@@ -11,14 +11,34 @@
 #define SDL_MAIN_HANDLED
 #ifdef _WIN32
 #include "SDL.h"
+#include "SDL_syswm.h"
 #else
 #include "SDL2/SDL.h"
+#include "SDL2/SDL_syswm.h"
 #endif
+
+// N64 button bitmasks (from libultra PR/controller.h)
+#define N64_A_BUTTON     0x8000
+#define N64_B_BUTTON     0x4000
+#define N64_Z_TRIG       0x2000
+#define N64_START_BUTTON 0x1000
+#define N64_U_JPAD       0x0800
+#define N64_D_JPAD       0x0400
+#define N64_L_JPAD       0x0200
+#define N64_R_JPAD       0x0100
+#define N64_L_TRIG       0x0020
+#define N64_R_TRIG       0x0010
+#define N64_U_CBUTTONS   0x0008
+#define N64_D_CBUTTONS   0x0004
+#define N64_L_CBUTTONS   0x0002
+#define N64_R_CBUTTONS   0x0001
 
 // ---------------------------------------------------------------------------
 // Forward declarations from RecompiledFuncs
 // ---------------------------------------------------------------------------
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
+// The game's N64 "main" function — renamed to avoid clash with C main()
+extern "C" void rs_main(uint8_t* rdram, recomp_context* ctx);
 gpr get_entrypoint_address();
 
 // ---------------------------------------------------------------------------
@@ -113,21 +133,33 @@ static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float
         if (SDL_GameControllerGetButton(controller, sdl)) btn |= mask;
     };
 
-    // N64 button masks (from ultra64.h)
-    b(A_BUTTON,     SDL_CONTROLLER_BUTTON_A);
-    b(B_BUTTON,     SDL_CONTROLLER_BUTTON_X);
-    b(Z_TRIG,       SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
-    b(START_BUTTON, SDL_CONTROLLER_BUTTON_START);
-    b(U_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_UP);
-    b(D_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_DOWN);
-    b(L_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_LEFT);
-    b(R_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
-    b(L_TRIG,       SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
-    b(R_TRIG,       SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
-    b(U_CBUTTONS,   SDL_CONTROLLER_BUTTON_Y);
-    b(D_CBUTTONS,   SDL_CONTROLLER_BUTTON_B);
-    b(L_CBUTTONS,   SDL_CONTROLLER_BUTTON_BACK);
-    b(R_CBUTTONS,   SDL_CONTROLLER_BUTTON_GUIDE);
+    // Rogue Squadron N64 → modern gamepad mapping:
+    //   A (fire)        → face A
+    //   B (bombs)       → face X
+    //   Z (brake)       → left trigger (digital, via axis threshold below)
+    //   R (boost)       → right shoulder
+    //   L (targeting)   → left shoulder
+    //   C-Up (view)     → right stick up (handled via axis) — face Y as fallback
+    //   C-Down          → face B
+    //   C-Left          → right stick left (axis) — d-left as fallback
+    //   C-Right         → right stick right (axis) — d-right as fallback
+    //   D-Pad           → d-pad
+    //   Start           → start
+    b(N64_A_BUTTON,     SDL_CONTROLLER_BUTTON_A);
+    b(N64_B_BUTTON,     SDL_CONTROLLER_BUTTON_X);
+    b(N64_START_BUTTON, SDL_CONTROLLER_BUTTON_START);
+    b(N64_U_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_UP);
+    b(N64_D_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_DOWN);
+    b(N64_L_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_LEFT);
+    b(N64_R_JPAD,       SDL_CONTROLLER_BUTTON_DPAD_RIGHT);
+    b(N64_L_TRIG,       SDL_CONTROLLER_BUTTON_LEFTSHOULDER);   // targeting computer
+    b(N64_R_TRIG,       SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);  // boost/accelerate
+    b(N64_U_CBUTTONS,   SDL_CONTROLLER_BUTTON_Y);
+    b(N64_D_CBUTTONS,   SDL_CONTROLLER_BUTTON_B);
+    b(N64_L_CBUTTONS,   SDL_CONTROLLER_BUTTON_BACK);
+    b(N64_R_CBUTTONS,   SDL_CONTROLLER_BUTTON_GUIDE);
+    // Z trigger (brake) from left analog trigger axis
+    if (SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 16000) btn |= N64_Z_TRIG;
 
     int16_t ax = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTX);
     int16_t ay = SDL_GameControllerGetAxis(controller, SDL_CONTROLLER_AXIS_LEFTY);
@@ -137,13 +169,13 @@ static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float
     return true;
 }
 
-static void set_rumble(int, bool) { /* TODO */ }
+static void set_rumble(int, bool) {}
 
 static ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
     if (controller_num == 0 && controller) {
-        return { ultramodern::input::DeviceType::Gamepad };
+        return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
     }
-    return { ultramodern::input::DeviceType::None };
+    return { ultramodern::input::Device::None, ultramodern::input::Pak::None };
 }
 
 // ---------------------------------------------------------------------------
@@ -156,30 +188,37 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
-    return {};
+    return nullptr;
 }
 
 // Defined in rt64_render_context.cpp
 namespace recomp {
     std::unique_ptr<ultramodern::renderer::RendererContext>
-    create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window, bool developer_mode);
+    create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode);
 }
 
 ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
-    SDL_Window* window = SDL_CreateWindow(
+    SDL_Window* sdl_window = SDL_CreateWindow(
         "Star Wars: Rogue Squadron 64 Recompiled",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         640, 480,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_SHOWN
     );
-    if (!window) {
+    if (!sdl_window) {
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
-    return { window };
+#if defined(_WIN32)
+    SDL_SysWMinfo wm{};
+    SDL_VERSION(&wm.version);
+    SDL_GetWindowWMInfo(sdl_window, &wm);
+    return { wm.info.win.window };
+#else
+    return sdl_window;
+#endif
 }
 
-void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t, void*) {}
+void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {}
 
 // ---------------------------------------------------------------------------
 // Thread naming
@@ -225,55 +264,40 @@ int main(int argc, char* argv[]) {
         recomp::register_game(game);
     }
 
-    recomp::rsp::callbacks_t rsp_callbacks{
-        .get_rsp_microcode = get_rsp_microcode,
-    };
-
-    ultramodern::renderer::callbacks_t renderer_callbacks{
-        .create_render_context = recomp::create_render_context,
-    };
-
-    ultramodern::gfx_callbacks_t gfx_callbacks{
-        .create_gfx    = create_gfx,
-        .create_window = create_window,
-        .update_gfx    = update_gfx,
-    };
-
-    ultramodern::audio_callbacks_t audio_callbacks{
-        .queue_samples      = queue_samples,
-        .get_frames_remaining = get_frames_remaining,
-        .set_frequency      = set_frequency,
-    };
-
-    ultramodern::input::callbacks_t input_callbacks{
-        .poll_input               = poll_input,
-        .get_input                = get_n64_input,
-        .set_rumble               = set_rumble,
-        .get_connected_device_info = get_connected_device_info,
-    };
-
-    ultramodern::events::callbacks_t event_callbacks{};
-
-    ultramodern::error_handling::callbacks_t error_callbacks{
-        .message_box = [](const char* msg) { fprintf(stderr, "[Error] %s\n", msg); },
-    };
-
-    ultramodern::threads::callbacks_t thread_callbacks{
-        .get_game_thread_name = get_game_thread_name,
-    };
-
-    recomp::start(
-        { 0, 1, 0 },   // version: 0.1.0
-        {},             // project_version extras
-        rsp_callbacks,
-        renderer_callbacks,
-        audio_callbacks,
-        input_callbacks,
-        gfx_callbacks,
-        event_callbacks,
-        error_callbacks,
-        thread_callbacks
-    );
+    recomp::start(recomp::Configuration{
+        .project_version = { 0, 1, 0 },
+        .window_handle = {},
+        .rsp_callbacks = {
+            .get_rsp_microcode = get_rsp_microcode,
+        },
+        .renderer_callbacks = {
+            .create_render_context = recomp::create_render_context,
+        },
+        .audio_callbacks = {
+            .queue_samples        = queue_samples,
+            .get_frames_remaining = get_frames_remaining,
+            .set_frequency        = set_frequency,
+        },
+        .input_callbacks = {
+            .poll_input                = poll_input,
+            .get_input                 = get_n64_input,
+            .set_rumble                = set_rumble,
+            .get_connected_device_info = get_connected_device_info,
+        },
+        .gfx_callbacks = {
+            .create_gfx    = create_gfx,
+            .create_window = create_window,
+            .update_gfx    = update_gfx,
+        },
+        .events_callbacks    = {},
+        .error_handling_callbacks = {
+            .message_box = [](const char* msg) { fprintf(stderr, "[Error] %s\n", msg); },
+        },
+        .threads_callbacks = {
+            .get_game_thread_name = get_game_thread_name,
+        },
+        .message_queue_control = {},
+    });
 
     return EXIT_SUCCESS;
 }

@@ -43,7 +43,10 @@ add_library(RecompiledFuncs STATIC)
 
 if (MSVC)
     target_compile_options(RecompiledFuncs PRIVATE /wd4101 /wd4133)
+    # Rename game's 'main' to avoid MSVC treating it as the entry point
+    target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
 else()
+    target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
     target_compile_options(RecompiledFuncs PRIVATE
         -fno-strict-aliasing
         -Wno-unused-variable

@@ -13,8 +13,6 @@ E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/re-spirv/CMakeFiles/re-
 E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/re-spirv/CMakeFiles/re-spirv-cli.dir
 E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/re-spirv/CMakeFiles/INSTALL.dir
 E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/re-spirv/CMakeFiles/ALL_BUILD.dir
-E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/re-spirv/external/SPIRV-Headers/CMakeFiles/INSTALL.dir
-E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/re-spirv/external/SPIRV-Headers/CMakeFiles/ALL_BUILD.dir
 E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/nativefiledialog-extended/CMakeFiles/INSTALL.dir
 E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/nativefiledialog-extended/CMakeFiles/ALL_BUILD.dir
 E:/Projects/RogueSquadron64Recomp/build/rt64/src/contrib/nativefiledialog-extended/src/CMakeFiles/nfd.dir

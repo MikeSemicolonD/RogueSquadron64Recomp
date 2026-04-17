@@ -23,6 +23,17 @@ static unsigned int DPC_TMEM_REG     = 0;
 
 static void dummy_check_interrupts() {}
 
+static ultramodern::renderer::SetupResult map_result(RT64::Application::SetupResult r) {
+    switch (r) {
+    case RT64::Application::SetupResult::Success:                  return ultramodern::renderer::SetupResult::Success;
+    case RT64::Application::SetupResult::DynamicLibrariesNotFound: return ultramodern::renderer::SetupResult::DynamicLibrariesNotFound;
+    case RT64::Application::SetupResult::InvalidGraphicsAPI:       return ultramodern::renderer::SetupResult::InvalidGraphicsAPI;
+    case RT64::Application::SetupResult::GraphicsAPINotFound:      return ultramodern::renderer::SetupResult::GraphicsAPINotFound;
+    case RT64::Application::SetupResult::GraphicsDeviceNotFound:   return ultramodern::renderer::SetupResult::GraphicsDeviceNotFound;
+    }
+    return ultramodern::renderer::SetupResult::GraphicsDeviceNotFound;
+}
+
 // ---------------------------------------------------------------------------
 // RT64Context — wraps RT64::Application as a RendererContext
 // ---------------------------------------------------------------------------
@@ -79,19 +90,25 @@ public:
 
         RT64::ApplicationConfiguration appConfig;
         appConfig.useConfigurationFile = false;
+        appConfig.detectDataPath = false;
 
         app = std::make_unique<RT64::Application>(appCore, appConfig);
         app->userConfig.developerMode = debug;
+        app->userConfig.displayBuffering = RT64::UserConfiguration::DisplayBuffering::Triple;
 
-        auto result = app->setup();
-        setup_result = map_result(result);
+        uint32_t thread_id = 0;
+#ifdef _WIN32
+        thread_id = window_handle.thread_id;
+#endif
+        setup_result = map_result(app->setup(thread_id));
         if (setup_result != ultramodern::renderer::SetupResult::Success) {
-            fprintf(stderr, "[RT64] setup failed: %d\n", (int)result);
+            fprintf(stderr, "[RT64] setup failed: %d\n", (int)setup_result);
+            app = nullptr;
         }
     }
 
     bool valid() override {
-        return app && app->isSetupSuccessful();
+        return app != nullptr;
     }
 
     bool update_config(const ultramodern::renderer::GraphicsConfig&,
@@ -100,11 +117,22 @@ public:
     }
 
     void enable_instant_present() override {
-        if (app) app->userConfig.refreshRate.mode = RT64::UserConfiguration::RefreshRate::Maximum;
+        if (app) {
+            app->enhancementConfig.presentation.mode =
+                RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
+            app->updateEnhancementConfig();
+        }
     }
 
     void send_dl(const OSTask* task) override {
-        if (app) app->sendDL((RT64::OSTask*)task);
+        if (app) {
+            app->state->rsp->reset();
+            app->interpreter->loadUCodeGBI(
+                task->t.ucode & 0x3FFFFFF,
+                task->t.ucode_data & 0x3FFFFFF,
+                true);
+            app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
+        }
     }
 
     void update_screen() override {
@@ -112,27 +140,21 @@ public:
     }
 
     void shutdown() override {
-        app.reset();
+        if (app) {
+            app->end();
+            app.reset();
+        }
     }
 
     uint32_t get_display_framerate() const override {
-        return app ? app->getTargetRefreshRate() : 60;
+        if (app && app->presentQueue) {
+            return app->presentQueue->ext.sharedResources->swapChainRate;
+        }
+        return 60;
     }
 
     float get_resolution_scale() const override {
-        return app ? app->userConfig.resolutionMultiplier : 1.0f;
-    }
-
-private:
-    static ultramodern::renderer::SetupResult map_result(RT64::Application::SetupResult r) {
-        switch (r) {
-        case RT64::Application::SetupResult::Success:                 return ultramodern::renderer::SetupResult::Success;
-        case RT64::Application::SetupResult::DynamicLibrariesNotFound:return ultramodern::renderer::SetupResult::DynamicLibrariesNotFound;
-        case RT64::Application::SetupResult::InvalidGraphicsAPI:      return ultramodern::renderer::SetupResult::InvalidGraphicsAPI;
-        case RT64::Application::SetupResult::GraphicsAPINotFound:     return ultramodern::renderer::SetupResult::GraphicsAPINotFound;
-        case RT64::Application::SetupResult::GraphicsDeviceNotFound:  return ultramodern::renderer::SetupResult::GraphicsDeviceNotFound;
-        }
-        return ultramodern::renderer::SetupResult::GraphicsDeviceNotFound;
+        return app ? float(app->userConfig.resolutionMultiplier) : 1.0f;
     }
 };
 
