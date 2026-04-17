@@ -1,0 +1,14 @@
+# Target labels
+ sdl2-populate
+# Source files and their labels
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/sdl2-populate
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/01abfd05562bde7fbd35b7932e54e799/sdl2-populate.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/9f4ea2b1e25f6daa79d97e7daea3aca7/sdl2-populate-complete.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-build.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-configure.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-download.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-install.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-mkdir.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-patch.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-test.rule
+E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-update.rule

@@ -1,0 +1,1303 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_common.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_dynamic_libraries.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_elapsed_timer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_emulator_configuration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_enhancement_configuration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_filesystem_zip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_load_types.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_mapped_file.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_math.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_profiling_timer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_replacement_database.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_thread.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_timer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_user_configuration.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\common\rt64_user_paths.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dex2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dgolden.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dpd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dwave.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dzex2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_l3dex2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_rdp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_s2dex.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_s2dex2.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_extended.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gui\rt64_camera_controller.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gui\rt64_debugger_inspector.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gui\rt64_file_dialog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gui\rt64_inspector.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_application.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_application_window.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_color_converter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_command_warning.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_draw_call.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_framebuffer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_framebuffer_changes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_framebuffer_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_framebuffer_pair.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_framebuffer_storage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_game_frame.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_interpreter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_light_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_present_queue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_projection.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_rdp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_rdp_tmem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_rigid_body.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_rsp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_state.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_vi.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_workload.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\hle\rt64_workload_queue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\imgui\imgui_impl_sdl2_custom.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_buffer_uploader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_framebuffer_renderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_geometry_mode.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_native_target.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_optimus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_projection_processor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_raster_shader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_raster_shader_cache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_render_target.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_render_target_manager.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_render_worker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_rsp_processor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_shader_common.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_shader_compiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_shader_library.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_texture_cache.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_tile_processor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_transform_processor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_upscaler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_vertex_processor.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\render\rt64_vi_renderer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\preset\rt64_preset.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\preset\rt64_preset_draw_call.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\preset\rt64_preset_light.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\preset\rt64_preset_material.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\preset\rt64_preset_scene.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\shared\rt64_hlsl_json.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\rhi\rt64_render_hooks.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\vulkan\rt64_vulkan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\imgui.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\imgui_demo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\imgui_draw.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\imgui_tables.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\imgui_widgets.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\backends\imgui_impl_vulkan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\im3d\im3d.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\implot\implot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\implot\implot_demo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\implot\implot_items.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\miniz\miniz.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\d3d12\rt64_d3d12.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\backends\imgui_impl_dx12.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\imgui\backends\imgui_impl_win32.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RenderParams.hlsli.rw.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSLibrary.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSLibraryMS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterVSLibrary.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSDynamic.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSDynamic.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSDynamicMS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSDynamicMS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSSpecConstant.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSSpecConstantMS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSSpecConstantFlat.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterPSSpecConstantFlatMS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterVSDynamic.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterVSDynamic.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterVSSpecConstant.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RasterVSSpecConstantFlat.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbChangesClearCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbChangesClearCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbChangesDrawColorPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbChangesDrawColorPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbChangesDrawDepthPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbChangesDrawDepthPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbReadAnyChangesCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbReadAnyChangesCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbReinterpretCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbReinterpretCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbReadAnyFullCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbReadAnyFullCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbWriteColorCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbWriteColorCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbWriteDepthCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbWriteDepthCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbWriteDepthCSMS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FbWriteDepthCSMS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\GaussianFilterRGB3x3CS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\GaussianFilterRGB3x3CS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\BoxFilterCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\BoxFilterCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\BicubicScalingCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\BicubicScalingCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\HistogramAverageCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\HistogramAverageCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\HistogramClearCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\HistogramClearCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\HistogramSetCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\HistogramSetCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\IdleCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\IdleCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\LuminanceHistogramCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\LuminanceHistogramCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostBlendDitherNoiseAddPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostBlendDitherNoiseAddPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostBlendDitherNoiseSubPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostBlendDitherNoiseSubPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostBlendDitherNoiseSubNegativePS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostBlendDitherNoiseSubNegativePS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPModifyCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPModifyCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPProcessCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPProcessCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPWorldCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPWorldCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPSmoothNormalCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPSmoothNormalCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPVertexTestZCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPVertexTestZCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPVertexTestZCSMS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RSPVertexTestZCSMS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepthPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepthPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepth2XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepth2XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepth4XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepth4XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepth8XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyColorToDepth8XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColorPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColorPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColor2XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColor2XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColor4XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColor4XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColor8XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\RtCopyDepthToColor8XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureCopyPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureCopyPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureDecodeCS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureDecodeCS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureResolveSamples2XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureResolveSamples2XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureResolveSamples4XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureResolveSamples4XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureResolveSamples8XPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\TextureResolveSamples8XPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\VideoInterfacePSRegular.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\VideoInterfacePSRegular.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\VideoInterfacePSPixel.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\VideoInterfacePSPixel.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FullScreenVS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\FullScreenVS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\Im3DVS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\Im3DVS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\ComposePS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\ComposePS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\DebugPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\DebugPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\Im3DPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\Im3DPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostProcessPS.hlsl.dxil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\src\shaders\PostProcessPS.hlsl.spirv.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RenderParams.hlsli.rw.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RenderParams.hlsli.rw.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSLibrary.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSLibrary.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSLibraryMS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSLibraryMS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSLibrary.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSLibrary.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamic.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamic.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamic.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamic.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamicMS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamicMS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamicMS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSDynamicMS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstant.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstant.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstantMS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstantMS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstantFlat.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstantFlat.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstantFlatMS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterPSSpecConstantFlatMS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSDynamic.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSDynamic.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSDynamic.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSDynamic.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSSpecConstant.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSSpecConstant.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSSpecConstantFlat.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RasterVSSpecConstantFlat.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesClearCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesClearCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesClearCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesClearCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawColorPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawColorPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawColorPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawColorPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawDepthPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawDepthPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawDepthPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbChangesDrawDepthPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyChangesCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyChangesCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyChangesCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyChangesCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReinterpretCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReinterpretCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReinterpretCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReinterpretCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyFullCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyFullCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyFullCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbReadAnyFullCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteColorCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteColorCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteColorCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteColorCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCSMS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCSMS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCSMS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FbWriteDepthCSMS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\GaussianFilterRGB3x3CS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\GaussianFilterRGB3x3CS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\GaussianFilterRGB3x3CS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\GaussianFilterRGB3x3CS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BoxFilterCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BoxFilterCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BoxFilterCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BoxFilterCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BicubicScalingCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BicubicScalingCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BicubicScalingCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\BicubicScalingCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramAverageCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramAverageCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramAverageCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramAverageCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramClearCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramClearCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramClearCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramClearCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramSetCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramSetCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramSetCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\HistogramSetCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\IdleCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\IdleCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\IdleCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\IdleCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\LuminanceHistogramCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\LuminanceHistogramCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\LuminanceHistogramCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\LuminanceHistogramCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseAddPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseAddPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseAddPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseAddPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubNegativePS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubNegativePS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubNegativePS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostBlendDitherNoiseSubNegativePS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPModifyCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPModifyCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPModifyCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPModifyCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPProcessCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPProcessCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPProcessCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPProcessCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPWorldCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPWorldCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPWorldCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPWorldCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPSmoothNormalCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPSmoothNormalCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPSmoothNormalCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPSmoothNormalCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCSMS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCSMS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCSMS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RSPVertexTestZCSMS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepthPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepthPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepthPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepthPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth2XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth2XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth2XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth2XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth4XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth4XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth4XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth4XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth8XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth8XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth8XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyColorToDepth8XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColorPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColorPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColorPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColorPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor2XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor2XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor2XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor2XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor4XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor4XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor4XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor4XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor8XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor8XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor8XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\RtCopyDepthToColor8XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureCopyPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureCopyPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureCopyPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureCopyPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureDecodeCS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureDecodeCS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureDecodeCS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureDecodeCS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples2XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples2XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples2XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples2XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples4XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples4XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples4XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples4XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples8XPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples8XPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples8XPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\TextureResolveSamples8XPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSRegular.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSRegular.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSRegular.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSRegular.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSPixel.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSPixel.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSPixel.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\VideoInterfacePSPixel.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FullScreenVS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FullScreenVS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FullScreenVS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\FullScreenVS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DVS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DVS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DVS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DVS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\ComposePS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\ComposePS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\ComposePS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\ComposePS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\DebugPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\DebugPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\DebugPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\DebugPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\Im3DPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostProcessPS.hlsl.dxil.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostProcessPS.hlsl.dxil.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostProcessPS.hlsl.spv.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\2861ad20966ab3093c9d25e03ba0bd8e\PostProcessPS.hlsl.spirv.c.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{BEB865FD-172B-3CE4-9E39-30A9980CA653}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{887D7345-106B-3898-9BAF-7564F52956F1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

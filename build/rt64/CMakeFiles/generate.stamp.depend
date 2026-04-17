@@ -1,0 +1,4 @@
+# CMake generation dependency list for this directory.
+E:/Projects/RogueSquadron64Recomp/lib/rt64/CMakeLists.txt
+E:/Projects/RogueSquadron64Recomp/lib/rt64/src/contrib/dxc/bin/x64/dxcompiler.dll
+E:/Projects/RogueSquadron64Recomp/lib/rt64/src/contrib/dxc/bin/x64/dxil.dll

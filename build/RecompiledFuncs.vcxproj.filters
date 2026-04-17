@@ -1,0 +1,166 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_0.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_1.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_10.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_11.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_12.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_13.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_14.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_15.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_16.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_17.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_18.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_19.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_2.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_20.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_21.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_22.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_23.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_24.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_25.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_26.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_27.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_28.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_29.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_3.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_30.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_31.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_32.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_33.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_34.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_35.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_36.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_37.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_38.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_39.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_4.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_40.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_41.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_42.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_43.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_44.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_45.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_46.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_47.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_48.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_49.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_5.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_6.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_7.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_8.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\funcs_9.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\N64Recomp\RecompiledFuncs\lookup.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{887D7345-106B-3898-9BAF-7564F52956F1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

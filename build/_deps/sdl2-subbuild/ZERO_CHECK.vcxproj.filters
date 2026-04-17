@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\_deps\sdl2-subbuild\CMakeFiles\01abfd05562bde7fbd35b7932e54e799\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{AC346E56-FFD5-344D-83BD-2644B38492EA}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

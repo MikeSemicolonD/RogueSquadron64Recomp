@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\build\CMakeFiles\e391bbb3b642587325b5ae746583b441\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{BEB865FD-172B-3CE4-9E39-30A9980CA653}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

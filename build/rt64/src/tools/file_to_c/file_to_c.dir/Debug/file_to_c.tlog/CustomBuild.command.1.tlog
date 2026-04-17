@@ -1,0 +1,10 @@
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\LIB\RT64\SRC\TOOLS\FILE_TO_C\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SE:/Projects/RogueSquadron64Recomp -BE:/Projects/RogueSquadron64Recomp/build --check-stamp-file E:/Projects/RogueSquadron64Recomp/build/rt64/src/tools/file_to_c/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

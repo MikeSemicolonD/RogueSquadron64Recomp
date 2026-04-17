@@ -1,0 +1,2210 @@
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RENDERPARAMS.HLSLI.RW.RULE
+setlocal
+clang -x c -E -P E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RenderParams.hlsli -o E:/Projects/RogueSquadron64Recomp/build/src/shaders/RenderParams.hlsli.rw -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RENDERPARAMS.HLSLI.RW.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RenderParams.hlsli.rw RenderParamsText E:/Projects/RogueSquadron64Recomp/build/src/shaders/RenderParams.hlsli.rw.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RenderParams.hlsli.rw.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSLIBRARY.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -D LIBRARY -T lib_6_3 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibrary.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSLIBRARY.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibrary.hlsl.dxil RasterPSLibraryBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibrary.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibrary.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSLIBRARYMS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -D LIBRARY -T lib_6_3 "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibraryMS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSLIBRARYMS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibraryMS.hlsl.dxil RasterPSLibraryMSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibraryMS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSLibraryMS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSLIBRARY.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -D LIBRARY -T lib_6_3 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSLibrary.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSLIBRARY.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSLibrary.hlsl.dxil RasterVSLibraryBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSLibrary.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSLibrary.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMIC.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D DYNAMIC_RENDER_PARAMS" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMIC.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.dxil RasterPSDynamicBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMIC.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D DYNAMIC_RENDER_PARAMS" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMIC.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.spv RasterPSDynamicBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamic.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMICMS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D DYNAMIC_RENDER_PARAMS" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMICMS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.dxil RasterPSDynamicMSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMICMS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D DYNAMIC_RENDER_PARAMS" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSDYNAMICMS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.spv RasterPSDynamicMSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSDynamicMS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANT.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SPEC_CONSTANT_RENDER_PARAMS" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstant.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANT.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstant.hlsl.spv RasterPSSpecConstantBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstant.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstant.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANTMS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantMS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANTMS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantMS.hlsl.spv RasterPSSpecConstantMSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantMS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantMS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANTFLAT.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D VERTEX_FLAT_COLOR" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlat.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANTFLAT.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlat.hlsl.spv RasterPSSpecConstantFlatBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlat.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlat.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANTFLATMS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SPEC_CONSTANT_RENDER_PARAMS" "-D VERTEX_FLAT_COLOR" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlatMS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERPSSPECCONSTANTFLATMS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlatMS.hlsl.spv RasterPSSpecConstantFlatMSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlatMS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterPSSpecConstantFlatMS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSDYNAMIC.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y "-D DYNAMIC_RENDER_PARAMS" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSDYNAMIC.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.dxil RasterVSDynamicBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSDYNAMIC.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y "-D DYNAMIC_RENDER_PARAMS" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSDYNAMIC.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.spv RasterVSDynamicBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSDynamic.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSSPECCONSTANT.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y "-D SPEC_CONSTANT_RENDER_PARAMS" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstant.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSSPECCONSTANT.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstant.hlsl.spv RasterVSSpecConstantBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstant.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstant.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSSPECCONSTANTFLAT.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y "-D SPEC_CONSTANT_RENDER_PARAMS" "-D VERTEX_FLAT_COLOR" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RasterVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstantFlat.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RASTERVSSPECCONSTANTFLAT.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstantFlat.hlsl.spv RasterVSSpecConstantFlatBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstantFlat.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RasterVSSpecConstantFlat.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESCLEARCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbChangesClearCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESCLEARCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.dxil FbChangesClearCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESCLEARCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbChangesClearCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESCLEARCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.spv FbChangesClearCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesClearCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWCOLORPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbChangesDrawColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWCOLORPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.dxil FbChangesDrawColorPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWCOLORPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbChangesDrawColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWCOLORPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.spv FbChangesDrawColorPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawColorPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWDEPTHPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbChangesDrawDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWDEPTHPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.dxil FbChangesDrawDepthPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWDEPTHPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbChangesDrawDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBCHANGESDRAWDEPTHPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.spv FbChangesDrawDepthPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbChangesDrawDepthPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYCHANGESCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbReadAnyChangesCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYCHANGESCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.dxil FbReadAnyChangesCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYCHANGESCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbReadAnyChangesCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYCHANGESCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.spv FbReadAnyChangesCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyChangesCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREINTERPRETCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbReinterpretCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREINTERPRETCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.dxil FbReinterpretCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREINTERPRETCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbReinterpretCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREINTERPRETCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.spv FbReinterpretCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReinterpretCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYFULLCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbReadAnyFullCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYFULLCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.dxil FbReadAnyFullCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYFULLCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbReadAnyFullCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBREADANYFULLCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.spv FbReadAnyFullCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbReadAnyFullCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITECOLORCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbWriteColorCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITECOLORCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.dxil FbWriteColorCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITECOLORCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" -O0 E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbWriteColorCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITECOLORCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.spv FbWriteColorCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteColorCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbWriteDepthCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.dxil FbWriteDepthCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbWriteDepthCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.spv FbWriteDepthCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCSMS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbWriteDepthCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCSMS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.dxil FbWriteDepthCSMSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCSMS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FbWriteDepthCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FBWRITEDEPTHCSMS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.spv FbWriteDepthCSMSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FbWriteDepthCSMS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\GAUSSIANFILTERRGB3X3CS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/GaussianFilterRGB3x3CS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\GAUSSIANFILTERRGB3X3CS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.dxil GaussianFilterRGB3x3CSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\GAUSSIANFILTERRGB3X3CS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/GaussianFilterRGB3x3CS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\GAUSSIANFILTERRGB3X3CS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.spv GaussianFilterRGB3x3CSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/GaussianFilterRGB3x3CS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BOXFILTERCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/BoxFilterCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BOXFILTERCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.dxil BoxFilterCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BOXFILTERCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/BoxFilterCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BOXFILTERCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.spv BoxFilterCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/BoxFilterCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BICUBICSCALINGCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/BicubicScalingCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BICUBICSCALINGCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.dxil BicubicScalingCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BICUBICSCALINGCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/BicubicScalingCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\BICUBICSCALINGCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.spv BicubicScalingCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/BicubicScalingCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMAVERAGECS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/HistogramAverageCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMAVERAGECS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.dxil HistogramAverageCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMAVERAGECS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/HistogramAverageCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMAVERAGECS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.spv HistogramAverageCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramAverageCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMCLEARCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/HistogramClearCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMCLEARCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.dxil HistogramClearCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMCLEARCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/HistogramClearCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMCLEARCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.spv HistogramClearCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramClearCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMSETCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/HistogramSetCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMSETCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.dxil HistogramSetCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMSETCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/HistogramSetCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\HISTOGRAMSETCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.spv HistogramSetCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/HistogramSetCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IDLECS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/IdleCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IDLECS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.dxil IdleCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IDLECS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/IdleCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IDLECS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.spv IdleCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/IdleCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\LUMINANCEHISTOGRAMCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/LuminanceHistogramCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\LUMINANCEHISTOGRAMCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.dxil LuminanceHistogramCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\LUMINANCEHISTOGRAMCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/LuminanceHistogramCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\LUMINANCEHISTOGRAMCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.spv LuminanceHistogramCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/LuminanceHistogramCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISEADDPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D ADD_MODE" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostBlendDitherNoisePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISEADDPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.dxil PostBlendDitherNoiseAddPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISEADDPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D ADD_MODE" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostBlendDitherNoisePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISEADDPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.spv PostBlendDitherNoiseAddPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseAddPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SUB_MODE" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostBlendDitherNoisePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.dxil PostBlendDitherNoiseSubPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SUB_MODE" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostBlendDitherNoisePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.spv PostBlendDitherNoiseSubPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBNEGATIVEPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SUB_MODE" "-D NEGATIVE_MODE" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostBlendDitherNoisePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBNEGATIVEPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.dxil PostBlendDitherNoiseSubNegativePSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBNEGATIVEPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SUB_MODE" "-D NEGATIVE_MODE" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostBlendDitherNoisePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTBLENDDITHERNOISESUBNEGATIVEPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.spv PostBlendDitherNoiseSubNegativePSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostBlendDitherNoiseSubNegativePS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPMODIFYCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPModifyCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPMODIFYCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.dxil RSPModifyCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPMODIFYCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPModifyCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPMODIFYCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.spv RSPModifyCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPModifyCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPPROCESSCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPProcessCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPPROCESSCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.dxil RSPProcessCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPPROCESSCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPProcessCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPPROCESSCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.spv RSPProcessCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPProcessCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPWORLDCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPWorldCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPWORLDCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.dxil RSPWorldCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPWORLDCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPWorldCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPWORLDCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.spv RSPWorldCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPWorldCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPSMOOTHNORMALCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPSmoothNormalCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPSMOOTHNORMALCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.dxil RSPSmoothNormalCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPSMOOTHNORMALCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPSmoothNormalCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPSMOOTHNORMALCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.spv RSPSmoothNormalCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPSmoothNormalCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPVertexTestZCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.dxil RSPVertexTestZCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPVertexTestZCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.spv RSPVertexTestZCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCSMS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPVertexTestZCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCSMS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.dxil RSPVertexTestZCSMSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCSMS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" "-D MULTISAMPLING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RSPVertexTestZCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RSPVERTEXTESTZCSMS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.spv RSPVertexTestZCSMSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RSPVertexTestZCSMS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTHPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTHPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.dxil RtCopyColorToDepthPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTHPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTHPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.spv RtCopyColorToDepthPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepthPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH2XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_2X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH2XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.dxil RtCopyColorToDepth2XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH2XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_2X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH2XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.spv RtCopyColorToDepth2XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth2XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH4XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_4X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH4XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.dxil RtCopyColorToDepth4XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH4XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_4X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH4XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.spv RtCopyColorToDepth4XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth4XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH8XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_8X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH8XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.dxil RtCopyColorToDepth8XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH8XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_8X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyColorToDepthPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYCOLORTODEPTH8XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.spv RtCopyColorToDepth8XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyColorToDepth8XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLORPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLORPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.dxil RtCopyDepthToColorPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLORPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLORPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.spv RtCopyDepthToColorPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColorPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR2XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_2X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR2XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.dxil RtCopyDepthToColor2XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR2XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_2X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR2XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.spv RtCopyDepthToColor2XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor2XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR4XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_4X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR4XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.dxil RtCopyDepthToColor4XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR4XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_4X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR4XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.spv RtCopyDepthToColor4XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor4XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR8XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_8X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR8XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.dxil RtCopyDepthToColor8XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR8XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_8X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/RtCopyDepthToColorPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\RTCOPYDEPTHTOCOLOR8XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.spv RtCopyDepthToColor8XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/RtCopyDepthToColor8XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURECOPYPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureCopyPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURECOPYPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.dxil TextureCopyPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURECOPYPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureCopyPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURECOPYPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.spv TextureCopyPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureCopyPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTUREDECODECS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureDecodeCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTUREDECODECS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.dxil TextureDecodeCSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTUREDECODECS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E CSMain "-T cs_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureDecodeCS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTUREDECODECS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.spv TextureDecodeCSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureDecodeCS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES2XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_2X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureResolvePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES2XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.dxil TextureResolveSamples2XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES2XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_2X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureResolvePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES2XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.spv TextureResolveSamples2XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples2XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES4XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_4X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureResolvePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES4XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.dxil TextureResolveSamples4XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES4XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_4X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureResolvePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES4XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.spv TextureResolveSamples4XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples4XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES8XPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_8X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureResolvePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES8XPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.dxil TextureResolveSamples8XPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES8XPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D SAMPLES_8X" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/TextureResolvePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\TEXTURERESOLVESAMPLES8XPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.spv TextureResolveSamples8XPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/TextureResolveSamples8XPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSREGULAR.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/VideoInterfacePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSREGULAR.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.dxil VideoInterfacePSRegularBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSREGULAR.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/VideoInterfacePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSREGULAR.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.spv VideoInterfacePSRegularBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSRegular.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSPIXEL.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D PIXEL_ANTIALIASING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/VideoInterfacePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSPIXEL.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.dxil VideoInterfacePSPixelBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSPIXEL.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" "-D PIXEL_ANTIALIASING" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/VideoInterfacePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\VIDEOINTERFACEPSPIXEL.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.spv VideoInterfacePSPixelBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/VideoInterfacePSPixel.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FULLSCREENVS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FullScreenVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FULLSCREENVS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.dxil FullScreenVSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FULLSCREENVS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/FullScreenVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\FULLSCREENVS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.spv FullScreenVSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/FullScreenVS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DVS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/Im3DVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DVS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.dxil Im3DVSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DVS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E VSMain "-T vs_6_3" -fvk-invert-y E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/Im3DVS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DVS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.spv Im3DVSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DVS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\COMPOSEPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/ComposePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\COMPOSEPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.dxil ComposePSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\COMPOSEPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/ComposePS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\COMPOSEPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.spv ComposePSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/ComposePS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\DEBUGPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/DebugPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\DEBUGPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.dxil DebugPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\DEBUGPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/DebugPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\DEBUGPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.spv DebugPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/DebugPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/Im3DPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.dxil Im3DPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/Im3DPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\IM3DPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.spv Im3DPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/Im3DPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTPROCESSPS.HLSL.DXIL.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -Wno-ignored-attributes -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostProcessPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.dxil
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTPROCESSPS.HLSL.DXIL.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.dxil PostProcessPSBlobDXIL E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.dxil.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.dxil.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTPROCESSPS.HLSL.SPV.RULE
+setlocal
+E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\dxc\bin\x64\dxc.exe -spirv -fspv-target-env=vulkan1.0 -fvk-use-dx-layout -IE:/Projects/RogueSquadron64Recomp/lib/rt64/src -E PSMain "-T ps_6_3" E:/Projects/RogueSquadron64Recomp/lib/rt64/src/shaders/PostProcessPS.hlsl /Fo E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\BUILD\CMAKEFILES\2861AD20966AB3093C9D25E03BA0BD8E\POSTPROCESSPS.HLSL.SPIRV.C.RULE
+setlocal
+..\Debug\file_to_c.exe E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.spv PostProcessPSBlobSPIRV E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.spirv.c E:/Projects/RogueSquadron64Recomp/build/src/shaders/PostProcessPS.hlsl.spirv.h
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\LIB\RT64\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SE:/Projects/RogueSquadron64Recomp -BE:/Projects/RogueSquadron64Recomp/build --check-stamp-file E:/Projects/RogueSquadron64Recomp/build/rt64/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

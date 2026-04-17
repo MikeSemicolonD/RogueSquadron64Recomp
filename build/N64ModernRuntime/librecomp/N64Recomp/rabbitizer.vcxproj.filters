@@ -1,0 +1,124 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\analysis\LoPairingInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\analysis\RegistersTracker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstrId.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstrIdType.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstructionBase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstructionCpu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstructionR3000GTE.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstructionR5900.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\cplusplus\src\instructions\InstructionRsp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\analysis\RabbitizerLoPairingInfo.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\analysis\RabbitizerRegistersTracker.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\analysis\RabbitizerTrackedRegisterState.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\common\RabbitizerConfig.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\common\RabbitizerVersion.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\common\Utils.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstrCategory.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstrDescriptor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstrId.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstrIdType.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstrSuffix.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionCpu\RabbitizerInstructionCpu_OperandType.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionR3000GTE\RabbitizerInstructionR3000GTE.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionR3000GTE\RabbitizerInstructionR3000GTE_OperandType.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionR3000GTE\RabbitizerInstructionR3000GTE_ProcessUniqueId.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionR5900\RabbitizerInstructionR5900.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionR5900\RabbitizerInstructionR5900_OperandType.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionR5900\RabbitizerInstructionR5900_ProcessUniqueId.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionRsp\RabbitizerInstructionRsp.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionRsp\RabbitizerInstructionRsp_OperandType.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstructionRsp\RabbitizerInstructionRsp_ProcessUniqueId.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstruction\RabbitizerInstruction.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstruction\RabbitizerInstruction_Disassemble.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstruction\RabbitizerInstruction_Examination.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstruction\RabbitizerInstruction_Operand.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerInstruction\RabbitizerInstruction_ProcessUniqueId.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerRegister.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\lib\rabbitizer\src\instructions\RabbitizerRegisterDescriptor.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{887D7345-106B-3898-9BAF-7564F52956F1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,58 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\audio.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\error_handling.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\events.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\extensions.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\input.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\mesgqueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\misc_ultra.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\renderer_context.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\rsp.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\scheduling.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\task_win32.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\threadqueue.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\threads.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\timer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\src\ultrainit.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{887D7345-106B-3898-9BAF-7564F52956F1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

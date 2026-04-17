@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/sdl2-populate"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/01abfd05562bde7fbd35b7932e54e799/sdl2-populate.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/9f4ea2b1e25f6daa79d97e7daea3aca7/sdl2-populate-complete.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-build.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-configure.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-download.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-install.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-mkdir.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-patch.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-test.rule"
+		},
+		{
+			"file" : "E:/Projects/RogueSquadron64Recomp/build/_deps/sdl2-subbuild/CMakeFiles/fcbd426138dc91b269c8572dd088e3d6/sdl2-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"sdl2-populate"
+		],
+		"name" : "sdl2-populate"
+	}
+}

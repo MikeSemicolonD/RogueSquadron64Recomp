@@ -1,0 +1,10 @@
+^E:\PROJECTS\ROGUESQUADRON64RECOMP\LIB\N64MODERNRUNTIME\ULTRAMODERN\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SE:/Projects/RogueSquadron64Recomp -BE:/Projects/RogueSquadron64Recomp/build --check-stamp-file E:/Projects/RogueSquadron64Recomp/build/N64ModernRuntime/ultramodern/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

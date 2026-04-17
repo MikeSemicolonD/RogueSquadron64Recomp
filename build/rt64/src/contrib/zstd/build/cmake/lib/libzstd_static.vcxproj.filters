@@ -1,0 +1,222 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\debug.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\entropy_common.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\error_private.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\fse_decompress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\pool.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\threading.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\xxhash.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\zstd_common.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\fse_compress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\hist.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\huf_compress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_literals.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_sequences.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_superblock.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_double_fast.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_fast.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_lazy.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_ldm.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_opt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstdmt_compress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\huf_decompress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\zstd_ddict.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\zstd_decompress.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\zstd_decompress_block.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\dictBuilder\cover.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\dictBuilder\divsufsort.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\dictBuilder\fastcover.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\dictBuilder\zdict.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\zdict.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\zstd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\zstd_errors.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\allocations.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\bits.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\bitstream.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\compiler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\cpu.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\error_private.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\fse.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\huf.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\mem.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\pool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\portability_macros.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\threading.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\xxhash.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\zstd_deps.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\zstd_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\common\zstd_trace.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\clevels.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\hist.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_literals.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_sequences.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_compress_superblock.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_cwksp.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_double_fast.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_fast.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_lazy.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_ldm.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_ldm_geartab.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstd_opt.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\compress\zstdmt_compress.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\zstd_ddict.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\zstd_decompress_block.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\decompress\zstd_decompress_internal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\dictBuilder\cover.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\lib\dictBuilder\divsufsort.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\contrib\zstd\build\cmake\lib\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{38DE83FC-E399-366D-8D31-403AB9DDE771}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{887D7345-106B-3898-9BAF-7564F52956F1}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
