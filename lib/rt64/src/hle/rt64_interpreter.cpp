@@ -169,8 +169,14 @@ namespace RT64 {
         DisplayList *dl = dlStart;
         uint8_t opCode;
         GBIFunction func;
+        static int s_opTraceCount = 0;
         while (dl != nullptr) {
             opCode = (dl->w0 >> 24);
+
+            if (s_opTraceCount < 200) {
+                fprintf(stderr, "[DL %d] op=0x%02X w0=0x%08X w1=0x%08X\n", s_opTraceCount++, opCode, dl->w0, dl->w1);
+                fflush(stderr);
+            }
 
             if ((extendedOpCode != 0) && (opCode == extendedOpCode)) {
                 extendedFunction(state, &dl);
@@ -183,10 +189,14 @@ namespace RT64 {
 #       endif
 
                 if (func != nullptr) {
+                    if (s_opTraceCount < 200) { fprintf(stderr, "  -> dispatch 0x%02X (func=%p)\n", opCode, (void*)func); fflush(stderr); }
                     func(state, &dl);
+                    if (s_opTraceCount < 200) { fprintf(stderr, "  <- done 0x%02X\n", opCode); fflush(stderr); }
                 }
                 else {
                     RT64_LOG_PRINTF("DL Parser ran into an unknown opCode (GBI %u): %u / 0x%X", uint32_t(hleGBI->ucode), opCode, opCode);
+                    fprintf(stderr, "[DL] unknown opcode 0x%02X  w0=0x%08X w1=0x%08X\n", opCode, dl->w0, dl->w1);
+                    fflush(stderr);
                 }
             }
 

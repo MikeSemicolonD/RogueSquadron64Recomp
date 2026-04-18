@@ -12619,6 +12619,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dgolden.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dpd.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dwave.cpp" />
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dfactor5.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_f3dzex2.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_l3dex2.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\lib\rt64\src\gbi\rt64_gbi_rdp.cpp" />

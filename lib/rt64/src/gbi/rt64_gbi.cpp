@@ -14,6 +14,7 @@
 #include "rt64_gbi_f3dex.h"
 #include "rt64_gbi_f3dex2.h"
 #include "rt64_gbi_f3dwave.h"
+#include "rt64_gbi_f3dfactor5.h"
 #include "rt64_gbi_f3dzex2.h"
 #include "rt64_gbi_l3dex2.h"
 #include "rt64_gbi_rdp.h"
@@ -61,6 +62,7 @@ namespace RT64 {
     const GBIInstance   F3D_GOLDEN                = { "SW Version: 2.0G, 09-30-96 (GE007)",        GBIUCode::F3DGOLDEN,   { false,  false,  false,  false,  false } }; // Needs confirmation.
     const GBIInstance   F3D_PD                    = { "SW Version: Unknown (PD)",                  GBIUCode::F3DPD,       { false,  false,  false,  false,  false } };
     const GBIInstance   F3D_WAVE                  = { "SW Version: 2.0D, 04-01-96 (Wave Race)",    GBIUCode::F3DWAVE,     { false,  false,  false,  false,  false } }; // Needs confirmation.
+    const GBIInstance   F3D_FACTOR5               = { "Factor 5 custom (Rogue Squadron)",          GBIUCode::F3DFACTOR5,  { false,  false,  false,  false,  false } };
     const GBIInstance   F3DEX_0_95                = { "F3DEX 0.95",                                GBIUCode::F3DEX,       { false,  false,  false,  false,  false } }; // Needs confirmation.
     const GBIInstance   F3DLX_0_95                = { "F3DLX 0.95",                                GBIUCode::F3DEX,       { true,   false,  false,  false,  false } }; // Needs confirmation.
     const GBIInstance   F3DEX_0_96                = { "F3DEX 0.96",                                GBIUCode::F3DEX,       { false,  false,  false,  false,  false } }; // Needs confirmation.
@@ -160,7 +162,8 @@ namespace RT64 {
     // 
     //                  Length      Hash                    Known instances               
     //     
-    static std::array<GBISegment, 94> textSegments = {
+    static std::array<GBISegment, 95> textSegments = {
+            GBISegment{ 0x1FA0,     0xC8B0316823094FD2ULL,  { &F3D_FACTOR5 } }, // text, Rogue Squadron (Factor 5)
             GBISegment{ 0x1408,     0x9C0926F5E466BE70ULL,  { &F3D_SDK_E } }, // Needs confirmation.
             GBISegment{ 0x1400,     0x34EAA6E921BCF1B2ULL,  { &F3D_SDK_F, &F3D_SDK_UNKNOWN_G, &F3D_SDK_UNKNOWN_H } }, // Needs confirmation.
             GBISegment{ 0x1408,     0x3E05E9BBE814C700ULL,  { &F3D_FIFO_SDK_E } }, // Needs confirmation.
@@ -257,7 +260,8 @@ namespace RT64 {
             GBISegment{ 0x10B0,     0xE8028E4BC6529E6EULL,  { &ZSORTP_0_33 } }, // Needs confirmation.
     };
 
-    static std::array<GBISegment, 105> dataSegments = {
+    static std::array<GBISegment, 106> dataSegments = {
+            GBISegment{ 0x100,      0xF2150F53524F1EFAULL,  { &F3D_FACTOR5 } }, // data, Rogue Squadron (Factor 5)
             GBISegment{ 0x800,      0xEEB10D73400213B3ULL,  { &F3D_SDK_E } }, // Needs confirmation.
             GBISegment{ 0x800,      0x49651E384B48F694ULL,  { &F3D_SDK_F } }, // Needs confirmation.
             GBISegment{ 0x800,      0x1A736198F90E81C5ULL,  { &F3D_SDK_UNKNOWN_G } }, // Needs confirmation.
@@ -480,6 +484,9 @@ namespace RT64 {
                 break;
             case GBIUCode::F3DWAVE:
                 GBI_F3DWAVE::setup(&gbi);
+                break;
+            case GBIUCode::F3DFACTOR5:
+                GBI_F3DFACTOR5::setup(&gbi);
                 break;
             case GBIUCode::F3DEX:
                 GBI_F3DEX::setup(&gbi);

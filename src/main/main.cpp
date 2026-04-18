@@ -14,6 +14,7 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <crtdbg.h>
 #include "SDL.h"
 #include "SDL_syswm.h"
 #else
@@ -291,6 +292,11 @@ int main(int argc, char* argv[]) {
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);
+    // Route CRT debug asserts to stderr instead of the blocking dialog.
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+    _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
 #endif
 
     rs64_register_overlays();

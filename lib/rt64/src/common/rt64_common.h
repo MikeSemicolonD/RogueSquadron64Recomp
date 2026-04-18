@@ -46,8 +46,8 @@ namespace RT64 {
 #       define RT64_LOG_OPEN(x) do { RT64::GlobalLogFile = fopen(x, "w"); } while (0)
 #   endif
 #   define RT64_LOG_CLOSE() do { fclose(RT64::GlobalLogFile); } while (0)
-#   define RT64_LOG_PRINTF(x, ...) do { fprintf(RT64::GlobalLogFile, x, ## __VA_ARGS__); fprintf(RT64::GlobalLogFile, "\n"); fflush(RT64::GlobalLogFile); } while (0)
-#   define RT64_LOG_PRINTF_DETAILED(x, ...) do { fprintf(RT64::GlobalLogFile, x, ## __VA_ARGS__); fprintf(RT64::GlobalLogFile, " (%s in %s:%d)\n", __FUNCTION__, __FILE__, __LINE__); fflush(RT64::GlobalLogFile); } while (0)
+#   define RT64_LOG_PRINTF(x, ...) do { if (RT64::GlobalLogFile) { fprintf(RT64::GlobalLogFile, x, ## __VA_ARGS__); fprintf(RT64::GlobalLogFile, "\n"); fflush(RT64::GlobalLogFile); } } while (0)
+#   define RT64_LOG_PRINTF_DETAILED(x, ...) do { if (RT64::GlobalLogFile) { fprintf(RT64::GlobalLogFile, x, ## __VA_ARGS__); fprintf(RT64::GlobalLogFile, " (%s in %s:%d)\n", __FUNCTION__, __FILE__, __LINE__); fflush(RT64::GlobalLogFile); } } while (0)
 #endif
 
     inline float HaltonSequence(int i, int b) {
