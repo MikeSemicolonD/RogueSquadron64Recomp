@@ -2,14 +2,18 @@
 #include <cstdlib>
 #include <vector>
 #include <cinttypes>
+#include <filesystem>
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
+#include "ultramodern/events.hpp"
 #include "librecomp/game.hpp"
 #include "librecomp/rsp.hpp"
 
 #define SDL_MAIN_HANDLED
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
 #include "SDL.h"
 #include "SDL_syswm.h"
 #else
@@ -34,8 +38,9 @@
 #define N64_R_CBUTTONS   0x0001
 
 // ---------------------------------------------------------------------------
-// Forward declarations from RecompiledFuncs
+// Forward declarations
 // ---------------------------------------------------------------------------
+void rs64_register_overlays();
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
 // The game's N64 "main" function — renamed to avoid clash with C main()
 extern "C" void rs_main(uint8_t* rdram, recomp_context* ctx);
@@ -257,11 +262,71 @@ std::vector<recomp::GameEntry> supported_games = {
 // ---------------------------------------------------------------------------
 // main()
 // ---------------------------------------------------------------------------
+static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
+    DWORD code = ep->ExceptionRecord->ExceptionCode;
+    uintptr_t addr = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
+    fprintf(stderr, "[CRASH] Exception 0x%08lX at 0x%llX\n", code, (unsigned long long)addr);
+    if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2) {
+        fprintf(stderr, "[CRASH] Access violation %s address 0x%llX\n",
+            ep->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
+            (unsigned long long)ep->ExceptionRecord->ExceptionInformation[1]);
+    }
+    // Print a raw stack trace (return addresses only — no symbol resolution)
+    void* frames[32];
+    USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
+    fprintf(stderr, "[CRASH] Stack trace (%u frames):\n", (unsigned)count);
+    HMODULE exe_base = GetModuleHandleW(nullptr);
+    for (USHORT i = 0; i < count; i++) {
+        uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)exe_base;
+        fprintf(stderr, "  [%2u] 0x%llX  (rva 0x%llX)\n", (unsigned)i,
+            (unsigned long long)(uintptr_t)frames[i],
+            (unsigned long long)rva);
+    }
+    fflush(stderr);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
+#ifdef _WIN32
+    SetUnhandledExceptionFilter(crash_handler);
+#endif
+
+    rs64_register_overlays();
+
+    // Use the working directory as the config/data path (portable mode).
+    recomp::register_config_path(std::filesystem::current_path());
+
     for (const auto& game : supported_games) {
         recomp::register_game(game);
+    }
+
+    // Check if the ROM is already stored; if not, try to import it from common filenames.
+    recomp::check_all_stored_roms();
+    std::u8string rs_game_id = supported_games[0].game_id;
+    if (!recomp::is_rom_valid(rs_game_id)) {
+        static const char* rom_candidates[] = {
+            "rogue_squadron.z64",
+            "rogue squadron.z64",
+            "RogueSquadron.z64",
+            "rs64.z64",
+        };
+        for (const char* name : rom_candidates) {
+            std::filesystem::path p = std::filesystem::current_path() / name;
+            auto result = recomp::select_rom(p, rs_game_id);
+            if (result == recomp::RomValidationError::Good) {
+                fprintf(stderr, "[ROM] Imported %s\n", name);
+                break;
+            }
+        }
+    }
+    // Re-check after any import attempt so is_rom_valid reflects the new file.
+    recomp::check_all_stored_roms();
+    if (!recomp::is_rom_valid(rs_game_id)) {
+        fprintf(stderr,
+            "[ROM] Place your Rogue Squadron (USA v1.0) ROM named\n"
+            "      'rogue_squadron.z64' next to the executable and restart.\n");
     }
 
     recomp::start(recomp::Configuration{
@@ -289,7 +354,15 @@ int main(int argc, char* argv[]) {
             .create_window = create_window,
             .update_gfx    = update_gfx,
         },
-        .events_callbacks    = {},
+        .events_callbacks = {
+            .vi_callback = nullptr,
+            .gfx_init_callback = []() {
+                std::u8string game_id = u8"rs64.n64.us.1.0";
+                if (recomp::is_rom_valid(game_id)) {
+                    recomp::start_game(game_id);
+                }
+            },
+        },
         .error_handling_callbacks = {
             .message_box = [](const char* msg) { fprintf(stderr, "[Error] %s\n", msg); },
         },

@@ -43,6 +43,12 @@ add_library(RecompiledFuncs STATIC)
 
 if (MSVC)
     target_compile_options(RecompiledFuncs PRIVATE /wd4101 /wd4133)
+    # ClangCL: the recompiler emits calls to libultra *_recomp wrappers whose
+    # declarations live in the runtime, not funcs.h. Treat implicit decls as a
+    # warning instead of an error (plain MSVC cl ignores this flag).
+    target_compile_options(RecompiledFuncs PRIVATE
+        -Wno-implicit-function-declaration
+        -Wno-error=implicit-function-declaration)
     # Rename game's 'main' to avoid MSVC treating it as the entry point
     target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
 else()
@@ -69,11 +75,13 @@ target_sources(RecompiledFuncs PRIVATE ${RECOMP_C_SOURCES} ${RECOMP_CXX_SOURCES}
 add_executable(RogueSquadron64Recomp
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
     ${CMAKE_SOURCE_DIR}/src/main/rt64_render_context.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/rsp/aspMain.cpp
 )
 
 target_include_directories(RogueSquadron64Recomp PRIVATE
     ${CMAKE_SOURCE_DIR}/include
+    ${RECOMP_FUNCS_DIR}
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include

@@ -41,8 +41,17 @@ namespace RT64 {
 
     void Thread::setCurrentThreadName(const std::string &str) {
 #   if defined(_WIN32)
-        std::wstring nameWide = win32::Utf8ToUtf16(str);
-        SetThreadDescription(GetCurrentThread(), nameWide.c_str());
+        printf("[RT64] Thread::setCurrentThreadName('%s') begin\n", str.c_str()); fflush(stdout);
+        try {
+            std::wstring nameWide = win32::Utf8ToUtf16(str);
+            printf("[RT64] wstring ok len=%zu\n", nameWide.size()); fflush(stdout);
+            SetThreadDescription(GetCurrentThread(), nameWide.c_str());
+            printf("[RT64] Thread::setCurrentThreadName done\n"); fflush(stdout);
+        } catch (const std::exception& e) {
+            fprintf(stderr, "[RT64] setCurrentThreadName threw: %s\n", e.what()); fflush(stderr);
+        } catch (...) {
+            fprintf(stderr, "[RT64] setCurrentThreadName threw unknown exception\n"); fflush(stderr);
+        }
 #   elif defined(__linux__)
         pthread_setname_np(pthread_self(), str.c_str());
 #   elif defined(__APPLE__)

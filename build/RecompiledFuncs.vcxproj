@@ -79,6 +79,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>E:\Projects\RogueSquadron64Recomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\librecomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) -Wno-implicit-function-declaration -Wno-error=implicit-function-declaration</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
@@ -114,6 +115,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>E:\Projects\RogueSquadron64Recomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\librecomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) -Wno-implicit-function-declaration -Wno-error=implicit-function-declaration</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <DisableSpecificWarnings>4101;4133</DisableSpecificWarnings>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -149,6 +151,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>E:\Projects\RogueSquadron64Recomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\librecomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) -Wno-implicit-function-declaration -Wno-error=implicit-function-declaration</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <DisableSpecificWarnings>4101;4133</DisableSpecificWarnings>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -184,6 +187,7 @@
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">
     <ClCompile>
       <AdditionalIncludeDirectories>E:\Projects\RogueSquadron64Recomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\ultramodern\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\librecomp\include;E:\Projects\RogueSquadron64Recomp\lib\N64ModernRuntime\N64Recomp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>%(AdditionalOptions) -Wno-implicit-function-declaration -Wno-error=implicit-function-declaration</AdditionalOptions>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <DisableSpecificWarnings>4101;4133</DisableSpecificWarnings>

@@ -7,6 +7,9 @@
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\rt64_render_context.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\register_overlays.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\rsp\aspMain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

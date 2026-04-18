@@ -66,3 +66,5 @@ RSPRecomp
 .idea
 build-*
 cmake-build-*
+*.lnk
+/.claude
