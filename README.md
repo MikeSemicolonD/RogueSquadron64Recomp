@@ -1,6 +1,6 @@
-# Star Wars: Rogue Squadron 64 — Recompiled
+# Star Wars: Rogue Squadron 64 Recompiled
 
-A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/Wiseguy2/N64ModernRuntime).
+A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
 
 > **Work in progress.** Audio HLE is stubbed; the game may reach the title screen but gameplay is not yet fully functional.
 
