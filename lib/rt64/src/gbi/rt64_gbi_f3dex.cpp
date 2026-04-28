@@ -21,15 +21,30 @@ namespace RT64 {
         }
 
         void tri1(State *state, DisplayList **dl) {
+            static int n = 0;
+            if (++n <= 8 || (n % 1000) == 0) {
+                fprintf(stderr, "[gbi_f3dex] tri1 #%d w0=0x%08X w1=0x%08X\n", n, (*dl)->w0, (*dl)->w1);
+                fflush(stderr);
+            }
             state->rsp->drawIndexedTri((*dl)->p1(17, 7), (*dl)->p1(9, 7), (*dl)->p1(1, 7));
         }
 
         void tri2(State *state, DisplayList **dl) {
+            static int n = 0;
+            if (++n <= 4) {
+                fprintf(stderr, "[gbi_f3dex] tri2 #%d w0=0x%08X w1=0x%08X\n", n, (*dl)->w0, (*dl)->w1);
+                fflush(stderr);
+            }
             state->rsp->drawIndexedTri((*dl)->p0(17, 7), (*dl)->p0(9, 7), (*dl)->p0(1, 7));
             state->rsp->drawIndexedTri((*dl)->p1(17, 7), (*dl)->p1(9, 7), (*dl)->p1(1, 7));
         }
         
         void quad(State *state, DisplayList **dl) {
+            static int n = 0;
+            if (++n <= 4) {
+                fprintf(stderr, "[gbi_f3dex] quad #%d w0=0x%08X w1=0x%08X\n", n, (*dl)->w0, (*dl)->w1);
+                fflush(stderr);
+            }
             uint8_t a = (*dl)->p1(25, 7);
             uint8_t b = (*dl)->p1(17, 7);
             uint8_t c = (*dl)->p1(9, 7);

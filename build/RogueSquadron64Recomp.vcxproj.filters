@@ -18,6 +18,11 @@
     <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\CMakeLists.txt" />
   </ItemGroup>
   <ItemGroup>
+    <ResourceCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\app.rc">
+      <Filter>Source Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
     <Filter Include="Source Files">
       <UniqueIdentifier>{887D7345-106B-3898-9BAF-7564F52956F1}</UniqueIdentifier>
     </Filter>

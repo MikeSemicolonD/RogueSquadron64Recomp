@@ -375,6 +375,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\rt64_render_context.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\register_overlays.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\rsp\aspMain.cpp" />
+    <ResourceCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\app.rc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="E:\Projects\RogueSquadron64Recomp\build\ZERO_CHECK.vcxproj">

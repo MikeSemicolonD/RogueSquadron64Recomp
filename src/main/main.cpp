@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <csignal>
 #include <vector>
 #include <cinttypes>
 #include <filesystem>
@@ -233,7 +234,7 @@ static std::string get_game_thread_name(const OSThread* t) {
     switch (t->id) {
     case 1:  return "[Game] IDLE";
     case 3:  return "[Game] MAIN";
-    case 4:  return "[Game] GRAPH";
+    case 4:  return "[Game] EEPROM";  // entry func_8006F2CC: save writer (osEepromLongWrite), not GRAPH
     case 5:  return "[Game] SCHED";
     case 10: return "[Game] AUDIOMGR";
     case 18: return "[Game] DMAMGR";
@@ -292,11 +293,63 @@ int main(int argc, char* argv[]) {
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);
+    signal(SIGABRT, [](int){
+        fprintf(stderr, "[ABORT] caught SIGABRT, dumping stack:\n");
+        void* frames[32];
+        USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
+        HMODULE base = GetModuleHandleW(nullptr);
+        for (USHORT i = 0; i < count; i++) {
+            uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)base;
+            fprintf(stderr, "  [%2u] 0x%llX  rva 0x%llX\n", (unsigned)i,
+                (unsigned long long)(uintptr_t)frames[i],
+                (unsigned long long)rva);
+        }
+        fflush(stderr);
+        _Exit(3);
+    });
     // Route CRT debug asserts to stderr instead of the blocking dialog.
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
     _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+    // Hook fires BEFORE abort() runs — gives us a chance to dump the stack
+    // for "vector subscript out of range" and similar STL bounds checks.
+    _CrtSetReportHook([](int reportType, char* message, int*) -> int {
+        fprintf(stderr, "[CRT_REPORT type=%d] %s\n", reportType,
+            message ? message : "(null)");
+        void* frames[48];
+        USHORT count = RtlCaptureStackBackTrace(0, 48, frames, nullptr);
+        HMODULE base = GetModuleHandleW(nullptr);
+        for (USHORT i = 0; i < count; i++) {
+            uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)base;
+            fprintf(stderr, "  [%2u] 0x%llX  rva 0x%llX\n", (unsigned)i,
+                (unsigned long long)(uintptr_t)frames[i],
+                (unsigned long long)rva);
+        }
+        fflush(stderr);
+        return 0; // 0 = don't suppress, let abort proceed
+    });
+    // MSVC debug iterators call _invalid_parameter on bounds-check failure
+    // (e.g. "vector subscript out of range"). Default handler aborts silently;
+    // ours prints a stack trace first.
+    _set_invalid_parameter_handler([](const wchar_t* expr, const wchar_t* func,
+                                       const wchar_t* file, unsigned int line,
+                                       uintptr_t) {
+        fprintf(stderr, "[INVALID_PARAM] expr=%ls func=%ls file=%ls:%u\n",
+            expr ? expr : L"(null)", func ? func : L"(null)",
+            file ? file : L"(null)", line);
+        void* frames[48];
+        USHORT count = RtlCaptureStackBackTrace(0, 48, frames, nullptr);
+        HMODULE base = GetModuleHandleW(nullptr);
+        for (USHORT i = 0; i < count; i++) {
+            uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)base;
+            fprintf(stderr, "  [%2u] 0x%llX  rva 0x%llX\n", (unsigned)i,
+                (unsigned long long)(uintptr_t)frames[i],
+                (unsigned long long)rva);
+        }
+        fflush(stderr);
+        _Exit(4);
+    });
 #endif
 
     rs64_register_overlays();

@@ -6,10 +6,25 @@
 
 #include <cassert>
 
+extern "C" void mqdiag_dump(const char *path);
+
 //#define DUMP_DISPLAY_LISTS
 
 namespace RT64 {
     static FILE *displayListFp = nullptr;
+
+    // One-shot opcode 0x02 capture. A ring buffer of the last N DL commands is
+    // maintained here, and rt64_gbi_f3dfactor5.cpp's op02 handler dumps it
+    // alongside full RDRAM to disk on the first 0x02 dispatch.
+    struct DLHistEntry { uint32_t w0, w1, dlAddr; uint8_t opcode; };
+    static constexpr size_t kDLHistLen = 65536;
+    DLHistEntry g_dlHist[kDLHistLen];
+    size_t g_dlHistCount = 0;  // total commands seen
+    bool g_op02Captured = false;
+    // Dump after the Nth processDisplayLists call returns (0-based).
+    // Frame 0 is usually just state setup; frame 3 should include real draws.
+    static constexpr int kFrameToDump = 20;
+    int g_frameCounter = 0;
 
     // Interpreter
 
@@ -153,6 +168,39 @@ namespace RT64 {
         state->dlCpuProfiler.end();
     }
 
+    static void dumpFrameCaptureIfNeeded(State *state) {
+        if (g_frameCounter != kFrameToDump) return;
+        g_op02Captured = true;  // disable any older op02 trigger
+        static bool dumped = false;
+        if (dumped) return;
+        dumped = true;
+
+        constexpr size_t kRDRAMSize = 8 * 1024 * 1024;
+        if (FILE *fp = fopen("rdram_frame.bin", "wb")) {
+            fwrite(state->RDRAM, 1, kRDRAMSize, fp);
+            fclose(fp);
+        }
+
+        if (FILE *fp = fopen("dlhist_frame.txt", "w")) {
+            fprintf(fp, "# Full DL history through end of frame %d\n", kFrameToDump);
+            fprintf(fp, "# total cmds captured: %zu (ring capacity %zu)\n",
+                    g_dlHistCount, kDLHistLen);
+            size_t start = (g_dlHistCount > kDLHistLen) ? (g_dlHistCount - kDLHistLen) : 0;
+            for (size_t i = start; i < g_dlHistCount; i++) {
+                const auto &e = g_dlHist[i % kDLHistLen];
+                fprintf(fp, "%06zu  op=0x%02X  w0=0x%08X  w1=0x%08X  dlAddr=0x%08X\n",
+                    i, e.opcode, e.w0, e.w1, e.dlAddr);
+            }
+            fclose(fp);
+        }
+
+        mqdiag_dump("mqdiag_frame.txt");
+
+        fprintf(stderr, "[frame %d] captured RDRAM + %zu DL commands + mqdiag\n",
+                kFrameToDump, g_dlHistCount);
+        fflush(stderr);
+    }
+
     void Interpreter::processDisplayLists(uint32_t dlStartAdddress, DisplayList *dlStart) {
         assert(hleGBI != nullptr);
 
@@ -169,13 +217,16 @@ namespace RT64 {
         DisplayList *dl = dlStart;
         uint8_t opCode;
         GBIFunction func;
-        static int s_opTraceCount = 0;
         while (dl != nullptr) {
             opCode = (dl->w0 >> 24);
 
-            if (s_opTraceCount < 200) {
-                fprintf(stderr, "[DL %d] op=0x%02X w0=0x%08X w1=0x%08X\n", s_opTraceCount++, opCode, dl->w0, dl->w1);
-                fflush(stderr);
+            {
+                size_t slot = g_dlHistCount % kDLHistLen;
+                g_dlHist[slot].w0 = dl->w0;
+                g_dlHist[slot].w1 = dl->w1;
+                g_dlHist[slot].dlAddr = dlStartAdddress + uint32_t((uintptr_t)dl - (uintptr_t)dlStart);
+                g_dlHist[slot].opcode = opCode;
+                g_dlHistCount++;
             }
 
             if ((extendedOpCode != 0) && (opCode == extendedOpCode)) {
@@ -189,14 +240,10 @@ namespace RT64 {
 #       endif
 
                 if (func != nullptr) {
-                    if (s_opTraceCount < 200) { fprintf(stderr, "  -> dispatch 0x%02X (func=%p)\n", opCode, (void*)func); fflush(stderr); }
                     func(state, &dl);
-                    if (s_opTraceCount < 200) { fprintf(stderr, "  <- done 0x%02X\n", opCode); fflush(stderr); }
                 }
                 else {
                     RT64_LOG_PRINTF("DL Parser ran into an unknown opCode (GBI %u): %u / 0x%X", uint32_t(hleGBI->ucode), opCode, opCode);
-                    fprintf(stderr, "[DL] unknown opcode 0x%02X  w0=0x%08X w1=0x%08X\n", opCode, dl->w0, dl->w1);
-                    fflush(stderr);
                 }
             }
 
@@ -206,5 +253,19 @@ namespace RT64 {
         }
 
         state->dlCpuProfiler.end();
+
+        // Mark frame boundary in DL history with a sentinel entry (opcode 0xFF is
+        // SETCIMG in F3DEX, but having dlAddr=0 makes this recognizable as a marker).
+        if (g_dlHistCount < kDLHistLen * 8) {
+            size_t slot = g_dlHistCount % kDLHistLen;
+            g_dlHist[slot] = { 0xDEADBEEF, uint32_t(g_frameCounter), 0, 0xFF };
+            g_dlHistCount++;
+        }
+        g_frameCounter++;
+        if (g_frameCounter <= 10 || g_frameCounter % 5 == 0) {
+            fprintf(stderr, "[heartbeat] frame %d, %zu DL cmds\n", g_frameCounter, g_dlHistCount);
+            fflush(stderr);
+        }
+        dumpFrameCaptureIfNeeded(state);
     }
 };

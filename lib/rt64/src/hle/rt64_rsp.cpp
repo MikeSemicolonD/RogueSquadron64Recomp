@@ -946,6 +946,13 @@ namespace RT64 {
     }
 
     void RSP::drawIndexedTri(uint32_t a, uint32_t b, uint32_t c, bool rawGlobalIndices) {
+        {
+            static int n = 0;
+            if (++n <= 4) {
+                fprintf(stderr, "[rsp] drawIndexedTri call #%d a=%u b=%u c=%u raw=%d\n", n, a, b, c, (int)rawGlobalIndices);
+                fflush(stderr);
+            }
+        }
         // Copy mode is not supported when drawing regular tris and crashes the hardware.
         const uint32_t cycleType = state->rdp->otherMode.cycleType();
         assert(cycleType != G_CYC_COPY);
@@ -1014,6 +1021,21 @@ namespace RT64 {
         }
 
         // Indicates the vertex has been used in a tri. Whatever routines modify the vertex afterwards must use a new index instead.
+
+        // Bounds-check: stale/corrupt indices (e.g. Factor5 ucode misparse)
+        // can yield globalIndex past tcFloats.size(). Skip the tri and log
+        // once-ish instead of asserting in MSVC debug iterators.
+        const size_t vertCount = tcFloats.size() / 2;
+        if (globalIndices[0] >= vertCount || globalIndices[1] >= vertCount || globalIndices[2] >= vertCount) {
+            static int badTris = 0;
+            if (++badTris <= 8 || (badTris % 1000) == 0) {
+                fprintf(stderr, "[rsp] drawIndexedTri OOB #%d: gi=(%u,%u,%u) vertCount=%zu rawGI=%d a=%u b=%u c=%u\n",
+                    badTris, globalIndices[0], globalIndices[1], globalIndices[2],
+                    vertCount, (int)rawGlobalIndices, a, b, c);
+                fflush(stderr);
+            }
+            return;
+        }
 
         for (int i = 0; i < 3; i++) {
             // TODO: Figure out how to handle texcoord tracking on TEXGEN cases.

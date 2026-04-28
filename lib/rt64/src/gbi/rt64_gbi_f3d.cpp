@@ -91,10 +91,20 @@ namespace RT64 {
         }
 
         void tri1(State *state, DisplayList **dl) {
+            static int n = 0;
+            if (++n <= 4) {
+                fprintf(stderr, "[gbi_f3d] tri1 #%d w0=0x%08X w1=0x%08X\n", n, (*dl)->w0, (*dl)->w1);
+                fflush(stderr);
+            }
             state->rsp->drawIndexedTri((*dl)->p1(16, 8) / 10, (*dl)->p1(8, 8) / 10, (*dl)->p1(0, 8) / 10);
         }
-        
+
         void quad(State *state, DisplayList **dl) {
+            static int n = 0;
+            if (++n <= 4) {
+                fprintf(stderr, "[gbi_f3d] quad #%d w0=0x%08X w1=0x%08X\n", n, (*dl)->w0, (*dl)->w1);
+                fflush(stderr);
+            }
             const uint8_t v0 = (*dl)->p1(24, 8) / 10;
             const uint8_t v1 = (*dl)->p1(16, 8) / 10;
             const uint8_t v2 = (*dl)->p1(8, 8) / 10;

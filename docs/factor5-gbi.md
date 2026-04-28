@@ -62,8 +62,47 @@ So there are (at least) two dispatch tables:
 - DL dispatch trace (stderr) in [lib/rt64/src/hle/rt64_interpreter.cpp](../lib/rt64/src/hle/rt64_interpreter.cpp) — remove after Stage B.
 - MSVC CRT asserts are routed to stderr from [src/main/main.cpp](../src/main/main.cpp).
 
-## Next steps
+## Current status (end of session)
 
-1. Replace the `op02_unknown` no-op with a real handler by disassembling IMEM `0x14F0` (use `rabbitizer` or `mips64-gcc objdump` on the extracted text blob).
-2. Prototype `op80_unknown` as a sub-DL call: treat the 24-bit field as a direct RDRAM pointer and push it onto the DL stack.
-3. Rebuild, run, check whether anything presents to the swapchain.
+- Stage A: **done.** GBI is registered, `getGBIForUCode` succeeds, no identification assert.
+- Stage B: **done for opcode coverage.** All opcodes in the stream have handlers (standard F3DEX or explicit no-ops). Zero unknown-opcode log entries over 5000+ DL commands / 39 render frames. DL loop runs stably without asserts or crashes. Game threads run healthily (validated via mq/thread trace).
+- Stage C (visible rendering): **blocked — scope escalation.**
+
+## Why nothing renders (the blocker)
+
+Over 5000 DL commands across 39 frame loops, observed opcode frequencies are:
+
+```
+273x 0xBC (MOVEWORD)    156x 0xE7 (RDPPIPESYNC)
+234x 0xBA (SETOTHERMODE_H)  117x 0xB8 (ENDDL)
+ 78x each of: 0x06 (DL), 0x02 (Factor5), 0x00 (NOOP), 0xF6 (FILLRECT),
+              0xF7 (SETFILLCOLOR), 0xFF (SETCIMG), 0xED (SETSCISSOR),
+              0xB9 (SETOTHERMODE_L)
+ 39x each of: 0x01 (MTX), 0x03 (MOVEMEM), 0x80 (Factor5), 0xB6/B7 (GEOMETRYMODE),
+              0xE6/E8/E9 (RDP sync), 0xF8 (FOGCOLOR), 0xF9 (BLENDCOLOR), 0xFE (SETZIMG)
+```
+
+**Zero G_VTX (0x04), zero G_TRI1 (0xBF), zero G_TRI2 (0xB1).** Every frame is clear-rect + state-setup only, no geometry submitted through any standard F3DEX opcode. The game is literally drawing nothing but filled rectangles, 39 frames deep.
+
+Combined with the disassembly of opcode `0x02`'s handler at IMEM `0x14F0` (a 40+-instruction loop iterating up to 512 times, writing to RSP COP2 vector registers via `mtc2 ... $v3[e]`), this means:
+
+> **Factor 5's custom ucode bundles the entire vertex / transform / triangle pipeline into opcode `0x02`.** It doesn't use F3DEX's G_VTX/G_TRI* at all.
+
+So opcode 0x02 is not a configuration command we can safely no-op — it's *the* geometry command. Stubbing it drops all 3D drawing, which is exactly what we observe.
+
+## Path forward — two realistic options
+
+Both are significant multi-week work; choose based on tooling preference:
+
+1. **Full HLE reimplementation of opcode 0x02.** Reverse-engineer the full RSP handler at IMEM `0x14F0` plus the helpers it calls (`func_4001F14`, `func_4001F60`, ...). The handler reads from DMEM pointed to by `k1` and `gp`, runs vector math through COP2, and produces vertex/triangle output. We'd implement the equivalent transform + draw path in `GBI_F3DFACTOR5::op02`, emitting into RT64's existing vertex/triangle buffers. Cost: several weeks of RSP+vector-math reverse engineering; no unique tooling beyond `rabbitizer` + the existing RT64 rendering API.
+
+2. **Extend RSPRecomp to handle graphics ucode, then go LLE.** The earlier LLE spike ([docs/lle-spike-report.md](lle-spike-report.md)) failed because RSPRecomp chokes on graphics-specific `mfc0` reads of DPC registers and on a handful of INVALID opcodes. Adding those handlers to RSPRecomp is a more concentrated codebase but unlocks every custom ucode game, not just Rogue Squadron. Cost: similar multi-week, but the payoff compounds.
+
+The GBI-level plan (identification + opcode map) is effectively closed — no more progress is possible at that layer.
+
+## Diagnostic infrastructure left in place
+
+- DL dispatch trace (stderr), capped at 5000 entries — [rt64_interpreter.cpp:172-200](../lib/rt64/src/hle/rt64_interpreter.cpp#L172-L200). Remove when no longer needed.
+- Null-guard on `RT64_LOG_PRINTF` — [rt64_common.h:49-50](../lib/rt64/src/common/rt64_common.h#L49-L50). Keep.
+- Enhanced `osStartThread` / `osCreateThread` logging — [ultra_translation.cpp:16-33](../lib/N64ModernRuntime/librecomp/src/ultra_translation.cpp#L16-L33). Keep (cheap, useful).
+- MSVC CRT asserts routed to stderr — [main.cpp](../src/main/main.cpp). Keep.
