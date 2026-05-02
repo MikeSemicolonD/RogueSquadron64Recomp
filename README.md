@@ -22,7 +22,7 @@ A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the
 | **GPU** | D3D12 / Vulkan / Metal capable |
 | **CMake** | 3.20+ |
 | **Compiler** | MSVC with ClangCL toolset (Windows), Clang/GCC (Linux/macOS) |
-| **N64Recomp output** | Pre-generated `RecompiledFuncs/` from the companion [rogue_squadron64](https://github.com/) decomp project |
+| **N64Recomp output** | Pre-generated `RecompiledFuncs/` from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp project |
 
 ---
 
