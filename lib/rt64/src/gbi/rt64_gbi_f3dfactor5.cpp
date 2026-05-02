@@ -19,10 +19,13 @@ namespace RT64 {
     extern bool g_op02Captured;
 
     namespace GBI_F3DFACTOR5 {
-        // TODO: identify. Payload: w0=0x80AAAAAA w1=0.
-        // Tried as raw-RDRAM sub-DL call — infinite recursion, hangs after ~200 DLs.
-        // So 0x80 is NOT a G_DL-style pointer. Likely a register/state set where AAAAAA
-        // is an ID or a value, not an address. Kept as a no-op until disassembled.
+        // op 0x80: Factor5 chunk header (metadata, not control flow).
+        // Payload: w0=next_chunk_addr, w1=prev_chunk_addr (back-pointer).
+        //
+        // Confirmed via texrect_chunks.bin dump: chunks are 0x108-byte blocks
+        // packed contiguously; w0 points exactly 0x108 forward. The parent DL
+        // walks the chain via standard G_DL (op=0x06, ~109 invocations vs 210
+        // op=0x80 markers in the dump). Header is a no-op for HLE.
         void op80_unknown(State *state, DisplayList **dl) {
             // no-op
         }

@@ -1263,6 +1263,7 @@ namespace RT64 {
     }
     
     void RDP::drawTexRect(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, uint8_t tile, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip, const ExtendedAlignment &extAlignment) {
+        { static int n=0; if (++n<=10 || (n%50)==0) { fprintf(stderr, "[trace] RT64::drawTexRect #%d ulx=%d uly=%d lrx=%d lry=%d tile=%u\n", n, ulx, uly, lrx, lry, tile); fflush(stderr); } }
 #   ifdef LOG_TEXRECT_METHODS
         RT64_LOG_PRINTF("RDP::drawTexRect(ulx %d, uly %d, lrx %d, lry %d, tile %u, uls %d, ult %d, dsdx %d, dtdy %d, flip %u)", ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, flip);
 #   endif

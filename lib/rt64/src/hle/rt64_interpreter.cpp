@@ -23,7 +23,7 @@ namespace RT64 {
     bool g_op02Captured = false;
     // Dump after the Nth processDisplayLists call returns (0-based).
     // Frame 0 is usually just state setup; frame 3 should include real draws.
-    static constexpr int kFrameToDump = 20;
+    static constexpr int kFrameToDump = 38;  // captures state just before frame-40 stall
     int g_frameCounter = 0;
 
     // Interpreter

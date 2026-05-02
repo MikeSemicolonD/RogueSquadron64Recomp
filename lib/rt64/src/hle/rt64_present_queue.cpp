@@ -340,6 +340,15 @@ namespace RT64 {
                 commandList->setFramebuffer(swapChainFramebuffer);
                 commandList->clearColor();
 
+                { static int n=0; if (++n<=10 || (n%50)==0) {
+                    const VI &vi = present.screenVI;
+                    fprintf(stderr, "[trace] PresentQueue::frame #%d viFb=0x%08X visible=%d statusType=0x%X hStart=%u width=%u origin=0x%08X\n",
+                        n, (uint32_t)vi.fbAddress(), (int)vi.visible(),
+                        (unsigned)vi.status.type, (unsigned)vi.hRegion.hStart,
+                        (unsigned)vi.width, (unsigned)vi.origin);
+                    fflush(stderr);
+                } }
+
                 if (renderParams.texture != nullptr) {
                     commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(renderParams.texture, RenderTextureLayout::SHADER_READ));
                     viRenderer->render(renderParams);
@@ -398,6 +407,7 @@ namespace RT64 {
                 RenderCommandSemaphore *waitSemaphore = drawSemaphore.get();
                 presentTimestamp = Timer::current();
                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
+                { static int n=0; if (++n<=10 || (n%50)==0) { fprintf(stderr, "[trace] RT64::Present #%d swapIdx=%u valid=%d\n", n, (unsigned)swapChainIndex, (int)swapChainValid); fflush(stderr); } }
                 presentProfiler.logAndRestart();
             }
         }
