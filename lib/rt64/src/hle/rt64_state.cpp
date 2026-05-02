@@ -737,6 +737,17 @@ namespace RT64 {
     }
     
     void State::fullSync() {
+        {
+            static int n = 0;
+            ++n;
+            int workloadCursor = ext.workloadQueue->writeCursor;
+            Workload &wl = ext.workloadQueue->workloads[workloadCursor];
+            if (n <= 10 || (n % 50) == 0) {
+                fprintf(stderr, "[trace] State::fullSync #%d workload-fbPairCount=%u\n",
+                    n, (unsigned)wl.fbPairCount);
+                fflush(stderr);
+            }
+        }
         flush();
         submitFramebufferPair(FramebufferPair::FlushReason::ProcessDisplayListsEnd);
 

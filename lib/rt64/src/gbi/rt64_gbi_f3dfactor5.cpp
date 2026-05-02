@@ -8,6 +8,9 @@
 #include "hle/rt64_state.h"
 
 #include "rt64_gbi_f3dex.h"
+#include "rt64_gbi_f3d.h"
+
+#include "hle/rt64_rsp.h"
 
 #include <cstdio>
 
@@ -69,12 +72,26 @@ namespace RT64 {
             // no-op
         }
 
+        // Factor5 emits one G_SETCIMG (0xFF) per render-pass with a bogus
+        // payload (w0=0xFFF00F0F, w1=0x00000000) immediately before the
+        // overlay TEXRECT batch. That zeroes RDP::colorImage.address, so the
+        // subsequent TEXRECTs render onto a null target and produce no
+        // visible output. Real SETCIMG calls always carry a non-zero w1.
+        // Filter out the bogus form here.
+        void setColorImage_filtered(State *state, DisplayList **dl) {
+            if ((*dl)->w1 == 0) {
+                return;
+            }
+            GBI_F3D::setColorImage(state, dl);
+        }
+
         void setup(GBI *gbi) {
             GBI_F3DEX::setup(gbi);
 
             gbi->map[0x80] = &op80_unknown;
             gbi->map[0x02] = &op02_unknown;
             gbi->map[0xB5] = &op_B5_noop;
+            gbi->map[0xFF] = &setColorImage_filtered;
         }
     }
 };

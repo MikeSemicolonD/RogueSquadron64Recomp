@@ -137,9 +137,27 @@ namespace RT64 {
         // Attempt to find the matching framebuffer for the VI based on the origin address.
         // If that fails, we look at the shared storage.
         if (present.screenVI.visible()) {
+            // DIAGNOSTIC: Factor5 detects the expansion pak and renders hi-res
+            // (640w) to 0x0066A000. The VI's 320w swap buffers (0x006DD000 /
+            // 0x006BA000) are stale because the down-blit isn't emulated.
+            // Look up the hi-res target first; fall back to VI fb / off-screen.
             Framebuffer *viFb = nullptr;
             if (!viewRDRAM) {
-                viFb = fbManager.find(present.screenVI.fbAddress());
+                viFb = fbManager.find(0x0066A000);
+                bool hiresHit = (viFb != nullptr);
+                if (viFb == nullptr) {
+                    viFb = fbManager.find(present.screenVI.fbAddress());
+                }
+                if (viFb == nullptr) {
+                    viFb = fbManager.find(0x007DD000);
+                }
+                static int n = 0;
+                ++n;
+                if (n <= 10 || (n % 50) == 0) {
+                    fprintf(stderr, "[trace] Present::lookup #%d hires=%d viFb=0x%08X final-hit=%d\n",
+                        n, (int)hiresHit, (uint32_t)present.screenVI.fbAddress(), viFb != nullptr);
+                    fflush(stderr);
+                }
             }
 
             Framebuffer *presentFb = viFb;
@@ -153,6 +171,20 @@ namespace RT64 {
             }
             
             if ((presentFb != nullptr) && (viFb != nullptr)) {
+                { static int n=0; ++n;
+                    if (n <= 5 || n % 50 == 0) {
+                        fprintf(stderr, "[trace] fbReg #%d vecCount=%zu fbCount=%zu:", n,
+                            ext.sharedResources->colorImageAddressVector.size(),
+                            fbManager.framebuffers.size());
+                        for (uint32_t a : ext.sharedResources->colorImageAddressVector) {
+                            fprintf(stderr, " V:0x%08X", a);
+                        }
+                        for (auto &kv : fbManager.framebuffers) {
+                            fprintf(stderr, " F:0x%08X(w=%u)", kv.first, (unsigned)kv.second.width);
+                        }
+                        fprintf(stderr, "\n"); fflush(stderr);
+                    }
+                }
                 for (uint32_t colorAddress : ext.sharedResources->colorImageAddressVector) {
                     Framebuffer *colorFb = fbManager.find(colorAddress);
                     if (colorFb == nullptr) {
@@ -194,6 +226,12 @@ namespace RT64 {
 
                 RenderTargetKey colorTargetKey(presentFb->addressStart, presentFb->width, presentFb->siz, Framebuffer::Type::Color);
                 colorTarget = &targetManager.get(colorTargetKey, true);
+                { static int n=0; if (++n<=10 || (n%50)==0) {
+                    fprintf(stderr, "[trace] PresentQ::regfb #%d viFb=%p presentFb=%p addr=0x%08X w=%u siz=%u empty=%d lastWriteType=%d\n",
+                        n, (void*)viFb, (void*)presentFb, presentFb->addressStart, presentFb->width,
+                        (unsigned)presentFb->siz, (int)colorTarget->isEmpty(), (int)presentFb->lastWriteType);
+                    fflush(stderr);
+                } }
                 if (!colorTarget->isEmpty()) {
                     // If a depth framebuffer is about to be shown, convert it to color.
                     if (presentFb->isLastWriteDifferent(Framebuffer::Type::Color)) {
@@ -216,6 +254,10 @@ namespace RT64 {
             }
             else {
                 uint32_t fbAddress = present.screenVI.fbAddress();
+                { static int n=0; if (++n<=10 || (n%50)==0) {
+                    fprintf(stderr, "[trace] PresentQ::scratch #%d fbAddr=0x%08X (viFb null path)\n", n, fbAddress);
+                    fflush(stderr);
+                } }
 
                 // Use a scratch framebuffer to upload the RAM to the render target.
                 hlslpp::uint2 fbSize = present.screenVI.fbSize();
@@ -342,10 +384,11 @@ namespace RT64 {
 
                 { static int n=0; if (++n<=10 || (n%50)==0) {
                     const VI &vi = present.screenVI;
-                    fprintf(stderr, "[trace] PresentQueue::frame #%d viFb=0x%08X visible=%d statusType=0x%X hStart=%u width=%u origin=0x%08X\n",
+                    fprintf(stderr, "[trace] PresentQueue::frame #%d viFb=0x%08X visible=%d statusType=0x%X hStart=%u width=%u origin=0x%08X colorTarget=%p tex=%p\n",
                         n, (uint32_t)vi.fbAddress(), (int)vi.visible(),
                         (unsigned)vi.status.type, (unsigned)vi.hRegion.hStart,
-                        (unsigned)vi.width, (unsigned)vi.origin);
+                        (unsigned)vi.width, (unsigned)vi.origin,
+                        (void*)colorTarget, (void*)renderParams.texture);
                     fflush(stderr);
                 } }
 

@@ -127,6 +127,21 @@ namespace RT64 {
             depthImage.changed = false;
 
             state->updateDrawStatusAttribute(DrawAttribute::FramebufferPair);
+
+            // DIAGNOSTIC: Factor5 ucode in Rogue Squadron doesn't emit
+            // G_RDPFULLSYNC for normal frames, so the workload accumulates
+            // fbPairs indefinitely (observed: 2400+) and is never submitted
+            // to the renderer. Force-drain when the pair count crosses a
+            // threshold so accumulated draws actually reach fbManager.
+            if (workload.fbPairCount >= 4) {
+                static int n = 0;
+                if (++n <= 5 || (n % 50) == 0) {
+                    fprintf(stderr, "[trace] auto-fullSync #%d (fbPairCount=%u)\n",
+                        n, (unsigned)workload.fbPairCount);
+                    fflush(stderr);
+                }
+                state->fullSync();
+            }
         }
     }
     
@@ -242,6 +257,15 @@ namespace RT64 {
             (colorImage.width != width) ||
             (colorImage.address != newAddress))
         {
+            { static int n=0; ++n;
+                bool isZero = (newAddress == 0);
+                if (isZero || n<=30 || (n%50)==0) {
+                    fprintf(stderr, "[trace] setColorImage #%d addr=0x%08X w=%u fmt=%u siz=%u%s\n",
+                        n, newAddress, (unsigned)width, (unsigned)fmt, (unsigned)siz,
+                        isZero ? " <ZERO>" : "");
+                    fflush(stderr);
+                }
+            }
             colorImage.fmt = fmt;
             colorImage.siz = siz;
             colorImage.width = width;
@@ -1157,6 +1181,7 @@ namespace RT64 {
         }
 
         const FixedRect &scissorRect = state->rdp->scissorRectStack[scissorStackSize - 1];
+        bool scissorIsNull = scissorRect.isNull();
         if (!scissorRect.isNull()) {
             fbPair.scissorRect.merge(scissorRect);
 
@@ -1166,6 +1191,24 @@ namespace RT64 {
                 if (otherMode.zUpd()) {
                     fbPair.drawDepthRect.merge(intRect);
                 }
+            } else {
+                static int n = 0;
+                if (++n <= 10 || (n % 1000) == 0) {
+                    fprintf(stderr, "[trace] texrect intRectNull #%d colorAddr=0x%08X scissor={%d,%d,%d,%d} draw={%d,%d,%d,%d}\n",
+                        n, colorImage.address,
+                        scissorRect.ulx, scissorRect.uly, scissorRect.lrx, scissorRect.lry,
+                        drawRect.ulx, drawRect.uly, drawRect.lrx, drawRect.lry);
+                    fflush(stderr);
+                }
+            }
+        }
+        if (scissorIsNull) {
+            static int n = 0;
+            if (++n <= 10 || (n % 1000) == 0) {
+                fprintf(stderr, "[trace] texrect scissorNull #%d colorAddr=0x%08X draw={%d,%d,%d,%d}\n",
+                    n, colorImage.address,
+                    drawRect.ulx, drawRect.uly, drawRect.lrx, drawRect.lry);
+                fflush(stderr);
             }
         }
         
@@ -1263,7 +1306,7 @@ namespace RT64 {
     }
     
     void RDP::drawTexRect(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, uint8_t tile, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip, const ExtendedAlignment &extAlignment) {
-        { static int n=0; if (++n<=10 || (n%50)==0) { fprintf(stderr, "[trace] RT64::drawTexRect #%d ulx=%d uly=%d lrx=%d lry=%d tile=%u\n", n, ulx, uly, lrx, lry, tile); fflush(stderr); } }
+        { static int n=0; if (++n<=10 || (n%50)==0) { fprintf(stderr, "[trace] RT64::drawTexRect #%d ulx=%d uly=%d lrx=%d lry=%d tile=%u colorAddr=0x%08X\n", n, ulx, uly, lrx, lry, tile, colorImage.address); fflush(stderr); } }
 #   ifdef LOG_TEXRECT_METHODS
         RT64_LOG_PRINTF("RDP::drawTexRect(ulx %d, uly %d, lrx %d, lry %d, tile %u, uls %d, ult %d, dsdx %d, dtdy %d, flip %u)", ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, flip);
 #   endif
