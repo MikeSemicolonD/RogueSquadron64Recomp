@@ -29,6 +29,13 @@ namespace RT64 {
         // packed contiguously; w0 points exactly 0x108 forward. The parent DL
         // walks the chain via standard G_DL (op=0x06, ~109 invocations vs 210
         // op=0x80 markers in the dump). Header is a no-op for HLE.
+        //
+        // CAUTION: tried calling state->fullSync() here as a batch flush —
+        // crashed with "vector subscript out of range" after 3 invocations.
+        // fullSync from inside a mid-DL handler is unsafe in this codebase
+        // because the workload-cursor advance leaves indexed structures in
+        // a transitional state. Don't reintroduce without auditing every
+        // workload-indexed path in the call chain first.
         void op80_unknown(State *state, DisplayList **dl) {
             // no-op
         }
@@ -63,13 +70,15 @@ namespace RT64 {
             fflush(stderr);
         }
 
-        // Opcode 0xB5 is G_QUAD in F3DEX, but Factor5 emits it with payload
-        // (w0=0xB5000000, w1=0) — w1 is the index data in F3DEX's encoding,
-        // so all-zero w1 means "draw a quad with vertices 0,0,0,0" against
-        // an empty vertex cache. That can't be right. Factor5 reuses 0xB5 for
-        // something else (probably sync/noop). No-op until disassembled.
-        void op_B5_noop(State *state, DisplayList **dl) {
-            // no-op
+        // Opcode 0xB5 in Factor5 is the chunk/DL terminator — equivalent to
+        // F3DEX's G_ENDDL (0xB8). Each 0x108-byte chunk ends with op=0xB5 at
+        // offset 0x100; without popping the call stack here, the interpreter
+        // walks linearly into the next chunk's op=0x80 header (which is also
+        // a no-op) and continues forever. Confirmed via runtime DL dumps: the
+        // sub-DL at 0x007239B8 contains a SINGLE op=0xB5 command, only making
+        // sense as a "do nothing, return" marker.
+        void op_B5_endDl(State *state, DisplayList **dl) {
+            *dl = state->popReturnAddress();
         }
 
         // Factor5 emits one G_SETCIMG (0xFF) per render-pass with a bogus
@@ -90,7 +99,7 @@ namespace RT64 {
 
             gbi->map[0x80] = &op80_unknown;
             gbi->map[0x02] = &op02_unknown;
-            gbi->map[0xB5] = &op_B5_noop;
+            gbi->map[0xB5] = &op_B5_endDl;
             gbi->map[0xFF] = &setColorImage_filtered;
         }
     }

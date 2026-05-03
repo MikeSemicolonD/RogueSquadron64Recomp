@@ -74,6 +74,15 @@ namespace RT64 {
         }
 
         void runDl(State *state, DisplayList **dl) {
+            { static int n = 0;
+              const uint32_t targetAddr = state->rsp->fromSegmentedMasked((*dl)->w1);
+              const uint8_t branch = (uint8_t)((*dl)->p0(16, 1));
+              if (++n <= 20 || (n % 5000) == 0) {
+                  fprintf(stderr, "[trace] G_DL #%d -> 0x%08X branch=%u\n",
+                      n, targetAddr, (unsigned)branch);
+                  fflush(stderr);
+              }
+            }
             if ((*dl)->p0(16, 1) == 0) {
                 state->pushReturnAddress(*dl);
             }
@@ -83,6 +92,12 @@ namespace RT64 {
         }
 
         void endDl(State *state, DisplayList **dl) {
+            { static int n = 0;
+              if (++n <= 20 || (n % 5000) == 0) {
+                  fprintf(stderr, "[trace] G_ENDDL #%d\n", n);
+                  fflush(stderr);
+              }
+            }
             *dl = state->popReturnAddress();
         }
 

@@ -384,11 +384,12 @@ namespace RT64 {
 
                 { static int n=0; if (++n<=10 || (n%50)==0) {
                     const VI &vi = present.screenVI;
-                    fprintf(stderr, "[trace] PresentQueue::frame #%d viFb=0x%08X visible=%d statusType=0x%X hStart=%u width=%u origin=0x%08X colorTarget=%p tex=%p\n",
+                    int targetEmpty = (colorTarget != nullptr) ? (int)colorTarget->isEmpty() : -1;
+                    fprintf(stderr, "[trace] PresentQueue::frame #%d viFb=0x%08X visible=%d statusType=0x%X hStart=%u width=%u origin=0x%08X colorTarget=%p empty=%d tex=%p\n",
                         n, (uint32_t)vi.fbAddress(), (int)vi.visible(),
                         (unsigned)vi.status.type, (unsigned)vi.hRegion.hStart,
                         (unsigned)vi.width, (unsigned)vi.origin,
-                        (void*)colorTarget, (void*)renderParams.texture);
+                        (void*)colorTarget, targetEmpty, (void*)renderParams.texture);
                     fflush(stderr);
                 } }
 

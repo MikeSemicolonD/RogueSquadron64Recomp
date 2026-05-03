@@ -9,6 +9,8 @@
 #include "rt64_f3d.h"
 
 namespace RT64 {
+    extern size_t g_dlHistCount;
+    extern int g_frameCounter;
     namespace GBI_RDP {
         void noOp(State *state, DisplayList **dl) {
             // Do nothing.
@@ -32,6 +34,11 @@ namespace RT64 {
             const uint8_t siz = (*dl)->p0(19, 2);
             const uint16_t width = (*dl)->p0(0, 12) + 1;
             const uint32_t address = (*dl)->w1;
+            { static int n=0; if (++n<=10 || (n%5000)==0) {
+                fprintf(stderr, "[trace] setTextureImage #%d addr=0x%08X w=%u fmt=%u siz=%u\n",
+                    n, address, (unsigned)width, (unsigned)fmt, (unsigned)siz);
+                fflush(stderr);
+            } }
             state->rdp->setTextureImage(fmt, siz, width, address);
         }
 
@@ -53,6 +60,11 @@ namespace RT64 {
             const uint8_t masks = (*dl)->p1(4, 4);
             const uint8_t shiftt = (*dl)->p1(10, 4);
             const uint8_t shifts = (*dl)->p1(0, 4);
+            { static int n=0; if (++n<=10 || (n%5000)==0) {
+                fprintf(stderr, "[trace] setTile #%d tile=%u fmt=%u siz=%u line=%u tmem=%u\n",
+                    n, (unsigned)tile, (unsigned)fmt, (unsigned)siz, (unsigned)line, (unsigned)tmem);
+                fflush(stderr);
+            } }
             state->rdp->setTile(tile, fmt, siz, line, tmem, palette, cmt, cms, maskt, masks, shiftt, shifts);
         }
 
@@ -80,6 +92,11 @@ namespace RT64 {
             const uint16_t ult = (*dl)->p0(0, 12);
             const uint16_t lrs = (*dl)->p1(12, 12);
             const uint16_t dxt = (*dl)->p1(0, 12);
+            { static int n=0; if (++n<=10 || (n%5000)==0) {
+                fprintf(stderr, "[trace] loadBlock #%d tile=%u uls=%u ult=%u lrs=%u dxt=%u\n",
+                    n, (unsigned)tile, (unsigned)uls, (unsigned)ult, (unsigned)lrs, (unsigned)dxt);
+                fflush(stderr);
+            } }
             state->rdp->loadBlock(tile, uls, ult, lrs, dxt);
         }
 
@@ -169,6 +186,11 @@ namespace RT64 {
         }
 
         void texrect(State *state, DisplayList **dl) {
+            { static int n=0; if (++n <= 10 || (n % 10000) == 0) {
+                fprintf(stderr, "[trace] GBI texrect handler #%d g_dlHist=%zu g_frame=%d\n",
+                    n, RT64::g_dlHistCount, RT64::g_frameCounter);
+                fflush(stderr);
+            } }
             const int32_t ulx = (*dl)->p1(12, 12);
             const int32_t uly = (*dl)->p1(0, 12);
             const int32_t lrx = (*dl)->p0(12, 12);

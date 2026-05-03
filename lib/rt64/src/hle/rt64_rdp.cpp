@@ -127,21 +127,6 @@ namespace RT64 {
             depthImage.changed = false;
 
             state->updateDrawStatusAttribute(DrawAttribute::FramebufferPair);
-
-            // DIAGNOSTIC: Factor5 ucode in Rogue Squadron doesn't emit
-            // G_RDPFULLSYNC for normal frames, so the workload accumulates
-            // fbPairs indefinitely (observed: 2400+) and is never submitted
-            // to the renderer. Force-drain when the pair count crosses a
-            // threshold so accumulated draws actually reach fbManager.
-            if (workload.fbPairCount >= 4) {
-                static int n = 0;
-                if (++n <= 5 || (n % 50) == 0) {
-                    fprintf(stderr, "[trace] auto-fullSync #%d (fbPairCount=%u)\n",
-                        n, (unsigned)workload.fbPairCount);
-                    fflush(stderr);
-                }
-                state->fullSync();
-            }
         }
     }
     
@@ -291,10 +276,19 @@ namespace RT64 {
     }
 
     void RDP::setTextureImage(uint8_t fmt, uint8_t siz, uint16_t width, uint32_t address) {
+        const uint32_t newAddr = maskAddress(address);
+        { static int n=0; ++n;
+          bool isZero = (newAddr == 0);
+          if (isZero || n<=10 || (n%5000)==0) {
+              fprintf(stderr, "[trace] RDP::setTextureImage #%d addr=0x%08X w=%u fmt=%u siz=%u%s\n",
+                  n, newAddr, (unsigned)width, (unsigned)fmt, (unsigned)siz,
+                  isZero ? " <ZERO>" : "");
+              fflush(stderr);
+          } }
         texture.fmt = fmt;
         texture.siz = siz;
         texture.width = width;
-        texture.address = maskAddress(address);
+        texture.address = newAddr;
         state->updateDrawStatusAttribute(DrawAttribute::Texture);
 
 #   ifdef LOG_TEXTURE_IMAGE_METHODS
@@ -303,6 +297,17 @@ namespace RT64 {
     }
 
     void RDP::setCombine(uint64_t combine) {
+        { static int n=0; static uint64_t last = ~uint64_t(0);
+            if (combine != last) {
+                ++n;
+                if (n <= 10 || (n % 200) == 0) {
+                    fprintf(stderr, "[trace] setCombine #%d mux=0x%016llX\n",
+                        n, (unsigned long long)combine);
+                    fflush(stderr);
+                }
+                last = combine;
+            }
+        }
         interop::ColorCombiner &colorCombiner = colorCombinerStack[colorCombinerStackSize - 1];
         colorCombiner.L = combine & 0xFFFFFFFFULL;
         colorCombiner.H = (combine >> 32ULL) & 0xFFFFFFFFULL;
@@ -853,6 +858,15 @@ namespace RT64 {
     }
     
     void RDP::setPrimColor(uint8_t lodFrac, uint8_t lodMin, uint32_t color) {
+        { static int n=0;
+          ++n;
+          // ALWAYS log first 30, then every 1000th regardless of value change
+          if (n <= 30 || (n % 1000) == 0) {
+              fprintf(stderr, "[trace] setPrimColor #%d color=0x%08X A=%u\n",
+                  n, color, (unsigned)(color & 0xFF));
+              fflush(stderr);
+          }
+        }
         hlslpp::float2 &primLOD = primLODStack[primColorStackSize - 1];
         primLOD.x = lodFrac / 256.0f;
         primLOD.y = lodMin / 32.0f;

@@ -204,6 +204,34 @@ namespace RT64 {
     void Interpreter::processDisplayLists(uint32_t dlStartAdddress, DisplayList *dlStart) {
         assert(hleGBI != nullptr);
 
+        {
+            static int n = 0;
+            ++n;
+            fprintf(stderr, "[trace] processDisplayLists ENTER #%d dlStart=0x%08X\n",
+                n, dlStartAdddress);
+            fflush(stderr);
+
+            // Dump first 30 commands of any DL we haven't seen before.
+            static uint32_t seen[16] = {0};
+            static int seen_n = 0;
+            bool already = false;
+            for (int i = 0; i < seen_n; i++) {
+                if (seen[i] == dlStartAdddress) { already = true; break; }
+            }
+            if (!already && seen_n < 16) {
+                seen[seen_n++] = dlStartAdddress;
+                fprintf(stderr, "[trace] NEW DL @ 0x%08X first 30 cmds:\n", dlStartAdddress);
+                DisplayList *p = dlStart;
+                for (int i = 0; i < 30; i++) {
+                    fprintf(stderr, "  %03d  op=0x%02X  w0=0x%08X  w1=0x%08X  addr=0x%08X\n",
+                        i, (unsigned)(p->w0 >> 24), p->w0, p->w1,
+                        dlStartAdddress + (uint32_t)(i * sizeof(DisplayList)));
+                    p++;
+                }
+                fflush(stderr);
+            }
+        }
+
         state->dlCpuProfiler.start();
 
         // Update the state with the current display list address.
@@ -217,8 +245,39 @@ namespace RT64 {
         DisplayList *dl = dlStart;
         uint8_t opCode;
         GBIFunction func;
+        size_t loopIters = 0;
+        static uint64_t opFreq[256] = {0};
+        static uint64_t opFreqDumpThreshold = 100000;
         while (dl != nullptr) {
             opCode = (dl->w0 >> 24);
+            loopIters++;
+            opFreq[opCode]++;
+            if (loopIters == opFreqDumpThreshold) {
+                fprintf(stderr, "[trace] opFreq dump @ iter=%zu:", loopIters);
+                for (int i = 0; i < 256; i++) {
+                    if (opFreq[i] > 0) {
+                        fprintf(stderr, " 0x%02X=%llu", i, (unsigned long long)opFreq[i]);
+                    }
+                }
+                fprintf(stderr, "\n"); fflush(stderr);
+                opFreqDumpThreshold *= 10;
+            }
+
+            // Periodic dlAddr trace: every 100K iters, dump current dl pointer +
+            // the last 8 unique dlAddrs from history. If the stuck task cycles
+            // through the same chunk addresses, this will reveal the cycle.
+            if ((loopIters % 100000) == 0) {
+                uint32_t curAddr = dlStartAdddress + uint32_t((uintptr_t)dl - (uintptr_t)dlStart);
+                fprintf(stderr, "[trace] dlAddr probe iter=%zu cur=0x%08X recent=",
+                    loopIters, curAddr);
+                for (int back = 0; back < 8; back++) {
+                    if (g_dlHistCount < (size_t)(back + 1)) break;
+                    size_t idx = (g_dlHistCount - 1 - back) % kDLHistLen;
+                    fprintf(stderr, " 0x%08X[op=%02X]",
+                        g_dlHist[idx].dlAddr, g_dlHist[idx].opcode);
+                }
+                fprintf(stderr, "\n"); fflush(stderr);
+            }
 
             {
                 size_t slot = g_dlHistCount % kDLHistLen;
@@ -239,6 +298,35 @@ namespace RT64 {
                 RT64_LOG_PRINTF("0x%08X 0x%08X", dl->w0, dl->w1);
 #       endif
 
+                // Probe G_DL (op 0x06) targets — dump first 20 cmds of any new sub-DL.
+                if (opCode == 0x06) {
+                    uint32_t target = dl->w1 & 0x00FFFFFF;
+                    static uint32_t seen_dl[256] = {0};
+                    static int seen_dl_n = 0;
+                    bool dl_already = false;
+                    for (int i = 0; i < seen_dl_n; i++) {
+                        if (seen_dl[i] == target) { dl_already = true; break; }
+                    }
+                    if (!dl_already && seen_dl_n < 256) {
+                        seen_dl[seen_dl_n++] = target;
+                        DisplayList *t = (DisplayList*)((uint8_t*)dlStart + (target - dlStartAdddress));
+                        // Bounds check: only dump if target is within reasonable RDRAM range
+                        if (target >= 0x00000000 && target < 0x00800000) {
+                            DisplayList *p = (DisplayList*)(state->RDRAM + target);
+                            fprintf(stderr, "[trace] NEW sub-DL @ 0x%08X (called from 0x%08X) first 35 cmds:\n",
+                                target, dlStartAdddress + (uint32_t)((uintptr_t)dl - (uintptr_t)dlStart));
+                            for (int i = 0; i < 35; i++) {
+                                uint32_t w0 = (p + i)->w0;
+                                uint32_t w1 = (p + i)->w1;
+                                fprintf(stderr, "  %03d  op=0x%02X  w0=0x%08X  w1=0x%08X  addr=0x%08X\n",
+                                    i, (unsigned)(w0 >> 24), w0, w1,
+                                    target + (uint32_t)(i * sizeof(DisplayList)));
+                            }
+                            fflush(stderr);
+                        }
+                    }
+                }
+
                 if (func != nullptr) {
                     func(state, &dl);
                 }
@@ -249,6 +337,45 @@ namespace RT64 {
 
             if (dl != nullptr) {
                 dl++;
+            }
+
+            // Factor5 in Rogue Squadron emits multi-million-command DLs
+            // without G_RDPFULLSYNC for normal frames. processDisplayLists
+            // never returns within wallclock budget, so workloads accumulate
+            // and never reach the renderer. Drain periodically here, BETWEEN
+            // commands, where workload state is consistent (the prior handler
+            // has fully returned and any drawData updates are committed).
+            {
+                const int workloadCursor = state->ext.workloadQueue->writeCursor;
+                Workload &wl = state->ext.workloadQueue->workloads[workloadCursor];
+                if (wl.fbPairCount >= 64) {
+                    static int n = 0;
+                    if (++n <= 5 || (n % 50) == 0) {
+                        fprintf(stderr, "[trace] inter-cmd fullSync #%d (fbPairCount=%u, loopIters=%zu)\n",
+                            n, (unsigned)wl.fbPairCount, loopIters);
+                        fflush(stderr);
+                    }
+                    state->fullSync();
+                }
+            }
+        }
+
+        // Factor5 in Rogue Squadron does not emit G_RDPFULLSYNC for normal frames
+        // (its ucode signals DP completion through a different path), so the workload
+        // accumulates fbPairs indefinitely and is never submitted to the renderer.
+        // The end of processDisplayLists is the natural task boundary — texture/TMEM
+        // state is consistent here — so flush the workload now if it hasn't been.
+        {
+            const int workloadCursor = state->ext.workloadQueue->writeCursor;
+            Workload &wl = state->ext.workloadQueue->workloads[workloadCursor];
+            static int n = 0;
+            if (++n <= 5 || (n % 50) == 0) {
+                fprintf(stderr, "[trace] DL-end #%d loopIters=%zu fbPairCount=%u\n",
+                    n, loopIters, (unsigned)wl.fbPairCount);
+                fflush(stderr);
+            }
+            if (wl.fbPairCount > 0) {
+                state->fullSync();
             }
         }
 
