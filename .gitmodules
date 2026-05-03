@@ -3,4 +3,4 @@
 	url = https://github.com/MikeSemicolonD/N64ModernRuntime.git
 [submodule "lib/rt64"]
 	path = lib/rt64
-	url = https://github.com/MikeSemicolonD/rt64.git
+	url = https://github.com/MikeSemicolonD/rt64
