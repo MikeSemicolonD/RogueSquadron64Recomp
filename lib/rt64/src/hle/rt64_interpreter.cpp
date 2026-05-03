@@ -202,7 +202,19 @@ namespace RT64 {
     }
 
     void Interpreter::processDisplayLists(uint32_t dlStartAdddress, DisplayList *dlStart) {
-        assert(hleGBI != nullptr);
+        // If GBI lookup failed (e.g. game submitted a task with an unrecognized
+        // ucode — Rogue Squadron does this for some post-credits scenes), skip
+        // the task instead of asserting. The interpreter's main loop reads
+        // hleGBI->map[opcode], which would AV at a small NULL+offset address.
+        if (hleGBI == nullptr) {
+            static int n = 0;
+            if (++n <= 10 || (n % 200) == 0) {
+                fprintf(stderr, "[trace] processDisplayLists SKIP #%d (no hleGBI) dlStart=0x%08X\n",
+                    n, dlStartAdddress);
+                fflush(stderr);
+            }
+            return;
+        }
 
         {
             static int n = 0;
@@ -249,6 +261,23 @@ namespace RT64 {
         static uint64_t opFreq[256] = {0};
         static uint64_t opFreqDumpThreshold = 100000;
         while (dl != nullptr) {
+            // Safety bound: any single task running > 5M commands almost certainly
+            // means the interpreter walked off a chunk's expected terminator.
+            // Without this guard, dl++ marches past the end of valid RDRAM and
+            // eventually dereferences an unmapped page (AV). Force-exit instead.
+            // This guards against not-yet-identified Factor5-specific terminator
+            // opcodes (we know op_B5 is one, but post-credits scenes appear to
+            // have additional ones we haven't mapped yet).
+            if (loopIters > 5000000) {
+                static int n = 0;
+                if (++n <= 5) {
+                    uint32_t curAddr = dlStartAdddress + uint32_t((uintptr_t)dl - (uintptr_t)dlStart);
+                    fprintf(stderr, "[trace] DL safety-exit #%d (loopIters=%zu, dlStart=0x%08X, cur=0x%08X)\n",
+                        n, loopIters, dlStartAdddress, curAddr);
+                    fflush(stderr);
+                }
+                break;
+            }
             opCode = (dl->w0 >> 24);
             loopIters++;
             opFreq[opCode]++;
@@ -292,6 +321,19 @@ namespace RT64 {
                 extendedFunction(state, &dl);
             }
             else {
+                // Guard against hleGBI becoming nullptr mid-task. F3DEX's
+                // loadUCode (op 0xAF) calls loadUCodeGBI which sets hleGBI to
+                // null if the new ucode isn't recognized. Without this check
+                // the next iteration AVs at NULL+(opcode*8). Force-end the task.
+                if (hleGBI == nullptr) {
+                    static int n = 0;
+                    if (++n <= 5) {
+                        fprintf(stderr, "[trace] interpreter abort: hleGBI became null mid-task (n=%d, loopIters=%zu)\n",
+                            n, loopIters);
+                        fflush(stderr);
+                    }
+                    break;
+                }
                 func = hleGBI->map[opCode];
 
 #       ifdef DUMP_DISPLAY_LISTS

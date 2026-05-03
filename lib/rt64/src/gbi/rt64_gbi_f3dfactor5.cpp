@@ -112,6 +112,22 @@ namespace RT64 {
             // blocks because dsdx/dtdy are read from the wrong word.
             gbi->map[0xE4] = &GBI_RDP::texrectLLE;
             gbi->map[0xE5] = &GBI_RDP::texrectFlipLLE;
+
+            // EXPERIMENTAL: Factor5 emits a family of unknown opcodes with the
+            // pattern op|0x003400 in both w0 and w1, where the opcode byte
+            // itself appears to encode an operand (bits [6:2]). Frequency
+            // analysis from the broken-loop opFreq dump suggested:
+            //   op 0x2A, 0x2E (~12K each) — most frequent, plausibly tri2/quad
+            //   op 0x26 (~5K)             — paired tri-style command
+            //   op 0x12, 0x36, 0x3A (~2K each) — plausibly G_VTX variants
+            // Try routing them to F3DEX's tri1/tri2 handlers as a probe — if
+            // any geometry appears that wasn't there before, we have a hint.
+            // Worst case: they remain effectively no-ops (degenerate triangles
+            // since vertex indices decode to small/zero values).
+            gbi->map[0x2A] = &GBI_F3DEX::tri1;
+            gbi->map[0x2E] = &GBI_F3DEX::tri1;
+            gbi->map[0x26] = &GBI_F3DEX::tri2;
+            gbi->map[0x22] = &GBI_F3DEX::tri2;
         }
     }
 };

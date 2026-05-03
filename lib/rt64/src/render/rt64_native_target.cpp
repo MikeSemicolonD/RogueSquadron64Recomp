@@ -163,15 +163,28 @@ namespace RT64 {
         nativeCB.ditherRandomSeed = 0;
         nativeCB.usesHDR = shaderLibrary->usesHDR;
 
-        // Assert for formats that have not been implemented yet because hardware verification is pending.
-        assert((nativeCB.siz != G_IM_SIZ_4b) && "Unimplemented 4 bits Readback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_RGBA) || (nativeCB.siz != G_IM_SIZ_8b)) && "Unimplemented RGBA8 Readback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_IA) || (nativeCB.siz != G_IM_SIZ_8b)) && "Unimplemented IA8 Readback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_CI) || (nativeCB.siz != G_IM_SIZ_16b)) && "Unimplemented CI16 Readback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_IA) || (nativeCB.siz != G_IM_SIZ_16b)) && "Unimplemented IA16 Readback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_I) || (nativeCB.siz != G_IM_SIZ_16b)) && "Unimplemented I16 Readback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_DEPTH) || (nativeCB.siz == G_IM_SIZ_16b)) && "Depth format is not allowed outside of 16-bits.");
-        assert(((nativeCB.fmt != G_IM_FMT_CI) || (nativeCB.siz != G_IM_SIZ_32b)) && "Unimplemented CI32 Readback mode.");
+        // Originally these were assert()s. For Rogue Squadron (Factor5) we hit
+        // 4-bit readback during the explosion/X-wing intro scene, which kills
+        // the game. Skip the readback for unsupported formats — visual artifacts
+        // (missing reflections/effects) are preferable to a hard crash.
+        bool unsupported_readback =
+            (nativeCB.siz == G_IM_SIZ_4b) ||
+            ((nativeCB.fmt == G_IM_FMT_RGBA) && (nativeCB.siz == G_IM_SIZ_8b)) ||
+            ((nativeCB.fmt == G_IM_FMT_IA) && (nativeCB.siz == G_IM_SIZ_8b)) ||
+            ((nativeCB.fmt == G_IM_FMT_CI) && (nativeCB.siz == G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_IA) && (nativeCB.siz == G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_I) && (nativeCB.siz == G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_DEPTH) && (nativeCB.siz != G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_CI) && (nativeCB.siz == G_IM_SIZ_32b));
+        if (unsupported_readback) {
+            static int n = 0;
+            if (++n <= 5 || (n % 200) == 0) {
+                fprintf(stderr, "[native_target] skip unsupported readback fmt=%d siz=%d (n=%d)\n",
+                    (int)nativeCB.fmt, (int)nativeCB.siz, n);
+                fflush(stderr);
+            }
+            return 0;
+        }
         assert(((nativeCB.fmt != G_IM_FMT_IA) || (nativeCB.siz != G_IM_SIZ_32b)) && "Unimplemented IA32 Readback mode.");
         assert(((nativeCB.fmt != G_IM_FMT_I) || (nativeCB.siz != G_IM_SIZ_32b)) && "Unimplemented I32 Readback mode.");
 

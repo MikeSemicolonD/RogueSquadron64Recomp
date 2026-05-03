@@ -5,6 +5,8 @@
 #include "rt64_gbi_f3d.h"
 
 #include <cassert>
+#include <cstdio>
+#include <unordered_map>
 
 #include "../include/rt64_extended_gbi.h"
 
@@ -63,9 +65,24 @@ namespace RT64 {
             case F3D_G_MV_LOOKATY:
                 state->rsp->setLookAt(1, (*dl)->w1);
                 break;
-            default:
-                assert(false && "Unimplemented move mem.");
+            default: {
+                // Factor5 (and likely other custom ucodes) emit G_MOVEMEM with
+                // indices outside the F3D set. Asserting kills the game; instead
+                // log the index once-per-value and continue. The relevant state
+                // (matrix/light/etc.) just doesn't update — visually that means
+                // some geometry uses stale state, which is preferable to a hard
+                // abort. Useful for tracking which indices Factor5 actually uses
+                // so a future RE pass can map them.
+                static std::unordered_map<uint8_t, int> seen;
+                uint8_t idx = (*dl)->p0(16, 8);
+                int &n = seen[idx];
+                if (++n <= 3) {
+                    fprintf(stderr, "[gbi_f3d] moveMem unknown idx=0x%02X (n=%d) w0=0x%08X w1=0x%08X\n",
+                        idx, n, (*dl)->w0, (*dl)->w1);
+                    fflush(stderr);
+                }
                 break;
+            }
             }
         }
         

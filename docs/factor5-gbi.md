@@ -50,11 +50,52 @@ So there are (at least) two dispatch tables:
 - **Table A** at DMEM `0xD6`, covering opcodes `0x00-0x3F`. Example: opcode 0x02 → halfword at data[0xDA] = `0x14F0` → handler at IMEM `0x14F0`.
 - **Table B** at DMEM `0x64`, covering opcodes `0x40-0xBF` via sign-magnitude indexing. For opcode 0x80 the computed index lands at data[0x164], which is past the 0x100-byte "registration" window but within the full `~0x3C0`-byte data segment.
 
+## Confirmed Factor5 opcodes (from runtime probing — May 2026)
+
+| Opcode | Factor5 behavior | Handler in our tree | Confidence |
+|-------:|-------------------|---------------------|-----------|
+| `0xB5` | Chunk/DL terminator (= F3DEX `G_ENDDL`). Each 0x108-byte chunk ends with `0xB5` at offset 0x100. Sub-DL at `0x007239B8` is a single `0xB5` command — only makes sense as "do nothing, return". | `op_B5_endDl` → `state->popReturnAddress()` | **Confirmed** — fix unblocked credits scene from infinite-DL hang |
+| `0xE4` | LLE TEXRECT (16-byte: command + one RDPHALF follow-up packing uls/ult/dsdx/dtdy together). F3DEX HLE expected 24 bytes which consumed the *next* TEXRECT as garbage data. | `texrectLLE` | **Confirmed** — fix made credit text glyphs render with correct UVs |
+| `0xE5` | LLE TEXRECTFLIP — same format change as `0xE4` | `texrectFlipLLE` | **Confirmed** by inference |
+| `0xFF` | `G_SETCIMG`, but Factor5 sometimes emits with bogus payload (`w1=0`). Real calls always have non-zero w1. | `setColorImage_filtered` (filters bogus form) | **Confirmed** |
+
+## Unknown opcode family — `0xXX` where bit pattern is `00xxxx10`
+
+Observed during post-credits scene playback:
+
+| Opcode | Frequency (approx, per 1M-cmd broken-loop sample) | Notes |
+|-------:|--------------------------------------------------:|-------|
+| `0x02` | 80                                                | Constant payload: `w0=0x028001C0 w1=0x01FF0000`. Only 80 hits per task — likely a one-shot setup command. |
+| `0x12` | 2,430                                             | Plausibly G_VTX variant |
+| `0x16` | 9                                                 | Rare |
+| `0x1E` | 18                                                | Rare |
+| `0x22` | 26                                                | Rare |
+| `0x26` | 4,864                                             | ~2× tri count — possibly tri2 / quad |
+| `0x2A` | 12,147                                            | Most frequent — possibly tri1 |
+| `0x2E` | 12,149                                            | Most frequent — possibly tri1 variant |
+| `0x32` | 0 in sample                                       |  |
+| `0x36` | 2,431                                             | Plausibly G_VTX variant (matches 0x12 count) |
+| `0x3A` | 2,427                                             | Plausibly G_VTX variant (matches 0x12 count) |
+
+**Pattern**: opcode bits `[6:2]` form a 5-bit operand (0–31); bits `[1:0]` always `0b10`. Payload is always `w0 = w1 = (op << 24) | 0x003400` — the constant `0x003400` does NOT vary per call. This means the **operand is encoded in the opcode byte itself**, not in the data. Without ucode disassembly we can't know what it operates on.
+
+Tested experimentally: routing `0x2A`, `0x2E` to F3DEX's `tri1` and `0x22`, `0x26` to `tri2` decoded vertex indices to mostly-degenerate values (e.g., (0, 26, 0)) — confirms the operand is NOT in the data payload using F3DEX's vertex-index encoding.
+
+## Crash-class summary (post-credits scenes)
+
+The N64 logo / X-wing intro sequence hits multiple unimplemented paths. These are now safety-netted, not fixed:
+
+1. **Different DL chunks with no recognized terminator** — chunks at `0x0074xxxx` march past the end of RDRAM. Caught by 5M-iter safety limit in [rt64_interpreter.cpp](../lib/rt64/src/hle/rt64_interpreter.cpp).
+2. **Tasks with unrecognized ucode** — `getGBIForUCode` returns null. Caught by null-`hleGBI` skip in `processDisplayLists` and a mid-task null guard in the main loop.
+3. **`G_MOVEMEM` with idx outside F3D set** — was `assert(false)`, now logs and skips ([rt64_gbi_f3d.cpp](../lib/rt64/src/gbi/rt64_gbi_f3d.cpp)).
+4. **Unimplemented framebuffer readback formats** (4-bit I, RGBA8, IA8, etc.) — was `assert(...)`, now logs and returns `0` ([rt64_native_target.cpp](../lib/rt64/src/render/rt64_native_target.cpp)).
+5. **STL bounds checks ("vector subscript out of range")** — `_CrtSetReportHook` returns 1 to suppress the abort.
+
 ## Open questions
 
 1. **Opcode 0x02 handler at IMEM 0x14F0** — needs disassembly to confirm it's a config load / segment setup. Once identified, replace `op02_unknown` with a real handler.
-2. **Opcode 0x80 sub-DL call hypothesis** — if `0x80`'s 24-bit field is a raw RDRAM pointer to a child DL, we should implement it as `state->rsp->displayList(ptr, push_return=true)` or similar. The address `0x720108` is plausible RDRAM (game uses 8 MB expansion pak).
-3. **Why 0xFF**, `0xFE`, `0xF9`, `0xF8`, `0xF7`, `0xF6`, `0xED`, `0xE9`, `0xE8`, `0xE7`, `0xE6` all resolve in F3DEX — are their semantics actually preserved, or does Factor 5 overload any of them? (Rendering verification required.)
+2. **The `XX10` opcode family** — likely vertex/triangle/state commands with operand in the opcode byte. Reverse-engineering needs the Factor5 ucode binary.
+3. **Whether `0xFE`, `0xF9`, `0xF8`, `0xF7`, `0xF6`, `0xED`, `0xE9`, `0xE8`, `0xE7`, `0xE6` semantics are preserved** in Factor5 — needs rendering verification per opcode.
 
 ## Diagnostic infrastructure
 

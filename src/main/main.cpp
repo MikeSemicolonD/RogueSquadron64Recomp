@@ -53,10 +53,25 @@ gpr get_entrypoint_address();
 // ---------------------------------------------------------------------------
 extern RspUcodeFunc aspMain;
 
+// Rogue Squadron uses Factor5's MusyX audio ucode, NOT stock aspMain. Running
+// aspMain on MusyX-formatted task data produces garbage or hangs the audio
+// thread (no shared format). Until MusyX has a real recomp pass (see
+// project_audio_musyx.md), stub all audio tasks: return Broke immediately so
+// the game thinks the task completed, sp_complete() fires, and play continues.
+// Cost: no audio. Trade-off: keeps the rest of the game responsive.
+static RspExitReason musyx_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
+    static int n = 0;
+    if (++n <= 5 || (n % 500) == 0) {
+        fprintf(stderr, "[RSP] musyx_stub invoked #%d (audio task short-circuited)\n", n);
+        fflush(stderr);
+    }
+    return RspExitReason::Broke;
+}
+
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     switch (task->t.type) {
     case M_AUDTASK:
-        return aspMain;
+        return &musyx_stub;
     default:
         fprintf(stderr, "[RSP] Unknown task type: %" PRIu32 "\n", task->t.type);
         return nullptr;
@@ -327,7 +342,13 @@ int main(int argc, char* argv[]) {
                 (unsigned long long)rva);
         }
         fflush(stderr);
-        return 0; // 0 = don't suppress, let abort proceed
+        // Return 1 to SUPPRESS the abort. STL bounds-check assertions ("vector
+        // subscript out of range") fire when a Factor5 ucode handler indexes
+        // past a vector limit due to state we can't fully replicate yet. The
+        // resulting abort kills the game even though continuing with whatever
+        // garbage the out-of-bounds read returned often lets play continue.
+        // Trade-off: occasional visual glitches over a hard crash. Print first.
+        return 1;
     });
     // MSVC debug iterators call _invalid_parameter on bounds-check failure
     // (e.g. "vector subscript out of range"). Default handler aborts silently;
