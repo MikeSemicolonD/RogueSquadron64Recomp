@@ -77,3 +77,5 @@ cmake-build-*
 /build/N64ModernRuntime/librecomp/librecomp.dir/Debug
 /build/N64ModernRuntime/ultramodern/Debug
 /build/rt64/rt64.dir/Debug
+/build/N64ModernRuntime/librecomp/Debug
+/build/rt64/rt64.dir/Debug
