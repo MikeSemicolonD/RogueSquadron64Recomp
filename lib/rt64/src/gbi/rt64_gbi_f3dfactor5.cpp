@@ -82,6 +82,51 @@ namespace RT64 {
             *dl = state->popReturnAddress();
         }
 
+        // op_B4: Factor5-specific 16-byte command (cmd word + 8-byte payload).
+        // Identified via drift detector: every drift-into-ASCII transition was
+        // preceded by op_B4 dispatched at standard 8-byte stride. The 8 bytes
+        // following the cmd were being read as the next opcode, causing the
+        // interpreter to mis-parse data as commands. Consume the extra word
+        // here; the dispatch loop's dl++ takes care of the cmd word itself.
+        // Payload pattern observed: w0=0xB4000006 with varying w1 carrying
+        // packed data (e.g., 0x14373C28). Likely a register/state setter.
+        // Treat as no-op for now — just consume the right number of bytes.
+        void op_B4_consume16(State *state, DisplayList **dl) {
+            (*dl)++;  // skip the 8-byte payload
+        }
+
+        // Factor5 op_BF: also a 16-byte command (cmd word + 8-byte payload).
+        // F3DEX standard maps op_BF = G_TRI1 (8 bytes), but in Factor5 the
+        // drift detector consistently shows op_BF as the last cmd before
+        // drift-into-ASCII payload. Same pattern as op_B4. Pair often appears
+        // as `op_FA op_BF` (set env color + Factor5 cmd).
+        void op_BF_consume16(State *state, DisplayList **dl) {
+            (*dl)++;
+        }
+
+        // Strict G_DL filter for Factor5. Standard F3D G_DL has w0=0x06000000
+        // (opcode + branch flag at bit 16, rest zero). Factor5 emits commands
+        // that share the first byte 0x06 but pack data into w0's low 24 bits
+        // (e.g., w0=0x060A07C0 — opcode 0x06 followed by 24 bits of payload).
+        // Treating these as G_DLs leads runDl to dispatch w1 as a target
+        // address, which can land inside vertex/color data and corrupt the
+        // interpreter state. Filter: only call F3D::runDl if w0's payload
+        // bits (excluding the branch flag at bit 16) are zero.
+        void op_06_strict_dl(State *state, DisplayList **dl) {
+            const uint32_t w0Payload = (*dl)->w0 & 0x00FEFFFF;  // mask out opcode and branch flag
+            if (w0Payload == 0) {
+                GBI_F3D::runDl(state, dl);
+                return;
+            }
+            // Looks like a Factor5-specific opcode reusing byte 0x06. No-op for now.
+            static int n = 0;
+            if (++n <= 10 || (n % 5000) == 0) {
+                fprintf(stderr, "[trace] op_06 non-standard #%d w0=0x%08X w1=0x%08X (skipped)\n",
+                    n, (*dl)->w0, (*dl)->w1);
+                fflush(stderr);
+            }
+        }
+
         // Factor5 emits one G_SETCIMG (0xFF) per render-pass with a bogus
         // payload (w0=0xFFF00F0F, w1=0x00000000) immediately before the
         // overlay TEXRECT batch. That zeroes RDP::colorImage.address, so the
@@ -89,7 +134,25 @@ namespace RT64 {
         // visible output. Real SETCIMG calls always carry a non-zero w1.
         // Filter out the bogus form here.
         void setColorImage_filtered(State *state, DisplayList **dl) {
-            if ((*dl)->w1 == 0) {
+            const uint32_t w0 = (*dl)->w0;
+            const uint32_t w1 = (*dl)->w1;
+            if (w1 == 0) {
+                return;
+            }
+            // Reject when fmt field (w0 bits 23-21) is invalid (>4). Standard
+            // G_IM_FMT values: RGBA=0, YUV=1, CI=2, IA=3, I=4. fmt 5,6,7 only
+            // appear when garbage (e.g. RGBA8888 pixel = 0xFFFFFFFF) is parsed
+            // as a SETCIMG cmd. Without this, downstream allocators get fed
+            // bogus fmt+siz+width and crash with zero-size buffer asserts in
+            // D3D12MemoryAllocator.
+            const uint32_t fmt = (w0 >> 21) & 0x7;
+            if (fmt > 4) {
+                static int n = 0;
+                if (++n <= 10 || (n % 5000) == 0) {
+                    fprintf(stderr, "[trace] setColorImage skip-bogus #%d w0=0x%08X w1=0x%08X (fmt=%u>4)\n",
+                        n, w0, w1, fmt);
+                    fflush(stderr);
+                }
                 return;
             }
             GBI_F3D::setColorImage(state, dl);
@@ -101,6 +164,19 @@ namespace RT64 {
 
             gbi->map[0x80] = &op80_unknown;
             gbi->map[0x02] = &op02_unknown;
+            gbi->map[0x06] = &op_06_strict_dl;
+
+            // Factor5 emits commands that share first byte with F3DEX opcodes
+            // but encode entirely different payloads. Inheriting the F3DEX
+            // handler causes crashes when garbage payload is interpreted as
+            // F3DEX state. Map known-collision opcodes to no-op:
+            //   0xB0 = F3DEX G_BRANCH_Z. Factor5 emits packed data here; the
+            //          inherited handler extracts a vertex index from w0 bits
+            //          1-11, hits std::array bounds check on the 32-entry
+            //          vertex cache. Confirmed via crash-dump ring buffer.
+            gbi->map[0xB0] = &op80_unknown;
+            gbi->map[0xB4] = &op_B4_consume16;
+            gbi->map[0xBF] = &op_BF_consume16;
             // EXPERIMENT: was &op_B5_endDl. Runtime DL dumps show many sub-DLs
             // start with op_B5 followed by FD/F5/F3 setup ending in op_B8
             // (standard F3D G_ENDDL). Treating B5 as endDl skips the setup
@@ -122,21 +198,14 @@ namespace RT64 {
             gbi->map[0xE4] = &GBI_RDP::texrectLLE;
             gbi->map[0xE5] = &GBI_RDP::texrectFlipLLE;
 
-            // EXPERIMENTAL: Factor5 emits a family of unknown opcodes with the
-            // pattern op|0x003400 in both w0 and w1, where the opcode byte
-            // itself appears to encode an operand (bits [6:2]). Frequency
-            // analysis from the broken-loop opFreq dump suggested:
-            //   op 0x2A, 0x2E (~12K each) — most frequent, plausibly tri2/quad
-            //   op 0x26 (~5K)             — paired tri-style command
-            //   op 0x12, 0x36, 0x3A (~2K each) — plausibly G_VTX variants
-            // Try routing them to F3DEX's tri1/tri2 handlers as a probe — if
-            // any geometry appears that wasn't there before, we have a hint.
-            // Worst case: they remain effectively no-ops (degenerate triangles
-            // since vertex indices decode to small/zero values).
-            gbi->map[0x2A] = &GBI_F3DEX::tri1;
-            gbi->map[0x2E] = &GBI_F3DEX::tri1;
-            gbi->map[0x26] = &GBI_F3DEX::tri2;
-            gbi->map[0x22] = &GBI_F3DEX::tri2;
+            // REVERTED 2026-05-03: experimental tri1/tri2 mappings on 0x22/
+            // 0x26/0x2A/0x2E and 0x05 were producing polygon fragments where
+            // 2D content was expected (e.g. N64 logo). The opcodes' constant
+            // `op|0x003400` payload doesn't decode as F3DEX vertex indices —
+            // running tri1/tri2 on them just hallucinates geometry from
+            // garbage data. Keep these unmapped until we have a 3D scene
+            // confirmed loaded with vertex-load opcodes (op_04, etc.) firing,
+            // and can correlate the actual triangle-emit opcode by ratio.
         }
     }
 };

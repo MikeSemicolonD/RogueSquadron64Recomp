@@ -381,7 +381,19 @@ namespace RT64 {
     }
 
     void NativeTarget::copyToRAM(uint32_t rowStart, uint32_t rowEnd, uint32_t width, uint8_t siz, uint8_t *data) {
-        assert(writeBufferHistoryCount > 0);
+        // Was assert(writeBufferHistoryCount > 0). Fires when copyToRAM is
+        // called without a preceding copyFromTarget — happens during the post-
+        // N64-logo path where Factor5's framebuffer dance doesn't always queue
+        // a writeback. Skip-and-log instead of aborting.
+        if (writeBufferHistoryCount == 0) {
+            static int n = 0;
+            if (++n <= 10 || (n % 500) == 0) {
+                fprintf(stderr, "[trace] copyToRAM skip #%d (no writeBuffer history) row=%u..%u w=%u siz=%u\n",
+                    n, rowStart, rowEnd, width, (unsigned)siz);
+                fflush(stderr);
+            }
+            return;
+        }
 
         const WriteBuffer &writeBuffer = writeBufferHistory[writeBufferHistoryIndex];
         const uint32_t bufferOffset = getNativeSize(width, rowStart, siz);

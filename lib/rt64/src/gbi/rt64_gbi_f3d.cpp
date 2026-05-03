@@ -100,11 +100,26 @@ namespace RT64 {
                   fflush(stderr);
               }
             }
+            const uint32_t rdramAddress = state->rsp->fromSegmentedMasked((*dl)->w1);
+            // Guard: invalid target (NULL or outside RDRAM). Reached when an
+            // unmapped Factor5 opcode mis-advances dl into MIPS code memory,
+            // and the interpreter parses raw instruction bytes as opcodes;
+            // an instruction-encoded "op_06" (any MIPS lwc1/sw with bits[31:24]
+            // == 0x06) lands here with garbage w1. Without this check we walk
+            // into NULL and trigger a vector subscript out-of-range crash deep
+            // in RT64. Treat as no-op (consume the cmd, don't follow).
+            if (rdramAddress == 0 || rdramAddress >= 0x00800000) {
+                static int n = 0;
+                if (++n <= 10) {
+                    fprintf(stderr, "[trace] G_DL skip-invalid #%d target=0x%08X (raw w1=0x%08X)\n",
+                        n, rdramAddress, (*dl)->w1);
+                    fflush(stderr);
+                }
+                return;
+            }
             if ((*dl)->p0(16, 1) == 0) {
                 state->pushReturnAddress(*dl);
             }
-
-            const uint32_t rdramAddress = state->rsp->fromSegmentedMasked((*dl)->w1);
             *dl = reinterpret_cast<DisplayList *>(state->fromRDRAM(rdramAddress)) - 1;
         }
 

@@ -6,6 +6,12 @@
 
 #include <cassert>
 
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#include <stdlib.h>
+#include <cwchar>
+#endif
+
 extern "C" void mqdiag_dump(const char *path);
 
 //#define DUMP_DISPLAY_LISTS
@@ -28,10 +34,54 @@ namespace RT64 {
 
     // Interpreter
 
+    // Dump the last N entries of g_dlHist on a CRT assert/invalid-parameter event.
+    // Triggered by std::vector/std::array bounds-checks that fire when the dl
+    // pointer drifts into non-DL memory and RT64 indexes a draw-data array
+    // with a corrupted index. See post_credits memory file Update 14.
+    static void dump_dl_history_tail(const char *reason) {
+        constexpr size_t kTailLen = 32;
+        size_t start = (g_dlHistCount > kTailLen) ? (g_dlHistCount - kTailLen) : 0;
+        fprintf(stderr, "[crash-dump] %s — last %zu DL cmds (of %zu total):\n",
+            reason, g_dlHistCount - start, g_dlHistCount);
+        for (size_t i = start; i < g_dlHistCount; i++) {
+            const auto &e = g_dlHist[i % kDLHistLen];
+            fprintf(stderr, "  %05zu  op=0x%02X  w0=0x%08X  w1=0x%08X  addr=0x%08X\n",
+                i, e.opcode, e.w0, e.w1, e.dlAddr);
+        }
+        fflush(stderr);
+    }
+
+#ifdef _MSC_VER
+    static void __cdecl rt64_invalid_param_handler(
+        const wchar_t* /*expr*/, const wchar_t* /*func*/,
+        const wchar_t* /*file*/, unsigned int /*line*/, uintptr_t /*reserved*/)
+    {
+        dump_dl_history_tail("invalid_parameter");
+    }
+
+    static int __cdecl rt64_crt_report_hook(int /*type*/, char *msg, int* /*ret*/) {
+        // _CrtDbgReport hook fires for vector/array subscript checks before abort.
+        if (msg != nullptr) {
+            fprintf(stderr, "[crash-dump] CRT hook: %s\n", msg);
+        }
+        dump_dl_history_tail("crt-report");
+        return 0;  // 0 = continue normal handling (assert dialog → abort)
+    }
+#endif
+
     Interpreter::Interpreter() {
         state = nullptr;
         hleGBI = nullptr;
         extendedFunction = gbiManager.getExtendedFunction();
+#ifdef _MSC_VER
+        // Install once. Idempotent — re-installing the same handler is harmless.
+        static bool installed = false;
+        if (!installed) {
+            _set_invalid_parameter_handler(rt64_invalid_param_handler);
+            _CrtSetReportHook(rt64_crt_report_hook);
+            installed = true;
+        }
+#endif
     }
 
     void Interpreter::setup(State *state) {
@@ -302,6 +352,46 @@ namespace RT64 {
             loopIters++;
             opFreq[opCode]++;
             totalIters++;
+
+            // Drift detector: fires at the transition from "valid DL" to
+            // "ASCII/string data" or "RGBA pixel data". Logs the previous 4
+            // cmds — the last one is the suspect that mis-advanced dl.
+            // ASCII printable range 0x20-0x7E with common-letter density is
+            // the signal. Only fire once per drift transition (debounced).
+            {
+                static uint8_t recentOps[4] = {0, 0, 0, 0};
+                static size_t recentDls[4] = {0, 0, 0, 0};
+                static bool inAsciiRun = false;
+                static int driftLogCount = 0;
+                // ASCII string detection: ALL 4 bytes of w0 in printable range
+                // (0x20-0x7E). Single ASCII-range opcodes are legitimate
+                // (Factor5 op_2E, 0x2A, 0x26, etc.); only when the entire
+                // word reads as text are we reading data, not opcodes.
+                const uint32_t w0v = dl->w0;
+                auto inPrint = [](uint32_t b) { return b >= 0x20 && b <= 0x7E; };
+                bool isAsciiLike = inPrint((w0v >> 24) & 0xFF) && inPrint((w0v >> 16) & 0xFF) &&
+                                   inPrint((w0v >> 8) & 0xFF) && inPrint(w0v & 0xFF);
+                if (isAsciiLike && !inAsciiRun && driftLogCount < 5) {
+                    driftLogCount++;
+                    uint32_t curAddr = dlStartAdddress + uint32_t((uintptr_t)dl - (uintptr_t)dlStart);
+                    fprintf(stderr, "[drift] #%d ASCII-word w0=0x%08X w1=0x%08X at dl=0x%08X — last 4 cmds:\n",
+                        driftLogCount, dl->w0, dl->w1, curAddr);
+                    for (int i = 0; i < 4; i++) {
+                        fprintf(stderr, "  -%d: op=0x%02X dl=0x%08X\n",
+                            4 - i, recentOps[i], (unsigned)recentDls[i]);
+                    }
+                    fflush(stderr);
+                    inAsciiRun = true;
+                }
+                if (!isAsciiLike) {
+                    inAsciiRun = false;
+                }
+                // Update sliding window.
+                recentOps[0] = recentOps[1]; recentOps[1] = recentOps[2]; recentOps[2] = recentOps[3]; recentOps[3] = opCode;
+                recentDls[0] = recentDls[1]; recentDls[1] = recentDls[2]; recentDls[2] = recentDls[3];
+                recentDls[3] = dlStartAdddress + uint32_t((uintptr_t)dl - (uintptr_t)dlStart);
+            }
+
             if (totalIters >= totalDumpThreshold) {
                 fprintf(stderr, "[opfreq-cumul] @ %llu cumul cmds:", (unsigned long long)totalIters);
                 // Print ALL nonzero opcodes sorted by count.
