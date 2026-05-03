@@ -12,7 +12,16 @@ A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the
 > **Work in progress.** Audio HLE is stubbed; the game may reach the title screen but gameplay is not yet fully functional.
 
 <div align="center">
-  <img src="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/screenshots/initial-screenshot.PNG">
+<table>
+  <tr>
+    <td>
+		<img src="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/screenshots/initial-screenshot.PNG">
+    </td>
+    <td>
+		<img src="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/screenshots/past-initial-screenshot.PNG">
+    </td>
+  </tr>
+</table>
 </div>
 
 ---

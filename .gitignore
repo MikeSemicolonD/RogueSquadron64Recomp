@@ -68,3 +68,7 @@ build-*
 cmake-build-*
 *.lnk
 /.claude
+*.tlog
+/build/rt64/rt64.dir/Debug
+/build/N64ModernRuntime/ultramodern/ultramodern.dir/Debug
+/build/N64ModernRuntime/ultramodern/Debug
