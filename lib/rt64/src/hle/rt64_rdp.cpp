@@ -300,9 +300,27 @@ namespace RT64 {
         { static int n=0; static uint64_t last = ~uint64_t(0);
             if (combine != last) {
                 ++n;
-                if (n <= 10 || (n % 200) == 0) {
-                    fprintf(stderr, "[trace] setCombine #%d mux=0x%016llX\n",
-                        n, (unsigned long long)combine);
+                if (n <= 30 || (n % 200) == 0) {
+                    interop::ColorCombiner cc;
+                    cc.L = combine & 0xFFFFFFFFULL;
+                    cc.H = (combine >> 32ULL) & 0xFFFFFFFFULL;
+                    // Decode both cycles' alpha inputs so we can spot a
+                    // permanently-zero alpha (which would explain invisible
+                    // glyphs in the credits/post-credits text path).
+                    fprintf(stderr, "[trace] setCombine #%d mux=0x%016llX L=0x%08X H=0x%08X\n",
+                        n, (unsigned long long)combine, cc.L, cc.H);
+                    fprintf(stderr, "  cycle0 alpha A=%u B=%u C=%u D=%u\n",
+                        cc.parseAlphaInputA(false), cc.parseAlphaInputB(false),
+                        cc.parseAlphaInputC(false), cc.parseAlphaInputD(false));
+                    fprintf(stderr, "  cycle1 alpha A=%u B=%u C=%u D=%u\n",
+                        cc.parseAlphaInputA(true), cc.parseAlphaInputB(true),
+                        cc.parseAlphaInputC(true), cc.parseAlphaInputD(true));
+                    fprintf(stderr, "  cycle0 color A=%u B=%u C=%u D=%u\n",
+                        cc.parseColorInputA(false), cc.parseColorInputB(false),
+                        cc.parseColorInputC(false), cc.parseColorInputD(false));
+                    fprintf(stderr, "  cycle1 color A=%u B=%u C=%u D=%u\n",
+                        cc.parseColorInputA(true), cc.parseColorInputB(true),
+                        cc.parseColorInputC(true), cc.parseColorInputD(true));
                     fflush(stderr);
                 }
                 last = combine;
@@ -1242,6 +1260,25 @@ namespace RT64 {
             state->loadDrawState();
         }
 
+        // Glyph-batch bind diagnostic: log loadIndex + loadCount AFTER
+        // loadDrawState() has computed them. Filter for small rects (likely
+        // text glyphs: width < 256 fixed-point = 64 pixels at 10.2 fixed).
+        // Expected for credits text: each rect's loadCount==2 (LoadTLUT+
+        // LoadBlock pair), loadIndex monotonically increasing by 2.
+        {
+            const int32_t rectW = drawRect.width(true, true);
+            const bool glyphSized = (rectW > 0) && (rectW < 256);
+            if (glyphSized) {
+                static int n = 0; ++n;
+                if (n <= 60 || (n % 200) == 0) {
+                    fprintf(stderr, "[trace] glyph-rect #%d w=%d loadIdx=%u loadCnt=%u flushed=%d colorAddr=0x%08X\n",
+                        n, rectW, drawCall.loadIndex, drawCall.loadCount,
+                        (int)flushedState, colorImage.address);
+                    fflush(stderr);
+                }
+            }
+        }
+
         auto &triPosFloats = workload.drawData.triPosFloats;
         auto &triTcFloats = workload.drawData.triTcFloats;
         auto &triColorFloats = workload.drawData.triColorFloats;
@@ -1321,6 +1358,19 @@ namespace RT64 {
     
     void RDP::drawTexRect(int32_t ulx, int32_t uly, int32_t lrx, int32_t lry, uint8_t tile, int16_t uls, int16_t ult, int16_t dsdx, int16_t dtdy, bool flip, const ExtendedAlignment &extAlignment) {
         { static int n=0; if (++n<=10 || (n%50)==0) { fprintf(stderr, "[trace] RT64::drawTexRect #%d ulx=%d uly=%d lrx=%d lry=%d tile=%u colorAddr=0x%08X\n", n, ulx, uly, lrx, lry, tile, colorImage.address); fflush(stderr); } }
+        // Per-rect load-binding probe. Confirms whether each glyph's TEXRECT
+        // binds to its own loadOperations range (loadIndex/loadCount). For text
+        // batches: expect loadCount=2 per glyph (LoadTLUT + LoadBlock) and
+        // loadIndex monotonically increasing. If loadCount=0 for most rects,
+        // the texture pipeline is binding stale TMEM state.
+        { static int n=0; ++n; if (n<=20 || (n%500)==0) {
+            const int wlc = state->ext.workloadQueue->writeCursor;
+            const auto &wl = state->ext.workloadQueue->workloads[wlc];
+            fprintf(stderr, "[trace] drawTexRect-bind #%d tile=%u loadOps=%zu drawRanges.loadOps.second=%zu\n",
+                n, (unsigned)tile, wl.drawData.loadOperations.size(),
+                wl.drawRanges.loadOperations.second);
+            fflush(stderr);
+        } }
 #   ifdef LOG_TEXRECT_METHODS
         RT64_LOG_PRINTF("RDP::drawTexRect(ulx %d, uly %d, lrx %d, lry %d, tile %u, uls %d, ult %d, dsdx %d, dtdy %d, flip %u)", ulx, uly, lrx, lry, tile, uls, ult, dsdx, dtdy, flip);
 #   endif

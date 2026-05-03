@@ -263,16 +263,26 @@ namespace RT64 {
         nativeCB.ditherRandomSeed = ditherRandomSeed;
         nativeCB.usesHDR = shaderLibrary->usesHDR;
 
-        // Assert for formats that have not been implemented yet because hardware verification is pending.
-        assert((nativeCB.siz != G_IM_SIZ_4b) && "Unimplemented 4 bits Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_RGBA) || (nativeCB.siz != G_IM_SIZ_8b)) && "Unimplemented RGBA8 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_IA) || (nativeCB.siz != G_IM_SIZ_8b)) && "Unimplemented IA8 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_CI) || (nativeCB.siz != G_IM_SIZ_16b)) && "Unimplemented CI16 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_IA) || (nativeCB.siz != G_IM_SIZ_16b)) && "Unimplemented IA16 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_I) || (nativeCB.siz != G_IM_SIZ_16b)) && "Unimplemented I16 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_CI) || (nativeCB.siz != G_IM_SIZ_32b)) && "Unimplemented CI32 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_IA) || (nativeCB.siz != G_IM_SIZ_32b)) && "Unimplemented IA32 Writeback mode.");
-        assert(((nativeCB.fmt != G_IM_FMT_I) || (nativeCB.siz != G_IM_SIZ_32b)) && "Unimplemented I32 Writeback mode.");
+        // Skip combinations that have not been implemented yet because hardware verification is pending.
+        bool unsupported_writeback =
+            (nativeCB.siz == G_IM_SIZ_4b) ||
+            ((nativeCB.fmt == G_IM_FMT_RGBA) && (nativeCB.siz == G_IM_SIZ_8b)) ||
+            ((nativeCB.fmt == G_IM_FMT_IA)   && (nativeCB.siz == G_IM_SIZ_8b)) ||
+            ((nativeCB.fmt == G_IM_FMT_CI)   && (nativeCB.siz == G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_IA)   && (nativeCB.siz == G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_I)    && (nativeCB.siz == G_IM_SIZ_16b)) ||
+            ((nativeCB.fmt == G_IM_FMT_CI)   && (nativeCB.siz == G_IM_SIZ_32b)) ||
+            ((nativeCB.fmt == G_IM_FMT_IA)   && (nativeCB.siz == G_IM_SIZ_32b)) ||
+            ((nativeCB.fmt == G_IM_FMT_I)    && (nativeCB.siz == G_IM_SIZ_32b));
+        if (unsupported_writeback) {
+            static int n = 0; ++n;
+            if (n <= 10 || (n % 50) == 0) {
+                fprintf(stderr, "[native_target] skip unsupported writeback fmt=%u siz=%u (n=%d)\n",
+                        (unsigned)nativeCB.fmt, (unsigned)nativeCB.siz, n);
+                fflush(stderr);
+            }
+            return;
+        }
         
         // Select shader based on the format and pixel size.
         const ShaderRecord *writeShader;

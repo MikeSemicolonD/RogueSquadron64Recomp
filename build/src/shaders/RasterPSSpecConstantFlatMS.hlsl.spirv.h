@@ -1,7 +1,7 @@
 #ifdef __cplusplus
   extern "C" {
 #endif
-extern const char RasterPSSpecConstantFlatMSBlobSPIRV[283324];
+extern const char RasterPSSpecConstantFlatMSBlobSPIRV[284028];
 #ifdef __cplusplus
   }
 #endif

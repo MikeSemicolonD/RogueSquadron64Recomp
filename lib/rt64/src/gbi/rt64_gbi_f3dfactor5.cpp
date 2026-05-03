@@ -95,12 +95,21 @@ namespace RT64 {
             GBI_F3D::setColorImage(state, dl);
         }
 
+
         void setup(GBI *gbi) {
             GBI_F3DEX::setup(gbi);
 
             gbi->map[0x80] = &op80_unknown;
             gbi->map[0x02] = &op02_unknown;
-            gbi->map[0xB5] = &op_B5_endDl;
+            // EXPERIMENT: was &op_B5_endDl. Runtime DL dumps show many sub-DLs
+            // start with op_B5 followed by FD/F5/F3 setup ending in op_B8
+            // (standard F3D G_ENDDL). Treating B5 as endDl skips the setup
+            // and leaves following TEXRECTs rendering with stale TMEM —
+            // probable cause of "P shows as E" / missing-glyph symptom.
+            // Try B5 as no-op; trust B8 (inherited from F3D) as real endDl.
+            // Chunk runaways are caught by the RDRAM-bounds exit in the
+            // interpreter loop.
+            gbi->map[0xB5] = &op80_unknown;  // no-op
             gbi->map[0xFF] = &setColorImage_filtered;
 
             // Factor5 emits TEXRECTs in LLE format (16 bytes: TEXRECT + one

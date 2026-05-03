@@ -26,7 +26,7 @@ BUILD_FUZZERS:BOOL=OFF
 //Build a header-only version
 BUILD_HEADER_ONLY:BOOL=OFF
 
-//Build shared library instead of static
+//Build a shared library instead of static
 BUILD_SHARED_LIBS:BOOL=OFF
 
 //Build tests
@@ -852,7 +852,7 @@ CMAKE_MT-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: CMAKE_NM
 CMAKE_NM-ADVANCED:INTERNAL=1
 //number of local generators
-CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=18
+CMAKE_NUMBER_OF_MAKEFILES:INTERNAL=12
 //Platform information initialized
 CMAKE_PLATFORM_INFO_INITIALIZED:INTERNAL=1
 //noop for ranlib

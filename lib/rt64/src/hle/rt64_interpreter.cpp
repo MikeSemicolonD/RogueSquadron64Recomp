@@ -260,6 +260,8 @@ namespace RT64 {
         size_t loopIters = 0;
         static uint64_t opFreq[256] = {0};
         static uint64_t opFreqDumpThreshold = 100000;
+        static uint64_t totalIters = 0;
+        static uint64_t totalDumpThreshold = 50000;
         while (dl != nullptr) {
             // Safety bound: any single task running > 5M commands almost certainly
             // means the interpreter walked off a chunk's expected terminator.
@@ -278,9 +280,45 @@ namespace RT64 {
                 }
                 break;
             }
+
+            // RDRAM bounds: if dl walks past 8 MB (the expansion-pak limit), the
+            // interpreter has marched off the end of any valid Factor5 chunk and
+            // is reading zero/garbage. Without this check, the loop chews through
+            // up to 5M iterations of op_00 before the safety-exit fires, eating
+            // the entire frame budget. Bail immediately on first out-of-range dl.
+            {
+                uint32_t curOff = dlStartAdddress + uint32_t((uintptr_t)dl - (uintptr_t)dlStart);
+                if (curOff >= 0x00800000) {
+                    static int n = 0;
+                    if (++n <= 10) {
+                        fprintf(stderr, "[trace] DL rdram-exit #%d (loopIters=%zu, dlStart=0x%08X, cur=0x%08X)\n",
+                            n, loopIters, dlStartAdddress, curOff);
+                        fflush(stderr);
+                    }
+                    break;
+                }
+            }
             opCode = (dl->w0 >> 24);
             loopIters++;
             opFreq[opCode]++;
+            totalIters++;
+            if (totalIters >= totalDumpThreshold) {
+                fprintf(stderr, "[opfreq-cumul] @ %llu cumul cmds:", (unsigned long long)totalIters);
+                // Print ALL nonzero opcodes sorted by count.
+                int idxs[256];
+                for (int i = 0; i < 256; i++) idxs[i] = i;
+                for (int i = 0; i < 256; i++) {
+                    int best = i;
+                    for (int j = i + 1; j < 256; j++) {
+                        if (opFreq[idxs[j]] > opFreq[idxs[best]]) best = j;
+                    }
+                    int tmp = idxs[i]; idxs[i] = idxs[best]; idxs[best] = tmp;
+                    if (opFreq[idxs[i]] == 0) break;
+                    fprintf(stderr, " 0x%02X=%llu", idxs[i], (unsigned long long)opFreq[idxs[i]]);
+                }
+                fprintf(stderr, "\n"); fflush(stderr);
+                totalDumpThreshold *= 4;
+            }
             if (loopIters == opFreqDumpThreshold) {
                 fprintf(stderr, "[trace] opFreq dump @ iter=%zu:", loopIters);
                 for (int i = 0; i < 256; i++) {
