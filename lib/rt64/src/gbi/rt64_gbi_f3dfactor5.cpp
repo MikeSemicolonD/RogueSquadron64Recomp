@@ -9,6 +9,7 @@
 
 #include "rt64_gbi_f3dex.h"
 #include "rt64_gbi_f3d.h"
+#include "rt64_gbi_rdp.h"
 
 #include "hle/rt64_rsp.h"
 
@@ -101,6 +102,16 @@ namespace RT64 {
             gbi->map[0x02] = &op02_unknown;
             gbi->map[0xB5] = &op_B5_endDl;
             gbi->map[0xFF] = &setColorImage_filtered;
+
+            // Factor5 emits TEXRECTs in LLE format (16 bytes: TEXRECT + one
+            // RDPHALF follow-up packing uls/ult/dsdx/dtdy together). The default
+            // F3DEX HLE texrect handler reads 24 bytes (TEXRECT + RDPHALF_1 +
+            // RDPHALF_2), which consumes the *next* TEXRECT as garbage follow-up
+            // data. Force the LLE variants so per-glyph texture coords decode
+            // correctly — without this, all text TEXRECTs render as solid white
+            // blocks because dsdx/dtdy are read from the wrong word.
+            gbi->map[0xE4] = &GBI_RDP::texrectLLE;
+            gbi->map[0xE5] = &GBI_RDP::texrectFlipLLE;
         }
     }
 };

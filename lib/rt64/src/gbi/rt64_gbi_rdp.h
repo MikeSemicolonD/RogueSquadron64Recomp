@@ -31,6 +31,8 @@ namespace RT64 {
         void setKeyGB(State *state, DisplayList **dl);
         void texrect(State * state, DisplayList * *dl);
         void texrectFlip(State * state, DisplayList * *dl);
+        void texrectLLE(State * state, DisplayList * *dl);
+        void texrectFlipLLE(State * state, DisplayList * *dl);
         void fillRect(State * state, DisplayList * *dl);
         void loadSync(State *state, DisplayList **dl);
         void pipeSync(State *state, DisplayList **dl);
