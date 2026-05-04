@@ -15,6 +15,8 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <DbgHelp.h>
+#pragma comment(lib, "Dbghelp.lib")
 #include <crtdbg.h>
 #include "SDL.h"
 #include "SDL_syswm.h"
@@ -52,6 +54,13 @@ gpr get_entrypoint_address();
 // RSP microcode dispatch
 // ---------------------------------------------------------------------------
 extern RspUcodeFunc aspMain;
+extern RspExitReason factor5_ucode(uint8_t* rdram, uint32_t ucode_addr);
+extern RspExitReason factor5_boot (uint8_t* rdram, uint32_t ucode_addr);
+extern uint8_t dmem[];
+
+// Cached for the next ucode invocation. get_rsp_microcode is called with the
+// OSTask immediately before the ucode runs on the same thread.
+static thread_local uint32_t s_pending_task_data_ptr = 0;
 
 // Rogue Squadron uses Factor5's MusyX audio ucode, NOT stock aspMain. Running
 // aspMain on MusyX-formatted task data produces garbage or hangs the audio
@@ -68,8 +77,199 @@ static RspExitReason musyx_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
     return RspExitReason::Broke;
 }
 
+// Factor5 GFX ucode — recompiled to C by RSPRecomp. Replaces RT64's HLE GBI
+// interpreter for graphics tasks. RDP commands the ucode emits via DPC_START/
+// DPC_END writes go through src/rsp/dpc_bridge.cpp into RT64.
+//
+// The original Factor5 boot ucode (a separate ~0xD0-byte blob at RDRAM
+// 0x800825D0) DMAs the data section to DMEM and stages task->t.data_ptr in
+// DMEM[0x654] for the main ucode to pick up via `lw $17, 0x654($8)`. We don't
+// recompile the boot, so we write that location manually here.
+static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
+    static int n = 0;
+    ++n;
+
+    uint32_t dl_ptr = s_pending_task_data_ptr;
+
+    if (n <= 5 || (n % 200) == 0) {
+        // Read DMEM[0x654] BEFORE & AFTER boot to see what the boot DMA put
+        // there (this is what factor5_ucode reads as $17). DMEM offsets follow
+        // the BE/XOR-3 layout — read four bytes from 0x654..0x657.
+        auto read_be32_dmem = [](uint32_t off) -> uint32_t {
+            uint32_t v = 0;
+            for (int i = 0; i < 4; ++i) v |= ((uint32_t)dmem[(off + i) ^ 3]) << (24 - 8*i);
+            return v;
+        };
+        uint32_t before = read_be32_dmem(0x654);
+        fprintf(stderr, "[RSP] factor5 #%d (ucode=0x%08X data_ptr=0x%08X dmem[0x654]_before_boot=0x%08X)\n",
+                n, ucode_addr, dl_ptr, before);
+        fflush(stderr);
+    }
+    // Run the boot ucode first to set up registers + DMA the data section.
+    // Boot exits via UnhandledJumpTarget on its `jr $7=0x1080` (jumping into
+    // the main ucode it just DMA'd to IMEM 0x80) — that's expected, since the
+    // main ucode is our separately-recompiled C function and we'll call it
+    // next. Anything else from the boot is a real failure.
+    RspExitReason boot_r = factor5_boot(rdram, ucode_addr);
+    if (boot_r != RspExitReason::UnhandledJumpTarget && boot_r != RspExitReason::Broke) {
+        fprintf(stderr, "[RSP] factor5_boot returned unexpected %d, abandoning task\n", (int)boot_r);
+        fflush(stderr);
+        return RspExitReason::Broke;
+    }
+
+    // Emulate L_112C's DL fetch by hand: in the original ucode, L_112C is
+    // called from inside the L_1010 dispatch loop to DMA the next 0x110 bytes
+    // of DL from OSTask.data_ptr → DMEM[0x170]. On first task it has not yet
+    // been called, so DMEM has no real DL and the dispatcher would loop on
+    // garbage. We do that DMA up-front here, then poke DMEM[0x654] = 0x178 so
+    // the recompile's first `lw $17, 0x654` lands at the start of real
+    // commands (DMA target was 0x170; first 8 bytes are header so r17=0x178).
+    // dl_ptr is task->t.data_ptr (RDRAM addr like 0x80720108).
+    auto poke_be32 = [](uint32_t off, uint32_t val) {
+        for (int i = 0; i < 4; ++i) {
+            dmem[(off + i) ^ 3] = (uint8_t)(val >> (24 - 8*i));
+        }
+    };
+    if (dl_ptr) {
+        // PAK-SCREEN CAPTURE: log every UNIQUE dl_ptr we see, for the first
+        // ~30 distinct values. This finds different DLs not in the first 4
+        // tasks (e.g., 3D model rendering may use a different DL).
+        {
+            static uint32_t seen[64] = {0};
+            static int seen_n = 0;
+            bool is_new = true;
+            for (int k = 0; k < seen_n; k++) {
+                if (seen[k] == dl_ptr) { is_new = false; break; }
+            }
+            if (is_new && seen_n < 64) {
+                seen[seen_n++] = dl_ptr;
+                fprintf(stderr, "[capture] NEW dl_ptr #%d = 0x%08X (task #%d)\n",
+                    seen_n, dl_ptr, n);
+                fflush(stderr);
+            }
+        }
+        // One-shot dump of the triangle-emit sub-DL at 0x80741F78 the moment
+        // we first see a task that references it. Read raw RDRAM directly.
+        {
+            static bool dumped_tri_subdl = false;
+            if (!dumped_tri_subdl) {
+                uint32_t target = 0x80741F78;
+                FILE* fp = fopen("pak_tri_subdl_80741F78.bin", "wb");
+                if (fp) {
+                    uint32_t base = target & 0x00FFFFFF;
+                    uint8_t buf[0x200];
+                    for (uint32_t i = 0; i < 0x200; ++i) {
+                        int64_t mips = (int64_t)(int32_t)(base + i + 0x80000000);
+                        buf[i] = MEM_B(0, mips);
+                    }
+                    fwrite(buf, 1, 0x200, fp);
+                    fclose(fp);
+                    dumped_tri_subdl = true;
+                }
+            }
+        }
+        // Dump first 0x110 bytes of EACH distinct dl_ptr (first 30 distinct).
+        {
+            static uint32_t dumped[64] = {0};
+            static int dumped_n = 0;
+            bool already_dumped = false;
+            for (int k = 0; k < dumped_n; k++) {
+                if (dumped[k] == dl_ptr) { already_dumped = true; break; }
+            }
+            if (!already_dumped && dumped_n < 30) {
+                dumped[dumped_n++] = dl_ptr;
+                char fname[64];
+                snprintf(fname, sizeof(fname), "pak_dl_%08X.bin", dl_ptr);
+                FILE* fp = fopen(fname, "wb");
+                if (fp) {
+                    uint32_t base = dl_ptr & 0x00FFFFFF;
+                    uint8_t buf[0x110];
+                    for (uint32_t i = 0; i < 0x110; ++i) {
+                        int64_t mips_addr = (int64_t)(int32_t)(base + i + 0x80000000);
+                        buf[i] = MEM_B(0, mips_addr);
+                    }
+                    fwrite(buf, 1, 0x110, fp);
+                    fclose(fp);
+                }
+            }
+        }
+        if (n <= 4) {
+            char fname[64];
+            snprintf(fname, sizeof(fname), "pak_input_dl_%d.bin", n);
+            FILE* fp = fopen(fname, "wb");
+            if (fp) {
+                uint32_t base = dl_ptr & 0x00FFFFFF;
+                uint8_t buf[0x110];
+                for (uint32_t i = 0; i < 0x110; ++i) {
+                    int64_t mips_addr = (int64_t)(int32_t)(base + i + 0x80000000);
+                    buf[i] = MEM_B(0, mips_addr);
+                }
+                fwrite(buf, 1, 0x110, fp);
+                fclose(fp);
+                fprintf(stderr, "[capture] dumped pak_input_dl_%d.bin (dl_ptr=0x%08X)\n", n, dl_ptr);
+                fflush(stderr);
+            }
+            // Also dump the first sub-DL referenced from this DL — the top-level
+            // DL is just a dispatcher; the actual rendering content lives in the
+            // sub-DLs at the G_DL targets.
+            // Walk the input DL to find the first G_DL (op=0x06 in top byte).
+            uint32_t base = dl_ptr & 0x00FFFFFF;
+            for (uint32_t off = 0; off < 0x40; off += 8) {
+                int64_t mips0 = (int64_t)(int32_t)(base + off + 0x80000000);
+                uint32_t w0 = ((uint32_t)MEM_B(0, mips0) << 24)
+                            | ((uint32_t)MEM_B(0, mips0+1) << 16)
+                            | ((uint32_t)MEM_B(0, mips0+2) << 8)
+                            |  (uint32_t)MEM_B(0, mips0+3);
+                uint32_t w1 = ((uint32_t)MEM_B(0, mips0+4) << 24)
+                            | ((uint32_t)MEM_B(0, mips0+5) << 16)
+                            | ((uint32_t)MEM_B(0, mips0+6) << 8)
+                            |  (uint32_t)MEM_B(0, mips0+7);
+                if ((w0 >> 24) == 0x06 && w1 != 0) {
+                    char sname[64];
+                    snprintf(sname, sizeof(sname), "pak_subdl_%d_at_%08X.bin", n, w1);
+                    FILE* sfp = fopen(sname, "wb");
+                    if (sfp) {
+                        uint32_t sbase = w1 & 0x00FFFFFF;
+                        constexpr uint32_t kDumpLen = 0x4000;  // 16KB — should cover all chunks
+                        uint8_t sbuf[kDumpLen];
+                        for (uint32_t i = 0; i < kDumpLen; ++i) {
+                            int64_t ma = (int64_t)(int32_t)(sbase + i + 0x80000000);
+                            sbuf[i] = MEM_B(0, ma);
+                        }
+                        fwrite(sbuf, 1, kDumpLen, sfp);
+                        fclose(sfp);
+                        fprintf(stderr, "[capture] dumped %s\n", sname);
+                        fflush(stderr);
+                    }
+                    // continue scanning — capture both G_DLs (setup + chunk array)
+                }
+            }
+        }
+        // Use librecomp's helper for correct byte-swizzle.
+        dma_rdram_to_dmem(rdram, /*dmem*/0x170, /*dram*/dl_ptr & 0x00FFFFFF, /*rd_len*/0x10F);
+        // Save data_ptr at DMEM[0x101C] (= 0xFC0+0x5C, where r18=0xFC0 means
+        // L_112C's `sw $r2, 0x5C($18)` writes after future re-DMAs).
+        poke_be32(0x101C, dl_ptr);
+        // Set DL pointer for the dispatcher: r17 = 0x178 (skip 8-byte header).
+        poke_be32(0x654, 0x178);
+    } else {
+        poke_be32(0x654, 0x270);  // fallback if no data_ptr cached yet
+    }
+    RspExitReason r = factor5_ucode(rdram, ucode_addr);
+    if (n <= 5 || (n % 200) == 0) {
+        fprintf(stderr, "[RSP] factor5_ucode #%d returned %d (boot=%d)\n", n, (int)r, (int)boot_r);
+        fflush(stderr);
+    }
+    return r;
+}
+
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     switch (task->t.type) {
+    case M_GFXTASK:
+        // Cache data_ptr for factor5_gfx_runner — the recompile reads $17 from
+        // DMEM[0x654] which the boot ucode normally pre-populates.
+        s_pending_task_data_ptr = (uint32_t)task->t.data_ptr;
+        return &factor5_gfx_runner;
     case M_AUDTASK:
         return &musyx_stub;
     default:
@@ -279,6 +479,48 @@ std::vector<recomp::GameEntry> supported_games = {
 // ---------------------------------------------------------------------------
 // main()
 // ---------------------------------------------------------------------------
+// One-shot init of DbgHelp symbol resolution — done lazily on first crash.
+static void ensure_dbghelp_init() {
+    static bool init = false;
+    if (init) return;
+    init = true;
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+    SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+}
+
+// Print stack frames with symbol resolution. Each frame becomes:
+//   [ N] 0xADDR  module!function+0xOFF  (file:line)
+static void print_stack_with_symbols(void** frames, USHORT count) {
+    ensure_dbghelp_init();
+    HANDLE proc = GetCurrentProcess();
+    HMODULE exe_base = GetModuleHandleW(nullptr);
+    constexpr DWORD kNameMax = 512;
+    char buf[sizeof(SYMBOL_INFO) + kNameMax];
+    SYMBOL_INFO* sym = reinterpret_cast<SYMBOL_INFO*>(buf);
+    for (USHORT i = 0; i < count; i++) {
+        DWORD64 addr = (DWORD64)(uintptr_t)frames[i];
+        uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)exe_base;
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen = kNameMax - 1;
+        DWORD64 disp = 0;
+        const char* name = "?";
+        if (SymFromAddr(proc, addr, &disp, sym)) {
+            name = sym->Name;
+        }
+        IMAGEHLP_LINE64 line{}; line.SizeOfStruct = sizeof(line);
+        DWORD lineDisp = 0;
+        if (SymGetLineFromAddr64(proc, addr, &lineDisp, &line)) {
+            fprintf(stderr, "  [%2u] 0x%llX rva 0x%llX  %s+0x%llX  (%s:%lu)\n",
+                (unsigned)i, (unsigned long long)addr, (unsigned long long)rva,
+                name, (unsigned long long)disp, line.FileName, (unsigned long)line.LineNumber);
+        } else {
+            fprintf(stderr, "  [%2u] 0x%llX rva 0x%llX  %s+0x%llX\n",
+                (unsigned)i, (unsigned long long)addr, (unsigned long long)rva,
+                name, (unsigned long long)disp);
+        }
+    }
+}
+
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
     uintptr_t addr = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
@@ -288,17 +530,10 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
             ep->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
             (unsigned long long)ep->ExceptionRecord->ExceptionInformation[1]);
     }
-    // Print a raw stack trace (return addresses only — no symbol resolution)
     void* frames[32];
     USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
     fprintf(stderr, "[CRASH] Stack trace (%u frames):\n", (unsigned)count);
-    HMODULE exe_base = GetModuleHandleW(nullptr);
-    for (USHORT i = 0; i < count; i++) {
-        uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)exe_base;
-        fprintf(stderr, "  [%2u] 0x%llX  (rva 0x%llX)\n", (unsigned)i,
-            (unsigned long long)(uintptr_t)frames[i],
-            (unsigned long long)rva);
-    }
+    print_stack_with_symbols(frames, count);
     fflush(stderr);
     return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -312,13 +547,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "[ABORT] caught SIGABRT, dumping stack:\n");
         void* frames[32];
         USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
-        HMODULE base = GetModuleHandleW(nullptr);
-        for (USHORT i = 0; i < count; i++) {
-            uintptr_t rva = (uintptr_t)frames[i] - (uintptr_t)base;
-            fprintf(stderr, "  [%2u] 0x%llX  rva 0x%llX\n", (unsigned)i,
-                (unsigned long long)(uintptr_t)frames[i],
-                (unsigned long long)rva);
-        }
+        print_stack_with_symbols(frames, count);
         fflush(stderr);
         _Exit(3);
     });

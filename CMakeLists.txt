@@ -72,11 +72,23 @@ file(GLOB RECOMP_CXX_SOURCES ${RECOMP_FUNCS_DIR}/*.cpp)
 target_sources(RecompiledFuncs PRIVATE ${RECOMP_C_SOURCES} ${RECOMP_CXX_SOURCES})
 
 # ---- Main executable ----
+# Factor5 GFX ucode — recompiled to C by RSPRecomp from factor5_rsp.toml.
+# Regen: build/Debug/RSPRecomp.exe factor5_rsp.toml
+# librecomp headers are C++ so the file must be compiled as C++.
+set(FACTOR5_UCODE_C ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_ucode_recompiled.c)
+set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
+set_source_files_properties(${FACTOR5_UCODE_C} ${FACTOR5_BOOT_C} PROPERTIES
+    LANGUAGE CXX
+    COMPILE_OPTIONS "-msse4.1")
+
 add_executable(RogueSquadron64Recomp
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
     ${CMAKE_SOURCE_DIR}/src/main/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/rsp/aspMain.cpp
+    ${CMAKE_SOURCE_DIR}/src/rsp/dpc_bridge.cpp
+    ${FACTOR5_BOOT_C}
+    ${FACTOR5_UCODE_C}
     $<$<PLATFORM_ID:Windows>:${CMAKE_SOURCE_DIR}/src/main/app.rc>
 )
 

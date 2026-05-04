@@ -1,4 +1,5 @@
 #include <memory>
+#include <atomic>
 #include <cstdio>
 
 #define HLSL_CPU
@@ -6,6 +7,11 @@
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
+
+// Shared Application accessor — set on construction, queried by the LLE DPC
+// bridge in src/rsp/dpc_bridge.cpp to forward Factor5 RDP commands.
+static std::atomic<RT64::Application*> g_rt64_app{nullptr};
+extern "C" RT64::Application* rs64_get_rt64_app() { return g_rt64_app.load(); }
 
 // RDP/RSP register state owned by this file
 static uint8_t DMEM[0x1000];
@@ -105,6 +111,7 @@ public:
             fprintf(stderr, "[RT64] setup failed: %d\n", (int)setup_result);
             app = nullptr;
         }
+        g_rt64_app.store(app.get());
     }
 
     bool valid() override {
@@ -135,12 +142,19 @@ public:
         }
     }
 
+    void send_rdp_range(uint32_t lo_phys, uint32_t hi_phys) override {
+        if (app && hi_phys > lo_phys) {
+            app->processDisplayLists(app->core.RDRAM, lo_phys, hi_phys, /*isHLE*/ false);
+        }
+    }
+
     void update_screen() override {
         if (app) app->updateScreen();
     }
 
     void shutdown() override {
         if (app) {
+            g_rt64_app.store(nullptr);
             app->end();
             app.reset();
         }

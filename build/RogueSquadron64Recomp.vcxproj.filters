@@ -13,6 +13,15 @@
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\rsp\aspMain.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\rsp\dpc_bridge.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\factor5_ucode\factor5_boot_recompiled.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\factor5_ucode\factor5_ucode_recompiled.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="E:\Projects\RogueSquadron64Recomp\CMakeLists.txt" />

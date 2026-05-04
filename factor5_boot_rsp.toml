@@ -1,0 +1,11 @@
+# Recompile config for the Factor5 RSP boot ucode (separate from the main
+# graphics ucode). At runtime the boot lives at RDRAM 0x800825D0, size 0xD0.
+# Extracted from rdram_frame.bin into factor5_boot_text.bin (BE bytes).
+# When invoked, the boot DMAs OSTask.ucode_data → DMEM 0 and OSTask.ucode →
+# IMEM 0x80, then jumps to PC 0x1080 (start of main ucode at IMEM offset 0x80).
+rom_file_path = "factor5_boot_text.bin"
+text_offset = 0x0
+text_size = 0xD0
+text_address = 0x04001000   # IMEM main-CPU map
+output_file_path = "build/factor5_ucode/factor5_boot_recompiled.c"
+output_function_name = "factor5_boot"

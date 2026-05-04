@@ -375,6 +375,27 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\rt64_render_context.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\register_overlays.cpp" />
     <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\rsp\aspMain.cpp" />
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\src\rsp\dpc_bridge.cpp" />
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\factor5_ucode\factor5_boot_recompiled.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">CompileAsCpp</CompileAs>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">CompileAsCpp</CompileAs>
+    </ClCompile>
+    <ClCompile Include="E:\Projects\RogueSquadron64Recomp\build\factor5_ucode\factor5_ucode_recompiled.c">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">CompileAsCpp</CompileAs>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='Release|x64'">CompileAsCpp</CompileAs>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='MinSizeRel|x64'">CompileAsCpp</CompileAs>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">%(AdditionalOptions) -msse4.1</AdditionalOptions>
+      <CompileAs Condition="'$(Configuration)|$(Platform)'=='RelWithDebInfo|x64'">CompileAsCpp</CompileAs>
+    </ClCompile>
     <ResourceCompile Include="E:\Projects\RogueSquadron64Recomp\src\main\app.rc" />
   </ItemGroup>
   <ItemGroup>

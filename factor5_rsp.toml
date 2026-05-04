@@ -1,0 +1,16 @@
+rom_file_path = "rogue_squadron.z64"
+text_offset = 0x025610
+text_size = 0xF80  # main ucode occupies IMEM 0x80..0xFFF (boot lives at 0..0x7F)
+text_address = 0x04001080  # PC where the main ucode actually executes (boot DMAs it to IMEM 0x80)
+output_file_path = "build/factor5_ucode/factor5_ucode_recompiled.c"
+output_function_name = "factor5_ucode"
+
+# Dispatch-table targets — RSPRecomp can't see these because the ucode loads
+# the addresses from data via lhu and jumps via jr. Extracted from the data
+# section's tables at DMEM[0x64] (high opcodes), DMEM[0x76] (init dispatch),
+# and DMEM[0xD6] (low opcodes), filtered to IMEM range [0x1000, 0x2000).
+extra_indirect_branch_targets = [
+    0x10D8, 0x10E0, 0x12A0, 0x12B8, 0x12C4, 0x12E4, 0x12EC, 0x12FC,
+    0x1304, 0x1350, 0x135C, 0x1370, 0x1390, 0x146C, 0x1484, 0x14D4,
+    0x14F0, 0x1504, 0x15A4, 0x15AC, 0x15B4, 0x1DB0
+]
