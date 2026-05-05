@@ -178,7 +178,7 @@ requiring a custom HLE GBI profile.
 | Input | Working (SDL2 gamepad — game shows "NO CONTROLLER" until one is plugged in) |
 | Save data | EEPROM 4K via librecomp |
 | Audio | Stubbed — silent (Factor 5's MusyX ucode is not yet recompiled) |
-| Memory pak | Stubbed — returns no-pak |
+| Memory pak | Stubbed — returns no-pak (Yet the game seems to detect one) |
 
 ---
 
