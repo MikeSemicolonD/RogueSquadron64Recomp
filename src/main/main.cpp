@@ -173,6 +173,9 @@ static size_t get_frames_remaining() {
     return queued / 4;
 }
 
+// Forward declaration so the F12 hotkey in poll_input() can write a dump.
+static void write_minidump_safe(EXCEPTION_POINTERS* ep);
+
 // ---------------------------------------------------------------------------
 // Input (SDL2 gamepad — one controller)
 // ---------------------------------------------------------------------------
@@ -195,6 +198,11 @@ static void poll_input() {
                 SDL_GameControllerClose(controller);
                 controller = nullptr;
             }
+        }
+        if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F12) {
+            fprintf(stderr, "[F12] manual minidump requested\n");
+            fflush(stderr);
+            write_minidump_safe(nullptr);
         }
     }
 }
@@ -376,6 +384,41 @@ static void print_stack_with_symbols(void** frames, USHORT count) {
     }
 }
 
+// Full-memory minidump so we can inspect rdram contents post-mortem.
+// ep may be null (SIGABRT path) — we still capture process+thread state.
+static void write_minidump_safe(EXCEPTION_POINTERS* ep) {
+    char path[MAX_PATH];
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    snprintf(path, sizeof(path),
+        "crash_%04u%02u%02u_%02u%02u%02u.dmp",
+        st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+    HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, NULL,
+        CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        fprintf(stderr, "[CRASH] CreateFile(%s) failed err=%lu\n",
+            path, GetLastError());
+        return;
+    }
+    MINIDUMP_EXCEPTION_INFORMATION mei{};
+    PMINIDUMP_EXCEPTION_INFORMATION pmei = nullptr;
+    if (ep) {
+        mei.ThreadId = GetCurrentThreadId();
+        mei.ExceptionPointers = ep;
+        mei.ClientPointers = FALSE;
+        pmei = &mei;
+    }
+    BOOL ok = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+        hFile, MiniDumpWithFullMemory, pmei, NULL, NULL);
+    CloseHandle(hFile);
+    if (ok) {
+        fprintf(stderr, "[CRASH] Minidump written: %s\n", path);
+    } else {
+        fprintf(stderr, "[CRASH] MiniDumpWriteDump failed err=%lu\n", GetLastError());
+    }
+    fflush(stderr);
+}
+
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
     DWORD code = ep->ExceptionRecord->ExceptionCode;
     uintptr_t addr = (uintptr_t)ep->ExceptionRecord->ExceptionAddress;
@@ -385,6 +428,7 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
             ep->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
             (unsigned long long)ep->ExceptionRecord->ExceptionInformation[1]);
     }
+    write_minidump_safe(ep);
     void* frames[32];
     USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
     fprintf(stderr, "[CRASH] Stack trace (%u frames):\n", (unsigned)count);
@@ -403,7 +447,9 @@ int main(int argc, char* argv[]) {
         void* frames[32];
         USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
         print_stack_with_symbols(frames, count);
-        fflush(stderr);
+        // No EXCEPTION_POINTERS on the abort path — passing nullptr makes
+        // VS open the dump without the "unhandled exception" dialog.
+        write_minidump_safe(nullptr);
         _Exit(3);
     });
     // Route CRT debug asserts to stderr instead of the blocking dialog.
