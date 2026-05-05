@@ -1,6 +1,0 @@
-# CMake generation dependency list for this directory.
-C:/Program Files/CMake/share/cmake-3.29/Modules/CMakeParseArguments.cmake
-C:/Program Files/CMake/share/cmake-3.29/Modules/CheckCXXCompilerFlag.cmake
-C:/Program Files/CMake/share/cmake-3.29/Modules/GNUInstallDirs.cmake
-E:/Projects/RogueSquadron64Recomp/lib/N64ModernRuntime/N64Recomp/lib/fmt/CMakeLists.txt
-E:/Projects/RogueSquadron64Recomp/lib/N64ModernRuntime/N64Recomp/lib/fmt/support/cmake/JoinPaths.cmake
