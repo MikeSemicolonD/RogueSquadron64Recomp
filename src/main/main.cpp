@@ -4,6 +4,8 @@
 #include <vector>
 #include <cinttypes>
 #include <filesystem>
+#include <thread>
+#include <chrono>
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
@@ -175,6 +177,22 @@ static size_t get_frames_remaining() {
 
 // Forward declaration so the F12 hotkey in poll_input() can write a dump.
 static void write_minidump_safe(EXCEPTION_POINTERS* ep);
+
+// Periodic mqdiag watchdog: dumps message-queue stats every 3s to
+// mqdiag_watchdog.txt. Lets us see queue progress mid-hang even when
+// the SDL message pump is starved (rules out trying to use F12).
+extern "C" void mqdiag_dump(const char *path);
+static void start_mqdiag_watchdog() {
+    static std::thread watchdog{[]{
+        for (int n = 0; ; ++n) {
+            std::this_thread::sleep_for(std::chrono::seconds(3));
+            char path[64];
+            std::snprintf(path, sizeof(path), "mqdiag_%03d.txt", n);
+            mqdiag_dump(path);
+        }
+    }};
+    watchdog.detach();
+}
 
 // ---------------------------------------------------------------------------
 // Input (SDL2 gamepad — one controller)
@@ -439,6 +457,8 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
 
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
+
+    start_mqdiag_watchdog();
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);

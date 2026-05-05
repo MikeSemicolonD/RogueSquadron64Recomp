@@ -9,7 +9,17 @@
 
 A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
 
-> **Work in progress.** The boot sequence currently advances through the LucasArts / Factor 5 title to the N64 logo screen. Beyond that, an FP-NaN regression in recompiled CPU code halts the boot before the explosion / main-menu sequence. Audio is stubbed (silent). See [Status](#status) for details.
+> **Work in progress.** Boot reaches the N64 logo screen and stays there.
+> On real hardware the N64 logo is followed by an explosion, a camera pan
+> with an X-wing and a TIE fighter revealing the LucasArts logo imprinted
+> against terrain, and finally the X-wing flying in to display the
+> Factor 5 logo in 3D — none of that post-logo cinematic renders here.
+> The recompile actually progresses internally past the logo (the menu /
+> credits state machine dispatches and emits text-render commands), but
+> the game's per-frame state driver isn't getting onto the dispatch
+> table, so its framebuffer never wins the swap arbitration and the
+> screen visibly stays on the N64 logo. Audio is stubbed (silent).
+> See [Status](#status) for details.
 >
 > **Heads-up on AI-assisted development.** Most of the debugging, architectural
 > decisions, and code in this repository — including the Factor 5 LLE recompile
@@ -164,7 +174,7 @@ requiring a custom HLE GBI profile.
 | System | Status |
 |---|---|
 | Video / RDP | Working — RT64 driven by Factor 5 LLE recompile + DPC bridge |
-| Boot sequence | Title screen + N64 logo render; halts on FP-NaN in recompiled CPU code before the post-logo cutscene |
+| Boot sequence | Reaches the N64 logo and visibly halts there. None of the post-logo cinematic plays — on real hardware that's an explosion, a camera pan with X-wing + TIE fighter showing the LucasArts logo on terrain, then the X-wing flying in to display the Factor 5 3D logo. Internally the menu/credits state machine dispatches (state=9, glyph commands emitted) but its framebuffer never wins the swap-priority arbitration, so the displayed image stays on the N64 logo |
 | Input | Working (SDL2 gamepad — game shows "NO CONTROLLER" until one is plugged in) |
 | Save data | EEPROM 4K via librecomp |
 | Audio | Stubbed — silent (Factor 5's MusyX ucode is not yet recompiled) |
@@ -179,6 +189,25 @@ If you want to investigate a crash or behavior bug, see
 for how to attach Visual Studio to the recompiled output, set conditional
 breakpoints inside `funcs_*.c`, walk back through a bad register value,
 and tell a recompile bug apart from a game-logic bug.
+
+For hangs or post-mortem analysis there's a small helper toolkit under
+[tools/](tools/):
+
+- `tools/dump-game.ps1` — captures a full-memory minidump of a running
+  `RogueSquadron64Recomp.exe` even when the GUI is unresponsive. Uses
+  the kernel `MiniDumpWriteDump` API so it doesn't depend on the
+  target's SDL message pump.
+- `tools/inspect-dump.py` — pip `minidump` reader. Lists every thread
+  in the dump and tags it `in_exe` (running our recompile),
+  `kernel_wait` (parked in ntdll), or other-module. The two or three
+  `in_exe` threads are usually the only ones worth opening in VS.
+
+The runtime also writes `mqdiag_NNN.txt` snapshots every 3 seconds via
+a watchdog thread (`start_mqdiag_watchdog` in [src/main/main.cpp](src/main/main.cpp)).
+That file shows per-message-queue send/recv/external/delivered/lost
+counts — useful for finding queues with backed-up events or threads
+stuck on a missing message. F12 inside the game window writes an
+ad-hoc minidump (when the message pump is alive).
 
 ---
 

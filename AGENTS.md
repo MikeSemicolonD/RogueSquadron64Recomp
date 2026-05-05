@@ -39,16 +39,44 @@ ROM lives at `build/Debug/rogue_squadron.z64` (USA v1.0, xxHash3-64 = `0x6B66A44
 
 ## Diagnostic artifacts
 
-Files written to `build/Debug/` during a run:
+Files written to the working directory during a run:
 
-- `mqdiag_frame.txt` — per-message-queue counters (sends/recvs/external/delivered/blocked/lost/requeued + per-source-type breakdown)
-- `mqfocus.txt` — focused queue events for `0x80114388, 0x8011A408, 0x8011A7E8`
-- `dlhist_frame.txt` — display-list command history through frame 38, ring-buffered
-- `dlhist_op02.txt` — DL state at first Factor5 op_02 dispatch
-- `rdram_frame.bin` — 8 MB RDRAM dump
-- `rdram_op02.bin` — RDRAM dump at first op_02
+- `mqdiag_NNN.txt` — per-queue counters dumped every 3s by the watchdog
+  thread (`start_mqdiag_watchdog` in [src/main/main.cpp](src/main/main.cpp)).
+  Each file is a snapshot at that point in time; diff two snapshots to
+  see which queues are still moving.
+- `mqdiag_frame.txt` — single-frame snapshot from
+  [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter.cpp) (HLE path).
+- `mqfocus.txt` — focused queue events for `0x80114388, 0x8011A408, 0x8011A7E8`.
+- `dlhist_frame.txt` / `dlhist_op02.txt` — DL command history.
+- `rdram_frame.bin` / `rdram_op02.bin` — 8 MB RDRAM dumps.
+- `crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump written by either
+  the SEH crash handler, the SIGABRT/abort handler, the F12 hotkey, or
+  external `tools/dump-game.ps1`. Captures all of RDRAM so post-mortem
+  inspection of MIPS-side data structures works.
 
-These dump unconditionally during normal runs. They're useful for forensic analysis after a crash.
+## Post-mortem dump tooling (under `tools/`)
+
+When the game freezes or crashes, the fastest route is:
+
+1. **For a crash**: a `crash_*.dmp` is written automatically by the
+   handlers in `src/main/main.cpp`. Open it in VS (File → Open →
+   File → .dmp → Debug with Native Only).
+2. **For a hang**: from another shell, run
+   `pwsh tools/dump-game.ps1` to capture the running process even
+   when its window is "Not Responding". Don't try F12 — if the
+   message pump is starved, F12 won't fire.
+3. **Triage threads**: `python tools/inspect-dump.py` lists every
+   thread in the most recent dump and tags ones running our exe
+   code as `in_exe`. The 2–4 `in_exe` threads are the only ones
+   worth opening in VS Threads window — the rest are runtime workers
+   parked in ntdll waits.
+
+Note: the Windows debugger CLI (`cdb.exe`) is currently broken on
+this machine (fails with `STATUS_DLL_INIT_FAILED`). Don't waste time
+trying to drive it from PowerShell — use VS interactively, or read
+the dump with the `minidump` Python package (already covered by
+`inspect-dump.py`).
 
 ## Architectural quirks worth knowing
 
