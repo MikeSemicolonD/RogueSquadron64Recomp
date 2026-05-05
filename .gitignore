@@ -98,3 +98,5 @@ factor5_ucode_disasm.txt
 mqfocus.txt
 *.log
 .mcp.json
+logs/
+*.stackdump
