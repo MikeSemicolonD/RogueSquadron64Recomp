@@ -92,3 +92,4 @@ factor5_ucode_disasm.txt
 # Note: factor5_boot_text.bin is a build input (referenced by factor5_boot_rsp.toml)
 # and intentionally NOT ignored.
 mqfocus.txt
+*.log
