@@ -172,6 +172,16 @@ requiring a custom HLE GBI profile.
 
 ---
 
+## Contributing / Debugging
+
+If you want to investigate a crash or behavior bug, see
+[docs/debugging-with-visual-studio.md](docs/debugging-with-visual-studio.md)
+for how to attach Visual Studio to the recompiled output, set conditional
+breakpoints inside `funcs_*.c`, walk back through a bad register value,
+and tell a recompile bug apart from a game-logic bug.
+
+---
+
 ## License
 
 See [LICENSE](LICENSE). This project contains no ROM data and requires a legally-obtained copy of the game.
