@@ -69,11 +69,6 @@ static thread_local uint32_t s_pending_task_data_ptr = 0;
 // the game thinks the task completed, sp_complete() fires, and play continues.
 // Cost: no audio. Trade-off: keeps the rest of the game responsive.
 static RspExitReason musyx_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
-    static int n = 0;
-    if (++n <= 5 || (n % 500) == 0) {
-        fprintf(stderr, "[RSP] musyx_stub invoked #%d (audio task short-circuited)\n", n);
-        fflush(stderr);
-    }
     return RspExitReason::Broke;
 }
 
@@ -86,34 +81,15 @@ static RspExitReason musyx_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
 // DMEM[0x654] for the main ucode to pick up via `lw $17, 0x654($8)`. We don't
 // recompile the boot, so we write that location manually here.
 static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
-    static int n = 0;
-    ++n;
-
     uint32_t dl_ptr = s_pending_task_data_ptr;
 
-    if (n <= 5 || (n % 200) == 0) {
-        // Read DMEM[0x654] BEFORE & AFTER boot to see what the boot DMA put
-        // there (this is what factor5_ucode reads as $17). DMEM offsets follow
-        // the BE/XOR-3 layout — read four bytes from 0x654..0x657.
-        auto read_be32_dmem = [](uint32_t off) -> uint32_t {
-            uint32_t v = 0;
-            for (int i = 0; i < 4; ++i) v |= ((uint32_t)dmem[(off + i) ^ 3]) << (24 - 8*i);
-            return v;
-        };
-        uint32_t before = read_be32_dmem(0x654);
-        fprintf(stderr, "[RSP] factor5 #%d (ucode=0x%08X data_ptr=0x%08X dmem[0x654]_before_boot=0x%08X)\n",
-                n, ucode_addr, dl_ptr, before);
-        fflush(stderr);
-    }
     // Run the boot ucode first to set up registers + DMA the data section.
     // Boot exits via UnhandledJumpTarget on its `jr $7=0x1080` (jumping into
     // the main ucode it just DMA'd to IMEM 0x80) — that's expected, since the
-    // main ucode is our separately-recompiled C function and we'll call it
-    // next. Anything else from the boot is a real failure.
+    // main ucode is our separately-recompiled C function we call next.
     RspExitReason boot_r = factor5_boot(rdram, ucode_addr);
     if (boot_r != RspExitReason::UnhandledJumpTarget && boot_r != RspExitReason::Broke) {
         fprintf(stderr, "[RSP] factor5_boot returned unexpected %d, abandoning task\n", (int)boot_r);
-        fflush(stderr);
         return RspExitReason::Broke;
     }
 
@@ -124,128 +100,12 @@ static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
     // garbage. We do that DMA up-front here, then poke DMEM[0x654] = 0x178 so
     // the recompile's first `lw $17, 0x654` lands at the start of real
     // commands (DMA target was 0x170; first 8 bytes are header so r17=0x178).
-    // dl_ptr is task->t.data_ptr (RDRAM addr like 0x80720108).
     auto poke_be32 = [](uint32_t off, uint32_t val) {
         for (int i = 0; i < 4; ++i) {
             dmem[(off + i) ^ 3] = (uint8_t)(val >> (24 - 8*i));
         }
     };
     if (dl_ptr) {
-        // PAK-SCREEN CAPTURE: log every UNIQUE dl_ptr we see, for the first
-        // ~30 distinct values. This finds different DLs not in the first 4
-        // tasks (e.g., 3D model rendering may use a different DL).
-        {
-            static uint32_t seen[64] = {0};
-            static int seen_n = 0;
-            bool is_new = true;
-            for (int k = 0; k < seen_n; k++) {
-                if (seen[k] == dl_ptr) { is_new = false; break; }
-            }
-            if (is_new && seen_n < 64) {
-                seen[seen_n++] = dl_ptr;
-                fprintf(stderr, "[capture] NEW dl_ptr #%d = 0x%08X (task #%d)\n",
-                    seen_n, dl_ptr, n);
-                fflush(stderr);
-            }
-        }
-        // One-shot dump of the triangle-emit sub-DL at 0x80741F78 the moment
-        // we first see a task that references it. Read raw RDRAM directly.
-        {
-            static bool dumped_tri_subdl = false;
-            if (!dumped_tri_subdl) {
-                uint32_t target = 0x80741F78;
-                FILE* fp = fopen("pak_tri_subdl_80741F78.bin", "wb");
-                if (fp) {
-                    uint32_t base = target & 0x00FFFFFF;
-                    uint8_t buf[0x200];
-                    for (uint32_t i = 0; i < 0x200; ++i) {
-                        int64_t mips = (int64_t)(int32_t)(base + i + 0x80000000);
-                        buf[i] = MEM_B(0, mips);
-                    }
-                    fwrite(buf, 1, 0x200, fp);
-                    fclose(fp);
-                    dumped_tri_subdl = true;
-                }
-            }
-        }
-        // Dump first 0x110 bytes of EACH distinct dl_ptr (first 30 distinct).
-        {
-            static uint32_t dumped[64] = {0};
-            static int dumped_n = 0;
-            bool already_dumped = false;
-            for (int k = 0; k < dumped_n; k++) {
-                if (dumped[k] == dl_ptr) { already_dumped = true; break; }
-            }
-            if (!already_dumped && dumped_n < 30) {
-                dumped[dumped_n++] = dl_ptr;
-                char fname[64];
-                snprintf(fname, sizeof(fname), "pak_dl_%08X.bin", dl_ptr);
-                FILE* fp = fopen(fname, "wb");
-                if (fp) {
-                    uint32_t base = dl_ptr & 0x00FFFFFF;
-                    uint8_t buf[0x110];
-                    for (uint32_t i = 0; i < 0x110; ++i) {
-                        int64_t mips_addr = (int64_t)(int32_t)(base + i + 0x80000000);
-                        buf[i] = MEM_B(0, mips_addr);
-                    }
-                    fwrite(buf, 1, 0x110, fp);
-                    fclose(fp);
-                }
-            }
-        }
-        if (n <= 4) {
-            char fname[64];
-            snprintf(fname, sizeof(fname), "pak_input_dl_%d.bin", n);
-            FILE* fp = fopen(fname, "wb");
-            if (fp) {
-                uint32_t base = dl_ptr & 0x00FFFFFF;
-                uint8_t buf[0x110];
-                for (uint32_t i = 0; i < 0x110; ++i) {
-                    int64_t mips_addr = (int64_t)(int32_t)(base + i + 0x80000000);
-                    buf[i] = MEM_B(0, mips_addr);
-                }
-                fwrite(buf, 1, 0x110, fp);
-                fclose(fp);
-                fprintf(stderr, "[capture] dumped pak_input_dl_%d.bin (dl_ptr=0x%08X)\n", n, dl_ptr);
-                fflush(stderr);
-            }
-            // Also dump the first sub-DL referenced from this DL — the top-level
-            // DL is just a dispatcher; the actual rendering content lives in the
-            // sub-DLs at the G_DL targets.
-            // Walk the input DL to find the first G_DL (op=0x06 in top byte).
-            uint32_t base = dl_ptr & 0x00FFFFFF;
-            for (uint32_t off = 0; off < 0x40; off += 8) {
-                int64_t mips0 = (int64_t)(int32_t)(base + off + 0x80000000);
-                uint32_t w0 = ((uint32_t)MEM_B(0, mips0) << 24)
-                            | ((uint32_t)MEM_B(0, mips0+1) << 16)
-                            | ((uint32_t)MEM_B(0, mips0+2) << 8)
-                            |  (uint32_t)MEM_B(0, mips0+3);
-                uint32_t w1 = ((uint32_t)MEM_B(0, mips0+4) << 24)
-                            | ((uint32_t)MEM_B(0, mips0+5) << 16)
-                            | ((uint32_t)MEM_B(0, mips0+6) << 8)
-                            |  (uint32_t)MEM_B(0, mips0+7);
-                if ((w0 >> 24) == 0x06 && w1 != 0) {
-                    char sname[64];
-                    snprintf(sname, sizeof(sname), "pak_subdl_%d_at_%08X.bin", n, w1);
-                    FILE* sfp = fopen(sname, "wb");
-                    if (sfp) {
-                        uint32_t sbase = w1 & 0x00FFFFFF;
-                        constexpr uint32_t kDumpLen = 0x4000;  // 16KB — should cover all chunks
-                        uint8_t sbuf[kDumpLen];
-                        for (uint32_t i = 0; i < kDumpLen; ++i) {
-                            int64_t ma = (int64_t)(int32_t)(sbase + i + 0x80000000);
-                            sbuf[i] = MEM_B(0, ma);
-                        }
-                        fwrite(sbuf, 1, kDumpLen, sfp);
-                        fclose(sfp);
-                        fprintf(stderr, "[capture] dumped %s\n", sname);
-                        fflush(stderr);
-                    }
-                    // continue scanning — capture both G_DLs (setup + chunk array)
-                }
-            }
-        }
-        // Use librecomp's helper for correct byte-swizzle.
         dma_rdram_to_dmem(rdram, /*dmem*/0x170, /*dram*/dl_ptr & 0x00FFFFFF, /*rd_len*/0x10F);
         // Save data_ptr at DMEM[0x101C] (= 0xFC0+0x5C, where r18=0xFC0 means
         // L_112C's `sw $r2, 0x5C($18)` writes after future re-DMAs).
@@ -255,12 +115,7 @@ static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
     } else {
         poke_be32(0x654, 0x270);  // fallback if no data_ptr cached yet
     }
-    RspExitReason r = factor5_ucode(rdram, ucode_addr);
-    if (n <= 5 || (n % 200) == 0) {
-        fprintf(stderr, "[RSP] factor5_ucode #%d returned %d (boot=%d)\n", n, (int)r, (int)boot_r);
-        fflush(stderr);
-    }
-    return r;
+    return factor5_ucode(rdram, ucode_addr);
 }
 
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
