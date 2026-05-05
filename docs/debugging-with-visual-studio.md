@@ -101,6 +101,55 @@ Some helpful debugger features:
   recompiled call sites show as a sequence of register stores then a `func_XXXX(rdram, ctx)` call; this lets you skip the stores and step
   directly into the next recompiled function.
 
+### When data breakpoints don't work — in-source `[mem-watch]` instrumentation
+
+VS hardware data breakpoints have only 4 slots and sometimes don't fire on
+writes that go through MEM_W / SD store macros (memory address changes
+across runs from VirtualAlloc, possible cache-line / TLB interactions).
+A reliable alternative is to add a tiny watcher *inside* the recompile
+itself.
+
+Add at the top of a function whose entry you want to sample:
+
+```c
+{
+    static uint64_t prev = 0;
+    uint64_t cur = *(uint64_t*)(rdram + 0x3DDB0);   // your suspect address
+    if (cur != prev) {
+        fprintf(stderr, "[mem-watch] funcname entry: 0x3DDB0 was 0x%016llX, now 0x%016llX\n",
+            (unsigned long long)prev, (unsigned long long)cur);
+        fflush(stderr);
+        prev = cur;
+    }
+}
+```
+
+Place these at multiple points in a call chain (the chronic-crasher
+function plus its callers) — the value transitions get bracketed between
+the function whose watcher last logged "good" and the one that first
+logged "bad", narrowing the corrupter to a small region of code.
+
+For finding the offending function via an indirect dispatch loop (e.g.
+`LOOKUP_FUNC(ctx->r2)(rdram, ctx);`), use a *one-shot* check after the
+call so it doesn't disturb timing on every iteration:
+
+```c
+{
+    uint32_t f = (uint32_t)ctx->r2;
+    LOOKUP_FUNC(ctx->r2)(rdram, ctx);
+    static int logged = 0;
+    if (!logged && *(uint64_t*)(rdram + 0x3DDB0) == 0xFFFFFFFFFFFFFFFFULL) {
+        logged = 1;
+        fprintf(stderr, "[mem-watch] FIRST corruption observed after dispatching func 0x%08X\n", f);
+        fflush(stderr);
+    }
+}
+```
+
+Heavier `before/after` watchers (read both before *and* after each
+dispatch) can shift threading timing enough to mask race-condition bugs —
+prefer the lightest possible probe.
+
 ### Recompile bug vs. game logic
 
 A few patterns reliably distinguish a recompile bug from genuine in-game
