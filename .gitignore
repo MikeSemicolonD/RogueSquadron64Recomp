@@ -1,35 +1,33 @@
-# VSCode file settings
+# IDE / editor
 .vscode/settings.json
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/tasks.json
-
-# Input elf and rom files
-*.elf
-*.z64
-
-# Output C files
-RecompiledFuncs/
-RecompiledPatches/
-
-# Linux build output
-build*/
-*.o
-
-# Windows build output
-*.exe
-*.dll
-*.lib
-*.pdb
-
-# User-specific files
+.vs/
+.idea
+.cache
 *.rsuser
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
 
-# Build results
+# OS
+.DS_Store
+
+# ROMs and ELF inputs
+*.elf
+*.z64
+*.n64
+
+# Recompiler outputs
+RecompiledFuncs/
+RecompiledPatches/
+
+# Build directories
+build*/
+build-*
+cmake-build-*
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
@@ -45,39 +43,51 @@ bld/
 [Ll]og/
 [Ll]ogs/
 out/
-
-# Visual Studio 2015/2017 cache/options directory
-.vs/
+node_modules/
 vcpkg_installed/
 
-# Runtime files
+# Build artifacts
+*.exe
+*.dll
+*.lib
+*.o
+*.obj
+*.pdb
+*.tlog
+*.ipdb
+*.iobj
+
+# Runtime artifacts
 imgui.ini
 rt64.log
+saves/
+*.bak
 
-node_modules/
-
-# Recompiler Linux binary
+# Recompiler binaries
 N64Recomp
 RSPRecomp
-.DS_Store
 
-# Cmake build directory
-.cache
-.idea
-build-*
-cmake-build-*
+# Misc
 *.lnk
 /.claude
-*.tlog
-/build/rt64/rt64.dir/Debug
-/build/N64ModernRuntime/ultramodern/ultramodern.dir/Debug
-/build/N64ModernRuntime/ultramodern/Debug
-/build/N64ModernRuntime/librecomp/Debug
-*.tlog
-/build/N64ModernRuntime/librecomp/librecomp.dir/Debug
-/build/N64ModernRuntime/ultramodern/Debug
-/build/rt64/rt64.dir/Debug
-/build/N64ModernRuntime/librecomp/Debug
-/build/rt64/rt64.dir/Debug
-/build/rt64/rt64.dir
-/build/N64ModernRuntime/librecomp/librecomp.dir
+
+# Debug captures and logs (developer-local)
+*_log.txt
+freeze_log.txt
+run_stderr.txt
+run_stdout.txt
+test_err.txt
+test_out.txt
+tasks_log.txt
+snap_*.txt
+dlhist_*.txt
+
+# Captured RDP / RDRAM dumps (developer-local)
+rdram_*.bin
+pak_*.bin
+texrect_chunks.bin
+factor5_ucode_text.bin
+factor5_ucode_data.bin
+factor5_ucode_disasm.txt
+# Note: factor5_boot_text.bin is a build input (referenced by factor5_boot_rsp.toml)
+# and intentionally NOT ignored.

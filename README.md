@@ -9,7 +9,24 @@
 
 A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
 
-> **Work in progress.** Audio HLE is stubbed; the game may reach the title screen but gameplay is not yet fully functional.
+> **Work in progress.** The boot sequence currently advances through the LucasArts / Factor 5 title to the N64 logo screen. Beyond that, an FP-NaN regression in recompiled CPU code halts the boot before the explosion / main-menu sequence. Audio is stubbed (silent). See [Status](#status) for details.
+>
+> **Heads-up on AI-assisted development.** Most of the debugging, architectural
+> decisions, and code in this repository — including the Factor 5 LLE recompile
+> bridge, the runtime patches inside `lib/rt64` and `lib/N64ModernRuntime`, and
+> large parts of `src/main/main.cpp` — were produced with heavy assistance from
+> AI coding tools (Claude). Things to be aware of as a reader or contributor:
+>
+> - Some choices are pragmatic workarounds (e.g. the `if(0) fprintf(...)`
+>   dead-code logging scattered through the renderer, the PIPESYNC-only RDP
+>   filter, the HLE-arm-for-signaling-only path) rather than principled fixes.
+> - Manual edits inside the `lib/rt64` and `lib/N64ModernRuntime` submodules,
+>   and inside generated files like `build/factor5_ucode/factor5_ucode_recompiled.c`,
+>   are not committed upstream and can be clobbered on regeneration.
+> - Both the LLE bridge approach and several runtime decisions are novel and
+>   underverified — they appear to work for the boot sequence but should not
+>   be assumed correct without scrutiny. Issues, corrections, and second
+>   opinions are very welcome.
 
 <div align="center">
 <table>
@@ -115,15 +132,30 @@ RogueSquadron64Recomp.exe
 
 ```
 src/
-  main/main.cpp               — Entry point, SDL2 audio/input/window, game registration
+  main/main.cpp                — Entry point, SDL2 audio/input/window, RSP ucode dispatch
   main/rt64_render_context.cpp — RT64 renderer integration
-  rsp/aspMain.cpp             — Audio RSP microcode stub (TODO: full HLE)
+  main/register_overlays.cpp   — Game function-table registration
+  rsp/dpc_bridge.cpp           — DPC_START/DPC_END bridge for Factor5 LLE → RT64
+  rsp/aspMain.cpp              — Audio RSP microcode stub (MusyX, silent)
 include/
-  recomp_game.h               — Forward declarations for runtime functions
+  recomp_game.h                — Forward declarations for runtime functions
 lib/
-  N64ModernRuntime/           — Runtime (ultramodern + librecomp)
-  rt64/                       — RT64 renderer
+  N64ModernRuntime/            — Runtime (ultramodern + librecomp)
+  rt64/                        — RT64 N64-compatible renderer
+factor5_rsp.toml               — RSPRecomp config for the Factor5 graphics ucode
+factor5_boot_rsp.toml          — RSPRecomp config for the Factor5 boot ucode
+factor5_boot_text.bin          — Boot-ucode text segment (input to RSPRecomp)
 ```
+
+### Graphics path: Factor 5 LLE recompile
+
+Rogue Squadron uses Factor 5's custom GBI, which RT64's HLE pipeline cannot
+recognise. To work around that, the game's RSP graphics ucode is statically
+recompiled to C with [RSPRecomp](https://github.com/N64Recomp/N64Recomp) and
+runs as `factor5_ucode()` on the SP task thread. RDP commands the ucode emits
+via `mtc0` to `DPC_START` / `DPC_END` are forwarded to RT64's RDP interpreter
+through `src/rsp/dpc_bridge.cpp`, giving low-level (LLE) parity without
+requiring a custom HLE GBI profile.
 
 ---
 
@@ -131,10 +163,11 @@ lib/
 
 | System | Status |
 |---|---|
-| Video / RDP | Working (RT64) |
-| Input | Working (SDL2 gamepad) |
+| Video / RDP | Working — RT64 driven by Factor 5 LLE recompile + DPC bridge |
+| Boot sequence | Title screen + N64 logo render; halts on FP-NaN in recompiled CPU code before the post-logo cutscene |
+| Input | Working (SDL2 gamepad — game shows "NO CONTROLLER" until one is plugged in) |
 | Save data | EEPROM 4K via librecomp |
-| Audio | Stubbed — silent |
+| Audio | Stubbed — silent (Factor 5's MusyX ucode is not yet recompiled) |
 | Memory pak | Stubbed — returns no-pak |
 
 ---
