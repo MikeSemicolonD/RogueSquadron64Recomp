@@ -91,7 +91,7 @@ The `lib/` directory contains:
 
 ### 2 : Generate the recompiled C output
 
-Before building this project you need the N64Recomp output. From the companion decomp project:
+Before building this project you need the N64Recomp output. From the [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp project:
 
 ```sh
 # In the rogue_squadron64 repo:
