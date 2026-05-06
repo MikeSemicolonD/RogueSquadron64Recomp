@@ -48,6 +48,14 @@ A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the
 		<img src="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/screenshots/past-initial-screenshot.PNG">
     </td>
   </tr>
+  <tr>
+    <td>
+		<img src="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/screenshots/progress/past-initial-xwing.png">
+    </td>
+    <td>
+		<img src="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/screenshots/progress/past-initial-factor5-logo.png">
+    </td>
+  </tr>
 </table>
 </div>
 
