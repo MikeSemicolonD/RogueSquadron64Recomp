@@ -76,7 +76,7 @@ A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the
 
 ## Building
 
-### 1 — Clone with submodules
+### 1 : Clone with submodules
 
 ```sh
 git clone --recurse-submodules <this-repo>
@@ -84,12 +84,14 @@ cd RogueSquadron64Recomp
 ```
 
 The `lib/` directory contains:
-- `lib/N64ModernRuntime` — ultramodern + librecomp runtime
-- `lib/rt64` — RT64 N64-compatible renderer
+- [`lib/N64ModernRuntime`](https://github.com/MikeSemicolonD/N64ModernRuntime) — ultramodern + librecomp runtime
+- [`lib/rt64`](https://github.com/MikeSemicolonD/rt64) — RT64 N64-compatible renderer
 
-### 2 — Generate the recompiled C output
+> The repos in `lib/` are forked to provide the maximum amount of developer freedom due to Factor5's custom byte code.
 
-Before building this project you need the N64Recomp output. From the companion decomp project:
+### 2 : Generate the recompiled C output
+
+Before building this project you need the N64Recomp output. From the [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp project:
 
 ```sh
 # In the rogue_squadron64 repo:
@@ -101,7 +103,7 @@ N64Recomp rogue_squadron.toml
 
 The output goes to `../N64Recomp/RecompiledFuncs/` (relative to this repo).
 
-### 3 — Configure and build
+### 3 : Configure and build
 
 **Windows (Visual Studio + ClangCL):**
 ```sh
