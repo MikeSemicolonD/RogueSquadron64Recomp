@@ -46,6 +46,12 @@ static uint32_t g_task_op_count[64] = {0};
 // command, no function call. Same single-thread-only constraint as above.
 extern "C" uint32_t g_task_gfx_op_count[256] = {0};
 
+// Per-task G_MOVEMEM index histogram. F3D indices: 0x80 viewport,
+// 0x82 lookat_y, 0x84 lookat_x, 0x86..0x94 lights L0..L7, 0x96 txtatt,
+// 0x98/9A/9C/9E matrix1-4. Tells us if Factor5 is loading lights every
+// frame (animated lighting) or just static state.
+extern "C" uint32_t g_task_movemem_idx_count[256] = {0};
+
 void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
     if (end <= start) {
         return;
@@ -200,6 +206,35 @@ extern "C" void rsp_task_log_and_reset(uint32_t iters, uint32_t data_size, uint3
                             (unsigned)i, g_task_gfx_op_count[i]);
                     }
                 }
+                // G_MOVEMEM index breakdown: which kinds of state are being
+                // loaded (lights, matrices, viewport, etc.).
+                fprintf(stderr, "  [task#%llu movemem-idx]\n",
+                    (unsigned long long)n);
+                for (int i = 0; i < 256; i++) {
+                    if (g_task_movemem_idx_count[i] > 0) {
+                        const char *name = "?";
+                        switch (i) {
+                            case 0x80: name = "VIEWPORT"; break;
+                            case 0x82: name = "LOOKAT_Y"; break;
+                            case 0x84: name = "LOOKAT_X"; break;
+                            case 0x86: name = "L0"; break;
+                            case 0x88: name = "L1"; break;
+                            case 0x8A: name = "L2"; break;
+                            case 0x8C: name = "L3"; break;
+                            case 0x8E: name = "L4"; break;
+                            case 0x90: name = "L5"; break;
+                            case 0x92: name = "L6"; break;
+                            case 0x94: name = "L7"; break;
+                            case 0x96: name = "TXTATT"; break;
+                            case 0x98: name = "MTX_2"; break;
+                            case 0x9A: name = "MTX_3"; break;
+                            case 0x9C: name = "MTX_4"; break;
+                            case 0x9E: name = "MTX_1"; break;
+                        }
+                        fprintf(stderr, "    idx 0x%02X (%s) = %u\n",
+                            (unsigned)i, name, g_task_movemem_idx_count[i]);
+                    }
+                }
             }
             fflush(stderr);
         }
@@ -226,6 +261,7 @@ extern "C" void rsp_task_log_and_reset(uint32_t iters, uint32_t data_size, uint3
     }
     for (int i = 0; i < 64; i++) g_task_op_count[i] = 0;
     for (int i = 0; i < 256; i++) g_task_gfx_op_count[i] = 0;
+    for (int i = 0; i < 256; i++) g_task_movemem_idx_count[i] = 0;
 }
 
 // Submit a synthetic FULL_SYNC by re-using the RDRAM bytes of the most recent
