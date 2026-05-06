@@ -79,7 +79,7 @@ A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the
 ### 1 : Clone with submodules
 
 ```sh
-git clone --recurse-submodules <this-repo>
+git clone --recurse-submodules https://github.com/MikeSemicolonD/RogueSquadron64Recomp.git
 cd RogueSquadron64Recomp
 ```
 
