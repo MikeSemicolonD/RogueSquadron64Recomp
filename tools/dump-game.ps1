@@ -10,7 +10,9 @@ if (-not $proc) {
 }
 
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
-$path = Join-Path (Get-Location) "crash_${ts}_external.dmp"
+$dumpDir = Join-Path (Get-Location) "dumps/crash-dumps"
+New-Item -ItemType Directory -Force -Path $dumpDir | Out-Null
+$path = Join-Path $dumpDir "crash_${ts}_external.dmp"
 
 Add-Type -TypeDefinition @"
 using System;

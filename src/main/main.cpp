@@ -204,11 +204,13 @@ void print_stack_with_symbols(void** frames, USHORT count);
 // the SDL message pump is starved (rules out trying to use F12).
 extern "C" void mqdiag_dump(const char *path);
 static void start_mqdiag_watchdog() {
+    CreateDirectoryA("logs", NULL);
+    CreateDirectoryA("logs/mqdiag", NULL);
     static std::thread watchdog{[]{
         for (int n = 0; ; ++n) {
             std::this_thread::sleep_for(std::chrono::seconds(3));
             char path[64];
-            std::snprintf(path, sizeof(path), "logs/mqdiag_%03d.txt", n);
+            std::snprintf(path, sizeof(path), "logs/mqdiag/mqdiag_%03d.txt", n);
             mqdiag_dump(path);
         }
     }};
@@ -560,8 +562,10 @@ static void write_minidump_safe(EXCEPTION_POINTERS* ep) {
     char path[MAX_PATH];
     SYSTEMTIME st;
     GetLocalTime(&st);
+    CreateDirectoryA("dumps", NULL);
+    CreateDirectoryA("dumps/crash-dumps", NULL);
     snprintf(path, sizeof(path),
-        "dumps/crash_%04u%02u%02u_%02u%02u%02u.dmp",
+        "dumps/crash-dumps/crash_%04u%02u%02u_%02u%02u%02u.dmp",
         st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, NULL,
         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);

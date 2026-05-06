@@ -9,7 +9,7 @@ from pathlib import Path
 from minidump.minidumpfile import MinidumpFile
 
 if len(sys.argv) < 2:
-    dumps = sorted(Path(".").glob("crash_*.dmp"), key=lambda p: p.stat().st_mtime, reverse=True)
+    dumps = sorted(Path("dumps/crash-dumps").glob("crash_*.dmp"), key=lambda p: p.stat().st_mtime, reverse=True)
     if not dumps:
         print("No crash_*.dmp found.")
         sys.exit(1)
