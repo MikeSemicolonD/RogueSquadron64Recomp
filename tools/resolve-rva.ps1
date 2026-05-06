@@ -64,17 +64,21 @@ public static class Sym {
 }
 "@
 
-# 0x10 = LOAD_LINES, 0x4 = DEFERRED_LOADS, 0x40000000 = UNDNAME
-[void][Sym]::SymSetOptions(0x10 -bor 0x4 -bor 0x40000000)
+# 0x10 = LOAD_LINES, 0x40000000 = UNDNAME, 0x80 = OMAP_FIND_NEAREST
+# Removed DEFERRED_LOADS (0x4) — was causing empty symbol names.
+[void][Sym]::SymSetOptions(0x10 -bor 0x80 -bor 0x40000000)
 $proc = [Sym]::GetCurrentProcess()
 [void][Sym]::SymInitialize($proc, $pdbDir, $false)
 
 $loadBase = [uint64]0x10000000
-$base = [Sym]::SymLoadModuleEx($proc, [IntPtr]::Zero, $exe, "main", $loadBase, 0, [IntPtr]::Zero, 0)
+$peSize = (Get-Item $exe).Length
+$base = [Sym]::SymLoadModuleEx($proc, [IntPtr]::Zero, $exe, "main", $loadBase, [uint32]$peSize, [IntPtr]::Zero, 0)
 if ($base -eq 0) {
-    Write-Error "SymLoadModuleEx failed"
+    $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    Write-Error "SymLoadModuleEx failed err=$err"
     exit 1
 }
+Write-Output "Loaded module at 0x$($base.ToString('X')), size=0x$($peSize.ToString('X'))"
 
 foreach ($a in $RvaList) {
     $rvaStr = "$a"  # force string
@@ -82,11 +86,35 @@ foreach ($a in $RvaList) {
     $rva = [Convert]::ToUInt64($rvaStr, 16)
     $addr = $base + $rva
 
-    $sym = New-Object SYMBOL_INFO
-    $sym.SizeOfStruct = 88   # offsetof(Name)
-    $sym.MaxNameLen = 511
+    # Allocate native buffer for SYMBOL_INFO + name (700 bytes is plenty)
+    $bufSize = 700
+    $buf = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bufSize)
+    [System.Runtime.InteropServices.Marshal]::Copy([byte[]]::new($bufSize), 0, $buf, $bufSize)
+    [System.Runtime.InteropServices.Marshal]::WriteInt32($buf, 88)            # SizeOfStruct
+    [System.Runtime.InteropServices.Marshal]::WriteInt32($buf, 84, 511)       # MaxNameLen at offset 84
     [uint64]$disp = 0
-    $okSym = [Sym]::SymFromAddr($proc, $addr, [ref]$disp, [ref]$sym)
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class SymRaw {
+    [DllImport("dbghelp.dll", SetLastError=true)]
+    public static extern bool SymFromAddr(IntPtr h, ulong addr, out ulong disp, IntPtr sym);
+}
+"@ -ErrorAction SilentlyContinue
+    $okSym = [SymRaw]::SymFromAddr($proc, $addr, [ref]$disp, $buf)
+    $symName = ""
+    $symAddr = [uint64]0
+    if ($okSym) {
+        # Address at offset 56, NameLen at offset 80, Name starts at offset 88
+        $symAddr = [System.Runtime.InteropServices.Marshal]::ReadInt64($buf, 56)
+        $nameLen = [System.Runtime.InteropServices.Marshal]::ReadInt32($buf, 80)
+        if ($nameLen -gt 0 -and $nameLen -lt 600) {
+            $bytes = New-Object byte[] $nameLen
+            [System.Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($buf, 88), $bytes, 0, $nameLen)
+            $symName = [System.Text.Encoding]::ASCII.GetString($bytes)
+        }
+    }
+    [System.Runtime.InteropServices.Marshal]::FreeHGlobal($buf)
 
     $line = New-Object IMAGEHLP_LINE64
     $line.SizeOfStruct = [System.Runtime.InteropServices.Marshal]::SizeOf([type][IMAGEHLP_LINE64])
@@ -96,7 +124,7 @@ foreach ($a in $RvaList) {
     Write-Output ""
     Write-Output "RVA 0x$($rva.ToString('X')) base=0x$($base.ToString('X')) addr=0x$($addr.ToString('X'))"
     if ($okSym) {
-        Write-Output "  symbol: $($sym.Name) +0x$($disp.ToString('X'))"
+        Write-Output "  symbol: $symName +0x$($disp.ToString('X'))  (fn at 0x$($symAddr.ToString('X')))"
     } else {
         $err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
         Write-Output "  symbol: <none> err=$err"
