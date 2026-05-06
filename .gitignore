@@ -100,3 +100,4 @@ mqfocus.txt
 .mcp.json
 logs/
 *.stackdump
+mqdiag_*.txt
