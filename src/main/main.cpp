@@ -208,7 +208,7 @@ static void start_mqdiag_watchdog() {
         for (int n = 0; ; ++n) {
             std::this_thread::sleep_for(std::chrono::seconds(3));
             char path[64];
-            std::snprintf(path, sizeof(path), "mqdiag_%03d.txt", n);
+            std::snprintf(path, sizeof(path), "logs/mqdiag_%03d.txt", n);
             mqdiag_dump(path);
         }
     }};
@@ -561,7 +561,7 @@ static void write_minidump_safe(EXCEPTION_POINTERS* ep) {
     SYSTEMTIME st;
     GetLocalTime(&st);
     snprintf(path, sizeof(path),
-        "crash_%04u%02u%02u_%02u%02u%02u.dmp",
+        "dumps/crash_%04u%02u%02u_%02u%02u%02u.dmp",
         st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     HANDLE hFile = CreateFileA(path, GENERIC_WRITE, 0, NULL,
         CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);

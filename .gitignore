@@ -99,5 +99,6 @@ mqfocus.txt
 *.log
 .mcp.json
 logs/
+dumps/
 *.stackdump
 mqdiag_*.txt
