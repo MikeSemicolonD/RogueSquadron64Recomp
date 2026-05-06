@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <thread>
 #include <chrono>
+#include <atomic>
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
@@ -18,6 +19,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <DbgHelp.h>
+#include <TlHelp32.h>
 #pragma comment(lib, "Dbghelp.lib")
 #include <crtdbg.h>
 #include "SDL.h"
@@ -71,6 +73,14 @@ static thread_local uint32_t s_pending_task_data_ptr = 0;
 // the game thinks the task completed, sp_complete() fires, and play continues.
 // Cost: no audio. Trade-off: keeps the rest of the game responsive.
 static RspExitReason musyx_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
+    return RspExitReason::Broke;
+}
+
+// Catch-all stub for unrecognised task types. Returning Broke (instead of
+// QUICK_EXIT'ing) avoids tearing down the process when a stale/uninitialised
+// task struct gets dispatched — observed early in boot with type fields like
+// 0x21E50ADF that don't match M_GFXTASK/M_AUDTASK.
+static RspExitReason unknown_task_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr*/) {
     return RspExitReason::Broke;
 }
 
@@ -130,8 +140,15 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     case M_AUDTASK:
         return &musyx_stub;
     default:
-        fprintf(stderr, "[RSP] Unknown task type: %" PRIu32 "\n", task->t.type);
-        return nullptr;
+        // Don't crash — log once per distinct type and stub it out.
+        static thread_local uint32_t last_unknown = 0;
+        if (task->t.type != last_unknown) {
+            last_unknown = task->t.type;
+            fprintf(stderr, "[RSP] Stubbing unknown task type: %" PRIu32 " (0x%08X)\n",
+                task->t.type, task->t.type);
+            fflush(stderr);
+        }
+        return &unknown_task_stub;
     }
 }
 
@@ -177,6 +194,10 @@ static size_t get_frames_remaining() {
 
 // Forward declaration so the F12 hotkey in poll_input() can write a dump.
 static void write_minidump_safe(EXCEPTION_POINTERS* ep);
+// Forward declaration so the hwbp VEH (defined before print_stack_with_symbols)
+// can render the offending thread's stack with symbols. Non-static so RT64's
+// d3d12 allocator-failure tracer can extern-declare and call it.
+void print_stack_with_symbols(void** frames, USHORT count);
 
 // Periodic mqdiag watchdog: dumps message-queue stats every 3s to
 // mqdiag_watchdog.txt. Lets us see queue progress mid-hang even when
@@ -192,6 +213,137 @@ static void start_mqdiag_watchdog() {
         }
     }};
     watchdog.detach();
+}
+
+// Memory watchpoint: caught the corruption window via polling but missed the
+// instigating store. Switch to a Win32 hardware data breakpoint (DR0, write,
+// 4 bytes) on rdram + 0x3CBC4. When a write hits, the OS raises
+// EXCEPTION_SINGLE_STEP on the offending thread; our vectored handler logs
+// tid/RIP/stack so we can name the racing writer.
+//
+// DR0..DR3 are per-thread; we walk the process thread list and arm DR0 on each
+// thread (skipping ourselves). New threads spawned later need re-arming, so we
+// re-walk the list on a slow cadence — overhead is negligible vs. catching the
+// race.
+extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw = nullptr;
+
+static volatile uintptr_t g_wp_addr = 0;     // address being watched (in our VA)
+static volatile LONG      g_wp_hit_count = 0; // limit logging — race may fire fast
+
+static LONG WINAPI memwp_veh(EXCEPTION_POINTERS* ep) {
+    // Hardware data breakpoints raise EXCEPTION_SINGLE_STEP with B0..B3 set in DR6.
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    CONTEXT* ctx = ep->ContextRecord;
+    DWORD64 dr6_hits = ctx->Dr6 & 0xFu;
+    if (!dr6_hits) {
+        return EXCEPTION_CONTINUE_SEARCH;  // BS or other source — not us
+    }
+
+    // Throttle: catastrophic loop would flood stderr and slow everything to a halt.
+    LONG n = InterlockedIncrement(&g_wp_hit_count);
+    if (n <= 16) {
+        DWORD tid = GetCurrentThreadId();
+        uint32_t cur_val = 0;
+        uint8_t* rdram = (uint8_t*)g_recomp_rdram_for_wp_raw;
+        if (rdram) cur_val = *(uint32_t*)(rdram + 0x3CBC4);
+        fprintf(stderr,
+            "[hwbp-hit #%ld] tid=%lu RIP=0x%llX  watch=0x%llX  "
+            "current=0x%08X  DR6=0x%llX\n",
+            n, tid,
+            (unsigned long long)ctx->Rip,
+            (unsigned long long)g_wp_addr,
+            cur_val,
+            (unsigned long long)ctx->Dr6);
+        void* frames[24];
+        USHORT count = RtlCaptureStackBackTrace(0, 24, frames, nullptr);
+        print_stack_with_symbols(frames, count);
+        fflush(stderr);
+    }
+
+    // Clear DR6 status bits so further hits can be observed.
+    ctx->Dr6 &= ~0xFull;
+    // Set RF in EFlags to avoid refire on the same instruction (data BP is a
+    // trap that fires AFTER the write, but RF is harmless here and matches
+    // canonical post-handler behavior).
+    ctx->EFlags |= 0x10000;
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+// Configure DR0 on the given (suspended) thread to trap on 4-byte WRITE at addr.
+// Returns true if we actually wrote new debug regs.
+static bool arm_hwbp_on_thread(HANDLE hThread, uintptr_t addr) {
+    CONTEXT ctx{};
+    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    if (!GetThreadContext(hThread, &ctx)) return false;
+    if (ctx.Dr0 == (DWORD64)addr && (ctx.Dr7 & 0x000D0001ull) == 0x000D0001ull) {
+        // Already armed — no need to rewrite (avoids per-tick churn cost).
+        return false;
+    }
+    ctx.Dr0 = (DWORD64)addr;
+    // DR7: clear DR0 fields, then set L0=1, R/W0=01 (write), LEN0=11 (4 bytes).
+    //   L0=bit0, R/W0=bits16-17, LEN0=bits18-19. Combined mask 0xF0001 in low20.
+    DWORD64 dr7 = ctx.Dr7;
+    dr7 &= ~((0x3ull << 16) | (0x3ull << 18) | 0x1ull);
+    dr7 |= (0x1ull << 16);  // R/W0 = 01 (write)
+    dr7 |= (0x3ull << 18);  // LEN0 = 11 (4 bytes)
+    dr7 |= 0x1ull;          // L0 = 1
+    ctx.Dr7 = dr7;
+    ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    return SetThreadContext(hThread, &ctx) != 0;
+}
+
+static void arm_hwbp_all_threads(uintptr_t addr) {
+    DWORD me  = GetCurrentThreadId();
+    DWORD pid = GetCurrentProcessId();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return;
+    THREADENTRY32 te{};
+    te.dwSize = sizeof(te);
+    if (Thread32First(snap, &te)) {
+        do {
+            if (te.th32OwnerProcessID != pid) continue;
+            if (te.th32ThreadID == me) continue;
+            HANDLE h = OpenThread(
+                THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME,
+                FALSE, te.th32ThreadID);
+            if (!h) continue;
+            if (SuspendThread(h) != (DWORD)-1) {
+                arm_hwbp_on_thread(h, addr);  // skips if already armed; silent
+                ResumeThread(h);
+            }
+            CloseHandle(h);
+        } while (Thread32Next(snap, &te));
+    }
+    CloseHandle(snap);
+    // Intentionally no per-tick print — recurring stderr writes starve the
+    // SDL message pump and produce a "Not Responding" window. Hits are still
+    // reported by memwp_veh; that's the only signal we care about.
+}
+
+static void start_memwp_watchdog() {
+    static std::thread wp_thread{[]{
+        uint8_t* rdram = nullptr;
+        while (!(rdram = (uint8_t*)g_recomp_rdram_for_wp_raw)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        uintptr_t addr = (uintptr_t)(rdram + 0x3CBC4);
+        g_wp_addr = addr;
+        AddVectoredExceptionHandler(1, memwp_veh);
+        fprintf(stderr, "[hwbp] watching VA 0x%llX (rdram+0x3CBC4), initial=0x%08X\n",
+            (unsigned long long)addr, *(uint32_t*)(rdram + 0x3CBC4));
+        fflush(stderr);
+        // Re-arm cadence: most game threads are created in the first ~2 s of boot.
+        // After that, fresh threads are rare (RT64 lazy workers, the occasional
+        // file IO). 1 s is plenty and keeps SuspendThread/SetThreadContext churn
+        // off the SDL pump's back. Per-thread arm itself is silent.
+        for (;;) {
+            arm_hwbp_all_threads(addr);
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }};
+    wp_thread.detach();
 }
 
 // ---------------------------------------------------------------------------
@@ -371,7 +523,7 @@ static void ensure_dbghelp_init() {
 
 // Print stack frames with symbol resolution. Each frame becomes:
 //   [ N] 0xADDR  module!function+0xOFF  (file:line)
-static void print_stack_with_symbols(void** frames, USHORT count) {
+void print_stack_with_symbols(void** frames, USHORT count) {
     ensure_dbghelp_init();
     HANDLE proc = GetCurrentProcess();
     HMODULE exe_base = GetModuleHandleW(nullptr);
@@ -459,6 +611,7 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     start_mqdiag_watchdog();
+    start_memwp_watchdog();
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);
