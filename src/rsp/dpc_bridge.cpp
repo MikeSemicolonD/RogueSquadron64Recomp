@@ -41,6 +41,11 @@ static std::atomic<uint32_t> g_task_rdp_fullsyncs{0};
 // task_log_and_reset both run on the RSP task thread, so plain array is fine.
 static uint32_t g_task_op_count[64] = {0};
 
+// Per-task GFX opcode histogram (high byte of DL command word). Counted
+// directly from the factor5_ucode dispatch loop — a single increment per
+// command, no function call. Same single-thread-only constraint as above.
+extern "C" uint32_t g_task_gfx_op_count[256] = {0};
+
 void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
     if (end <= start) {
         return;
@@ -163,6 +168,41 @@ extern "C" void rsp_task_log_and_reset(uint32_t iters, uint32_t data_size, uint3
             (unsigned long long)n, iters, data_size, r17, cmd_w0, cmd_w1,
             bytes, cmds, fs,
             capped_no_fs ? " CAPPED-NO-FS" : "");
+        // Top-8 gfx opcode dump (full byte 0xB0..0xFF range plus low ops).
+        // Identifies what Factor5 actually dispatches per task — including
+        // lighting-related ops (G_MOVEMEM 0x03/0xDB, G_SETLIGHTS macros).
+        // First capped task ALSO dumps every non-zero op for full coverage.
+        {
+            uint32_t copy[256];
+            for (int i = 0; i < 256; i++) copy[i] = g_task_gfx_op_count[i];
+            for (int slot = 0; slot < 8; slot++) {
+                int max_idx = 0;
+                for (int i = 0; i < 256; i++) {
+                    if (copy[i] > copy[max_idx]) max_idx = i;
+                }
+                if (copy[max_idx] == 0) break;
+                fprintf(stderr, "  [task#%llu gfx] op 0x%02X = %u\n",
+                    (unsigned long long)n, (unsigned)max_idx, copy[max_idx]);
+                copy[max_idx] = 0;
+            }
+            // Full non-zero dump for first 4 tasks (attribution screen) +
+            // first capped-no-fs task (cinematic). Lets us compare opcode
+            // distributions between phases.
+            static bool s_first_capped_dumped = false;
+            const bool dump_full = (n <= 4) || (capped_no_fs && !s_first_capped_dumped);
+            if (dump_full) {
+                if (capped_no_fs) s_first_capped_dumped = true;
+                fprintf(stderr, "  [task#%llu gfx-FULL] all non-zero ops:\n",
+                    (unsigned long long)n);
+                for (int i = 0; i < 256; i++) {
+                    if (g_task_gfx_op_count[i] > 0) {
+                        fprintf(stderr, "    op 0x%02X = %u\n",
+                            (unsigned)i, g_task_gfx_op_count[i]);
+                    }
+                }
+            }
+            fflush(stderr);
+        }
         fflush(stderr);
         // For cap-without-fullSync tasks, dump the opcode histogram (top 8).
         // Helps identify the loop: if one opcode dominates, that's the stuck
@@ -185,6 +225,7 @@ extern "C" void rsp_task_log_and_reset(uint32_t iters, uint32_t data_size, uint3
         }
     }
     for (int i = 0; i < 64; i++) g_task_op_count[i] = 0;
+    for (int i = 0; i < 256; i++) g_task_gfx_op_count[i] = 0;
 }
 
 // Submit a synthetic FULL_SYNC by re-using the RDRAM bytes of the most recent
