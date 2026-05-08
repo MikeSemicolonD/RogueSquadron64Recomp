@@ -615,7 +615,16 @@ int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
     start_mqdiag_watchdog();
-    start_memwp_watchdog();
+    // Hardware-breakpoint watchdog on rdram+0x3CBC4 (where a corruption was
+    // first observed). Useful for tracing the writer when investigating the
+    // bug; emits a stack-traced [hwbp-hit] line for every write to the
+    // watched address. Default off — set ROGUESQ_HWBP=1 to enable.
+    {
+        const char *e = std::getenv("ROGUESQ_HWBP");
+        if (e && *e && *e != '0') {
+            start_memwp_watchdog();
+        }
+    }
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);
