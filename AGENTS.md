@@ -1,20 +1,25 @@
 # AGENTS.md
 
-Guidance for AI agents working on the Rogue Squadron 64 Recompiled project. This is an active port of *Star Wars: Rogue Squadron* (N64, USA v1.0) using N64Recomp + RT64 HLE rendering, modeled after Zelda64Recomp.
+Guidance for AI agents working on the Rogue Squadron 64 Recompiled project. This is an active port of *Star Wars: Rogue Squadron* (N64, USA v1.0) using N64Recomp + RT64 LLE rendering (Factor 5 ucode recompiled to C, output forwarded to RT64 via the DPC bridge).
 
 ## Project layout
 
 ```
 src/main/main.cpp                       Game registration + RSP/audio/input/gfx callbacks
-lib/N64ModernRuntime/                   Junction → E:\Projects\N64ModernRuntime (shared runtime)
+src/rsp/dpc_bridge.cpp                  DPC_START/DPC_END bridge: Factor 5 LLE → RT64
+src/rsp/aspMain.cpp                     Audio RSP microcode stub (silent)
+lib/N64ModernRuntime/                   Submodule — fork at MikeSemicolonD/N64ModernRuntime
   ├── librecomp/                        Recompiler runtime (overlay loading, get_function, SEH)
   └── ultramodern/                      libultra emulation (threads, mesgqueue, events)
-lib/rt64/                               Symlink → E:\Projects\Zelda64Recomp\lib\rt64
-docs/                                   Project-specific notes (Factor5 GBI, LLE spike)
+lib/rt64/                               Submodule — fork at MikeSemicolonD/rt64
+docs/                                   Project-specific notes (Factor5 GBI, debug-trace env vars)
+tools/                                  PowerShell + Python diagnostic helpers
 build/                                  CMake out-of-source build dir
 ```
 
 The recompiled MIPS code lives **outside** the project at `E:\Projects\N64Recomp\RecompiledFuncs\`. Files there are named `funcs_N.c` (N=0..42) plus `funcs.h`, `recomp_overlays.inl`. Edits there are routine and expected — they are auto-generated but commonly hand-instrumented during debugging.
+
+The forked submodules under `lib/` have intentional `if(false) fprintf(...)` debug-toggle cruft and a number of game-specific defensive guards. **Do not propose stripping these** as part of cleanup; they are intentional.
 
 ## Build & run
 
@@ -39,23 +44,23 @@ ROM lives at `build/Debug/rogue_squadron.z64` (USA v1.0, xxHash3-64 = `0x6B66A44
 
 ## Diagnostic artifacts
 
-Files written to the working directory during a run:
+Files written to `logs/` and `dumps/crash-dumps/` during a run:
 
+- `logs/cine_yield_sink.log` — per-iter yield burst sink (CINE_YIELD macro
+  in `funcs_27.c`).
+- `logs/stability/<tag>/run_N.log` — per-run stderr captured by
+  `tools/run-stability.ps1`. Companion `summary.csv` classifies outcomes.
+- `logs/stability/<tag>/memory.csv` — per-second WS / private bytes / VM
+  samples written by `tools/measure-leak.ps1`.
 - `mqdiag_NNN.txt` — per-queue counters dumped every 3s by the watchdog
   thread (`start_mqdiag_watchdog` in [src/main/main.cpp](src/main/main.cpp)).
   Each file is a snapshot at that point in time; diff two snapshots to
   see which queues are still moving.
-- `mqdiag_frame.txt` — single-frame snapshot from
-  [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter.cpp) (HLE path).
-- `mqfocus.txt` — focused queue events for `0x80114388, 0x8011A408, 0x8011A7E8`.
-- `dlhist_frame.txt` / `dlhist_op02.txt` — DL command history.
-- `rdram_frame.bin` / `rdram_op02.bin` — 8 MB RDRAM dumps.
-- `crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump written by either
-  the SEH crash handler, the SIGABRT/abort handler, the F12 hotkey, or
-  external `tools/dump-game.ps1`. Captures all of RDRAM so post-mortem
-  inspection of MIPS-side data structures works.
+- `dumps/crash-dumps/crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump
+  written by either the SEH crash handler, the SIGABRT/abort handler,
+  the F12 hotkey, or external `tools/dump-game.ps1`.
 
-## Post-mortem dump tooling (under `tools/`)
+## Tooling (under `tools/`)
 
 When the game freezes or crashes, the fastest route is:
 
@@ -72,11 +77,42 @@ When the game freezes or crashes, the fastest route is:
    worth opening in VS Threads window — the rest are runtime workers
    parked in ntdll waits.
 
+For stability or leak measurements, prefer the harness over manual runs:
+
+- `tools/run-stability.ps1 -Runs N -Timeout S -Tag <label>` — launches
+  the binary N times, captures per-run stderr, classifies each outcome
+  by grepping markers (`[CRASH]`, `[ABORT]`, `[L_627C-FIRST]` for
+  natural exit, `[cine-tick]` for max iter/fc, `[guard]` count, menu-init
+  reached). Use `-EnvVars "ROGUESQ_LOG_X=1;..."` to forward debug-trace
+  env vars. Use `-Runs 1` for data-capture diagnostics; `-Runs 3` for
+  stability-rate measurement.
+- `tools/measure-leak.ps1 -Timeout S -Tag <label>` — single run, polls
+  Working Set / Private Bytes / Virtual Memory once per second to
+  `memory.csv`. Useful when correlating per-second growth with stderr
+  trace timestamps.
+
 Note: the Windows debugger CLI (`cdb.exe`) is currently broken on
 this machine (fails with `STATUS_DLL_INIT_FAILED`). Don't waste time
 trying to drive it from PowerShell — use VS interactively, or read
 the dump with the `minidump` Python package (already covered by
 `inspect-dump.py`).
+
+## Debug trace env vars
+
+All `[*]` log tags are gated behind `ROGUESQ_LOG_*` env vars. Canonical
+catalog at [docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md)
+— **read it before adding a new `fprintf` or asking the user to enable
+logs**. Notable vars:
+
+| Env var | What it enables |
+|---|---|
+| `ROGUESQ_LOG_ALL` | Master switch — turns on every category |
+| `ROGUESQ_LOG_CINE_CP` | Per-call-site checkpoints inside `func_800A5D80`'s cinematic loop body. Pair with `ROGUESQ_LOG_CINE_CP_FROM=N` to start verbose at iter N |
+| `ROGUESQ_LOG_RT64_ALLOC` | RT64 allocation hotspots (interpolatedColorTargets, nativeSwappedRAM, rdramData, BufferPair, RenderTarget setup) — finds allocation spikes |
+| `ROGUESQ_LOG_DPC` | DPC bridge submission events |
+| `ROGUESQ_LOG_THREADS`, `ROGUESQ_LOG_INIT`, `ROGUESQ_LOG_PRESENT`, `ROGUESQ_LOG_SP_TASKS`, etc. | See `docs/debug-trace-env-vars.md` |
+| `ROGUESQ_SUPPRESS_OOB_CIMG` | **Default OFF.** When set, drops Factor 5 ucode emissions of bogus SET_COLOR_IMAGE commands at HIGH (≥ 0x800000) and LOW (< 0x100000) addresses before they reach RT64. Reduces the iter-810 memory spike but causes a visual regression — the 3D Factor 5 logo no longer renders because some legitimate lowmem CIMGs are dropped along with the garbage. Existing writeback guard at `rt64_state.cpp:1494` (`addressStart >= 0x100000`) is the right place to filter without dropping the CIMG itself |
+| `ROGUESQ_HWBP` + `ROGUESQ_HWBP_ADDR` | Win32 DR0 hardware breakpoint on a configurable RDRAM address |
 
 ## Architectural quirks worth knowing
 
@@ -89,7 +125,7 @@ This game uses a Factor5-customized F3DEX-derived ucode (`gspF3DEXMain` symbol b
 | `0xB5` | F3DEX `G_QUAD`     | **Chunk/DL terminator** (= F3DEX `G_ENDDL`) | `op_B5_endDl`       |
 | `0xE4` | F3DEX `G_TEXRECT`  | **LLE format (16 bytes)**, not HLE 24-byte  | `texrectLLE`        |
 | `0xE5` | F3DEX `G_TEXRECTFLIP` | LLE format                              | `texrectFlipLLE`    |
-| `0xFF` | `G_SETCIMG`        | Sometimes emitted with bogus payload (w1=0) | `setColorImage_filtered` (filters bogus) |
+| `0xFF` | `G_SETCIMG`        | Frequently emitted with bogus payloads (w1=0, fmt>4, addresses outside FB region). `setColorImage_filtered` rejects fmt>4 and w1==0. Optional `[cimg-drop]` filter in `src/rsp/dpc_bridge.cpp` (env-gated, OFF by default) drops HIGH (≥ 0x800000) and LOW (< 0x100000) addresses — but enabling it kills the 3D Factor 5 logo, so use only for leak-mitigation experiments | `setColorImage_filtered` (always-on) + `[cimg-drop]` (env-gated) |
 | `0x80` | unused in F3DEX    | Chunk metadata header (next/prev pointers)  | `op80_unknown` (no-op) — see note |
 | `0x02` | F3D `G_RDPHALF_2`  | Custom — constant payload `0x028001C0/0x01FF0000` | `op02_unknown` (no-op) |
 | `0x12, 0x16, 0x1E, 0x22, 0x26, 0x2A, 0x2E, 0x32, 0x36, 0x3A` | unused | Custom Factor5 family — opcode byte encodes operand bits 6:2 | unmapped |
@@ -142,17 +178,12 @@ The main loop also guards against `hleGBI` becoming NULL mid-task (F3DEX op `0xA
 - Cooperative scheduler losing DP messages between yields — `mqdiag` shows 0 lost/requeued for DP queue.
 - "iter 3 hangs" interpretation of `func_8000C07C` — counter misread; the loop runs 30+ iters under normal conditions.
 - The `wmain/main` link warning matters — it's benign.
-
-## Memory system & sessions
-
-When invoked via Claude Code, AI agents have a persistent memory at `C:\Users\Michael\.claude\projects\e--Projects-RogueSquadron64Recomp\memory\`. Key memory files:
-
-- `MEMORY.md` — index of all memories, loaded into every conversation
-- `project_factor5_workload_drain.md` — RESOLVED. Captures the journey from black-screen credits to legible text rendering.
-- `project_post_credits.md` — current blocker. Post-credits scenes (LucasArts, N64 logo, X-wing intro) reach further with each fix but still expose new unimplemented Factor5/RT64 paths.
-- `project_audio_musyx.md` — audio is stubbed; full MusyX HLE needs a separate RSPRecomp pass.
-
-Memory is for facts that survive across sessions (project state, decisions, dead ends). Don't store code conventions or per-conversation work there.
+- Synthetic per-halt FULL_SYNC injection in dpc_bridge — corrupts RT64 tile state mid-frame, produces white-bounding-box artifacts and AVs in `loadTileOperation`. The cinematic's natural ~5/s submission rate is correct. Don't retry.
+- Force-menu bypass via `ROGUESQ_FORCE_MENU_AT_SEC` — skipping the cinematic init causes downstream crashes. Find what gates `bit 25 of MEM[0x80130B58]` naturally instead.
+- A `cv.wait` rewrite of RT64's present-queue busy-wait at `lib/rt64/src/hle/rt64_present_queue.cpp:38-46` — looked surgical, regressed natural-exit rate from ~30% to 0%. Reverted.
+- Re-investigating "missing state-1 writer" in the 5-slot table at `D_80154620` — that table is the speech-sample playback slots, not cinematic stages. Audio is stubbed so the slots stay zero.
+- Repeatedly iterating cinematic-explosion shader probes — frame rate, pipeline drops, early-z, VI selection, vertex w, mux family, and FillRect-not-firing are all ruled out. Next step is a RenderDoc/PIX capture, not another shader iteration.
+- `[cimg-drop]` LOW-region filter (`addr < 0x100000`) as default-on — Factor 5 LLE legitimately emits some lowmem CIMGs for the 3D logo render path, so dropping them at dpc_bridge kills the visual. The right place to filter is the existing writeback guard at `rt64_state.cpp:1494` (`addressStart >= 0x100000`), which lets the CIMG produce a render target but skips the RDRAM writeback. Keep `ROGUESQ_SUPPRESS_OOB_CIMG` env-gated.
 
 ## Style conventions
 
@@ -168,9 +199,10 @@ Memory is for facts that survive across sessions (project state, decisions, dead
 
 ## Open work
 
-The Factor5 RSP ucode reverse-engineering would unlock:
-- Full text rendering (currently sparse — many glyphs render as the right shape at one position but the per-glyph TEXRECT loops emit the same UV coords)
-- 3D triangle rendering for explosions, X-wings, ships, terrain
-- Audio (separate MusyX pass)
+- **iter ~810 cinematic freeze**: ~70% of runs time out at iter 832-835 inside random functions in `func_800A5D80`'s loop body. Empirically only stderr writes unstick it; `Sleep`, `SwitchToThread`, and `cursorCondition` waits all do not. Likely OS-level thread starvation. CP markers gated by `ROGUESQ_LOG_CINE_CP=1` are already wired into the loop body.
+- **Menu-init heap-walker bugs**: when natural exit fires (~30% of runs), execution lands in `func_800C58A0` `menu_overlay_init` which has its own KSEG0-pointer-validation issues.
+- **Bogus RDP commands from Factor 5 DMA buffer**: the ucode emits uninitialized DMEM bytes (e.g., `FF FF FF FF 00 00 07 E0`) as 8-byte DMA submissions. The `[cimg-drop]` filter in `src/rsp/dpc_bridge.cpp` neutralises the worst of them, but a wider-width family still slips through. Hunt the ucode-side cause at `build/factor5_ucode/factor5_ucode_recompiled.c:427` (the DMA write call site).
+- **Audio**: stubbed; per the rerogue PC-version reversing notes the codec is **MORT**, not MusyX as previously assumed. Either way needs a separate RSPRecomp pass.
+- **Keyboard input**: port Zelda64Recompiled's bind/rebind UI so keyboard can replace gamepad. Defer until past the cinematic-freeze blocker.
 
-Each one is a multi-day effort assuming you have the ucode binary and a disassembler. The team explicitly chose NOT to pursue full LLE — see [docs/lle-spike-report.md](docs/lle-spike-report.md).
+The team explicitly chose NOT to pursue full HLE for Factor 5 — see [docs/lle-spike-report.md](docs/lle-spike-report.md).

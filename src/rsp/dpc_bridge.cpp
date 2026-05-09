@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <atomic>
+#include <mutex>
+#include <unordered_map>
 #include "librecomp/rsp.hpp"
 #include "ultramodern/events.hpp"
 
@@ -84,6 +86,47 @@ uint32_t g_cine_last_settimg_siz = 0;
 uint32_t g_cine_last_settimg_addr = 0;
 uint32_t g_cine_last_cimg_addr = 0;     // current SET_COLOR_IMAGE target fb
 
+// PHASE 21 correlation: which cinematic effect slot (0-5) is currently
+// executing its handler. Set by the recompiled slot dispatcher around the
+// handler `jalr` call (funcs_8.c:func_8003E8DC); reset to -1 between calls.
+// Lets us annotate dpc_bridge SET_COLOR_IMAGE / TEXRECT logs with the
+// originating effect slot, so we can see the slot → fb mapping.
+//
+// Plain global (not thread_local) — the cinematic dispatcher runs on the
+// MAIN game thread; SET_COLOR_IMAGE detection runs on the GFX thread; both
+// see the same value with eventual-consistency, which is fine for logging.
+// Declared `extern int` from C (recompiled funcs_8.c) — needs `extern "C"`
+// linkage here so the C-side reference resolves at link time. Read
+// non-atomically; minor races produce wrong slot annotations on a few
+// events, not crashes.
+extern "C" int g_cine_current_slot = -1;
+
+// PHASE 21 engine-aware filter: per-fb slot ownership.
+// Records, for each fb address (key), the slot index that was active when
+// the most recent SET_COLOR_IMAGE targeting that fb was emitted. If >= 0,
+// the fb is "owned by a cinematic effect" and full-screen fills on it
+// are the cinematic erasure pattern (suppress). If -1, the fb belongs
+// to non-cinematic phases (attribution / N64 logo / etc) and its fills
+// are legitimate clear-then-redraw (don't suppress).
+//
+// RT64's framebuffer_renderer queries this map via a free function
+// (rt64_cine_fb_is_slot_owned, defined below).
+static std::mutex g_cine_fb_owner_mutex;
+static std::unordered_map<uint32_t, int> g_cine_fb_owner_slot;
+
+// Query function called from RT64's framebuffer_renderer FillRect handler.
+// Returns true iff the fb at `addr` was last targeted by a SET_COLOR_IMAGE
+// emitted from inside an active slot dispatch (slot >= 0), meaning the fb
+// is the cinematic's render target and a full-screen fill on it would be
+// erasing visible content. Returns false for fbs that have never been
+// touched by the cinematic, or that were last touched by non-cinematic
+// SET_COLOR_IMAGE (slot=-1).
+extern "C" bool rt64_cine_fb_is_slot_owned(uint32_t addr) {
+    std::lock_guard<std::mutex> lk(g_cine_fb_owner_mutex);
+    auto it = g_cine_fb_owner_slot.find(addr & 0x00FFFFFFu);
+    return (it != g_cine_fb_owner_slot.end()) && (it->second >= 0);
+}
+
 // Shadow of the most recent RDP state-set commands. Used so the
 // 64-tri particle mux entry can dump the full draw context (otherMode,
 // texture, framebuffer, tile) at the moment the particle combiner is
@@ -155,6 +198,140 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
         int64_t mips_first = (int64_t)(int32_t)(submit_lo + 0x80000000);
         uint8_t op = (uint8_t)MEM_B(0, mips_first) & 0x3F;
         g_task_op_count[op]++;
+    }
+
+    // EARLY DUMP: capture RDRAM at MIPS 0x4B7800 + DMEM at the first few
+    // submit_rdp_range calls. Lets us compare to PJ64's first-explosion screenshot
+    // (which captures cinematic data well before the freeze). Tags numbered so we
+    // know which submission produced each dump.
+    {
+        static std::atomic<uint32_t> s_early_dump{0};
+        uint32_t n = ++s_early_dump;
+        // Dump at submission counts spanning boot → late cinematic. The 9A C2 C2 C2
+        // pattern doesn't appear in early dumps (#1, #50, #200, #1000 all-zero),
+        // so we sample farther out to find when it first emerges.
+        if (n == 1 || n == 1000 || n == 3000 || n == 6000 || n == 10000 ||
+            n == 15000 || n == 20000 || n == 25000 || n == 30000) {
+            fprintf(stderr, "[early-dump #%u] RDRAM 0x4B7800-0x4B7900 host order:\n", n);
+            for (uint32_t row = 0; row < 16; ++row) {
+                uint32_t base = 0x4B7800u + row * 16;
+                fprintf(stderr, "  %08X:", base);
+                for (uint32_t col = 0; col < 16; ++col) {
+                    fprintf(stderr, " %02X", (unsigned)rdram[base + col]);
+                }
+                fprintf(stderr, "\n");
+            }
+            extern uint8_t dmem[];
+            fprintf(stderr, "[early-dump #%u] DMEM 0x170-0x1C0 host order:\n", n);
+            for (uint32_t row = 0; row < 5; ++row) {
+                uint32_t base = 0x170u + row * 16;
+                fprintf(stderr, "  %03X:", base);
+                for (uint32_t col = 0; col < 16; ++col) {
+                    fprintf(stderr, " %02X", (unsigned)dmem[base + col]);
+                }
+                fprintf(stderr, "\n");
+            }
+            fflush(stderr);
+        }
+    }
+
+    // OOB-CIMG: catch G_SETCIMG (byte 0 == 0xFF EXACTLY) with bogus addr.
+    // Originally only fired for size==8 submissions; extended 2026-05-08 to
+    // scan first 8 bytes of any submission (catches CIMGs at the head of
+    // multi-command batches too).
+    //
+    // Two address regions are bogus:
+    //   addr >= 0x800000  : past 8MB RDRAM (typical: 0x00FFFFFF garbage)
+    //   addr <  0x100000  : in asset/code region, not framebuffer space
+    //                       (typical: 0x00008FFD, 0x00001FFE, 0x00003B83)
+    //
+    // The "segHigh" field is the high byte of the unmasked w1 — if non-zero,
+    // it's a segment index (real RDP would resolve via segments[]). Tells us
+    // whether we're misinterpreting raw bytes vs. failing to do segment
+    // resolution on a real game-emitted CIMG.
+    if ((submit_hi - submit_lo) >= 8) {
+        int64_t mips = (int64_t)(int32_t)(submit_lo + 0x80000000);
+        uint8_t b0w = (uint8_t)MEM_B(0, mips);
+        if (b0w == 0xFF) {  // strict G_SETCIMG opcode match
+            uint32_t w1w = ((uint32_t)(uint8_t)MEM_B(4, mips) << 24) |
+                           ((uint32_t)(uint8_t)MEM_B(5, mips) << 16) |
+                           ((uint32_t)(uint8_t)MEM_B(6, mips) <<  8) |
+                           ((uint32_t)(uint8_t)MEM_B(7, mips));
+            uint32_t addr24 = w1w & 0x00FFFFFF;
+            uint8_t  segHigh = (uint8_t)((w1w >> 24) & 0xFF);
+            const bool oob_high = (addr24 >= 0x00800000u);
+            const bool oob_low  = (addr24 < 0x00100000u && addr24 != 0);
+            (void)segHigh;
+            if (oob_high || oob_low) {
+                static std::atomic<uint64_t> s_oob{0};
+                static std::atomic<uint32_t> s_oob_low{0};
+                uint64_t n = ++s_oob;
+                bool log_low = oob_low && (++s_oob_low <= 30);
+                bool log_high = oob_high && (n == 1 || (n & (n - 1)) == 0);
+                if (log_low || log_high) {
+                    uint32_t w0w = ((uint32_t)(uint8_t)MEM_B(0, mips) << 24) |
+                                   ((uint32_t)(uint8_t)MEM_B(1, mips) << 16) |
+                                   ((uint32_t)(uint8_t)MEM_B(2, mips) <<  8) |
+                                   ((uint32_t)(uint8_t)MEM_B(3, mips));
+                    const char *region = oob_high ? "HIGH" : "LOW";
+                    uint32_t submit_size = submit_hi - submit_lo;
+                    fprintf(stderr,
+                        "[cimg-oob-1] #%llu region=%s slot=%d dl=0x%08X size=%u w0=0x%08X w1=0x%08X addr24=0x%06X segHigh=0x%02X\n",
+                        (unsigned long long)n, region, g_cine_current_slot,
+                        (unsigned)submit_lo | 0x80000000u, submit_size, w0w, w1w, addr24, (unsigned)segHigh);
+                    // Dump 32 bytes context (16 before + cmd + 16 after) around the
+                    // submission's source byte. Tells us whether the bogus CIMG is:
+                    //   (a) A real game-emitted command (addr next to legit DL ops)
+                    //   (b) Garbage past a short DL (preceded by FULL_SYNC + zeros)
+                    //   (c) Trailing pixel data (preceded by triangle/texrect bytes)
+                    if (log_low) {
+                        int64_t pre  = (int64_t)(int32_t)((submit_lo - 16) + 0x80000000);
+                        int64_t post = (int64_t)(int32_t)((submit_lo +  8) + 0x80000000);
+                        fprintf(stderr,
+                            "  [ctx] pre16:");
+                        for (int i = 0; i < 16; ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, pre));
+                        fprintf(stderr, "  cmd:");
+                        for (int i = 0; i < 8;  ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, mips));
+                        fprintf(stderr, "  post16:");
+                        for (int i = 0; i < 16; ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, post));
+                        fprintf(stderr, "\n");
+                    }
+                    fflush(stderr);
+                }
+                // ONE-SHOT MEMORY DUMP at first OOB. RDRAM at MIPS 0x4B7800 + DMEM
+                // (the RSP's local memory). Lets us compare to PJ64 screenshots:
+                //  - If our DMEM matches PJ64's at a similar frame → RSP recompile is
+                //    fine, the dpc_bridge interpretation differs.
+                //  - If our DMEM diverges structurally (uniform vs varied) → RSP bug.
+                {
+                    static std::atomic<bool> s_dumped{false};
+                    bool expected = false;
+                    if (s_dumped.compare_exchange_strong(expected, true)) {
+                        fprintf(stderr, "[mem-dump-4B7800] 256 bytes (host order, MIPS 0x4B7800-0x4B7900):\n");
+                        for (uint32_t row = 0; row < 16; ++row) {
+                            uint32_t base = 0x4B7800u + row * 16;
+                            fprintf(stderr, "  %08X:", base);
+                            for (uint32_t col = 0; col < 16; ++col) {
+                                fprintf(stderr, " %02X", (unsigned)rdram[base + col]);
+                            }
+                            fprintf(stderr, "\n");
+                        }
+                        // Dump DMEM contents at the same moment.
+                        extern uint8_t dmem[];  // defined in librecomp/rsp.cpp
+                        fprintf(stderr, "[mem-dump-DMEM] 1KB (host order, DMEM 0x000-0x400):\n");
+                        for (uint32_t row = 0; row < 64; ++row) {
+                            uint32_t base = row * 16;
+                            fprintf(stderr, "  %03X:", base);
+                            for (uint32_t col = 0; col < 16; ++col) {
+                                fprintf(stderr, " %02X", (unsigned)dmem[base + col]);
+                            }
+                            fprintf(stderr, "\n");
+                        }
+                        fflush(stderr);
+                    }
+                }
+            }
+        }
     }
 
     // PIPESYNC FILTER: Factor5 emits PIPESYNC (op_int 0x27) very heavily.
@@ -513,6 +690,47 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
                           ((uint32_t)(uint8_t)MEM_B(6, mips) <<  8) |
                           ((uint32_t)(uint8_t)MEM_B(7, mips));
             g_cine_last_cimg_addr = w1 & 0x00FFFFFF;
+            // ALWAYS log when CIMG address is OOB (>= 8MB). Captures the slot
+            // that emitted the bad command + the source DL location, so we can
+            // backtrack to whichever code wrote garbage into this DL slot.
+            // Throttled exponentially to avoid log floods.
+            if (g_cine_last_cimg_addr >= 0x00800000u) {
+                static std::atomic<uint64_t> s_oob{0};
+                uint64_t n = ++s_oob;
+                if (n == 1 || (n & (n - 1)) == 0) {
+                    uint32_t w0 = ((uint32_t)MEM_B(0, mips) << 24) |
+                                  ((uint32_t)(uint8_t)MEM_B(1, mips) << 16) |
+                                  ((uint32_t)(uint8_t)MEM_B(2, mips) <<  8) |
+                                  ((uint32_t)(uint8_t)MEM_B(3, mips));
+                    fprintf(stderr,
+                        "[cimg-oob] #%llu slot=%d dl=0x%08X w0=0x%08X w1=0x%08X addr24=0x%08X\n",
+                        (unsigned long long)n, g_cine_current_slot,
+                        (unsigned)mips, w0, w1, g_cine_last_cimg_addr);
+                    fflush(stderr);
+                }
+            }
+            // PHASE 21 engine-aware filter: record slot ownership for this fb.
+            // Once an effect-dispatched SET_COLOR_IMAGE selects this fb, the fb
+            // is owned by that slot until a non-cinematic SET_COLOR_IMAGE
+            // (slot=-1) selects the same address again.
+            {
+                std::lock_guard<std::mutex> lk(g_cine_fb_owner_mutex);
+                g_cine_fb_owner_slot[g_cine_last_cimg_addr] = g_cine_current_slot;
+            }
+            // PHASE 21 correlation log. Tag every SET_COLOR_IMAGE with the
+            // currently-executing effect slot index (or -1 if not inside an
+            // effect dispatch). Run with ROGUESQ_LOG_DPC=1 to enable.
+            if (log_dpc()) {
+                static std::atomic<uint64_t> s_seq{0};
+                uint64_t v = ++s_seq;
+                if (v <= 200 || (v % 100) == 0) {
+                    fprintf(stderr,
+                        "[cimg-corr] seq=%llu slot=%d addr=0x%08X\n",
+                        (unsigned long long)v, g_cine_current_slot,
+                        g_cine_last_cimg_addr);
+                    fflush(stderr);
+                }
+            }
         }
         // Cinematic particle combiner — log first ~32 texrects + their
         // tile/texture/CIMG context so we can see whether particles are
@@ -622,6 +840,52 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
     }
 
     (void)rdram;
+
+    // SUPPRESS_OOB_CIMG: drop isolated 8-byte SET_COLOR_IMAGE commands whose
+    // address field is outside legitimate framebuffer space.
+    //   HIGH (>= 0x800000)  : past 8MB RDRAM (typical: 0x00FFFFFF garbage)
+    //   LOW  (<  0x100000)  : asset/code region — but Factor 5 LLE legitimately
+    //                         emits some lowmem CIMGs for the 3D logo render
+    //                         path; dropping them causes a visual regression.
+    //                         Existing writeback guard at rt64_state.cpp gates
+    //                         the resulting RDRAM writeback on addressStart
+    //                         >= 0x100000, which is the right place to filter
+    //                         these — let them through to RT64.
+    // Default OFF; set ROGUESQ_SUPPRESS_OOB_CIMG=1 to enable for leak-mitigation
+    // experiments. Tradeoff: HIGH+LOW drop reduces the iter-810 memory spike,
+    // but kills the Factor 5 3D logo visual.
+    {
+        static const bool s_suppress = []{
+            const char* v = std::getenv("ROGUESQ_SUPPRESS_OOB_CIMG");
+            return v && *v && *v != '0';
+        }();
+        if (s_suppress && (submit_hi - submit_lo) == 8) {
+            int64_t mp = (int64_t)(int32_t)(submit_lo + 0x80000000);
+            uint8_t b0 = (uint8_t)MEM_B(0, mp);
+            if (b0 == 0xFF) {
+                uint32_t w1v = ((uint32_t)(uint8_t)MEM_B(4, mp) << 24) |
+                               ((uint32_t)(uint8_t)MEM_B(5, mp) << 16) |
+                               ((uint32_t)(uint8_t)MEM_B(6, mp) <<  8) |
+                               ((uint32_t)(uint8_t)MEM_B(7, mp));
+                uint32_t addr24 = w1v & 0x00FFFFFF;
+                const bool drop_high = (addr24 >= 0x00800000u);
+                const bool drop_low  = (addr24 != 0 && addr24 < 0x00100000u);
+                if (drop_high || drop_low) {
+                    static std::atomic<uint64_t> s_drop_h{0};
+                    static std::atomic<uint64_t> s_drop_l{0};
+                    uint64_t n = drop_high ? ++s_drop_h : ++s_drop_l;
+                    if (n == 1 || (n & (n - 1)) == 0) {
+                        fprintf(stderr, "[cimg-drop] %s #%llu submit_lo=0x%08X addr=0x%06X\n",
+                            drop_high ? "HIGH" : "LOW",
+                            (unsigned long long)n, submit_lo, addr24);
+                        fflush(stderr);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
     ultramodern::submit_rdp_range(submit_lo, submit_hi);
 }
 

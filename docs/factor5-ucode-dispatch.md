@@ -1,7 +1,7 @@
 # Factor5 RSP ucode — dispatch + handler map
 
-Working notes from RE pass 2026-05-04 — supersedes older claims in
-`memory/project_factor5_ucode.md` where they conflict.
+Working notes from RE pass 2026-05-04. Treat this as the current source
+of truth for the dispatch table and handler addresses.
 
 ## Files
 

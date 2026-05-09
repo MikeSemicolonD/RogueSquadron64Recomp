@@ -9,17 +9,15 @@
 
 A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
 
-> **Work in progress.** Boot reaches the N64 logo screen and stays there.
-> On real hardware the N64 logo is followed by an explosion, a camera pan
-> with an X-wing and a TIE fighter revealing the LucasArts logo imprinted
-> against terrain, and finally the X-wing flying in to display the
-> Factor 5 logo in 3D — none of that post-logo cinematic renders here.
-> The recompile actually progresses internally past the logo (the menu /
-> credits state machine dispatches and emits text-render commands), but
-> the game's per-frame state driver isn't getting onto the dispatch
-> table, so its framebuffer never wins the swap arbitration and the
-> screen visibly stays on the N64 logo. Audio is stubbed (silent).
-> See [Status](#status) for details.
+> **Work in progress.** Boot reaches the N64 logo and the post-logo
+> cinematic begins — explosion particles and Factor 5 3D logo elements
+> are visible. The cinematic CPU thread runs to completion in ~30% of
+> attempts (reaching the natural-exit path at fc=1120 and entering
+> menu-init), but the other ~70% of attempts time out around iter ~810
+> due to an intermittent OS-level thread-starvation issue. The main
+> menu has been reached but is not yet stable. Audio is stubbed
+> (silent — Factor 5's audio ucode is not yet recompiled). See
+> [Status](#status) for details.
 >
 > **Heads-up on AI-assisted development.** Most of the debugging, architectural
 > decisions, and code in this repository — including the Factor 5 LLE recompile
@@ -184,11 +182,13 @@ requiring a custom HLE GBI profile.
 | System | Status |
 |---|---|
 | Video / RDP | Working — RT64 driven by Factor 5 LLE recompile + DPC bridge |
-| Boot sequence | Reaches the N64 logo and visibly halts there. None of the post-logo cinematic plays — on real hardware that's an explosion, a camera pan with X-wing + TIE fighter showing the LucasArts logo on terrain, then the X-wing flying in to display the Factor 5 3D logo. Internally the menu/credits state machine dispatches (state=9, glyph commands emitted) but its framebuffer never wins the swap-priority arbitration, so the displayed image stays on the N64 logo |
-| Input | Working (SDL2 gamepad — game shows "NO CONTROLLER" until one is plugged in) |
+| Boot sequence | Reaches LucasArts attribution → N64 logo → post-logo cinematic. Factor 5 logo + explosion particles render. Cinematic reaches natural exit (fc=1120) in ~30% of runs |
+| Main menu | Intermittently reached after natural exit. `func_800C58A0` menu_overlay_init still has heap-walker issues |
+| Cinematic loop freeze | Open. ~70% of runs time out at iter ~810 due to OS-level thread starvation (cinematic CPU thread blocks). Empirical: stderr writes unstick it, `Sleep` does not |
+| Input | Working (SDL2 gamepad — game shows "NO CONTROLLER" until one is plugged in). Keyboard support pending (Zelda-style bind/rebind UI) |
 | Save data | EEPROM 4K via librecomp |
-| Audio | Stubbed — silent (Factor 5's MusyX ucode is not yet recompiled) |
-| Memory pak | Stubbed — returns no-pak (Yet the game seems to detect one) |
+| Audio | Stubbed — silent. Per [rerogue](https://github.com/jrra/rerogue) the codec is **MORT**, not MusyX as previously assumed; both still need a separate recompile pass |
+| Memory pak | Stubbed — returns no-pak |
 
 ---
 
@@ -200,7 +200,7 @@ for how to attach Visual Studio to the recompiled output, set conditional
 breakpoints inside `funcs_*.c`, walk back through a bad register value,
 and tell a recompile bug apart from a game-logic bug.
 
-For hangs or post-mortem analysis there's a small helper toolkit under
+For hangs or post-mortem analysis there's a helper toolkit under
 [tools/](tools/):
 
 - `tools/dump-game.ps1` — captures a full-memory minidump of a running
@@ -211,13 +211,34 @@ For hangs or post-mortem analysis there's a small helper toolkit under
   in the dump and tags it `in_exe` (running our recompile),
   `kernel_wait` (parked in ntdll), or other-module. The two or three
   `in_exe` threads are usually the only ones worth opening in VS.
+- `tools/run-stability.ps1` — N-run harness. Launches the binary
+  `-Runs N` times with `-Timeout` seconds each, captures per-run
+  stderr to `logs/stability/<tag>/run_N.log`, and classifies outcomes
+  by grepping markers (`[CRASH]`, `[ABORT]`, `[L_627C-FIRST]`,
+  `[cine-tick]`, `[guard]`). Prints a summary table + CSV. Use
+  `-EnvVars "FOO=1;BAR=2"` to forward debug-trace env vars.
+- `tools/measure-leak.ps1` — single-run harness that polls Working
+  Set / Private Bytes / Virtual Memory once per second and writes
+  `memory.csv`. Useful when correlating per-second memory growth with
+  stderr trace timestamps.
 
-The runtime also writes `mqdiag_NNN.txt` snapshots every 3 seconds via
-a watchdog thread (`start_mqdiag_watchdog` in [src/main/main.cpp](src/main/main.cpp)).
-That file shows per-message-queue send/recv/external/delivered/lost
-counts — useful for finding queues with backed-up events or threads
-stuck on a missing message. F12 inside the game window writes an
-ad-hoc minidump (when the message pump is alive).
+The runtime writes `mqdiag_NNN.txt` snapshots every 3 seconds via a
+watchdog thread (`start_mqdiag_watchdog` in
+[src/main/main.cpp](src/main/main.cpp)). Useful for finding queues
+with backed-up events or threads stuck on a missing message. F12
+inside the game window writes an ad-hoc minidump.
+
+Most diagnostic logs are gated behind `ROGUESQ_LOG_*` env vars (see
+[docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md) — read
+before adding new `fprintf` or asking which trace to enable). Notable:
+
+| Env var | What it enables |
+|---|---|
+| `ROGUESQ_LOG_ALL` | Master switch — turns on everything |
+| `ROGUESQ_LOG_CINE_CP` | Per-call-site checkpoints inside `func_800A5D80`'s cinematic loop body. Pair with `ROGUESQ_LOG_CINE_CP_FROM=N` to start verbose logging at iter N |
+| `ROGUESQ_LOG_RT64_ALLOC` | RT64 allocation hotspots (interpolatedColorTargets, nativeSwappedRAM, rdramData, BufferPair, RenderTarget) — use to find allocation spikes |
+| `ROGUESQ_SUPPRESS_OOB_CIMG` | **Default OFF.** When set, drops Factor 5 ucode emissions of bogus SET_COLOR_IMAGE commands at HIGH (≥ 0x800000) and LOW (< 0x100000) addresses before they reach RT64. Reduces the iter-810 memory spike but causes a visual regression — the 3D Factor 5 logo no longer renders, since some legitimate Factor 5 lowmem CIMGs are dropped along with the garbage |
+| `ROGUESQ_HWBP` + `ROGUESQ_HWBP_ADDR` | Win32 DR0 hardware breakpoint on a configurable RDRAM address |
 
 ---
 

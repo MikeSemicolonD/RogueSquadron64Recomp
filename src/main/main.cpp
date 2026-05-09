@@ -244,12 +244,16 @@ static LONG WINAPI memwp_veh(EXCEPTION_POINTERS* ep) {
     }
 
     // Throttle: catastrophic loop would flood stderr and slow everything to a halt.
-    LONG n = InterlockedIncrement(&g_wp_hit_count);
-    if (n <= 16) {
-        DWORD tid = GetCurrentThreadId();
-        uint32_t cur_val = 0;
-        uint8_t* rdram = (uint8_t*)g_recomp_rdram_for_wp_raw;
-        if (rdram) cur_val = *(uint32_t*)(rdram + 0x3CBC4);
+    static volatile uint32_t s_last_val = 0;
+    DWORD tid = GetCurrentThreadId();
+    uint32_t cur_val = 0;
+    if (g_wp_addr) cur_val = *(uint32_t*)g_wp_addr;
+    // Only log on value TRANSITIONS — the watched word may be written many times
+    // with the same value (a DMA hot path); we want the moments it CHANGES.
+    bool changed = (cur_val != s_last_val);
+    if (changed) s_last_val = cur_val;
+    LONG n = changed ? InterlockedIncrement(&g_wp_hit_count) : g_wp_hit_count;
+    if (changed && n <= 200) {
         fprintf(stderr,
             "[hwbp-hit #%ld] tid=%lu RIP=0x%llX  watch=0x%llX  "
             "current=0x%08X  DR6=0x%llX\n",
@@ -330,11 +334,18 @@ static void start_memwp_watchdog() {
         while (!(rdram = (uint8_t*)g_recomp_rdram_for_wp_raw)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        uintptr_t addr = (uintptr_t)(rdram + 0x3CBC4);
+        // Default watch is rdram+0x3CBC4 (N64-logo low-mem fb writeback hunt).
+        // Override via ROGUESQ_HWBP_ADDR=<hex offset> for new investigations.
+        uint32_t watch_off = 0x3CBC4u;
+        if (const char* e = std::getenv("ROGUESQ_HWBP_ADDR")) {
+            unsigned long v = strtoul(e, nullptr, 0);
+            if (v > 0 && v < 0x800000u) watch_off = (uint32_t)v;
+        }
+        uintptr_t addr = (uintptr_t)(rdram + watch_off);
         g_wp_addr = addr;
         AddVectoredExceptionHandler(1, memwp_veh);
-        fprintf(stderr, "[hwbp] watching VA 0x%llX (rdram+0x3CBC4), initial=0x%08X\n",
-            (unsigned long long)addr, *(uint32_t*)(rdram + 0x3CBC4));
+        fprintf(stderr, "[hwbp] watching VA 0x%llX (rdram+0x%X), initial=0x%08X\n",
+            (unsigned long long)addr, watch_off, *(uint32_t*)(rdram + watch_off));
         fflush(stderr);
         // Re-arm cadence: most game threads are created in the first ~2 s of boot.
         // After that, fresh threads are rare (RT64 lazy workers, the occasional
@@ -582,11 +593,29 @@ static void write_minidump_safe(EXCEPTION_POINTERS* ep) {
         mei.ClientPointers = FALSE;
         pmei = &mei;
     }
+    // Default to a lighter dump type. The earlier MiniDumpWithFullMemory
+    // captured the full process address space (≈5 GB on this app, dominated
+    // by D3D12/Vulkan render targets and texture caches). The symbolicated
+    // stack trace in the .log already covers the common debug case; the
+    // dump only needs threads + stacks + indirectly-referenced memory.
+    // Set ROGUESQ_FULL_DUMP=1 to restore the full 5 GB dump for deep-dives.
+    static const bool s_full_dump = []{
+        const char *e = std::getenv("ROGUESQ_FULL_DUMP");
+        return e && *e && *e != '0';
+    }();
+    MINIDUMP_TYPE dumpType = s_full_dump
+        ? MiniDumpWithFullMemory
+        : (MINIDUMP_TYPE)(MiniDumpNormal
+                          | MiniDumpWithIndirectlyReferencedMemory
+                          | MiniDumpWithDataSegs
+                          | MiniDumpWithThreadInfo
+                          | MiniDumpWithUnloadedModules);
     BOOL ok = MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
-        hFile, MiniDumpWithFullMemory, pmei, NULL, NULL);
+        hFile, dumpType, pmei, NULL, NULL);
     CloseHandle(hFile);
     if (ok) {
-        fprintf(stderr, "[CRASH] Minidump written: %s\n", path);
+        fprintf(stderr, "[CRASH] Minidump written: %s%s\n",
+            path, s_full_dump ? " (full memory)" : " (lite)");
     } else {
         fprintf(stderr, "[CRASH] MiniDumpWriteDump failed err=%lu\n", GetLastError());
     }
@@ -602,11 +631,14 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
             ep->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading",
             (unsigned long long)ep->ExceptionRecord->ExceptionInformation[1]);
     }
-    write_minidump_safe(ep);
+    // Capture stack BEFORE minidump — if the process is killed mid-minidump
+    // (e.g. by an external watchdog), we still want the trace in stderr.
     void* frames[32];
     USHORT count = RtlCaptureStackBackTrace(0, 32, frames, nullptr);
     fprintf(stderr, "[CRASH] Stack trace (%u frames):\n", (unsigned)count);
     print_stack_with_symbols(frames, count);
+    fflush(stderr);
+    write_minidump_safe(ep);
     fflush(stderr);
     return EXCEPTION_CONTINUE_SEARCH;
 }
