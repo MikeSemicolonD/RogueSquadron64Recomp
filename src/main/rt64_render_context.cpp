@@ -131,18 +131,23 @@ public:
         }
     }
 
-    void send_dl(const OSTask* task) override {
-        if (app) {
-            app->state->rsp->reset();
-            app->interpreter->loadUCodeGBI(
-                task->t.ucode & 0x3FFFFFF,
-                task->t.ucode_data & 0x3FFFFFF,
-                true);
-            app->processDisplayLists(app->core.RDRAM, task->t.data_ptr & 0x3FFFFFF, 0, true);
-        }
+    void send_dl(const OSTask* /*task*/) override {
+        // No-op: Rogue Squadron uses Factor 5's custom RSP microcode, which is
+        // NOT in RT64's HLE GBI database. Routing through HLE here would assert
+        // ("Unable to find a matching GBI in the current database").
+        //
+        // Instead the gfx pipeline runs LLE: the game's task is dispatched to
+        // the recompiled factor5_ucode (on a separate thread), which executes
+        // mtc0 to DPC_START/DPC_END. Our DPC bridge (src/rsp/dpc_bridge.cpp)
+        // intercepts those and feeds RDP byte ranges directly to RT64 via
+        // processDisplayLists(isHLE=false) through ultramodern::submit_rdp_range.
     }
 
-    void send_rdp_range(uint32_t lo_phys, uint32_t hi_phys) override {
+    // Not an override of any base-class virtual — the canonical
+    // ultramodern::renderer::RendererContext doesn't have an RDP-direct
+    // entrypoint. Called via the free function below, which is what dpc_bridge
+    // links against.
+    void send_rdp_range(uint32_t lo_phys, uint32_t hi_phys) {
         if (app && hi_phys > lo_phys) {
             app->processDisplayLists(app->core.RDRAM, lo_phys, hi_phys, /*isHLE*/ false);
         }
@@ -178,3 +183,15 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
 }
 
 } // namespace recomp
+
+// Free-function bridge for the LLE DPC pipeline (see src/rsp/dpc_bridge.cpp).
+// Replaces the upstream-removed `ultramodern::submit_rdp_range` by routing
+// directly to the live RT64::Application — no runtime-layer modification.
+namespace ultramodern {
+    void submit_rdp_range(uint32_t lo_phys, uint32_t hi_phys) {
+        RT64::Application *app = g_rt64_app.load();
+        if (app && hi_phys > lo_phys) {
+            app->processDisplayLists(app->core.RDRAM, lo_phys, hi_phys, /*isHLE*/ false);
+        }
+    }
+}

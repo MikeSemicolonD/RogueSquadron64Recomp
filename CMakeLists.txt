@@ -49,6 +49,10 @@ if (MSVC)
     target_compile_options(RecompiledFuncs PRIVATE
         -Wno-implicit-function-declaration
         -Wno-error=implicit-function-declaration)
+    # Force-include our MEM_WU + RSP_DPC_* macros header (fills gaps in
+    # upstream recomp.h without modifying it). See include/rsp_dpc_macros.h.
+    target_compile_options(RecompiledFuncs PRIVATE
+        /FI${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h)
     # Rename game's 'main' to avoid MSVC treating it as the entry point
     target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
 else()
@@ -161,12 +165,13 @@ set(FACTOR5_UCODE_C ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_ucode_recomp
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
 set_source_files_properties(${FACTOR5_UCODE_C} ${FACTOR5_BOOT_C} PROPERTIES
     LANGUAGE CXX
-    COMPILE_OPTIONS "-msse4.1")
+    COMPILE_OPTIONS "-msse4.1;/FI${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h")
 
 add_executable(RogueSquadron64Recomp
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
     ${CMAKE_SOURCE_DIR}/src/main/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/upstream_compat.cpp
     ${CMAKE_SOURCE_DIR}/src/rsp/aspMain.cpp
     ${CMAKE_SOURCE_DIR}/src/rsp/dpc_bridge.cpp
     ${FACTOR5_BOOT_C}

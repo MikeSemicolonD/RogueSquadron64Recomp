@@ -13,6 +13,7 @@
 #include "ultramodern/events.hpp"
 #include "librecomp/game.hpp"
 #include "librecomp/rsp.hpp"
+#include "common/rt64_common.h"
 
 #define SDL_MAIN_HANDLED
 #ifdef _WIN32
@@ -199,23 +200,9 @@ static void write_minidump_safe(EXCEPTION_POINTERS* ep);
 // d3d12 allocator-failure tracer can extern-declare and call it.
 void print_stack_with_symbols(void** frames, USHORT count);
 
-// Periodic mqdiag watchdog: dumps message-queue stats every 3s to
-// mqdiag_watchdog.txt. Lets us see queue progress mid-hang even when
-// the SDL message pump is starved (rules out trying to use F12).
-extern "C" void mqdiag_dump(const char *path);
-static void start_mqdiag_watchdog() {
-    CreateDirectoryA("logs", NULL);
-    CreateDirectoryA("logs/mqdiag", NULL);
-    static std::thread watchdog{[]{
-        for (int n = 0; ; ++n) {
-            std::this_thread::sleep_for(std::chrono::seconds(3));
-            char path[64];
-            std::snprintf(path, sizeof(path), "logs/mqdiag/mqdiag_%03d.txt", n);
-            mqdiag_dump(path);
-        }
-    }};
-    watchdog.detach();
-}
+// (Periodic mqdiag watchdog removed — mqdiag_dump lived in the librecomp
+//  fork and isn't in upstream. Hangs are rare enough now that on-demand
+//  dump-game.ps1 is sufficient.)
 
 // Memory watchpoint: caught the corruption window via polling but missed the
 // instigating store. Switch to a Win32 hardware data breakpoint (DR0, write,
@@ -646,7 +633,20 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
-    start_mqdiag_watchdog();
+    // RT64's RT64_LOG_PRINTF macro (debug builds) writes to GlobalLogFile via
+    // unchecked fprintf + fflush. Pristine RT64 expects RT64::Application::start
+    // to open it (we bypass Application), so without redirection the pointer
+    // stays NULL and any RT64 debug-log call asserts in the CRT.
+    //
+    // Routing to stderr works but RT64 calls these macros at high rate (every
+    // fullSync), and the per-call fflush starves the SDL message pump → game
+    // window goes "Not Responding". Send writes to NUL instead — same effect
+    // as the fork's `if(false) fprintf` cruft, but stays in our repo.
+    if (FILE *nul = fopen("NUL", "w")) {
+        RT64::GlobalLogFile = nul;
+    } else {
+        RT64::GlobalLogFile = stderr;  // last-resort fallback
+    }
     // Hardware-breakpoint watchdog on rdram+0x3CBC4 (where a corruption was
     // first observed). Useful for tracing the writer when investigating the
     // bug; emits a stack-traced [hwbp-hit] line for every write to the

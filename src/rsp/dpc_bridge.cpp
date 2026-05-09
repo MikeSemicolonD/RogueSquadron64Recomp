@@ -15,6 +15,16 @@
 #include "librecomp/rsp.hpp"
 #include "ultramodern/events.hpp"
 
+// Direct RT64 entry — the upstream librecomp doesn't expose
+// `ultramodern::submit_rdp_range` (that was a fork addition). Bypass the
+// runtime layer entirely: shim through rs64_get_rt64_app() and call
+// processDisplayLists(isHLE=false). Defined in src/main/rt64_render_context.cpp.
+namespace RT64 { class Application; }
+extern "C" RT64::Application* rs64_get_rt64_app();
+namespace ultramodern {
+    void submit_rdp_range(uint32_t lo_phys, uint32_t hi_phys);
+}
+
 uint32_t g_rsp_dpc_start = 0;
 uint32_t g_rsp_dpc_end   = 0;
 
@@ -235,15 +245,19 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
         }
     }
 
-    // OOB-CIMG: catch G_SETCIMG (byte 0 == 0xFF EXACTLY) with bogus addr.
+    // OOB-CIMG: catch G_SETCIMG (byte 0 == 0xFF EXACTLY) with bogus addr OR width.
     // Originally only fired for size==8 submissions; extended 2026-05-08 to
     // scan first 8 bytes of any submission (catches CIMGs at the head of
-    // multi-command batches too).
+    // multi-command batches too). Width-bogus branch added for the iter-810
+    // 600 MB allocation spike investigation — see CIMG-width-filter plan.
     //
-    // Two address regions are bogus:
+    // Three categories of bogus CIMG:
     //   addr >= 0x800000  : past 8MB RDRAM (typical: 0x00FFFFFF garbage)
     //   addr <  0x100000  : in asset/code region, not framebuffer space
     //                       (typical: 0x00008FFD, 0x00001FFE, 0x00003B83)
+    //   width >  640      : impossible (lo-res 320, hi-res 640).
+    //                       Observed: 3846, 7888, 7934 — clearly garbage
+    //                       interpretation, NOT real fb dimensions.
     //
     // The "segHigh" field is the high byte of the unmasked w1 — if non-zero,
     // it's a segment index (real RDP would resolve via segments[]). Tells us
@@ -253,47 +267,57 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
         int64_t mips = (int64_t)(int32_t)(submit_lo + 0x80000000);
         uint8_t b0w = (uint8_t)MEM_B(0, mips);
         if (b0w == 0xFF) {  // strict G_SETCIMG opcode match
+            uint32_t w0w = ((uint32_t)(uint8_t)MEM_B(0, mips) << 24) |
+                           ((uint32_t)(uint8_t)MEM_B(1, mips) << 16) |
+                           ((uint32_t)(uint8_t)MEM_B(2, mips) <<  8) |
+                           ((uint32_t)(uint8_t)MEM_B(3, mips));
             uint32_t w1w = ((uint32_t)(uint8_t)MEM_B(4, mips) << 24) |
                            ((uint32_t)(uint8_t)MEM_B(5, mips) << 16) |
                            ((uint32_t)(uint8_t)MEM_B(6, mips) <<  8) |
                            ((uint32_t)(uint8_t)MEM_B(7, mips));
             uint32_t addr24 = w1w & 0x00FFFFFF;
             uint8_t  segHigh = (uint8_t)((w1w >> 24) & 0xFF);
-            const bool oob_high = (addr24 >= 0x00800000u);
-            const bool oob_low  = (addr24 < 0x00100000u && addr24 != 0);
+            // Width is encoded in bits 0-11 of w0 as (width-1).
+            uint16_t cimg_width = (uint16_t)((w0w & 0xFFFu) + 1);
+            const bool oob_high  = (addr24 >= 0x00800000u);
+            const bool oob_low   = (addr24 < 0x00100000u && addr24 != 0);
+            const bool oob_width = (cimg_width > 640u);
             (void)segHigh;
-            if (oob_high || oob_low) {
+            if (oob_high || oob_low || oob_width) {
                 static std::atomic<uint64_t> s_oob{0};
                 static std::atomic<uint32_t> s_oob_low{0};
+                static std::atomic<uint32_t> s_oob_width{0};
                 uint64_t n = ++s_oob;
-                bool log_low = oob_low && (++s_oob_low <= 30);
-                bool log_high = oob_high && (n == 1 || (n & (n - 1)) == 0);
-                if (log_low || log_high) {
-                    uint32_t w0w = ((uint32_t)(uint8_t)MEM_B(0, mips) << 24) |
-                                   ((uint32_t)(uint8_t)MEM_B(1, mips) << 16) |
-                                   ((uint32_t)(uint8_t)MEM_B(2, mips) <<  8) |
-                                   ((uint32_t)(uint8_t)MEM_B(3, mips));
-                    const char *region = oob_high ? "HIGH" : "LOW";
+                bool log_low   = oob_low && (++s_oob_low <= 30);
+                bool log_high  = oob_high && (n == 1 || (n & (n - 1)) == 0);
+                bool log_width = oob_width && (++s_oob_width <= 40);
+                if (log_low || log_high || log_width) {
+                    const char *region = oob_width ? "WIDTH"
+                                       : oob_high  ? "HIGH"
+                                       : "LOW";
                     uint32_t submit_size = submit_hi - submit_lo;
                     fprintf(stderr,
-                        "[cimg-oob-1] #%llu region=%s slot=%d dl=0x%08X size=%u w0=0x%08X w1=0x%08X addr24=0x%06X segHigh=0x%02X\n",
+                        "[cimg-oob-1] #%llu region=%s slot=%d dl=0x%08X size=%u w0=0x%08X w1=0x%08X addr24=0x%06X w=%u segHigh=0x%02X\n",
                         (unsigned long long)n, region, g_cine_current_slot,
-                        (unsigned)submit_lo | 0x80000000u, submit_size, w0w, w1w, addr24, (unsigned)segHigh);
-                    // Dump 32 bytes context (16 before + cmd + 16 after) around the
+                        (unsigned)submit_lo | 0x80000000u, submit_size, w0w, w1w, addr24, (unsigned)cimg_width, (unsigned)segHigh);
+                    // Dump 72 bytes context (32 before + cmd + 32 after) around the
                     // submission's source byte. Tells us whether the bogus CIMG is:
                     //   (a) A real game-emitted command (addr next to legit DL ops)
                     //   (b) Garbage past a short DL (preceded by FULL_SYNC + zeros)
                     //   (c) Trailing pixel data (preceded by triangle/texrect bytes)
-                    if (log_low) {
-                        int64_t pre  = (int64_t)(int32_t)((submit_lo - 16) + 0x80000000);
+                    // 32-byte pre-window picks up the typical 4-cmd lead-in patterns
+                    // that a single emit-helper would produce; helps grep against
+                    // RecompiledFuncs/funcs_*.c for the owning function.
+                    if (log_low || log_width) {
+                        int64_t pre  = (int64_t)(int32_t)((submit_lo - 32) + 0x80000000);
                         int64_t post = (int64_t)(int32_t)((submit_lo +  8) + 0x80000000);
                         fprintf(stderr,
-                            "  [ctx] pre16:");
-                        for (int i = 0; i < 16; ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, pre));
+                            "  [ctx] pre32:");
+                        for (int i = 0; i < 32; ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, pre));
                         fprintf(stderr, "  cmd:");
                         for (int i = 0; i < 8;  ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, mips));
-                        fprintf(stderr, "  post16:");
-                        for (int i = 0; i < 16; ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, post));
+                        fprintf(stderr, "  post32:");
+                        for (int i = 0; i < 32; ++i) fprintf(stderr, " %02X", (unsigned)(uint8_t)MEM_B(i, post));
                         fprintf(stderr, "\n");
                     }
                     fflush(stderr);
