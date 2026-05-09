@@ -1,0 +1,82 @@
+
+Discarded input sections
+
+ .reginfo       0x0000000000000000       0x18 heap_guards.o
+ .MIPS.abiflags
+                0x0000000000000000       0x18 heap_guards.o
+ .pdr           0x0000000000000000       0x20 heap_guards.o
+ .mdebug.abi32  0x0000000000000000        0x0 heap_guards.o
+ .comment       0x0000000000000000       0x13 heap_guards.o
+ .gnu.attributes
+                0x0000000000000000       0x10 heap_guards.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+extram           0x0000000080801000 0x0000000004000000
+rom              0x0000000000000000 0x0000000004000000
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD heap_guards.o
+                0x0000000080801000                RAMBASE = 0x80801000
+                0x0000000081000000                PATCH_RAM_END = 0x81000000
+
+.ctors
+ *(.ctors*)
+ *(.init_array*)
+
+.dtors
+ *(.dtors*)
+
+.text           0x0000000080801000        0x0 load address 0x0000000000000000
+ *(.text*)
+ .text          0x0000000080801000        0x0 heap_guards.o
+
+.recomp_patch   0x0000000080801000      0x128 load address 0x0000000000000000
+ *(.recomp_patch*)
+ .recomp_patch  0x0000000080801000      0x128 heap_guards.o
+                0x0000000080801000                func_80007D74
+ *(.recomp_force_patch*)
+
+.recomp_export
+ *(.recomp_export*)
+
+.recomp_event
+ *(.recomp_event*)
+
+.rodata
+ *(.rodata*)
+
+.data           0x0000000080801128        0x0 load address 0x0000000000000128
+ *(.data*)
+ .data          0x0000000080801128        0x0 heap_guards.o
+
+.bss            0x0000000080801128        0x0 load address 0x0000000000000128
+ *(.bss*)
+ .bss           0x0000000080801128        0x0 heap_guards.o
+ *(COMMON)
+                0x0000000000000001                ASSERT ((. <= PATCH_RAM_END), Maxed out recomp extra ram)
+
+.reloc
+ *(.reloc*)
+
+.symtab
+ *(.symtab)
+
+.strtab
+ *(.strtab)
+
+.shstrtab
+ *(.shstrtab)
+
+/DISCARD/
+ *(*)
+                0x0000000080000000                __start = 0x80000000
+                0x000000008002221c                func_8002221C = 0x8002221c
+                0x00000000801163b0                heap_free_head = 0x801163b0
+                0x00000000801163fc                heap_other_listhead = 0x801163fc
+                0x000000008011a7dc                heap_tail_loc = 0x8011a7dc
+                0x00000000801163d4                heap_bump = 0x801163d4
+OUTPUT(patches.elf elf32-bigmips)

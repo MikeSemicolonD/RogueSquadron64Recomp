@@ -69,6 +69,8 @@ A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the
 | **CMake** | 3.20+ |
 | **Compiler** | MSVC with ClangCL toolset (Windows), Clang/GCC (Linux/macOS) |
 | **N64Recomp output** | Pre-generated `RecompiledFuncs/` from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp project (originally started by [Tmcg2](https://github.com/Tmcg2/rogue_squadron64))|
+| **MIPS cross-compiler** *(optional but strongly recommended)* | `mips64-elf-gcc` for the [`patches/` build](patches/README.md). Windows: download [`gcc-toolchain-mips64-win64.zip`](https://github.com/n64-tools/gcc-toolchain-mips64/releases). The official LLVM Windows installers ship without the MIPS backend, so clang doesn't work as a substitute. Default install path: `E:/mips-toolchain` (override with `cmake -DMIPS_TOOLCHAIN_DIR=...`). Skip-able: cmake will warn and disable the patches build if the toolchain isn't found, and the rest of the project still builds. |
+| **GNU make** | Used by `patches/Makefile`. `mingw32-make` from a MinGW install is fine. |
 
 ---
 
@@ -174,6 +176,32 @@ runs as `factor5_ucode()` on the SP task thread. RDP commands the ucode emits
 via `mtc0` to `DPC_START` / `DPC_END` are forwarded to RT64's RDP interpreter
 through `src/rsp/dpc_bridge.cpp`, giving low-level (LLE) parity without
 requiring a custom HLE GBI profile.
+
+### Patching auto-generated functions: the `patches/` build
+
+Defensive guards and overrides for game functions live in [`patches/`](patches/),
+**not** as hand-edits to the auto-generated `RecompiledFuncs/funcs_*.c`. Hand-
+written C in `patches/*.c` is cross-compiled to MIPS, run back through
+N64Recomp, and linked ahead of the auto-generated output so its symbols win
+the duplicate-resolution at link time. Auto-generated source can therefore be
+regenerated cleanly without losing our work.
+
+The pattern follows
+[Zelda64Recompiled/patches](https://github.com/Zelda64Recomp/Zelda64Recomp/tree/dev/patches),
+**but uses `mips64-elf-gcc` instead of `clang -target mips`** — current
+official LLVM Windows builds (19, 20, and 22.x release candidates) ship
+without the MIPS backend, while Linux/Mac LLVM packages include it. We use
+the [n64-tools](https://github.com/n64-tools/gcc-toolchain-mips64/releases)
+prebuilt MIPS GCC for Windows. See [patches/README.md](patches/README.md) for:
+
+- Toolchain install steps and verification
+- The full pipeline (`mips64-elf-gcc` → ELF → N64Recomp → host C → link)
+- How to write an override + the syms.ld pattern
+- Flag-by-flag differences from Zelda's clang-based Makefile (we drop the
+  clang-only flags `-target mips`, `-mno-odd-spreg`, `-mno-check-zero-division`,
+  `-Wno-incompatible-library-redeclaration`, `-Wno-unsupported-floating-point-opt`)
+- Constraints (`-nostdinc` means no `stddef.h` / `stdint.h` — inline the
+  typedefs you need)
 
 ---
 

@@ -8,6 +8,14 @@
 
 #include "librecomp/overlays.hpp"
 
+// Rogue Squadron loads overlay code on-demand via PI DMA. After each ROM read,
+// we ask librecomp to register the recompiled functions for that range so
+// subsequent jumps dispatch correctly. load_overlays internally bounds-checks
+// against known overlay sections — non-overlay asset reads are no-ops.
+static void rs64_post_pi_dma(uint32_t rom_offset, int32_t rdram_address, uint32_t size) {
+    load_overlays(rom_offset, rdram_address, size);
+}
+
 void rs64_register_overlays() {
     recomp::overlays::overlay_section_table_data_t sections {
         .code_sections = section_table,
@@ -21,4 +29,5 @@ void rs64_register_overlays() {
     };
 
     recomp::overlays::register_overlays(sections, overlays);
+    recomp::set_post_pi_dma_callback(&rs64_post_pi_dma);
 }

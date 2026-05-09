@@ -71,6 +71,88 @@ file(GLOB RECOMP_C_SOURCES   ${RECOMP_FUNCS_DIR}/*.c)
 file(GLOB RECOMP_CXX_SOURCES ${RECOMP_FUNCS_DIR}/*.cpp)
 target_sources(RecompiledFuncs PRIVATE ${RECOMP_C_SOURCES} ${RECOMP_CXX_SOURCES})
 
+# ---- Patches (Zelda-style override layer) ----
+# Hand-written C in patches/*.c is cross-compiled to MIPS by the decompals
+# mips64-elf-gcc toolchain, then run back through N64Recomp to produce
+# RecompiledPatches/patches.c. Symbols defined there override the same names
+# in RecompiledFuncs because PatchesLib gets linked first. Pattern adapted
+# from Zelda64Recompiled — see docs/audit-changes.md Tier 4 + patches/README.md.
+
+set(PATCHES_DIR             "${CMAKE_SOURCE_DIR}/patches")
+set(RECOMPILED_PATCHES_DIR  "${CMAKE_SOURCE_DIR}/RecompiledPatches")
+
+# Toolchain locations. Override on the cmake command line if installed elsewhere:
+#   cmake -DMIPS_TOOLCHAIN_DIR=C:/mips-toolchain ...
+set(MIPS_TOOLCHAIN_DIR "E:/mips-toolchain" CACHE PATH "Root of mips64-elf toolchain (decompals/n64-tools).")
+set(MIPS_GCC           "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc.exe")
+set(MIPS_LD            "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld.exe")
+set(N64RECOMP_EXE      "${CMAKE_BINARY_DIR}/Debug/N64Recomp.exe" CACHE FILEPATH "N64Recomp executable (built from lib/N64ModernRuntime/N64Recomp via N64RecompCLI target)")
+find_program(PATCHES_MAKE_EXE NAMES mingw32-make make)
+
+if (EXISTS "${MIPS_GCC}" AND EXISTS "${N64RECOMP_EXE}" AND PATCHES_MAKE_EXE)
+    file(GLOB PATCH_C_SOURCES "${PATCHES_DIR}/*.c")
+
+    # Step 1: cross-compile *.c → patches.elf (MIPS)
+    add_custom_command(OUTPUT "${PATCHES_DIR}/patches.elf"
+        COMMAND ${PATCHES_MAKE_EXE} CC=${MIPS_GCC} LD=${MIPS_LD}
+        WORKING_DIRECTORY "${PATCHES_DIR}"
+        DEPENDS ${PATCH_C_SOURCES}
+                "${PATCHES_DIR}/Makefile"
+                "${PATCHES_DIR}/patches.ld"
+                "${PATCHES_DIR}/syms.ld"
+        COMMENT "Cross-compiling patches.elf (MIPS)"
+        VERBATIM
+    )
+
+    # Step 2: N64Recomp the elf → RecompiledPatches/patches.c
+    add_custom_command(OUTPUT "${RECOMPILED_PATCHES_DIR}/patches.c"
+                              "${RECOMPILED_PATCHES_DIR}/funcs.h"
+                              "${RECOMPILED_PATCHES_DIR}/recomp_overlays.inl"
+        COMMAND ${N64RECOMP_EXE} "${CMAKE_SOURCE_DIR}/patches.toml"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS "${PATCHES_DIR}/patches.elf" "${CMAKE_SOURCE_DIR}/patches.toml"
+        COMMENT "Recompiling patches.elf → RecompiledPatches/patches.c"
+        VERBATIM
+    )
+
+    # Step 3: build PatchesLib that wraps the recompiled output
+    add_library(PatchesLib STATIC "${RECOMPILED_PATCHES_DIR}/patches.c")
+    set_source_files_properties("${RECOMPILED_PATCHES_DIR}/patches.c"
+        PROPERTIES GENERATED TRUE)
+
+    target_include_directories(PatchesLib PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${RECOMPILED_PATCHES_DIR}
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include
+        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
+    )
+    if (MSVC)
+        target_compile_options(PatchesLib PRIVATE /wd4101 /wd4133
+            -Wno-implicit-function-declaration
+            -Wno-error=implicit-function-declaration)
+    else()
+        target_compile_options(PatchesLib PRIVATE
+            -fno-strict-aliasing -Wno-unused-variable -Wno-implicit-function-declaration)
+    endif()
+    target_compile_definitions(PatchesLib PRIVATE main=rs_main)
+
+    set(PATCHES_BUILD_OK TRUE)
+else()
+    set(PATCHES_BUILD_OK FALSE)
+    message(STATUS "Patches build skipped:")
+    if (NOT EXISTS "${MIPS_GCC}")
+        message(STATUS "  - mips64-elf-gcc not at ${MIPS_GCC}")
+    endif()
+    if (NOT EXISTS "${N64RECOMP_EXE}")
+        message(STATUS "  - N64Recomp.exe not at ${N64RECOMP_EXE}")
+    endif()
+    if (NOT PATCHES_MAKE_EXE)
+        message(STATUS "  - mingw32-make / make not on PATH")
+    endif()
+    message(STATUS "  See patches/README.md for setup; rebuild without patches for now.")
+endif()
+
 # ---- Main executable ----
 # Factor5 GFX ucode — recompiled to C by RSPRecomp from factor5_rsp.toml.
 # Regen: build/Debug/RSPRecomp.exe factor5_rsp.toml
@@ -112,6 +194,15 @@ endif()
 
 if (MSVC)
     target_link_options(RogueSquadron64Recomp PRIVATE /OPT:NOICF)
+    # /FORCE:MULTIPLE lets PatchesLib's overrides win against the same-named
+    # auto-generated functions in RecompiledFuncs. lld-link processes libs in
+    # command-line order and takes the first definition; for our symbols
+    # PatchesLib comes first in the link line. Without this flag the linker
+    # treats the second definition as a fatal error. The risk: any genuinely
+    # accidental duplicate elsewhere is masked. If that becomes a problem we
+    # can switch to /FORCE:MULTIPLE only on the patched-symbol set via a
+    # per-symbol .def or by carving out the patched .obj from RecompiledFuncs.
+    target_link_options(RogueSquadron64Recomp PRIVATE /FORCE:MULTIPLE)
 endif()
 
 # ---- SDL2 (Windows: fetch; Linux/Mac: find_package) ----
@@ -150,6 +241,12 @@ else()
     find_package(Threads REQUIRED)
     target_include_directories(RogueSquadron64Recomp PRIVATE ${SDL2_INCLUDE_DIRS})
     target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS} Threads::Threads)
+endif()
+
+# PatchesLib must come BEFORE RecompiledFuncs so the linker takes its
+# overrides for any duplicated symbol names (Zelda's pattern).
+if (PATCHES_BUILD_OK)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE PatchesLib)
 endif()
 
 target_link_libraries(RogueSquadron64Recomp PRIVATE

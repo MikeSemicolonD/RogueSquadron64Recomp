@@ -38,8 +38,25 @@ To disable: unset, set to `0`, or leave undefined.
 | `ROGUESQ_LOG_RDP_STATE` | off | `[trace] setCombine #N mux=...`, `[trace] setOtherMode #N cycleType=...`, `[texfilt] tf=...`, `[particle-mux] otherMode...` | RDP-state diagnosis — which combiner/cycleType is active when a specific draw fires. Useful when correlating "what mux runs at frame X" or "did texfilt change between expected and actual". |
 | `ROGUESQ_LOG_PRESENT` | off | `[trace] RT64::Present #N swapIdx=...`, `[trace] PresentQueue::frame #N`, `[trace] Present::lookup`, `[trace] PresentQ::regfb/scratch`, `[trace] fbReg`, `[vi-status] word=...` | VI presentation / framebuffer routing investigations. The buffer-arbiter bug was diagnosed via these traces. Fires ~60 lines/sec. |
 | `ROGUESQ_LOG_SP_TASKS` | off | `[sp] osSpTaskStartGo #N kind=GFX...` | Task-scheduling rate (cinematic ~30/s, normal play 1-2/frame). Useful when tracking how often the game submits GFX tasks to the RSP. |
-| `ROGUESQ_HWBP` | off | `[hwbp] watching VA ...`, `[hwbp-hit #N] tid=... stack trace` | Hardware-breakpoint watchdog on rdram+0x3CBC4 — fires a symbolicated stack trace on every write to that address. Use when tracking memory corruption to find the writer. Heavy: kernel-mode debug-register churn. |
-| `ROGUESQ_PROBES` | n/a | (Reserved — `[wp@*]` watchpoint probes in recompiled funcs are currently always-on but only fire on value change, so volume is naturally bounded. Mark for future gating if needed.) | — |
+| `ROGUESQ_HWBP` | off | `[hwbp] watching VA ...`, `[hwbp-hit #N] tid=... stack trace` | Hardware-breakpoint watchdog on `rdram + ROGUESQ_HWBP_ADDR` (default 0x3CBC4) — fires a symbolicated stack trace on every write to that address. Use when tracking memory corruption to find the writer. Heavy: kernel-mode debug-register churn. |
+| `ROGUESQ_HWBP_ADDR` | `0x3CBC4` | (companion to `ROGUESQ_HWBP`) | Hex address (offset into RDRAM) to watch. Set both to enable a custom watchpoint, e.g. `ROGUESQ_HWBP=1 ROGUESQ_HWBP_ADDR=0x4B7848`. |
+| `ROGUESQ_LOG_FRAME_RATE` | off | `[rate] swap=N/s sample=M/s fb=...` | Once-per-second telemetry of `osViSwapBuffer` and VI-tick rates. Useful when investigating producer/consumer imbalance during cinematic. |
+| `ROGUESQ_LOG_PIPELINE` | off | `[pipe-1]`, `[pipe-2]`, `[pipe-3]` stage counters in RT64 framebuffer renderer | Per-stage TEXRECT pipeline counters (push → GPU draw). Used to verify the pipeline isn't dropping cinematic content between submission and rasterization. |
+| `ROGUESQ_LOG_PROBES` | off | `[wp@*]` watchpoint probes in `funcs_*.c` | Per-call value-change watchpoint probes inserted during the iter-810 freeze investigation. Volume is naturally bounded (only fire on transitions) but useful to gate if you want a quieter run. Same flag is checked from `src/main/debug_logs.h`. |
+| `ROGUESQ_LOG_RT64_ALLOC` | off | `[rt64-alloc] interpolatedColorTargets/nativeSwappedRAM/rdramData/BufferPair/RT::setupColor/setupDepth` | RT64 allocation hotspots — emit `[rt64-alloc]` log lines whenever an allocator commits ≥ 1 MB. Used to find allocation spikes. Lives in 5 sites across `lib/rt64/src/{hle,render}/`. |
+| `ROGUESQ_LOG_TEXBYTES` | off | `[trace] tex bytes ...` | First 32 bytes of texture data at SETTIMG addresses, for diagnosing wrong/missing assets. |
+
+### Cinematic-loop checkpoints
+
+These were added during the iter-810 freeze investigation and live in
+`E:/Projects/N64Recomp/RecompiledFuncs/funcs_27.c`. They get clobbered on
+N64Recomp regeneration — see [audit-changes.md](audit-changes.md) for the
+preservation strategy.
+
+| Env Var | Default | Tags Enabled | When To Enable |
+|---|---|---|---|
+| `ROGUESQ_LOG_CINE_CP` | off | `[cp] iter=N cpNN-...` | Per-call-site checkpoints inside `func_800A5D80`'s cinematic loop body. The last `[cp]` line before silence identifies which call hangs. ~30 sites. |
+| `ROGUESQ_LOG_CINE_CP_FROM` | `800` | (companion to `ROGUESQ_LOG_CINE_CP`) | Iter at which to start verbose logging. Each site prints once before the cutoff for sanity, then prints every iter from this point on. Set lower for full traces, higher to focus on the freeze window. |
 
 ## Workaround / experiment env vars (separate from logging)
 
@@ -62,6 +79,11 @@ they're orthogonal to the log gates above but commonly co-used.
 | `ROGUESQ_VI_FORCE_FB` | off | Diagnostic. Forces VI to present a specific RDRAM fb regardless of VI_ORIGIN. Use as `ROGUESQ_VI_FORCE_FB=0x80695C00`. Bypasses the cinematic buffer-arbiter bug to test "explosion sprites land in fb X but VI never shows X" hypotheses. Strips upper-half virtual prefix automatically. |
 | `ROGUESQ_NO_FULLSCREEN_FILLRECT` | off | Diagnostic. Suppresses full-screen FillRect (rect covers entire color target). Modes: `1`/`all` = skip every full-screen FillRect (causes Memory Pak attribution to ghost-trail since clears are needed there); `cinematic` = skip only when target is cinematic color fb 0x0062B800 / 0x00695C00 (preserves attribution clears, exposes cinematic content). Tests sub-frame-overwrite hypothesis for cinematic explosions. Partial FillRects always execute. |
 | `ROGUESQ_VI_FOLLOW_INCLUDE_FILLS` | off | Restores legacy VI-follow behavior. By default, fillOnly fbpairs are excluded from the VI-follow candidate list (so VI doesn't pick a just-cleared cinematic buffer when the actual content is in a sprite-rendering fbpair earlier in the workload). Set to `1` to include fillOnly pairs again. |
+| `ROGUESQ_FILLRECT_DEBUG` | off | Forces every FillRect to a fixed magenta. Visual sanity check: any cinematic frame with FillRect activity glows magenta. Lives in `rt64_framebuffer_renderer.cpp`. |
+| `ROGUESQ_DISABLE_Z_CMP` | off | Forces Z_CMP and Z_UPD bits OFF in `setOtherModeL`. Diagnostic for "is geometry being z-killed" hypotheses. |
+| `ROGUESQ_FULL_DUMP` | off | When a crash dump is written (SEH handler, SIGABRT, F12), `=1` produces a full-memory minidump (~5 GB) instead of the default lite dump. Use only when you need RDRAM contents for postmortem. |
+| `ROGUESQ_SUPPRESS_OOB_CIMG` | off | When set, drops Factor 5 ucode emissions of bogus SET_COLOR_IMAGE commands at HIGH (≥ 0x800000) and LOW (< 0x100000) addresses before they reach RT64. Reduces the iter-810 memory spike but causes a visual regression — the 3D Factor 5 logo no longer renders, since some legitimate Factor 5 lowmem CIMGs are dropped along with the garbage. |
+| `ROGUESQ_SWAP_SHADE` | off | **Legacy alias** for `ROGUESQ_SHADE_FIX=1`. Prefer setting `SHADE_FIX` directly. Kept because old logs reference it. |
 
 ## How to add a new debug trace
 
