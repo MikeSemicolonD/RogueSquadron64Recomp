@@ -6,7 +6,7 @@
 
 // MEM_WU — unsigned-word RDRAM access. Upstream recomp.h defines MEM_W
 // (signed int32) and MEM_HU/MEM_BU (unsigned half/byte) but no unsigned
-// word variant. Recompile output occasionally needs it (e.g. funcs_4
+// word variant. Recompile output occasionally needs it (e.g. funcs_7
 // pointer comparisons). Mirrors MEM_W layout but loads as uint32_t.
 #ifndef MEM_WU
 #define MEM_WU(offset, reg) \
@@ -26,10 +26,8 @@
 
 extern uint32_t g_rsp_dpc_start;
 extern uint32_t g_rsp_dpc_end;
-// Bridge entry point — defined in src/rsp/dpc_bridge.cpp. Filters + masks
-// the DPC range, then forwards to RT64 (via ultramodern::submit_rdp_range).
-// Going through this is required: bare submit_rdp_range bypasses every
-// CIMG/sync filter and crashes RT64 on malformed bytes from boot.
+// Bridge entry point — defined in src/rsp/dpc_bridge.cpp. Forwards the
+// DPC byte range to RT64 for raw-RDP rasterization.
 void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end);
 
 #define RSP_DPC_START(value)   do { g_rsp_dpc_start = (uint32_t)(value); } while (0)

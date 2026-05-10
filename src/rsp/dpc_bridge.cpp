@@ -53,6 +53,30 @@ static std::atomic<uint32_t> g_task_rdp_fullsyncs{0};
 // task_log_and_reset both run on the RSP task thread, so plain array is fine.
 static uint32_t g_task_op_count[64] = {0};
 
+// Drain accessor for diagnostic — see rt64_render_context.cpp / main.cpp.
+extern "C" void rs64_dpc_drain_histogram(uint32_t out[64]) {
+    for (int i = 0; i < 64; ++i) {
+        out[i] = g_task_op_count[i];
+        g_task_op_count[i] = 0;
+    }
+}
+
+// Cumulative opcode histogram across the whole session (NOT reset per task).
+// Used by the SEH handler in rt64_render_context.cpp to dump what kinds of
+// commands were submitted before the crash.
+static std::atomic<uint32_t> g_cumulative_op_count[64] = {};
+extern "C" void rs64_dpc_get_cumulative_histogram(uint32_t out[64]) {
+    for (int i = 0; i < 64; ++i) {
+        out[i] = g_cumulative_op_count[i].load(std::memory_order_relaxed);
+    }
+}
+
+// Cumulative FULL_SYNC count across the whole session (NOT reset per task).
+static std::atomic<uint32_t> g_cumulative_fullsyncs{0};
+extern "C" uint32_t rs64_dpc_get_cumulative_fullsyncs() {
+    return g_cumulative_fullsyncs.load(std::memory_order_relaxed);
+}
+
 // Per-task GFX opcode histogram (high byte of DL command word). Counted
 // directly from the factor5_ucode dispatch loop — a single increment per
 // command, no function call. Same single-thread-only constraint as above.
@@ -208,6 +232,22 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
         int64_t mips_first = (int64_t)(int32_t)(submit_lo + 0x80000000);
         uint8_t op = (uint8_t)MEM_B(0, mips_first) & 0x3F;
         g_task_op_count[op]++;
+        g_cumulative_op_count[op].fetch_add(1, std::memory_order_relaxed);
+        // Track all SET_COLOR_IMAGE addresses (op 0x3F = G_SETCIMG mask) so
+        // we can compare them against VI_ORIGIN to diagnose visual gaps.
+        if (op == 0x3F) {
+            uint32_t w1 = ((uint32_t)(uint8_t)MEM_B(4, mips_first) << 24) |
+                          ((uint32_t)(uint8_t)MEM_B(5, mips_first) << 16) |
+                          ((uint32_t)(uint8_t)MEM_B(6, mips_first) <<  8) |
+                          ((uint32_t)(uint8_t)MEM_B(7, mips_first));
+            static std::atomic<int> s_set_count{0};
+            int n = ++s_set_count;
+            if (n <= 16 || (n & 63) == 0) {
+                fprintf(stderr, "[set-cimg #%d] addr=0x%08X (phys=0x%06X)\n",
+                        n, w1, w1 & 0x00FFFFFF);
+                fflush(stderr);
+            }
+        }
     }
 
     // EARLY DUMP: capture RDRAM at MIPS 0x4B7800 + DMEM at the first few
@@ -374,6 +414,7 @@ void rsp_dpc_submit(uint8_t* rdram, uint32_t start, uint32_t end) {
             // halt externally, so signal the ucode dispatcher to break out.
             g_rsp_full_sync_seen.store(true, std::memory_order_release);
             g_task_rdp_fullsyncs.fetch_add(1, std::memory_order_relaxed);
+            g_cumulative_fullsyncs.fetch_add(1, std::memory_order_relaxed);
             g_last_fullsync_addr.store(submit_lo, std::memory_order_release);
             // Count FULL_SYNC bytes submitted. Compare to State::fullSync
             // count to see if RT64 is observing every one we send.

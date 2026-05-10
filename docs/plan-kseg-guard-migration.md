@@ -207,6 +207,36 @@ Total: ~25 guards across 7 files (excluding 2 dead-code guards in func_80007D74)
 7. **Final build + cinematic test** end-to-end. Behavior should match
    pre-migration runs.
 
+## Migration status (2026-05-09 afternoon)
+
+**Done** — already in `E:/Projects/N64Recomp/rogue_squadron.toml`:
+- Tier 1: 2/2 (`func_800646AC`, `func_800191C4`)
+- Tier 2: 4/4 (`func_800079F0` ×2, `func_8003E8DC`, `func_8003EA4C`)
+- Tier 3: 4/4 (`func_8000CFD4`, `func_80010014`, `func_80016C44`,
+  `func_8003EC10` lb-guard at 0x8003ED04)
+- Tier 4: 3/3 (`func_80010014`, `func_80016C44`, `func_8003EC10`
+  sw-guard at 0x8003ED3C)
+- TBD-migrated:
+  - `func_8003EC10` 0xFFFFFFFF→0 normalize ×3 at 0x8003ECB8/0x8003ECC4/0x8003ED18
+  - `func_800A5D80` loop-top free-list scrub at L_800A6024
+  - `rs_free` walker bounds at 0x80001D84
+  - `func_800022F8` walker bounds at 0x80002434
+
+**Still TODO** — complex multi-instruction patterns; need careful
+disassembly + matching label resolution:
+- `func_800A8420` chain-deref guards (multi-instruction NOP at
+  0x800A87A0/0x800A87A4/0x800A87A8 + conditional logic)
+- `func_8003FFEC` bail-with-full-epilogue at 0x800400AC
+- `func_80047368` chain-deref at 0x80047538
+
+**Verified post-migration** (2026-05-09):
+- Regen runs clean (0 errors).
+- Build runs clean.
+- Game launches and runs without crashing.
+- Cinematic still produces empty GFX tasks (tri=0 texrect=0). The
+  remaining TODO guards may be needed to break the cinematic stall —
+  pre-rebase fork had all 25 inline; migrated subset is ~22.
+
 ## Critical files
 
 - `E:/Projects/N64Recomp/rogue_squadron.toml` — where all hook entries go

@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <csignal>
 #include <vector>
 #include <cinttypes>
@@ -51,6 +52,14 @@
 // ---------------------------------------------------------------------------
 void rs64_register_overlays();
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
+
+// Wrapper: captures rdram into the watchdog global on first call so the
+// hwbp/poll diagnostic threads can attach. Forwards to the real entrypoint.
+extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw;
+extern "C" void rs64_entrypoint_with_rdram_capture(uint8_t* rdram, recomp_context* ctx) {
+    g_recomp_rdram_for_wp_raw = rdram;
+    recomp_entrypoint(rdram, ctx);
+}
 // The game's N64 "main" function — renamed to avoid clash with C main()
 extern "C" void rs_main(uint8_t* rdram, recomp_context* ctx);
 gpr get_entrypoint_address();
@@ -58,14 +67,16 @@ gpr get_entrypoint_address();
 // ---------------------------------------------------------------------------
 // RSP microcode dispatch
 // ---------------------------------------------------------------------------
-extern RspUcodeFunc aspMain;
 extern RspExitReason factor5_ucode(uint8_t* rdram, uint32_t ucode_addr);
 extern RspExitReason factor5_boot (uint8_t* rdram, uint32_t ucode_addr);
 extern uint8_t dmem[];
+extern "C" void rs64_dpc_drain_histogram(uint32_t out[64]);
 
 // Cached for the next ucode invocation. get_rsp_microcode is called with the
 // OSTask immediately before the ucode runs on the same thread.
-static thread_local uint32_t s_pending_task_data_ptr = 0;
+static thread_local uint32_t s_pending_task_data_ptr  = 0;
+static thread_local uint32_t s_pending_task_ucode_data = 0;
+static thread_local uint32_t s_pending_task_ucode_data_size = 0;
 
 // Rogue Squadron uses Factor5's MusyX audio ucode, NOT stock aspMain. Running
 // aspMain on MusyX-formatted task data produces garbage or hangs the audio
@@ -85,58 +96,158 @@ static RspExitReason unknown_task_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr
     return RspExitReason::Broke;
 }
 
-// Factor5 GFX ucode — recompiled to C by RSPRecomp. Replaces RT64's HLE GBI
-// interpreter for graphics tasks. RDP commands the ucode emits via DPC_START/
-// DPC_END writes go through src/rsp/dpc_bridge.cpp into RT64.
+// Factor 5 GFX ucode runner (LLE side of the hybrid pipeline).
 //
-// The original Factor5 boot ucode (a separate ~0xD0-byte blob at RDRAM
-// 0x800825D0) DMAs the data section to DMEM and stages task->t.data_ptr in
-// DMEM[0x654] for the main ucode to pick up via `lw $17, 0x654($8)`. We don't
-// recompile the boot, so we write that location manually here.
+// Runs the boot ucode to set up DMEM + DMA the data section, emulates
+// L_112C's first DL fetch by hand (the original ucode normally calls L_112C
+// from inside the dispatch loop, but on first invocation that hasn't happened
+// yet so DMEM has no real DL bytes), then runs the main ucode. The main ucode
+// processes DL commands and, for vertex-pipeline ops, emits raw RDP triangle
+// bytes via mtc0 DPC_END writes that flow through src/rsp/dpc_bridge.cpp into
+// RT64 (isHLE=false).
 static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
-    uint32_t dl_ptr = s_pending_task_data_ptr;
+    uint32_t dl_ptr           = s_pending_task_data_ptr;
+    uint32_t ucode_data_addr  = s_pending_task_ucode_data;
+    uint32_t ucode_data_size  = s_pending_task_ucode_data_size;
 
-    // Run the boot ucode first to set up registers + DMA the data section.
+    // Mimic SP_BOOT (silicon-level RSP boot ucode): zero DMEM[0..0xFC0] then
+    // DMA OSTask.ucode_data into DMEM[0..ucode_data_size]. Leave DMEM[0xFC0
+    // ..0x1000] alone — that's the OSTask region the boot ucode reads.
+    // Zeroing it would wipe OSTask.ucode at DMEM[0xFD0] and the next boot
+    // call would DMA from RDRAM[0] (garbage).
+    std::memset(dmem, 0, 0xFC0);
+    if (ucode_data_addr != 0 && ucode_data_size != 0 && ucode_data_size <= 0xFC0) {
+        dma_rdram_to_dmem(rdram, /*dmem*/0, /*dram*/ucode_data_addr & 0x00FFFFFF,
+                          /*rd_len*/ucode_data_size - 1);
+    }
+    // Diagnostic: log re-DMA params + DMEM[0..0x10] after the copy.
+    {
+        static int s_log = -1;
+        if (s_log < 0) {
+            const char* e = std::getenv("ROGUESQ_LOG_SPBOOT");
+            s_log = (e && *e && *e != '0') ? 1 : 0;
+        }
+        if (s_log) {
+            static int s_n = 0;
+            ++s_n;
+            if (s_n <= 4) {
+                fprintf(stderr,
+                    "[spboot] task #%d ucode_data=0x%08X size=0x%X DMEM[0..0x10]:",
+                    s_n, ucode_data_addr, ucode_data_size);
+                for (int i = 0; i < 0x10; ++i) {
+                    fprintf(stderr, " %02X", dmem[i ^ 3]);
+                }
+                fprintf(stderr, "\n");
+                fflush(stderr);
+            }
+        }
+    }
+
     // Boot exits via UnhandledJumpTarget on its `jr $7=0x1080` (jumping into
-    // the main ucode it just DMA'd to IMEM 0x80) — that's expected, since the
-    // main ucode is our separately-recompiled C function we call next.
+    // the main ucode it just DMA'd to IMEM 0x80) — that's expected.
     RspExitReason boot_r = factor5_boot(rdram, ucode_addr);
     if (boot_r != RspExitReason::UnhandledJumpTarget && boot_r != RspExitReason::Broke) {
         fprintf(stderr, "[RSP] factor5_boot returned unexpected %d, abandoning task\n", (int)boot_r);
         return RspExitReason::Broke;
     }
 
-    // Emulate L_112C's DL fetch by hand: in the original ucode, L_112C is
-    // called from inside the L_1010 dispatch loop to DMA the next 0x110 bytes
-    // of DL from OSTask.data_ptr → DMEM[0x170]. On first task it has not yet
-    // been called, so DMEM has no real DL and the dispatcher would loop on
-    // garbage. We do that DMA up-front here, then poke DMEM[0x654] = 0x178 so
-    // the recompile's first `lw $17, 0x654` lands at the start of real
-    // commands (DMA target was 0x170; first 8 bytes are header so r17=0x178).
     auto poke_be32 = [](uint32_t off, uint32_t val) {
         for (int i = 0; i < 4; ++i) {
             dmem[(off + i) ^ 3] = (uint8_t)(val >> (24 - 8*i));
         }
     };
     if (dl_ptr) {
+        // Stage the first 0x110 bytes of DL into DMEM at 0x170 (where the
+        // main ucode's L_112C helper would normally DMA). Set DMEM[0x654] to
+        // 0x178 so the dispatcher's first `lw $17, 0x654` lands past the
+        // 8-byte header at the start of real commands.
         dma_rdram_to_dmem(rdram, /*dmem*/0x170, /*dram*/dl_ptr & 0x00FFFFFF, /*rd_len*/0x10F);
-        // Save data_ptr at DMEM[0x101C] (= 0xFC0+0x5C, where r18=0xFC0 means
-        // L_112C's `sw $r2, 0x5C($18)` writes after future re-DMAs).
+        // DMEM[$18+0x30] = the "current chunk RDRAM addr". With $18=0x100
+        // (the value our fixup injects, matching L_1DB0's bootstrap), this
+        // is DMEM[0x130]. L_11B0's chunk-fetch reads this slot for the next
+        // re-DMA. L_1DB0 normally bootstraps it from DMEM[$1+0x30] = 0xFF0;
+        // we mirror that bootstrap here in case L_1DB0 itself doesn't fire
+        // every task. (Without this, tasks 2+ exit before emitting any RDP
+        // because the static-data segment leaves 0x130 as bogus.)
+        poke_be32(0x130, dl_ptr);
+        poke_be32(0xFF0, dl_ptr);
         poke_be32(0x101C, dl_ptr);
-        // Set DL pointer for the dispatcher: r17 = 0x178 (skip 8-byte header).
-        poke_be32(0x654, 0x178);
+        poke_be32(0x654,  0x178);
+        // Reset the DL-stack-pointer byte. The ucode runs with $18 = 0x100
+        // (set by L_1DB0's bootstrap), so $18+0x52 = DMEM[0x152]. Op_0F's
+        // L_12C4 handler decrements this by 8 each call and exits the
+        // dispatch loop when it goes negative. After task #1 underflows the
+        // byte is left negative; subsequent tasks would exit immediately with
+        // 0 RDP work emitted. Reset to 0x18 (3 stack entries) at task start.
+        dmem[0x152 ^ 3] = 0x18;
+        dmem[0x153 ^ 3] = 0;     // L_1DB0 also clears 0x53($18)
+
+        // Diagnostic: dump first 16 DMEM bytes at the dispatch start so we
+        // can see what opcode the first iter is dispatching on per task.
+        static int s_dump = -1;
+        if (s_dump < 0) {
+            const char* e = std::getenv("ROGUESQ_LOG_DMEM_DL");
+            s_dump = (e && *e && *e != '0') ? 1 : 0;
+        }
+        if (s_dump) {
+            static int s_n = 0;
+            ++s_n;
+            if (s_n <= 8) {
+                fprintf(stderr, "[dl] task #%d dl_ptr=0x%08X DMEM[0x178..0x190]:",
+                        s_n, dl_ptr);
+                for (int i = 0x178; i < 0x190; ++i) {
+                    fprintf(stderr, " %02X", dmem[i ^ 3]);
+                }
+                fprintf(stderr, "\n");
+                fflush(stderr);
+            }
+        }
     } else {
-        poke_be32(0x654, 0x270);  // fallback if no data_ptr cached yet
+        poke_be32(0x654, 0x270);
     }
-    return factor5_ucode(rdram, ucode_addr);
+    RspExitReason r = factor5_ucode(rdram, ucode_addr);
+    {
+        static int s_log = -1;
+        if (s_log < 0) {
+            const char* e = std::getenv("ROGUESQ_LOG_RUNNER");
+            s_log = (e && *e && *e != '0') ? 1 : 0;
+        }
+        if (s_log) {
+            static int s_n = 0;
+            ++s_n;
+            if (s_n <= 8 || (s_n & 31) == 0) {
+                // Pull the dpc_bridge per-task RDP-opcode histogram (raw 6-bit
+                // RDP opcodes, NOT the F3D DL byte). 0x08-0x0F = triangle
+                // variants; 0x24/0x25 = TEXRECT/TEXRECT_FLIP; 0x29 = SYNC_FULL;
+                // 0x36 = FILL_RECTANGLE; 0x3E/0x3F = SET_DEPTH/COLOR_IMAGE.
+                uint32_t hist[64];
+                rs64_dpc_drain_histogram(hist);
+                uint32_t tris = 0;
+                for (int i = 0x08; i <= 0x0F; ++i) tris += hist[i];
+                fprintf(stderr,
+                        "[runner] task #%d exit=%d dl_ptr=0x%08X tris=%u texrects=%u fillrects=%u syncs=%u cimg=%u depth=%u\n",
+                        s_n, (int)r, dl_ptr,
+                        tris, hist[0x24] + hist[0x25], hist[0x36],
+                        hist[0x29], hist[0x3F], hist[0x3E]);
+                fflush(stderr);
+            }
+        }
+    }
+    return r;
 }
 
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     switch (task->t.type) {
     case M_GFXTASK:
-        // Cache data_ptr for factor5_gfx_runner — the recompile reads $17 from
-        // DMEM[0x654] which the boot ucode normally pre-populates.
-        s_pending_task_data_ptr = (uint32_t)task->t.data_ptr;
+        // Cache OSTask fields for factor5_gfx_runner. The runner needs to:
+        //   - DMA the ucode_data segment to DMEM (mimicking SP_BOOT) so each
+        //     task starts with fresh per-task data, not state carried over
+        //     from the previous task's exit.
+        //   - DMA the first chunk of the DL into DMEM[0x170] so the first
+        //     dispatch loop iter has real bytes.
+        s_pending_task_data_ptr        = (uint32_t)task->t.data_ptr;
+        s_pending_task_ucode_data      = (uint32_t)task->t.ucode_data;
+        s_pending_task_ucode_data_size = (uint32_t)task->t.ucode_data_size;
         return &factor5_gfx_runner;
     case M_AUDTASK:
         return &musyx_stub;
@@ -315,6 +426,187 @@ static void arm_hwbp_all_threads(uintptr_t addr) {
     // reported by memwp_veh; that's the only signal we care about.
 }
 
+// Helper: read a 4-byte BE word from RDRAM at the given RDRAM-relative offset.
+// (RDRAM is host-LE-stored; XOR-3 byte order for BE).
+static inline uint32_t rdram_be32(const uint8_t* rdram, uint32_t off) {
+    return (uint32_t(rdram[(off + 0) ^ 3]) << 24) |
+           (uint32_t(rdram[(off + 1) ^ 3]) << 16) |
+           (uint32_t(rdram[(off + 2) ^ 3]) <<  8) |
+            uint32_t(rdram[(off + 3) ^ 3]);
+}
+
+// Periodic poll of the scene-state struct at D_80130B10 + the per-frame
+// callback array at D_8011A8A4. Both regions are documented in
+// `project_thread_topology_2026_05_09.md`. Gated by ROGUESQ_LOG_STATE=1.
+//
+// Reports the first dump immediately, then logs changes only. The state byte
+// at +0x14 of D_80130B10 indexes the level/scene jump-table at jtbl_8003A3E8.
+// The 4 callback slots at D_8011A8A4 are the per-frame draw callbacks the
+// main game thread iterates each frame.
+static void start_state_poller() {
+    if (!std::getenv("ROGUESQ_LOG_STATE")) return;
+    static std::thread t{[]{
+        uint8_t* rdram = nullptr;
+        while (!(rdram = (uint8_t*)g_recomp_rdram_for_wp_raw)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        // KSEG0 → RDRAM-relative offset (mask 0x00FFFFFF).
+        const uint32_t state_off  = 0x130B10;  // D_80130B10..B40 (scene state)
+        const uint32_t cbarr_off  = 0x11A8A4;  // D_8011A8A4..B4  (4 callbacks)
+        // 12 words covers B10..B3F. asm/main/3EBA0.s reads bytes at +0x20,
+        // +0x21, +0x22 (D_80130B30..B32) to gate state transitions, so the
+        // first poll missed exactly the bytes needed for forward-progress
+        // analysis. Now we cover the whole B10..B3F region.
+        uint32_t prev[16] = {0xFFFFFFFFu};
+        bool first = true;
+        for (int i = 0; i < 1200; ++i) {  // ~60s @ 50ms
+            uint32_t state[12];
+            for (int j = 0; j < 12; ++j) state[j] = rdram_be32(rdram, state_off + j * 4);
+            uint32_t cbs[4];    // 4 callback fn ptrs
+            for (int j = 0; j < 4; ++j) cbs[j]   = rdram_be32(rdram, cbarr_off + j * 4);
+
+            // Drain-loop diagnostic — boot thread is stuck waiting for these.
+            // D_800A0F50 byte: drain-enable gate (0 = bypass drain, return ready)
+            // D_80141AD0 byte: drain-entry count
+            // D_801496F8 word: array base ptr (each entry 0x88 bytes; byte[0] = active flag)
+            uint8_t  a0f50 = rdram[0xA0F50 ^ 3];
+            uint8_t  c1ad0 = rdram[0x141AD0 ^ 3];
+            uint32_t array_base = rdram_be32(rdram, 0x1496F8);
+            // Sound-asset data dumps — boot deadlocks in func_80097518 walking
+            // pool_SND, possibly because the asset loader leaves buffers zeroed.
+            // Dump all 3 sound assets once each when they become non-null.
+            //   D_80139B4C = sound/proj_SND  (first asset)
+            //   D_80139B54 = sound/pool_SND  (second asset, fed to func_80097518)
+            //   D_80139B50 = sound/sdir_SND  (third asset)
+            static bool snd_dumped[3] = {false, false, false};
+            const uint32_t snd_addrs[3] = {0x139B4C, 0x139B54, 0x139B50};
+            const char* snd_names[3] = {"proj_SND", "pool_SND", "sdir_SND"};
+            for (int s = 0; s < 3; ++s) {
+                if (snd_dumped[s]) continue;
+                uint32_t ptr = rdram_be32(rdram, snd_addrs[s]);
+                uint32_t off = ptr & 0x00FFFFFFu;
+                if ((ptr & 0xF0000000u) == 0x80000000u && off + 0x40 < 0x800000u) {
+                    fprintf(stderr, "[%s] t=%4d ms ptr=0x%08X first 0x40 bytes (BE):\n",
+                            snd_names[s], i * 50, ptr);
+                    for (int row = 0; row < 4; ++row) {
+                        fprintf(stderr, "  %04X:", row * 16);
+                        for (int b = 0; b < 16; ++b) {
+                            fprintf(stderr, " %02X", rdram[(off + row * 16 + b) ^ 3]);
+                        }
+                        fprintf(stderr, "\n");
+                    }
+                    fflush(stderr);
+                    snd_dumped[s] = true;
+                    // EXPERIMENTAL: if the buffer is all zeros, write -1 sentinel
+                    // into the first word. The user's hypothesis is that the
+                    // attribution screen has no audio, so empty pool is correct
+                    // and the game's pool walker should exit early on -1 sentinel.
+                    // Our zero-init heap puts 0 instead. Test the hypothesis:
+                    // ROGUESQ_FORCE_EMPTY_POOL_SENTINEL=1.
+                    if (std::getenv("ROGUESQ_FORCE_EMPTY_POOL_SENTINEL")) {
+                        bool all_zero = true;
+                        for (int j = 0; j < 16; ++j) {
+                            if (rdram[(off + j) ^ 3] != 0) { all_zero = false; break; }
+                        }
+                        if (all_zero) {
+                            // Write 0xFFFFFFFF (BE) to first word.
+                            for (int j = 0; j < 4; ++j) {
+                                rdram[(off + j) ^ 3] = 0xFF;
+                            }
+                            fprintf(stderr,
+                                "[%s-FIX] wrote sentinel -1 to first word at 0x%08X\n",
+                                snd_names[s], ptr);
+                            fflush(stderr);
+                        }
+                    }
+                }
+            }
+            // Compute first-N active flags if array_base is a sane KSEG0 ptr
+            uint8_t flags[8] = {0};
+            uint32_t array_off = array_base & 0x00FFFFFFu;
+            int n = c1ad0 < 8 ? c1ad0 : 8;
+            if ((array_base & 0xF0000000u) == 0x80000000u && array_off + n * 0x88 < 0x800000u) {
+                for (int j = 0; j < n; ++j) {
+                    flags[j] = rdram[(array_off + j * 0x88) ^ 3];
+                }
+            }
+
+            uint32_t cur[16];
+            for (int j = 0; j < 12; ++j) cur[j] = state[j];
+            for (int j = 0; j < 4; ++j) cur[12 + j] = cbs[j];
+            bool changed = first;
+            for (int j = 0; j < 16; ++j) if (cur[j] != prev[j]) { changed = true; break; }
+            // Track drain state too — re-log when it changes.
+            static uint8_t prev_a0f50 = 0xFF, prev_c1ad0 = 0xFF;
+            static uint32_t prev_array_base = 0xFFFFFFFFu;
+            static uint8_t prev_flags[8] = {0xFF};
+            if (a0f50 != prev_a0f50 || c1ad0 != prev_c1ad0 || array_base != prev_array_base) changed = true;
+            for (int j = 0; j < 8; ++j) if (flags[j] != prev_flags[j]) { changed = true; break; }
+            if (changed) {
+                first = false;
+                fprintf(stderr,
+                    "[state] t=%4d ms B10=%08X B14=%08X B18=%08X B1C=%08X B20=%08X B24=%08X B28=%08X B2C=%08X B30=%08X B34=%08X B38=%08X B3C=%08X | scene=%u | cb=[%08X,%08X,%08X,%08X] | drain.A0F50=%02X drain.cnt=%u arr=0x%08X flags=[%02X,%02X,%02X,%02X,%02X,%02X,%02X,%02X]\n",
+                    i * 50,
+                    state[0], state[1], state[2], state[3], state[4], state[5],
+                    state[6], state[7], state[8], state[9], state[10], state[11],
+                    (state[1] >> 24) & 0xFFu,
+                    cbs[0], cbs[1], cbs[2], cbs[3],
+                    a0f50, c1ad0, array_base,
+                    flags[0], flags[1], flags[2], flags[3],
+                    flags[4], flags[5], flags[6], flags[7]);
+                fflush(stderr);
+                for (int j = 0; j < 16; ++j) prev[j] = cur[j];
+                prev_a0f50 = a0f50;
+                prev_c1ad0 = c1ad0;
+                prev_array_base = array_base;
+                for (int j = 0; j < 8; ++j) prev_flags[j] = flags[j];
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }};
+    t.detach();
+}
+
+// Periodic poll of MEM[0x80130B50] (the inner-loop transition gate). Reports
+// changes so we can see WHO writes it and what bits flip. Gated by
+// ROGUESQ_LOG_B50=1.
+static void start_b50_poller() {
+    if (!std::getenv("ROGUESQ_LOG_B50")) return;
+    static std::thread t{[]{
+        uint8_t* rdram = nullptr;
+        while (!(rdram = (uint8_t*)g_recomp_rdram_for_wp_raw)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        // RDRAM-relative offsets for KSEG0 0x80130B50 / 0x80130B58.
+        const uint32_t b50_off = 0x130B50;
+        const uint32_t b58_off = 0x130B58;
+        uint32_t prev_b50 = 0xFFFFFFFFu;
+        uint32_t prev_b58 = 0xFFFFFFFFu;
+        for (int i = 0; i < 1200; ++i) {  // ~60s @ 50ms
+            // Reads via byte XOR-3 to get BE word (RDRAM is host-LE-stored).
+            uint32_t b50 = (uint32_t(rdram[(b50_off + 0) ^ 3]) << 24) |
+                           (uint32_t(rdram[(b50_off + 1) ^ 3]) << 16) |
+                           (uint32_t(rdram[(b50_off + 2) ^ 3]) <<  8) |
+                            uint32_t(rdram[(b50_off + 3) ^ 3]);
+            uint32_t b58 = (uint32_t(rdram[(b58_off + 0) ^ 3]) << 24) |
+                           (uint32_t(rdram[(b58_off + 1) ^ 3]) << 16) |
+                           (uint32_t(rdram[(b58_off + 2) ^ 3]) <<  8) |
+                            uint32_t(rdram[(b58_off + 3) ^ 3]);
+            if (b50 != prev_b50 || b58 != prev_b58) {
+                fprintf(stderr, "[b50] t=%4d ms B50=0x%08X B58=0x%08X (b50.bit5=%d b50.b3=0x%02X b58.bit25=%d)\n",
+                        i * 50, b50, b58,
+                        (b50 >> 5) & 1, b50 & 0xFF,
+                        (b58 >> 25) & 1);
+                fflush(stderr);
+                prev_b50 = b50;
+                prev_b58 = b58;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }};
+    t.detach();
+}
+
 static void start_memwp_watchdog() {
     static std::thread wp_thread{[]{
         uint8_t* rdram = nullptr;
@@ -355,6 +647,8 @@ static void poll_input() {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_QUIT) {
+            fprintf(stderr, "[main] SDL_QUIT received, exiting\n");
+            fflush(stderr);
             exit(EXIT_SUCCESS);
         }
         if (e.type == SDL_CONTROLLERDEVICEADDED) {
@@ -373,6 +667,18 @@ static void poll_input() {
             fprintf(stderr, "[F12] manual minidump requested\n");
             fflush(stderr);
             write_minidump_safe(nullptr);
+        }
+        // Diagnostic: log F1-F4 to confirm the keys are reaching the SDL
+        // queue at all. If we see these logs, SDL is delivering keypresses
+        // to our process — RT64's filter (which runs before SDL_PollEvent)
+        // may have already consumed them, or it may not be installed.
+        if (e.type == SDL_KEYDOWN) {
+            const auto& sym = e.key.keysym.sym;
+            if (sym == SDLK_F1 || sym == SDLK_F2 || sym == SDLK_F3 || sym == SDLK_F4) {
+                fprintf(stderr, "[input] SDL_KEYDOWN sym=%d (F%d) reached PollEvent\n",
+                        (int)sym, (int)(sym - SDLK_F1 + 1));
+                fflush(stderr);
+            }
         }
     }
 }
@@ -473,7 +779,20 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 #endif
 }
 
-void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {}
+void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
+    // Pump SDL events on the main thread (the one that owns the SDL window).
+    // Win32 routes window messages to the window-owning thread's queue, so
+    // SDL_PumpEvents on any other thread won't dispatch them. Without this,
+    // the window appears "Not Responding" and F1/F2/F3/F4 keypresses never
+    // reach RT64's developer-mode filter — even though poll_input() on the
+    // game thread also calls SDL_PollEvent, that thread doesn't own the
+    // window so messages stay queued.
+    //
+    // RT64's SDL_SetEventFilter installed via Application::sdlEventFilter
+    // intercepts F1-F4 here (filters run before SDL_PollEvent dequeues), so
+    // the controller-input poll on the game thread never sees those keys.
+    SDL_PumpEvents();
+}
 
 // ---------------------------------------------------------------------------
 // Thread naming
@@ -505,7 +824,7 @@ std::vector<recomp::GameEntry> supported_games = {
         .save_type            = recomp::SaveType::Eep4k,
         .is_enabled           = true,
         .entrypoint_address   = get_entrypoint_address(),
-        .entrypoint           = recomp_entrypoint,
+        .entrypoint           = rs64_entrypoint_with_rdram_capture,
     },
 };
 
@@ -650,13 +969,29 @@ int main(int argc, char* argv[]) {
     // Hardware-breakpoint watchdog on rdram+0x3CBC4 (where a corruption was
     // first observed). Useful for tracing the writer when investigating the
     // bug; emits a stack-traced [hwbp-hit] line for every write to the
-    // watched address. Default off — set ROGUESQ_HWBP=1 to enable.
+    // watched address. Default off — set ROGUESQ_HWBP=1 to enable, or just
+    // ROGUESQ_HWBP_ADDR=<offset> to enable + watch a different address.
     {
         const char *e = std::getenv("ROGUESQ_HWBP");
-        if (e && *e && *e != '0') {
+        const char *e_addr = std::getenv("ROGUESQ_HWBP_ADDR");
+        bool flag_enabled = (e && *e && *e != '0');
+        // ADDR enables the watchdog if it parses to a non-zero number — accepts
+        // "0x470", "1136", etc. Don't test *e_addr against '0' (broken for "0x...").
+        bool addr_enabled = false;
+        if (e_addr && *e_addr) {
+            unsigned long v = std::strtoul(e_addr, nullptr, 0);
+            if (v != 0) addr_enabled = true;
+        }
+        if (flag_enabled || addr_enabled) {
+            fprintf(stderr, "[hwbp] watchdog enabled (ROGUESQ_HWBP=%s ROGUESQ_HWBP_ADDR=%s)\n",
+                    e ? e : "(unset)", e_addr ? e_addr : "(unset, defaults to 0x3CBC4)");
+            fflush(stderr);
             start_memwp_watchdog();
         }
     }
+
+    start_b50_poller();
+    start_state_poller();
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);

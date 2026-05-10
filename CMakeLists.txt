@@ -15,6 +15,21 @@ if (WIN32)
     add_compile_definitions(NOMINMAX _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
+# Disable MSVC's debug iterator bounds checks. Currently there's a
+# `vector subscript out of range` assert deep in RT64 when Factor 5's
+# ucode generates non-standard RDP byte sequences. The assert fires in
+# Debug builds even with our CRT_REPORT hook returning 1 because
+# _STL_VERIFY calls abort() unconditionally after the report. With
+# bounds checks off, the vector returns garbage and execution continues.
+# Trade-off: we lose bounds-check safety nets across the whole build.
+# Enable via -DROGUESQ_NO_ITER_DEBUG=ON. Both defines are required to
+# avoid linker incompatibility with already-compiled debug libs.
+option(ROGUESQ_NO_ITER_DEBUG "Disable MSVC debug iterators (skip bounds checks)" OFF)
+if(WIN32 AND ROGUESQ_NO_ITER_DEBUG)
+    add_compile_definitions(_HAS_ITERATOR_DEBUGGING=0 _ITERATOR_DEBUG_LEVEL=0)
+    message(STATUS "MSVC debug iterators DISABLED (vector bounds checks off)")
+endif()
+
 if (APPLE)
     enable_language(OBJC OBJCXX)
 endif()
@@ -30,6 +45,15 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(RT64_STATIC TRUE)
 set(RT64_SDL_WINDOW_VULKAN TRUE)
 add_compile_definitions(HLSL_CPU)
+# Enable D3D12 debug layer to get readable error messages from DirectX
+# instead of cryptic crashes deep in D3D12GetInterface. RT64's plume layer
+# checks for D3D12_DEBUG_LAYER_ENABLED at compile time. Set via
+# -DROGUESQ_DX12_DEBUG=ON when configuring CMake to enable.
+option(ROGUESQ_DX12_DEBUG "Enable D3D12 debug layer in RT64" OFF)
+if(ROGUESQ_DX12_DEBUG)
+    add_compile_definitions(D3D12_DEBUG_LAYER_ENABLED)
+    message(STATUS "D3D12 debug layer ENABLED")
+endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
 
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
@@ -49,7 +73,7 @@ if (MSVC)
     target_compile_options(RecompiledFuncs PRIVATE
         -Wno-implicit-function-declaration
         -Wno-error=implicit-function-declaration)
-    # Force-include our MEM_WU + RSP_DPC_* macros header (fills gaps in
+    # Force-include our MEM_WU macro header (fills the unsigned-word gap in
     # upstream recomp.h without modifying it). See include/rsp_dpc_macros.h.
     target_compile_options(RecompiledFuncs PRIVATE
         /FI${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h)
@@ -158,11 +182,43 @@ else()
 endif()
 
 # ---- Main executable ----
-# Factor5 GFX ucode — recompiled to C by RSPRecomp from factor5_rsp.toml.
-# Regen: build/Debug/RSPRecomp.exe factor5_rsp.toml
-# librecomp headers are C++ so the file must be compiled as C++.
+# Hybrid graphics pipeline (2026-05-09):
+#   - HLE side: RT64's Factor 5 GBI module (lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp)
+#     handles standard F3D-derived opcodes (TEXRECT, FILLRECT, sync ops, etc.)
+#     when the HLE path is invoked.
+#   - LLE side: factor5_ucode_recompiled.c (auto-translated by RSPRecomp from the
+#     game's RSP graphics ucode) handles vertex transform / clip / project.
+#     Triangles get emitted as raw RDP bytes via DPC_END writes; src/rsp/
+#     dpc_bridge.cpp forwards them into RT64 via submit_rdp_range.
+#
+# A pure HLE replacement for the LLE side is feasible (op_01..op_04 plus
+# triangle assembly are tractable handlers, contrary to factor5-gbi.md's
+# original "GBI-level plan is closed" conclusion) but is multi-day work.
+# Keeping LLE for now lets us ship visuals while migrating ops one at a time.
 set(FACTOR5_UCODE_C ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_ucode_recompiled.c)
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
+# Post-process: RSPRecomp emits a goto to a non-existent label for one
+# never-taken branch near end-of-IMEM (perspective-divide reciprocal block).
+# tools/fixup_factor5_ucode.py rewrites those gotos to clean exits. The
+# fixup runs as part of CMake config so it survives any future regen.
+find_package(Python3 COMPONENTS Interpreter)
+if (Python3_Interpreter_FOUND AND EXISTS ${FACTOR5_UCODE_C})
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${FACTOR5_UCODE_C}
+        RESULT_VARIABLE FACTOR5_FIXUP_RESULT
+    )
+endif()
+# Same fixup, applied to factor5_boot_recompiled.c. The boot ucode hands off
+# to the main ucode via `jr $7=0x1080`, which RSPRecomp can't model — without
+# this fixup, every task triggers a 4-line printf register dump. The runner
+# already treats UnhandledJumpTarget from boot as expected, so the printf is
+# pure spam (and at ~3 tasks/sec it can starve the console pump).
+if (Python3_Interpreter_FOUND AND EXISTS ${FACTOR5_BOOT_C})
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${FACTOR5_BOOT_C}
+        RESULT_VARIABLE FACTOR5_BOOT_FIXUP_RESULT
+    )
+endif()
 set_source_files_properties(${FACTOR5_UCODE_C} ${FACTOR5_BOOT_C} PROPERTIES
     LANGUAGE CXX
     COMPILE_OPTIONS "-msse4.1;/FI${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h")

@@ -67,11 +67,10 @@ inline bool log_init() {
     return v;
 }
 
-// dpc_bridge.cpp pretty-printer (`[dpc-pak] ...`, `[dpc-cine] ...`,
-// `[dpc-64tri] ...`, `[trace] cinematic_drv ...`, `[task] #N ...`,
-// `[task#N gfx] ...`, `[task-brief] ...`). High-volume during cinematic.
-// Useful for tracing what GFX commands the Factor5 LLE ucode emits.
-// ROGUESQ_LOG_DPC=1.
+// Legacy LLE DPC trace gate. The dpc_bridge.cpp pretty-printer
+// (`[dpc-pak] ...` etc.) was retired 2026-05-09 alongside the LLE pipeline;
+// the gate is preserved for any future LLE bring-up but currently has no
+// callers. ROGUESQ_LOG_DPC=1.
 inline bool log_dpc() {
     static const bool v = env_flag("ROGUESQ_LOG_DPC");
     return v;
