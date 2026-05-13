@@ -9,9 +9,9 @@
 
 A naive static recomp of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
 
-> **Shelved by the original author.** The project boots, reaches the attribution screen, then advances to the N64 logo phase — but the **attribution text and N64-logo content never render** because of an architectural issue (see [Status](#status) and [Where it actually stops](#where-it-actually-stops)). The original author burned through many sessions debugging downstream symptoms before the root cause was identified, then handed the project off. Audio is stubbed (silent).
+> **Shelved by the original author.** 
 >
-> The repository is being kept open as a starting point for someone with more time. The next contributor's most productive work is likely (a) the overlay-dispatch fix outlined in [Where it actually stops](#where-it-actually-stops), (b) continuing the function-renaming pass against `RecompiledFuncs/funcs_*.c` to make the codebase more legible, and (c) the MORT audio recompile that hasn't been started.
+> The repository is being kept open as a starting point for someone with more time and more experience in assembly programming.
 >
 > **Heads-up on AI-assisted development.** Almost all the debugging, architectural decisions, and code in this repository — including the Factor 5 LLE/HLE bridge work, the runtime patches inside `lib/rt64` and `lib/N64ModernRuntime`, large parts of `src/main/main.cpp`, the `patches/` build pipeline, and most of the diagnostic env-var infrastructure — were produced with heavy AI assistance (Claude). Things to be aware of as a reader or contributor:
 >
@@ -19,8 +19,18 @@ A naive static recomp of **Star Wars: Rogue Squadron** (N64, USA v1.0) built wit
 > - Manual edits inside the `lib/rt64` and `lib/N64ModernRuntime` submodules, and inside generated files like `build/factor5_ucode/factor5_ucode_recompiled.c` and `RecompiledFuncs/`, are not committed to those upstream repos and can be clobbered on regeneration.
 > - The architectural conclusions (especially around overlay dispatch and Factor 5 GBI handling) appear well-supported by the code evidence but should not be treated as final without scrutiny. Issues, corrections, and second opinions are very welcome.
 
+---
+
+'*first-attempt*' branch **is** the farthest I have gotten. Second attempt was a more higher level focus but ended up slowly drifting back to what first attempt was which is mostly LLE focused. I tried to go away from that because debugging and printing data from assembly gets very hairy. Since my experience with assembly is limited to just my comp. architecture class, I feel like I've done all that I can. Hopefully this project can be used as a good jumping off point for the whole recomp project. 
+
+To anyone in the future willing to take this on: **May the force be with you**
+
+---
+
 <div align="center">
+	
 ### [first-attempt](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/tree/first-attempt)
+	
 <table>
   <tr>
     <td>
