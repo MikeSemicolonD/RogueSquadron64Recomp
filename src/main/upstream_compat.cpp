@@ -16,7 +16,13 @@
 // windows.h elsewhere.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <dbghelp.h>
+#include <timeapi.h>
+#pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "winmm.lib")
 #endif
+
+#include <atomic>
 
 #include "recomp.h"
 #include "librecomp/helpers.hpp"
@@ -59,19 +65,183 @@ extern "C" void osYieldThread_recomp(uint8_t* /*rdram*/, recomp_context* /*ctx*/
     std::this_thread::yield();
 }
 
+// RS64 fix: game calls osViBlack(1) twice during boot at funcs_0.c:2083 and
+// :2142 and never osViBlack(0). That keeps ultramodern's VI_STATE_BLACK set
+// forever → hStart forced to 0 → VI::visible() returns false in RT64 →
+// PresentEarly matcher fails → no presents fire. Override the recomp wrapper
+// so the game's calls are no-ops (visibility stays on by default).
+extern "C" void osViBlack_recomp(uint8_t* /*rdram*/, recomp_context* ctx) {
+    static int s_count = 0;
+    int n = ++s_count;
+    if (n <= 8) {
+        fprintf(stderr, "[osViBlack #%d] active=%u (ignored — RS64 fix)\n",
+                n, (uint32_t)ctx->r4);
+        fflush(stderr);
+    }
+}
+
 // Diagnostic: log osViSwapBuffer calls. The game tells VI which fb to display
 // via this call. If the address doesn't match any prior SET_COLOR_IMAGE
 // address, RT64 has no rendered content for it → black screen.
 extern "C" void osViSwapBuffer_recomp(uint8_t* rdram, recomp_context* ctx) {
     static int s_count = 0;
     int n = ++s_count;
+    uint32_t fb = (uint32_t)ctx->r4;
+
+    // EXPERIMENT 2026-05-13: ROGUESQ_FB_REDIRECT_HIRES — if the game asks VI
+    // to display a lo-res fb (0x806BA000 / 0x806DD000 are 320×224 buffers,
+    // ~0x23000 apart), redirect to the hi-res scratch fb at 0x8062B800
+    // instead. Tests the hypothesis that attribution text lives in the
+    // hi-res scratch but VI is swapping to an empty lo-res target.
+    //
+    // Empirically: SET_CIMG fires for both fb classes per frame, but ALL
+    // texrects target 0x62B800 — the lo-res buffers only receive fillRect
+    // clears. So this redirect should pull the actual drawn content into
+    // VI's sampling stream.
+    static int s_redirect = -1;
+    if (s_redirect < 0) {
+        const char* v = std::getenv("ROGUESQ_FB_REDIRECT_HIRES");
+        s_redirect = (v && *v && v[0] != '0') ? 1 : 0;
+        if (s_redirect) {
+            fprintf(stderr, "[fb-redirect] lo-res VI swaps will be redirected to 0x8062B800 (hi-res scratch)\n");
+            fflush(stderr);
+        }
+    }
+    if (s_redirect) {
+        const uint32_t phys = fb & 0x00FFFFFF;
+        // Lo-res-fb signature: addresses 0x6BA000 / 0x6DD000 / 0x7DD000
+        // (under 0x800000, in the small-fb cluster). Hi-res scratch is at
+        // 0x62B800 — leave that untouched; redirect anything else in the
+        // "expected VI fb" range to the hi-res scratch.
+        if ((phys == 0x6BA000) || (phys == 0x6DD000) || (phys == 0x7DD000)) {
+            uint32_t orig = fb;
+            fb = 0x8062B800;
+            if (n <= 8 || (n & 63) == 0) {
+                fprintf(stderr, "[fb-redirect #%d] 0x%08X -> 0x%08X\n", n, orig, fb);
+                fflush(stderr);
+            }
+        }
+    }
+
     if (n <= 16 || (n & 63) == 0) {
-        fprintf(stderr, "[osViSwapBuffer #%d] fb=0x%08X\n",
-                n, (uint32_t)ctx->r4);
+        fprintf(stderr, "[osViSwapBuffer #%d] fb=0x%08X\n", n, fb);
+        fflush(stderr);
+    }
+    // ROGUESQ_LOG_VI_FB_CONTENT=1: sample a few non-zero bytes from the fb
+    // RDRAM to verify whether the game is writing attribution pixels into it
+    // (vs the fb being empty and attribution rendering happening elsewhere).
+    static int s_dump_fb = -1;
+    if (s_dump_fb < 0) {
+        const char* v = std::getenv("ROGUESQ_LOG_VI_FB_CONTENT");
+        s_dump_fb = (v && *v && v[0] != '0') ? 1 : 0;
+    }
+    if (s_dump_fb && (n <= 64 || (n & 31) == 0)) {
+        auto scan_fb = [&](uint32_t target_addr, const char* label) {
+            const uint32_t phys = target_addr & 0x00FFFFFF;
+            size_t nonzero = 0;
+            uint32_t first_nz_off = 0xFFFFFFFFu;
+            uint32_t first_nz_val = 0;
+            const uint32_t scan = 320u * 224u * 2u;
+            for (uint32_t i = 0; i < scan; i += 2) {
+                uint32_t off = phys + i;
+                uint8_t b0 = rdram[off ^ 3];
+                uint8_t b1 = rdram[(off + 1) ^ 3];
+                if (b0 || b1) {
+                    if (first_nz_off == 0xFFFFFFFFu) {
+                        first_nz_off = i;
+                        first_nz_val = (uint32_t)((b0 << 8) | b1);
+                    }
+                    ++nonzero;
+                }
+            }
+            fprintf(stderr, "[vi-fb-content #%d %s] addr=0x%08X nz_px=%zu/%u first@%u=0x%04X\n",
+                    n, label, target_addr, nonzero, scan / 2u, first_nz_off, first_nz_val);
+        };
+        scan_fb(fb, "VI");
+        // Also scan the hi-res scratch fb (0x8062B800) so we can see if
+        // experimental op_02 output landed there.
+        scan_fb(0x8062B800u, "hiRes");
         fflush(stderr);
     }
     extern void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
-    osViSwapBuffer(rdram, (int32_t)ctx->r4);
+    osViSwapBuffer(rdram, (int32_t)fb);
+}
+
+// Diagnostic: log osViSetMode calls + decode the OS_VI_MODE struct contents.
+// OS_VI_MODE layout (libultra):
+//   type      u32 at +0x00
+//   comRegs.ctrl/width/burst/vSync/hSync/leap/hStart/xScale/vCurrent (9 u32) +0x04
+//     → width at +0x08, xScale at +0x20
+//   fldRegs[0].origin/yScale/vStart/vBurst/vIntr (5 u32) at +0x28
+//     → yScale at +0x2C
+//   fldRegs[1] at +0x3C (same layout)
+// Total 80 bytes. We dump the first 80 bytes raw + key fields decoded so we
+// can tell which mode is lo-res (width=320, xScale~0x200) vs hi-res
+// (width=640, xScale~0x400).
+extern "C" void osViSetMode_recomp(uint8_t* rdram, recomp_context* ctx) {
+    static int s_count = 0;
+    int n = ++s_count;
+    uint32_t mode_ptr = (uint32_t)ctx->r4;
+    uint32_t rdram_off = mode_ptr & 0x00FFFFFF;
+    auto read_u32 = [&](uint32_t off) -> uint32_t {
+        uint32_t v = 0;
+        for (int i = 0; i < 4; ++i) {
+            v = (v << 8) | rdram[(rdram_off + off + i) ^ 3];
+        }
+        return v;
+    };
+    uint32_t type    = read_u32(0x00);
+    uint32_t ctrl    = read_u32(0x04);
+    uint32_t width   = read_u32(0x08);
+    uint32_t xScale  = read_u32(0x20);
+    uint32_t yScale  = read_u32(0x2C);
+    fprintf(stderr,
+        "[osViSetMode #%d] mode_ptr=0x%08X  type=0x%08X ctrl=0x%08X "
+        "width=%u xScale=0x%08X yScale=0x%08X\n",
+        n, mode_ptr, type, ctrl, width, xScale, yScale);
+    fflush(stderr);
+    extern void osViSetMode(uint8_t* rdram, int32_t modePtr);
+    osViSetMode(rdram, (int32_t)ctx->r4);
+}
+
+extern "C" void osViSetXScale_recomp(uint8_t* rdram, recomp_context* ctx) {
+    static int s_count = 0;
+    int n = ++s_count;
+    if (n <= 4) {
+        fprintf(stderr, "[osViSetXScale #%d] scale=%f\n", n, (double)ctx->f12.fl);
+        fflush(stderr);
+    }
+    extern void osViSetXScale(float scale);
+    osViSetXScale(ctx->f12.fl);
+}
+
+extern "C" void osViSetYScale_recomp(uint8_t* rdram, recomp_context* ctx) {
+    static int s_count = 0;
+    int n = ++s_count;
+    if (n <= 4) {
+        fprintf(stderr, "[osViSetYScale #%d] scale=%f\n", n, (double)ctx->f12.fl);
+        fflush(stderr);
+    }
+    extern void osViSetYScale(float scale);
+    osViSetYScale(ctx->f12.fl);
+}
+
+// osGetMemSize override — defaults to 8MB (Expansion Pak present, hi-res
+// mode available). ROGUESQ_MEM_SIZE_MB=4 forces 4MB to test base-N64 lo-res
+// path. 2026-05-13 test confirmed 4MB alone crashes boot in mainBootstrapWorker
+// (game still goes hi-res because the mode flag is gated on more than memsize),
+// so the env var is a knob, not a recommended setting.
+extern "C" void osGetMemSize_recomp(uint8_t* /*rdram*/, recomp_context* ctx) {
+    static int s_mb = -1;
+    if (s_mb < 0) {
+        const char* v = std::getenv("ROGUESQ_MEM_SIZE_MB");
+        s_mb = (v && *v) ? std::atoi(v) : 8;
+        if (s_mb != 8) {
+            fprintf(stderr, "[osGetMemSize] reporting %d MB (env override)\n", s_mb);
+            fflush(stderr);
+        }
+    }
+    ctx->r2 = (gpr)(s_mb * 1024 * 1024);
 }
 
 // zmemcpy is stubbed in rogue_squadron.toml because the original MIPS code
@@ -131,6 +301,266 @@ extern "C" void zmemcpy(uint8_t* rdram, recomp_context* ctx) {
         MEM_B(i, dest_reg) = ctx->r2;
     }
     ctx->r2 = ctx->r4;  // zlib's zmemcpy returns nothing meaningful
+}
+
+// heapWalker cycle-detection state. Updated by hooks in funcs_3.c (entry +
+// loop-top). When the walk revisits its starting pointer, the hook breaks
+// out of the loop instead of spinning forever.
+extern "C" unsigned g_heapwalker_initial = 0;
+extern "C" unsigned g_heapwalker_iter = 0;
+
+// tickTextureMaterialExpiry cycle-detection state. Inner walk over the
+// material list can loop forever when a node's next ptr points back into
+// the visited set. KSEG0 guards prevent AVs but not cycles. Reset at
+// function entry; capped iter count + first-node-revisit triggers bailout.
+extern "C" unsigned g_tick_walker_first = 0;
+extern "C" unsigned g_tick_walker_iter  = 0;
+
+// Watchdog for the cinematic inner loop. cinematicLoopBody iterates many
+// times per cutscene playback; if it stops iterating for more than 2 seconds
+// while the rest of the runtime keeps ticking, the game thread is hung in
+// some callee. We capture the game thread's stack to find which one.
+#ifdef _WIN32
+static std::atomic<DWORD> g_cine_tid{0};
+static std::atomic<uint64_t> g_cine_iter{0};
+static std::atomic<uint64_t> g_cine_last_ms{0};
+
+extern "C" void rs64_cine_dump_if_stuck(void);
+extern "C" void rs64_cine_progress_log(void);
+extern "C" void rs64_cine_start_watchdog_thread(void);
+
+extern "C" void rs64_cine_iter_tick(unsigned iter) {
+    g_cine_tid.store(GetCurrentThreadId(), std::memory_order_relaxed);
+    g_cine_iter.store(iter, std::memory_order_relaxed);
+    g_cine_last_ms.store(GetTickCount64(), std::memory_order_relaxed);
+    // First tick spawns the dedicated watchdog thread.
+    rs64_cine_start_watchdog_thread();
+}
+
+// Spawn a dedicated watchdog thread the first time iter_tick fires. The
+// gfx_thread's update_screen path could itself be deadlocked behind the
+// same mutex chain that's hanging the game thread (events_context.message_mutex
+// in ultramodern, in particular), so polling from gfx_thread isn't reliable.
+// A standalone thread that only uses Sleep + atomics is immune.
+extern "C" void rs64_cine_start_watchdog_thread(void) {
+    static std::atomic<bool> s_started{false};
+    bool was = s_started.exchange(true, std::memory_order_relaxed);
+    if (was) return;
+    std::thread([]() {
+        for (;;) {
+            ::Sleep(500);
+            rs64_cine_progress_log();
+            rs64_cine_dump_if_stuck();
+        }
+    }).detach();
+}
+
+// Periodic progress log so we can see whether the inner loop is iterating
+// at all and at what rate. Called from update_screen on a coarse schedule.
+extern "C" void rs64_cine_progress_log(void) {
+    static uint64_t s_last_log_ms = 0;
+    static uint64_t s_last_log_iter = 0;
+    uint64_t now = GetTickCount64();
+    if (now - s_last_log_ms < 2000) return;  // 2s cadence
+    uint64_t cur = g_cine_iter.load(std::memory_order_relaxed);
+    uint64_t delta = cur - s_last_log_iter;
+    uint64_t age_ms = (g_cine_last_ms.load() ? now - g_cine_last_ms.load() : 0);
+    fprintf(stderr, "[cine-progress] iter=%llu delta=%llu in %llums (idle=%llums)\n",
+            (unsigned long long)cur, (unsigned long long)delta,
+            (unsigned long long)(now - s_last_log_ms),
+            (unsigned long long)age_ms);
+    fflush(stderr);
+    s_last_log_ms = now;
+    s_last_log_iter = cur;
+}
+
+extern void print_stack_with_symbols(void** frames, USHORT count);
+
+extern "C" void rs64_cine_dump_if_stuck(void) {
+    static std::atomic<bool> s_dumped{false};
+    if (s_dumped.load(std::memory_order_relaxed)) return;
+
+    uint64_t last = g_cine_last_ms.load(std::memory_order_relaxed);
+    if (last == 0) return;  // never started iterating
+
+    uint64_t now = GetTickCount64();
+    if (now - last < 2000) return;  // not stuck yet
+
+    DWORD tid = g_cine_tid.load(std::memory_order_relaxed);
+    if (tid == 0) return;
+
+    bool expected = false;
+    if (!s_dumped.compare_exchange_strong(expected, true)) return;  // single shot
+
+    fprintf(stderr, "[cine-watchdog] freeze detected: tid=%lu iter=%llu idle=%llums — opening thread\n",
+            tid, (unsigned long long)g_cine_iter.load(), (unsigned long long)(now - last));
+    fflush(stderr);
+
+    // Try several access masks — some Win10 builds reject the wide masks.
+    DWORD masks[] = {
+        THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT,
+        THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_LIMITED_INFORMATION,
+        0x1F03FF,  // pre-Vista THREAD_ALL_ACCESS
+        0x1FFFFF,  // Vista+ THREAD_ALL_ACCESS
+    };
+    HANDLE hThread = NULL;
+    DWORD last_err = 0;
+    for (DWORD m : masks) {
+        hThread = OpenThread(m, FALSE, tid);
+        if (hThread) {
+            fprintf(stderr, "[cine-watchdog] OpenThread succeeded with mask=0x%lX\n", m);
+            break;
+        }
+        last_err = GetLastError();
+    }
+    if (hThread == NULL) {
+        fprintf(stderr, "[cine-watchdog] OpenThread failed for tid=%lu last_err=%lu (cur tid=%lu)\n",
+                tid, last_err, GetCurrentThreadId());
+        fflush(stderr);
+        s_dumped.store(false, std::memory_order_relaxed);
+        return;
+    }
+    fprintf(stderr, "[cine-watchdog] opened, suspending\n"); fflush(stderr);
+    DWORD susp = SuspendThread(hThread);
+    if (susp == (DWORD)-1) {
+        fprintf(stderr, "[cine-watchdog] SuspendThread failed err=%lu\n", GetLastError());
+        fflush(stderr);
+        CloseHandle(hThread);
+        return;
+    }
+    fprintf(stderr, "[cine-watchdog] suspended (prev count=%lu), getting context\n", susp); fflush(stderr);
+    CONTEXT ctx{};
+    ctx.ContextFlags = CONTEXT_ALL;
+    if (!GetThreadContext(hThread, &ctx)) {
+        fprintf(stderr, "[cine-watchdog] GetThreadContext failed err=%lu\n", GetLastError());
+        fflush(stderr);
+        ResumeThread(hThread);
+        CloseHandle(hThread);
+        return;
+    }
+    fprintf(stderr,
+        "[cine-watchdog] game thread tid=%lu hung at RIP=0x%llX RSP=0x%llX RBP=0x%llX\n",
+        tid, (unsigned long long)ctx.Rip, (unsigned long long)ctx.Rsp, (unsigned long long)ctx.Rbp);
+    fflush(stderr);
+
+    // Stack walk.
+    STACKFRAME64 frame{};
+    frame.AddrPC.Offset    = ctx.Rip; frame.AddrPC.Mode    = AddrModeFlat;
+    frame.AddrFrame.Offset = ctx.Rbp; frame.AddrFrame.Mode = AddrModeFlat;
+    frame.AddrStack.Offset = ctx.Rsp; frame.AddrStack.Mode = AddrModeFlat;
+    void* frames[48];
+    USHORT count = 0;
+    HANDLE hProcess = GetCurrentProcess();
+    SymInitialize(hProcess, NULL, TRUE);
+    fprintf(stderr, "[cine-watchdog] walking stack\n"); fflush(stderr);
+    while (count < 48) {
+        if (!StackWalk64(IMAGE_FILE_MACHINE_AMD64, hProcess, hThread, &frame, &ctx,
+                         NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL))
+            break;
+        if (frame.AddrPC.Offset == 0) break;
+        frames[count++] = (void*)(uintptr_t)frame.AddrPC.Offset;
+    }
+    fprintf(stderr, "[cine-watchdog] walked %u frames, resuming + symbolizing\n", count); fflush(stderr);
+    ResumeThread(hThread);
+    CloseHandle(hThread);
+    print_stack_with_symbols(frames, count);
+    fflush(stderr);
+}
+#else
+extern "C" void rs64_cine_iter_tick(unsigned) {}
+extern "C" void rs64_cine_dump_if_stuck(void) {}
+#endif
+
+// Yield the cinematic CPU thread every N iterations to break the iter-810
+// OS-level thread starvation stall. Empirically a kernel I/O call (stderr
+// flush) unsticks it; Win32 Sleep alone does not. SwitchToThread yields to
+// any ready thread on the same CPU.
+extern "C" void rs64_cine_yield(void) {
+    static int s_count = 0;
+    ++s_count;
+    // ~Every 16 iters: yield + flush stderr. Cheap enough to do hot.
+    if ((s_count & 0xF) == 0) {
+#ifdef _WIN32
+        ::SwitchToThread();
+#else
+        std::this_thread::yield();
+#endif
+        std::fflush(stderr);
+    }
+}
+
+// Pace the 32-iteration attribution-display loop inside
+// runIdleFramesAndLoadSaveData (each iter renders one attribution frame).
+// On real N64, each iter waits for the previous frame to complete via
+// waitForPrevFrameDone → waitForPostSwapAck → which we patched to NOBLOCK
+// (boot deadlock workaround). Without the wait, all 32 frames flash by in
+// <1ms and the attribution screen is never visible.
+// Sleep here so attribution displays for ~5 seconds (configurable).
+//
+// ROGUESQ_ATTRIBUTION_SLEEP_MS=N (default 150ms × 32 iters ≈ 4.8 sec).
+// Set to 0 to disable.
+extern "C" void rs64_idle_pace(void) {
+#ifdef _WIN32
+    static int s_sleep_ms = -1;
+    if (s_sleep_ms < 0) {
+        const char* e = std::getenv("ROGUESQ_ATTRIBUTION_SLEEP_MS");
+        s_sleep_ms = (e && *e) ? std::atoi(e) : 150;
+        if (s_sleep_ms < 0) s_sleep_ms = 0;
+        if (s_sleep_ms > 5000) s_sleep_ms = 5000;
+        fprintf(stderr, "[idle-pace] attribution sleep_ms=%d (32 iters ≈ %ds total)\n",
+                s_sleep_ms, (s_sleep_ms * 32) / 1000);
+        fflush(stderr);
+    }
+    if (s_sleep_ms == 0) return;
+    ::Sleep((DWORD)s_sleep_ms);
+#endif
+}
+
+// Pace cinematicLoopBody to a target frame rate. Without this, the loop
+// runs at >1000 Hz on the host (no pacing from NOBLOCK-patched osRecvMesg
+// waits), racing through the cinematic in <2 seconds and skipping past
+// the attribution screen, fade, and N64-logo segments before they're
+// visible. Default 30 Hz to match N64 native cinematic rate.
+// Configure via ROGUESQ_CINE_TARGET_FPS env var: 0 = disabled, positive
+// int = target FPS.
+extern "C" void rs64_cine_pace(void) {
+#ifdef _WIN32
+    static int s_target_fps = -1;
+    if (s_target_fps < 0) {
+        const char* e = std::getenv("ROGUESQ_CINE_TARGET_FPS");
+        s_target_fps = (e && *e) ? std::atoi(e) : 30;
+        if (s_target_fps < 0) s_target_fps = 0;
+        if (s_target_fps > 240) s_target_fps = 240;
+        fprintf(stderr, "[cine-pace] init target_fps=%d (env='%s')\n",
+                s_target_fps, e ? e : "(null)");
+        fflush(stderr);
+        // Bump Windows timer resolution to 1ms so Sleep(33) actually sleeps
+        // ~33ms instead of the default ~15.6ms quantum.
+        timeBeginPeriod(1);
+    }
+    if (s_target_fps == 0) return;  // disabled
+    uint32_t target_interval_ms = 1000u / (uint32_t)s_target_fps;
+    static uint64_t s_last_ms = 0;
+    static uint32_t s_calls = 0;
+    static uint32_t s_sleeps = 0;
+    uint64_t now = GetTickCount64();
+    if (s_last_ms == 0) {
+        s_last_ms = now;
+        return;
+    }
+    uint64_t elapsed = now - s_last_ms;
+    if (elapsed < (uint64_t)target_interval_ms) {
+        ::Sleep((DWORD)(target_interval_ms - elapsed));
+        ++s_sleeps;
+    }
+    s_last_ms = GetTickCount64();
+    ++s_calls;
+    if (s_calls <= 5 || (s_calls & 0x3F) == 0) {
+        fprintf(stderr, "[cine-pace] call=%u sleeps=%u elapsed=%llums interval=%ums\n",
+                s_calls, s_sleeps, (unsigned long long)elapsed, target_interval_ms);
+        fflush(stderr);
+    }
+#endif
 }
 
 // Diagnostic helper for [[patches.hook]] entries that need to log to

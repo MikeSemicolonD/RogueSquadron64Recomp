@@ -111,14 +111,33 @@ static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
     uint32_t ucode_data_size  = s_pending_task_ucode_data_size;
 
     // Mimic SP_BOOT (silicon-level RSP boot ucode): zero DMEM[0..0xFC0] then
-    // DMA OSTask.ucode_data into DMEM[0..ucode_data_size]. Leave DMEM[0xFC0
-    // ..0x1000] alone — that's the OSTask region the boot ucode reads.
-    // Zeroing it would wipe OSTask.ucode at DMEM[0xFD0] and the next boot
-    // call would DMA from RDRAM[0] (garbage).
+    // populate DMEM[0..ucode_data_size]. Leave DMEM[0xFC0..0x1000] alone —
+    // that's the OSTask region the boot ucode reads.
+    //
+    // Snapshot/restore: the first task to use a given ucode_data address gets
+    // a fresh DMA from RDRAM. Subsequent tasks restore from the cached
+    // snapshot taken AT THAT FIRST DMA. RDRAM at ucode_data is modified
+    // mid-flight by some part of the engine (gfx CPU code or background DMA),
+    // which is why task #N>1 was producing garbage DMEM[0..0x10] from the
+    // same source addr and hitting UnhandledJumpTarget 0xFF7E. Replaying
+    // from the snapshot bypasses the corruption.
+    static thread_local std::vector<uint8_t> s_udata_snap;
+    static thread_local uint32_t s_udata_snap_addr = 0;
+    static thread_local uint32_t s_udata_snap_size = 0;
     std::memset(dmem, 0, 0xFC0);
     if (ucode_data_addr != 0 && ucode_data_size != 0 && ucode_data_size <= 0xFC0) {
-        dma_rdram_to_dmem(rdram, /*dmem*/0, /*dram*/ucode_data_addr & 0x00FFFFFF,
-                          /*rd_len*/ucode_data_size - 1);
+        const bool snap_match = (s_udata_snap_addr == ucode_data_addr &&
+                                  s_udata_snap_size == ucode_data_size &&
+                                  s_udata_snap.size() == ucode_data_size);
+        if (snap_match) {
+            std::memcpy(dmem, s_udata_snap.data(), ucode_data_size);
+        } else {
+            dma_rdram_to_dmem(rdram, /*dmem*/0, /*dram*/ucode_data_addr & 0x00FFFFFF,
+                              /*rd_len*/ucode_data_size - 1);
+            s_udata_snap_addr = ucode_data_addr;
+            s_udata_snap_size = ucode_data_size;
+            s_udata_snap.assign(dmem, dmem + ucode_data_size);
+        }
     }
     // Diagnostic: log re-DMA params + DMEM[0..0x10] after the copy.
     {
@@ -145,7 +164,19 @@ static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
 
     // Boot exits via UnhandledJumpTarget on its `jr $7=0x1080` (jumping into
     // the main ucode it just DMA'd to IMEM 0x80) — that's expected.
+    static thread_local int s_runner_step_log = 0;
+    const bool log_step = (++s_runner_step_log) <= 16;
+    if (log_step) {
+        fprintf(stderr, "[runner-step #%d] entering factor5_boot ucode_addr=0x%08X\n",
+                s_runner_step_log, ucode_addr);
+        fflush(stderr);
+    }
     RspExitReason boot_r = factor5_boot(rdram, ucode_addr);
+    if (log_step) {
+        fprintf(stderr, "[runner-step #%d] factor5_boot returned %d\n",
+                s_runner_step_log, (int)boot_r);
+        fflush(stderr);
+    }
     if (boot_r != RspExitReason::UnhandledJumpTarget && boot_r != RspExitReason::Broke) {
         fprintf(stderr, "[RSP] factor5_boot returned unexpected %d, abandoning task\n", (int)boot_r);
         return RspExitReason::Broke;
@@ -205,7 +236,16 @@ static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
     } else {
         poke_be32(0x654, 0x270);
     }
+    if (log_step) {
+        fprintf(stderr, "[runner-step #%d] entering factor5_ucode\n", s_runner_step_log);
+        fflush(stderr);
+    }
     RspExitReason r = factor5_ucode(rdram, ucode_addr);
+    if (log_step) {
+        fprintf(stderr, "[runner-step #%d] factor5_ucode returned %d\n",
+                s_runner_step_log, (int)r);
+        fflush(stderr);
+    }
     {
         static int s_log = -1;
         if (s_log < 0) {
@@ -234,6 +274,47 @@ static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
         }
     }
     return r;
+}
+
+// Public entry point for the LLE GFX path — used by the renderer's send_dl
+// callback when ROGUESQ_LLE_FORCE=1. Sets the pending-task statics that
+// factor5_gfx_runner reads, writes the OSTask struct to DMEM[0xFC0..0x1000]
+// (real SP_BOOT does this DMA-style; the runner mimics SP_BOOT but skips
+// this step), then invokes the LLE runner.
+extern "C" int rs64_run_lle_gfx(uint8_t* rdram, const OSTask* task) {
+    s_pending_task_data_ptr        = (uint32_t)task->t.data_ptr;
+    s_pending_task_ucode_data      = (uint32_t)task->t.ucode_data;
+    s_pending_task_ucode_data_size = (uint32_t)task->t.ucode_data_size;
+
+    // Write OSTask to DMEM[0xFC0..0x1000] in big-endian byte order via the
+    // i^3 swizzle (matching RSP_MEM_W_LOAD's encoding). The ucode reads
+    // task fields from this region via DMEM[r18+offset] where r18 = 0xFC0.
+    // OSTask is 0x40 bytes: type/flags/ucode_boot/ucode_boot_size/ucode/
+    // ucode_size/ucode_data/ucode_data_size/dram_stack/dram_stack_size/
+    // output_buff/output_buff_size/data_ptr/data_size/yield_data_ptr/yield_data_size.
+    auto poke = [](uint32_t off, uint32_t val) {
+        for (int j = 0; j < 4; ++j) {
+            dmem[(off + j) ^ 3] = (uint8_t)(val >> (24 - j * 8));
+        }
+    };
+    poke(0xFC0 + 0x00, (uint32_t)task->t.type);
+    poke(0xFC0 + 0x04, (uint32_t)task->t.flags);
+    poke(0xFC0 + 0x08, (uint32_t)task->t.ucode_boot);
+    poke(0xFC0 + 0x0C, (uint32_t)task->t.ucode_boot_size);
+    poke(0xFC0 + 0x10, (uint32_t)task->t.ucode);
+    poke(0xFC0 + 0x14, (uint32_t)task->t.ucode_size);
+    poke(0xFC0 + 0x18, (uint32_t)task->t.ucode_data);
+    poke(0xFC0 + 0x1C, (uint32_t)task->t.ucode_data_size);
+    poke(0xFC0 + 0x20, (uint32_t)task->t.dram_stack);
+    poke(0xFC0 + 0x24, (uint32_t)task->t.dram_stack_size);
+    poke(0xFC0 + 0x28, (uint32_t)task->t.output_buff);
+    poke(0xFC0 + 0x2C, (uint32_t)task->t.output_buff_size);
+    poke(0xFC0 + 0x30, (uint32_t)task->t.data_ptr);
+    poke(0xFC0 + 0x34, (uint32_t)task->t.data_size);
+    poke(0xFC0 + 0x38, (uint32_t)task->t.yield_data_ptr);
+    poke(0xFC0 + 0x3C, (uint32_t)task->t.yield_data_size);
+
+    return (int)factor5_gfx_runner(rdram, (uint32_t)task->t.ucode);
 }
 
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
@@ -607,6 +688,174 @@ static void start_b50_poller() {
     t.detach();
 }
 
+// Periodic poll of cinematic phase state so we can see stage transitions
+// and timing. Gated by ROGUESQ_LOG_PHASE=1. Reports on change only.
+//
+// State variables (per memory notes project_cinematic_data_structures.md
+// + project_b50_b58_polled_state.md):
+//   cineState  : MEM_W[0x800B0934] — master cinematic state word
+//   gateCtr    : MEM_W[0x800B0B28] — cinematic frame counter (compared
+//                vs cutscene[0x44])
+//   cutscene   : MEM_W[0x800B1904] — pointer to currently-loaded cutscene
+//                struct
+//   cuts_44    : MEM_W[cutscene+0x44] — total-count / duration field
+//   B50        : MEM_W[0x80130B50] — state word, bit 5 is inner-loop
+//                advance gate
+//   B58        : MEM_W[0x80130B58] — state word, bit 25 is outer gate
+//   slot_dispatcher_ptr : MEM_W[0x80130BB0] — pointer to 6-slot table
+//                (each slot is 8B, jalr handler at slot+0x00)
+//   active_slot_indices : 6 halfwords at 0x80139560
+static void start_phase_poller() {
+    if (!std::getenv("ROGUESQ_LOG_PHASE")) return;
+    static std::thread t{[]{
+        uint8_t* rdram = nullptr;
+        while (!(rdram = (uint8_t*)g_recomp_rdram_for_wp_raw)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        uint32_t prev_cineState = 0xFFFFFFFFu;
+        uint32_t prev_gateCtr   = 0xFFFFFFFFu;
+        uint32_t prev_cutscene  = 0xFFFFFFFFu;
+        uint32_t prev_cuts44    = 0xFFFFFFFFu;
+        uint32_t prev_b50       = 0xFFFFFFFFu;
+        uint32_t prev_b58       = 0xFFFFFFFFu;
+        uint32_t prev_slot_tbl  = 0xFFFFFFFFu;
+        uint32_t prev_cur_ovl   = 0xFFFFFFFFu;
+        uint32_t prev_star_word = 0xFFFFFFFFu;
+        uint32_t prev_cb0 = 0xDEADBEEFu, prev_cb1 = 0xDEADBEEFu;
+        uint32_t prev_cb2 = 0xDEADBEEFu, prev_cb3 = 0xDEADBEEFu;
+        uint16_t prev_active[6] = {0xFFFFu, 0xFFFFu, 0xFFFFu, 0xFFFFu, 0xFFFFu, 0xFFFFu};
+        uint64_t start_ms = GetTickCount64();
+        uint64_t last_change_ms = start_ms;
+        bool first = true;
+
+        auto rdram_be32_at = [&](uint32_t off) -> uint32_t {
+            return rdram_be32(rdram, off);
+        };
+        auto rdram_be16_at = [&](uint32_t off) -> uint16_t {
+            return (uint16_t)((uint16_t(rdram[(off + 0) ^ 3]) << 8) |
+                              uint16_t(rdram[(off + 1) ^ 3]));
+        };
+
+        for (int i = 0; i < 1200; ++i) {  // ~60s @ 50ms
+            uint32_t cur_ovl   = rdram_be32_at(0x375B0);  // gCurrentLoadedOverlay
+            // Probe first 4 bytes of STAR WARS string at menu_overlay 0xA5E60
+            // — if menu overlay is loaded, these should spell 'STAR' (0x53 54 41 52).
+            uint32_t star_word = rdram_be32_at(0xA5E60);
+            // Per-frame draw callbacks at 0x8011A8A4 (4 slots, fn ptrs)
+            uint32_t cb0 = rdram_be32_at(0x11A8A4);
+            uint32_t cb1 = rdram_be32_at(0x11A8A8);
+            uint32_t cb2 = rdram_be32_at(0x11A8AC);
+            uint32_t cb3 = rdram_be32_at(0x11A8B0);
+            uint32_t cineState = rdram_be32_at(0xB0934);
+            uint32_t gateCtr   = rdram_be32_at(0xB0B28);
+            uint32_t cutscene  = rdram_be32_at(0xB1904);
+            uint32_t cuts44 = 0;
+            if ((cutscene & 0xF0000000u) == 0x80000000u &&
+                (cutscene & 0x00FFFFFFu) + 0x44 < 0x800000u) {
+                cuts44 = rdram_be32_at((cutscene & 0x00FFFFFFu) + 0x44);
+            }
+            uint32_t b50      = rdram_be32_at(0x130B50);
+            uint32_t b58      = rdram_be32_at(0x130B58);
+            uint32_t slot_tbl = rdram_be32_at(0x130BB0);
+            uint16_t active[6];
+            for (int j = 0; j < 6; ++j) active[j] = rdram_be16_at(0x139560 + j * 2);
+
+            bool changed = first;
+            if (cineState != prev_cineState) changed = true;
+            if (gateCtr   != prev_gateCtr)   changed = true;
+            if (cutscene  != prev_cutscene)  changed = true;
+            if (cuts44    != prev_cuts44)    changed = true;
+            if (b50       != prev_b50)       changed = true;
+            if (b58       != prev_b58)       changed = true;
+            if (slot_tbl  != prev_slot_tbl)  changed = true;
+            if (cur_ovl   != prev_cur_ovl)   changed = true;
+            if (star_word != prev_star_word) changed = true;
+            if (cb0 != prev_cb0 || cb1 != prev_cb1 || cb2 != prev_cb2 || cb3 != prev_cb3) changed = true;
+            for (int j = 0; j < 6; ++j) {
+                if (active[j] != prev_active[j]) { changed = true; break; }
+            }
+
+            if (changed) {
+                uint64_t now = GetTickCount64();
+                uint64_t since_start = now - start_ms;
+                uint64_t stable = now - last_change_ms;
+                // Decode star_word as 4-char ASCII for at-a-glance
+                // "is the menu overlay's STAR WARS string here" check.
+                char sw[5]; sw[0]=(char)(star_word>>24); sw[1]=(char)(star_word>>16);
+                sw[2]=(char)(star_word>>8); sw[3]=(char)star_word; sw[4]=0;
+                for (int k=0;k<4;k++) if (sw[k]<0x20||sw[k]>0x7E) sw[k]='.';
+                fprintf(stderr,
+                    "[phase] t=%5llums (stable %4llums)  cineState=%08X gateCtr=%5u "
+                    "cuts=%08X cuts44=%5u B50=%08X B58=%08X slotTbl=%08X "
+                    "active=[%04X %04X %04X %04X %04X %04X] curOvl=%u starWord=0x%08X(%s) "
+                    "cb=[%08X %08X %08X %08X]\n",
+                    (unsigned long long)since_start, (unsigned long long)stable,
+                    cineState, gateCtr,
+                    cutscene, cuts44,
+                    b50, b58,
+                    slot_tbl,
+                    active[0], active[1], active[2], active[3], active[4], active[5],
+                    cur_ovl, star_word, sw,
+                    cb0, cb1, cb2, cb3);
+                fflush(stderr);
+
+                // When slotTbl becomes valid, dump non-empty slot entries
+                // so we can see which NPCs are populated. Compare to real
+                // N64 RAM dumps (e.g. lucasArtsScreen has handlers in
+                // 0x80206000-0x80209000 range; N64-logo state is different).
+                if ((slot_tbl & 0xF0000000u) == 0x80000000u && slot_tbl != prev_slot_tbl) {
+                    uint32_t pool_off = slot_tbl & 0x00FFFFFFu;
+                    int populated = 0;
+                    fprintf(stderr, "[phase] slot pool @ 0x%08X populated entries:\n", slot_tbl);
+                    for (int s = 0; s < 2048 && populated < 40; ++s) {
+                        uint32_t entry_off = pool_off + (uint32_t)s * 8;
+                        if (entry_off + 8 > 0x800000u) break;
+                        uint32_t h = rdram_be32_at(entry_off);
+                        uint32_t w = rdram_be32_at(entry_off + 4);
+                        if (h != 0 && h != 0xFFFFFFFFu) {
+                            fprintf(stderr, "  slot[%4d]: handler=0x%08X  word2=0x%08X\n", s, h, w);
+                            ++populated;
+                        }
+                    }
+                    fprintf(stderr, "[phase] (showing first %d populated of pool 2048)\n", populated);
+                    fflush(stderr);
+                }
+                first = false;
+                prev_cineState = cineState;
+                prev_gateCtr   = gateCtr;
+                prev_cutscene  = cutscene;
+                prev_cuts44    = cuts44;
+                prev_b50       = b50;
+                prev_b58       = b58;
+                prev_slot_tbl  = slot_tbl;
+                prev_cur_ovl   = cur_ovl;
+                prev_star_word = star_word;
+                prev_cb0 = cb0; prev_cb1 = cb1; prev_cb2 = cb2; prev_cb3 = cb3;
+                for (int j = 0; j < 6; ++j) prev_active[j] = active[j];
+                last_change_ms = now;
+            }
+            // Periodic slot-pool snapshot every ~1 second so we can see if
+            // NPCs spawn over time (real N64 attribution has 30+ populated;
+            // if we stay at 4, something's stopping further spawns).
+            if ((i % 20) == 0 && (slot_tbl & 0xF0000000u) == 0x80000000u) {
+                uint32_t pool_off = slot_tbl & 0x00FFFFFFu;
+                int total_pop = 0;
+                for (int s = 0; s < 2048; ++s) {
+                    uint32_t entry_off = pool_off + (uint32_t)s * 8;
+                    if (entry_off + 8 > 0x800000u) break;
+                    uint32_t h = rdram_be32_at(entry_off);
+                    if (h != 0 && h != 0xFFFFFFFFu) ++total_pop;
+                }
+                fprintf(stderr, "[phase] t=%5llums slot-pool count = %d\n",
+                        (unsigned long long)(GetTickCount64() - start_ms), total_pop);
+                fflush(stderr);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }};
+    t.detach();
+}
+
 static void start_memwp_watchdog() {
     static std::thread wp_thread{[]{
         uint8_t* rdram = nullptr;
@@ -952,6 +1201,15 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep) {
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
 
+#ifdef _WIN32
+    // Log PE base so we can resolve absolute addresses from SEH logs to RVAs
+    // (RVA = abs_addr - pe_base). Logged once on startup; helps with the
+    // cinematic-loop AV diagnostics.
+    HMODULE hSelf = GetModuleHandleW(NULL);
+    fprintf(stderr, "[main] PE base=%p\n", (void*)hSelf);
+    fflush(stderr);
+#endif
+
     // RT64's RT64_LOG_PRINTF macro (debug builds) writes to GlobalLogFile via
     // unchecked fprintf + fflush. Pristine RT64 expects RT64::Application::start
     // to open it (we bypass Application), so without redirection the pointer
@@ -992,6 +1250,7 @@ int main(int argc, char* argv[]) {
 
     start_b50_poller();
     start_state_poller();
+    start_phase_poller();
 
 #ifdef _WIN32
     SetUnhandledExceptionFilter(crash_handler);

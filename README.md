@@ -7,36 +7,20 @@
 
 </div>
 
-A native PC port of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
+A naive static recomp of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with the [N64Recomp](https://github.com/N64Recomp/N64Recomp) static recompilation toolchain and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime).
 
-> **Work in progress.** Boot reaches the N64 logo and the post-logo
-> cinematic begins — explosion particles and Factor 5 3D logo elements
-> are visible. The cinematic CPU thread runs to completion in ~30% of
-> attempts (reaching the natural-exit path at fc=1120 and entering
-> menu-init), but the other ~70% of attempts time out around iter ~810
-> due to an intermittent OS-level thread-starvation issue. The main
-> menu has been reached but is not yet stable. Audio is stubbed
-> (silent — Factor 5's audio ucode is not yet recompiled). See
-> [Status](#status) for details.
+> **Shelved by the original author.** The project boots, reaches the attribution screen, then advances to the N64 logo phase — but the **attribution text and N64-logo content never render** because of an architectural issue (see [Status](#status) and [Where it actually stops](#where-it-actually-stops)). The original author burned through many sessions debugging downstream symptoms before the root cause was identified, then handed the project off. Audio is stubbed (silent).
 >
-> **Heads-up on AI-assisted development.** Most of the debugging, architectural
-> decisions, and code in this repository — including the Factor 5 LLE recompile
-> bridge, the runtime patches inside `lib/rt64` and `lib/N64ModernRuntime`, and
-> large parts of `src/main/main.cpp` — were produced with heavy assistance from
-> AI coding tools (Claude). Things to be aware of as a reader or contributor:
+> The repository is being kept open as a starting point for someone with more time. The next contributor's most productive work is likely (a) the overlay-dispatch fix outlined in [Where it actually stops](#where-it-actually-stops), (b) continuing the function-renaming pass against `RecompiledFuncs/funcs_*.c` to make the codebase more legible, and (c) the MORT audio recompile that hasn't been started.
 >
-> - Some choices are pragmatic workarounds (e.g. the `if(0) fprintf(...)`
->   dead-code logging scattered through the renderer, the PIPESYNC-only RDP
->   filter, the HLE-arm-for-signaling-only path) rather than principled fixes.
-> - Manual edits inside the `lib/rt64` and `lib/N64ModernRuntime` submodules,
->   and inside generated files like `build/factor5_ucode/factor5_ucode_recompiled.c`,
->   are not committed upstream and can be clobbered on regeneration.
-> - Both the LLE bridge approach and several runtime decisions are novel and
->   underverified — they appear to work for the boot sequence but should not
->   be assumed correct without scrutiny. Issues, corrections, and second
->   opinions are very welcome.
+> **Heads-up on AI-assisted development.** Almost all the debugging, architectural decisions, and code in this repository — including the Factor 5 LLE/HLE bridge work, the runtime patches inside `lib/rt64` and `lib/N64ModernRuntime`, large parts of `src/main/main.cpp`, the `patches/` build pipeline, and most of the diagnostic env-var infrastructure — were produced with heavy AI assistance (Claude). Things to be aware of as a reader or contributor:
+>
+> - Many choices are pragmatic workarounds (defensive KSEG0 guards, env-gated diagnostic toggles, dead-code logging scaffolding) rather than principled fixes. Some of these may not be necessary once the overlay-dispatch issue is addressed.
+> - Manual edits inside the `lib/rt64` and `lib/N64ModernRuntime` submodules, and inside generated files like `build/factor5_ucode/factor5_ucode_recompiled.c` and `RecompiledFuncs/`, are not committed to those upstream repos and can be clobbered on regeneration.
+> - The architectural conclusions (especially around overlay dispatch and Factor 5 GBI handling) appear well-supported by the code evidence but should not be treated as final without scrutiny. Issues, corrections, and second opinions are very welcome.
 
 <div align="center">
+### [first-attempt](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/tree/first-attempt)
 <table>
   <tr>
     <td>
@@ -108,16 +92,37 @@ The output goes to `../N64Recomp/RecompiledFuncs/` (relative to this repo).
 **Windows (Visual Studio + ClangCL):**
 ```sh
 cmake -B build -T ClangCL
-cmake --build build --config Release
+cmake --build build --config Debug    # for development (recommended while debugging)
+cmake --build build --config Release  # for performance
 ```
 
 **Linux / macOS:**
 ```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ```
 
-The binary is written to `build/Release/RogueSquadron64Recomp` (or `build/Debug/` for debug builds).
+The binary is written to `build/Debug/RogueSquadron64Recomp.exe` (Windows) or
+`build/RogueSquadron64Recomp` (Linux/macOS).
+
+#### Build options
+
+| CMake option | Default | Purpose |
+|---|---|---|
+| `-DMIPS_TOOLCHAIN_DIR=path` | `E:/mips-toolchain` | Override the mips64-elf-gcc install path for `patches/`. |
+| `-DROGUESQ_DX12_DEBUG=ON` | OFF | Enable the D3D12 debug layer (use only with Debug builds). |
+| `-DROGUESQ_NO_ITER_DEBUG=ON` | OFF | Disable MSVC debug iterators in `lib/rt64` (defines `_HAS_ITERATOR_DEBUGGING=0 _ITERATOR_DEBUG_LEVEL=0`). Speeds up Debug runs that exercise lots of std::vector access in the renderer. |
+
+#### Incremental builds
+
+When iterating on host-side code (`src/main/*`, `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`), Debug builds typically rebuild + link in ~10–30s. Regenerating `RecompiledFuncs/` (step 2) is only required when the game's TOML changes — for day-to-day work, run only step 3.
+
+#### Build pipeline summary
+
+1. `RecompiledFuncs/` (from N64Recomp) → game's MIPS recompiled to C
+2. `patches/` (optional MIPS GCC step) → `patches.elf` → recompiled-back → linked ahead of `RecompiledFuncs/` so override symbols win
+3. `lib/rt64` + `lib/N64ModernRuntime` → static-linked host runtime
+4. `src/main/*` → entry point wiring everything together
 
 ---
 
@@ -209,14 +214,37 @@ prebuilt MIPS GCC for Windows. See [patches/README.md](patches/README.md) for:
 
 | System | Status |
 |---|---|
-| Video / RDP | Working — RT64 driven by Factor 5 LLE recompile + DPC bridge |
-| Boot sequence | Reaches LucasArts attribution → N64 logo → post-logo cinematic. Factor 5 logo + explosion particles render. Cinematic reaches natural exit (fc=1120) in ~30% of runs |
-| Main menu | Intermittently reached after natural exit. `func_800C58A0` menu_overlay_init still has heap-walker issues |
-| Cinematic loop freeze | Open. ~70% of runs time out at iter ~810 due to OS-level thread starvation (cinematic CPU thread blocks). Empirical: stderr writes unstick it, `Sleep` does not |
-| Input | Working (SDL2 gamepad — game shows "NO CONTROLLER" until one is plugged in). Keyboard support pending (Zelda-style bind/rebind UI) |
+| Boot sequence | Reaches the attribution screen, advances to the N64 logo phase, no crash |
+| Attribution screen | **Visible only as a coloured clear** (default black with the canonical `0x00010001` fill, or bright green if `ROGUESQ_HLE_OP02_EXPERIMENTAL=1` is set as a visibility marker). The actual "STAR WARS: ROGUE SQUADRON / LucasArts / Factor 5" text is **not rendered** — see [Where it actually stops](#where-it-actually-stops) |
+| N64 logo | Phase is reached without crashing, but no logo content renders (white screen) |
+| Cinematic | Not reached in a useful state — depends on N64 logo phase completing visibly |
+| Main menu | Not reached |
+| Video pipeline (host side) | RT64 + custom F3DFACTOR5 GBI module dispatching cleanly. SDL window, swapchain, ImGui inspector (F1), VI presentation timing all working. The pixels-from-RDRAM-to-screen path is intact — verified via `ROGUESQ_LOG_VI_FB_CONTENT=1` which shows whatever the game writes to RDRAM does reach the swapchain |
+| Input | Working (SDL2 gamepad). Keyboard support not implemented |
 | Save data | EEPROM 4K via librecomp |
-| Audio | Stubbed — silent. Per [rerogue](https://github.com/jrra/rerogue) the codec is **MORT**, not MusyX as previously assumed; both still need a separate recompile pass |
+| Audio | Stubbed — silent. Per [rerogue](https://github.com/jrra/rerogue) the codec is **MORT**, not MusyX as previously assumed; needs a separate RSPRecomp pass for either codec |
 | Memory pak | Stubbed — returns no-pak |
+
+### Where it actually stops
+
+The attribution screen and N64 logo both fail to render their actual content because the game's CPU code never produces any pixel data beyond the canonical-black framebuffer clear. `ROGUESQ_LOG_VI_FB_CONTENT=1` traces confirm this directly: during the attribution-display loop the VI framebuffer at `0x806BA000` has every single pixel (71680 of 71680) set to `0x0001` (canonical N64 black with alpha=1). No text bytes, no glyphs, no draw commands. The host renderer is faithfully showing what's in RDRAM — and what's in RDRAM is just a clear.
+
+The **root cause** appears to be an overlay-dispatch issue rather than a rendering issue:
+
+1. The game ships three overlays that all load at VA `0x800A5130`: `.ovl.mission` (ROM 0xA5D30), `.ovl.menu` (ROM 0x10C2D0), `.ovl.cinematic` (ROM 0x137580). At runtime they swap in and out as the game progresses.
+2. N64Recomp's output (`RecompiledFuncs/recomp_overlays.inl`) **does** generate separate function arrays for all three overlays (`section_4_ovl_mission_funcs`, `section_5_ovl_menu_funcs`, `section_6_ovl_cinematic_funcs`).
+3. **But** librecomp's `load_overlays(0x1000, entrypoint, 1024*1024)` boot-time registration call covers only the first 1 MB of ROM. That's enough to register `.ovl.mission` (rom 0xA5D30, in range), but `.ovl.menu` (rom 0x10C2D0) and `.ovl.cinematic` (rom 0x137580) are past the cutoff and never register their functions into `func_map`.
+4. So when the game calls `loadOverlay(1)` to bring the menu overlay into RAM, the bytes DMA in correctly, but the recompiled-C side keeps calling whichever overlay's version of each function was bound at link time (mission). The menu overlay's distinct code — including the function that draws the attribution text — never executes.
+
+A prior commit (`e532b90`, "Add logging, frame-rate hooks, and overlay guard") fixed this by adding a `load_overlays(...)` call inside `lib/N64ModernRuntime/librecomp/src/pi.cpp:do_dma` so each ROM→RDRAM transfer re-registered any overlay it brought in. A later cleanup reverted that change. Restoring it is the architectural fix; an attempt to shadow `osPiStartDma_recomp` in `src/main/upstream_compat.cpp` instead (to avoid modifying the submodule) regressed boot because the replacement didn't cover the SRAM-read path that `do_dma` also handles.
+
+The minimal correct fix is to re-add the post-DMA `load_overlays` call to `lib/N64ModernRuntime/librecomp/src/pi.cpp`. If that path is undesirable because the file lives under `lib/`, a more involved alternative is a complete SRAM-aware shadow of both `osPiStartDma_recomp` and `osEPiStartDma_recomp` in `src/main/upstream_compat.cpp` that replicates the full `do_dma` behaviour and layers `load_overlays` on top. Either way, the next visible content to appear would be whatever the menu overlay actually draws when its real code runs.
+
+### Other known issues
+
+- **Audio**: stubbed entirely. Per [rerogue](https://github.com/jrra/rerogue) PC-version reversing, the codec is **MORT**, not MusyX. Either codec needs an RSPRecomp pass against the audio ucode segment in the ROM. No starting work has been done.
+- **Defensive KSEG0 guards in `RecompiledFuncs/funcs_*.c`**: many functions have hand-instrumented pointer-validity guards to survive wild-pointer dereferences. Most of these were added while chasing downstream symptoms of the overlay-dispatch issue and may not be needed once the overlays dispatch correctly. Leave them for now — strip them only after the overlay fix is verified.
+- **`func_80022048` stub** and the **SEH wrap of the recompiled thread entry** in `lib/N64ModernRuntime/librecomp/src/recomp.cpp` are similarly downstream-symptom guards that should be revisited after the overlay fix.
 
 ---
 
@@ -263,10 +291,31 @@ before adding new `fprintf` or asking which trace to enable). Notable:
 | Env var | What it enables |
 |---|---|
 | `ROGUESQ_LOG_ALL` | Master switch — turns on everything |
+| `ROGUESQ_LOG_GBI` | Per-handler logs in the F3DFACTOR5 GBI (texrect / setCombine / setOtherMode / setScissor / setCIMG accepts + rejects). High volume — locks the ImGui inspector after a few seconds if left on |
+| `ROGUESQ_LOG_CIMG` | Per-fb setCIMG + per-fb texrect frequency counters. Bounded output, useful for correlating render targets with VI's sampled fb |
 | `ROGUESQ_LOG_CINE_CP` | Per-call-site checkpoints inside `func_800A5D80`'s cinematic loop body. Pair with `ROGUESQ_LOG_CINE_CP_FROM=N` to start verbose logging at iter N |
 | `ROGUESQ_LOG_RT64_ALLOC` | RT64 allocation hotspots (interpolatedColorTargets, nativeSwappedRAM, rdramData, BufferPair, RenderTarget) — use to find allocation spikes |
+| `ROGUESQ_HLE_DEV_MODE` | Default ON. Set to `0` to disable RT64's ImGui developer overlay (F1 inspector) |
+| `ROGUESQ_HLE_AUTO_FULLSYNC` | Default OFF. Set to `1` to force an extra `state->fullSync()` after every `processDisplayLists`. Factor 5 already emits its own G_RDPFULLSYNC, so this usually overwrites the committed workload with an empty one — only useful as a diagnostic toggle |
+| `ROGUESQ_HLE_PRESENT_EARLY` | Default OFF. Set to `1` to switch RT64 into `PresentEarly` presentation mode (Zelda64Recomp's default). Causes instability with our Factor 5 flow — keep off unless investigating |
+| `ROGUESQ_HLE_NO_AA` | Default OFF. When set, strips `AA_EN` (bit 14) from any setOtherModeL write that covers it. Use to test whether anti-aliasing + zero combiner alpha is suppressing pixels |
+| `ROGUESQ_HLE_NO_CVGA` | Default OFF. Strips `CVG_X_ALPHA` (bit 23) and `ALPHA_CVG_SEL` (bit 24) from otherModeL writes. Same diagnostic class as `NO_AA` but targets the coverage-from-alpha path |
+| `ROGUESQ_HLE_FORCE_OPAQUE` | Default OFF. Strips AA_EN + CVG_X_ALPHA + ALPHA_CVG_SEL all at once. Broadest "make pixels visible regardless of combiner alpha" sledgehammer |
+| `ROGUESQ_HLE_FORCE_VISIBLE` | Default OFF. Replaces every Factor 5 setCombine + setFillColor with a known-rendering "solid magenta" setup. If magenta appears on screen, the GPU pipeline works and the bug is purely combiner-mux-specific |
+| `ROGUESQ_GFX_API` | Force a specific graphics API. Values: `vulkan` or `d3d12`. Default is `auto` (D3D12 on Windows) |
 | `ROGUESQ_SUPPRESS_OOB_CIMG` | **Default OFF.** When set, drops Factor 5 ucode emissions of bogus SET_COLOR_IMAGE commands at HIGH (≥ 0x800000) and LOW (< 0x100000) addresses before they reach RT64. Reduces the iter-810 memory spike but causes a visual regression — the 3D Factor 5 logo no longer renders, since some legitimate Factor 5 lowmem CIMGs are dropped along with the garbage |
 | `ROGUESQ_HWBP` + `ROGUESQ_HWBP_ADDR` | Win32 DR0 hardware breakpoint on a configurable RDRAM address |
+
+### RT64 developer overlay (F1)
+
+With `ROGUESQ_HLE_DEV_MODE` enabled (default), pressing **F1** in the window toggles RT64's ImGui inspector:
+
+- **Configuration** — resolution / aspect / antialiasing / framebuffer settings.
+- **Textures** — load texture packs; **Start dumping textures** writes every TMEM load + palette to a directory of your choice (useful for confirming TMEM populates correctly).
+- **Debugger** — pause/resume (F4), Frame stats, per-fbPair → per-rectangle → per-Call inspector with vertex/pixel shader dump buttons.
+- **Render** — render-target visualization.
+
+Other developer hotkeys: **F2** ray tracing toggle (not yet public), **F3** ViewRDRAM mode, **F4** texture replacement toggle.
 
 ---
 

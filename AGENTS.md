@@ -1,6 +1,8 @@
 # AGENTS.md
 
-Guidance for AI agents working on the Rogue Squadron 64 Recompiled project. This is an active port of *Star Wars: Rogue Squadron* (N64, USA v1.0) using N64Recomp + RT64 LLE rendering (Factor 5 ucode recompiled to C, output forwarded to RT64 via the DPC bridge).
+Guidance for AI agents working on the Rogue Squadron 64 Recompiled project. This is a port of *Star Wars: Rogue Squadron* (N64, USA v1.0) using N64Recomp + RT64. The original author has shelved the project; the most useful contributions right now are (a) the overlay-dispatch fix described in the README's "Where it actually stops" section, (b) renaming auto-generated `func_HHHHHHHH` symbols in `RecompiledFuncs/funcs_*.c` to their human-mapped names from the companion `rogue_squadron64` decomp project, and (c) the MORT audio recompile that hasn't been started.
+
+**The single most important thing to read before doing anything else is the [Where it actually stops](README.md#where-it-actually-stops) section of the README**. It documents the architectural root cause for why no game content renders past the framebuffer clear, with code references and a proposed minimal fix.
 
 ## Project layout
 
@@ -274,20 +276,40 @@ The main loop also guards against `hleGBI` becoming NULL mid-task (F3DEX op `0xA
 
 ## Avoid these dead ends (already disproven)
 
-- 13-way contention on `0x8011A7E8` — only one thread calls `func_8000C07C`.
-- cE/cF bytes at `0x80128EAE/F` as a frame-sync counter — they're slot-type bytes in a scheduler table.
-- 10× `dp_complete` to fix DP-event throughput — producer-side fine; bottleneck was downstream (interpreter loop).
-- Cooperative scheduler losing DP messages between yields — `mqdiag` shows 0 lost/requeued for DP queue.
-- "iter 3 hangs" interpretation of `func_8000C07C` — counter misread; the loop runs 30+ iters under normal conditions.
-- The `wmain/main` link warning matters — it's benign.
-- Synthetic per-halt FULL_SYNC injection in dpc_bridge — corrupts RT64 tile state mid-frame, produces white-bounding-box artifacts and AVs in `loadTileOperation`. The cinematic's natural ~5/s submission rate is correct. Don't retry.
-- Force-menu bypass via `ROGUESQ_FORCE_MENU_AT_SEC` — skipping the cinematic init causes downstream crashes. Find what gates `bit 25 of MEM[0x80130B58]` naturally instead.
-- A `cv.wait` rewrite of RT64's present-queue busy-wait at `lib/rt64/src/hle/rt64_present_queue.cpp:38-46` — looked surgical, regressed natural-exit rate from ~30% to 0%. Reverted.
-- Re-investigating "missing state-1 writer" in the 5-slot table at `D_80154620` — that table is the speech-sample playback slots, not cinematic stages. Audio is stubbed so the slots stay zero.
-- Repeatedly iterating cinematic-explosion shader probes — frame rate, pipeline drops, early-z, VI selection, vertex w, mux family, and FillRect-not-firing are all ruled out. Next step is a RenderDoc/PIX capture, not another shader iteration.
-- `[cimg-drop]` LOW-region filter (`addr < 0x100000`) as default-on — Factor 5 LLE legitimately emits some lowmem CIMGs for the 3D logo render path, so dropping them at dpc_bridge kills the visual. The right place to filter is the existing writeback guard at `rt64_state.cpp:1494` (`addressStart >= 0x100000`), which lets the CIMG produce a render target but skips the RDRAM writeback. Keep `ROGUESQ_SUPPRESS_OOB_CIMG` env-gated.
-- **Hand-editing `funcs_*.c` (the auto-generated MIPS-to-C output).** Looks fast in the moment, but the next regeneration silently strips your work and you don't realise until something downstream breaks weeks later. Always use the `patches/` build instead — write the override in `patches/foo.c`, point `syms.ld` at the game-side data it touches, rebuild. See [patches/README.md](patches/README.md).
-- **Regenerating `funcs_*.c` with the newer N64Recomp (`build/Debug/N64Recomp.exe`).** It errors out on the unsupported `cache 0x0D` MIPS instruction in `func_8000040C` and `func_80018D80`, then **truncates `funcs.h` and the affected `funcs_N.c` mid-write**. If this happens, restore the broken files via `cd E:/Projects/N64Recomp && git checkout -- RecompiledFuncs/`. Use the *older* N64Recomp at `E:/Projects/N64Recomp/Debug/N64Recomp.exe` for full main-tree regeneration; the newer one is only for the patches pipeline.
+These were exhaustively investigated before the overlay-dispatch root cause was found. Most of them were chasing downstream symptoms — none of them is the real bug, and revisiting them is wasted time.
+
+### Rendering / GBI
+
+- **Shader iteration on "invisible glyphs"**. Frame rate, pipeline drops, early-z, VI selection, vertex w, mux family, FillRect-not-firing, coverage-bit strips (`ROGUESQ_HLE_NO_AA`, `ROGUESQ_HLE_NO_CVGA`, `ROGUESQ_HLE_FORCE_OPAQUE`) are all ruled out. The bug is upstream of rendering — there's nothing to render. `ROGUESQ_LOG_VI_FB_CONTENT=1` confirms the framebuffer is uniformly black: no text bytes in RDRAM at all.
+- **Forcing presentation of specific fbPairs** via the inspector's View Framebuffer slider — won't help when the framebuffer is uniform black.
+- **`[cimg-drop]` LOW-region filter (`addr < 0x100000`) as default-on** — Factor 5 LLE legitimately emits some lowmem CIMGs. Keep `ROGUESQ_SUPPRESS_OOB_CIMG` env-gated.
+- **Synthetic per-halt FULL_SYNC injection in dpc_bridge** — corrupts RT64 tile state mid-frame, produces white-bounding-box artifacts and AVs in `loadTileOperation`.
+- **Running LLE + HLE in parallel (`ROGUESQ_LLE_FORCE=1` without `LLE_SOLO`)** — LLE hits `Unhandled jump target 0xFEDB` on cinematic-shaped tasks, then dpc_bridge SEH-catches an AV inside `processDisplayLists`, leaving RT64's framebuffer-tracking state inconsistent. A downstream `fullSync` then asserts on "Unimplemented 4 bits Readback mode" in `rt64_native_target.cpp:167`. The 4-bit assertion is a *symptom* of the LLE state corruption, not a legitimate game-side issue.
+- **A `cv.wait` rewrite of RT64's present-queue busy-wait** at `lib/rt64/src/hle/rt64_present_queue.cpp:38-46` — looked surgical, regressed natural-exit rate dramatically. Reverted.
+
+### libultra / scheduler
+
+- **13-way contention on `0x8011A7E8`** — only one thread calls `func_8000C07C`.
+- **cE/cF bytes at `0x80128EAE/F` as a frame-sync counter** — they're slot-type bytes in a scheduler table.
+- **10× `dp_complete` to fix DP-event throughput** — producer side is fine.
+- **Cooperative scheduler losing DP messages between yields** — `mqdiag` shows 0 lost/requeued for DP queue.
+- **"iter 3 hangs" interpretation of `func_8000C07C`** — counter misread; the loop runs 30+ iters normally.
+
+### Boot flow / state machine
+
+- **Force-menu bypass via `ROGUESQ_FORCE_MENU_AT_SEC`** — skipping the cinematic init causes downstream crashes. Don't try to jump the state machine; fix the overlay dispatch and the state machine advances naturally.
+- **Re-investigating "missing state-1 writer" in the 5-slot table at `D_80154620`** — that table is the speech-sample playback slots, not cinematic stages. Audio is stubbed so they stay zero.
+- **"iter ~810 cinematic freeze"** — was a real symptom of the previous LLE pipeline; with the current HLE path the loop runs steady and the freeze is no longer observable. Don't chase it.
+
+### Build / regeneration
+
+- **Hand-editing `funcs_*.c` (auto-generated MIPS-to-C output)** for game-logic overrides. Looks fast, but next regeneration silently strips the work. Use the `patches/` build instead — see [patches/README.md](patches/README.md). Hand-instrumented `fprintf` probes inside `funcs_*.c` for **diagnostic logging** are routine and fine; just don't put load-bearing logic there.
+- **Regenerating `funcs_*.c` with the newer N64Recomp** (`build/Debug/N64Recomp.exe`). It errors on the unsupported `cache 0x0D` MIPS instruction in `func_8000040C` and `func_80018D80`, then **truncates `funcs.h` and the affected `funcs_N.c` mid-write**. Restore via `cd E:/Projects/N64Recomp && git checkout -- RecompiledFuncs/`. Use the *older* N64Recomp at `E:/Projects/N64Recomp/Debug/N64Recomp.exe` for full main-tree regeneration; the newer one is only for the patches pipeline.
+
+### Miscellaneous
+
+- **The `wmain/main` link warning matters** — it's benign.
+- **Shadowing `osPiStartDma_recomp` in `src/main/upstream_compat.cpp` with only the ROM-read branch** — boot needs the SRAM-read path too. If you go the shadow route, replicate `do_dma` in full or it'll regress.
 
 ## Style conventions
 
@@ -303,10 +325,18 @@ The main loop also guards against `hleGBI` becoming NULL mid-task (F3DEX op `0xA
 
 ## Open work
 
-- **iter ~810 cinematic freeze**: ~70% of runs time out at iter 832-835 inside random functions in `func_800A5D80`'s loop body. Empirically only stderr writes unstick it; `Sleep`, `SwitchToThread`, and `cursorCondition` waits all do not. Likely OS-level thread starvation. CP markers gated by `ROGUESQ_LOG_CINE_CP=1` are already wired into the loop body.
-- **Menu-init heap-walker bugs**: when natural exit fires (~30% of runs), execution lands in `func_800C58A0` `menu_overlay_init` which has its own KSEG0-pointer-validation issues.
-- **Bogus RDP commands from Factor 5 DMA buffer**: the ucode emits uninitialized DMEM bytes (e.g., `FF FF FF FF 00 00 07 E0`) as 8-byte DMA submissions. The `[cimg-drop]` filter in `src/rsp/dpc_bridge.cpp` neutralises the worst of them, but a wider-width family still slips through. Hunt the ucode-side cause at `build/factor5_ucode/factor5_ucode_recompiled.c:427` (the DMA write call site).
-- **Audio**: stubbed; per the rerogue PC-version reversing notes the codec is **MORT**, not MusyX as previously assumed. Either way needs a separate RSPRecomp pass.
-- **Keyboard input**: port Zelda64Recompiled's bind/rebind UI so keyboard can replace gamepad. Defer until past the cinematic-freeze blocker.
+### Highest priority — the actual blocker
+
+- **Overlay-dispatch fix**. See [Where it actually stops](README.md#where-it-actually-stops). librecomp's boot-time `load_overlays(0x1000, entrypoint, 1024*1024)` covers only the first MB of ROM and so registers only `.ovl.mission`. The `.ovl.menu` (ROM 0x10C2D0) and `.ovl.cinematic` (ROM 0x137580) sections live past that boundary and never register their functions into `func_map`. Direct C calls to overlay-region functions keep dispatching to the mission-overlay version regardless of which overlay the game has actually DMA'd into RAM. The menu overlay's attribution-draw code never executes, which is why the attribution screen and the N64 logo phase don't render any content. Minimal fix is restoring the per-DMA `load_overlays(rom_offset, ram_addr, size)` call to `lib/N64ModernRuntime/librecomp/src/pi.cpp:do_dma` (it was added in commit `e532b90`, removed in a later cleanup). A shadow attempt in `src/main/upstream_compat.cpp` regressed boot because it didn't replicate the SRAM-read path that `do_dma` also handles — if you take that route, replicate the full `do_dma` body, not just the ROM-read branch.
+
+### Productive renaming work
+
+- **Auto-generated `func_HHHHHHHH` → human names** in `RecompiledFuncs/funcs_*.c`. The companion decomp project `rogue_squadron64` has partial m2c output and named symbol files. The architecture doc at [docs/game-architecture.md](docs/game-architecture.md) tracks what's known. Renaming reduces the friction of every future debugging session. Recommended approach: pick a memory-map region (e.g. an overlay range or a subsystem like the save/account family), read its functions, pattern-match against m2c output or string references in ROM, propose names that encode meaning (not addresses). Avoid address-encoded names like `clearByteAt801128CC` — they add nothing over `func_HHHHHHHH`. If you can't see semantics, leave the function as `func_*` rather than inventing a name.
+
+### Long-tail
+
+- **Audio**: stubbed. Per [rerogue](https://github.com/jrra/rerogue) PC-version notes the codec is **MORT**, not MusyX. The audio RSP ucode segment in the ROM needs a separate RSPRecomp pass with a custom config. No starting work has been done.
+- **Keyboard input**: port Zelda64Recompiled's bind/rebind UI. Defer until the overlay-dispatch fix lets a real menu render.
+- **Cleanup pass**: many defensive KSEG0 guards and SEH catches in `RecompiledFuncs/funcs_*.c` and `lib/N64ModernRuntime/librecomp/src/recomp.cpp` were added while chasing symptoms of the overlay-dispatch issue. After the fix lands and the game renders correctly, these can be re-evaluated.
 
 The team explicitly chose NOT to pursue full HLE for Factor 5 — see [docs/lle-spike-report.md](docs/lle-spike-report.md).

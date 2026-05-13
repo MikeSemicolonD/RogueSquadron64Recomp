@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <vector>
 
 #define HLSL_CPU
 #include "hle/rt64_application.h"
@@ -17,6 +18,12 @@ static std::atomic<RT64::Application*> g_rt64_app{nullptr};
 
 extern "C" void rs64_dpc_get_cumulative_histogram(uint32_t out[64]);
 extern "C" uint32_t rs64_dpc_get_cumulative_fullsyncs();
+extern "C" void rs64_cine_dump_if_stuck(void);
+extern "C" void rs64_cine_progress_log(void);
+// LLE GFX entry — runs the RSP recompile (factor5_boot + factor5_ucode)
+// against this task's data. Defined in main.cpp. OSTask comes from
+// ultramodern/ultra64.h (already included via ultramodern.hpp).
+extern "C" int rs64_run_lle_gfx(uint8_t* rdram, const OSTask* task);
 
 // RDP/RSP register state owned by this file
 static uint8_t DMEM[0x1000];
@@ -105,17 +112,48 @@ public:
         appConfig.detectDataPath = false;
 
         app = std::make_unique<RT64::Application>(appCore, appConfig);
-        // Force developer mode ON so the RT64 ImGui debugger is visible —
-        // gives a direct view of workloads / draw calls / framebuffers /
-        // shaders RT64 is producing. Even if game pixels stay black, the
-        // debugger overlays render so we can confirm RT64 itself is alive.
-        // Disable by setting ROGUESQ_HLE_DEV_MODE=0.
+        // Dev mode default: ON for Debug builds (so F1 inspector is available),
+        // OFF for Release. Override either way with ROGUESQ_HLE_DEV_MODE=0/1.
+        // The inspector can be unstable with our HLE flow under load — fall
+        // back to ROGUESQ_HLE_DEV_MODE=0 if it locks up an investigation.
+#ifdef _DEBUG
         bool dev_mode_on = true;
+#else
+        bool dev_mode_on = false;
+#endif
         if (const char* v = std::getenv("ROGUESQ_HLE_DEV_MODE")) {
-            if (v[0] == '0') dev_mode_on = false;
+            dev_mode_on = (v[0] && v[0] != '0');
         }
         app->userConfig.developerMode = debug || dev_mode_on;
         app->userConfig.displayBuffering = RT64::UserConfiguration::DisplayBuffering::Triple;
+
+        // PresentEarly ON by default. Our cinematic stays on a single VI fb
+        // address; without PresentEarly, RT64's updateScreen only pushes a
+        // present when VI changes or RDRAM at VI_ORIGIN changes — neither
+        // happens for HLE single-buffer flow, so rendered fbPairs never
+        // reach the swapchain. PresentEarly pushes presents directly from
+        // fullSync. Opt out via ROGUESQ_HLE_PRESENT_EARLY=0.
+        bool present_early = true;
+        if (const char* v = std::getenv("ROGUESQ_HLE_PRESENT_EARLY")) {
+            present_early = (v[0] && v[0] != '0');
+        }
+        if (present_early) {
+            app->enhancementConfig.presentation.mode =
+                RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
+        }
+
+        // 2026-05-10: Apply Zelda64Recomp's RT64 enhancement-config settings.
+        // Without these, RT64's textureLOD selection and gbi branching take
+        // different paths that cause our texture lookups to sample stale or
+        // empty TMEM regions → glyph texrects render invisibly.
+        //
+        // forceBranch=true: forces gbi depth branches, preventing LODs from
+        // kicking in for textures that don't have proper mipmap chains.
+        //
+        // textureLOD.scale=true: scales LODs based on output resolution so
+        // higher-res rendering doesn't bias toward LOD 0 unnecessarily.
+        app->enhancementConfig.f3dex.forceBranch = true;
+        app->enhancementConfig.textureLOD.scale = true;
         // Diagnostic: ROGUESQ_GFX_API=vulkan forces Vulkan instead of the
         // default D3D12 (Automatic on Windows). Lets us isolate whether crashes
         // are DX12-specific or apply to both backends.
@@ -138,7 +176,19 @@ public:
             fprintf(stderr, "[RT64] setup failed: %d\n", (int)setup_result);
             app = nullptr;
         }
-        else if (app && app->appWindow) {
+        else {
+            // Propagate construction-time enhancementConfig changes (e.g.
+            // PresentEarly) into RT64's internal state. setup() initializes
+            // before these are read, so without this call the changes stay
+            // dormant.
+            app->updateEnhancementConfig();
+            fprintf(stderr, "[RT64] enhancementConfig: presentMode=%d forceBranch=%d textureLOD.scale=%d\n",
+                    (int)app->enhancementConfig.presentation.mode,
+                    (int)app->enhancementConfig.f3dex.forceBranch,
+                    (int)app->enhancementConfig.textureLOD.scale);
+            fflush(stderr);
+        }
+        if (app && app->appWindow) {
             // Diagnostic: dump the post-setup state of RT64's window/filter
             // so we know whether F1-F4 keypresses can reach the inspector.
             fprintf(stderr,
@@ -167,26 +217,91 @@ public:
     }
 
     void enable_instant_present() override {
+        // PresentEarly is set at construction (see ctor); this host hook
+        // would re-apply it, but constructor-time setup is sufficient.
+        // Respects ROGUESQ_HLE_PRESENT_EARLY=0 opt-out.
         if (app) {
-            // Disabled for Factor 5: PresentEarly only commits a workload if
-            // its colorImage.address matches an fbAddress already in
-            // viHistory. Factor 5's render-then-swap flow renders to a back
-            // buffer BEFORE VI samples it, so PresentEarly's check fails for
-            // every workload → nothing is presented → black screen.
-            // Default SkipBuffering presents via the normal VI updateScreen
-            // path, which follows the actual swap chain. ROGUESQ_HLE_PRESENT_EARLY=1
-            // forces PresentEarly back on for testing.
-            const char* v = std::getenv("ROGUESQ_HLE_PRESENT_EARLY");
-            if (v && v[0] && v[0] != '0') {
+            bool present_early = true;
+            if (const char* v = std::getenv("ROGUESQ_HLE_PRESENT_EARLY")) {
+                present_early = (v[0] && v[0] != '0');
+            }
+            if (present_early) {
                 app->enhancementConfig.presentation.mode =
                     RT64::EnhancementConfiguration::Presentation::Mode::PresentEarly;
                 app->updateEnhancementConfig();
             }
-            // else: leave as default SkipBuffering.
         }
     }
 
     void send_dl(const OSTask* task) override {
+        // ROGUESQ_LLE_FORCE=1: route this GFX task through the LLE RSP
+        // recompile path INSTEAD of HLE. factor5_gfx_runner reproduces what
+        // real-hardware RSP would do — runs boot+main ucode against DMEM,
+        // emits RDP byte stream via mtc0 DPC_END writes, src/rsp/dpc_bridge.cpp
+        // forwards those bytes to RT64 via processDisplayLists(isHLE=false).
+        // This is the path needed for Factor 5's op 0x02 (vertex transform)
+        // to actually emit triangles — HLE drops it.
+        static int s_lle_force = -1;
+        if (s_lle_force < 0) {
+            const char* v = std::getenv("ROGUESQ_LLE_FORCE");
+            s_lle_force = (v && *v && v[0] != '0') ? 1 : 0;
+            if (s_lle_force) {
+                fprintf(stderr, "[lle-force] LLE path enabled for M_GFXTASK; "
+                                "HLE send_dl will skip processDisplayLists\n");
+                fflush(stderr);
+            }
+        }
+        if (s_lle_force && app) {
+            // Gate LLE to attribution-shape DLs only. Cinematic-phase tasks
+            // hit Unhandled jump target in factor5_ucode_recompiled and
+            // corrupt RT64's deferred state (which then asserts 4-bit
+            // readback downstream). Attribution DL signature: data_ptr =
+            // 0x80720108 for task #1, 0x80720318 for task #2 of the same
+            // phase (observed). Both live in the 0x80720000 page. Restrict
+            // LLE to data_ptr in that page so cinematic tasks bypass it.
+            //
+            // ROGUESQ_LLE_UNGATED=1 disables this gate (debug/regression).
+            const uint32_t dlp = (uint32_t)task->t.data_ptr;
+            static int s_lle_ungated = -1;
+            if (s_lle_ungated < 0) {
+                const char* v = std::getenv("ROGUESQ_LLE_UNGATED");
+                s_lle_ungated = (v && *v && v[0] != '0') ? 1 : 0;
+            }
+            const bool in_attribution_page = ((dlp & 0xFFFF0000u) == 0x80720000u);
+            if (s_lle_ungated || in_attribution_page) {
+                static int s_n = 0;
+                int n = ++s_n;
+                int r = rs64_run_lle_gfx(app->core.RDRAM, task);
+                if (n <= 8 || (n & 31) == 0) {
+                    fprintf(stderr, "[lle send_dl #%d] gate=%s exit=%d task->ucode=0x%08X dl=0x%08X\n",
+                            n, in_attribution_page ? "attr" : "ungated",
+                            r, (unsigned)task->t.ucode, dlp);
+                    fflush(stderr);
+                }
+                // ROGUESQ_LLE_SOLO=1 skips the HLE fallthrough below. By default
+                // we run HLE in parallel so HLE's green fillRect-override marker
+                // stays visible alongside whatever LLE produces.
+                static int s_lle_solo = -1;
+                if (s_lle_solo < 0) {
+                    const char* v = std::getenv("ROGUESQ_LLE_SOLO");
+                    s_lle_solo = (v && *v && v[0] != '0') ? 1 : 0;
+                }
+                if (s_lle_solo) {
+                    return;
+                }
+                // Fall through to HLE below.
+            } else {
+                // Cinematic / N64-logo / other tasks: HLE only. Skip LLE.
+                static int s_skip_count = 0;
+                int sn = ++s_skip_count;
+                if (sn <= 4 || (sn & 127) == 0) {
+                    fprintf(stderr, "[lle send_dl skip #%d] non-attribution DL dl=0x%08X (LLE bypassed)\n",
+                            sn, dlp);
+                    fflush(stderr);
+                }
+            }
+        }
+
         // Standard HLE pipeline (matches Zelda64Recompiled / Starfox64Recomp).
         // RT64's GBI database now includes the Factor 5 ucode signatures (see
         // lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp), so loadUCodeGBI matches
@@ -194,6 +309,222 @@ public:
         //
         // Mask 0x3FFFFFF strips the KSEG0 bits to get the physical RDRAM
         // offset that processDisplayLists expects.
+        // ROGUESQ_LOG_OPCODE_HIST=1: per-call opcode histogram of the first
+        // 256 DL commands at task->t.data_ptr. Lets us compare which
+        // F3DFACTOR5 opcodes fire during attribution vs N64-logo phase to
+        // test the "some opcode carries attribution-glyph semantics but is
+        // currently no-op'd in our HLE" hypothesis.
+        if (app) {
+            // ROGUESQ_DUMP_UCODE=path — dump task ucode (IMEM) + ucode_data
+            // (DMEM-bound segment) to disk on the first call so the F3DFACTOR5
+            // ucode can be disassembled offline to decode op 0x02 semantics.
+            static int s_dumped_ucode = 0;
+            if (!s_dumped_ucode) {
+                const char* dump_path = std::getenv("ROGUESQ_DUMP_UCODE");
+                if (dump_path && *dump_path) {
+                    s_dumped_ucode = 1;
+                    const uint32_t ucode_phys = (uint32_t)task->t.ucode & 0x3FFFFFF;
+                    const uint32_t udata_phys = (uint32_t)task->t.ucode_data & 0x3FFFFFF;
+                    const uint32_t udata_size = task->t.ucode_data_size ? task->t.ucode_data_size : 0x800;
+                    uint8_t* rdram = app->core.RDRAM;
+                    // Standard RSP ucode IMEM is 4KB. Dump 8KB to be safe.
+                    char ipath[512], dpath[512];
+                    snprintf(ipath, sizeof ipath, "%s.imem.bin", dump_path);
+                    snprintf(dpath, sizeof dpath, "%s.dmem.bin", dump_path);
+                    FILE* f = fopen(ipath, "wb");
+                    if (f) {
+                        uint8_t buf[0x2000];
+                        for (uint32_t i = 0; i < sizeof(buf); ++i) {
+                            uint32_t off = ucode_phys + i;
+                            buf[i] = (off < 0x800000u) ? rdram[off ^ 3] : 0;
+                        }
+                        fwrite(buf, 1, sizeof(buf), f);
+                        fclose(f);
+                        fprintf(stderr, "[dump-ucode] wrote IMEM %u bytes to %s (src=0x%08X)\n",
+                                (unsigned)sizeof(buf), ipath, ucode_phys);
+                    }
+                    f = fopen(dpath, "wb");
+                    if (f) {
+                        std::vector<uint8_t> buf(udata_size);
+                        for (uint32_t i = 0; i < udata_size; ++i) {
+                            uint32_t off = udata_phys + i;
+                            buf[i] = (off < 0x800000u) ? rdram[off ^ 3] : 0;
+                        }
+                        fwrite(buf.data(), 1, udata_size, f);
+                        fclose(f);
+                        fprintf(stderr, "[dump-ucode] wrote DMEM %u bytes to %s (src=0x%08X)\n",
+                                udata_size, dpath, udata_phys);
+                    }
+                    fflush(stderr);
+                }
+            }
+            // ROGUESQ_DUMP_VTXDATA=path — dump 64 KB starting at RAM
+            // 0x80700000 and 0x80710000 on the first send_dl call. These
+            // are the addresses op 0x01 references in attribution DLs
+            // (alternating between consecutive submissions). Offline
+            // decode reveals what vertex / asset data the F3DFACTOR5
+            // ucode reads to drive op 0x02's matrix-vertex pipeline.
+            static int s_dumped_vtx = 0;
+            if (!s_dumped_vtx) {
+                const char* dump_path = std::getenv("ROGUESQ_DUMP_VTXDATA");
+                if (dump_path && *dump_path) {
+                    s_dumped_vtx = 1;
+                    uint8_t* rdram = app->core.RDRAM;
+                    // Extended dump set: add the .data segment region around
+                    // the state-setup sub-DL (0x80037658) to search for
+                    // static vertex arrays.
+                    for (uint32_t base : { 0x00700000u, 0x00710000u, 0x00037000u }) {
+                        char path[512];
+                        snprintf(path, sizeof path, "%s.0x%08X.bin", dump_path, base);
+                        FILE* f = fopen(path, "wb");
+                        if (f) {
+                            uint8_t buf[0x10000];
+                            for (uint32_t i = 0; i < sizeof(buf); ++i) {
+                                uint32_t off = base + i;
+                                buf[i] = (off < 0x800000u) ? rdram[off ^ 3] : 0;
+                            }
+                            fwrite(buf, 1, sizeof(buf), f);
+                            fclose(f);
+                            fprintf(stderr, "[dump-vtxdata] wrote 64 KB to %s\n", path);
+                        }
+                    }
+                    fflush(stderr);
+                }
+            }
+            static int s_op_hist = -1;
+            if (s_op_hist < 0) {
+                const char* v = std::getenv("ROGUESQ_LOG_OPCODE_HIST");
+                s_op_hist = (v && *v && v[0] != '0') ? 1 : 0;
+            }
+            if (s_op_hist) {
+                static int s_oh_count = 0;
+                int ohn = ++s_oh_count;
+                const uint32_t dl_phys = (uint32_t)task->t.data_ptr & 0x3FFFFFF;
+                uint8_t* rdram = app->core.RDRAM;
+                uint32_t hist[256] = {0};
+                uint32_t total = 0;
+                // Walk up to 256 8-byte commands (or stop on G_ENDDL=0xDF or
+                // a zeroed slot). Follow at most 2 G_DL jumps so we get a
+                // representative sample even when Factor 5 chains via G_DL.
+                uint32_t addr = dl_phys;
+                uint32_t stack[16];
+                int sp = 0;
+                int jumps_left = 16;
+                // Track first 8 instances of each "interesting" no-op'd
+                // opcode so we can see if their payloads encode something
+                // meaningful (like a DMA src/dst pair).
+                uint64_t op02_payloads[8] = {0};
+                int op02_count = 0;
+                uint64_t op80_payloads[8] = {0};
+                int op80_count = 0;
+                for (int i = 0; i < 1024; ++i) {
+                    if (addr + 8u > 0x800000u) break;
+                    uint8_t op = rdram[addr ^ 3];
+                    hist[op]++;
+                    total++;
+                    if (op == 0x02 && op02_count < 8) {
+                        uint64_t w = 0;
+                        for (int k = 0; k < 8; ++k) {
+                            w = (w << 8) | rdram[(addr + k) ^ 3];
+                        }
+                        op02_payloads[op02_count++] = w;
+                    }
+                    if (op == 0x80 && op80_count < 8) {
+                        uint64_t w = 0;
+                        for (int k = 0; k < 8; ++k) {
+                            w = (w << 8) | rdram[(addr + k) ^ 3];
+                        }
+                        op80_payloads[op80_count++] = w;
+                    }
+                    // F3D-style G_ENDDL = 0xB8 (Factor 5 uses F3D's 0xB8,
+                    // not F3DEX2's 0xDF). Pop on B8.
+                    if (op == 0xB8) {
+                        if (sp > 0) { addr = stack[--sp]; continue; }
+                        break;
+                    }
+                    if (op == 0xDF) break;
+                    // F3D G_DL = 0x06, F3DEX2 G_DL = 0xDE.
+                    // 0x06 in Factor 5: branch=byte1 (0=push, 1=branch).
+                    if ((op == 0x06 || op == 0xDE) && jumps_left > 0) {
+                        uint8_t branch = rdram[(addr + 1) ^ 3];
+                        uint32_t w1 = 0;
+                        for (int k = 0; k < 4; ++k) {
+                            w1 = (w1 << 8) | rdram[(addr + 4 + k) ^ 3];
+                        }
+                        uint32_t target = w1 & 0x3FFFFFF;
+                        if (branch == 0) {  // G_DL push: save return addr
+                            if (sp < 16) stack[sp++] = addr + 8;
+                        }
+                        addr = target;
+                        jumps_left--;
+                        continue;
+                    }
+                    addr += 8;
+                }
+                // Dump full DL bytes for the first call so we can hand-decode
+                // the attribution DL structure.
+                if (ohn == 1) {
+                    uint32_t a = dl_phys;
+                    int dump_stack_sp = 0;
+                    uint32_t dump_stack[16];
+                    int dump_jumps = 16;
+                    fprintf(stderr, "[opcode-hist #1 FULL DL DUMP] start=0x%08X\n", dl_phys);
+                    for (int i = 0; i < 256; ++i) {
+                        if (a + 8u > 0x800000u) break;
+                        uint64_t w = 0;
+                        for (int k = 0; k < 8; ++k) {
+                            w = (w << 8) | rdram[(a + k) ^ 3];
+                        }
+                        uint8_t op = rdram[a ^ 3];
+                        fprintf(stderr, "  %08X: %016llX  op=%02X\n",
+                                a, (unsigned long long)w, op);
+                        if (op == 0xB8) {
+                            if (dump_stack_sp > 0) { a = dump_stack[--dump_stack_sp]; continue; }
+                            break;
+                        }
+                        if (op == 0xDF) break;
+                        if ((op == 0x06 || op == 0xDE) && dump_jumps > 0) {
+                            uint8_t branch = rdram[(a + 1) ^ 3];
+                            uint32_t w1 = 0;
+                            for (int k = 0; k < 4; ++k) {
+                                w1 = (w1 << 8) | rdram[(a + 4 + k) ^ 3];
+                            }
+                            uint32_t target = w1 & 0x3FFFFFF;
+                            if (branch == 0) {
+                                if (dump_stack_sp < 16) dump_stack[dump_stack_sp++] = a + 8;
+                            }
+                            a = target;
+                            dump_jumps--;
+                            continue;
+                        }
+                        a += 8;
+                    }
+                    fflush(stderr);
+                }
+                fprintf(stderr, "[opcode-hist #%d] dl=0x%08X total=%u", ohn, dl_phys, total);
+                for (int op = 0; op < 256; ++op) {
+                    if (hist[op]) {
+                        fprintf(stderr, " %02X=%u", op, hist[op]);
+                    }
+                }
+                fprintf(stderr, "\n");
+                if (op02_count > 0) {
+                    fprintf(stderr, "[opcode-hist #%d op02 payloads]", ohn);
+                    for (int k = 0; k < op02_count; ++k) {
+                        fprintf(stderr, " %016llX", (unsigned long long)op02_payloads[k]);
+                    }
+                    fprintf(stderr, "\n");
+                }
+                if (op80_count > 0) {
+                    fprintf(stderr, "[opcode-hist #%d op80 payloads]", ohn);
+                    for (int k = 0; k < op80_count; ++k) {
+                        fprintf(stderr, " %016llX", (unsigned long long)op80_payloads[k]);
+                    }
+                    fprintf(stderr, "\n");
+                }
+                fflush(stderr);
+            }
+        }
         if (app) {
             static int s_count = 0;
             static uint32_t s_last_ucode = 0;
@@ -201,12 +532,17 @@ public:
             int n = ++s_count;
             const bool ucode_changed = (task->t.ucode != s_last_ucode) || (task->t.ucode_data != s_last_data);
             if (n <= 8 || (n & 63) == 0 || ucode_changed) {
+                // Capture workload state pre- and post-DL so we can see
+                // fbPair growth and presentEarly matcher activity.
+                int wq_wc_pre = app->workloadQueue ? (int)app->workloadQueue->writeCursor : -1;
+                int pq_wc_pre = app->presentQueue ? (int)app->presentQueue->writeCursor : -1;
                 fprintf(stderr,
-                    "[hle send_dl #%d]%s type=%u ucode=0x%08X data=0x%08X dl=0x%08X size=%u\n",
+                    "[hle send_dl #%d]%s type=%u ucode=0x%08X data=0x%08X dl=0x%08X size=%u wq=%d pq=%d\n",
                     n, ucode_changed ? " [UCODE-CHANGE]" : "",
                     (unsigned)task->t.type, (unsigned)task->t.ucode,
                     (unsigned)task->t.ucode_data, (unsigned)task->t.data_ptr,
-                    (unsigned)task->t.data_size);
+                    (unsigned)task->t.data_size,
+                    wq_wc_pre, pq_wc_pre);
                 fflush(stderr);
             }
             s_last_ucode = task->t.ucode;
@@ -220,62 +556,79 @@ public:
                 task->t.ucode_data & 0x3FFFFFF,
                 true);
 #ifdef _WIN32
+            static std::atomic<int> s_seh_streak{0};
             __try {
+                int wq_wc_pre = app->workloadQueue ? (int)app->workloadQueue->writeCursor : -1;
+                int pq_wc_pre = app->presentQueue ? (int)app->presentQueue->writeCursor : -1;
                 app->processDisplayLists(app->core.RDRAM,
                                          task->t.data_ptr & 0x3FFFFFF,
                                          0,
                                          /*isHLE*/ true);
+                s_seh_streak.store(0, std::memory_order_relaxed);
+                // Post-DL: see if workload + present cursors moved. Track
+                // distinct transition patterns so we can spot when pq
+                // *should* be advancing but isn't.
+                if (n <= 8 || (n & 63) == 0) {
+                    int wq_wc_post = app->workloadQueue ? (int)app->workloadQueue->writeCursor : -1;
+                    int pq_wc_post = app->presentQueue ? (int)app->presentQueue->writeCursor : -1;
+                    int wc = app->workloadQueue ? (int)app->workloadQueue->writeCursor : 0;
+                    auto& wl = app->workloadQueue->workloads[wc];
+                    auto& wlPrev = app->workloadQueue->workloads[(wc + app->workloadQueue->workloads.size() - 1) % app->workloadQueue->workloads.size()];
+                    fprintf(stderr,
+                        "[hle send_dl #%d post] wq=%d->%d pq=%d->%d nextFbPairs=%u prevFbPairs=%u\n",
+                        n, wq_wc_pre, wq_wc_post, pq_wc_pre, pq_wc_post,
+                        (unsigned)wl.fbPairCount, (unsigned)wlPrev.fbPairCount);
+                    fflush(stderr);
+                }
 
-                // 2026-05-10 update: Factor 5's ucode DOES emit G_RDPFULLSYNC
-                // (op 0xE9) mid-DL — confirmed via opcode tracer. RT64's own
-                // fullSync handler runs there, advancing the workload cursor
-                // and presenting the populated workload normally. An external
-                // fullSync from here runs on the *next* (empty) workload,
-                // overwriting the real frame with nothing → black screen.
-                // Default OFF; only enable for debugging via
-                // ROGUESQ_HLE_AUTO_FULLSYNC=1.
+                // Default ON: needed for stability in cinematic phase (workload's
+                // fbPairCount grows unbounded without flushing). Disable via
+                // ROGUESQ_HLE_AUTO_FULLSYNC=0 to investigate cases where it might
+                // double-fire and overwrite a present.
                 static bool s_auto_fullsync = []() {
                     const char* v = std::getenv("ROGUESQ_HLE_AUTO_FULLSYNC");
-                    return v && v[0] && v[0] != '0';
+                    if (v && v[0]) return v[0] != '0';
+                    return true;
                 }();
                 if (app->state) {
-                    // Conditional fullSync. Factor 5 emits its own
-                    // G_RDPFULLSYNC mid-DL, so most tasks DON'T need an
-                    // external one — calling fullSync on the new (empty)
-                    // workload that Factor 5's fullSync advanced to would
-                    // overwrite the real frame with nothing.
-                    //
-                    // BUT some Factor 5 DLs end without emitting fullSync,
-                    // leaving fbPairCount > fbPairSubmitted (uncommitted
-                    // work). If we don't flush, that work piles up across
-                    // tasks and eventually trips checkRDRAM assertions.
-                    //
-                    // Strategy: fullSync only if the current workload has
-                    // unsubmitted fbPairs OR pending triangles. Otherwise
-                    // assume Factor 5's natural fullSync already ran.
-                    int wc = app->state->ext.workloadQueue->writeCursor;
-                    auto& wl = app->state->ext.workloadQueue->workloads[wc];
-                    const bool needs_flush = (wl.fbPairCount > wl.fbPairSubmitted) ||
-                                             (app->state->drawCall.triangleCount > 0);
-                    if (needs_flush) {
-                        // Bracket fullSync so the dlCpuProfiler ends in the
-                        // stopped state processDisplayLists left it in.
-                        app->state->dlCpuProfiler.start();
-                        app->state->fullSync();
-                        app->state->dlCpuProfiler.end();
+                    // Conditional fullSync. Factor 5's cinematic DLs emit fullSync
+                    // mid-DL but the post-fullSync workload accumulates fbPairs
+                    // unbounded (60→229+ in one DL) without committing, eventually
+                    // tripping RT64's internal limits. We flush when the current
+                    // workload has uncommitted work; the gate skips the case where
+                    // Factor 5's natural fullSync already advanced the cursor
+                    // (next workload starts empty so needs_flush=false).
+                    // Override OFF via ROGUESQ_HLE_AUTO_FULLSYNC=0 (default ON).
+                    if (s_auto_fullsync) {
+                        int wc = app->state->ext.workloadQueue->writeCursor;
+                        auto& wl = app->state->ext.workloadQueue->workloads[wc];
+                        const bool needs_flush = (wl.fbPairCount > wl.fbPairSubmitted) ||
+                                                 (app->state->drawCall.triangleCount > 0);
+                        if (needs_flush) {
+                            app->state->dlCpuProfiler.start();
+                            app->state->fullSync();
+                            app->state->dlCpuProfiler.end();
+                        }
                     }
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER) {
-                // Set the disable flag and write the log FIRST — any further
-                // RT64 state poking can re-AV and we'd lose visibility.
-                s_hle_disabled.store(true, std::memory_order_relaxed);
-                fprintf(stderr, "[hle send_dl] SEH in processDisplayLists "
-                                "ucode=0x%08X data=0x%08X dl=0x%08X — HLE submission "
-                                "DISABLED for the rest of this session.\n",
+                // Log and try to keep going. The previous behavior latched
+                // s_hle_disabled on first SEH and killed all subsequent
+                // rendering — too aggressive: transient boot AVs would
+                // permanently kill the screen. Only latch-off if SEHs
+                // hit 3 IN A ROW with no successful submission between.
+                int streak = s_seh_streak.fetch_add(1, std::memory_order_relaxed) + 1;
+                fprintf(stderr, "[hle send_dl] SEH streak=%d in processDisplayLists "
+                                "ucode=0x%08X data=0x%08X dl=0x%08X%s\n",
+                                streak,
                                 (unsigned)task->t.ucode, (unsigned)task->t.ucode_data,
-                                (unsigned)task->t.data_ptr);
+                                (unsigned)task->t.data_ptr,
+                                streak >= 3 ? " — HLE submission DISABLED" : "");
                 fflush(stderr);
+                if (streak >= 3) {
+                    s_hle_disabled.store(true, std::memory_order_relaxed);
+                }
                 if (app && app->state) {
                     app->state->dlCpuProfiler.startedTimestamp = RT64::Timestamp{};
                 }
@@ -297,6 +650,117 @@ public:
             static int s_n = 0;
             static bool s_filter_logged = false;
             ++s_n;
+
+            // Watchdog moved to its own thread (rs64_cine_start_watchdog_thread)
+            // because the gfx_thread can itself be deadlocked on the same mutex
+            // chain that's hanging the game thread.
+
+            // Host-side buffer-arbiter state-machine driver. Under HLE, the game's
+            // bufferArbiterProducerMark blocks on a recv that's supposed to be
+            // signaled by viRetraceHandlerThread; if that signal misses (timing),
+            // slot states stagnate in 0/1/2 and func_8000BF60's scan loop spins
+            // waiting for state 3 or 4. We auto-advance any slot in state 2 → 3
+            // (CONSUMED), state 3 → 4 (PRESENTED), state 4 → 5 (DISPLAYED),
+            // state 5 → 0 (FREE). This mimics what viRetraceHandlerThread would
+            // naturally do over multiple ticks but condenses it into one
+            // update_screen pass. Gated by ROGUESQ_FORCE_BUFFER_PROGRESS=1.
+            static const bool s_force_buffer = [](){
+                const char *v = std::getenv("ROGUESQ_FORCE_BUFFER_PROGRESS");
+                return v && v[0] && v[0] != '0';
+            }();
+            if (s_force_buffer && app->core.RDRAM) {
+                // Slot state array at 0x80128EAA[N]; count byte at 0x80128EAD.
+                // Conservative driver: only advance the retrace-thread's
+                // transitions (4 PRESENTED → 5 DISPLAYED → 0 FREE).
+                // Producer-mark's transitions (2→3 and X→4) are left to fire
+                // naturally via bufferArbiterProducerMark — bypassing those
+                // would cause ultramodern sync invariants to break (saw an AV
+                // in ultramodern's mesgqueue/threads area on the aggressive
+                // version of this driver at iter 1255).
+                const uint32_t STATE_BASE = 0x128EAA;
+                const uint32_t COUNT_ADDR = 0x128EAD;
+                if (COUNT_ADDR < 0x800000) {
+                    uint8_t total = app->core.RDRAM[COUNT_ADDR ^ 3];
+                    if (total > 0 && total <= 8) {
+                        for (uint8_t i = 0; i < total; i++) {
+                            uint32_t addr = STATE_BASE + i;
+                            if (addr >= 0x800000) continue;
+                            uint8_t state = app->core.RDRAM[addr ^ 3];
+                            switch (state) {
+                                case 4: app->core.RDRAM[addr ^ 3] = 5; break;  // PRESENTED → DISPLAYED
+                                case 5: app->core.RDRAM[addr ^ 3] = 0; break;  // DISPLAYED → FREE
+                                default: break;  // leave 0/1/2/3 to game code
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Game-state poller: read engine globals via RDRAM and log changes.
+            // Tells us whether the game is actually progressing past boot, even
+            // when the screen is black. Enable via ROGUESQ_LOG_GAMESTATE=1.
+            static const bool s_log_gs = [](){
+                const char *v = std::getenv("ROGUESQ_LOG_GAMESTATE");
+                return v && v[0] && v[0] != '0';
+            }();
+            if (s_log_gs && app->core.RDRAM && (s_n & 63) == 0) {
+                // Globals from docs/game-architecture.md. RDRAM is little-endian
+                // word-swap relative to MIPS BE — use byte index ^ 3.
+                auto rb = [&](uint32_t addr) -> uint8_t {
+                    if (addr >= 0x800000) return 0;
+                    return app->core.RDRAM[addr ^ 3];
+                };
+                auto rw = [&](uint32_t addr) -> uint32_t {
+                    return (uint32_t(rb(addr)) << 24) | (uint32_t(rb(addr+1)) << 16) |
+                           (uint32_t(rb(addr+2)) <<  8) |  uint32_t(rb(addr+3));
+                };
+                uint8_t curLevel = rb(0x130B70);
+                uint8_t curCraft = rb(0x130B41);
+                uint32_t cineStatePtr = rw(0x0B0934);
+                uint8_t cineStage = rb(0x0B0938);
+                uint32_t curCutsceneFile = rw(0x0B1904);
+                uint8_t unk20 = rb(0x130B60);  // gGameSettings+0x20 (menu sub-state)
+                uint8_t unk21 = rb(0x130B61);  // gGameSettings+0x21 (cinematic sub-state)
+                uint8_t unk22 = rb(0x130B62);  // gGameSettings+0x22 (mission sub-state)
+
+                static uint8_t s_last_level = 0xFF, s_last_craft = 0xFF;
+                static uint32_t s_last_cineState = 0xFFFFFFFF;
+                static uint8_t s_last_cineStage = 0xFF;
+                static uint32_t s_last_cutscene = 0xFFFFFFFF;
+                static uint8_t s_last_u20 = 0xFF, s_last_u21 = 0xFF, s_last_u22 = 0xFF;
+                bool changed = (curLevel != s_last_level) || (curCraft != s_last_craft) ||
+                               (cineStatePtr != s_last_cineState) || (cineStage != s_last_cineStage) ||
+                               (curCutsceneFile != s_last_cutscene) ||
+                               (unk20 != s_last_u20) || (unk21 != s_last_u21) || (unk22 != s_last_u22);
+                if (changed || (s_n & 511) == 0) {
+                    fprintf(stderr,
+                        "[gamestate vi=#%d] level=%u craft=%u u20=%u u21=%u u22=%u cineState=0x%08X cineStage=%u cutscene=0x%08X%s\n",
+                        s_n, curLevel, curCraft, unk20, unk21, unk22,
+                        cineStatePtr, cineStage, curCutsceneFile,
+                        changed ? " [CHANGED]" : "");
+                    // Dump first 32 bytes of cutscene struct (filename field). Helps confirm WHICH cutscene.
+                    if (curCutsceneFile >= 0x80000000 && curCutsceneFile < 0x80800000) {
+                        uint32_t off = curCutsceneFile - 0x80000000;
+                        fprintf(stderr, "  cutscene-filename: \"");
+                        for (int i = 0; i < 32 && (off + i) < 0x800000; i++) {
+                            uint8_t b = app->core.RDRAM[(off + i) ^ 3];
+                            if (b >= 0x20 && b < 0x7F) fputc(b, stderr);
+                            else if (b == 0) break;
+                            else fputc('?', stderr);
+                        }
+                        fprintf(stderr, "\"\n");
+                    }
+                    fflush(stderr);
+                    s_last_level = curLevel;
+                    s_last_craft = curCraft;
+                    s_last_cineState = cineStatePtr;
+                    s_last_cineStage = cineStage;
+                    s_last_cutscene = curCutsceneFile;
+                    s_last_u20 = unk20;
+                    s_last_u21 = unk21;
+                    s_last_u22 = unk22;
+                }
+            }
             // Log once when the SDL filter actually installs.
             if (!s_filter_logged && app->appWindow && app->appWindow->sdlEventFilterInstalled) {
                 fprintf(stderr,
@@ -316,11 +780,18 @@ public:
                         any_nonzero |= app->core.RDRAM[origin + i];
                     }
                 }
+                // Also log presentQueue + workloadQueue cursors so we can
+                // see whether PresentEarly is pushing presents and the
+                // workload worker is consuming them. If presents stay flat
+                // while workloads advance, the matcher is failing.
+                int pq_wc = app->presentQueue ? (int)app->presentQueue->writeCursor : -1;
+                int wq_wc = app->workloadQueue ? (int)app->workloadQueue->writeCursor : -1;
                 fprintf(stderr,
-                    "[vi] update_screen #%d origin=0x%08X width=%u status=0x%X v_current=%u nonzero=%d fs=%u\n",
+                    "[vi] update_screen #%d origin=0x%08X width=%u status=0x%X v_current=%u nonzero=%d fs=%u pq.wc=%d wq.wc=%d\n",
                     s_n, vi->VI_ORIGIN_REG, vi->VI_WIDTH_REG,
                     vi->VI_STATUS_REG, vi->VI_V_CURRENT_LINE_REG, any_nonzero != 0,
-                    rs64_dpc_get_cumulative_fullsyncs());
+                    rs64_dpc_get_cumulative_fullsyncs(),
+                    pq_wc, wq_wc);
                 // Every 256 updates, also dump the cumulative opcode histogram.
                 if ((s_n & 255) == 0) {
                     uint32_t hist[64];
