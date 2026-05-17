@@ -11,6 +11,9 @@
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
 
+// Material free-list integrity probe (src/main/upstream_compat.cpp).
+extern "C" void rs64_matfreelist_check(uint8_t*, const char*);
+
 // Shared Application accessor for the LLE DPC bridge (src/rsp/dpc_bridge.cpp).
 // The bridge needs to forward Factor 5 raw RDP byte ranges via
 // processDisplayLists(isHLE=false). Set on construction, cleared on shutdown.
@@ -560,10 +563,15 @@ public:
             __try {
                 int wq_wc_pre = app->workloadQueue ? (int)app->workloadQueue->writeCursor : -1;
                 int pq_wc_pre = app->presentQueue ? (int)app->presentQueue->writeCursor : -1;
+                // Material free-list integrity around RT64's DL processing —
+                // tests whether the renderer (CIMG / framebuffer writeback)
+                // corrupts the node pool. Gated by ROGUESQ_LOG_MATFREELIST.
+                rs64_matfreelist_check(app->core.RDRAM, "RT64 send_dl PRE-processDisplayLists");
                 app->processDisplayLists(app->core.RDRAM,
                                          task->t.data_ptr & 0x3FFFFFF,
                                          0,
                                          /*isHLE*/ true);
+                rs64_matfreelist_check(app->core.RDRAM, "RT64 send_dl POST-processDisplayLists");
                 s_seh_streak.store(0, std::memory_order_relaxed);
                 // Post-DL: see if workload + present cursors moved. Track
                 // distinct transition patterns so we can spot when pq

@@ -18,6 +18,7 @@
 #include <windows.h>
 #include <dbghelp.h>
 #include <timeapi.h>
+#include <tlhelp32.h>
 #pragma comment(lib, "dbghelp.lib")
 #pragma comment(lib, "winmm.lib")
 #endif
@@ -626,6 +627,201 @@ extern "C" void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned 
     fprintf(stderr, "[hook] %s a=0x%08X b=0x%08X c=0x%08X d=0x%08X\n",
             tag ? tag : "?", a, b, c, d);
     fflush(stderr);
+}
+
+// Material node pool extent, recorded when func_80021F38 creates it. Used to
+// detect whether another rs_malloc allocation overlaps the pool (a heap
+// double-allocation would explain unrelated writes corrupting the free-list).
+extern "C" unsigned g_matpool_lo = 0;
+extern "C" unsigned g_matpool_hi = 0;
+static uint8_t* g_rdram_base = nullptr;
+
+// --- Software page-guard watchpoint on the material node pool ---
+// Hardware debug registers are virtualized away in this environment
+// (SetThreadContext of DR0-7 silently no-ops). Instead: VirtualProtect the
+// 4 KB page holding matpool nodes 82-87 to read-only during the
+// submitGfxFrame->frameStartReset window (which has no legitimate matpool
+// writes), so the corrupting write traps as an access violation. A vectored
+// exception handler logs the faulting PC + stack. Catches any thread,
+// recompiled or host code. Gated by ROGUESQ_MATPOOL_WP=1.
+static void* g_pg_page = nullptr;          // 4 KB host page covering the nodes
+static volatile LONG g_pg_caught = 0;
+static volatile LONG g_pg_protected = 0;
+static int g_pg_on = -1;
+
+// func_80021E94 (the legitimate free-list rebuilder) host-RVA range — its
+// writes are skipped so the guard catches the *next*, real corruptor.
+#define RS64_E94_LO 0x226100u
+#define RS64_E94_HI 0x2265A0u
+static volatile LONG g_pg_ss_tid = 0; // thread mid single-step over a skipped write
+
+static LONG CALLBACK rs64_matpool_pg_veh(EXCEPTION_POINTERS* ep) {
+    DWORD code = ep->ExceptionRecord->ExceptionCode;
+
+    // Step 2 of the skip dance: the single-step trap after a legit write.
+    if (code == EXCEPTION_SINGLE_STEP &&
+        (DWORD)GetCurrentThreadId() == (DWORD)g_pg_ss_tid) {
+        DWORD old;
+        VirtualProtect(g_pg_page, 0x1000, PAGE_READONLY, &old);
+        InterlockedExchange(&g_pg_ss_tid, 0);
+        ep->ContextRecord->EFlags &= ~0x100u; // clear trap flag
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+
+    if (code != EXCEPTION_ACCESS_VIOLATION ||
+        ep->ExceptionRecord->NumberParameters < 2 || g_pg_page == nullptr) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    uintptr_t fault = (uintptr_t)ep->ExceptionRecord->ExceptionInformation[1];
+    uintptr_t pg = (uintptr_t)g_pg_page;
+    if (fault < pg || fault >= pg + 0x1000) {
+        return EXCEPTION_CONTINUE_SEARCH; // not our guarded page
+    }
+    // A write into the guarded matpool page — unprotect so the write retries.
+    DWORD old;
+    VirtualProtect(g_pg_page, 0x1000, PAGE_READWRITE, &old);
+    uintptr_t modbase = (uintptr_t)GetModuleHandleW(NULL);
+    uintptr_t pcrva = (uintptr_t)ep->ExceptionRecord->ExceptionAddress - modbase;
+
+    if (pcrva >= RS64_E94_LO && pcrva < RS64_E94_HI) {
+        // Legit free-list rebuild — single-step over this write, then re-arm.
+        InterlockedExchange(&g_pg_ss_tid, (LONG)GetCurrentThreadId());
+        ep->ContextRecord->EFlags |= 0x100u; // trap flag
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+
+    // A non-rebuilder write — the actual corruptor.
+    InterlockedExchange(&g_pg_protected, 0);
+    if (InterlockedCompareExchange(&g_pg_caught, 1, 0) == 0) {
+        uint32_t n64 = 0x80000000u + (uint32_t)(fault - (uintptr_t)g_rdram_base);
+        void* frames[24];
+        USHORT nf = RtlCaptureStackBackTrace(0, 24, frames, NULL);
+        fprintf(stderr, "[matpg] *** CORRUPTOR caught — pc_rva=0x%llX n64_target=0x%08X "
+                "rw=%llu tid=%u ***\n",
+                (unsigned long long)pcrva, n64,
+                (unsigned long long)ep->ExceptionRecord->ExceptionInformation[0],
+                (unsigned)GetCurrentThreadId());
+        fprintf(stderr, "[matpg]   stack RVAs:");
+        for (USHORT i = 0; i < nf; i++) {
+            fprintf(stderr, " 0x%llX", (unsigned long long)((uintptr_t)frames[i] - modbase));
+        }
+        fprintf(stderr, "\n");
+        fflush(stderr);
+    }
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+// Called from the submitGfxFrame-exit hook: arm the page guard.
+extern "C" void rs64_matpool_protect(void) {
+    if (g_pg_on != 1 || g_pg_caught || g_pg_page == nullptr) return;
+    DWORD old;
+    if (VirtualProtect(g_pg_page, 0x1000, PAGE_READONLY, &old)) {
+        InterlockedExchange(&g_pg_protected, 1);
+    }
+}
+
+// Called from the frameStartReset-entry hook: disarm (no legit write happened).
+extern "C" void rs64_matpool_unprotect(void) {
+    if (!g_pg_protected) return;
+    DWORD old;
+    VirtualProtect(g_pg_page, 0x1000, PAGE_READWRITE, &old);
+    InterlockedExchange(&g_pg_protected, 0);
+}
+
+extern "C" void rs64_matpool_set(uint8_t* rdram, unsigned pool) {
+    g_rdram_base = rdram;
+    g_matpool_lo = pool;
+    g_matpool_hi = pool + 0x3000u;
+    if (g_pg_on < 0) {
+        const char* e = std::getenv("ROGUESQ_MATPOOL_WP");
+        g_pg_on = (e && *e && *e != '0') ? 1 : 0;
+        if (g_pg_on) {
+            // 4 KB host page covering matpool nodes 82-87 (0x801605A8..0x160620).
+            uintptr_t node83 = (uintptr_t)rdram + (uintptr_t)(pool - 0x80000000u) + 83u * 0x18u;
+            g_pg_page = (void*)(node83 & ~(uintptr_t)0xFFF);
+            AddVectoredExceptionHandler(1, rs64_matpool_pg_veh);
+            fprintf(stderr, "[matpg] page guard ready — page host 0x%p (matpool @0x%08X)\n",
+                    g_pg_page, pool);
+            fflush(stderr);
+        }
+    }
+}
+
+extern "C" void rs64_matpool_alloc_check(unsigned addr, unsigned size) {
+    static int s_on = -1;
+    if (s_on < 0) {
+        const char* e = std::getenv("ROGUESQ_LOG_MATFREELIST");
+        s_on = (e && *e && *e != '0') ? 1 : 0;
+    }
+    if (!s_on || g_matpool_lo == 0 || addr == g_matpool_lo) return;
+    // Overlap of [addr, addr+size) with [g_matpool_lo, g_matpool_hi)?
+    if (addr < g_matpool_hi && (addr + size) > g_matpool_lo) {
+        static int s_n = 0;
+        if (s_n++ < 8) {
+            fprintf(stderr, "[matpool] rs_malloc 0x%08X size 0x%X OVERLAPS material pool "
+                    "[0x%08X,0x%08X)!\n", addr, size, g_matpool_lo, g_matpool_hi);
+            fflush(stderr);
+        }
+    }
+}
+
+// Texture-material free-list integrity probe. Gated by ROGUESQ_LOG_MATFREELIST.
+// Walks the node free-list (pool ptr @0x80128EF4, head @0x80128EF8) following
+// each node's +0x0 'next'. Every node must lie in [pool, pool+0x3000) and be
+// 0x18-aligned from the pool base. Reports the FIRST corruption seen, plus
+// which texture-material function's entry detected it — so the corrupting
+// function can be bisected from the call sequence.
+extern "C" void rs64_matfreelist_check(uint8_t* rdram, const char* where) {
+    static int s_on = -1;
+    if (s_on < 0) {
+        const char* e = std::getenv("ROGUESQ_LOG_MATFREELIST");
+        s_on = (e && *e && *e != '0') ? 1 : 0;
+    }
+    if (!s_on) return;
+    static int s_last_ok = 1;             // was the list intact at the last check?
+    static char s_last_where[80] = "(boot)";
+    static int s_done = 0;
+    if (s_done) return;
+
+    uint32_t pool = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80128EF4);
+    if (pool < 0x80000000u || pool >= 0x80800000u) return; // pool not created yet
+    uint32_t pool_end = pool + 0x3000u;
+    uint32_t head = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80128EF8);
+
+    uint32_t node = head, prev = 0;
+    int steps = 0, corrupt = 0;
+    uint32_t bad = 0;
+    while (node != 0) {
+        if (node < pool || node >= pool_end || ((node - pool) % 0x18u) != 0) {
+            corrupt = 1; bad = node; break;
+        }
+        prev = node;
+        node = (uint32_t)MEM_W(0, (gpr)(int32_t)node);
+        if (++steps > 600) { corrupt = 1; bad = 0xCCCCCCCCu; break; }
+    }
+
+    if (corrupt && s_last_ok) {
+        // OK -> CORRUPT transition: the corruptor ran between these two checks.
+        // Also dump the draw framebuffer + width/height globals
+        // (buildAndRegisterDefaultMaterial writes them) to test whether the
+        // matpool overlaps the framebuffer the renderer writes.
+        uint32_t draw_fb = (uint32_t)MEM_W(0, (gpr)(int32_t)0x8011A84C);
+        uint32_t fb_w    = (uint32_t)MEM_W(0, (gpr)(int32_t)0x8011A838);
+        uint32_t fb_h    = (uint32_t)MEM_HU(0, (gpr)(int32_t)0x8011A848);
+        fprintf(stderr, "[matfreelist] *** corruption appeared between [%s] and [%s] *** "
+                "bad next=0x%08X from prev=0x%08X (prev pool idx %d) step=%d head=0x%08X pool=[0x%08X,0x%08X)\n"
+                "[matfreelist]   draw_fb=0x%08X fb_w=0x%X fb_h=0x%X  (fb spans 0x%08X..0x%08X if w*h*2)\n",
+                s_last_where, where, bad, prev,
+                (prev >= pool && prev < pool_end) ? (int)((prev - pool) / 0x18u) : -1,
+                steps, head, pool, pool_end,
+                draw_fb, fb_w, fb_h, draw_fb, draw_fb + fb_w * fb_h * 2);
+        fflush(stderr);
+        s_done = 1;
+        return;
+    }
+    s_last_ok = corrupt ? 0 : 1;
+    s_last_where[0] = '\0';
+    for (int i = 0; i < 79 && where[i]; i++) { s_last_where[i] = where[i]; s_last_where[i + 1] = '\0'; }
 }
 
 // Optional task-submission diagnostic. Gated by ROGUESQ_LOG_TASKSUBMIT.
