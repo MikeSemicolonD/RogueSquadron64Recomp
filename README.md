@@ -229,16 +229,25 @@ prebuilt MIPS GCC for Windows. See [patches/README.md](patches/README.md) for:
 
 The attribution screen and N64 logo both fail to render their actual content because the game's CPU code never produces any pixel data beyond the canonical-black framebuffer clear. `ROGUESQ_LOG_VI_FB_CONTENT=1` traces confirm this directly: during the attribution-display loop the VI framebuffer at `0x806BA000` has every single pixel (71680 of 71680) set to `0x0001` (canonical N64 black with alpha=1). No text bytes, no glyphs, no draw commands. The host renderer is faithfully showing what's in RDRAM — and what's in RDRAM is just a clear.
 
-The **root cause** appears to be an overlay-dispatch issue rather than a rendering issue:
+The **root cause** is an overlay-dispatch issue rather than a rendering issue:
 
 1. The game ships three overlays that all load at VA `0x800A5130`: `.ovl.mission` (ROM 0xA5D30), `.ovl.menu` (ROM 0x10C2D0), `.ovl.cinematic` (ROM 0x137580). At runtime they swap in and out as the game progresses.
 2. N64Recomp's output (`RecompiledFuncs/recomp_overlays.inl`) **does** generate separate function arrays for all three overlays (`section_4_ovl_mission_funcs`, `section_5_ovl_menu_funcs`, `section_6_ovl_cinematic_funcs`).
-3. **But** librecomp's `load_overlays(0x1000, entrypoint, 1024*1024)` boot-time registration call covers only the first 1 MB of ROM. That's enough to register `.ovl.mission` (rom 0xA5D30, in range), but `.ovl.menu` (rom 0x10C2D0) and `.ovl.cinematic` (rom 0x137580) are past the cutoff and never register their functions into `func_map`.
-4. So when the game calls `loadOverlay(1)` to bring the menu overlay into RAM, the bytes DMA in correctly, but the recompiled-C side keeps calling whichever overlay's version of each function was bound at link time (mission). The menu overlay's distinct code — including the function that draws the attribution text — never executes.
+3. **But** the recompiled C emits **direct C function calls** for `jal` instructions targeting the overlay VA range — each bound at link time to one overlay's version (whichever the recompiler picked). When the game loads the menu overlay and calls `jal 0x800A5D80`, the C code still calls the mission/cinematic-overlay function it was bound to. The menu overlay's distinct code — including the attribution-text draw — never executes.
 
-A prior commit (`e532b90`, "Add logging, frame-rate hooks, and overlay guard") fixed this by adding a `load_overlays(...)` call inside `lib/N64ModernRuntime/librecomp/src/pi.cpp:do_dma` so each ROM→RDRAM transfer re-registered any overlay it brought in. A later cleanup reverted that change. Restoring it is the architectural fix; an attempt to shadow `osPiStartDma_recomp` in `src/main/upstream_compat.cpp` instead (to avoid modifying the submodule) regressed boot because the replacement didn't cover the SRAM-read path that `do_dma` also handles.
+`func_map` (librecomp's runtime address→function table) is only consulted for *indirect* calls. The `loadOverlay` hook added in `src/main/upstream_compat.cpp` (`rs64_load_overlay`) keeps `func_map` correct at runtime, but direct calls never look at it, so the hook alone changes nothing.
 
-The minimal correct fix is to re-add the post-DMA `load_overlays` call to `lib/N64ModernRuntime/librecomp/src/pi.cpp`. If that path is undesirable because the file lives under `lib/`, a more involved alternative is a complete SRAM-aware shadow of both `osPiStartDma_recomp` and `osEPiStartDma_recomp` in `src/main/upstream_compat.cpp` that replicates the full `do_dma` behaviour and layers `load_overlays` on top. Either way, the next visible content to appear would be whatever the menu overlay actually draws when its real code runs.
+**Two fixes were evaluated (2026-05-16); neither works as-is:**
+
+- **`use_lookup_for_all_function_calls`** — an N64Recomp config flag that converts *every* `jal` into a `LOOKUP_FUNC(addr)` runtime dispatch. The toml key was a dead key (the recompiler's `config.cpp` never parsed it); wiring it up + regenerating produced 14,377 lookup calls and correctly converted overlay calls. **But** it also converts calls to runtime-provided libultra functions (`osYieldThread` at 0x80037510, etc.), which are *not* in `func_map` — so those calls hit `get_function` → assert → abort early in boot.
+- **`relocatable_sections_path`** — declaring the three overlay sections relocatable so only overlay-target calls become lookups (libultra calls stay direct). This is the *cleaner* mechanism, but the recompiler needs ELF **relocations** on the cross-section calls to resolve them; the companion `rogue_squadron64` decomp ELF carries none on the overlay sections, so `jal`-into-overlay resolves to `NoMatch` and recompilation fails (`No function found for jal target: 0x800C58A0`).
+
+**The genuine fix needs one of:**
+
+1. Register the runtime-provided libultra functions in `func_map` (by VA), then `use_lookup_for_all_function_calls` works cleanly. This is a librecomp-side change to how `func_map` is populated.
+2. Rebuild the `rogue_squadron64` decomp ELF so the overlay sections carry relocations on cross-section calls, then `relocatable_sections_path` works. This is a change to the decomp project's splat config / linker script.
+
+Both are real infrastructure work, not a same-session patch. The N64Recomp source change that wires up the `use_lookup_for_all_function_calls` toml key (`src/config.cpp`, `src/config.h`, `src/main.cpp`) is a correct improvement and can stay — it just isn't sufficient alone.
 
 ### Other known issues
 

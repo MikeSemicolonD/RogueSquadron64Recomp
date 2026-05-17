@@ -26,7 +26,43 @@
 
 #include "recomp.h"
 #include "librecomp/helpers.hpp"
+#include "librecomp/overlays.hpp"
 #include "ultramodern/ultramodern.hpp"
+
+// Runtime overlay registration. RS64 ships three overlays that all load at
+// VA 0x800A5130 and swap at runtime: .ovl.mission, .ovl.menu, .ovl.cinematic.
+// librecomp's boot-time load_overlays(0x1000, entrypoint, 1MB) only covers
+// ROM offsets below 0x101000 — that registers .ovl.mission (rom 0xA5D30) but
+// NOT .ovl.menu (rom 0x10C2D0) or .ovl.cinematic (rom 0x137580). Without this
+// hook, calls into the menu/cinematic overlay regions keep dispatching to the
+// mission overlay's recompiled functions, so the menu overlay's distinct code
+// (attribution draw, menu screens) never runs.
+//
+// Called from a [[patches.hook]] on the game's loadOverlay (0x80000B20) with
+// the overlay id in $a0. We unload whatever currently occupies the shared VA,
+// then register the requested overlay's functions into func_map so subsequent
+// direct calls resolve correctly. VA is always 0x800A5130; per-overlay ROM
+// offset + size are the section_table entries from recomp_overlays.inl.
+extern "C" void rs64_load_overlay(unsigned int overlay_id) {
+    // Largest overlay size (mission, 0x665A0) — unload_overlays cleanly drops
+    // any smaller overlay fully contained in this range.
+    unload_overlays(0x800A5130, 0x000665A0);
+    switch (overlay_id) {
+        case 0: load_overlays(0x000A5D30, 0x800A5130, 0x000665A0); break; // .ovl.mission
+        case 1: load_overlays(0x0010C2D0, 0x800A5130, 0x000283F0); break; // .ovl.menu
+        case 2: load_overlays(0x00137580, 0x800A5130, 0x0000B810); break; // .ovl.cinematic
+        default: break;
+    }
+    static int s_log = -1;
+    if (s_log < 0) {
+        const char* e = std::getenv("ROGUESQ_LOG_OVERLAY");
+        s_log = (e && *e && *e != '0') ? 1 : 0;
+    }
+    if (s_log) {
+        fprintf(stderr, "[overlay] loadOverlay(%u) -> registered functions in func_map\n", overlay_id);
+        fflush(stderr);
+    }
+}
 
 extern "C" void __osContRamRead_recomp(uint8_t* /*rdram*/, recomp_context* ctx) {
     _return<s32>(ctx, -1);  // no rumble pak
@@ -315,6 +351,20 @@ extern "C" unsigned g_heapwalker_iter = 0;
 // function entry; capped iter count + first-node-revisit triggers bailout.
 extern "C" unsigned g_tick_walker_first = 0;
 extern "C" unsigned g_tick_walker_iter  = 0;
+
+// func_800225F8 (texture-material list walker) cycle-detection state. Its
+// linked-list walk (next ptr at +0x0) spins forever when the list is cyclic;
+// the KSEG0 guard catches bad pointers but not a cycle of valid ones. Reset
+// at function entry; first-node-revisit or iter cap triggers bailout.
+extern "C" unsigned g_matwalk_first = 0;
+extern "C" unsigned g_matwalk_iter  = 0;
+
+// func_800079A4 (free-list insert/coalesce) cycle-detection state. Its
+// L_800079B8 loop walks a next-pointer chain (field +0x0) with no KSEG0
+// check and no cycle guard — the unguarded walk that AVs in the
+// tickTextureMaterialExpiry -> func_800079A4 path. Reset at function entry.
+extern "C" unsigned g_f79a4_first = 0;
+extern "C" unsigned g_f79a4_iter  = 0;
 
 // Watchdog for the cinematic inner loop. cinematicLoopBody iterates many
 // times per cutscene playback; if it stops iterating for more than 2 seconds

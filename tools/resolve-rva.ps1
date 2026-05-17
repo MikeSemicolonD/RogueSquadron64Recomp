@@ -90,8 +90,8 @@ foreach ($a in $RvaList) {
     $bufSize = 700
     $buf = [System.Runtime.InteropServices.Marshal]::AllocHGlobal($bufSize)
     [System.Runtime.InteropServices.Marshal]::Copy([byte[]]::new($bufSize), 0, $buf, $bufSize)
-    [System.Runtime.InteropServices.Marshal]::WriteInt32($buf, 88)            # SizeOfStruct
-    [System.Runtime.InteropServices.Marshal]::WriteInt32($buf, 84, 511)       # MaxNameLen at offset 84
+    [System.Runtime.InteropServices.Marshal]::WriteInt32($buf, 88)            # SizeOfStruct (DbgHelp expects 88)
+    [System.Runtime.InteropServices.Marshal]::WriteInt32($buf, 80, 511)       # MaxNameLen at offset 80
     [uint64]$disp = 0
     Add-Type -TypeDefinition @"
 using System;
@@ -105,12 +105,12 @@ public static class SymRaw {
     $symName = ""
     $symAddr = [uint64]0
     if ($okSym) {
-        # Address at offset 56, NameLen at offset 80, Name starts at offset 88
+        # Natural-aligned SYMBOL_INFO: Address at offset 56, NameLen at 76, Name at 84
         $symAddr = [System.Runtime.InteropServices.Marshal]::ReadInt64($buf, 56)
-        $nameLen = [System.Runtime.InteropServices.Marshal]::ReadInt32($buf, 80)
+        $nameLen = [System.Runtime.InteropServices.Marshal]::ReadInt32($buf, 76)
         if ($nameLen -gt 0 -and $nameLen -lt 600) {
             $bytes = New-Object byte[] $nameLen
-            [System.Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($buf, 88), $bytes, 0, $nameLen)
+            [System.Runtime.InteropServices.Marshal]::Copy([IntPtr]::Add($buf, 84), $bytes, 0, $nameLen)
             $symName = [System.Text.Encoding]::ASCII.GetString($bytes)
         }
     }
