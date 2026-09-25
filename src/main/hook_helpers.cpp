@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <atomic>
 #include <thread>
 
@@ -15,6 +16,8 @@
 #endif
 
 #include "recomp.h"
+#include "librecomp/mods.hpp"
+#include "video_config.h"
 #include "debug_logs.h"
 #include "hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "upstream_compat.h"   // rs64_vi_driven, rs64_fb_guards_mask
@@ -31,6 +34,122 @@ using recomp::dbg::env_int;
 #define RS64_DIAG 1
 #endif
 
+
+// ---- Draw distance ----
+
+static float env_mult(const char* name, float def) {
+    const char* v = env_str(name);
+    const float m = v ? float(std::atof(v)) : def;
+    return (m >= 0.25f && m <= 8.0f) ? m : def;
+}
+
+// Draw distance multiplier for the camera far plane and object culls: the in-game DRAW DISTANCE setting (roguesq_video.json), live; ROGUESQ_DRAW_DIST overrides.
+extern "C" float rs64_draw_dist(void) {
+    static const float s_env = env_mult("ROGUESQ_DRAW_DIST", 0.0f);
+    return (s_env > 0.0f) ? s_env : rs64::video::draw_distance();
+}
+
+// Terrain reach and fog multiplier, following the draw distance unless ROGUESQ_TERRAIN_DIST overrides. Capped at 2.5 (128-cell grid).
+extern "C" float rs64_terrain_dist(void) {
+    static const float s_env = env_mult("ROGUESQ_TERRAIN_DIST", 0.0f);
+    return std::min((s_env > 0.0f) ? s_env : rs64_draw_dist(), 2.5f);
+}
+
+// Level terrain cell budget scale, evaluated at each level load: ROGUESQ_TGRID_BUDGET_MULT (1-2), default 2 when terrain distance is 2x or more.
+// 3x exhausts the game heap and the level load stalls; N is also capped at 6553 (u16 vertex-block indices up to 10N-4).
+extern "C" uint32_t rs64_tgrid_budget(uint32_t original) {
+    static const int s_env = env_int("ROGUESQ_TGRID_BUDGET_MULT", 0);
+    const uint32_t s_mult = (uint32_t)std::clamp(s_env > 0 ? s_env : (rs64_terrain_dist() >= 2.0f ? 2 : 1), 1, 2);
+    const uint32_t n = original * s_mult;
+    return n > 0x1999u ? 0x1999u : n;
+}
+
+// Peak terrain cells streamed in one grid build and how often the level budget stopped the stream.
+static uint32_t s_tgrid_cells_peak = 0, s_tgrid_budget_hits = 0;
+extern "C" void rs64_tgrid_budget_probe(uint32_t cells, uint32_t budget) {
+    s_tgrid_cells_peak = std::max(s_tgrid_cells_peak, cells);
+    if (cells >= budget) s_tgrid_budget_hits++;
+}
+
+// ROGUESQ_LOG_TERRAIN_GRID=1: terrain view bounding box and cell budget, every 60 grid builds.
+extern "C" void rs64_terrain_grid_log(int32_t minX, int32_t width, int32_t minZ, int32_t height, uint32_t budget, uint32_t mapW, uint32_t mapH) {
+    static const bool s_on = env_on("ROGUESQ_LOG_TERRAIN_GRID");
+    if (!s_on) return;
+    static int s_n = 0;
+    static int32_t s_max = 0;
+    s_max = std::max(s_max, std::max(width, height));
+    if ((++s_n % 60) != 0) return;
+    fprintf(stderr, "[tgrid] box=%dx%d at (%d,%d) map=%ux%u budget=%u maxDim=%d cellsPeak=%u budgetHits=%u\n", width, height, minX, minZ, mapW, mapH, budget, s_max, s_tgrid_cells_peak, s_tgrid_budget_hits);
+    fflush(stderr);
+}
+
+// Terrain grid tables relocated into host-only RDRAM above the game's 8 MB, sized for the 128-stride patches (not optional).
+extern "C" uint32_t rs64_tgrid_base(uint32_t original) {
+    switch (original) {
+    case 0x80130C70u: return 0x80A00000u;
+    case 0x80130D10u: return 0x80A00100u;
+    case 0x80130DB0u: return 0x80A01000u;
+    case 0x80131DB0u: return 0x80A05000u;
+    case 0x80132DC0u: return 0x80A10000u;
+    default:          return original;
+    }
+}
+
+// Zeroes the relocated terrain grid tables at level load, as a fresh level would find the originals.
+extern "C" void rs64_tgrid_clear(uint8_t* rdram) {
+    std::memset(rdram + (0x80A00000u - 0x80000000u), 0, 0x20000);
+}
+
+// Keeps the terrain view box inside the 128-cell grid (far corners within 62 cells of the camera). ROGUESQ_TGRID_MAP_CLAMP=1 also clamps to the map bounds; off by default, since vanilla draws past the map edge by repeating edge tiles.
+extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram) {
+    constexpr float R = 62.0f;
+    auto rf = [&](uint32_t a) { uint32_t u = *reinterpret_cast<uint32_t*>(rdram + (a - 0x80000000u)); float f; std::memcpy(&f, &u, 4); return f; };
+    auto wf = [&](uint32_t a, float f) { uint32_t u; std::memcpy(&u, &f, 4); *reinterpret_cast<uint32_t*>(rdram + (a - 0x80000000u)) = u; };
+    auto rh = [&](uint32_t a) { return *reinterpret_cast<uint16_t*>(rdram + ((a ^ 2u) - 0x80000000u)); };
+    static const bool s_map_clamp = env_on("ROGUESQ_TGRID_MAP_CLAMP", false);
+    const float mapW = s_map_clamp ? (float)rh(0x80136DF8u) : 0.0f, mapH = s_map_clamp ? (float)rh(0x80136DFAu) : 0.0f;
+    const float cx = rf(0x80130C10u), cz = rf(0x80130C18u);
+    for (uint32_t i = 1; i <= 4; i++) {
+        const uint32_t p = 0x80130C10u + i * 0xCu;
+        float x = std::clamp(rf(p), cx - R, cx + R);
+        float z = std::clamp(rf(p + 8), cz - R, cz + R);
+        if (mapW > 1.0f && mapH > 1.0f) {
+            x = std::clamp(x, 0.0f, mapW - 1.0f);
+            z = std::clamp(z, 0.0f, mapH - 1.0f);
+        }
+        wf(p, x);
+        wf(p + 8, z);
+    }
+}
+
+// ---- Mods ----
+
+// Mod filter extension point: every enabled mod whose native library exports `name` may rewrite a u32 value (passed in r4, returned in r2), chained in mod order.
+// Filters: hangar_craft_mask (crafts selectable in the hangar), level_craft_icons (crafts shown on SELECT LEVEL). Bit n = craft n. See docs/adding-menus-and-buttons.md.
+extern "C" uint32_t rs64_mod_filter_u32(uint8_t* rdram, const char* name, uint32_t value) {
+    for (const auto& d : recomp::mods::get_all_mod_details("rs64")) {
+        if (!recomp::mods::is_mod_enabled(d.mod_id)) {
+            continue;
+        }
+
+        recomp_func_t* fn = recomp::mods::get_mod_export(d.mod_id, name);
+        if (fn == nullptr) {
+            continue;
+        }
+
+        recomp_context c{};
+        c.r4 = value;
+        c.r2 = value;
+        fn(rdram, &c);
+        static const bool s_log = env_on("ROGUESQ_LOG_MOD_FILTERS");
+        if (s_log && (uint32_t)c.r2 != value) {
+            fprintf(stderr, "[mod-filter] %s: %s 0x%X -> 0x%X\n", name, d.mod_id.c_str(), value, (uint32_t)c.r2);
+            fflush(stderr);
+        }
+        value = (uint32_t)c.r2;
+    }
+    return value;
+}
 
 // ---- Boot target ----
 
@@ -159,6 +278,34 @@ extern "C" void rs64_attrib_wait_vi(void) {
     unsigned start = g_vi_tick;
     for (int i = 0; i < 40 && g_vi_tick == start; ++i) ::Sleep(1);
 #endif
+}
+
+// ---- Service replies ----
+
+extern "C" void rs_malloc(uint8_t* rdram, recomp_context* ctx);
+
+// tickFormatMessageWorker sends every reply as a pointer to one stack buffer. Copy each reply
+// into its own slot of a persistent ring so replies still queued keep their request ids.
+// Returns the address to send; ROGUESQ_NO_FORMAT_REPLY_FIX=1 returns src unchanged.
+extern "C" uint32_t rs64_format_reply_slot(uint8_t* rdram, recomp_context* ctx, uint32_t src) {
+    static const bool s_off = env_on("ROGUESQ_NO_FORMAT_REPLY_FIX");
+    constexpr uint32_t kSlots = 32, kSlotSize = 0x30;
+    static uint32_t s_ring = 0;
+    static uint32_t s_next = 0;
+    if (s_off || (src & 3u) != 0 || (src & 0xFF800000u) != 0x80000000u) return src;
+    if (s_ring == 0) {
+        recomp_context saved = *ctx;
+        ctx->r4 = kSlots * kSlotSize;
+        ctx->r5 = 0;
+        rs_malloc(rdram, ctx);
+        const uint32_t p = (uint32_t)ctx->r2;
+        *ctx = saved;
+        if ((p & 0xFF800000u) != 0x80000000u) return src;
+        s_ring = p;
+    }
+    const uint32_t dst = s_ring + (s_next++ % kSlots) * kSlotSize;
+    std::memcpy(rdram + (dst - 0x80000000u), rdram + (src - 0x80000000u), kSlotSize);
+    return dst;
 }
 
 // ---- Display-list walkers ----

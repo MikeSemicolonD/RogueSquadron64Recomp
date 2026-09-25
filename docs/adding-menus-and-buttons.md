@@ -122,6 +122,13 @@ the FULLSCREEN toggle). Your own mod folders alongside them are never overwritte
 
 - actions: `quit`.
 - toggles: `fullscreen` (`{ get, toggle }`).
+- sliders: `draw_distance`, the `drawDistance` multiplier from `roguesq_video.json` as a percent (use `"min": 100, "max": 250`). It applies live and is saved. The base game shows no draw-distance UI; a menu mod adds one with this key.
+
+**Game filters (native mods).** Beyond menu behaviors, the base game exposes named filter points that native-library mods can implement. Each enabled mod exporting a filter's name (and listing it in `native_libraries`) receives the game's value in `r4` and returns the new value in `r2`; mods chain in load order.
+- `hangar_craft_mask`: crafts selectable in the hangar.
+- `level_craft_icons`: craft icons listed on SELECT LEVEL.
+
+In both, bit n = craft n: 0 X-wing, 1 Y-wing, 2 A-wing, 3 V-wing, 4 Snowspeeder, 5 Millennium Falcon, 6 TIE Interceptor. [mods/any-craft/](../mods/any-craft/) is a complete example.
 
 Add built-ins by extending `actions()` / `toggles()`.
 

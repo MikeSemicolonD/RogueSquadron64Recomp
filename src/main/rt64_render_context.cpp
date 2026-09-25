@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string_view>
+#include <thread>
 #include <vector>
 #include <filesystem>
 #include <fstream>
@@ -31,6 +32,13 @@ using recomp::dbg::env_str;
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
+
+extern "C" volatile unsigned g_f5_heur[4];
+
+#ifdef _WIN32
+extern "C" void rs64_data_bp_arm(void* host_addr);
+extern "C" void rs64_data_bp_drain(int vi);
+#endif
 
 // src/main/main.cpp
 extern void print_stack_with_symbols(void** frames, unsigned short count);
@@ -72,6 +80,18 @@ extern "C" int rs64_rt64_inspector_open(void) {
     // being non-null must not suppress capture.
     if (!app->userConfig.developerMode) return 0;
     return app->presentQueue->inspector != nullptr ? 1 : 0;
+}
+
+// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
+// ROGUESQ_CULL_WIDEN=0 disables.
+extern "C" float rs64_cull_widen(void) {
+    static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+    if (!s_on || !app || !app->presentQueue) return 1.0f;
+    const hlslpp::float2 rs = app->presentQueue->ext.sharedResources->resolutionScale;
+    const float y = float(rs.y);
+    const float w = (y > 0.0f) ? float(rs.x) / y : 1.0f;
+    return (w > 1.0f && w < 4.0f) ? w : 1.0f;
 }
 
 #ifdef _WIN32
@@ -385,6 +405,9 @@ public:
 
     void send_dl(const OSTask* task) override {
         if (!app) return;
+        static const int s_task_delay_ms = env_int("ROGUESQ_GFX_TASK_DELAY_MS", 0);
+        if (s_task_delay_ms > 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(s_task_delay_ms));
         dump_ucode_once(task);
         log_task(task);
         run_hle_task(task);
@@ -403,6 +426,15 @@ public:
         }
         rs64_nav_tick((uint8_t*)app->core.RDRAM);
         dump_rdram_if_armed();
+        watch_rdram();
+        data_bp_tick();
+        {
+            // ROGUESQ_LOG_HEURISTICS=1: firing counts of F5 render heuristics under retirement review.
+            static const bool s_heur = env_on("ROGUESQ_LOG_HEURISTICS");
+            if (s_heur && (vi_count_ & 255) == 0)
+                fprintf(stderr, "[heur] vi=#%d op0A=%u proj_mismatch=%u b4_filler=%u attrib_deflicker=%u\n",
+                        vi_count_, g_f5_heur[0], g_f5_heur[1], g_f5_heur[2], g_f5_heur[3]);
+        }
         log_vi_state();
         maybe_persist_video_cfg();
         const auto pres0 = std::chrono::high_resolution_clock::now();
@@ -520,6 +552,47 @@ private:
             try { out << json::parse(cur).dump(2) << "\n"; } catch (...) {}
             fprintf(stderr, "[RT64] saved %s (menu change)\n", video_cfg_path_.c_str());
         }
+    }
+
+    // ROGUESQ_WATCH_ADDRS=<addr>[,<addr>...]: log each listed RDRAM word when it changes, per VI.
+    void watch_rdram() {
+        static const char* s_spec = env_str("ROGUESQ_WATCH_ADDRS");
+        if (!s_spec || !app->core.RDRAM) return;
+        static uint32_t s_waddr[16], s_wlast[16];
+        static int s_n = -1;
+        if (s_n < 0) {
+            s_n = 0;
+            for (const char* p = s_spec; *p && s_n < 16; ) {
+                s_waddr[s_n] = (uint32_t)std::strtoul(p, (char**)&p, 16) & 0x7FFFFCu;
+                s_wlast[s_n] = rd32(s_waddr[s_n]);
+                fprintf(stderr, "[watch] vi=#%d %08X = %08X (initial)\n", vi_count_, 0x80000000u | s_waddr[s_n], s_wlast[s_n]);
+                ++s_n;
+                if (*p == ',') ++p;
+                else break;
+            }
+        }
+        for (int i = 0; i < s_n; ++i) {
+            const uint32_t v = rd32(s_waddr[i]);
+            if (v == s_wlast[i]) continue;
+            fprintf(stderr, "[watch] vi=#%d %08X %08X -> %08X\n", vi_count_, 0x80000000u | s_waddr[i], s_wlast[i], v);
+            s_wlast[i] = v;
+        }
+    }
+
+    // ROGUESQ_DATA_BP=<addr>: hardware write-watch on that word, armed at ROGUESQ_DATA_BP_ARM_VI.
+    void data_bp_tick() {
+#ifdef _WIN32
+        static const char* s_bp = env_str("ROGUESQ_DATA_BP");
+        if (!s_bp || !app->core.RDRAM) return;
+        static const int s_arm_vi = env_int("ROGUESQ_DATA_BP_ARM_VI", 1);
+        static bool s_armed = false;
+        if (!s_armed && vi_count_ >= s_arm_vi) {
+            s_armed = true;
+            const uint32_t a = (uint32_t)std::strtoul(s_bp, nullptr, 16) & 0x7FFFFCu;
+            rs64_data_bp_arm(app->core.RDRAM + a);
+        }
+        if (s_armed) rs64_data_bp_drain(vi_count_);
+#endif
     }
 
     // RDRAM accessors, byte-swapped (index ^ 3) and bounds-checked.
@@ -926,12 +999,14 @@ private:
                 static char s_buf[256];
                 static const char* s_ids[16];
                 static bool s_iddone[16];
+                static int s_held[16];
+                static const int s_settle = env_int("ROGUESQ_DUMP_RDRAM_STATE_SETTLE", 0);
                 static int s_nids = -1;
                 if (s_nids < 0) {
                     std::snprintf(s_buf, sizeof s_buf, "%s", s_on_state);
                     s_nids = 0;
                     for (char* p = s_buf; *p && s_nids < 16; ) {
-                        s_ids[s_nids] = p; s_iddone[s_nids] = false; ++s_nids;
+                        s_ids[s_nids] = p; s_iddone[s_nids] = false; s_held[s_nids] = 0; ++s_nids;
                         char* c = std::strchr(p, ',');
                         if (!c) break;
                         *c = 0; p = c + 1;
@@ -939,7 +1014,9 @@ private:
                 }
                 const char* cur = rs64_state_current_id();
                 for (int i = 0; i < s_nids; ++i) {
-                    if (s_iddone[i] || std::strcmp(cur, s_ids[i]) != 0) continue;
+                    if (s_iddone[i]) continue;
+                    if (std::strcmp(cur, s_ids[i]) != 0) { s_held[i] = 0; continue; }
+                    if (++s_held[i] <= s_settle) continue;
                     s_iddone[i] = true;
                     char path[512];
                     std::snprintf(path, sizeof path, "dumps/rdram_state_%s.bin", s_ids[i]);

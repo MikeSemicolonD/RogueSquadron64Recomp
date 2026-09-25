@@ -1649,13 +1649,23 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     // presenting and the VI-paced loop proceeds; only on-screen display + window screenshots are lost.
     const bool hide_window = env_on("ROGUESQ_HIDE_WINDOW");
     Uint32 window_flags = SDL_WINDOW_RESIZABLE | (hide_window ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
+    if (env_on("ROGUESQ_MAXIMIZED"))
+        window_flags |= SDL_WINDOW_MAXIMIZED;
 #ifndef _WIN32
     window_flags |= SDL_WINDOW_VULKAN;
 #endif
+    int window_w = 640, window_h = 480;
+    if (const char* ws = recomp::dbg::env_str("ROGUESQ_WINDOW_SIZE")) {
+        int w = 0, h = 0;
+        if (sscanf(ws, "%dx%d", &w, &h) == 2 && w >= 64 && h >= 64) {
+            window_w = w;
+            window_h = h;
+        }
+    }
     SDL_Window* sdl_window = SDL_CreateWindow(
         "Star Wars: Rogue Squadron 64 Recompiled",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        640, 480,
+        window_w, window_h,
         window_flags
     );
     if (!sdl_window) {
@@ -1674,32 +1684,15 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 }
 
 void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
-    // Pump SDL events on the main thread (the one that owns the SDL window).
-    // Win32 routes window messages to the window-owning thread's queue, so
-    // SDL_PumpEvents on any other thread won't dispatch them. Without this,
-    // the window appears "Not Responding" and F1/F2/F3/F4 keypresses never
-    // reach RT64's developer-mode filter — even though poll_input() on the
-    // game thread also calls SDL_PollEvent, that thread doesn't own the
-    // window so messages stay queued.
-    //
-    // RT64's SDL_SetEventFilter installed via Application::sdlEventFilter
-    // intercepts F1-F4 here (filters run before SDL_PollEvent dequeues), so
-    // the controller-input poll on the game thread never sees those keys.
+    // Window messages only dispatch on the thread that owns the window, so events (and RT64's F1-F4 filter) must be pumped here.
     SDL_PumpEvents();
 
-    // Build the menu config once here on the main thread (early, before the menu),
-    // so the game-thread menu hooks never do the file I/O + mod-mutex work that
-    // config() does on its first call -- that races with menu-audio init.
+    // Build the menu config on the main thread; doing it lazily from a game-thread menu hook races menu-audio init.
     { static bool s_cfg = false;
       if (!s_cfg) { s_cfg = true; rs64_menu_config_init(); } }
 
-    // Mouse-steering capture is implicit: on whenever the window is focused,
-    // released when focus is lost, the F6 controls window is open, or RT64's F1
-    // inspector is up (so the cursor is free for ImGui). Computed here on the
-    // window-owning thread -- SDL_PumpEvents above just ran RT64's filter, so the
-    // inspector state is current. g_mouse_capture drives motion accumulation and
-    // st.mouse_active on the game thread. Drain the accumulator on each transition
-    // so enabling doesn't produce a jump from motion that happened while released.
+    // Capture the mouse for steering while focused, unless the F6 controls window or the F1 inspector is open.
+    // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
     bool want = (SDL_GetKeyboardFocus() != nullptr)
              && !g_show_controls.load()
              && !rs64_rt64_inspector_open();
@@ -1968,7 +1961,10 @@ static const CliFlag kCliFlags[] = {
     {"fake-controller",  "ROGUESQ_FAKE_CONTROLLER",  CliFlag::Bool,  "1", "0", "fake a connected controller (headless runs)"},
     {"auto-start",       "ROGUESQ_AUTO_START",       CliFlag::Value, "",  "",  "pulse START after <ms> (headless runs)"},
     {"hide-window",      "ROGUESQ_HIDE_WINDOW",      CliFlag::Bool,  "1", "0", "create the window hidden (background process; no display/screenshots)"},
-    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | demo:N (N=0-5)"},
+    {"maximized",        "ROGUESQ_MAXIMIZED",        CliFlag::Bool,  "1", "0", "start with the window maximized"},
+    {"window-size",      "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
+    {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
+    {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | demo:N (N=0-5)"},
 };
 
 static void print_cli_usage() {

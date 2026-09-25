@@ -1,5 +1,8 @@
 #include "video_config.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <fstream>
 
 namespace rs64::video {
@@ -12,10 +15,24 @@ template <class T>
 void adv_get(const json& a, const char* key, T& out) {
     if (a.contains(key) && !a.at(key).is_null()) out = a.at(key).get<T>();
 }
+
+std::atomic<float> g_draw_distance{1.0f};
 } // namespace
+
+float draw_distance() {
+    return g_draw_distance.load(std::memory_order_relaxed);
+}
+
+void set_draw_distance(float mult) {
+    g_draw_distance.store(std::clamp(mult, kDrawDistanceMin, kDrawDistanceMax), std::memory_order_relaxed);
+}
 
 void apply_friendly(UC& uc, const json& j) {
     auto has = [&](const char* k) { return j.contains(k) && !j.at(k).is_null(); };
+
+    if (has("drawDistance") && j["drawDistance"].is_number()) {
+        set_draw_distance(j["drawDistance"].get<float>());
+    }
 
     if (has("widescreen")) {
         uc.aspectRatio = j["widescreen"].get<bool>() ? UC::AspectRatio::Expand
@@ -98,6 +115,7 @@ void apply_friendly(UC& uc, const json& j) {
 json to_friendly(const UC& uc) {
     json j;
     j["schema"] = 2;
+    j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     json adv = json::object();
 
     // widescreen <-> aspectRatio
@@ -186,6 +204,8 @@ LoadResult load(UC& uc, const std::string& path) {
 
     if (j.contains("schema") && j["schema"].is_number_integer() && j["schema"].get<int>() >= 2) {
         apply_friendly(uc, j);
+        // Rewrite files that predate a friendly key so it shows up for editing.
+        r.migrated = !j.contains("drawDistance");
     } else {
         // Legacy raw UserConfiguration: merge onto the current baseline, same as
         // the pre-migration loader, then flag for rewrite in friendly form.

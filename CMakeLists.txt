@@ -436,17 +436,18 @@ endif()
 
 # Ship the user mods tree next to the exe. Each subfolder of mods/ is a mod;
 # menu_config.cpp scans them for a roguesq_menu.json. copy_directory refreshes them
-# without deleting the user's own mod folders. The example mods (native-demo,
-# menu-example) are self-contained with their own builds (mods/<name>/CMakeLists.txt),
-# so the game build neither compiles their DLLs nor ships them — they are stripped
-# from the staged tree.
+# without deleting the user's own mod folders. Native mods build separately with
+# their own mods/<name>/CMakeLists.txt, and whatever DLL that left beside mod.json
+# is copied along; the game build never compiles them. The example mods (native-demo,
+# menu-example) are stripped from the staged tree.
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/mods"
         $<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods
     COMMAND ${CMAKE_COMMAND} -E rm -rf
         "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/native-demo"
-        "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/menu-example")
+        "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/menu-example"
+        "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/any-craft/build")
 
 # PatchesLib is an OBJECT library: its objects go straight onto the exe link
 # line ahead of RecompiledFuncs (the .lib), so the patch definitions win any
@@ -482,6 +483,18 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_directory,true>
             "${CMAKE_SOURCE_DIR}/mods"
             "${RS64_DIST_DIR}/mods"
+        COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,rm,true> -rf "${RS64_DIST_DIR}/mods/any-craft/build"
         COMMENT "Assembling clean Release folder in ${RS64_DIST_DIR} (Release only)"
         VERBATIM)
 endif()
+
+# Opt-level bisect: targets listed here compile /Od in RelWithDebInfo.
+set(RS64_OD_TARGETS "" CACHE STRING "Targets compiled /Od in RelWithDebInfo (opt-level bisect)")
+foreach(t IN LISTS RS64_OD_TARGETS)
+    target_compile_options(${t} PRIVATE $<$<CONFIG:RelWithDebInfo>:/Od /Ob0>)
+endforeach()
+set(RS64_OD_SOURCES "" CACHE STRING "RecompiledFuncs sources (basenames) compiled /Od in RelWithDebInfo")
+foreach(s IN LISTS RS64_OD_SOURCES)
+    set_source_files_properties("${CMAKE_SOURCE_DIR}/RecompiledFuncs/${s}" TARGET_DIRECTORY RecompiledFuncs
+        PROPERTIES COMPILE_OPTIONS "$<$<CONFIG:RelWithDebInfo>:/Od;/Ob0>")
+endforeach()

@@ -465,9 +465,10 @@ func = "dpInterruptHandlerThread"
 vram = 0x8001C3C4
 value = 0x00000000
 
-# Attribution pacing (0x800C29F8). Default: pace to the real VI retrace so the
-# producer emits the full glyph set (fixes the white/partial-draw race + gives
-# ~2s duration). ROGUESQ_ATTRIB_HOLD_MS>0 forces the old fixed sleep instead
+# Attribution pacing (0x800C29F8). Default: yield through the N64 scheduler until
+# the next VI, so the producer emits the full glyph set (fixes the white/partial-draw
+# race + gives ~2s duration) without holding the run slot (a host sleep here
+# deadlocked the frame-buffer arbiter). ROGUESQ_ATTRIB_HOLD_MS>0 forces the old fixed sleep instead
 # (default 50ms; e.g. 300 for screenshotting); =0 disables both.
 [[patches.hook]]
 func = "runMenuModelViewerScreen"   # was func_800C28F0 (renamed in syms)
@@ -481,8 +482,301 @@ text = '''{
     static int s_force_sleep = -1;
     if (s_force_sleep < 0) { const char* e = getenv("ROGUESQ_ATTRIB_HOLD_MS"); s_force_sleep = (e && *e) ? 1 : 0; }
     if (s_force_sleep) { if (s_ms > 0) { extern void rs64_sleep_ms(unsigned); rs64_sleep_ms((unsigned)s_ms); } }
-    else { extern void rs64_attrib_wait_vi(void); rs64_attrib_wait_vi(); }
+    else { extern void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*); rs64_attrib_wait_vi_yield(rdram, ctx); }
 }'''
+
+# tickFormatMessageWorker replies with a pointer to one stack buffer for every request.
+# The host decodes faster than hardware, so queued replies alias and all read the last
+# request id; the SELECT GAME medal/preview slots then never activate. Send each reply
+# from its own ring slot. ROGUESQ_NO_FORMAT_REPLY_FIX=1 disables.
+[[patches.hook]]
+func = "tickFormatMessageWorker"
+before_vram = 0x800B380C
+text = '''{ extern uint32_t rs64_format_reply_slot(uint8_t*, recomp_context*, uint32_t); ctx->r6 = (gpr)(int32_t)rs64_format_reply_slot(rdram, ctx, (uint32_t)ctx->r6); }'''
+
+# Widescreen: widen the game's 4:3 culls by rs64_cull_widen. transformVec3ToNpcLocalWithScale (misnamed) is the object view test; $f2 is its aspect factor.
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001DEA0
+text = '''{ extern float rs64_cull_widen(void); ctx->f2.fl *= rs64_cull_widen(); }'''
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001E168
+text = '''{ extern float rs64_cull_widen(void); ctx->f2.fl *= rs64_cull_widen(); }'''
+
+# Draw distance: scale each read of the camera far plane (cam+0x28, in $f0) by rs64_draw_dist, except for the unseen-spawn trigger (caller 0x800F27B4), and the terrain trapezoid far distance ($f2) by rs64_terrain_dist.
+[[patches.hook]]
+func = "setupCameraMatrices"
+before_vram = 0x80016CE0
+text = '''{ extern float rs64_draw_dist(void); ctx->f0.fl *= rs64_draw_dist(); }'''
+
+[[patches.hook]]
+func = "setupCameraMatrices"
+before_vram = 0x80016D50
+text = '''{ extern float rs64_draw_dist(void); ctx->f0.fl *= rs64_draw_dist(); }'''
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001DDA0
+text = '''{ extern float rs64_draw_dist(void); if (MEM_W(0x3C, ctx->r29) != (int32_t)0x800F27B4) ctx->f0.fl *= rs64_draw_dist(); }'''
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001E078
+text = '''{ extern float rs64_draw_dist(void); if (MEM_W(0x3C, ctx->r29) != (int32_t)0x800F27B4) ctx->f0.fl *= rs64_draw_dist(); }'''
+
+# Object model LOD: the depth compared against the LOD distance table ($f2) is divided by rs64_draw_dist, so detail drops proportionally farther out.
+[[patches.hook]]
+func = "addNpcToVisibilityBucket"
+before_vram = 0x80057EAC
+text = '''{ extern float rs64_draw_dist(void); ctx->f2.fl /= rs64_draw_dist(); }'''
+
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x8005813C
+text = '''{ extern float rs64_draw_dist(void); ctx->f2.fl /= rs64_draw_dist(); }'''
+
+[[patches.hook]]
+func = "buildVisibleTerrainGridAroundCamera"
+before_vram = 0x8004392C
+text = '''{ extern float rs64_terrain_dist(void); ctx->f2.fl *= rs64_terrain_dist(); }'''
+
+# Mod filters on the craft masks (rs64_mod_filter_u32): hangar_craft_mask (selectable crafts) and level_craft_icons (SELECT LEVEL icons); the jr's delay slot copies $a0/$a1 into $v0.
+[[patches.hook]]
+func = "getAvailablePlayerCraftFlagsConsiderUnlocks"
+before_vram = 0x800C63B8
+text = '''{ extern uint32_t rs64_mod_filter_u32(uint8_t*, const char*, uint32_t); ctx->r4 = (gpr)(int32_t)rs64_mod_filter_u32(rdram, "hangar_craft_mask", (uint32_t)ctx->r4); }'''
+
+[[patches.hook]]
+func = "getAvailablePlayerCraftFlagsIgnoreUnlocks"
+before_vram = 0x800C64C0
+text = '''{ extern uint32_t rs64_mod_filter_u32(uint8_t*, const char*, uint32_t); ctx->r5 = (gpr)(int32_t)rs64_mod_filter_u32(rdram, "level_craft_icons", (uint32_t)ctx->r5); }'''
+
+# Terrain grid relocation: re-point each table base (rs64_tgrid_base) into host RAM above 8 MB.
+[[patches.hook]]
+func = "scanConvertTriangleToSpanTable"
+before_vram = 0x800425D8
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r12 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r12); }'''
+
+[[patches.hook]]
+func = "scanConvertTriangleToSpanTable"
+before_vram = 0x800425E0
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r8 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r8); }'''
+
+[[patches.hook]]
+func = "scanConvertTriangleToSpanTable"
+before_vram = 0x800425E8
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r7 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r7); }'''
+
+[[patches.hook]]
+func = "scanConvertTriangleToSpanTable"
+before_vram = 0x80042720
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r12 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r12); }'''
+
+[[patches.hook]]
+func = "scanConvertTriangleToSpanTable"
+before_vram = 0x80042728
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r8 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r8); }'''
+
+[[patches.hook]]
+func = "scanConvertTriangleToSpanTable"
+before_vram = 0x80042730
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r7 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r7); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansAscending"
+before_vram = 0x80042000
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansAscending"
+before_vram = 0x80042050
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansAscending"
+before_vram = 0x80042078
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r3 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r3); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansAscending"
+before_vram = 0x800420A4
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansAscending"
+before_vram = 0x800420CC
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansDescending"
+before_vram = 0x80042174
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r3 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r3); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansDescending"
+before_vram = 0x800421A0
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansDescending"
+before_vram = 0x800421CC
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansDescending"
+before_vram = 0x80042224
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "rasterizeEdgeXSpansDescending"
+before_vram = 0x80042274
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r2 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r2); }'''
+
+[[patches.hook]]
+func = "binPolygonIntoTerrainGrid"
+before_vram = 0x80042A4C
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r10 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r10); }'''
+
+[[patches.hook]]
+func = "binPolygonIntoTerrainGrid"
+before_vram = 0x80042A54
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r9 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r9); }'''
+
+[[patches.hook]]
+func = "streamTerrainGridCellsByDistance"
+before_vram = 0x80042CF4
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r13 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r13); }'''
+
+[[patches.hook]]
+func = "streamTerrainGridCellsByDistance"
+before_vram = 0x80042D24
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r10 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r10); }'''
+
+[[patches.hook]]
+func = "streamTerrainGridCellsByDistance"
+before_vram = 0x80042D4C
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r14 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r14); }'''
+
+[[patches.hook]]
+func = "buildGridCellMeshForFace"
+before_vram = 0x80043534
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r8 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r8); }'''
+
+[[patches.hook]]
+func = "buildGridCellMeshForFace"
+before_vram = 0x8004368C
+text = '''{ extern uint32_t rs64_tgrid_base(uint32_t); ctx->r7 = (gpr)(int32_t)rs64_tgrid_base((uint32_t)ctx->r7); }'''
+
+# Terrain grid 128x128: row stride sll 6 -> 7 (byte tables) and sll 8 -> 9 (pointer table).
+[[patches.instruction]]
+func = "scanConvertTriangleToSpanTable"
+vram = 0x80042610
+value = 0x000549C0
+
+[[patches.instruction]]
+func = "scanConvertTriangleToSpanTable"
+vram = 0x80042758
+value = 0x000549C0
+
+[[patches.instruction]]
+func = "binPolygonIntoTerrainGrid"
+vram = 0x80042A64
+value = 0x000729C0
+
+[[patches.instruction]]
+func = "streamTerrainGridCellsByDistance"
+vram = 0x80042D2C
+value = 0x001EB240
+
+[[patches.instruction]]
+func = "streamTerrainGridCellsByDistance"
+vram = 0x80042D3C
+value = 0x001E11C0
+
+[[patches.instruction]]
+func = "buildGridCellMeshForFace"
+vram = 0x80043564
+value = 0x00021240
+
+[[patches.instruction]]
+func = "buildGridCellMeshForFace"
+vram = 0x800435A8
+value = 0x00021240
+
+[[patches.instruction]]
+func = "buildGridCellMeshForFace"
+vram = 0x800436A8
+value = 0x00021240
+
+[[patches.instruction]]
+func = "buildGridCellMeshForFace"
+vram = 0x800435DC
+value = 0x00061A40
+
+[[patches.instruction]]
+func = "buildGridCellMeshForFace"
+vram = 0x80043620
+value = 0x00061A40
+
+[[patches.instruction]]
+func = "buildGridCellMeshForFace"
+vram = 0x8004370C
+value = 0x00061A40
+
+# Clear the relocated terrain grid tables at each level load.
+[[patches.hook]]
+func = "loadLevelAssets"
+before_vram = 0x800453C8
+text = '''{ extern void rs64_tgrid_clear(uint8_t*); rs64_tgrid_clear(rdram); }'''
+
+# Terrain view polygon clamp: the box can never exceed the 128-cell grid.
+[[patches.hook]]
+func = "buildVisibleTerrainGridAroundCamera"
+before_vram = 0x80043A84
+text = '''{ extern void rs64_tgrid_clamp_polygon(uint8_t*); rs64_tgrid_clamp_polygon(rdram); }'''
+
+# Terrain cell budget: scale N ($s0) before loadLevelAssets stores it and sizes the cell pools from it.
+[[patches.hook]]
+func = "loadLevelAssets"
+before_vram = 0x800453D8
+text = '''{ extern uint32_t rs64_tgrid_budget(uint32_t); ctx->r16 = (gpr)(int32_t)rs64_tgrid_budget((uint32_t)ctx->r16); }'''
+
+# Terrain cell budget probe: $a3 = cells streamed so far, $v0 = level budget, before the budget compare.
+[[patches.hook]]
+func = "streamTerrainGridCellsByDistance"
+before_vram = 0x80042DDC
+text = '''{ extern void rs64_tgrid_budget_probe(uint32_t, uint32_t); rs64_tgrid_budget_probe((uint32_t)ctx->r7, (uint32_t)ctx->r2); }'''
+
+# Terrain grid probe (ROGUESQ_LOG_TERRAIN_GRID): bounding box written by binPolygonIntoTerrainGrid and the level cell budget.
+[[patches.hook]]
+func = "buildVisibleTerrainGridAroundCamera"
+before_vram = 0x80043A8C
+text = '''{ extern void rs64_terrain_grid_log(int32_t, int32_t, int32_t, int32_t, uint32_t, uint32_t, uint32_t); rs64_terrain_grid_log(MEM_W(0, (gpr)(int32_t)0x80132DB0), MEM_W(0, (gpr)(int32_t)0x80132DB4), MEM_W(0, (gpr)(int32_t)0x80132DB8), MEM_W(0, (gpr)(int32_t)0x80132DBC), MEM_HU(0, (gpr)(int32_t)0x80130C4C), MEM_HU(0, (gpr)(int32_t)0x80136DF8), MEM_HU(0, (gpr)(int32_t)0x80136DFA)); }'''
+
+# Fog start/end (world units, $f4) follow the terrain reach so the ground fades out where it ends.
+[[patches.hook]]
+func = "setupCameraMatrices"
+before_vram = 0x800170D0
+text = '''{ extern float rs64_terrain_dist(void); ctx->f4.fl *= rs64_terrain_dist(); }'''
+
+[[patches.hook]]
+func = "setupCameraMatrices"
+before_vram = 0x80017168
+text = '''{ extern float rs64_terrain_dist(void); ctx->f4.fl *= rs64_terrain_dist(); }'''
+
+# Sky horizon ring draws heading±2 of 8 sectors, only ~45° on some headings; widen to ±3 when widescreen is active ($a3/$a2 = first/last sector).
+[[patches.hook]]
+func = "linkDirectionalTrailSegments"
+before_vram = 0x8005B418
+text = '''{ extern float rs64_cull_widen(void); if (rs64_cull_widen() > 1.0f && (int32_t)ctx->r6 - (int32_t)ctx->r7 == 4) { ctx->r7 = (gpr)((int32_t)ctx->r7 - 1); ctx->r6 = (gpr)((int32_t)ctx->r6 + 1); } }'''
+
+# Terrain view trapezoid; $f6 is the normalized corner vector's x, so widening keeps the forward reach.
+[[patches.hook]]
+func = "buildVisibleTerrainGridAroundCamera"
+before_vram = 0x8004395C
+text = '''{ extern float rs64_cull_widen(void); ctx->f6.fl *= rs64_cull_widen(); }'''
 
 # Credits pacing (0x800c14a8 = loop top of runMenuShipSelectScreen, the credits
 # sequence — misnamed in the ELF syms). Same race as the attribution screen: the

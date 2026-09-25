@@ -100,7 +100,7 @@ def read_thread(rd, g):
     return dict(next=be32(rd, off + T_NEXT), pri=be32(rd, off + T_PRI),
                 queue=be32(rd, off + T_QUEUE), id=be32(rd, off + T_ID),
                 state=be16(rd, off + T_STATE16),
-                ctx=be32(rd, off + 0x1C))  # low 4 bytes of the host context ptr
+                ctx=be32(rd, off + 0x20))  # low 4 bytes of the host context ptr (8-byte aligned field)
 
 
 def looks_like_thread(t):
@@ -147,7 +147,9 @@ def enumerate_threads(rd):
             continue
         if t["ctx"] < 0x1000:          # real threads carry a host context ptr
             continue
-        if 0 < t["id"] < 64:
+        # Game threads can have id 0. A STOPPED thread keeps a stale run-queue sentinel after
+        # osStopThread (thread_queue_remove does not clear it), so require state QUEUED (1).
+        if 0 <= t["id"] < 64 and t["state"] == 1:
             real[g] = t
             src.setdefault(g, "RUN-QUEUE")
     for g in real:
