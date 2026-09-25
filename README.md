@@ -10,7 +10,7 @@
 A static recompilation of **Star Wars: Rogue Squadron** (N64, USA v1.0) built with [N64Recomp](https://github.com/N64Recomp/N64Recomp) and [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime), rendering through a forked [RT64](https://github.com/MikeSemicolonD/rt64) that understands Factor 5's custom display-list format.
 
 > [!IMPORTANT]
-> **Work in progress and Heavily AI-assisted.**
+> **Work in progress & Heavily AI-assisted.**
 > Most of the debugging, architectural decisions, and code here (the F3DFACTOR5 GBI module, the runtime patches inside `lib/`, `src/main/`, the `patches/` pipeline, the diagnostic env vars) were produced with Claude.
 
 ---
@@ -62,11 +62,11 @@ git clone --recurse-submodules https://github.com/MikeSemicolonD/RogueSquadron64
 cd RogueSquadron64Recomp
 ```
 
-`lib/` holds forks of [N64ModernRuntime](https://github.com/MikeSemicolonD/N64ModernRuntime) and [rt64](https://github.com/MikeSemicolonD/rt64). They are forked because Factor 5's custom microcode needs changes stock upstream would not take.
+`lib/` holds forks of [N64ModernRuntime](https://github.com/MikeSemicolonD/N64ModernRuntime) and [rt64](https://github.com/MikeSemicolonD/rt64). Forked because these libraries don't support Factor 5's custom microcode.
 
 ### 2. Produce the decomp ELF
 
-The recompiler needs the ELF from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp (checked out next to this repo):
+The recompiler needs the ELF from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp:
 
 ```sh
 # In the rogue_squadron64 repo:
@@ -88,15 +88,13 @@ cmake --build build --target regen_funcs
 cmake --build build
 ```
 
-`regen_funcs` runs the recompiler (built from the `lib/N64ModernRuntime/N64Recomp` submodule) on `rogue_squadron.toml`, producing the gitignored `RecompiledFuncs/`. Re-run it when `rogue_squadron.toml`, the symbols, or the decomp ELF change; the next build picks up the new sources automatically.
-
-The binary is `build/Debug/RogueSquadron64Recomp.exe` (Windows) or `build/RogueSquadron64Recomp` (Linux/macOS). Host-side edits rebuild and link in well under a minute.
+`regen_funcs` runs the recompiler (built from the `lib/N64ModernRuntime/N64Recomp` submodule) on `rogue_squadron.toml`, producing the gitignored `RecompiledFuncs/`. Re-run it when `rogue_squadron.toml`, the symbols, or the decomp ELF changes.
 
 | CMake option | Default | Purpose |
 | --- | --- | --- |
-| `-DMIPS_TOOLCHAIN_DIR=path` | `E:/mips-toolchain` | Location of `mips64-elf-gcc` for `patches/` |
-| `-DROGUESQ_DX12_DEBUG=ON` | OFF | D3D12 debug layer (Debug builds only) |
-| `-DROGUESQ_NO_ITER_DEBUG=ON` | OFF | Disable MSVC debug iterators in `lib/rt64` for faster Debug runs |
+| `DMIPS_TOOLCHAIN_DIR=path` | `E:/mips-toolchain` | Location of `mips64-elf-gcc` for `patches/` |
+| `DROGUESQ_DX12_DEBUG=ON` | OFF | D3D12 debug layer (Debug builds only) |
+| `DROGUESQ_NO_ITER_DEBUG=ON` | OFF | Disable MSVC debug iterators in `lib/rt64` for faster Debug runs |
 
 ### Linux / WSL notes
 
@@ -112,7 +110,7 @@ cmake --build build --target RogueSquadron64Recomp
 
 The `patches/` override layer is skipped automatically without `mips64-elf-gcc` (Linux clang/gcc ships the MIPS backend, so it *can* be built — see [patches/README.md](patches/README.md)); without it the game links and runs, minus the `npc_health_guard` explosion fix.
 
-**About WSL2:**
+#### About WSL2
 
 - Keep the build directory on the Linux filesystem (e.g. `~/rs64-build`), **not** under `/mnt/…` — CMake's compiler checks can fail with `Operation not permitted` on the Windows drive mount. Source can stay on `/mnt`.
 - WSLg supplies the display, PulseAudio (sound), and keyboard/mouse, so the game runs directly — no extra setup. A physical gamepad needs `usbipd-win`; the keyboard works out of the box.
@@ -139,47 +137,45 @@ Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrid
 
 Put `rogue_squadron.z64` next to the executable and launch it. The ROM hash is checked at startup.
 
-## Controls
+### Controls
 
-Keyboard, mouse, and gamepad all work; no controller is required. The keyboard
-defaults follow the PC version (*Rogue Squadron 3D*). Actions are for the game's
-default **Luke** controller setting; the other presets in Options rearrange them.
+Keyboard, mouse, and gamepad all work; no controller is required. The keyboard defaults follow the PC version (*Rogue Squadron 3D*). Actions are for the game's default **Luke** controller setting. The other controller presets in Options rearrange them.
+
+<div style="text-align:center">
 
 | Action | Keyboard | N64 | Gamepad |
 | --- | --- | --- | --- |
-| Steer | Arrows (A / D turn) | Analog stick | Left stick |
-| Fire blasters | Space | B | X |
-| Fire secondary | Alt | C-Left | Back |
-| Fire mode | X | C-Down | B |
-| Thrust | W | A | A |
-| Brake | S | Z | Left trigger |
-| Roll | E | R | Right shoulder |
-| Special | F | C-Right | Guide |
-| Cockpit / standard / close view | F1 / F2 / F3 | D-Pad Up / Down / Right | D-Pad |
-| Switch view | F4 | L | Left shoulder |
-| Look around | F8 | C-Up | Y |
-| Profiler HUD | F5 | — | — |
-| Drop camera | Z | D-Pad Left | D-Pad |
-| Menu confirm / back | Enter / Backspace | A / B | A / X |
-| Pause | Esc | Start | Start |
+| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Analog stick | Left stick |
+| Fire blasters | <kbd>Space</kbd> | B | X |
+| Fire secondary | <kbd>Alt</kbd> | C-Left | Back |
+| Fire mode | <kbd>X</kbd> | C-Down | B |
+| Thrust | <kbd>W</kbd> | A | A |
+| Brake | <kbd>S</kbd> | Z | Left trigger |
+| Roll | <kbd>E</kbd> | R | Right shoulder |
+| Special | <kbd>F</kbd> | C-Right | Guide |
+| Cockpit | <kbd>F1</kbd> | D-Pad Up | D-Pad |
+| Standard | <kbd>F2</kbd> | D-Pad  Down | D-Pad |
+| Close view | <kbd>F3</kbd> | D-Pad Right | D-Pad |
+| Switch view | <kbd>F4</kbd> | L | Left shoulder |
+| In-Game Profiler HUD | <kbd>F5</kbd> | — | — |
+| Look around | <kbd>F8</kbd> | C-Up | Y |
+| Drop camera | <kbd>Z</kbd> | D-Pad Left | D-Pad |
+| Menu confirm | <kbd>Enter</kbd> | A | A |
+| Back | <kbd>Backspace</kbd> | B | X |
+| Pause | <kbd>Esc</kbd> | Start | Start |
 
-**Mouse flight steering:** mouse capture is automatic while the game window is
-focused — mouse motion steers the craft, left click fires blasters, right click
-fires the secondary weapon. Capture releases when the window loses focus, when
-the controls window (**F6**) is open, or when RT64's **F1** inspector is up, so the
-cursor is free for other windows.
+</div>
+
+**Mouse flight steering:** mouse capture is automatic while the game window is focused.
+Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon. Capture releases when the window loses focus, the controls window (**F6**) is open, or when RT64's **F1** inspector is up.
 
 In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
 
 **F1** toggles RT64's ImGui overlay (configuration, texture dumping, per-call debugger, render-target view). **F3** toggles ViewRDRAM mode and **F4** toggles texture replacement.
 
-### Rebinding controls
+#### Rebinding controls
 
-Press **F6** to open the **Controls** window. Click **Rebind** on any action and
-press the key, gamepad button, or mouse button to assign it; **Clear** removes a
-binding. Adjust mouse sensitivity and invert there, then **Save** (or **Restore
-defaults**). Bindings persist to `roguesq_input.json` next to the executable,
-which you can also hand-edit.
+Press **F6** to open the **Controls** window. Click **Rebind** on any action and press the key, gamepad button, or mouse button to assign it. **Clear** removes a binding. Adjust mouse sensitivity and invert there, then **Save** (or **Restore defaults**). Bindings persist to `roguesq_input.json` next to the executable, which you can also hand-edit.
 
 > [!TIP]
 > In Debug builds (developer mode on by default) the RT64 inspector owns the ImGui overlay, so press **F1** once before **F6**.
@@ -192,25 +188,25 @@ which you can also hand-edit.
 > [!NOTE]
 > I have personally managed to play it (on windows) all the way through from the first level to the credits sequence.
 
-Issues:
+#### Recomp. specific Issues
 
 - Text and background during the Credit sequence renders incorrectly, with it clipping letters. The background has some slight visual artifacts as well. (Happens after completing the game, NOT when the 'CREDITS' passcode is entered. Meaning that the issue probably stems from the ending cutscene that plays prior to the credits) This issue might've been fixed already it just needs to be verified.
 
-- Sometimes when starting up the game it'll freeze when fading to black on the Attribution screen (it happens rarely, but if it does just restart it)
-
-- A visible ring near the skybox's horizon will sometimes overlap geometry that has a transparent material (This is most likely a depth sorting issue)
-
-- Some CPU performance hitching and slow down (~20fps) in spots (although not as bad as the real n64 game)
-
-- Cutscenes having screen sizes of varying widths which could genuinely be an issue with the game itself.
-
 - Some slight graphical glitches in spots like how the final cutscene after completing "Battle of Calamari" will display the edge of the terrain as it renders when the fog should be covering it. (I think on real hardware during this cutscene in particular fog settings change to account for the perspective)
 
-- Frame interpolation *can be enabled* **BUT** it causes visual glitches due to how objects are ID'd. (The biggest pain point on this is the terrain which generates/changes on the fly causing the whole terrain to visually stutter) The performance hitches also causes frame stutter when interpolation is enabled.
+- Frame interpolation *can be enabled* **BUT** it still causes visual glitches if meshes/objects aren't ID'd properly. The performance hitches (frame rate drops) will also cause a frame stutter. It's better than it was but still needs work.
 
 - Low Resolution mode works but affects how cutscenes are displayed with them appearing more wide than they probably should be.
 
+#### Game specific Issues
+
+- Some CPU performance hitching and slow down (~20fps) in spots (although not as bad as the real n64 game) This is expected since the game is very CPU heavy. So anything to optimize CPU rendering or even offload the work onto the GPU would be greatly beneficial and would eliminate a lot of the frame rate issues.
+
+- Cutscenes having screen sizes of varying widths which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
+
 - Very slight cut off at the top of text rects BUT this also existed in the original game.
+
+- Terrain tile textures don't align perfectly and seem to have a slight cut off which again is probably a game issue than a recomp. issue.
 
 ---
 
@@ -267,21 +263,23 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 | `--fake-controller`, `--auto-start <ms>` | Headless runs: fake a controller, pulse START |
 | `--set NAME=VALUE` | Set any `ROGUESQ_*` variable directly |
 
-Each option maps to a `ROGUESQ_*` environment variable, which still works (a bare `NAME=VALUE` argument does too). The full debug/trace/experiment catalog — logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles — lives in [docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md); reach any of those from the command line with `--set NAME=VALUE`.
+Each option maps to a `ROGUESQ_*` environment variable. The full debug/trace/experiment catalog, logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles lives in [docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md); reach any of those from the command line with `--set NAME=VALUE`.
 
-**F5** toggles Factor 5's own built-in frame-profiler HUD (a dormant retail feature, gated by one RDRAM byte). Bars: yellow = CPU (frame submit), blue = RSP/geometry, red = RDP total; magenta/white/green are the RDP command/raster/texture breakdown, fed genuine RT64 workload proxies (draw calls / triangles / texture loads) since the PC path has no RDP hardware counters — scale them with `ROGUESQ_DRAW_SCALE` / `ROGUESQ_TRIS_SCALE` / `ROGUESQ_TEX_SCALE`. `ROGUESQ_PROFILER_DUMP=1` logs the raw slot values.
+**F5** toggles Factor 5's own built-in frame-profiler HUD (a dormant retail feature, gated by one RDRAM byte).
 
 <img alt="Factor5's built-in profiler" src="./docs/ProfilerBars.PNG">
 
-- Yellow Bar  = CPU; it grows toward full width as a scene exceeds 'frame budget'.
-- Blue bar    = render/geometry cost (RSP + display-list processing)
-- Red bar     = rasterization/fill cost (RDP)
-- Magenta Bar = RDP* cmd-buffer busy (DPC_BUFBUSY) -> draw-call count (per State::flush)
-- White Bar   = RDP* pipe busy (DPC_PIPEBUSY)      -> drawCall.triangleCount
-- Green Bar   = RDP* TMEM busy (DPC_TMEM)          -> drawCall.loadCount
-- Cyan Bar    = Not used
+- **Yellow Bar**  = CPU; it grows toward full width as a scene exceeds 'frame budget'.
+- **Blue bar**    = render/geometry cost (RSP + display-list processing)
+- **Red bar**     = rasterization/fill cost (total RDP)
+- **Magenta Bar** = RDP* cmd-buffer busy (DPC_BUFBUSY) -> draw-call count (per State::flush)
+- **White Bar**   = RDP* pipe busy (DPC_PIPEBUSY)      -> drawCall.triangleCount
+- **Green Bar**   = RDP* TMEM busy (DPC_TMEM)          -> drawCall.loadCount
+- **Cyan Bar**    = Not used
 
-*The recomp re-uses the RDP bars by basing them on the draw calls from rt64 (It's an approximation that is not representative of how DPC performs on actual hardware)
+*The recomp re-uses the bars by basing them on the draw calls from rt64 while also scaling them with `ROGUESQ_DRAW_SCALE` / `ROGUESQ_TRIS_SCALE` / `ROGUESQ_TEX_SCALE`. `ROGUESQ_PROFILER_DUMP=1` can log the raw slot values for debugging purposes.
+
+**(It's an approximation and is not representative of how DPC performs on *actual hardware*)**
 
 ### Local save editor tool
 
@@ -295,9 +293,9 @@ Using an AI Agent properly comes down to handing it the *right set of tools*, *t
 
 This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and setup by the user themselves and is something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harness in `tools` to performs test, perform multiple runs to verify robustness or drive an agent to particular menu to chase a bug.
 
-Once your agent is setup tasks that would've taken weeks/months/years to do can be done in a single day/week.
+Once your agent is setup, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
 
-Here's a list of MCPs that could useful for this project:
+Here's a list of MCPs that could be useful for this project:
 
 - [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [python 3.10+](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs)
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
@@ -317,10 +315,14 @@ Here's a list of MCPs that could useful for this project:
 
 ## Acknowledgements
 
-- **Dávid Pethes**: the [rerogue](https://github.com/dpethes/rerogue) tools and the [satd.sk write-up](https://satd.sk/pages/rs/) document the PC build's HOB, HMT, HMP, and MORT formats, which the N64 build shares. They directly inform the texture and model pipeline here.
+- **[Dávid Pethes](https://github.com/dpethes/rerogue)**: the rerogue tools and the [satd.sk write-up](https://satd.sk/pages/rs/) documenting the PC build's HOB, HMT, HMP, and MORT formats, which the N64 build shares.
 - **[jrra](https://github.com/jrra/rerogue)**: a community fork of rerogue.
 - **[Tmcg2](https://github.com/Tmcg2/rogue_squadron64)**: started the companion decomp project.
 
 ## License
 
-See [LICENSE](LICENSE). This project contains no ROM data and requires a legally obtained copy of the game.
+See [LICENSE](LICENSE). This is a hobby project.
+
+This project is in **no way** associated with, sponsored or endorsed by Disney, LucasArts (now known as Lucasfilm Games LLC), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
+
+This project contains no ROM data and requires a legally obtained copy of the game.

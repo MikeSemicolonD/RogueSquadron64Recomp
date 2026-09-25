@@ -124,11 +124,7 @@ the FULLSCREEN toggle). Your own mod folders alongside them are never overwritte
 - toggles: `fullscreen` (`{ get, toggle }`).
 - sliders: `draw_distance`, the `drawDistance` multiplier from `roguesq_video.json` as a percent (use `"min": 100, "max": 250`). It applies live and is saved. The base game shows no draw-distance UI; a menu mod adds one with this key.
 
-**Game filters (native mods).** Beyond menu behaviors, the base game exposes named filter points that native-library mods can implement. Each enabled mod exporting a filter's name (and listing it in `native_libraries`) receives the game's value in `r4` and returns the new value in `r2`; mods chain in load order.
-- `hangar_craft_mask`: crafts selectable in the hangar.
-- `level_craft_icons`: craft icons listed on SELECT LEVEL.
-
-In both, bit n = craft n: 0 X-wing, 1 Y-wing, 2 A-wing, 3 V-wing, 4 Snowspeeder, 5 Millennium Falcon, 6 TIE Interceptor. [mods/any-craft/](../mods/any-craft/) is a complete example.
+**Code mods (`.nrm`).** To change game behavior (not just menus), write a code mod: it patches game functions directly (`RECOMP_PATCH` replaces a base function, `RECOMP_HOOK` / `RECOMP_HOOK_RETURN` run around one) and needs no base changes. [mods/infinite-secondary/](../mods/infinite-secondary/), [mods/any-craft/](../mods/any-craft/) and [mods/larger-object-pool/](../mods/larger-object-pool/) (calls game functions) are complete examples: MIPS C in `src/`, `mod.ld`, a RecompModTool manifest `mod.toml` that references `syms/rogue_squadron.syms.toml` (patch names must match a function there), and a two-line `CMakeLists.txt` calling `add_code_mod` from [tools/mods/code_mod.cmake](../tools/mods/code_mod.cmake). Build RecompModTool once with `cmake --build build/N64ModernRuntime/librecomp/N64Recomp --config Debug --target RecompModTool`, then `cmake -S mods/<name> -B mods/<name>/build` and `cmake --build mods/<name>/build`. The `.nrm` lands in `mods/` and is staged beside the exe; any `mods/<name>/` holding a `mod.toml` is stripped from staging automatically. Call game functions by their name in the syms file (e.g. `rs_malloc`, `func_8004028C`) and reach game data by absolute address. Mod ids must be C identifiers (`infinite_secondary`). Enable it in the Mods panel (F1) or `mods.json`; code mods apply at startup. LiveRecomp does not materialize branch-and-link `$ra` values, so a `RECOMP_HOOK` on a function that reads `$ra` as data will misbehave.
 
 Add built-ins by extending `actions()` / `toggles()`.
 
@@ -222,6 +218,8 @@ Back), and a page cannot be opened from the host menu itself.
 The `enum Menu`: `MAIN_MENU=0, ACCOUNT_SELECTION=1, OPTIONS=2, GAME_SETTINGS=3,
 ELITE_ROGUES=4, CONTROLLER_SETTINGS=5, SOUND_SETTINGS=6, CHEAT_MENU=7,
 BIOGRAPHIES=8, LANGUAGE_SELECT=9, SHOWROOM=10, CONCERT_HALL=11, AT_THE_MOVIES=12`.
+
+Ids 13 and up are custom pages (see above) and `0xFF` means none. The game calls `setupMenuData` with constants 0, 2, 4 and 9 (`menuControllerInput`) and 10 (`menuSubtype02Handler`); every other id comes from an entry's `unk74` target. `gCurrentMenuData` is menu-overlay BSS, so before the front end loads (the boot intro) `0x800CE730` is heap: values read there, such as `current_menu = 0x80`, are model data, not menu ids.
 
 ### How a menu is built — `setupMenuData(menuId, controller, flags)` @ `0x800BA0F0`
 

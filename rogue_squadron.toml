@@ -488,7 +488,7 @@ text = '''{
 # tickFormatMessageWorker replies with a pointer to one stack buffer for every request.
 # The host decodes faster than hardware, so queued replies alias and all read the last
 # request id; the SELECT GAME medal/preview slots then never activate. Send each reply
-# from its own ring slot. ROGUESQ_NO_FORMAT_REPLY_FIX=1 disables.
+# from its own slot of a ring in host RAM (the game heap is reallocated between menu screens). ROGUESQ_NO_FORMAT_REPLY_FIX=1 disables.
 [[patches.hook]]
 func = "tickFormatMessageWorker"
 before_vram = 0x800B380C
@@ -541,17 +541,6 @@ text = '''{ extern float rs64_draw_dist(void); ctx->f2.fl /= rs64_draw_dist(); }
 func = "buildVisibleTerrainGridAroundCamera"
 before_vram = 0x8004392C
 text = '''{ extern float rs64_terrain_dist(void); ctx->f2.fl *= rs64_terrain_dist(); }'''
-
-# Mod filters on the craft masks (rs64_mod_filter_u32): hangar_craft_mask (selectable crafts) and level_craft_icons (SELECT LEVEL icons); the jr's delay slot copies $a0/$a1 into $v0.
-[[patches.hook]]
-func = "getAvailablePlayerCraftFlagsConsiderUnlocks"
-before_vram = 0x800C63B8
-text = '''{ extern uint32_t rs64_mod_filter_u32(uint8_t*, const char*, uint32_t); ctx->r4 = (gpr)(int32_t)rs64_mod_filter_u32(rdram, "hangar_craft_mask", (uint32_t)ctx->r4); }'''
-
-[[patches.hook]]
-func = "getAvailablePlayerCraftFlagsIgnoreUnlocks"
-before_vram = 0x800C64C0
-text = '''{ extern uint32_t rs64_mod_filter_u32(uint8_t*, const char*, uint32_t); ctx->r5 = (gpr)(int32_t)rs64_mod_filter_u32(rdram, "level_craft_icons", (uint32_t)ctx->r5); }'''
 
 # Terrain grid relocation: re-point each table base (rs64_tgrid_base) into host RAM above 8 MB.
 [[patches.hook]]
@@ -1078,3 +1067,25 @@ text = '''{
 func = "traverseSceneGraphRecursive"
 before_vram = 0x800155E4   # jal convertMat3x4ToN64Mtx: a0=ring dst slot, s2=scene node
 text = '''{ extern void rs64_f5_map_node(unsigned, unsigned); rs64_f5_map_node((unsigned)ctx->r4, (unsigned)ctx->r18); }'''
+
+# Billboard sprite (0xBD) emission: record which mesh face each command came from, so frame interpolation can identify particles individually.
+[[patches.hook]]
+func = "renderLitMeshFaceGroup"
+before_vram = 0x800137D4   # sw of the 0xBD word: a1 = DL cursor, s2 = face
+text = '''{ extern void rs64_f5_map_sprite(unsigned, unsigned); rs64_f5_map_sprite((unsigned)ctx->r5, (unsigned)ctx->r18); }'''
+
+[[patches.hook]]
+func = "renderLitMeshFaceGroup"
+before_vram = 0x80014620   # sw of the 0xBD word: s1 = DL cursor, s2 = face
+text = '''{ extern void rs64_f5_map_sprite(unsigned, unsigned); rs64_f5_map_sprite((unsigned)ctx->r17, (unsigned)ctx->r18); }'''
+
+# The same two blocks' white-sprite branch (face flag 0x200 clear, w1 = 0xFFFFFFFF).
+[[patches.hook]]
+func = "renderLitMeshFaceGroup"
+before_vram = 0x800138A4   # a1 = DL cursor, s2 = face
+text = '''{ extern void rs64_f5_map_sprite(unsigned, unsigned); rs64_f5_map_sprite((unsigned)ctx->r5, (unsigned)ctx->r18); }'''
+
+[[patches.hook]]
+func = "renderLitMeshFaceGroup"
+before_vram = 0x800146F0   # s1 = DL cursor, s2 = face
+text = '''{ extern void rs64_f5_map_sprite(unsigned, unsigned); rs64_f5_map_sprite((unsigned)ctx->r17, (unsigned)ctx->r18); }'''
