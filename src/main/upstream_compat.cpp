@@ -2,6 +2,7 @@
 // (/FORCE:MULTIPLE picks these over librecomp's) to match hardware semantics this game needs.
 // Hook entry points for rogue_squadron.toml live in hook_helpers.cpp.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,7 +17,11 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <dbghelp.h>
+#include <tlhelp32.h>
+#include <intrin.h>
 #pragma comment(lib, "dbghelp.lib")
+#else
+#define _ReturnAddress() __builtin_return_address(0)
 #endif
 
 #include "recomp.h"
@@ -229,6 +234,68 @@ static const char* rs64_host_caller_name(void* addr) {
     else snprintf(out, sizeof out, "rva%llx", (unsigned long long)((uintptr_t)addr - (uintptr_t)GetModuleHandleW(nullptr)));
     return cache.emplace(addr, out).first->second.c_str();
 }
+
+// Hardware write-watch (DR0, 4 bytes) on one host RDRAM word. The VEH only records the
+// faulting RIP and new value so the writing thread is not slowed; the drain symbolizes.
+struct Rs64BpHit { uint32_t value; uint32_t tid; uint64_t rip; };
+static Rs64BpHit s_bp_hits[256];
+static std::atomic<unsigned> s_bp_nhits{0};
+static volatile uint32_t* s_bp_addr = nullptr;
+
+static LONG CALLBACK rs64_bp_veh(EXCEPTION_POINTERS* ep) {
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !(ep->ContextRecord->Dr6 & 1))
+        return EXCEPTION_CONTINUE_SEARCH;
+    ep->ContextRecord->Dr6 = 0;
+    const unsigned i = s_bp_nhits.fetch_add(1);
+    if (i < 256) s_bp_hits[i] = { *s_bp_addr, GetCurrentThreadId(), ep->ContextRecord->Rip };
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+extern "C" void rs64_data_bp_arm(void* host_addr) {
+    SymSetOptions(SymGetOptions() | SYMOPT_LOAD_LINES);
+    s_bp_addr = (volatile uint32_t*)host_addr;
+    AddVectoredExceptionHandler(1, rs64_bp_veh);
+    const DWORD self = GetCurrentThreadId(), pid = GetCurrentProcessId();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    THREADENTRY32 te{};
+    te.dwSize = sizeof te;
+    int armed = 0;
+    for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
+        if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) continue;
+        HANDLE t = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
+        if (!t) continue;
+        if (SuspendThread(t) != (DWORD)-1) {
+            CONTEXT c{};
+            c.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+            if (GetThreadContext(t, &c)) {
+                c.Dr0 = (DWORD64)host_addr;
+                c.Dr7 = (c.Dr7 & ~0xF0003ull) | 1ull | (1ull << 16) | (3ull << 18);
+                if (SetThreadContext(t, &c)) ++armed;
+            }
+            ResumeThread(t);
+        }
+        CloseHandle(t);
+    }
+    CloseHandle(snap);
+    fprintf(stderr, "[data-bp] armed %d threads at host %p\n", armed, host_addr);
+    fflush(stderr);
+}
+
+extern "C" void rs64_data_bp_drain(int vi) {
+    static unsigned s_done = 0;
+    const unsigned n = std::min(s_bp_nhits.load(), 256u);
+    for (; s_done < n; ++s_done) {
+        const Rs64BpHit& h = s_bp_hits[s_done];
+        const char* fn = rs64_host_caller_name((void*)h.rip);
+        IMAGEHLP_LINE64 line{};
+        line.SizeOfStruct = sizeof line;
+        DWORD ldisp = 0;
+        const bool has_line = SymGetLineFromAddr64(GetCurrentProcess(), h.rip, &ldisp, &line) != 0;
+        fprintf(stderr, "[data-bp] hit#%u vi=#%d tid=%u value=%08X at %s (%s:%lu)\n", s_done + 1, vi, h.tid, h.value, fn,
+                has_line ? line.FileName : "?", has_line ? line.LineNumber : 0ul);
+    }
+    if (n) fflush(stderr);
+}
 #endif
 
 // ROGUESQ_LOG_MESG_TRACE=1: thread/message order for cinematic frames ROGUESQ_MESG_TRACE_FRAMES=lo-hi
@@ -279,9 +346,44 @@ extern "C" void osYieldThread_recomp(uint8_t* rdram, recomp_context* ctx) {
     ultramodern::run_next_thread_and_wait(rdram);
 }
 
+// Attribution-loop pacing: wait for the next host VI tick by yielding through the N64 scheduler
+// (~1 ms per step, cap ~40), so pending VI/DP events are delivered and the higher-priority VI
+// handler preempts the loop as on hardware. A host Sleep here holds the run slot and let the
+// frame-buffer arbiter deadlock (producer waiting SP-done, VI handler blocked on its ack).
+// ROGUESQ_ATTRIB_HOST_SLEEP=1 restores the host-sleep wait.
+extern "C" volatile unsigned g_vi_tick;
+extern "C" void rs64_attrib_wait_vi(void);
+extern "C" void rs64_attrib_wait_vi_yield(uint8_t* rdram, recomp_context* ctx) {
+    static const bool s_host = env_on("ROGUESQ_ATTRIB_HOST_SLEEP");
+    if (s_host) {
+        rs64_attrib_wait_vi();
+        return;
+    }
+    const unsigned start = g_vi_tick;
+    for (int i = 0; i < 40 && g_vi_tick == start; ++i) osYieldThread_recomp(rdram, ctx);
+}
+
+// ROGUESQ_LOG_THREADS=1: one line per thread start/stop/destroy with the target's state and the
+// recompiled caller (lost-thread / scheduler diagnosis).
+static void rs64_thread_log(const char* op, uint8_t* rdram, PTR(OSThread) t_, void* ret) {
+    static const bool on = env_on("ROGUESQ_LOG_THREADS");
+    if (!on) return;
+    const OSThread* t = t_ ? TO_PTR(OSThread, t_) : nullptr;
+#ifdef _WIN32
+    const char* caller = rs64_host_caller_name(ret);
+#else
+    const char* caller = "?"; (void)ret;
+#endif
+    fprintf(stderr, "[thr] vi=%u %s t=%08X id=%d pri=%d state=%d queue=%08X self=%08X caller=%s\n",
+            g_vi_tick, op, (uint32_t)t_, t ? (int)t->id : -1, t ? (int)t->priority : -1, t ? (int)t->state : -1,
+            t ? (uint32_t)t->queue : 0u, (uint32_t)ultramodern::this_thread(), caller);
+    fflush(stderr);
+}
+
 extern "C" void osStartThread(uint8_t* rdram, PTR(OSThread) t);
 extern "C" void osStartThread_recomp(uint8_t* rdram, recomp_context* ctx) {
     rs64_mesg_trace(rdram, "start", (uint32_t)ctx->r4, 0, (uint32_t)ctx->r31);
+    rs64_thread_log("start", rdram, (PTR(OSThread))(int32_t)ctx->r4, _ReturnAddress());
     osStartThread(rdram, (int32_t)ctx->r4);
 }
 
@@ -289,6 +391,7 @@ extern "C" void osStartThread_recomp(uint8_t* rdram, recomp_context* ctx) {
 // semantics: pull the target off whatever queue it waits on and mark it STOPPED.
 extern "C" void osStopThread_recomp(uint8_t* rdram, recomp_context* ctx) {
     PTR(OSThread) t_ = (PTR(OSThread))(int32_t)ctx->r4;
+    rs64_thread_log("stop", rdram, t_, _ReturnAddress());
     if (t_ == NULLPTR) {
         ultramodern::run_next_thread_and_wait(PASS_RDRAM1);
         return;
@@ -305,6 +408,7 @@ extern "C" void osStopThread_recomp(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void osDestroyThread(uint8_t* rdram, PTR(OSThread) t_);
 extern "C" void osDestroyThread_recomp(uint8_t* rdram, recomp_context* ctx) {
     PTR(OSThread) t_ = (PTR(OSThread))(int32_t)ctx->r4;
+    rs64_thread_log("destroy", rdram, t_, _ReturnAddress());
     if (t_ != NULLPTR) {
         OSThread* t = TO_PTR(OSThread, t_);
         auto in_ram = [](uint32_t p) { return p >= 0x80000000u && p < 0x80800000u; };

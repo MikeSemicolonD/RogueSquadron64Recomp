@@ -1,0 +1,11 @@
+{
+  "game_id": "rs64",
+  "id": "any-craft",
+  "display_name": "Any Craft, Any Mission",
+  "description": "The hangar lets you fly any standard craft (X-wing, Y-wing, A-wing, V-wing, Snowspeeder, Millennium Falcon, TIE Interceptor) on any mission. Nothing is unlocked in your save. Snowspeeder missions may be unwinnable in other craft.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": false,
+  "native_libraries": { "any_craft": ["hangar_craft_mask", "level_craft_icons"] }
+}

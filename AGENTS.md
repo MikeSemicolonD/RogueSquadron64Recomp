@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game boots, and content renders: attribution text, the textured Factor 5 / N64-logo cinematic, the main menu, and the attract demo all come up. The current frontier is display-list fidelity (texturing/UV bugs and per-frame DL desyncs), attract-demo stability, and symbol renaming. See the [Status](README.md#status) table in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
+Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. The current frontier is the remaining visual and pacing issues (credits text clipping, the intermittent attribution-screen stall, the horizon ring over transparent geometry, hitching, frame-interpolation quality), per-frame DL desyncs, and symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
 
 ## Project layout
 
@@ -24,7 +24,7 @@ build/                                  CMake out-of-source build dir
 
 The recompiled MIPS code lives in-repo at `RecompiledFuncs/` — `funcs_*.c` plus `funcs.h`, `lookup.cpp`, and `recomp_overlays.inl`. It is **gitignored** (a derivative of the copyrighted ROM; generated locally, never committed) and regenerated from `rogue_squadron.toml` with `cmake --build build --config Debug --target regen_funcs`; the next build re-globs automatically (`CONFIGURE_DEPENDS`). These are auto-generated; hand-instrumenting them with diagnostic `fprintf` probes is routine, but load-bearing logic belongs in the `patches/` build (see below), not here — regeneration silently discards inline edits.
 
-The forked submodules under `lib/` carry intentional `if(false) fprintf(...)` debug-toggle cruft and game-specific defensive guards. **Do not propose stripping these** as cleanup; they are intentional. (The KSEG0 pointer guards are a separate, tracked retirement — see Open work.)
+The forked submodules under `lib/` carry intentional `if(false) fprintf(...)` debug-toggle cruft and game-specific defensive guards. **Do not propose stripping these** as cleanup; they are intentional. (The inline KSEG0 pointer guards in `rogue_squadron.toml` have already been retired.)
 
 ## Build & run
 
@@ -65,14 +65,14 @@ for. Any variable can be set on the command line with `--set NAME=VALUE`.
 | `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-paced frame loop instead of the hardware VI protocol (default on). The VI-driven loop matches hardware message order and is the current stability baseline |
 | `ROGUESQ_F5_NATIVE=0` | Parse F5 display lists without emitting geometry |
 | `ROGUESQ_F5_CHUNK_BOUND=0` | Disable the F5 DL chunk-bounded fetch rule (default on) |
-| `ROGUESQ_F5_TERRAIN_SUB` / `ROGUESQ_F5_TERRAIN_SUB_FAR` | Terrain subdivision for near (`shift==0`) and far (`shift>=1`) tiles (default 2 / 1). Far-tile reduction is the frame-hitch fix; raise `_SUB_FAR` toward 2 for smoother distant terrain at a perf cost |
+| `ROGUESQ_F5_TERRAIN_SUB` / `ROGUESQ_F5_TERRAIN_SUB_FAR` | Terrain subdivision for near (`shift==0`) and far (`shift>=1`) tiles (default 2 / same as near). A lower far value leaves T-junction cracks at the LOD boundary; terrain emission is cheap (~0.3 ms/walk) |
 | `ROGUESQ_F5_CULL_DIST=<units>` | **Default off.** RT64-side per-object distance cull (camera-space): drops a model's draws when its `0x01` modelview origin exceeds the threshold. Trades far-object pop-in for fewer draws. Benefit scales with aggressiveness (~3000 = ~30% fewer hitches but visible pop-in; ~10000 = visually clean but marginal). Terrain/effects unaffected. `ROGUESQ_F5_CULL_LOG=1` logs per-object distances |
 | `ROGUESQ_FB_GUARDS=0` | Disable the host framebuffer-window guards for A/B against goldens |
 | `ROGUESQ_NO_AUDIO_UCODE=1` | Silent audio stub instead of the MusyX synth |
 | `ROGUESQ_DUMP_PCM=<path>` | Write the synth output to a 22050 Hz stereo WAV |
 | `ROGUESQ_RENDER_SONG=<key>` | Force a specific song (0 = the N64-logo music) |
 | `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>` | Headless runs: fake a controller, pulse START |
-| `ROGUESQ_SUPPRESS_OOB_CIMG` | **Default OFF.** Drops F5 ucode SET_COLOR_IMAGE emissions at HIGH (≥ 0x800000) / LOW (< 0x100000) addresses. Reduces a memory spike but drops legitimate lowmem CIMGs too (regresses the 3D logo). Leak-experiment only |
+| `ROGUESQ_SUPPRESS_OOB_CIMG` | **Inactive.** Read only by the LLE `dpc_bridge` path, which graphics tasks no longer take (they go to the HLE `send_dl`). Historically dropped F5 SET_COLOR_IMAGE at HIGH/LOW addresses (regressed the 3D logo) |
 | `ROGUESQ_LOG_ALL=1` | Every trace category |
 | `ROGUESQ_LOG_GBI=1` / `ROGUESQ_LOG_GFX_TASK=1` | Per-handler GBI logs (high volume) / one line per graphics task |
 | `ROGUESQ_LOG_MESG_TRACE=1` (+ `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Thread/message-order trace for `tools/validate/compare_mesg_trace.py` |
@@ -86,7 +86,7 @@ Files written to `logs/` and `dumps/crash-dumps/` during a run:
 
 - `logs/stability/<tag>/run_N.log` — per-run stderr captured by `tools/run-stability.ps1`. Companion `summary.csv` classifies outcomes.
 - `logs/stability/<tag>/memory.csv` — per-second WS / private / VM samples from `tools/measure-leak.ps1`.
-- `mqdiag_NNN.txt` — per-queue counters dumped every 3s by the watchdog thread (`start_mqdiag_watchdog` in [src/main/main.cpp](src/main/main.cpp)). Each file is a point-in-time snapshot; diff two to see which queues are still moving.
+- `mqdiag_NNN.txt` — no longer written (the periodic watchdog was removed). For a hang, take a full dump with `tools/dump-game.ps1` and run `tools/reconstruct-freeze.py` (game threads and queues from RDRAM) plus `tools/host-stacks.py` (symbolized host stacks; Debug build only).
 - `dumps/crash-dumps/crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump from the SEH handler, the SIGABRT handler, the F12 hotkey, or external `tools/dump-game.ps1`.
 
 ## Tooling (under `tools/`)
@@ -199,6 +199,10 @@ See [patches/README.md](patches/README.md) for the full how-to.
 
 librecomp's section table covers all three `.ovl.*` overlays (mission / menu / cinematic), which share `ram_addr 0x800A5130`. They are all registered at boot in [src/main/register_overlays.cpp](src/main/register_overlays.cpp) via `recomp::overlays::register_overlays` — the Zelda64Recomp pattern. The per-DMA `load_overlays` callback that earlier builds patched into librecomp is **non-canonical** and was removed. If runtime DMA-driven overlay switching ever proves necessary, the correct place is a thin wrapper inside our own `load_overlays`, not a librecomp modification.
 
+### Terrain grid is 128x128 in host RAM
+
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80A00000-0x80A1FFFF, host RDRAM above the game's 8 MB, and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. `ROGUESQ_DRAW_DIST` scales reach (terrain capped at 2.5x); the level cell budget doubles at 2x+. See [plans/2026-09-24-terrain-grid-expansion-plan.md](plans/2026-09-24-terrain-grid-expansion-plan.md).
+
 ### Game-state model + BOOT_TARGET nav engine
 
 A canonical game-state model classifies the current state each present from RDRAM: descriptor `state_model.toml` → `tools/state/gen_state_table.py` (CMake `gen_state_table`) → `src/main/state_table.inl`, host classifier in [src/main/game_state.cpp](src/main/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-step 0x800CE626). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
@@ -211,14 +215,14 @@ This game uses a Factor 5-customized F3DEX-derived ucode. The RT64 profile `GBI_
 
 | Opcode | Standard meaning | Factor 5 behavior | Handler |
 |-------:|------------------|-------------------|---------|
-| `0xB5` | F3DEX `G_QUAD` | **Chunk/DL terminator** at chunk offset 0x100 (returns to parent DL) | `OP_B5_ENDDL` / `op_b5_next_chunk` |
+| `0xB5` | F3DEX `G_QUAD` | **Next chunk**: continue in the chunk named by the current chunk header's first word (w1 ignored); `0xB8` is the pop/return | `op_b5_next_chunk` |
 | `0xE4` | F3DEX `G_TEXRECT` | **LLE format (16 bytes)**, not HLE 24-byte | `texrectLLE_guarded` |
 | `0xE5` | F3DEX `G_TEXRECTFLIP` | LLE format | `texrectFlipLLE_guarded` |
 | `0xFF` | `G_SETCIMG` | Frequently emitted with bogus payloads (w1=0, fmt>4, out-of-FB addresses); rejected by `setColorImage_filtered` | `setColorImage_filtered` |
-| `0x80` | unused | Chunk metadata header (next-chunk pointer in 24-bit w0); walked as a no-op | `op80_unknown` |
-| `0x02` | F3D `G_RDPHALF_2` | Constant payload `0x028001C0 / 0x01FF0000`; fixed setup, no-op | `op02_unknown` |
+| `0x80` | unused | Chunk header (next-chunk pointer in 24-bit w0); never executed by the ucode, used by the HLE to record the chunk base | `op_80_header` |
+| `0x02` | F3D `G_RDPHALF_2` | Per-vertex RGBA colors: DMA `(w0&0xFFFF)+1` bytes from w1 into DMEM 0xB70 | `op_02_colors` |
 
-Chunks are contiguous 0x108-byte blocks; the interpreter walks chunk content linearly and the `0xB5` terminator at offset 0x100 returns control to the parent DL. Models render as CI4 textures at palette bank 15. **The current model texturing/UV bug is RT64-side** — the DL stream, UVs, wrap/mask, and texture data have been proven byte-identical to a PJ64 golden, so the defect is in RT64's rendering of that faithful stream, not in what we submit. Use `f5_dl_walk.py --tex` to compare.
+Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content linearly from +8; at +0x108, or on `0xB5`, it continues in the chunk named by the header's first word. `0x06` pushes and calls, `0x07` branches, and `0xB8` pops (or ends the task at depth 0). Models render as CI4 textures at palette bank 15. Per-face UVs are raw values scaled by the per-material `03 82` texcoord scale (16.16, DMEM 0x140); applying it fixed the old "zoomed/stretched model texture" bug (`ROGUESQ_F5_TC_SCALE=0` reverts for A/B). Judge any remaining UV defect after that scale. Use `f5_dl_walk.py --tex` to compare.
 
 ### Audio — MusyX synth and MORT voice
 
@@ -241,7 +245,7 @@ DP (`OS_EVENT_DP`) events arrive on a non-game thread → `enqueue_external_mess
 
 ### RT64 interpreter safety
 
-The interpreter loop in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter.cpp) has a 5-million-iter safety limit — without it a missing DL terminator marches `dl++` past RDRAM and AVs. It also guards against `hleGBI` going NULL mid-task (F3DEX `0xAF` `loadUCode` can fail to match and zero it out).
+There is no global iteration cap in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter.cpp). F5 walks are bounded by the chunk-fetch rules in `rt64_gbi_f3dfactor5.cpp`: a per-task limit of 4096 chunk hops, exact chunk-revisit detection, and a back-link check. A runaway walk means one of those rules failed. `hleGBI` NULL checks exist around the reset path; the main HLE loop only `assert`s it.
 
 ## When investigating a new crash
 
@@ -256,16 +260,18 @@ The interpreter loop in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter
    - `Unable to find a matching GBI in the current database` — unrecognized ucode task; the mid-task NULL guard catches the resulting deref, that geometry doesn't render.
 3. **Check recent `processDisplayLists ENTER` logs** — the latest `dlStart` names the DL; `NEW DL @` / `NEW sub-DL @` dumps show the first commands.
 4. **Check `submit_rsp_task` counts.** `n_gfx` = M_GFXTASK enqueues, `n_other` = audio. Compare with `dp_complete` on 0x8011A408 (mqdiag `Dp` column) to find tasks stuck in RT64.
-5. **Use `mqdiag_NNN.txt`** to validate queue-level theories before instrumenting.
+5. **Use `tools/reconstruct-freeze.py` on a full dump** to validate queue-level theories before instrumenting: it lists every blocked game thread and its wait queue.
 
-For a hang specifically: if it's a cutscene/demo, suspect a recompiler codegen mistranslation of a rare instruction on the hung path (the demo-freeze root cause — see the Audio quirk) before deep subsystem RE. The remaining intermittent attract-demo freeze on structure destruction is tracked in [plans/jade-moon-demo-freeze-plan.md](plans/jade-moon-demo-freeze-plan.md).
+For a hang specifically: if it's a cutscene/demo, suspect a recompiler codegen mistranslation of a rare instruction on the hung path (the demo-freeze root cause — see the Audio quirk) before deep subsystem RE.
+
+For a bug that shows up only in Release (or only when the host is fast), suspect a game assumption that some producer is slower than a frame before suspecting the compiler. Example: `tickFormatMessageWorker` sent every reply as a pointer to one stack buffer; at -O2 it answered several requests before the menu polled once, the queued replies aliased, and SELECT GAME lost its medals/preview (fixed by the reply-ring hook in `rogue_squadron.toml`). `ROGUESQ_WATCH_ADDRS` and `ROGUESQ_DATA_BP` find the diverging write; the CMake `RS64_OD_TARGETS` / `RS64_OD_SOURCES` settings bisect by optimization level.
 
 ## Avoid these dead ends (already disproven)
 
 ### Rendering / GBI
 
 - **`op_80` as a sub-DL call** — treating its 24-bit w0 as a call target infinite-loops and hangs after ~200 DLs. It's a state/param load.
-- **Y-flip / component swap on model textures** — retired. The stream is byte-faithful to golden; the texturing bug is inside RT64's render of a correct DL, not in our submission or a coordinate transform. Fix RT64, not the stream.
+- **Y-flip / component swap on model textures** — retired. The real cause was the missing `03 82` texcoord scale (see the Factor 5 GBI section).
 - **`ROGUESQ_SUPPRESS_OOB_CIMG` LOW-region filter as default-on** — Factor 5 LLE legitimately emits some lowmem CIMGs; keep it env-gated.
 - **Synthetic per-halt FULL_SYNC injection in dpc_bridge** — corrupts RT64 tile state mid-frame; white-bounding-box artifacts and AVs in `loadTileOperation`.
 - **A `cv.wait` rewrite of RT64's present-queue busy-wait** (`rt64_present_queue.cpp:38-46`) — regressed natural-exit rate. Reverted.
@@ -301,6 +307,7 @@ For a hang specifically: if it's a cutscene/demo, suspect a recompiler codegen m
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.
 - Default to **no comments**. Add one only when the WHY is non-obvious (a workaround for a specific bug, a hidden invariant, a non-visible constraint).
 - **Comments are terse and matter-of-fact.** State the fact, not the reasoning journey. No multi-paragraph narration, no dated blow-by-blow history, no "we tried X then Y" storytelling in a comment — one or two plain lines. This applies to config comments (e.g. `rogue_squadron.toml`) too.
+- **At most 1-2 lines per comment block, and don't hard-wrap at ~90 columns** — let a line run long rather than splitting one sentence across several. No trailing side comments after code (`x = 1;  // note`) and no extra notes tacked on after a semicolon; if it matters, it goes in the one comment above the code.
 - Don't reference the current task or session in comments — they rot.
 - Prefer **editing existing files** over creating new ones. The runtime is already large; new files attract drift.
 - For probe instrumentation in `funcs_*.c`, rate-limit:
@@ -315,15 +322,16 @@ For a hang specifically: if it's a cutscene/demo, suspect a recompiler codegen m
   if (s_lo < 0) s_lo = env_on("ROGUESQ_LOG_AUDIO_OUT");
   ```
   Exempt: single-line loop bodies, aligned lookup/return ladders and tabular min/max updates, and the env-gated diagnostic probe blocks — keep those terse.
+- **Env gates on hot paths must read the environment once.** Use a `static const` initializer, or a distinct uninitialized sentinel checked with `== -1`. Never cache "off" as a negative value that a `< 0` check re-reads: 12 such gates in the F5 GBI ran `getenv()` on every command and were half the walk time.
 - **Read env vars through the shared `recomp::dbg::env_*` helpers** (`src/main/debug_logs.h`: `env_on`/`env_int`/`env_str`/`env_u32`), not open-coded `getenv` parsing.
 
 ## Open work
 
-Priorities, per the README's [Open work](README.md#open-work):
+Priorities (user-visible issues are listed under [Status](README.md#status-playable) in the README):
 
 1. **Display-list desyncs** — about a dozen per run, typically garbage right after a material sub-DL returns. Root-cause with [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and `tools/validate/f5_dl_walk.py`.
 2. **Attract-demo stability** — the structure-destruction freeze (jade moon et al.) is now FIXED via `patches/npc_health_guard.c` + the OBJECT-library link fix ([plans/jade-moon-demo-freeze-plan.md](plans/jade-moon-demo-freeze-plan.md)). The Tatooine-demo freeze was fixed earlier (an N64Recomp link-branch codegen bug; MORT itself is recompiled and works). Watch for any further demo-specific stalls (Kile II / Taloraan / Fest / Trench Run untested end-to-end).
-3. **Retire the remaining KSEG0 pointer guards** — proven inert against hardware-golden runs. The cycle-cap counters, the matpool free-list probes, and the matpool page-guard watchpoint are already gone from `rogue_squadron.toml` and `hook_helpers.cpp`; the plain KSEG0 entry-bail / skip-store hooks in the TOML are what is left. Remove via the TOML plus a regen, verifying with a boot-to-menu and a demo run each time.
-4. **Keyboard input** — port Zelda64Recompiled's bind/rebind UI.
+3. **Retire render heuristics that a known microcode rule can replace** — e.g. the 0xBD sprite path (the ucode emits a screen-space texrect via overlay 0x2C) and the terrain grid shape. Verify each with the DL/RDRAM validation harness, not screenshots alone.
+4. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Run `tools/rename/lint_toml_syms.py` after each batch.
 
 The render path is HLE through the `GBI_F3DFACTOR5` profile.

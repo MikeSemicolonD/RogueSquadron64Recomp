@@ -131,6 +131,13 @@ mods/menu-example/menu_example.lib
 mods/menu-example/menu_example.exp
 mods/menu-example/menu_example.pdb
 
+# any-craft mod: separate-build DLL artifacts (built via mods/any-craft/CMakeLists.txt)
+mods/any-craft/build/
+mods/any-craft/any_craft.dll
+mods/any-craft/any_craft.lib
+mods/any-craft/any_craft.exp
+mods/any-craft/any_craft.pdb
+
 # Generated from state_model.toml by tools/state/gen_state_table.py
 src/main/state_table.inl
 

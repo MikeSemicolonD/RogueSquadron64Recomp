@@ -194,7 +194,7 @@ which you can also hand-edit.
 
 Issues:
 
-- Text and background during the Credit sequence renders incorrectly, with it clipping letters. The background has some slight visual artifacts as well. (Happens after completing the game, NOT when the 'CREDITS' passcode is entered. Meaning that the issue probably stems from the ending cutscene that plays prior to the credits)
+- Text and background during the Credit sequence renders incorrectly, with it clipping letters. The background has some slight visual artifacts as well. (Happens after completing the game, NOT when the 'CREDITS' passcode is entered. Meaning that the issue probably stems from the ending cutscene that plays prior to the credits) This issue might've been fixed already it just needs to be verified.
 
 - Sometimes when starting up the game it'll freeze when fading to black on the Attribution screen (it happens rarely, but if it does just restart it)
 
@@ -303,7 +303,7 @@ Here's a list of MCPs that could useful for this project:
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
-> `windows-screenshot-mcp-server` usage can be finicky because Claude (as of September 2026) has no visual capabilities, meaning it can miss things that are visually obvious to a human like visual glitches/artifacts. Claude can *at most* look at the pixel values in the image to figure out what it's looking at. (Technically no vision capable but good surprisingly enough to be dangerous)
+> `windows-screenshot-mcp-server` usage can be finicky because Claude (as of September 2026) has no visual capabilities, meaning it can miss things that are visually obvious to a human like visual glitches/artifacts. Claude can *at most* look at the pixel values in the image to figure out what it's looking at. (Technically not vision capable but surprisingly good enough to be dangerous)
 
 ---
 

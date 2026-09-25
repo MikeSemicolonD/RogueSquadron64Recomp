@@ -1,6 +1,7 @@
 #include "menu_config.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -22,6 +23,7 @@
 #include "json/json.hpp"
 #include "librecomp/mods.hpp"
 #include "recomp.h"   // recomp_context, recomp_func_t (for mod-provided @exports)
+#include "video_config.h"
 
 // Menu button system v2 — one typed button model for the front-end and pause
 // menus, driven by mod JSON. See docs/adding-menus-and-buttons.md and
@@ -261,8 +263,12 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
     };
     return r;
 }
+// draw_distance: the roguesq_video.json drawDistance multiplier as a percent (100-250), for mod menus; applies live and is saved.
 std::unordered_map<std::string, SliderImpl>& sliders() {
-    static std::unordered_map<std::string, SliderImpl> r = {};
+    static std::unordered_map<std::string, SliderImpl> r = {
+        { "draw_distance", { [] { return (int)std::lround(rs64::video::draw_distance() * 100.0f); },
+                             [](int v) { rs64::video::set_draw_distance((float)v / 100.0f); } } },
+    };
     return r;
 }
 

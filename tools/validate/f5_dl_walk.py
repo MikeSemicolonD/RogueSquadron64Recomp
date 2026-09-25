@@ -132,7 +132,8 @@ while steps < a.max and not ended:
         if stack: pc, base = stack.pop(); continue
         ended = True; break
     elif op == 0x05: ln = 40 if ((w0 >> 16) & 0xFF) == 5 else 8
-    elif op in (0xBE, 0xBD, 0x14, 0x09, 0x0A): ln = 16
+    elif op in (0xBD, 0x0A): ln = 24              # sprite record: w2 fog color, w3 half-extent, w4 tex extent
+    elif op in (0xBE, 0x14, 0x09): ln = 16
     elif op == 0x03:
         ln = 24
         if ((w0 >> 16) & 0xFF) == 0x82:
@@ -179,7 +180,8 @@ while steps < a.max and not ended:
     if op in (0xB9, 0xBA):                        # SETOTHERMODE_L / _H
         rec(kind='othermode', op=op, chunk=cord(base), w0='0x%08X' % w0, w1='0x%08X' % w1)
     if op == 0xBD:                                # billboard sprite
-        rec(kind='bd', op=op, chunk=cord(base), w0='0x%08X' % w0, w1='0x%08X' % w1)
+        rec(kind='bd', op=op, chunk=cord(base), w0='0x%08X' % w0, w1='0x%08X' % w1,
+            fog='0x%08X' % W(pc + 8), extent='0x%08X' % W(pc + 12), tex='0x%08X' % W(pc + 16))
     if op == 0x05 and ((w0 >> 16) & 0xFF) == 5:   # terrain tile: 05 05 02=flat quad, 05 05 00=heightfield grid
         sub = (w0 >> 8) & 0xFF
         payload = ['0x%08X' % W(pc + 8 + i * 4) for i in range(8)]   # words 2..9 of the 40-byte record
