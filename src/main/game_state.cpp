@@ -1,11 +1,13 @@
 #include "game_state.h"
 #include <atomic>
 #include <cstring>
+#include <cstdio>
 
 #include "state_table.inl"   // g_state_predicates, g_state_force_params, g_state_reachable,
                              // g_state_table, RS_STATE_COUNT
 
 static std::atomic<int> g_current{-1};
+static std::atomic<bool> g_cutscene_running{false};
 
 // Match rd8/rd32 in rt64_render_context.cpp: host RDRAM is byte-swapped within each
 // word (the ^3), and a field is read as a big-endian word starting at its exact address.
@@ -49,6 +51,17 @@ void rs64_state_poll(const uint8_t* rdram) {
         }
     }
     g_current.store(best, std::memory_order_relaxed);
+
+    // A cutscene timeline is playing: gCurrentCutsceneFile (0x800B1904) is loaded and gateCtr (0x800B0B28) is below its end frame (file+0x44, minus the same 0xA margin the game uses).
+    // This covers the boot intro, where the "menu" predicate is a false positive (0x800CE730 is still heap), as well as in-mission cutscenes.
+    bool running = false;
+    const uint32_t cut = rd_be(rdram, 0x800B1904u);
+    if ((cut >= 0x80000000u) && (cut < 0x80800000u)) {
+        const uint32_t gate = rd_be(rdram, 0x800B0B28u);
+        const uint32_t endFrame = rd_be(rdram, cut + 0x44u);
+        running = (endFrame > 0x10u) && (endFrame < 0x100000u) && (gate < endFrame - 0xAu);
+    }
+    g_cutscene_running.store(running, std::memory_order_relaxed);
 }
 
 extern "C" int rs64_state_current(void) {
@@ -70,6 +83,12 @@ static int find_state(const char* id) {
         if (std::strcmp(g_state_table[i].id, id) == 0) return i;
     }
     return -1;
+}
+
+extern "C" int rs64_state_in_cinematic(void) {
+    static const int s_cine = find_state("cinematic");
+    const int cur = g_current.load(std::memory_order_relaxed);
+    return g_cutscene_running.load(std::memory_order_relaxed) || ((cur >= 0) && (cur == s_cine));
 }
 
 extern "C" int rs64_force_state(const char* id) {

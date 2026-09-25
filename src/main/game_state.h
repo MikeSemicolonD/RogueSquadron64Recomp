@@ -32,6 +32,7 @@ extern "C" {
     void rs64_state_poll(const uint8_t* rdram);   // reclassify; updates the published state
     int  rs64_state_current(void);                // index into g_state_table, or -1 (unknown)
     const char* rs64_state_current_id(void);      // id string, or "unknown"
+    int  rs64_state_in_cinematic(void);           // 1 while a cutscene timeline plays (boot intro, in-mission cutscenes) or the state is "cinematic"
 
     int rs64_force_state(const char* id);         // stage a force; 0 ok, -1 unknown/no-slot
     int rs64_force_consume(int slot, int32_t* out, int out_cap);  // slot hooks call this

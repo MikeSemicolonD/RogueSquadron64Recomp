@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. The current frontier is the remaining visual and pacing issues (credits text clipping, the intermittent attribution-screen stall, the horizon ring over transparent geometry, hitching, frame-interpolation quality), per-frame DL desyncs, and symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
+Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. The current frontier is the remaining visual and pacing issues (credits text clipping, hitching, frame-interpolation quality), per-frame DL desyncs, and symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
 
 ## Project layout
 
@@ -193,6 +193,8 @@ RecompiledFuncs = .lib).
 
 See [patches/README.md](patches/README.md) for the full how-to.
 
+`patches/` is for base-game fixes. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and the "Code mods" paragraph in [docs/adding-menus-and-buttons.md](docs/adding-menus-and-buttons.md).
+
 ## Architectural quirks worth knowing
 
 ### Overlays register at boot
@@ -201,7 +203,7 @@ librecomp's section table covers all three `.ovl.*` overlays (mission / menu / c
 
 ### Terrain grid is 128x128 in host RAM
 
-The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80A00000-0x80A1FFFF, host RDRAM above the game's 8 MB, and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. `ROGUESQ_DRAW_DIST` scales reach (terrain capped at 2.5x); the level cell budget doubles at 2x+. See [plans/2026-09-24-terrain-grid-expansion-plan.md](plans/2026-09-24-terrain-grid-expansion-plan.md).
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. `ROGUESQ_DRAW_DIST` scales reach (terrain capped at 2.5x); the level cell budget doubles at 2x+. See [plans/2026-09-24-terrain-grid-expansion-plan.md](plans/2026-09-24-terrain-grid-expansion-plan.md).
 
 ### Game-state model + BOOT_TARGET nav engine
 
@@ -330,8 +332,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 Priorities (user-visible issues are listed under [Status](README.md#status-playable) in the README):
 
 1. **Display-list desyncs** — about a dozen per run, typically garbage right after a material sub-DL returns. Root-cause with [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and `tools/validate/f5_dl_walk.py`.
-2. **Attract-demo stability** — the structure-destruction freeze (jade moon et al.) is now FIXED via `patches/npc_health_guard.c` + the OBJECT-library link fix ([plans/jade-moon-demo-freeze-plan.md](plans/jade-moon-demo-freeze-plan.md)). The Tatooine-demo freeze was fixed earlier (an N64Recomp link-branch codegen bug; MORT itself is recompiled and works). Watch for any further demo-specific stalls (Kile II / Taloraan / Fest / Trench Run untested end-to-end).
-3. **Retire render heuristics that a known microcode rule can replace** — e.g. the 0xBD sprite path (the ucode emits a screen-space texrect via overlay 0x2C) and the terrain grid shape. Verify each with the DL/RDRAM validation harness, not screenshots alone.
-4. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Run `tools/rename/lint_toml_syms.py` after each batch.
+2. **Retire render heuristics that a known microcode rule can replace** — e.g. the 0xBD sprite path (the ucode emits a screen-space texrect via overlay 0x2C) and the terrain grid shape. Verify each with the DL/RDRAM validation harness, not screenshots alone.
+3. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Run `tools/rename/lint_toml_syms.py` after each batch.
 
 The render path is HLE through the `GBI_F3DFACTOR5` profile.

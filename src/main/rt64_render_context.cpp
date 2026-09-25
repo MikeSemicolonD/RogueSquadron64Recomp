@@ -367,6 +367,16 @@ public:
                     fflush(stderr);
                 }
             }
+
+            // ROGUESQ_TEXTURE_DUMP_DIR=<dir>: start RT64's texture dumper at boot (the inspector's "Start dumping textures").
+            if (const char* dd = env_str("ROGUESQ_TEXTURE_DUMP_DIR")) {
+                if (app->state) {
+                    std::filesystem::create_directories(dd);
+                    app->state->dumpingTexturesDirectory = std::filesystem::path(dd);
+                    fprintf(stderr, "[RT64] dumping textures to '%s'\n", dd);
+                    fflush(stderr);
+                }
+            }
         }
         if (app && app->appWindow) {
             fprintf(stderr,

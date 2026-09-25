@@ -1,0 +1,15 @@
+[manifest]
+id = "larger_object_pool"
+version = "1.0.0"
+display_name = "Larger Object Pool"
+description = "Doubles the shared object pool (ships, lasers, missiles, trails, explosions) from 192 to 384 slots. When the pool is full the game deletes a live object to make room and skips enemy formation spawns; busy missions hit that limit even without mods. Uses more game memory."
+short_description = "Doubles the shared object pool (192 to 384)."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "larger_object_pool"
+func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]

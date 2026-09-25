@@ -439,7 +439,16 @@ endif()
 # without deleting the user's own mod folders. Native mods build separately with
 # their own mods/<name>/CMakeLists.txt, and whatever DLL that left beside mod.json
 # is copied along; the game build never compiles them. The example mods (native-demo,
-# menu-example) are stripped from the staged tree.
+# menu-example) are stripped from the staged tree, as are code-mod source folders (any
+# mods/<name>/ with a mod.toml; their .nrm is built into mods/ and staged on its own).
+file(GLOB RS64_CODE_MOD_TOMLS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/mods/*/mod.toml")
+set(RS64_CODE_MOD_DIRS "")
+foreach(toml ${RS64_CODE_MOD_TOMLS})
+    get_filename_component(dir "${toml}" DIRECTORY)
+    get_filename_component(name "${dir}" NAME)
+    list(APPEND RS64_CODE_MOD_DIRS "${name}")
+endforeach()
+list(TRANSFORM RS64_CODE_MOD_DIRS PREPEND "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/" OUTPUT_VARIABLE RS64_STAGED_CODE_MOD_DIRS)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/mods"
@@ -447,7 +456,7 @@ add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E rm -rf
         "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/native-demo"
         "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/menu-example"
-        "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/any-craft/build")
+        ${RS64_STAGED_CODE_MOD_DIRS})
 
 # PatchesLib is an OBJECT library: its objects go straight onto the exe link
 # line ahead of RecompiledFuncs (the .lib), so the patch definitions win any
@@ -472,6 +481,7 @@ set_property(TARGET RogueSquadron64Recomp PROPERTY VS_DEBUGGER_WORKING_DIRECTORY
 # dependencies. For Release, assemble a clean folder holding only what ships.
 if (WIN32)
     set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
+    list(TRANSFORM RS64_CODE_MOD_DIRS PREPEND "${RS64_DIST_DIR}/mods/" OUTPUT_VARIABLE RS64_DIST_CODE_MOD_DIRS)
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,make_directory,true> "${RS64_DIST_DIR}"
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_if_different,true>
@@ -483,7 +493,7 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_directory,true>
             "${CMAKE_SOURCE_DIR}/mods"
             "${RS64_DIST_DIR}/mods"
-        COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,rm,true> -rf "${RS64_DIST_DIR}/mods/any-craft/build"
+        COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,rm,true> -rf ${RS64_DIST_CODE_MOD_DIRS}
         COMMENT "Assembling clean Release folder in ${RS64_DIST_DIR} (Release only)"
         VERBATIM)
 endif()

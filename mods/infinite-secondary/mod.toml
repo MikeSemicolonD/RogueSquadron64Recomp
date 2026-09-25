@@ -1,0 +1,15 @@
+[manifest]
+id = "infinite_secondary"
+version = "1.0.0"
+display_name = "Infinite Secondary"
+description = "Secondary weapons (torpedoes, missiles, bombs, ion cannon, ...) never run out. The HUD shows 99. Takes effect at the next mission start."
+short_description = "Secondary weapons never run out."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "infinite_secondary"
+func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]
