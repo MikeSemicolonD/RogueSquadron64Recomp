@@ -450,6 +450,7 @@ foreach(toml ${RS64_CODE_MOD_TOMLS})
 endforeach()
 list(TRANSFORM RS64_CODE_MOD_DIRS PREPEND "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/" OUTPUT_VARIABLE RS64_STAGED_CODE_MOD_DIRS)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -DDIR=$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods -P "${CMAKE_SOURCE_DIR}/tools/mods/clean_staged_nrm.cmake"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         "${CMAKE_SOURCE_DIR}/mods"
         $<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods
@@ -490,6 +491,7 @@ if (WIN32)
             "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/dxil.dll"
             "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/dxcompiler.dll"
             "${RS64_DIST_DIR}"
+        COMMAND ${CMAKE_COMMAND} -DDIR=$<IF:$<CONFIG:Release>,${RS64_DIST_DIR}/mods,> -P "${CMAKE_SOURCE_DIR}/tools/mods/clean_staged_nrm.cmake"
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_directory,true>
             "${CMAKE_SOURCE_DIR}/mods"
             "${RS64_DIST_DIR}/mods"

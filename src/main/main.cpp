@@ -4,6 +4,7 @@
 #include <cstring>
 #include <csignal>
 #include <vector>
+#include <unordered_map>
 #include <cinttypes>
 #include <filesystem>
 #include <thread>
@@ -1591,15 +1592,25 @@ static void draw_mods_ui() {
     if (ImGui::Begin("Mods")) {
         auto mods = recomp::mods::get_all_mod_details("rs64");
         if (mods.empty()) ImGui::TextDisabled("No mods loaded. Put mods in the 'mods' folder.");
+        // Code mods load once at game start; toggling one is saved but only applies on the next launch.
+        static std::unordered_map<std::string, bool> s_loaded_state;
         for (const auto& d : mods) {
             ImGui::PushID(d.mod_id.c_str());
             bool enabled = recomp::mods::is_mod_enabled(d.mod_id);
+            if (!d.runtime_toggleable) {
+                s_loaded_state.try_emplace(d.mod_id, enabled);
+            }
             if (ImGui::Checkbox("##enabled", &enabled)) {
                 recomp::mods::enable_mod(d.mod_id, enabled);
                 rs64_menu_config_mark_dirty();
             }
             ImGui::SameLine();
             const char* title = d.display_name.empty() ? d.mod_id.c_str() : d.display_name.c_str();
+            auto loaded = s_loaded_state.find(d.mod_id);
+            if (loaded != s_loaded_state.end() && loaded->second != enabled) {
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "(restart to apply)");
+                ImGui::SameLine();
+            }
             if (ImGui::CollapsingHeader(title)) {
                 if (!d.description.empty()) ImGui::TextWrapped("%s", d.description.c_str());
                 const auto& schema = recomp::mods::get_mod_config_schema(d.mod_id);
@@ -2290,7 +2301,12 @@ int main(int argc, char* argv[]) {
             },
         },
         .error_handling_callbacks = {
-            .message_box = [](const char* msg) { fprintf(stderr, "[Error] %s\n", msg); },
+            // Also a dialog: Release has no console, so a stderr-only error (e.g. a mod conflict) left a silent black window.
+            .message_box = [](const char* msg) {
+                fprintf(stderr, "[Error] %s\n", msg);
+                fflush(stderr);
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Rogue Squadron 64 Recompiled", msg, nullptr);
+            },
         },
         .threads_callbacks = {
             .get_game_thread_name = get_game_thread_name,

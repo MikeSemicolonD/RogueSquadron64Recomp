@@ -141,7 +141,7 @@ Put `rogue_squadron.z64` next to the executable and launch it. The ROM hash is c
 
 Keyboard, mouse, and gamepad all work; no controller is required. The keyboard defaults follow the PC version (*Rogue Squadron 3D*). Actions are for the game's default **Luke** controller setting. The other controller presets in Options rearrange them.
 
-<div style="text-align:center">
+<div align="center">
 
 | Action | Keyboard | N64 | Gamepad |
 | --- | --- | --- | --- |
