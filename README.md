@@ -158,7 +158,7 @@ Keyboard, mouse, and gamepad all work; no controller is required. The keyboard d
 | Close view | <kbd>F3</kbd> | D-Pad Right | D-Pad |
 | Switch view | <kbd>F4</kbd> | L | Left shoulder |
 | In-Game Profiler HUD | <kbd>F5</kbd> | — | — |
-| Look around | <kbd>F8</kbd> | C-Up | Y |
+| Look around | <kbd>Q</kbd> | C-Up | Y |
 | Drop camera | <kbd>Z</kbd> | D-Pad Left | D-Pad |
 | Menu confirm | <kbd>Enter</kbd> | A | A |
 | Back | <kbd>Backspace</kbd> | B | X |
