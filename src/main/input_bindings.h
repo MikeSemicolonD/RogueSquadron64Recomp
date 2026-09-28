@@ -15,7 +15,7 @@ namespace rs64::input {
 // same way; x/y are reconstructed from opposing deflections in resolve().
 // Look* hold C-Up and point the stick while pressed (the game's look-around), for hats.
 // Throttle is a positional axis (full travel, dir picks which end is forward) that sets flight speed directly.
-// Roll* (a twist or rudder axis, or keys) hold R and drive stick X, the game's pure roll; pitch stays on the stick.
+// Roll* (a twist or rudder axis) drive stick X while the Roll button (R) is held, the game's pure roll; pitch stays on the stick.
 enum class Target : int {
     A, B, Z, Start,
     DpadUp, DpadDown, DpadLeft, DpadRight,
@@ -71,6 +71,22 @@ struct RumbleConfig {
     bool  crash                = true;   // 12
 };
 
+// DualShock 4 / DualSense lightbar colors (0xRRGGBB) by game state. In a mission the color follows
+// health: full -> damaged (half) -> critical (empty), flashing on hits and strobing during the death spiral.
+struct LightbarConfig {
+    bool     enabled   = true;
+    bool     health    = true;
+    bool     hit_flash = true;
+    uint32_t menu      = 0x193792;  // #193792
+    uint32_t cinematic = 0xC05A08;  // #C05A08
+    uint32_t mission   = 0x00E050;  // #00E050
+    uint32_t damaged   = 0xFFB000;  // #FFB000
+    uint32_t critical  = 0xFF1A00;  // #FF1A00
+    uint32_t hit       = 0xFFFFFF;  // #FFFFFF
+    uint32_t death     = 0xFF0000;  // #FF0000
+    uint32_t dead      = 0x200000;  // #200000
+};
+
 struct Bindings {
     std::vector<Source> targets[(int)Target::Count];
     std::vector<JoyDevice> joy_devices;
@@ -80,10 +96,11 @@ struct Bindings {
     bool  mouse_invert_x    = false;
     bool  mouse_invert_y    = false;
     bool  keyboard_enabled  = true;   // report a controller and read the keyboard
-    bool  joystick_enabled  = true;   // read raw joysticks (Ctrl+J toggles)
+    bool  joystick_enabled  = true;   // read connected raw joysticks
     float stick_range       = 80.0f;  // raw N64 stick value at full gamepad/joystick deflection (hardware ~80; the game saturates at 75/80)
     float throttle_cruise   = 0.5f;   // throttle position [0,1] that gives the craft's cruise speed
     RumbleConfig rumble;
+    LightbarConfig lightbar;
 };
 
 // Snapshot of live device state handed to resolve() each poll.

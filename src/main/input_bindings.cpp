@@ -178,11 +178,22 @@ void add_joystick_defaults(Bindings& b, int dev, int num_axes, int num_buttons, 
     std::string lname = b.joy_devices[dev].name;
     std::transform(lname.begin(), lname.end(), lname.begin(), [](unsigned char c) { return (char)std::tolower(c); });
     const bool throttle_unit = lname.find("throttle") != std::string::npos;
+    // Combined stick+throttle units in DirectInput order (X, Y, Z throttle, Rx, Ry, Rz twist, slider).
+    const bool x52 = lname.find("x52") != std::string::npos;
 
     // Throttle lever: forward is negative on most devices.
-    const int throttle_axis = throttle_unit ? 0 : (num_axes == 3 ? 2 : -1);
+    int throttle_axis = throttle_unit ? 0 : (num_axes == 3 ? 2 : -1);
+    int twist_axis = -1;
+    if (x52 && num_axes >= 6) {
+        throttle_axis = 2;
+        twist_axis = 5;
+    }
     if (throttle_axis >= 0 && throttle_axis < num_axes) {
         add(Target::Throttle, SourceKind::JoyAxis, throttle_axis, -1);
+    }
+    if (twist_axis >= 0 && twist_axis < num_axes) {
+        add(Target::RollLeft,  SourceKind::JoyAxis, twist_axis, -1);
+        add(Target::RollRight, SourceKind::JoyAxis, twist_axis, +1);
     }
     if (!throttle_unit && num_axes >= 2) {
         add(Target::StickLeft,  SourceKind::JoyAxis, 0, -1);
@@ -315,10 +326,9 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
         sy = ly;
     }
 
-    // Roll: R held turns stick X into pure roll in the game, so a roll input takes over stick X while it is deflected.
+    // Roll: while the Roll button (R) is held the game turns stick X into pure roll; a deflected roll axis then takes over stick X.
     const float roll = defl[(int)Target::RollRight] - defl[(int)Target::RollLeft];
-    if (!looking && std::fabs(roll) > 0.1f) {
-        btn |= RT;
+    if (!looking && (btn & RT) && std::fabs(roll) > 0.1f) {
         sx = roll;
     }
 
@@ -331,6 +341,21 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
 // --- Persistence (roguesq_input.json) --------------------------------------
 namespace {
 using nlohmann::json;
+
+std::vector<std::pair<const char*, uint32_t*>> lightbar_colors(LightbarConfig& c) {
+    return { {"menu", &c.menu}, {"cinematic", &c.cinematic}, {"mission", &c.mission}, {"damaged", &c.damaged},
+             {"critical", &c.critical}, {"hit", &c.hit}, {"death", &c.death}, {"dead", &c.dead} };
+}
+
+// "#RRGGBB" or "RRGGBB"; returns fallback when malformed.
+uint32_t parse_hex_color(const std::string& s, uint32_t fallback) {
+    const char* p = s.c_str();
+    if (*p == '#') ++p;
+    if (std::strlen(p) != 6) return fallback;
+    char* end = nullptr;
+    const unsigned long v = std::strtoul(p, &end, 16);
+    return (end && *end == '\0') ? (uint32_t)v : fallback;
+}
 
 const char* target_name(Target t) {
     switch (t) {
@@ -556,6 +581,20 @@ bool load_bindings(Bindings& b, const std::string& path) {
         }
     }
 
+    if (j.contains("lightbar") && j["lightbar"].is_object()) {
+        const json& l = j["lightbar"];
+        LightbarConfig& c = b.lightbar;
+        c.enabled   = l.value("enabled", c.enabled);
+        c.health    = l.value("health", c.health);
+        c.hit_flash = l.value("hit_flash", c.hit_flash);
+        if (l.contains("colors") && l["colors"].is_object()) {
+            const json& k = l["colors"];
+            for (auto& [name, field] : lightbar_colors(c)) {
+                if (k.contains(name) && k[name].is_string()) *field = parse_hex_color(k[name].get<std::string>(), *field);
+            }
+        }
+    }
+
     if (j.contains("joysticks") && j["joysticks"].is_array()) {
         b.joy_devices.clear();
         for (const json& d : j["joysticks"]) {
@@ -601,6 +640,14 @@ bool save_bindings(const Bindings& b, const std::string& path) {
                     {"effects", { {"hit", c.hit}, {"collision", c.collision}, {"object_collision", c.object_collision},
                                   {"terrain_scrape", c.terrain_scrape}, {"weapons", c.weapons},
                                   {"death_spiral", c.death_spiral}, {"crash", c.crash} }} };
+    LightbarConfig lb = b.lightbar;
+    json colors = json::object();
+    for (auto& [name, field] : lightbar_colors(lb)) {
+        char hex[8];
+        snprintf(hex, sizeof(hex), "#%06X", (unsigned)(*field & 0xFFFFFF));
+        colors[name] = hex;
+    }
+    j["lightbar"] = { {"enabled", lb.enabled}, {"health", lb.health}, {"hit_flash", lb.hit_flash}, {"colors", colors} };
     json joys = json::array();
     for (const JoyDevice& d : b.joy_devices) {
         joys.push_back({ {"guid", d.guid}, {"ordinal", d.ordinal}, {"name", d.name},

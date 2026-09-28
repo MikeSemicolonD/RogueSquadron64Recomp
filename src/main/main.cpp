@@ -1159,6 +1159,10 @@ static void start_phase_poller() {
 // Input (SDL2 gamepad — one controller)
 // ---------------------------------------------------------------------------
 static SDL_GameController* controller = nullptr;
+// Every open gamepad; `controller` is whichever one last produced input (Steam Input / DS4Windows can expose an idle virtual pad alongside the real one).
+static std::vector<SDL_GameController*> g_pads;
+// Set when a pad connects so the next lightbar tick re-sends the current color.
+static std::atomic<bool> g_lightbar_resend{true};
 
 // ROGUESQ_FAKE_CONTROLLER=1 — report a connected controller and feed neutral
 // input even with no physical gamepad attached. Lets headless/automated runs
@@ -1382,17 +1386,173 @@ static void close_raw_joystick(SDL_JoystickID id) {
     }
 }
 
-// Converts the game's Rumble Pak motor pulses (plus the damage/death-spiral layers) into device rumble at ~60 Hz.
+static const char* gamepad_type_name(SDL_GameControllerType t) {
+    switch (t) {
+        case SDL_CONTROLLER_TYPE_XBOX360:                      return "Xbox 360/XInput";
+        case SDL_CONTROLLER_TYPE_XBOXONE:                      return "Xbox One";
+        case SDL_CONTROLLER_TYPE_PS3:                          return "PS3";
+        case SDL_CONTROLLER_TYPE_PS4:                          return "PS4";
+        case SDL_CONTROLLER_TYPE_PS5:                          return "PS5";
+        case SDL_CONTROLLER_TYPE_NINTENDO_SWITCH_PRO:          return "Switch Pro";
+        case SDL_CONTROLLER_TYPE_VIRTUAL:                      return "virtual";
+        case SDL_CONTROLLER_TYPE_GOOGLE_STADIA:                return "Stadia";
+        case SDL_CONTROLLER_TYPE_AMAZON_LUNA:                  return "Luna";
+        case SDL_CONTROLLER_TYPE_NVIDIA_SHIELD:                return "Shield";
+        default:                                               return "unknown";
+    }
+}
+
+static void open_gamepad(int device_index) {
+    SDL_GameController* pad = SDL_GameControllerOpen(device_index);
+    if (!pad) {
+        fprintf(stderr, "[input] gamepad %d open failed: %s\n", device_index, SDL_GetError());
+        fflush(stderr);
+        return;
+    }
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+    for (SDL_GameController* p : g_pads) {
+        if (p == pad) {
+            SDL_GameControllerClose(pad);
+            return;
+        }
+    }
+    g_pads.push_back(pad);
+    if (!controller) controller = pad;
+    g_lightbar_resend.store(true);
+    char guid[64] = {};
+    SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(SDL_GameControllerGetJoystick(pad)), guid, sizeof(guid));
+    const char* name = SDL_GameControllerName(pad);
+    fprintf(stderr, "[input] gamepad \"%s\" type=%s vid=%04x pid=%04x guid=%s%s\n", name ? name : "?",
+            gamepad_type_name(SDL_GameControllerGetType(pad)), SDL_GameControllerGetVendor(pad), SDL_GameControllerGetProduct(pad), guid,
+            controller == pad ? " (active)" : "");
+    fflush(stderr);
+}
+
+static void close_gamepad(SDL_JoystickID id) {
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+    for (size_t i = 0; i < g_pads.size(); ++i) {
+        if (SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(g_pads[i])) != id) continue;
+        if (controller == g_pads[i]) controller = nullptr;
+        SDL_GameControllerClose(g_pads[i]);
+        g_pads.erase(g_pads.begin() + (ptrdiff_t)i);
+        if (!controller && !g_pads.empty()) controller = g_pads.front();
+        fprintf(stderr, "[input] gamepad removed (%zu left)\n", g_pads.size());
+        fflush(stderr);
+        return;
+    }
+}
+
+static bool gamepad_has_input(SDL_GameController* pad) {
+    for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
+        if (SDL_GameControllerGetButton(pad, (SDL_GameControllerButton)b)) return true;
+    for (int a = 0; a < SDL_CONTROLLER_AXIS_MAX; ++a)
+        if (std::abs((int)SDL_GameControllerGetAxis(pad, (SDL_GameControllerAxis)a)) > 16000) return true;
+    return false;
+}
+
+static void select_active_gamepad() {
+    if (g_pads.size() < 2 || (controller && gamepad_has_input(controller))) return;
+    for (SDL_GameController* p : g_pads) {
+        if (p == controller || !gamepad_has_input(p)) continue;
+        std::lock_guard<std::mutex> lk(g_bindings_mtx);
+        controller = p;
+        const char* name = SDL_GameControllerName(p);
+        fprintf(stderr, "[input] active gamepad -> \"%s\"\n", name ? name : "?");
+        fflush(stderr);
+        return;
+    }
+}
+
+struct LightRgb { float r, g, b; };
+
+static LightRgb light_rgb(uint32_t c) {
+    return { ((c >> 16) & 0xFF) / 255.0f, ((c >> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f };
+}
+
+static LightRgb light_mix(LightRgb a, LightRgb b, float t) {
+    return { a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t };
+}
+
+// DualShock 4 / DualSense lightbar: state colors crossfade; in a mission the color follows health, pulses when critical,
+// flashes on hits, and strobes through the death spiral. Pads without an LED (XInput, Steam/DS4Windows virtual pads) are skipped.
+static void lightbar_tick(const rs64::input::LightbarConfig& cfg, const char* st, float dt) {
+    static LightRgb s_cur{};
+    static bool     s_have = false;
+    static float    s_last_health = -1.0f, s_flash = 0.0f, s_phase = 0.0f;
+    static uint32_t s_sent = 0xFFFFFFFFu;
+    static auto     s_sent_t = std::chrono::steady_clock::now();
+
+    if (!cfg.enabled) {
+        s_sent = 0xFFFFFFFFu;
+        return;
+    }
+    s_phase = std::fmod(s_phase + dt, 60.0f);
+    constexpr float TWO_PI = 6.2831853f;
+    const bool in_menu = st && std::strncmp(st, "menu", 4) == 0;
+    const bool in_mission = st && std::strcmp(st, "mission") == 0;
+
+    LightRgb target = light_rgb(in_menu ? cfg.menu : cfg.cinematic);
+    float bright = 1.0f;
+    bool snap = false;
+    if (in_mission) {
+        const rs64::rumble::CraftStatus cs = rs64::rumble::craft_status((const uint8_t*)g_recomp_rdram_for_wp_raw);
+        target = light_rgb(cfg.mission);
+        if (cs.valid && cs.dead) {
+            target = light_rgb(cfg.dead);
+        } else if (cs.valid && cs.spiral) {
+            target = light_rgb(cfg.death);
+            bright = 0.15f + 0.85f * (0.5f + 0.5f * std::cos(s_phase * TWO_PI * 5.0f));
+            snap = true;
+        } else if (cs.valid && cfg.health) {
+            const float h = cs.health;
+            target = h >= 0.5f ? light_mix(light_rgb(cfg.damaged), light_rgb(cfg.mission), (h - 0.5f) * 2.0f)
+                               : light_mix(light_rgb(cfg.critical), light_rgb(cfg.damaged), h * 2.0f);
+            if (h < 0.25f) bright = 0.45f + 0.55f * (0.5f + 0.5f * std::cos(s_phase * TWO_PI * 1.4f));
+        }
+        if (cs.valid && cfg.hit_flash && !cs.dead && s_last_health >= 0.0f && cs.health < s_last_health - 0.005f) s_flash = 1.0f;
+        s_last_health = cs.valid ? cs.health : -1.0f;
+    } else {
+        s_last_health = -1.0f;
+        s_flash = 0.0f;
+    }
+
+    const float a = (snap || !s_have) ? 1.0f : 1.0f - std::exp(-dt / 0.12f);
+    s_cur = light_mix(s_cur, target, a);
+    s_have = true;
+    LightRgb out = { s_cur.r * bright, s_cur.g * bright, s_cur.b * bright };
+    if (s_flash > 0.0f) out = light_mix(out, light_rgb(cfg.hit), s_flash);
+    s_flash = std::max(0.0f, s_flash - dt / 0.18f);
+
+    auto q = [](float v) { return (uint32_t)std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f); };
+    const uint32_t packed = (q(out.r) << 16) | (q(out.g) << 8) | q(out.b);
+    const auto now = std::chrono::steady_clock::now();
+    const bool resend = g_lightbar_resend.exchange(false);
+    if (!resend && (packed == s_sent || now - s_sent_t < std::chrono::milliseconds(33))) return;
+    s_sent = packed;
+    s_sent_t = now;
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+    for (SDL_GameController* p : g_pads) {
+        if (SDL_GameControllerHasLED(p)) SDL_GameControllerSetLED(p, (Uint8)(packed >> 16), (Uint8)(packed >> 8), (Uint8)packed);
+    }
+}
+
+// Converts the game's Rumble Pak motor pulses (plus the damage/death-spiral layers) into device rumble at ~60 Hz, and drives the lightbar.
 static void rumble_thread_main() {
     bool prev_any = false;
     float haptic_last = 0.0f;
     auto haptic_t = std::chrono::steady_clock::now();
+    auto tick_t = haptic_t;
     for (;;) {
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
         rs64::input::RumbleConfig cfg;
+        rs64::input::LightbarConfig light;
         { std::lock_guard<std::mutex> lk(g_bindings_mtx);
-          cfg = g_bindings.rumble; }
+          cfg = g_bindings.rumble;
+          light = g_bindings.lightbar; }
         const char* st = rs64_state_current_id();
+        const auto tick_now = std::chrono::steady_clock::now();
+        lightbar_tick(light, st, std::chrono::duration<float>(tick_now - tick_t).count());
+        tick_t = tick_now;
         const bool in_mission = st && std::strcmp(st, "mission") == 0;
         const rs64::rumble::Output out = rs64::rumble::tick(cfg, (const uint8_t*)g_recomp_rdram_for_wp_raw, in_mission);
         const bool any = out.lo > 0.0f || out.hi > 0.0f;
@@ -1751,6 +1911,17 @@ static void apply_fullscreen_if_requested() {
 
 static void poll_input() {
     apply_fullscreen_if_requested();
+    static bool s_scanned = false;
+    if (!s_scanned) {
+        s_scanned = true;
+        const int n = SDL_NumJoysticks();
+        fprintf(stderr, "[input] %d device(s) at first poll\n", n);
+        fflush(stderr);
+        for (int i = 0; i < n; ++i) {
+            if (SDL_IsGameController(i)) open_gamepad(i);
+            else open_raw_joystick(i);
+        }
+    }
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERMOTION || e.type == SDL_FINGERUP) {
@@ -1785,12 +1956,6 @@ static void poll_input() {
                 rs64_toggle_fullscreen();   // Alt+Enter: standard fullscreen toggle
             } else if (e.key.keysym.scancode == SDL_SCANCODE_F6) {
                 g_show_controls.store(!g_show_controls.load());
-            } else if (e.key.keysym.scancode == SDL_SCANCODE_J && (e.key.keysym.mod & KMOD_CTRL)) {
-                // Ctrl+J toggles joystick input, as in the PC version.
-                std::lock_guard<std::mutex> lk(g_bindings_mtx);
-                g_bindings.joystick_enabled = !g_bindings.joystick_enabled;
-                fprintf(stderr, "[input] joystick %s\n", g_bindings.joystick_enabled ? "on" : "off");
-                fflush(stderr);
             } else if (e.key.keysym.scancode == SDL_SCANCODE_F5) {
                 // Toggle Factor 5's built-in frame-profiler/debug-text HUD.
                 // Gate byte at virtual 0x80038CE0 (retail leaves it 0); the
@@ -1817,17 +1982,10 @@ static void poll_input() {
             _Exit(EXIT_SUCCESS);
         }
         if (e.type == SDL_CONTROLLERDEVICEADDED) {
-            if (!controller) {
-                controller = SDL_GameControllerOpen(e.cdevice.which);
-            }
+            open_gamepad(e.cdevice.which);
         }
-        if (e.type == SDL_CONTROLLERDEVICEREMOVED && controller) {
-            if (SDL_GameControllerGetJoystick(controller) ==
-                SDL_JoystickFromInstanceID(e.cdevice.which)) {
-                std::lock_guard<std::mutex> lk(g_bindings_mtx);
-                SDL_GameControllerClose(controller);
-                controller = nullptr;
-            }
+        if (e.type == SDL_CONTROLLERDEVICEREMOVED) {
+            close_gamepad(e.cdevice.which);
         }
         if (e.type == SDL_JOYDEVICEADDED) {
             open_raw_joystick(e.jdevice.which);
@@ -1853,6 +2011,7 @@ static void poll_input() {
             }
         }
     }
+    select_active_gamepad();
     update_gyro_sensor();
     // Drain SDL's relative-motion accumulator once per poll. Read from the
     // internal state (updated before RT64's event filter), so capture is robust
@@ -2191,7 +2350,7 @@ static void draw_controls_ui() {
         if (ImGui::CollapsingHeader("Joysticks / HOTAS")) {
             std::lock_guard<std::mutex> lk(g_bindings_mtx);
             ImGui::Checkbox("Joystick input", &g_bindings.joystick_enabled);
-            ImGui::SameLine(); ImGui::TextDisabled("(Ctrl+J)");
+            ImGui::SameLine(); ImGui::TextDisabled("(untick to ignore connected joysticks)");
             ImGui::SliderFloat("Analog stick range", &g_bindings.stick_range, 60.0f, 127.0f, "%.0f");
             ImGui::TextDisabled("Full gamepad/joystick deflection. The N64 stick reaches ~80 and the game saturates there.");
             if (g_bindings.joy_devices.empty()) ImGui::TextDisabled("No joysticks seen yet.");
@@ -2239,7 +2398,7 @@ static void draw_controls_ui() {
                 ImGui::SameLine();
                 ImGui::TextDisabled("(starts with the next mission)");
             }
-            ImGui::SliderFloat("Strength", &r.strength, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Strength", &r.strength, 0.0f, 2.0f, "%.2f");
             ImGui::Checkbox("Scale hits by damage", &r.scale_hits_by_damage);
             ImGui::Checkbox("Sustain through death spiral", &r.sustain_death_spiral);
             ImGui::Checkbox("Hits", &r.hit); ImGui::SameLine();
@@ -2249,6 +2408,39 @@ static void draw_controls_ui() {
             ImGui::Checkbox("Weapons", &r.weapons); ImGui::SameLine();
             ImGui::Checkbox("Death spiral", &r.death_spiral); ImGui::SameLine();
             ImGui::Checkbox("Crash", &r.crash);
+        }
+
+        if (ImGui::CollapsingHeader("Lightbar (DualShock 4 / DualSense)")) {
+            std::lock_guard<std::mutex> lk(g_bindings_mtx);
+            ri::LightbarConfig& l = g_bindings.lightbar;
+            ImGui::Checkbox("Lightbar", &l.enabled); ImGui::SameLine();
+            ImGui::Checkbox("Follow health", &l.health); ImGui::SameLine();
+            ImGui::Checkbox("Flash on hits", &l.hit_flash);
+            auto color = [](const char* label, uint32_t& c) {
+                float f[3] = { ((c >> 16) & 0xFF) / 255.0f, ((c >> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f };
+                if (ImGui::ColorEdit3(label, f, ImGuiColorEditFlags_NoInputs)) {
+                    c = ((uint32_t)std::lround(f[0] * 255.0f) << 16) | ((uint32_t)std::lround(f[1] * 255.0f) << 8) | (uint32_t)std::lround(f[2] * 255.0f);
+                }
+            };
+            color("Menus", l.menu); ImGui::SameLine();
+            color("Cutscenes / demos", l.cinematic);
+            color("Full health", l.mission); ImGui::SameLine();
+            color("Damaged", l.damaged); ImGui::SameLine();
+            color("Critical", l.critical);
+            color("Hit flash", l.hit); ImGui::SameLine();
+            color("Death spiral", l.death); ImGui::SameLine();
+            color("Destroyed", l.dead);
+            if (ImGui::Button("Default colors")) {
+                const ri::LightbarConfig d;
+                const bool en = l.enabled, hp = l.health, hf = l.hit_flash;
+                l = d;
+                l.enabled = en;
+                l.health = hp;
+                l.hit_flash = hf;
+            }
+            bool any_led = false;
+            for (SDL_GameController* p : g_pads) any_led = any_led || SDL_GameControllerHasLED(p);
+            if (!any_led) ImGui::TextDisabled("No connected pad has a controllable lightbar (Steam Input or DS4Windows hide it behind a virtual pad).");
         }
         ImGui::Separator();
 

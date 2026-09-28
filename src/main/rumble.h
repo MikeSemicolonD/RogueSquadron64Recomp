@@ -22,6 +22,15 @@ void motor(int channel, bool on);
 // in_mission gates the RDRAM-derived layers (effect ids, health, death spiral).
 Output tick(const rs64::input::RumbleConfig& cfg, const uint8_t* rdram, bool in_mission);
 
+// Player 0 craft, for the lightbar. Only meaningful in a mission; valid = false when health is unreadable.
+struct CraftStatus {
+    bool  valid  = false;
+    float health = 1.0f;   // health / max health, [0,1]
+    bool  spiral = false;  // death spiral in progress
+    bool  dead   = false;  // crashed or destroyed
+};
+CraftStatus craft_status(const uint8_t* rdram);
+
 } // namespace rs64::rumble
 
 #endif

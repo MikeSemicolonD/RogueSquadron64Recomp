@@ -162,7 +162,7 @@ Keyboard, mouse, gamepad, and flight sticks / HOTAS all work; no controller is r
 
 <div align="center">
 
-| Action | Keyboard | N64 | Gamepad | Joystick / HOTAS |
+| Action | Keyboard | N64 | Gamepad | Joystick / H.O.T.A.S. |
 | --- | --- | --- | --- | --- |
 | Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Analog stick | Left stick | Stick X/Y |
 | Fire blasters | <kbd>Space</kbd> | B | X | Button 1 (trigger) |
@@ -171,7 +171,7 @@ Keyboard, mouse, gamepad, and flight sticks / HOTAS all work; no controller is r
 | Thrust | <kbd>W</kbd> | A | A | Button 3 |
 | Brake | <kbd>S</kbd> | Z | Left trigger | Button 4 |
 | Speed (positional) | — | — | — | Throttle lever |
-| Roll | <kbd>E</kbd> | R | Right shoulder | Button 7, or a twist/rudder axis on RollLeft/RollRight |
+| Roll | <kbd>E</kbd> | R | Right shoulder | Button 7 + twist joystick |
 | Special | <kbd>F</kbd> | C-Right | Guide | Button 5 |
 | Cockpit | <kbd>F1</kbd> | D-Pad Up | D-Pad | — |
 | Standard | <kbd>F2</kbd> | D-Pad  Down | D-Pad | — |
@@ -183,11 +183,10 @@ Keyboard, mouse, gamepad, and flight sticks / HOTAS all work; no controller is r
 | Menu confirm | <kbd>Enter</kbd> | A | A | Button 3 |
 | Back | <kbd>Backspace</kbd> | B | X | Button 1 |
 | Pause | <kbd>Esc</kbd> | Start | Start | — |
-| Joystick on/off | <kbd>Ctrl</kbd>+<kbd>J</kbd> | — | — | — |
 
 </div>
 
-**Flight sticks and HOTAS:** any joystick that isn't a gamepad (flight stick, throttle unit, pedals) is picked up automatically, several at once. The first time one is connected it gets the PC version's layout above. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: back is the craft's slowest, forward its fastest, and the **Cruise at** point (middle by default) its normal speed. Other axes such as twist, rudder, or a throttle slider on the stick are bound from the Controls window (**F6**) For the throttle, pull the lever back, click **Rebind** on Throttle, then push it forward. A twist grip or rudder pedals can do one of two jobs, depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction adds together. Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis.
+**Flight sticks and HOTAS:** any joystick that isn't a gamepad (flight stick, throttle unit, pedals) is picked up automatically, several at once. The first time one is connected it gets the PC version's layout above. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: back is the craft's slowest, forward its fastest, and the **Cruise at** point (middle by default) its normal speed. Other axes such as twist, rudder, or a throttle slider on the stick are bound from the Controls window (**F6**) For the throttle, pull the lever back, click **Rebind** on Throttle, then push it forward. A twist grip or rudder pedals can do one of two jobs, depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction adds together. Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis: hold the Roll button and twist to roll.
 
 **Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks with rumble or force feedback. Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. Turn rumble off, change its strength, or turn off individual effects in the Controls window, or in the `rumble` section of `roguesq_input.json`.
 

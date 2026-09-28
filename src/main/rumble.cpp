@@ -116,6 +116,20 @@ void motor(int channel, bool on) {
     }
 }
 
+CraftStatus craft_status(const uint8_t* rd) {
+    CraftStatus s;
+    if (!rd) return s;
+    const float h = rd_f32(rd, CRAFT_HEALTH);
+    const float hmax = rd_f32(rd, CRAFT_MAX_HEALTH);
+    if (!std::isfinite(h) || !std::isfinite(hmax) || hmax <= 0.0f) return s;
+    const uint16_t flags = rd_u16(rd, CRAFT_FLAGS);
+    s.valid = true;
+    s.health = std::clamp(h / hmax, 0.0f, 1.0f);
+    s.dead = (flags & 0x20) || ((flags & 0x10) && h <= 0.0f);
+    s.spiral = (flags & 0x8) && h <= 0.0f && !s.dead;
+    return s;
+}
+
 Output tick(const rs64::input::RumbleConfig& cfg, const uint8_t* rd, bool in_mission) {
     static float   s_last_health = -1.0f;
     static float   s_hit_scale = 1.0f;
@@ -192,7 +206,8 @@ Output tick(const rs64::input::RumbleConfig& cfg, const uint8_t* rd, bool in_mis
     }
     s_last_sustain = do_sustain;
 
-    const float k = std::clamp(cfg.strength, 0.0f, 1.0f);
+    // Up to 2x: the game's PWM duty often lands at 0.1-0.3, which is faint on modern motors. Output still caps at 1.
+    const float k = std::clamp(cfg.strength, 0.0f, 2.0f);
     out.lo = std::clamp(out.lo * k, 0.0f, 1.0f);
     out.hi = std::clamp(out.hi * k, 0.0f, 1.0f);
 

@@ -100,7 +100,7 @@ int main() {
     SDL_JoystickSetVirtualAxis(j, 0, 0);
     SDL_JoystickUpdate();
 
-    // Roll on a twist axis (3): holds R and takes over stick X; pitch stays on the stick.
+    // Roll on a twist axis (3): does nothing on its own; with the Roll button (button 6 -> R) held it takes over stick X. Pitch stays on the stick.
     {
         Bindings rb = b;
         rb.targets[(int)Target::RollRight].push_back(Source{ SourceKind::JoyAxis, 3, +1, 0 });
@@ -109,16 +109,21 @@ int main() {
         SDL_JoystickSetVirtualAxis(j, 1, -32768);
         SDL_JoystickUpdate();
         resolve(rb, st, &btn, &x, &y);
+        assert(!(btn & 0x0010) && near(x, 0.0f) && near(y, 80.0f / 127.0f));
+        SDL_JoystickSetVirtualButton(j, 6, 1);
+        SDL_JoystickUpdate();
+        resolve(rb, st, &btn, &x, &y);
         assert((btn & 0x0010) && near(x, -80.0f / 127.0f) && near(y, 80.0f / 127.0f));
         SDL_JoystickSetVirtualAxis(j, 3, 3000);
         SDL_JoystickUpdate();
         resolve(rb, st, &btn, &x, &y);
-        assert(!(btn & 0x0010));
+        assert((btn & 0x0010) && near(x, 0.0f));
         SDL_JoystickSetVirtualAxis(j, 3, 32767);
         SDL_JoystickSetVirtualHat(j, 0, SDL_HAT_LEFT);
         SDL_JoystickUpdate();
         resolve(rb, st, &btn, &x, &y);
-        assert(!(btn & 0x0010) && (btn & 0x0008) && near(x, -1.0f));
+        assert((btn & 0x0008) && near(x, -1.0f));
+        SDL_JoystickSetVirtualButton(j, 6, 0);
         SDL_JoystickSetVirtualHat(j, 0, SDL_HAT_CENTERED);
         SDL_JoystickSetVirtualAxis(j, 3, 0);
         SDL_JoystickSetVirtualAxis(j, 1, 0);
@@ -161,6 +166,16 @@ int main() {
     assert(near(throttle_speed(1.0f, 0.5f, 2.25f, 2.625f, 3.75f), 3.75f));
     assert(near(throttle_speed(0.75f, 0.5f, 2.25f, 2.625f, 3.75f), 3.1875f));
     assert(near(throttle_speed(0.5f, 0.5f, 2.0f, 9.0f, 4.0f), 3.0f));
+
+    // Saitek X52 (7 axes): throttle on axis 2, twist on axis 5 as roll.
+    {
+        Bindings x;
+        int xd = find_or_add_joy_device(x, "guid-x52", 0, "X52 H.O.T.A.S.", &added);
+        add_joystick_defaults(x, xd, 7, 34, 1);
+        assert(x.targets[(int)Target::Throttle].size() == 1 && x.targets[(int)Target::Throttle][0].code == 2);
+        assert(x.targets[(int)Target::RollRight].size() == 1 && x.targets[(int)Target::RollRight][0].code == 5);
+        assert(x.targets[(int)Target::StickRight].size() == 1 && x.targets[(int)Target::StickRight][0].code == 0);
+    }
 
     // A device named "throttle" binds only its first axis, to Throttle.
     Bindings th;
