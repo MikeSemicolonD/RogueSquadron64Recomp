@@ -159,7 +159,7 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 - **Can't render when cross-built.** Metal shaders need `xcrun metal`, which exists only on macOS, so a cross-build embeds the MSL source (`RT64_METAL_COMPILE=OFF`) instead of compiled metallibs. A build meant to run has to be made on a Mac (or a macOS CI runner).
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
-- **Not yet done:** an `.app` bundle with SDL2 inside, and a first run on Apple Silicon (16 KB pages, the POSIX fault guard).
+- **Not yet done:** an `.app` bundle with SDL2 inside.
 
 ---
 
