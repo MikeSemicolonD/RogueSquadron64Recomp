@@ -24,11 +24,17 @@ static unsigned g_rs64_audio_underruns = 0;   // dry-queue arrivals (see queue_s
 #include "imgui/imgui.h"
 #include "rhi/rt64_render_hooks.h"
 #include "input_bindings.h"
+#include "rumble.h"
+#include "touch_input.h"
+#include "touch_menu.h"
+#include "touch_config.h"
+#include "game_state.h"           // rs64_state_current_id
 #include "debug_logs.h"
 #include "main.h"                 // this file's own exports (fullscreen/quit hooks)
 #include "upstream_compat.h"      // rs64_vi_driven
 #include "hook_helpers.h"         // g_vi_tick, g_boot_pulse_start
 #include "nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
+
 #include "rt64_render_context.h"  // recomp::create_render_context
 #include "../rsp/dpc_bridge.h"    // rs64_dpc_drain_histogram
 #include <mutex>
@@ -36,7 +42,18 @@ static unsigned g_rs64_audio_underruns = 0;   // dry-queue arrivals (see queue_s
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 
+// Android keeps SDL's main -> SDL_main rename: SDLActivity calls SDL_main in libmain.so.
+#ifndef __ANDROID__
 #define SDL_MAIN_HANDLED
+#endif
+#ifdef _WIN32
+#define RS64_NULL_DEVICE "NUL"
+#else
+#define RS64_NULL_DEVICE "/dev/null"
+#endif
+#ifdef __ANDROID__
+#include "android_host.h"
+#endif
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -646,7 +663,16 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
 // Audio (SDL2)
 // ---------------------------------------------------------------------------
 static SDL_AudioDeviceID audio_device = 0;
+#ifdef __ANDROID__
+// False from SDL_APP_WILLENTERBACKGROUND until SDL_APP_DIDENTERFOREGROUND. While false the game keeps running but its
+// audio is dropped: SDL pauses the device, so queued samples would otherwise play seconds late on return.
+static std::atomic<bool> g_android_foreground{true};
+// Set on return to the foreground: the next buffer reopens the device, since Android's paused stream can resume holding stale sound.
+static std::atomic<bool> g_android_audio_reopen{false};
+#endif
 static uint32_t audio_sample_rate = 48000;
+
+static void open_audio_device(uint32_t freq);
 
 static void set_frequency(uint32_t freq) {
     // Don't churn the device when the rate hasn't changed — each close/reopen
@@ -655,6 +681,10 @@ static void set_frequency(uint32_t freq) {
     if (audio_device && freq == audio_sample_rate) {
         return;
     }
+    open_audio_device(freq);
+}
+
+static void open_audio_device(uint32_t freq) {
     if (audio_device) {
         SDL_CloseAudioDevice(audio_device);
         audio_device = 0;
@@ -683,6 +713,25 @@ static void queue_samples(int16_t* samples, size_t num_samples) {
     // so only HALF of every buffer reached SDL (the game submits 0x300=768-byte
     // buffers; SDL was getting 384) — the dominant cause of the underrun/crackle.
     const size_t num_bytes = num_samples * sizeof(int16_t);
+#ifdef __ANDROID__
+    if (!g_android_foreground.load()) {
+        return;
+    }
+    static uint32_t s_probe_until = 0;
+    if (g_android_audio_reopen.exchange(false)) {
+        open_audio_device(audio_sample_rate);
+        s_probe_until = SDL_GetTicks() + 10000;
+        fprintf(stderr, "[Audio] reopened device after returning to the foreground\n");
+    }
+    // Measure what is still queued in SDL for a while after returning (a multi-second value would mean the backlog is on our side).
+    if (audio_device && !SDL_TICKS_PASSED(SDL_GetTicks(), s_probe_until)) {
+        static uint32_t s_last = 0;
+        if (SDL_GetTicks() - s_last >= 1000) {
+            s_last = SDL_GetTicks();
+            fprintf(stderr, "[Audio] after resume: SDL queued %.1f ms\n", SDL_GetQueuedAudioSize(audio_device) / 4.0 * 1000.0 / audio_sample_rate);
+        }
+    }
+#endif
     if (audio_device) {
         // Underrun gauge: the device queue was already dry when this buffer arrived (audible gap).
         { static int warm = 0;
@@ -1224,6 +1273,155 @@ static float                 g_mouse_ax = 0.0f;   // accumulated relative motion
 static float                 g_mouse_ay = 0.0f;
 static uint32_t              g_mouse_btn = 0;
 
+// Raw joysticks (flight sticks, HOTAS throttles, pedals): every joystick SDL doesn't treat as a
+// gamepad. g_joy_by_dev maps Bindings::joy_devices to the open handle. Both guarded by g_bindings_mtx.
+struct OpenJoy {
+    SDL_Joystick*  joy = nullptr;
+    SDL_JoystickID id = -1;
+    std::string    guid;
+    int            ordinal = 0;
+    SDL_Haptic*    haptic = nullptr;   // force-feedback sticks without SDL_JoystickRumble
+};
+static std::vector<OpenJoy>       g_open_joys;
+static std::vector<SDL_Joystick*> g_joy_by_dev;
+
+// Throttle lever position [0,1] from the last input poll, -1 when no throttle is bound or connected.
+static std::atomic<float> g_throttle{-1.0f};
+
+// Per-craft speed hooks in rogue_squadron.toml call this just before the craft's current speed steps toward its
+// target. Addresses are f32 game constants (base_addr 0 = unscaled, cruise_addr 0 = none); a nonzero f32 at
+// skip_addr (a scripted boost) keeps the game's target. ROGUESQ_THROTTLE=<0..1> forces a position (headless tests).
+extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t base_addr, uint32_t floor_addr, uint32_t cruise_addr, uint32_t cap_addr, uint32_t skip_addr) {
+    static const float s_forced = []() { const char* e = recomp::dbg::env_str("ROGUESQ_THROTTLE"); return e ? (float)std::atof(e) : -1.0f; }();
+    const float p = s_forced >= 0.0f ? s_forced : g_throttle.load();
+    if (p < 0.0f) return target;
+    auto f32 = [rdram](uint32_t addr) { float f; memcpy(&f, rdram + (addr - 0x80000000u), 4); return f; };
+    if (skip_addr && f32(skip_addr) != 0.0f) return target;
+    const float base = base_addr ? f32(base_addr) : 1.0f;
+    const float min_speed = base * f32(floor_addr);
+    const float max_speed = base * f32(cap_addr);
+    const float cruise_speed = cruise_addr ? base * f32(cruise_addr) : -1.0f;
+    if (!(max_speed > min_speed)) return target;
+    float cruise_at;
+    { std::lock_guard<std::mutex> lk(g_bindings_mtx);
+      cruise_at = g_bindings.throttle_cruise; }
+    const float speed = rs64::input::throttle_speed(p, cruise_at, min_speed, cruise_speed, max_speed);
+    if (recomp::dbg::log_throttle()) {
+        static int n = 0;
+        if ((++n % 60) == 1) fprintf(stderr, "[throttle] pos=%.2f range=%.3f/%.3f/%.3f game=%.3f -> %.3f\n", p, min_speed, cruise_speed, max_speed, target, speed);
+    }
+    return speed;
+}
+
+// Rumble Pak reported to the game (all 13 built-in effects). Set from rumble.enabled at startup or when it is
+// turned on; never cleared, since the game only probes for the pak at mission start. Turning rumble off mutes the host output.
+static std::atomic<bool> g_report_rumble_pak{false};
+
+static void rebuild_joy_map_locked() {
+    g_joy_by_dev.assign(g_bindings.joy_devices.size(), nullptr);
+    for (const OpenJoy& oj : g_open_joys) {
+        for (size_t d = 0; d < g_bindings.joy_devices.size(); ++d) {
+            if (g_bindings.joy_devices[d].guid == oj.guid && g_bindings.joy_devices[d].ordinal == oj.ordinal) {
+                g_joy_by_dev[d] = oj.joy;
+            }
+        }
+    }
+}
+
+static void open_raw_joystick(int device_index) {
+    if (SDL_IsGameController(device_index)) return;
+    SDL_Joystick* j = SDL_JoystickOpen(device_index);
+    if (!j) return;
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+    OpenJoy oj;
+    oj.joy = j;
+    oj.id = SDL_JoystickInstanceID(j);
+    for (const OpenJoy& o : g_open_joys) {
+        if (o.id == oj.id) return;
+    }
+    char guid[64] = {};
+    SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(j), guid, sizeof(guid));
+    oj.guid = guid;
+    for (const OpenJoy& o : g_open_joys) {
+        if (o.guid == oj.guid) oj.ordinal++;
+    }
+    const char* name = SDL_JoystickName(j);
+    const int axes = SDL_JoystickNumAxes(j), buttons = SDL_JoystickNumButtons(j), hats = SDL_JoystickNumHats(j);
+    bool added = false;
+    const int dev = rs64::input::find_or_add_joy_device(g_bindings, oj.guid, oj.ordinal, name ? name : "", &added);
+    if (added && dev >= 0) {
+        rs64::input::add_joystick_defaults(g_bindings, dev, axes, buttons, hats);
+        rs64::input::save_bindings(g_bindings, rs64::input::default_config_path());
+    }
+    if (!SDL_JoystickHasRumble(j) && SDL_JoystickIsHaptic(j) == SDL_TRUE) {
+        SDL_Haptic* h = SDL_HapticOpenFromJoystick(j);
+        if (h && SDL_HapticRumbleSupported(h) == SDL_TRUE && SDL_HapticRumbleInit(h) == 0) {
+            oj.haptic = h;
+        } else if (h) {
+            SDL_HapticClose(h);
+        }
+    }
+    g_open_joys.push_back(oj);
+    rebuild_joy_map_locked();
+    fprintf(stderr, "[input] joystick J%d \"%s\" axes=%d buttons=%d hats=%d rumble=%s%s\n", dev + 1, name ? name : "?",
+            axes, buttons, hats, SDL_JoystickHasRumble(j) ? "yes" : (oj.haptic ? "haptic" : "no"), added ? " (new: PC-style defaults bound)" : "");
+    fflush(stderr);
+}
+
+static void close_raw_joystick(SDL_JoystickID id) {
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+    for (size_t i = 0; i < g_open_joys.size(); ++i) {
+        if (g_open_joys[i].id != id) continue;
+        if (g_open_joys[i].haptic) SDL_HapticClose(g_open_joys[i].haptic);
+        SDL_JoystickClose(g_open_joys[i].joy);
+        g_open_joys.erase(g_open_joys.begin() + (ptrdiff_t)i);
+        rebuild_joy_map_locked();
+        fprintf(stderr, "[input] joystick removed\n");
+        fflush(stderr);
+        return;
+    }
+}
+
+// Converts the game's Rumble Pak motor pulses (plus the damage/death-spiral layers) into device rumble at ~60 Hz.
+static void rumble_thread_main() {
+    bool prev_any = false;
+    float haptic_last = 0.0f;
+    auto haptic_t = std::chrono::steady_clock::now();
+    for (;;) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        rs64::input::RumbleConfig cfg;
+        { std::lock_guard<std::mutex> lk(g_bindings_mtx);
+          cfg = g_bindings.rumble; }
+        const char* st = rs64_state_current_id();
+        const bool in_mission = st && std::strcmp(st, "mission") == 0;
+        const rs64::rumble::Output out = rs64::rumble::tick(cfg, (const uint8_t*)g_recomp_rdram_for_wp_raw, in_mission);
+        const bool any = out.lo > 0.0f || out.hi > 0.0f;
+        if (!any && !prev_any) continue;
+        prev_any = any;
+        const Uint16 lo = (Uint16)(out.lo * 65535.0f), hi = (Uint16)(out.hi * 65535.0f);
+        const Uint32 ms = any ? 100 : 0;
+        const float mag = std::max(out.lo, out.hi);
+        const auto now = std::chrono::steady_clock::now();
+        const bool haptic_due = !any || std::fabs(mag - haptic_last) > 0.05f || now - haptic_t > std::chrono::milliseconds(100);
+        std::lock_guard<std::mutex> lk(g_bindings_mtx);
+        if (controller) SDL_GameControllerRumble(controller, lo, hi, ms);
+        for (const OpenJoy& oj : g_open_joys) {
+            if (!g_bindings.joystick_enabled) break;
+            if (!oj.haptic) {
+                SDL_JoystickRumble(oj.joy, lo, hi, ms);
+                continue;
+            }
+            if (!haptic_due) continue;
+            if (any) SDL_HapticRumblePlay(oj.haptic, mag, 150);
+            else SDL_HapticRumbleStop(oj.haptic);
+        }
+        if (haptic_due) {
+            haptic_last = any ? mag : 0.0f;
+            haptic_t = now;
+        }
+    }
+}
+
 // Fullscreen: set/toggled from any thread (menu, UI); applied on the main thread
 // in poll_input via SDL_SetWindowFullscreen (RT64 resizes its swapchain off the
 // resulting resize event). g_sdl_window is set in create_window.
@@ -1235,6 +1433,316 @@ extern "C" void rs64_set_fullscreen(int on)   { g_fullscreen.store(on != 0); g_f
 extern "C" int  rs64_get_fullscreen(void)     { return g_fullscreen.load() ? 1 : 0; }
 extern "C" void rs64_toggle_fullscreen(void)  { g_fullscreen.store(!g_fullscreen.load()); g_fullscreen_dirty.store(true); }
 
+// Touch engine: finger/sensor events arrive on the SDL pump thread, polls on the game thread.
+static rs64::touch::Engine g_touch;
+static std::mutex g_touch_mtx;
+static rs64::touch::MenuSnapshot g_touch_menu_at_down{};
+static SDL_Sensor* g_accel_sensor = nullptr;
+static SDL_Sensor* g_gyro_sensor = nullptr;
+// Set by the TOUCH LAYOUT menu action on the game thread; the next touch poll opens the editor.
+static std::atomic<bool> g_touch_edit_request{false};
+
+extern "C" void rs64_touch_layout_request(void) { g_touch_edit_request.store(true); }
+
+static uint8_t* touch_rdram() {
+    return (uint8_t*)g_recomp_rdram_for_wp_raw;
+}
+
+static rs64::touch::Context touch_context() {
+    uint8_t* r = touch_rdram();
+    // The account menu (select game / level / craft) is carousel-like on every screen; its classifier sub-states are unreliable.
+    if (r && g_active_overlay == 1 && rs64::touch::account_screen(r) != rs64::touch::AccountScreen::NotAccount) {
+        return rs64::touch::Context::Carousel;
+    }
+    return rs64::touch::classify(g_active_overlay, rs64_state_current_id(), r && rs64::touch::read_paused(r), r && rs64::touch::read_demo(r));
+}
+
+static rs64::touch::AccountScreen touch_account_screen() {
+    uint8_t* r = touch_rdram();
+    if (!r || g_active_overlay != 1) {
+        return rs64::touch::AccountScreen::NotAccount;
+    }
+    return rs64::touch::account_screen(r);
+}
+
+static bool touch_state_is(const char* want) {
+    const char* id = rs64_state_current_id();
+    return id && std::strcmp(id, want) == 0;
+}
+
+// Tap-to-select only where the resident menu data is what's on screen: list menus, Passcodes' ENTER CODE/BACK, SELECT GAME's ERASE GAME.
+static bool touch_menu_hits_allowed() {
+    return touch_context() == rs64::touch::Context::ListMenu || touch_state_is("menu.passcodes") ||
+           touch_account_screen() == rs64::touch::AccountScreen::SelectGame;
+}
+
+// SOUND SETTINGS volume bar being edited (opened by a touch): touches on the bar set the value from the finger's x.
+struct TouchSlider {
+    bool active = false;
+    int entry = -1;
+    uint32_t opened_ms = 0;
+    int64_t finger = -1;
+    int last_value = -1;
+    uint32_t close_ms = 0;   // a touch off the bar just closed it: that tap only closes the game's slider edit
+};
+static TouchSlider g_touch_slider;
+
+static void window_size(float* w, float* h) {
+    int iw = 0, ih = 0;
+    if (g_sdl_window) {
+        SDL_GetWindowSize(g_sdl_window, &iw, &ih);
+    }
+    *w = (float)iw;
+    *h = (float)ih;
+}
+
+// Returns true if the finger event was on the open volume bar. The game steps 1 per held frame in its slider edit
+// mode and applies the mixer itself, so write one step short of the target and inject one frame toward it.
+static bool touch_slider_event(rs64::touch::FingerEvent ev, int64_t finger, float x, float y) {
+    using rs64::touch::FingerEvent;
+    TouchSlider& s = g_touch_slider;
+    uint8_t* r = touch_rdram();
+    float w, h;
+    window_size(&w, &h);
+    rs64::touch::SliderBar bar{};
+    if (!s.active || !r || !touch_state_is("menu.sound_settings") || !rs64::touch::sound_slider(r, s.entry, w, h, &bar)) {
+        s.active = false;
+        return false;
+    }
+    if (ev == FingerEvent::Down) {
+        if (y < bar.y0 || y > bar.y1) {
+            // Off the bar: this touch closes the slider (an overlay B does it itself; a tap sends only A, see touch_menu_tap).
+            s.active = false;
+            s.close_ms = SDL_GetTicks();
+            return false;
+        }
+        s.finger = finger;
+        s.last_value = -1;
+    }
+    if (finger != s.finger) {
+        return false;
+    }
+    if (ev == FingerEvent::Up) {
+        s.finger = -1;
+        return true;
+    }
+    // The bar fades in for about 1/3 s after opening and ignores input meanwhile.
+    if (SDL_GetTicks() - s.opened_ms < 400) {
+        return true;
+    }
+    const int target = rs64::touch::slider_value_at(bar, x);
+    if (target != s.last_value) {
+        s.last_value = target;
+        if (target > 0) {
+            rs64::touch::write_volume(r, bar.channel, (uint8_t)(target - 1));
+            g_touch.inject(0, 1.0f, 0.0f, 1);
+        } else {
+            rs64::touch::write_volume(r, bar.channel, 1);
+            g_touch.inject(0, -1.0f, 0.0f, 1);
+        }
+    }
+    return true;
+}
+
+// Menu/carousel tap handling (called by the engine with g_touch_mtx held): per-screen targets, then menu entry hit-test.
+static rs64::touch::TapAction touch_menu_tap(float x, float y) {
+    using rs64::touch::TapAction;
+    float w, h;
+    window_size(&w, &h);
+    uint8_t* r = touch_rdram();
+    if (!r) {
+        return TapAction::None;
+    }
+    if (touch_context() == rs64::touch::Context::PauseMenu) {
+        return rs64::touch::pause_tap_select(r, x, y, w, h) ? TapAction::Confirm : TapAction::None;
+    }
+    // PASSCODES: the engine steps on side touches itself; a tap on the wheel's center enters the letter.
+    if (touch_context() == rs64::touch::Context::Wheel && rs64::touch::on_wheel(y)) {
+        return TapAction::Confirm;
+    }
+    const rs64::touch::AccountScreen acct = touch_account_screen();
+    if (acct == rs64::touch::AccountScreen::SelectGame) {
+        const TapAction slot = rs64::touch::select_game_tap(x, y, w, h);
+        if (slot != TapAction::None) {
+            return slot;
+        }
+    } else if (acct == rs64::touch::AccountScreen::Levels) {
+        return rs64::touch::level_select_tap(x, y);
+    } else if (acct == rs64::touch::AccountScreen::Craft) {
+        return rs64::touch::craft_select_tap(x, y);
+    } else if (touch_context() == rs64::touch::Context::Carousel) {
+        const TapAction arrow = rs64::touch::carousel_arrow_tap(x, y);
+        if (arrow != TapAction::None) {
+            return arrow;
+        }
+    }
+    // The first tap after leaving an open volume bar only closes the game's slider edit (A), without moving the highlight.
+    if (g_touch_slider.close_ms != 0 && SDL_GetTicks() - g_touch_slider.close_ms < 600) {
+        g_touch_slider.close_ms = 0;
+        return TapAction::Confirm;
+    }
+    g_touch_slider.close_ms = 0;
+    g_touch_slider.active = false;
+    if (!touch_menu_hits_allowed() || !rs64::touch::tap_select(r, g_touch_menu_at_down, x, y, w, h)) {
+        return TapAction::None;
+    }
+    // Confirming a volume entry opens its bar; remember it so touches on the bar set the value.
+    rs64::touch::MenuSnapshot snap{};
+    std::vector<rs64::touch::Box> boxes;
+    rs64::touch::SliderBar bar{};
+    if (rs64::touch::read_menu(r, &snap, &boxes, w, h) && rs64::touch::sound_slider(r, snap.current, w, h, &bar)) {
+        g_touch_slider.active = true;
+        g_touch_slider.entry = snap.current;
+        g_touch_slider.opened_ms = SDL_GetTicks();
+        g_touch_slider.finger = -1;
+    }
+    return TapAction::Confirm;
+}
+
+// Pause volume bars: a touch on a bar highlights its row and sets the value from the finger's x while it drags.
+// The pause slider steps by a frame-time-scaled amount, so write one short and inject one frame of right (lands within 1).
+struct TouchPauseSlider {
+    int64_t finger = -1;
+    int channel = -1;
+    int row = -1;
+    int last_value = -1;
+};
+static TouchPauseSlider g_touch_pause_slider;
+
+static bool touch_pause_slider_event(rs64::touch::FingerEvent ev, int64_t finger, float x, float y) {
+    using rs64::touch::FingerEvent;
+    TouchPauseSlider& s = g_touch_pause_slider;
+    uint8_t* r = touch_rdram();
+    if (!r || touch_context() != rs64::touch::Context::PauseMenu) {
+        s.finger = -1;
+        return false;
+    }
+    float w, h;
+    window_size(&w, &h);
+    std::vector<rs64::touch::PauseLine> lines;
+    if (!rs64::touch::read_pause_lines(r, w, h, &lines)) {
+        return false;
+    }
+    const rs64::touch::PauseLine* bar = nullptr;
+    if (ev == FingerEvent::Down) {
+        for (const rs64::touch::PauseLine& l : lines) {
+            if (l.bar && l.channel >= 0 && x >= l.x0 - 0.03f && x <= l.x1 + 0.03f && y >= l.y0 - 0.02f && y <= l.y1 + 0.02f) {
+                bar = &l;
+            }
+        }
+        if (!bar) {
+            return false;
+        }
+        s = { finger, bar->channel, bar->selectable, -1 };
+        rs64::touch::pause_set_entry(r, s.row);
+    } else {
+        if (finger != s.finger) {
+            return false;
+        }
+        if (ev == FingerEvent::Up) {
+            s.finger = -1;
+            return true;
+        }
+        for (const rs64::touch::PauseLine& l : lines) {
+            if (l.bar && l.channel == s.channel) {
+                bar = &l;
+            }
+        }
+        if (!bar) {
+            return true;
+        }
+    }
+    const int target = rs64::touch::pause_slider_value(*bar, x);
+    if (target != s.last_value) {
+        s.last_value = target;
+        rs64::touch::write_volume(r, s.channel, (uint8_t)(target > 0 ? target - 1 : 0));
+        g_touch.inject(0, 1.0f, 0.0f, 1);
+    }
+    return true;
+}
+
+static void touch_event(const SDL_Event& e) {
+    using rs64::touch::FingerEvent;
+    const FingerEvent ev = (e.type == SDL_FINGERDOWN) ? FingerEvent::Down : (e.type == SDL_FINGERUP) ? FingerEvent::Up : FingerEvent::Move;
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    if (g_touch.editing()) {
+        g_touch.finger((int64_t)e.tfinger.fingerId, ev, e.tfinger.x, e.tfinger.y, e.tfinger.timestamp);
+        return;
+    }
+    if (touch_slider_event(ev, (int64_t)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y)) {
+        return;
+    }
+    if (touch_pause_slider_event(ev, (int64_t)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y)) {
+        return;
+    }
+    if (ev == FingerEvent::Down) {
+        std::vector<rs64::touch::Box> unused;
+        float w, h;
+        window_size(&w, &h);
+        if (uint8_t* r = touch_rdram()) {
+            rs64::touch::read_menu(r, &g_touch_menu_at_down, &unused, w, h);
+        }
+    }
+    g_touch.finger((int64_t)e.tfinger.fingerId, ev, e.tfinger.x, e.tfinger.y, e.tfinger.timestamp);
+}
+
+// Tilt steering: screen roll from gravity, low-passed so hand shake and linear acceleration don't jitter the turn.
+static void accel_event(const SDL_Event& e) {
+    static float s_roll = 0.0f;
+    const bool flipped = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
+    float roll = 0.0f;
+    const bool valid = rs64::touch::tilt_angles(e.sensor.data[0], e.sensor.data[1], e.sensor.data[2], flipped, &roll);
+    s_roll += (roll - s_roll) * 0.25f;
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    g_touch.tilt(s_roll, valid);
+}
+
+// Gyro rates for the steering assist and mouse-like up/down. Device axes are portrait-natural: the screen normal is device z (+ = counter-clockwise, so negate
+// for clockwise), and tipping the top edge away turns about screen-right (device -y, flipped on the other landscape side).
+static void gyro_event(const SDL_Event& e) {
+    const bool flipped = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
+    const float s = flipped ? -1.0f : 1.0f;
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    g_touch.gyro_rate(-e.sensor.data[2], s * e.sensor.data[1]);
+}
+
+static SDL_Sensor* open_sensor(SDL_SensorType type) {
+    for (int i = 0; i < SDL_NumSensors(); ++i) {
+        if (SDL_SensorGetDeviceType(i) == type) {
+            return SDL_SensorOpen(i);
+        }
+    }
+    return nullptr;
+}
+
+// Opens the accelerometer (tilt) and gyroscope (rate assist) while the GYRO STEERING toggle is on, closes them when off.
+static void update_gyro_sensor() {
+    const bool want = rs64::touch::gyro_enabled();
+    if (want && !g_accel_sensor) {
+        static bool s_warned = false;
+        g_accel_sensor = open_sensor(SDL_SENSOR_ACCEL);
+        g_gyro_sensor = open_sensor(SDL_SENSOR_GYRO);
+        if ((!g_accel_sensor || !g_gyro_sensor) && !s_warned) {
+            s_warned = true;
+            fprintf(stderr, "[touch] accelerometer=%s gyroscope=%s\n", g_accel_sensor ? "yes" : "no", g_gyro_sensor ? "yes" : "no");
+        }
+    } else if (!want && g_accel_sensor) {
+        SDL_SensorClose(g_accel_sensor);
+        g_accel_sensor = nullptr;
+        if (g_gyro_sensor) {
+            SDL_SensorClose(g_gyro_sensor);
+            g_gyro_sensor = nullptr;
+        }
+    }
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    rs64::touch::Config tc = g_touch.config();
+    tc.gyro = want && g_accel_sensor;
+    g_touch.set_config(tc);
+    if (!g_gyro_sensor) {
+        g_touch.gyro_rate(0.0f, 0.0f);
+    }
+}
+
 static void apply_fullscreen_if_requested() {
     if (g_fullscreen_dirty.exchange(false) && g_sdl_window) {
         SDL_SetWindowFullscreen(g_sdl_window, g_fullscreen.load() ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -1245,6 +1753,31 @@ static void poll_input() {
     apply_fullscreen_if_requested();
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
+        if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERMOTION || e.type == SDL_FINGERUP) {
+            touch_event(e);
+            continue;
+        }
+        if (e.type == SDL_SENSORUPDATE && g_gyro_sensor && e.sensor.which == SDL_SensorGetInstanceID(g_gyro_sensor)) {
+            gyro_event(e);
+            continue;
+        }
+        if (e.type == SDL_SENSORUPDATE && g_accel_sensor && e.sensor.which == SDL_SensorGetInstanceID(g_accel_sensor)) {
+            accel_event(e);
+            continue;
+        }
+        // Android's system back gesture/button arrives as AC_BACK and means B.
+        if (e.type == SDL_KEYDOWN && e.key.repeat == 0 && e.key.keysym.scancode == SDL_SCANCODE_AC_BACK) {
+            std::lock_guard<std::mutex> lk(g_touch_mtx);
+            g_touch_slider.active = false;
+            g_touch.back_pressed();
+            continue;
+        }
+        // Any physical input hides the touch overlay until the next touch.
+        if (e.type == SDL_KEYDOWN || e.type == SDL_CONTROLLERBUTTONDOWN || e.type == SDL_JOYBUTTONDOWN ||
+            (e.type == SDL_CONTROLLERAXISMOTION && std::abs(e.caxis.value) > 16000)) {
+            std::lock_guard<std::mutex> lk(g_touch_mtx);
+            g_touch.physical_input();
+        }
         // F6 toggles the controls/rebind window. Mouse-steering capture is
         // automatic (focus-driven, in update_gfx) -- no manual toggle.
         if (e.type == SDL_KEYDOWN && e.key.repeat == 0) {
@@ -1252,6 +1785,12 @@ static void poll_input() {
                 rs64_toggle_fullscreen();   // Alt+Enter: standard fullscreen toggle
             } else if (e.key.keysym.scancode == SDL_SCANCODE_F6) {
                 g_show_controls.store(!g_show_controls.load());
+            } else if (e.key.keysym.scancode == SDL_SCANCODE_J && (e.key.keysym.mod & KMOD_CTRL)) {
+                // Ctrl+J toggles joystick input, as in the PC version.
+                std::lock_guard<std::mutex> lk(g_bindings_mtx);
+                g_bindings.joystick_enabled = !g_bindings.joystick_enabled;
+                fprintf(stderr, "[input] joystick %s\n", g_bindings.joystick_enabled ? "on" : "off");
+                fflush(stderr);
             } else if (e.key.keysym.scancode == SDL_SCANCODE_F5) {
                 // Toggle Factor 5's built-in frame-profiler/debug-text HUD.
                 // Gate byte at virtual 0x80038CE0 (retail leaves it 0); the
@@ -1285,9 +1824,16 @@ static void poll_input() {
         if (e.type == SDL_CONTROLLERDEVICEREMOVED && controller) {
             if (SDL_GameControllerGetJoystick(controller) ==
                 SDL_JoystickFromInstanceID(e.cdevice.which)) {
+                std::lock_guard<std::mutex> lk(g_bindings_mtx);
                 SDL_GameControllerClose(controller);
                 controller = nullptr;
             }
+        }
+        if (e.type == SDL_JOYDEVICEADDED) {
+            open_raw_joystick(e.jdevice.which);
+        }
+        if (e.type == SDL_JOYDEVICEREMOVED) {
+            close_raw_joystick(e.jdevice.which);
         }
         if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_F12) {
             fprintf(stderr, "[F12] manual minidump requested\n");
@@ -1307,6 +1853,7 @@ static void poll_input() {
             }
         }
     }
+    update_gyro_sensor();
     // Drain SDL's relative-motion accumulator once per poll. Read from the
     // internal state (updated before RT64's event filter), so capture is robust
     // in dev mode. Only feed the resolver while capture is engaged.
@@ -1347,7 +1894,29 @@ static inline uint16_t boot_start_pulse() {
     return ((SDL_GetTicks() % 240u) < 120u) ? N64_START_BUTTON : 0;
 }
 
-static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y) {
+static rs64::touch::Pad poll_touch() {
+    float w, h;
+    window_size(&w, &h);
+    const rs64::touch::Context ctx = touch_context();
+    float px0 = 0.0f, px1 = 1.0f;
+    rs64::touch::picture_extent(touch_rdram(), g_active_overlay, w, h, &px0, &px1);
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    g_touch.set_screen(w, h);
+    g_touch.set_picture(px0, px1);
+    if (g_touch_edit_request.exchange(false) && g_touch.config().enabled) {
+        g_touch_slider.active = false;
+        g_touch.begin_edit();
+    }
+    if (g_touch.take_layout_saved()) {
+        rs64::touch::Config& shared = rs64::touch::shared_config();
+        shared.layout = g_touch.config().layout;
+        shared.stick_split = g_touch.config().stick_split;
+        rs64::touch::save_config(shared, rs64::touch::config_path());
+    }
+    return g_touch.poll(ctx, SDL_GetTicks());
+}
+
+static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, float* y) {
     if (controller_num != 0) {
         *buttons = 0; *x = 0.0f; *y = 0.0f;
         return false;
@@ -1397,9 +1966,18 @@ static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float
       s_sm_dx += (raw_dx - s_sm_dx) * alpha;
       s_sm_dy += (raw_dy - s_sm_dy) * alpha;
       st.mouse_dx = s_sm_dx; st.mouse_dy = s_sm_dy;
-      active = rs64::input::resolve(g_bindings, st, &btn, x, y); }
+      st.joys = g_joy_by_dev.data();
+      st.joys_len = (int)g_joy_by_dev.size();
+      active = rs64::input::resolve(g_bindings, st, &btn, x, y);
+      g_throttle.store(rs64::input::throttle_position(g_bindings, st)); }
 
     if (!active) {
+        // Touch counts as a connected controller (no "NO CONTROLLER" gate on a phone).
+        if (g_touch.config().enabled) {
+            rs64::touch::Pad tp = poll_touch();
+            *buttons = tp.buttons | boot_start_pulse(); *x = tp.x; *y = tp.y;
+            return true;
+        }
         // No keyboard and no gamepad: keep the fake-controller path so headless
         // runs still clear the "NO CONTROLLER" gate.
         if (fake_controller_enabled()) {
@@ -1420,15 +1998,119 @@ static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float
     if (s_auto < 0) s_auto = env_int("ROGUESQ_AUTO_START", 0);
     if (s_auto > 0 && (SDL_GetTicks() % (uint32_t)s_auto) < 120u) btn |= N64_START_BUTTON;
     btn |= boot_start_pulse();
+    rs64::touch::merge(poll_touch(), &btn, x, y);
     *buttons = btn;
     return true;
 }
 
-static void set_rumble(int, bool) {}
+// ROGUESQ_INPUT_RECORD=<file> records controller 0 from the first input poll after launch (menus included); ROGUESQ_INPUT_REPLAY=<file> plays it back from the same point.
+// Lines after the header: "<ms> <vi> <poll> <buttons hex> <x> <y>". v4 (written now) has one line per poll; replay serves the recorded sample nearest the current wall-clock ms (within half a poll).
+// v3 (older) was written on change and replays by wall-clock ms with the stick blended between close samples.
+struct InputRec { uint32_t ms, vi, poll; uint16_t buttons; float x, y; };
+
+static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y) {
+    static const char* s_rec_path = recomp::dbg::env_str("ROGUESQ_INPUT_RECORD");
+    static const char* s_play_path = recomp::dbg::env_str("ROGUESQ_INPUT_REPLAY");
+    static bool s_anchored = false;
+    static uint32_t s_poll = 0;
+    static unsigned s_vi0 = 0;
+    static std::chrono::steady_clock::time_point s_t0;
+    if ((controller_num == 0) && (s_rec_path || s_play_path)) {
+        if (!s_anchored) {
+            s_anchored = true;
+            s_poll = 0;
+            s_vi0 = g_vi_tick;
+            s_t0 = std::chrono::steady_clock::now();
+            fprintf(stderr, "[input-rec] first poll: %s\n", s_play_path ? "replaying" : "recording");
+        }
+    }
+    const uint32_t vi = s_anchored ? (uint32_t)(g_vi_tick - s_vi0) : 0u;
+    const uint32_t ms = s_anchored ? (uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - s_t0).count() : 0u;
+    if ((controller_num == 0) && s_play_path && s_anchored) {
+        static std::vector<InputRec> s_recs;
+        static size_t s_idx = 0;
+        static bool s_loaded = false;
+        static int s_version = 0;
+        if (!s_loaded) {
+            s_loaded = true;
+            if (FILE* f = fopen(s_play_path, "r")) {
+                char header[32] = {};
+                if ((fscanf(f, "%31s v%d", header, &s_version) == 2) && (s_version >= 3)) {
+                    InputRec r{};
+                    unsigned b = 0;
+                    while (fscanf(f, "%u %u %u %x %f %f", &r.ms, &r.vi, &r.poll, &b, &r.x, &r.y) == 6) {
+                        r.buttons = (uint16_t)b;
+                        s_recs.push_back(r);
+                    }
+                }
+                fclose(f);
+            }
+            fprintf(stderr, "[input-rec] loaded %zu entries (v%d) from %s\n", s_recs.size(), s_version, s_play_path);
+        }
+        if ((s_version >= 4) && !s_recs.empty()) {
+            // Every poll was recorded with its time, so serve the recorded sample nearest to now: at most half a poll off, and no lag builds up when the game polls at a slightly different rate.
+            auto it = std::lower_bound(s_recs.begin() + (ptrdiff_t)s_idx, s_recs.end(), ms, [](const InputRec& r, uint32_t t) { return r.ms < t; });
+            size_t j = (it == s_recs.end()) ? (s_recs.size() - 1) : (size_t)(it - s_recs.begin());
+            if ((j > 0) && ((it == s_recs.end()) || ((s_recs[j].ms - ms) > (ms - s_recs[j - 1].ms)))) {
+                j--;
+            }
+            s_idx = std::max(s_idx, j);
+        }
+        else {
+            while ((s_idx + 1 < s_recs.size()) && (s_recs[s_idx + 1].ms <= ms)) {
+                s_idx++;
+            }
+        }
+        // Close the game once the recording has played out (the last entry is written when the recorded session ended).
+        { static bool s_quit = false;
+          if (!s_quit && !s_recs.empty() && (ms > s_recs.back().ms + 500u)) {
+              s_quit = true;
+              fprintf(stderr, "[input-rec] replay finished at ms=%u, closing\n", ms);
+              rs64_menu_request_quit();
+          } }
+        const bool have = !s_recs.empty() && ((s_version >= 4) || (s_recs[s_idx].ms <= ms));
+        *buttons = have ? s_recs[s_idx].buttons : 0;
+        *x = have ? s_recs[s_idx].x : 0.0f;
+        *y = have ? s_recs[s_idx].y : 0.0f;
+        // v3 only: blend the stick between samples of continuous motion (mouse steering) so a poll that lands a few ms off still reads nearly the recorded value; held values and sudden changes still step.
+        if (have && (s_version < 4) && (s_idx + 1 < s_recs.size())) {
+            const InputRec& a = s_recs[s_idx];
+            const InputRec& b = s_recs[s_idx + 1];
+            if ((b.ms > a.ms) && (b.ms - a.ms <= 50u)) {
+                const float t = (float)(ms - a.ms) / (float)(b.ms - a.ms);
+                *x = a.x + (b.x - a.x) * t;
+                *y = a.y + (b.y - a.y) * t;
+            }
+        }
+        // Drift check: our VI/poll counts at this time vs the recorded ones.
+        { static uint32_t s_last_log = 0;
+          if (have && (ms >= s_last_log + 10000)) { s_last_log = ms; fprintf(stderr, "[input-rec] ms=%u vi=%u recorded_vi=%u poll=%u recorded_poll=%u\n", ms, vi, s_recs[s_idx].vi, s_poll, s_recs[s_idx].poll); } }
+        s_poll++;
+        return true;
+    }
+    const bool ok = get_n64_input_live(controller_num, buttons, x, y);
+    if ((controller_num == 0) && s_rec_path && s_anchored) {
+        static FILE* s_file = [](const char* p) { FILE* f = fopen(p, "w"); if (f) fprintf(f, "rs64-input v4\n"); return f; }(s_rec_path);
+        if (s_file) {
+            fprintf(s_file, "%u %u %u %04X %.9g %.9g\n", ms, vi, s_poll, *buttons, *x, *y);
+            fflush(s_file);
+        }
+        s_poll++;
+    }
+    return ok;
+}
+
+static void set_rumble(int controller_num, bool on) {
+    rs64::rumble::motor(controller_num, on);
+}
 
 static ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num) {
-    if (controller_num == 0 && (controller || g_bindings.keyboard_enabled || fake_controller_enabled())) {
-        return { ultramodern::input::Device::Controller, ultramodern::input::Pak::None };
+    bool any_joy = false;
+    { std::lock_guard<std::mutex> lk(g_bindings_mtx);
+      any_joy = g_bindings.joystick_enabled && !g_open_joys.empty(); }
+    if (controller_num == 0 && (controller || any_joy || g_bindings.keyboard_enabled || fake_controller_enabled())) {
+        const auto pak = g_report_rumble_pak.load() ? ultramodern::input::Pak::RumblePak : ultramodern::input::Pak::None;
+        return { ultramodern::input::Device::Controller, pak };
     }
     return { ultramodern::input::Device::None, ultramodern::input::Pak::None };
 }
@@ -1437,15 +2119,41 @@ static ultramodern::input::connected_device_info_t get_connected_device_info(int
 // (SetRenderHookImgui), between NewFrame and Render. All g_bindings mutation is
 // under g_bindings_mtx since get_n64_input reads it on the game thread. Only
 // active in developer mode (the inspector frame); F6 toggles visibility.
+// Index into g_bindings.joy_devices for an open joystick, or -1.
+static int joy_dev_locked(const OpenJoy& oj) {
+    for (size_t d = 0; d < g_bindings.joy_devices.size(); ++d) {
+        if (g_bindings.joy_devices[d].guid == oj.guid && g_bindings.joy_devices[d].ordinal == oj.ordinal) return (int)d;
+    }
+    return -1;
+}
+
+// After a profile reset, re-register connected joysticks so they get the PC-style defaults again.
+static void rebind_open_joysticks_locked() {
+    for (const OpenJoy& oj : g_open_joys) {
+        bool added = false;
+        const char* name = SDL_JoystickName(oj.joy);
+        const int dev = rs64::input::find_or_add_joy_device(g_bindings, oj.guid, oj.ordinal, name ? name : "", &added);
+        if (added && dev >= 0) {
+            rs64::input::add_joystick_defaults(g_bindings, dev, SDL_JoystickNumAxes(oj.joy), SDL_JoystickNumButtons(oj.joy), SDL_JoystickNumHats(oj.joy));
+        }
+    }
+    rebuild_joy_map_locked();
+}
+
 static void draw_controls_ui() {
     if (!g_show_controls.load()) return;
     namespace ri = rs64::input;
 
     static int capture_target = -1;                 // Target awaiting a new bind
+    static bool capture_append = false;             // Add (keep existing binds) vs Rebind (replace)
+    static bool capture_snap = false;               // joystick baseline not taken yet
     static uint8_t prev_keys[SDL_NUM_SCANCODES] = {0};
     static uint32_t prev_pad = 0, prev_mouse = 0;
+    // Joystick state when the rebind started; a button/hat press or an axis moved >50% from here is captured.
+    struct JoySnap { SDL_JoystickID id; std::vector<float> axes; std::vector<uint8_t> buttons, hats; };
+    static std::vector<JoySnap> joy_snap;
 
-    ImGui::SetNextWindowSize(ImVec2(540, 470), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(560, 560), ImGuiCond_FirstUseEver);
     bool open = true;
     if (ImGui::Begin("Controls", &open)) {
         // Action row at the top so it stays visible even if the window is taller
@@ -1458,12 +2166,13 @@ static void draw_controls_ui() {
         if (ImGui::Button("Restore defaults")) {
             std::lock_guard<std::mutex> lk(g_bindings_mtx);
             g_bindings = rs64::input::default_bindings();
+            rebind_open_joysticks_locked();
             rs64::input::save_bindings(g_bindings, rs64::input::default_config_path());
         }
         ImGui::SameLine();
         if (ImGui::Button("Close")) g_show_controls.store(false);
         ImGui::Separator();
-        ImGui::TextWrapped("Click Rebind, then press a key, gamepad button, or mouse button. Esc cancels a rebind.");
+        ImGui::TextWrapped("Click Rebind (replace) or Add, then press a key, gamepad button, mouse button, joystick button or hat, or move a joystick axis. Esc cancels.");
         {
             std::lock_guard<std::mutex> lk(g_bindings_mtx);
             ImGui::SliderFloat("Mouse sensitivity", &g_bindings.mouse_sensitivity, 0.005f, 0.30f, "%.3f");
@@ -1478,10 +2187,84 @@ static void draw_controls_ui() {
             if (ImGui::Checkbox("Fullscreen", &fs)) rs64_set_fullscreen(fs);
             ImGui::SameLine(); ImGui::TextDisabled("(Alt+Enter)");
         }
+
+        if (ImGui::CollapsingHeader("Joysticks / HOTAS")) {
+            std::lock_guard<std::mutex> lk(g_bindings_mtx);
+            ImGui::Checkbox("Joystick input", &g_bindings.joystick_enabled);
+            ImGui::SameLine(); ImGui::TextDisabled("(Ctrl+J)");
+            ImGui::SliderFloat("Analog stick range", &g_bindings.stick_range, 60.0f, 127.0f, "%.0f");
+            ImGui::TextDisabled("Full gamepad/joystick deflection. The N64 stick reaches ~80 and the game saturates there.");
+            if (g_bindings.joy_devices.empty()) ImGui::TextDisabled("No joysticks seen yet.");
+            for (size_t d = 0; d < g_bindings.joy_devices.size(); ++d) {
+                ri::JoyDevice& jd = g_bindings.joy_devices[d];
+                SDL_Joystick* j = d < g_joy_by_dev.size() ? g_joy_by_dev[d] : nullptr;
+                ImGui::PushID((int)d);
+                ImGui::Text("J%d  %s%s", (int)d + 1, jd.name.c_str(), j ? "" : "  (disconnected)");
+                ImGui::SliderFloat("Deadzone", &jd.deadzone, 0.0f, 0.5f, "%.2f");
+                const int axes = j ? SDL_JoystickNumAxes(j) : 0;
+                for (int a = 0; a < axes && a < 32; ++a) {
+                    ImGui::PushID(a);
+                    ri::RawState rs;
+                    rs.joys = g_joy_by_dev.data();
+                    rs.joys_len = (int)g_joy_by_dev.size();
+                    const float v = ri::joy_axis(g_bindings, rs, (int)d, a);
+                    char label[32];
+                    snprintf(label, sizeof(label), "axis%d  %+.2f", a, v);
+                    ImGui::ProgressBar((v + 1.0f) * 0.5f, ImVec2(220, 0), label);
+                    ImGui::SameLine();
+                    bool inv = (jd.invert_axes >> a) & 1u;
+                    if (ImGui::Checkbox("Invert", &inv)) jd.invert_axes = inv ? (jd.invert_axes | (1u << a)) : (jd.invert_axes & ~(1u << a));
+                    ImGui::PopID();
+                }
+                ImGui::PopID();
+            }
+            {
+                const float tp = g_throttle.load();
+                if (tp >= 0.0f) ImGui::ProgressBar(tp, ImVec2(220, 0), "Throttle");
+                else ImGui::TextDisabled("Throttle: not bound (pull the lever back, click Rebind on Throttle, then push it forward).");
+                ImGui::SliderFloat("Cruise at", &g_bindings.throttle_cruise, 0.05f, 0.95f, "%.2f");
+                ImGui::TextDisabled("Lever back = slowest, forward = fastest; the \"Cruise at\" position gives the craft's normal speed.");
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Rumble")) {
+            std::lock_guard<std::mutex> lk(g_bindings_mtx);
+            ri::RumbleConfig& r = g_bindings.rumble;
+            static bool s_late_pak = false;
+            if (ImGui::Checkbox("Rumble", &r.enabled) && r.enabled && !g_report_rumble_pak.exchange(true)) {
+                s_late_pak = true;
+                fprintf(stderr, "[rumble] Rumble Pak now reported; effects start with the next mission\n");
+            }
+            if (r.enabled && s_late_pak) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(starts with the next mission)");
+            }
+            ImGui::SliderFloat("Strength", &r.strength, 0.0f, 1.0f, "%.2f");
+            ImGui::Checkbox("Scale hits by damage", &r.scale_hits_by_damage);
+            ImGui::Checkbox("Sustain through death spiral", &r.sustain_death_spiral);
+            ImGui::Checkbox("Hits", &r.hit); ImGui::SameLine();
+            ImGui::Checkbox("Collisions", &r.collision); ImGui::SameLine();
+            ImGui::Checkbox("Object collisions", &r.object_collision);
+            ImGui::Checkbox("Terrain scrape", &r.terrain_scrape); ImGui::SameLine();
+            ImGui::Checkbox("Weapons", &r.weapons); ImGui::SameLine();
+            ImGui::Checkbox("Death spiral", &r.death_spiral); ImGui::SameLine();
+            ImGui::Checkbox("Crash", &r.crash);
+        }
         ImGui::Separator();
 
         // Edge-detect a captured input while a rebind is pending.
-        if (capture_target >= 0) {
+        if (capture_target >= 0 && capture_snap) {
+            std::lock_guard<std::mutex> lk(g_bindings_mtx);
+            joy_snap.clear();
+            for (const OpenJoy& oj : g_open_joys) {
+                JoySnap s{ oj.id, {}, {}, {} };
+                for (int a = 0; a < SDL_JoystickNumAxes(oj.joy); ++a) s.axes.push_back(SDL_JoystickGetAxis(oj.joy, a) / 32767.0f);
+                for (int b = 0; b < SDL_JoystickNumButtons(oj.joy); ++b) s.buttons.push_back(SDL_JoystickGetButton(oj.joy, b));
+                for (int h = 0; h < SDL_JoystickNumHats(oj.joy); ++h) s.hats.push_back(SDL_JoystickGetHat(oj.joy, h));
+                joy_snap.push_back(std::move(s));
+            }
+            capture_snap = false;
+        } else if (capture_target >= 0) {
             int nk = 0; const uint8_t* ks = SDL_GetKeyboardState(&nk);
             if (ks[SDL_SCANCODE_ESCAPE]) {
                 capture_target = -1;
@@ -1499,9 +2282,35 @@ static void draw_controls_ui() {
                     for (int b = 1; b <= 5 && !have; ++b)
                         if ((mb & SDL_BUTTON(b)) && !(prev_mouse & SDL_BUTTON(b))) { got = { ri::SourceKind::MouseButton, b, 0 }; have = true; }
                 }
+                std::lock_guard<std::mutex> lk(g_bindings_mtx);
+                for (const OpenJoy& oj : g_open_joys) {
+                    if (have) break;
+                    const int dev = joy_dev_locked(oj);
+                    const JoySnap* s = nullptr;
+                    for (const JoySnap& js : joy_snap) {
+                        if (js.id == oj.id) s = &js;
+                    }
+                    if (dev < 0 || !s) continue;
+                    for (int b = 0; b < (int)s->buttons.size() && !have; ++b) {
+                        if (SDL_JoystickGetButton(oj.joy, b) && !s->buttons[b]) { got = { ri::SourceKind::JoyButton, b, 0, (int8_t)dev }; have = true; }
+                    }
+                    for (int h = 0; h < (int)s->hats.size() && !have; ++h) {
+                        const uint8_t now_bits = SDL_JoystickGetHat(oj.joy, h) & (uint8_t)~s->hats[h];
+                        for (int bit = 0; bit < 4 && !have; ++bit) {
+                            if (now_bits & (1u << bit)) { got = { ri::SourceKind::JoyHat, h, (int8_t)(1 << bit), (int8_t)dev }; have = true; }
+                        }
+                    }
+                    for (int a = 0; a < (int)s->axes.size() && !have; ++a) {
+                        const float delta = SDL_JoystickGetAxis(oj.joy, a) / 32767.0f - s->axes[a];
+                        if (std::fabs(delta) < 0.5f) continue;
+                        int dir = delta > 0.0f ? 1 : -1;
+                        if (a < 32 && ((g_bindings.joy_devices[dev].invert_axes >> a) & 1u)) dir = -dir;
+                        got = { ri::SourceKind::JoyAxis, a, (int8_t)dir, (int8_t)dev };
+                        have = true;
+                    }
+                }
                 if (have) {
-                    std::lock_guard<std::mutex> lk(g_bindings_mtx);
-                    g_bindings.targets[capture_target].clear();
+                    if (!capture_append) g_bindings.targets[capture_target].clear();
                     g_bindings.targets[capture_target].push_back(got);
                     capture_target = -1;
                 }
@@ -1529,7 +2338,17 @@ static void draw_controls_ui() {
                     ImGui::TextUnformatted(b.empty() ? "(unbound)" : b.c_str());
                 }
                 ImGui::SameLine(330);
-                if (ImGui::SmallButton("Rebind")) capture_target = t;
+                if (ImGui::SmallButton("Rebind")) {
+                    capture_target = t;
+                    capture_append = false;
+                    capture_snap = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Add")) {
+                    capture_target = t;
+                    capture_append = true;
+                    capture_snap = true;
+                }
                 ImGui::SameLine();
                 if (ImGui::SmallButton("Clear")) g_bindings.targets[t].clear();
                 ImGui::PopID();
@@ -1627,8 +2446,166 @@ static void draw_mods_ui() {
     ImGui::End();
 }
 
-// The single ImGui render hook draws both dev panels.
+static void draw_touch_text(ImDrawList* dl, const char* s, ImVec2 c, float size, ImU32 col) {
+    ImFont* f = ImGui::GetFont();
+    const ImVec2 ts = f->CalcTextSizeA(size, FLT_MAX, 0.0f, s);
+    dl->AddText(f, size, { c.x - ts.x / 2, c.y - ts.y / 2 }, col, s);
+}
+
+// N64 controller glyphs (not action icons: controller presets remap what each button does).
+static void draw_touch_glyph(ImDrawList* dl, const rs64::touch::ButtonDef& b, float W, float H, float op, bool pressed) {
+    const std::string_view id = b.id ? b.id : "";
+    const ImVec2 c{ b.cx * W, b.cy * H };
+    const float r = b.r * H;
+    const int a = (int)(op * (pressed ? 255 : 150));
+    const ImU32 ink = IM_COL32(255, 255, 255, (int)(op * 255));
+    const ImU32 ring = IM_COL32(255, 255, 255, (int)(op * (pressed ? 255 : 170)));
+    auto color = [&](int rr, int gg, int bb) {
+        const float k = pressed ? 1.35f : 1.0f;
+        return IM_COL32(std::min(255, (int)(rr * k)), std::min(255, (int)(gg * k)), std::min(255, (int)(bb * k)), a);
+    };
+    if (id == "R") {
+        const ImVec2 p0{ c.x - r * 1.3f, c.y - r * 0.7f };
+        const ImVec2 p1{ c.x + r * 1.3f, c.y + r * 0.7f };
+        dl->AddRectFilled(p0, p1, color(120, 120, 128), r * 0.7f);
+        dl->AddRect(p0, p1, ring, r * 0.7f, 0, 2.0f);
+        draw_touch_text(dl, "R", c, r * 1.1f, ink);
+        return;
+    }
+    if (id == "CU" || id == "CD" || id == "CL" || id == "CR") {
+        dl->AddCircleFilled(c, r, color(235, 190, 30), 32);
+        dl->AddCircle(c, r, ring, 32, 2.0f);
+        const float t = r * 0.55f;
+        const ImU32 arrow = IM_COL32(60, 40, 0, (int)(op * 255));
+        if (id == "CU") {
+            dl->AddTriangleFilled({ c.x, c.y - t }, { c.x - t, c.y + t * 0.6f }, { c.x + t, c.y + t * 0.6f }, arrow);
+        } else if (id == "CD") {
+            dl->AddTriangleFilled({ c.x, c.y + t }, { c.x + t, c.y - t * 0.6f }, { c.x - t, c.y - t * 0.6f }, arrow);
+        } else if (id == "CL") {
+            dl->AddTriangleFilled({ c.x - t, c.y }, { c.x + t * 0.6f, c.y + t }, { c.x + t * 0.6f, c.y - t }, arrow);
+        } else {
+            dl->AddTriangleFilled({ c.x + t, c.y }, { c.x - t * 0.6f, c.y - t }, { c.x - t * 0.6f, c.y + t }, arrow);
+        }
+        return;
+    }
+    if (id == "GEAR") {
+        dl->AddCircleFilled(c, r, IM_COL32(70, 70, 80, a), 32);
+        for (int i = 0; i < 8; ++i) {
+            const float ang = i * 3.14159265f / 4.0f;
+            const ImVec2 d{ std::cos(ang), std::sin(ang) };
+            dl->AddLine({ c.x + d.x * r * 0.35f, c.y + d.y * r * 0.35f }, { c.x + d.x * r * 0.75f, c.y + d.y * r * 0.75f }, ink, r * 0.22f);
+        }
+        dl->AddCircleFilled(c, r * 0.5f, ink, 24);
+        dl->AddCircleFilled(c, r * 0.22f, IM_COL32(70, 70, 80, 255), 16);
+        dl->AddCircle(c, r, ring, 32, 2.0f);
+        return;
+    }
+    ImU32 fill = color(130, 130, 138);
+    if (id == "A") {
+        fill = color(50, 90, 220);
+    } else if (id == "B" || id == "MENU_B") {
+        fill = color(40, 160, 70);
+    } else if (id == "START" || id == "MENU_START") {
+        fill = color(200, 45, 45);
+    }
+    dl->AddCircleFilled(c, r, fill, 32);
+    dl->AddCircle(c, r, ring, 32, 2.0f);
+    const bool word = std::string_view(b.label).size() > 1;
+    draw_touch_text(dl, b.label, c, word ? r * 0.55f : r * 1.1f, ink);
+}
+
+// Touch controls over the game (or the layout editor); with debug_hitboxes, the menu entries' tap boxes.
+static void draw_touch_overlay() {
+    ImGuiIO& io = ImGui::GetIO();
+    const float W = io.DisplaySize.x;
+    const float H = io.DisplaySize.y;
+    const rs64::touch::Context ctx = touch_context();
+    rs64::touch::OverlayState ds;
+    rs64::touch::Config cfg;
+    {
+        std::lock_guard<std::mutex> lk(g_touch_mtx);
+        ds = g_touch.draw_state(ctx);
+        cfg = g_touch.config();
+    }
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    // Pause-menu calibration: log the HUD's line elements (at most once a second, only when they change).
+    if (cfg.debug_hitboxes && ctx == rs64::touch::Context::PauseMenu) {
+        static std::string s_last_pause;
+        static uint32_t s_last_ms = 0;
+        uint8_t* r = touch_rdram();
+        const uint32_t now = SDL_GetTicks();
+        if (r && now - s_last_ms > 1000) {
+            std::string d = rs64::touch::describe_pause(r);
+            if (d != s_last_pause) {
+                s_last_pause = d;
+                s_last_ms = now;
+                fprintf(stderr, "[touch] pause %s win=%.0fx%.0f\n", d.c_str(), W, H);
+            }
+        }
+        std::vector<rs64::touch::PauseLine> lines;
+        if (r && rs64::touch::read_pause_lines(r, W, H, &lines)) {
+            for (const rs64::touch::PauseRow& row : rs64::touch::pause_rows(lines)) {
+                dl->AddRect({ row.x0 * W, row.y0 * H }, { row.x1 * W, row.y1 * H }, IM_COL32(0, 255, 0, 255), 0.0f, 0, 2.0f);
+            }
+        }
+    }
+    if (cfg.debug_hitboxes && touch_menu_hits_allowed()) {
+        std::vector<rs64::touch::Box> boxes;
+        rs64::touch::MenuSnapshot snap{};
+        uint8_t* r = touch_rdram();
+        if (r) {
+            static std::string s_last;
+            std::string d = rs64::touch::describe_menu(r);
+            if (d != s_last) {
+                s_last = d;
+                fprintf(stderr, "[touch] menu %s win=%.0fx%.0f\n", d.c_str(), W, H);
+            }
+        }
+        if (r && rs64::touch::read_menu(r, &snap, &boxes, W, H)) {
+            for (const rs64::touch::Box& b : boxes) {
+                dl->AddRect({ b.x0 * W, b.y0 * H }, { b.x1 * W, b.y1 * H }, IM_COL32(0, 255, 0, 255), 0.0f, 0, 2.0f);
+            }
+        }
+    }
+    if (!ds.visible) {
+        return;
+    }
+    const float op = ds.editing ? 1.0f : cfg.opacity;
+    const ImU32 edge = IM_COL32(255, 255, 255, (int)(op * 255));
+    if (ds.editing) {
+        dl->AddRectFilled({ 0, 0 }, { W, H }, IM_COL32(0, 0, 0, 150));
+        const float sx = ds.stick_split * W;
+        for (float y = 0; y < H; y += 24.0f) {
+            dl->AddLine({ sx, y }, { sx, y + 12.0f }, IM_COL32(255, 255, 255, 200), 3.0f);
+        }
+        draw_touch_text(dl, "STICK", { sx * 0.5f, H * 0.5f }, H * 0.05f, IM_COL32(255, 255, 255, 160));
+        draw_touch_text(dl, "TOUCH LAYOUT: drag to move, pinch or +/- to resize", { W * 0.5f, H * 0.17f }, H * 0.035f, edge);
+    }
+    for (const rs64::touch::ButtonDef& b : ds.buttons) {
+        draw_touch_glyph(dl, b, W, H, op, (ds.pressed & b.mask) != 0);
+        if (ds.editing && b.mask == ds.selected) {
+            dl->AddCircle({ b.cx * W, b.cy * H }, b.r * H + 6.0f, IM_COL32(255, 220, 40, 255), 48, 4.0f);
+        }
+    }
+    for (const rs64::touch::ButtonDef& t : ds.tools) {
+        const ImVec2 c{ t.cx * W, t.cy * H };
+        const float r = t.r * H;
+        const float hw = std::string_view(t.label).size() > 1 ? r * 1.9f : r;
+        dl->AddRectFilled({ c.x - hw, c.y - r }, { c.x + hw, c.y + r }, IM_COL32(40, 60, 110, 230), r);
+        dl->AddRect({ c.x - hw, c.y - r }, { c.x + hw, c.y + r }, edge, r, 0, 2.0f);
+        draw_touch_text(dl, t.label, c, r * 0.9f, edge);
+    }
+    if (ds.stick_down) {
+        dl->AddCircleFilled({ ds.base_x * W, ds.base_y * H }, ds.stick_r * H, IM_COL32(40, 40, 48, (int)(op * 110)), 48);
+        dl->AddCircle({ ds.base_x * W, ds.base_y * H }, ds.stick_r * H, edge, 48, 2.0f);
+        dl->AddCircleFilled({ ds.knob_x * W, ds.knob_y * H }, ds.stick_r * H * 0.4f, IM_COL32(90, 90, 100, (int)(op * 230)), 32);
+        dl->AddCircle({ ds.knob_x * W, ds.knob_y * H }, ds.stick_r * H * 0.4f, edge, 32, 2.0f);
+    }
+}
+
+// The single ImGui render hook draws the touch overlay and both dev panels.
 static void draw_dev_ui() {
+    draw_touch_overlay();
     draw_controls_ui();
     draw_mods_ui();
 }
@@ -1639,14 +2616,46 @@ static void draw_dev_ui() {
 ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
     SDL_SetHint(SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS, "0");
+#ifdef __ANDROID__
+    // Touches must not also arrive as mouse clicks (the mouse bindings would fire).
+    SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+    // Two threads pump SDL events (window thread + game input thread); block-on-pause releases only one of them on resume.
+    SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+#else
+    // Desktop testing of the touch overlay: mouse clicks arrive as finger events.
+    if (rs64::touch::shared_config().enabled) {
+        SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
+    }
+#endif
 #ifndef NDEBUG
     // Debug builds: don't steal focus from the editor when the window first shows.
     SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
 #endif
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO | SDL_INIT_SENSOR) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+    // Force-feedback sticks only; missing haptic support just means no rumble on them.
+    if (SDL_InitSubSystem(SDL_INIT_HAPTIC) != 0) {
+        fprintf(stderr, "[input] haptic init failed (force-feedback sticks won't rumble): %s\n", SDL_GetError());
+    }
+#ifdef __ANDROID__
+    // Runs synchronously on SDL's Java thread as the app backgrounds, before Android destroys the surface.
+    SDL_AddEventWatch([](void*, SDL_Event* ev) -> int {
+        if (ev->type == SDL_APP_WILLENTERBACKGROUND) {
+            g_android_foreground.store(false);
+            rs64_render_suspend_surface();
+        } else if (ev->type == SDL_APP_DIDENTERFOREGROUND) {
+            // Start from a fresh device so sound lines up with the picture again.
+            if (audio_device) {
+                SDL_ClearQueuedAudio(audio_device);
+            }
+            g_android_audio_reopen.store(true);
+            g_android_foreground.store(true);
+        }
+        return 0;
+    }, nullptr);
+#endif
     return nullptr;
 }
 
@@ -1664,6 +2673,10 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         window_flags |= SDL_WINDOW_MAXIMIZED;
 #ifndef _WIN32
     window_flags |= SDL_WINDOW_VULKAN;
+#endif
+#ifdef __ANDROID__
+    // SDLActivity hides the system bars (immersive mode) only for a fullscreen window.
+    window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 #endif
     int window_w = 640, window_h = 480;
     if (const char* ws = recomp::dbg::env_str("ROGUESQ_WINDOW_SIZE")) {
@@ -1697,10 +2710,19 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     // Window messages only dispatch on the thread that owns the window, so events (and RT64's F1-F4 filter) must be pumped here.
     SDL_PumpEvents();
+#ifdef __ANDROID__
+    // Back in the foreground: move RT64 onto the new window once SDL has one (until then SDL may still report the old one).
+    if (g_android_foreground.load() && rs64_render_surface_suspended()) {
+        rs64_render_resume_surface();
+    }
+#endif
 
     // Build the menu config on the main thread; doing it lazily from a game-thread menu hook races menu-audio init.
     { static bool s_cfg = false;
       if (!s_cfg) { s_cfg = true; rs64_menu_config_init(); } }
+
+    { static bool s_rumble = false;
+      if (!s_rumble) { s_rumble = true; std::thread(rumble_thread_main).detach(); } }
 
     // Capture the mouse for steering while focused, unless the F6 controls window or the F1 inspector is open.
     // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
@@ -2064,6 +3086,13 @@ static int apply_cli_args(int argc, char* argv[]) {
 }
 
 int main(int argc, char* argv[]) {
+#ifdef __ANDROID__
+    // No console, shell environment, or exe directory on Android: log to logcat, read env from a file, run from the app's files dir.
+    rs64::android::start_logcat_pump();
+    rs64::android::load_env_file();
+    std::filesystem::current_path(rs64::android::data_dir());
+    rs64::android::install_bundled_mods();
+#endif
     if (int rc = apply_cli_args(argc, argv); rc >= 0) {
         return rc;
     }
@@ -2082,7 +3111,32 @@ int main(int argc, char* argv[]) {
         } else {
             fprintf(stderr, "[input] loaded bindings from %s\n", cfg.c_str());
         }
+        g_report_rumble_pak.store(g_bindings.rumble.enabled);
         fflush(stderr);
+    }
+    // Touch controls: roguesq_touch.json (on by default on Android); ROGUESQ_TOUCH_DEBUG draws the menu tap boxes.
+    {
+        rs64::touch::Config tc = rs64::touch::shared_config();
+        if (env_on("ROGUESQ_TOUCH_DEBUG")) {
+            tc.debug_hitboxes = true;
+        }
+        g_touch.set_config(tc);
+        g_touch.set_menu_hover([](float x, float y) {
+            uint8_t* r = touch_rdram();
+            if (!r || touch_context() != rs64::touch::Context::PauseMenu) {
+                return -1;
+            }
+            float w, h;
+            window_size(&w, &h);
+            return rs64::touch::pause_hover(r, x, y, w, h);
+        });
+        g_touch.set_menu_tap([](float x, float y) {
+            const rs64::touch::TapAction a = touch_menu_tap(x, y);
+            if (g_touch.config().debug_hitboxes) {
+                fprintf(stderr, "[touch] tap %.3f,%.3f screen=%d state=%s -> action %d\n", x, y, (int)touch_account_screen(), rs64_state_current_id(), (int)a);
+            }
+            return a;
+        });
     }
     RT64::SetRenderHookImgui(&draw_dev_ui);
 
@@ -2107,7 +3161,7 @@ int main(int argc, char* argv[]) {
     // GlobalLogFile only exists in RT64 debug builds (under !NDEBUG); in Release
     // the RT64_LOG_* macros are no-ops, so the redirect is both unneeded and uncompilable.
 #ifndef NDEBUG
-    if (FILE *nul = recomp::os::fopen("NUL", "w")) {
+    if (FILE *nul = recomp::os::fopen(RS64_NULL_DEVICE, "w")) {
         RT64::GlobalLogFile = nul;
     } else {
         RT64::GlobalLogFile = stderr;  // last-resort fallback
@@ -2260,11 +3314,54 @@ int main(int argc, char* argv[]) {
     }
     // Re-check after any import attempt so is_rom_valid reflects the new file.
     recomp::check_all_stored_roms();
+#ifdef __ANDROID__
+    // No ROM yet: ask for one with the system file picker until a valid one is imported, or the player quits.
+    std::string rom_problem;
+    while (!recomp::is_rom_valid(rs_game_id)) {
+        const std::string picked = rs64::android::pick_rom();
+        if (picked.empty()) {
+            const SDL_MessageBoxButtonData buttons[] = {
+                { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Choose ROM" },
+                { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Quit" },
+            };
+            const std::string text = rom_problem + "Rogue Squadron 64 Recomp needs your Star Wars: Rogue Squadron (USA v1.0) N64 ROM.";
+            const SDL_MessageBoxData box{ SDL_MESSAGEBOX_INFORMATION, nullptr, "ROM needed", text.c_str(), 2, buttons, nullptr };
+            int choice = 0;
+            if (SDL_ShowMessageBox(&box, &choice) != 0 || choice != 1) {
+                return 0;
+            }
+            rom_problem.clear();
+            continue;
+        }
+        const recomp::RomValidationError r = recomp::select_rom(picked, rs_game_id);
+        std::error_code ec;
+        std::filesystem::remove(picked, ec);
+        fprintf(stderr, "[ROM] picked file: validation %d\n", (int)r);
+        if (r == recomp::RomValidationError::Good) {
+            recomp::check_all_stored_roms();
+            continue;
+        }
+        rom_problem = (r == recomp::RomValidationError::NotARom) ? "That file is not an N64 ROM.\n\n"
+                    : (r == recomp::RomValidationError::IncorrectRom || r == recomp::RomValidationError::IncorrectVersion) ? "That ROM is not Star Wars: Rogue Squadron (USA v1.0).\n\n"
+                    : "That file could not be read.\n\n";
+        const SDL_MessageBoxButtonData buttons[] = {
+            { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Choose again" },
+            { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Quit" },
+        };
+        const SDL_MessageBoxData box{ SDL_MESSAGEBOX_WARNING, nullptr, "Wrong file", rom_problem.c_str(), 2, buttons, nullptr };
+        int choice = 0;
+        if (SDL_ShowMessageBox(&box, &choice) != 0 || choice != 1) {
+            return 0;
+        }
+        rom_problem.clear();
+    }
+#else
     if (!recomp::is_rom_valid(rs_game_id)) {
         fprintf(stderr,
             "[ROM] Place your Rogue Squadron (USA v1.0) ROM named\n"
             "      'rogue_squadron.z64' next to the executable and restart.\n");
     }
+#endif
 
     recomp::start(recomp::Configuration{
         .project_version = { 0, 1, 0 },

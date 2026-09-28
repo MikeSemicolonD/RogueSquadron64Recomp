@@ -654,7 +654,7 @@ blend 4 control points with `0.5(−t³+2t²−t)` etc. Confirmed funcs_4.c:2672
 - **Spline-walker NPC state** (craft context @NPC+0xC, malloc 0x1E4): speed@+0x10, parametric
   t/phase@+0x14, turn-rate@+0x18, segment countdown@+0x1C, cached pos@+0x60. The path/segment ptrs
   live on the DAT item (passed in), not cached. `advanceNpcOnCurvedPath` (funcs_16.c:14856).
-  A transform-actor variant `updateSplineCraftTransform` (funcs_30.c:5982) walks t@+0x14, speed@+0xE8.
+  A transform-actor variant `updatePlayerDeathSpiral` (funcs_30.c:5982) walks t@+0x14, speed@+0xE8.
 
 Open gap: the on-disk waypoint list (plain vec3f) and the in-RAM Catmull-Rom descriptor (count/
 points/knots) differ; the conversion step in `load_level_dat` was not located.

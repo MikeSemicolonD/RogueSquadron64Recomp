@@ -1,0 +1,121 @@
+plugins {
+    id 'com.android.application'
+}
+
+// SDL's Java glue (org.libsdl.app.*) must match the SDL2 version CMakeLists.txt builds for Android.
+def sdlVersion = '2.32.10'
+def sdlArchive = layout.buildDirectory.file("sdl/SDL2-${sdlVersion}.tar.gz")
+def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
+
+// Host-built file_to_c from the Windows build; RT64 needs it to embed its SPIR-V shaders when cross-compiling.
+def hostFileToC = rootProject.file("../build/Debug/file_to_c.exe").absolutePath
+
+tasks.register('fetchSdlJava') {
+    outputs.dir(sdlJavaDir)
+    doLast {
+        def archive = sdlArchive.get().asFile
+        if (!archive.exists()) {
+            archive.parentFile.mkdirs()
+            new URL("https://github.com/libsdl-org/SDL/releases/download/release-${sdlVersion}/SDL2-${sdlVersion}.tar.gz").withInputStream { i -> archive.withOutputStream { it << i } }
+        }
+        copy {
+            from(tarTree(resources.gzip(archive))) {
+                include "SDL2-${sdlVersion}/android-project/app/src/main/java/org/libsdl/app/*.java"
+                eachFile { it.path = "org/libsdl/app/${it.name}" }
+                includeEmptyDirs = false
+            }
+            into sdlJavaDir
+        }
+    }
+}
+
+// Mods bundled into the APK: the "android" list in mods/platforms.json (folders or built .nrm files).
+// android_host.cpp installs them into <files>/mods on launch from assets/mods/index.txt.
+def modsRoot = rootProject.file('../mods')
+def androidMods = new groovy.json.JsonSlurper().parse(new File(modsRoot, 'platforms.json')).android
+def modsAssetsDir = layout.buildDirectory.dir("generated/mod-assets")
+
+tasks.register('bundleMods') {
+    inputs.file(new File(modsRoot, 'platforms.json'))
+    inputs.files(androidMods.collect { new File(modsRoot, it) })
+    outputs.dir(modsAssetsDir)
+    doLast {
+        def out = modsAssetsDir.get().asFile
+        project.delete(out)
+        def lines = []
+        androidMods.each { name ->
+            def src = new File(modsRoot, name)
+            if (src.isFile()) {
+                lines << name
+                project.copy { from src; into new File(out, 'mods') }
+            } else if (src.isDirectory()) {
+                src.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+                    def rel = name + '/' + src.toPath().relativize(f.toPath()).toString().replace('\\', '/')
+                    lines << rel
+                    project.copy { from f; into new File(out, 'mods/' + new File(rel).parent) }
+                }
+            } else {
+                throw new GradleException("mods/platforms.json lists '${name}' for android, but mods/${name} does not exist (code mods must be built first)")
+            }
+        }
+        new File(out, 'mods/index.txt').text = lines.join('\n') + '\n'
+    }
+}
+
+android {
+    namespace 'com.rs64recomp.app'
+    compileSdk 34
+    ndkVersion '29.0.14206865'
+
+    defaultConfig {
+        applicationId 'com.rs64recomp.app'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '0.1'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}"
+                targets 'RogueSquadron64Recomp', 'SDL2'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('../../CMakeLists.txt')
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += sdlJavaDir
+            assets.srcDirs += modsAssetsDir
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+tasks.named('preBuild') {
+    dependsOn 'fetchSdlJava', 'bundleMods'
+}

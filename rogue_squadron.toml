@@ -494,6 +494,54 @@ func = "tickFormatMessageWorker"
 before_vram = 0x800B380C
 text = '''{ extern uint32_t rs64_format_reply_slot(uint8_t*, recomp_context*, uint32_t); ctx->r6 = (gpr)(int32_t)rs64_format_reply_slot(rdram, ctx, (uint32_t)ctx->r6); }'''
 
+# Positional HOTAS throttle: each craft's speed update, just before current speed steps toward the clamped target.
+# rs64_throttle_hook(rdram, target, base_addr, floor, cruise, cap, skip_addr) maps the lever onto that craft's floor/cruise/cap.
+[[patches.hook]]
+func = "updateXwingFlightControls"   # X-wing speed update (misnamed); 0x4($s2) != 0 is a scripted full-speed boost
+before_vram = 0x800B48EC
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x14, 0x800A58C4, 0x800A58D0, 0x800A58DC, (uint32_t)ctx->r18 + 0x4); }'''
+
+[[patches.hook]]
+func = "updateAwingFlightControls"   # A-wing speed update (misnamed)
+before_vram = 0x800B5D54
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, 0, 0x800A5A44, 0x800A5A4C, 0x800A5A54, 0); }'''
+
+[[patches.hook]]
+func = "updateYwingFlightControls"   # Y-wing speed update (misnamed)
+before_vram = 0x800B7984
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, 0, 0x800A5B88, 0, 0x800A5B90, 0); }'''
+
+[[patches.hook]]
+func = "updateVwingFlightControls"   # V-wing speed update; 0x190($s5) > 0 is its boost timer
+before_vram = 0x800B9280
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f24.fl = rs64_throttle_hook(rdram, ctx->f24.fl, 0, 0x800A5CB0, 0x800A5CB8, 0x800A5CC0, (uint32_t)ctx->r21 + 0x190); }'''
+
+[[patches.hook]]
+func = "updateFalconFlightControls"
+before_vram = 0x800BA8F4
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x4, 0x800A5DD8, 0x800A5DE0, 0x800A5DE8, 0); }'''
+
+[[patches.hook]]
+func = "updateTieInterceptorFlightControls"
+before_vram = 0x800BC190
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x4, 0x800A5F40, 0x800A5F48, 0x800A5F50, 0); }'''
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BD148
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x4, 0x800A604C, 0x800A6054, 0x800A605C, 0); }'''
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"   # Naboo starfighter speed update (misnamed)
+before_vram = 0x800BDEB0
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, 0, 0x800A6144, 0x800A6150, 0x800A6154, 0); }'''
+
+# Snowspeeder: 0x2D($s2) selects the half-speed constant set; its air brakes (control-map +0x14/+0x16) force their own speed.
+[[patches.hook]]
+func = "updateSnowSpeederFlightControls"   # snowspeeder speed update (misnamed)
+before_vram = 0x800ABDA0
+text = '''{ extern float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t); const int half = MEM_BU(0x2D, ctx->r18) != 0; const uint16_t held = MEM_HU(0, (gpr)(int32_t)0x80130B88); const uint16_t brakes = MEM_HU(0x14, (gpr)(int32_t)0x8010BE18) | MEM_HU(0x16, (gpr)(int32_t)0x8010BE18); if (!(held & brakes)) ctx->f22.fl = rs64_throttle_hook(rdram, ctx->f22.fl, 0, half ? 0x800A5318 : 0x800A531C, half ? 0x800A5308 : 0x800A530C, half ? 0x800A5328 : 0x800A532C, 0); }'''
+
 # Widescreen: widen the game's 4:3 culls by rs64_cull_widen. transformVec3ToNpcLocalWithScale (misnamed) is the object view test; $f2 is its aspect factor.
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"

@@ -7,6 +7,7 @@ extern "C" {
     int  rs64_get_fullscreen(void);
     void rs64_toggle_fullscreen(void);
     void rs64_menu_request_quit(void);
+    void rs64_touch_layout_request(void);
 }
 
 #endif // RS64_MAIN_H

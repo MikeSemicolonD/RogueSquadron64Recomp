@@ -1,0 +1,7 @@
+{
+  "//": "Android only (bundled into the APK). TOUCH LAYOUT in the pause-menu slot QUIT TO DESKTOP uses on desktop; action='touch_layout' opens the touch control layout editor. Front-end menus use the corner gear instead. See docs/adding-menus-and-buttons.md.",
+  "buttons": [
+    { "id": "touch_layout_pause", "menu": "pause", "type": "action", "action": "touch_layout",
+      "label": "TOUCH LAYOUT" }
+  ]
+}

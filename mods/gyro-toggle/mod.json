@@ -1,0 +1,10 @@
+{
+  "game_id": "rs64",
+  "id": "gyro-toggle",
+  "display_name": "Gyro Steering Toggle",
+  "description": "Android: adds a GYRO STEERING on/off toggle to Game Settings (front-end) and the in-mission pause Game Settings submenu.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true
+}

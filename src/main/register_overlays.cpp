@@ -2,7 +2,7 @@
 // Redefine it here so recomp_overlays.inl compiles correctly.
 #define main rs_main
 
-#include "../../../N64Recomp/RecompiledFuncs/recomp_overlays.inl"
+#include "../../RecompiledFuncs/recomp_overlays.inl"
 
 #undef main
 
