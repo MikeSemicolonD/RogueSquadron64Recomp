@@ -4,8 +4,16 @@
 #
 # Compiles with MIPS GCC, links with <mod>/mod.ld, packs with RecompModTool per <mod>/mod.toml (whose
 # mod_filename must equal <nrm_name>), and copies <nrm_name>.nrm into mods/.
+if (CMAKE_HOST_WIN32)
+    set(RS64_HOST_EXE_SUFFIX ".exe")
+    set(RS64_MOD_TOOL_DEFAULT "${CMAKE_CURRENT_LIST_DIR}/../../build/Debug/RecompModTool.exe")
+else()
+    set(RS64_MOD_TOOL_DEFAULT "${CMAKE_CURRENT_LIST_DIR}/../../build/RecompModTool")
+endif()
 set(MIPS_TOOLCHAIN_DIR "E:/mips-toolchain" CACHE PATH "MIPS GCC toolchain root")
-set(RECOMP_MOD_TOOL "${CMAKE_CURRENT_LIST_DIR}/../../build/Debug/RecompModTool.exe" CACHE FILEPATH "RecompModTool executable")
+set(MIPS_GCC "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS C compiler")
+set(MIPS_LD  "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS linker")
+set(RECOMP_MOD_TOOL "${RS64_MOD_TOOL_DEFAULT}" CACHE FILEPATH "RecompModTool executable")
 
 function(add_code_mod NRM_NAME)
     set(MOD_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -17,7 +25,7 @@ function(add_code_mod NRM_NAME)
         get_filename_component(stem "${src}" NAME_WE)
         set(obj "${MOD_DIR}/build/${stem}.o")
         add_custom_command(OUTPUT "${obj}"
-            COMMAND "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc.exe"
+            COMMAND "${MIPS_GCC}"
                 -mips2 -mabi=32 -O2 -G0 -mno-abicalls -fomit-frame-pointer -fno-builtin
                 -nostdinc -Wall -Wextra -Wno-unused-parameter
                 -c "${MOD_DIR}/${src}" -o "${obj}"
@@ -27,7 +35,7 @@ function(add_code_mod NRM_NAME)
 
     # Game functions stay undefined so RecompModTool resolves them by name; GNU ld resolves them to 0 and flags every jal as out of range, so --noinhibit-exec keeps the output (the emitted relocs are what RecompModTool reads).
     add_custom_command(OUTPUT "${MOD_ELF}"
-        COMMAND "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld.exe"
+        COMMAND "${MIPS_LD}"
             -nostdlib -T "${MOD_DIR}/mod.ld" -Map "${MOD_DIR}/build/mod.map"
             --unresolved-symbols=ignore-all --emit-relocs --noinhibit-exec -e 0
             ${objs} -o "${MOD_ELF}"

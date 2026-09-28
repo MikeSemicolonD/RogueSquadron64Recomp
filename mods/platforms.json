@@ -3,8 +3,6 @@
   "desktop": [
     "fullscreen-toggle",
     "quit-prompt",
-    "any_craft.nrm",
-    "infinite_secondary.nrm",
     "larger_object_pool.nrm"
   ],
   "android": [

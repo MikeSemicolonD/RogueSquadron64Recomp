@@ -1,0 +1,164 @@
+# Release build on self-hosted runners that hold the ROM-derived inputs (decomp ELF + RSP ucode sources).
+# Nothing ROM-derived is in the repo or the runner images; see docs/release-ci.md.
+# Only tags and manual dispatch trigger this: never add pull_request, a fork PR would run on the self-hosted machines.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    if: github.repository_owner == 'MikeSemicolonD'
+    runs-on: [self-hosted, linux, rs64]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          clean: true
+
+      - name: Stage ROM-derived inputs
+        run: python3 ci/stage_inputs.py
+
+      # Standalone: the game's own configure needs RecompiledFuncs/ to exist already.
+      - name: Build N64Recomp
+        run: |
+          cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-tools --target N64RecompCLI RecompModTool
+
+      - name: Regenerate RecompiledFuncs
+        run: |
+          build-tools/N64Recomp rogue_squadron.toml
+          lines=$(wc -l < RecompiledFuncs/funcs.h)
+          echo "funcs.h: $lines lines"
+          [ "$lines" -ge 2000 ] || { echo "::error::funcs.h truncated ($lines lines): stale or broken N64Recomp"; exit 1; }
+
+      - name: Build code mods
+        run: |
+          cmake -DPLATFORM=desktop -DRECOMP_MOD_TOOL="$PWD/build-tools/RecompModTool" \
+            -DMIPS_GCC="$RS64_MIPS_GCC" -DMIPS_LD="$RS64_MIPS_LD" -P tools/mods/build_code_mods.cmake
+
+      - name: Build patches and game
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" \
+            -DMIPS_GCC="$RS64_MIPS_GCC" -DMIPS_LD="$RS64_MIPS_LD"
+          cmake --build build --target PatchesLib
+          cmake --build build --target RogueSquadron64Recomp
+
+      - name: Package
+        run: |
+          ver="${GITHUB_REF_NAME//\//-}"
+          bash tools/package-linux.sh "$PWD/rs64-linux-x64-$ver.tar.gz" "$PWD/build"
+          echo "PKG=rs64-linux-x64-$ver.tar.gz" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x64
+          path: ${{ env.PKG }}
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Remove staged inputs
+        if: always()
+        run: python3 ci/stage_inputs.py --clean
+
+  windows:
+    if: github.repository_owner == 'MikeSemicolonD'
+    runs-on: [self-hosted, windows, rs64]
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: powershell
+    env:
+      MIPS_DIR: ${{ vars.RS64_MIPS_TOOLCHAIN_DIR || 'E:/mips-toolchain' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          clean: true
+
+      - name: Stage ROM-derived inputs
+        run: |
+          python ci/stage_inputs.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # Standalone: the game's own configure needs RecompiledFuncs/ to exist already.
+      - name: Build N64Recomp
+        run: |
+          cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build-tools --config Release --target N64RecompCLI RecompModTool
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Regenerate RecompiledFuncs
+        run: |
+          build-tools/Release/N64Recomp.exe rogue_squadron.toml
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $lines = (Get-Content RecompiledFuncs/funcs.h | Measure-Object -Line).Lines
+          Write-Host "funcs.h: $lines lines"
+          if ($lines -lt 2000) { Write-Host "::error::funcs.h truncated ($lines lines): stale or broken N64Recomp"; exit 1 }
+
+      - name: Build code mods
+        run: |
+          cmake -DPLATFORM=desktop "-DRECOMP_MOD_TOOL=$env:GITHUB_WORKSPACE/build-tools/Release/RecompModTool.exe" `
+            "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR" -P tools/mods/build_code_mods.cmake
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build patches and game
+        run: |
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL `
+            "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR" `
+            "-DN64RECOMP_EXE=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build --config Release --target PatchesLib
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build --config Release --target RogueSquadron64Recomp
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Package
+        run: |
+          $ver = $env:GITHUB_REF_NAME -replace '/', '-'
+          $pkg = "rs64-windows-x64-$ver.zip"
+          Copy-Item docs/release-readme.txt build/dist/README.txt
+          Compress-Archive -Path build/dist/* -DestinationPath $pkg -Force
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG=$pkg" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: ${{ env.PKG }}
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Remove staged inputs
+        if: always()
+        run: python ci/stage_inputs.py --clean
+
+  release:
+    needs: [linux, windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*

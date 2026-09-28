@@ -68,6 +68,10 @@ using recomp::dbg::env_int;
 // SDL_syswm.h is only needed for the Win32 HWND path in create_window(); on
 // Linux it pulls X11 <Xlib.h>, whose None/Bool/Status macros collide with C++
 // enum members (e.g. ultramodern::input::Pak::None), so it is not included here.
+#ifdef __APPLE__
+#include "SDL2/SDL_syswm.h"
+#include "SDL2/SDL_metal.h"
+#endif
 static inline uint64_t GetTickCount64() {
     return (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -2863,7 +2867,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     Uint32 window_flags = SDL_WINDOW_RESIZABLE | (hide_window ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
     if (env_on("ROGUESQ_MAXIMIZED"))
         window_flags |= SDL_WINDOW_MAXIMIZED;
-#ifndef _WIN32
+#if defined(__APPLE__)
+    window_flags |= SDL_WINDOW_METAL;
+#elif !defined(_WIN32)
     window_flags |= SDL_WINDOW_VULKAN;
 #endif
 #ifdef __ANDROID__
@@ -2894,6 +2900,12 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     SDL_VERSION(&wm.version);
     SDL_GetWindowWMInfo(sdl_window, &wm);
     return { wm.info.win.window };
+#elif defined(__APPLE__)
+    SDL_SysWMinfo wm{};
+    SDL_VERSION(&wm.version);
+    SDL_GetWindowWMInfo(sdl_window, &wm);
+    SDL_MetalView view = SDL_Metal_CreateView(sdl_window);
+    return { wm.info.cocoa.window, SDL_Metal_GetLayer(view) };
 #else
     return sdl_window;
 #endif
