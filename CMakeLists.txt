@@ -157,9 +157,18 @@ set(RECOMPILED_PATCHES_DIR  "${CMAKE_SOURCE_DIR}/RecompiledPatches")
 # Toolchain locations. Override on the cmake command line if installed elsewhere:
 #   cmake -DMIPS_TOOLCHAIN_DIR=C:/mips-toolchain ...
 set(MIPS_TOOLCHAIN_DIR "E:/mips-toolchain" CACHE PATH "Root of mips64-elf toolchain (decompals/n64-tools).")
-set(MIPS_GCC           "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc.exe")
-set(MIPS_LD            "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld.exe")
-set(N64RECOMP_EXE      "${CMAKE_BINARY_DIR}/Debug/N64Recomp.exe" CACHE FILEPATH "N64Recomp executable (built from lib/N64ModernRuntime/N64Recomp via N64RecompCLI target)")
+if (CMAKE_HOST_WIN32)
+    set(RS64_HOST_EXE_SUFFIX ".exe")
+endif()
+set(MIPS_GCC "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS C compiler for the patches build")
+set(MIPS_LD  "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS linker for the patches build")
+get_property(RS64_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if (RS64_MULTI_CONFIG)
+    set(RS64_N64RECOMP_DEFAULT "${CMAKE_BINARY_DIR}/Debug/N64Recomp${RS64_HOST_EXE_SUFFIX}")
+else()
+    set(RS64_N64RECOMP_DEFAULT "${CMAKE_BINARY_DIR}/N64Recomp${RS64_HOST_EXE_SUFFIX}")
+endif()
+set(N64RECOMP_EXE "${RS64_N64RECOMP_DEFAULT}" CACHE FILEPATH "N64Recomp executable (built from lib/N64ModernRuntime/N64Recomp via N64RecompCLI target)")
 find_program(PATCHES_MAKE_EXE NAMES mingw32-make make)
 
 if (EXISTS "${MIPS_GCC}" AND EXISTS "${N64RECOMP_EXE}" AND PATCHES_MAKE_EXE)
@@ -199,7 +208,7 @@ else()
         message(STATUS "  - mips64-elf-gcc not at ${MIPS_GCC}")
     endif()
     if (NOT EXISTS "${N64RECOMP_EXE}")
-        message(STATUS "  - N64Recomp.exe not at ${N64RECOMP_EXE}")
+        message(STATUS "  - N64Recomp not at ${N64RECOMP_EXE}")
     endif()
     if (NOT PATCHES_MAKE_EXE)
         message(STATUS "  - mingw32-make / make not on PATH")
@@ -398,6 +407,7 @@ if (MSVC)
     # can switch to /FORCE:MULTIPLE only on the patched-symbol set via a
     # per-symbol .def or by carving out the patched .obj from RecompiledFuncs.
     target_link_options(RogueSquadron64Recomp PRIVATE /FORCE:MULTIPLE)
+elseif (APPLE)
 else()
     # GNU ld equivalent of /FORCE:MULTIPLE. src/main overrides (osVi*_recomp in
     # upstream_compat.cpp, submit_rdp_range in rt64_render_context.cpp, and the

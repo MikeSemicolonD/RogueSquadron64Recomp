@@ -195,6 +195,8 @@ See [patches/README.md](patches/README.md) for the full how-to.
 
 `patches/` is for base-game fixes. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and the "Code mods" paragraph in [docs/adding-menus-and-buttons.md](docs/adding-menus-and-buttons.md).
 
+`mods/platforms.json` decides which mods ship per platform: a mod not listed there ships nowhere. `desktop` entries (data-only folders and `.nrm` files) are staged next to the exe by `tools/mods/stage_mods.cmake`; `android` entries are packed into the APK. Release CI builds every `.nrm` listed under `desktop` via `tools/mods/build_code_mods.cmake`, matching each entry to the `mods/*/mod.toml` whose `mod_filename` equals the `.nrm` name, so a new code mod must be added to that list to ship ([docs/release-ci.md](docs/release-ci.md#code-mods)).
+
 ## Architectural quirks worth knowing
 
 ### Overlays register at boot

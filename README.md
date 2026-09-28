@@ -44,7 +44,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (N64, USA v1.0) built wi
 | Requirement | Notes |
 | --- | --- |
 | **ROM** | `rogue_squadron.z64`, USA v1.0 (16 MB, xxHash3-64 `0x6B66A44153594DEA`) |
-| **OS / GPU** | Windows 10+, Linux, or macOS 11+ with a D3D12, Vulkan, or Metal capable GPU; Android 8+ arm64 with Vulkan 1.1 (see [Android notes](#android-notes)) |
+| **OS / GPU** | Windows 10+, Linux, or macOS 11+ with a D3D12, Vulkan, or Metal capable GPU; Android 8+ arm64 with Vulkan 1.1 (see [Android notes](#android-notes)); macOS is compile-only so far (see [macOS notes](#macos-notes)) |
 | **CMake** | 3.20+ |
 | **Compiler** | MSVC with the ClangCL toolset (Windows), Clang or GCC (Linux/macOS) |
 | **N64Recomp output** | `RecompiledFuncs/`, generated locally from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp (started by [Tmcg2](https://github.com/Tmcg2/rogue_squadron64)) via the `regen_funcs` target |
@@ -135,6 +135,31 @@ adb install -r app\build\outputs\apk\release\app-release.apk
 - **Controls:** touch controls are on by default: tap menu entries directly, swipe carousels, and fly with a floating stick plus N64-style buttons. The user can move and resize the buttons by using the gear button in corner of the main menu or **TOUCH LAYOUT** (Requires [touch-layout](mods/touch-layout) mod) in the pause menu. **GYRO STEERING** (Requires [gyro-toggle](mods/gyro-toggle) mod) in Game Settings turns on tilt steering with mouse-like up/down aiming. Android Back is B; a paired gamepad works and hides the touch overlay. Settings live in `roguesq_touch.json`.
 - **Mods:** the APK will build and include the mods listed under `android` in [mods/platforms.json](mods/platforms.json) installing them into the app's `mods/` folder.
 - **Debugging:** logs go to logcat under the tag `RS64` (the `Logcat (Android)` task filters it). Environment variables go one `NAME=VALUE` per line in `roguesq_env.txt` in the app's files folder.
+
+### macOS notes
+
+**Compile-only so far.** An arm64 (Apple Silicon) Mach-O builds and links for macOS 11+, but it hasn't been run on a Mac yet. macOS renders through RT64's **Metal** backend.
+
+On a Mac, the Linux / macOS commands above should apply (Xcode Command Line Tools + `brew install cmake ninja sdl2`)
+
+Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](https://github.com/tpoechtrager/osxcross):
+
+1. Download **Command Line Tools for Xcode 16.4** (`.dmg`) from [developer.apple.com/download/all](https://developer.apple.com/download/all/)
+2. Build the toolchain and its Darwin runtime (`libssl-dev cpio libxml2-dev` needed):
+
+   ```sh
+   git clone https://github.com/tpoechtrager/osxcross ~/osxcross && cd ~/osxcross
+   ./tools/gen_sdk_package_tools_dmg.sh /path/to/Command_Line_Tools_for_Xcode_16.4.dmg
+   mv MacOSX15.5.sdk.tar.xz tarballs/
+   UNATTENDED=1 SDK_VERSION=15.5 OSX_VERSION_MIN=11.0 ./build.sh
+   ./build_compiler_rt.sh   # no need to run the install commands it prints
+   ```
+
+3. Build the game with `tools/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp`.
+
+- **Can't render when cross-built.** Metal shaders need `xcrun metal`, which exists only on macOS, so a cross-build embeds the MSL source (`RT64_METAL_COMPILE=OFF`) instead of compiled metallibs. A build meant to run has to be made on a Mac (or a macOS CI runner).
+- **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
+- **Not yet done:** an `.app` bundle with SDL2 inside.
 
 ---
 
