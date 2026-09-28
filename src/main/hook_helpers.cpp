@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
+#include <chrono>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -262,9 +263,11 @@ extern "C" volatile unsigned g_vi_tick = 0;
 // Block until the next VI tick (cap ~40 ms). Paces a menu fade loop (attribution screen,
 // credits sequence) to real time so the VI-driven glyph-layout producer thread gets to run.
 extern "C" void rs64_attrib_wait_vi(void) {
-#ifdef _WIN32
     unsigned start = g_vi_tick;
+#ifdef _WIN32
     for (int i = 0; i < 40 && g_vi_tick == start; ++i) ::Sleep(1);
+#else
+    for (int i = 0; i < 40 && g_vi_tick == start; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
 #endif
 }
 

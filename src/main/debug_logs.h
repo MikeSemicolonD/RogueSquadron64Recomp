@@ -55,6 +55,18 @@ inline bool log_threads() {
     return v;
 }
 
+// Rumble: game motor edges, effect ids, hit scaling, death-spiral sustain. ROGUESQ_LOG_RUMBLE=1.
+inline bool log_rumble() {
+    static const bool v = env_flag("ROGUESQ_LOG_RUMBLE");
+    return v;
+}
+
+// Positional throttle: lever position, the craft's speed range, game vs. applied target. ROGUESQ_LOG_THROTTLE=1.
+inline bool log_throttle() {
+    static const bool v = env_flag("ROGUESQ_LOG_THROTTLE");
+    return v;
+}
+
 // Behaviour knobs, read at the call site. Unlike env_flag, ROGUESQ_LOG_ALL does not turn these on.
 inline const char* env_str(const char* name) { const char* v = recomp::os::getenv(name); return (v && *v) ? v : nullptr; }
 inline bool env_on(const char* name, bool def = false) { const char* v = env_str(name); return v ? (*v != '0') : def; }

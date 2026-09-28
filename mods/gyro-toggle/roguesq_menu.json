@@ -1,0 +1,10 @@
+{
+  "//": "Android only (bundled into the APK; takes the Game Settings slot FULLSCREEN uses on desktop). type=toggle binds to the built-in 'gyro' toggle. The pause labels are space-padded to line up under the native two-column ON/OFF toggles. See docs/adding-menus-and-buttons.md.",
+  "buttons": [
+    { "id": "gyro_menu", "menu": "game_settings", "type": "toggle", "toggle": "gyro",
+      "label_on": "GYRO STEERING: ON", "label_off": "GYRO STEERING: OFF", "after": "high_resolution" },
+
+    { "id": "gyro_pause", "menu": "pause_game_settings", "type": "toggle", "toggle": "gyro",
+      "label_on": "GYRO STEERING  ON", "label_off": "GYRO STEERING OFF" }
+  ]
+}

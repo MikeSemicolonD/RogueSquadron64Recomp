@@ -10,6 +10,10 @@
 #include <filesystem>
 #include <fstream>
 #include "SDL.h"
+#ifdef __ANDROID__
+#include "SDL_syswm.h"
+extern SDL_Window* g_sdl_window;
+#endif
 #include "common/rt64_user_configuration.h"
 #include "video_config.h"
 
@@ -27,6 +31,9 @@
 #include "nav_sequencer.h"        // rs64_nav_set_target, rs64_nav_tick
 #include "rt64_render_context.h"  // create_render_context + submit_rdp_range (defined below)
 #include "../rsp/dpc_bridge.h"    // rs64_dpc_get_cumulative_histogram / _fullsyncs
+#ifdef __ANDROID__
+#include "android_host.h"
+#endif
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -80,6 +87,45 @@ extern "C" int rs64_rt64_inspector_open(void) {
     // being non-null must not suppress capture.
     if (!app->userConfig.developerMode) return 0;
     return app->presentQueue->inspector != nullptr ? 1 : 0;
+}
+
+extern "C" void rs64_render_suspend_surface(void) {
+    RT64::Application* app = g_rt64_app.load();
+    if (app && app->presentQueue) {
+        app->presentQueue->suspendSurface();
+        fprintf(stderr, "[RT64] surface suspended (app backgrounded)\n");
+    }
+}
+
+extern "C" bool rs64_render_surface_suspended(void) {
+    RT64::Application* app = g_rt64_app.load();
+    return app && app->presentQueue && app->presentQueue->surfaceSuspended;
+}
+
+extern "C" bool rs64_render_resume_surface(void) {
+    RT64::Application* app = g_rt64_app.load();
+    if (!app || !app->presentQueue || !app->presentQueue->surfaceSuspended) {
+        return false;
+    }
+#ifdef __ANDROID__
+    SDL_SysWMinfo wm{};
+    SDL_VERSION(&wm.version);
+    if (!::g_sdl_window || !SDL_GetWindowWMInfo(::g_sdl_window, &wm) || !wm.info.android.window ||
+        ANativeWindow_getWidth(wm.info.android.window) <= 0) {
+        static uint32_t s_last_log = 0;
+        if (SDL_GetTicks() - s_last_log > 1000) {
+            s_last_log = SDL_GetTicks();
+            fprintf(stderr, "[RT64] resume waiting: window=%p\n", (void*)wm.info.android.window);
+        }
+        return false;
+    }
+    app->presentQueue->resumeSurface(wm.info.android.window);
+    rs64::android::set_window_frame_rate(wm.info.android.window);
+    fprintf(stderr, "[RT64] surface resumed on new window %p\n", (void*)wm.info.android.window);
+    return true;
+#else
+    return false;
+#endif
 }
 
 // Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
@@ -152,7 +198,13 @@ public:
         RT64::Application::Core appCore{};
 #if defined(_WIN32)
         appCore.window = window_handle.window;
-#elif defined(__linux__) || defined(__ANDROID__)
+#elif defined(__ANDROID__)
+        SDL_SysWMinfo wm{};
+        SDL_VERSION(&wm.version);
+        SDL_GetWindowWMInfo(window_handle, &wm);
+        appCore.window = wm.info.android.window;
+        rs64::android::set_window_frame_rate(wm.info.android.window);
+#elif defined(__linux__)
         appCore.window = window_handle;
 #elif defined(__APPLE__)
         appCore.window.window = window_handle.window;
@@ -343,6 +395,12 @@ public:
         thread_id = window_handle.thread_id;
 #endif
         setup_result = map_result(app->setup(thread_id));
+#ifdef __ANDROID__
+        // RT64 only records the SDL window on Linux; the ImGui hook (touch overlay) needs it on Android too.
+        if (app && app->appWindow) {
+            app->appWindow->sdlWindow = ::g_sdl_window;
+        }
+#endif
         if (setup_result != ultramodern::renderer::SetupResult::Success) {
             fprintf(stderr, "[RT64] setup failed: %d\n", (int)setup_result);
             app = nullptr;
@@ -420,7 +478,13 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(s_task_delay_ms));
         dump_ucode_once(task);
         log_task(task);
+#ifdef __ANDROID__
+        const auto t0 = std::chrono::steady_clock::now();
         run_hle_task(task);
+        rs64::android::perf_report_work(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count());
+#else
+        run_hle_task(task);
+#endif
     }
 
     void update_screen() override {

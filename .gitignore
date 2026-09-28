@@ -139,3 +139,8 @@ src/main/state_table.inl
 # Code mods: .nrm outputs and their separate build dirs (tools/mods/code_mod.cmake)
 mods/*.nrm
 mods/*/build/
+
+# Android (Gradle) project: caches, native build tree, machine-local SDK path
+android/.gradle/
+android/app/.cxx/
+android/local.properties

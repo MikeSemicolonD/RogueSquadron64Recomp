@@ -41,6 +41,27 @@ endif()
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# Android consumes the code the Windows build generated (N64Recomp, RSPRecomp, state table); it cannot run those tools itself.
+if (ANDROID)
+    foreach(f RecompiledFuncs/funcs.h RecompiledPatches/patches.c src/main/state_table.inl
+              build/factor5_ucode/factor5_ucode_recompiled.c build/factor5_ucode/factor5_boot_recompiled.c
+              build/factor5_ucode/musyx_audio_recompiled.c)
+        if (NOT EXISTS "${CMAKE_SOURCE_DIR}/${f}")
+            message(FATAL_ERROR "Android build needs host-generated ${f}; run the Windows Debug build first.")
+        endif()
+    endforeach()
+endif()
+
+# Android: SDL2 is built from source (libSDL2.so, loaded by SDLActivity); must exist before RT64 configures.
+if (ANDROID)
+    include(FetchContent)
+    FetchContent_Declare(SDL2 URL https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz)
+    set(SDL_SHARED ON CACHE BOOL "" FORCE)
+    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(SDL2)
+endif()
+
 # ---- RT64 renderer ----
 set(RT64_STATIC TRUE)
 set(RT64_SDL_WINDOW_VULKAN TRUE)
@@ -166,7 +187,27 @@ if (EXISTS "${MIPS_GCC}" AND EXISTS "${N64RECOMP_EXE}" AND PATCHES_MAKE_EXE)
         COMMENT "Recompiling patches.elf → RecompiledPatches/patches.c"
         VERBATIM
     )
+    set_source_files_properties("${RECOMPILED_PATCHES_DIR}/patches.c" PROPERTIES GENERATED TRUE)
+    set(PATCHES_BUILD_OK TRUE)
+elseif (EXISTS "${RECOMPILED_PATCHES_DIR}/patches.c")
+    set(PATCHES_BUILD_OK TRUE)
+    message(STATUS "Patches: using pre-generated RecompiledPatches/patches.c (MIPS toolchain not found)")
+else()
+    set(PATCHES_BUILD_OK FALSE)
+    message(STATUS "Patches build skipped:")
+    if (NOT EXISTS "${MIPS_GCC}")
+        message(STATUS "  - mips64-elf-gcc not at ${MIPS_GCC}")
+    endif()
+    if (NOT EXISTS "${N64RECOMP_EXE}")
+        message(STATUS "  - N64Recomp.exe not at ${N64RECOMP_EXE}")
+    endif()
+    if (NOT PATCHES_MAKE_EXE)
+        message(STATUS "  - mingw32-make / make not on PATH")
+    endif()
+    message(STATUS "  See patches/README.md for setup; rebuild without patches for now.")
+endif()
 
+if (PATCHES_BUILD_OK)
     # Step 3: build PatchesLib that wraps the recompiled output.
     # OBJECT (not STATIC): CMake splices its .obj directly onto the exe link
     # line, so the patch symbols are strong command-line-object definitions.
@@ -176,8 +217,6 @@ if (EXISTS "${MIPS_GCC}" AND EXISTS "${N64RECOMP_EXE}" AND PATCHES_MAKE_EXE)
     # so the indirect LOOKUP_FUNC call reached the unguarded recompiled version
     # and AV'd). An object beats an archive member regardless of link order.
     add_library(PatchesLib OBJECT "${RECOMPILED_PATCHES_DIR}/patches.c")
-    set_source_files_properties("${RECOMPILED_PATCHES_DIR}/patches.c"
-        PROPERTIES GENERATED TRUE)
 
     target_include_directories(PatchesLib PRIVATE
         ${CMAKE_SOURCE_DIR}/include
@@ -202,21 +241,6 @@ if (EXISTS "${MIPS_GCC}" AND EXISTS "${N64RECOMP_EXE}" AND PATCHES_MAKE_EXE)
             -fno-strict-aliasing -Wno-unused-variable -Wno-implicit-function-declaration)
     endif()
     target_compile_definitions(PatchesLib PRIVATE main=rs_main)
-
-    set(PATCHES_BUILD_OK TRUE)
-else()
-    set(PATCHES_BUILD_OK FALSE)
-    message(STATUS "Patches build skipped:")
-    if (NOT EXISTS "${MIPS_GCC}")
-        message(STATUS "  - mips64-elf-gcc not at ${MIPS_GCC}")
-    endif()
-    if (NOT EXISTS "${N64RECOMP_EXE}")
-        message(STATUS "  - N64Recomp.exe not at ${N64RECOMP_EXE}")
-    endif()
-    if (NOT PATCHES_MAKE_EXE)
-        message(STATUS "  - mingw32-make / make not on PATH")
-    endif()
-    message(STATUS "  See patches/README.md for setup; rebuild without patches for now.")
 endif()
 
 # ---- Regenerate RecompiledFuncs (opt-in) ----
@@ -288,9 +312,13 @@ if (MSVC)
 else()
     set(RSP_UCODE_FORCE_INCLUDE "-include;${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h")
 endif()
+# arm64 maps the RSP vector ops through sse2neon (rsp_vu.hpp), so -msse4.1 is x86-only.
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
+    set(RSP_UCODE_ARCH_FLAGS "-msse4.1")
+endif()
 set_source_files_properties(${FACTOR5_UCODE_C} ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C} PROPERTIES
     LANGUAGE CXX
-    COMPILE_OPTIONS "-msse4.1;${RSP_UCODE_FORCE_INCLUDE}")
+    COMPILE_OPTIONS "${RSP_UCODE_ARCH_FLAGS};${RSP_UCODE_FORCE_INCLUDE}")
 
 # Generate the game-state table header from the canonical descriptor (state_model.toml).
 set(STATE_TABLE_INL ${CMAKE_SOURCE_DIR}/src/main/state_table.inl)
@@ -306,11 +334,15 @@ if (Python3_Interpreter_FOUND)
     add_custom_target(gen_state_table DEPENDS ${STATE_TABLE_INL})
 endif()
 
-add_executable(RogueSquadron64Recomp
+set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
     ${CMAKE_SOURCE_DIR}/src/main/game_state.cpp
     ${CMAKE_SOURCE_DIR}/src/main/nav_sequencer.cpp
     ${CMAKE_SOURCE_DIR}/src/main/input_bindings.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/rumble.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_input.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_config.cpp
     ${CMAKE_SOURCE_DIR}/src/main/video_config.cpp
     ${CMAKE_SOURCE_DIR}/src/main/menu_config.cpp
     ${CMAKE_SOURCE_DIR}/src/main/rt64_render_context.cpp
@@ -324,6 +356,15 @@ add_executable(RogueSquadron64Recomp
     ${MUSYX_AUDIO_C}
     $<$<PLATFORM_ID:Windows>:${CMAKE_SOURCE_DIR}/src/main/app.rc>
 )
+# Android: the game is libmain.so, loaded by SDL's SDLActivity (which calls SDL_main).
+if (ANDROID)
+    add_library(RogueSquadron64Recomp SHARED ${RS64_MAIN_SOURCES} ${CMAKE_SOURCE_DIR}/src/main/android_host.cpp)
+    set_target_properties(RogueSquadron64Recomp PROPERTIES OUTPUT_NAME main)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE android log)
+    target_link_options(RogueSquadron64Recomp PRIVATE -Wl,-z,max-page-size=16384)
+else()
+    add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
+endif()
 if (TARGET gen_state_table)
     add_dependencies(RogueSquadron64Recomp gen_state_table)
 endif()
@@ -367,6 +408,24 @@ else()
 endif()
 
 # Standalone unit test for the friendly video-config translation layer.
+# POSIX guest-fault guard test (Windows uses SEH instead): cmake --build <dir> --target fault_guard_test
+if (NOT WIN32 AND NOT ANDROID)
+    add_executable(fault_guard_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/fault_guard_test.cpp)
+    target_link_libraries(fault_guard_test PRIVATE librecomp)
+    target_include_directories(fault_guard_test PRIVATE ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include)
+endif()
+
+# Touch engine + menu layer unit tests: cmake --build build --config Debug --target touch_input_test
+add_executable(touch_input_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/touch_input_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_input.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_config.cpp
+)
+set_target_properties(touch_input_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
+target_compile_definitions(touch_input_test PRIVATE RS64_TOUCH_NO_SDL)
+
 # Not part of the default build: cmake --build build --config Debug --target video_config_test
 add_executable(video_config_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/video_config_test.cpp
@@ -422,6 +481,9 @@ if (WIN32)
     # SDL2main (pulled in transitively) must not be linked: its SDL_windows_main.obj
     # references SDL_main, which we intentionally do not provide.
     target_link_options(RogueSquadron64Recomp PRIVATE /NODEFAULTLIB:SDL2main.lib)
+elseif (ANDROID)
+    find_package(Threads REQUIRED)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2::SDL2 Threads::Threads)
 elseif (APPLE)
     find_package(SDL2 REQUIRED)
     find_package(Threads REQUIRED)
@@ -434,29 +496,34 @@ else()
     target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS} Threads::Threads)
 endif()
 
-# Ship the user mods tree next to the exe. Each subfolder of mods/ is a mod;
-# menu_config.cpp scans them for a roguesq_menu.json. copy_directory refreshes them
-# without deleting the user's own mod folders. Native mods build separately with
-# their own mods/<name>/CMakeLists.txt, and whatever DLL that left beside mod.json
-# is copied along; the game build never compiles them. The example mods (native-demo,
-# menu-example) are stripped from the staged tree, as are code-mod source folders (any
-# mods/<name>/ with a mod.toml; their .nrm is built into mods/ and staged on its own).
-file(GLOB RS64_CODE_MOD_TOMLS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/mods/*/mod.toml")
-set(RS64_CODE_MOD_DIRS "")
-foreach(toml ${RS64_CODE_MOD_TOMLS})
-    get_filename_component(dir "${toml}" DIRECTORY)
-    get_filename_component(name "${dir}" NAME)
-    list(APPEND RS64_CODE_MOD_DIRS "${name}")
-endforeach()
-list(TRANSFORM RS64_CODE_MOD_DIRS PREPEND "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/" OUTPUT_VARIABLE RS64_STAGED_CODE_MOD_DIRS)
+# Input-bindings resolver test against an SDL virtual joystick: cmake --build build --config Debug --target input_bindings_test
+if (NOT ANDROID)
+    add_executable(input_bindings_test EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tests/input_bindings_test.cpp
+        ${CMAKE_SOURCE_DIR}/src/main/input_bindings.cpp
+    )
+    set_target_properties(input_bindings_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_include_directories(input_bindings_test PRIVATE ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
+    if (WIN32)
+        target_include_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/include)
+        target_link_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/lib/x64)
+        target_link_libraries(input_bindings_test PRIVATE SDL2)
+        target_link_options(input_bindings_test PRIVATE /NODEFAULTLIB:SDL2main.lib)
+        add_custom_command(TARGET input_bindings_test POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${sdl2_SOURCE_DIR}/lib/x64/SDL2.dll" $<TARGET_FILE_DIR:input_bindings_test>)
+    else()
+        target_include_directories(input_bindings_test PRIVATE ${SDL2_INCLUDE_DIRS})
+        target_link_libraries(input_bindings_test PRIVATE SDL2::SDL2)
+    endif()
+endif()
+
+# Stage the desktop mods listed in mods/platforms.json next to the exe. The user's own mod folders there are left alone.
+# Native mods build separately with their own mods/<name>/CMakeLists.txt; a listed folder carries whatever DLL that left beside mod.json.
+if (NOT ANDROID)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/mods"
-        $<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods
-    COMMAND ${CMAKE_COMMAND} -E rm -rf
-        "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/native-demo"
-        "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/menu-example"
-        ${RS64_STAGED_CODE_MOD_DIRS})
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods -DPLATFORM=desktop
+        -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake")
+endif()
 
 # PatchesLib is an OBJECT library: its objects go straight onto the exe link
 # line ahead of RecompiledFuncs (the .lib), so the patch definitions win any
@@ -481,7 +548,6 @@ set_property(TARGET RogueSquadron64Recomp PROPERTY VS_DEBUGGER_WORKING_DIRECTORY
 # dependencies. For Release, assemble a clean folder holding only what ships.
 if (WIN32)
     set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
-    list(TRANSFORM RS64_CODE_MOD_DIRS PREPEND "${RS64_DIST_DIR}/mods/" OUTPUT_VARIABLE RS64_DIST_CODE_MOD_DIRS)
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,make_directory,true> "${RS64_DIST_DIR}"
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_if_different,true>
@@ -490,10 +556,8 @@ if (WIN32)
             "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/dxil.dll"
             "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/dxcompiler.dll"
             "${RS64_DIST_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_directory,true>
-            "${CMAKE_SOURCE_DIR}/mods"
-            "${RS64_DIST_DIR}/mods"
-        COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,rm,true> -rf ${RS64_DIST_CODE_MOD_DIRS}
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<IF:$<CONFIG:Release>,${RS64_DIST_DIR}/mods,> -DPLATFORM=desktop
+            -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
         COMMENT "Assembling clean Release folder in ${RS64_DIST_DIR} (Release only)"
         VERBATIM)
 endif()

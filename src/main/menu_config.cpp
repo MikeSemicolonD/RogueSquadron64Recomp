@@ -35,6 +35,7 @@
 
 namespace recomp { void* alloc(uint8_t* rdram, size_t size); }
 #include "main.h"   // rs64_menu_request_quit, rs64_toggle_fullscreen, rs64_get_fullscreen
+#include "touch_config.h"
 
 namespace {
 
@@ -186,6 +187,8 @@ void apply_json(MenuConfig& m, const std::string& path, const std::string& mod_i
 MenuConfig default_config() {
     MenuConfig m;
 
+    // No quitting to desktop on Android; the system handles app exit.
+#ifndef __ANDROID__
     Button quit;
     quit.id = "quit";
     quit.menu = "main_menu";
@@ -202,6 +205,7 @@ MenuConfig default_config() {
     pause_quit.behavior = "quit";
     pause_quit.label = "QUIT TO DESKTOP";
     m.buttons.push_back(std::move(pause_quit));
+#endif
 
     return m;
 }
@@ -253,6 +257,7 @@ struct SliderImpl { std::function<int()> get; std::function<void(int)> set; };
 std::unordered_map<std::string, std::function<void()>>& actions() {
     static std::unordered_map<std::string, std::function<void()>> r = {
         { "quit", [] { rs64_menu_request_quit(); } },
+        { "touch_layout", [] { rs64_touch_layout_request(); } },
     };
     return r;
 }
@@ -260,6 +265,8 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
     static std::unordered_map<std::string, ToggleImpl> r = {
         { "fullscreen", { [] { return rs64_get_fullscreen() != 0; },
                           [] { rs64_toggle_fullscreen(); } } },
+        { "gyro", { [] { return rs64::touch::gyro_enabled(); },
+                    [] { rs64::touch::set_gyro_enabled(!rs64::touch::gyro_enabled()); } } },
     };
     return r;
 }

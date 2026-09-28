@@ -44,6 +44,8 @@ covers the front-end and pause menus. Sources are layered in this order:
 3. Each **mod** is a subfolder of `mods/` (next to the exe); every mod folder with
    a `roguesq_menu.json` is applied on top, in folder-name order.
 
+Which repo mods ship where is decided by [mods/platforms.json](../mods/platforms.json): its `desktop` list is staged beside the exe (and into `dist/` for Release) by `tools/mods/stage_mods.cmake`, and its `android` list is packed into the APK. A new mod ships nowhere until it is added there.
+
 A button with the same **`id`** as an earlier one **replaces it in place**, so a
 mod overrides a default (or an earlier mod) by reusing its id. Editing JSON needs
 no rebuild — relaunch. Two example mods ship to `build/Debug/mods/`:
@@ -124,7 +126,7 @@ the FULLSCREEN toggle). Your own mod folders alongside them are never overwritte
 - toggles: `fullscreen` (`{ get, toggle }`).
 - sliders: `draw_distance`, the `drawDistance` multiplier from `roguesq_video.json` as a percent (use `"min": 100, "max": 250`). It applies live and is saved. The base game shows no draw-distance UI; a menu mod adds one with this key.
 
-**Code mods (`.nrm`).** To change game behavior (not just menus), write a code mod: it patches game functions directly (`RECOMP_PATCH` replaces a base function, `RECOMP_HOOK` / `RECOMP_HOOK_RETURN` run around one) and needs no base changes. [mods/infinite-secondary/](../mods/infinite-secondary/), [mods/any-craft/](../mods/any-craft/) and [mods/larger-object-pool/](../mods/larger-object-pool/) (calls game functions) are complete examples: MIPS C in `src/`, `mod.ld`, a RecompModTool manifest `mod.toml` that references `syms/rogue_squadron.syms.toml` (patch names must match a function there), and a two-line `CMakeLists.txt` calling `add_code_mod` from [tools/mods/code_mod.cmake](../tools/mods/code_mod.cmake). Build RecompModTool once with `cmake --build build/N64ModernRuntime/librecomp/N64Recomp --config Debug --target RecompModTool`, then `cmake -S mods/<name> -B mods/<name>/build` and `cmake --build mods/<name>/build`. The `.nrm` lands in `mods/` and is staged beside the exe; any `mods/<name>/` holding a `mod.toml` is stripped from staging automatically. Call game functions by their name in the syms file (e.g. `rs_malloc`, `func_8004028C`) and reach game data by absolute address. Mod ids must be C identifiers (`infinite_secondary`). Enable it in the Mods panel (F1) or `mods.json`; code mods apply at startup. LiveRecomp does not materialize branch-and-link `$ra` values, so a `RECOMP_HOOK` on a function that reads `$ra` as data will misbehave.
+**Code mods (`.nrm`).** To change game behavior (not just menus), write a code mod: it patches game functions directly (`RECOMP_PATCH` replaces a base function, `RECOMP_HOOK` / `RECOMP_HOOK_RETURN` run around one) and needs no base changes. [mods/infinite-secondary/](../mods/infinite-secondary/), [mods/any-craft/](../mods/any-craft/) and [mods/larger-object-pool/](../mods/larger-object-pool/) (calls game functions) are complete examples: MIPS C in `src/`, `mod.ld`, a RecompModTool manifest `mod.toml` that references `syms/rogue_squadron.syms.toml` (patch names must match a function there), and a two-line `CMakeLists.txt` calling `add_code_mod` from [tools/mods/code_mod.cmake](../tools/mods/code_mod.cmake). Build RecompModTool once with `cmake --build build/N64ModernRuntime/librecomp/N64Recomp --config Debug --target RecompModTool`, then `cmake -S mods/<name> -B mods/<name>/build` and `cmake --build mods/<name>/build`. The `.nrm` lands in `mods/`; list it in `mods/platforms.json` to stage it beside the exe (the `mods/<name>/` source folder is never listed). Call game functions by their name in the syms file (e.g. `rs_malloc`, `func_8004028C`) and reach game data by absolute address. Mod ids must be C identifiers (`infinite_secondary`). Enable it in the Mods panel (F1) or `mods.json`; code mods apply at startup. LiveRecomp does not materialize branch-and-link `$ra` values, so a `RECOMP_HOOK` on a function that reads `$ra` as data will misbehave.
 
 Add built-ins by extending `actions()` / `toggles()`.
 
@@ -212,6 +214,7 @@ Back), and a page cannot be opened from the host menu itself.
 | +0x74 | `u32 unk74[8]` | per-entry param; for sub-type 1 = target `enum Menu` |
 | +0x94 | `u8 current_menu_entry` | highlighted index |
 | +0x95 | `u8 num_menu_entries` | visible count |
+| +0x96 | `s16 list_base` | list y origin, set per menu (default 40; main 165, options 20/30, 4 and 5 are -90); entry i's y = `list_base + 36*i - 18*n + entry_xy_offsets[i].y`, x = `entry_xy_offsets[i].x` centered (setupMenuData tail 0x800C4CF0) |
 | +0x98 | `u16 active_entries` | bitmask, bit i set if entry i is selectable |
 | +0xA0 | `f32 highlight_timer` | pulse animation |
 

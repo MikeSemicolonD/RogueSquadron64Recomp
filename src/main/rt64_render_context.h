@@ -22,4 +22,10 @@ namespace ultramodern {
 // input layer, which releases mouse-steering capture when the inspector is up.
 extern "C" int rs64_rt64_inspector_open(void);
 
+// Android lifecycle: stop presenting before the OS destroys the window, and move RT64's swap chain to the new window on
+// return. resume returns false (and stays suspended) until SDL has a live native window with a size.
+extern "C" void rs64_render_suspend_surface(void);
+extern "C" bool rs64_render_resume_surface(void);
+extern "C" bool rs64_render_surface_suspended(void);
+
 #endif // RS64_RT64_RENDER_CONTEXT_H

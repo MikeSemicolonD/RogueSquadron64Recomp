@@ -1,0 +1,14 @@
+{
+  "//": "Which mods each build ships. Entries are folder names under mods/ (data-only mods) or built .nrm files (code mods). A mod not listed here ships nowhere: example mods and code-mod source folders stay out. Desktop: tools/mods/stage_mods.cmake stages next to the exe (and into dist/ for Release). Android: android/app/build.gradle bundleMods packs into the APK.",
+  "desktop": [
+    "fullscreen-toggle",
+    "quit-prompt",
+    "any_craft.nrm",
+    "infinite_secondary.nrm",
+    "larger_object_pool.nrm"
+  ],
+  "android": [
+    "touch-layout",
+    "gyro-toggle"
+  ]
+}

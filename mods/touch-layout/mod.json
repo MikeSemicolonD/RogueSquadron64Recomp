@@ -1,0 +1,10 @@
+{
+  "game_id": "rs64",
+  "id": "touch-layout",
+  "display_name": "Touch Layout",
+  "description": "Android: adds TOUCH LAYOUT to the pause menu, opening the on-screen control layout editor.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true
+}

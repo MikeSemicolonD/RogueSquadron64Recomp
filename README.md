@@ -44,7 +44,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (N64, USA v1.0) built wi
 | Requirement | Notes |
 | --- | --- |
 | **ROM** | `rogue_squadron.z64`, USA v1.0 (16 MB, xxHash3-64 `0x6B66A44153594DEA`) |
-| **OS / GPU** | Windows 10+, Linux, or macOS 11+ with a D3D12, Vulkan, or Metal capable GPU |
+| **OS / GPU** | Windows 10+, Linux, or macOS 11+ with a D3D12, Vulkan, or Metal capable GPU; Android 8+ arm64 with Vulkan 1.1 (see [Android notes](#android-notes)) |
 | **CMake** | 3.20+ |
 | **Compiler** | MSVC with the ClangCL toolset (Windows), Clang or GCC (Linux/macOS) |
 | **N64Recomp output** | `RecompiledFuncs/`, generated locally from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp (started by [Tmcg2](https://github.com/Tmcg2/rogue_squadron64)) via the `regen_funcs` target |
@@ -117,6 +117,25 @@ The `patches/` override layer is skipped automatically without `mips64-elf-gcc` 
 - WSL's default Vulkan is **llvmpipe (software)** — it runs but hitches. For GPU acceleration, build [Mesa's](https://gitlab.freedesktop.org/mesa/mesa) **[Dozen (`dzn`)](https://gitlab.freedesktop.org/mesa/mesa/-/tree/main/src/microsoft/vulkan?ref_type=heads)** driver (Vulkan → D3D12 → the real GPU via `/dev/dxg`). If the game doesn't detect `dzn` it'll default to software (CPU) rendering.
 - The `tools/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
 
+### Android notes
+
+Builds as an arm64 APK and runs on a **(Snapdragon 8 Gen 3 / Adreno 750, Android 16)**; other arm64 phones with Vulkan 1.1 should work, but driver quality varies. The Gradle project in `android/` builds the same `CMakeLists.txt` with the NDK.
+
+Needs **Android Studio** (for its SDK, bundled JDK and `adb`) with **NDK 29.0.14206865**; Gradle fetches SDL 2.32.10 and installs its CMake itself.
+
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
+cd android
+.\gradlew.bat assembleRelease   # app\build\outputs\apk\release\app-release.apk
+adb install -r app\build\outputs\apk\release\app-release.apk
+```
+
+- **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and stutters. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wraps the commands above.
+- **ROM:** on first launch the system file picker asks for `rogue_squadron.z64`; the ROM is checked and imported once. (Pushing it to `/sdcard/Android/data/com.rs64recomp.app/files/` with `adb push` also works.)
+- **Controls:** touch controls are on by default: tap menu entries directly, swipe carousels, and fly with a floating stick plus N64-style buttons. The user can move and resize the buttons by using the gear button in corner of the main menu or **TOUCH LAYOUT** (Requires [touch-layout](mods/touch-layout) mod) in the pause menu. **GYRO STEERING** (Requires [gyro-toggle](mods/gyro-toggle) mod) in Game Settings turns on tilt steering with mouse-like up/down aiming. Android Back is B; a paired gamepad works and hides the touch overlay. Settings live in `roguesq_touch.json`.
+- **Mods:** the APK will build and include the mods listed under `android` in [mods/platforms.json](mods/platforms.json) installing them into the app's `mods/` folder.
+- **Debugging:** logs go to logcat under the tag `RS64` (the `Logcat (Android)` task filters it). Environment variables go one `NAME=VALUE` per line in `roguesq_env.txt` in the app's files folder.
+
 ---
 
 ## The recompiler config (`rogue_squadron.toml`)
@@ -139,32 +158,37 @@ Put `rogue_squadron.z64` next to the executable and launch it. The ROM hash is c
 
 ### Controls
 
-Keyboard, mouse, and gamepad all work; no controller is required. The keyboard defaults follow the PC version (*Rogue Squadron 3D*). Actions are for the game's default **Luke** controller setting. The other controller presets in Options rearrange them.
+Keyboard, mouse, gamepad, and flight sticks / HOTAS all work; no controller is required. The keyboard and joystick defaults follow the PC version (*Rogue Squadron 3D*). Actions are for the game's default **Luke** controller setting. The other controller presets in Options rearrange them.
 
-<div style="text-align:center">
+<div align="center">
 
-| Action | Keyboard | N64 | Gamepad |
-| --- | --- | --- | --- |
-| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Analog stick | Left stick |
-| Fire blasters | <kbd>Space</kbd> | B | X |
-| Fire secondary | <kbd>Alt</kbd> | C-Left | Back |
-| Fire mode | <kbd>X</kbd> | C-Down | B |
-| Thrust | <kbd>W</kbd> | A | A |
-| Brake | <kbd>S</kbd> | Z | Left trigger |
-| Roll | <kbd>E</kbd> | R | Right shoulder |
-| Special | <kbd>F</kbd> | C-Right | Guide |
-| Cockpit | <kbd>F1</kbd> | D-Pad Up | D-Pad |
-| Standard | <kbd>F2</kbd> | D-Pad  Down | D-Pad |
-| Close view | <kbd>F3</kbd> | D-Pad Right | D-Pad |
-| Switch view | <kbd>F4</kbd> | L | Left shoulder |
-| In-Game Profiler HUD | <kbd>F5</kbd> | — | — |
-| Look around | <kbd>F8</kbd> | C-Up | Y |
-| Drop camera | <kbd>Z</kbd> | D-Pad Left | D-Pad |
-| Menu confirm | <kbd>Enter</kbd> | A | A |
-| Back | <kbd>Backspace</kbd> | B | X |
-| Pause | <kbd>Esc</kbd> | Start | Start |
+| Action | Keyboard | N64 | Gamepad | Joystick / H.O.T.A.S. |
+| --- | --- | --- | --- | --- |
+| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Analog stick | Left stick | Stick X/Y |
+| Fire blasters | <kbd>Space</kbd> | B | X | Button 1 (trigger) |
+| Fire secondary | <kbd>Alt</kbd> | C-Left | Back | Button 2 |
+| Fire mode | <kbd>X</kbd> | C-Down | B | Button 6 |
+| Thrust | <kbd>W</kbd> | A | A | Button 3 |
+| Brake | <kbd>S</kbd> | Z | Left trigger | Button 4 |
+| Speed (positional) | — | — | — | Throttle lever |
+| Roll | <kbd>E</kbd> | R | Right shoulder | Button 7 + twist joystick |
+| Special | <kbd>F</kbd> | C-Right | Guide | Button 5 |
+| Cockpit | <kbd>F1</kbd> | D-Pad Up | D-Pad | — |
+| Standard | <kbd>F2</kbd> | D-Pad  Down | D-Pad | — |
+| Close view | <kbd>F3</kbd> | D-Pad Right | D-Pad | — |
+| Switch view | <kbd>F4</kbd> | L | Left shoulder | Button 8 |
+| In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — |
+| Look around | <kbd>Q</kbd> | C-Up | Y | Hat |
+| Drop camera | <kbd>Z</kbd> | D-Pad Left | D-Pad | — |
+| Menu confirm | <kbd>Enter</kbd> | A | A | Button 3 |
+| Back | <kbd>Backspace</kbd> | B | X | Button 1 |
+| Pause | <kbd>Esc</kbd> | Start | Start | — |
 
 </div>
+
+**Flight sticks and HOTAS:** any joystick that isn't a gamepad (flight stick, throttle unit, pedals) is picked up automatically, several at once. The first time one is connected it gets the PC version's layout above. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: back is the craft's slowest, forward its fastest, and the **Cruise at** point (middle by default) its normal speed. Other axes such as twist, rudder, or a throttle slider on the stick are bound from the Controls window (**F6**) For the throttle, pull the lever back, click **Rebind** on Throttle, then push it forward. A twist grip or rudder pedals can do one of two jobs, depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction adds together. Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis: hold the Roll button and twist to roll.
+
+**Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks with rumble or force feedback. Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. Turn rumble off, change its strength, or turn off individual effects in the Controls window, or in the `rumble` section of `roguesq_input.json`.
 
 **Mouse flight steering:** mouse capture is automatic while the game window is focused.
 Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon. Capture releases when the window loses focus, the controls window (**F6**) is open, or when RT64's **F1** inspector is up.
@@ -175,7 +199,7 @@ In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
 
 #### Rebinding controls
 
-Press **F6** to open the **Controls** window. Click **Rebind** on any action and press the key, gamepad button, or mouse button to assign it. **Clear** removes a binding. Adjust mouse sensitivity and invert there, then **Save** (or **Restore defaults**). Bindings persist to `roguesq_input.json` next to the executable, which you can also hand-edit.
+Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Add** (keep the existing ones) on any action, then press a key, gamepad button, mouse button, joystick button or hat, or move a joystick axis to assign it. **Clear** removes a binding. The **Joysticks / HOTAS** section shows each connected joystick's axes live, with invert and deadzone settings. The **Rumble** section holds the rumble settings. Adjust mouse sensitivity and invert there too, then **Save** (or **Restore defaults**). Bindings persist to `roguesq_input.json` next to the executable, which you can also hand-edit.
 
 > [!TIP]
 > In Debug builds (developer mode on by default) the RT64 inspector owns the ImGui overlay, so press **F1** once before **F6**.
@@ -323,6 +347,6 @@ Here's a list of MCPs that could be useful for this project:
 
 See [LICENSE](LICENSE). This is a hobby project.
 
-This project is in **no way** associated with, sponsored or endorsed by Disney, LucasArts (now known as Lucasfilm Games LLC), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
+This project is in **no way** associated with, sponsored or endorsed by Nintendo, Disney, LucasArts (now known as Lucasfilm Games LLC), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
 
 This project contains no ROM data and requires a legally obtained copy of the game.
