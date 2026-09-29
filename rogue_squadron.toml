@@ -494,6 +494,12 @@ func = "tickFormatMessageWorker"
 before_vram = 0x800B380C
 text = '''{ extern uint32_t rs64_format_reply_slot(uint8_t*, recomp_context*, uint32_t); ctx->r6 = (gpr)(int32_t)rs64_format_reply_slot(rdram, ctx, (uint32_t)ctx->r6); }'''
 
+# initVideoSubsystem zeroes the new mode's first buffer on the CPU ($s1 = fb, $s0 = bytes); RT64 never sees it, so tell the present side.
+[[patches.hook]]
+func = "initVideoSubsystem"
+before_vram = 0x8001A2EC
+text = '''{ extern void rs64_fb_cpu_cleared(uint8_t*, uint32_t, uint32_t); rs64_fb_cpu_cleared(rdram, (uint32_t)ctx->r17, (uint32_t)ctx->r16); }'''
+
 # Positional HOTAS throttle: each craft's speed update, just before current speed steps toward the clamped target.
 # rs64_throttle_hook(rdram, target, base_addr, floor, cruise, cap, skip_addr) maps the lever onto that craft's floor/cruise/cap.
 [[patches.hook]]

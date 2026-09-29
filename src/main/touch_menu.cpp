@@ -112,8 +112,14 @@ namespace rs64::touch {
         return Context::Carousel;
     }
 
+    // The pause flag alone misses frames around the pause HUD's open/close animation, where tilt would otherwise move the cursor.
     bool read_paused(const uint8_t* r) {
-        return rw(r, kPauseWord) == 5;
+        if (rw(r, kPauseWord) == 5) {
+            return true;
+        }
+        const uint32_t hud = find_pause_hud(r);
+        const uint8_t phase = hud ? rb(r, hud - 0x80000000u + 0x258) : 0;
+        return phase >= 1 && phase <= 3;
     }
 
     bool read_demo(const uint8_t* r) {
@@ -486,6 +492,60 @@ namespace rs64::touch {
         const uint16_t v = (uint16_t)k;
         std::memcpy(r + ((hud - 0x80000000u + 0xD68) ^ 2), &v, 2);
         return true;
+    }
+
+    int pause_submenu(const uint8_t* r) {
+        const uint32_t hud = find_pause_hud(r);
+        if (!hud) {
+            return -1;
+        }
+        const uint32_t hh = hud - 0x80000000u;
+        const uint8_t menu = rb(r, hh + 0xD6A);
+        return (rb(r, hh + 0x258) == 3 && menu <= 3) ? menu : -1;
+    }
+
+    int pause_entry(const uint8_t* r) {
+        const uint32_t hud = find_pause_hud(r);
+        return hud ? rh(r, hud - 0x80000000u + 0xD68) : -1;
+    }
+
+    int pause_find_entry(const uint8_t* r, int menu, uint16_t next) {
+        if (menu < 0 || menu > 3) {
+            return -1;
+        }
+        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        int k = 0;
+        for (int i = 0; i < 64; ++i) {
+            const uint16_t f = rh(r, recs + 6u * i);
+            if (f == 0xFFFF) {
+                break;
+            }
+            if (f & 0x0001) {
+                if (rh(r, recs + 6u * i + 4) == next) {
+                    return k;
+                }
+                ++k;
+            }
+        }
+        return -1;
+    }
+
+    std::string describe_pause_records(const uint8_t* r, int menu) {
+        std::string s;
+        if (menu < 0 || menu > 3) {
+            return s;
+        }
+        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        char buf[48];
+        for (int i = 0; i < 64; ++i) {
+            const uint16_t f = rh(r, recs + 6u * i);
+            if (f == 0xFFFF) {
+                break;
+            }
+            std::snprintf(buf, sizeof(buf), " [%04X %04X %04X]", f, rh(r, recs + 6u * i + 2), rh(r, recs + 6u * i + 4));
+            s += buf;
+        }
+        return s;
     }
 
     bool pause_tap_select(uint8_t* r, float x, float y, float w, float h) {

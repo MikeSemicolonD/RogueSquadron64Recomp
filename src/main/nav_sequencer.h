@@ -4,7 +4,7 @@
 #pragma once
 #include <cstdint>
 
-enum RsNavKind { NAV_NONE = 0, NAV_LEVEL, NAV_CUTSCENE, NAV_DEMO };
+enum RsNavKind { NAV_NONE = 0, NAV_LEVEL, NAV_CUTSCENE, NAV_DEMO, NAV_ABORT };
 struct RsNavTarget { RsNavKind kind; int a; int b; };  // level: a=level b=craft; cutscene/demo: a=index
 
 extern "C" {
@@ -12,5 +12,6 @@ extern "C" {
     void rs64_nav_set_target(const char* boot_target);  // called once from the render context
     void rs64_nav_inject(uint16_t buttons, float x, float y);  // stage a one-shot controller state
     bool rs64_nav_consume(uint16_t* buttons, float* x, float* y);  // get_n64_input drains it
-    void rs64_nav_tick(uint8_t* rdram);  // called each present; advances the step machine
+    // overlay: g_active_overlay (0 mission, 1 menu, 2 cinematic, -1 none).
+    void rs64_nav_tick(uint8_t* rdram, int overlay);  // called each present; advances the step machine
 }

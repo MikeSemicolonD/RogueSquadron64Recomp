@@ -1,5 +1,7 @@
 #include "nav_sequencer.h"
 #include "game_state.h"        // rs64_state_current_id
+#include "touch_menu.h"
+#include "debug_logs.h"
 #include <atomic>
 #include <cstring>
 #include <cstdlib>
@@ -42,6 +44,7 @@ extern "C" RsNavTarget rs64_nav_parse(const char* v) {
     auto arg = [](const char* s) { const char* c = std::strchr(s, ':'); return (c && c[1]) ? std::atoi(c + 1) : -1; };
     auto arg2 = [](const char* s) { const char* c = std::strchr(s, ','); return (c && c[1]) ? std::atoi(c + 1) : -1; };
     if (!std::strncmp(v, "level", 5))         { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); }
+    else if (!std::strncmp(v, "abort", 5))    { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); }
     else if (!std::strncmp(v, "cutscene", 8)) { t.kind = NAV_CUTSCENE; t.a = arg(v); }
     else if (!std::strncmp(v, "demo", 4))     { t.kind = NAV_DEMO;     t.a = arg(v) < 0 ? 0 : arg(v); }
     return t;
@@ -59,6 +62,7 @@ extern "C" void rs64_nav_set_target(const char* boot_target) {
 // filled per target in Task 3/5/6. Each step has a frame budget; on overflow the sequence aborts
 // (logged) rather than hanging the boot.
 static int s_step = 0;
+static int s_overlay = -1;
 static int s_watchdog = 0;
 static int s_since_press = 9999;
 static bool s_disabled = false;
@@ -107,6 +111,18 @@ static void nav_repress(uint16_t btn) {
 // so the flow always passes ENTER NAME; we pick a letter (A) + finish (START) rather than depend
 // on the name buffer, then write the real level/craft on their screens and let the game confirm.
 static int s_name_toggle = 0;
+static const int ABORT_FIRST_STEP = 10;
+
+// Mission reached: the level target stops here; the abort target goes on to its pause-menu steps.
+static void nav_mission_reached() {
+    if (g_target.kind == NAV_ABORT) {
+        s_step = ABORT_FIRST_STEP - 1;
+        nav_advance();
+    } else {
+        s_disabled = true;
+    }
+}
+
 static void nav_level(uint8_t* rdram, const char* st) {
     // A brand-new pilot (saves don't persist headless) auto-launches a forced level -- there is no
     // level/craft select screen to drive. Pin the requested level+craft only AFTER name entry
@@ -122,7 +138,7 @@ static void nav_level(uint8_t* rdram, const char* st) {
         fprintf(stderr, "[nav] level target=%d reached; currentLevel=0x%02X craft=0x%02X\n",
                 g_target.a, rdram[0x130B40 ^ 3], rdram[0x130B41 ^ 3]);
         fflush(stderr);
-        s_disabled = true;
+        nav_mission_reached();
         return;
     }
     switch (s_step) {
@@ -163,8 +179,118 @@ static void nav_level(uint8_t* rdram, const char* st) {
         case 5:  // reached the mission
             fprintf(stderr, "[nav] level %d reached (state=%s)\n", g_target.a, st);
             fflush(stderr);
-            s_disabled = true;
+            nav_mission_reached();
             break;
+        default: break;
+    }
+}
+
+// Abort target, after the mission launches: pause, pick ABORT MISSION (the root record whose nextMenu is the confirm
+// submenu 3), then YES, and wait for the front end. The cursor is written the way touch taps do (HUD+0xD68) and A
+// confirms it. YES is the first confirm row unless ROGUESQ_NAV_ABORT_YES says otherwise; landing back on the root
+// means that row was NO, so the next row is tried.
+static int s_settle = 0;
+static int s_yes = -1;
+static int s_abort_wait = 0;
+static void nav_log_pause(uint8_t* rdram, const char* what) {
+    const int menu = rs64::touch::pause_submenu(rdram);
+    fprintf(stderr, "[nav] abort %s: %s records%s\n", what, rs64::touch::describe_pause(rdram).c_str(),
+            rs64::touch::describe_pause_records(rdram, menu < 0 ? 0 : menu).c_str());
+    fflush(stderr);
+}
+
+static void nav_select_and_confirm(uint8_t* rdram, int k) {
+    if (rs64::touch::pause_entry(rdram) != k) {
+        rs64::touch::pause_set_entry(rdram, k);
+        s_since_press = REPRESS_INTERVAL - 10;
+        return;
+    }
+    nav_repress(N64_A_BUTTON);
+}
+
+static void nav_abort(uint8_t* rdram, const char* st) {
+    if (s_step < ABORT_FIRST_STEP) {
+        nav_level(rdram, st);
+        return;
+    }
+    const bool paused = rs64::touch::read_paused(rdram);
+    const int menu = rs64::touch::pause_submenu(rdram);
+    switch (s_step) {
+        case 10:  // let the mission start before pausing
+            if (is(st, "mission") && !paused && ++s_settle >= 180) nav_advance();
+            break;
+        case 11:  // START until the pause root is open; no re-press while the HUD animates
+            if (menu == 0) {
+                nav_log_pause(rdram, "pause open");
+                nav_advance();
+            } else if (!paused) {
+                nav_repress(N64_START_BUTTON);
+            }
+            break;
+        case 12: {  // root: ABORT MISSION -> confirm submenu
+            if (menu == 3) {
+                nav_log_pause(rdram, "confirm open");
+                if (s_yes < 0) s_yes = recomp::dbg::env_int("ROGUESQ_NAV_ABORT_YES", 0);
+                nav_advance();
+                break;
+            }
+            if (menu != 0) {
+                if (!paused) s_step = 11;
+                break;
+            }
+            const int k = rs64::touch::pause_find_entry(rdram, 0, 3);
+            if (k < 0) {
+                nav_log_pause(rdram, "no ABORT entry");
+                s_disabled = true;
+                break;
+            }
+            nav_select_and_confirm(rdram, k);
+            break;
+        }
+        case 13:  // confirm: YES
+            if (menu == 3) {
+                nav_select_and_confirm(rdram, s_yes);
+            } else if (menu == 0) {
+                fprintf(stderr, "[nav] abort: confirm row %d was NO; trying %d\n", s_yes, s_yes + 1);
+                fflush(stderr);
+                s_yes++;
+                s_step = 12;
+            } else if (!paused) {
+                fprintf(stderr, "[nav] abort confirmed (YES=%d, state=%s)\n", s_yes, st);
+                fflush(stderr);
+                nav_advance();
+            }
+            break;
+        case 14:  // back to the front end (menu overlay; the classifier still says mission on the pilot screens, whose menu ptr is 0)
+            if (s_overlay == 1 || !std::strncmp(st, "menu", 4)) {
+                fprintf(stderr, "[nav] abort: results screen (overlay=%d state=%s)\n", s_overlay, st);
+                fflush(stderr);
+                s_settle = 0;
+                nav_advance();
+            } else if (++s_abort_wait > 600 && !paused) {
+                nav_repress(N64_A_BUTTON);
+            }
+            break;
+        case 15: {  // MISSION FAILED results -> one A -> SELECT LEVEL; a second A would launch the level again
+            static uint32_t s_prev_key = 0xFFFFFFFFu;
+            const uint16_t screen = (uint16_t)((rdram[0x0CFF50 ^ 3] << 8) | rdram[0x0CFF51 ^ 3]);
+            const uint32_t key = ((uint32_t)s_overlay << 24) ^ ((uint32_t)rdram[0x0CE734 ^ 3] << 16) ^ screen;
+            if (key != s_prev_key) {
+                fprintf(stderr, "[nav] abort results: overlay=%d state=%s screen=%u menuPtr=0x%02X%02X%02X%02X menuId=%u\n", s_overlay, st, screen,
+                        rdram[0x0CE730 ^ 3], rdram[0x0CE731 ^ 3], rdram[0x0CE732 ^ 3], rdram[0x0CE733 ^ 3], rdram[0x0CE734 ^ 3]);
+                fflush(stderr);
+                s_prev_key = key;
+            }
+            // Front-end screen u16: 3 results, 1 SELECT LEVEL (menu ptr is 0 here, so account_screen() can't be used).
+            if (s_overlay == 1 && screen == 1) {
+                fprintf(stderr, "[nav] abort complete: level %d -> SELECT LEVEL\n", g_target.a);
+                fflush(stderr);
+                s_disabled = true;
+            } else if (s_overlay == 1 && screen == 3) {
+                nav_repress(N64_A_BUTTON);
+            }
+            break;
+        }
         default: break;
     }
 }
@@ -188,7 +314,9 @@ static void nav_demo(uint8_t* rdram, const char* st) {
     }
 }
 
-extern "C" void rs64_nav_tick(uint8_t* rdram) {
+
+extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay) {
+    s_overlay = overlay;
     if (g_target.kind == NAV_NONE || !rdram) return;
     if (s_disabled) { g_driving.store(false, std::memory_order_release); return; }
     // Do NOT drive before the first action: the boot START pulse must advance the title ->
@@ -215,6 +343,7 @@ extern "C" void rs64_nav_tick(uint8_t* rdram) {
         case NAV_LEVEL:    nav_level(rdram, st); break;
         case NAV_CUTSCENE: /* Task 6 */ break;
         case NAV_DEMO:     nav_demo(rdram, st); break;
+        case NAV_ABORT:    nav_abort(rdram, st); break;
         default: s_disabled = true; break;
     }
 }

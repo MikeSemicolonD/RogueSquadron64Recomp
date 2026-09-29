@@ -22,6 +22,7 @@
 #include "hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "upstream_compat.h"   // rs64_vi_driven, rs64_fb_guards_mask
 #include "game_state.h"
+#include "hle/rt64_rs64_transition.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -287,6 +288,24 @@ extern "C" uint32_t rs64_format_reply_slot(uint8_t* rdram, recomp_context* ctx, 
     const uint32_t dst = kRing + (s_next++ % kSlots) * kSlotSize;
     std::memcpy(rdram + (dst - 0x80000000u), rdram + (src - 0x80000000u), kSlotSize);
     return dst;
+}
+
+// ---- Mode-change blanking ----
+
+// RT64's present queue presents black while the VI shows this CPU-zeroed buffer. The game has drained every frame before the clear, so the last workload id is stable here.
+extern "C" volatile uint32_t g_rs64_clear_seq = 0;
+extern "C" volatile uint32_t g_rs64_clear_bytes = 0;
+
+extern "C" void rs64_fb_cpu_cleared(uint8_t* /*rdram*/, uint32_t fb, uint32_t bytes) {
+    static const bool s_log = env_on("ROGUESQ_LOG_TRANSITION");
+    g_rs64_cpu_cleared_wid.store(g_rs64_last_workload_id.load(std::memory_order_acquire), std::memory_order_release);
+    g_rs64_cpu_cleared_fb.store(fb & 0x00FFFFFFu, std::memory_order_release);
+    g_rs64_clear_bytes = bytes;
+    g_rs64_clear_seq = g_rs64_clear_seq + 1;
+    if (s_log) {
+        fprintf(stderr, "[transition] cpu-clear fb=0x%08X bytes=0x%X\n", fb, bytes);
+        fflush(stderr);
+    }
 }
 
 // ---- Display-list walkers ----

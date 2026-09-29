@@ -198,6 +198,21 @@ zlib decompressor (embedded v0.99-1.08): `adler32` (0x800269B0), `inflateInit2_`
 
 `osViBlack` is overridden to a no-op in the runtime: the game calls `osViBlack(1)` but never `osViBlack(0)`, which would otherwise leave the VI stuck in `VI_STATE_BLACK` and present nothing.
 
+Video-mode changes (menu<->menu, menu<->mission) go through `advanceVideoFrame` (0x8001818C) and blank themselves without `osViBlack`:
+1. `swapBufferWithViMode` applies a copy of the current mode with vStart == vEnd (zero active lines).
+2. `initVideoSubsystem` (0x8001A098) re-partitions the framebuffers top-down and zeroes the first new buffer on the CPU (memset at 0x8001A2E4).
+3. It swaps to that zeroed buffer.
+4. The new mode is set.
+
+Buffers of one mode reuse addresses of another. For example, a 512x448 no-Z menu buffer at 0x790000 covers the mission Z buffer. So RT64 can still hold an old target, possibly depth, at the zeroed address.
+
+The host mirrors the blanking:
+- `apply_vi_overrides` zeroes hStart for the zero-height mode.
+- A `rogue_squadron.toml` hook at 0x8001A2EC arms a present-side gate that shows black while the VI shows the zeroed buffer and no later workload has drawn it.
+- The present never converts a depth buffer to color.
+
+`ROGUESQ_LOG_TRANSITION=1` traces it.
+
 ### 7. Audio subsystem (Factor 5 / MusyX)
 
 Custom Factor 5 audio ucode, MusyX-derived; see [Audio pipeline](#audio-pipeline)

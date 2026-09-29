@@ -333,7 +333,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 Priorities (user-visible issues are listed under [Status](README.md#status-playable) in the README):
 
-1. **Display-list desyncs** — about a dozen per run, typically garbage right after a material sub-DL returns. Root-cause with [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and `tools/validate/f5_dl_walk.py`.
+1. **Display-list desyncs** — mostly fixed: the texrect handlers left the 16-byte LLE texrect's second word in the stream, so it ran as a command (0x06 calls, 0x07 branches, 0x0D othermode). An `abort:0` run went from 19 garbage color-image rejects to 0 (`ROGUESQ_LOG_DL_HEALTH=1`; `ROGUESQ_F5_TEXRECT_FOLLOWUP_AS_CMD=1` reverts). Recheck longer runs and other levels; root-cause any remaining ones with [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and `tools/validate/f5_dl_walk.py`.
 2. **Retire render heuristics that a known microcode rule can replace** — e.g. the 0xBD sprite path (the ucode emits a screen-space texrect via overlay 0x2C) and the terrain grid shape. Verify each with the DL/RDRAM validation harness, not screenshots alone.
 3. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Run `tools/rename/lint_toml_syms.py` after each batch.
 
