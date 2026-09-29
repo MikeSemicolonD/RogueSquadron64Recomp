@@ -21,6 +21,7 @@ extern SDL_Window* g_sdl_window;
 #define HLSL_CPU
 #endif
 #include "hle/rt64_application.h"
+#include "hle/rt64_rs64_transition.h"
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
@@ -44,6 +45,7 @@ extern "C" volatile unsigned g_f5_heur[4];
 
 #ifdef _WIN32
 extern "C" void rs64_data_bp_arm(void* host_addr);
+extern "C" void rs64_data_bp_set2(void* host_addr);
 extern "C" void rs64_data_bp_drain(int vi);
 #endif
 
@@ -55,6 +57,8 @@ extern "C" uint8_t* g_rs64_parse_rdram;             // RDRAM snapshot for the cu
 extern "C" volatile unsigned g_most_drawn_fb;        // most-drawn color image and its width
 extern "C" volatile unsigned g_most_drawn_fb_width;
 extern "C" volatile unsigned long long g_most_drawn_fb_ms;
+extern "C" volatile uint32_t g_rs64_clear_seq;          // mode-change clear count and size (hook_helpers.cpp)
+extern "C" volatile uint32_t g_rs64_clear_bytes;
 // Defined below
 extern "C" void rs64_sanitize_fb_registry(void);
 
@@ -192,7 +196,16 @@ public:
     std::unique_ptr<RT64::Application> app;
     static inline std::atomic<bool> s_hle_disabled{false};  // tripped by the SEH streak, retried periodically
 
-    RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool debug) {
+    RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool debug)
+        : rdram_(rdram), window_handle_(window_handle), debug_(debug) {
+        create_app();
+    }
+
+    // Builds and sets up the RT64 application; also rebuilds it after the GPU device is lost.
+    void create_app() {
+        uint8_t* rdram = rdram_;
+        ultramodern::renderer::WindowHandle window_handle = window_handle_;
+        const bool debug = debug_;
         static unsigned char dummy_rom_header[0x40] = {};
 
         RT64::Application::Core appCore{};
@@ -473,6 +486,8 @@ public:
 
     void send_dl(const OSTask* task) override {
         if (!app) return;
+        rebuild_renderer_if_lost();
+        if (!app) return;
         static const int s_task_delay_ms = env_int("ROGUESQ_GFX_TASK_DELAY_MS", 0);
         if (s_task_delay_ms > 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(s_task_delay_ms));
@@ -489,8 +504,14 @@ public:
 
     void update_screen() override {
         if (!app) return;
+        if (rebuild_renderer_if_lost() || !app) return;
         ++vi_count_;
+        if (ultramodern::renderer::ViRegs* vi0 = ultramodern::renderer::get_vi_regs()) {
+            game_vi_origin_ = vi0->VI_ORIGIN_REG & 0x00FFFFFFu;
+            game_vi_width_ = vi0->VI_WIDTH_REG;
+        }
         apply_vi_overrides();
+        log_transition_lum();
         drive_buffer_arbiter();
         drive_boot_target();
         poll_gamestate();
@@ -498,7 +519,7 @@ public:
             static bool s_nav_init = false;
             if (!s_nav_init) { s_nav_init = true; rs64_nav_set_target(env_str("ROGUESQ_BOOT_TARGET")); }
         }
-        rs64_nav_tick((uint8_t*)app->core.RDRAM);
+        rs64_nav_tick((uint8_t*)app->core.RDRAM, g_active_overlay);
         dump_rdram_if_armed();
         watch_rdram();
         data_bp_tick();
@@ -608,7 +629,52 @@ public:
     }
 
 private:
+    uint8_t* rdram_ = nullptr;
+    ultramodern::renderer::WindowHandle window_handle_{};
+    bool debug_ = false;
+
+    // A lost GPU device never recovers; rebuild RT64 on the same window. Rebuilds back off (1 s, doubling to 16 s) while losses keep recurring so a persistent fault can't spin.
+    // ROGUESQ_NO_DEVICE_LOST_RECOVERY=1 disables. Runs on the gfx thread, which is the only caller of send_dl/update_screen.
+    bool rebuild_renderer_if_lost() {
+        static const bool s_off = env_on("ROGUESQ_NO_DEVICE_LOST_RECOVERY");
+        if (s_off || !app || !app->device || !app->device->isLost()) {
+            return false;
+        }
+
+        using clock = std::chrono::steady_clock;
+        static clock::time_point s_last_rebuild{};
+        static std::chrono::milliseconds s_backoff{ 0 };
+        static int s_rebuilds = 0;
+        const auto now = clock::now();
+        if ((s_rebuilds > 0) && (now - s_last_rebuild < s_backoff)) {
+            return true;
+        }
+
+        // A quiet minute since the last rebuild resets the backoff.
+        if ((s_rebuilds == 0) || (now - s_last_rebuild > std::chrono::seconds(60))) {
+            s_backoff = std::chrono::milliseconds(1000);
+        }
+        else {
+            s_backoff = std::min(s_backoff * 2, std::chrono::milliseconds(16000));
+        }
+
+        s_last_rebuild = now;
+        ++s_rebuilds;
+        fprintf(stderr, "[RT64] GPU device lost, rebuilding renderer (#%d, next retry backoff %lld ms)\n", s_rebuilds, (long long)s_backoff.count());
+        fflush(stderr);
+        g_rt64_app.store(nullptr);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        app->end();
+        app.reset();
+        create_app();
+        fprintf(stderr, "[RT64] renderer rebuild %s\n", app ? "succeeded" : "FAILED");
+        fflush(stderr);
+        return true;
+    }
+
     int vi_count_ = 0;
+    uint32_t game_vi_origin_ = 0;     // VI origin/width as the game set them, before apply_vi_overrides
+    uint32_t game_vi_width_ = 0;
     std::string video_cfg_path_;      // roguesq_video.json next to the exe ("" = disabled)
     std::string video_cfg_snapshot_;  // last-persisted userConfig json; F1-menu edits rewrite the file
 
@@ -660,9 +726,14 @@ private:
         if (!s_bp || !app->core.RDRAM) return;
         static const int s_arm_vi = env_int("ROGUESQ_DATA_BP_ARM_VI", 1);
         static bool s_armed = false;
-        if (!s_armed && vi_count_ >= s_arm_vi) {
+        // Re-arm every 30 VIs so game threads created after the first arm (per-screen workers) are watched too.
+        if (vi_count_ >= s_arm_vi && (!s_armed || (vi_count_ % 30) == 0)) {
             s_armed = true;
             const uint32_t a = (uint32_t)std::strtoul(s_bp, nullptr, 16) & 0x7FFFFCu;
+            // ROGUESQ_DATA_BP2=<addr>: a second watched word (DR1).
+            if (const char* bp2 = env_str("ROGUESQ_DATA_BP2")) {
+                rs64_data_bp_set2(app->core.RDRAM + ((uint32_t)std::strtoul(bp2, nullptr, 16) & 0x7FFFFCu));
+            }
             rs64_data_bp_arm(app->core.RDRAM + a);
         }
         if (s_armed) rs64_data_bp_drain(vi_count_);
@@ -833,12 +904,82 @@ private:
 
     // ---- update_screen ----
 
+    // ROGUESQ_LOG_TRANSITION=1: for 180 VIs after each mode-change clear, sample the scanned-out buffer in RDRAM (RT64 writes rendered frames back) and log how white it is.
+    // Keeps the last 240 VI lines and dumps them when a clear fires, so the frames leading into a mode change are visible too.
+    void log_transition_lum() {
+        static const bool s_on = env_on("ROGUESQ_LOG_TRANSITION");
+        if (!s_on || !app->core.RDRAM) return;
+        constexpr int kRing = 240;
+        static std::string s_ring[kRing];
+        static int s_head = 0;
+        static uint32_t s_seq = 0;
+        static int s_left = 0;
+        if (g_rs64_clear_seq != s_seq) {
+            s_seq = g_rs64_clear_seq;
+            s_left = 180;
+            fprintf(stderr, "[transition] ---- last %d VIs before clear #%u ----\n", kRing, s_seq);
+            for (int i = 0; i < kRing; ++i) {
+                const std::string& e = s_ring[(s_head + i) % kRing];
+                if (!e.empty()) fprintf(stderr, "%s\n", e.c_str());
+            }
+            fprintf(stderr, "[transition] ---- end ring ----\n");
+        }
+        ultramodern::renderer::ViRegs* vi = ultramodern::renderer::get_vi_regs();
+        if (!vi) return;
+        const uint32_t origin = vi->VI_ORIGIN_REG & 0x00FFFFFFu;
+        const uint32_t w = vi->VI_WIDTH_REG;
+        const uint32_t bpp = ((vi->VI_STATUS_REG & 3u) == 3u) ? 4u : 2u;
+        if (w < 16 || w > 1024 || origin == 0) return;
+        const uint32_t bytes = g_rs64_clear_bytes;
+        uint32_t h = bytes ? bytes / (w * bpp) : 240u;
+        if (h < 8 || h > 480) h = 240;
+        int white = 0, n = 0;
+        uint32_t sum = 0;
+        for (uint32_t gy = 0; gy < 24; ++gy) {
+            for (uint32_t gx = 0; gx < 32; ++gx) {
+                const uint32_t x = (gx * w) / 32 + w / 64, y = (gy * h) / 24 + h / 48;
+                const uint32_t a = origin + (y * w + x) * bpp;
+                uint32_t r, g, b;
+                if (bpp == 2) {
+                    const uint32_t hi = rd8(a), lo = rd8(a + 1);
+                    r = (hi >> 3) << 3; g = (((hi & 7) << 2) | (lo >> 6)) << 3; b = ((lo >> 1) & 31) << 3;
+                }
+                else {
+                    r = rd8(a); g = rd8(a + 1); b = rd8(a + 2);
+                }
+                const uint32_t l = (r * 3 + g * 6 + b) / 10;
+                sum += l;
+                if (l >= 220) ++white;
+                ++n;
+            }
+        }
+        const long long ms = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count() % 100000;
+        char line[256];
+        snprintf(line, sizeof line, "[transition] vi-lum t=%05lld vi=#%d origin=0x%06X w=%u game=0x%06X/%u hstart=0x%X vstart=0x%X white=%d/%d mean=%u",
+                 ms, vi_count_, origin, w, game_vi_origin_, game_vi_width_, vi->VI_H_START_REG, vi->VI_V_START_REG, white, n, sum / (uint32_t)n);
+        if (s_left > 0) {
+            --s_left;
+            fprintf(stderr, "%s\n", line);
+        }
+        else {
+            s_ring[s_head] = line;
+            s_head = (s_head + 1) % kRing;
+        }
+    }
+
     // Present-side VI register overrides. The menu fix is the load-bearing one; the FORCE_*
     // switches are A/B levers for it.
     void apply_vi_overrides() {
         ultramodern::renderer::ViRegs* vi = ultramodern::renderer::get_vi_regs();
         if (!vi) return;
         auto set_origin = [&](uint32_t base) { vi->VI_ORIGIN_REG = (base & ~0xFFFu) | (vi->VI_ORIGIN_REG & 0xFFFu); };
+
+        // swapBufferWithViMode blanks mode changes with vStart == vEnd; RT64's visible() ignores vRegion, so zero hStart instead.
+        static const bool s_viblank = !env_on("ROGUESQ_NO_VI_BLANK_MODE");
+        if (s_viblank && rs64transition::isBlankVStart(vi->VI_V_START_REG)) {
+            vi->VI_H_START_REG = 0;
+            return;
+        }
 
         // ROGUESQ_FORCE_SWAP_FB=1: scan out the game's last osViSwapBuffer target (physical).
         static const bool s_force_swap = env_on("ROGUESQ_FORCE_SWAP_FB");
@@ -857,6 +998,13 @@ private:
         // RT64's live fb map. ROGUESQ_NO_MENU_PRESENT_FIX=1 disables.
         static const bool s_menufix = !env_on("ROGUESQ_NO_MENU_PRESENT_FIX");
         if (!s_menufix || !g_most_drawn_fb) return;
+        // Hold the redirect while a mode-change clear is pending or gated, at most 30 VIs: the redirect may be what lets this screen present at all.
+        {
+            static int s_heldVis = 0;
+            const bool held = g_rs64_cpu_cleared_fb.load(std::memory_order_acquire) != 0 || g_rs64_transition_gate_fb.load(std::memory_order_acquire) != 0;
+            s_heldVis = held ? (s_heldVis + 1) : 0;
+            if (held && s_heldVis <= 30) return;
+        }
         const uint32_t w = g_most_drawn_fb_width;
         if (w < 16 || w > 1024 || w == vi->VI_WIDTH_REG) return;
         // Only redirect to a buffer that is still being drawn. The mission text crawl draws
@@ -944,7 +1092,7 @@ private:
             if (!v) return (int)BOOT_OFF;
             if (!std::strncmp(v, "menu", 4))  return (int)BOOT_MENU;
             if (!std::strncmp(v, "demo", 4))  return (int)BOOT_DEMO;
-            if (!std::strncmp(v, "level", 5)) return (int)BOOT_LEVEL;
+            if (!std::strncmp(v, "level", 5) || !std::strncmp(v, "abort", 5)) return (int)BOOT_LEVEL;
             return (int)BOOT_OFF;
         }();
         static const int s_demo_arg = [](){

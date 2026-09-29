@@ -22,7 +22,7 @@ grammar itself (chunk fetch, per-opcode semantics from the IMEM listing) is in
 | `0xBF` / `0x08` | G_TRI1 | Triangle; `w0&2` = textured (16 B texcoords follow) | native |
 | `0xB4` / `0x13` | G_QUAD | Quad (4th vertex from w1 byte0) → two triangles | native |
 | `0xB5` | G_QUAD | Chunk/DL terminator at chunk offset `0x100`; returns to parent DL | `op_B5_endDl` |
-| `0xE4` | G_TEXRECT | LLE format (16 bytes), not HLE 24-byte | `texrectLLE` |
+| `0xE4` | G_TEXRECT | LLE format (16 bytes), not HLE 24-byte; the handler consumes both words (the S/T/DsDx/DtDy word dispatched as a command whenever S >= 0x100, e.g. 0x0D = SETOTHERMODE_H forcing copy mode) | `texrectLLE_guarded` |
 | `0xE5` | G_TEXRECTFLIP | LLE format | `texrectFlipLLE` |
 | `0xFF` | G_SETCIMG | Sometimes emitted with bogus payload (w1=0, fmt>4, OOB addr); rejected | `setColorImage_filtered` |
 | `0x80` | unused | Chunk metadata header (next-chunk pointer in 24-bit w0); walked as a no-op | `op80_unknown` |

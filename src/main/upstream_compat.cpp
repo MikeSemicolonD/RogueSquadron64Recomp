@@ -237,24 +237,69 @@ static const char* rs64_host_caller_name(void* addr) {
 
 // Hardware write-watch (DR0, 4 bytes) on one host RDRAM word. The VEH only records the
 // faulting RIP and new value so the writing thread is not slowed; the drain symbolizes.
-struct Rs64BpHit { uint32_t value; uint32_t tid; uint64_t rip; };
+struct Rs64BpHit { uint32_t value; uint32_t tid; uint64_t rip; uint32_t slot; };
 static Rs64BpHit s_bp_hits[256];
 static std::atomic<unsigned> s_bp_nhits{0};
 static volatile uint32_t* s_bp_addr = nullptr;
+static volatile uint32_t* s_bp_addr2 = nullptr;
+static bool s_bp_white_only = false;     // ROGUESQ_DATA_BP_WHITE=1: record only near-white writes (skips frame write-backs)
+
+// Second watched word (DR1); set before rs64_data_bp_arm.
+extern "C" void rs64_data_bp_set2(void* host_addr) {
+    s_bp_addr2 = (volatile uint32_t*)host_addr;
+}
+
+// Both RGBA16 pixels of the word have r,g,b >= 28/31.
+static bool rs64_word_is_white(uint32_t v) {
+    auto px = [](uint32_t p) { return (((p >> 11) & 31) >= 28) && (((p >> 6) & 31) >= 28) && (((p >> 1) & 31) >= 28); };
+    return px(v >> 16) && px(v & 0xFFFF);
+}
 
 static LONG CALLBACK rs64_bp_veh(EXCEPTION_POINTERS* ep) {
-    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !(ep->ContextRecord->Dr6 & 1))
+    const DWORD64 dr6 = ep->ContextRecord->Dr6;
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_SINGLE_STEP || !(dr6 & 3))
         return EXCEPTION_CONTINUE_SEARCH;
     ep->ContextRecord->Dr6 = 0;
+    const uint32_t slot = (dr6 & 1) ? 0u : 1u;
+    volatile uint32_t* addr = slot ? s_bp_addr2 : s_bp_addr;
+    const uint32_t value = addr ? *addr : 0;
+    if (s_bp_white_only && !rs64_word_is_white(value)) return EXCEPTION_CONTINUE_EXECUTION;
     const unsigned i = s_bp_nhits.fetch_add(1);
-    if (i < 256) s_bp_hits[i] = { *s_bp_addr, GetCurrentThreadId(), ep->ContextRecord->Rip };
+    s_bp_hits[i & 255] = { value, GetCurrentThreadId(), ep->ContextRecord->Rip, slot };
     return EXCEPTION_CONTINUE_EXECUTION;
 }
 
 extern "C" void rs64_data_bp_arm(void* host_addr) {
     SymSetOptions(SymGetOptions() | SYMOPT_LOAD_LINES);
     s_bp_addr = (volatile uint32_t*)host_addr;
-    AddVectoredExceptionHandler(1, rs64_bp_veh);
+    s_bp_white_only = env_on("ROGUESQ_DATA_BP_WHITE");
+    // Re-arming is called periodically so threads created after the first arm are covered; the handler goes in once.
+    static bool s_veh_added = false;
+    if (!s_veh_added) {
+        s_veh_added = true;
+        AddVectoredExceptionHandler(1, rs64_bp_veh);
+    }
+    auto arm_thread = [host_addr](DWORD tid) {
+        bool ok = false;
+        HANDLE t = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, tid);
+        if (!t) return false;
+        if (SuspendThread(t) != (DWORD)-1) {
+            CONTEXT c{};
+            c.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+            if (GetThreadContext(t, &c)) {
+                c.Dr0 = (DWORD64)host_addr;
+                c.Dr7 = (c.Dr7 & ~0xF0003ull) | 1ull | (1ull << 16) | (3ull << 18);
+                if (s_bp_addr2) {
+                    c.Dr1 = (DWORD64)s_bp_addr2;
+                    c.Dr7 = (c.Dr7 & ~0xF0000Cull) | 4ull | (1ull << 20) | (3ull << 22);
+                }
+                ok = SetThreadContext(t, &c) != 0;
+            }
+            ResumeThread(t);
+        }
+        CloseHandle(t);
+        return ok;
+    };
     const DWORD self = GetCurrentThreadId(), pid = GetCurrentProcessId();
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     THREADENTRY32 te{};
@@ -262,36 +307,34 @@ extern "C" void rs64_data_bp_arm(void* host_addr) {
     int armed = 0;
     for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) {
         if (te.th32OwnerProcessID != pid || te.th32ThreadID == self) continue;
-        HANDLE t = OpenThread(THREAD_GET_CONTEXT | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, te.th32ThreadID);
-        if (!t) continue;
-        if (SuspendThread(t) != (DWORD)-1) {
-            CONTEXT c{};
-            c.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-            if (GetThreadContext(t, &c)) {
-                c.Dr0 = (DWORD64)host_addr;
-                c.Dr7 = (c.Dr7 & ~0xF0003ull) | 1ull | (1ull << 16) | (3ull << 18);
-                if (SetThreadContext(t, &c)) ++armed;
-            }
-            ResumeThread(t);
-        }
-        CloseHandle(t);
+        if (arm_thread(te.th32ThreadID)) ++armed;
     }
     CloseHandle(snap);
-    fprintf(stderr, "[data-bp] armed %d threads at host %p\n", armed, host_addr);
-    fflush(stderr);
+    // A thread can't set its own debug registers; a helper arms the caller (the VI/gfx thread) while it waits in join.
+    bool self_ok = false;
+    std::thread([&] { self_ok = arm_thread(self); }).join();
+    if (self_ok) ++armed;
+    static int s_last_armed = -1;
+    if (armed != s_last_armed) {
+        s_last_armed = armed;
+        fprintf(stderr, "[data-bp] armed %d threads at host %p\n", armed, host_addr);
+        fflush(stderr);
+    }
 }
 
 extern "C" void rs64_data_bp_drain(int vi) {
+    // Hits are a ring of the latest 256; if more arrived since the last drain, skip to the newest 256.
     static unsigned s_done = 0;
-    const unsigned n = std::min(s_bp_nhits.load(), 256u);
+    const unsigned n = s_bp_nhits.load();
+    if (n - s_done > 256) s_done = n - 256;
     for (; s_done < n; ++s_done) {
-        const Rs64BpHit& h = s_bp_hits[s_done];
+        const Rs64BpHit& h = s_bp_hits[s_done & 255];
         const char* fn = rs64_host_caller_name((void*)h.rip);
         IMAGEHLP_LINE64 line{};
         line.SizeOfStruct = sizeof line;
         DWORD ldisp = 0;
         const bool has_line = SymGetLineFromAddr64(GetCurrentProcess(), h.rip, &ldisp, &line) != 0;
-        fprintf(stderr, "[data-bp] hit#%u vi=#%d tid=%u value=%08X at %s (%s:%lu)\n", s_done + 1, vi, h.tid, h.value, fn,
+        fprintf(stderr, "[data-bp] hit#%u slot=%u vi=#%d tid=%u value=%08X at %s (%s:%lu)\n", s_done + 1, h.slot, vi, h.tid, h.value, fn,
                 has_line ? line.FileName : "?", has_line ? line.LineNumber : 0ul);
     }
     if (n) fflush(stderr);

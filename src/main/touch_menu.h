@@ -89,6 +89,14 @@ namespace rs64::touch {
     int pause_slider_value(const PauseLine& bar, float x);
     // Highlights pause row k (current_entry, HUD+0xD68). False if the pause HUD is not found.
     bool pause_set_entry(uint8_t* rdram, int k);
+    // Open pause submenu (0 root, 1 game settings, 2 audio, 3 abort confirm) while the HUD is in its menu phase; -1 otherwise.
+    int pause_submenu(const uint8_t* rdram);
+    // Highlighted pause row (HUD+0xD68); -1 if the pause HUD is not found.
+    int pause_entry(const uint8_t* rdram);
+    // Selectable index in pause submenu `menu` whose record nextMenu (+4) equals `next`; -1 if none.
+    int pause_find_entry(const uint8_t* rdram, int menu, uint16_t next);
+    // Raw records (flags, +2, nextMenu) of pause submenu `menu`, for logs.
+    std::string describe_pause_records(const uint8_t* rdram, int menu);
     bool read_pause_lines(const uint8_t* rdram, float win_w, float win_h, std::vector<PauseLine>* lines);
     // One tap zone per selectable pause row: its pieces merged, widened 10%, neighbours split at the vertical midpoint.
     struct PauseRow { int selectable; float x0, x1, y0, y1; };

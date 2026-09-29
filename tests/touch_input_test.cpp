@@ -1121,6 +1121,22 @@ static void test_pause_slider_value() {
     CHECK(pause_slider_value(bar, 0.30f) == 0);
 }
 
+// Paused for touch/tilt purposes while the pause flag is set or the pause HUD is open or animating, so tilt never drives the pause cursor.
+static void test_read_paused_hud_phase() {
+    setup_pause(0.0f, 20.0f);
+    CHECK(read_paused(g_ram.data()));
+    ww(0x8010CA20, 0);
+    for (uint8_t phase = 1; phase <= 3; ++phase) {
+        wb(0x80320000 + 0x258, phase);
+        CHECK(read_paused(g_ram.data()));
+    }
+    wb(0x80320000 + 0x258, 0);
+    CHECK(!read_paused(g_ram.data()));
+    ww(0x80310000, 0x80012345);
+    wb(0x80320000 + 0x258, 3);
+    CHECK(!read_paused(g_ram.data()));
+}
+
 static void test_pause_not_ready() {
     setup_pause(0.0f, 20.0f);
     wb(0x80320000 + 0x258, 1);   // still animating in
@@ -1249,6 +1265,7 @@ int main() {
     test_carousel_corner_arrows();
     test_pause_lines_and_select();
     test_pause_not_ready();
+    test_read_paused_hud_phase();
     test_pause_rows_merge_and_split();
     test_pause_side_by_side_rows();
     test_pause_line_extent();

@@ -2817,6 +2817,8 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
     // Two threads pump SDL events (window thread + game input thread); block-on-pause releases only one of them on resume.
     SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+    // SDL otherwise lists the accelerometer as a joystick, and the raw-joystick bindings turn phone tilt into stick input on every screen.
+    SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #else
     // Desktop testing of the touch overlay: mouse clicks arrive as finger events.
     if (rs64::touch::shared_config().enabled) {

@@ -454,12 +454,19 @@ add_executable(nav_target_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/nav_target_test.cpp
     ${CMAKE_SOURCE_DIR}/src/main/nav_sequencer.cpp
     ${CMAKE_SOURCE_DIR}/src/main/game_state.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
 )
 set_target_properties(nav_target_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(nav_target_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
+target_include_directories(nav_target_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
 if (TARGET gen_state_table)
     add_dependencies(nav_target_test gen_state_table)
 endif()
+
+# Standalone unit test for the mode-change blanking gate.
+add_executable(transition_gate_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/transition_gate_test.cpp
+)
+set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 # ---- SDL2 (Windows: fetch; Linux/Mac: find_package) ----
 if (WIN32)
