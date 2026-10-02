@@ -377,7 +377,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/valida
 | `ROGUESQ_LOG_THROTTLE` | off | throttle | Positional HOTAS throttle about once a second: lever position, the craft's speed range, game vs. applied target. |
 | `ROGUESQ_LOG_RUMBLE` | off | rumble | Rumble Pak motor calls, effect id (0-12), health drops with hit scale, death-spiral sustain, host output; a state line every 2 s in missions. |
 | `ROGUESQ_WATCH_ADDRS` | off | `[watch] vi=#N addr old -> new` | Up to 16 comma-separated hex RDRAM addresses, sampled once per VI on the renderer thread. Addresses up to 16 MB, so relocated fields can be watched. |
-| `ROGUESQ_DATA_BP` | off | `[data-bp] hit#N vi=#N tid=… value=… at <fn>+off (funcs_N.c:line)` | Windows only. Hardware write-watch (DR0) on one RDRAM word, armed at `ROGUESQ_DATA_BP_ARM_VI` (1) on every thread and re-armed every 30 VIs. `ROGUESQ_DATA_BP2` watches a second word; `ROGUESQ_DATA_BP_WHITE=1` records only near-white values. Arming near a race can perturb it. |
+| `ROGUESQ_DATA_BP` | off | `[data-bp] hit#N vi=#N tid=… value=… at <fn>+off (funcs_N.c:line)` | Windows only. Hardware read/write watch (DR0, RW=11, so readers are logged too) on one RDRAM word, armed at `ROGUESQ_DATA_BP_ARM_VI` (1) on every thread and re-armed every 30 VIs. `ROGUESQ_DATA_BP2` watches a second word; `ROGUESQ_DATA_BP_WHITE=1` records only near-white values. Arming near a race can perturb it. |
 
 ## Record / replay and co-op
 

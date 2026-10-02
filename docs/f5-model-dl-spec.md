@@ -68,16 +68,19 @@ funcs_4.c:9782-9854, in buildOrientedFaceGeometry (billboard/oriented faces; als
 from renderLitMeshFaceGroup:12099 for regular models). Per §7 the length is 32 B
 when textured.
 
-### 0xBD — per-face color + lighting
+### 0xBD — billboard sprite
 ```
 w0 = 0xBD00xxxx  (| ((count*5+idx)<<8))
-w1 = RGBA — material color × CPU-computed lighting (lit) or raw material color (unlit)
+w1 = RGBA — face color (face+0x2C), or 0xFFFFFFFF on the white-sprite branch (face flag 0x200 clear)
+then: second color word (from $s4), then sprite width/height as unsigned fixed point
 ```
-renderLitMeshFaceGroup funcs_4.c:11174-11230 (lit), 11339-11361 (unlit). Lighting
-is CPU-side: per-channel material×f22 scale, f20 threshold clamp
-(funcs_4.c:10828-10948); light direction bytes accompany the color. The F5 GBI
-module overrides 0xBD (it would otherwise fall through to F3DEX `popMatrix` and
-corrupt RT64's matrix stack under native matrix loading).
+renderLitMeshFaceGroup 0x800137A4.. (white-sprite branch 0x8001387C..). The `f22` multiply and
+`f20` compare at 0x8001382C convert the face's float width/height (face+0x20/+0x24) to unsigned
+fixed point (`f20` = 2^31 for the trunc.w.s split); it is not lighting. The game does no
+per-face lighting here: model colours come from static prelit vertex colours (meshdef1 +0x4C),
+and the level's directional light (0x80136E20) is transformed per node but never read for
+shading. The F5 GBI module overrides 0xBD (it would otherwise fall through to F3DEX
+`popMatrix` and corrupt RT64's matrix stack under native matrix loading).
 
 ### 0xBE — merged state word
 Emitted unconditionally at the end of appendRdpStateDl: `w0=0xBE000000, w1=t0`
@@ -138,7 +141,7 @@ or another emitter.
 - Args: a0=scene node, a1=render-pass index, a2=DL cursor, a3=render-pass array.
 - Sequence: transformSceneLights(node, pass, cursor, &flags) (:1976) → appendRdpStateDl (:2207) → chunk reservations (:2223, :2239) → per-material emitMaterialTexturedDL (:2320, on material-ID change; lit-vs-flat by material flag bit 2, :3714-3716) → facegroup renderers.
 - Node mode word at node+0x2C (bit 0x8 lighting; 0x4000/0xC000 transform/cull). Pass lists hang off 0x80138D18-area globals (0x63B0/0x63FC).
-- transformSceneLights' output consumption (DL command vs DMEM staging) not isolated.
+- `transformSceneLights` (0x8000EF88) is misnamed: it clears a 32-word table and runs the vertex-cache helper over the node's render items. Lights are transformed by `transformLightByType` (0x8000DCFC) from `traverseSceneGraphRecursive`; nothing reads the result for shading.
 
 ## 7. Ucode truth (from the IMEM listing)
 
