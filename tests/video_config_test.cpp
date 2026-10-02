@@ -139,7 +139,7 @@ static void test_load_missing() {
 static void test_load_friendly() {
     UC uc; uc.validate();
     std::string p = write_tmp("tmp_friendly_video.json",
-        R"({"schema":2,"widescreen":true,"resolutionScale":"auto"})");
+        R"({"schema":2,"drawDistance":1.0,"widescreen":true,"resolutionScale":"auto"})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
@@ -159,7 +159,44 @@ static void test_load_legacy_migrates() {
     std::remove(p.c_str());
 }
 
+static void test_keep_cutscene_default_and_roundtrip() {
+    rs64::video::set_keep_cutscene_draw_distance(true);
+    UC uc; uc.validate();
+    json j = rs64::video::to_friendly(uc);
+    CHECK(j.value("keepCutsceneDrawDistance", false) == true);
+    json in = { {"schema", 2}, {"drawDistance", 1.5}, {"keepCutsceneDrawDistance", false} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::keep_cutscene_draw_distance() == false);
+    json out = rs64::video::to_friendly(uc);
+    CHECK(out.value("keepCutsceneDrawDistance", true) == false);
+    rs64::video::set_keep_cutscene_draw_distance(true);
+    rs64::video::set_draw_distance(1.0f);
+}
+
+static void test_keep_cutscene_absent_key_not_migrated() {
+    rs64::video::set_keep_cutscene_draw_distance(true);
+    UC uc; uc.validate();
+    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3})");
+    auto r = rs64::video::load(uc, p);
+    CHECK(r.loaded == true);
+    CHECK(r.migrated == false);
+    CHECK(rs64::video::keep_cutscene_draw_distance() == true);
+    std::remove(p.c_str());
+    rs64::video::set_draw_distance(1.0f);
+}
+
+static void test_effective_draw_distance() {
+    using rs64::video::effective_draw_distance;
+    CHECK(effective_draw_distance(2.0f, false, 15) == 2.0f);
+    CHECK(effective_draw_distance(2.0f, true, 15) == 1.0f);
+    CHECK(effective_draw_distance(2.0f, false, rs64::video::kGameViewLevel) == 1.0f);
+    CHECK(effective_draw_distance(1.0f, false, 0) == 1.0f);
+}
+
 int main() {
+    test_keep_cutscene_default_and_roundtrip();
+    test_keep_cutscene_absent_key_not_migrated();
+    test_effective_draw_distance();
     test_to_friendly_basic();
     test_to_friendly_mapping();
     test_to_friendly_thirdstate_to_advanced();

@@ -3,6 +3,7 @@ entrypoint = 0x80000400
 elf_path = "../rogue_squadron64/build/roguesquadron.elf"
 rom_file_path = "../rogue_squadron64/rogue_squadron.z64"
 output_func_path = "RecompiledFuncs"
+patch_files = ["tools/coop/coop_relocation.toml"]
 
 # The 3 overlays (.ovl.mission/menu/cinematic) share VA 0x800A5130 and swap at
 # runtime; direct jal binds every call to one overlay at link time. Route all
@@ -488,7 +489,7 @@ text = '''{
 # tickFormatMessageWorker replies with a pointer to one stack buffer for every request.
 # The host decodes faster than hardware, so queued replies alias and all read the last
 # request id; the SELECT GAME medal/preview slots then never activate. Send each reply
-# from its own slot of a ring in host RAM (the game heap is reallocated between menu screens). ROGUESQ_NO_FORMAT_REPLY_FIX=1 disables.
+# from its own slot of a ring in host RAM (the game heap is reallocated between menu screens).
 [[patches.hook]]
 func = "tickFormatMessageWorker"
 before_vram = 0x800B380C
@@ -579,6 +580,12 @@ text = '''{ extern float rs64_draw_dist(void); if (MEM_W(0x3C, ctx->r29) != (int
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E078
 text = '''{ extern float rs64_draw_dist(void); if (MEM_W(0x3C, ctx->r29) != (int32_t)0x800F27B4) ctx->f0.fl *= rs64_draw_dist(); }'''
+
+# Tow cable segments reach the visibility buckets here, ship end first (vanilla and long-tow-cable renderer alike); frame interpolation ids them by that order. a1 = submitted mesh instance.
+[[patches.hook]]
+func = "addNpcToVisibilityBucket"
+before_vram = 0x80057C90
+text = '''{ extern void rs64_f5_cable_submit(uint32_t, uint32_t, uint32_t); rs64_f5_cable_submit((uint32_t)MEM_W(0, (gpr)(int32_t)0x8010B6E0), (uint32_t)ctx->r5, (uint32_t)MEM_W(0, (gpr)(int32_t)0x8010B6E8)); }'''
 
 # Object model LOD: the depth compared against the LOD distance table ($f2) is divided by rs64_draw_dist, so detail drops proportionally farther out.
 [[patches.hook]]
@@ -786,6 +793,23 @@ func = "loadLevelAssets"
 before_vram = 0x800453D8
 text = '''{ extern uint32_t rs64_tgrid_budget(uint32_t); ctx->r16 = (gpr)(int32_t)rs64_tgrid_budget((uint32_t)ctx->r16); }'''
 
+# Terrain detail radius: cells nearer than this squared distance (0x8009DEB4, from the far-range base D) get relief meshes, the rest coarse quads; scale it with the terrain reach so the coarse band stays at the fog line.
+[[patches.hook]]
+func = "computeGridLayerScrollOffset"
+before_vram = 0x800456D4
+text = '''{ extern float rs64_terrain_dist(void); const float td = rs64_terrain_dist(); ctx->f0.fl *= td * td; }'''
+
+# Marks setupCutsceneLevel's loadLevelAssets call, so the terrain budget above can keep the stock size for cutscene levels.
+[[patches.hook]]
+func = "setupCutsceneLevel"
+before_vram = 0x800A6D3C
+text = '''{ extern void rs64_cutscene_level_load(int); rs64_cutscene_level_load(1); }'''
+
+[[patches.hook]]
+func = "setupCutsceneLevel"
+before_vram = 0x800A6D44
+text = '''{ extern void rs64_cutscene_level_load(int); rs64_cutscene_level_load(0); }'''
+
 # Terrain cell budget probe: $a3 = cells streamed so far, $v0 = level budget, before the budget compare.
 [[patches.hook]]
 func = "streamTerrainGridCellsByDistance"
@@ -808,6 +832,12 @@ text = '''{ extern float rs64_terrain_dist(void); ctx->f4.fl *= rs64_terrain_dis
 func = "setupCameraMatrices"
 before_vram = 0x80017168
 text = '''{ extern float rs64_terrain_dist(void); ctx->f4.fl *= rs64_terrain_dist(); }'''
+
+# Fog/far-plane probe (ROGUESQ_LOG_FOG): what the game set this frame, after setFog and setFogEnable return.
+[[patches.hook]]
+func = "cutsceneActorNpcHandler"
+before_vram = 0x80044924
+text = '''{ extern void rs64_fog_probe(uint8_t*); rs64_fog_probe(rdram); }'''
 
 # Sky horizon ring draws heading±2 of 8 sectors, only ~45° on some headings; widen to ±3 when widescreen is active ($a3/$a2 = first/last sector).
 [[patches.hook]]
@@ -848,6 +878,27 @@ text = '''{ extern void rs64_dbg_log4(const char*, unsigned, unsigned, unsigned,
 [[patches.hook]]
 func = "musyxKeyOnVoice"
 text = '''{ if (getenv("ROGUESQ_STUB_VOICESTART")) { return; } if (MEM_HU(ctx->r4, 0X60) == 0) { return; } }'''
+
+# NPC health accessors: a structure's NPC torn down mid-explosion leaves npc+0x190 garbage and the per-difficulty slot read/write AVs (Jade Moon AT-PTs that won't die, demo gfx-barrier freeze). Bad slot = health 0, damage dropped.
+[[patches.hook]]
+func = "getNpcCurrentHealth"
+text = '''{ extern int rs64_npc_health_slot_ok(uint8_t*, uint32_t); if (MEM_BU(0x1A7, ctx->r4) == 0 && !rs64_npc_health_slot_ok(rdram, (uint32_t)MEM_W(0x190, ctx->r4))) { ctx->r2 = 0; return; } }'''
+
+[[patches.hook]]
+func = "dealDamageToNpc"
+text = '''{ extern int rs64_npc_health_slot_ok(uint8_t*, uint32_t); if (MEM_BU(0x1A7, ctx->r4) == 0 && !rs64_npc_health_slot_ok(rdram, (uint32_t)MEM_W(0x190, ctx->r4))) { ctx->r2 = 0; return; } }'''
+
+[[patches.hook]]
+func = "getNpcMissingHealth"
+text = '''{ extern int rs64_npc_health_slot_ok(uint8_t*, uint32_t); if (MEM_BU(0x1A7, ctx->r4) == 0 && !rs64_npc_health_slot_ok(rdram, (uint32_t)MEM_W(0x190, ctx->r4))) { ctx->r2 = MEM_W(0x194, ctx->r4); return; } }'''
+
+[[patches.hook]]
+func = "getNpcHealthPercentage"
+text = '''{ extern int rs64_npc_health_slot_ok(uint8_t*, uint32_t); if (MEM_BU(0x1A7, ctx->r4) == 0 && !rs64_npc_health_slot_ok(rdram, (uint32_t)MEM_W(0x190, ctx->r4))) { ctx->f0.fl = 0.0f; return; } }'''
+
+[[patches.hook]]
+func = "setNpcHealth"
+text = '''{ extern int rs64_npc_health_slot_ok(uint8_t*, uint32_t); extern void rs64_set_npc_health_no_slot(uint8_t*, recomp_context*); if (!rs64_npc_health_slot_ok(rdram, (uint32_t)ctx->r5)) { rs64_set_npc_health_no_slot(rdram, ctx); return; } }'''
 
 # musyxSynthFrame (0x8009123C) audio tick (viRetraceHandlerThread -> musyxSynthFrame, per VI)
 # does an indirect call `jalr $v0` at 0x80091798 through the N64-RSP-mixer
@@ -1067,10 +1118,25 @@ func = "menuControllerInput"
 before_vram = 0x800B51B8   # `lbu $v0,0x28($v0)` — selected entry's sub-type
 text = '''{ extern void rs64_menu_confirm_main(uint8_t* rdram); rs64_menu_confirm_main(rdram); }'''
 
-# Sync each Sound Settings mod slider's channel byte to its @export value.
+# Each front-end loop pass, right after the pad poll (0x80079CE0): the multiplayer address editor takes the pad while it is editing, and a pilot-first page leaves for mission select once done.
+# hook: RS64_HOOK_MENU_INPUT
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B4CA8
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(1u, rdram, ctx)) return; }'''
+
+# A pilot was chosen and loaded ($s6 = 0xA before the jump to the exit fade): a pilot-first page (MULTIPLAYER) is shown instead of leaving for mission select.
+# hook: RS64_HOOK_MENU_PILOT_CHOSEN
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B5428
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(2u, rdram, ctx)) return; }'''
+
+# Each front-end frame: lobby network tick, live page labels, Sound Settings mod slider sync.
+# hook: RS64_HOOK_MENU_FRAME
 [[patches.hook]]
 func = "updateMenuPerFrame"
-text = '''{ extern void rs64_slider_sync(uint8_t* rdram); rs64_slider_sync(rdram); }'''
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(3u, rdram, ctx)) return; }'''
 
 # Redirect a mod slider's channel index (sp+0xEF) to its unused settings byte so
 # its value is independent of the real audio channels. Common slider handler entry.
@@ -1143,3 +1209,215 @@ text = '''{ extern void rs64_f5_map_sprite(unsigned, unsigned); rs64_f5_map_spri
 func = "renderLitMeshFaceGroup"
 before_vram = 0x800146F0   # s1 = DL cursor, s2 = face
 text = '''{ extern void rs64_f5_map_sprite(unsigned, unsigned); rs64_f5_map_sprite((unsigned)ctx->r17, (unsigned)ctx->r18); }'''
+
+# Lockstep determinism harness (plans/multiplayer-coop/phase0-plan.md); inert unless a ROGUESQ_LS_* mode is set.
+# Mission start: seed and recorded session settings, before initMission reads difficulty.
+# hook: RS64_HOOK_MISSION_INIT
+[[patches.hook]]
+func = "initMission"
+before_vram = 0x800FA28C
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(4u, rdram, ctx)) return; }'''
+
+# Frame start: force a fixed dt ($f20, stored to 0x88($sp) by the next delay slot).
+# hook: RS64_HOOK_MISSION_FRAME_DT
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FA7D0
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(5u, rdram, ctx)) return; }'''
+
+# Right after the pad poll, before tickPlayerHudIndicators or the tick pass read the pad state at 0x80130B88: record/replay/delay pads, hash the frame.
+# hook: RS64_HOOK_MISSION_FRAME_PADS
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FA7D8
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(6u, rdram, ctx)) return; }'''
+
+# Song end is a sim input: tickSongFadeTimer posts the music-end request when the audio thread reports the song stopped. Record/replay that answer.
+# hook: RS64_HOOK_SONG_ACTIVE
+[[patches.hook]]
+func = "tickSongFadeTimer"
+before_vram = 0x800EE82C
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(7u, rdram, ctx)) return; }'''
+
+# Mission-end responders (Mode1 writes result 1, Mode2 result 2 once speech is idle): lockstep uses the host's speech-idle answer; a ghost client lands only the host's result.
+# hook: RS64_HOOK_SPEECH_RESPONSE_2
+[[patches.hook]]
+func = "requestSpeechResponseMode2"
+before_vram = 0x800FBB08
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(8u, rdram, ctx)) return; }'''
+
+# hook: RS64_HOOK_SPEECH_RESPONSE_1
+[[patches.hook]]
+func = "requestSpeechResponseMode1"
+before_vram = 0x800FBB64
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(9u, rdram, ctx)) return; }'''
+
+# Co-op imposter (ROGUESQ_COOP_LOCAL=1): player 2 is an allied wingman NPC spawned from a fake DAT record at 0x80B40000 on the first mission frame.
+# hook: RS64_HOOK_MISSION_FRAME_NPCS
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FA94C
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(10u, rdram, ctx)) return; }'''
+
+# hook: RS64_HOOK_MISSION_END
+[[patches.hook]]
+func = "endMissionCleanup"
+before_vram = 0x800FB9E4
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(11u, rdram, ctx)) return; }'''
+
+# Ghost co-op: a client enters the end modes (requestMissionTransitionMode a0 = 3 success, 2 failure) only for the host's result; a refused request (v0 = 0) stays pending, like during a respawn.
+# hook: RS64_HOOK_TRANSITION_REQUEST
+[[patches.hook]]
+func = "requestMissionTransitionMode"
+before_vram = 0x800FB190
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(12u, rdram, ctx)) return; }'''
+
+# Ghost co-op: pausing opens the menu and tint without freezing the world ($v0 = 0x8010CA1C & 1 at the freeze branch).
+# hook: RS64_HOOK_FREEZE_CHECK_A
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FA8E4
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(13u, rdram, ctx)) return; }'''
+
+# The same freeze bit also stops texture animations/timers (runInMissionFrame) and part of the world render NPC (cutsceneActorNpcHandler, misnamed).
+# hook: RS64_HOOK_FREEZE_CHECK_B
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FACA8
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(14u, rdram, ctx)) return; }'''
+
+# hook: RS64_HOOK_CUTSCENE_FREEZE_CHECK
+[[patches.hook]]
+func = "cutsceneActorNpcHandler"
+before_vram = 0x80044970
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(15u, rdram, ctx)) return; }'''
+
+# Ghost co-op: objective booleans/counts are host-owned; a client drops its own datItemSetObjectiveBooleanCount writes (a leaf, no frame), since every death is mirrored into the host's world and counted there.
+# hook: RS64_HOOK_OBJECTIVE_COUNT
+[[patches.hook]]
+func = "datItemSetObjectiveBooleanCount"
+before_vram = 0x80065914
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(16u, rdram, ctx)) return; }'''
+
+# Ghost co-op: the host decides the mission result; a client drops its own end requests (setHudEnableBit8 success, setHudEnableBit4 failure; entry = before the stack adjust) and applies the host's.
+# hook: RS64_HOOK_RESULT_FAIL
+[[patches.hook]]
+func = "setHudEnableBit4"
+before_vram = 0x800C7738
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(17u, rdram, ctx)) return; }'''
+
+# hook: RS64_HOOK_RESULT_SUCCESS
+[[patches.hook]]
+func = "setHudEnableBit8"
+before_vram = 0x800C776C
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(18u, rdram, ctx)) return; }'''
+
+# $s0 = blk, $s3 = ctx, $s2 = action at the post-state join (idle state 0 lands here); the imposter's flight, fire and health.
+# hook: RS64_HOOK_WINGMAN_TICK
+[[patches.hook]]
+func = "npcWingmanUpdate"
+before_vram = 0x800D9A00
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(19u, rdram, ctx)) return; }'''
+
+# Activation and grid streaming key on player 1; extend both to the imposter. $v0 = the range test's result, $s0 = the NPC point.
+# hook: RS64_HOOK_NPC_ACTIVATION
+[[patches.hook]]
+func = "isNpcWithinActiveReferenceRange"
+before_vram = 0x80047D9C
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(20u, rdram, ctx)) return; }'''
+
+# hook: RS64_HOOK_GRID_STREAM
+[[patches.hook]]
+func = "lookupActivePlayerCraftGridCell"
+before_vram = 0x80047E44
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(21u, rdram, ctx)) return; }'''
+
+# Lobby mission select (menu overlay): the client starts on the host's pick (a2 = highest level shown, a3 = start level, before the init call).
+# hook: RS64_HOOK_MISSION_SELECT_INIT
+[[patches.hook]]
+func = "drawRadarIcon"
+before_vram = 0x800C5E84
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(22u, rdram, ctx)) return; }'''
+
+# Lobby mission select: the confirmed level (s0) is sent by the host and replaced by the host's on the client.
+# hook: RS64_HOOK_MISSION_CONFIRMED
+[[patches.hook]]
+func = "drawRadarIcon"
+before_vram = 0x800C5ED8
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(23u, rdram, ctx)) return; }'''
+
+# Lobby mission select: font 2 gets a third slot (status line) in a session.
+# hook: RS64_HOOK_MISSION_SELECT_FONTS
+[[patches.hook]]
+func = "initCraftSelectScreen"
+before_vram = 0x800AF0D0
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(24u, rdram, ctx)) return; }'''
+
+# Lobby mission select tick, after its pad poll: the client waits for the host's pick, then follows it.
+# hook: RS64_HOOK_MISSION_SELECT_TICK
+[[patches.hook]]
+func = "tickCraftSelectScreen"
+before_vram = 0x800AF3EC
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(25u, rdram, ctx)) return; }'''
+
+# Lobby craft select (menu overlay hangar): font 2 gets a fourth slot (status line) in a session.
+# hook: RS64_HOOK_CRAFT_SELECT_INIT
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AAC44
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(26u, rdram, ctx)) return; }'''
+
+# Lobby craft select frame, after its pad poll: nobody leaves until both players picked a craft.
+# hook: RS64_HOOK_CRAFT_SELECT_TICK
+[[patches.hook]]
+func = "runHangarSelectionFrame"
+before_vram = 0x800AADD8
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(27u, rdram, ctx)) return; }'''
+
+# Ghost co-op: right after choosePlayerCraftAssets, load the other player's craft as the puppet's wingman model.
+# hook: RS64_HOOK_CRAFT_ASSETS
+[[patches.hook]]
+func = "initMission"
+before_vram = 0x800FA5BC
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(28u, rdram, ctx)) return; }'''
+
+# Ghost co-op HUD: the mission font gets two more slots (co-op message line, name label).
+# hook: RS64_HOOK_HUD_FONTS
+[[patches.hook]]
+func = "initVoiceSubtitleSystem"
+before_vram = 0x80055B08
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(29u, rdram, ctx)) return; }'''
+
+# Ghost co-op HUD: after the subtitle is linked into the 2D overlay list, link the co-op message line.
+# hook: RS64_HOOK_HUD_DRAW
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FAC70
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(30u, rdram, ctx)) return; }'''
+
+# Ghost co-op radar: after placeRadarDots, the other player as a purple dot.
+# hook: RS64_HOOK_RADAR
+[[patches.hook]]
+func = "renderRadarMinimap"
+before_vram = 0x800C6290
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(31u, rdram, ctx)) return; }'''
+
+# Ghost co-op power-ups: a pickup the other player collected is collected here too (f4 = squared distance, zeroed to pass the touch test). Mid-function: never returns.
+# hook: RS64_HOOK_POWERUP_TOUCH
+[[patches.hook]]
+func = "npcPowerUpUpdate"
+before_vram = 0x800EBD20
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); rs64_hook(34u, rdram, ctx); }'''
+
+# Ghost co-op power-ups: a collect is sent to the other player; a forced one plays its sound at this player's ship (a1). Mid-function: never returns.
+# hook: RS64_HOOK_POWERUP_COLLECT
+[[patches.hook]]
+func = "npcPowerUpUpdate"
+before_vram = 0x800EBD34
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); rs64_hook(35u, rdram, ctx); }'''
+
+# BOOT_TARGET=cutscene:<level>[,<kind>]: the boot intro call cinematicLoopBody(0x13, 2, 0) plays that cutscene instead.
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E10C
+text = '''{ extern void rs64_nav_boot_cutscene(uint8_t*, uint32_t*, uint32_t*); uint32_t lv = (uint32_t)ctx->r4, kd = (uint32_t)ctx->r5; rs64_nav_boot_cutscene(rdram, &lv, &kd); ctx->r4 = (gpr)(int32_t)lv; ctx->r5 = (gpr)(int32_t)kd; }'''

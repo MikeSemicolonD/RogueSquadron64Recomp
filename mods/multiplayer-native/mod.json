@@ -1,0 +1,11 @@
+{
+  "game_id": "rs64",
+  "id": "multiplayer-native",
+  "display_name": "Multiplayer",
+  "description": "Online co-op for two players: a MULTIPLAYER page on the main menu to host or join a game (LAN discovery, UPnP for internet play). Stays off in a game that has multiplayer built in.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true,
+  "native_libraries": { "multiplayer_native": ["rs64_mod_init"] }
+}

@@ -1,0 +1,316 @@
+src/main/debug_logs.h: comment block over 2 lines: // Centralized debug-log gates for the Rogue Squadron recomp
+src/main/game_state.h: comment after code: const char* rs64_state_current_id(void);      // id string, 
+src/main/game_state.h: comment after code: int  rs64_state_current(void);                // index into 
+src/main/game_state.h: comment after code: int  rs64_state_in_cinematic(void);           // 1 while a c
+src/main/game_state.h: comment after code: int force_slot;     // RsForceSlot
+src/main/game_state.h: comment after code: int parent;         // index into g_state_table, or -1
+src/main/game_state.h: comment after code: int rf_off;         // reachable_from pool offset (used by f
+src/main/game_state.h: comment after code: int rs64_force_consume(int slot, int32_t* out, int out_cap);
+src/main/game_state.h: comment after code: int rs64_force_state(const char* id);         // stage a for
+src/main/game_state.h: comment after code: uint32_t addr;      // KSEG0 (0x80xxxxxx); read as a big-end
+src/main/game_state.h: comment after code: uint32_t rs64_state_cutscene_skips(void);    // cutscenes th
+src/main/game_state.h: comment after code: void rs64_state_poll(const uint8_t* rdram);   // reclassify;
+src/main/hook_helpers.cpp: comment after code: if (op == 0xE4 || op == 0xE5) {   // TEXRECT, 24 bytes
+src/main/hook_helpers.cpp: comment after code: if (v) timeBeginPeriod(1);   // so Sleep(33) is not quantize
+src/main/hook_helpers.cpp: comment after code: uint32_t img = (w1 & 0xFFFFFFu) | 0x80000000u;   // RDP addr
+src/main/hook_helpers.cpp: comment block over 2 lines: // FB-guards bit 1 (default off): rewrite any G_SETCIMG whos
+src/main/hook_helpers.cpp: comment block over 2 lines: // Level terrain cell budget scale, evaluated at each level 
+src/main/hook_helpers.cpp: comment block over 2 lines: // ROGUESQ_DUMP_FRAME_DL=N: dump the opcode stream of gfx ta
+src/main/hook_helpers.cpp: comment block over 2 lines: // ROGUESQ_MEDAL_PROBE=1: on EVERY gfx task, scan the DL for
+src/main/hook_helpers.cpp: comment block over 2 lines: // tickFormatMessageWorker sends every reply as a pointer to
+src/main/hook_helpers.cpp: two statements on one line: if (comma && comma[1]) { int cc = std::atoi(comma + 1); if (
+src/main/hook_helpers.cpp: two statements on one line: if (lrx/4 > tr_maxx) tr_maxx = lrx/4; if (lry/4 > tr_maxy) t
+src/main/hook_helpers.cpp: two statements on one line: if (ulx/4 < tr_minx) tr_minx = ulx/4; if (uly/4 < tr_miny) t
+src/main/hook_helpers.h: comment block over 2 lines: // hook_helpers.h — public C-linkage surface of hook_helpers
+src/main/input_bindings.cpp: comment after code: add(Target::A,     key(SDL_SCANCODE_RETURN));   // menu conf
+src/main/input_bindings.cpp: comment after code: add(Target::A,     key(SDL_SCANCODE_W));        // thrust
+src/main/input_bindings.cpp: comment after code: add(Target::A,     mb(SDL_BUTTON_MIDDLE));      // menu conf
+src/main/input_bindings.cpp: comment after code: add(Target::B,     key(SDL_SCANCODE_SPACE));    // fire blas
+src/main/input_bindings.cpp: comment after code: add(Target::B,     mb(SDL_BUTTON_LEFT));        // fire blas
+src/main/input_bindings.cpp: comment after code: add(Target::CDown, key(SDL_SCANCODE_X));        // fire mode
+src/main/input_bindings.cpp: comment after code: add(Target::CLeft, key(SDL_SCANCODE_LALT));     // fire seco
+src/main/input_bindings.cpp: comment after code: add(Target::CLeft, mb(SDL_BUTTON_RIGHT));       // fire seco
+src/main/input_bindings.cpp: comment after code: add(Target::CRight,key(SDL_SCANCODE_F));        // special
+src/main/input_bindings.cpp: comment after code: add(Target::CUp,      key(SDL_SCANCODE_Q));     // look arou
+src/main/input_bindings.cpp: comment after code: add(Target::DpadDown, key(SDL_SCANCODE_F2));    // standard 
+src/main/input_bindings.cpp: comment after code: add(Target::DpadLeft, key(SDL_SCANCODE_Z));     // drop came
+src/main/input_bindings.cpp: comment after code: add(Target::DpadRight,key(SDL_SCANCODE_F3));    // close vie
+src/main/input_bindings.cpp: comment after code: add(Target::DpadUp,   key(SDL_SCANCODE_F1));    // cockpit v
+src/main/input_bindings.cpp: comment after code: add(Target::LTrig,    key(SDL_SCANCODE_F4));    // switch vi
+src/main/input_bindings.cpp: comment after code: add(Target::RTrig, key(SDL_SCANCODE_E));        // roll
+src/main/input_bindings.cpp: comment after code: add(Target::Start, key(SDL_SCANCODE_ESCAPE));   // pause
+src/main/input_bindings.cpp: comment after code: add(Target::StickDown,  max(1, +1)); add(Target::StickUp,   
+src/main/input_bindings.cpp: comment after code: add(Target::Z,     key(SDL_SCANCODE_S));        // brake
+src/main/input_bindings.cpp: comment after code: d *= (float)s.dir;                 // select requested half
+src/main/input_bindings.cpp: comment after code: v *= (float)s.dir;                 // select requested half
+src/main/input_bindings.cpp: comment block over 2 lines: // --- Keyboard ---
+src/main/input_bindings.h: comment after code: _SDL_GameController*     pad          = nullptr;  // null if
+src/main/input_bindings.h: comment after code: _SDL_Joystick* const*   joys         = nullptr;  // indexed 
+src/main/input_bindings.h: comment after code: bool                    mouse_active = false;      // relati
+src/main/input_bindings.h: comment after code: bool  collision            = true;   // 1-3
+src/main/input_bindings.h: comment after code: bool  crash                = true;   // 12
+src/main/input_bindings.h: comment after code: bool  death_spiral         = true;   // 11
+src/main/input_bindings.h: comment after code: bool  hit                  = true;   // effect 0
+src/main/input_bindings.h: comment after code: bool  joystick_enabled  = true;   // read connected raw joys
+src/main/input_bindings.h: comment after code: bool  keyboard_enabled  = true;   // report a controller and
+src/main/input_bindings.h: comment after code: bool  object_collision     = true;   // 4-6
+src/main/input_bindings.h: comment after code: bool  terrain_scrape       = true;   // 7
+src/main/input_bindings.h: comment after code: bool  weapons              = true;   // 8-10
+src/main/input_bindings.h: comment after code: const char* target_label(Target t);            // "A", "Stic
+src/main/input_bindings.h: comment after code: const uint8_t*          keys         = nullptr;  // SDL_GetK
+src/main/input_bindings.h: comment after code: float                   mouse_curve  = 1.0f;       // respon
+src/main/input_bindings.h: comment after code: float                   mouse_dx     = 0.0f;      // relativ
+src/main/input_bindings.h: comment after code: float       deadzone    = 0.05f;  // fraction of each half-a
+src/main/input_bindings.h: comment after code: float mouse_curve       = 1.0f;   // response exponent on [0
+src/main/input_bindings.h: comment after code: float mouse_sensitivity = 0.05f;  // relative-pixel -> stick
+src/main/input_bindings.h: comment after code: float mouse_smoothing   = 0.3f;   // 0 = raw per-frame delta
+src/main/input_bindings.h: comment after code: float stick_range       = 80.0f;  // raw N64 stick value at 
+src/main/input_bindings.h: comment after code: float throttle_cruise   = 0.5f;   // throttle position [0,1]
+src/main/input_bindings.h: comment after code: int         target_count();                    // == (int)Ta
+src/main/input_bindings.h: comment after code: std::string source_label(const Source& s);     // "Space", "
+src/main/input_bindings.h: comment after code: uint32_t                mouse_buttons= 0;          // SDL_Ge
+src/main/input_bindings.h: comment after code: uint32_t    invert_axes = 0;      // bit n flips axis n
+src/main/input_bindings.h: comment after code: uint32_t cinematic = 0xC05A08;  // #C05A08
+src/main/input_bindings.h: comment after code: uint32_t critical  = 0xFF1A00;  // #FF1A00
+src/main/input_bindings.h: comment after code: uint32_t damaged   = 0xFFB000;  // #FFB000
+src/main/input_bindings.h: comment after code: uint32_t dead      = 0x200000;  // #200000
+src/main/input_bindings.h: comment after code: uint32_t death     = 0xFF0000;  // #FF0000
+src/main/input_bindings.h: comment after code: uint32_t hit       = 0xFFFFFF;  // #FFFFFF
+src/main/input_bindings.h: comment after code: uint32_t menu      = 0x193792;  // #193792
+src/main/input_bindings.h: comment after code: uint32_t mission   = 0x00E050;  // #00E050
+src/main/input_bindings.h: comment block over 2 lines: // Bind the PC version's (Rogue Squadron 3D) joystick layout
+src/main/input_bindings.h: comment block over 2 lines: // N64 controller outputs, as rebindable targets. The analog
+src/main/input_bindings.h: comment block over 2 lines: // One physical input bound to a target.
+src/main/input_bindings.h: comment block over 2 lines: // Resolve device state into an N64 button mask + analog x/y
+src/main/main.cpp: comment after code: RT64::GlobalLogFile = stderr;  // last-resort fallback
+src/main/main.cpp: comment after code: SDL_Haptic*    haptic = nullptr;   // force-feedback sticks 
+src/main/main.cpp: comment after code: const char* env;    // target ROGUESQ_* variable
+src/main/main.cpp: comment after code: const char* flag;   // long name without leading "--"
+src/main/main.cpp: comment after code: const char* off;    // Bool: value for --no-flag; Value: unu
+src/main/main.cpp: comment after code: const char* on;     // Bool: value for --flag; Value: unused
+src/main/main.cpp: comment after code: const uint32_t cbarr_off  = 0x11A8A4;  // D_8011A8A4..B4  (4
+src/main/main.cpp: comment after code: const uint32_t state_off  = 0x130B10;  // D_80130B10..B40 (s
+src/main/main.cpp: comment after code: dump(0x3B0);  // ROM = 40850800 03E00008 40871000 400A3000 (
+src/main/main.cpp: comment after code: dump(0x3E8);  // ROM = 00000000 4B271094 C9231800 4B070850 (
+src/main/main.cpp: comment after code: float tau = g_bindings.mouse_smoothing * 100.0f;  // smoothi
+src/main/main.cpp: comment after code: for (int i = 0; i < 1200; ++i) {  // ~60s @ 50ms
+src/main/main.cpp: comment after code: for (uint32_t k = 0; k < 0x100; k++) if (rdram[(vpp + k) ^ 3
+src/main/main.cpp: comment after code: g_mouse_ax = g_mouse_ay = 0.0f;  // consume this frame's acc
+src/main/main.cpp: comment after code: if (rs64_vi_driven()) return;   // hardware protocol: no hos
+src/main/main.cpp: comment after code: print_stack_with_symbols(frames, count);  // symbolized to s
+src/main/main.cpp: comment after code: rs64_toggle_fullscreen();   // Alt+Enter: standard fullscree
+src/main/main.cpp: comment after code: size_t frames = SDL_GetQueuedAudioSize(audio_device) / 4;  /
+src/main/main.cpp: comment after code: static bool capture_append = false;             // Add (keep
+src/main/main.cpp: comment after code: static bool capture_snap = false;               // joystick 
+src/main/main.cpp: comment after code: static float                 g_mouse_ax = 0.0f;   // accumul
+src/main/main.cpp: comment after code: static int capture_target = -1;                 // Target aw
+src/main/main.cpp: comment after code: static std::mutex            g_bindings_mtx;    // UI thread
+src/main/main.cpp: comment after code: static uint32_t s_t0 = 0;            // wall-clock at first 
+src/main/main.cpp: comment after code: static unsigned g_rs64_audio_underruns = 0;   // dry-queue a
+src/main/main.cpp: comment after code: static volatile uint32_t g_audtask_n = 0;  // M_AUDTASK subm
+src/main/main.cpp: comment after code: uint32_t cbs[4];    // 4 callback fn ptrs
+src/main/main.cpp: comment after code: uint32_t close_ms = 0;   // a touch off the bar just closed 
+src/main/main.cpp: comment after code: uint32_t cur_ovl   = rdram_be32_at(0x375B0);  // gCurrentLoa
+src/main/main.cpp: comment after code: uint32_t rg = 0x09FCD4u - 8*8;  // start 8 entries earlier t
+src/main/main.cpp: comment after code: uint32_t vp2 = vpp + 0x100;                                 
+src/main/main.cpp: comment block over 2 lines: // (2026-09-07) The "permanent sample bank" copy that lived 
+src/main/main.cpp: comment block over 2 lines: // (Periodic mqdiag watchdog removed — mqdiag_dump lived in 
+src/main/main.cpp: comment block over 2 lines: // ---------------------------------------------------------
+src/main/main.cpp: comment block over 2 lines: // 12 words covers B10..B3F. asm/main/3EBA0.s reads bytes at
+src/main/main.cpp: comment block over 2 lines: // Active bindings + mouse-steering runtime state. poll_inpu
+src/main/main.cpp: comment block over 2 lines: // BOOT_TARGET: while the FrontEnd attract-title is up, the 
+src/main/main.cpp: comment block over 2 lines: // Big-endian RDRAM accessors (RDRAM is host-LE-stored; XOR-
+src/main/main.cpp: comment block over 2 lines: // Capture the MusyX audio ucode's OSTask fields once — thes
+src/main/main.cpp: comment block over 2 lines: // Catch-all stub for unrecognised task types. Returning Bro
+src/main/main.cpp: comment block over 2 lines: // Check voice-struct population at several time points (boo
+src/main/main.cpp: comment block over 2 lines: // Compare the LIVE synth ucode (RAM at OSTask.ucode) vs wha
+src/main/main.cpp: comment block over 2 lines: // Controls / rebind window. Runs on the RT64 graphics threa
+src/main/main.cpp: comment block over 2 lines: // Deepen the game's audio target. ultramodern feeds this to
+src/main/main.cpp: comment block over 2 lines: // Default to a lighter dump type. The earlier MiniDumpWithF
+src/main/main.cpp: comment block over 2 lines: // Diagnostic: log F1-F4 to confirm the keys are reaching th
+src/main/main.cpp: comment block over 2 lines: // Did the synth produce ANY internal signal? Scan its DMEM 
+src/main/main.cpp: comment block over 2 lines: // Don't churn the device when the rate hasn't changed — eac
+src/main/main.cpp: comment block over 2 lines: // Drain SDL's relative-motion accumulator once per poll. Re
+src/main/main.cpp: comment block over 2 lines: // Drain-loop diagnostic — boot thread is stuck waiting for 
+src/main/main.cpp: comment block over 2 lines: // EXPERIMENT (ROGUESQ_BRIDGE_WORD2): the CPU pipeline write
+src/main/main.cpp: comment block over 2 lines: // Forward declaration so the crash handler can render the o
+src/main/main.cpp: comment block over 2 lines: // Frame-rate-aware exponential low-pass on the mouse veloci
+src/main/main.cpp: comment block over 2 lines: // Fullscreen: set/toggled from any thread (menu, UI); appli
+src/main/main.cpp: comment block over 2 lines: // Headless automation overrides resolved input and must run
+src/main/main.cpp: comment block over 2 lines: // Input bindings: load roguesq_input.json next to the exe, 
+src/main/main.cpp: comment block over 2 lines: // Log PE base so we can resolve absolute addresses from SEH
+src/main/main.cpp: comment block over 2 lines: // MSVC debug iterators call _invalid_parameter on bounds-ch
+src/main/main.cpp: comment block over 2 lines: // MusyX gets its work from the command list at data_ptr (NO
+src/main/main.cpp: comment block over 2 lines: // On non-Windows RT64 renders through Vulkan and needs the 
+src/main/main.cpp: comment block over 2 lines: // Per-craft speed hooks in rogue_squadron.toml call this ju
+src/main/main.cpp: comment block over 2 lines: // Periodic poll of cinematic phase state so we can see stag
+src/main/main.cpp: comment block over 2 lines: // Periodic poll of the scene-state struct at D_80130B10 + t
+src/main/main.cpp: comment block over 2 lines: // Periodic slot-pool snapshot every ~1 second so we can see
+src/main/main.cpp: comment block over 2 lines: // Pinpoints uncaught C++ throws (notably ultramodern::threa
+src/main/main.cpp: comment block over 2 lines: // Probe the synth's OWN output buffer right after synthesis
+src/main/main.cpp: comment block over 2 lines: // Production-rate gauge: frames/sec actually produced vs th
+src/main/main.cpp: comment block over 2 lines: // ROGUESQ_DUMP_SYNTH_FRAME=<n>: capture the EXACT synth inp
+src/main/main.cpp: comment block over 2 lines: // ROGUESQ_FAKE_CONTROLLER=1 — report a connected controller
+src/main/main.cpp: comment block over 2 lines: // ROGUESQ_INPUT_RECORD=<file> records controller 0 from the
+src/main/main.cpp: comment block over 2 lines: // ROGUESQ_INPUT_SEQ="name:holdMs:afterMs,..." — a scripted 
+src/main/main.cpp: comment block over 2 lines: // ROGUESQ_LOG_AUDIO_OUT=1: one-time scan of RDRAM for the .
+src/main/main.cpp: comment block over 2 lines: // ROGUESQ_PROFILER_DUMP=1: sample the 7 F5-HUD timing slots
+src/main/main.cpp: comment block over 2 lines: // RT64's RT64_LOG_PRINTF macro (debug builds) writes to Glo
+src/main/main.cpp: comment block over 2 lines: // Return 1 to SUPPRESS the abort. STL bounds-check assertio
+src/main/main.cpp: comment block over 2 lines: // Rogue Squadron uses Factor5's MusyX audio ucode, NOT stoc
+src/main/main.cpp: comment block over 2 lines: // Run the shared Factor5 boot ucode first — it's the SAME u
+src/main/main.cpp: comment block over 2 lines: // SDL_syswm.h is only needed for the Win32 HWND path in cre
+src/main/main.cpp: comment block over 2 lines: // Song REGISTRY (loadSongAssetByName 3rd loop, base 0x8009F
+src/main/main.cpp: comment block over 2 lines: // Song-table state (0x80139A00, ≤16 entries × 8B). Empty sl
+src/main/main.cpp: comment block over 2 lines: // Sound-asset data dumps — boot deadlocks in func_80097518 
+src/main/main.cpp: comment block over 2 lines: // Speaker-safety master gain: the MusyX mix clips hard (pea
+src/main/main.cpp: comment block over 2 lines: // Step-0 cadence probe (ROGUESQ_LOG_AUDIO_OUT): is the 89% 
+src/main/main.cpp: comment block over 2 lines: // Toggle Factor 5's built-in frame-profiler/debug-text HUD.
+src/main/main.cpp: comment block over 2 lines: // User-facing runtime flags. Each maps a --flag to a ROGUES
+src/main/main.cpp: comment block over 2 lines: // When slotTbl becomes valid, dump non-empty slot entries
+src/main/main.cpp: comment block over 2 lines: // [FRAME-PACING] Host-signal the frame-sync barrier queue (
+src/main/main.cpp: comment block over 2 lines: // [FRAME-PACING] Host-signal the video-buffer drain queue (
+src/main/main.cpp: comment block over 2 lines: // [FRAME-PACING] Host-signal viRetraceHandlerThread's VI qu
+src/main/main.cpp: comment block over 2 lines: // _Exit, not exit: the recomp game threads and RT64 are sti
+src/main/main.cpp: comment block over 2 lines: // samp-buffer content check: is the loaded sample bank actu
+src/main/main.cpp: comment block over 2 lines: // ultramodern's queue_samples contract passes the int16 SAM
+src/main/main.cpp: two statements on one line: char nm[20]={0}; uint32_t pp=p&0x00FFFFFFu; if(pp&&pp<0x8000
+src/main/main.cpp: two statements on one line: s_sum += aud_ms; ++s_cnt; if (aud_ms > s_max) s_max = aud_ms
+src/main/main.cpp: two statements on one line: static int once=0; if(!once){once=1; fprintf(stderr,"[songta
+src/main/main.cpp: two statements on one line: { const double gap = std::chrono::duration<double, std::mill
+src/main/main.cpp: two statements on one line: { uint32_t f = num_bytes / 4; s_calls++; s_fsum += f; if (f 
+src/main/menu_config.cpp: comment after code: constexpr int      SND_CH_FIRST = 3, SND_CH_LAST = 7;      /
+src/main/menu_config.cpp: comment after code: constexpr int      VOL_MAX   = 0x80;                       /
+src/main/menu_config.cpp: comment after code: constexpr int MAX_ENTRIES = 8;                      // menu_
+src/main/menu_config.cpp: comment after code: constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte 
+src/main/menu_config.cpp: comment after code: constexpr uint32_t VOL_BYTES = 0x80130B60u - 0x80000000u;  /
+src/main/menu_config.cpp: comment after code: constexpr uint8_t  SND_SLIDER_SUB = 21;                    /
+src/main/menu_config.cpp: comment after code: int flags = 0x4001;      // pause entry flag word (0x4000 st
+src/main/menu_config.cpp: comment after code: int smin = 0, smax = 100, sstep = 10;   // slider range
+src/main/menu_config.cpp: comment after code: int title_y = 0;         // Submenu: the page title's y offs
+src/main/menu_config.cpp: comment after code: std::string before, after, replace;   // anchor to a native 
+src/main/menu_config.cpp: comment after code: std::string behavior;    // action or toggle registry key (o
+src/main/menu_config.cpp: comment after code: std::string confirm;     // Action: non-empty => YES/NO prom
+src/main/menu_config.cpp: comment after code: std::string label;       // Action label
+src/main/menu_config.cpp: comment after code: std::string label_on, label_off;        // toggle labels (fo
+src/main/menu_config.cpp: comment after code: std::string label_on;    // Toggle labels
+src/main/menu_config.cpp: comment after code: std::string label_src;   // Page entry: live text source; th
+src/main/menu_config.cpp: comment after code: std::string leave_action; // Submenu: action fired when its 
+src/main/menu_config.cpp: comment after code: std::string menu;        // named location (main_menu, game_
+src/main/menu_config.cpp: comment after code: std::string mod_id;      // owning mod (for @export resoluti
+src/main/menu_config.cpp: comment after code: std::string page;        // Submenu: the page it opens; page
+src/main/menu_config.cpp: comment after code: std::string s_active_page;              // page currently sh
+src/main/menu_config.cpp: comment after code: std::string title;       // Submenu: the opened page's title
+src/main/menu_config.cpp: comment after code: std::string transition;  // Front-end action: also run the n
+src/main/menu_config.cpp: comment after code: uint8_t     s_page_parent = MENU_MAIN;  // menu to return to
+src/main/menu_config.h: comment block over 2 lines: // Host entry points for the custom front-end menu entries, 
+src/main/nav_sequencer.h: comment after code: bool rs64_nav_consume(uint16_t* buttons, float* x, float* y)
+src/main/nav_sequencer.h: comment after code: struct RsNavTarget { RsNavKind kind; int a; int b; int c = -
+src/main/nav_sequencer.h: comment after code: void rs64_nav_inject(uint16_t buttons, float x, float y);  /
+src/main/nav_sequencer.h: comment after code: void rs64_nav_set_target(const char* boot_target);  // calle
+src/main/nav_sequencer.h: comment after code: void rs64_nav_tick(uint8_t* rdram, int overlay);  // called 
+src/main/nav_sequencer.h: comment block over 2 lines: // State-gated BOOT_TARGET navigation sequencer: drives the 
+src/main/rt64_render_context.cpp: comment after code: app->userConfig.threePointFiltering = false;             // 
+src/main/rt64_render_context.cpp: comment after code: if ((vi_count_ % 15) != 0) return;                 // ~4x/se
+src/main/rt64_render_context.cpp: comment after code: rs64_state_poll((const uint8_t*)app->core.RDRAM);   // every
+src/main/rt64_render_context.cpp: comment after code: static inline std::atomic<bool> s_hle_disabled{false};  // t
+src/main/rt64_render_context.cpp: comment after code: std::string video_cfg_path_;      // roguesq_video.json next
+src/main/rt64_render_context.cpp: comment after code: std::string video_cfg_snapshot_;  // last-persisted userConf
+src/main/rt64_render_context.cpp: comment after code: uint32_t game_vi_origin_ = 0;     // VI origin/width as the 
+src/main/rt64_render_context.cpp: comment after code: video_cfg_path_ = cfgPath;                           // enab
+src/main/rt64_render_context.cpp: comment block over 2 lines: // All nav targets reach the front-end menu; pulse START thr
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Erases framebuffers RT64 registered outside [0x400000, 0x
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Frame interpolation OFF by default: it smooths rigid obje
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Host-side buffer-arbiter consumer for the legacy host-pac
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Menu present fix: the menu composes into a 512-wide color
+src/main/rt64_render_context.cpp: comment block over 2 lines: // One-shot RDRAM dump (un-swizzled to MIPS byte order, same
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Only redirect to a buffer that is still being drawn. The 
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Only the developer-mode F1 inspector counts. Outside deve
+src/main/rt64_render_context.cpp: comment block over 2 lines: // Per-hitch attribution: on a long present interval, dump t
+src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_BOOT_TARGET=menu | demo:N | level:<id>[,craft]. m
+src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]: multi-milesto
+src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_INTERP_RATE=<hz> pins the game's logical rate, by
+src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_LOG_FRAME_PROFILE=1: once/sec, attribute frame ti
+src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_TEX_FILTER=nearest|linear|aa. This drives BOTH th
+src/main/rt64_render_context.cpp: comment block over 2 lines: // The menu buffer is a 512x448 full frame but VI is still i
+src/main/rt64_render_context.cpp: comment block over 2 lines: // True while RT64's F1 developer inspector (ImGui) is up. T
+src/main/rt64_render_context.cpp: comment block over 2 lines: // roguesq_video.json next to the exe (same convention as ro
+src/main/rt64_render_context.cpp: two statements on one line: if (s_iters.empty()) { for (const char* c = s_on_cine; *c; )
+src/main/rumble.cpp: comment after code: bool              g_base_state = false;   // motor state bef
+src/main/rumble.cpp: comment after code: constexpr uint32_t CRAFT_EFFECT_ID  = CRAFT + 0x1C4;  // s32
+src/main/rumble.cpp: comment after code: constexpr uint32_t CRAFT_FLAGS      = CRAFT + 0x180;  // u16
+src/main/rumble.cpp: comment after code: constexpr uint32_t CRAFT_HEALTH     = CRAFT + 0xC0;   // f32
+src/main/rumble.cpp: comment after code: constexpr uint32_t CRAFT_MAX_HEALTH = CRAFT + 0xC4;   // f32
+src/main/rumble.cpp: comment after code: constexpr uint32_t CRAFT_PAK_SLOT   = CRAFT + 0xBB;   // u8
+src/main/rumble.cpp: comment after code: constexpr uint32_t GATE_FLAGS       = 0x80130B50;     // u32
+src/main/rumble.cpp: comment after code: constexpr uint32_t GATE_WORD        = 0x8010CA20;     // u32
+src/main/rumble.cpp: comment after code: constexpr uint32_t RUMBLE_SLOTS     = 0x80110520;     // str
+src/main/rumble.cpp: comment after code: constexpr uint32_t RUMBLE_SUSPENDED = 0x80110740;     // u8
+src/main/rumble.h: comment after code: bool  dead   = false;  // crashed or destroyed
+src/main/rumble.h: comment after code: bool  spiral = false;  // death spiral in progress
+src/main/rumble.h: comment after code: float health = 1.0f;   // health / max health, [0,1]
+src/main/rumble.h: comment after code: float hi = 0.0f;   // high-frequency (light) motor, [0,1]
+src/main/rumble.h: comment after code: float lo = 0.0f;   // low-frequency (heavy) motor, [0,1]
+src/main/rumble.h: comment block over 2 lines: // The game runs its own Rumble Pak effects and pulses the m
+src/main/touch_input.h: comment after code: bool gyro = false;              // tilt flying (GYRO STEERIN
+src/main/touch_input.h: comment after code: float pitch_gain = 0.8f;        // up/down (mouse-like): sti
+src/main/touch_input.h: comment after code: float pitch_min = 0.08f;        // up/down: smallest output 
+src/main/touch_input.h: comment after code: float rate_assist = 0.3f;       // steering: stick added per
+src/main/touch_input.h: comment after code: float steer_curve = 1.5f;       // response exponent; >1 is 
+src/main/touch_input.h: comment after code: float steer_dead_deg = 5.0f;    // roll under this flies str
+src/main/touch_input.h: comment after code: float steer_full_deg = 40.0f;   // roll for a full left/righ
+src/main/touch_input.h: comment after code: float stick_curve = 1.5f;     // response exponent; >1 is ge
+src/main/touch_input.h: comment after code: float stick_radius = 0.18f;   // drag distance (screen heigh
+src/main/touch_input.h: comment after code: float stick_split = 0.5f;                  // flight: touche
+src/main/touch_input.h: comment after code: int axis;    // scrub axis once locked: 0 none, 1 x, 2 y
+src/main/touch_input.h: comment after code: int row0 = -1;  // pause menu: line under the finger at Down
+src/main/touch_input.h: comment after code: int side = 0;   // passcode wheel: -1/+1 while holding a sid
+src/main/touch_input.h: comment after code: int steps;   // scrub steps already emitted
+src/main/touch_input.h: comment after code: std::map<std::string, Placement> layout;   // flight button 
+src/main/touch_input.h: comment after code: std::vector<ButtonDef> tools;    // layout editor toolbar (i
+src/main/touch_input.h: comment after code: uint16_t selected = 0;           // layout editor: mask of t
+src/main/touch_menu.cpp: comment after code: constexpr uint32_t kVolumes = 0x80130B60u - 0x80000000u;   /
+src/main/touch_menu.cpp: comment after code: selectable = -1;   // plain text line; slider parts (0x4xxx)
+src/main/touch_menu.h: comment after code: bool bar = false;    // a volume bar's backing (full value r
+src/main/touch_menu.h: comment after code: float box_aspect;    // width/height of the presented game i
+src/main/touch_menu.h: comment after code: float center_x;      // screen x of game x 0
+src/main/touch_menu.h: comment after code: float glyph_w;       // advance per character at scaler 1.0
+src/main/touch_menu.h: comment after code: float line_h;        // text height at scaler 1.0
+src/main/touch_menu.h: comment after code: float x0, x1;    // window x of value 0 and value 128
+src/main/touch_menu.h: comment after code: float x_scale;       // screen units per game x unit (320/51
+src/main/touch_menu.h: comment after code: float y0, y1;    // touch band around the bar
+src/main/touch_menu.h: comment after code: float y_origin;      // screen y (text top) of game y 0
+src/main/touch_menu.h: comment after code: float y_scale;       // screen units per game y unit
+src/main/touch_menu.h: comment after code: int channel = -1;    // volume channel of the slider row thi
+src/main/touch_menu.h: comment after code: int channel;     // 0 music, 1 sfx, 2 speech (byte at 0x8013
+src/main/upstream_compat.cpp: comment after code: *reinterpret_cast<uint32_t*>(rdram + 0x39100) = 0u;         
+src/main/upstream_compat.cpp: comment after code: *reinterpret_cast<uint32_t*>(rdram + 0x39104) = 46875000u;  
+src/main/upstream_compat.cpp: comment after code: MEM_W(1 * 4, buf_ptr) = (int32_t)(magv);                    
+src/main/upstream_compat.cpp: comment after code: MEM_W(2 * 4, buf_ptr) = (int32_t)(tris * (uint32_t)ts + magv
+src/main/upstream_compat.cpp: comment after code: MEM_W(3 * 4, buf_ptr) = (int32_t)(texloads * (uint32_t)xs); 
+src/main/upstream_compat.cpp: comment after code: case 0: load_overlays(0x000A5D30, 0x800A5130, 0x000665A0); b
+src/main/upstream_compat.cpp: comment after code: case 1: load_overlays(0x0010C2D0, 0x800A5130, 0x000283F0); b
+src/main/upstream_compat.cpp: comment after code: case 2: load_overlays(0x00137580, 0x800A5130, 0x0000B810); b
+src/main/upstream_compat.cpp: comment after code: extern void print_stack_with_symbols(void** frames, unsigned
+src/main/upstream_compat.cpp: comment after code: gpr buf_ptr = ctx->r4;   // full gpr so the sign-extended ad
+src/main/upstream_compat.cpp: comment after code: if (s_nb && !rs64_vi_driven() && (q == 0x8011A7E8u || q == 0
+src/main/upstream_compat.cpp: comment after code: int tid = (self >= 0x80000000u && self < 0x80800000u) ? (int
+src/main/upstream_compat.cpp: comment after code: static bool s_bp_white_only = false;     // ROGUESQ_DATA_BP_
+src/main/upstream_compat.cpp: comment after code: unload_overlays(0x800A5130, 0x000665A0);   // largest overla
+src/main/upstream_compat.cpp: comment after code: void dequeue_external_messages(uint8_t* rdram);         // u
+src/main/upstream_compat.cpp: comment block over 2 lines: // A graphics task is in flight from the game's REQUEST (typ
+src/main/upstream_compat.cpp: comment block over 2 lines: // Attribution-loop pacing: wait for the next host VI tick b
+src/main/upstream_compat.cpp: comment block over 2 lines: // Called from the loadOverlay (0x80000B20) hook with the ov
+src/main/upstream_compat.cpp: comment block over 2 lines: // Frame start (video queue 0x80128CF0): the game is about t
+src/main/upstream_compat.cpp: comment block over 2 lines: // No real RDP on the PC path, so feed the F5 profiler HUD's
+src/main/upstream_compat.cpp: comment block over 2 lines: // ROGUESQ_CHECK_CHUNKLIST=1: walk the DL chunk free list (h
+src/main/upstream_compat.cpp: comment block over 2 lines: // ROGUESQ_LOG_MESG_TRACE=1: thread/message order for cinema
+src/main/upstream_compat.cpp: comment block over 2 lines: // Wait for the in-flight RT64 parse from an N64 thread, yie
+src/main/upstream_compat.cpp: comment block over 2 lines: // __osInitialize_common is HLE'd and never touches the game
+src/main/upstream_compat.cpp: comment block over 2 lines: // libultra _recomp bindings upstream librecomp does not pro
+src/main/upstream_compat.cpp: comment block over 2 lines: // submitGfxFrame reads these as cumulative counters: white 
+src/main/upstream_compat.cpp: comment block over 2 lines: // zmemcpy is stubbed in rogue_squadron.toml (its MIPS body 
+src/main/upstream_compat.h: comment block over 2 lines: // upstream_compat.h — public C-linkage surface of upstream_
+src/main/video_config.cpp: comment after code: json base = uc;            // RT64 to_json
+src/main/video_config.h: comment after code: bool loaded = false;    // a file was present and parsed
+src/main/video_config.h: comment after code: bool migrated = false;  // the file was legacy raw and shoul

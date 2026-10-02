@@ -1,0 +1,10 @@
+{
+  "game_id": "rs64",
+  "id": "multiplayer",
+  "display_name": "Multiplayer",
+  "description": "Adds a MULTIPLAYER page to the main menu: host a co-op game or join one by address.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true
+}

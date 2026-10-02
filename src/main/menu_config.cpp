@@ -1,6 +1,7 @@
 #include "menu_config.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -25,17 +26,17 @@
 #include "recomp.h"   // recomp_context, recomp_func_t (for mod-provided @exports)
 #include "video_config.h"
 
-// Menu button system v2 — one typed button model for the front-end and pause
-// menus, driven by mod JSON. See docs/adding-menus-and-buttons.md and
-// plans/menu-button-system-v2.md. A "button" is { menu, type, behavior, labels,
-// placement }; the install engine rebuilds the target menu's entry list, merging
-// native entries with mod buttons by order/anchor. Behavior keys resolve to a
-// host registry (built-in actions/toggles); mod-provided behavior (@export) is
-// Phase 1b.
+// Menu button system v2: one typed button model { menu, type, behavior, labels, placement } for the front-end and pause menus, driven by mod JSON (docs/adding-menus-and-buttons.md).
+// The install engine rebuilds the target menu's entry list, merging native entries with mod buttons by order/anchor; behavior keys resolve to a host registry or a mod @export.
 
 namespace recomp { void* alloc(uint8_t* rdram, size_t size); }
 #include "main.h"   // rs64_menu_request_quit, rs64_toggle_fullscreen, rs64_get_fullscreen
 #include "touch_config.h"
+#include "mips_call.h"
+#include "host_api.h"
+#include "debug_logs.h"
+
+extern "C" int rs64_hook(uint32_t hook, uint8_t* rdram, recomp_context* ctx);
 
 namespace {
 
@@ -55,18 +56,16 @@ enum FrontMenu : uint8_t {
     MENU_SOUND_SETTINGS      = 6,
     MENU_PASSCODES           = 7,
     MENU_BIOGRAPHIES         = 8,
-    // Ids 0-12 are native (setupMenuData range-checks < 13). An id >= 13 bails to
-    // the shared tail with 0 entries, so our install hook fully builds it: a
-    // custom page. See plans/custom-menu-pages-plan.md.
+    // Ids 0-12 are native (setupMenuData range-checks < 13); an id >= 13 bails to the shared tail with 0 entries, so our install hook fully builds it as a custom page.
     MENU_MOD_PAGE            = 13,
     MENU_NONE                = 0xFF,
 };
 
-// Entry sub-types. 1 = submenu transition (self-targeting = re-run setupMenuData,
-// the only way to re-commit labels); 4 = in-range no-op on confirm (intercept owns
-// the action).
+// Entry sub-types. 1 = submenu transition (self-targeting = re-run setupMenuData, the only way to re-commit labels); 4 = in-range no-op on confirm (intercept owns the action).
 constexpr uint8_t SUBTYPE_SUBMENU = 1;
 constexpr uint8_t SUBTYPE_HOST    = 4;
+// Non-selectable line: the menu navigation skips it.
+constexpr uint8_t SUBTYPE_LABEL   = 13;
 constexpr int16_t YESNO_X = -0x40;
 
 bool env_disabled(const char* name) {
@@ -74,9 +73,7 @@ bool env_disabled(const char* name) {
     return v && *v && *v != '0';
 }
 
-// The custom front-end menu is suppressed when ROGUESQ_NO_MENU_BUTTONS is set, OR for the demo
-// boot target -- the custom menu displaces the original title's attract-idle path, so demo needs
-// the stock front end. See project_boot_target_nav_engine memory / nav_sequencer.cpp.
+// The custom front-end menu is off when ROGUESQ_NO_MENU_BUTTONS is set or for the demo boot target, which needs the stock front end (the custom menu displaces the attract-idle path).
 bool menu_buttons_off() {
     static const bool off = [] {
         if (env_disabled("ROGUESQ_NO_MENU_BUTTONS")) return true;
@@ -86,16 +83,13 @@ bool menu_buttons_off() {
     return off;
 }
 
-// A game_settings toggle that `replace`s a known native toggle slot flips in place
-// via that slot's native sub-type-5 re-render (no reload). On by default; set
-// ROGUESQ_NO_TOGGLE_INPLACE to force the reload path.
+// A game_settings toggle that `replace`s a known native toggle slot flips in place via that slot's native sub-type-5 re-render (no reload); ROGUESQ_NO_TOGGLE_INPLACE forces the reload path.
 bool toggle_inplace() { static bool v = !env_disabled("ROGUESQ_NO_TOGGLE_INPLACE"); return v; }
 
-// ---------------------------------------------------------------------------
-// Config model
-// ---------------------------------------------------------------------------
+// ---- Config model ----
 
-enum class BType { Action, Toggle, Slider, Submenu };
+// Label: a page line the cursor skips (sub-type 13), e.g. a live status line.
+enum class BType { Action, Toggle, Slider, Submenu, Label };
 
 struct Button {
     std::string id;
@@ -108,18 +102,29 @@ struct Button {
     std::string label_off;
     std::string page;        // Submenu: the page it opens; page entries use menu==page
     std::string title;       // Submenu: the opened page's title (default = label)
+    int title_y = 0;         // Submenu: the page title's y offset (gCurrentMenuData+0x52, title slot 9)
+    std::string leave_action; // Submenu: action fired when its page is left (its "action" fires on open)
+    std::string label_src;   // Page entry: live text source; the drawn label follows it every frame
+    std::string transition;  // Front-end action: also run the native transition to this menu ("account" = the profile select, like START)
+    // With transition "account": once a pilot is chosen, show this page instead of leaving for mission select, and leave when the exit_when condition holds.
+    std::string exit_when;
     // placement
     bool has_order = false;
     int order = 0;
     std::string before, after, replace;   // anchor to a native alias / button id
     int x = 0, y = 0;
+    // Page entries: extra space below this line (pixels) and the text scale.
+    int gap_after = 0;
+    float scale = 1.0f;
+    // Page entries with the same row share one line (left to right in file order, placed by x); left/right moves between them.
+    std::string row;
     int flags = 0x4001;      // pause entry flag word (0x4000 style + 0x0001 selectable)
     std::string mod_id;      // owning mod (for @export resolution)
     // Slider (value control rendered as a font-glyph bar in the label).
     int smin = 0, smax = 100, sstep = 10;
     int bar_width = 10;
     std::string bar_filled = "|";
-    std::string bar_empty  = ".";
+    std::string bar_empty  = " ";
 };
 
 struct MenuConfig {
@@ -138,11 +143,16 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     b.menu     = e.value("menu", std::string{"main_menu"});
     std::string t = e.value("type", std::string{"action"});
     b.type = (t == "toggle") ? BType::Toggle : (t == "slider") ? BType::Slider
-           : (t == "submenu") ? BType::Submenu : BType::Action;
+           : (t == "submenu") ? BType::Submenu : (t == "label") ? BType::Label : BType::Action;
     const char* bkey = (b.type == BType::Toggle) ? "toggle" : (b.type == BType::Slider) ? "slider" : "action";
     b.behavior = e.value(bkey, std::string{});
     b.page  = e.value("page",  std::string{});
     b.title = e.value("title", std::string{});
+    b.title_y = e.value("title_y", 0);
+    b.leave_action = e.value("leave_action", std::string{});
+    b.label_src = e.value("label_src", std::string{});
+    b.transition = e.value("transition", std::string{});
+    b.exit_when = e.value("exit_when", std::string{});
     b.smin  = e.value("min",  b.smin);
     b.smax  = e.value("max",  b.smax);
     b.sstep = e.value("step", b.sstep);
@@ -159,6 +169,9 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     b.replace = e.value("replace", std::string{});
     b.x = e.value("x", 0);
     b.y = e.value("y", 0);
+    b.gap_after = e.value("gap_after", 0);
+    b.row = e.value("row", std::string{});
+    b.scale = e.value("scale", 1.0f);
     b.flags = e.value("flags", 0x4001);
     out.push_back(std::move(b));
 }
@@ -224,9 +237,7 @@ MenuConfig build_config() {
         apply_json(m, (root / "roguesq_menu.json").string(), d.mod_id);
     }
 
-    // id-based override: a later button (a mod) replaces an earlier one (the
-    // default, or an earlier mod) with the same id, in place. Id-less buttons are
-    // always kept.
+    // A later button with the same id replaces the earlier one in place; id-less buttons are always kept.
     std::vector<Button> merged;
     std::unordered_map<std::string, size_t> by_id;
     for (auto& b : m.buttons) {
@@ -247,9 +258,7 @@ const MenuConfig& config() {
     return cached;
 }
 
-// ---------------------------------------------------------------------------
-// Behavior registries (built-in). Phase 1b resolves @export names to mod code.
-// ---------------------------------------------------------------------------
+// ---- Behavior registries (built-in) ----
 
 struct ToggleImpl { std::function<bool()> get; std::function<void()> toggle; };
 struct SliderImpl { std::function<int()> get; std::function<void(int)> set; };
@@ -258,8 +267,14 @@ std::unordered_map<std::string, std::function<void()>>& actions() {
     static std::unordered_map<std::string, std::function<void()>> r = {
         { "quit", [] { rs64_menu_request_quit(); } },
         { "touch_layout", [] { rs64_touch_layout_request(); } },
+        { "none", [] {} },
     };
     return r;
+}
+// Live label text for page entries with a `label_src` (upper case, digits, spaces and < > only: menu font 5).
+std::string source_text(const std::string& key) {
+    const char* s = rs64::host::text_source(key.c_str());
+    return s ? std::string(s) : std::string{};
 }
 std::unordered_map<std::string, ToggleImpl>& toggles() {
     static std::unordered_map<std::string, ToggleImpl> r = {
@@ -267,6 +282,8 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
                           [] { rs64_toggle_fullscreen(); } } },
         { "gyro", { [] { return rs64::touch::gyro_enabled(); },
                     [] { rs64::touch::set_gyro_enabled(!rs64::touch::gyro_enabled()); } } },
+        { "cutscene_draw_distance", { [] { return rs64::video::keep_cutscene_draw_distance(); },
+                                      [] { rs64::video::set_keep_cutscene_draw_distance(!rs64::video::keep_cutscene_draw_distance()); } } },
     };
     return r;
 }
@@ -281,7 +298,11 @@ std::unordered_map<std::string, SliderImpl>& sliders() {
 
 void fire_action(const std::string& key) {
     auto it = actions().find(key);
-    if (it != actions().end() && it->second) it->second();
+    if (it != actions().end() && it->second) {
+        it->second();
+        return;
+    }
+    rs64::host::run_action(key.c_str());
 }
 bool toggle_state(const std::string& key) {
     auto it = toggles().find(key);
@@ -306,9 +327,7 @@ bool call_export_bool(uint8_t* rdram, recomp_func_t* fn) {
     return ctx.r2 != 0;
 }
 
-// Resolve a mod native-library export by name, cached once found. Resolution is
-// LAZY (at menu-show time) because config() is built at boot, before the game
-// loads mod native libraries — resolving there would always miss.
+// Resolve a mod native-library export by name, cached once found. Lazy (at menu-show time): config() is built at boot, before mod native libraries load.
 recomp_func_t* resolve_export(const std::string& mod_id, const std::string& name) {
     if (mod_id.empty() || name.empty()) return nullptr;
     static std::unordered_map<std::string, recomp_func_t*> cache;
@@ -316,7 +335,8 @@ recomp_func_t* resolve_export(const std::string& mod_id, const std::string& name
     auto it = cache.find(key);
     if (it != cache.end()) return it->second;
     recomp_func_t* fn = recomp::mods::get_mod_export(mod_id, name);
-    if (fn) cache[key] = fn;   // only cache successes; retry until the lib loads
+    // Only cache successes; retry until the lib loads.
+    if (fn) cache[key] = fn;
     return fn;
 }
 
@@ -332,9 +352,7 @@ BehaviorFns resolve_behavior(const std::string& mod_id, BType type, const std::s
     return f;
 }
 
-// ---------------------------------------------------------------------------
-// rdram accessors + string alloc
-// ---------------------------------------------------------------------------
+// ---- rdram accessors + string alloc ----
 
 inline int32_t rd_w(uint8_t* r, uint32_t off)           { return *(int32_t*)(r + off); }
 inline int16_t rd_h(uint8_t* r, uint32_t off)           { return *(int16_t*)(r + (off ^ 2)); }
@@ -358,9 +376,7 @@ uint32_t alloc_str(uint8_t* rdram, const std::string& s) {
     return vaddr;
 }
 
-// ---------------------------------------------------------------------------
-// Front-end menu entry slots
-// ---------------------------------------------------------------------------
+// ---- Front-end menu entry slots ----
 
 struct Slot { int32_t label; uint8_t sub; int32_t param; int16_t x, y; int32_t scaler; };
 
@@ -382,9 +398,7 @@ bool label_is_empty(uint8_t* r, uint32_t label_vaddr) {
     return rd_b(r, label_vaddr - 0x80000000u) == 0;
 }
 
-// ---------------------------------------------------------------------------
-// Menu-name resolution + native aliases (for ordering anchors / replace / hide)
-// ---------------------------------------------------------------------------
+// ---- Menu-name resolution + native aliases (for ordering anchors / replace / hide) ----
 
 uint8_t frontend_menu_id(const std::string& name) {
     if (name == "main_menu")           return MENU_MAIN;
@@ -429,9 +443,7 @@ const std::unordered_map<std::string, NativeAlias>* native_aliases(uint8_t menu_
     }
 }
 
-// ---------------------------------------------------------------------------
-// Per-slot binding, read by the confirm intercept
-// ---------------------------------------------------------------------------
+// ---- Per-slot binding, read by the confirm intercept ----
 
 struct SlotBinding {
     bool set = false; BType type = BType::Action; std::string key, confirm;
@@ -439,27 +451,60 @@ struct SlotBinding {
     recomp_func_t* action_fn = nullptr, * toggle_get_fn = nullptr, * toggle_set_fn = nullptr;
     int smin = 0, smax = 100, sstep = 10;   // slider range
     std::string label_on, label_off;        // toggle labels (for in-place relabel)
+    // Submenu opener: action fired when the page opens.
+    std::string open_action;
+    // Action with transition "account": the page shown after the pilot is chosen, and its exit condition.
+    std::string pilot_page, exit_when;
+    // Live label: the entry points at its own RDRAM buffer (never an alloc_str cache entry, which other labels share).
+    std::string label_src, live_text;
+    uint32_t live_buf = 0;
 };
 SlotBinding s_slot[MAX_ENTRIES];
+// The current page's line per selectable slot (-1: not selectable); set only when the page has a shared row.
+int s_slot_line[MAX_ENTRIES];
+bool s_page_rows = false;
+// Whether a mod page is on screen, for the touch code on the SDL thread.
+std::atomic<bool> s_page_shown{false};
 
-// Custom mod pages: hosted on a real menu id (whose native builder runs the required
-// text setup) and flag-gated so the host menu still works when reached normally. A
-// "submenu" button opens a named page; buttons with menu==<page> are its entries.
+constexpr size_t LIVE_CAP = 40;
+
+// One buffer per button id, kept for the session.
+uint32_t live_buffer(uint8_t* rdram, const std::string& id) {
+    static std::unordered_map<std::string, uint32_t> bufs;
+    auto it = bufs.find(id);
+    if (it != bufs.end()) return it->second;
+    void* p = recomp::alloc(rdram, LIVE_CAP + 1);
+    if (!p) return 0;
+    const uint32_t v = (uint32_t)((uint8_t*)p - rdram) + 0x80000000u;
+    bufs.emplace(id, v);
+    return v;
+}
+
+void write_live(uint8_t* rdram, uint32_t vaddr, const std::string& s) {
+    const size_t n = std::min(s.size(), LIVE_CAP);
+    const uint32_t off = vaddr - 0x80000000u;
+    for (size_t i = 0; i < n; ++i) rdram[(off + (uint32_t)i) ^ 3] = (uint8_t)s[i];
+    rdram[(off + (uint32_t)n) ^ 3] = 0;
+}
+
+// Custom mod pages: hosted on a real menu id (its native builder runs the required text setup) and flag-gated so the host menu still works normally.
+// A "submenu" button opens a named page; buttons with menu==<page> are its entries.
 constexpr uint8_t MOD_PAGE_HOST = MENU_GAME_SETTINGS;
 std::string s_active_page;              // page currently shown on the host (empty = none)
+// A pilot-first page (action with transition "account"): armed on confirm, shown when the pilot is chosen, left when its exit condition holds.
+std::string s_pilot_page, s_pilot_exit;
 uint8_t     s_page_parent = MENU_MAIN;  // menu to return to on Back
 
-// In-place game_settings toggles reuse a native toggle slot (native sub-type 5) so the
-// game re-renders in place. Each `replace`s a native toggle, taking its param and its
-// ON/OFF label textIds, which we override with the mod's labels reflecting the mod's
-// own state. Only slots whose textIds are known are supported.
+// In-place game_settings toggles reuse a native toggle slot (sub-type 5) so the game re-renders in place: each `replace`s a native toggle, taking its param and ON/OFF textIds,
+// which are overridden with the mod's labels. Only slots with known textIds are supported.
 struct InplaceToggle { int param; unsigned off_tid, on_tid; std::string on, off, key; recomp_func_t* get = nullptr; };
 std::vector<InplaceToggle> s_inplace_tgls;
 
 // Map a game_settings `replace` alias to its native toggle {param, OFF tid, ON tid}.
 bool inplace_slot(const std::string& alias, int& param, unsigned& off_tid, unsigned& on_tid) {
     if (alias == "crosshairs") { param = 3; off_tid = 0x6C; on_tid = 0x6D; return true; }
-    return false;   // other slots: probe their textIds before adding
+    // Other slots: probe their textIds before adding.
+    return false;
 }
 
 enum class ConfirmState { None, Pending };
@@ -509,7 +554,7 @@ struct Item {
     Slot slot;
     bool is_native;
     bool is_spacer;
-    SlotBinding binding;   // for mod-button items
+    SlotBinding binding;
 };
 
 bool alias_matches(const Slot& s, const NativeAlias& a) {
@@ -532,13 +577,12 @@ bool anchor_order(const std::vector<Item>& items, uint8_t menu_id,
     return false;
 }
 
-// Rebuild the current front-end menu's entry list = native entries merged with
-// this menu's mod buttons, ordered by order/anchors, dropping hidden/replaced
-// natives and spacers as needed to fit MAX_ENTRIES.
+// Rebuild the current front-end menu's entry list: native entries merged with the mod buttons by order/anchors, dropping hidden/replaced natives and spacers to fit MAX_ENTRIES.
 void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
     const char* mname = frontend_menu_name(menu_id);
     if (!mname) return;
-    if (menu_id == MENU_GAME_SETTINGS) s_inplace_tgls.clear();   // re-detected below
+    // Re-detected below.
+    if (menu_id == MENU_GAME_SETTINGS) s_inplace_tgls.clear();
 
     const uint8_t n = rd_b(rdram, GCMD_OFF + 0x95);
     int32_t ref_scaler = n > 0 ? read_slot(rdram, 0).scaler : 0x3F800000;
@@ -597,6 +641,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
             it.slot = Slot{ (int32_t)lbl, SUBTYPE_SUBMENU, (int32_t)MOD_PAGE_HOST,
                             (int16_t)b.x, (int16_t)b.y, ref_scaler };
             it.binding = { true, BType::Submenu, b.page };
+            it.binding.open_action = b.behavior;
             items.push_back(it);
             continue;
         }
@@ -613,27 +658,33 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
             text = b.label;
         uint32_t lbl = alloc_str(rdram, text);
         if (!lbl) continue;
-        // Toggle/Slider + confirm-action = self-targeting sub-type 1 (rebuild reflects
-        // the new state / rides the YES-NO transition). Plain action = no-op host. In
-        // native game_settings with ROGUESQ_TOGGLE_INPLACE, a toggle is emitted as the
-        // native sub-type 5 (param = a game-settings toggle index) so the game's own
-        // handler re-renders it in place (no reload). TEST: index 3 (crosshairs slot).
+        // Toggle/Slider + confirm-action = self-targeting sub-type 1 (rebuild reflects the new state / rides the YES-NO transition); plain action = no-op host.
+        // In native game_settings a toggle is emitted as native sub-type 5 (param = game-settings toggle index) so the game's own handler re-renders it in place.
         uint8_t sub; int32_t param;
         int ip_param; unsigned ip_off, ip_on;
         if (b.type == BType::Toggle && toggle_inplace() && menu_id == MENU_GAME_SETTINGS
             && !b.replace.empty() && inplace_slot(b.replace, ip_param, ip_off, ip_on)) {
-            sub = 5; param = ip_param;   // native in-place re-render on the replaced slot
+            // Native in-place re-render on the replaced slot.
+            sub = 5; param = ip_param;
             s_inplace_tgls.push_back({ ip_param, ip_off, ip_on, b.label_on, b.label_off,
                                        b.behavior, fns.toggle_get });
         } else {
             bool selfsub = (b.type == BType::Slider) || !b.confirm.empty() || b.type == BType::Toggle;
             sub = selfsub ? SUBTYPE_SUBMENU : SUBTYPE_HOST;
             param = selfsub ? (int32_t)menu_id : 0;
+            if (b.type == BType::Action && b.confirm.empty() && b.transition == "account") {
+                sub = SUBTYPE_SUBMENU;
+                param = MENU_ACCOUNT;
+            }
         }
         Slot s{ (int32_t)lbl, sub, param, (int16_t)b.x, (int16_t)b.y, ref_scaler };
         Item it; it.order = ord; it.slot = s; it.is_native = false; it.is_spacer = false;
         it.binding = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                        b.smin, b.smax, b.sstep, b.label_on, b.label_off };
+        if (b.transition == "account") {
+            it.binding.pilot_page = b.page;
+            it.binding.exit_when = b.exit_when;
+        }
         items.push_back(it);
     }
 
@@ -649,9 +700,12 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
 
     // write back
     for (int i = 0; i < MAX_ENTRIES; ++i) s_slot[i] = {};
+    // The main menu's list grows down from under the logo and fits three entries: each one past that lifts it a line (36) so the last stays on screen.
+    const int lift = (menu_id == MENU_MAIN && (int)items.size() > 3) ? 36 * ((int)std::min<size_t>(items.size(), MAX_ENTRIES) - 3) : 0;
     int j = 0;
     for (auto& it : items) {
         if (j >= MAX_ENTRIES) break;
+        it.slot.y = (int16_t)(it.slot.y - lift);
         write_slot(rdram, j, it.slot);
         if (!it.is_native) s_slot[j] = it.binding;
         ++j;
@@ -659,13 +713,8 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
     wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)j);
 }
 
-// ---------------------------------------------------------------------------
-// Sound Settings native slider. A mod `type:"slider"` with `menu:"sound_settings"`
-// and a `replace` anchor becomes a real volume-slider entry (sub-type 21). Its
-// channel index is redirected to an unused settings byte so the value is
-// independent of audio; endpoint labels (label_off/label_on) and the value (synced
-// to the mod's @export) are overridden. See docs/adding-menus-and-buttons.md.
-// ---------------------------------------------------------------------------
+// Sound Settings native slider: a mod slider on `sound_settings` with a `replace` anchor becomes a volume-slider entry (sub-type 21) whose channel index is redirected to an unused settings byte,
+// so the value is independent of audio; endpoint labels and the value (synced to the mod's @export) are overridden.
 
 constexpr uint32_t VOL_BYTES = 0x80130B60u - 0x80000000u;  // channel volume bytes (0..N)
 constexpr int      VOL_MAX   = 0x80;                       // native slider range
@@ -713,7 +762,8 @@ void sound_settings_install(uint8_t* rdram) {
     for (const auto& b : config().buttons) {
         if (b.type != BType::Slider || frontend_menu_id(b.menu) != MENU_SOUND_SETTINGS) continue;
         int slot = b.replace.empty() ? -1 : snd_alias_slot(rdram, b.replace);
-        if (slot < 0 || next_ch > SND_CH_LAST) continue;   // needs a replace anchor + free channel
+        // Needs a replace anchor + free channel.
+        if (slot < 0 || next_ch > SND_CH_LAST) continue;
         int ch = next_ch++;
         BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         Slot s = read_slot(rdram, slot);
@@ -736,22 +786,48 @@ const SndSlider* snd_slider_for_slot(int slot) {
     return nullptr;
 }
 
-// Build a custom mod page on the host menu: title from the opening submenu button,
-// entries from config buttons whose menu == the page name, plus a Back to the parent
-// menu. Reserves a slot for Back and caps at MAX_ENTRIES.
+// Build a custom mod page on the host menu: title from the opening submenu button, entries from buttons whose menu == the page name, plus a Back to the parent (slot reserved, capped at MAX_ENTRIES).
 void build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent) {
     for (int i = 0; i < MAX_ENTRIES; ++i) s_slot[i] = {};
     const int32_t sc = 0x3F800000;
 
     std::string title = page;
     for (const auto& b : config().buttons)
-        if (b.type == BType::Submenu && b.page == page) { title = b.title.empty() ? b.label : b.title; break; }
+        if (b.page == page && b.menu != page) {
+            title = b.title.empty() ? b.label : b.title;
+            if (b.title_y != 0) wr_h(rdram, GCMD_OFF + 0x52, (int16_t)b.title_y);
+            break;
+        }
     wr_w(rdram, GCMD_OFF + 0x00, (int32_t)alloc_str(rdram, title));
 
-    int j = 0;
-    for (const auto& b : config().buttons) {
-        if (b.menu != page) continue;
-        if (j >= MAX_ENTRIES - 1) break;   // reserve a slot for Back
+    std::vector<const Button*> lines;
+    for (const auto& b : config().buttons)
+        if (b.menu == page) lines.push_back(&b);
+    // Reserve a slot for Back.
+    if ((int)lines.size() > MAX_ENTRIES - 1) lines.resize(MAX_ENTRIES - 1);
+    // Selectable lines take the first slots with BACK after them (a leading non-selectable entry hangs the menu navigation); labels take the slots after BACK.
+    // Every line is then moved (its y offset; slot i is drawn 36 * i down) to the place its JSON order gives it, BACK last.
+    std::vector<int> slot_of(lines.size());
+    int next = 0;
+    for (size_t v = 0; v < lines.size(); ++v)
+        if (lines[v]->type != BType::Label) slot_of[v] = next++;
+    const int back_slot = next++;
+    for (size_t v = 0; v < lines.size(); ++v)
+        if (lines[v]->type == BType::Label) slot_of[v] = next++;
+    int gap = 0;
+    int line = -1, line_gap = 0;
+    s_page_rows = false;
+    for (int i = 0; i < MAX_ENTRIES; ++i) s_slot_line[i] = -1;
+    for (size_t v = 0; v < lines.size(); ++v) {
+        const Button& b = *lines[v];
+        const int j = slot_of[v];
+        const bool same_row = !b.row.empty() && v > 0 && lines[v - 1]->row == b.row;
+        if (!same_row) {
+            ++line;
+            line_gap = gap;
+        }
+        s_page_rows = s_page_rows || same_row;
+        if (b.type != BType::Label) s_slot_line[j] = line;
         BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         std::string text;
         if (b.type == BType::Toggle)
@@ -761,26 +837,43 @@ void build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent) {
                                    b.smin, b.smax, b.bar_width, b.bar_filled, b.bar_empty);
         else
             text = b.label;
-        uint32_t lbl = alloc_str(rdram, text);
-        if (!lbl) continue;
+        uint32_t live = 0;
+        if (!b.label_src.empty()) {
+            const std::string src = source_text(b.label_src);
+            if (!src.empty()) text = src;
+            live = live_buffer(rdram, b.id.empty() ? page + "#" + std::to_string(j) : b.id);
+            if (live) write_live(rdram, live, text);
+        }
+        uint32_t lbl = live ? live : alloc_str(rdram, text.empty() ? " " : text);
         // Page toggles reload (self-target the host): in-place sub-type 5 is not
         // usable on a page (it re-asserts native game_settings over the page).
         bool selfsub = (b.type == BType::Toggle) || (b.type == BType::Slider) || !b.confirm.empty();
-        write_slot(rdram, j, Slot{ (int32_t)lbl, selfsub ? SUBTYPE_SUBMENU : SUBTYPE_HOST,
-                   selfsub ? (int32_t)MOD_PAGE_HOST : 0, (int16_t)b.x, (int16_t)b.y, sc });
+        const uint8_t sub = b.type == BType::Label ? SUBTYPE_LABEL : selfsub ? SUBTYPE_SUBMENU : SUBTYPE_HOST;
+        const int32_t param = (b.type != BType::Label && selfsub) ? (int32_t)MOD_PAGE_HOST : 0;
+        int32_t scale_bits = sc;
+        if (b.scale != 1.0f) std::memcpy(&scale_bits, &b.scale, 4);
+        const int y = 36 * (line - j) + line_gap + b.y;
+        write_slot(rdram, j, Slot{ (int32_t)lbl, sub, param, (int16_t)b.x, (int16_t)y, scale_bits });
+        gap += b.gap_after;
         s_slot[j] = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                       b.smin, b.smax, b.sstep, b.label_on, b.label_off };
-        ++j;
+        if (live) {
+            s_slot[j].label_src = b.label_src;
+            s_slot[j].live_text = text;
+            s_slot[j].live_buf = live;
+        }
     }
-    write_slot(rdram, j, Slot{ (int32_t)alloc_str(rdram, "BACK"), SUBTYPE_SUBMENU, parent, 0, 0, sc });
-    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)(j + 1));
+    s_slot_line[back_slot] = line + 1;
+    const int back_y = 36 * (line + 1 - back_slot) + gap;
+    write_slot(rdram, back_slot, Slot{ (int32_t)alloc_str(rdram, "BACK"), SUBTYPE_SUBMENU, parent, 0, (int16_t)back_y, sc });
+    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)(lines.size() + 1));
+    // The B button returns to gCurrentMenuData+0x05 (the host menu's native parent, OPTIONS); a page goes back where BACK does.
+    wr_b(rdram, GCMD_OFF + 0x05, parent);
 }
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// Front-end hook entry points
-// ---------------------------------------------------------------------------
+// ---- Front-end hook entry points ----
 
 extern "C" void rs64_menu_config_mark_dirty(void) {}
 extern "C" void rs64_menu_config_init(void) { (void)config(); }
@@ -803,12 +896,20 @@ extern "C" void rs64_menu_install_main(uint8_t* rdram) {
         return;
     }
 
-    // Leaving the host menu ends the mod page (a native visit to the host is normal).
-    if (menu != MOD_PAGE_HOST) s_active_page.clear();
+    // Leaving the host menu ends the mod page (a native visit to the host is normal); its opener's leave_action runs.
+    // Back at the main menu (B from the profile select or the page): a pilot-first page is no longer armed.
+    if (menu == MENU_MAIN) {
+        s_pilot_page.clear();
+        s_pilot_exit.clear();
+        rs64_hook(RS64_HOOK_MAIN_MENU, rdram, nullptr);
+    }
+    if (menu != MOD_PAGE_HOST && !s_active_page.empty()) {
+        for (const auto& b : config().buttons)
+            if (b.page == s_active_page && !b.leave_action.empty()) { fire_action(b.leave_action); break; }
+        s_active_page.clear();
+    }
 
-    // A mod page, rendered on the host menu so its native builder does the text
-    // setup; we override the title + entries. Flag-gated by s_active_page so a normal
-    // visit to the host menu is untouched.
+    // A mod page renders on the host menu so its native builder does the text setup; we override the title + entries, gated by s_active_page so a normal visit is untouched.
     if (menu == MOD_PAGE_HOST && !s_active_page.empty()) {
         build_mod_page(rdram, s_active_page, s_page_parent);
         return;
@@ -821,7 +922,7 @@ extern "C" void rs64_menu_install_main(uint8_t* rdram) {
 extern "C" void rs64_menu_confirm_main(uint8_t* rdram) {
     static const bool off = menu_buttons_off();
     if (off) return;
-    uint8_t e = rd_b(rdram, GCMD_OFF + 0x94);   // highlighted entry
+    uint8_t e = rd_b(rdram, GCMD_OFF + 0x94);
 
     if (s_confirm_state == ConfirmState::Pending) {
         if (rd_b(rdram, GCMD_OFF + 0x04) != 0) { s_confirm_state = ConfirmState::None; return; }
@@ -839,6 +940,7 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram) {
         // sub-type-1 transition to the host menu then renders the page.
         s_active_page = b.key;
         s_page_parent = rd_b(rdram, GCMD_OFF + 0x04);
+        if (!b.open_action.empty()) fire_action(b.open_action);
     } else if (b.type == BType::Toggle) {
         if (b.toggle_set_fn) call_export(rdram, b.toggle_set_fn); else toggle_flip(b.key);
         // In-place toggles are emitted as native sub-type 5, so the game re-renders
@@ -853,16 +955,121 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram) {
         s_confirm_fn = b.action_fn;
     } else {
         if (b.action_fn) call_export(rdram, b.action_fn); else fire_action(b.key);
+        if (!b.pilot_page.empty()) {
+            s_pilot_page = b.pilot_page;
+            s_pilot_exit = b.exit_when;
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Sound Settings native slider hooks. The common volume-slider handler
-// (menuControllerInput 0x800b5920) takes a channel index at sp+0xEF; when the
-// selected entry is a mod slider we redirect it to that slider's unused channel
-// (independent value). getGameOrFrontText 0xB7/0xB8 = OFF/MAX endpoint text; we
-// override them per slider. updateMenuPerFrame syncs the byte to the mod @export.
-// ---------------------------------------------------------------------------
+// The pilot select's carousel and medals, hidden while a pilot-first page is up (the chosen-pilot fade, state 0xA, that would clear them is skipped); re-entering SELECT GAME resets it (readAccountForSelectionScreen).
+// Carousel slots 0x800CF180 (stride 0x48): load fade +0x18, transition fade +0x1C drive element alpha and visibility; the medals (font 8 slots 1-3) copy alpha from the front slot only while it is visible.
+static void hide_pilot_carousel(uint8_t* rdram, recomp_context* ctx, bool medals) {
+    for (uint32_t i = 0; i < 3; ++i) {
+        wr_w(rdram, 0x000CF180u + i * 0x48 + 0x18, 0);
+        wr_w(rdram, 0x000CF180u + i * 0x48 + 0x1C, 0);
+    }
+    if (medals) {
+        for (uint32_t s = 1; s <= 3; ++s) rs64::mips::mips_call(rdram, ctx, 0x80061C74u, {8u, s, 0u});
+    }
+}
+
+// Exit conditions for pilot-first pages, registered through the host API (multiplayer's mp_ready).
+static bool exit_condition(const std::string& key) { return rs64::host::condition(key.c_str()) > 0; }
+
+// menuControllerInput 0x800B5428: a pilot was chosen and loaded (s6 = 0xA, the exit fade is next). With a pilot-first page armed, take the native sub-type-1 path to it instead
+// ($s6 = 1 fade, target menu at sp+0xBF, sp+0x80 = 0 so the fade does not leave the menus).
+extern "C" void rs64_menu_pilot_chosen(uint8_t* rdram, recomp_context* ctx) {
+    if (s_pilot_page.empty()) return;
+    const uint32_t spv = (uint32_t)ctx->r29;
+    const uint32_t sp = spv - 0x80000000u;
+    wr_b(rdram, sp + 0xBF, MOD_PAGE_HOST);
+    wr_b(rdram, sp + 0x80, 0);
+    // As the sub-type-1 confirm (0x800B5268-0x800B5334): the fade waits for the menu wipe 0x800B3F24 starts, named by sprintf(sp+0x20, 0x800A6644, picture + 1), unless 0x800CF046 skips it.
+    const bool skip_wipe = rd_b(rdram, 0x000CF046u) != 0;
+    if (!skip_wipe) wr_b(rdram, sp + 0xA7, (uint8_t)((rd_b(rdram, sp + 0xA7) + 1) % 7));
+    rs64::mips::mips_call(rdram, ctx, 0x80033CC4u, {spv + 0x20, 0x800A6644u, (uint32_t)rd_b(rdram, sp + 0xA7) + 1});
+    if (rd_b(rdram, sp + 0x7F) & 2) {
+        wr_w(rdram, sp + 0x20, rd_w(rdram, 0x000A664Cu));
+        wr_h(rdram, sp + 0x24, rd_h(rdram, 0x000A6650u));
+    }
+    if (!skip_wipe) rs64::mips::mips_call(rdram, ctx, 0x800B3F24u, {(uint32_t)rd_w(rdram, 0x000CF10Cu), spv + 0x20});
+    hide_pilot_carousel(rdram, ctx, true);
+    ctx->r22 = 1;
+    s_active_page = s_pilot_page;
+    s_page_parent = MENU_MAIN;
+    fprintf(stderr, "[menu] pilot chosen: opening page %s\n", s_pilot_page.c_str());
+}
+
+// A page with a shared row: the cursor moves by line (wrapping) and left/right within a line; the native list order would step through a row's entries one by one.
+// Runs before the menu's own input reads the pressed word (0x8013A960, port 0), and takes the presses it handles.
+static void page_row_nav(uint8_t* rdram) {
+    if (!s_page_rows) return;
+    constexpr uint32_t kUp = 0x00200800u, kDown = 0x00100400u, kLeft = 0x00800200u, kRight = 0x00400100u;
+    const uint32_t p = (uint32_t)rd_w(rdram, 0x0013A960u);
+    if (!(p & (kUp | kDown | kLeft | kRight))) return;
+    const int sel = rd_b(rdram, GCMD_OFF + 0x94);
+    if (sel >= MAX_ENTRIES || s_slot_line[sel] < 0) return;
+    const int line = s_slot_line[sel];
+    int first = sel;
+    while (first > 0 && s_slot_line[first - 1] == line) --first;
+    int last_line = 0;
+    for (int i = 0; i < MAX_ENTRIES; ++i) last_line = std::max(last_line, s_slot_line[i]);
+    const bool in_row = (first + 1 < MAX_ENTRIES && s_slot_line[first + 1] == line);
+    // Left/right on a line of its own stays the entry's (a slider's).
+    if (!in_row && (p & (kUp | kDown)) == 0) return;
+    int target = sel;
+    if (in_row && (p & (kLeft | kRight))) {
+        const int to = sel + ((p & kLeft) ? -1 : 1);
+        if (to >= 0 && to < MAX_ENTRIES && s_slot_line[to] == line) target = to;
+    }
+    // Entering a row picks the column last used in a row (clamped to its last entry).
+    static int s_col = 0;
+    if (in_row) s_col = sel - first;
+    if (target == sel && (p & (kUp | kDown))) {
+        const int want = (p & kUp) ? (line == 0 ? last_line : line - 1) : (line == last_line ? 0 : line + 1);
+        for (int i = 0, col = 0; i < MAX_ENTRIES; ++i) {
+            if (s_slot_line[i] != want) continue;
+            target = i;
+            if (col++ == s_col) break;
+        }
+    } else if (target != sel) {
+        s_col = target - first;
+    }
+    wr_w(rdram, 0x0013A960u, (int32_t)(p & ~(kUp | kDown | kLeft | kRight)));
+    wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)target);
+}
+
+// Each front-end loop pass, after the pad poll: the page's own input, then a pilot-first page whose exit condition holds leaves the way a chosen pilot does
+// ($s6 = 0xA, sp+0x80 = 1 and sp+0x9F = 1, the fade from 0x800A6760 at sp+0x118): fade, return from the menus, mission select with the pilot loaded.
+extern "C" int rs64_menu_page_shown(void) {
+    return s_page_shown.load() ? 1 : 0;
+}
+
+extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx) {
+    const bool page_shown = !s_active_page.empty() && rd_b(rdram, GCMD_OFF + 0x04) == MOD_PAGE_HOST;
+    s_page_shown.store(page_shown);
+    // Handlers that take the pad (the multiplayer address editor) run before the page's row navigation reads it.
+    rs64::host::set_flag("menu_page_shown", page_shown ? 1 : 0);
+    rs64::host::dispatch(RS64_HOOK_MENU_PAD, rdram, ctx);
+    if (page_shown) page_row_nav(rdram);
+    if (s_pilot_page.empty() || s_active_page != s_pilot_page || rd_b(rdram, GCMD_OFF + 0x04) != MOD_PAGE_HOST) return;
+    // A carousel slot still loading ramps its fade back up: keep it down while the page is shown.
+    hide_pilot_carousel(rdram, ctx, false);
+    if ((uint32_t)ctx->r22 != 0 || !exit_condition(s_pilot_exit)) return;
+    const uint32_t sp = (uint32_t)ctx->r29 - 0x80000000u;
+    ctx->r22 = 0xA;
+    wr_b(rdram, sp + 0x80, 1);
+    wr_b(rdram, sp + 0x9F, 1);
+    wr_w(rdram, sp + 0x118, rd_w(rdram, 0x000A6760u));
+    fprintf(stderr, "[menu] page %s done: on to mission select\n", s_active_page.c_str());
+    s_active_page.clear();
+    s_pilot_page.clear();
+    s_pilot_exit.clear();
+}
+
+// Sound Settings slider hooks: menuControllerInput 0x800b5920 takes a channel index at sp+0xEF, redirected to the mod slider's unused channel; getGameOrFrontText 0xB7/0xB8 (OFF/MAX endpoint text) is overridden per slider;
+// updateMenuPerFrame syncs the byte to the mod @export.
 
 // Redirect the channel index for a mod slider (hook: 0x800b5920, sp = ctx->r29).
 extern "C" void rs64_slider_redirect(uint8_t* rdram, uint32_t sp) {
@@ -890,8 +1097,93 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId) {
     return 0;
 }
 
-// Sync each mod slider's channel byte to its @export value (hook: updateMenuPerFrame).
-extern "C" void rs64_slider_sync(uint8_t* rdram) {
+// The italic menu font ("italic35") lacks '.', a period-wide blank ('`', status_dots padding) and a caret ('|'): the unused umlaut slots become them, cut from the font's own
+// ':' (lower dot; blank) and '!' (its stem). Glyphs are D_80128F08 entries (0x24: W @8, size @0xC, data @0x10, name @0x14 = "F" char "A"); charset 0x8003B450 and widths 0x8009EDA8 share the index.
+static void ensure_menu_period(uint8_t* rdram) {
+    constexpr uint32_t kCharset = 0x3B450u, kWidths = 0x9EDA8u;
+    enum Rows { kLastRun, kNone, kAllButLastRun };
+    struct Glyph { int slot; uint8_t from; uint8_t to; uint8_t src; int src_slot; Rows rows; };
+    static const Glyph kGlyphs[] = {{53, 0xDC, '.', ':', 36, kLastRun}, {52, 0xD6, '`', ':', 36, kNone}, {51, 0xC4, '|', '!', 44, kAllButLastRun}};
+    constexpr int kCount = (int)(sizeof(kGlyphs) / sizeof(kGlyphs[0]));
+    for (const Glyph& g : kGlyphs) {
+        if (rd_b(rdram, kCharset + g.slot) == g.from) {
+            wr_b(rdram, kCharset + g.slot, g.to);
+            wr_b(rdram, kWidths + g.slot, rd_b(rdram, kWidths + g.src_slot));
+        }
+    }
+    // The loaded font instance (static data; charset pointer, then +0x14 a 256-byte char -> glyph index map built from the charset at load) is what text layout reads.
+    for (uint32_t a = 0x9E000u; a < 0xA0000u; a += 4) {
+        if ((uint32_t)rd_w(rdram, a) != (0x80000000u | kCharset)) continue;
+        const uint32_t map = (uint32_t)rd_w(rdram, a + 0x14);
+        if (map < 0x80000000u || map >= 0x80800000u || rd_b(rdram, (map & 0x7FFFFFu) + ':') != 36) continue;
+        for (const Glyph& g : kGlyphs)
+            wr_b(rdram, (map & 0x7FFFFFu) + g.to, (uint8_t)g.slot);
+    }
+    const uint32_t table = (uint32_t)rd_w(rdram, 0x128F08u);
+    if (table < 0x80000000u || table >= 0x80800000u) return;
+    // A reloaded font gets fresh records; converted ones are renamed to their new character.
+    static uint32_t s_done = 0;
+    if (s_done && rd_b(rdram, (s_done & 0x7FFFFFu) + 0x15) == '.') return;
+    uint32_t rec[kCount] = {}, src_rec[kCount] = {};
+    for (uint32_t e = table & 0x7FFFFFu, n = 0; n < 4096 && e + 0x24 <= 0x800000u; e += 0x24, ++n) {
+        if (rd_b(rdram, e + 0x14) != 'F' || rd_b(rdram, e + 0x16) != 'A' || rd_b(rdram, e + 0x17) != 0) continue;
+        const uint8_t c = rd_b(rdram, e + 0x15);
+        for (int k = 0; k < kCount; ++k) {
+            if (c == kGlyphs[k].from) rec[k] = e;
+            if (c == kGlyphs[k].src) src_rec[k] = e;
+        }
+    }
+    for (int k = 0; k < kCount; ++k)
+        if (!rec[k] || !src_rec[k] || (uint16_t)rd_h(rdram, rec[k] + 0x0C) < (uint16_t)rd_h(rdram, src_rec[k] + 0x0C)) return;
+    // I4 glyphs 33 rows high, loaded at the record's width rounded up; each new glyph takes its source's layout, size and width (the umlauts' 32 px buffers have room).
+    // Rows keep their bytes (the odd-row word swap stays inside a row), so a row copies as-is.
+    constexpr int kRows = 33;
+    for (int k = 0; k < kCount; ++k) {
+        const uint32_t src = (uint32_t)rd_w(rdram, src_rec[k] + 0x10) & 0x7FFFFFu;
+        const uint16_t size = (uint16_t)rd_h(rdram, src_rec[k] + 0x0C);
+        const uint32_t stride = size / kRows;
+        auto row_lit = [&](int y) {
+            for (uint32_t i = 0; i < stride; ++i)
+                if (rd_b(rdram, src + y * stride + i)) return true;
+            return false;
+        };
+        // The last run of lit rows: the colon's lower dot, the exclamation mark's dot.
+        int last = kRows - 1;
+        while (last >= 0 && !row_lit(last)) --last;
+        int first = last;
+        while (first > 0 && row_lit(first - 1)) --first;
+        if (stride == 0 || last < 0) return;
+        const uint32_t dst = (uint32_t)rd_w(rdram, rec[k] + 0x10) & 0x7FFFFFu;
+        for (uint32_t i = 0; i < size; ++i) {
+            const int y = (int)(i / stride);
+            const bool keep = kGlyphs[k].rows == kLastRun ? (y >= first && y <= last) : kGlyphs[k].rows == kAllButLastRun ? (y < first) : false;
+            wr_b(rdram, dst + i, keep ? rd_b(rdram, src + i) : 0);
+        }
+        wr_h(rdram, rec[k] + 0x08, rd_h(rdram, src_rec[k] + 0x08));
+        wr_h(rdram, rec[k] + 0x0C, (int16_t)size);
+        wr_b(rdram, rec[k] + 0x15, kGlyphs[k].to);
+    }
+    s_done = rec[0] | 0x80000000u;
+    fprintf(stderr, "[menu] italic font: period, period-wide blank and caret made\n");
+}
+
+// Every front-end frame (hook: updateMenuPerFrame): live page labels, and each mod slider's channel byte synced to its @export value.
+extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx) {
+    ensure_menu_period(rdram);
+    // A changed live label is rewritten in its buffer and relaid out in place (0x800C4C8C(menu, entry mask, 0), as the name entry does).
+    if (rd_b(rdram, GCMD_OFF + 0x04) == MOD_PAGE_HOST && !s_active_page.empty()) {
+        uint32_t mask = 0;
+        for (int i = 0; i < MAX_ENTRIES; ++i) {
+            SlotBinding& b = s_slot[i];
+            if (!b.set || b.label_src.empty() || !b.live_buf || (uint32_t)rd_w(rdram, GCMD_OFF + 0x08 + i * 4) != b.live_buf) continue;
+            const std::string t = source_text(b.label_src);
+            if (t.empty() || t == b.live_text) continue;
+            write_live(rdram, b.live_buf, t);
+            b.live_text = t;
+            mask |= 1u << i;
+        }
+        if (mask) rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, mask, 0u});
+    }
     if (rd_b(rdram, GCMD_OFF + 0x04) != MENU_SOUND_SETTINGS) return;
     for (const auto& ss : s_snd_sliders) {
         int byte = rd_b(rdram, VOL_BYTES + ss.channel);
@@ -899,15 +1191,12 @@ extern "C" void rs64_slider_sync(uint8_t* rdram) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Pause menu (in-mission). Buttons are placed into a spacer/terminator slot in
-// their target PauseMenuStuff array and tagged with a unique nextMenu sentinel
-// (0xF010+). The render/confirm hooks dispatch by sentinel via the maps below.
-// ---------------------------------------------------------------------------
+// Pause menu (in-mission): buttons go into a spacer/terminator slot of their PauseMenuStuff array, tagged with a unique nextMenu sentinel (0xF010+); the render/confirm hooks dispatch by sentinel via the maps below.
 
 namespace {
 
-constexpr uint16_t PAUSE_TEXTID    = 0x0002;   // any valid textId (render overrides)
+// Any valid textId; the render hook overrides the text.
+constexpr uint16_t PAUSE_TEXTID    = 0x0002;
 constexpr uint16_t PAUSE_MARK_BASE = 0xF010;
 
 struct PauseBinding {
@@ -916,7 +1205,7 @@ struct PauseBinding {
     int smin = 0, smax = 100, sstep = 10, bar_width = 10;
     std::string bar_filled = "|", bar_empty = ".";
 };
-std::unordered_map<uint16_t, PauseBinding> s_pause_marks;   // sentinel -> behavior
+std::unordered_map<uint16_t, PauseBinding> s_pause_marks;
 
 // Pause array slot targets. Root objectives terminator, and the game-settings
 // spacer. (Phase 1 supports one button per target; multi-entry needs relocation.)
@@ -953,7 +1242,8 @@ extern "C" void rs64_pause_install(uint8_t* rdram) {
             wr_h(rdram, tgt.entry_off + 0x0, (int16_t)b.flags);
             wr_h(rdram, tgt.entry_off + 0x2, (int16_t)PAUSE_TEXTID);
             wr_h(rdram, tgt.entry_off + 0x4, (int16_t)mark);
-            if (tgt.is_terminator) wr_h(rdram, tgt.entry_off + 0x6, (int16_t)0xFFFF);  // new terminator
+            // Mark the new terminator.
+            if (tgt.is_terminator) wr_h(rdram, tgt.entry_off + 0x6, (int16_t)0xFFFF);
         }
         BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         s_pause_marks[mark] = { b.type, b.behavior, b.label, b.label_on, b.label_off,

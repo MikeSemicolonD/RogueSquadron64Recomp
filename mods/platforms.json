@@ -1,12 +1,17 @@
 {
-  "//": "Which mods each build ships. Entries are folder names under mods/ (data-only mods) or built .nrm files (code mods). A mod not listed here ships nowhere: example mods and code-mod source folders stay out. Desktop: tools/mods/stage_mods.cmake stages next to the exe (and into dist/ for Release). Android: android/app/build.gradle bundleMods packs into the APK.",
+  "//": "Which mods each build ships. Entries are folder names under mods/ (data-only mods) or built .nrm files (code mods). A mod not listed here ships nowhere: example mods and code-mod source folders stay out. Desktop: tools/mods/stage_mods.cmake stages next to the exe (and into dist/ for Release). Android: android/app/build.gradle bundleMods packs into the APK. Native mods (multiplayer-native) are built by the game's CMake and staged from build/built_mods; a build with RS64_MULTIPLAYER=ON stages multiplayer (the menu only) in their place.",
   "desktop": [
     "fullscreen-toggle",
     "quit-prompt",
-    "larger_object_pool.nrm"
+    "multiplayer-native",
+    "steam-relay",
+    "larger_object_pool.nrm",
+    "invincibility.nrm",
+    "long_tow_cable.nrm"
   ],
   "android": [
     "touch-layout",
-    "gyro-toggle"
+    "gyro-toggle",
+    "multiplayer-native"
   ]
 }

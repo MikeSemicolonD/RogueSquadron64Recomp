@@ -444,17 +444,6 @@ static void test_carousel_swipe_one_pulse() {
 }
 
 // List/pause drags scrub: one step at the swipe threshold, then one per further 0.05; each step is a separate press.
-static int count_right_presses(Engine& e, Context ctx, uint32_t t0, int polls) {
-    int presses = 0;
-    bool was = false;
-    for (int i = 0; i < polls; ++i) {
-        const bool now = e.poll(ctx, t0 + i).x > 0.9f;
-        if (now && !was) ++presses;
-        was = now;
-    }
-    return presses;
-}
-
 static int count_presses(Engine& e, Context ctx, uint32_t t0, int polls, bool right) {
     int presses = 0;
     bool was = false;
@@ -543,19 +532,6 @@ static void test_pause_touch_highlights_directly() {
     e.finger(3, FingerEvent::Up, 0.50f, 0.30f, 3040);
     CHECK(confirms == 1);
     CHECK((e.poll(Context::PauseMenu, 3041).buttons & A) == 0);
-}
-
-// Counts press edges in one direction over a stretch of 33 ms polls starting at t0.
-static int wheel_presses(Engine& e, uint32_t t0, int polls, bool right) {
-    int presses = 0;
-    bool was = false;
-    for (int i = 0; i < polls; ++i) {
-        const float x = e.poll(Context::Wheel, t0 + 33u * i).x;
-        const bool now = right ? x > 0.9f : x < -0.9f;
-        if (now && !was) ++presses;
-        was = now;
-    }
-    return presses;
 }
 
 // The passcode wheel spins while the stick is held and snaps to a letter on release, so touch drives it like an analog stick.

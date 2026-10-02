@@ -131,6 +131,26 @@ namespace rs64::android {
         return path;
     }
 
+    float ime_fraction() {
+        JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+        jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
+        if (!env || !activity) {
+            return 0.0f;
+        }
+        float f = 0.0f;
+        jclass cls = env->GetObjectClass(activity);
+        jmethodID mid = env->GetStaticMethodID(cls, "imeFraction", "()F");
+        if (mid) {
+            f = env->CallStaticFloatMethod(cls, mid);
+        }
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+        env->DeleteLocalRef(cls);
+        env->DeleteLocalRef(activity);
+        return f;
+    }
+
     void set_window_frame_rate(void* native_window) {
         using SetFrameRate = int32_t (*)(ANativeWindow*, float, int8_t);
         static const auto s_fn = [] {

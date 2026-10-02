@@ -14,7 +14,7 @@ file — fixups self-gate by detecting which file is being processed.
     `jr $7` to hand off. RSPRecomp can't model the inter-ucode jump, so it
     falls through to do_indirect_jump's default and prints a 4-line register
     dump every task. The runner already treats UnhandledJumpTarget as
-    expected (see factor5_gfx_runner in src/main/main.cpp), so we gate the
+    expected (see musyx_audio_runner in src/main/main.cpp), so we gate the
     printf to only fire on *unexpected* targets.
 
 2. Inject a per-task iteration cap at L_1090 (main ucode only).
@@ -63,7 +63,7 @@ for label in undefined:
 # `jr $7` where r7 = 0x1080 to hand off to it. RSPRecomp can't model that
 # inter-ucode jump, so it falls through to the do_indirect_jump default and
 # prints a 4-line "Unhandled jump target" register dump. The runner already
-# treats UnhandledJumpTarget from boot as expected (see factor5_gfx_runner in
+# treats UnhandledJumpTarget from boot as expected (see musyx_audio_runner in
 # src/main/main.cpp), so the printf is pure spam — and at ~3 tasks/sec it
 # floods stderr enough to starve the console pump (the same class of issue
 # documented in project_factor5_lle_breakthrough.md).

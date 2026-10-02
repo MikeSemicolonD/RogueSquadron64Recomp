@@ -50,7 +50,7 @@ foreach ($s in $States) {
     $gold = Join-Path $pj64Dir  "rdram_state_$s.bin"
     if (-not (Test-Path $cand)) { $rows += [pscustomobject]@{ State = $s; Result = "NO CANDIDATE (state not reached)" }; continue }
     if (-not (Test-Path $gold)) { $rows += [pscustomobject]@{ State = $s; Result = "NO GOLDEN (capture PJ64 rdram_state_$s.bin)" }; continue }
-    $focus = & $py (Join-Path $PSScriptRoot "focus_of.py") (Join-Path $root "state_model.toml") $s
+    $focus = & $py (Join-Path $PSScriptRoot "focus_of.py") (Join-Path $root "tools/state/state_model.toml") $s
     $args  = @($gold, $cand) + $focus
     $out = & $py (Join-Path $PSScriptRoot "rdram_golden_diff.py") @args 2>&1 | Out-String
     $diffLine = ($out -split "`n" | Select-String -Pattern "differing|identical|FOCUS|mismatch" | Select-Object -First 1)

@@ -30,13 +30,13 @@ static unsigned g_rs64_audio_underruns = 0;   // dry-queue arrivals (see queue_s
 #include "touch_config.h"
 #include "game_state.h"           // rs64_state_current_id
 #include "debug_logs.h"
+#include "host_api.h"
 #include "main.h"                 // this file's own exports (fullscreen/quit hooks)
 #include "upstream_compat.h"      // rs64_vi_driven
 #include "hook_helpers.h"         // g_vi_tick, g_boot_pulse_start
 #include "nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
 
 #include "rt64_render_context.h"  // recomp::create_render_context
-#include "../rsp/dpc_bridge.h"    // rs64_dpc_drain_histogram
 #include <mutex>
 
 using recomp::dbg::env_on;
@@ -129,27 +129,11 @@ gpr get_entrypoint_address();
 // ---------------------------------------------------------------------------
 // RSP microcode dispatch
 // ---------------------------------------------------------------------------
-extern RspExitReason factor5_ucode(uint8_t* rdram, uint32_t ucode_addr);
+// factor5_boot runs ahead of the MusyX synth.
 extern RspExitReason factor5_boot (uint8_t* rdram, uint32_t ucode_addr);
 extern RspExitReason musyx_audio  (uint8_t* rdram, uint32_t ucode_addr);
 extern uint8_t dmem[];
-// Recompiled audio funcs, for the offline song-render trigger (ROGUESQ_RENDER_SONG).
-extern "C" void loadSongAssetByName(uint8_t*, recomp_context*);
-extern "C" void findAudioChannelById(uint8_t*, recomp_context*);
-extern "C" void playSongById(uint8_t*, recomp_context*);
 
-// Cached for the next ucode invocation. get_rsp_microcode is called with the
-// OSTask immediately before the ucode runs on the same thread.
-static thread_local uint32_t s_pending_task_data_ptr  = 0;
-static thread_local uint32_t s_pending_task_ucode_data = 0;
-static thread_local uint32_t s_pending_task_ucode_data_size = 0;
-
-// Rogue Squadron uses Factor5's MusyX audio ucode, NOT stock aspMain. Running
-// aspMain on MusyX-formatted task data produces garbage or hangs the audio
-// thread (no shared format). Until MusyX has a real recomp pass (see
-// project_audio_musyx.md), stub all audio tasks: return Broke immediately so
-// the game thinks the task completed, sp_complete() fires, and play continues.
-// Cost: no audio. Trade-off: keeps the rest of the game responsive.
 extern "C" uint32_t g_audio_ucode_data_addr;
 extern "C" uint32_t g_audio_ucode_data_size;
 uint32_t g_audio_ucode_data_addr = 0;
@@ -247,14 +231,7 @@ static RspExitReason musyx_stub(uint8_t* rdram, uint32_t ucode_addr) {
     return RspExitReason::Broke;
 }
 
-// Audio-ucode runner (ROGUESQ_AUDIO_UCODE=1). Mirrors factor5_gfx_runner:
-// mimic SP_BOOT — zero DMEM + DMA the ucode_data section to DMEM[0] — then run
-// the RSPRecomp'd MusyX synth. The synthesized PCM flows out through the game's
-// own osAiSetNextBuffer → runtime AI emulation → queue_samples → SDL, so no
-// manual output capture is needed. WORK IN PROGRESS: DMEM/boot/command-list
-// setup is not yet verified correct; gated off by default so normal runs keep
-// the silent musyx_stub. See project_audio_state_2026_05_24.md step 3.
-// (dma_rdram_to_dmem comes from librecomp/rsp.hpp, already included.)
+// Mimics SP_BOOT (zero DMEM, DMA ucode_data to DMEM[0]) then runs the RSPRecomp'd MusyX synth; the PCM reaches SDL via osAiSetNextBuffer and queue_samples.
 static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr) {
     // ROGUESQ_LOG_AUDIO_OUT=1: one-time scan of RDRAM for the .samp waveform signature
     // (first 8 bytes of samp_SND.bin: FC 97 FF 63 01 58 00 81). Tells us if the sample
@@ -382,7 +359,7 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr) {
             rdram_wr32(rdram, dpp + 8, dp);
     }
     // Run the shared Factor5 boot ucode first — it's the SAME ucode at 0x800825D0
-    // that the GFX task uses (factor5_boot_rsp.toml), and it initializes the DMEM
+    // that the GFX task uses (rsp/factor5_boot_rsp.toml), and it initializes the DMEM
     // state the synth depends on (beyond just the ucode_data DMA). Reading the
     // audio OSTask from DMEM[0xFC0], it DMAs the audio ucode_data → DMEM 0. Boot
     // exits via UnhandledJumpTarget/Broke on its `jr 0x1080` handoff = expected.
@@ -486,7 +463,7 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr) {
         }
     }
     // Treat UnhandledJumpTarget/Broke as task-complete so sp_complete fires and
-    // the audio thread keeps running (same contract as the GFX runner).
+    // the audio thread keeps running.
     return RspExitReason::Broke;
 }
 
@@ -498,129 +475,11 @@ static RspExitReason unknown_task_stub(uint8_t* /*rdram*/, uint32_t /*ucode_addr
     return RspExitReason::Broke;
 }
 
-// Factor 5 GFX ucode runner (LLE side of the hybrid pipeline).
-//
-// Runs the boot ucode to set up DMEM + DMA the data section, emulates
-// L_112C's first DL fetch by hand (the original ucode normally calls L_112C
-// from inside the dispatch loop, but on first invocation that hasn't happened
-// yet so DMEM has no real DL bytes), then runs the main ucode. The main ucode
-// processes DL commands and, for vertex-pipeline ops, emits raw RDP triangle
-// bytes via mtc0 DPC_END writes that flow through src/rsp/dpc_bridge.cpp into
-// RT64 (isHLE=false).
-static RspExitReason factor5_gfx_runner(uint8_t* rdram, uint32_t ucode_addr) {
-    uint32_t dl_ptr           = s_pending_task_data_ptr;
-    uint32_t ucode_data_addr  = s_pending_task_ucode_data;
-    uint32_t ucode_data_size  = s_pending_task_ucode_data_size;
-
-    // Mimic SP_BOOT (silicon-level RSP boot ucode): zero DMEM[0..0xFC0] then
-    // populate DMEM[0..ucode_data_size]. Leave DMEM[0xFC0..0x1000] alone —
-    // that's the OSTask region the boot ucode reads.
-    //
-    // Snapshot/restore: the first task to use a given ucode_data address gets
-    // a fresh DMA from RDRAM. Subsequent tasks restore from the cached
-    // snapshot taken AT THAT FIRST DMA. RDRAM at ucode_data is modified
-    // mid-flight by some part of the engine (gfx CPU code or background DMA),
-    // which is why task #N>1 was producing garbage DMEM[0..0x10] from the
-    // same source addr and hitting UnhandledJumpTarget 0xFF7E. Replaying
-    // from the snapshot bypasses the corruption.
-    static thread_local std::vector<uint8_t> s_udata_snap;
-    static thread_local uint32_t s_udata_snap_addr = 0;
-    static thread_local uint32_t s_udata_snap_size = 0;
-    std::memset(dmem, 0, 0xFC0);
-    if (ucode_data_addr != 0 && ucode_data_size != 0 && ucode_data_size <= 0xFC0) {
-        const bool snap_match = (s_udata_snap_addr == ucode_data_addr &&
-                                  s_udata_snap_size == ucode_data_size &&
-                                  s_udata_snap.size() == ucode_data_size);
-        if (snap_match) {
-            std::memcpy(dmem, s_udata_snap.data(), ucode_data_size);
-        } else {
-            dma_rdram_to_dmem(rdram, /*dmem*/0, /*dram*/ucode_data_addr & 0x00FFFFFF,
-                              /*rd_len*/ucode_data_size - 1);
-            s_udata_snap_addr = ucode_data_addr;
-            s_udata_snap_size = ucode_data_size;
-            s_udata_snap.assign(dmem, dmem + ucode_data_size);
-        }
-    }
-
-    // Boot exits via UnhandledJumpTarget on its `jr $7=0x1080` (jumping into
-    // the main ucode it just DMA'd to IMEM 0x80) — that's expected.
-    static thread_local int s_runner_step_log = 0;
-    const bool log_step = (++s_runner_step_log) <= 16;
-    if (log_step) {
-        fprintf(stderr, "[runner-step #%d] entering factor5_boot ucode_addr=0x%08X\n",
-                s_runner_step_log, ucode_addr);
-        fflush(stderr);
-    }
-    RspExitReason boot_r = factor5_boot(rdram, ucode_addr);
-    if (log_step) {
-        fprintf(stderr, "[runner-step #%d] factor5_boot returned %d\n",
-                s_runner_step_log, (int)boot_r);
-        fflush(stderr);
-    }
-    if (boot_r != RspExitReason::UnhandledJumpTarget && boot_r != RspExitReason::Broke) {
-        fprintf(stderr, "[RSP] factor5_boot returned unexpected %d, abandoning task\n", (int)boot_r);
-        return RspExitReason::Broke;
-    }
-
-    auto poke_be32 = [](uint32_t off, uint32_t val) {
-        for (int i = 0; i < 4; ++i) {
-            dmem[(off + i) ^ 3] = (uint8_t)(val >> (24 - 8*i));
-        }
-    };
-    if (dl_ptr) {
-        // Stage the first 0x110 bytes of DL into DMEM at 0x170 (where the
-        // main ucode's L_112C helper would normally DMA). Set DMEM[0x654] to
-        // 0x178 so the dispatcher's first `lw $17, 0x654` lands past the
-        // 8-byte header at the start of real commands.
-        dma_rdram_to_dmem(rdram, /*dmem*/0x170, /*dram*/dl_ptr & 0x00FFFFFF, /*rd_len*/0x10F);
-        // DMEM[$18+0x30] = the "current chunk RDRAM addr". With $18=0x100
-        // (the value our fixup injects, matching L_1DB0's bootstrap), this
-        // is DMEM[0x130]. L_11B0's chunk-fetch reads this slot for the next
-        // re-DMA. L_1DB0 normally bootstraps it from DMEM[$1+0x30] = 0xFF0;
-        // we mirror that bootstrap here in case L_1DB0 itself doesn't fire
-        // every task. (Without this, tasks 2+ exit before emitting any RDP
-        // because the static-data segment leaves 0x130 as bogus.)
-        poke_be32(0x130, dl_ptr);
-        poke_be32(0xFF0, dl_ptr);
-        poke_be32(0x101C, dl_ptr);
-        poke_be32(0x654,  0x178);
-        // Reset the DL-stack-pointer byte. The ucode runs with $18 = 0x100
-        // (set by L_1DB0's bootstrap), so $18+0x52 = DMEM[0x152]. Op_0F's
-        // L_12C4 handler decrements this by 8 each call and exits the
-        // dispatch loop when it goes negative. After task #1 underflows the
-        // byte is left negative; subsequent tasks would exit immediately with
-        // 0 RDP work emitted. Reset to 0x18 (3 stack entries) at task start.
-        dmem[0x152 ^ 3] = 0x18;
-        dmem[0x153 ^ 3] = 0;     // L_1DB0 also clears 0x53($18)
-    } else {
-        poke_be32(0x654, 0x270);
-    }
-    if (log_step) {
-        fprintf(stderr, "[runner-step #%d] entering factor5_ucode\n", s_runner_step_log);
-        fflush(stderr);
-    }
-    RspExitReason r = factor5_ucode(rdram, ucode_addr);
-    if (log_step) {
-        fprintf(stderr, "[runner-step #%d] factor5_ucode returned %d\n",
-                s_runner_step_log, (int)r);
-        fflush(stderr);
-    }
-    return r;
-}
-
 RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
     switch (task->t.type) {
     case M_GFXTASK:
-        // Cache OSTask fields for factor5_gfx_runner. The runner needs to:
-        //   - DMA the ucode_data segment to DMEM (mimicking SP_BOOT) so each
-        //     task starts with fresh per-task data, not state carried over
-        //     from the previous task's exit.
-        //   - DMA the first chunk of the DL into DMEM[0x170] so the first
-        //     dispatch loop iter has real bytes.
-        s_pending_task_data_ptr        = (uint32_t)task->t.data_ptr;
-        s_pending_task_ucode_data      = (uint32_t)task->t.ucode_data;
-        s_pending_task_ucode_data_size = (uint32_t)task->t.ucode_data_size;
-        return &factor5_gfx_runner;
+        // Graphics tasks go to send_dl in events.cpp; this is never reached for them.
+        return &unknown_task_stub;
     case M_AUDTASK:
         // Capture the MusyX audio ucode's OSTask fields once — these give the
         // text/data RDRAM addresses + sizes that RSPRecomp needs (see
@@ -642,7 +501,7 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
             g_audio_task = *task;
         }
         {
-            ++g_audtask_n;
+            g_audtask_n = g_audtask_n + 1;
             // Runs the RSPRecomp'd MusyX synth (now functional after the text_address=0x1080
             // fix). DEFAULT ON; opt out with ROGUESQ_NO_AUDIO_UCODE=1 to fall back to musyx_stub.
             static int s_au = -1;
@@ -862,7 +721,7 @@ static void write_minidump_safe(void*) {}
 
 // Captured RDRAM base (set by the entrypoint wrapper) so detached diagnostic
 // watchdog threads can read game memory.
-extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw = nullptr;
+extern "C" { volatile uint8_t* volatile g_recomp_rdram_for_wp_raw = nullptr; }
 
 // Periodic poll of the scene-state struct at D_80130B10 + the per-frame
 // callback array at D_8011A8A4. Both regions are documented in
@@ -926,28 +785,6 @@ static void start_state_poller() {
                     }
                     fflush(stderr);
                     snd_dumped[s] = true;
-                    // EXPERIMENTAL: if the buffer is all zeros, write -1 sentinel
-                    // into the first word. The user's hypothesis is that the
-                    // attribution screen has no audio, so empty pool is correct
-                    // and the game's pool walker should exit early on -1 sentinel.
-                    // Our zero-init heap puts 0 instead. Test the hypothesis:
-                    // ROGUESQ_FORCE_EMPTY_POOL_SENTINEL=1.
-                    if (recomp::os::getenv("ROGUESQ_FORCE_EMPTY_POOL_SENTINEL")) {
-                        bool all_zero = true;
-                        for (int j = 0; j < 16; ++j) {
-                            if (rdram[(off + j) ^ 3] != 0) { all_zero = false; break; }
-                        }
-                        if (all_zero) {
-                            // Write 0xFFFFFFFF (BE) to first word.
-                            for (int j = 0; j < 4; ++j) {
-                                rdram[(off + j) ^ 3] = 0xFF;
-                            }
-                            fprintf(stderr,
-                                "[%s-FIX] wrote sentinel -1 to first word at 0x%08X\n",
-                                snd_names[s], ptr);
-                            fflush(stderr);
-                        }
-                    }
                 }
             }
             // Compute first-N active flags if array_base is a sane KSEG0 ptr
@@ -1296,12 +1133,22 @@ static std::vector<SDL_Joystick*> g_joy_by_dev;
 // Throttle lever position [0,1] from the last input poll, -1 when no throttle is bound or connected.
 static std::atomic<float> g_throttle{-1.0f};
 
+// Lever position the throttle hook would use without the lockstep harness; ROGUESQ_THROTTLE=<0..1> forces one (headless tests).
+extern "C" float rs64_throttle_live(void) {
+    static const float s_forced = []() { const char* e = recomp::dbg::env_str("ROGUESQ_THROTTLE"); return e ? (float)std::atof(e) : -1.0f; }();
+    return s_forced >= 0.0f ? s_forced : g_throttle.load();
+}
+
+extern "C" float rs64_throttle_cruise_live(void) {
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+    return g_bindings.throttle_cruise;
+}
+
 // Per-craft speed hooks in rogue_squadron.toml call this just before the craft's current speed steps toward its
 // target. Addresses are f32 game constants (base_addr 0 = unscaled, cruise_addr 0 = none); a nonzero f32 at
-// skip_addr (a scripted boost) keeps the game's target. ROGUESQ_THROTTLE=<0..1> forces a position (headless tests).
+// skip_addr (a scripted boost) keeps the game's target.
 extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t base_addr, uint32_t floor_addr, uint32_t cruise_addr, uint32_t cap_addr, uint32_t skip_addr) {
-    static const float s_forced = []() { const char* e = recomp::dbg::env_str("ROGUESQ_THROTTLE"); return e ? (float)std::atof(e) : -1.0f; }();
-    const float p = s_forced >= 0.0f ? s_forced : g_throttle.load();
+    const float p = rs64_ls_throttle(rs64_throttle_live());
     if (p < 0.0f) return target;
     auto f32 = [rdram](uint32_t addr) { float f; memcpy(&f, rdram + (addr - 0x80000000u), 4); return f; };
     if (skip_addr && f32(skip_addr) != 0.0f) return target;
@@ -1310,9 +1157,7 @@ extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t base_
     const float max_speed = base * f32(cap_addr);
     const float cruise_speed = cruise_addr ? base * f32(cruise_addr) : -1.0f;
     if (!(max_speed > min_speed)) return target;
-    float cruise_at;
-    { std::lock_guard<std::mutex> lk(g_bindings_mtx);
-      cruise_at = g_bindings.throttle_cruise; }
+    const float cruise_at = rs64_ls_cruise(rs64_throttle_cruise_live());
     const float speed = rs64::input::throttle_speed(p, cruise_at, min_speed, cruise_speed, max_speed);
     if (recomp::dbg::log_throttle()) {
         static int n = 0;
@@ -1612,8 +1457,17 @@ static uint8_t* touch_rdram() {
     return (uint8_t*)g_recomp_rdram_for_wp_raw;
 }
 
+extern "C" int rs64_menu_page_shown(void);
+namespace RT64 {
+    extern std::atomic<float> presentShiftY;
+}
+
 static rs64::touch::Context touch_context() {
     uint8_t* r = touch_rdram();
+    // A mod page is a list menu, though its title in host RAM leaves the classifier at "unknown".
+    if (g_active_overlay == 1 && rs64_menu_page_shown()) {
+        return rs64::touch::Context::ListMenu;
+    }
     // The account menu (select game / level / craft) is carousel-like on every screen; its classifier sub-states are unreliable.
     if (r && g_active_overlay == 1 && rs64::touch::account_screen(r) != rs64::touch::AccountScreen::NotAccount) {
         return rs64::touch::Context::Carousel;
@@ -1717,6 +1571,8 @@ static rs64::touch::TapAction touch_menu_tap(float x, float y) {
     if (!r) {
         return TapAction::None;
     }
+    // A tap on the picture slid up above the keyboard lands where that spot is drawn unshifted.
+    y += RT64::presentShiftY.load();
     if (touch_context() == rs64::touch::Context::PauseMenu) {
         return rs64::touch::pause_tap_select(r, x, y, w, h) ? TapAction::Confirm : TapAction::None;
     }
@@ -1913,8 +1769,32 @@ static void apply_fullscreen_if_requested() {
     }
 }
 
+// While the lobby address is typed on a phone, slide the picture up just enough that the highlighted entry clears the on-screen keyboard.
+static void update_keyboard_shift() {
+#ifdef __ANDROID__
+    float shift = 0.0f;
+    uint8_t* r = touch_rdram();
+    if (r && rs64::host::flag("text_entry")) {
+        const float ime = rs64::android::ime_fraction();
+        float w, h;
+        window_size(&w, &h);
+        rs64::touch::MenuSnapshot snap{};
+        std::vector<rs64::touch::Box> boxes;
+        if (ime > 0.0f && rs64::touch::read_menu(r, &snap, &boxes, w, h)) {
+            for (const rs64::touch::Box& b : boxes) {
+                if (b.entry == snap.current) {
+                    shift = std::max(0.0f, b.y1 - (1.0f - ime - 0.03f));
+                }
+            }
+        }
+    }
+    RT64::presentShiftY.store(shift);
+#endif
+}
+
 static void poll_input() {
     apply_fullscreen_if_requested();
+    update_keyboard_shift();
     static bool s_scanned = false;
     if (!s_scanned) {
         s_scanned = true;
@@ -1938,6 +1818,14 @@ static void poll_input() {
         }
         if (e.type == SDL_SENSORUPDATE && g_accel_sensor && e.sensor.which == SDL_SensorGetInstanceID(g_accel_sensor)) {
             accel_event(e);
+            continue;
+        }
+        // Text entry (the lobby address): typed text and Backspace/Enter go to a key handler that takes them, not the game.
+        if (e.type == SDL_TEXTINPUT && rs64::host::run_key_handlers(e.text.text, 0)) {
+            continue;
+        }
+        if (e.type == SDL_KEYDOWN && (e.key.keysym.sym == SDLK_BACKSPACE || e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) &&
+            rs64::host::run_key_handlers(nullptr, e.key.keysym.sym == SDLK_BACKSPACE ? '\b' : '\r')) {
             continue;
         }
         // Android's system back gesture/button arrives as AC_BACK and means B.
@@ -1979,6 +1867,7 @@ static void poll_input() {
         if (e.type == SDL_QUIT) {
             fprintf(stderr, "[main] SDL_QUIT received, exiting\n");
             fflush(stderr);
+            rs64::host::run_quit_handlers();
             // _Exit, not exit: the recomp game threads and RT64 are still live, so
             // running the C++/atexit static-destructor table here throws (-> terminate,
             // the Release crash-on-close) or deadlocks (the hang). Terminate now; the OS
@@ -2095,9 +1984,12 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     // Headless automation overrides resolved input and must run BEFORE resolve(): keyboard is
     // enabled by default, so resolve() reports "active" even with no key pressed, which would
     // otherwise skip the fake-controller branch and swallow injected input.
-    if (fake_controller_enabled()) {
+    // The BOOT_TARGET menu driver also drives with a real controller connected (it only reports input while its sequence runs).
+    {
         uint16_t nb = 0; float nx = 0.f, ny = 0.f;
         if (rs64_nav_consume(&nb, &nx, &ny)) { *buttons = nb; *x = nx; *y = ny; return true; }
+    }
+    if (fake_controller_enabled()) {
         uint16_t sb = 0; float sx = 0.f, sy = 0.f;
         if (scripted_input(&sb, &sx, &sy)) { *buttons = sb; *x = sx; *y = sy; return true; }
     }
@@ -2252,6 +2144,9 @@ static bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float
         return true;
     }
     const bool ok = get_n64_input_live(controller_num, buttons, x, y);
+    if (controller_num == 0) {
+        rs64::host::run_input_filters(0, buttons, x, y);
+    }
     if ((controller_num == 0) && s_rec_path && s_anchored) {
         static FILE* s_file = [](const char* p) { FILE* f = fopen(p, "w"); if (f) fprintf(f, "rs64-input v4\n"); return f; }(s_rec_path);
         if (s_file) {
@@ -2886,9 +2781,23 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
             window_h = h;
         }
     }
+    // ROGUESQ_WINDOW_POS=x,y, "left" or "right" (just left or right of the primary display's centre, 8 px apart), e.g. for a co-op pair.
+    int window_x = SDL_WINDOWPOS_CENTERED, window_y = SDL_WINDOWPOS_CENTERED;
+    if (const char* wp = recomp::dbg::env_str("ROGUESQ_WINDOW_POS")) {
+        SDL_Rect usable{};
+        int x = 0, y = 0;
+        const bool left = strcmp(wp, "left") == 0;
+        if ((left || strcmp(wp, "right") == 0) && SDL_GetDisplayUsableBounds(0, &usable) == 0) {
+            window_x = left ? usable.x + usable.w / 2 - window_w - 4 : usable.x + usable.w / 2 + 4;
+            window_y = usable.y + (usable.h - window_h) / 2;
+        } else if (sscanf(wp, "%d,%d", &x, &y) == 2) {
+            window_x = x;
+            window_y = y;
+        }
+    }
     SDL_Window* sdl_window = SDL_CreateWindow(
         "Star Wars: Rogue Squadron 64 Recompiled",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        window_x, window_y,
         window_w, window_h,
         window_flags
     );
@@ -2962,13 +2871,13 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
 // (step 2) and the game loop will pace to the real VI instead of running free.
 // Disable with ROGUESQ_VI_BARRIER_SIGNAL=0.
 static void rs64_vi_callback() {
-    ++g_vi_tick;
+    g_vi_tick = g_vi_tick + 1;
     if (rs64_vi_driven()) return;   // hardware protocol: no host-injected tokens (they double-signal size-1 queues)
-    --g_vi_tick;
+    g_vi_tick = g_vi_tick - 1;
     static int s_on = -1;
     if (s_on < 0) s_on = env_on("ROGUESQ_VI_BARRIER_SIGNAL", true);
     // Tick for rs64_attrib_wait_vi (attribution loop paces to the real VI).
-    ++g_vi_tick;
+    g_vi_tick = g_vi_tick + 1;
     if (!s_on) {
         return;
     }
@@ -3196,14 +3105,16 @@ static const CliFlag kCliFlags[] = {
     {"audio-gain",       "ROGUESQ_AUDIO_GAIN",       CliFlag::Value, "",  "",  "master gain multiplier (e.g. 0.35; 0 = silent)"},
     {"audio-latency-ms", "ROGUESQ_AUDIO_LATENCY_MS", CliFlag::Value, "",  "",  "audio buffer latency in milliseconds"},
     {"dump-pcm",         "ROGUESQ_DUMP_PCM",         CliFlag::Value, "",  "",  "write synth output to a 22050 Hz stereo WAV at <path>"},
-    {"render-song",      "ROGUESQ_RENDER_SONG",      CliFlag::Value, "",  "",  "force a specific song key (0 = N64-logo music)"},
     {"fake-controller",  "ROGUESQ_FAKE_CONTROLLER",  CliFlag::Bool,  "1", "0", "fake a connected controller (headless runs)"},
     {"auto-start",       "ROGUESQ_AUTO_START",       CliFlag::Value, "",  "",  "pulse START after <ms> (headless runs)"},
     {"hide-window",      "ROGUESQ_HIDE_WINDOW",      CliFlag::Bool,  "1", "0", "create the window hidden (background process; no display/screenshots)"},
     {"maximized",        "ROGUESQ_MAXIMIZED",        CliFlag::Bool,  "1", "0", "start with the window maximized"},
     {"window-size",      "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
     {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
-    {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | demo:N (N=0-5)"},
+    {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
+    {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
+    {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},
+    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
 };
 
 static void print_cli_usage() {

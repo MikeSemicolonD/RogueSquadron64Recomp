@@ -10,8 +10,6 @@ namespace rs64::touch {
         constexpr float kTapMove = 0.03f;
         constexpr uint32_t kSwipeMs = 400;
         constexpr float kSwipeMove = 0.08f;
-        constexpr int kPulsePolls = 3;
-        constexpr int kGapPolls = 2;
         constexpr float kScrubStep = 0.05f;
         constexpr float kFineStep = 0.015f;
         constexpr size_t kMaxPending = 8;

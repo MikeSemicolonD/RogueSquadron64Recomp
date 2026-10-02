@@ -51,8 +51,11 @@ EOF
 chmod +x "$stage/run.sh"
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cp "$repo/docs/release-readme.txt" "$stage/README.txt"
-[ -d "$BUILD_DIR/mods" ] && cp -r "$BUILD_DIR/mods" "$stage/mods"
+cp "$repo/ci/release-readme.txt" "$stage/README.txt"
+if [ -d "$BUILD_DIR/mods" ]; then
+  cp -r "$BUILD_DIR/mods" "$stage/mods"
+  find "$stage/mods" -name '*.so' -exec strip --strip-unneeded {} +
+fi
 
 tar czf "$OUT" -C "$stage" .
 echo "wrote $OUT ($(du -h "$OUT" | cut -f1)); $(ls "$stage/lib" | wc -l) libs bundled"

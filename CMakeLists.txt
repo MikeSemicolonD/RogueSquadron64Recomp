@@ -15,19 +15,18 @@ if (WIN32)
     add_compile_definitions(NOMINMAX _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
-# Disable MSVC's debug iterator bounds checks. Currently there's a
-# `vector subscript out of range` assert deep in RT64 when Factor 5's
-# ucode generates non-standard RDP byte sequences. The assert fires in
-# Debug builds even with our CRT_REPORT hook returning 1 because
-# _STL_VERIFY calls abort() unconditionally after the report. With
-# bounds checks off, the vector returns garbage and execution continues.
-# Trade-off: we lose bounds-check safety nets across the whole build.
-# Enable via -DROGUESQ_NO_ITER_DEBUG=ON. Both defines are required to
-# avoid linker incompatibility with already-compiled debug libs.
+# Turns off MSVC debug iterators (and their bounds checks) across the whole build for faster Debug runs. Both defines are needed to keep the libs link-compatible.
 option(ROGUESQ_NO_ITER_DEBUG "Disable MSVC debug iterators (skip bounds checks)" OFF)
 if(WIN32 AND ROGUESQ_NO_ITER_DEBUG)
     add_compile_definitions(_HAS_ITERATOR_DEBUGGING=0 _ITERATOR_DEBUG_LEVEL=0)
     message(STATUS "MSVC debug iterators DISABLED (vector bounds checks off)")
+endif()
+
+# Online co-op built into the game. OFF: the multiplayer-native mod provides it (desktop); Android always builds it in.
+option(RS64_MULTIPLAYER "Build online co-op into the game" ON)
+if (ANDROID AND NOT RS64_MULTIPLAYER)
+    message(STATUS "RS64_MULTIPLAYER forced ON: Android builds multiplayer in")
+    set(RS64_MULTIPLAYER ON CACHE BOOL "Build online co-op into the game" FORCE)
 endif()
 
 if (APPLE)
@@ -43,9 +42,8 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Android consumes the code the Windows build generated (N64Recomp, RSPRecomp, state table); it cannot run those tools itself.
 if (ANDROID)
-    foreach(f RecompiledFuncs/funcs.h RecompiledPatches/patches.c src/main/state_table.inl
-              build/factor5_ucode/factor5_ucode_recompiled.c build/factor5_ucode/factor5_boot_recompiled.c
-              build/factor5_ucode/musyx_audio_recompiled.c)
+    foreach(f RecompiledFuncs/funcs.h src/main/state_table.inl
+              build/factor5_ucode/factor5_boot_recompiled.c build/factor5_ucode/musyx_audio_recompiled.c)
         if (NOT EXISTS "${CMAKE_SOURCE_DIR}/${f}")
             message(FATAL_ERROR "Android build needs host-generated ${f}; run the Windows Debug build first.")
         endif()
@@ -66,68 +64,51 @@ endif()
 set(RT64_STATIC TRUE)
 set(RT64_SDL_WINDOW_VULKAN TRUE)
 add_compile_definitions(HLSL_CPU)
-# Enable D3D12 debug layer to get readable error messages from DirectX
-# instead of cryptic crashes deep in D3D12GetInterface. RT64's plume layer
-# checks for D3D12_DEBUG_LAYER_ENABLED at compile time. Set via
-# -DROGUESQ_DX12_DEBUG=ON when configuring CMake to enable.
-option(ROGUESQ_DX12_DEBUG "Enable D3D12 debug layer in RT64" OFF)
-if(ROGUESQ_DX12_DEBUG)
-    # plume defines the BREAK_ON_* companion macros only under !NDEBUG, so the enable
-    # flag must be Debug-only — setting it in Release breaks the plume D3D12 build.
-    add_compile_definitions($<$<CONFIG:Debug>:D3D12_DEBUG_LAYER_ENABLED>)
-    message(STATUS "D3D12 debug layer ENABLED (Debug config only)")
-endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
 
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N64ModernRuntime)
 
+# ---- ENet6 (co-op networking, static) ----
+add_subdirectory(${CMAKE_SOURCE_DIR}/lib/enet6 ${CMAKE_BINARY_DIR}/enet6 EXCLUDE_FROM_ALL)
+
+# ---- miniupnpc (co-op internet hosting: UPnP port mapping, static) ----
+set(UPNPC_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
+set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
+add_subdirectory(${CMAKE_SOURCE_DIR}/lib/miniupnp/miniupnpc ${CMAKE_BINARY_DIR}/miniupnpc EXCLUDE_FROM_ALL)
+# Linked into the multiplayer-native shared library too, which needs position-independent code on Linux.
+set_target_properties(enet6 libminiupnpc-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 # ---- RecompiledFuncs ----
-# N64Recomp output. Gitignored (derivative of the copyrighted ROM; generated
-# locally, never committed). Regenerate with the `regen_funcs` target.
+# N64Recomp output; gitignored (derived from the ROM). Regenerate with the regen_funcs target.
 set(RECOMP_FUNCS_DIR "${CMAKE_SOURCE_DIR}/RecompiledFuncs")
 
 add_library(RecompiledFuncs STATIC)
 
 if (MSVC)
-    target_compile_options(RecompiledFuncs PRIVATE /wd4101 /wd4133)
-    # ClangCL: the recompiler emits calls to libultra *_recomp wrappers whose
-    # declarations live in the runtime, not funcs.h. Treat implicit decls as a
-    # warning instead of an error (plain MSVC cl ignores this flag).
-    target_compile_options(RecompiledFuncs PRIVATE
+    # Generated code calls *_recomp wrappers declared only in the runtime, and leaves unused scratch locals and per-block labels.
+    target_compile_options(RecompiledFuncs PRIVATE /wd4101 /wd4133
         -Wno-implicit-function-declaration
         -Wno-error=implicit-function-declaration
-        # clang-cl: the recompiler emits scratch locals (hi/lo/result/c1cs) and
-        # goto labels that many generated functions never use. /wd4101 only
-        # covers MSVC C4101; clang needs -Wno-unused-variable for unread locals,
-        # -Wno-unused-but-set-variable for ones only assigned (hi/lo/result), and
-        # -Wno-unused-label for the L_ labels emitted per basic block.
         -Wno-unused-variable
         -Wno-unused-but-set-variable
         -Wno-unused-label)
-    # Generated probes call getenv/atoi. Opt out of the secure-CRT deprecation
-    # specifically (keeps -Wdeprecated-declarations live for real deprecations).
     target_compile_definitions(RecompiledFuncs PRIVATE _CRT_SECURE_NO_WARNINGS)
-    # Force-include our MEM_WU macro header (fills the unsigned-word gap in
-    # upstream recomp.h without modifying it). See include/rsp_dpc_macros.h.
+    # mem_wu.h adds the unsigned-word MEM_WU macro that upstream recomp.h lacks.
     target_compile_options(RecompiledFuncs PRIVATE
-        /FI${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h)
-    # clang-cl enables TBAA at -O2; the recompiled code type-puns RDRAM through
-    # MEM_* constantly, so strict aliasing miscompiles it in Release (garbage
-    # framebuffer pointers in the built DL). Match the non-MSVC branch.
+        /FI${CMAKE_SOURCE_DIR}/include/mem_wu.h)
+    # The recompiled code type-puns RDRAM through MEM_*; strict aliasing miscompiles it at -O2.
     target_compile_options(RecompiledFuncs PRIVATE -fno-strict-aliasing)
-    # Rename game's 'main' to avoid MSVC treating it as the entry point
     target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
 else()
     target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
     target_compile_options(RecompiledFuncs PRIVATE
         -fno-strict-aliasing
         -Wno-unused-variable
-        -Wno-implicit-function-declaration
-        # Match the MSVC branch's force-include: supplies MEM_WU (unsigned-word
-        # RDRAM access) that upstream recomp.h omits. GCC/Clang syntax is
-        # `-include <file>` (two tokens), not clang-cl's glued /FI.
-        -include "${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h"
+        $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>
+        -include "${CMAKE_SOURCE_DIR}/include/mem_wu.h"
     )
 endif()
 
@@ -138,30 +119,15 @@ target_include_directories(RecompiledFuncs PRIVATE
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
 )
 
-# CONFIGURE_DEPENDS: re-glob on build so a regen_funcs run that adds/removes a
-# file (e.g. lookup.cpp) is picked up without a manual reconfigure.
+# CONFIGURE_DEPENDS picks up files a regen adds or removes without a manual reconfigure.
 file(GLOB RECOMP_C_SOURCES   CONFIGURE_DEPENDS ${RECOMP_FUNCS_DIR}/*.c)
 file(GLOB RECOMP_CXX_SOURCES CONFIGURE_DEPENDS ${RECOMP_FUNCS_DIR}/*.cpp)
 target_sources(RecompiledFuncs PRIVATE ${RECOMP_C_SOURCES} ${RECOMP_CXX_SOURCES})
 
-# ---- Patches (Zelda-style override layer) ----
-# Hand-written C in patches/*.c is cross-compiled to MIPS by the decompals
-# mips64-elf-gcc toolchain, then run back through N64Recomp to produce
-# RecompiledPatches/patches.c. Symbols defined there override the same names
-# in RecompiledFuncs because PatchesLib gets linked first. Pattern adapted
-# from Zelda64Recompiled — see docs/audit-changes.md Tier 4 + patches/README.md.
-
-set(PATCHES_DIR             "${CMAKE_SOURCE_DIR}/patches")
-set(RECOMPILED_PATCHES_DIR  "${CMAKE_SOURCE_DIR}/RecompiledPatches")
-
-# Toolchain locations. Override on the cmake command line if installed elsewhere:
-#   cmake -DMIPS_TOOLCHAIN_DIR=C:/mips-toolchain ...
-set(MIPS_TOOLCHAIN_DIR "E:/mips-toolchain" CACHE PATH "Root of mips64-elf toolchain (decompals/n64-tools).")
+# ---- N64Recomp ----
 if (CMAKE_HOST_WIN32)
     set(RS64_HOST_EXE_SUFFIX ".exe")
 endif()
-set(MIPS_GCC "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS C compiler for the patches build")
-set(MIPS_LD  "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS linker for the patches build")
 get_property(RS64_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 if (RS64_MULTI_CONFIG)
     set(RS64_N64RECOMP_DEFAULT "${CMAKE_BINARY_DIR}/Debug/N64Recomp${RS64_HOST_EXE_SUFFIX}")
@@ -169,97 +135,14 @@ else()
     set(RS64_N64RECOMP_DEFAULT "${CMAKE_BINARY_DIR}/N64Recomp${RS64_HOST_EXE_SUFFIX}")
 endif()
 set(N64RECOMP_EXE "${RS64_N64RECOMP_DEFAULT}" CACHE FILEPATH "N64Recomp executable (built from lib/N64ModernRuntime/N64Recomp via N64RecompCLI target)")
-find_program(PATCHES_MAKE_EXE NAMES mingw32-make make)
-
-if (EXISTS "${MIPS_GCC}" AND EXISTS "${N64RECOMP_EXE}" AND PATCHES_MAKE_EXE)
-    file(GLOB PATCH_C_SOURCES "${PATCHES_DIR}/*.c")
-
-    # Step 1: cross-compile *.c → patches.elf (MIPS)
-    add_custom_command(OUTPUT "${PATCHES_DIR}/patches.elf"
-        COMMAND ${PATCHES_MAKE_EXE} CC=${MIPS_GCC} LD=${MIPS_LD}
-        WORKING_DIRECTORY "${PATCHES_DIR}"
-        DEPENDS ${PATCH_C_SOURCES}
-                "${PATCHES_DIR}/Makefile"
-                "${PATCHES_DIR}/patches.ld"
-                "${PATCHES_DIR}/syms.ld"
-        COMMENT "Cross-compiling patches.elf (MIPS)"
-        VERBATIM
-    )
-
-    # Step 2: N64Recomp the elf → RecompiledPatches/patches.c
-    add_custom_command(OUTPUT "${RECOMPILED_PATCHES_DIR}/patches.c"
-                              "${RECOMPILED_PATCHES_DIR}/funcs.h"
-                              "${RECOMPILED_PATCHES_DIR}/recomp_overlays.inl"
-        COMMAND ${N64RECOMP_EXE} "${CMAKE_SOURCE_DIR}/patches.toml"
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        DEPENDS "${PATCHES_DIR}/patches.elf" "${CMAKE_SOURCE_DIR}/patches.toml"
-        COMMENT "Recompiling patches.elf → RecompiledPatches/patches.c"
-        VERBATIM
-    )
-    set_source_files_properties("${RECOMPILED_PATCHES_DIR}/patches.c" PROPERTIES GENERATED TRUE)
-    set(PATCHES_BUILD_OK TRUE)
-elseif (EXISTS "${RECOMPILED_PATCHES_DIR}/patches.c")
-    set(PATCHES_BUILD_OK TRUE)
-    message(STATUS "Patches: using pre-generated RecompiledPatches/patches.c (MIPS toolchain not found)")
-else()
-    set(PATCHES_BUILD_OK FALSE)
-    message(STATUS "Patches build skipped:")
-    if (NOT EXISTS "${MIPS_GCC}")
-        message(STATUS "  - mips64-elf-gcc not at ${MIPS_GCC}")
-    endif()
-    if (NOT EXISTS "${N64RECOMP_EXE}")
-        message(STATUS "  - N64Recomp not at ${N64RECOMP_EXE}")
-    endif()
-    if (NOT PATCHES_MAKE_EXE)
-        message(STATUS "  - mingw32-make / make not on PATH")
-    endif()
-    message(STATUS "  See patches/README.md for setup; rebuild without patches for now.")
-endif()
-
-if (PATCHES_BUILD_OK)
-    # Step 3: build PatchesLib that wraps the recompiled output.
-    # OBJECT (not STATIC): CMake splices its .obj directly onto the exe link
-    # line, so the patch symbols are strong command-line-object definitions.
-    # A .lib-vs-.lib pair is the documented failure mode -- /FORCE:MULTIPLE does
-    # NOT reliably let a static-lib override win an address-of reference (the
-    # func_map's &getNpcCurrentHealth bound to the RecompiledFuncs body instead,
-    # so the indirect LOOKUP_FUNC call reached the unguarded recompiled version
-    # and AV'd). An object beats an archive member regardless of link order.
-    add_library(PatchesLib OBJECT "${RECOMPILED_PATCHES_DIR}/patches.c")
-
-    target_include_directories(PatchesLib PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-        ${RECOMPILED_PATCHES_DIR}
-        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/ultramodern/include
-        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include
-        ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
-    )
-    if (MSVC)
-        target_compile_options(PatchesLib PRIVATE /wd4101 /wd4133
-            -Wno-implicit-function-declaration
-            -Wno-error=implicit-function-declaration
-            # clang-cl: same generated-code noise as RecompiledFuncs. /wd4101 is
-            # MSVC-only; clang needs these three for the scratch locals, the
-            # set-but-unused hi/lo/result, and the per-block L_ labels.
-            -Wno-unused-variable
-            -Wno-unused-but-set-variable
-            -Wno-unused-label)
-        target_compile_definitions(PatchesLib PRIVATE _CRT_SECURE_NO_WARNINGS)
-    else()
-        target_compile_options(PatchesLib PRIVATE
-            -fno-strict-aliasing -Wno-unused-variable -Wno-implicit-function-declaration)
-    endif()
-    target_compile_definitions(PatchesLib PRIVATE main=rs_main)
-endif()
 
 # ---- Regenerate RecompiledFuncs (opt-in) ----
-# Runs N64Recomp on the in-repo rogue_squadron.toml, regenerating RecompiledFuncs/
-# from the decomp ELF (elf_path in the toml -> ../rogue_squadron64/build). Not in
-# the default build: regen is heavy and needs the ELF. Run explicitly, then re-run
-# cmake configure (RecompiledFuncs are globbed at configure time):
-#   cmake --build build --config Debug --target regen_funcs
+# Not in the default build: needs the decomp ELF (elf_path in rogue_squadron.toml). cmake --build build --config Debug --target regen_funcs
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+# The verify step fails the regen when an N64Recomp without patch_files support silently skips tools/coop/coop_relocation.toml.
 add_custom_target(regen_funcs
     COMMAND ${N64RECOMP_EXE} "${CMAKE_SOURCE_DIR}/rogue_squadron.toml"
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/coop/gen_relocation.py" --verify
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Regenerating RecompiledFuncs from rogue_squadron.toml (needs decomp ELF + N64Recomp.exe)"
     VERBATIM
@@ -270,78 +153,34 @@ if (TARGET N64RecompCLI)
 endif()
 
 # ---- Main executable ----
-# Hybrid graphics pipeline (2026-05-09):
-#   - HLE side: RT64's Factor 5 GBI module (lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp)
-#     handles standard F3D-derived opcodes (TEXRECT, FILLRECT, sync ops, etc.)
-#     when the HLE path is invoked.
-#   - LLE side: factor5_ucode_recompiled.c (auto-translated by RSPRecomp from the
-#     game's RSP graphics ucode) handles vertex transform / clip / project.
-#     Triangles get emitted as raw RDP bytes via DPC_END writes; src/rsp/
-#     dpc_bridge.cpp forwards them into RT64 via submit_rdp_range.
-#
-set(FACTOR5_UCODE_C ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_ucode_recompiled.c)
+# Graphics are HLE through RT64; only the audio RSP ucodes (shared boot + MusyX synth, from rsp/*.toml) are recompiled.
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
-# MusyX audio synthesis ucode (RSPRecomp'd from ROM 0x9ABE0 via musyx_rsp.toml).
-# Replaces the no-audio musyx_stub when ROGUESQ_AUDIO_UCODE=1. See
-# project_audio_state_2026_05_24.md.
 set(MUSYX_AUDIO_C   ${CMAKE_SOURCE_DIR}/build/factor5_ucode/musyx_audio_recompiled.c)
-# Post-process: RSPRecomp emits a goto to a non-existent label for one
-# never-taken branch near end-of-IMEM (perspective-divide reciprocal block).
-# tools/fixup_factor5_ucode.py rewrites those gotos to clean exits. The
-# fixup runs as part of CMake config so it survives any future regen.
-find_package(Python3 COMPONENTS Interpreter)
-if (Python3_Interpreter_FOUND AND EXISTS ${FACTOR5_UCODE_C})
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${FACTOR5_UCODE_C}
-        RESULT_VARIABLE FACTOR5_FIXUP_RESULT
-    )
-endif()
-# Same fixup, applied to factor5_boot_recompiled.c. The boot ucode hands off
-# to the main ucode via `jr $7=0x1080`, which RSPRecomp can't model — without
-# this fixup, every task triggers a 4-line printf register dump. The runner
-# already treats UnhandledJumpTarget from boot as expected, so the printf is
-# pure spam (and at ~3 tasks/sec it can starve the console pump).
-if (Python3_Interpreter_FOUND AND EXISTS ${FACTOR5_BOOT_C})
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${FACTOR5_BOOT_C}
-        RESULT_VARIABLE FACTOR5_BOOT_FIXUP_RESULT
-    )
-endif()
-# Same unhandled-jump-goto fixup for the MusyX audio ucode.
-if (Python3_Interpreter_FOUND AND EXISTS ${MUSYX_AUDIO_C})
-    execute_process(
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${MUSYX_AUDIO_C}
-        RESULT_VARIABLE MUSYX_AUDIO_FIXUP_RESULT
-    )
-endif()
-# Force-include rsp_dpc_macros.h (RSP DPC MMIO bridge macros). clang-cl wants
-# the glued /FI form; GCC/Clang want `-include <file>` as two tokens.
-if (MSVC)
-    set(RSP_UCODE_FORCE_INCLUDE "/FI${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h")
-else()
-    set(RSP_UCODE_FORCE_INCLUDE "-include;${CMAKE_SOURCE_DIR}/include/rsp_dpc_macros.h")
-endif()
+# RSPRecomp emits gotos to missing labels for unhandled jumps (the boot ucode's `jr $7=0x1080` hand-off would printf a register dump per task); the fixup rewrites them to clean exits at configure time.
+foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
+    if (EXISTS ${ucode_c})
+        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${ucode_c})
+    endif()
+endforeach()
 # arm64 maps the RSP vector ops through sse2neon (rsp_vu.hpp), so -msse4.1 is x86-only.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     set(RSP_UCODE_ARCH_FLAGS "-msse4.1")
 endif()
-set_source_files_properties(${FACTOR5_UCODE_C} ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C} PROPERTIES
+set_source_files_properties(${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C} PROPERTIES
     LANGUAGE CXX
-    COMPILE_OPTIONS "${RSP_UCODE_ARCH_FLAGS};${RSP_UCODE_FORCE_INCLUDE}")
+    COMPILE_OPTIONS "${RSP_UCODE_ARCH_FLAGS};-Wno-unused-variable;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-braces>;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-shift-op-parentheses>;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-bitwise-op-parentheses>")
 
 # Generate the game-state table header from the canonical descriptor (state_model.toml).
 set(STATE_TABLE_INL ${CMAKE_SOURCE_DIR}/src/main/state_table.inl)
-if (Python3_Interpreter_FOUND)
-    add_custom_command(
-        OUTPUT ${STATE_TABLE_INL}
-        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.py
-                ${CMAKE_SOURCE_DIR}/state_model.toml ${STATE_TABLE_INL}
-        DEPENDS ${CMAKE_SOURCE_DIR}/state_model.toml
-                ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.py
-                ${CMAKE_SOURCE_DIR}/tools/state/state_model.py
-        COMMENT "Generating state_table.inl from state_model.toml")
-    add_custom_target(gen_state_table DEPENDS ${STATE_TABLE_INL})
-endif()
+add_custom_command(
+    OUTPUT ${STATE_TABLE_INL}
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.py
+            ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml ${STATE_TABLE_INL}
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml
+            ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.py
+            ${CMAKE_SOURCE_DIR}/tools/state/state_model.py
+    COMMENT "Generating state_table.inl from state_model.toml")
+add_custom_target(gen_state_table DEPENDS ${STATE_TABLE_INL})
 
 set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
@@ -358,13 +197,37 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/main/upstream_compat.cpp
     ${CMAKE_SOURCE_DIR}/src/main/hook_helpers.cpp
-    ${CMAKE_SOURCE_DIR}/src/rsp/aspMain.cpp
-    ${CMAKE_SOURCE_DIR}/src/rsp/dpc_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/lockstep.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/host_api_game.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/builtin_hooks.cpp
     ${FACTOR5_BOOT_C}
-    ${FACTOR5_UCODE_C}
     ${MUSYX_AUDIO_C}
     $<$<PLATFORM_ID:Windows>:${CMAKE_SOURCE_DIR}/src/main/app.rc>
 )
+set(RS64_MP_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/main/mp_register.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/coop_imposter.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/net_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/net_link.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/ghost.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/ghost_lobby.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/ghost_hud.cpp
+)
+if (RS64_MULTIPLAYER)
+    list(APPEND RS64_MAIN_SOURCES ${RS64_MP_SOURCES})
+    set(RS64_MP_DEF 1)
+else()
+    set(RS64_MP_DEF 0)
+endif()
+set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/builtin_hooks.cpp PROPERTIES COMPILE_DEFINITIONS RS64_MULTIPLAYER=${RS64_MP_DEF})
+# Lockstep simulation math must round identically everywhere: no fused multiply-add.
+if (MSVC)
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
+else()
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+endif()
 # Android: the game is libmain.so, loaded by SDL's SDLActivity (which calls SDL_main).
 if (ANDROID)
     add_library(RogueSquadron64Recomp SHARED ${RS64_MAIN_SOURCES} ${CMAKE_SOURCE_DIR}/src/main/android_host.cpp)
@@ -374,8 +237,13 @@ if (ANDROID)
 else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
 endif()
-if (TARGET gen_state_table)
-    add_dependencies(RogueSquadron64Recomp gen_state_table)
+add_dependencies(RogueSquadron64Recomp gen_state_table)
+if (MSVC)
+    target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
+endif()
+if (ANDROID)
+    target_compile_definitions(RogueSquadron64Recomp PRIVATE SSE2NEON_SUPPRESS_WARNINGS)
+    target_compile_options(RogueSquadron64Recomp PRIVATE -Wno-deprecated-literal-operator)
 endif()
 
 target_include_directories(RogueSquadron64Recomp PRIVATE
@@ -398,26 +266,14 @@ endif()
 
 if (MSVC)
     target_link_options(RogueSquadron64Recomp PRIVATE /OPT:NOICF)
-    # /FORCE:MULTIPLE lets PatchesLib's overrides win against the same-named
-    # auto-generated functions in RecompiledFuncs. lld-link processes libs in
-    # command-line order and takes the first definition; for our symbols
-    # PatchesLib comes first in the link line. Without this flag the linker
-    # treats the second definition as a fatal error. The risk: any genuinely
-    # accidental duplicate elsewhere is masked. If that becomes a problem we
-    # can switch to /FORCE:MULTIPLE only on the patched-symbol set via a
-    # per-symbol .def or by carving out the patched .obj from RecompiledFuncs.
+    # The src/main overrides redefine RecompiledFuncs/runtime symbols; the first definition wins. Masks accidental duplicates too.
     target_link_options(RogueSquadron64Recomp PRIVATE /FORCE:MULTIPLE)
 elseif (APPLE)
 else()
-    # GNU ld equivalent of /FORCE:MULTIPLE. src/main overrides (osVi*_recomp in
-    # upstream_compat.cpp, submit_rdp_range in rt64_render_context.cpp, and the
-    # PatchesLib symbols) intentionally redefine symbols that also live in the
-    # librecomp/ultramodern archives. Command-line objects come first, so the
-    # override wins; without this ld treats the duplicate as fatal.
+    # GNU ld equivalent of /FORCE:MULTIPLE.
     target_link_options(RogueSquadron64Recomp PRIVATE -Wl,--allow-multiple-definition)
 endif()
 
-# Standalone unit test for the friendly video-config translation layer.
 # POSIX guest-fault guard test (Windows uses SEH instead): cmake --build <dir> --target fault_guard_test
 if (NOT WIN32 AND NOT ANDROID)
     add_executable(fault_guard_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/fault_guard_test.cpp)
@@ -453,20 +309,86 @@ target_include_directories(video_config_test PRIVATE
 add_executable(nav_target_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/nav_target_test.cpp
     ${CMAKE_SOURCE_DIR}/src/main/nav_sequencer.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/main/game_state.cpp
     ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
 )
 set_target_properties(nav_target_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(nav_target_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
-if (TARGET gen_state_table)
-    add_dependencies(nav_target_test gen_state_table)
-endif()
+add_dependencies(nav_target_test gen_state_table)
+
+# Standalone unit test for the lockstep record/replay core.
+add_executable(lockstep_core_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/lockstep_core_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
+)
+set_target_properties(lockstep_core_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(lockstep_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
+
+# Standalone unit test for the co-op network core (packets, input schedule, hash check).
+add_executable(net_core_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/net_core_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/net_core.cpp
+)
+set_target_properties(net_core_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(net_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
+
+# Loopback test for the co-op network link (ENet, simulated latency and loss).
+add_executable(net_link_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/net_link_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/net_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/net_link.cpp
+)
+set_target_properties(net_link_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(net_link_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(net_link_test PRIVATE enet6 libminiupnpc-static)
+
+# Standalone unit test for the mod host API registry.
+add_executable(host_api_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/host_api_test.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
+)
+set_target_properties(host_api_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(host_api_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(host_api_test PRIVATE RS64_TOML_PATH="${CMAKE_SOURCE_DIR}/rogue_squadron.toml")
+
+# Standalone unit test for the tow cable head interpolation alias.
+add_executable(cable_alias_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/cable_alias_test.cpp
+)
+set_target_properties(cable_alias_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# Standalone unit test for the crosshair texrect matcher.
+add_executable(crosshair_match_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/crosshair_match_test.cpp
+)
+set_target_properties(crosshair_match_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# One command for the unit tests: cmake --build build --config Release --target rs64_unit_tests
+add_custom_target(rs64_unit_tests
+    COMMAND $<TARGET_FILE:lockstep_core_test>
+    COMMAND $<TARGET_FILE:net_core_test>
+    COMMAND $<TARGET_FILE:net_link_test>
+    COMMAND $<TARGET_FILE:nav_target_test>
+    COMMAND $<TARGET_FILE:host_api_test>
+    COMMAND $<TARGET_FILE:cable_alias_test>
+    COMMAND $<TARGET_FILE:crosshair_match_test>
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/style/check_style.py
+    DEPENDS lockstep_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test
+    COMMENT "Running the unit tests")
 
 # Standalone unit test for the mode-change blanking gate.
 add_executable(transition_gate_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/transition_gate_test.cpp
 )
 set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+if (MSVC)
+    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test net_core_test net_link_test host_api_test transition_gate_test cable_alias_test crosshair_match_test)
+        target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endforeach()
+endif()
 
 # ---- SDL2 (Windows: fetch; Linux/Mac: find_package) ----
 if (WIN32)
@@ -494,9 +416,7 @@ if (WIN32)
         LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
     )
     target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2 Winmm.lib)
-    # We define SDL_MAIN_HANDLED and provide our own main() under /SUBSYSTEM:CONSOLE, so
-    # SDL2main (pulled in transitively) must not be linked: its SDL_windows_main.obj
-    # references SDL_main, which we intentionally do not provide.
+    # SDL_MAIN_HANDLED with our own main(); SDL2main would demand an SDL_main we don't define.
     target_link_options(RogueSquadron64Recomp PRIVATE /NODEFAULTLIB:SDL2main.lib)
 elseif (ANDROID)
     find_package(Threads REQUIRED)
@@ -534,17 +454,41 @@ if (NOT ANDROID)
     endif()
 endif()
 
+if (WIN32)
+    set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
+endif()
+# Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
+set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods")
+if (NOT ANDROID)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
+    if (NOT RS64_MULTIPLAYER)
+        add_dependencies(RogueSquadron64Recomp multiplayer_native)
+    endif()
+endif()
+# The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.
+set(STEAMWORKS_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/steamworks/sdk" CACHE PATH "Steamworks SDK folder (holds public/steam/steam_api_flat.h)")
+if (NOT ANDROID AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")
+    add_subdirectory(${CMAKE_SOURCE_DIR}/mods/steam-relay ${CMAKE_BINARY_DIR}/steam-relay EXCLUDE_FROM_ALL)
+    add_dependencies(RogueSquadron64Recomp steam_relay)
+elseif (NOT ANDROID)
+    message(STATUS "steam-relay mod not built: no Steamworks SDK at ${STEAMWORKS_SDK_DIR}")
+endif()
+# With multiplayer built in, desktop stages the data-only menu mod in place of the native one; without, the reverse.
+if (RS64_MULTIPLAYER)
+    set(RS64_MOD_STAGE_ARGS -DSWAP=multiplayer-native=multiplayer)
+else()
+    set(RS64_MOD_STAGE_ARGS -DDROP=multiplayer)
+endif()
+
 # Stage the desktop mods listed in mods/platforms.json next to the exe. The user's own mod folders there are left alone.
-# Native mods build separately with their own mods/<name>/CMakeLists.txt; a listed folder carries whatever DLL that left beside mod.json.
+# Native mods built by this CMake (multiplayer-native) are staged from build/built_mods/<Config>; a relink restages here, a rebuild of the library alone restages from its own POST_BUILD.
 if (NOT ANDROID)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods -DPLATFORM=desktop
+        -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG> ${RS64_MOD_STAGE_ARGS}
         -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake")
 endif()
 
-# PatchesLib is an OBJECT library: its objects go straight onto the exe link
-# line ahead of RecompiledFuncs (the .lib), so the patch definitions win any
-# duplicated symbol via /FORCE:MULTIPLE (object beats archive member).
 if (PATCHES_BUILD_OK)
     target_link_libraries(RogueSquadron64Recomp PRIVATE PatchesLib)
 endif()
@@ -555,16 +499,15 @@ target_link_libraries(RogueSquadron64Recomp PRIVATE
     ultramodern
     rt64
 )
+if (RS64_MULTIPLAYER)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE enet6 libminiupnpc-static)
+endif()
 
 set_property(TARGET RogueSquadron64Recomp PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # ---- Release packaging ----
-# CMAKE_RUNTIME_OUTPUT_DIRECTORY points every executable target at build/<Config>,
-# so the submodule build tools (file_to_c, re-spirv-cli, texture_hasher/packer,
-# zstd) and the intermediate .libs all land next to the game exe. None are runtime
-# dependencies. For Release, assemble a clean folder holding only what ships.
+# Submodule build tools and .libs land next to the exe; Release copies only what ships into build/dist.
 if (WIN32)
-    set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,make_directory,true> "${RS64_DIST_DIR}"
         COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_if_different,true>
@@ -574,6 +517,7 @@ if (WIN32)
             "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/dxcompiler.dll"
             "${RS64_DIST_DIR}"
         COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<IF:$<CONFIG:Release>,${RS64_DIST_DIR}/mods,> -DPLATFORM=desktop
+            -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG> ${RS64_MOD_STAGE_ARGS}
             -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
         COMMENT "Assembling clean Release folder in ${RS64_DIST_DIR} (Release only)"
         VERBATIM)

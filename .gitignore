@@ -27,11 +27,6 @@ crash_*.dmp
 RecompiledFuncs/
 RecompiledPatches/
 
-# Patches build byproducts (only the *.c sources + syms.ld/patches.ld/Makefile are source)
-patches/*.d
-patches/patches.bin
-patches/patches.map
-
 # Build directories
 build*/
 build-*
@@ -153,3 +148,6 @@ android/local.properties
 
 # CI runner secrets
 ci/linux/runner.env
+
+# Local Steamworks SDK for building the steam-relay mod (never committed)
+lib/steamworks/

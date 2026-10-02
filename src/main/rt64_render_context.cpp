@@ -30,8 +30,8 @@ extern SDL_Window* g_sdl_window;
 #include "hook_helpers.h"         // g_boot_pulse_start, g_current_scene, rs64_cine_iter_get, rs64_neutralize_matpool_cimg
 #include "game_state.h"           // rs64_state_poll, rs64_state_current_id
 #include "nav_sequencer.h"        // rs64_nav_set_target, rs64_nav_tick
-#include "rt64_render_context.h"  // create_render_context + submit_rdp_range (defined below)
-#include "../rsp/dpc_bridge.h"    // rs64_dpc_get_cumulative_histogram / _fullsyncs
+#include "main.h"                // rs64_reloc_guard_tick
+#include "rt64_render_context.h"
 #ifdef __ANDROID__
 #include "android_host.h"
 #endif
@@ -363,8 +363,8 @@ public:
                 app->userConfig.threePointFiltering = (v[0] != '0');
                 fprintf(stderr, "[RT64] threePointFiltering=%d\n", app->userConfig.threePointFiltering ? 1 : 0);
             }
-            // ROGUESQ_RT_INTERP=0 disables frame interpolation; =<hz> sets a target (raster-only,
-            // does not touch the logic tick). Baseline is ON at 60 Hz; only overrides when set.
+            // ROGUESQ_RT_INTERP=0 disables frame interpolation, =<hz> enables it at that target (raster-only, not the logic tick).
+            // Unset keeps the baseline: off unless roguesq_video.json sets frameInterpolation.
             if (const char* v = env_str("ROGUESQ_RT_INTERP")) {
                 if (v[0] == '0') {
                     app->userConfig.refreshRate = UC::RefreshRate::Original;
@@ -522,13 +522,14 @@ public:
         rs64_nav_tick((uint8_t*)app->core.RDRAM, g_active_overlay);
         dump_rdram_if_armed();
         watch_rdram();
+        rs64_reloc_guard_tick((uint8_t*)app->core.RDRAM);
         data_bp_tick();
         {
             // ROGUESQ_LOG_HEURISTICS=1: firing counts of F5 render heuristics under retirement review.
             static const bool s_heur = env_on("ROGUESQ_LOG_HEURISTICS");
             if (s_heur && (vi_count_ & 255) == 0)
-                fprintf(stderr, "[heur] vi=#%d op0A=%u proj_mismatch=%u b4_filler=%u attrib_deflicker=%u\n",
-                        vi_count_, g_f5_heur[0], g_f5_heur[1], g_f5_heur[2], g_f5_heur[3]);
+                fprintf(stderr, "[heur] vi=#%d op0A=%u b4_filler=%u attrib_deflicker=%u\n",
+                        vi_count_, g_f5_heur[0], g_f5_heur[2], g_f5_heur[3]);
         }
         log_vi_state();
         maybe_persist_video_cfg();
@@ -703,7 +704,7 @@ private:
         if (s_n < 0) {
             s_n = 0;
             for (const char* p = s_spec; *p && s_n < 16; ) {
-                s_waddr[s_n] = (uint32_t)std::strtoul(p, (char**)&p, 16) & 0x7FFFFCu;
+                s_waddr[s_n] = (uint32_t)std::strtoul(p, (char**)&p, 16) & 0x00FFFFFCu;
                 s_wlast[s_n] = rd32(s_waddr[s_n]);
                 fprintf(stderr, "[watch] vi=#%d %08X = %08X (initial)\n", vi_count_, 0x80000000u | s_waddr[s_n], s_wlast[s_n]);
                 ++s_n;
@@ -729,10 +730,10 @@ private:
         // Re-arm every 30 VIs so game threads created after the first arm (per-screen workers) are watched too.
         if (vi_count_ >= s_arm_vi && (!s_armed || (vi_count_ % 30) == 0)) {
             s_armed = true;
-            const uint32_t a = (uint32_t)std::strtoul(s_bp, nullptr, 16) & 0x7FFFFCu;
+            const uint32_t a = (uint32_t)std::strtoul(s_bp, nullptr, 16) & 0x00FFFFFCu;
             // ROGUESQ_DATA_BP2=<addr>: a second watched word (DR1).
             if (const char* bp2 = env_str("ROGUESQ_DATA_BP2")) {
-                rs64_data_bp_set2(app->core.RDRAM + ((uint32_t)std::strtoul(bp2, nullptr, 16) & 0x7FFFFCu));
+                rs64_data_bp_set2(app->core.RDRAM + ((uint32_t)std::strtoul(bp2, nullptr, 16) & 0x00FFFFFCu));
             }
             rs64_data_bp_arm(app->core.RDRAM + a);
         }
@@ -742,7 +743,7 @@ private:
 
     // RDRAM accessors, byte-swapped (index ^ 3) and bounds-checked.
     uint8_t rd8(uint32_t addr) const {
-        if (!app->core.RDRAM || addr >= 0x800000) return 0;
+        if (!app->core.RDRAM || addr >= 0x01000000) return 0;
         return app->core.RDRAM[addr ^ 3];
     }
     uint32_t rd32(uint32_t addr) const {
@@ -750,7 +751,7 @@ private:
                (uint32_t(rd8(addr + 2)) << 8) | uint32_t(rd8(addr + 3));
     }
     void wr8(uint32_t addr, uint8_t v) {
-        if (app->core.RDRAM && addr < 0x800000) app->core.RDRAM[addr ^ 3] = v;
+        if (app->core.RDRAM && addr < 0x01000000) app->core.RDRAM[addr ^ 3] = v;
     }
     void wr32(uint32_t addr, uint32_t v) {
         wr8(addr, uint8_t(v >> 24)); wr8(addr + 1, uint8_t(v >> 16));
@@ -1339,7 +1340,7 @@ private:
     }
 
     // First 4 presents and every 64th: VI regs, queue cursors, and whether the scanout buffer
-    // has any pixel data. Every 256th adds the cumulative DPC opcode histogram.
+    // has any pixel data.
     void log_vi_state() {
         static bool s_filter_logged = false;
         if (!s_filter_logged && app->appWindow && app->appWindow->sdlEventFilterInstalled) {
@@ -1356,25 +1357,10 @@ private:
             for (int i = 0; i < 16; i++) any_nonzero |= app->core.RDRAM[origin + i];
         }
         fprintf(stderr,
-            "[vi] update_screen #%d origin=0x%08X width=%u status=0x%X v_current=%u nonzero=%d fs=%u pq.wc=%d wq.wc=%d drawn=0x%08X dw=%u\n",
+            "[vi] update_screen #%d origin=0x%08X width=%u status=0x%X v_current=%u nonzero=%d pq.wc=%d wq.wc=%d drawn=0x%08X dw=%u\n",
             vi_count_, vi->VI_ORIGIN_REG, vi->VI_WIDTH_REG, vi->VI_STATUS_REG, vi->VI_V_CURRENT_LINE_REG,
-            any_nonzero != 0, rs64_dpc_get_cumulative_fullsyncs(), present_cursor(), workload_cursor(),
+            any_nonzero != 0, present_cursor(), workload_cursor(),
             (unsigned)g_most_drawn_fb, (unsigned)g_most_drawn_fb_width);
-        if ((vi_count_ & 255) == 0) {
-            uint32_t hist[64];
-            rs64_dpc_get_cumulative_histogram(hist);
-            uint32_t total = 0;
-            for (int i = 0; i < 64; ++i) total += hist[i];
-            fprintf(stderr, "  [opcode-hist total=%u top:", total);
-            for (int slot = 0; slot < 6; ++slot) {
-                int max_idx = 0;
-                for (int i = 0; i < 64; ++i) if (hist[i] > hist[max_idx]) max_idx = i;
-                if (hist[max_idx] == 0) break;
-                fprintf(stderr, " op%02X=%u", max_idx, hist[max_idx]);
-                hist[max_idx] = 0;
-            }
-            fprintf(stderr, "]\n");
-        }
         fflush(stderr);
     }
 };
@@ -1385,79 +1371,6 @@ create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window
 }
 
 } // namespace recomp
-
-// LLE DPC bridge entry (src/rsp/dpc_bridge.cpp): raw RDP byte ranges into RT64.
-namespace ultramodern {
-    // RT64 state is unrecoverable after an AV here, so the first SEH disables LLE submission.
-    static std::atomic<bool> s_rdp_disabled{false};
-
-    static void run_rdp_submission(RT64::Application* app, uint32_t lo_phys, uint32_t hi_phys) {
-        if (s_rdp_disabled.load(std::memory_order_relaxed)) {
-            return;
-        }
-#ifdef _WIN32
-        __try {
-            app->processDisplayLists(app->core.RDRAM, lo_phys, hi_phys, /*isHLE*/ false);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            if (app->state) {
-                app->state->dlCpuProfiler.startedTimestamp = RT64::Timestamp{};
-            }
-            s_rdp_disabled.store(true, std::memory_order_relaxed);
-            fprintf(stderr, "[rdp-submit] SEH in processDisplayLists "
-                            "lo=0x%08X hi=0x%08X — RDP submission DISABLED for the rest "
-                            "of this session (RT64 state corrupted by AV).\n",
-                            lo_phys, hi_phys);
-            uint32_t hist[64];
-            rs64_dpc_get_cumulative_histogram(hist);
-            uint32_t total = 0;
-            for (int i = 0; i < 64; ++i) total += hist[i];
-            fprintf(stderr, "[rdp-submit] cumulative opcode histogram (total=%u):\n", total);
-            uint32_t copy[64];
-            for (int i = 0; i < 64; ++i) copy[i] = hist[i];
-            for (int slot = 0; slot < 12; ++slot) {
-                int max_idx = 0;
-                for (int i = 0; i < 64; ++i) {
-                    if (copy[i] > copy[max_idx]) max_idx = i;
-                }
-                if (copy[max_idx] == 0) break;
-                fprintf(stderr, "  op 0x%02X = %u\n", max_idx, copy[max_idx]);
-                copy[max_idx] = 0;
-            }
-            fflush(stderr);
-        }
-#else
-        app->processDisplayLists(app->core.RDRAM, lo_phys, hi_phys, /*isHLE*/ false);
-#endif
-    }
-
-    void submit_rdp_range(uint32_t lo_phys, uint32_t hi_phys) {
-        RT64::Application *app = g_rt64_app.load();
-        if (app && hi_phys > lo_phys) {
-            // ROGUESQ_LOG_RDP_SUBMIT=1: log each submission's range and first bytes.
-            static const bool s_log = env_on("ROGUESQ_LOG_RDP_SUBMIT");
-            if (s_log) {
-                static int s_count = 0;
-                ++s_count;
-                uint32_t len = hi_phys - lo_phys;
-                fprintf(stderr, "[rdp-submit #%d] lo=0x%08X hi=0x%08X len=%u\n",
-                        s_count, lo_phys, hi_phys, len);
-                if (len >= 8 && app->core.RDRAM) {
-                    uint8_t* bytes = app->core.RDRAM + lo_phys;
-                    int dump_len = (int)std::min<uint32_t>(len, 64);
-                    fprintf(stderr, "  bytes: ");
-                    for (int i = 0; i < dump_len; ++i) {
-                        fprintf(stderr, "%02X ", bytes[i]);
-                        if ((i & 7) == 7 && i + 1 < dump_len) fprintf(stderr, "\n         ");
-                    }
-                    fprintf(stderr, "\n");
-                }
-                fflush(stderr);
-            }
-            run_rdp_submission(app, lo_phys, hi_phys);
-        }
-    }
-}
 
 // Erases framebuffers RT64 registered outside [0x400000, 0x800000): real ones all live in
 // [0x4B7800, 0x800000), anything else is garbage CIMG the pre-parse walker missed and would

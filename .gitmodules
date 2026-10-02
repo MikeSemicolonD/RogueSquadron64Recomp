@@ -4,3 +4,9 @@
 [submodule "lib/rt64"]
 	path = lib/rt64
 	url = https://github.com/MikeSemicolonD/rt64.git
+[submodule "lib/enet6"]
+	path = lib/enet6
+	url = https://github.com/SirLynix/enet6.git
+[submodule "lib/miniupnp"]
+	path = lib/miniupnp
+	url = https://github.com/miniupnp/miniupnp.git

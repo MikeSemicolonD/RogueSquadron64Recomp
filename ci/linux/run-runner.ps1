@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $EnvFile)) { throw "Missing $EnvFile (copy runner.env.example and fill it in)" }
 if (-not (Test-Path $ElfPath)) { throw "Decomp ELF not found: $ElfPath" }
-foreach ($f in "factor5_ucode_recompiled.c", "factor5_boot_recompiled.c", "musyx_audio_recompiled.c") {
+foreach ($f in "factor5_boot_recompiled.c", "musyx_audio_recompiled.c") {
     if (-not (Test-Path (Join-Path $UcodeDir $f))) { throw "Missing ucode source: $UcodeDir\$f" }
 }
 

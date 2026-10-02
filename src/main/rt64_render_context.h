@@ -1,7 +1,5 @@
 // rt64_render_context.h — public surface of rt64_render_context.cpp: the
-// RendererContext factory (used by main.cpp) and the RDP-range submit entry
-// the DPC bridge forwards into (used by dpc_bridge.cpp; a fork addition not
-// exposed by any upstream ultramodern header).
+// RendererContext factory (used by main.cpp) and the host hooks around it.
 #ifndef RS64_RT64_RENDER_CONTEXT_H
 #define RS64_RT64_RENDER_CONTEXT_H
 
@@ -12,10 +10,6 @@
 namespace recomp {
     std::unique_ptr<ultramodern::renderer::RendererContext>
     create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window, bool developer_mode);
-}
-
-namespace ultramodern {
-    void submit_rdp_range(uint32_t lo_phys, uint32_t hi_phys);
 }
 
 // Nonzero while RT64's F1 developer inspector is open. Declared here for the

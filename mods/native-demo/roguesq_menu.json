@@ -5,6 +5,8 @@
       "label_on": "DEMO: ON", "label_off": "DEMO: OFF" },
     { "id": "demo_slider", "menu": "sound_settings", "type": "slider", "slider": "@demo_slider",
       "label": "DEMO VOL", "label_off": "MIN", "label_on": "FULL",
-      "min": 0, "max": 100, "step": 10, "replace": "stereo" }
+      "min": 0, "max": 100, "step": 10, "replace": "stereo" },
+    { "id": "demo_page", "menu": "main_menu", "type": "submenu", "page": "native_demo", "label": "NATIVE DEMO", "title": "NATIVE DEMO" },
+    { "id": "demo_frames", "menu": "native_demo", "type": "label", "label": "DEMO FRAMES", "label_src": "demo_frames" }
   ]
 }

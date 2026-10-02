@@ -1,12 +1,13 @@
 [manifest]
 id = "any_craft"
-version = "2.0.0"
+version = "2.1.0"
 display_name = "Any Craft, Any Mission"
-description = "The hangar lets you fly any standard craft (X-wing, Y-wing, A-wing, V-wing, Snowspeeder, Millennium Falcon, TIE Interceptor) on any mission. Nothing is unlocked in your save. Snowspeeder missions may be unwinnable in other craft."
+description = "The hangar lets you fly any standard craft (X-wing, Y-wing, A-wing, V-wing, Snowspeeder, Millennium Falcon, TIE Interceptor) on any mission. Nothing is unlocked in your save. Snowspeeder missions may be unwinnable in other craft. The V-wing and snowspeeder fly at normal altitude on missions without reachable ground, such as Battle Above Taloraan, instead of sinking."
 short_description = "Fly any standard craft on any mission."
 authors = ["RogueSquadron64Recomp"]
 game_id = "rs64"
 minimum_recomp_version = "0.0.0"
+enabled_by_default = false
 
 [inputs]
 elf_path = "build/mod.elf"

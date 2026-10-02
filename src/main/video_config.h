@@ -1,6 +1,7 @@
 #ifndef RS64_VIDEO_CONFIG_H
 #define RS64_VIDEO_CONFIG_H
 
+#include <cstdint>
 #include <string>
 
 #include "common/rt64_user_configuration.h"
@@ -26,6 +27,14 @@ constexpr float kDrawDistanceMin = 1.0f;
 constexpr float kDrawDistanceMax = 2.5f;
 float draw_distance();
 void set_draw_distance(float mult);
+
+// Cutscenes keep the view distance the game sets per shot ("keepCutsceneDrawDistance", default on); ROGUESQ_CINE_DRAW_DIST overrides.
+bool keep_cutscene_draw_distance();
+void set_keep_cutscene_draw_distance(bool on);
+
+// Battle Above Taloraan pins its own far plane and fog and has no terrain, so the multiplier stays 1.0 there.
+constexpr uint32_t kGameViewLevel = 10;
+float effective_draw_distance(float setting, bool game_view, uint32_t level);
 
 // Seed uc with the baseline before calling. Reads `path`; schema>=2 -> friendly,
 // otherwise legacy raw merge (migrated=true). Missing/unparseable -> loaded=false.
