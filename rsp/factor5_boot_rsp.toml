@@ -1,0 +1,8 @@
+# RSPRecomp config for the Factor5 RSP boot ucode (splat rspbootText, ROM 0x831D0, runtime RDRAM 0x800825D0, size 0xD0).
+# The boot DMAs OSTask.ucode_data to DMEM 0 and OSTask.ucode to IMEM 0x80, then jumps to PC 0x1080.
+rom_file_path = "../rogue_squadron.z64"
+text_offset = 0x831D0
+text_size = 0xD0
+text_address = 0x04001000
+output_file_path = "../build/factor5_ucode/factor5_boot_recompiled.c"
+output_function_name = "factor5_boot"

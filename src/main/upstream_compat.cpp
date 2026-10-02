@@ -27,6 +27,7 @@
 #include "recomp.h"
 #include "librecomp/helpers.hpp"
 #include "librecomp/overlays.hpp"
+#include "librecomp/addresses.hpp"
 #include "ultramodern/ultramodern.hpp"
 #include "debug_logs.h"
 #include "upstream_compat.h"   // declares the exports defined below (rs64_vi_driven, g_active_overlay, …)
@@ -62,7 +63,7 @@ extern "C" int rs64_fb_guards(void) { return rs64_fb_guards_mask() != 0; }
 
 // Which overlay is mapped at 0x800A5130: 0 = mission, 1 = menu, 2 = cinematic, -1 = none yet.
 // The F5 op_01 handler loads matrices only for the menu overlay.
-extern "C" volatile int g_active_overlay = -1;
+extern "C" { volatile int g_active_overlay = -1; }
 
 // Called from the loadOverlay (0x80000B20) hook with the overlay id. librecomp's boot-time
 // load_overlays only covers ROM offsets below 0x101000, so the menu and cinematic overlays
@@ -148,10 +149,12 @@ extern "C" void zmemcpy(uint8_t* rdram, recomp_context* ctx) {
     uint64_t dest_full = (uint64_t)ctx->r4;
     uint64_t src_full  = (uint64_t)ctx->r5;
     uint64_t len_full  = (uint64_t)ctx->r6;
+    // The whole host RDRAM, not just the game's 8 MB: co-op per-player data (0x80B3xxxx) and recomp::alloc buffers live above it.
+    constexpr uint64_t kEnd = 0x80000000ull + recomp::mem_size;
     auto in_range = [](uint64_t addr, uint64_t n) {
-        if (addr >= 0xFFFFFFFF80000000ull && addr + n <= 0xFFFFFFFF80800000ull) return true;
+        if (addr >= 0xFFFFFFFF80000000ull && addr + n <= 0xFFFFFFFF00000000ull + kEnd) return true;
         uint32_t lo = (uint32_t)addr;
-        return (addr >> 32) == 0 && lo >= 0x80000000u && (uint64_t)lo + n <= 0x80800000u;
+        return (addr >> 32) == 0 && lo >= 0x80000000u && (uint64_t)lo + n <= kEnd;
     };
     if (len_full > 0 && (!in_range(dest_full, len_full) || !in_range(src_full, len_full))) {
         static int s_warned = 0;
@@ -175,7 +178,7 @@ extern "C" void zmemcpy(uint8_t* rdram, recomp_context* ctx) {
 // ---- VI ----
 
 // Last osViSwapBuffer target; the present side reads it.
-extern "C" volatile unsigned g_last_swap_fb = 0;
+extern "C" { volatile unsigned g_last_swap_fb = 0; }
 
 extern "C" void osViSwapBuffer_recomp(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t fb = (uint32_t)ctx->r4;
@@ -373,11 +376,8 @@ static void rs64_mesg_trace(uint8_t* rdram, const char* ev, uint32_t q, int flag
 
 // Real libultra semantics: re-queue at priority and switch to the highest runnable thread. A host
 // yield keeps the N64 scheduler slot, so any game spin-loop starves every other N64 thread.
-// ROGUESQ_HOST_YIELD_ONLY=1 restores that.
 extern "C" void osYieldThread_recomp(uint8_t* rdram, recomp_context* ctx) {
     rs64_mesg_trace(rdram, "yield", 0, 0, (uint32_t)ctx->r31);
-    static const bool s_old = env_on("ROGUESQ_HOST_YIELD_ONLY");
-    if (s_old) { std::this_thread::yield(); return; }
     // Host VI/DP/AI events arrive as external messages that only drain inside osRecvMesg/osSendMesg
     // or when the run queue is empty; a spinning thread would never let the VI thread wake.
     dequeue_external_messages(rdram);
@@ -393,15 +393,8 @@ extern "C" void osYieldThread_recomp(uint8_t* rdram, recomp_context* ctx) {
 // (~1 ms per step, cap ~40), so pending VI/DP events are delivered and the higher-priority VI
 // handler preempts the loop as on hardware. A host Sleep here holds the run slot and let the
 // frame-buffer arbiter deadlock (producer waiting SP-done, VI handler blocked on its ack).
-// ROGUESQ_ATTRIB_HOST_SLEEP=1 restores the host-sleep wait.
 extern "C" volatile unsigned g_vi_tick;
-extern "C" void rs64_attrib_wait_vi(void);
 extern "C" void rs64_attrib_wait_vi_yield(uint8_t* rdram, recomp_context* ctx) {
-    static const bool s_host = env_on("ROGUESQ_ATTRIB_HOST_SLEEP");
-    if (s_host) {
-        rs64_attrib_wait_vi();
-        return;
-    }
     const unsigned start = g_vi_tick;
     for (int i = 0; i < 40 && g_vi_tick == start; ++i) osYieldThread_recomp(rdram, ctx);
 }
@@ -481,7 +474,7 @@ extern "C" void osDestroyThread_recomp(uint8_t* rdram, recomp_context* ctx) {
 // Wait for the in-flight RT64 parse from an N64 thread, yielding between slices so higher-priority
 // N64 threads (retrace: buffer swap + audio) run meanwhile, as hardware preemption would let them.
 // Also called from hooks in rogue_squadron.toml.
-extern "C" volatile unsigned g_rs64_pw_calls = 0, g_rs64_pw_waited = 0, g_rs64_pw_ms = 0, g_rs64_pw_timeouts = 0;
+extern "C" { volatile unsigned g_rs64_pw_calls = 0, g_rs64_pw_waited = 0, g_rs64_pw_ms = 0, g_rs64_pw_timeouts = 0; }
 extern "C" void rs64_wait_gfx_parse_yield(uint8_t* rdram, recomp_context* ctx) {
     g_rs64_pw_calls = g_rs64_pw_calls + 1;
     const auto t0 = std::chrono::steady_clock::now();

@@ -56,28 +56,64 @@ static float terrain_dist_setting() {
     return std::min((s_env > 0.0f) ? s_env : draw_dist_setting(), 2.5f);
 }
 
-// Cutscenes are framed for the stock draw distance (fog hides the map edge), so they run at 1.0; ROGUESQ_CINE_DRAW_DIST=0 keeps the setting.
-static bool cinematic_default_dist() {
-    static const bool s_on = env_on("ROGUESQ_CINE_DRAW_DIST", true);
-    return s_on && rs64_state_in_cinematic();
+// Cutscenes keep the game's own view distance and fog per shot unless the player opts out (keepCutsceneDrawDistance; ROGUESQ_CINE_DRAW_DIST=0/1 overrides).
+static bool game_owns_view_setting() {
+    static const int s_env = env_int("ROGUESQ_CINE_DRAW_DIST", -1);
+    return (s_env >= 0) ? (s_env != 0) : rs64::video::keep_cutscene_draw_distance();
+}
+
+static bool game_owns_view() {
+    return game_owns_view_setting() && rs64_state_in_cinematic();
 }
 
 extern "C" float rs64_draw_dist(void) {
-    return cinematic_default_dist() ? 1.0f : draw_dist_setting();
+    return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view(), rs64_state_level());
 }
 
 // Terrain reach and fog multiplier, following the draw distance unless ROGUESQ_TERRAIN_DIST overrides. Capped at 2.5 (128-cell grid).
 extern "C" float rs64_terrain_dist(void) {
-    return cinematic_default_dist() ? 1.0f : terrain_dist_setting();
+    return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view(), rs64_state_level());
+}
+
+// ROGUESQ_LOG_FOG=1: level, far-range base D and its bounds, fog start/end/color the game set, cutscene flag and our multipliers, on change.
+extern "C" void rs64_fog_probe(uint8_t* rdram) {
+    static const bool s_on = env_on("ROGUESQ_LOG_FOG");
+    if (!s_on) return;
+    auto rw = [&](uint32_t a) { return *reinterpret_cast<uint32_t*>(rdram + (a - 0x80000000u)); };
+    auto rf = [&](uint32_t a) { uint32_t u = rw(a); float f; std::memcpy(&f, &u, 4); return f; };
+    auto rb = [&](uint32_t a) { return (uint32_t)rdram[(a - 0x80000000u) ^ 3u]; };
+    const uint32_t level = rw(0x80130B70u);
+    const uint32_t rgb = (rb(0x8011A873u) << 16) | (rb(0x8011A874u) << 8) | rb(0x8011A875u);
+    const int cine = rs64_state_in_cinematic();
+    const float cur[6] = { rf(0x8009DEACu), rf(0x80130C54u), rf(0x80130C58u), rf(0x8011A878u), rf(0x8011A87Cu), rs64_draw_dist() * 1000.0f + rs64_terrain_dist() };
+    static float s_last[6] = {};
+    static uint32_t s_level = ~0u, s_rgb = ~0u;
+    static int s_cine = -1;
+    if (level == s_level && rgb == s_rgb && cine == s_cine && std::memcmp(cur, s_last, sizeof(cur)) == 0) return;
+    std::memcpy(s_last, cur, sizeof(cur));
+    s_level = level;
+    s_rgb = rgb;
+    s_cine = cine;
+    fprintf(stderr, "[fog] level=%u D=%.3f range=%.2f..%.2f fog=%.1f..%.1f rgb=%06X cine=%d dd=%.2f td=%.2f\n",
+            level, cur[0], cur[1], cur[2], cur[3], cur[4], rgb, cine, rs64_draw_dist(), rs64_terrain_dist());
+    fflush(stderr);
 }
 
 // Level terrain cell budget scale, evaluated at each level load: ROGUESQ_TGRID_BUDGET_MULT (1-2), default 2 when terrain distance is 2x or more.
 // 3x exhausts the game heap and the level load stalls; N is also capped at 6553 (u16 vertex-block indices up to 10N-4).
-// Uses the setting, not the cutscene override, since a mission can load while its intro cutscene is still running.
+// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view.
+static bool s_cutscene_level_load = false;
+extern "C" void rs64_cutscene_level_load(int on) {
+    s_cutscene_level_load = on != 0;
+}
+
 extern "C" uint32_t rs64_tgrid_budget(uint32_t original) {
     static const int s_env = env_int("ROGUESQ_TGRID_BUDGET_MULT", 0);
-    const uint32_t s_mult = (uint32_t)std::clamp(s_env > 0 ? s_env : (terrain_dist_setting() >= 2.0f ? 2 : 1), 1, 2);
+    const bool cutscene_level = s_cutscene_level_load && game_owns_view_setting();
+    const uint32_t s_mult = cutscene_level ? 1u : (uint32_t)std::clamp(s_env > 0 ? s_env : (terrain_dist_setting() >= 2.0f ? 2 : 1), 1, 2);
     const uint32_t n = original * s_mult;
+    static const bool s_log = env_on("ROGUESQ_LOG_TERRAIN_GRID");
+    if (s_log) { fprintf(stderr, "[tgrid] level-load budget %u x%u%s\n", original, s_mult, cutscene_level ? " (cutscene level)" : ""); fflush(stderr); }
     return n > 0x1999u ? 0x1999u : n;
 }
 
@@ -144,7 +180,7 @@ extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram) {
 // ---- Boot target ----
 
 // Set by the present hook while the attract title is up; get_n64_input injects START while set.
-extern "C" volatile int g_boot_pulse_start = 0;
+extern "C" { volatile int g_boot_pulse_start = 0; }
 
 // ROGUESQ_BOOT_TARGET=level:<id>[,craft]: level id (0..0x14) or -1; craft (0..8) or -1 via craft_out.
 // Consumed by the runIdleFramesAndLoadSaveData epilogue hook.
@@ -167,8 +203,9 @@ extern "C" int rs64_boot_target_level(int* craft_out) {
 
 // ---- State published for the GBI ----
 
-extern "C" volatile int g_current_scene = -1;      // menuOverlayInit action id; 9 = attribution
-extern "C" volatile unsigned g_op_bf_count = 0;    // bumped by the F5 GBI per explosion-bloom tri
+// g_current_scene: menuOverlayInit action id, 9 = attribution. g_op_bf_count: bumped by the F5 GBI per explosion-bloom tri.
+extern "C" { volatile int g_current_scene = -1; }
+extern "C" { volatile unsigned g_op_bf_count = 0; }
 
 // ROGUESQ_LOG_HOOKS=1: stderr for hook code.
 extern "C" void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned c, unsigned d) {
@@ -259,7 +296,7 @@ extern "C" void rs64_sleep_ms(unsigned ms) {
 }
 
 // Bumped once per host VI retrace (main.cpp).
-extern "C" volatile unsigned g_vi_tick = 0;
+extern "C" { volatile unsigned g_vi_tick = 0; }
 
 // Block until the next VI tick (cap ~40 ms). Paces a menu fade loop (attribution screen,
 // credits sequence) to real time so the VI-driven glyph-layout producer thread gets to run.
@@ -278,23 +315,50 @@ extern "C" void rs64_attrib_wait_vi(void) {
 // tickFormatMessageWorker sends every reply as a pointer to one stack buffer. Copy each reply
 // into its own slot of a persistent ring so replies still queued keep their request ids.
 // The ring lives in host RDRAM above the game's 8 MB (after the terrain grid tables): a game-heap block would be reallocated when the front end reloads between screens.
-// Returns the address to send; ROGUESQ_NO_FORMAT_REPLY_FIX=1 returns src unchanged.
+// Returns the address to send.
 extern "C" uint32_t rs64_format_reply_slot(uint8_t* rdram, recomp_context* ctx, uint32_t src) {
     (void)ctx;
-    static const bool s_off = env_on("ROGUESQ_NO_FORMAT_REPLY_FIX");
     constexpr uint32_t kSlots = 32, kSlotSize = 0x30, kRing = 0x80B20000u;
     static uint32_t s_next = 0;
-    if (s_off || (src & 3u) != 0 || (src & 0xFF800000u) != 0x80000000u) return src;
+    if ((src & 3u) != 0 || (src & 0xFF800000u) != 0x80000000u) return src;
     const uint32_t dst = kRing + (s_next++ % kSlots) * kSlotSize;
     std::memcpy(rdram + (dst - 0x80000000u), rdram + (src - 0x80000000u), kSlotSize);
     return dst;
 }
 
+// ---- NPC health guard ----
+
+static inline int32_t& rd_w(uint8_t* rdram, uint32_t addr) {
+    return *reinterpret_cast<int32_t*>(rdram + (addr - 0x80000000u));
+}
+
+// Array health is base[npcHealthTableIndex]; a torn-down NPC leaves base garbage, so the slot must be in RDRAM or the co-op imposter's record (0x80B40000).
+extern "C" int rs64_npc_health_slot_ok(uint8_t* rdram, uint32_t base) {
+    const uint32_t addr = base + (static_cast<uint32_t>(rd_w(rdram, 0x80137CE4u)) << 2);
+    return ((addr & 0xE0000000u) == 0x80000000u && (addr & 0x1FFFFFFFu) < 0x800000u) || (addr >= 0x80B40000u && addr < 0x80B40100u);
+}
+
+// setNpcHealth with an unusable slot: the game's stores with the slot value read as 0.
+extern "C" void rs64_set_npc_health_no_slot(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t npc = static_cast<uint32_t>(ctx->r4), info = static_cast<uint32_t>(ctx->r6);
+    if (*(rdram + ((npc + 0x1A7u) ^ 3u) - 0x80000000u) == 0) {
+        rd_w(rdram, npc + 0x190u) = static_cast<int32_t>(ctx->r5);
+        if (static_cast<uint32_t>(rd_w(rdram, info + 0x54u)) == 0x80000000u) {
+            rd_w(rdram, info + 0x54u) = 0;
+        }
+        rd_w(rdram, npc + 0x194u) = rd_w(rdram, info + 0x54u);
+    } else {
+        rd_w(rdram, npc + 0x190u) = 0;
+        rd_w(rdram, npc + 0x194u) = 0;
+    }
+    ctx->r2 = 0;
+}
+
 // ---- Mode-change blanking ----
 
 // RT64's present queue presents black while the VI shows this CPU-zeroed buffer. The game has drained every frame before the clear, so the last workload id is stable here.
-extern "C" volatile uint32_t g_rs64_clear_seq = 0;
-extern "C" volatile uint32_t g_rs64_clear_bytes = 0;
+extern "C" { volatile uint32_t g_rs64_clear_seq = 0; }
+extern "C" { volatile uint32_t g_rs64_clear_bytes = 0; }
 
 extern "C" void rs64_fb_cpu_cleared(uint8_t* /*rdram*/, uint32_t fb, uint32_t bytes) {
     static const bool s_log = env_on("ROGUESQ_LOG_TRANSITION");

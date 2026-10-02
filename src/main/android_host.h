@@ -15,6 +15,8 @@ namespace rs64::android {
     void install_bundled_mods();
     // Opens the system file picker (MainActivity.pickRom) and blocks until it closes. Returns a private copy's path, or "" if cancelled.
     std::string pick_rom();
+    // The on-screen keyboard's height as a fraction of the window (MainActivity.imeFraction), 0 when hidden.
+    float ime_fraction();
     // ANativeWindow_setFrameRate(FIXED_SOURCE) at ROGUESQ_ANDROID_FRAME_RATE (default 60, 0 = leave the display alone). API 30+.
     void set_window_frame_rate(void* native_window);
     // ADPF: reports one display list's CPU time to a hint session on the render threads (Gfx, RT64 Workload/Present). API 33+; ROGUESQ_ANDROID_PERF_HINT=0 disables.

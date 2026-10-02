@@ -180,7 +180,7 @@ either struct as isolated.
 `(1<<i)` in `gGameSettings+0x18` (0x80130B58). Naboo bit 0x10 pre-set → calls
 `load_naboo_starfighter`, stashes CRC at +0x28.
 
-Bit → cheat (full table in `docs/cheat_codes/cheat_codes.md`; entry N @ 0x800A0ED0+N*4):
+Bit → cheat (full table in `docs/cheat_codes/cheat_codes.md` in the sister decomp repo, not this one; entry N @ 0x800A0ED0+N*4):
 bit0 GAMEFLO! (unlock missions), 0x2 KOELSCH, 0x4 FARMBOY (Falcon), 0x8 TIEDUP (TIE),
 0x10 HALIFAX? (Naboo step1), 0x20 BLAMEUS, 0x40 ACE (hard), 0x80 ICHHELD, 0x100 PSYLOCK,
 0x200 WUTZI, 0x400 BERGLOWE, 0x800 TIECK, 0x1000 RUDIBUBI, 0x2000 CHIPPIE, 0x4000 TOBIASS,
@@ -558,7 +558,7 @@ far@+0x28.)
 
 The 6-state arbiter arrays are at **0x80128E98 / 0x80128EAA**, not 0x80138E98/EAA (the recomp
 reaches them via `lui 0x8013, -0x7168/-0x7156`, underflowing into the 0x8012 bank; host
-`upstream_compat.cpp:253` confirms 0x80128EAA). Layout: fb-target ptr array @0x80128E98 (stride
+`rt64_render_context.cpp` reads `STATE_BASE = 0x128EAA`). Layout: fb-target ptr array @0x80128E98 (stride
 4), state byte array @0x80128EAA (0=free, 1=alloc/in-flight, 2=ready), slot count @0x80128EAD,
 secondary record-ptr array @0x80128EC0, active index @0x80128D2C (XOR 1 = inactive). `submitGfxFrame`
 populates a standard OSTask (data_ptr@0x800377D0, data_size@0x800377D4, ucode@0x800377D8) and

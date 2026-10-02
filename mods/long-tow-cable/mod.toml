@@ -1,0 +1,15 @@
+[manifest]
+id = "long_tow_cable"
+version = "1.0.0"
+display_name = "Long Tow Cable"
+description = "The snowspeeder tow cable holds 160 segments instead of 60, about four loops around an AT-AT instead of one and a half, so the cable no longer erases its oldest end while you wrap the walker. Takes effect at the next mission start."
+short_description = "Tow cable long enough to wrap an AT-AT."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "long_tow_cable"
+func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]

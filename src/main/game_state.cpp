@@ -1,4 +1,5 @@
 #include "game_state.h"
+#include "lockstep_core.h"
 #include <atomic>
 #include <cstring>
 #include <cstdio>
@@ -8,6 +9,8 @@
 
 static std::atomic<int> g_current{-1};
 static std::atomic<bool> g_cutscene_running{false};
+static std::atomic<uint32_t> g_cutscene_skips{0};
+static std::atomic<uint32_t> g_level{0};
 
 // Match rd8/rd32 in rt64_render_context.cpp: host RDRAM is byte-swapped within each
 // word (the ^3), and a field is read as a big-endian word starting at its exact address.
@@ -55,13 +58,32 @@ void rs64_state_poll(const uint8_t* rdram) {
     // A cutscene timeline is playing: gCurrentCutsceneFile (0x800B1904) is loaded and gateCtr (0x800B0B28) is below its end frame (file+0x44, minus the same 0xA margin the game uses).
     // This covers the boot intro, where the "menu" predicate is a false positive (0x800CE730 is still heap), as well as in-mission cutscenes.
     bool running = false;
+    uint32_t gate = 0;
+    uint32_t endFrame = 0;
     const uint32_t cut = rd_be(rdram, 0x800B1904u);
     if ((cut >= 0x80000000u) && (cut < 0x80800000u)) {
-        const uint32_t gate = rd_be(rdram, 0x800B0B28u);
-        const uint32_t endFrame = rd_be(rdram, cut + 0x44u);
+        gate = rd_be(rdram, 0x800B0B28u);
+        endFrame = rd_be(rdram, cut + 0x44u);
         running = (endFrame > 0x10u) && (endFrame < 0x100000u) && (gate < endFrame - 0xAu);
     }
+    static uint32_t s_gate = 0;
+    static uint32_t s_end = 0;
+    const bool was_running = g_cutscene_running.load(std::memory_order_relaxed);
+    if (rs64::ls::cutscene_skipped(was_running, s_gate, s_end, running)) {
+        g_cutscene_skips.fetch_add(1, std::memory_order_relaxed);
+        fprintf(stderr, "[cutscene] skipped at frame %u of %u\n", s_gate, s_end);
+    }
+    if (running && !was_running) {
+        fprintf(stderr, "[cutscene] started at frame %u of %u\n", gate, endFrame);
+    }
+    s_gate = gate;
+    s_end = endFrame;
     g_cutscene_running.store(running, std::memory_order_relaxed);
+    g_level.store(rd_be(rdram, 0x80130B70u), std::memory_order_relaxed);
+}
+
+extern "C" uint32_t rs64_state_level(void) {
+    return g_level.load(std::memory_order_relaxed);
 }
 
 extern "C" int rs64_state_current(void) {
@@ -83,6 +105,10 @@ static int find_state(const char* id) {
         if (std::strcmp(g_state_table[i].id, id) == 0) return i;
     }
     return -1;
+}
+
+extern "C" uint32_t rs64_state_cutscene_skips(void) {
+    return g_cutscene_skips.load(std::memory_order_relaxed);
 }
 
 extern "C" int rs64_state_in_cinematic(void) {

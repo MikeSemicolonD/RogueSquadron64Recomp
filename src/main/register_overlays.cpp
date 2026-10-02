@@ -8,13 +8,8 @@
 
 #include "librecomp/overlays.hpp"
 
-// All overlays registered at boot; librecomp's section table covers the
-// 3 .ovl.* overlays (mission/menu/cinematic), all sharing ram_addr
-// 0x800A5130. The DMA-time per-overlay callback (`set_post_pi_dma_callback`)
-// that was previously here is non-canonical — Zelda64Recomp registers
-// overlays at boot only. If runtime DMA-driven overlay switching turns
-// out to be needed for RS64, the right place is a thin wrapper inside
-// our own load_overlays, not a librecomp modification.
+// The 3 .ovl.* overlays (mission/menu/cinematic, all at 0x800A5130) are registered here at boot.
+// The loadOverlay hook (0x80000B3C in rogue_squadron.toml) switches func_map to the live one at runtime via rs64_load_overlay in upstream_compat.cpp.
 void rs64_register_overlays() {
     recomp::overlays::overlay_section_table_data_t sections {
         .code_sections = section_table,

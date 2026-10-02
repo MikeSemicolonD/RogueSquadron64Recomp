@@ -41,19 +41,26 @@ jobs:
           lines=$(wc -l < RecompiledFuncs/funcs.h)
           echo "funcs.h: $lines lines"
           [ "$lines" -ge 2000 ] || { echo "::error::funcs.h truncated ($lines lines): stale or broken N64Recomp"; exit 1; }
+          python3 tools/coop/gen_relocation.py --verify || { echo "::error::coop_relocation.toml not applied: N64Recomp lacks patch_files support"; exit 1; }
 
       - name: Build code mods
         run: |
           cmake -DPLATFORM=desktop -DRECOMP_MOD_TOOL="$PWD/build-tools/RecompModTool" \
             -DMIPS_GCC="$RS64_MIPS_GCC" -DMIPS_LD="$RS64_MIPS_LD" -P tools/mods/build_code_mods.cmake
 
-      - name: Build patches and game
+      - name: Build game
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" \
-            -DMIPS_GCC="$RS64_MIPS_GCC" -DMIPS_LD="$RS64_MIPS_LD"
-          cmake --build build --target PatchesLib
+            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" -DRS64_MULTIPLAYER=OFF
           cmake --build build --target RogueSquadron64Recomp
+
+      - name: Check the multiplayer mod
+        run: |
+          test -f build/mods/multiplayer-native/multiplayer_native.so || { echo "::error::multiplayer-native not staged"; exit 1; }
+          ! grep -qa "searching the LAN" build/RogueSquadron64Recomp || { echo "::error::multiplayer is built into the exe"; exit 1; }
+
+      - name: Unit tests
+        run: cmake --build build --target rs64_unit_tests
 
       - name: Package
         run: |
@@ -107,6 +114,8 @@ jobs:
           $lines = (Get-Content RecompiledFuncs/funcs.h | Measure-Object -Line).Lines
           Write-Host "funcs.h: $lines lines"
           if ($lines -lt 2000) { Write-Host "::error::funcs.h truncated ($lines lines): stale or broken N64Recomp"; exit 1 }
+          python tools/coop/gen_relocation.py --verify
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::coop_relocation.toml not applied: N64Recomp lacks patch_files support"; exit 1 }
 
       - name: Build code mods
         run: |
@@ -114,22 +123,31 @@ jobs:
             "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR" -P tools/mods/build_code_mods.cmake
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - name: Build patches and game
+      - name: Build game
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL `
-            "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR" `
-            "-DN64RECOMP_EXE=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          cmake --build build --config Release --target PatchesLib
+            "-DN64RECOMP_EXE=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe" `
+            "-DRS64_MULTIPLAYER=OFF"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           cmake --build build --config Release --target RogueSquadron64Recomp
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Check the multiplayer mod
+        run: |
+          if (-not (Test-Path build/dist/mods/multiplayer-native/multiplayer_native.dll)) { Write-Host "::error::multiplayer-native not staged"; exit 1 }
+          if (Select-String -Quiet -SimpleMatch -Path build/dist/RogueSquadron64Recomp.exe -Pattern 'searching the LAN') { Write-Host "::error::multiplayer is built into the exe"; exit 1 }
+          exit 0
+
+      - name: Unit tests
+        run: |
+          cmake --build build --config Release --target rs64_unit_tests
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Package
         run: |
           $ver = $env:GITHUB_REF_NAME -replace '/', '-'
           $pkg = "rs64-windows-x64-$ver.zip"
-          Copy-Item docs/release-readme.txt build/dist/README.txt
+          Copy-Item ci/release-readme.txt build/dist/README.txt
           Compress-Archive -Path build/dist/* -DestinationPath $pkg -Force
           Add-Content -Path $env:GITHUB_ENV -Value "PKG=$pkg" -Encoding ascii
 

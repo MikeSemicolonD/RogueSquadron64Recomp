@@ -5,9 +5,10 @@ authoritative in [f5-model-dl-spec.md §7](f5-model-dl-spec.md).
 
 ## Files
 
-- `factor5_ucode_text.bin` (4 KB, BE byte order — 1024 RSP instructions)
-- `factor5_ucode_data.bin` (2 KB, **librecomp LE-u32 byte order** — must reverse
-  each 4-byte chunk to get BE bytes the RSP sees)
+- `dumps/f5_ucode.imem.bin` (8 KB IMEM image, BE; offset 0 = IMEM `0x04001000`, matches ROM `0x25610`)
+- `dumps/f5_ucode.dmem.bin` (4 KB DMEM image, BE; starts with the ROM data segment at `0x39900`)
+
+Read by `tools/disasm_rsp_entry.py`, `tools/disasm_op01_area.py`, `tools/decode_dmem_vtx_area.py` and siblings.
 
 ## Dispatch loop (IMEM 0x010 - 0x05C)
 
@@ -65,7 +66,7 @@ For op `O`, idx = `(O & ~0x80) << 1` (bit 7 collapsed by andi/negu split).
 
 Entries 0x15..0x3F are mostly 0x0000 (= no-ops, re-enter dispatch).
 
-## Observed game opcode frequency (frame 100, dlhist_frame.txt)
+## Observed game opcode frequency (one frame-100 histogram)
 
 | op | count | RDP/F3D meaning (where standard) |
 |---|---|---|

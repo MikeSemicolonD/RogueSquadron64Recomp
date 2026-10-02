@@ -16,10 +16,6 @@
 //   if (recomp::dbg::log_vi()) {
 //       fprintf(stderr, "[osViSwapBuffer #%d] fb=0x%08X\n", n, fb);
 //   }
-//
-// To enable everything quickly:
-//   set ROGUESQ_LOG_ALL=1   (Windows)
-//   export ROGUESQ_LOG_ALL=1   (POSIX)
 
 #pragma once
 
@@ -29,11 +25,8 @@
 
 namespace recomp::dbg {
 
-// Cached env-var read. Returns true iff the variable is set to a non-zero
-// non-"false"/"no" value, OR the catch-all ROGUESQ_LOG_ALL is enabled.
+// True iff the variable is set to a value other than 0, "false" or "no".
 inline bool env_flag(const char *name) {
-    const char *all = recomp::os::getenv("ROGUESQ_LOG_ALL");
-    if (all && *all && *all != '0') return true;
     const char *e = recomp::os::getenv(name);
     if (!e || !*e) return false;
     if (*e == '0') return false;
@@ -67,7 +60,7 @@ inline bool log_throttle() {
     return v;
 }
 
-// Behaviour knobs, read at the call site. Unlike env_flag, ROGUESQ_LOG_ALL does not turn these on.
+// Behaviour knobs, read at the call site. env_on treats any value not starting with '0' as on.
 inline const char* env_str(const char* name) { const char* v = recomp::os::getenv(name); return (v && *v) ? v : nullptr; }
 inline bool env_on(const char* name, bool def = false) { const char* v = env_str(name); return v ? (*v != '0') : def; }
 inline int env_int(const char* name, int def = 0) { const char* v = env_str(name); return v ? std::atoi(v) : def; }

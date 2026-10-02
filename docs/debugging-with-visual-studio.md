@@ -3,7 +3,7 @@
 The N64Recomp / RSPRecomp toolchain emits plain C, so all of Visual Studio's
 normal C/C++ debugger features work on this project unmodified — including
 on the recompiled CPU code under `RecompiledFuncs\` and the recompiled RSP
-graphics ucode under `build/factor5_ucode/`. Reaching for the debugger before
+audio ucode under `build/factor5_ucode/`. Reaching for the debugger before
 adding more `printf` is almost always faster.
 
 The recompiler keeps the original MIPS PC of every instruction as a comment,
@@ -23,8 +23,8 @@ breakpoint you can correlate exactly to the disassembly of the original ROM.
 4. F5 (Debug → Start Debugging) launches the binary under the debugger.
 
 `Ctrl+,` opens "Go to All" — type a filename like `funcs_24.c` to jump to
-recompiled CPU code, or `factor5_ucode_recompiled.c` for the RSP graphics
-ucode.
+recompiled CPU code, or `musyx_audio_recompiled.c` for the RSP audio
+synth.
 
 ## The recompile context
 
@@ -38,12 +38,12 @@ ctx->f0 .. ctx->f31    — FP registers; .d = double, .f = float, .u64 = raw bit
 ctx->lo, ctx->hi       — multiply/divide result registers
 ```
 
-`rdram` is the 8 MB RAM blob; the helpers `MEM_B / MEM_H / MEM_W / LD`
-(byte / halfword / word / doubleword) translate MIPS-style `0x80xxxxxx`
-KSEG0 addresses to host bytes inside `rdram` with the right endian swizzle.
-`(addr - 0x2250) & 0xFFFFFF` is a useful expression for converting a
-MIPS-space address to the physical RDRAM offset for inspection in the
-**Memory** window.
+`rdram` is the RAM blob, based at KSEG0 `0x80000000`; the helpers `MEM_B / MEM_H / MEM_W / LD`
+(byte / halfword / word / doubleword, in `lib/N64ModernRuntime/N64Recomp/include/recomp.h`)
+translate MIPS-style `0x80xxxxxx` addresses to host bytes inside `rdram`. RDRAM is stored as
+native little-endian 32-bit words, so a word lives at `rdram + (addr - 0x80000000)`, a halfword
+at `rdram + ((addr ^ 2) - 0x80000000)` and a byte at `rdram + ((addr ^ 3) - 0x80000000)`. GPRs are
+64-bit and sign-extended, so compare them as `(uint32_t)ctx->rN`.
 
 ## Common patterns
 
@@ -62,8 +62,8 @@ Examples:
 | Failure | Conditional expression |
 |---|---|
 | `ctx->f2` becomes NaN | `ctx->f2.d != ctx->f2.d` |
-| Pointer arithmetic produces a kernel address | `ctx->r17 >= 0x80800000` |
-| Specific memory address gets touched | `ctx->r1 - 0x2250 == 0x80128000` |
+| Pointer arithmetic produces a kernel address | `(uint32_t)ctx->r17 >= 0x80800000` |
+| Specific memory address gets touched (`sw $x, 0x10($a0)`) | `(uint32_t)(ctx->r4 + 0x10) == 0x80128000` |
 | Nth iteration only | switch the dropdown from Conditional Expression to **Hit Count**, set "is equal to N" |
 
 Conditional breakpoints are evaluated in the debugger every time the line
@@ -95,7 +95,7 @@ Some helpful debugger features:
   ID, then `Ctrl+H` to refer to it as `$1`). Lets you compare register
   state across calls or threads quickly.
 - **Memory window** (Debug → Windows → Memory → Memory 1) — paste
-  `rdram + ((ctx->r1 - 0x2250) & 0xFFFFFF)` to see what the surrounding
+  `rdram + ((uint32_t)ctx->r4 - 0x80000000)` to see what the surrounding
   RDRAM looks like at the moment of the read.
 - **Trace Into Specific Function** (right-click → Step Into Specific) —
   recompiled call sites show as a sequence of register stores then a `func_XXXX(rdram, ctx)` call; this lets you skip the stores and step
@@ -184,10 +184,11 @@ windbg -z RogueSquadron64Recomp.exe
 | File | What it is |
 |---|---|
 | `RecompiledFuncs\funcs_*.c` | Recompiled CPU code from the ROM; thousands of `func_8xxxxxxx` functions (in-repo, gitignored, regenerated). |
-| `build\factor5_ucode\factor5_ucode_recompiled.c` | Recompiled Factor 5 graphics RSP ucode. The dispatch loop is at `L_1090`; opcode handlers branch from there. |
-| `build\factor5_ucode\factor5_boot_recompiled.c` | Recompiled boot ucode that DMAs the main ucode into IMEM. |
-| `src\rsp\dpc_bridge.cpp` | Where DPC_END writes from the ucode become RT64 RDP submissions. |
-| `lib\rt64\src\hle\rt64_interpreter.cpp` | RT64's HLE display-list interpreter; Factor 5 dispatches through the `GBI_F3DFACTOR5` profile here. |
+| `build\factor5_ucode\musyx_audio_recompiled.c` | Recompiled MusyX audio synth RSP ucode. |
+| `build\factor5_ucode\factor5_boot_recompiled.c` | Recompiled boot ucode that DMAs the audio ucode data into place. |
+| `lib\rt64\src\hle\rt64_interpreter.cpp` | RT64's HLE display-list interpreter loop. |
+| `lib\rt64\src\gbi\rt64_gbi.cpp`, `lib\rt64\src\hle\rt64_rsp.cpp` | Ucode identification selects `GBIUCode::F3DFACTOR5` (`GBI_F3DFACTOR5::setup`); `rt64_rsp.cpp` applies its F5-specific RSP state. |
+| `lib\rt64\src\gbi\rt64_gbi_f3dfactor5.cpp` | The Factor 5 opcode handlers. |
 
 ## When printf is still the right tool
 
@@ -199,12 +200,10 @@ where to look. Logging is still better for:
 - Validating that a code path is reached at all.
 - Comparing across threads when stepping would change the timing.
 
-The codebase has rate-limited `fprintf(stderr, "[name] …")` patterns gated
-by `static int n=0; if (++n<=N || (n%K)==0) { … }` already — re-enable a
-specific category by searching for `if(false) fprintf(stderr, "[name]"`
-and flipping `if(false)` → `if(true)`. Categories include `[trace]`,
-`[diag-*]`, `[ck]`, `[capture]`, `[ucode]`, `[mqdrain]`, `[apply]`,
-`[cycle0]`, `[cycle1]`. Prefer redirecting stderr to a file
+Trace categories are off by default and enabled with `ROGUESQ_LOG_*`
+environment variables; the catalog is [debug-trace-env-vars.md](debug-trace-env-vars.md).
+New probes use the rate-limited `static int n=0; if (++n<=N || (n%K)==0) { … }`
+pattern. Prefer redirecting stderr to a file
 (`> log.txt 2>&1`) — Windows console I/O is synchronous and orders of
 magnitude slower than file I/O, and at high event rates a console-bound
 process will appear to hang as the message-pump starves.

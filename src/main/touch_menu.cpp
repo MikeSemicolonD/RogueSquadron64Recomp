@@ -15,6 +15,8 @@ namespace rs64::touch {
         constexpr uint8_t kMenuSoundSettings = 6;
         constexpr uint8_t kMenuAccount = 1;
         constexpr uint8_t kMenuMediaHub = 10;
+        // Mod page text line (menu_config.cpp SUBTYPE_LABEL): drawn and marked active, but the cursor skips it.
+        constexpr uint8_t kSubtypeLabel = 13;
         constexpr uint32_t kHudSlotId = 0x8010BFD0u - 0x80000000u;
         constexpr uint32_t kSlotTable = 0x80130BB0u - 0x80000000u;
         constexpr uint32_t kHandleHud = 0x800C0084u;
@@ -50,9 +52,13 @@ namespace rs64::touch {
             return p >= 0x80000000u && p < 0x80000000u + kRamSize;
         }
 
-        // Labels live in game RAM or, for mod-added entries, on the mod heap (0x81000000+) inside the always-mapped 512 MB kseg0.
+        // Labels live in game RAM or, for mod-added entries and mod page titles, on the mod heap (0x81000000+) inside the always-mapped 512 MB kseg0.
+        bool in_label_mem(uint32_t p) {
+            return in_ram(p) || (p >= kModHeap && p < 0x80000000u + kLabelMemSize);
+        }
+
         bool str_len(const uint8_t* r, uint32_t p, int* len) {
-            if (!in_ram(p) && !(p >= kModHeap && p < 0x80000000u + kLabelMemSize)) {
+            if (!in_label_mem(p)) {
                 return false;
             }
             const uint32_t off = p - 0x80000000u;
@@ -130,7 +136,7 @@ namespace rs64::touch {
         boxes->clear();
         const uint32_t ptr = rw(r, kGcmd);
         const uint8_t count = rb(r, kGcmd + 0x95);
-        if (!in_ram(ptr) || count < 1 || count > 8 || w <= 0.0f || h <= 0.0f) {
+        if (!in_label_mem(ptr) || count < 1 || count > 8 || w <= 0.0f || h <= 0.0f) {
             return false;
         }
         snap->menu_ptr = ptr;
@@ -146,7 +152,7 @@ namespace rs64::touch {
             if (!str_len(r, rw(r, kGcmd + 0x08 + 4 * i), &len)) {
                 return false;
             }
-            if (len == 0 || !(snap->active & (1u << i))) {
+            if (len == 0 || !(snap->active & (1u << i)) || rb(r, kGcmd + 0x28 + i) == kSubtypeLabel) {
                 continue;
             }
             float scale;
@@ -608,7 +614,7 @@ namespace rs64::touch {
         char buf[96];
         std::snprintf(buf, sizeof(buf), "ptr=0x%08X id=%u count=%u base=%d cur=%u active=0x%04X", ptr, rb(r, kGcmd + 0x04), count, (int16_t)rh(r, kGcmd + 0x96), rb(r, kGcmd + 0x94), rh(r, kGcmd + 0x98));
         std::string s = buf;
-        if (!in_ram(ptr) || count < 1 || count > 8) {
+        if (!in_label_mem(ptr) || count < 1 || count > 8) {
             return s;
         }
         for (int i = 0; i < count; ++i) {

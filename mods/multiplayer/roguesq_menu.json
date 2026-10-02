@@ -1,0 +1,14 @@
+{
+  "//": "Online co-op lobby. MULTIPLAYER goes to the pilot select like START; once a pilot is chosen this page opens instead of mission select, and mission select follows as soon as both players are connected. HOST GAME listens, shows this PC's address and asks the router (UPnP) to open the port for internet play (the line under the status says whether internet play is open or why not; the address line is the NET address to give a remote player once it is, else the LAN one); JOIN GAME connects to the address row (A on it to edit: left/right pick a number, up/down change it, A or B to finish). Rows with label_src follow live text from the game (docs/adding-menus-and-buttons.md).",
+  "buttons": [
+    { "id": "mp_open", "menu": "main_menu", "type": "action", "action": "none", "transition": "account", "page": "multiplayer", "exit_when": "mp_ready",
+      "label": "MULTIPLAYER", "title": "MULTIPLAYER", "leave_action": "mp_leave", "after": "options", "x": -117, "title_y": -20 },
+
+    { "id": "mp_status", "menu": "multiplayer", "type": "label", "label": "HOST OR JOIN A GAME", "label_src": "mp_status", "y": -18 },
+    { "id": "mp_online", "menu": "multiplayer", "type": "label", "label": " ", "label_src": "mp_online", "scale": 0.75, "y": -16, "gap_after": 2 },
+    { "id": "mp_join", "menu": "multiplayer", "type": "action", "action": "mp_join", "label": "JOIN GAME", "label_src": "mp_join_label", "row": "mp_buttons", "x": -100 },
+    { "id": "mp_host", "menu": "multiplayer", "type": "action", "action": "mp_host", "label": "HOST GAME", "label_src": "mp_host_label", "row": "mp_buttons", "x": 100, "gap_after": 8 },
+    { "id": "mp_address", "menu": "multiplayer", "type": "action", "action": "mp_edit", "label": "192.168.1.2", "label_src": "mp_address", "scale": 1.2, "gap_after": 16 },
+    { "id": "mp_mine", "menu": "multiplayer", "type": "label", "label": " ", "label_src": "mp_host_address", "scale": 0.75, "gap_after": 30 }
+  ]
+}

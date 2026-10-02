@@ -17,6 +17,7 @@ void adv_get(const json& a, const char* key, T& out) {
 }
 
 std::atomic<float> g_draw_distance{1.0f};
+std::atomic<bool> g_keep_cutscene{true};
 } // namespace
 
 float draw_distance() {
@@ -27,11 +28,26 @@ void set_draw_distance(float mult) {
     g_draw_distance.store(std::clamp(mult, kDrawDistanceMin, kDrawDistanceMax), std::memory_order_relaxed);
 }
 
+bool keep_cutscene_draw_distance() {
+    return g_keep_cutscene.load(std::memory_order_relaxed);
+}
+
+void set_keep_cutscene_draw_distance(bool on) {
+    g_keep_cutscene.store(on, std::memory_order_relaxed);
+}
+
+float effective_draw_distance(float setting, bool game_view, uint32_t level) {
+    return (game_view || level == kGameViewLevel) ? 1.0f : setting;
+}
+
 void apply_friendly(UC& uc, const json& j) {
     auto has = [&](const char* k) { return j.contains(k) && !j.at(k).is_null(); };
 
     if (has("drawDistance") && j["drawDistance"].is_number()) {
         set_draw_distance(j["drawDistance"].get<float>());
+    }
+    if (has("keepCutsceneDrawDistance") && j["keepCutsceneDrawDistance"].is_boolean()) {
+        set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
     }
 
     if (has("widescreen")) {
@@ -116,6 +132,7 @@ json to_friendly(const UC& uc) {
     json j;
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
+    j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     json adv = json::object();
 
     // widescreen <-> aspectRatio

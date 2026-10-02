@@ -16,19 +16,23 @@ grammar itself (chunk fetch, per-opcode semantics from the IMEM listing) is in
 
 | Opcode | Standard meaning | Factor 5 behavior | Handler |
 |-------:|------------------|-------------------|---------|
-| `0x04` | G_VTX | Vertex batch: `(w0>>10)&0x3F` 8-byte vertices (x,y,z int16, pad) DMA'd from w1 | native |
-| `0x02` | G_RDPHALF_2 | DMA `(w0&0xFFFF)+1` bytes of per-vertex RGBA into DMEM `0xB70` | `op02` |
-| `0x03` | — | State: byte1 selects a DMEM slot. `03 80` = viewport; `03 82` = texcoord scale | native |
-| `0xBF` / `0x08` | G_TRI1 | Triangle; `w0&2` = textured (16 B texcoords follow) | native |
-| `0xB4` / `0x13` | G_QUAD | Quad (4th vertex from w1 byte0) → two triangles | native |
-| `0xB5` | G_QUAD | Chunk/DL terminator at chunk offset `0x100`; returns to parent DL | `op_B5_endDl` |
+| `0x04` | G_VTX | Vertex batch: `(w0>>10)&0x3F` 8-byte vertices (x,y,z int16, pad) DMA'd from w1 | `op_04_vertex` |
+| `0x02` | G_RDPHALF_2 | DMA `(w0&0xFFFF)+1` bytes of per-vertex RGBA into DMEM `0xB70` | `op_02_colors` |
+| `0x03` | — | State: byte1 selects a DMEM slot. `03 80` = viewport; `03 82` = texcoord scale | `op_03_f5` |
+| `0xBF` / `0x08` | G_TRI1 | Triangle; `w0&2` = textured (16 B texcoords follow) | `op_bf_tri` |
+| `0xB4` / `0x13` | G_QUAD | Quad (4th vertex from w1 byte0) → two triangles | `op_b4_quad` / `op_13_quad` |
+| `0xB5` / `0x12` | G_QUAD | Next chunk: continue in the chunk named by the current chunk header's first word (w1 ignored); `0xB8` is the pop/return | `op_b5_next_chunk` |
 | `0xE4` | G_TEXRECT | LLE format (16 bytes), not HLE 24-byte; the handler consumes both words (the S/T/DsDx/DtDy word dispatched as a command whenever S >= 0x100, e.g. 0x0D = SETOTHERMODE_H forcing copy mode) | `texrectLLE_guarded` |
-| `0xE5` | G_TEXRECTFLIP | LLE format | `texrectFlipLLE` |
+| `0xE5` | G_TEXRECTFLIP | LLE format | `texrectFlipLLE_guarded` |
 | `0xFF` | G_SETCIMG | Sometimes emitted with bogus payload (w1=0, fmt>4, OOB addr); rejected | `setColorImage_filtered` |
-| `0x80` | unused | Chunk metadata header (next-chunk pointer in 24-bit w0); walked as a no-op | `op80_unknown` |
-| `0x05` | — | Terrain record (40 B): `05 05 02` flat tile, `05 05 00` heightfield | `op05` |
+| `0x80` | unused | Chunk metadata header (next-chunk pointer in 24-bit w0); records the chunk base, never executed by the ucode | `op_80_header` |
+| `0x05` | — | Terrain record (40 B): `05 05 02` flat tile, `05 05 00` heightfield | `op_05_record` |
+| `0x01` | G_MTX | Matrix load | `op_01_matrix` |
+| `0x06` | G_DL | Push and call | `op_06_strict_dl` |
+| `0x07` | — | Branch | `op_07_branch` |
+| `0xBB` / `0x0C` | G_TEXTURE | Texture state | `texture_f5` |
 
-Standard F3D/F3DEX opcodes (0x01, 0x06, 0xB8, 0xB9, 0xBA, 0xBC, 0xE6-0xED, 0xF6-0xFF) dispatch through the inherited map.
+Other standard F3D/F3DEX opcodes (0xB8, 0xB9, 0xBA, 0xBC, 0xE6-0xED, 0xF6-0xFF) dispatch through the inherited map, several via logging/guarded wrappers.
 
 ## RSP dispatch mechanism
 

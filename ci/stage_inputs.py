@@ -5,7 +5,7 @@ The inputs never live in the repo. They come from a directory on the runner host
 (RS64_INPUTS, bind-mounted read-only into the Linux container):
 
   roguesquadron.elf             decomp ELF that rogue_squadron.toml recompiles
-  factor5_ucode/*.c             RSPRecomp output for the gfx, boot and MusyX ucodes
+  factor5_ucode/*.c             RSPRecomp output for the boot and MusyX ucodes
 
 RS64_ELF and RS64_UCODE_DIR override the individual paths (point RS64_ELF at the
 decomp's live build/roguesquadron.elf so symbol renames reach CI).
@@ -23,7 +23,7 @@ REPO = Path(__file__).resolve().parent.parent
 ELF_DST = REPO.parent / "rogue_squadron64" / "build" / "roguesquadron.elf"
 STAGED_MARKER = ELF_DST.parent.parent / ".rs64-ci-staged"
 UCODE_DST = REPO / "build" / "factor5_ucode"
-UCODE_FILES = ("factor5_ucode_recompiled.c", "factor5_boot_recompiled.c", "musyx_audio_recompiled.c")
+UCODE_FILES = ("factor5_boot_recompiled.c", "musyx_audio_recompiled.c")
 
 
 def fail(msg):

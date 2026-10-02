@@ -7,5 +7,5 @@
   "authors": ["RogueSquadron64Recomp"],
   "minimum_recomp_version": "0.0.0",
   "enabled_by_default": false,
-  "native_libraries": { "native_demo": ["demo_action", "demo_toggle", "demo_toggle_get", "demo_slider", "demo_slider_get"] }
+  "native_libraries": { "native_demo": ["demo_action", "demo_toggle", "demo_toggle_get", "demo_slider", "demo_slider_get", "rs64_mod_init"] }
 }

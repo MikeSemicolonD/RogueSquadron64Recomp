@@ -163,7 +163,7 @@ chunk would otherwise walk the free list).
 | `02` | `0x14F0` | DMA `(w0&0xFFFF)+1` bytes from w1 into `0xB70` = per-vertex RGBA colors | 8 |
 | `03` | `0x14D4` | byte1 selects a DMEM slot (table `0x46`); the next 16 B are stored inline. `03 80` = viewport (vscale x,y,z,pad / vtrans x,y,z,pad, 2-bit fixed); `03 82` = texcoord scale (4 hi + 4 lo halfwords, 16.16 s,t,s,t; DMEM 0x140) multiplied into every per-face UV | 24 |
 | `04` | `0x15B4` | DMA `(w0&0x3FF)+1` bytes from w1 into `0x280`; `(w0>>10)&0x3F` 8-byte vertices (x,y,z int16, pad) | 8 |
-| `05` | `0x15AC` | load overlay 0xC: `05 05 02 ..` = flat terrain tile (below); `05 05 00 ..` = heightfield tile (overlays 0x14/0x18, not yet in the HLE) | 40 |
+| `05` | `0x15AC` | load overlay 0xC: `05 05 02 ..` = flat terrain tile (below); `05 05 00 ..` = heightfield tile (overlays 0x14/0x18; HLE `f5_tile_grid`) | 40 |
 | `BF` / `08` | `0x146C` | triangle: w1 bytes 1..3 = vertex slot (byte/5 = index), word2 bytes = per-vertex color offsets into `0xB70`, word3 = flags; `w0&2` = textured, 16 B of raw (s,t) halfwords follow, multiplied by the `03 82` texcoord scale (raw 0x1000 = one tile) | 32 / 16 |
 | `B4` / `13` | `0x1484`-0x80 | quad: as `BF` plus the 4th vertex from w1 byte0; vertex order = bytes 1,2,3,0 (colors + UVs in that order); tris (v0,v1,v2) (v0,v2,v3) | 32 / 16 |
 | `14`, `BD`, `BE` | `0x12EC`, `0x15A4`, `0x12E4` | 16-byte state commands (`BD` also loads overlay 0x2C) | 16 |
@@ -181,7 +181,8 @@ v0 (0,s) v1 (s,s) v2 (0,0) v3 (s,0), transformed by the current MVP.
 **Heightfield tile (`05 05 00 xx`).** DMAs `(word4.hi+0x16)&0xFF0` height bytes from
 word2 into DMEM `0x4E0` and `(word4.lo+0x13)&0xFF0` color bytes from word3 into `0x380`;
 byte1 = samples per row, byte3 = LOD shift, byte2>>4 = second shift. Overlay 0x14
-subdivides/averages rows, overlay 0x18 emits the grid. Not yet implemented.
+subdivides/averages rows, overlay 0x18 emits the grid. The HLE (`f5_tile_grid`) reads the
+5x5 signed heights and RGBA colors and bilinear-subdivides them (`ROGUESQ_F5_TERRAIN_SUB`).
 
 **Conventions.** NDC is y-down (the ucode adds `ndc*vscale` with no negation); the HLE
 hands RT64 a negative `vscale.y`. Matrices are standard N64 split int/frac, row-vector

@@ -177,7 +177,7 @@ def _set_u32(buf, kseg0, val):
 def test_classify_real_descriptor_states():
     from state_model import classify
     root = pathlib.Path(__file__).resolve().parents[2]
-    m = load_model(str(root / "state_model.toml"))
+    m = load_model(str(root / "tools" / "state" / "state_model.toml"))
 
     # in-mission: numMissionObjectives != 0, demo bit clear
     b = _blank_rdram()
@@ -220,14 +220,14 @@ def test_classify_real_descriptor_states():
 
 def test_real_descriptor_is_valid():
     root = pathlib.Path(__file__).resolve().parents[2]
-    m = load_model(str(root / "state_model.toml"))
+    m = load_model(str(root / "tools" / "state" / "state_model.toml"))
     assert validate(m) == []
 
 
 def test_real_descriptor_codegen(tmp_path=None):
     from gen_state_table import gen_state_table
     root = pathlib.Path(__file__).resolve().parents[2]
-    m = load_model(str(root / "state_model.toml"))
+    m = load_model(str(root / "tools" / "state" / "state_model.toml"))
     c = gen_state_table(m)
     assert "#define RS_STATE_COUNT" in c
     assert len(m.states) >= 3

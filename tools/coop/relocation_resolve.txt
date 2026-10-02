@@ -1,0 +1,5 @@
+# Hand decisions for lui sites gen_relocation.py cannot classify: <func> 0x<vram> move [R1..R4]|keep, or edge 0x<addr> move|keep  # reason
+edge 0x80138058 move  # object at the start of R1, only reached by pointer (mostly arg 3 of 0x80067D90, 0x80068D5C, 0x800698F4); gPlayers[1] needs this space
+updateMultiNodeAudioListeners 0x8005012C move R4  # $s1 = 0x80138930 (R4 start), walked per view; loop-widened
+updateMultiNodeAudioListeners 0x80050138 keep  # $a3 = 0x80137DBC (gPlayers[0]+4), $s3 = +0x250; loop-widened
+updateMultiNodeAudioListeners 0x80050160 keep  # $s7 = 0x80137DBC (gPlayers[0]+4); loop-widened

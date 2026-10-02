@@ -20,7 +20,7 @@
 - **Game loop**: `mainGameLoop` (`0x8003DFA0`) drives per-frame work; entered from `gBootConfig+0x04` ptr after bootstrap.
 - **Frame protocol**: two VIs per frame on hardware. The game thread builds the list and waits for the previous task's SP-done and DP-done; the VI retrace thread swaps buffers and submits the graphics task to the RSP scheduler thread. The recomp runs this protocol as-is (no host-injected tokens) — see [Frame loop](#frame-loop-hardware-protocol).
 - **Graphics path**: HLE — the graphics task is parsed by RT64's F3DFACTOR5 GBI module, which follows the ucode's chunk-fetch rules and feeds RT64's native transform (see [Rendering pipeline](#rendering-pipeline)).
-- **Audio path**: LLE — the MusyX RSP synth is statically recompiled by RSPRecomp (`musyx_rsp.toml`) and runs on the host audio task thread; samples stream from the cartridge as on hardware (see [Audio pipeline](#audio-pipeline)).
+- **Audio path**: LLE — the MusyX RSP synth is statically recompiled by RSPRecomp (`rsp/musyx_rsp.toml`) and runs on the host audio task thread; samples stream from the cartridge as on hardware (see [Audio pipeline](#audio-pipeline)).
 
 ## How the recompilation works (port shape)
 
@@ -32,18 +32,18 @@ against a `recomp_context` (the guest register file) and an 8 MB `rdram[]`
 backing store via the `MEM_W` / `MEM_BU` accessors.
 
 Two RSP microcodes are recompiled separately by **RSPRecomp** and run as host
-functions on the SP-task thread: the Factor 5 graphics ucode (used only by the
-dormant LLE path — see below) and the MusyX audio ucode (live).
+functions on the SP-task thread: the shared Factor 5 boot ucode and the MusyX
+audio ucode (configs in `rsp/`). The graphics ucode is not recompiled; graphics tasks go to the HLE
+`GBI_F3DFACTOR5` profile in RT64.
 
 The host glue lives in `src/`:
 
 | File | Role |
 |---|---|
-| `src/main/main.cpp` | Entry point; SDL2 window/audio/input; `get_rsp_microcode` task dispatch (M_GFXTASK→gfx, M_AUDTASK→MusyX synth); minidump/watchdog infra |
+| `src/main/main.cpp` | Entry point; SDL2 window/audio/input; `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); minidump/watchdog infra |
 | `src/main/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer, RDRAM dump triggers |
 | `src/main/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
 | `src/main/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
-| `src/rsp/dpc_bridge.cpp` | DPC_START/DPC_END LLE→RT64 bridge (dormant for GFX under HLE; kept for non-GFX RSP work) |
 | `patches/` | Hand-written C cross-compiled to MIPS, run back through N64Recomp, linked *ahead* of `RecompiledFuncs/` so its symbols win — the regen-safe place for guards/overrides |
 
 `lib/rt64` and `lib/N64ModernRuntime` are MikeSemicolonD forks carrying the
@@ -264,7 +264,7 @@ Three helpers around the swap handshake, used by the frame loop (see
 | `getControllerNewButtonsPressed` (0x80079F50) | Returns `D_8013A960[idx]` |
 | `initControllerSettingsStructs` (0x800BCE2C) / `controllerSettingsScreen` (0x800BD274) | Controller settings UI |
 
-Controller settings — 4 named profiles: LUKE / WEDGE / JANSON / HOBBIE, 18 inputs each. SDL2 gamepad input works; the host can fake a controller for headless runs (`ROGUESQ_FAKE_CONTROLLER=1`, with `ROGUESQ_AUTO_START=<ms>` to pulse START) so automated runs clear the "NO CONTROLLER" gate. Keyboard support is not implemented.
+Controller settings — 4 named profiles: LUKE / WEDGE / JANSON / HOBBIE, 18 inputs each. SDL2 gamepad input works; the host can fake a controller for headless runs (`ROGUESQ_FAKE_CONTROLLER=1`, with `ROGUESQ_AUTO_START=<ms>` to pulse START) so automated runs clear the "NO CONTROLLER" gate. Keyboard, mouse and gamepad are resolved through the bindings profile in `src/main/input_bindings.cpp` (`roguesq_input.json`, F6 rebind UI).
 
 ### 9. Menus
 
@@ -393,8 +393,8 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 > `0xB4`/`0x13` = quad, `0x05` = terrain record, `0xB5` = next chunk …), so a
 > stock F3DEX parser misreads the stream. RT64 dispatches it through the custom
 > GBI module in `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` (geometry and chunk
-> flow), `rt64_gbi_f5_rdpstate.cpp` (RDP state, the color-image filter) and
-> `rt64_gbi_f5_diag.cpp` (desync ring). The grammar below was read off the
+> flow) and `rt64_gbi_f5_rdpstate.cpp` (RDP state, the color-image filter); the
+> desync ring is in `hle/rt64_interpreter.cpp`. The grammar below was read off the
 > ucode's IMEM listing on 2026-09-07 and is validated offline by
 > `tools/validate/f5_dl_walk.py`, which walks any RDRAM dump's task list with
 > the same rules (every Project64 golden walks clean).
@@ -418,7 +418,8 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 | Vertices | `04` converts the 8-byte vertices into RT64 vertices in a scratch area at RDRAM `0xA00000` (above the 8 MB the game can see; the recomp heap uses `0x71E000`) and calls `setVertex` |
 | Faces | `BF`/`B4`/`13` copy the referenced vertices into temp slots, apply the color offsets and inline texcoords, and call `drawIndexedTri` |
 | Viewport | From the stream's `03 80` block (synthesized from the scissor only if the stream never sends one); `vscale.y` is negated so RT64's F3D y-flip cancels out (`ROGUESQ_F5_FLIP_Y=0` reverts) |
-| Terrain | Flat `05 05 02` tiles are drawn as two triangles (`ROGUESQ_F5_TILES=0` disables); heightfield records are skipped (40 bytes) |
+| Terrain | Flat `05 05 02` tiles are drawn as two triangles (`ROGUESQ_F5_TILES=0` disables); `05 05 00` heightfield records are tessellated by `f5_tile_grid` (`ROGUESQ_F5_TERRAIN=0` disables) |
+| Sprites | `BD` billboards (fire, smoke, explosions) are emitted by `op_bd_sprite` (`ROGUESQ_F5_SPRITES=0` disables) |
 | RDP state | Combiner, other-mode, tiles, loads and images are taken from the stream as sent. `setColorImage_filtered` rejects garbage images (width ≤ 1, outside `[0x400000, 0x800000)`, non-standard widths) and, with `ROGUESQ_DESYNC_TRACE=1`, dumps the last commands that led there |
 
 ### Validation
@@ -430,7 +431,7 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 ### Rendered output
 
 - Attribution screen: the legal text as IA16 glyph texrects on black (274 rects per frame, matching the hardware walk).
-- Intro cinematic: TIE fighter, X-wing with lasers in the Death Star trench, the N64 logo exploding into debris, the Factor 5 letters assembling with the fire "5", flat terrain tiles and the grey sky. Missing: the heightfield surface tiles (gaps in the ground) and the fire/smoke billboards, which are the unimplemented `05` forms.
+- Intro cinematic: TIE fighter, X-wing with lasers in the Death Star trench, the N64 logo exploding into debris, the Factor 5 letters assembling with the fire "5", heightfield and flat terrain, fire/smoke billboards and the grey sky.
 - Main menu: background tiles and title text.
 
 ## Frame loop (hardware protocol)
@@ -468,6 +469,7 @@ The host never writes these bytes in the default mode (the old
 |-----|--------|
 | `ROGUESQ_F5_NATIVE=0` | Parse without emitting geometry |
 | `ROGUESQ_F5_FLIP_Y=0` / `ROGUESQ_F5_TILES=0` | Revert the y-down viewport / disable flat terrain tiles |
+| `ROGUESQ_F5_TERRAIN=0` / `ROGUESQ_F5_SPRITES=0` | Disable heightfield terrain / `BD` billboards |
 | `ROGUESQ_F5_CHAIN_CAP` / `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | Walk budgets (64 / 2048 / 4096) |
 | `ROGUESQ_F5_CHUNK_BOUND=0` | Disable the per-level chunk bound (linear fall-through, as the old core did) |
 | `ROGUESQ_DESYNC_TRACE=1` | Ring dump of the commands leading to a rejected color image |
@@ -488,23 +490,23 @@ The host never writes these bytes in the default mode (the old
 
 ### Audio pipeline components
 
-1. **Sample bank streams from cartridge (hardware truth, 2026-09-07).** The 2.94 MB `samp_SND` bank (ROM `0x2B60B8`, stored raw) is never loaded into RDRAM by the game. Project64 dumps at the start screen, the attribution screen, the cinematic and the main menu all show the bank absent, `.samp` base `0x8009FCD0` = 0, and the asset table holding the bank's cartridge address `0xB02B60B8`. Voice slots carry cartridge sample addresses (`0xB0000000 + ROM offset`); `relocateSndPointer` accepts both `0x80` and `0xB0` pointers; `musyxRenderVoiceSamples` → `fillSampleStreamRange` queues ranges into 0x600-byte stream blocks (`acquireSampleStreamBlock`), and a DMA pump issues 256-byte `osPiStartDma` cart→RDRAM transfers (a PI-register trace on PJ64 logs thousands of them during the cinematic). This path works unchanged in the recomp through librecomp's ROM read, with audio level equal to the old forced load and the heap layout matching hardware (`languageData` at `0x80194300` as on hardware, no allocations spilling above `0x400000`). The old forced load in `loadSndFiles` (`funcs_15.c` hand edit) is now opt-in via `ROGUESQ_SAMP_LOAD=1` and should be considered retired, along with the `musyx_stub` permanent-region relocation and the raised librecomp DMA read-bound.
+1. **Sample bank streams from cartridge (hardware truth, 2026-09-07).** The 2.94 MB `samp_SND` bank (ROM `0x2B60B8`, stored raw) is never loaded into RDRAM by the game. Project64 dumps at the start screen, the attribution screen, the cinematic and the main menu all show the bank absent, `.samp` base `0x8009FCD0` = 0, and the asset table holding the bank's cartridge address `0xB02B60B8`. Voice slots carry cartridge sample addresses (`0xB0000000 + ROM offset`); `relocateSndPointer` accepts both `0x80` and `0xB0` pointers; `musyxRenderVoiceSamples` → `fillSampleStreamRange` queues ranges into 0x600-byte stream blocks (`acquireSampleStreamBlock`), and a DMA pump issues 256-byte `osPiStartDma` cart→RDRAM transfers (a PI-register trace on PJ64 logs thousands of them during the cinematic). This path works unchanged in the recomp through librecomp's ROM read, with audio level equal to the old forced load and the heap layout matching hardware (`languageData` at `0x80194300` as on hardware, no allocations spilling above `0x400000`). There is no forced bank load into RDRAM.
 
-2. **Voice key-on.** The synth voice key-on handler (`musyxKeyOnVoice`, 0x80090A3C) is un-stubbed by default (plus div-by-zero/period guards), so music voices transition to ready/counted and the DSP task build runs; re-stub with `ROGUESQ_STUB_VOICESTART=1`. This edit lives in the regen-fragile `RecompiledFuncs/funcs_*.c` and must be re-applied (or migrated to `patches/`) after any N64Recomp regeneration — the active renaming pass regenerates those files.
+2. **Voice key-on.** The synth voice key-on handler (`musyxKeyOnVoice`, 0x80090A3C) runs by default, so music voices transition to ready/counted and the DSP task build runs. A `[[patches.hook]]` in `rogue_squadron.toml` skips voices with a zero period (the envelope math divides by it); `ROGUESQ_STUB_VOICESTART=1` skips every key-on.
 
-3. **Synth ucode task-data DMA.** The boot ucode DMAs the main synth text to IMEM 0x80, not IMEM 0, so `text_address` in `musyx_rsp.toml` is `0x04001080`; otherwise `jal` targets resolve to the wrong offset (the header-DMA call lands on the resampler instead of the DMA routine) and the synth mixes silence. The config:
+3. **Synth ucode task-data DMA.** The boot ucode DMAs the main synth text to IMEM 0x80, not IMEM 0, so `text_address` in `rsp/musyx_rsp.toml` is `0x04001080`; otherwise `jal` targets resolve to the wrong offset (the header-DMA call lands on the resampler instead of the DMA routine) and the synth mixes silence. The config:
    ```toml
    text_offset  = 0x9ABE0
    text_size    = 0xF80          # only 0xF80 bytes load to IMEM 0x80..0xFFF
    text_address = 0x04001080     # synth text loads to IMEM 0x80
    ```
-   Regenerate with `RSPRecomp musyx_rsp.toml`, then `python tools/fixup_factor5_ucode.py build/factor5_ucode/musyx_audio_recompiled.c`, then rebuild. The synth then DMAs sample waveforms from the bank and the WAV output is dynamic (music and SFX).
+   Regenerate with `RSPRecomp rsp/musyx_rsp.toml`, then `python tools/fixup_factor5_ucode.py build/factor5_ucode/musyx_audio_recompiled.c`, then rebuild. The synth then DMAs sample waveforms from the bank and the WAV output is dynamic (music and SFX).
 
 ### Host dispatch & flow
 
 - `src/main/main.cpp` `get_rsp_microcode`: `M_AUDTASK` → `musyx_audio_runner` by default (opt out `ROGUESQ_NO_AUDIO_UCODE=1` to fall back to the silent `musyx_stub`). The runner DMAs the ucode to DMEM, writes the OSTask, runs `factor5_boot` then the recompiled `musyx_audio`.
 - CPU side (`musyxSynthFrame`, 0x8009123C, run as an SI callback by the VI retrace thread each VI): `tickAudioSequencerFrame` drives channels each frame; `musyxMixActiveVoices` (0x80090E04) builds DSP descriptors from the 20-slot voice table `D_80149710`; `musyxBuildVoiceCommandList` (0x80091034) assembles the DSP task; key-on via `musyxKeyOnVoice`.
-- PCM/WAV capture: `ROGUESQ_DUMP_PCM=<path>` writes a streaming 22050 Hz stereo s16 WAV of the real synth output (the output dir must exist). `ROGUESQ_RENDER_SONG=<key>` force-renders a specific song in-game (key 0 = `logo1_SNG`, the N64-logo music).
+- PCM/WAV capture: `ROGUESQ_DUMP_PCM=<path>` writes a streaming 22050 Hz stereo s16 WAV of the real synth output (the output dir must exist); `ROGUESQ_DUMP_PCM=1` writes `dumps/wav/capture.wav`.
 
 ---
 
@@ -604,7 +606,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 | Barrier receives | Real blocking receives; the generated C keeps the original `OS_MESG_BLOCK` flags when VI-driven |
 | Buffer arbiter | Host only reads `D_80128E98`/`D_80128EAA` in the default mode; the old host consumer is gated off |
 | `osViBlack` | No-op override (the game never calls `osViBlack(0)`) |
-| `osYieldThread` | Real requeue-and-switch (`ROGUESQ_HOST_YIELD_ONLY=1` restores the host yield) |
+| `osYieldThread` | Real requeue-and-switch |
 | `osDestroyThread` | Guards a queued thread with a null queue pointer (the boot-time thread 4 teardown) |
 | `osInitialize` | Sets `osClockRate` to 46875000 as on hardware (librecomp left the ROM's 62500000, slowing every time computation by 0.75×) |
 | `osStopThread` non-self semantics | Overrides upstream `assert(false)` with libultra-equivalent |
@@ -618,20 +620,19 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 |---|---|
 | Boot → attribution → logo → cinematic → menu | Reaches the main menu on every recent run without host tokens or forced non-blocking receives |
 | Attribution text | Renders (glyph rect count matches the hardware walk) |
-| Intro cinematic | Ships, trench, exploding logo, Factor 5 letters + fire, flat terrain tiles, grey sky; heightfield ground and fire/smoke billboards missing |
+| Intro cinematic | Ships, trench, exploding logo, Factor 5 letters + fire, heightfield and flat terrain, billboards, grey sky |
 | Main menu | Renders (bg + title) |
-| In-mission gameplay | Not yet exercised past the menu |
+| In-mission gameplay | Playable from the first level through the credits; see [Status](../README.md#status-playable) |
 | Audio (music + SFX) | Recompiled MusyX synth, cartridge-streamed samples, synth tick and voice pool registered as on hardware |
-| Input | SDL2 gamepad (keyboard not implemented); `ROGUESQ_FAKE_CONTROLLER=1` for headless runs |
+| Input | Keyboard, mouse and SDL2 gamepad through `input_bindings.cpp`; `ROGUESQ_FAKE_CONTROLLER=1` for headless runs |
 | Save (EEPROM 4K) | Works; Memory Pak stubbed |
 
 ### Open items
 
-1. **Parse-versus-rebuild race (fixed 2026-09-08).** The game frees and reuses material/frame chunks at frame start before `submitGfxFrame` waits for SP-done; hardware is safe because the RSP finishes in a few ms, but RT64's 10–100 ms parse read rebuilt chunks (garbage walks, and a bad color-image at 0x760000 that corrupted the heap free list — the LucasArts-reveal crash). Fix: a graphics task is in flight from the request message until the parse completes; the frame-start receive and chunk-release wait for it (`ROGUESQ_VI_WAIT_PARSE=0` disables); the host VI thread holds a retrace during a parse; color images < 16 px wide or not 64-byte aligned are rejected. Post-fix: zero capped tasks, hardware chunk-hop count, 0.9 ms average parse.
-2. **Heightfield terrain and billboards.** The `05 05 00` record (height grid + color rows, overlays 0x14/0x18) and the fire/smoke sprites are not drawn. Record layouts and overlay disassembly are in [f5-model-dl-spec.md §7](f5-model-dl-spec.md) and the scratch notes.
-3. **Frame pacing.** Three VIs per frame vs two on hardware; with the race fixed the parse averages under 1 ms, so the remaining VI is on the game side of the frame (to be measured).
-4. **Regen-fragile hand edits** in `RecompiledFuncs/funcs_*.c`: the VI-driven gating of the four barrier receives, the yield in `waitForMusyXAudioTaskDone`, the voice key-on un-stub, the guard counters and probes. The KSEG0 guard hooks measured zero fallbacks in a full boot→menu run and can be retired with a regen. The `menuOverlayInit` instruction patch at 0x800C593C nops a callee-save store rather than the branch its comment describes.
-5. **Factor 5 mutex/queue stubs** in the toml (audio) — hardware takes the mutex every frame; restore now that yields are real.
+1. **Parse-versus-rebuild race (fixed).** The game frees and reuses material/frame chunks at frame start before `submitGfxFrame` waits for SP-done; hardware is safe because the RSP finishes in a few ms, but RT64's 10–100 ms parse read rebuilt chunks (garbage walks, and a bad color-image at 0x760000 that corrupted the heap free list — the LucasArts-reveal crash). Fix: a graphics task is in flight from the request message until the parse completes; the frame-start receive and chunk-release wait for it (`ROGUESQ_VI_WAIT_PARSE=0` disables); the host VI thread holds a retrace during a parse; color images < 16 px wide or not 64-byte aligned are rejected. Post-fix: zero capped tasks, hardware chunk-hop count, 0.9 ms average parse.
+2. **Frame pacing.** Three VIs per frame vs two on hardware; with the race fixed the parse averages under 1 ms, so the remaining VI is on the game side of the frame (to be measured).
+3. **No load-bearing hand edits** in `RecompiledFuncs/funcs_*.c`. The barrier receives block as on hardware (`osRecvMesg_recomp` in `upstream_compat.cpp` forces non-blocking only when `ROGUESQ_VI_DRIVEN_LOOP=0`); the `waitForMusyXAudioTaskDone` yield and the voice key-on guard are `[[patches.hook]]` entries in `rogue_squadron.toml`. The `menuOverlayInit` instruction patch at 0x800C593C nops a callee-save store rather than the branch its comment describes.
+4. **Factor 5 mutex/queue stubs** in the toml (audio) — hardware takes the mutex every frame; un-stubbing deadlocks at boot (the BSS counter desyncs from the queue token).
 
 The white background during the N64 logo and the grey sky in the trench are
 intended content.
@@ -642,14 +643,16 @@ intended content.
 
 After renaming a symbol (`llvm-objcopy --redefine-sym`):
 
-1. **Regen recompiled C** — use the **Release** binary (Debug aborts on `recomp_entrypoint`):
+1. **Regen recompiled C** (needs the decomp ELF at `../rogue_squadron64/build/roguesquadron.elf`; rebuilds `N64RecompCLI` first and runs `tools/coop/gen_relocation.py --verify`):
    ```
-   cd E:/Projects/N64Recomp && ./build_new/Release/N64Recomp.exe rogue_squadron.toml
+   cmake --build build --config Debug --target regen_funcs
    ```
-2. **Regen audio ucode** (only if `musyx_rsp.toml` changed):
+2. **Regen audio ucode** (only if a config under `rsp/` changed):
    ```
-   ./build/Debug/RSPRecomp.exe musyx_rsp.toml
+   ./build/Debug/RSPRecomp.exe rsp/musyx_rsp.toml
+   ./build/Debug/RSPRecomp.exe rsp/factor5_boot_rsp.toml
    python tools/fixup_factor5_ucode.py build/factor5_ucode/musyx_audio_recompiled.c
+   python tools/fixup_factor5_ucode.py build/factor5_ucode/factor5_boot_recompiled.c
    ```
 3. **Rebuild** (Debug is the dev/debug target; Release for perf):
    ```
@@ -658,8 +661,7 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
    Check the executable's timestamp afterwards: a failed build leaves the previous binary in place and the run scripts will happily launch it.
 4. **Smoke test**: `tools/validate/capture_menu_rdram.ps1 -Screen "menu,400" -Timeout 420 -FastFwd 0` boots headless to the menu and dumps RDRAM there; `tools/validate/rdram_golden_diff.py` compares it with a Project64 golden. `./tools/run-stability.ps1 -Runs 1 -Timeout 30` is the shorter check.
 
-> Regen overwrites hand-edits in `RecompiledFuncs/funcs_*.c` (see open item 4);
-> run `tools/rename/lint_toml_syms.py` after every rename batch.
+> Regen overwrites hand-edits in `RecompiledFuncs/funcs_*.c`; load-bearing logic belongs in `rogue_squadron.toml` hooks or `patches/`.
 
 
 ## What's NOT yet renamed / understood
@@ -684,5 +686,6 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
 - [docs/factor5-gbi.md](factor5-gbi.md) — Factor 5 graphics microcode docs (older runtime priors).
 - [docs/factor5-ucode-dispatch.md](factor5-ucode-dispatch.md) — dispatch-table notes; its handler readings are offset by 0x80 (see the spec §7).
 - [docs/debug-trace-env-vars.md](debug-trace-env-vars.md) — `ROGUESQ_LOG_*` runtime tracing.
-- `musyx_rsp.toml` — RSPRecomp config for the MusyX audio synth (`text_address = 0x04001080`).
+- `rsp/musyx_rsp.toml` — RSPRecomp config for the MusyX audio synth (`text_address = 0x04001080`).
+- `rsp/factor5_boot_rsp.toml` — RSPRecomp config for the shared boot ucode (ROM 0x831D0, size 0xD0).
 </content>

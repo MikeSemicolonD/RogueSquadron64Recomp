@@ -198,6 +198,3 @@ touch the interior directly; interior points next to an edge see the morphed edg
 4. Keep "differs" as is (identical for M=5; for M=3, only the midpoint step).
 5. Apply every step to colors as well.
 6. Emit the slivers, or snap the fine vertices onto the coarse line.
-
-Separately, our time-based `f5_terrain_blend` keys its signature on rec[0].w1. A finer tile changes signature when it adopts a neighbour
-byte, but the coarser tile does not, so the two can blend out of step. The ucode's own weights are already continuous, so this blend is redundant for grid tiles.

@@ -7,6 +7,7 @@ short_description = "Secondary weapons never run out."
 authors = ["RogueSquadron64Recomp"]
 game_id = "rs64"
 minimum_recomp_version = "0.0.0"
+enabled_by_default = false
 
 [inputs]
 elf_path = "build/mod.elf"

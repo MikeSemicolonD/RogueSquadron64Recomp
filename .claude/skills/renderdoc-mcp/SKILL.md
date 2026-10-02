@@ -70,8 +70,8 @@ never-rasterized -> ruled out present/writeback and pointed at cull.
 
 ## Recipes for the open render bugs
 - **Skybox / effect-not-appearing:** `pixel_history` the empty region -> only clears => never-rasterized.
-  Then check whether faces reach the CPU clip (`ROGUESQ_LOG_CLIP` in `rt64_rsp.cpp` `drawIndexedTri`), and
-  A/B the cull (`ROGUESQ_SKY_NOCULL`).
+  Then check whether faces reach the CPU clip (`rt64_rsp.cpp` `drawIndexedTri`), and
+  A/B the cull (`ROGUESQ_SKY_NOCULL`, or `ROGUESQ_F5_CULL=0` for the double-sided path).
 - **Model texture/UV:** `get_draw_call_state` the model draw for its bound texture, `read_texture_pixels`
   the texture, `get_post_vs_data`/TEXCOORD to compare UVs vs the byte-faithful golden.
 - **Confirm which frame a capture is:** `save_render_target` the present RT (`321`/`322`).

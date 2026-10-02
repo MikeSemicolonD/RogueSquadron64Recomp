@@ -1,6 +1,6 @@
 ---
 name: roguesquadron-debug
-description: Debug and iterate on RogueSquadron64Recomp (the Star Wars Rogue Squadron N64 static-recompilation port; N64Recomp + N64ModernRuntime + RT64, Windows/MSVC-clang) using evidence, not screenshots. Use for ANY crash/hang/freeze/AV triage, for landing a durable game-logic override, or for proving a change correct WITHOUT asking the user to eyeball a frame. Covers: symbolizing access violations to the exact recompiled function (llvm-symbolizer against the PDB) instead of trusting a memorized RVA; reading the [cine-progress]/[vi]/[musyx-run] freeze signature; killing the game with taskkill (never TaskStop); reaching any attract demo fast (ROGUESQ_SKIP_DEMO + ROGUESQ_CINE_FASTFWD); the patches/ override build and the load-bearing rule that PatchesLib MUST be an OBJECT library so an override wins the func_map/LOOKUP_FUNC address-of reference; and perception-free validation via RDRAM dumps (ROGUESQ_DUMP_RDRAM_AT_VI), offline DL walks (f5_dl_walk.py --tex), offline texture decode from a dump, the TMEM-state trace (ROGUESQ_LOG_CI4_TMEM), PJ64 golden diffs (rdram_golden_diff.py / dl_diff.py) and MusyX audio diffs (audio_cmd_walk.py / audio_diff.py). Triggers on: access violation / C0000005 / av_rva, SEH caught, demo/cinematic freeze or deadlock, "which function crashed", getNpcCurrentHealth, patches build / PatchesLib / /FORCE:MULTIPLE / override didn't take effect, ROGUESQ_* env vars, RDRAM dump, TMEM, taskkill, and "how do I know this is correct without a screenshot". Complements f5-dl-validate (F5 DL/opcode diffing), n64recomp-integration (recompiler + patches pipeline) and rt64-integration (renderer internals); this skill is the top-level debug/validate loop that ties them together. Read AGENTS.md first for the authoritative project map.
+description: Debug and iterate on RogueSquadron64Recomp (the Star Wars Rogue Squadron N64 static-recompilation port; N64Recomp + N64ModernRuntime + RT64, Windows/MSVC-clang) using evidence, not screenshots. Use for ANY crash/hang/freeze/AV triage, for landing a durable game-logic override, or for proving a change correct WITHOUT asking the user to eyeball a frame. Covers: symbolizing access violations to the exact recompiled function (llvm-symbolizer against the PDB) instead of trusting a memorized RVA; reading the [cine-progress]/[vi]/[musyx-run] freeze signature; killing the game with taskkill (never TaskStop); reaching any attract demo fast (ROGUESQ_SKIP_DEMO + ROGUESQ_CINE_FASTFWD); landing a game-logic override as a rogue_squadron.toml entry hook (covers func_map/LOOKUP_FUNC indirect calls); and perception-free validation via RDRAM dumps (ROGUESQ_DUMP_RDRAM_AT_VI), offline DL walks (f5_dl_walk.py --tex), offline texture decode from a dump, the TMEM-state trace (ROGUESQ_LOG_CI4_TMEM), PJ64 golden diffs (rdram_golden_diff.py / dl_diff.py) and MusyX audio diffs (audio_cmd_walk.py / audio_diff.py). Triggers on: access violation / C0000005 / av_rva, SEH caught, demo/cinematic freeze or deadlock, "which function crashed", getNpcCurrentHealth, patches build / PatchesLib / /FORCE:MULTIPLE / override didn't take effect, ROGUESQ_* env vars, RDRAM dump, TMEM, taskkill, and "how do I know this is correct without a screenshot". Complements f5-dl-validate (F5 DL/opcode diffing), n64recomp-integration (recompiler + patches pipeline) and rt64-integration (renderer internals); this skill is the top-level debug/validate loop that ties them together. Read AGENTS.md first for the authoritative project map.
 ---
 
 # RogueSquadron64Recomp — Debugging & Validation
@@ -90,41 +90,19 @@ Read it before instrumenting.
 ### NEVER hand-edit `E:/Projects/N64Recomp/RecompiledFuncs/funcs_*.c` for logic/guards.
 Those files are auto-generated; the next regen silently strips inline edits. This has burned the project
 repeatedly. Diagnostic `fprintf` probes there are fine (rate-limit them), but every load-bearing
-override belongs in the `patches/` build.
+override belongs in a `[[patches.hook]]` in `rogue_squadron.toml`.
 
-### The patches/ build (the durable override mechanism)
-Pipeline (details in AGENTS.md "Patches build" + `n64recomp-integration`): write MIPS-side C in
-`patches/*.c` named exactly like the game function, `RECOMP_PATCH`; add referenced game symbols to
-`patches/syms.ld`; `mips64-elf-gcc` -> `patches.elf` -> N64Recomp -> `RecompiledPatches/patches.c` ->
-compiled into the exe. Build target `PatchesLib` (or the full exe target).
-
-### LOAD-BEARING: PatchesLib MUST be an OBJECT library, not STATIC.
-This is the single most important, hardest-won fact. `RecompiledFuncs` is a static `.lib`. If PatchesLib
-is ALSO a static `.lib`, `/FORCE:MULTIPLE` does **not** reliably let the patch win an *address-of*
-reference. Overrides that are only ever called **indirectly** — via `LOOKUP_FUNC` / the `func_map`, which
-stores `&funcName` taken in `recomp_overlays.inl` — then bind to the RecompiledFuncs body and the patch
-silently never runs. Making PatchesLib an `add_library(PatchesLib OBJECT ...)` splices its objects
-straight onto the exe link line, where an object always beats an archive member regardless of order, so
-`&funcName` binds to the patch. This is the documented Zelda pattern (patches = .obj, RecompiledFuncs =
-.lib; the `n64recomp-integration` pitfall list says it explicitly). Consequence: `register_patches` is
-NOT needed to cover indirect calls — the OBJECT-library link does it.
+### Hooks (the durable override mechanism)
+See AGENTS.md "Overriding recompiled functions". A hook's C is compiled into the recompiled body (at entry
+or `before_vram`), so it covers direct and `LOOKUP_FUNC`/`func_map` indirect calls alike. A bare `return`
+exits the game function (set `ctx->r2`/`ctx->f0` first). Put real logic in an `extern "C"` helper in
+`src/main/hook_helpers.cpp`. Regen (`regen_funcs`) after editing the toml, then grep `funcs_*.c` for the
+helper name to confirm the hook landed.
 
 Case study (jade-moon freeze, [[project-jade-moon-freeze-musyx-ucode-2026-09-13]]): `getNpcCurrentHealth`
-has ZERO direct C callers (`grep 'getNpcCurrentHealth(rdram' funcs_*.c` = 0) — it is reached ONLY via
-`LOOKUP_FUNC(0x800F20EC)`. With two static libs the guard patch never ran and the demo kept freezing;
-STATIC->OBJECT fixed it. Verify an override actually took effect by symbolizing the AV/behavior, not by
-assuming the link picked it.
-
-### Patches build gotchas
-- A stale `patches/*.o` for a source you removed/disabled still gets linked and breaks the recompile
-  ("Error in recompiling func_XXXX"). The Makefile globs `*.c`; delete orphan `.o` files after moving a
-  source to `patches/disabled/`.
-- Patch->game-function `jal`s: an absolute address in `syms.ld` is required for `ld` to emit the call,
-  but N64Recomp then fails to resolve it ("No function found for jal target 0x..."). This is an
-  unresolved limitation; a patch that only touches memory/globals (no calls into game functions)
-  recompiles clean. Keep such patches self-contained.
-- `-nostdinc`: inline your own typedefs (`typedef unsigned int uint32_t;` etc.); no libc, no printf.
-- Duplicate-symbol linker warnings for overridden names are EXPECTED (/FORCE:MULTIPLE); one per override.
+has ZERO direct C callers; it is reached ONLY via `LOOKUP_FUNC(0x800F20EC)`. Its guard used to be a
+`patches/` link-time override, which silently never ran while PatchesLib was a static lib. The guard is now
+an entry hook on all five health accessors, which cannot lose the indirect path.
 
 ## Perception-free validation (prove correctness without a screenshot)
 
@@ -193,7 +171,7 @@ See `f5-dl-validate` for the full parser/DL/RDRAM-layer method and the landmark-
 
 ### 6. Audio (perception-free)
 `tools/validate/audio_cmd_walk.py` + `audio_diff.py` walk and diff the MusyX voice-command stream; a
-cinematic golden is an active-voice oracle. `ROGUESQ_DUMP_PCM=<wav>` / `ROGUESQ_RENDER_SONG=<key>` drive
+cinematic golden is an active-voice oracle. `ROGUESQ_DUMP_PCM=<wav>` drives
 offline capture. You never have to listen.
 
 ## Fast iteration loop
@@ -202,13 +180,13 @@ offline capture. You never have to listen.
    the DL / dump the texture).
 3. Localize to a function (symbolizer) or an opcode/material (f5_dl_walk) or state (TMEM trace) — never
    stop at "looks wrong."
-4. Fix in the right place: `patches/` for game logic (OBJECT lib!), `lib/rt64` for render (scoped, env-
+4. Fix in the right place: `rogue_squadron.toml` hooks for game logic, `lib/rt64` for render (scoped, env-
    gated; respect the "ask before new lib/rt64 changes" preference), never inline in `funcs_*.c`.
 5. `taskkill` the game, rebuild (`cmake --build build --config Debug --target RogueSquadron64Recomp`),
    re-run, and validate with the SAME byte/address-level check — not a new screenshot.
 
 ## Known dead ends (don't re-derive)
-AGENTS.md "Avoid these dead ends" is authoritative. Session-specific additions: PatchesLib as a static
-lib (indirect overrides silently lost); blanket CI4 deswizzle by address range (breaks terrain);
+AGENTS.md "Avoid these dead ends" is authoritative. Session-specific additions: link-time overrides
+of recompiled functions (indirect calls silently missed them; use hooks); blanket CI4 deswizzle by address range (breaks terrain);
 trusting a memorized `av_rva` across a rebuild; and treating a screenshot as a verdict. The KSEG0 pointer
 guards are a tracked retirement, not cleanup fodder — leave them until the toml+regen migration.

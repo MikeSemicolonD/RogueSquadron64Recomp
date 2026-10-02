@@ -19,6 +19,8 @@ set_target_properties(native_demo PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/$<0:>"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/$<0:>")
 
+target_include_directories(native_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../include)
+
 # Static CRT so the DLL is self-contained (LoadLibraryEx uses a restricted search
 # that won't find the CRT DLLs otherwise).
 if (MSVC)

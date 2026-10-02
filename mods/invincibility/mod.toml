@@ -1,0 +1,16 @@
+[manifest]
+id = "invincibility"
+version = "1.0.0"
+display_name = "Invincibility"
+description = "Your craft takes no damage from enemy fire, collisions or crashing into the ground. Takes effect at the next mission start."
+short_description = "Your craft can't be damaged."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+enabled_by_default = false
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "invincibility"
+func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]

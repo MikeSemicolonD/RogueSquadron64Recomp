@@ -17,7 +17,7 @@ the picture against a Project64 golden and localizing any divergence to a specif
 
 - A scene renders garbage, is missing geometry, or shows "garbage right after a material sub-DL returns."
 - Face counts explode or a gfx task is capped / trips the per-task budget (runaway parse).
-- You changed `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` (or `f5_rdpstate` / `f5_diag`) and need to prove it.
+- You changed `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` (or `f5_rdpstate`) and need to prove it.
 - You want to know whether a "desync" is a real bug or a capture artifact.
 
 ## Core principle: partition, and stop at the first divergent layer

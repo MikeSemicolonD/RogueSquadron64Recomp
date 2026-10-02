@@ -2,7 +2,6 @@
 .vscode/settings.json
 .vscode/c_cpp_properties.json
 .vscode/launch.json
-.vscode/tasks.json
 .vs/
 .idea
 .cache
@@ -28,14 +27,10 @@ crash_*.dmp
 RecompiledFuncs/
 RecompiledPatches/
 
-# Patches build byproducts (only the *.c sources + syms.ld/patches.ld/Makefile are source)
-patches/*.d
-patches/patches.bin
-patches/patches.map
-
 # Build directories
 build*/
 build-*
+!tools/build-mods.ps1
 cmake-build-*
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -98,8 +93,6 @@ factor5_ucode_text.bin
 factor5_ucode_data.bin
 factor5_ucode_disasm.txt
 
-# Note: factor5_boot_text.bin is a build input (referenced by factor5_boot_rsp.toml)
-# and intentionally NOT ignored.
 mqfocus.txt
 mqdiag_*.txt
 skills-lock.json
@@ -111,11 +104,15 @@ logs/
 dumps/
 /.agents
 /wav
-/tools/__pycache__
+__pycache__/
+*.py[cod]
 /tools/rename
-/tools/validate/__pycache__
-/tools/state/__pycache__
 /plans
+.claude/settings.json
+
+# Lockstep replay run outputs (the .rec/.rec.hash recordings are inputs and stay)
+tools/recordings/**/*.out
+tools/recordings/**/*.hash.dump
 
 # native-demo example mod: separate-build DLL artifacts (built via mods/native-demo/CMakeLists.txt)
 mods/native-demo/build/
@@ -132,13 +129,17 @@ mods/menu-example/menu_example.exp
 mods/menu-example/menu_example.pdb
 
 
-# Generated from state_model.toml by tools/state/gen_state_table.py
+# Generated from tools/state/state_model.toml by tools/state/gen_state_table.py
 src/main/state_table.inl
 
 
 # Code mods: .nrm outputs and their separate build dirs (tools/mods/code_mod.cmake)
 mods/*.nrm
 mods/*/build/
+
+# Steamworks runtime for the steam-relay mod: players supply it, never committed or shipped (*.dll is covered above)
+libsteam_api.so
+libsteam_api.dylib
 
 # Android (Gradle) project: caches, native build tree, machine-local SDK path
 android/.gradle/
@@ -147,3 +148,6 @@ android/local.properties
 
 # CI runner secrets
 ci/linux/runner.env
+
+# Local Steamworks SDK for building the steam-relay mod (never committed)
+lib/steamworks/

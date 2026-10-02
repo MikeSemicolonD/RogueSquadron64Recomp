@@ -1,0 +1,11 @@
+{
+  "game_id": "rs64",
+  "id": "steam-relay",
+  "display_name": "Steam Relay",
+  "description": "Online co-op over Steam's relay network: HOST GAME shows a join code, JOIN GAME takes it, no port forwarding. Needs Steam running and the Steamworks SDK 1.65's steam_api64.dll (Windows), libsteam_api.so (Linux) or libsteam_api.dylib (macOS) placed in this mod's folder; without them multiplayer uses direct connections.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true,
+  "native_libraries": { "steam_relay": ["rs64_mod_init"] }
+}

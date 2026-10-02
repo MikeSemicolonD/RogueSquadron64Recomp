@@ -3,6 +3,10 @@ package com.rs64recomp.app;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.net.Uri;
+import android.net.wifi.WifiManager;
+import android.os.Build;
+import android.os.Bundle;
+import android.view.WindowInsets;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -16,6 +20,44 @@ public class MainActivity extends SDLActivity {
     private static final int PICK_ROM = 0x5253;
     private static CountDownLatch sRomLatch;
     private static String sPickedRom;
+
+    // Wi-Fi drivers drop broadcast packets for apps without this lock, and the co-op lobby finds hosts by broadcast.
+    private WifiManager.MulticastLock mMulticastLock;
+
+    // On-screen keyboard height as a fraction of the window, read by the game to slide the picture up while typing.
+    private static volatile float sImeFraction;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        if (wifi != null) {
+            mMulticastLock = wifi.createMulticastLock("rs64-lobby");
+            mMulticastLock.setReferenceCounted(false);
+            mMulticastLock.acquire();
+        }
+        // The window is fullscreen, so the keyboard never resizes it; its height arrives only as an inset (API 30+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().getDecorView().setOnApplyWindowInsetsListener((v, insets) -> {
+                final int h = v.getHeight();
+                final int ime = insets.getInsets(WindowInsets.Type.ime()).bottom;
+                sImeFraction = h > 0 ? (float) ime / h : 0.0f;
+                return v.onApplyWindowInsets(insets);
+            });
+        }
+    }
+
+    public static float imeFraction() {
+        return sImeFraction;
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (mMulticastLock != null && mMulticastLock.isHeld()) {
+            mMulticastLock.release();
+        }
+        super.onDestroy();
+    }
 
     @Override
     protected String[] getLibraries() {

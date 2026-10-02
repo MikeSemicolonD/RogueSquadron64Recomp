@@ -14,7 +14,7 @@ param(
     [int]$Timeout = 90,
     [string]$Tag = "baseline",
     [string]$Binary = ".\build\Debug\RogueSquadron64Recomp.exe",
-    [string]$EnvVars = "",  # e.g. "ROGUESQ_LOG_VI=1;ROGUESQ_NO_SYNTH_FULLSYNC=1"
+    [string]$EnvVars = "",  # e.g. "ROGUESQ_LOG_VI=1;ROGUESQ_LOG_GFX_TASK=1"
     [bool]$Memory = $true   # poll process memory once per second
 )
 
