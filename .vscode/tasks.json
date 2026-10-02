@@ -51,6 +51,34 @@
             "detail": "Launch the game with an optional forced level and/or craft (--force-level / --force-craft). You drive the menus; whatever mission you launch uses the forced values."
         },
         {
+            "label": "IDE: Refresh clangd compile database (Windows)",
+            "type": "shell",
+            "command": "$vs = 'C:/Program Files/Microsoft Visual Studio/2022/Community'; Import-Module \"$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll\"; Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null; cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Configure-only Ninja tree (build-ide/) that writes compile_commands.json for clangd. Never built; rerun after adding source files or changing CMakeLists. Generated RT64 shader headers come from build/src via .clangd."
+        },
+        {
+            "label": "IDE: Refresh Android clangd compile database",
+            "type": "shell",
+            "command": "$src = Get-ChildItem android/app/.cxx -Recurse -Filter compile_commands.json | Where-Object { $_.FullName -notmatch '[\\\\/]tools[\\\\/]' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if (-not $src) { Write-Host 'No Android compile database yet: run an Android build first.'; exit 1 }; New-Item -ItemType Directory -Force build-ide-android | Out-Null; Copy-Item $src.FullName build-ide-android/compile_commands.json -Force; Write-Host \"Copied $($src.FullName)\"",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Copies the newest NDK compile_commands.json from android/app/.cxx (its folder name is a hash that changes) to build-ide-android/, which .clangd uses for android_host.cpp."
+        },
+        {
             "label": "Build: All mods",
             "type": "shell",
             "command": "powershell",
