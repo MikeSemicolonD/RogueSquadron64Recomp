@@ -51,6 +51,20 @@
             "detail": "Launch the game with an optional forced level and/or craft (--force-level / --force-craft). You drive the menus; whatever mission you launch uses the forced values."
         },
         {
+            "label": "Record: Input recording (pick level / craft)",
+            "type": "shell",
+            "command": "& .\\tools\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Record controller input into tools/recordings/<id>-<mission>/ (folder created if missing). Mission = lockstep .rec + .hash baseline, boots straight into the level; session = from launch with the level forced. Blank name = <mission>_<timestamp>."
+        },
+        {
             "label": "IDE: Refresh clangd compile database (Windows)",
             "type": "shell",
             "command": "$vs = 'C:/Program Files/Microsoft Visual Studio/2022/Community'; Import-Module \"$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll\"; Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null; cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
@@ -128,6 +142,40 @@
             "detail": "Regenerate funcs_*.c then compile the RecompiledFuncs target."
         },
         {
+            "label": "Test: Unit tests",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "${input:rsConfig}",
+                "--target", "rs64_unit_tests"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Builds and runs rs64_unit_tests: lockstep_core, net_core, net_link, nav_target, host_api, cable_alias, crosshair_match, rs64_lights, then the style checker."
+        },
+        {
+            "label": "Test: Standalone test",
+            "type": "shell",
+            "command": "cmake --build build --config ${input:rsConfig} --target ${input:rsTest}; if ($?) { & \"build/${input:rsConfig}/${input:rsTest}.exe\" }",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "group": "test",
+            "problemMatcher": "$msCompile",
+            "detail": "Builds and runs one of the EXCLUDE_FROM_ALL tests that rs64_unit_tests does not cover."
+        },
+        {
             "label": "Configure (Linux/WSL)",
             "type": "process",
             "command": "wsl.exe",
@@ -188,6 +236,38 @@
             "dependsOn": "Configure (Linux/WSL, Release)",
             "dependsOrder": "sequence",
             "detail": "Configure then build the native Linux Release exe in the selected WSL distro. Output: ~/rs64-build-release/RogueSquadron64Recomp (ELF x86-64). Requires: build-essential cmake ninja-build libsdl2-dev libvulkan-dev libgtk-3-dev python3."
+        },
+        {
+            "label": "Test (WSL): Unit tests",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "cd \"$(wslpath '${workspaceFolder}')\" && d=\"$HOME/${input:wslBuildDir}\" && if [ ! -d \"$d\" ]; then echo \"No build tree at $d: run the matching Configure (Linux/WSL) task first.\"; exit 1; fi && cmake --build \"$d\" --target rs64_unit_tests -j\"$(nproc)\""
+            ],
+            "group": "test",
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+            },
+            "detail": "Builds and runs rs64_unit_tests in the selected WSL distro's Linux build tree (unit tests + style checker)."
+        },
+        {
+            "label": "Test (WSL): Standalone test",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "cd \"$(wslpath '${workspaceFolder}')\" && d=\"$HOME/${input:wslBuildDir}\" && if [ ! -d \"$d\" ]; then echo \"No build tree at $d: run the matching Configure (Linux/WSL) task first.\"; exit 1; fi && cmake --build \"$d\" --target ${input:wslTest} -j\"$(nproc)\" && \"$d/${input:wslTest}\""
+            ],
+            "group": "test",
+            "problemMatcher": {
+                "base": "$gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+            },
+            "detail": "Builds and runs one EXCLUDE_FROM_ALL test in the WSL Linux build tree, including the POSIX-only fault_guard_test."
         },
         {
             "label": "Package (Linux/WSL, Release bundle)",
@@ -397,6 +477,80 @@
                 { "label": "8 Naboo Starfighter", "value": "8" }
             ],
             "default": ""
+        },
+        {
+            "id": "rsRecLevel",
+            "type": "pickString",
+            "description": "Level to record (selects the tools/recordings folder)",
+            "options": [
+                { "label": "0  Ambush at Mos Eisley", "value": "0" },
+                { "label": "1  Rendezvous on Barkhesh", "value": "1" },
+                { "label": "2  The Search for the Nonnah", "value": "2" },
+                { "label": "3  Defection at Corellia", "value": "3" },
+                { "label": "4  Liberation of Gerrard V", "value": "4" },
+                { "label": "5  The Jade Moon", "value": "5" },
+                { "label": "6  Imperial Construction Yards", "value": "6" },
+                { "label": "7  Assault on Kile II", "value": "7" },
+                { "label": "8  Rescue on Kessel", "value": "8" },
+                { "label": "9  Prisons of Kessel", "value": "9" },
+                { "label": "10 Battle Above Taloraan", "value": "10" },
+                { "label": "11 Escape from Fest", "value": "11" },
+                { "label": "12 Blockade on Chandrila", "value": "12" },
+                { "label": "13 Raid on Sullust", "value": "13" },
+                { "label": "14 Moff Seerdon's Revenge", "value": "14" },
+                { "label": "15 The Battle of Calamari", "value": "15" },
+                { "label": "16 Beggar's Canyon (bonus)", "value": "16" },
+                { "label": "17 The Death Star Trench Run (bonus)", "value": "17" },
+                { "label": "18 The Battle of Hoth (bonus)", "value": "18" }
+            ],
+            "default": "0"
+        },
+        {
+            "id": "rsRecKind",
+            "type": "pickString",
+            "description": "Recording kind",
+            "options": [
+                { "label": "Mission (lockstep, .hash baseline, boots into the level)", "value": "mission" },
+                { "label": "Session (from launch, menus included)", "value": "session" }
+            ],
+            "default": "mission"
+        },
+        {
+            "id": "rsRecName",
+            "type": "promptString",
+            "description": "Recording file name (blank = <mission>_<timestamp>.rec)",
+            "default": ""
+        },
+        {
+            "id": "rsRecConfig",
+            "type": "pickString",
+            "description": "Build configuration to record with (Release matches replays)",
+            "options": ["Release", "Debug"],
+            "default": "Release"
+        },
+        {
+            "id": "rsTest",
+            "type": "pickString",
+            "description": "Standalone test to build and run",
+            "options": ["touch_input_test", "video_config_test", "transition_gate_test", "input_bindings_test"],
+            "default": "transition_gate_test"
+        },
+        {
+            "id": "wslBuildDir",
+            "type": "pickString",
+            "description": "Linux build tree to test",
+            "options": [
+                { "label": "Debug (~/rs64-build)", "value": "rs64-build" },
+                { "label": "Release (~/rs64-build-release)", "value": "rs64-build-release" }
+            ],
+            "default": "rs64-build"
+        },
+        {
+            "id": "wslTest",
+            "type": "pickString",
+            "description": "Standalone test to build and run in WSL",
+            "options": ["fault_guard_test", "touch_input_test", "video_config_test", "transition_gate_test", "input_bindings_test"],
+            "default": "fault_guard_test"
         },
         {
             "id": "wslDistro",

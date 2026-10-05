@@ -62,6 +62,13 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 
 ## Scripts
 
+- `record.ps1`: records into the level's folder, creating `<id>-<mission>` if it is missing. Also the VS Code task **Record: Input recording (pick level / craft)**.
+
+  ```powershell
+  .\tools\recordings\record.ps1 -Level 5 -Craft 0 -Name jade_moon
+  .\tools\recordings\record.ps1 -Level 9 -Kind session
+  ```
+
 - `run-replays.ps1`: replays every mission recording under a folder that has a `.hash` baseline (skips `*_coop.rec` and session recordings) and compares each with `compare_hashes.py`. Writes to `logs/lockstep/<tag>/` with a `summary.csv`; exits 0 only if every replay is IDENTICAL.
 
   ```powershell
@@ -70,8 +77,14 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
   ```
 
   `-Speed 4` (default) runs the game clock 4x and matches 1x; 8 is too fast for the menu driver.
+- `capture-frames.ps1`: replays one recording (level and craft from its header, 4x) and screenshots the window at each listed frame; the replay pauses there (`ROGUESQ_LS_PAUSE_AT`) until the capture is taken, so two runs with different `-Env` give pixel-identical frames for A/B of render changes. Output and the hash log go to `dumps/capture/<tag>/`, never next to the recording.
+
+  ```powershell
+  .\tools\recordings\capture-frames.ps1 -Recording tools\recordings\06-imperial-construction-yards\construction_yards_bonus.rec -Frames 2995,3025 -Tag pickup -Env "ROGUESQ_RT_LIGHTS=1"
+  ```
+
 - `compare_hashes.py <baseline.hash> <replay.hash>`: prints the first diverging frame and column (`IDENTICAL` otherwise). Tests: `python tools\recordings\test_compare_hashes.py`.
-- `tools/lockstep/run-mp.ps1` (co-op, stays with the multiplayer tooling): `-HostPad` / `-ClientPad` take mission recordings from here.
+- `tools/lockstep/run-mp.ps1` (co-op, stays with the multiplayer tooling): `-HostPad` / `-ClientPad` take mission recordings from here. `-ClientLive` flies the client by hand (both sides at 1x) and `-ClientRecord <rec>` records the client's input; such a co-op client recording replays only in a pair, as `-ClientPad` against the same `-HostPad`.
 
 ## Record a mission recording
 
