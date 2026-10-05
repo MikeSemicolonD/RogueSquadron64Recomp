@@ -65,6 +65,20 @@
             "detail": "Record controller input into tools/recordings/<id>-<mission>/ (folder created if missing). Mission = lockstep .rec + .hash baseline, boots straight into the level; session = from launch with the level forced. Blank name = <mission>_<timestamp>."
         },
         {
+            "label": "Record: Co-op client recording (you fly player 2)",
+            "type": "shell",
+            "command": "& .\\tools\\recordings\\record-coop.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -HostPad '${input:rsCoopHostPad}' -Name '${input:rsRecName}'",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Online co-op pair on localhost: the host (left) replays the level's solo recording (newest <mission>_<timestamp>.rec unless overridden), you fly the client (right) and your input is saved as <mission>_coop_client_<timestamp>.rec. Close the client window to stop. Craft None = the host recording's craft."
+        },
+        {
             "label": "IDE: Refresh clangd compile database (Windows)",
             "type": "shell",
             "command": "$vs = 'C:/Program Files/Microsoft Visual Studio/2022/Community'; Import-Module \"$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll\"; Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null; cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
@@ -519,6 +533,12 @@
             "id": "rsRecName",
             "type": "promptString",
             "description": "Recording file name (blank = <mission>_<timestamp>.rec)",
+            "default": ""
+        },
+        {
+            "id": "rsCoopHostPad",
+            "type": "promptString",
+            "description": "Host recording in the level's folder (blank = newest <mission>_<timestamp>.rec, else newest solo mission recording)",
             "default": ""
         },
         {

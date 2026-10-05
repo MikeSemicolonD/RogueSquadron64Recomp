@@ -84,6 +84,7 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
   ```
 
 - `compare_hashes.py <baseline.hash> <replay.hash>`: prints the first diverging frame and column (`IDENTICAL` otherwise). Tests: `python tools\recordings\test_compare_hashes.py`.
+- `record-coop.ps1 -Level N [-Craft c] [-HostPad <rec>]` (VS Code task "Record: Co-op client recording"): you fly the co-op client while the host replays the level's solo recording (newest `<mission>_<timestamp>.rec`, else one with a `.hash` baseline); writes `<mission>_coop_client_<timestamp>.rec`.
 - `tools/lockstep/run-mp.ps1` (co-op, stays with the multiplayer tooling): `-HostPad` / `-ClientPad` take mission recordings from here. `-ClientLive` flies the client by hand (both sides at 1x) and `-ClientRecord <rec>` records the client's input; such a co-op client recording replays only in a pair, as `-ClientPad` against the same `-HostPad`.
 
 ## Record a mission recording
