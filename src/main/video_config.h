@@ -33,6 +33,12 @@ void set_draw_distance(float mult);
 bool keep_cutscene_draw_distance();
 void set_keep_cutscene_draw_distance(bool on);
 
+// Fullscreen ("fullscreen" in roguesq_video.json, default off). Alt+Enter and the menu toggle change it and the change is saved.
+bool fullscreen();
+void set_fullscreen(bool on);
+// Reads only the "fullscreen" key, so the window can be created fullscreen before the full config loads.
+bool peek_fullscreen(const std::string& path);
+
 // Ray-tracing switches ("rayTracing" in roguesq_video.json: lights, shadows, softShadows, fogShafts; default off, soft on). The stored setting is the
 // player's; setting it also flips the live RT64 switch unless a ROGUESQ_RT_* env var pins that switch.
 bool rt_setting(rs64lights::Feature f);

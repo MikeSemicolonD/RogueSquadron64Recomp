@@ -37,6 +37,7 @@ static unsigned g_rs64_audio_underruns = 0;   // dry-queue arrivals (see queue_s
 #include "nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
 
 #include "rt64_render_context.h"  // recomp::create_render_context
+#include "video_config.h"
 #include "renderdoc_capture.h"
 #include <mutex>
 
@@ -1432,16 +1433,14 @@ static void rumble_thread_main() {
     }
 }
 
-// Fullscreen: set/toggled from any thread (menu, UI); applied on the main thread
-// in poll_input via SDL_SetWindowFullscreen (RT64 resizes its swapchain off the
-// resulting resize event). g_sdl_window is set in create_window.
+// Fullscreen: the roguesq_video.json setting, set/toggled from any thread (menu, UI); applied on the main thread
+// in poll_input via SDL_SetWindowFullscreen (RT64 resizes its swapchain off the resulting resize event).
 SDL_Window*                  g_sdl_window = nullptr;
-static std::atomic<bool>     g_fullscreen{false};
-static std::atomic<bool>     g_fullscreen_dirty{false};
+static bool                  g_fullscreen_applied = false;
 
-extern "C" void rs64_set_fullscreen(int on)   { g_fullscreen.store(on != 0); g_fullscreen_dirty.store(true); }
-extern "C" int  rs64_get_fullscreen(void)     { return g_fullscreen.load() ? 1 : 0; }
-extern "C" void rs64_toggle_fullscreen(void)  { g_fullscreen.store(!g_fullscreen.load()); g_fullscreen_dirty.store(true); }
+extern "C" void rs64_set_fullscreen(int on)   { rs64::video::set_fullscreen(on != 0); }
+extern "C" int  rs64_get_fullscreen(void)     { return rs64::video::fullscreen() ? 1 : 0; }
+extern "C" void rs64_toggle_fullscreen(void)  { rs64::video::set_fullscreen(!rs64::video::fullscreen()); }
 
 // Touch engine: finger/sensor events arrive on the SDL pump thread, polls on the game thread.
 static rs64::touch::Engine g_touch;
@@ -1765,9 +1764,13 @@ static void update_gyro_sensor() {
 }
 
 static void apply_fullscreen_if_requested() {
-    if (g_fullscreen_dirty.exchange(false) && g_sdl_window) {
-        SDL_SetWindowFullscreen(g_sdl_window, g_fullscreen.load() ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#ifndef __ANDROID__
+    const bool want = rs64::video::fullscreen();
+    if (want != g_fullscreen_applied && g_sdl_window) {
+        g_fullscreen_applied = want;
+        SDL_SetWindowFullscreen(g_sdl_window, want ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     }
+#endif
 }
 
 // While the lobby address is typed on a phone, slide the picture up just enough that the highlighted entry clears the on-screen keyboard.
@@ -2773,6 +2776,16 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 #ifdef __ANDROID__
     // SDLActivity hides the system bars (immersive mode) only for a fullscreen window.
     window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#else
+    if (!hide_window) {
+        std::string cfg_path;
+        if (char* base = SDL_GetBasePath()) { cfg_path = base; SDL_free(base); }
+        if (rs64::video::peek_fullscreen(cfg_path + "roguesq_video.json")) {
+            rs64::video::set_fullscreen(true);
+            g_fullscreen_applied = true;
+            window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        }
+    }
 #endif
     int window_w = 640, window_h = 480;
     if (const char* ws = recomp::dbg::env_str("ROGUESQ_WINDOW_SIZE")) {

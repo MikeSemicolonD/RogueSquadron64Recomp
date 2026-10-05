@@ -19,6 +19,7 @@ void adv_get(const json& a, const char* key, T& out) {
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+std::atomic<bool> g_fullscreen{false};
 
 // "rayTracing" in roguesq_video.json. The file keeps the player's setting; a set ROGUESQ_RT_* env var only pins the live switch, so test runs never rewrite it.
 const std::pair<const char*, rs64lights::Feature> kRtKeys[] = {
@@ -58,6 +59,22 @@ void set_keep_cutscene_draw_distance(bool on) {
     g_keep_cutscene.store(on, std::memory_order_relaxed);
 }
 
+bool fullscreen() {
+    return g_fullscreen.load(std::memory_order_relaxed);
+}
+
+void set_fullscreen(bool on) {
+    g_fullscreen.store(on, std::memory_order_relaxed);
+}
+
+bool peek_fullscreen(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) return false;
+    json j;
+    try { in >> j; } catch (...) { return false; }
+    return j.is_object() && j.contains("fullscreen") && j["fullscreen"].is_boolean() && j["fullscreen"].get<bool>();
+}
+
 float effective_draw_distance(float setting, bool game_view, uint32_t level) {
     return (game_view || level == kGameViewLevel) ? 1.0f : setting;
 }
@@ -70,6 +87,9 @@ void apply_friendly(UC& uc, const json& j) {
     }
     if (has("keepCutsceneDrawDistance") && j["keepCutsceneDrawDistance"].is_boolean()) {
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
+    }
+    if (has("fullscreen") && j["fullscreen"].is_boolean()) {
+        set_fullscreen(j["fullscreen"].get<bool>());
     }
     if (has("rayTracing") && j["rayTracing"].is_object()) {
         const json& rt = j["rayTracing"];
@@ -163,6 +183,7 @@ json to_friendly(const UC& uc) {
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
+    j["fullscreen"] = fullscreen();
     json rt = json::object();
     for (const auto& [key, feature] : kRtKeys) {
         rt[key] = rt_setting(feature);
