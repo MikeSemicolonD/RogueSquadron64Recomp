@@ -199,6 +199,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/hook_helpers.cpp
     ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/main/lockstep.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/renderdoc_capture.cpp
     ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
     ${CMAKE_SOURCE_DIR}/src/main/host_api_game.cpp
     ${CMAKE_SOURCE_DIR}/src/main/builtin_hooks.cpp
@@ -365,6 +366,12 @@ add_executable(crosshair_match_test EXCLUDE_FROM_ALL
 )
 set_target_properties(crosshair_match_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
+# Standalone unit test for the dynamic point-light helpers.
+add_executable(rs64_lights_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/rs64_lights_test.cpp
+)
+set_target_properties(rs64_lights_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
 # One command for the unit tests: cmake --build build --config Release --target rs64_unit_tests
 add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:lockstep_core_test>
@@ -374,8 +381,9 @@ add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:host_api_test>
     COMMAND $<TARGET_FILE:cable_alias_test>
     COMMAND $<TARGET_FILE:crosshair_match_test>
+    COMMAND $<TARGET_FILE:rs64_lights_test>
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/style/check_style.py
-    DEPENDS lockstep_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test
+    DEPENDS lockstep_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test rs64_lights_test
     COMMENT "Running the unit tests")
 
 # Standalone unit test for the mode-change blanking gate.
@@ -385,7 +393,7 @@ add_executable(transition_gate_test EXCLUDE_FROM_ALL
 set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 if (MSVC)
-    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test net_core_test net_link_test host_api_test transition_gate_test cable_alias_test crosshair_match_test)
+    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test net_core_test net_link_test host_api_test transition_gate_test cable_alias_test crosshair_match_test rs64_lights_test)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endforeach()
 endif()

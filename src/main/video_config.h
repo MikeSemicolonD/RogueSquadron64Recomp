@@ -5,6 +5,7 @@
 #include <string>
 
 #include "common/rt64_user_configuration.h"
+#include "hle/rt64_rs64_lights.h"
 #include "json/json.hpp"
 
 namespace rs64::video {
@@ -31,6 +32,11 @@ void set_draw_distance(float mult);
 // Cutscenes keep the view distance the game sets per shot ("keepCutsceneDrawDistance", default on); ROGUESQ_CINE_DRAW_DIST overrides.
 bool keep_cutscene_draw_distance();
 void set_keep_cutscene_draw_distance(bool on);
+
+// Ray-tracing switches ("rayTracing" in roguesq_video.json: lights, shadows, softShadows, fogShafts; default off, soft on). The stored setting is the
+// player's; setting it also flips the live RT64 switch unless a ROGUESQ_RT_* env var pins that switch.
+bool rt_setting(rs64lights::Feature f);
+void set_rt_setting(rs64lights::Feature f, bool on);
 
 // Battle Above Taloraan pins its own far plane and fog and has no terrain, so the multiplier stays 1.0 there.
 constexpr uint32_t kGameViewLevel = 10;

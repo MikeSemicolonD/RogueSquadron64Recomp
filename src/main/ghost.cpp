@@ -114,6 +114,28 @@ int32_t dat_health(const uint8_t* rdram, uint32_t item) {
     return (int32_t)rw(rdram, item + 0x6C + diff * 4);
 }
 
+// Player 1's trigger list (getPlayerRecordTargetBuffer(0) = 0x80137DBC + 0x34): u16[63], low 12 bits = index into the DAT event table at *(D_801375D8)+0x3C.
+constexpr uint32_t kPlyList = 0x80137DF0u;
+constexpr uint32_t kPlyListEnd = kPlyList + 63u * 2u;
+
+// The trigger event with this index, or 0 if it is not a type 0x18/0x19 event (the only types applyDatObjectiveTriggerEffect handles).
+uint32_t trigger_event(const uint8_t* rdram, uint16_t idx) {
+    const uint32_t dat = rw(rdram, 0x801375D8u);
+    if (dat < 0x80000000u || dat >= 0x80800000u - 0x40u) {
+        return 0u;
+    }
+    const uint32_t table = rw(rdram, dat + 0x3C);
+    if (table < 0x80000000u || table + idx * 4u + 4u > 0x80800000u) {
+        return 0u;
+    }
+    const uint32_t ev = rw(rdram, table + idx * 4u);
+    if (ev < 0x80000000u || ev >= 0x80800000u - 0x68u) {
+        return 0u;
+    }
+    const uint16_t type = rs64::mips::rh(rdram, ev);
+    return (type == 0x18u || type == 0x19u) ? ev : 0u;
+}
+
 uint8_t rb(const uint8_t* rdram, uint32_t a) {
     return rdram[(a - 0x80000000u) ^ 3];
 }
@@ -334,6 +356,16 @@ void game_over(uint8_t* rdram, const char* why) {
     fprintf(stderr, "[ghost] game over: %s\n", why);
 }
 
+// Out of shared lives (host): the client is told at once, not after this side's game-over sequence, or a spectating client sits on the survivor's last pose until then.
+void send_game_over() {
+    Ghost& s = g();
+    if (!s.result_sent && !s.peer_left) {
+        s.link.send(rs64::net::encode_result(s.epoch, 3), true);
+        s.result_sent = true;
+        fprintf(stderr, "[ghost] host result 3 sent early\n");
+    }
+}
+
 void drain() {
     Ghost& s = g();
     // The connect edge first: the peer's HELLO can arrive in the same batch as the connection, and the lobby ignores a HELLO before it knows it is connected.
@@ -383,13 +415,18 @@ void drain() {
                 for (uint16_t i : s.pickups_mine) {
                     s.link.send(rs64::net::encode_pickup(mission_tag(), i), true);
                 }
+                for (uint16_t i : s.tows_mine) {
+                    s.link.send(rs64::net::encode_tow_trip(mission_tag(), i), true);
+                }
             } else if (s.remote_in && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch)) {
                 s.remote_in = false;
+                s.team_triggers.forget(1);
                 fprintf(stderr, "[ghost] peer left the mission\n");
             }
         } else if (type == (uint8_t)rs64::net::Msg::Result) {
             uint8_t e = 0, r = 0;
-            if (rs64::net::decode_result(m.data(), m.size(), &e, &r) && s.player == 1 && s.in_session && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch)) {
+            // One result per mission: the host also repeats it at its mission end, and applying it again mid-transition re-raises the end request.
+            if (rs64::net::decode_result(m.data(), m.size(), &e, &r) && s.player == 1 && s.in_session && s.host_result < 0 && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch)) {
                 s.pending_result = r;
                 s.host_result = r;
                 fprintf(stderr, "[ghost] host result %u received\n", r);
@@ -418,6 +455,7 @@ void drain() {
                     break;
                 case rs64::ls::LifeOutcome::GameOver:
                     game_over(s.rdram, "client down with no lives left");
+                    send_game_over();
                     break;
                 case rs64::ls::LifeOutcome::Ignore:
                     break;
@@ -450,6 +488,19 @@ void drain() {
                     s.pickups_forced.push_back(item);
                     fprintf(stderr, "[ghost] the other player collected power-up %u\n", i);
                 }
+            }
+        } else if (type == (uint8_t)rs64::net::Msg::Trigger) {
+            uint8_t e = 0;
+            uint16_t idx = 0;
+            bool enter = false;
+            if (s.player == 0 && s.in_session && rs64::net::decode_trigger(m.data(), m.size(), &e, &idx, &enter) && e == mission_tag()) {
+                s.trigger_in.emplace_back(idx, enter);
+            }
+        } else if (type == (uint8_t)rs64::net::Msg::TowTrip) {
+            uint8_t e = 0;
+            uint16_t i = 0;
+            if (s.in_session && s.rdram && rs64::net::decode_tow_trip(m.data(), m.size(), &e, &i) && e == mission_tag() && i < dat_count(s.rdram) && std::find(s.tow_in.begin(), s.tow_in.end(), i) == s.tow_in.end()) {
+                s.tow_in.push_back(i);
             }
         } else if (type == (uint8_t)rs64::net::Msg::Mission) {
             uint8_t id = 0;
@@ -582,6 +633,10 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx) {
         if (!dat_tracked(rdram, item)) {
             continue;
         }
+        // A tripped walker dies from its own fall (which counts the objective); a hit on it would skip that count.
+        if ((rw(rdram, item + 0x4C) & 0x80000000u) || std::find(s.tow_in.begin(), s.tow_in.end(), d.first) != s.tow_in.end()) {
+            continue;
+        }
         const int32_t local = dat_health(rdram, item);
         if (local > 0 && local > d.second && !dat_damage_safe(rdram, item)) {
             // An inconsistent slot is usually mid-teardown; retry for up to ~2 s.
@@ -658,6 +713,49 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx) {
     }
 }
 
+// The other player's tow-cable trips: this world's copy gets the harpoon's own trip message (action 9, kind 0xE at +0x18), with sender slot 0xFFFF so the walker's release reply goes nowhere. An unspawned walker waits until it spawns.
+void apply_remote_tows(uint8_t* rdram, recomp_context* ctx) {
+    Ghost& s = g();
+    if (s.tow_in.empty() || s.frame < kDamageSettleFrames || rs64::mp::in_cutscene()) {
+        return;
+    }
+    std::vector<uint16_t> wait;
+    for (uint16_t i : s.tow_in) {
+        const uint32_t item = dat_item(rdram, i);
+        if (!item || (rw(rdram, item + 0x4C) & 0x80000000u) || dat_health(rdram, item) <= 0) {
+            continue;
+        }
+        const uint32_t slot = rs64::mips::rh(rdram, item + 6);
+        if (slot == 0xFFFFu || !dat_damage_safe(rdram, item)) {
+            wait.push_back(i);
+            continue;
+        }
+        const uint32_t msg = 0x80B40140u;
+        for (uint32_t k = 0; k < 0x20u; k += 4) {
+            ww(rdram, msg + k, 0u);
+        }
+        ww(rdram, msg + 0x0, 0xFFFF0000u);
+        ww(rdram, msg + 0x4, 0xFFFFFFFFu);
+        wb(rdram, msg + 0x18, 0x0Eu);
+        s.tow_injecting = true;
+        rs64::mp::call(rdram, ctx, 0x8003E8DCu, {slot, 9u, msg});
+        s.tow_injecting = false;
+        if (rw(rdram, item + 0x4C) & 0x80000000u) {
+            s.tow_retry.erase(i);
+            fprintf(stderr, "[ghost] walker %u tripped for the other player\n", i);
+            continue;
+        }
+        // Not taken (the walker ignored the message in its current state): retry for ~2 s, then let the other player's mirrored damage reach it again.
+        if (s.tow_retry[i]++ < 60) {
+            wait.push_back(i);
+        } else {
+            s.tow_retry.erase(i);
+            fprintf(stderr, "[ghost] walker %u did not take the other player's trip; mirrored damage applies\n", i);
+        }
+    }
+    s.tow_in.swap(wait);
+}
+
 // Shared power-ups: a pickup ORs one bit into the settings word (npcPowerUpUpdate 0x800EBDB0-0x800EBE4C). Bits gained this mission go to the peer, theirs are ORed in here; the game's own commit saves them to the pilot on success and reverts them otherwise.
 void sync_upgrades(uint8_t* rdram) {
     constexpr uint32_t kSettings = 0x80130B4Cu;
@@ -724,6 +822,49 @@ extern "C" void rs64_ghost_powerup_collect(uint8_t* rdram, recomp_context* ctx) 
             return;
         }
     }
+}
+
+// npcAtAtUpdate accepting a trip (0x800CED7C, s1 = the AT-AT ext, +0x34 its DAT item): the other player trips its own copy, whose fall then kills it and counts the objective in its world.
+extern "C" void rs64_ghost_walker_tripped(uint8_t* rdram, recomp_context* ctx) {
+    Ghost& s = g();
+    if (!s.in_session || s.peer_left || s.tow_injecting) {
+        return;
+    }
+    const uint32_t item = rw(rdram, (uint32_t)ctx->r17 + 0x34u);
+    const uint32_t n = dat_count(rdram);
+    for (uint32_t i = 0; i < n; ++i) {
+        if (dat_item(rdram, i) == item) {
+            s.tows_mine.push_back((uint16_t)i);
+            s.link.send(rs64::net::encode_tow_trip(mission_tag(), (uint16_t)i), true);
+            fprintf(stderr, "[ghost] walker %u tripped; sent to the other player\n", i);
+            return;
+        }
+    }
+    fprintf(stderr, "[ghost] tripped walker %08X is not a level DAT item; not shared\n", item);
+}
+
+// The client's trigger edges, applied through the game's own effect (host): the next snapshot carries the result back to the client.
+void apply_remote_triggers(uint8_t* rdram, recomp_context* ctx) {
+    Ghost& s = g();
+    // Like mirrored damage, not before the host's mission settles or during its cutscene: the edges wait, in order.
+    if (s.trigger_in.empty() || s.frame < kDamageSettleFrames || rs64::mp::in_cutscene()) {
+        return;
+    }
+    for (const auto& t : s.trigger_in) {
+        const uint32_t ev = trigger_event(rdram, t.first);
+        if (!ev) {
+            fprintf(stderr, "[ghost] trigger %u from the other player is not a trigger event here; ignored\n", t.first);
+            continue;
+        }
+        if (!s.team_triggers.on_edge(1, t.first, t.second)) {
+            continue;
+        }
+        s.trigger_applying = true;
+        rs64::mp::call(rdram, ctx, 0x80065980u, {ev, t.second ? 1u : 0u});
+        s.trigger_applying = false;
+        fprintf(stderr, "[ghost] trigger %u %s from the other player applied\n", t.first, t.second ? "enter" : "exit");
+    }
+    s.trigger_in.clear();
 }
 
 // Applies the host's result on the client: success/fail by raising the game's own end request (refused during a respawn or pause, so retried each frame), abort and out-of-lives by the direct write the game's abort uses.
@@ -869,6 +1010,7 @@ extern "C" uint32_t rs64_ghost_block_transition(uint8_t* rdram, uint32_t arg) {
                 // The client is already out: the game's own decrement to 0 ends the mission with result 3.
                 lives = 1;
                 fprintf(stderr, "[ghost] game over: host down with no lives left\n");
+                send_game_over();
                 break;
             default:
                 break;
@@ -900,6 +1042,32 @@ extern "C" uint32_t rs64_ghost_objective_event(uint8_t* rdram, recomp_context* c
     (void)ctx;
     const Ghost& s = g();
     return (s.in_session && s.player == 1 && !s.peer_left) ? 1u : 0u;
+}
+
+// applyDatObjectiveTriggerEffect, for player 1's own trigger volumes (s0 = the list entry): a client sends the edge to the host and drops it, since the host's snapshot brings the result back; the host runs it once per team.
+extern "C" uint32_t rs64_ghost_trigger_effect(uint8_t* rdram, recomp_context* ctx) {
+    Ghost& s = g();
+    if (!s.in_session || s.peer_left || s.trigger_applying) {
+        return 0u;
+    }
+    const uint32_t entry = (uint32_t)ctx->r16;
+    if (entry < kPlyList || entry >= kPlyListEnd) {
+        return 0u;
+    }
+    const uint16_t idx = rs64::mips::rh(rdram, entry) & 0xFFFu;
+    const bool enter = (ctx->r5 & 0xFF) == 1;
+    if (s.player == 1) {
+        s.link.send(rs64::net::encode_trigger(mission_tag(), idx, enter), true);
+        fprintf(stderr, "[ghost] trigger %u %s sent to the host\n", idx, enter ? "enter" : "exit");
+        return 1u;
+    }
+    // ROGUESQ_MP_TEST_TRIGGER_SOLO=1: the host drops its own trigger edges, so only the client's can advance the mission.
+    static const bool solo = recomp::dbg::env_on("ROGUESQ_MP_TEST_TRIGGER_SOLO");
+    if (solo) {
+        fprintf(stderr, "[ghost] test: own trigger %u %s dropped\n", idx, enter ? "enter" : "exit");
+        return 1u;
+    }
+    return s.team_triggers.on_edge(0, idx, enter) ? 0u : 1u;
 }
 
 // requestSpeechResponseMode1/2 land result 1/2 when `ready`: on a client in session only the host's result may land, whatever raised the request in its own world.
@@ -1011,6 +1179,13 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx) {
     s.upgrades_in = 0;
     s.pickups_forced.clear();
     s.pickups_mine.clear();
+    s.team_triggers.reset();
+    s.trigger_in.clear();
+    s.trigger_applying = false;
+    s.tows_mine.clear();
+    s.tow_in.clear();
+    s.tow_retry.clear();
+    s.tow_injecting = false;
     if (const char* pad = recomp::dbg::env_str("ROGUESQ_MP_PAD")) {
         load_pad_recording(pad, &s.frames);
     }
@@ -1093,9 +1268,12 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx) {
             s.obj_last_sent = now;
             s.obj_sent_any = true;
         }
+        // After the snapshot: the level script reacts to the effect later this frame, so the next snapshot carries both (a client sent the effect alone runs its own reaction, e.g. level 3's random Nonnah location).
+        apply_remote_triggers(rdram, ctx);
     }
     sync_dat(rdram, ctx);
     sync_upgrades(rdram);
+    apply_remote_tows(rdram, ctx);
     // The shared pool dropped for the other player's death: show the HUD lives counter the way a local respawn does (HUD NPC slot 0x8010BFD0, action 0xC restarts its show timer HUD+0x228 and refreshes the digit).
     const int lives_now = rb(rdram, kLives);
     if (s.lives_seen >= 0 && lives_now < s.lives_seen && rw(rdram, 0x8010CA20u) != 1) {

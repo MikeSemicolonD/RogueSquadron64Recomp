@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cmath>
 #include <fstream>
+#include <utility>
 
 namespace rs64::video {
 
@@ -18,7 +19,28 @@ void adv_get(const json& a, const char* key, T& out) {
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+
+// "rayTracing" in roguesq_video.json. The file keeps the player's setting; a set ROGUESQ_RT_* env var only pins the live switch, so test runs never rewrite it.
+const std::pair<const char*, rs64lights::Feature> kRtKeys[] = {
+    { "lights", rs64lights::Feature::Lights },
+    { "shadows", rs64lights::Feature::Shadows },
+    { "softShadows", rs64lights::Feature::SoftShadows },
+    { "fogShafts", rs64lights::Feature::FogShafts },
+    { "ambientOcclusion", rs64lights::Feature::AmbientOcclusion },
+    { "globalIllumination", rs64lights::Feature::GlobalIllumination },
+    { "reflections", rs64lights::Feature::Reflections },
+};
+std::atomic<bool> g_rt_setting[7] = { false, false, true, false, false, false, false };
 } // namespace
+
+bool rt_setting(rs64lights::Feature f) {
+    return g_rt_setting[static_cast<int>(f)].load(std::memory_order_relaxed);
+}
+
+void set_rt_setting(rs64lights::Feature f, bool on) {
+    g_rt_setting[static_cast<int>(f)].store(on, std::memory_order_relaxed);
+    rs64lights::setFeature(f, on);
+}
 
 float draw_distance() {
     return g_draw_distance.load(std::memory_order_relaxed);
@@ -48,6 +70,14 @@ void apply_friendly(UC& uc, const json& j) {
     }
     if (has("keepCutsceneDrawDistance") && j["keepCutsceneDrawDistance"].is_boolean()) {
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
+    }
+    if (has("rayTracing") && j["rayTracing"].is_object()) {
+        const json& rt = j["rayTracing"];
+        for (const auto& [key, feature] : kRtKeys) {
+            if (rt.contains(key) && rt.at(key).is_boolean()) {
+                set_rt_setting(feature, rt.at(key).get<bool>());
+            }
+        }
     }
 
     if (has("widescreen")) {
@@ -133,6 +163,11 @@ json to_friendly(const UC& uc) {
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
+    json rt = json::object();
+    for (const auto& [key, feature] : kRtKeys) {
+        rt[key] = rt_setting(feature);
+    }
+    j["rayTracing"] = rt;
     json adv = json::object();
 
     // widescreen <-> aspectRatio

@@ -1,0 +1,10 @@
+{
+  "game_id": "rs64",
+  "id": "ray-tracing",
+  "display_name": "Ray Tracing Settings",
+  "description": "Adds a RAY TRACING page under Options with the ray-traced lights, sun shadows, soft shadows and fog light shafts switches (saved in roguesq_video.json). Needs a GPU with ray query support.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true
+}

@@ -2,12 +2,18 @@
 #include "debug_logs.h"
 #include "host_api.h"
 #include "main.h"
+#include "renderdoc_capture.h"
 #include "recomp.h"
 #include <cstdio>
 #include <cstring>
 #include <map>
 #include <memory>
 #include <string>
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <thread>
+#include <vector>
 #include <utility>
 #include <vector>
 
@@ -24,6 +30,7 @@ struct State {
     uint32_t frame = 0;
     FILE* rec = nullptr;
     FILE* hash = nullptr;
+    std::string hash_path;
     FILE* dump = nullptr;
     std::vector<FrameInput> frames;
     std::unique_ptr<DelayLine> delay;
@@ -226,7 +233,9 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*) {
     if (s.mode == Mode::Off || demo_active(rdram)) {
         return;
     }
-    if (rs64::host::flag("ghost_mode")) {
+    // Ghost co-op keeps only a recording of this player's input (for run-mp.ps1 -ClientPad): no reseed and no hashes, since the two worlds differ by design.
+    const bool ghost = rs64::host::flag("ghost_mode") != 0;
+    if (ghost && s.mode != Mode::Record) {
         static bool s_logged = false;
         if (!s_logged) {
             s_logged = true;
@@ -246,7 +255,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*) {
     const uint32_t seed = ls_seed();
     if (s.mode == Mode::Record) {
         const char* path = recomp::dbg::env_str("ROGUESQ_LS_RECORD");
-        SessionHeader h = read_session(rdram, seed);
+        SessionHeader h = read_session(rdram, ghost ? rw(rdram, 0x80003470u) : seed);
         h.build = __DATE__ " " __TIME__;
         s.cruise = rs64_throttle_cruise_live();
         memcpy(&h.cruise_bits, &s.cruise, 4);
@@ -257,9 +266,11 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*) {
         }
         fputs(format_header(h).c_str(), s.rec);
         fflush(s.rec);
-        s.hash = open_hash(std::string(path) + ".hash");
-        ww(rdram, 0x80003470u, h.seed);
-        fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s\n", h.level, h.craft, h.seed, path);
+        if (!ghost) {
+            s.hash = open_hash(std::string(path) + ".hash");
+            ww(rdram, 0x80003470u, h.seed);
+        }
+        fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s%s\n", h.level, h.craft, h.seed, path, ghost ? " (co-op: input only)" : "");
     } else if (s.mode == Mode::Replay) {
         const char* path = recomp::dbg::env_str("ROGUESQ_LS_REPLAY");
         SessionHeader h;
@@ -289,7 +300,8 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*) {
             fflush(s.rec);
             s.rerecord = true;
         }
-        s.hash = open_hash(out ? std::string(out) : (rerec ? std::string(rerec) + ".hash" : std::string(path) + ".replay.hash"));
+        s.hash_path = out ? std::string(out) : (rerec ? std::string(rerec) + ".hash" : std::string(path) + ".replay.hash");
+        s.hash = open_hash(s.hash_path);
         fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u%s\n", s.frames.size(), h.level, h.craft, h.seed, rerec ? " (re-recording)" : "");
     } else {
         const int delay = clamp_delay(recomp::dbg::env_int("ROGUESQ_LS_INPUT_DELAY", 0));
@@ -306,6 +318,74 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
         return dt;
     }
     return 1.0f / 30.0f;
+}
+
+// ROGUESQ_LS_PAUSE_AT=<f>[,<f>...]: a replay holds before frame f, writing <hash log>.paused, until <hash log>.resume appears (30 s cap), so
+// tools/recordings/capture-frames.ps1 can screenshot an exact frame at any ROGUESQ_SPEED. Off by default: it blocks the game thread.
+static const std::vector<uint32_t>& ls_pause_frames() {
+    static const std::vector<uint32_t> frames = [] {
+        std::vector<uint32_t> v;
+        const char* e = recomp::dbg::env_str("ROGUESQ_LS_PAUSE_AT");
+        for (const char* p = e; p && *p;) {
+            v.push_back((uint32_t)strtoul(p, const_cast<char**>(&p), 10));
+            while (*p == ',' || *p == ' ') ++p;
+        }
+        return v;
+    }();
+    return frames;
+}
+
+// With RenderDoc loaded, a pause frame is captured from ROGUESQ_RENDERDOC_LEAD frames before it (RT64 presents a frame or two behind the game, and a held
+// game sends no new display lists), over ROGUESQ_RENDERDOC_FRAMES presents.
+static void ls_renderdoc_point(const State& s) {
+    if (!rs64_renderdoc_active()) {
+        return;
+    }
+    static const uint32_t lead = (uint32_t)recomp::dbg::env_int("ROGUESQ_RENDERDOC_LEAD", 2);
+    static const uint32_t presents = (uint32_t)recomp::dbg::env_int("ROGUESQ_RENDERDOC_FRAMES", 3);
+    const auto& frames = ls_pause_frames();
+    if (std::find(frames.begin(), frames.end(), s.frame + lead) != frames.end()) {
+        rs64_renderdoc_trigger(presents);
+    }
+}
+
+static void ls_pause_point(const State& s) {
+    const auto& frames = ls_pause_frames();
+    if (frames.empty() || s.hash_path.empty() || std::find(frames.begin(), frames.end(), s.frame) == frames.end()) {
+        return;
+    }
+    const std::string paused = s.hash_path + ".paused";
+    const std::string resume = s.hash_path + ".resume";
+    if (FILE* f = fopen(paused.c_str(), "wb")) {
+        fprintf(f, "%u\n", s.frame);
+        fclose(f);
+    }
+    std::error_code ec;
+    const auto start = std::chrono::steady_clock::now();
+    const auto until = start + std::chrono::seconds(30);
+    // The resume file names the frame it releases, so a leftover from an earlier pause cannot release this one.
+    auto resume_frame = [&resume]() -> long {
+        FILE* f = fopen(resume.c_str(), "rb");
+        if (!f) {
+            return -1;
+        }
+        long v = -1;
+        if (fscanf(f, "%ld", &v) != 1) {
+            v = -1;
+        }
+        fclose(f);
+        return v;
+    };
+    bool resumed = false;
+    while (!(resumed = (resume_frame() == (long)s.frame)) && std::chrono::steady_clock::now() < until) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    while (std::filesystem::exists(resume, ec) && !std::filesystem::remove(resume, ec) && std::chrono::steady_clock::now() < until) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::filesystem::remove(paused, ec);
+    const long long ms = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    fprintf(stderr, "[ls] paused at frame %u: %s after %lld ms\n", s.frame, resumed ? "resumed" : "timed out", ms);
 }
 
 extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
@@ -325,6 +405,10 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
     }
     if (!s.active || demo_active(rdram)) {
         return;
+    }
+    if (s.mode == Mode::Replay) {
+        ls_renderdoc_point(s);
+        ls_pause_point(s);
     }
     if (s.mode == Mode::Record) {
         FrameInput f;

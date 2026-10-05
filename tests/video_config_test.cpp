@@ -193,7 +193,30 @@ static void test_effective_draw_distance() {
     CHECK(effective_draw_distance(1.0f, false, 0) == 1.0f);
 }
 
+// rayTracing: the file round-trips the player's setting; an env var pins the live switch but never leaks into the file.
+static void test_ray_tracing_settings() {
+    using rs64lights::Feature;
+    _putenv("ROGUESQ_RT_FOG_SHAFTS=1");
+    UC uc; uc.validate();
+    json j = rs64::video::to_friendly(uc);
+    CHECK(j.contains("rayTracing"));
+    CHECK(j["rayTracing"]["lights"] == false && j["rayTracing"]["shadows"] == false && j["rayTracing"]["softShadows"] == true);
+    rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lights", true}, {"shadows", true}, {"fogShafts", false}}}});
+    CHECK(rs64lights::feature(Feature::Lights) && rs64lights::feature(Feature::Shadows));
+    CHECK(rs64lights::feature(Feature::FogShafts));
+    j = rs64::video::to_friendly(uc);
+    CHECK(j["rayTracing"]["lights"] == true && j["rayTracing"]["fogShafts"] == false);
+    rs64::video::set_rt_setting(Feature::Shadows, false);
+    CHECK(!rs64lights::feature(Feature::Shadows) && (rs64::video::to_friendly(uc)["rayTracing"]["shadows"] == false));
+    j = rs64::video::to_friendly(uc);
+    CHECK(j["rayTracing"]["ambientOcclusion"] == false && j["rayTracing"]["globalIllumination"] == false && j["rayTracing"]["reflections"] == false);
+    rs64::video::apply_friendly(uc, json{{"rayTracing", {{"ambientOcclusion", true}}}});
+    CHECK(rs64lights::feature(Feature::AmbientOcclusion));
+    _putenv("ROGUESQ_RT_FOG_SHAFTS=");
+}
+
 int main() {
+    test_ray_tracing_settings();
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
     test_effective_draw_distance();

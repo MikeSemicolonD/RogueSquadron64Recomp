@@ -256,6 +256,7 @@ const char* hook_name(uint32_t hook) {
         "RS64_HOOK_MISSION_SELECT_FONTS", "RS64_HOOK_MISSION_SELECT_TICK", "RS64_HOOK_CRAFT_SELECT_INIT", "RS64_HOOK_CRAFT_SELECT_TICK",
         "RS64_HOOK_CRAFT_ASSETS", "RS64_HOOK_HUD_FONTS", "RS64_HOOK_HUD_DRAW", "RS64_HOOK_RADAR",
         "RS64_HOOK_MENU_PAD", "RS64_HOOK_MAIN_MENU", "RS64_HOOK_POWERUP_TOUCH", "RS64_HOOK_POWERUP_COLLECT",
+        "RS64_HOOK_TRIGGER_EFFECT", "RS64_HOOK_WALKER_TRIPPED",
     };
     static_assert(sizeof(names) / sizeof(names[0]) == RS64_HOOK_COUNT, "hook_name table must list every hook id");
     return hook < RS64_HOOK_COUNT ? names[hook] : "RS64_HOOK_UNKNOWN";

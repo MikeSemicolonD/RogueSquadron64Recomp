@@ -22,7 +22,7 @@ int add_quit_handler(rs64_event_fn fn, void* user);
 void run_quit_handlers();
 // Hooks with a rogue_squadron.toml site (one each); the others are dispatched by host code.
 constexpr bool hook_has_toml_site(uint32_t id) {
-    return (id >= 1u && id <= RS64_HOOK_RADAR) || id == RS64_HOOK_POWERUP_TOUCH || id == RS64_HOOK_POWERUP_COLLECT;
+    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_WALKER_TRIPPED);
 }
 void set_flag(const char* name, int value);
 int flag(const char* name);

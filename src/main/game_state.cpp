@@ -1,4 +1,5 @@
 #include "game_state.h"
+#include "debug_logs.h"
 #include "lockstep_core.h"
 #include <atomic>
 #include <cstring>
@@ -53,7 +54,11 @@ void rs64_state_poll(const uint8_t* rdram) {
             best_depth = g_state_table[i].depth;
         }
     }
-    g_current.store(best, std::memory_order_relaxed);
+    const int prev = g_current.exchange(best, std::memory_order_relaxed);
+    static const bool s_log = recomp::dbg::env_on("ROGUESQ_LOG_GAMESTATE");
+    if (s_log && (best != prev)) {
+        fprintf(stderr, "[gamestate] -> %s\n", (best >= 0) ? g_state_table[best].id : "unknown");
+    }
 
     // A cutscene timeline is playing: gCurrentCutsceneFile (0x800B1904) is loaded and gateCtr (0x800B0B28) is below its end frame (file+0x44, minus the same 0xA margin the game uses).
     // This covers the boot intro, where the "menu" predicate is a false positive (0x800CE730 is still heap), as well as in-mission cutscenes.

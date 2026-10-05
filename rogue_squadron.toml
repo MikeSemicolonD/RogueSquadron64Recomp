@@ -1416,6 +1416,20 @@ func = "npcPowerUpUpdate"
 before_vram = 0x800EBD34
 text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); rs64_hook(35u, rdram, ctx); }'''
 
+# Ghost co-op trigger volumes: a client sends its player's trigger edges to the host instead of applying them; the host applies one per team. Leaf entry: RETURN drops the effect.
+# hook: RS64_HOOK_TRIGGER_EFFECT
+[[patches.hook]]
+func = "applyDatObjectiveTriggerEffect"
+before_vram = 0x80065980
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); if (rs64_hook(36u, rdram, ctx)) return; }'''
+
+# Ghost co-op tow cable: an AT-AT accepting a trip is sent to the other player, whose copy is tripped the same way. Mid-function: never returns.
+# hook: RS64_HOOK_WALKER_TRIPPED
+[[patches.hook]]
+func = "npcAtAtUpdate"
+before_vram = 0x800CED7C
+text = '''{ extern int rs64_hook(uint32_t, uint8_t*, recomp_context*); rs64_hook(37u, rdram, ctx); }'''
+
 # BOOT_TARGET=cutscene:<level>[,<kind>]: the boot intro call cinematicLoopBody(0x13, 2, 0) plays that cutscene instead.
 [[patches.hook]]
 func = "mainGameLoop"

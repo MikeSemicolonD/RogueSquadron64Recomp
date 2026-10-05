@@ -37,6 +37,7 @@ static unsigned g_rs64_audio_underruns = 0;   // dry-queue arrivals (see queue_s
 #include "nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
 
 #include "rt64_render_context.h"  // recomp::create_render_context
+#include "renderdoc_capture.h"
 #include <mutex>
 
 using recomp::dbg::env_on;
@@ -2795,6 +2796,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
             window_y = y;
         }
     }
+    if (env_on("ROGUESQ_UNFOCUSED")) {
+        SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+    }
     SDL_Window* sdl_window = SDL_CreateWindow(
         "Star Wars: Rogue Squadron 64 Recompiled",
         window_x, window_y,
@@ -3109,6 +3113,7 @@ static const CliFlag kCliFlags[] = {
     {"auto-start",       "ROGUESQ_AUTO_START",       CliFlag::Value, "",  "",  "pulse START after <ms> (headless runs)"},
     {"hide-window",      "ROGUESQ_HIDE_WINDOW",      CliFlag::Bool,  "1", "0", "create the window hidden (background process; no display/screenshots)"},
     {"maximized",        "ROGUESQ_MAXIMIZED",        CliFlag::Bool,  "1", "0", "start with the window maximized"},
+    {"unfocused",        "ROGUESQ_UNFOCUSED",        CliFlag::Bool,  "1", "0", "show the window without taking focus (test runs)"},
     {"window-size",      "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
     {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
@@ -3213,6 +3218,7 @@ int main(int argc, char* argv[]) {
     if (int rc = apply_cli_args(argc, argv); rc >= 0) {
         return rc;
     }
+    rs64_renderdoc_init();
 
     // Input bindings: load roguesq_input.json next to the exe, or write the
     // defaults as an editable template if it's absent. ROGUESQ_INPUT_RESET=1

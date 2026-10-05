@@ -8,6 +8,8 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 - Each player keeps the upgrades of the pilot profile they chose before entering MULTIPLAYER.
 - An upgrade collected in a level is given to both players, and saved to both pilots if the mission succeeds (lost on failure, as in single player). The pickup disappears for the other player too, with its pickup sound.
 - A cutscene skipped by one player is skipped for both.
+- A trigger area either player flies into advances the mission for both (the host runs it once, however many of you are inside).
+- An AT-AT tripped by either player's tow cable falls in both worlds and counts once.
 - The other player's ship carries their pilot name (from the profile they chose), and shows on the radar as a purple dot.
 - Lives are one shared pool. When the other player dies, WINGMATE DOWN appears and your lives counter ticks down; WINGMATE OUT when that took the last life, WINGMATE LEFT if they quit.
 - A player who dies with no lives left spectates: their camera follows the survivor and SPECTATING is shown until the mission ends.
@@ -68,7 +70,7 @@ Hooks the registration takes (sites and contracts in [modding-host-api.md](moddi
 | Front end | `MENU_FRAME`, `MENU_PAD`, `MAIN_MENU`, `MISSION_SELECT_INIT`, `MISSION_CONFIRMED`, `MISSION_SELECT_FONTS`, `MISSION_SELECT_TICK`, `CRAFT_SELECT_INIT`, `CRAFT_SELECT_TICK` |
 | Mission frame | `MISSION_INIT`, `MISSION_FRAME_DT`, `MISSION_FRAME_PADS`, `MISSION_FRAME_NPCS`, `MISSION_END`, `CRAFT_ASSETS` |
 | Imposter and streaming | `WINGMAN_TICK`, `NPC_ACTIVATION`, `GRID_STREAM` |
-| Shared state | `TRANSITION_REQUEST`, `FREEZE_CHECK_A`, `FREEZE_CHECK_B`, `CUTSCENE_FREEZE_CHECK`, `OBJECTIVE_COUNT`, `RESULT_FAIL`, `RESULT_SUCCESS`, `SPEECH_RESPONSE_1`, `SPEECH_RESPONSE_2` |
+| Shared state | `TRANSITION_REQUEST`, `FREEZE_CHECK_A`, `FREEZE_CHECK_B`, `CUTSCENE_FREEZE_CHECK`, `OBJECTIVE_COUNT`, `RESULT_FAIL`, `RESULT_SUCCESS`, `SPEECH_RESPONSE_1`, `SPEECH_RESPONSE_2`, `TRIGGER_EFFECT`, `WALKER_TRIPPED` |
 | HUD | `HUD_FONTS`, `HUD_DRAW`, `RADAR` |
 
 A new base-side need is a flag or a table entry, never a direct call.
@@ -174,6 +176,8 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | LIFE, OUT | Client reports a death; host answers OUT when the shared lives are gone. |
 | UPGRADES | Power-up bits a player picked up this mission (see Shared objectives, deaths and lives). |
 | PICKUP | A power-up a player collected (DAT index); the other side collects its own copy. |
+| TRIGGER | Client to host: the client's craft entered or left a player trigger volume (DAT event index). |
+| TOW_TRIP | A player's tow cable tripped a walker (DAT index); the other side trips its own copy. |
 | RESULT | Host's mission result. |
 | PICK, READY, BROWSE, BRIEFING_DONE | Lobby screens. |
 | SKIP | Cutscene skip. |
@@ -195,6 +199,8 @@ The host's result ends the client's mission. On a client in session, `requestMis
 - Upgrades: a pickup ORs one bit into the settings word 0x80130B4C (`npcPowerUpUpdate` 0x800EBDB0-0x800EBE4C; `kUpgradeMask` 0x1FE00). `sync_upgrades` (ghost.cpp) takes the word's upgrade bits on the mission's first frame as the baseline (the pilot's own upgrades, never shared), sends bits gained after it as UPGRADES, and ORs the other player's into the word. Bits already shared either way are not sent again; a peer entering the mission gets them all again. The game's own commit then saves them to each pilot on success and reverts them otherwise.
 - Pickups: power-ups are DAT items. `RS64_HOOK_POWERUP_COLLECT` (0x800EBD34) sends this player's collect as PICKUP (DAT index). The receiver adds that record to `pickups_forced`; `RS64_HOOK_POWERUP_TOUCH` (0x800EBD20) zeroes the touch test's squared distance for it, so the game runs its own pickup there (bonus count, upgrade bit, shrink and removal), with the sound (`play3DSoundEvent`, a1) moved to the local ship so it is heard. A pickup not spawned on the receiver (no ship near it) is collected when it spawns. A peer entering the mission late gets every PICKUP again. Pair test: `construction_yards_bonus.rec` (see tools/recordings/README.md).
 - Shared deaths: level objects are DAT items. Each frame, every tracked item whose health dropped is sent as DAMAGE (a resync sends every item). The receiver applies the drop through the game's own damage path (`dealDamagetoDatItem` 0x800C7390: a hit for a spawned item, a stored-health cut for an unspawned one).
+- Trigger volumes: `ply` DAT events live in player 1's trigger list only (0x80137DF0); `applyDatObjectiveTriggerEffect` (0x80065980) writes the objective state directly, not through `datItemSetObjectiveBooleanCount`. `RS64_HOOK_TRIGGER_EFFECT` makes a client send its edges as TRIGGER and drop them; the host applies them through the same function with `TeamTriggers` (lockstep_core): one effect on the first enter and on the last exit. Test: `run-mp.ps1 -TestTriggerSolo` on the level 3 recording.
+- Tow-cable trips: `RS64_HOOK_WALKER_TRIPPED` (0x800CED7C, an AT-AT accepting the harpoon's action 9 kind 0xE) sends TOW_TRIP; the receiver sends its copy the same message (sender slot 0xFFFF, so the release reply goes nowhere), and its fall kills it and counts the objective. Mirrored DAMAGE skips a tripped walker (DAT item +0x4C bit 31): AT-ATs take x0.1 from a hit with no hit part, and a hit on a tripped one skips the objective count. The trip camera and the cable are seen only by the player who towed.
 - Lives: one pool (`numLives`, 0x80130B10), owned by the host. A client never runs out by itself: it respawns and sends LIFE, and the host rules (`shared_life`: spend, out, game over, ignore). A player who loses the last shared life is out and spectates: the craft rides the survivor's pose, cannot steer, fire or die, and the survivor's lives counter is re-shown (HUD action 0xC). A message line (SPECTATING, WINGMATE DOWN, OUT, LEFT) and the other pilot's name label are mission-font slots 1-2 linked into the 2D overlay list (`runInMissionFrame` 0x800FAC70). The other player is a purple radar dot (palette index 15, unused by the radar's grey ramp and pure red, green and blue).
 
 ## Damage settle

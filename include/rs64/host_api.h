@@ -52,6 +52,8 @@ typedef enum rs64_hook_id {
     // toml sites again.
     RS64_HOOK_POWERUP_TOUCH = 34,        // npcPowerUpUpdate 0x800EBD20: before the touch test, s1 = the power-up (s1+4 its DAT record), f4 = squared distance to player 1, f0 = squared radius; f4 = 0 collects it
     RS64_HOOK_POWERUP_COLLECT = 35,      // npcPowerUpUpdate 0x800EBD34: s1 = the power-up being collected, a1 = its pickup sound's position, may be replaced
+    RS64_HOOK_TRIGGER_EFFECT = 36,       // applyDatObjectiveTriggerEffect 0x80065980: a0 = DAT trigger event, a1 = 1 enter / 0 exit, s0 = the caller's trigger-list entry (player 1's list is 0x80137DF0); RETURN drops the effect
+    RS64_HOOK_WALKER_TRIPPED = 37,       // npcAtAtUpdate 0x800CED7C: an AT-AT accepts a tow-cable trip (action 9, kind 0xE); s1 = its ext (+0x34 DAT item), s0 = the message. Never RETURN (mid-function)
     RS64_HOOK_COUNT
 } rs64_hook_id;
 

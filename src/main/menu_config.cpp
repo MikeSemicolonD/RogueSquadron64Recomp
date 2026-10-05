@@ -276,6 +276,15 @@ std::string source_text(const std::string& key) {
     const char* s = rs64::host::text_source(key.c_str());
     return s ? std::string(s) : std::string{};
 }
+// Ray-tracing switches: shows the live state and flips the saved setting; a switch pinned by its env var does not respond.
+ToggleImpl rt_toggle(rs64lights::Feature f) {
+    return { [f] { return rs64lights::feature(f); },
+             [f] {
+                 if (!rs64lights::featurePinned(f)) {
+                     rs64::video::set_rt_setting(f, !rs64lights::feature(f));
+                 }
+             } };
+}
 std::unordered_map<std::string, ToggleImpl>& toggles() {
     static std::unordered_map<std::string, ToggleImpl> r = {
         { "fullscreen", { [] { return rs64_get_fullscreen() != 0; },
@@ -284,6 +293,13 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
                     [] { rs64::touch::set_gyro_enabled(!rs64::touch::gyro_enabled()); } } },
         { "cutscene_draw_distance", { [] { return rs64::video::keep_cutscene_draw_distance(); },
                                       [] { rs64::video::set_keep_cutscene_draw_distance(!rs64::video::keep_cutscene_draw_distance()); } } },
+        { "rt_lights", rt_toggle(rs64lights::Feature::Lights) },
+        { "rt_shadows", rt_toggle(rs64lights::Feature::Shadows) },
+        { "rt_soft_shadows", rt_toggle(rs64lights::Feature::SoftShadows) },
+        { "rt_fog_shafts", rt_toggle(rs64lights::Feature::FogShafts) },
+        { "rt_ao", rt_toggle(rs64lights::Feature::AmbientOcclusion) },
+        { "rt_gi", rt_toggle(rs64lights::Feature::GlobalIllumination) },
+        { "rt_reflections", rt_toggle(rs64lights::Feature::Reflections) },
     };
     return r;
 }
