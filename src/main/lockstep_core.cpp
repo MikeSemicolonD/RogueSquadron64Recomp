@@ -781,6 +781,31 @@ int browse_report(int state, uint32_t result) {
     return (state == 4 && result == 0xFFFFFEu) ? 2 : state;
 }
 
+bool TeamTriggers::on_edge(int player, uint16_t event, bool enter) {
+    const uint8_t bit = (uint8_t)(1u << (player & 1));
+    uint8_t& in = inside_[event];
+    if (enter) {
+        if (in & bit) {
+            return false;
+        }
+        const bool first = in == 0;
+        in |= bit;
+        return first;
+    }
+    if (!(in & bit)) {
+        return false;
+    }
+    in &= (uint8_t)~bit;
+    return in == 0;
+}
+
+void TeamTriggers::forget(int player) {
+    const uint8_t bit = (uint8_t)(1u << (player & 1));
+    for (auto& e : inside_) {
+        e.second &= (uint8_t)~bit;
+    }
+}
+
 int puppet_model(int craft) {
     return ((craft >= 0 && craft <= 5) || craft == 7) ? craft : -1;
 }

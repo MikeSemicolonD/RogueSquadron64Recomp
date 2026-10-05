@@ -119,6 +119,8 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 | `RS64_HOOK_RADAR` (31) | `renderRadarMinimap` 0x800C6290 | After `placeRadarDots`: `s0` = radar, `s2` = centre |
 | `RS64_HOOK_POWERUP_TOUCH` (34) | `npcPowerUpUpdate` 0x800EBD20 | Before the touch test: `s1` = the power-up (`s1+4` its DAT record), `f4` = squared distance to player 1, `f0` = squared radius; `f4 = 0` collects it. Never RETURN (mid-function) |
 | `RS64_HOOK_POWERUP_COLLECT` (35) | `npcPowerUpUpdate` 0x800EBD34 | A power-up is being collected: `s1` = it, `a1` = its pickup sound position, may be replaced. Never RETURN (mid-function) |
+| `RS64_HOOK_TRIGGER_EFFECT` (36) | `applyDatObjectiveTriggerEffect` 0x80065980 | A DAT trigger volume's effect is about to run: `a0` = the event, `a1` = 1 enter / 0 exit, `s0` = the caller's trigger-list entry (player 1's list is 0x80137DF0, 63 entries). RETURN drops the effect |
+| `RS64_HOOK_WALKER_TRIPPED` (37) | `npcAtAtUpdate` 0x800CED7C | An AT-AT accepts a tow-cable trip (action 9, message kind 0xE): `s1` = its ext (`+0x34` its DAT item), `s0` = the message. Never RETURN (mid-function) |
 
 ### Host-dispatched
 

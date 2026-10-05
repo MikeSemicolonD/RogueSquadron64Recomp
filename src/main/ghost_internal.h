@@ -62,6 +62,8 @@ void rs64_imposter_release(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_block_transition(uint8_t*, uint32_t);
 uint32_t rs64_ghost_unfreeze(uint8_t*);
 uint32_t rs64_ghost_objective_event(uint8_t*, recomp_context*);
+uint32_t rs64_ghost_trigger_effect(uint8_t*, recomp_context*);
+void rs64_ghost_walker_tripped(uint8_t*, recomp_context*);
 void rs64_imposter_tick(uint8_t*, recomp_context*);
 void rs64_imposter_activation(uint8_t*, recomp_context*, uint32_t);
 void rs64_imposter_stream(uint8_t*, recomp_context*);
@@ -221,6 +223,15 @@ struct Ghost {
     std::map<uint16_t, int> dat_retry_frames;
     uint32_t dat_sent = 0;
     uint32_t dat_applied = 0;
+    // Player trigger volumes: one effect per team (host), the client's edges waiting for this frame (host), and a remote edge being applied (its effect must pass the hook).
+    rs64::ls::TeamTriggers team_triggers;
+    std::vector<std::pair<uint16_t, bool>> trigger_in;
+    bool trigger_applying = false;
+    // Tow-cable trips: walkers this side tripped (DAT indices, sent again to a peer entering late), the other player's waiting to be tripped here, and a trip being injected (its hook must not send it back).
+    std::vector<uint16_t> tows_mine;
+    std::vector<uint16_t> tow_in;
+    std::map<uint16_t, int> tow_retry;
+    bool tow_injecting = false;
 };
 
 Ghost& g();

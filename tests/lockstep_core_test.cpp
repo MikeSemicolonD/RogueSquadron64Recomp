@@ -933,6 +933,33 @@ static void test_env_parsers() {
     CHECK(clamp_delay(60) == 60);
 }
 
+static void test_team_triggers_first_enter_last_exit() {
+    TeamTriggers t;
+    CHECK(t.on_edge(0, 5, true));
+    CHECK(!t.on_edge(1, 5, true));
+    CHECK(!t.on_edge(0, 5, false));
+    CHECK(t.on_edge(1, 5, false));
+    CHECK(t.on_edge(1, 5, true));
+}
+
+static void test_team_triggers_ignore_repeats_and_strays() {
+    TeamTriggers t;
+    CHECK(!t.on_edge(1, 7, false));
+    CHECK(t.on_edge(1, 7, true));
+    CHECK(!t.on_edge(1, 7, true));
+    CHECK(t.on_edge(0, 8, true));
+    CHECK(t.on_edge(1, 7, false));
+}
+
+static void test_team_triggers_forget_and_reset() {
+    TeamTriggers t;
+    CHECK(t.on_edge(1, 3, true));
+    t.forget(1);
+    CHECK(t.on_edge(0, 3, true));
+    t.reset();
+    CHECK(t.on_edge(1, 3, true));
+}
+
 int main() {
 #ifdef _WIN32
     // Report failed checks on stderr instead of the Debug CRT's modal dialog.
@@ -1006,6 +1033,9 @@ int main() {
     test_interp_puppet_midpoint_and_extrapolation();
     test_interp_puppet_ignores_jitter();
     test_puppet_model();
+    test_team_triggers_first_enter_last_exit();
+    test_team_triggers_ignore_repeats_and_strays();
+    test_team_triggers_forget_and_reset();
     printf("lockstep_core_test OK\n");
     return 0;
 }

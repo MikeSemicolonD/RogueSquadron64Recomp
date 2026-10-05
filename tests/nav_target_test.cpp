@@ -6,6 +6,9 @@ int main() {
     RsNavTarget t;
     t = rs64_nav_parse("level:3");    CHECK(t.kind == NAV_LEVEL && t.a == 3 && t.b == -1);
     t = rs64_nav_parse("level:14,0"); CHECK(t.kind == NAV_LEVEL && t.a == 14 && t.b == 0);
+    t = rs64_nav_parse("level:3");    CHECK(t.c == -1);
+    t = rs64_nav_parse("hangar:3,2"); CHECK(t.kind == NAV_ABORT && t.a == 3 && t.b == 2 && t.c == 1);
+    t = rs64_nav_parse("hangar:1");   CHECK(t.kind == NAV_ABORT && t.a == 1 && t.b == -1 && t.c == 1);
     t = rs64_nav_parse("cutscene:5"); CHECK(t.kind == NAV_CUTSCENE && t.a == 5);
     t = rs64_nav_parse("cutscene:15,1"); CHECK(t.kind == NAV_CUTSCENE && t.a == 15 && t.b == 1);
     t = rs64_nav_parse("cutscene:3"); CHECK(t.b == 0);

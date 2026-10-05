@@ -109,7 +109,7 @@ uint8_t message_type(const uint8_t* data, size_t n) {
     if (data[1] == (uint8_t)Msg::Hello) {
         return data[1];
     }
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Pickup) {
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::TowTrip) {
         return 0;
     }
     return data[1];
@@ -779,6 +779,57 @@ std::vector<uint8_t> encode_pickup(uint8_t epoch, uint16_t item) {
 bool decode_pickup(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item) {
     Reader r{data, n};
     if (!header(r, Msg::Pickup)) {
+        return false;
+    }
+    const uint8_t e = r.u8();
+    const uint16_t i = r.u16();
+    if (!r.done()) {
+        return false;
+    }
+    *epoch = e;
+    *item = i;
+    return true;
+}
+
+std::vector<uint8_t> encode_trigger(uint8_t epoch, uint16_t event, bool enter) {
+    Writer w;
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Trigger);
+    w.u8(epoch);
+    w.u16(event);
+    w.u8(enter ? 1 : 0);
+    return w.b;
+}
+
+bool decode_trigger(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* event, bool* enter) {
+    Reader r{data, n};
+    if (!header(r, Msg::Trigger)) {
+        return false;
+    }
+    const uint8_t e = r.u8();
+    const uint16_t ev = r.u16();
+    const uint8_t in = r.u8();
+    if (!r.done() || ev > 0xFFFu || in > 1) {
+        return false;
+    }
+    *epoch = e;
+    *event = ev;
+    *enter = in == 1;
+    return true;
+}
+
+std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item) {
+    Writer w;
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::TowTrip);
+    w.u8(epoch);
+    w.u16(item);
+    return w.b;
+}
+
+bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item) {
+    Reader r{data, n};
+    if (!header(r, Msg::TowTrip)) {
         return false;
     }
     const uint8_t e = r.u8();

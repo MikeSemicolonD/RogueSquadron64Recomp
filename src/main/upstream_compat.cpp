@@ -28,6 +28,7 @@
 #include "librecomp/helpers.hpp"
 #include "librecomp/overlays.hpp"
 #include "librecomp/addresses.hpp"
+#include "hle/rt64_rs64_lights.h"
 #include "ultramodern/ultramodern.hpp"
 #include "debug_logs.h"
 #include "upstream_compat.h"   // declares the exports defined below (rs64_vi_driven, g_active_overlay, …)
@@ -76,7 +77,10 @@ extern "C" void rs64_load_overlay(unsigned int overlay_id) {
         case 2: load_overlays(0x00137580, 0x800A5130, 0x0000B810); break; // .ovl.cinematic
         default: break;
     }
-    if (overlay_id <= 2) g_active_overlay = (int)overlay_id;
+    if (overlay_id <= 2) {
+        g_active_overlay = (int)overlay_id;
+        rs64lights::activeOverlay().store((int)overlay_id, std::memory_order_relaxed);
+    }
 }
 
 // ---- Stubs ----

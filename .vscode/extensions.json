@@ -1,5 +1,9 @@
 {
     "recommendations": [
-        "anthropic.claude-code"
+        "anthropic.claude-code",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.cmake-tools",
+        "redhat.java",
+        "vscjava.vscode-gradle"
     ]
 }

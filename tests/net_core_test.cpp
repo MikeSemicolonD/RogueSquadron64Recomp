@@ -398,6 +398,36 @@ static void test_skip_message() {
     CHECK(!decode_skip(h.data(), h.size()));
 }
 
+static void test_trigger_message() {
+    const std::vector<uint8_t> b = encode_trigger(9, 0x2A, true);
+    CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Trigger);
+    uint8_t e = 0;
+    uint16_t ev = 0;
+    bool enter = false;
+    CHECK(decode_trigger(b.data(), b.size(), &e, &ev, &enter) && e == 9 && ev == 0x2A && enter);
+    const std::vector<uint8_t> x = encode_trigger(9, 0x2A, false);
+    CHECK(decode_trigger(x.data(), x.size(), &e, &ev, &enter) && !enter);
+    CHECK(!decode_trigger(b.data(), b.size() - 1, &e, &ev, &enter));
+    std::vector<uint8_t> bad_flag = b;
+    bad_flag.back() = 2;
+    CHECK(!decode_trigger(bad_flag.data(), bad_flag.size(), &e, &ev, &enter));
+    const std::vector<uint8_t> wide = encode_trigger(9, 0x1000, true);
+    CHECK(!decode_trigger(wide.data(), wide.size(), &e, &ev, &enter));
+    const std::vector<uint8_t> k = encode_skip();
+    CHECK(!decode_trigger(k.data(), k.size(), &e, &ev, &enter));
+}
+
+static void test_tow_trip_message() {
+    const std::vector<uint8_t> b = encode_tow_trip(4, 317);
+    CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::TowTrip);
+    uint8_t e = 0;
+    uint16_t item = 0;
+    CHECK(decode_tow_trip(b.data(), b.size(), &e, &item) && e == 4 && item == 317);
+    CHECK(!decode_tow_trip(b.data(), b.size() - 1, &e, &item));
+    const std::vector<uint8_t> p = encode_pickup(4, 317);
+    CHECK(!decode_tow_trip(p.data(), p.size(), &e, &item));
+}
+
 static void test_upgrades_message() {
     const std::vector<uint8_t> b = encode_upgrades(7, 0x800u | 0x10000u);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Upgrades);
@@ -663,6 +693,8 @@ int main() {
     test_skip_message();
     test_briefing_done_message();
     test_upgrades_message();
+    test_trigger_message();
+    test_tow_trip_message();
     test_address_editor_typing();
     test_lobby_idle_status();
     test_status_dots();

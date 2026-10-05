@@ -294,6 +294,12 @@ Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Ad
 
 #### Recomp. specific Issues
 
+- Some 'highlights' from the lights or explosions when you destroy the AT-AT will sometimes show the wrong color.
+
+- Forcing a ship selection won't respect it's secondary (for example selecting a y-wing but then selecting an A-wing in the hangar)
+
+- {Multiplayer} The other player's tow cable isn't drawn: an AT-AT they trip falls in both games, but only they see the cable and the trip camera.
+
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existance at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
 - Frame interpolation *can be enabled* **BUT** it still causes visual glitches if meshes/objects aren't ID'd properly. The performance hitches (frame rate drops) will also cause a frame stutter.
@@ -425,9 +431,9 @@ Here's a list of MCPs that could be useful for this project:
 - **[jrra](https://github.com/jrra/rerogue)**: a community fork of rerogue.
 - **[Tmcg2](https://github.com/Tmcg2/rogue_squadron64)**: started the companion decomp project.
 
-## License
+## ~~License~~
 
-See [LICENSE](LICENSE). This is a hobby project.
+This is a hobby project.
 
 This project is in **no way** associated with, sponsored or endorsed by Nintendo, Disney, LucasArts (now known as Lucasfilm Games LLC), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
 

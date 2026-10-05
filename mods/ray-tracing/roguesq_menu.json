@@ -1,0 +1,22 @@
+{
+  "//": "RAY TRACING page under Options. Each toggle binds a built-in rt_* toggle (menu_config.cpp): the label shows the live state, selecting it flips the saved rayTracing setting in roguesq_video.json. A set ROGUESQ_RT_* env var pins its switch.",
+  "buttons": [
+    { "id": "rt_open", "menu": "options", "type": "submenu", "page": "ray_tracing",
+      "label": "RAY TRACING", "title": "RAY TRACING" },
+
+    { "id": "rt_lights", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_lights",
+      "label_on": "LIGHTS: ON", "label_off": "LIGHTS: OFF" },
+    { "id": "rt_shadows", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_shadows",
+      "label_on": "SHADOWS: ON", "label_off": "SHADOWS: OFF" },
+    { "id": "rt_soft_shadows", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_soft_shadows",
+      "label_on": "SOFT SHADOWS: ON", "label_off": "SOFT SHADOWS: OFF" },
+    { "id": "rt_fog_shafts", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_fog_shafts",
+      "label_on": "LIGHT SHAFTS: ON", "label_off": "LIGHT SHAFTS: OFF" },
+    { "id": "rt_ao", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_ao",
+      "label_on": "AMBIENT OCCLUSION: ON", "label_off": "AMBIENT OCCLUSION: OFF" },
+    { "id": "rt_gi", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_gi",
+      "label_on": "BOUNCE LIGHT: ON", "label_off": "BOUNCE LIGHT: OFF" },
+    { "id": "rt_reflections", "menu": "ray_tracing", "type": "toggle", "toggle": "rt_reflections",
+      "label_on": "REFLECTIONS: ON", "label_off": "REFLECTIONS: OFF" }
+  ]
+}

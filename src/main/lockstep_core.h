@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -213,6 +214,16 @@ struct CraftBarrier {
     void back() { local = -1; }
     void on_remote(int craft) { remote = craft; }
     bool released() const { return local >= 0 && remote >= 0; }
+};
+// Shared player trigger volumes: both players count as one team, so an effect runs on the first enter and on the last exit; repeats and exits without an enter run nothing. Player 0 = this machine's craft, 1 = the other player.
+class TeamTriggers {
+public:
+    bool on_edge(int player, uint16_t event, bool enter);
+    // That player left: its insides are dropped without running any exit.
+    void forget(int player);
+    void reset() { inside_.clear(); }
+private:
+    std::map<uint16_t, uint8_t> inside_;
 };
 // The wingman model (record +0x8C) showing a remote player's craft: its own model for crafts 0-5 and 7, else -1 (TIE interceptor and Naboo have none).
 int puppet_model(int craft);

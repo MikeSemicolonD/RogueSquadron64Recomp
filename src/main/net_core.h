@@ -13,7 +13,7 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22 };
 enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
@@ -99,8 +99,14 @@ bool decode_upgrades(const uint8_t* data, size_t n, uint8_t* epoch, uint32_t* bi
 // Ghost co-op, reliable: a player collected the power-up with this DAT item index; the other side collects its own copy.
 std::vector<uint8_t> encode_pickup(uint8_t epoch, uint16_t item);
 bool decode_pickup(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item);
+// Ghost co-op, reliable, client to host: the client's craft entered (or left) a player trigger volume; event = its index in the level's DAT event table (12 bits).
+std::vector<uint8_t> encode_trigger(uint8_t epoch, uint16_t event, bool enter);
+bool decode_trigger(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* event, bool* enter);
+// Ghost co-op, reliable: a player's tow cable tripped the walker with this DAT item index; the other side trips its own copy.
+std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item);
+bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item);
 // Network compatibility of this build: bump it whenever two builds can no longer play together. The lobby's HELLO carries it.
-constexpr uint32_t kBuildId = 0x52530007u;
+constexpr uint32_t kBuildId = 0x52530008u;
 // Lobby handshake, sent once by each side on connect. It decodes whatever the sender's protocol byte, so a mismatch can be reported.
 struct Hello {
     uint16_t protocol = kProtocol;

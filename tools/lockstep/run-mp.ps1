@@ -1,5 +1,5 @@
 # Two-instance ghost co-op run on localhost: the host flies $HostPad, the client $ClientPad.
-# Usage: .\tools\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-Lobby [-Level n]]
+# Usage: .\tools\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientRecord <rec>] [-KeepOpen]
 # Each instance gets its own working dir (ROM, configs and saves live in the working dir), so the pair never shares a save.
 param(
     [string]$Tag = "mp",
@@ -29,6 +29,8 @@ param(
     [string]$TestUpgrade = "",
     # Host collects the first power-up that ticks from that mission frame on, as if it flew through it.
     [int]$TestPickup = -1,
+    # The host drops its own player trigger-volume edges, so only the client's forwarded ones can advance the mission.
+    [switch]$TestTriggerSolo,
     # Lobby runs: the mission the host picks.
     [int]$Level = 0,
     # Lobby runs: each side's craft (-1 = the level's default) and the all-crafts unlock for both.
@@ -40,20 +42,27 @@ param(
     # Lobby runs: the client sits through every cutscene and ignores the host's skips, so it starts the mission late.
     [switch]$ClientLate,
     # Lobby runs: the client never skips a cutscene itself, so only the host's shared skips move it on.
-    [switch]$ClientWatch
+    [switch]$ClientWatch,
+    # The client is flown live (the user's controller or keyboard) instead of from $ClientPad; both sides run at 1x. The host still flies $HostPad.
+    [switch]$ClientLive,
+    # Writes the client's input to this .rec (relative to the repo root), replayable later as -ClientPad.
+    [string]$ClientRecord = "",
+    # Keep both instances running after the logs go quiet (for screenshots after a mission ends); -Timeout still applies.
+    [switch]$KeepOpen
 )
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path "$PSScriptRoot\..\..").Path
 $exe = (Resolve-Path (Join-Path $root $Binary)).Path
 $exeDir = Split-Path $exe
 $out = Join-Path $root "logs\mp\$Tag"
-$vars = "ROGUESQ_MP", "ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST_END", "ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_PAUSE", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_QUIT", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_UPGRADE", "ROGUESQ_MP_TEST_PICKUP", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP"
+$vars = "ROGUESQ_MP", "ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST_END", "ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_PAUSE", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_QUIT", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_UPGRADE", "ROGUESQ_MP_TEST_PICKUP", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v, "Process") }
 $procs = @{}
 $start = Get-Date
 try {
     foreach ($v in "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD") { [Environment]::SetEnvironmentVariable($v, $null, "Process") }
+    $speedNow = if ($ClientLive) { 1 } else { $Speed }
     foreach ($role in "host", "client") {
         $dir = Join-Path $out $role
         if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
@@ -79,6 +88,7 @@ try {
         $env:ROGUESQ_MP_TEST_UNLOCK = if ($role -eq "host" -and $TestUnlock -ge 0) { "$TestUnlock" } else { $null }
         $env:ROGUESQ_MP_TEST_UPGRADE = if ($role -eq "host" -and $TestUpgrade) { $TestUpgrade } else { $null }
         $env:ROGUESQ_MP_TEST_PICKUP = if ($role -eq "host" -and $TestPickup -ge 0) { "$TestPickup" } else { $null }
+        $env:ROGUESQ_MP_TEST_TRIGGER_SOLO = if ($role -eq "host" -and $TestTriggerSolo) { "1" } else { $null }
         $env:ROGUESQ_MP_TEST_ALLCRAFT = if ($TestAllCraft) { "1" } else { $null }
         $env:ROGUESQ_NAV_WATCH_CUTSCENES = if (($ClientLate -or $ClientWatch) -and $role -eq "client") { "1" } else { $null }
         $env:ROGUESQ_MP_TEST_NO_SKIP_SHARE = if ($ClientLate -and $role -eq "client") { "1" } else { $null }
@@ -86,24 +96,28 @@ try {
         $env:ROGUESQ_MP_ADDR = if ($Discover) { $null } else { "127.0.0.1" }
         $env:ROGUESQ_MP_UPNP = "0"
         $env:ROGUESQ_MP_PORT = "$Port"
-        $env:ROGUESQ_MP_PAD = (Resolve-Path (Join-Path $root $pad)).Path
+        $live = $ClientLive -and $role -eq "client"
+        $env:ROGUESQ_MP_PAD = if ($live) { $null } else { (Resolve-Path (Join-Path $root $pad)).Path }
+        $env:ROGUESQ_LS_RECORD = if ($role -eq "client" -and $ClientRecord) { [IO.Path]::GetFullPath((Join-Path $root $ClientRecord)) } else { $null }
         $env:ROGUESQ_MP_SIM_LATENCY_MS = "$Latency"
         $env:ROGUESQ_MP_SIM_LOSS_PCT = "$Loss"
         $env:ROGUESQ_MP_SIM_JITTER_MS = "$Jitter"
         # Without the lobby, boot the level and craft named in the recording header.
-        $hdr = Get-Content (Join-Path $root $pad) -TotalCount 12
+        $hdrPad = if ($live) { $HostPad } else { $pad }
+        $hdr = Get-Content (Join-Path $root $hdrPad) -TotalCount 12
         $recLevel = (($hdr | Select-String "^level=(\d+)").Matches | Select-Object -First 1).Groups[1].Value
         $recCraft = (($hdr | Select-String "^craft=(\d+)").Matches | Select-Object -First 1).Groups[1].Value
         if (-not $recLevel) { $recLevel = "0" }
         if (-not $recCraft) { $recCraft = "0" }
+        if ($live -and $ClientCraft -ge 0) { $recCraft = "$ClientCraft" }
         $env:ROGUESQ_BOOT_TARGET = if (-not $Lobby) { "level:$recLevel,$recCraft" } elseif ($role -eq "host") { "lobby:host,$Level,$HostCraft" } else { "lobby:join,$Level,$ClientCraft" }
         $env:ROGUESQ_NET_CONFIG = if ($Lobby) { Join-Path $dir "roguesq_net.json" } else { $null }
         if ($Lobby) { Set-Content -Encoding ascii -Path $env:ROGUESQ_NET_CONFIG -Value "{ `"last_address`": `"127.0.0.1`", `"port`": $Port }" }
-        $env:ROGUESQ_FAKE_CONTROLLER = "1"
-        $env:ROGUESQ_AUDIO_GAIN = "0"
-        $env:ROGUESQ_SPEED = "$Speed"
+        $env:ROGUESQ_FAKE_CONTROLLER = if ($live) { $null } else { "1" }
+        $env:ROGUESQ_AUDIO_GAIN = if ($live) { $null } else { "0" }
+        $env:ROGUESQ_SPEED = "$speedNow"
         # The menu driver's watchdog counts presents, which run Speed times faster.
-        $env:ROGUESQ_NAV_STEP_BUDGET = "$(1200 * [Math]::Max(1, $Speed))"
+        $env:ROGUESQ_NAV_STEP_BUDGET = "$(1200 * [Math]::Max(1, $speedNow))"
         $bin = if ($role -eq "client" -and $ClientBinary) { (Resolve-Path (Join-Path $root $ClientBinary)).Path } else { $exe }
         $procs[$role] = Start-Process -FilePath $bin -WorkingDirectory $dir -PassThru -WindowStyle Normal -RedirectStandardError (Join-Path $dir "run.log") -RedirectStandardOutput (Join-Path $dir "run.stdout.log")
     }
@@ -120,7 +134,9 @@ try {
             if ($n -ne $last[$role]) { $grew = $true; $last[$role] = $n }
         }
         $still = if ($grew -or $last.host -le 0 -or $last.client -le 0) { 0 } else { $still + 5 }
-        if ($still -ge 20) { break }
+        # A live run ends when the user closes the client window, not when the logs go quiet (they may sit in the pause menu).
+        if (-not ($ClientLive -or $KeepOpen) -and $still -ge 20) { break }
+        if ($ClientLive -and $procs.client.HasExited) { break }
         if ($procs.host.HasExited -and $procs.client.HasExited) { break }
     }
 } finally {

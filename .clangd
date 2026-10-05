@@ -1,0 +1,19 @@
+If:
+  PathExclude: src/main/android_host\.cpp
+CompileFlags:
+  CompilationDatabase: build-ide
+  Add: ["-I../build/src", "-Wno-unknown-pragmas"]
+---
+If:
+  PathMatch: src/main/android_host\.cpp
+CompileFlags:
+  CompilationDatabase: build-ide-android
+---
+Diagnostics:
+  UnusedIncludes: None
+  MissingIncludes: None
+---
+If:
+  PathMatch: RecompiledFuncs/.*
+Diagnostics:
+  Suppress: "*"

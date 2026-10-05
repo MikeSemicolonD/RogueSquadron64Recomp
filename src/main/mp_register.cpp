@@ -90,6 +90,10 @@ int objective_count(uint32_t, uint8_t* rdram, void* c, void*) {
     return rs64_ghost_objective_event(rdram, (recomp_context*)c) ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
 }
 
+int trigger_effect(uint32_t, uint8_t* rdram, void* c, void*) {
+    return rs64_ghost_trigger_effect(rdram, (recomp_context*)c) ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
+}
+
 int block_result(uint32_t, uint8_t*, void*, void*) {
     return rs64_ghost_block_result() ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
 }
@@ -121,6 +125,7 @@ extern "C" void rs64_mp_register(const rs64_host_api* api) {
     add_hook(RS64_HOOK_FREEZE_CHECK_B, unfreeze);
     add_hook(RS64_HOOK_CUTSCENE_FREEZE_CHECK, unfreeze);
     add_hook(RS64_HOOK_OBJECTIVE_COUNT, objective_count);
+    add_hook(RS64_HOOK_TRIGGER_EFFECT, trigger_effect);
     add_hook(RS64_HOOK_RESULT_FAIL, block_result);
     add_hook(RS64_HOOK_RESULT_SUCCESS, block_result);
     add_hook(RS64_HOOK_WINGMAN_TICK, forward, (void*)rs64_imposter_tick);
@@ -138,6 +143,7 @@ extern "C" void rs64_mp_register(const rs64_host_api* api) {
     add_hook(RS64_HOOK_RADAR, forward, (void*)rs64_ghost_radar);
     add_hook(RS64_HOOK_POWERUP_TOUCH, forward, (void*)rs64_ghost_powerup_touch);
     add_hook(RS64_HOOK_POWERUP_COLLECT, forward, (void*)rs64_ghost_powerup_collect);
+    add_hook(RS64_HOOK_WALKER_TRIPPED, forward, (void*)rs64_ghost_walker_tripped);
     add_hook(RS64_HOOK_MENU_PAD, menu_pad);
     add_hook(RS64_HOOK_MAIN_MENU, main_menu);
     rs64::mp::add_quit_handler([](void*) { rs64_ghost_quit(); });
