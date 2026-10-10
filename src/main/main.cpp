@@ -2780,8 +2780,12 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     if (!hide_window) {
         std::string cfg_path;
         if (char* base = SDL_GetBasePath()) { cfg_path = base; SDL_free(base); }
-        if (rs64::video::peek_fullscreen(cfg_path + "roguesq_video.json")) {
+        if (recomp::dbg::env_str("ROGUESQ_FULLSCREEN")) {
+            rs64::video::pin_fullscreen(env_on("ROGUESQ_FULLSCREEN"));
+        } else if (rs64::video::peek_fullscreen(cfg_path + "roguesq_video.json")) {
             rs64::video::set_fullscreen(true);
+        }
+        if (rs64::video::fullscreen()) {
             g_fullscreen_applied = true;
             window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
         }
@@ -2823,8 +2827,6 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         exit(EXIT_FAILURE);
     }
     extern SDL_Window* g_sdl_window; g_sdl_window = sdl_window;
-    // ROGUESQ_FULLSCREEN=1: start in borderless fullscreen (applied by poll_input like Alt+Enter).
-    if (env_on("ROGUESQ_FULLSCREEN")) rs64_set_fullscreen(1);
 #if defined(_WIN32)
     SDL_SysWMinfo wm{};
     SDL_VERSION(&wm.version);

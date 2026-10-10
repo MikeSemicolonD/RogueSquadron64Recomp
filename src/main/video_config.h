@@ -36,6 +36,8 @@ void set_keep_cutscene_draw_distance(bool on);
 // Fullscreen ("fullscreen" in roguesq_video.json, default off). Alt+Enter and the menu toggle change it and the change is saved.
 bool fullscreen();
 void set_fullscreen(bool on);
+// ROGUESQ_FULLSCREEN: overrides the live state without touching the saved setting; the next set_fullscreen clears it.
+void pin_fullscreen(bool on);
 // Reads only the "fullscreen" key, so the window can be created fullscreen before the full config loads.
 bool peek_fullscreen(const std::string& path);
 

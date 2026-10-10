@@ -20,6 +20,8 @@ void adv_get(const json& a, const char* key, T& out) {
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
 std::atomic<bool> g_fullscreen{false};
+// -1 = follow the setting; 0/1 = ROGUESQ_FULLSCREEN pins the live state until the player toggles, and the file keeps the setting.
+std::atomic<int> g_fullscreen_pin{-1};
 
 // "rayTracing" in roguesq_video.json. The file keeps the player's setting; a set ROGUESQ_RT_* env var only pins the live switch, so test runs never rewrite it.
 const std::pair<const char*, rs64lights::Feature> kRtKeys[] = {
@@ -60,11 +62,17 @@ void set_keep_cutscene_draw_distance(bool on) {
 }
 
 bool fullscreen() {
-    return g_fullscreen.load(std::memory_order_relaxed);
+    const int pin = g_fullscreen_pin.load(std::memory_order_relaxed);
+    return pin >= 0 ? pin != 0 : g_fullscreen.load(std::memory_order_relaxed);
 }
 
 void set_fullscreen(bool on) {
+    g_fullscreen_pin.store(-1, std::memory_order_relaxed);
     g_fullscreen.store(on, std::memory_order_relaxed);
+}
+
+void pin_fullscreen(bool on) {
+    g_fullscreen_pin.store(on ? 1 : 0, std::memory_order_relaxed);
 }
 
 bool peek_fullscreen(const std::string& path) {
@@ -89,7 +97,7 @@ void apply_friendly(UC& uc, const json& j) {
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
     }
     if (has("fullscreen") && j["fullscreen"].is_boolean()) {
-        set_fullscreen(j["fullscreen"].get<bool>());
+        g_fullscreen.store(j["fullscreen"].get<bool>(), std::memory_order_relaxed);
     }
     if (has("rayTracing") && j["rayTracing"].is_object()) {
         const json& rt = j["rayTracing"];
@@ -183,7 +191,7 @@ json to_friendly(const UC& uc) {
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
-    j["fullscreen"] = fullscreen();
+    j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
     json rt = json::object();
     for (const auto& [key, feature] : kRtKeys) {
         rt[key] = rt_setting(feature);

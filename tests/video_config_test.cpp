@@ -199,6 +199,16 @@ static void test_fullscreen_roundtrip_and_peek() {
     std::remove(p.c_str());
     CHECK(rs64::video::peek_fullscreen(p) == false);
     rs64::video::set_fullscreen(false);
+
+    // The env pin survives a config load and is never saved; a player toggle clears it.
+    rs64::video::pin_fullscreen(true);
+    p = write_tmp("tmp_fullscreen_video.json", R"({"schema":2,"drawDistance":1.0,"fullscreen":false})");
+    rs64::video::load(uc, p);
+    std::remove(p.c_str());
+    CHECK(rs64::video::fullscreen() == true);
+    CHECK(rs64::video::to_friendly(uc).value("fullscreen", true) == false);
+    rs64::video::set_fullscreen(false);
+    CHECK(rs64::video::fullscreen() == false);
 }
 
 static void test_effective_draw_distance() {
