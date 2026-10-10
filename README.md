@@ -165,6 +165,10 @@ cmake --build build --target RogueSquadron64Recomp
 
 `gcc-mips-linux-gnu binutils-mips-linux-gnu` are only needed to build `.nrm` code mods, as in the Linux release CI.
 
+- **Fresh public decomp checkout:** if `N64Recomp rogue_squadron.toml` stops with `Function ... is stubbed out in the config file but does not exist!`, the decomp's ELF is behind the names this config uses. Build the ELF with `python3 tools/make_elf_from_syms.py` instead of the decomp's `tools/make_elf.py`; it takes the function table from `syms/rogue_squadron.syms.toml` and needs only the ROM in the decomp's root (no `splat` run).
+- **Wayland:** if the window stays black and the log shows `fault caught ... lib=.../libdecor-gtk.so`, SDL's GTK decoration plugin crashed. Run through XWayland with `SDL_VIDEODRIVER=x11`.
+- `--fullscreen` (`ROGUESQ_FULLSCREEN=1`) starts in borderless fullscreen; Alt+Enter toggles it.
+
 #### About WSL2
 
 - Keep the build directory on the Linux filesystem (e.g. `~/rs64-build`), **not** under `/mnt/…` — CMake's compiler checks can fail with `Operation not permitted` on the Windows drive mount. Source can stay on `/mnt`.
