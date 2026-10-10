@@ -185,6 +185,32 @@ static void test_keep_cutscene_absent_key_not_migrated() {
     rs64::video::set_draw_distance(1.0f);
 }
 
+static void test_fullscreen_roundtrip_and_peek() {
+    rs64::video::set_fullscreen(false);
+    UC uc; uc.validate();
+    CHECK(rs64::video::to_friendly(uc).value("fullscreen", true) == false);
+    std::string p = write_tmp("tmp_fullscreen_video.json", R"({"schema":2,"drawDistance":1.0,"fullscreen":true})");
+    CHECK(rs64::video::peek_fullscreen(p) == true);
+    CHECK(rs64::video::fullscreen() == false);
+    auto r = rs64::video::load(uc, p);
+    CHECK(r.loaded == true);
+    CHECK(rs64::video::fullscreen() == true);
+    CHECK(rs64::video::to_friendly(uc).value("fullscreen", false) == true);
+    std::remove(p.c_str());
+    CHECK(rs64::video::peek_fullscreen(p) == false);
+    rs64::video::set_fullscreen(false);
+
+    // The env pin survives a config load and is never saved; a player toggle clears it.
+    rs64::video::pin_fullscreen(true);
+    p = write_tmp("tmp_fullscreen_video.json", R"({"schema":2,"drawDistance":1.0,"fullscreen":false})");
+    rs64::video::load(uc, p);
+    std::remove(p.c_str());
+    CHECK(rs64::video::fullscreen() == true);
+    CHECK(rs64::video::to_friendly(uc).value("fullscreen", true) == false);
+    rs64::video::set_fullscreen(false);
+    CHECK(rs64::video::fullscreen() == false);
+}
+
 static void test_effective_draw_distance() {
     using rs64::video::effective_draw_distance;
     CHECK(effective_draw_distance(2.0f, false, 15) == 2.0f);
@@ -219,6 +245,7 @@ int main() {
     test_ray_tracing_settings();
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
+    test_fullscreen_roundtrip_and_peek();
     test_effective_draw_distance();
     test_to_friendly_basic();
     test_to_friendly_mapping();
