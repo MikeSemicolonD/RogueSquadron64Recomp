@@ -316,6 +316,12 @@ Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Ad
 
 - Terrain tile textures don't align perfectly and seem to have a slight cut off which is probably a game issue than a recomp. issue.
 
+#### Repo Specific Issues
+
+- CMakeLists needs to be cleaned up of all the python files (6 places where it's used) to reduce the amount of dependencies needed to produce a build.
+
+- Move patches from the base `rogue_squadron.toml` into a patches ELF so every toml hook and instruction patch gets rewritten as a clang-built C. Needed so mods don't interfere with each other. Right now mods have a risk of removing/exlcuding needed patches. Getting this correct will also mean having to potentially decompile functions and match them using pure ASM (some small spots in the code are pure ASM) or C.
+
 ---
 
 ## Architecture
@@ -424,6 +430,10 @@ Here's a list of MCPs that could be useful for this project:
 [rizin](https://rizin.re/) to assist in validating/checking the game's assembly.
 
 [pj64](https://www.pj64-emu.com/nightly-builds) to pull memory dumps for checks and comparisons. (Development builds are recommended since they provide more ways to debug/validate *even though it performs slower*)
+
+## Contributors
+
+- **[terminalcommand](https://github.com/terminalcommand)**: Assisted in improving the Linux build process, fixed missing tool calls in the CMakeLists, fixed Wayland crashes on Linux and added borderless fullscreen argument.
 
 ## Acknowledgements
 
