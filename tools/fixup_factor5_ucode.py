@@ -152,7 +152,7 @@ if is_musyx and MUSYX_MARKER not in text:
     if dij_pattern.search(text):
         replacement = (
             "do_indirect_jump:\n"
-            "    if (jump_target == 0) {  " + MUSYX_MARKER + " top-level jr $ra (r31=0) = task complete */\n"
+            "    if (jump_target == 0) {  " + MUSYX_MARKER + " /* top-level jr $ra (r31=0) = task complete */\n"
             "        return RspExitReason::Broke;\n"
             "    }\n"
             "    if (++rs64_iter > (1L<<20)) {  " + MUSYX_MARKER + "\n"

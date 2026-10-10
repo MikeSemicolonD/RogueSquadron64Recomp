@@ -51,6 +51,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_AUTO_START` | `--auto-start` | 0 | Once past the no-controller gate, pulse START every `<ms>`. |
 | `ROGUESQ_HIDE_WINDOW` | `--[no-]hide-window` | off | Create the window hidden. RT64 still renders and presents; window screenshots are lost. |
 | `ROGUESQ_MAXIMIZED` / `ROGUESQ_WINDOW_SIZE=WxH` | `--maximized`, `--window-size` | off | Start maximized / initial client size. |
+| `ROGUESQ_FULLSCREEN` | `--fullscreen` | off | Start in borderless fullscreen; Alt+Enter toggles. |
 | `ROGUESQ_UNFOCUSED` | `--unfocused` | off | Show the window without taking focus (test runs; input still works through `tools/drive-input.ps1`). |
 | `ROGUESQ_WIDESCREEN` | `--[no-]widescreen` | off | `aspectRatio=Expand` (fill the window aspect). |
 | `ROGUESQ_DRAW_DIST=<mult>` | `--draw-distance` | `drawDistance` in `roguesq_video.json` (1.0) | Accepts 0.25-8 (outside that = unset). Camera far plane and object far cull; terrain reach and fog follow it through `ROGUESQ_TERRAIN_DIST`, capped at 2.5. |
