@@ -451,7 +451,7 @@ by `load_dat_file_assets` (funcs_15.c:1110).
 ## MusyX runtime state
 
 Three live in-RAM structs (distinct from the SND file format). The CPU `tickAudioChannel`
-runs an 81-entry SoundMacro opcode dispatch — the engine `tools/musyx_vm.py` ports.
+runs an 81-entry SoundMacro opcode dispatch — the engine `renderVoice` in `tools/rs64-explorer/rs64assets.js` ports.
 
 ### Voice slot — `*0x801496F8 + idx*0x88` (confirmed)
 
@@ -459,7 +459,7 @@ Synth voice. Key fields: +0x00 active flag, +0x01 allocated flag, +0x04 pitch (0
 ≤0x2000), +0x08 f64 position accumulator, +0x28 ADSR attack, +0x2A decay, +0x2C f32 sustain,
 +0x30 release, +0x34 sample-desc ptr, +0x38/+0x3C/+0x40 loop start/end/len, +0x58..+0x6C env
 ramp (level/incr/target/phase), +0x6D note number. Confirmed funcs_24.c:6955-7354. ADSR maps
-1:1 to musyx_vm.py attack/decay/sustain/release.
+1:1 to the explorer engine attack/decay/sustain/release.
 
 ### Song slot — `*0x80149A00 + handle*0xEF8` (8 slots) (mixed)
 
@@ -669,8 +669,8 @@ points/knots) differ; the conversion step in `load_level_dat` was not located.
   **sid** (0xFFFF terminates). Confirmed funcs_26.c:628-2072.
 - **sdir entry** (0x18): +0x00 id, +0x04 offset into samp_SND, +0x08 root key, +0x0A rate, +0x0C
   num_samples (low 24 bits; top byte flags), +0x10 loopStart, +0x14 loopLen. Samp data = 256B ADPCM
-  coefficient book + 0x28-byte frames. Confirmed (cross-ref musyx_n64_decode.py / musyx_group.py).
-- **pool sections**: section 0 = SoundMacro VM programs (the 81-op engine in musyx_vm.py), 1 keymaps,
+  coefficient book + 0x28-byte frames. Confirmed (decodeMusyxAdpcm / parsePool in tools/rs64-explorer/rs64assets.js).
+- **pool sections**: section 0 = SoundMacro VM programs (the 81-op engine; see docs/musyx-voice-mixing.md), 1 keymaps,
   3 Layers. Sample descriptor → `musyxInitVoiceFromSample`: +0x04 data ptr+flags, +0x08 length,
   +0x0C/+0x10/+0x14 loop start/end/len, +0x18 key (maps 1:1 to the sdir entry).
 
@@ -732,7 +732,7 @@ Pool header = 4 section offsets (0=SoundMacros, 1=Keymaps, 3=Layers); each subse
   w1 @+0x4. 81-entry dispatch @0x8003DBF0 in `tickAudioChannel`. Key ops: 0x00 End, 0x04/0x07 Wait
   (0xFFFE/0xFFFF=key-off), 0x06 GoSub (return ptr→ch+0x8/+0xC), 0x0C SetAdsr (table idx = w0>>8),
   0x10 StartSample (**operand is a KEYMAP id, not a direct sample id**), 0x11 KeyOff. Confirmed
-  funcs_23.c:3208-3348, funcs_22.c:4896-5076; matches musyx_vm.py.
+  funcs_23.c:3208-3348, funcs_22.c:4896-5076; matches the explorer engine.
 - **Keymap** (section 1, stride 0xC): descriptor ptr@+0x00, param@+0x04, key/note@+0x08 (bin-search
   key). Runtime table @0x8013B048. Confirmed funcs_22.c:5027, funcs_21.c:3251.
 - **Layer** (section 3, stride 0xC): `[count:u32][macro_id@+0, key_lo@+2, key_hi@+3, transpose@+4(s8),

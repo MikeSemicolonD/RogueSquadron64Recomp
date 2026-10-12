@@ -1,5 +1,7 @@
 // Rogue Squadron 64 asset parsers (data blob, HOB, HMT, HMP, DAT). Plain script so index.html works from file://; Node can import it too.
 // Formats: rogue_squadron64/docs/{data_blob,hob_files,hmt_files,hmp_files,dat_files}.
+// Wrapped in one function so the page can start Web Workers from its source (rs64Lib.toString()) without a server.
+function rs64Lib() {
 
 const BLOB_START = 0x144340;
 const BLOB_DATA = BLOB_START + 0x40;
@@ -540,7 +542,7 @@ function parseCutsceneVoice(dv) {
 }
 
 // Voice ids a DAT trigger leads to: a LINE_n name is a voice id; counters and flags it sets run the handlers the level script
-// registered for them. tv = one level of RS64_TRIGGER_VOICES ({ c: counter -> ids, b: flag -> ids }, from gen_voice_cats.mjs).
+// registered for them. tv = one level of RS64_TRIGGER_VOICES ({ c: counter -> ids, b: flag -> ids }, from tools/rs64-explorer-data/gen_voice_cats.mjs).
 function triggerVoiceIds(it, tv) {
   const ids = it.voiceId != null ? [it.voiceId] : [];
   const p = it.pathEvent, acts = [it.onEnter, it.onExit, p && { counter: p.addCounter, flag: p.setFlag, value: p.value }];
@@ -855,7 +857,7 @@ function parseSpriteAnim(dv, trans) {
   return frames.length ? frames : null;
 }
 
-// ---- Audio: MusyX samples (sdir_SND + samp_SND), port of tools/musyx_n64_decode.py ----
+// ---- Audio: MusyX samples (sdir_SND + samp_SND): N64 MusyX ADPCM ----
 
 function parseSdir(dv) {
   const out = [];
@@ -929,113 +931,608 @@ function parseSfxTable(dv) {
   return out;
 }
 
-// Offline render of one SFX id through its SoundMacro: a subset of the game's VM (tickAudioChannel), ported from tools/musyx_vm.py.
-// Wait timing from computeChannelWaitDuration (0x800895BC): the countdown is ms * 256; WaitMs (or w1 bit 8) = N ms, WaitTicks = N * 1000 / R ms
-// with R = 768 (default at 0x8013ACF0: 120 BPM at 384 ticks per beat), and tickAudioChannel subtracts one 384-sample frame (17.41 ms) per call.
-// shortcut: a 65535 wait on a looped sample holds 1.5 s. Skipped: pan, vibrato, pitch sweeps and the unknown ops (0x28, 0x30+).
-// bank = { pool: parsePool(), sdir: Map(id -> parseSdir entry), samp }.
-function renderSfx(bank, sfx, rate = 22050) {
-  const FRAME = 384 / 22050, TICK = 1 / 768;
-  const voices = [];
-  const runMacro = (macro, key, t0) => {
-    const s8 = (v) => (v << 24) >> 24;
-    let pc = [macro, 0], note = key, vol = 1, t = t0, pendingEnv = null, adsr = null, cur = null, steps = 0;
-    const stack = [], seen = new Set();
-    const sampleEnd = (v) => {
-      const sd = v.sd, step = (sd.rate / rate) * 2 ** ((v.note - sd.root) / 12);
-      return sd.loopLen ? v.start + 1.5 : v.start + (sd.num - v.offset) / step / rate;
-    };
-    const keyOff = () => cur && cur.off == null && (cur.off = t);
-    while (steps++ < 4000) {
-      const code = bank.pool[0].get(pc[0]);
-      if (!code) break;
-      const o = pc[1] * 8;
-      const w0 = o + 8 <= code.length ? ((code[o] << 24) | (code[o + 1] << 16) | (code[o + 2] << 8) | code[o + 3]) >>> 0 : 0;
-      const w1 = o + 8 <= code.length ? ((code[o + 4] << 24) | (code[o + 5] << 16) | (code[o + 6] << 8) | code[o + 7]) >>> 0 : 0;
-      const op = w0 & 0x7F, b0 = w0 >>> 24, b1 = (w0 >>> 16) & 0xFF, b2 = (w0 >>> 8) & 0xFF;
-      pc = [pc[0], pc[1] + 1];
-      if (op === 0x00 || op === 0x01) {
-        if (op === 0x00 && stack.length) { pc = stack.pop(); continue; }
-        break;
-      } else if (op === 0x10) {
-        keyOff();
-        const sd = bank.sdir.get((b1 << 8) | b2);
-        cur = sd ? { sd, note, start: t, offset: w1 < sd.num ? w1 : 0, env: [[t, vol]], adsr } : null;
-        if (cur) voices.push(cur);
-      } else if (op === 0x11 || op === 0x12) keyOff();
-      else if (op === 0x04 || op === 0x07) {
-        const n = w1 >>> 16;
-        if (n >= 0xFFFE) {
-          if (cur) {
-            t = Math.max(t, sampleEnd(cur));
-            keyOff();
-          }
-        } else t += Math.ceil((op === 0x04 && !((w1 >>> 8) & 1) ? n * TICK : n / 1000) / FRAME) * FRAME;
-        if (pendingEnv != null) [vol, pendingEnv] = [pendingEnv, null];
-        cur?.env.push([t, vol]);
-      } else if (op === 0x06) {
-        const tgt = w0 >>> 16, k = tgt + ':' + w1;
-        if (bank.pool[0].has(tgt) && !seen.has(k) && stack.length < 16) {
-          seen.add(k);
-          stack.push(pc);
-          pc = [tgt, w1];
-        }
-      } else if (op === 0x0C) adsr = bank.pool[1].get((b1 << 8) | b2) ?? null;
-      else if (op === 0x0D) cur?.env.push([t, (vol = b2 / 127)]);
-      else if (op === 0x0F) pendingEnv = b2 / 127;
-      else if (op === 0x18) note += s8(b2);
-      else if (op === 0x19) note = b2;
-      else if (op === 0x17) note = b0;
-    }
-    if (cur && cur.off == null) cur.off = Math.min(sampleEnd(cur), t + 1.5);
-  };
-  if (sfx.macro & 0x8000) {
-    // Layer (pool section 3): u32 count, 12-byte entries {u16 macro, keyLo, keyHi, s8 transpose, vol}; every entry covering the key plays.
-    const L = bank.pool[3].get(sfx.macro);
-    for (let i = 0, n = L ? (L[0] << 24 | L[1] << 16 | L[2] << 8 | L[3]) >>> 0 : 0; i < n && 4 + i * 12 + 12 <= L.length; i++) {
-      const e = 4 + i * 12, m = (L[e] << 8) | L[e + 1];
-      if (m !== 0xFFFF && L[e + 2] <= sfx.key && sfx.key <= L[e + 3]) runMacro(m, sfx.key + ((L[e + 4] << 24) >> 24), 0);
-    }
-  } else runMacro(sfx.macro, sfx.key, 0);
+// ---- Music: song table, song -> group binding, _SNG sequences (format: startSongSequence / advanceSongRegion) ----
 
-  const release = (v) => (v.adsr ? ((v.adsr[6] | (v.adsr[7] << 8)) < 0x8000 ? (v.adsr[6] | (v.adsr[7] << 8)) / 1000 : 0) : 0) || 0.03;
-  const end = Math.min(10, Math.max(0, ...voices.map((v) => v.off + release(v))));
-  const mix = new Float32Array(Math.ceil(end * rate));
-  for (const v of voices) {
-    const sd = v.sd, pcm = decodeMusyxAdpcm(bank.samp, sd.off, sd.num), rel = release(v);
-    const step = (sd.rate / rate) * 2 ** ((v.note - sd.root) / 12);
-    const attack = v.adsr ? (v.adsr[0] | (v.adsr[1] << 8)) / 1000 : 0;
-    let pos = v.offset, k = 0;
-    for (let i = Math.floor(v.start * rate); i < mix.length; i++) {
-      const t = i / rate;
-      if (t > v.off + rel) break;
-      if (pos >= pcm.length - 1) {
-        if (!sd.loopLen) break;
-        pos = sd.loopStart + ((pos - sd.loopStart) % sd.loopLen);
-      }
-      while (k + 1 < v.env.length && v.env[k + 1][0] <= t) k++;
-      const [ta, ga] = v.env[k], [tb, gb] = v.env[k + 1] ?? v.env[k];
-      let g = tb > ta ? ga + ((gb - ga) * (t - ta)) / (tb - ta) : ga;
-      if (attack && t - v.start < attack) g *= (t - v.start) / attack;
-      if (t > v.off) g *= 1 - (t - v.off) / rel;
-      const p = Math.floor(pos), f = pos - p;
-      mix[i] += (pcm[p] + (pcm[p + 1] - pcm[p]) * f) * g * (sfx.vel / 127);
-      pos += step;
-    }
+// D_main_8009FCD4: {u32 songId, char *name} until id == -1; names are sound/<name>_SNG.
+function parseSongTable(rom) {
+  const be32 = (o) => ((rom[o] << 24) | (rom[o + 1] << 16) | (rom[o + 2] << 8) | rom[o + 3]) >>> 0, R = (v) => v - 0x80000400 + 0x1000;
+  const out = [];
+  for (let o = R(0x8009FCD4); be32(o) !== 0xFFFFFFFF; o += 8) {
+    let p = R(be32(o + 4)), name = '';
+    while (rom[p]) name += String.fromCharCode(rom[p++]);
+    out.push({ id: be32(o), name });
   }
-  return { pcm: Int16Array.from(mix, (x) => Math.max(-32768, Math.min(32767, Math.round(x)))), rate, voices: voices.length };
+  return out;
 }
 
-function wavBytes(pcm, rate) {
+// proj_SND type-0 sections: playSongById(group, songId) searches the MIDISetup list (+8 + [+0x24]: 0x84-byte records
+// {u16 songId, u16, 16 x {program, CC7, CC10, CC91, CC93, ...}}); program tables at +8 + [+0x1C] (normal) / [+0x20] (drums,
+// channel 9): 8-byte {u16 target, x2, x3, defaultChannel, programNumber, pad} until programNumber 0xFF.
+function parseSongGroups(dv) {
+  const out = new Map();
+  for (let off = 0; off + 8 <= dv.byteLength;) {
+    const size = dv.getUint32(off);
+    if (!size || size === 0xFFFFFFFF) break;
+    if (dv.getUint16(off + 6) === 0) {
+      const group = dv.getUint16(off + 4), sub = (k) => off + 8 + dv.getUint32(off + k);
+      const progTable = (p) => {
+        const m = new Map();
+        for (; p + 8 <= dv.byteLength && dv.getUint8(p + 5) !== 0xFF; p += 8) {
+          m.set(dv.getUint8(p + 5), { target: dv.getUint16(p), x2: dv.getUint8(p + 2), x3: dv.getUint8(p + 3), defaultChannel: dv.getUint8(p + 4) });
+        }
+        return m;
+      };
+      const progs = progTable(sub(0x1C)), drums = progTable(sub(0x20));
+      for (let p = sub(0x24); dv.getUint16(p) !== 0xFFFF; p += 0x84) {
+        const setup = Array.from({ length: 16 }, (_, c) => {
+          const e = p + 4 + c * 8;
+          return { program: dv.getUint8(e), vol: dv.getUint8(e + 1), pan: dv.getUint8(e + 2), reverb: dv.getUint8(e + 3), chorus: dv.getUint8(e + 4) };
+        });
+        out.set(dv.getUint16(p), { group, setup, progs, drums });
+      }
+    }
+    off += size;
+  }
+  return out;
+}
+
+// _SNG: header {trackTbl, regionTbl, chanMap u8[64], tempoTbl, bpm, loopTick}; TrackRegion 12 B {start, program, CC7, -, regionIdx
+// (0xFFFF end, 0xFFFE loop -> u16 loopTo at +0xA), transpose, velAdd}; region {+4 bend lane, +8 mod lane, events from +0xC:
+// {u32 tick, u16 dur, a, b} until a == b == 0xFF}; lanes are (dt, dv) varints ending at 0x80 0x00.
+function parseSong(dv) {
+  const L = dv.byteLength, trackTbl = dv.getUint32(0), regionTbl = dv.getUint32(4), chanMap = dv.getUint32(8), tempoTbl = dv.getUint32(0xC);
+  const tempo = [];
+  for (let o = tempoTbl; tempoTbl && o + 8 <= L && dv.getUint32(o) !== 0xFFFFFFFF; o += 8) tempo.push({ tick: dv.getUint32(o), bpm: dv.getUint32(o + 4) });
+  const lane = (o) => {
+    const out = [];
+    if (!o) return out;
+    for (let n = 0; o + 2 <= L && n < 100000; n++) {
+      const b0 = dv.getUint8(o);
+      if (b0 === 0x80 && dv.getUint8(o + 1) === 0) break;
+      const dt = b0 & 0x80 ? ((b0 & 0x7F) << 8) | dv.getUint8(o + 1) : b0;
+      o += b0 & 0x80 ? 2 : 1;
+      const v0 = dv.getUint8(o);
+      const dvv = v0 & 0x80 ? ((((v0 & 0x7F) << 8) | dv.getUint8(o + 1)) << 17) >> 17 : (v0 << 25) >> 25;
+      o += v0 & 0x80 ? 2 : 1;
+      out.push({ dt, dv: dvv });
+    }
+    return out;
+  };
+  const regions = new Map(), tracks = [];
+  for (let t = 0; t < 64; t++) {
+    const to = dv.getUint32(trackTbl + t * 4);
+    if (!to) continue;
+    const track = { index: t, channel: dv.getUint8(chanMap + t), regions: [] };
+    for (let r = to; r + 12 <= L; r += 12) {
+      const idx = dv.getUint16(r + 8);
+      if (idx === 0xFFFF) break;
+      if (idx === 0xFFFE) {
+        track.regions.push({ start: dv.getUint32(r), loopTo: dv.getUint16(r + 0xA) });
+        break;
+      }
+      track.regions.push({ start: dv.getUint32(r), program: dv.getUint8(r + 4), vol: dv.getUint8(r + 5), region: idx,
+        transpose: dv.getInt8(r + 0xA), velAdd: dv.getInt8(r + 0xB) });
+      if (!regions.has(idx)) {
+        const ro = dv.getUint32(regionTbl + idx * 4), events = [];
+        for (let e = ro + 0xC; e + 8 <= L; e += 8) {
+          const a = dv.getUint8(e + 6), b = dv.getUint8(e + 7);
+          if (a === 0xFF && b === 0xFF) break;
+          events.push({ tick: dv.getUint32(e), dur: dv.getUint16(e + 4), a, b });
+        }
+        regions.set(idx, { events, bend: lane(dv.getUint32(ro + 4)), mod: lane(dv.getUint32(ro + 8)) });
+      }
+    }
+    tracks.push(track);
+  }
+  return { bpm: dv.getUint32(0x10), loopTick: dv.getUint32(0x14), tempo, tracks, regions };
+}
+
+// Program target -> voices (dispatchSequencerNoteEvent): top bits 0 = macro, 0x4000 keymap, 0x8000 layer, 0xC000 none.
+// Keymap (pool 2): 128 x 8 B by note {u16 target (0xFFFF silent), s8 transpose, pan, s8 prio}; no volume field.
+// Layer (pool 3, applyNoteEventToGroup): u32 count, 12 B {u16 macro, keyLo, keyHi, s8 transpose, vol, s8 prio, -, pan};
+// every entry covering the key plays, entries with 0xC000 bits are skipped, vel' = vel * vol / 127.
+function resolveNote(pool, target, note, vel, pan, prio) {
+  const clamp = (v, hi) => Math.max(0, Math.min(hi, v));
+  const panOf = (p) => (p & 0x80 ? 0x80 : clamp(pan + p - 0x40, 127));
+  const layer = (id, note, vel, pan, prio) => {
+    const L = pool[3].get(id), out = [];
+    const n = L ? ((L[0] << 24) | (L[1] << 16) | (L[2] << 8) | L[3]) >>> 0 : 0;
+    for (let i = 0; i < n && 4 + i * 12 + 12 <= L.length; i++) {
+      const e = 4 + i * 12, m = (L[e] << 8) | L[e + 1];
+      if (m & 0xC000 || note < L[e + 2] || note > L[e + 3]) continue;
+      out.push({ macro: m, note: clamp(note + ((L[e + 4] << 24) >> 24), 127), vel: Math.floor((vel * L[e + 5]) / 127),
+        pan: L[e + 8] & 0x80 ? 0x80 : clamp(pan + L[e + 8] - 0x40, 127), prio: clamp(prio + ((L[e + 6] << 24) >> 24), 255) });
+    }
+    return out;
+  };
+  const kind = target & 0xC000;
+  if (kind === 0) return [{ macro: target, note, vel, pan, prio }];
+  if (kind === 0x8000) return layer(target, note, vel, pan, prio);
+  if (kind !== 0x4000) return [];
+  const K = pool[2].get(target);
+  if (!K) return [];
+  const e = (note & 0x7F) * 8, t = (K[e] << 8) | K[e + 1];
+  if (t === 0xFFFF) return [];
+  const n2 = clamp(note + ((K[e + 2] << 24) >> 24), 127), p2 = panOf(K[e + 3]), pr2 = clamp(prio + ((K[e + 4] << 24) >> 24), 255);
+  if ((t & 0xC000) === 0) return [{ macro: t, note: n2, vel, pan: p2, prio: pr2 }];
+  return (t & 0xC000) === 0x8000 ? layer(t, n2, vel, p2, pr2) : [];
+}
+
+// ---- MusyX voice engine (docs/musyx-voice-mixing.md): one macro voice simulated per audio tick, shared by SFX and songs ----
+
+// Mixer tables read from the ROM (main code): volume curve, mix constants, pan law, semitone and 1/64-semitone rate ratios
+// (12.20), quarter-wave sine.
+function parseMixTables(rom) {
+  const dv = new DataView(rom.buffer, rom.byteOffset, rom.byteLength), R = (v) => v - 0x80000400 + 0x1000;
+  const f32 = (v, n) => Float32Array.from({ length: n }, (_, i) => dv.getFloat32(R(v) + i * 4));
+  const u32 = (v, n) => Float64Array.from({ length: n }, (_, i) => dv.getUint32(R(v) + i * 4) / 0x100000);
+  return { vol: f32(0x800A4BD8, 128), k: f32(0x800A4DD8, 4), pan: f32(0x800A4DE8, 3), semiUp: u32(0x800A2FD0, 128), semiDown: u32(0x800A31D0, 128),
+    fineUp: u32(0x800A33D0, 769), fineDown: u32(0x800A3FD4, 769), sine: Int16Array.from({ length: 1024 }, (_, i) => dv.getInt16(R(0x800A0F58) + i * 2)) };
+}
+
+const MIX_RATE = 22050, TICK_SAMPLES = 384, TICK_DT = 4456;
+const BIPOLAR_SRC = new Set([1, 0xA, 0x80, 0x83, 0x84, 0xA0, 0xA1]);
+
+// computeVoiceVolumePanCoefficients (94A80.c hand asm): vol/pan/span/aux in 16.16 (0..0x7F0000) -> s16 L, R, aux gains.
+function voiceGains(T, vol, pan, aux) {
+  const curve = (x) => {
+    x = Math.min(x, 0x7F0000);
+    const i = x >>> 16, a = T.vol[i], b = T.vol[Math.min(i + 1, 127)];
+    return a + (b - a) * (x & 0xFFFF) * T.k[0];
+  };
+  const panT = (x) => {
+    const i = x >>> 22;
+    return T.pan[i] + (T.pan[Math.min(i + 1, 2)] - T.pan[i]) * (x & 0x3FFFFF) * T.k[3];
+  };
+  const V = curve(vol);
+  let L, Rg;
+  if (pan === 0x800000) [Rg, L] = [V * T.k[1] * T.k[2], -V * T.k[1] * T.k[2]];
+  else [Rg, L] = [V * panT(pan) * T.k[2], V * panT(0x7FFFFF - pan) * T.k[2]];
+  return { L, R: Rg, aux: curve(aux) * T.k[1] * T.k[2] };
+}
+
+// Renders one macro voice into out.L / out.R / out.aux (Float32Array, MIX_RATE) starting at sample `at`.
+// o = { macro, note, vel, pan (0..127, 0x80 = anti-phase), keyOff (s, Infinity = never), tickRate R (ticks/s), song (sequencer
+// channel: CC stages and reverb send active), ctl (t -> {cc: Uint8Array(0x86), bend: 14-bit}), maxT (s) }.
+// Returns { pitch: [[t, note]], end (s), unresolved: Set }.
+function renderVoice(ctx, o, out, at = 0) {
+  ctx.pcm ??= ((cache) => (sd) => cache.get(sd) ?? cache.set(sd, decodeMusyxAdpcm(ctx.samp, sd.off, sd.num)).get(sd))(new Map());
+  const T = ctx.tables, pool = ctx.pool, unresolved = new Set(), pitchLog = [];
+  const s8 = (v) => (v << 24) >> 24, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  // Channel state (offsets in docs/musyx-voice-mixing.md).
+  let vol = o.vel << 16, vol2 = vol, pan = (o.pan & 0x80 ? 0x80 : o.pan) << 16, note = o.note, detune = 0, keyedOff = false;
+  let ramp = null, panSweep = null, vib = null, bendRange = [2, 2];
+  const lfo = [{ period: 0, phase: 0 }, { period: 0, phase: 0 }];
+  const recs = { vol: [{ src: 7, op: 0, scale: 0x100 }], bend: [{ src: 0x80, op: 0, scale: 0x100 }] }, pushed = new Set();
+  let smp = null, adsr = null, envStage = 'sustain', env = 1, envFrom = 1, envT = 0, stopReq = false;
+  let pc = [o.macro, 0], stack = [], waiting = null, stopped = false, steps = 0, seed = o.seed;
+  // Seeded so a re-render of the same note (one track at a time) draws the same random waits.
+  const rand = seed == null ? Math.random : () => ((seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) / 0x100000000);
+  // Tick-unit wait: N * 32000 / R << 3 (computeChannelWaitDuration), in ms*256 units.
+  const ticksToUnits = (n) => Math.floor((n * 32000) / o.tickRate) * 8;
+  const startWait = (w0, w1) => {
+    const b0 = w0 >>> 24, b1 = (w0 >>> 16) & 0xFF, b2 = (w0 >>> 8) & 0xFF;
+    if (b2 & 1 && keyedOff) return;
+    if (b0 & 1 && !(smp && smp.playing)) return;
+    let n = w1 >>> 16;
+    if (b1 & 1) n = (rand() * 0x10000 >>> 0) % Math.max(1, n);
+    waiting = { units: n === 0xFFFF ? Infinity : (w1 >>> 8) & 1 ? n * 256 : ticksToUnits(n), keyOff: !!(b2 & 1), sampleEnd: !!(b0 & 1) };
+    if (waiting.units === 0) waiting = null;
+  };
+  const tableRate = (n) => {
+    if (!smp) return 0;
+    const d = n - smp.sd.root;
+    return (smp.sd.rate * (d >= 0 ? T.semiUp[Math.min(127, d)] : T.semiDown[Math.min(127, -d)]));
+  };
+  const fineRatio = (steps64) => {
+    const up = steps64 >= 0, s = Math.abs(steps64), oct = Math.floor(s / 768), i = Math.floor(s % 768), f = s - Math.floor(s);
+    const tb = up ? T.fineUp : T.fineDown, r = tb[i] + (tb[i + 1] - tb[i]) * f;
+    return up ? r * 2 ** oct : r / 2 ** oct;
+  };
+  const ctlVal = (c, cc, bend) => {
+    if (c === 0x80) return bend;
+    if (c === 0xA0 || c === 0xA1) return 0x2000 + 2 * lfoOut[c - 0xA0];
+    if (c < 0x40) return (cc[c & 0x1F] << 7) | cc[(c & 0x1F) + 0x20];
+    if (c >= 0x40 && c <= 0x45) return cc[c] >= 0x40 ? 0x3FFF : 0;
+    return cc[c] << 7;
+  };
+  const evalRec = (rec, cc, bend) => {
+    let acc = 0;
+    const bip = BIPOLAR_SRC.has(rec[0].src);
+    for (const e of rec) {
+      const v = ctlVal(e.src, cc, bend);
+      const m = BIPOLAR_SRC.has(e.src) ? clamp(((v - 0x2000) * e.scale) >> 8, -0x2000, 0x2000) : clamp((v * e.scale) >> 8, 0, 0x3FFF);
+      if (e.op === 0) acc = m;
+      else if (e.op === 1) acc = bip ? clamp(acc + m, -0x2000, 0x2000) : clamp(acc + m, 0, 0x3FFF);
+      else acc = bip ? (acc * m) >> 13 : (acc * m) >> 14;
+    }
+    return bip ? acc + 0x2000 : acc;
+  };
+  const sine = (ang) => {
+    const q = ang >> 10, i = ang & 1023, t = T.sine;
+    return q === 0 ? t[i] : q === 1 ? t[1023 - i] : q === 2 ? -t[i] : -t[1023 - i];
+  };
+  const lfoOut = [0, 0];
+  const exec = () => {
+    while (!waiting && !stopped && steps++ < 20000) {
+      const code = pool[0].get(pc[0]);
+      if (!code) { stopped = true; break; }
+      const p = pc[1] * 8;
+      if (p + 8 > code.length) { stopped = true; break; }
+      const w0 = ((code[p] << 24) | (code[p + 1] << 16) | (code[p + 2] << 8) | code[p + 3]) >>> 0;
+      const w1 = ((code[p + 4] << 24) | (code[p + 5] << 16) | (code[p + 6] << 8) | code[p + 7]) >>> 0;
+      const op = w0 & 0x7F, b0 = w0 >>> 24, b1 = (w0 >>> 16) & 0xFF, b2 = (w0 >>> 8) & 0xFF;
+      pc = [pc[0], pc[1] + 1];
+      switch (op) {
+        case 0x00: if (stack.length) { pc = stack.pop(); break; } stopped = true; break;
+        case 0x01: if (b2 && stack.length) { pc = stack.pop(); break; } stopped = true; break;
+        case 0x03: if (b2 <= vol >>> 16) pc = [w0 >>> 16, w1 & 0xFFFF]; break;
+        case 0x04: case 0x07: startWait(w0, op === 0x07 ? (w1 | 0x100) >>> 0 : w1); break;
+        case 0x06: if (pool[0].has(w0 >>> 16) && stack.length < 16) { stack.push(pc); pc = [w0 >>> 16, w1 & 0xFFFF]; } break;
+        case 0x0C: {
+          const d = pool[1].get((w0 >>> 8) & 0xFFFF);
+          if (d) adsr = [0, 2, 4, 6].map((i) => d[i] | (d[i + 1] << 8));
+          break;
+        }
+        case 0x0D: vol = clamp(((((w1 >>> 8) & 0xFF ? vol2 : vol) * b2) >>> 7) + (b1 << 16), 0, 0x7F0000); break;
+        case 0x0E: {
+          const t = ((w0 >>> 16) & 0xFFFF) * 256, a = b2 << 16, d = s8(w1 & 0xFF) << 16;
+          pan = a;
+          panSweep = t ? { from: a, to: a + d, total: t, left: t } : null;
+          if (!t) pan = clamp(a + d, 0, 0x7F0000);
+          break;
+        }
+        case 0x0F: {
+          const t = (w1 >>> 8) & 1 ? (w1 >>> 16) * 256 : ticksToUnits(w1 >>> 16);
+          const target = clamp(((vol * b2) >>> 7) + (b1 << 16), 0, 0x7F0000);
+          ramp = { from: vol, to: target, total: Math.max(256, t), left: Math.max(256, t) };
+          break;
+        }
+        case 0x10: {
+          const sd = ctx.sdir.get((w0 >>> 8) & 0xFFFF);
+          if (sd) {
+            let off = w1 < sd.num ? w1 : 0;
+            if (b0) off = Math.min(sd.num - 1, Math.floor(((127 - (vol >>> 16)) * w1) / 127));
+            smp = { sd, pcm: ctx.pcm(sd), pos: off, playing: true };
+            envStage = adsr ? 'attack' : 'sustain'; env = adsr ? 0 : 1; envT = 0;
+            pitchLog.push([at / MIX_RATE + tNow, note + detune / 100]);
+          }
+          break;
+        }
+        case 0x11: if (smp) { envStage = 'release'; envFrom = env; envT = 0; } break;
+        // Sets ch+0x24 bit 0x80; tickAllAudioChannels then cuts the voice (musyxStopVoice, no release) unless the sustain pedal holds it.
+        case 0x12: stopReq = true; break;
+        case 0x18: case 0x19: case 0x1A: {
+          const base = op === 0x19 ? 0 : op === 0x18 && !b0 ? note : o.note;
+          note = clamp((base + b2) & 0xFF, 0, 127);
+          detune = s8(b1);
+          pitchLog.push([at / MIX_RATE + tNow, note + detune / 100]);
+          startWait(0, w1);
+          break;
+        }
+        case 0x17: {
+          // soundMacroPlayRandomKeyNote 0x8008B0A8: random key in [b0, b2] (or [note - b2, note + b0] when w1 byte 2 is set), detune b1 (or random -100..100
+          // when w1 byte 3 is set), then the command rewrites itself in the macro as op 0x19 with that key, so the first pick sticks.
+          const picks = (ctx.randomKeys ??= new Map()), k = pc[0] + ':' + p;
+          if (!picks.has(k)) {
+            const [lo, hi] = (w1 >>> 8) & 0xFF ? [clamp(note - b2, 0, 127), clamp(note + b0, 0, 127)] : b0 < b2 ? [b0, b2] : [b2, b0];
+            // shortcut: the game's RNG state at the first play is unknowable, so the pick is seeded per command (same in every render).
+            let sd = (pc[0] << 12) + p + 1;
+            const r16 = () => (sd = (Math.imul(sd, 1103515245) + 12345) >>> 0) >>> 16, det = w1 & 0xFF ? (r16() % 201) - 100 : s8(b1);
+            picks.set(k, { note: lo + (r16() % (hi - lo + 1)), detune: det });
+          }
+          ({ note, detune } = picks.get(k));
+          pitchLog.push([at / MIX_RATE + tNow, note + detune / 100]);
+          break;
+        }
+        case 0x1C: {
+          const t = (w1 >>> 8) & 1 ? (w1 >>> 16) * 256 : ticksToUnits(w1 >>> 16);
+          if (t) vib = { period: t, depth: s8(b2) < 0 ? -s8(b2) : b2, fine: b1, phase: s8(b2) < 0 ? t >> 1 : 0, wheel: !!(b0 & 3) };
+          else vib = null;
+          break;
+        }
+        case 0x33: bendRange = [b2, b1]; break;
+        case 0x40: case 0x42: {
+          const key = op === 0x40 ? 'vol' : 'bend';
+          const remap = { 0x81: 0x82, 0x82: 0xA0, 0x83: 0xA1, 0x84: 0x83, 0x85: 0x84 };
+          const e = { src: remap[b2] ?? b2, op: w1 >>> 24, scale: Math.trunc(((((w0 >>> 16) << 16) >> 16) * 256) / 100) };
+          if (!pushed.has(key) || e.op === 0) { recs[key] = []; pushed.add(key); }
+          if (recs[key].length < 4) recs[key].push(e);
+          break;
+        }
+        case 0x50: {
+          const n = b2 & 1;
+          if (lfo[n].period) lfo[n].phase = 0;
+          lfo[n].period = (w0 >>> 16) * 256;
+          break;
+        }
+        case 0x30: case 0x31: case 0x38: case 0x36: case 0x37: break;
+        default: unresolved.add('macro op 0x' + op.toString(16));
+      }
+    }
+  };
+  let tNow = 0;
+  const maxT = o.maxT ?? 60, total = Math.min(out.L.length - at, Math.ceil(maxT * MIX_RATE));
+  let prev = null;
+  for (let s = 0; s < total; s += TICK_SAMPLES) {
+    tNow = s / MIX_RATE;
+    if (!keyedOff && tNow >= o.keyOff) {
+      keyedOff = true;
+      if (waiting?.keyOff) waiting = null;
+    }
+    if (waiting) {
+      if ((waiting.sampleEnd && !(smp && smp.playing))) waiting = null;
+      else if (waiting.units !== Infinity && (waiting.units -= TICK_DT) <= 0) waiting = null;
+    }
+    if (!stopped) exec();
+    // A voice ends when its macro stops (soundMacroOpStopVoice frees it), except to finish a release; or when it waits forever on silence.
+    if (stopped && !(envStage === 'release' && smp?.playing)) break;
+    if (waiting?.units === Infinity && !(smp && smp.playing) && !(waiting.keyOff && o.keyOff !== Infinity)) break;
+    // Modulators (tickAllAudioChannels).
+    if (ramp) {
+      ramp.left -= TICK_DT;
+      vol = ramp.left <= 0 ? ramp.to : Math.round(ramp.to - ((ramp.to - ramp.from) * ramp.left) / ramp.total);
+      if (ramp.left <= 0) ramp = null;
+    }
+    if (panSweep) {
+      panSweep.left -= TICK_DT;
+      pan = clamp(panSweep.left <= 0 ? panSweep.to : Math.round(panSweep.to - ((panSweep.to - panSweep.from) * panSweep.left) / panSweep.total), 0, 0x7F0000);
+      if (panSweep.left <= 0) panSweep = null;
+    }
+    for (let n = 0; n < 2; n++) {
+      if (!lfo[n].period) continue;
+      lfo[n].phase += TICK_DT;
+      lfoOut[n] = sine(Math.floor(((lfo[n].phase % lfo[n].period) * 16) / (lfo[n].period >> 8)) & 4095);
+    }
+    const c = o.ctl ? o.ctl(tNow + at / MIX_RATE) : null;
+    const cc = c?.cc ?? DEFAULT_CC, bendCtl = c?.bend ?? 0x2000;
+    if (stopReq && !(o.song && cc[0x40] >= 0x40)) { stopReq = false; if (smp) smp.playing = false; }
+    // Pitch: note rate x detune, vibrato, pitch bend record.
+    let rate = tableRate(note);
+    if (detune > 0) rate += (rate * (0x10D390 / 0x100000) - rate) * detune / 100;
+    else if (detune < 0) rate += (rate - rate * (0xF1A1C / 0x100000)) * detune / 100;
+    if (vib) {
+      vib.phase += TICK_DT;
+      const sv = sine(Math.floor(((vib.phase % vib.period) * 16) / (vib.period >> 8)) & 4095);
+      let p = rate * (sv >= 0 ? T.semiUp[vib.depth] : T.semiDown[vib.depth]);
+      if (vib.fine) p += (p * (sv >= 0 ? 0x10D390 : 0xF1A1C) / 0x100000 - p) * vib.fine / 100;
+      const a0 = vib.wheel && o.song ? ctlVal(1, cc, bendCtl) >> 7 : 0x40;
+      rate += ((sv * (p - rate)) / 4096) * (a0 / 64);
+    }
+    const b = evalRec(recs.bend, cc, bendCtl) - 0x2000;
+    if (b) rate *= fineRatio(((b < 0 ? -1 : 1) * Math.abs(b) * bendRange[b < 0 ? 0 : 1]) / 128);
+    // Volume chain: faders (0x7F, runtime defaults) and CC7 when on a sequencer channel; pan with CC10; aux = CC91 x volume.
+    let V = vol;
+    for (let k = 0; k < 4; k++) V = (V >>> 7) * 0x7F;
+    if (o.song) V = (V >>> 7) * (evalRec(recs.vol, cc, bendCtl) >>> 7);
+    let P = pan;
+    if (o.song && P !== 0x800000) P = clamp(P + (((ctlVal(0xA, cc, bendCtl) >> 7) - 0x40) << 16), 0, 0x7F0000);
+    const aux = o.song ? Math.min(0x7F0000, (((cc[0x5B] << 7) >> 7) * V) >>> 7) : 0;
+    const g = voiceGains(T, V, P, aux);
+    // ADSR (advanceVolumeFadeEnvelope): linear stages in ms.
+    const ms = (TICK_SAMPLES / MIX_RATE) * 1000;
+    if (adsr && envStage !== 'sustain') {
+      envT += ms;
+      const [A, D, S, Rl] = adsr, sus = S / 4096;
+      if (envStage === 'attack') { env = A ? Math.min(1, envT / A) : 1; if (env >= 1) { envStage = 'decay'; envT = 0; } }
+      else if (envStage === 'decay') { env = D ? 1 + (sus - 1) * Math.min(1, envT / D) : sus; if (envT >= D) { envStage = 'hold'; env = sus; } }
+      else if (envStage === 'release') { const r = Rl || 20; env = Math.max(0, envFrom * (1 - envT / r)); if (env <= 0 && smp) smp.playing = false; }
+    } else if (!adsr && envStage === 'release') {
+      envT += ms;
+      env = Math.max(0, envFrom * (1 - envT / 20));
+      if (env <= 0 && smp) smp.playing = false;
+    }
+    // Render this tick's samples (gains ramp across the first 192-sample block, as the RSP does).
+    if (smp && smp.playing) {
+      const step = rate / MIX_RATE, sd = smp.sd, pcm = smp.pcm, loopLen = sd.loopLen, loopStart = sd.loopStart;
+      const tgt = { L: g.L * env, R: g.R * env, aux: g.aux * env }, from = prev ?? tgt;
+      const loopEnd = loopLen ? Math.min(pcm.length, loopStart + loopLen) : pcm.length, endAt = loopEnd - (loopLen ? 0 : 1);
+      const fL = from.L, dL = tgt.L - fL, fR = from.R, dR = tgt.R - fR, fA = from.aux, dA = tgt.aux - fA;
+      const oL = out.L, oR = out.R, oA = out.aux, base = at + s, n = Math.min(TICK_SAMPLES, total - s);
+      let pos = smp.pos;
+      // Most voice ticks are fully silent (volume 0 after key-off): only advance the sample position, the same steps as below.
+      const silent = !fL && !dL && !fR && !dR && !fA && !dA;
+      if (silent) {
+        for (let i = 0; i < n; i++) {
+          if (pos >= endAt) {
+            if (!loopLen) { smp.playing = false; break; }
+            pos = loopStart + ((pos - loopStart) % loopLen);
+          }
+          pos += step;
+        }
+      } else for (let i = 0; i < n; i++) {
+        if (pos >= endAt) {
+          if (!loopLen) { smp.playing = false; break; }
+          pos = loopStart + ((pos - loopStart) % loopLen);
+        }
+        const k = Math.floor(pos), a = pcm[k], next = k + 1 < loopEnd ? pcm[k + 1] : loopLen ? pcm[loopStart] : a;
+        const x = (a + (next - a) * (pos - k)) / 32768, f = i < 192 ? i / 192 : 1;
+        oL[base + i] += x * (fL + dL * f);
+        oR[base + i] += x * (fR + dR * f);
+        if (oA) oA[base + i] += x * (fA + dA * f);
+        pos += step;
+      }
+      smp.pos = pos;
+      prev = tgt;
+    } else if (stopped) break;
+  }
+  return { pitch: pitchLog, end: tNow, unresolved };
+}
+// Menu reverb presets (syncMusyXIfActive callers: cueMenuScreenAudioA/B/C, runModelViewerSoundDemo), by song id. Reverb is off elsewhere.
+const SONG_REVERB = (() => {
+  const ab = { name: 'menu A/B', lenMs: 160, delayMs: 155, tapGain: 0x7800, firGain: 0x4100, fir: [0x051E, 0x0F5C, 0x1999, 0x0800] };
+  const c = { ...ab, name: 'menu C / model viewer', delayMs: 160, firGain: 0x3200 };
+  return new Map([[1, ab], [0x3B, ab], [0x5E, c], [2, c]]);
+})();
+
+// MusyX v1 effect stage per 192-sample block (sfx_stage; block built by buildSongTempoSchedule): taps from the circular buffer -> L/R,
+// 4-tap FIR of the tap mix + the voices' aux bus written back into the buffer.
+function applyMusyxReverb(L, R, aux, p) {
+  const B = 192, sz = Math.floor((MIX_RATE * p.lenMs) / 1000 / B) * B + B, delay = ((Math.floor((MIX_RATE * p.delayMs) / 1000) + 3) & ~3);
+  const buf = new Int16Array(sz), h = p.fir.map((c) => (c * p.firGain) >> 15), c16 = (v) => Math.max(-32768, Math.min(32767, v));
+  let pos = 0, last4 = [0, 0, 0, 0];
+  for (let s = 0; s + B <= L.length; s += B, pos = (pos + B) % sz) {
+    const sub = new Int32Array(B);
+    let d = pos - delay;
+    if (d <= 0) d += sz;
+    for (let j = 0; j < B; j++) sub[j] = c16(sub[j] + ((buf[(d + j) % sz] * p.tapGain + 0x4000) >> 15));
+    const x = [...last4, ...sub];
+    last4 = [...sub.slice(B - 4)];
+    for (let j = 0; j < B; j++) {
+      L[s + j] += sub[j];
+      R[s + j] += sub[j];
+      const e = c16(Math.round(aux[s + j]) + ((h[0] * x[j + 1] + h[1] * x[j + 2] + h[2] * x[j + 3] + h[3] * x[j + 4]) >> 15));
+      buf[(pos + j) % sz] = e;
+    }
+  }
+}
+
+// One pass of a song (until its first track loop), stereo, with per-note timeline data.
+// ctx = { pool, sdir, samp, tables, groups: parseSongGroups() }; opts = { skipTracks: Set(track index), maxSeconds, dry: keep the reverb send (aux) and skip the reverb }.
+function* renderSongSteps(ctx, song, songId, opts = {}) {
+  const g = ctx.groups.get(songId), unresolved = new Set(), notes = [], ctl = [];
+  if (!g) unresolved.add('song not in the song table: no instrument group');
+  // Tempo: R = bpm * 0x600 / 240 ticks per second (setTrackVoiceTickBudget).
+  // updateSongTempoTickRate applies every tempo entry with tick <= the song position, so a tick-0 entry overrides the header BPM (73 songs have one).
+  const segs = [{ tick: 0, bpm: song.bpm }];
+  for (const x of [...song.tempo].sort((a, b) => a.tick - b.tick)) {
+    if (x.tick === segs[segs.length - 1].tick) segs[segs.length - 1] = { tick: x.tick, bpm: x.bpm };
+    else segs.push({ tick: x.tick, bpm: x.bpm });
+  }
+  let acc = 0;
+  for (let i = 0; i < segs.length; i++) {
+    segs[i].R = Math.floor((segs[i].bpm * 0x600) / 240);
+    segs[i].sec = acc;
+    if (i + 1 < segs.length) acc += (segs[i + 1].tick - segs[i].tick) / segs[i].R;
+  }
+  const seg = (tick) => { let i = segs.length - 1; while (i > 0 && segs[i].tick > tick) i--; return segs[i]; };
+  const sec = (tick) => { const s = seg(tick); return s.sec + (tick - s.tick) / s.R; };
+  // Channel events from every track, in tick order: program, controllers, pitch bend / modulation lanes.
+  const chEv = Array.from({ length: 16 }, () => []), noteEv = [];
+  let loopTick = Infinity, endTick = 0;
+  for (const t of song.tracks) {
+    for (const r of t.regions) {
+      if (r.region == null) { loopTick = Math.min(loopTick, r.start); break; }
+      const ev = chEv[t.channel], reg = song.regions.get(r.region);
+      if (r.program !== 0xFF) ev.push({ tick: r.start, kind: 'prog', v: r.program });
+      if (r.vol !== 0xFF) ev.push({ tick: r.start, kind: 'cc', n: 7, v: r.vol });
+      ev.push({ tick: r.start, kind: 'bend', v: 0x2000 }, { tick: r.start, kind: 'cc', n: 1, v: 0 });
+      let lt = 0, v = 0x2000;
+      for (const x of reg.bend) { lt += x.dt; v += x.dv; ev.push({ tick: r.start + lt, kind: 'bend', v }); }
+      lt = 0; v = 0;
+      for (const x of reg.mod) { lt += x.dt; v += x.dv; ev.push({ tick: r.start + lt, kind: 'cc', n: 1, v: Math.max(0, Math.min(127, v >> 7)) }); }
+      for (const e of reg.events) {
+        const tick = r.start + e.tick;
+        if (e.a < 0x80) {
+          noteEv.push({ track: t.index, ch: t.channel, tick, end: tick + e.dur, note: Math.max(0, Math.min(127, e.a + r.transpose)), vel: Math.max(0, Math.min(127, e.b + r.velAdd)) });
+          endTick = Math.max(endTick, tick + e.dur);
+        } else if (e.b === 0) ev.push({ tick, kind: 'prog', v: e.a & 0x7F });
+        else if (e.b >= 0x80) ev.push({ tick, kind: 'cc', n: e.b & 0x7F, v: e.a & 0x7F });
+        else if (e.b === 1) ev.push({ tick, kind: 'cc', n: 0x82, v: e.a & 0x7F });
+      }
+    }
+  }
+  const lastTick = Math.min(loopTick, endTick);
+  const length = Math.min(opts.maxSeconds ?? 600, sec(lastTick) + 3);
+  // Channel state snapshots: setup (MIDISetup) then the sorted events; ctl(ch)(t) returns the state in force at time t.
+  const snaps = chEv.map((ev, ch) => {
+    const s = g?.setup[ch], cc = DEFAULT_CC.slice();
+    if (s) [cc[7], cc[0xA], cc[0x5B], cc[0x5D]] = [s.vol, s.pan, s.reverb, s.chorus];
+    const out = [{ t: 0, cc: cc.slice(), bend: 0x2000, program: s?.program ?? 0 }];
+    for (const e of ev.sort((a, b) => a.tick - b.tick)) {
+      const p = out[out.length - 1], n = { t: sec(e.tick), cc: p.cc.slice(), bend: p.bend, program: p.program };
+      if (e.kind === 'prog') n.program = e.v;
+      else if (e.kind === 'bend') n.bend = e.v;
+      else { n.cc[e.n] = e.v; ctl.push({ channel: ch, t: n.t, cc: e.n, value: e.v }); }
+      out.push(n);
+    }
+    return out;
+  });
+  const stateAt = (ch, t) => {
+    const a = snaps[ch];
+    let lo = 0, hi = a.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (a[m].t <= t) lo = m; else hi = m - 1; }
+    return a[lo];
+  };
+  const n = Math.ceil(length * MIX_RATE), out = { L: new Float32Array(n), R: new Float32Array(n), aux: new Float32Array(n) };
+  const ordered = noteEv.sort((a, b) => a.tick - b.tick);
+  for (let ni = 0; ni < ordered.length; ni++) {
+    const e = ordered[ni];
+    if (ni % 4 === 0) yield ni / ordered.length;
+    const t = sec(e.tick);
+    if (t >= length) continue;
+    const st = stateAt(e.ch, t), entry = g && (e.ch === 9 ? g.drums : g.progs).get(st.program);
+    const voices = entry ? resolveNote(ctx.pool, entry.target, e.note, e.vel, 0x40, entry.x2) : [];
+    const rec = { track: e.track, channel: e.ch, t, dur: sec(e.end) - t, note: e.note, vel: e.vel, program: st.program, target: entry?.target ?? null,
+      voices: voices.map((v) => ({ macro: v.macro, note: v.note, sample: firstSample(ctx.pool, v.macro) })), silent: !voices.length };
+    notes.push(rec);
+    if (opts.skipTracks?.has(e.track)) continue;
+    for (const [vi, v] of voices.entries()) {
+      const r = renderVoice(ctx, { seed: ni * 8 + vi + 1, macro: v.macro, note: v.note, vel: v.vel, pan: v.pan, keyOff: rec.dur, tickRate: seg(e.tick).R, song: true,
+        ctl: (tt) => stateAt(e.ch, tt), maxT: Math.min(length - t, rec.dur + 10) }, out, Math.floor(t * MIX_RATE));
+      for (const u of r.unresolved) unresolved.add(u);
+    }
+  }
+  const reverb = SONG_REVERB.get(songId) ?? null;
+  if (reverb && !opts.dry) applyMusyxReverb(out.L, out.R, out.aux, reverb);
+  return { rate: MIX_RATE, L: out.L, R: out.R, aux: opts.dry ? out.aux : null, length, loopAt: loopTick === Infinity ? null : sec(loopTick), loopFrom: sec(song.loopTick), notes, ctl, reverb,
+    bpm: segs.map((s) => s.bpm), group: g?.group ?? null, unresolved };
+}
+function renderSong(ctx, song, songId, opts) {
+  const it = renderSongSteps(ctx, song, songId, opts);
+  for (;;) {
+    const r = it.next();
+    if (r.done) return r.value;
+  }
+}
+// First sample a macro starts (op 0x10), for colouring timeline notes.
+function firstSample(pool, macro) {
+  const c = pool[0].get(macro);
+  for (let o = 0; c && o + 8 <= c.length; o += 8) {
+    const op = c[o + 3] & 0x7F;
+    if (op === 0x10) return (c[o + 1] << 8) | c[o + 2];
+    if (op === 0) break;
+  }
+  return null;
+}
+
+const DEFAULT_CC = (() => {
+  const cc = new Uint8Array(0x86);
+  cc[7] = 0x7F;
+  cc[0xA] = 0x40;
+  cc[0x80] = 0x40;
+  cc[0x84] = 0x40;
+  return cc;
+})();
+
+// Offline render of one SFX id through its SoundMacro on the shared voice engine, mono ((L + R) / 2).
+// shortcut: a wait that only key-off would end (the game stops such SFX from code) is held for 2 s.
+// ctx = { pool, sdir: Map(id -> sdir entry), samp, tables: parseMixTables(rom) }.
+function renderSfx(ctx, sfx) {
+  const len = MIX_RATE * 10, out = { L: new Float32Array(len), R: new Float32Array(len) };
+  const voices = [];
+  const run = (macro, note) => voices.push(renderVoice(ctx, { macro, note, vel: sfx.vel, pan: sfx.pan, keyOff: 2, tickRate: 768, maxT: 10 }, out));
+  if (sfx.macro & 0x8000) for (const v of resolveNote(ctx.pool, sfx.macro, sfx.key, sfx.vel, sfx.pan, 0)) run(v.macro, v.note);
+  else run(sfx.macro, sfx.key);
+  const end = Math.min(len, Math.ceil(Math.max(0, ...voices.map((v) => v.end)) * MIX_RATE) + 2048);
+  const pcm = new Int16Array(end);
+  for (let i = 0; i < end; i++) pcm[i] = Math.max(-32768, Math.min(32767, Math.round((out.L[i] + out.R[i]) / 2)));
+  return { pcm, rate: MIX_RATE, voices: voices.length, pitch: voices.map((v) => v.pitch), unresolved: new Set(voices.flatMap((v) => [...v.unresolved])) };
+}
+
+// 16-bit WAV; stereo takes interleaved L/R samples.
+function wavBytes(pcm, rate, channels = 1) {
   const w = new Uint8Array(44 + pcm.length * 2), dv = new DataView(w.buffer);
   const str = (o, s) => [...s].forEach((c, i) => (w[o + i] = c.charCodeAt(0)));
   str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVEfmt ');
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
-  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, channels, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2 * channels, true); dv.setUint16(32, 2 * channels, true); dv.setUint16(34, 16, true);
   str(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
   for (let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, pcm[i], true);
   return w;
 }
 
 globalThis.RS64 = { openRom, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
-  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds };
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
+}
+rs64Lib();
