@@ -1,0 +1,2770 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RS64 Model Viewer</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --text: #d9dde6; --dim: #8a92a3; --accent: #e8b84a; --sel: #2b3242;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; }
+  body { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: 100%; }
+  body.no-rom .needs-rom { display: none !important; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  header { padding: 12px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0 0 8px; font-size: 14px; letter-spacing: .04em; color: var(--accent); }
+  .tabs { display: flex; gap: 4px; padding: 8px 12px 0; }
+  .tabs button { flex: 1; }
+  button, select, input { font: inherit; color: var(--text); background: #222733; border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+  button, select, input:not([type=checkbox], [type=range]) { transition: border-color .15s, background-color .15s, color .15s; }
+  button:not(:disabled), select { cursor: pointer; }
+  :where(button, select, input:not([type=checkbox], [type=range])):not(:disabled):hover { border-color: #4a5366; background-color: #2a303d; }
+  :where(button, select, input:not([type=checkbox], [type=range])):focus-visible { border-color: var(--accent); outline: none; }
+  /* Sliders are drawn here rather than left to the browser, whose native thumb can come out as a dark square on this theme. */
+  input[type=range] { -webkit-appearance: none; appearance: none; height: 16px; padding: 0; background: transparent; border: 0; cursor: pointer; }
+  input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: #3a4150; }
+  input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: #3a4150; }
+  input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 55%, #3a4150); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; border: 0; background: var(--accent); transition: transform .15s, box-shadow .15s; }
+  input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 0; background: var(--accent); transition: transform .15s, box-shadow .15s; }
+  input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.25); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  input[type=range]:hover::-moz-range-thumb { transform: scale(1.25); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  input[type=range]:focus-visible { outline: none; }
+  input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+  input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+  button.on, button.on:hover { border-color: var(--accent); color: var(--accent); }
+  .filterbox { position: relative; padding: 0 12px; }
+  #filter { width: 100%; margin: 8px 0 0; padding-right: 26px; }
+  #filterClear { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); margin-top: 4px; border: 0; background: none; color: var(--dim); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; }
+  #filterClear:hover { color: var(--text); }
+  #list { overflow: auto; flex: 1; min-height: 0; padding: 4px 0; }
+  #list .dir { padding: 8px 12px 2px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  #list .row { padding: 3px 12px 3px 20px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #list .row:hover { background: #20252f; }
+  #list .row.sel { background: var(--sel); color: var(--accent); }
+  #opts { padding: 8px 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+  #opts label { display: flex; gap: 6px; align-items: center; }
+  #opts .pair { display: flex; gap: 16px; }
+  #opts input[type=range] { flex: 1; padding: 0; }
+  #opts output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
+  #opts:not(.level) .lvl, #opts.level .mdl, #opts.fx .mdl { display: none; }
+  .tl { display: flex; gap: 6px; align-items: center; }
+  .tl button { flex: 1; }
+  #opts .sec, #scene b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+  #opts .sec:first-child { margin-top: 0; }
+  #scene, #fxPanel { bottom: 10px; right: 10px; display: grid; gap: 6px; padding-right: 14px; }
+  #fxPanel b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+  #scene label, #fxPanel label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  #scene input[type=range], #fxPanel input[type=range] { width: 130px; margin-left: auto; padding: 0; }
+  #scene output, #fxPanel output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
+  select:disabled, input:disabled { opacity: .45; }
+  main { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+  .panel { position: absolute; background: rgba(15,17,21,.85); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+  #hud { top: 10px; left: 10px; font: 12px/1.5 ui-monospace, monospace; pointer-events: none; white-space: pre; }
+  #hud:empty { display: none; }
+  #legend { top: 10px; right: 10px; display: grid; gap: 4px; max-height: calc(100% - 220px); overflow: auto; }
+  #legend b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  #legend label { display: grid; grid-template-columns: auto 14px 1fr auto; align-items: center; gap: 6px; cursor: pointer; }
+  #legend label.group { grid-template-columns: auto 1fr auto; margin-top: 4px; font-weight: 600; }
+  #legend label.sub { padding-left: 18px; }
+  #legend label.master { grid-template-columns: auto 1fr; }
+  #legendRows { display: contents; }
+  #legend em { color: var(--dim); font-style: normal; text-align: right; margin-left: 12px; }
+  #tip { pointer-events: none; background: rgba(15,17,21,.94); max-width: 340px; }
+  #tip span { color: var(--dim); font-family: ui-monospace, monospace; }
+  #tip q { color: var(--accent); }
+  #info { background: rgba(15,17,21,.96); border-color: var(--accent); max-width: 380px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+  #info b { grid-column: 1 / -1; color: var(--accent); margin-bottom: 4px; }
+  #info button { grid-column: 1 / -1; margin-top: 6px; }
+  #info span:nth-of-type(odd) { color: var(--dim); }
+  #info span:nth-of-type(even) { font-family: ui-monospace, monospace; word-break: break-word; }
+  #help { bottom: 10px; left: 10px; display: grid; grid-template-columns: auto auto; gap: 2px 16px; color: var(--dim); pointer-events: none; }
+  #help span:nth-child(odd) { color: var(--text); font-family: ui-monospace, monospace; }
+  #help span:nth-child(even) { text-align: right; }
+  #drop { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+  #drop .box { border: 2px dashed var(--line); border-radius: 10px; padding: 40px 48px; max-width: 460px; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+  #drop.over .box, #drop .box:hover, #drop .box:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); outline: none; }
+  #drop p { color: var(--dim); }
+  .err { color: #ff8a7a; }
+  #busy { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+  #drop.loading .box { pointer-events: none; border-color: var(--accent); }
+  #drop .loadingMsg { display: none; align-items: center; justify-content: center; gap: 8px; color: var(--text); }
+  #drop.loading .loadingMsg { display: flex; }
+  #drop.loading .box > :not(.loadingMsg) { display: none; }
+  @media (max-width: 700px) { body { grid-template-columns: 1fr; grid-template-rows: 40% 60%; } aside { border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.webgpu.js",
+  "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.webgpu.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<!-- Cache-busted: browsers otherwise keep an old parser after rs64assets.js changes, even on a normal reload. -->
+<script>document.write('<script src="rs64assets.js?v=' + Date.now() + '"><\/script>');</script>
+</head>
+<body class="no-rom">
+<aside>
+  <header>
+    <h1>RS64 MODEL VIEWER</h1>
+    <button id="btnBack" hidden style="width:100%;margin-bottom:8px"></button>
+    <input type="file" id="romfile" accept=".z64">
+  </header>
+  <div class="tabs needs-rom"><button id="tabModels" class="on">Models</button><button id="tabLevels">Levels</button><button id="tabEffects">Effects</button></div>
+  <div class="needs-rom filterbox"><input id="filter" placeholder="Filter"><button id="filterClear" title="Clear filter" hidden>&times;</button></div>
+  <div id="list" class="needs-rom"></div>
+  <div id="opts" class="needs-rom">
+    <b class="sec mdl">Model</b><b class="sec lvl">Detail</b>
+    <label id="objRow" hidden>Object <select id="objSel" style="flex:1"></select></label>
+    <label id="lodRow"><span class="lvl">Model</span>LOD <input type="range" id="optLod" min="0" max="3" value="0"><output id="lodVal">0</output></label>
+    <label class="lvl">Terrain LOD <input type="range" id="optTerrainLod" min="0" max="2" value="0"><output id="terrainLodVal">0</output></label>
+    <label class="mdl" id="animRow" hidden>Animation <select id="optAnim" style="flex:1"></select></label>
+    <label class="mdl" id="animSpeedRow" hidden>Anim speed <input type="range" id="optAnimSpeed" min="0" max="3" step="0.05" value="1"><output id="animSpeedVal">1x</output></label>
+    <label class="mdl" id="foilsRow" hidden title="X-wing: 0% = open (normal flight, +-10 deg), 100% = closed (full boost). Shuttle: 0% = folded up (landed), 100% = lowered 110 deg (flight)"><span id="foilsLabel">S-foils closed</span> <input type="range" id="optFoils" min="0" max="1" step="0.01" value="0"><output id="foilsVal">0%</output></label>
+    <label class="mdl" id="speedRow" hidden title="Craft speed driving the engine flicker (the game's player-craft exhaust code); below the craft's low value the exhaust is still">Speed <input type="range" id="optSpeed" min="0" max="6.5" step="0.05" value="4"><output id="speedVal">4</output></label>
+    <label class="mdl" title="Degrees per second-ish; negative spins the other way, 0 is off">Auto-rotate <input type="range" id="optSpin" min="-10" max="10" step="0.5" value="0"><output id="spinVal">0</output></label>
+    <b class="sec">Rendering</b>
+    <div class="pair"><label><input type="checkbox" id="optTex" checked> Textures</label><label><input type="checkbox" id="optWire"> Wireframe</label></div>
+    <label>Filtering <select id="optFilter" style="flex:1"><option value="nearest">Nearest (crisp)</option><option value="linear">Bilinear</option><option value="trilinear">Trilinear (mipmaps)</option><option value="aniso">Anisotropic 16x</option></select></label>
+    <label title="Game: models are prelit and the terrain is baked, as on the N64. Dynamic: real-time sun with cast shadows.">Lighting <select id="optLight" style="flex:1"><option value="game">Game (prelit)</option><option value="dynamic">Dynamic sun + shadows</option></select></label>
+    <button id="btnExport" title="Exports what is shown: current object, LOD and markers">Export .glb</button>
+  </div>
+</aside>
+<main>
+  <canvas id="view" tabindex="0"></canvas>
+  <div id="hud" class="panel needs-rom"></div>
+  <div id="legend" class="panel" hidden><label class="master" title="Show or hide every marker kind"><input type="checkbox" id="optMarkers" checked><b>Markers</b></label><div id="legendRows"></div></div>
+  <div id="fxPanel" class="panel needs-rom" hidden>
+    <b>Effect</b>
+    <label id="fxFpsRow" title="Flipbook playback rate; the game steps explosion frames from each particle's lifetime timer">Frame rate <input type="range" id="optFxFps" min="1" max="30" step="1" value="12"><output id="fxFpsVal">12</output></label>
+    <label id="fxAddRow" title="Add the effect onto the background instead of alpha-blending it (how glows and fire usually draw)"><input type="checkbox" id="optFxAdd"> Additive blend</label>
+    <label id="fxCraftRow" hidden title="The craft that goes down: wingman models run npcWingmanUpdate, the rest are a viewer choice">Craft <select id="optFxCraft" style="flex:1"></select></label>
+    <label title="Background colour behind effects">Background <input type="color" id="optFxBg" value="#0f1115" style="flex:1"></label>
+    <label id="fxSizeRow" hidden title="The owning object's size field (S or R in the tip), which the viewer cannot read from a placed object">Size <input type="range" id="optFxSize" min="0.01" max="3" step="0.005" value="1"><output id="fxSizeVal">1</output></label>
+    <label id="fxModeRow" hidden title="Particle (game): each particle follows its handler in the game code (size, growth, fade, flipbook timing)">Playback <select id="optFxMode" style="flex:1"><option value="particle">Particle (game)</option><option value="flipbook">Flipbook</option></select></label>
+    <label id="fxBurstRow" hidden title="Particles per burst and their spread are a viewer choice: the game spawns them from many callers whose counts are not traced">Burst <input type="range" id="optFxBurst" min="1" max="24" step="1" value="8"><output id="fxBurstVal">8</output></label>
+    <label id="fxChanceRow" hidden title="Chance a landing throws one more debris1 chunk (game: 2%, one rand % 100 roll shared with the plume)">Chunk % <input type="range" id="optChunkPct" min="0" max="100" step="1" value="100"><output id="chunkPctVal">100</output></label>
+    <label id="fxChanceRow2" hidden title="Chance a landing gives the 2-puff smoke plume, rolled on its own here (game: 8%, the 2..9 band of the shared roll)">Plume % <input type="range" id="optPlumePct" min="0" max="100" step="1" value="8"><output id="plumePctVal">8</output></label>
+    <b>Timeline</b>
+    <label title="Playback speed for every effect (1 = game speed); slow it down to watch a simulation">Speed <input type="range" id="optFxSpeed" min="0.05" max="2" step="0.05" value="1"><output id="fxSpeedVal">1x</output></label>
+    <div class="tl"><button id="fxPlay">Pause</button><button id="fxStop" title="Stop and rewind to the start">Stop</button><label><input type="checkbox" id="optFxLoop" checked> Loop</label></div>
+    <label title="Drag to scrub; the take replays deterministically">Time <input type="range" id="fxTime" min="0" max="1" step="0.001" value="0"><output id="fxTimeVal" style="min-width:7em">0.00 s</output></label>
+  </div>
+  <div id="scene" class="panel needs-rom" hidden>
+    <b>Scene</b>
+    <label><input type="checkbox" id="optSky" checked> Skybox</label>
+    <label><input type="checkbox" id="optFog"> Fog</label>
+    <label title="1x is the game's own fog range (it follows the camera)">Fog distance <input type="range" id="optFogDist" min="1" max="8" step="0.5" value="1" disabled><output id="fogVal">1x</output></label>
+    <b>Markers</b>
+    <label title="Lifts each spline above the splines it overlaps so stacked paths can be told apart">Spread paths <input type="range" id="optSpread" min="0" max="3" step="0.1" value="0"><output id="spreadVal">0</output></label>
+  </div>
+  <div id="tip" class="panel" hidden></div>
+  <div id="info" class="panel" hidden></div>
+  <div id="help" class="panel needs-rom">
+    <span>Left / right-drag</span><span>orbit (with momentum)</span>
+    <span>Middle-drag</span><span>pan</span>
+    <span>Right-click</span><span>inspect item / material / tile</span>
+    <span>Wheel</span><span>zoom</span>
+    <span>WASD / QE</span><span>fly (hold Shift to accelerate)</span>
+    <span>R</span><span>reset camera</span>
+  </div>
+  <div id="busy" role="status" aria-live="polite" hidden><span class="spinner"></span><span id="busyText"></span></div>
+  <div id="drop"><div class="box" role="button" tabindex="0" title="Choose a ROM file">
+    <h2>Drop your Rogue Squadron ROM here</h2>
+    <p>USA v1.0 <code>.z64</code>. It is read locally in your browser; nothing is uploaded.</p>
+    <p id="dropErr" class="err"></p>
+    <p class="loadingMsg"><span class="spinner"></span>Loading ROM...</p>
+  </div></div>
+</main>
+<script type="module">
+import * as THREE from 'three/webgpu';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+
+const { openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim } = window.RS64;
+const $ = (id) => document.getElementById(id);
+
+// HOB vertices are s16 model units; levels (DAT positions, terrain) use world units. Item scale applies on top.
+const HOB_TO_WORLD = 1 / 256;
+const MODEL_VIEW_SCALE = 1 / 1000;
+const SUBTYPE_MODEL = {
+  0x0C: 'imp_stuff/tiefighter', 0x0D: 'imp_stuff/gun_turret', 0x0E: 'imp_stuff/prbdroid', 0x0F: 'imp_stuff/atat',
+  0x12: 'imp_stuff/tieinter', 0x13: 'imp_stuff/tiebomber', 0x1E: 'imp_stuff/mis_turret', 0x1F: 'imp_stuff/atst',
+  0x24: 'imp_stuff/shuttle', 0x25: 'imp_stuff/tankdroid', 0x28: 'imp_stuff/megaturret', 0x29: 'imp_stuff/tie_d',
+  0x2A: 'gnrc_stuff/radardish', 0x2B: 'reb_stuff/r_transp', 0x2C: 'imp_stuff/hvyshut', 0x2D: 'imp_stuff/cargo01',
+  0x2E: 'reb_stuff/r_combat', 0x32: 'gnrc_stuff/shield', 0x37: 'imp_stuff/wrld_dvstr', 0x3B: 'imp_stuff/trooper',
+  0x3D: 'gnrc_stuff/civilian', 0x3E: 'imp_stuff/assboat', 0x40: 'imp_stuff/wskimmer', 0x41: 'reb_stuff/r_turret',
+  0x42: 'imp_stuff/tal_turret', 0x43: 'gnrc_stuff/cloudcar', 0x47: 'reb_stuff/atpt_i', 0x48: 'imp_stuff/bosshut',
+  0x4A: 'imp_stuff/pwrgen', 0x4C: 'gnrc_stuff/powerup', 0x4D: 'imp_stuff/raptor', 0x3C: 'reb_stuff/r_pilot',
+  // Trains follow splines like NPCs; '#name' picks the object inside a multi-object HOB.
+  0x2F: 'imp_stuff/train#tr_engine', 0x30: 'imp_stuff/train#tr_defense', 0x34: 'reb_stuff/r_train#r_tr_engine', 0x35: 'reb_stuff/r_train#r_tr_cargo',
+};
+// DAT item types; subtypes from rogue_squadron64/docs/dat_files/dat_file.md (several are educated guesses there).
+const TYPES = {
+  player: { color: 0xe8b84a, label: 'Player start / restarts', icon: 'tri', tip: 'Where the player begins (0x01) and respawns after dying (0x02); the cone shows the facing' },
+  wing: { color: 0xe6edf7, label: 'Wingmen', icon: 'wing', tip: 'Wingman start positions (0x27), e.g. WEDGE, ROGUE_10' },
+  0: { color: 0xc9b38a, label: 'Other units / objects', icon: 'tri', tip: 'Placed units or objects the viewer has no model for (trains, pilots, landing pads, unnamed items); the cone shows the facing' },
+  cam: { color: 0xff79c6, label: 'Camera positions', icon: 'cam', tip: 'Cutscene and intro camera placements (subtype 0x26); the pyramid opens toward where it looks' },
+  // DAT type 2 is a generic point list; the subtype says what each point is.
+  2: { color: 0xff6a3d, label: 'Lava vents', icon: 'circle', tip: 'Lava vent (point subtype 0x51, LavaFart* in Raid on Sullust): erupts lava' },
+  wdgun: { color: 0xb0b8c8, label: 'Devastator gun settings', icon: 'square', tip: 'Subtype 0x49 (lv_f): settings records for the World Devastator gun turrets, all at one dummy point; the guns themselves are parts of the wrld_dvstr model' },
+  point: { color: 0x9ad0ff, label: 'Menu points', icon: 'circle', tip: 'Frontend point (subtype 0x09): hangar camera starts (camstart_*) and bridge scene points (steps*)' },
+  3: { color: 0x4ac0e8, label: 'Unassigned paths', icon: 'cross', tip: 'Splines no NPC names (a level script may switch an NPC onto them); the cross marks the start' },
+  6: { color: 0x9aa3b5, label: 'Other zones', icon: 'zother', tip: 'Zone of an unidentified kind (subtype 0x39)' },
+  zhi: { color: 0x8a7cff, label: 'High-detail regions', icon: 'zhi', tip: 'LOD zone (0x04): objects use their high-detail models while the player is over this area' },
+  zlo: { color: 0x5b6bd8, label: 'Low-detail regions', icon: 'zlo', tip: 'LOD zone (0x05): objects use their low-detail models while the player is over this area' },
+  zmus: { color: 0xf0a24a, label: 'Music regions', icon: 'zmus', tip: 'Music zone (0x10): the music changes while the player is over this area' },
+  zmtrig: { color: 0xffd36b, label: 'Music trigger areas', icon: 'zmtrig', tip: 'Music trigger area (0x39): the linked music zone switches to its track while the player is inside; it can be gated on mission objectives' },
+  zunit: { color: 0xff5f8f, label: 'Ground-unit areas', icon: 'zunit', tip: 'Ground-unit area (0x16): troopers and civilians spawn and roam inside this area' },
+  tvoice: { color: 0x6be0d0, label: 'Voice-line triggers', icon: 'tvoice', tip: 'Event trigger (0x18) named for a voice line (LINE_n / say): entering the area sets objective flags that make the level script play the line' },
+  tevent: { color: 0x5fd17a, label: 'Objective triggers', icon: 'tevent', tip: 'Event trigger (0x18): entering or leaving the area adjusts objective flags and counters that the level script reacts to' },
+  tspawn: { color: 0xc3e65a, label: 'Spawn triggers', icon: 'tspawn', tip: 'Trigger (0x19, usually Gen_*): like an event trigger, and also flags the unit it names so it spawns' },
+  troam: { color: 0x7fd3ff, label: 'NPC roam areas', icon: 'troam', tip: 'Roam area (0x11 For_*, 0x17 *_SPHERE): an NPC names it as its box; it wanders inside the radius and turns back toward the centre when it strays out' },
+  // Path events (fired when an NPC on a spline passes the node; func_800F3CB0), one kind per subtype.
+  pspeed: { color: 0x7ee0ff, label: 'Speed changes', icon: 'bead', tip: 'Path event 0x1B: eases the NPC to a new speed along its spline' },
+  phold: { color: 0xffb347, label: 'Hold orders', icon: 'bead', tip: 'Path event 0x22: the NPC stops at this node until a timer runs out and an objective flag/counter condition is met (func_800F9AB8)' },
+  pattack: { color: 0xff3b30, label: 'Attack orders', icon: 'bead', tip: 'Path event 0x20: sets the NPC attack target (red dashed arrow)' },
+  paction: { color: 0xff9ad5, label: 'Craft actions', icon: 'bead', tip: 'Path event 0x1A: a per-craft action; TIE bombers start a bombing run, shuttles play their wing/landing animation, wingmen trigger an effect' },
+  pfly: { color: 0xc792ff, label: 'Fly-to orders', icon: 'bead', tip: 'Path event 0x4E: sends the NPC off its spline toward a named item (or the player); TIE fighters and the boss shuttle only' },
+  pweave: { color: 0x9be37a, label: 'Weave changes', icon: 'bead', tip: 'Path event 0x1C: changes how much the craft sways side to side along its spline' },
+  ppitch: { color: 0xf5e663, label: 'Landing pitch', icon: 'bead', tip: 'Path event 0x23: tilts the craft up to 90 degrees over a few seconds (landing) or back level (take-off)' },
+  twaypoint: { color: 0xffe14a, label: 'Objective arrow targets', icon: 'twaypoint', tip: 'HUD arrow target (0x3A): the objective arrow points at the nearest one whose objective flag/counter conditions hold' },
+  7: { color: 0x3f9a58, label: 'Other triggers', icon: 'diamond', tip: 'Trigger records no game code was found to read (none left among the subtypes in the levels). Lines point at what they name' },
+};
+const SUBTYPES = {
+  0x01: 'Player start', 0x02: 'Restart point', 0x03: 'Spline', 0x04: 'LOD region (high detail)', 0x05: 'LOD region (low detail)',
+  0x06: 'Hangar placement', 0x07: 'Scene placement', 0x08: 'Scene spline', 0x09: 'Menu point', 0x0C: 'TIE fighter',
+  0x0D: 'Gun turret', 0x0E: 'Probe droid', 0x0F: 'AT-AT', 0x10: 'Music region', 0x11: 'Proximity trigger', 0x12: 'TIE interceptor',
+  0x13: 'TIE bomber', 0x14: 'Building / prop', 0x16: 'Zone', 0x17: 'Sphere trigger', 0x18: 'Event trigger', 0x19: 'Trigger',
+  0x1A: 'Trigger', 0x1B: 'Trigger', 0x1C: 'Trigger', 0x1E: 'Missile turret', 0x1F: 'AT-ST', 0x20: 'Spawn trigger',
+  0x21: 'Stationary NPC spawn', 0x22: 'Trigger', 0x23: 'Trigger', 0x24: 'Shuttle', 0x25: 'Tank droid', 0x26: 'Camera position',
+  0x27: 'Wingman position', 0x28: 'Mega turret', 0x29: 'TIE (D)', 0x2A: 'Radar dish', 0x2B: 'Rebel transport',
+  0x2C: 'Heavy shuttle', 0x2D: 'Cargo', 0x2E: 'Rebel combat', 0x2F: 'Imperial train', 0x30: 'Imperial train',
+  0x31: 'Imperial train', 0x32: 'Shield', 0x33: 'Train pillar', 0x34: 'Rebel train', 0x35: 'Rebel train',
+  0x36: 'Rebel train pillar', 0x37: 'World Devastator', 0x39: 'Music trigger area', 0x3A: 'Trigger', 0x3B: 'Stormtrooper',
+  0x3C: 'Rebel pilot', 0x3D: 'Civilian', 0x3E: 'Assault boat', 0x40: 'Wave skimmer', 0x41: 'Rebel turret',
+  0x42: 'Taloraan turret', 0x43: 'Cloud car', 0x44: 'Imperial platform', 0x46: 'Moving NPC spawn', 0x47: 'AT-PT',
+  0x48: 'Boss hut', 0x49: 'World Devastator gun', 0x4A: 'Power generator', 0x4B: 'Large building', 0x4C: 'Power-up',
+  0x4D: 'Heavy raptor shuttle', 0x4E: 'Trigger', 0x4F: 'Exhaust port', 0x50: 'B soldier', 0x51: 'Lava vent', 0x52: 'Unnamed item',
+};
+const ICONS = {
+  cam: '<path d="M2 4 H9 V10 H2 Z M9 7 L13 4 V10 Z"/>', tri: '<path d="M7 1 L13 12 L1 12 Z"/>', circle: '<circle cx="7" cy="7" r="5"/>', cross: '<path d="M7 1 V13 M1 7 H13 M2.5 2.5 L11.5 11.5"/>',
+  square: '<rect x="2" y="2" width="10" height="10"/>', diamond: '<path d="M7 1 L13 7 L7 13 L1 7 Z"/>',
+  // Trigger kinds: speech bubble = voice line, flag = objective, circled plus = spawn, down arrow = HUD arrow target, dashed ring = roam area.
+  tvoice: '<path d="M1.5 2 H12.5 V9 H6 L3 12 V9 H1.5 Z"/>', tevent: '<path d="M3 13 V1.5 M3 2 H11.5 L9.5 4.75 L11.5 7.5 H3"/>',
+  tspawn: '<circle cx="7" cy="7" r="5.5"/><path d="M7 4 V10 M4 7 H10"/>', twaypoint: '<path d="M7 1.5 V12 M3 8 L7 12 L11 8"/>',
+  troam: '<circle cx="7" cy="7" r="5.5" stroke-dasharray="2.6 1.8"/><circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/>',
+  // Path event: a bead threaded on its spline.
+  bead: '<path d="M1 7 H13" stroke-width="1.4"/><circle cx="7" cy="7" r="3.4"/>',
+  // Zone kinds: dense grid = high detail, coarse grid = low detail, note = music, figure = ground units, dashed = unknown.
+  zhi: '<rect x="1.5" y="1.5" width="11" height="11"/><path d="M5.2 1.5 V12.5 M8.8 1.5 V12.5 M1.5 5.2 H12.5 M1.5 8.8 H12.5" stroke-width="1"/>',
+  zlo: '<rect x="1.5" y="1.5" width="11" height="11"/><path d="M7 1.5 V12.5 M1.5 7 H12.5" stroke-width="1"/>',
+  zmus: '<path d="M9.5 2 V10.5 M9.5 2 L13 3.5"/><circle cx="6.5" cy="10.5" r="2.5" fill="currentColor"/>',
+  zunit: '<circle cx="7" cy="3.8" r="2.2"/><path d="M2.5 13 C2.5 8.2 11.5 8.2 11.5 13"/>',
+  wing: '<path d="M7 2 L9 7 L13 9 L9 9 L7 13 L5 9 L1 9 L5 7 Z"/>',
+  zmtrig: '<rect x="1.5" y="1.5" width="11" height="11" stroke-width="1.2"/><path d="M8.5 3.5 V9 M8.5 3.5 L11 4.5" stroke-width="1.4"/><circle cx="6.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>',
+  zother: '<rect x="2" y="2" width="10" height="10" stroke-dasharray="2.5 2"/>',
+};
+const icon = (t) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#${t.color.toString(16).padStart(6, '0')}" color="#${t.color.toString(16).padStart(6, '0')}" stroke-width="2">${ICONS[t.icon]}</svg>`;
+
+// ---------- renderer ----------
+const canvas = $('view');
+const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
+// Not awaited at top level, so the ROM picker is live immediately; loading waits on it instead.
+const ready = renderer.init();
+// The N64 lights and blends straight in display space; skipping sRGB conversion keeps translucent glass/light shafts as faint as in-game.
+THREE.ColorManagement.enabled = false;
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+
+const scene = new THREE.Scene();
+const bgColor = new THREE.Color(0x0f1115);
+// Effects get their own background (the Background picker), so dark debris can be seen against a light one.
+const fxBg = new THREE.Color(0x0f1115);
+scene.background = bgColor;
+const hemi = new THREE.HemisphereLight(0xffffff, 0x404040, 2.2);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+sun.position.set(1, 2, 1.5);
+scene.add(sun, sun.target);
+// Left on permanently: toggling castShadow at runtime crashes three r170's shadow node, so shadows are switched per mesh.
+sun.castShadow = true;
+sun.shadow.intensity = 0;
+renderer.shadowMap.enabled = true;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.bias = -0.0005;
+
+// Sun from the level's HMP: colour 0-255, direction in game (Y-down) space. A few levels (lv_6) store it pointing up; the game's terrain is lit from above, so force that.
+function applySun(light, w, h) {
+  const c = (v) => new THREE.Color().setRGB(v[0] / 255, v[1] / 255, v[2] / 255, THREE.SRGBColorSpace);
+  hemi.color.copy(c(light.shadow));
+  hemi.groundColor.copy(c(light.shadow));
+  hemi.intensity = 1.6;
+  sun.color.copy(c(light.sunColor));
+  sun.intensity = 2.4;
+  const centre = new THREE.Vector3(w / 2, 0, -h / 2);
+  const travel = new THREE.Vector3(light.sunDir[0], -Math.abs(light.sunDir[1]), -light.sunDir[2]).normalize();
+  const r = Math.max(w, h) * 0.75;
+  sun.target.position.copy(centre);
+  sun.position.copy(centre).addScaledVector(travel, -r * 2);
+  Object.assign(sun.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 1, far: r * 4 });
+  sun.shadow.camera.updateProjectionMatrix();
+}
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 5000);
+camera.position.set(4, 3, 6);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.rotateSpeed = 0.7;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+
+let root = null;
+let stats = {};
+// Pixel ratio is re-read every time: fullscreen or a move to another monitor can change it, leaving a stale buffer size.
+const resize = () => {
+  const r = canvas.parentElement.getBoundingClientRect();
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(r.width, r.height, false);
+  camera.aspect = r.width / Math.max(1, r.height);
+  camera.updateProjectionMatrix();
+};
+new ResizeObserver(resize).observe(canvas.parentElement);
+addEventListener('resize', resize);
+resize();
+
+// ---------- camera: fly keys, framing, reset ----------
+const keys = new Set();
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  keys.add(e.code);
+  if (e.code === 'KeyR' && homeView) setView(homeView);
+});
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
+// Unity-style boost: Shift starts at 3x and keeps accelerating while you keep moving (up to 40x); releasing Shift or stopping resets it.
+let boost = 1;
+function fly(dt) {
+  const shift = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  if (!keys.size) { boost = 1; return; }
+  camera.getWorldDirection(fwd);
+  right.crossVectors(fwd, camera.up).normalize();
+  move.set(0, 0, 0);
+  if (keys.has('KeyW')) move.add(fwd);
+  if (keys.has('KeyS')) move.sub(fwd);
+  if (keys.has('KeyD')) move.add(right);
+  if (keys.has('KeyA')) move.sub(right);
+  if (keys.has('KeyE')) move.y += 1;
+  if (keys.has('KeyQ')) move.y -= 1;
+  if (!move.lengthSq()) { boost = 1; return; }
+  boost = shift ? Math.min(40, Math.max(3, boost) * (1 + 1.5 * dt)) : 1;
+  const speed = camera.position.distanceTo(controls.target) * boost;
+  move.normalize().multiplyScalar(Math.max(speed, 0.5) * dt);
+  camera.position.add(move);
+  controls.target.add(move);
+}
+
+let homeView = null;
+const getView = () => ({ pos: camera.position.clone(), target: controls.target.clone(), near: camera.near, far: camera.far });
+function setView(v) {
+  camera.position.copy(v.pos);
+  controls.target.copy(v.target);
+  camera.near = v.near;
+  camera.far = v.far;
+  camera.updateProjectionMatrix();
+}
+const frame = (obj, dir) => frameBox(new THREE.Box3().setFromObject(obj), dir);
+function frameBox(box, dir = new THREE.Vector3(0.6, 0.5, 0.8)) {
+  if (box.isEmpty()) return;
+  const c = box.getCenter(new THREE.Vector3());
+  dir = dir.clone().normalize();
+  const r = Math.max(box.getSize(new THREE.Vector3()).length() * 0.5, 1e-3);
+  controls.target.copy(c);
+  camera.position.copy(c).addScaledVector(dir, r / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 0.9);
+  camera.near = r / 500;
+  camera.far = r * 50;
+  camera.updateProjectionMatrix();
+  homeView = getView();
+}
+
+// Levels frame on what is rendered (terrain + placed models, not markers), trimming the 2% outliers on each axis:
+// a few items sit far off the map and would otherwise shrink the level to a speck (lv_3).
+function frameLevel(world, markers) {
+  world.updateMatrixWorld(true);
+  const pts = [];
+  const v = new THREE.Vector3();
+  for (const o of world.children) {
+    if (o === markers || o === sky) continue;
+    if (o.name === 'terrain') {
+      const b = new THREE.Box3().setFromObject(o);
+      pts.push(b.min.clone(), b.max.clone(), b.getCenter(new THREE.Vector3()));
+    } else {
+      pts.push(o.getWorldPosition(v).clone());
+    }
+  }
+  if (!pts.length) return frame(world);
+  const q = (axis, f) => pts.map((p) => p[axis]).sort((a, b) => a - b)[Math.min(pts.length - 1, Math.floor(f * (pts.length - 1)))];
+  const box = new THREE.Box3(new THREE.Vector3(q('x', 0.02), q('y', 0.02), q('z', 0.02)), new THREE.Vector3(q('x', 0.98), q('y', 0.98), q('z', 0.98)));
+  // Small scenes (frontend bridge/starwars) place every model at one point, which gives an empty box; frame their geometry instead.
+  if (pts.length < 20 || box.getSize(v).length() < 1) {
+    box.makeEmpty();
+    for (const o of world.children) if (o !== markers && o !== sky) box.expandByObject(o);
+  }
+  frameBox(box);
+}
+
+const clock = new THREE.Clock();
+let spin = 0;
+let sky = null, skyColor = null;
+const skyPos = new THREE.Vector3();
+ready.then(() => renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  fly(dt);
+  applyAnim(dt);
+  applyExhaust(dt);
+  applyEffect(dt);
+  // About 0.1 rad/s per slider step, roughly OrbitControls' old autoRotate pace.
+  if (spin && !selectedLevel && root?.name === 'spin') root.rotation.y += spin * 0.1 * dt;
+  controls.update();
+  // The dome rim sits 38 units above its origin (x2 scale); drop it so the rim meets the horizon.
+  if (sky && sky.parent) sky.position.copy(sky.parent.worldToLocal(skyPos.copy(camera.position))).y += 76;
+  renderer.render(scene, camera);
+}));
+
+function hud() {
+  const lines = [];
+  for (const [k, v] of Object.entries(stats)) lines.push(`${k.padEnd(10)} ${typeof v === 'number' ? v.toLocaleString() : v}`);
+  $('hud').textContent = lines.join('\n');
+}
+
+// ---------- materials ----------
+const lodLevel = () => +$('optLod').value;
+function setFilter(map) {
+  const mode = $('optFilter').value;
+  const mips = mode === 'trilinear' || mode === 'aniso';
+  map.magFilter = mode === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
+  map.minFilter = mips ? THREE.LinearMipmapLinearFilter : map.magFilter;
+  map.generateMipmaps = mips;
+  map.anisotropy = mode === 'aniso' ? 16 : 1;
+  map.needsUpdate = true;
+}
+// Textures, materials and part geometry are cached; a filter change clears them all and rebuilds the view.
+const texCache = new Map(), matPool = new Map(), partCache = new Map(), artCache = new Map();
+function clearCaches() {
+  for (const t of texCache.values()) t.map?.dispose();
+  for (const m of matPool.values()) m.dispose();
+  for (const p of partCache.values()) p.geometry.dispose();
+  for (const t of terrainCache.values()) { t.g.dispose(); t.map.dispose(); }
+  for (const a of artCache.values()) a.then((frames) => frames.forEach((f) => { f.map?.dispose(); f.modelMap?.dispose(); }));
+  terrainCache.clear();
+  artCache.clear();
+  texCache.clear();
+  matPool.clear();
+  partCache.clear();
+}
+
+function materialFor(model, matIndex, key) {
+  const { hmt, clamp } = model;
+  const m = hmt.materials[matIndex];
+  const t = m && (m.type & 1) ? hmt.textures[m.tex] : null;
+  const ck = key + ':' + matIndex;
+  if (!texCache.has(ck)) {
+    let map = null, cutout = false, blend = false;
+    if (t && t.rgba) {
+      map = new THREE.DataTexture(t.rgba, t.w, t.h, THREE.RGBAFormat);
+      // Textures whose UVs never leave 0..1 are clamped, so tiled skies and panels don't bleed the opposite edge in at seams.
+      map.wrapS = map.wrapT = clamp.has(matIndex) ? THREE.ClampToEdgeWrapping : THREE.RepeatWrapping;
+      setFilter(map);
+      // Soft alpha (glows, shockwaves) blends; on/off alpha (colour-keyed rails, walkways) is a cutout.
+      let soft = 0;
+      for (let i = 3; i < t.rgba.length; i += 4) {
+        if (t.rgba[i] < 128) cutout = true;
+        if (t.rgba[i] > 0 && t.rgba[i] < 255) soft++;
+      }
+      // Emissive alpha-format textures always blend, or opaque tiles of a set (centre of 1ade_moon) draw differently from their neighbours.
+      blend = soft > t.rgba.length / 160 || (!!m.emissive && !!(t.flags & 0x800));
+    }
+    texCache.set(ck, { map, cutout, blend, emissive: !!m?.emissive, index: matIndex, matName: m?.name ?? '', tex: t && { name: t.name, w: t.w, h: t.h, type: t.type, flags: t.flags, trans: t.trans } });
+  }
+  return texCache.get(ck);
+}
+
+// "game": models are prelit in the ROM and the game never lights them, so they are drawn unlit. "dynamic": lit by the level sun with shadows.
+const gameLighting = () => $('optLight').value === 'game';
+function threeMaterial(info, textured, wire) {
+  const game = gameLighting();
+  const k = `${info.map ? info.map.id : 0}|${textured}|${wire}|${!!info.valpha}|${game}`;
+  if (!matPool.has(k)) {
+    const blend = (textured && info.blend) || !!info.valpha;
+    // Glass (emissive, opaque texture made translucent by vertex alpha, e.g. sky_lv_01 on canopies) is a sphere-mapped reflection:
+    // the models carry per-face normals for it, and the texture slides across the glass as the view turns.
+    const env = textured && info.emissive && info.valpha && !info.blend;
+    const Mat = env ? THREE.MeshMatcapNodeMaterial : game ? THREE.MeshBasicNodeMaterial : THREE.MeshLambertNodeMaterial;
+    const mat = new Mat({
+      ...(env ? { matcap: info.map } : { map: textured ? info.map : null }), vertexColors: true, side: THREE.DoubleSide,
+      alphaTest: textured && info.cutout && !blend ? 0.5 : 0, transparent: blend, depthWrite: !blend, ...(env ? {} : { wireframe: wire }),
+      // Glow effects add light: emissive soft-alpha textures (engine glows) and untextured translucent strips (exhaust, light shafts). Glass is a plain alpha blend.
+      blending: blend && ((info.emissive && info.blend) || !info.map) ? THREE.AdditiveBlending : THREE.NormalBlending,
+    });
+    // three r170's node materials read vertex colour as RGB only, so feed its alpha in as opacity.
+    // Glass stores ~60% alpha but the game draws it nearly see-through; 25% is tuned by eye, not taken from the game's blend setup.
+    if (env) mat.opacity = 0.25;
+    else if (info.valpha) mat.opacityNode = new THREE.SplitNode(new THREE.AttributeNode('color', 'vec4'), 'w');
+    matPool.set(k, mat);
+  }
+  return matPool.get(k);
+}
+
+// One geometry per part (shared by every placement of it) with a group per material.
+function partGeometry(part, model, key) {
+  const ck = key + ':' + part.offset;
+  if (partCache.has(ck)) return partCache.get(ck);
+  const byMat = new Map();
+  for (const f of part.faces) {
+    if (!byMat.has(f.mat)) byMat.set(f.mat, []);
+    byMat.get(f.mat).push(f);
+  }
+  // vidx: the part vertex behind each buffer position, so effects that move part vertices (engine flicker) can rewrite them.
+  const pos = [], uv = [], col = [], groups = [], vidx = [];
+  let tris = 0;
+  for (const [mat, faces] of byMat) {
+    const start = pos.length / 3;
+    let valpha = false;
+    // Faces without vertex colours are not prelit; the game lights them from the material, whose +4 value is the grey level (tow cable 0.2).
+    const d = model.hmt.materials[mat]?.diffuse, g = d > 0 ? Math.round(Math.min(d, 1) * 255) : 255;
+    const unlit = ((g << 24) | (g << 16) | (g << 8) | 255) >>> 0;
+    for (const f of faces) {
+      const order = f.idx.length === 4 ? [0, 1, 2, 0, 2, 3] : [0, 1, 2];
+      // Vertex alpha is opacity (canopy glass, exhaust, light shafts). On ordinary materials all-zero alpha means "unset" (~3.5k faces);
+      // on emissive ones (exhaust cones) zero really is see-through.
+      const alphaSet = f.colors && (f.colors.some((c) => c & 255) || !!model.hmt.materials[mat]?.emissive);
+      for (const k of order) {
+        const vi = f.idx[k];
+        pos.push(part.verts[vi * 3], part.verts[vi * 3 + 1], part.verts[vi * 3 + 2]);
+        vidx.push(vi);
+        uv.push(f.uvs ? f.uvs[k][0] : 0, f.uvs ? f.uvs[k][1] : 0);
+        const c = f.colors ? (f.colors[k] ?? f.colors[0]) : unlit;
+        const a = alphaSet ? (c & 255) / 255 : 1;
+        if (a < 1) valpha = true;
+        col.push((c >>> 24) / 255, ((c >>> 16) & 255) / 255, ((c >>> 8) & 255) / 255, a);
+      }
+      tris += order.length / 3;
+    }
+    groups.push({ start, count: pos.length / 3 - start, mat, valpha });
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  geometry.computeVertexNormals();
+  const infos = groups.map((gr, i) => {
+    geometry.addGroup(gr.start, gr.count, i);
+    return { ...materialFor(model, gr.mat, key), valpha: gr.valpha };
+  });
+  const entry = { geometry, infos, tris, verts: part.verts.length / 3, vidx };
+  partCache.set(ck, entry);
+  return entry;
+}
+
+// HOB node matrices are 4x3 row-vector transforms (v' = v * M), relative to the parent node.
+// Level item rotation, as the game builds it (func_8001CB9C/CCCC/CDFC + func_800191C4): rotX, then rotY, then rotZ (degrees), then scale.
+function placementRotation(rot) {
+  // rotX, rotY, rotZ applied in that order with the game's signs: the hangar ship slots (stored as 180/a/180 or 0/a/0) then all face the
+  // hangar centre; the old negated angles turned each one by 2a.
+  return new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(...rot.map((d) => THREE.MathUtils.degToRad(d)), 'ZYX'));
+}
+
+// Node pose from the HOB rest values, or from an animation's rotation/translation when given (translation in vertex units).
+const _one = new THREE.Vector3(1, 1, 1), _piv = new THREE.Matrix4();
+const _zAxis = new THREE.Vector3(0, 0, 1);
+function poseNode(g, n, q = null, t = null) {
+  const m = n.matrix;
+  g.matrix.set(m[0], m[3], m[6], m[9], m[1], m[4], m[7], m[10], m[2], m[5], m[8], m[11], 0, 0, 0, 1);
+  if (!q) {
+    const [qw, qx, qy, qz] = n.quat;
+    q = n.flags & 4 ? new THREE.Quaternion(qx, qy, qz, qw).normalize() : new THREE.Quaternion();
+  }
+  if (!t) t = n.flags & 8 ? new THREE.Vector3(...n.pos).multiplyScalar(256) : new THREE.Vector3();
+  // Flag 2 = node scale at +0x5C (only the AT-ST root uses it: 0.0296).
+  g.matrix.premultiply(new THREE.Matrix4().compose(t, q, n.flags & 2 ? new THREE.Vector3(...n.scale) : _one));
+  // Flag 1 joints (AT-AT/AT-PT legs) keep vertices in whole-model space and bend about a pivot: T(pivot) R T(-pivot).
+  if (n.flags & 1) {
+    const p = new THREE.Vector3(...n.pivot).multiplyScalar(256);
+    g.matrix.multiply(_piv.makeTranslation(-p.x, -p.y, -p.z)).premultiply(_piv.makeTranslation(p.x, p.y, p.z));
+  }
+}
+
+function buildObject(obj, model, key, counts) {
+  const group = new THREE.Group();
+  group.name = obj.name;
+  group.userData.hobObject = true;
+  const lod = obj.lods[Math.min(lodLevel(), obj.lods.length - 1)] || [];
+  counts.lods = Math.max(counts.lods || 0, obj.lods.length);
+  const nodes = obj.nodes.map((n, i) => {
+    const g = new THREE.Group();
+    g.matrixAutoUpdate = false;
+    poseNode(g, n);
+    for (const p of lod[i] || []) {
+      const part = partGeometry(p, model, key);
+      const mesh = new THREE.Mesh(part.geometry, part.infos.map((info) => threeMaterial(info, $('optTex').checked, $('optWire').checked)));
+      mesh.userData.infos = part.infos;
+      mesh.userData.shared = true;
+      mesh.userData.hob = { part: p, vidx: part.vidx };
+      mesh.name = p.name;
+      counts.tris += part.tris;
+      counts.verts += part.verts;
+      counts.parts++;
+      g.add(mesh);
+    }
+    return g;
+  });
+  obj.nodes.forEach((n, i) => (n.parent >= 0 ? nodes[n.parent] : group).add(nodes[i]));
+  group.userData.rig = { nodes, src: obj.nodes };
+  return group;
+}
+
+// ---------- skeletal animation ----------
+let anim = null, animClock = 0, spriteRestore = null;
+// Sprite-animated NPCs swap their texture per frame. 12 fps is the rate the spawn code (0x80065260) passes for the 10-frame sets.
+const SPRITE_FPS = 12;
+const SPRITE_ANIMS = { 'gnrc_stuff/civilian': ['civ_anm_run'], 'imp_stuff/trooper': ['trp_anm_run', 'trp_anm_sht', 'blk_anm_run'], 'reb_stuff/r_pilot': ['r_pilot_anm'] };
+const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion();
+function sampleTrack(times, phase) {
+  let k = 0;
+  while (k < times.length - 1 && times[k + 1] <= phase) k++;
+  const k2 = Math.min(k + 1, times.length - 1);
+  const span = times[k2] - times[k];
+  return [k, k2, span > 0 ? (phase - times[k]) / span : 0];
+}
+// X-wing S-foils (playerXwingInit/playerXwingUpdate): boost progress t in 0..1 sets the hinge roll about the long axis,
+// wngrot_a = -(1 - t) * 10 deg, wngrot_b = +(1 - t) * 10 deg, written into the node's base matrix (func_800AA424, degrees).
+// Imperial shuttle (npcShuttleUpdate): progress p in 0..1 eases the wings from folded (rest pose) to 110 * (1 - cos(p * pi)) / 2 deg
+// about each hinge pivot, wngrot_a +deg and wngrot_b -deg (state +0x60, rotZ via func_8001CDFC).
+let foils = null;
+// Code-driven node animations from the player-craft and NPC updates, played as clips: [name, seconds, drive(phase) -> driver values,
+// [[node, local axis, game angle (deg) from the driver, optional game-space y offset]]]. Stick-driven poses sweep stick X -1..1 (sin).
+// A-wing func_800B5B4C, V-wing func_800B8C30 / Naboo func_800BDC9C, snowspeeder func_800AADD4, npcPowerUpUpdate, npcRadarDishUpdate.
+const stickSweep = (p) => ({ x: Math.sin(2 * Math.PI * p) });
+const PROC_ANIMS = [
+  [/pl_crafts\/awing$/, [['bank_sweep', 2, stickSweep, [['f_trns_l', 'y', (d) => d.x * -10.125], ['f_trns_r', 'y', (d) => d.x * -10.125], ['rot_a', 'y', (d) => d.x * -15.75], ['rot_b', 'y', (d) => d.x * -15.75]]]]],
+  [/pl_crafts\/(vwing|koelsch|rmobil)$/, [['bank_sweep', 2, stickSweep, [['f_trns_l', 'x', (d) => 45 * d.x], ['f_trns_r', 'x', (d) => -45 * d.x]]]]],
+  // botrns: a hold timer 0..0.5 s -> -180 * t deg; uptrns: the turned-toward side eases up to 45 deg.
+  [/pl_crafts\/snowspeeder$/, [
+    ['brake_left', 1, (p) => ({ t: 0.5 * (1 - Math.abs(2 * p - 1)) }), [['botrns_l', 'x', (d) => -180 * d.t]]],
+    ['brake_right', 1, (p) => ({ t: 0.5 * (1 - Math.abs(2 * p - 1)) }), [['botrns_r', 'x', (d) => -180 * d.t]]],
+    // uptrns are plain nodes with a rest orientation (flags 12): the generic sign flip turned them the wrong way, so their angle is pre-negated.
+    ['bank_sweep', 2, stickSweep, [['uptrns_l', 'x', (d) => (d.x < 0 ? -45 * (1 - Math.cos((-d.x * Math.PI) / 2)) : 0)], ['uptrns_r', 'x', (d) => (d.x > 0 ? -45 * (1 - Math.cos((d.x * Math.PI) / 2)) : 0)]]],
+  ]],
+  [/gnrc_stuff\/powerup$/, [['spin', 4, (p) => ({ a: 360 * p, b: Math.sin(8 * Math.PI * p) }), [['rot_a', 'y', (d) => d.a, (d) => 0.5 * d.b]]]]],
+  // Radar dish at speed scalar 1 (30 deg/s); its target aiming is not a clip.
+  [/gnrc_stuff\/radardish$/, [['spin', 12, (p) => ({ a: 360 * p }), [['dish', 'y', (d) => d.a]]]]],
+];
+const _axes = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: _zAxis };
+// The game rebuilds the node matrix with the angle added in node space. Like the S-foils, a plain node takes it on its matrix with the
+// sign flipped (row- vs column-vector rotation); a pivot (flag 1) node takes it inside the pivot with the game's sign (as the shuttle).
+function poseProc(g, n, axis, deg, dy = 0) {
+  const r = new THREE.Quaternion().setFromAxisAngle(_axes[axis], THREE.MathUtils.degToRad(n.flags & 1 ? deg : -deg));
+  if (n.flags & 1) {
+    const [qw, qx, qy, qz] = n.quat;
+    poseNode(g, n, (n.flags & 4 ? new THREE.Quaternion(qx, qy, qz, qw).normalize() : new THREE.Quaternion()).multiply(r));
+  } else {
+    poseNode(g, n);
+    g.matrix.multiply(new THREE.Matrix4().makeRotationFromQuaternion(r));
+  }
+  if (dy) g.matrix.premultiply(new THREE.Matrix4().makeTranslation(0, dy * 256, 0));
+}
+// The other shuttle models carry the same wngrot hinge nodes, so they take the traced shuttle rule.
+const foilKind = (id) => (/xwing|xwng/.test(id) ? 'xwing' : /imp_stuff\/(shuttle|hvyshut|bosshut)/.test(id) ? 'shuttle' : null);
+function setupFoils(id, objGroup) {
+  const rig = objGroup?.userData.rig, names = objGroup && modelCache.get(id)?.hob.objects.find((o) => o.name === objGroup.name)?.nodeNames;
+  const a = names?.get('wngrot_a'), b = names?.get('wngrot_b');
+  const kind = foilKind(id);
+  foils = kind && rig && a != null && b != null ? { rig, a, b, kind } : null;
+  $('foilsRow').hidden = !foils;
+  if (foils) $('foilsLabel').textContent = kind === 'shuttle' ? 'Wings lowered' : 'S-foils closed';
+  applyFoils();
+}
+// Engine flicker (func_80053C04 setup, func_80053F7C per frame): each frame one of eng_a/eng_b (alternating) gets its leading vertices'
+// z set to rest z - rand() % N, walking from vertex 0 while z stays within 16 of vertex 0's; N = t * 1024 + 1 with
+// t = max(0, (speed + 0.5 - lo) / (hi - lo)). Per-craft (lo, hi) from the game's table.
+const EXHAUST_RANGE = { awing: [3, 5.625], vwing: [3, 4.5], xwing: [1.875, 3.75], ywing: [2.25, 3.375], snowspeeder: [2.625, 3.5625],
+  falcon: [2.25, 5.625], tie_inter: [2.625, 4.5], koelsch: [2.25, 6], t16: [2.25, 6] };
+let exhaust = null, exhaustClock = 0, exhaustParity = 0;
+function setupExhaust(objGroup) {
+  if (exhaust) for (const e of exhaust.engines) writeEngineZ(e, (i) => e.rest[i]);
+  const range = objGroup && EXHAUST_RANGE[objGroup.name];
+  const engines = [];
+  objGroup?.traverse((o) => {
+    const h = o.userData.hob;
+    if (!h || !/^eng_[ab]$/.test(o.name)) return;
+    // Rest z of the leading run of vertices the game rewrites.
+    const v = h.part.verts, rest = [v[2]];
+    for (let i = 1; i < 16 && i * 3 + 2 < v.length && v[i * 3 + 2] - v[2] < 16; i++) rest.push(v[i * 3 + 2]);
+    engines.push({ mesh: o, vidx: h.vidx, rest, name: o.name });
+  });
+  engines.sort((a, b) => a.name.localeCompare(b.name));
+  exhaust = range && engines.length ? { engines, range } : null;
+  $('speedRow').hidden = !exhaust;
+}
+function writeEngineZ(e, zOf) {
+  const pos = e.mesh.geometry.attributes.position;
+  for (let j = 0; j < e.vidx.length; j++) if (e.vidx[j] < e.rest.length) pos.setZ(j, zOf(e.vidx[j]));
+  pos.needsUpdate = true;
+}
+function applyExhaust(dt) {
+  if (!exhaust) return;
+  exhaustClock += dt;
+  if (exhaustClock < 1 / 30) return;
+  exhaustClock = 0;
+  const [lo, hi] = exhaust.range, speed = +$('optSpeed').value;
+  const n = Math.floor(Math.max(0, (speed + 0.5 - lo) / (hi - lo)) * 1024 + 1);
+  const e = exhaust.engines[exhaustParity++ & 1] ?? exhaust.engines[0];
+  writeEngineZ(e, (i) => e.rest[i] - Math.floor(Math.random() * n));
+}
+function applyFoils(v = +$('optFoils').value) {
+  if (!foils) return;
+  // X-wing: the game writes the angle into the row-vector node matrix and three's column-vector rotation runs the other way.
+  // Shuttle: the angle goes inside the pivot, where the game's sign carries over unflipped (wings fold down outward).
+  const deg = foils.kind === 'shuttle' ? 55 * (1 - Math.cos(v * Math.PI)) : (1 - v) * 10;
+  for (const [i, sign] of [[foils.a, 1], [foils.b, -1]]) {
+    const g = foils.rig.nodes[i], q = new THREE.Quaternion().setFromAxisAngle(_zAxis, THREE.MathUtils.degToRad(sign * deg));
+    // The shuttle hinges are flag-1 pivot nodes, so the rotation goes inside the pivot; the X-wing's go on the node matrix.
+    if (foils.kind === 'shuttle') poseNode(g, foils.rig.src[i], q);
+    else {
+      poseNode(g, foils.rig.src[i]);
+      g.matrix.multiply(new THREE.Matrix4().makeRotationFromQuaternion(q));
+    }
+  }
+}
+
+function poseProcAt(a, phase) {
+  const d = a.proc[2](phase);
+  for (const [i, axis, angle, dy] of a.nodes) poseProc(a.rig.nodes[i], a.rig.src[i], axis, angle(d), dy?.(d));
+}
+
+function applyAnim(dt) {
+  if (anim?.sprite) {
+    animClock += dt * +$('optAnimSpeed').value;
+    const f = anim.sprite[Math.floor(animClock * SPRITE_FPS) % anim.sprite.length];
+    if (anim.map.image.data !== f.rgba) {
+      anim.map.image.data = f.rgba;
+      anim.map.needsUpdate = true;
+    }
+    return;
+  }
+  if (anim?.foil) {
+    // Drives the wings slider, so the slider shows where the sweep is.
+    animClock += dt * +$('optAnimSpeed').value;
+    const [from, to] = anim.foil, v = from + (to - from) * ((animClock / anim.seconds) % 1);
+    $('optFoils').value = v;
+    $('foilsVal').textContent = Math.round(v * 100) + '%';
+    applyFoils(v);
+    return;
+  }
+  if (anim?.proc) {
+    animClock += dt * +$('optAnimSpeed').value;
+    poseProcAt(anim, (animClock / anim.proc[1]) % 1);
+    return;
+  }
+  if (!anim || !anim.rig) return;
+  animClock += dt * +$('optAnimSpeed').value;
+  const phase = (animClock / anim.seconds) % 1;
+  anim.data.tracks.forEach((tr, i) => {
+    const g = anim.rig.nodes[i + 1], n = anim.rig.src[i + 1];
+    if (!tr || !g) return;
+    const [a, b, f] = sampleTrack(tr.times, phase);
+    let q = null, t = null;
+    if (tr.rot) q = new THREE.Quaternion().slerpQuaternions(_qa.set(...tr.rot[a]), _qb.set(...tr.rot[b]), f).normalize();
+    if (tr.pos) t = new THREE.Vector3(...tr.pos[a]).lerp(new THREE.Vector3(...tr.pos[b]), f);
+    poseNode(g, n, q, t);
+  });
+}
+
+function applyMaterialOptions() {
+  if (!root) return;
+  root.traverse((o) => {
+    if (o.isMesh && o.userData.infos) o.material = o.userData.infos.map((i) => threeMaterial(i, $('optTex').checked, $('optWire').checked));
+    if (o.isMesh && o.userData.terrain) {
+      o.material.wireframe = $('optWire').checked;
+      o.material.map = $('optTex').checked ? o.userData.terrain : null;
+      o.material.needsUpdate = true;
+    }
+  });
+}
+
+// ---------- level item descriptions ----------
+let voiceLine = () => undefined;
+const fmt = (v) => (Array.isArray(v) ? v.map((n) => n.toFixed(2)).join(', ') : v);
+const hex = (v) => '0x' + v.toString(16).toUpperCase();
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const TEX_TYPES = ['CI4', 'CI8', 'RGB16', 'RGB(A)32', 'Gray 4/8', 'Gray 8'];
+
+// What an item does, in words; trigger targets and voice lines are filled in by showLevel.
+function describe(it) {
+  if (it.type === 6) {
+    let s = (TYPES[markerKind(it)]?.tip ?? 'Zone').replaceAll('; ', ';\n');
+    if (/LevelSett|LevelDefa/.test(it.name)) s += ". Sits off the map; likely the level's default music settings";
+    if (it.linkedFrom && !it.label) s += '. Used by ' + it.linkedFrom.join(', ');
+    if (it.sub === 0x10 && it.linkedTo) s += '. Plays while the player is inside its linked trigger area';
+    return s;
+  }
+  if (it.type === 3) return it.users?.length ? 'Path followed by ' + it.users.join(', ') : it.pathKind ? `Path with no NPC naming it; grouped with ${TYPES[it.pathKind].label.toLowerCase()} by its name` : 'Path that no NPC names (a level script may switch an NPC onto it)';
+  if (it.type === 7) {
+    const lines = [];
+    if (it.radius > 0 && (it.sub === 0x11 || it.sub === 0x17)) {
+      // npcProbeDriod / func_800F4E74: the NPC wanders inside the radius (probe droids subtract their own size) and heads back to the centre when outside.
+      lines.push(`Roam area${it.targets?.length ? ' for ' + it.targets.join(', ') : ''}: wanders within ${it.radius.toFixed(1)} units of the centre and turns back when it strays out`);
+      return lines.join('\n');
+    }
+    if (it.waypoint) {
+      const w = it.waypoint;
+      lines.push(`Objective arrow target: the HUD arrow points at the nearest active one${w.follow ? `, following ${w.follow}` : ''}`);
+      const on = [w.flag && `flag #${w.flag} is set`, w.counter && `counter #${w.counter} ≥ ${w.atLeast}`].filter(Boolean);
+      const off = [w.hideFlag && `flag #${w.hideFlag} is set`, w.hideCounter && `counter #${w.hideCounter} reaches ${w.below}`].filter(Boolean);
+      if (on.length) lines.push('Shown once ' + on.join(' and '));
+      if (off.length) lines.push('Hidden once ' + off.join(' or '));
+      return lines.join('\n');
+    }
+    if (it.pathEvent) {
+      // func_800F3CB0 writes 0x1B/0x1C/0x23 into the path follower; 0x1A/0x22/0x4E/0x20 are channel-9 orders to the NPC's own handler.
+      const e = it.pathEvent, sc = (x) => +x.toFixed(2), w = e.w, fl = e.fl;
+      lines.push(it.paths?.length ? `Fires when an NPC on ${it.paths.join(', ')} passes it` : 'Fires when an NPC passes this spline node (no spline references it)');
+      // 0x22 hold (func_800F9AB8 + func_800F410C): stop while the timer runs, flag w[1] != w[2], or counter w[3] < w[4].
+      const hold = () => {
+        const until = [w[1] && `flag #${w[1]} = ${w[2]}`, w[3] && `counter #${w[3]} ≥ ${w[4]}`].filter(Boolean);
+        const time = fl[0] >= 9000 ? 'Stops here for good' : fl[0] > 0 ? `Stops here for ${sc(fl[0])} s` : 'Stops here';
+        return until.length ? `${time}${fl[0] > 0 && fl[0] < 9000 ? ' and' : ''} until ${until.join(' and ')}` : time;
+      };
+      // 0x1A word selects the craft: 0 = TIE bomber bombing run (count fl[1], interval fl[2]; npcTieVariantUpdate),
+      // 1 = shuttle wing/landing animation (direction fl[1], duration fl[2]; npcShuttleUpdate), 2 = wingman effect (npcWingmanUpdate).
+      const action = () => ({
+        0: `Bombing run: drops ${sc(fl[1])} bomb${fl[1] === 1 ? '' : 's'}${fl[2] > 0 ? ` every ${sc(fl[2])} s` : ''}`,
+        1: `Shuttle wing/landing animation ${fl[1] ? 'forward' : 'backward'} over ${sc(fl[2])} s`,
+        2: `Wingman effect ${fl[1] ? '0x1F' : '0x20'} (probably engines)`,
+      })[w[0]] ?? `Craft action mode ${w[0]}`;
+      const what = {
+        0x1A: action(),
+        0x1B: `Speed ${e.ib ? '×' : '='} ${sc(e.a)}${e.c > 0 ? `, eased over ${sc(e.c)} s` : ''}`,
+        0x1C: `Side-to-side weave ${e.ib ? '×' : '='} ${sc(e.a * 0.25)}, eased over ${sc(e.c)} s`,
+        0x20: e.target && e.target[0] !== '-' ? `Attacks ${e.target} (shot multiplier ${sc(fl[4])})` : 'Clears its attack target',
+        0x22: hold(),
+        0x23: e.ia ? `Pitches up to 90° over ${sc(e.b)} s (landing)` : `Levels out over ${sc(e.b)} s (take-off)`,
+        0x4E: `Leaves its spline and flies to ${e.target || 'the player'}`,
+      }[it.sub];
+      if (what) lines.push(what);
+      const need = [e.flag && `flag #${e.flag} is set`, e.counter && `counter #${e.counter} ≥ ${e.atLeast}`].filter(Boolean);
+      if (need.length) lines.push('Only if ' + need.join(' and '));
+      const act = [e.addCounter && `counter #${e.addCounter} ${e.amount >= 0 ? '+' : '−'}= ${Math.abs(e.amount)}`, e.setFlag && `flag #${e.setFlag} = ${e.value}`].filter(Boolean);
+      if (act.length) lines.push('Also ' + act.join(', '));
+      return lines.join('\n');
+    }
+    if (it.activators) {
+      // func_800AA6D0 / func_80065980: an activator entering/leaving the area adjusts mission flags and counters,
+      // which the level's own script (lvN_checkComplexObjectives) reacts to.
+      const who = it.activators.map((a) => (a === 'ply' ? 'the player' : a)).join(', ');
+      lines.push(`Fires when ${who} ${it.cylinder ? 'flies over' : 'comes within'} ${it.radius.toFixed(1)} units`);
+      const r = it.requires;
+      const need = r && [r.flag && `flag #${r.flag} is set`, r.counter && `counter #${r.counter} ≥ ${r.atLeast}`].filter(Boolean);
+      if (need?.length) lines.push('Only if ' + need.join(' and '));
+      const act = (b) => [b.counter && `counter #${b.counter} ${b.add >= 0 ? '+' : '−'}= ${Math.abs(b.add)}`, b.flag && `flag #${b.flag} = ${b.value}`].filter(Boolean).join(', ');
+      if (act(it.onEnter)) lines.push('On enter: ' + act(it.onEnter));
+      if (act(it.onExit)) lines.push('On exit: ' + act(it.onExit));
+    } else if (it.targets?.length) {
+      lines.push('Linked to ' + it.targets.join(', '));
+    }
+    if (it.voice) lines.push(`Name points to voice line ${it.voiceId}: "${it.voice}"`);
+    return lines.join('\n') || (SUBTYPES[it.sub] ?? 'Trigger') + ' (no activators or actions decoded for this subtype yet)';
+  }
+  return SUBTYPES[it.sub] ?? 'subtype ' + hex(it.sub);
+}
+function itemRows(it) {
+  return [['What it is', esc(describe(it)).replaceAll('\n', '<br>')], ['Kind', `${TYPES[markerKind(it)]?.label ?? 'Type ' + it.type} · ${SUBTYPES[it.sub] ?? hex(it.sub)}`],
+    ['DAT type / subtype', `${it.type} / ${hex(it.sub)}`], ['Index / offset', `${it.index} / ${hex(it.offset)}`],
+    it.model && ['Reference', esc(it.model)], [it.recordPos ? 'Position (node)' : 'Position', fmt(it.pos)], it.recordPos && ['Record position', fmt(it.recordPos)], it.rot && ['Rotation°', fmt(it.rot)],
+    it.scale && ['Scale', fmt(it.scale)], it.size && ['Footprint', it.size[0].toFixed(1) + ' × ' + it.size[2].toFixed(1)], it.points && ['Spline points', it.points.length]];
+}
+
+// ---------- level markers ----------
+const markerMat = new Map();
+const lineMat = (type, opacity = 1) => {
+  const k = type + '|' + opacity + '|' + TYPES[type]?.color;
+  if (!markerMat.has(k)) markerMat.set(k, new THREE.LineBasicMaterial({ color: TYPES[type]?.color ?? 0xffffff, transparent: opacity < 1, opacity, fog: false }));
+  return markerMat.get(k);
+};
+const attackLineMat = new THREE.LineDashedMaterial({ color: 0xff3b30, dashSize: 0.5, gapSize: 0.3, fog: false });
+const attackHeadMat = new THREE.MeshBasicMaterial({ color: 0xff3b30, fog: false });
+const meshMat = (type) => {
+  const k = 'm' + type + '|' + TYPES[type]?.color;
+  if (!markerMat.has(k)) markerMat.set(k, new THREE.MeshBasicMaterial({ color: TYPES[type]?.color ?? 0xffffff, wireframe: true, fog: false }));
+  return markerMat.get(k);
+};
+const GEO = {
+  cone: new THREE.ConeGeometry(0.3, 0.9, 8).rotateX(Math.PI / 2),
+  camera: new THREE.ConeGeometry(0.45, 0.8, 4).rotateY(Math.PI / 4).rotateX(-Math.PI / 2),
+  diamond: new THREE.OctahedronGeometry(0.4),
+  arrow: new THREE.ConeGeometry(0.2, 0.6, 8),
+  bead: new THREE.TorusGeometry(0.35, 0.09, 6, 18),
+  cube: new THREE.BoxGeometry(0.55, 0.55, 0.55),
+  // Tip at game +y, which is down on screen (game space is Y-down).
+  downCone: new THREE.ConeGeometry(0.3, 0.7, 8),
+  ball: new THREE.IcosahedronGeometry(0.35, 0),
+  cross: new THREE.BufferGeometry().setFromPoints([[-0.6, 0, 0], [0.6, 0, 0], [0, -0.6, 0], [0, 0.6, 0], [0, 0, -0.6], [0, 0, 0.6]].map((p) => new THREE.Vector3(...p))),
+};
+// 3D marker per trigger kind, matching the legend: ball = voice line, cube = spawn, down cone = HUD arrow target, small ball = roam area.
+const TRIGGER_GEO = { tvoice: GEO.ball, tspawn: GEO.cube, twaypoint: GEO.downCone, troam: new THREE.IcosahedronGeometry(0.2, 0) };
+// The ring's plane faces along the path at the node, so it reads as a bead threaded on the spline. Rotated per marker in the geometry
+// (not the mesh) so the marker's link lines keep their positions.
+const beadGeometry = (tangent) => (tangent ? GEO.bead.clone().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent)) : GEO.bead);
+function makeMarker(it) {
+  const [x, y, z] = it.pos;
+  let mk;
+  if (it.type === 6) {
+    // Zones are 2D footprints from pos to pos + size (X/Z); height is ignored (npcGroundTroopUpdate scatters units over
+    // [pos, pos+size] and takes Y from the terrain). Drawn as an outline + see-through fill draped on the ground.
+    const kind = markerKind(it), rot = placementRotation(it.rot);
+    const sx = it.size[0], sz = it.size[2], n = Math.max(2, Math.ceil(Math.max(Math.abs(sx), Math.abs(sz)) / 0.5));
+    const at = (u, v) => {
+      const p = new THREE.Vector3(u * sx, 0, v * sz).applyMatrix4(rot);
+      return new THREE.Vector3(p.x, levelHeight(x + p.x, z + p.z) - y - 0.15, p.z);
+    };
+    const ring = [];
+    for (const [u0, v0, u1, v1] of [[0, 0, 1, 0], [1, 0, 1, 1], [1, 1, 0, 1], [0, 1, 0, 0]]) {
+      for (let i = 0; i < n; i++) ring.push(at(u0 + (u1 - u0) * i / n, v0 + (v1 - v0) * i / n));
+    }
+    ring.push(ring[0].clone());
+    mk = new THREE.Line(new THREE.BufferGeometry().setFromPoints(ring), lineMat(kind));
+    const fill = new THREE.PlaneGeometry(1, 1, n, n);
+    const fp = fill.attributes.position;
+    for (let i = 0; i < fp.count; i++) {
+      const q = at(fp.getX(i) + 0.5, fp.getY(i) + 0.5);
+      fp.setXYZ(i, q.x, q.y, q.z);
+    }
+    const area = new THREE.Mesh(fill, zoneFillMat(kind));
+    area.userData.item = it;
+    mk.add(area);
+  } else if (it.type === 3) {
+    mk = new THREE.LineSegments(GEO.cross, lineMat(markerKind(it)));
+    if (it.points?.length > 1) {
+      const pts = it.points.map((p) => new THREE.Vector3(p[0] - x, p[1] - y, p[2] - z));
+      const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(pts.length * 12)), lineMat(markerKind(it)));
+      line.userData.item = it;
+      mk.add(line);
+    }
+  } else if (it.type === 0) {
+    const cam = markerKind(it) === 'cam';
+    mk = new THREE.Mesh(cam ? GEO.camera : GEO.cone, meshMat(markerKind(it)));
+    if (it.rot) mk.quaternion.setFromRotationMatrix(placementRotation(it.rot));
+  } else {
+    mk = new THREE.Mesh(it.pathEvent ? beadGeometry(it.nodeTangents?.[0]) : TRIGGER_GEO[markerKind(it)] ?? (it.type === 7 ? GEO.diamond : GEO.ball), meshMat(markerKind(it)));
+    // The real trigger area: a wire sphere, or for cylinder triggers a ring draped on the ground.
+    if (it.radius > 0) {
+      let area;
+      if (it.cylinder) {
+        const pts = [];
+        for (let k = 0; k <= 64; k++) {
+          const a = (k / 64) * Math.PI * 2, px = Math.cos(a) * it.radius, pz = Math.sin(a) * it.radius;
+          pts.push(new THREE.Vector3(px, levelHeight(x + px, z + pz) - y - 0.15, pz));
+        }
+        area = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat(markerKind(it), 0.7));
+      } else {
+        area = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(it.radius, 1)), lineMat(markerKind(it), 0.25));
+      }
+      area.userData.item = it;
+      mk.add(area);
+    }
+  }
+  mk.position.set(x, y, z);
+  mk.name = it.name;
+  mk.userData.item = it;
+  return mk;
+}
+
+// Legend rows double as per-type visibility toggles.
+// Camera placements are type-0 items like spawns, but listed separately.
+const ZONE_KINDS = { 0x04: 'zhi', 0x05: 'zlo', 0x10: 'zmus', 0x16: 'zunit', 0x39: 'zmtrig' };
+const SPAWN_KINDS = { 0x01: 'player', 0x02: 'player', 0x26: 'cam', 0x27: 'wing', 0x49: 'wdgun' };
+const PATH_KINDS = { 0x1B: 'pspeed', 0x22: 'phold', 0x20: 'pattack', 0x1A: 'paction', 0x4E: 'pfly', 0x1C: 'pweave', 0x23: 'ppitch' };
+const triggerKind = (it) => (it.sub === 0x11 || it.sub === 0x17 ? 'troam' : it.sub === 0x19 ? 'tspawn' : it.sub === 0x3A ? 'twaypoint' : it.pathEvent ? PATH_KINDS[it.sub] : it.sub !== 0x18 ? 7 : /LINE_\d|say/i.test(it.name) ? 'tvoice' : 'tevent');
+const markerKind = (it) => (it.type === 2 && it.sub !== 0x51 ? 'point' : it.type === 3 && it.pathKind ? it.pathKind : it.type === 0 ? SPAWN_KINDS[it.sub] ?? 0 : it.type === 6 ? ZONE_KINDS[it.sub] ?? 6 : it.type === 7 ? triggerKind(it) : it.type);
+// Game space is Y-down, so lifting a spline means subtracting from its y.
+function applySpread(markers) {
+  const step = +$('optSpread').value;
+  for (const m of markers.children) if (m.userData.spreadRank != null) m.position.y = m.userData.item.pos[1] - m.userData.spreadRank * step;
+}
+// Terrain height (game Y-down) at world x/z, set per level; 0 when the level has no terrain.
+let levelHeight = () => 0;
+const zoneFill = new Map();
+function zoneFillMat(kind) {
+  if (!zoneFill.has(kind)) zoneFill.set(kind, new THREE.MeshBasicMaterial({ color: TYPES[kind]?.color ?? 0xffffff, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+  return zoneFill.get(kind);
+}
+const hiddenTypes = new Set();
+function applyMarkerVisibility(markers) {
+  const kinds = new Set(markers.children.map((m) => String(markerKind(m.userData.item))));
+  for (const m of markers.children) m.visible = !hiddenTypes.has(String(markerKind(m.userData.item)));
+  // The master checkbox mirrors the per-kind toggles: off when all are hidden, indeterminate when some are.
+  const hidden = [...kinds].filter((k) => hiddenTypes.has(k)).length;
+  $('optMarkers').checked = hidden < kinds.size;
+  $('optMarkers').indeterminate = hidden > 0 && hidden < kinds.size;
+}
+const LEGEND_GROUPS = [
+  ['Spawns & cameras', ['player', 'wing', '0', 'cam', 'point', 'wdgun']],
+  // Paths get one row per NPC kind found on the level (path:*), then unassigned splines.
+  ['Paths', null],
+  ['Triggers', ['tvoice', 'tevent', 'tspawn', 'twaypoint', '7', '2']],
+  ['Path events', ['pspeed', 'phold', 'pattack', 'paction', 'pfly', 'pweave', 'ppitch']],
+  ['Zones', ['zhi', 'zlo', 'zmus', 'zmtrig', 'zunit', 'troam', '6']],
+];
+function renderLegend(markers) {
+  const counts = {};
+  for (const m of markers.children) { const k = markerKind(m.userData.item); counts[k] = (counts[k] || 0) + 1; }
+  const el = $('legendRows');
+  el.innerHTML = '';
+  // Each group header toggles all of its rows; it shows as indeterminate when only some are on.
+  for (const [group, types] of LEGEND_GROUPS) {
+    const present = (types ?? [...Object.keys(counts).filter((k) => k.startsWith('path:')).sort(), '3']).filter((t) => counts[t]);
+    if (!present.length) continue;
+    const head = document.createElement('label');
+    head.className = 'group';
+    head.innerHTML = `<input type="checkbox"><span>${group}</span><em>${present.reduce((s, t) => s + counts[t], 0)}</em>`;
+    const headBox = head.querySelector('input');
+    const rows = [];
+    const sync = () => {
+      const on = present.filter((t) => !hiddenTypes.has(t)).length;
+      headBox.checked = on === present.length;
+      headBox.indeterminate = on > 0 && on < present.length;
+    };
+    headBox.onchange = () => {
+      for (const t of present) {
+        if (headBox.checked) hiddenTypes.delete(t);
+        else hiddenTypes.add(t);
+      }
+      rows.forEach((r) => (r.checked = headBox.checked));
+      applyMarkerVisibility(markers);
+    };
+    el.append(head);
+    for (const type of present) {
+      const info = TYPES[type];
+      const row = document.createElement('label');
+      row.className = 'sub';
+      row.title = info.tip;
+      row.innerHTML = `<input type="checkbox" ${hiddenTypes.has(type) ? '' : 'checked'}>${icon(info)}<span>${info.label}</span><em>${counts[type]}</em>`;
+      const box = row.querySelector('input');
+      rows.push(box);
+      box.onchange = () => {
+        if (box.checked) hiddenTypes.delete(type);
+        else hiddenTypes.add(type);
+        sync();
+        applyMarkerVisibility(markers);
+      };
+      el.append(row);
+    }
+    sync();
+  }
+  applyMarkerVisibility(markers);
+  $('legend').hidden = false;
+}
+
+// ---------- picking: hover tips, click to pin, right-click to inspect ----------
+const raycaster = new THREE.Raycaster();
+raycaster.params.Line.threshold = 0.3;
+const pointer = new THREE.Vector2();
+const isUnderSky = (o) => { for (; o; o = o.parent) if (o === sky) return true; return false; };
+function pick(e, targets) {
+  const r = canvas.getBoundingClientRect();
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+  return raycaster.intersectObjects(targets, true).find((h) => {
+    for (let o = h.object; o; o = o.parent) if (!o.visible) return false;
+    return !isUnderSky(h.object);
+  });
+}
+const visibleMarkers = () => {
+  const m = root && root.getObjectByName('markers');
+  return m && m.visible ? m.children.filter((c) => c.visible) : [];
+};
+canvas.addEventListener('pointermove', (e) => {
+  const tip = $('tip');
+  // The right-click card takes over while it is open.
+  const hit = !e.buttons && $('info').hidden && pick(e, visibleMarkers());
+  if (!hit) { tip.hidden = true; return; }
+  const it = hit.object.userData.item;
+  let what = describe(it);
+  // Splines often run on top of each other; name every other one under the cursor too.
+  if (it.type === 3) {
+    const others = new Set(raycaster.intersectObjects(visibleMarkers(), true).map((h) => h.object.userData.item).filter((o) => o && o.type === 3 && o !== it).map((o) => o.name));
+    if (others.size) what += '\nAlso here: ' + [...others].join(', ');
+  }
+  tip.innerHTML = `<b>${esc(it.name || it.label || '(unnamed)')}</b><br>${esc(what).replaceAll('\n', '<br>')}<br>${it.type === 6 ? `Footprint ${it.size[0].toFixed(1)} × ${it.size[2].toFixed(1)}<br>` : ''}<span>${TYPES[markerKind(it)]?.label ?? 'Type ' + it.type} · ${SUBTYPES[it.sub] ?? hex(it.sub)}</span>`;
+  const r = canvas.getBoundingClientRect();
+  tip.style.left = e.clientX - r.left + 14 + 'px';
+  tip.style.top = e.clientY - r.top + 14 + 'px';
+  tip.hidden = false;
+});
+canvas.addEventListener('pointerleave', () => ($('tip').hidden = true));
+
+function inspect(hit) {
+  const o = hit.object;
+  if (o.userData.item) return { title: o.userData.item.name || o.userData.item.label || '(unnamed)', rows: itemRows(o.userData.item) };
+  if (o.userData.tiles) {
+    const { hmp, texIds } = o.userData.tiles;
+    const p = o.worldToLocal(hit.point.clone());
+    const tx = Math.floor(p.x / 2), ty = Math.floor(p.z / 2);
+    const ti = hmp.map[ty * hmp.w + tx], tile = hmp.tiles[ti];
+    if (!tile) return null;
+    return { title: `Terrain tile ${tx}, ${ty}`, rows: [['Tile record', ti], ['Texmap id', tile.tex], ['Bank texture', texIds[tile.tex] ?? '-'],
+      ['Flags', hex(tile.flags)], ['Height range', `${Math.min(...tile.hts)} .. ${Math.max(...tile.hts)} (x${+hmp.heightScale.toFixed(3)})`]] };
+  }
+  const info = o.userData.infos?.[hit.face?.materialIndex ?? 0];
+  if (!info) return null;
+  let obj = o;
+  while (obj.parent && obj.parent !== root && !obj.userData.hobObject) obj = obj.parent;
+  let placed = o;
+  while (placed && !placed.userData.source) placed = placed.parent;
+  const t = info.tex;
+  return { title: `${obj.name || 'model'} / ${o.name || 'part'}`, open: placed?.userData.source, rows: [['Material', `#${info.index} ${esc(info.matName)}`],
+    ['Texture', t ? `${esc(t.name)} ${t.w}x${t.h}` : 'none (vertex colour only)'], t && ['Format', `${TEX_TYPES[t.type] ?? 'type ' + t.type}, flags ${hex(t.flags)}`],
+    t && ['Wrap', info.map?.wrapS === THREE.ClampToEdgeWrapping ? 'clamp (UVs stay in 0..1)' : 'repeat'],
+    info.emissive && info.valpha && !info.blend && t && ['Shading', 'sphere-mapped reflection (glass)'],
+    ['Alpha', info.valpha ? 'blended (vertex alpha)' : info.blend ? 'blended (texture alpha)' : info.cutout ? 'cutout (alpha test 0.5)' : 'opaque'],
+    ['Part triangles', o.geometry.attributes.position.count / 3]] };
+}
+let backTo = null;
+function showInfo(card, x, y) {
+  const el = $('info');
+  if (!card) { el.hidden = true; return; }
+  el.innerHTML = `<b>${esc(card.title)}</b>` + card.rows.filter(Boolean).map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+  if (card.open) {
+    const btn = document.createElement('button');
+    btn.textContent = `Open ${card.open.name} in model view`;
+    btn.onclick = () => {
+      el.hidden = true;
+      backTo = { level: selected, view: getView() };
+      $('tabModels').click();
+      showModel(card.open.id, card.open.objIndex);
+      $('btnBack').textContent = '← Back to ' + backTo.level.split('/').pop();
+      $('btnBack').hidden = false;
+    };
+    el.append(btn);
+  }
+  const r = canvas.getBoundingClientRect();
+  el.style.left = Math.min(x, r.width - 390) + 'px';
+  el.style.top = Math.min(y, r.height - 220) + 'px';
+  el.hidden = false;
+}
+// A press that barely moves is a click; anything longer is an orbit drag.
+const downAt = {};
+canvas.addEventListener('pointerdown', (e) => (downAt[e.button] = [e.clientX, e.clientY]));
+const wasClick = (e, button) => downAt[button] && Math.hypot(e.clientX - downAt[button][0], e.clientY - downAt[button][1]) <= 4;
+canvas.addEventListener('pointerup', (e) => {
+  if (e.button !== 0 || !wasClick(e, 0)) return;
+  const hit = pick(e, visibleMarkers());
+  const r = canvas.getBoundingClientRect();
+  showInfo(hit && inspect(hit), e.clientX - r.left + 12, e.clientY - r.top + 12);
+});
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  if (!root || !wasClick(e, 2)) return;
+  const r = canvas.getBoundingClientRect();
+  const hit = pick(e, [root]);
+  showInfo(hit && inspect(hit), e.clientX - r.left + 12, e.clientY - r.top + 12);
+});
+
+function setRoot(obj) {
+  $('legend').hidden = true;
+  $('tip').hidden = true;
+  $('info').hidden = true;
+  if (root) {
+    scene.remove(root);
+    root.traverse((o) => {
+      if ((o.isMesh || o.isLine) && !o.userData.shared && !Object.values(GEO).includes(o.geometry)) o.geometry.dispose();
+    });
+  }
+  root = obj;
+  anim = null;
+  setupExhaust(null);
+  effect = null;
+  sky = null;
+  skyColor = null;
+  scene.background = bgColor;
+  scene.fog = null;
+  levelFog = null;
+  hemi.color.set(0xffffff);
+  hemi.groundColor.set(0x404040);
+  hemi.intensity = 2.2;
+  sun.color.set(0xffffff);
+  sun.intensity = 1.4;
+  sun.position.set(1, 2, 1.5);
+  sun.target.position.set(0, 0, 0);
+  scene.add(root);
+}
+
+// ---------- ROM + lists ----------
+let rom = null, romBytes = null, mode = 'models', selected = null, selectedLevel = false, selectedObj = -1;
+const modelCache = new Map();
+// Object name -> model id across every HOB, built once per ROM: placed items often name a model that lives outside the level's
+// opkg (atst, i_lnd_hi in lplatform, train pillars, other levels' shared buildings).
+let objectHome = null;
+function buildObjectIndex() {
+  objectHome ??= (async () => {
+    const map = new Map();
+    for (const a of rom.assets.values()) {
+      if (!a.name.endsWith('_HOB') || a.size <= 8 || !rom.assets.has(a.path.replace(/_HOB$/, '_HMT'))) continue;
+      try {
+        for (const o of parseHOB(await rom.read(a.path)).objects) if (!map.has(o.name)) map.set(o.name, a.path.replace(/_HOB$/, ''));
+      } catch { /* a malformed or encrypted HOB just isn't indexed */ }
+    }
+    return map;
+  })();
+  return objectHome;
+}
+async function loadModel(path) {
+  if (!modelCache.has(path)) {
+    const [hobDv, hmtDv] = await Promise.all([rom.read(path + '_HOB'), rom.read(path + '_HMT')]);
+    const hob = parseHOB(hobDv), hmt = parseHMT(hmtDv);
+    const outside = new Set();
+    for (const o of hob.objects) for (const lod of o.lods) for (const parts of lod) for (const p of parts) for (const f of p.faces) {
+      if (f.uvs && f.uvs.some(([u, v]) => u < -0.01 || u > 1.01 || v < -0.01 || v > 1.01)) outside.add(f.mat);
+    }
+    const clamp = new Set(hmt.materials.map((_, i) => i).filter((i) => !outside.has(i)));
+    modelCache.set(path, { hob, hmt, clamp });
+  }
+  return modelCache.get(path);
+}
+
+function renderList() {
+  const q = $('filter').value.toLowerCase();
+  const list = $('list');
+  list.innerHTML = '';
+  if (!rom) return;
+  const groups = new Map();
+  if (mode === 'models') {
+    for (const a of rom.assets.values()) {
+      if (!a.name.endsWith('_HOB') || !rom.assets.has(a.path.replace(/_HOB$/, '_HMT'))) continue;
+      // Skip placeholder models with no objects (every level ships an 8-byte opkg2_HOB).
+      if (a.size <= 8) continue;
+      const id = a.path.replace(/_HOB$/, '');
+      const dir = a.dir.replace(/^data\/?/, '') || 'data';
+      // A level's opkg_HOB is a package of separate buildings and props (preloaded on ROM open), listed one row per object.
+      const pkg = /\/opkg\d*$/.test(id) && modelCache.get(id);
+      const rows = pkg ? pkg.hob.objects.map((o, i) => ({ id, obj: i, label: o.name || 'object ' + i })) : [{ id, label: a.name.replace(/_HOB$/, '') }];
+      for (const r of rows) {
+        if (q && !(id + '/' + r.label).toLowerCase().includes(q)) continue;
+        if (!groups.has(dir)) groups.set(dir, []);
+        groups.get(dir).push(r);
+      }
+    }
+  } else if (mode === 'effects') {
+    for (const [dir, ids] of Object.entries(EFFECTS)) for (const id of ids) {
+      const label = SIMS[id]?.label ?? PART_LABELS[id] ?? id.split('/').pop();
+      if (!(SIMS[id] || rom.assets.has(id.split('#')[0])) || (q && !(id + ' ' + label).toLowerCase().includes(q))) continue;
+      if (!groups.has(dir)) groups.set(dir, []);
+      groups.get(dir).push({ id, label, tip: SIMS[id]?.tip });
+    }
+  } else {
+    for (const a of rom.assets.values()) {
+      if (a.name !== 'dat') continue;
+      const id = a.dir;
+      if (q && !id.toLowerCase().includes(q)) continue;
+      const dir = id.includes('/level/') ? 'missions' : 'frontend';
+      if (!groups.has(dir)) groups.set(dir, []);
+      groups.get(dir).push({ id, label: id.split('/').pop() });
+    }
+  }
+  for (const [dir, rows] of groups) {
+    const h = document.createElement('div');
+    h.className = 'dir';
+    h.textContent = dir;
+    list.append(h);
+    for (const r of rows) {
+      const d = document.createElement('div');
+      d.className = 'row' + (r.id === selected && (r.obj == null || r.obj === selectedObj) ? ' sel' : '');
+      d.textContent = r.label;
+      d.title = r.tip ?? (r.obj == null ? r.id : `${r.id} / ${r.label}`);
+      d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : mode === 'effects' ? showEffect(r.id) : showLevel(r.id));
+      list.append(d);
+    }
+  }
+}
+
+function setContext(level, fx = false) {
+  $('opts').classList.toggle('level', level);
+  $('opts').classList.toggle('fx', fx);
+  $('scene').hidden = !level;
+  $('fxPanel').hidden = !fx;
+}
+
+// ---------- effects ----------
+// Destruction bursts from the spawnDebris1Npc callers: n is the count for the tip, count() rolls it; R = (rand & 0x7F) - 64 per use.
+// shortcut: radii read from object fields (obj+0x50 * 0.5 etc.) are 0 here, so those chunks start at the centre; only fixed radii are kept.
+const R = () => Math.floor(rnd() * 128) - 64, stdScale = () => Math.abs(R() / 320) + 0.2, smallScale = () => Math.abs(R() / 213.3) + 0.3;
+const roll = (base, n) => base + Math.floor(rnd() * n);
+const BURSTS = {
+  'sim:destroy': { label: 'Object destroyed', src: 'updateDestructionDebrisNpc 0x8006D54C at size 1', n: '4 + rand % 3 (times the object size, up to 6x)', count: () => roll(4, 3), cone: 60, speed: [2, 3.5], scale: stdScale },
+  'sim:atst': { shock: 'shock:atst', label: 'AT-ST destroyed', src: 'npcAtStHandleDestruction 0x800CFC18', n: '5 + rand % 3', count: () => roll(5, 3), cone: 60, speed: [3, 4], scale: stdScale },
+  'sim:atat': { shock: 'shock:atat', label: 'AT-AT destroyed', src: 'npcAtAtHandleDestruction 0x800CD020', n: '40 (15 on levels 3/6/9/13)', count: () => 40, cone: 160, speed: [1.5, 3], scale: smallScale, note: 'A second stage (0x800CD300) throws 12 more; its timing is not traced, so it is left out.' },
+  'sim:atpt': { shock: 'shock:atpt', label: 'AT-PT destroyed', src: 'npcAtPtUpdate 0x800EB220', n: '4 + rand % 3', count: () => roll(4, 3), cone: 60, speed: [3, 4], scale: stdScale },
+  'sim:shuttle': { label: 'Shuttle / train car destroyed', src: 'npcShuttleHandleDestruction 0x800D367C (npcTrainCarUpdate 0x800E3688 and npcDebrisFieldUpdate 0x800D5858 use 90 degrees)', n: '5 + rand % 5', count: () => roll(5, 5), cone: 135, speed: [3, 4], scale: smallScale },
+  'sim:tie': { shock: 'shock:tie', label: 'TIE destroyed', src: 'npcTieVariantHandleDestruction 0x800DAE8C', n: 'a 50% roll, then 3 + rand % 2', count: () => (chance(50) ? roll(3, 2) : 0), cone: 135, speed: [3, 4], scale: smallScale },
+  'sim:turret': { label: 'Turret destroyed', src: 'npcTurretUpdate 0x800C99A8 (type != 2)', n: '3 + rand % 4', count: () => roll(3, 4), cone: 60, speed: [3, 4], scale: smallScale },
+  'sim:tank': { label: 'Tank droid / ground transport destroyed', src: 'npcTankDroidUpdate 0x800D711C (npcGroundTransportUpdate 0x800DF474 throws 3 + rand % 3)', n: '3 + rand % 2', count: () => roll(3, 2), cone: 90, speed: [3, 4], scale: stdScale },
+  'sim:probe': { shock: 'shock:probe', label: 'Probe droid destroyed', src: 'npcProbeDriod 0x800CB254', n: '2 + rand % 3', count: () => roll(2, 3), cone: 90, speed: [3, 4], scale: () => 0.3 },
+  'sim:shieldgen': { shock: 'shock:shieldgen', label: 'Shield generator / radar dish destroyed', src: 'npcShieldGeneratorUpdate 0x800817D4, npcRadarDishUpdate 0x800DCCFC', n: '7 + rand % 3', count: () => roll(7, 3), cone: 60, speed: [1.5, 3], scale: stdScale },
+  'sim:powergen': { shock: 'shock:powergen', label: 'Power generator destroyed', src: 'spawnDebrisBurstFromTemplate 0x80079000 (npcPowerGeneratorUpdate)', n: '12', count: () => 12, cone: 120, radius: 1.5, speed: [2, 4], scale: () => (Math.abs(R() / 320) + 0.6) * 1.5, note: 'The game fires it twice, at two template points.' },
+  'sim:wd': { shock: 'shock:wd', label: 'World Devastator destroyed', src: 'npcWordDevastatorUpdate 0x8007FEC8', n: '40', count: () => 40, cone: 60, radius: 2, speed: [1.5, 2.8], scale: stdScale },
+  'sim:watercraft': { shock: 'shock:watercraft', label: 'Water craft destroyed', src: 'npcWaterCraftHandleDestruction 0x800E5DB0 + 0x800E60B8', n: '4 + rand % 3 then 10 + rand % 5', count: () => roll(4, 3) + roll(10, 5), cone: 60, speed: [2, 3], scale: stdScale, note: 'The two calls play at once here.' },
+  'sim:crash': { shock: 'shock:crash', label: 'Player craft ground crash', src: 'onPlayerCraftGroundCrash 0x800B0814', n: '10 + rand % 5', count: () => roll(10, 5), cone: 60, speed: [3, 4], scale: stdScale },
+};
+// Shockwave groups from the func_80072684 callers, all spawned on the same frame; ring = [mesh, pulse, f1, f2, f3, life, rgb, up].
+// S is the owning object's size field, which the viewer cannot read: the Size slider sets it (sized entries only).
+const SH_BROWN = 0x9c5210;
+const SHOCKS = {
+  'shock:ground': { label: 'Explosion shock sphere', src: 'triggerDistanceScaledExplosion 0x80074600', rings: () => [[2, 1, 0.05, 0.18, 0.4, 0.5, 0x803030]] },
+  'shock:spray': { label: 'Spray emitter rings', src: 'func_8007559C (sprayEffectEmitterNpcHandler, S = 1)', sized: true, rings: (S) => [[3, 0, 0.1 * S, 0.7 * S, 0.7 * S, 0.37 * S, 0xe7faff], [1, 0, 0.15 * S, 1.5 * S, 0.5 * S, 0.7 * S, 0xe7faff]] },
+  'shock:blast': { label: 'Large blast rings', src: 'func_80077AF0 (R = obj+0x12C)', sized: true, rings: (R) => [[2, 0, 1.3 * R, 1.9 * R, 0.8, 0.6], [2, 0, 1.1 * R, 2 * R, 0.8, 0.5], [3, 0, 0.9 * R, 2.2 * R, 0.8, 0.45]] },
+  'shock:powergen': { label: 'Power generator rings', src: 'spawnDebrisBurstFromTemplate 0x80078E3C', rings: () => [[0, 0, 0.5, 15, 1.5, 0.5, 0xffffff, [0, 1, 0]], [0, 0, 0.5, 14, 1.5, 1], [0, 0, 0.5, 13, 1.5, 1.5], [2, 0, 0.5, 12, 0.75, 0.25]] },
+  'shock:wd': { label: 'World Devastator part', src: 'npcWordDevastatorUpdate (each destroyed part)', rings: () => [[2, 0, 2.25, 3.6, 1, 0.6], [1, 0, 2.25, 5.7, 2, 1]] },
+  // R = 1 / shldgen mesh size (+0x34) x item size; the 9259-unit shldgen mesh puts it near 0.055, so the spheres are 1.2x / 1.6x the generator.
+  'shock:shieldgen': { label: 'Shield generator', src: 'npcShieldGeneratorUpdate (R = obj+0x3C)', sized: true, defSize: 0.055, rings: (R) => [[2, 0, 25 * R, 30 * R, 1, 1], [3, 0, 22 * R, 34 * R, 1, 0.8]] },
+  'shock:crash': { label: 'Player craft ground crash', src: 'onPlayerCraftGroundCrash', rings: () => [[2, 1, 0.1875, 1.875, 1, 0.6, SH_BROWN], [1, 1, 0.1875, 1.875, 1, 0.4, SH_BROWN]] },
+  'shock:probe': { label: 'Probe droid', src: 'npcProbeDriod', rings: () => [[1, 0, 0.1, 0.5, 0.1, 1]] },
+  'shock:atat': { label: 'AT-AT destroyed', src: 'npcAtAtHandleDestruction stage 0 (S = obj+0x54 * 23.71)', sized: true, rings: (S) => [[2, 1, 2.2 * S, 3.5 * S, 1, 1, SH_BROWN], [3, 1, 2 * S, 3.3 * S, 1, 0.9, SH_BROWN], [1, 0, S, 4.9 * S, 1.5, 2, SH_BROWN]] },
+  'shock:atst': { label: 'AT-ST destroyed', src: 'npcAtStHandleDestruction (S = 2 * obj+0x54)', sized: true, rings: (S) => [[2, 1, 0.75 * S, 1.2 * S, 1, 0.6, SH_BROWN], [1, 1, 0.75 * S, 0.9 * S, 1, 0.4, SH_BROWN]] },
+  'shock:atpt': { label: 'AT-PT destroyed', src: 'npcAtPtUpdate (S = obj+0x54 * 13.333)', sized: true, rings: (S) => [[2, 1, 0.75 * S, 1.2 * S, 1, 0.6, SH_BROWN], [3, 1, 0.6 * S, S, 1, 0.6, SH_BROWN]] },
+  // shortcut: the game aims this ring's axis at the player; here it lies flat (axis up).
+  'shock:tie': { label: 'TIE destroyed (near the player)', src: 'npcTieVariantHandleDestruction', rings: () => [[1, 0, 0.1, 0.7, 0.15, 1]] },
+  'shock:radar': { label: 'Radar dish destroyed', src: 'npcRadarDishUpdate (S = obj+0x50 * 20)', sized: true, rings: (S) => [[2, 1, 0.75 * S, 1.2 * S, 1, 0.4]] },
+  'shock:watercraft': { label: 'Water craft destroyed', src: 'npcWaterCraftHandleDestruction (S = obj+0x70 * 40)', sized: true, rings: (S) => [[2, 1, 0.75 * S, 1.2 * S, 1, 0.6, 0xcefefb], [1, 1, 0.5 * S, 0.7 * S, 1, 0.4, 0xcefefb]] },
+  'shock:missile': { label: 'Incoming missile (cutscene)', src: 'npcIncomingMissileUpdate', rings: () => [[2, 0, 0.5, 3, 1, 0.35]] },
+  'shock:cutscene': { label: 'Cutscene blast rings', src: 'spawnCutsceneEffectsAndCues type 5/2 (S = cmd[0xC] / 500)', sized: true, rings: (S) => [[0, 0, 0.5, S, 1.5, 0.7, 0xffffff, [0, 1, 0]], [0, 0, 0.5, 0.9 * S, 1.5, 1.4], [0, 0, 0.5, 0.81 * S, 1.5, 2.1]] },
+};
+// Effect flipbooks share the sprite-anim frame format (parseSpriteAnim). Explosion sheets are the ones loadExplosionTextures
+// (0x8006108C) loads; the rest are particle, environment and craft effect textures.
+const EFFECTS = {
+  simulations: ['sim:ground', ...Object.keys(BURSTS), 'sim:land', 'sim:shotdown', 'sim:water', 'sim:water_player', 'sim:impact_fire', 'sim:impact_ion', 'sim:impact_small'],
+  shockwaves: Object.keys(SHOCKS),
+  explosions: ['data/explo2_IMGS', 'data/explo2hi_IMGS', 'data/ionexp_IMGS', 'data/ionex2_IMGS', 'data/smkexp_IMGS'],
+  // part_spr packs several effects; one entry per frame-name group (srp_s_01 -> srp_s), in the game's D_80130C08 order.
+  particles: ['data/part_spr#srp_s', 'data/part_spr#srp_f', 'data/part_spr#sm_f', 'data/part_spr#wsm_f', 'data/part_spr#spark', 'data/part_spr#starex', 'data/part_spr#trail', 'data/part_spr#halo'],
+  environment: ['data/gnrc_stuff/wtrspray_ANM'],
+  craft: ['data/pl_crafts/engine_TM', 'data/pl_crafts/engine2_TM', 'data/pl_crafts/xwng_glw', 'data/weapon_spr/tie_bomb', 'data/imp_stuff/wrld_vsanim'],
+  // Texture sets, not animations: shown laid out, with no playback.
+  textures: ['data/gnrc_stuff/tl_clouds', 'data/pl_crafts/shadows_TM'],
+};
+let selectedEffect = false, effect = null, effectClock = 0;
+const TEX_NAMES = ['CI4', 'CI8', 'RGBA16', 'RGB24/RGBA32', 'Gray', 'Gray8'];
+// Sprites sample v = 0 at the bottom, while decoded rows run top-down, so their textures get the rows reversed.
+function modelTex(f) {
+  const t = new THREE.DataTexture(f.rgba, f.w, f.h, THREE.RGBAFormat);
+  setFilter(t);
+  t.needsUpdate = true;
+  return t;
+}
+function uprightTex(f) {
+  const row = f.w * 4, data = new Uint8Array(f.rgba.length);
+  for (let y = 0; y < f.h; y++) data.set(f.rgba.subarray(y * row, (y + 1) * row), (f.h - 1 - y) * row);
+  const t = new THREE.DataTexture(data, f.w, f.h, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  setFilter(t);
+  t.needsUpdate = true;
+  return t;
+}
+async function showEffect(id, keepView = false) {
+  setContext(false, true);
+  selected = id;
+  selectedLevel = false;
+  selectedEffect = true;
+  renderList();
+  $('objRow').hidden = $('lodRow').hidden = true;
+  $('fxChanceRow').hidden = $('fxChanceRow2').hidden = !(BURSTS[id] || id === 'sim:land');
+  // Simulations run on the game's own timing, so the flipbook frame rate and blend toggle do not apply to them.
+  $('fxFpsRow').hidden = $('fxAddRow').hidden = !!SIMS[id];
+  const sizedShock = SHOCKS[id]?.sized ? SHOCKS[id] : SHOCKS[BURSTS[id]?.shock]?.sized ? SHOCKS[BURSTS[id].shock] : null;
+  $('fxSizeRow').hidden = !sizedShock;
+  $('fxCraftRow').hidden = id !== 'sim:shotdown';
+  if (id === 'sim:shotdown' && !$('optFxCraft').options.length) {
+    // Wingman models first (the craft npcWingmanUpdate flies), then the other player and Imperial craft; c_* models are cockpits.
+    const crafts = [...rom.assets.values()].filter((a) => a.name.endsWith('_HOB') && a.size > 8 && /^data\/(pl_crafts|imp_stuff\/tie)/.test(a.path) && !a.name.startsWith('c_')).map((a) => a.path.replace(/^data\/|_HOB$/g, ''));
+    const wm = crafts.filter((c) => /\/wm/.test(c)), other = crafts.filter((c) => !/\/wm/.test(c));
+    $('optFxCraft').innerHTML = [['Wingmen', wm], ['Other craft', other]].map(([g, list]) => `<optgroup label="${g}">${list.map((c) => `<option value="${esc(c)}">${esc(c.split('/').pop())}</option>`).join('')}</optgroup>`).join('');
+    $('optFxCraft').value = crafts.includes('pl_crafts/wmxwng') ? 'pl_crafts/wmxwng' : crafts[0];
+  }
+  // A newly picked effect starts at its own size estimate; a refresh keeps the slider where the user put it.
+  if (sizedShock && !keepView) {
+    $('optFxSize').value = sizedShock.defSize ?? 1;
+    $('fxSizeVal').textContent = $('optFxSize').value;
+  }
+  if (SIMS[id]) {
+    $('fxModeRow').hidden = $('fxBurstRow').hidden = true;
+    return showSim(id, keepView);
+  }
+  // Smoke is the only explosion sheet that defaults to particle playback; the rest play as flipbooks until the user switches.
+  if (!keepView) $('optFxMode').value = EFFECTS.explosions.includes(id) && id !== 'data/smkexp_IMGS' ? 'flipbook' : 'particle';
+  const [path, part] = id.split('#');
+  const frames = parseSpriteAnim(await rom.read(path)).filter((f) => f.rgba && (!part || f.name.replace(/[_\d]+$/, '') === part));
+  // Craft shadows narrower than tall are left halves cut at the right edge (the square Falcon/destr2 are whole), so mirror them out.
+  if (path.endsWith('shadows_TM')) frames.forEach((f, i) => {
+    if (f.w >= f.h) return;
+    const w = f.w * 2, rgba = new Uint8Array(w * f.h * 4);
+    for (let y = 0; y < f.h; y++) for (let x = 0; x < w; x++) {
+      const s = (y * f.w + (x < f.w ? x : w - 1 - x)) * 4;
+      rgba.set(f.rgba.subarray(s, s + 4), (y * w + x) * 4);
+    }
+    frames[i] = { ...f, w, rgba };
+  });
+  const add = $('optFxAdd').checked;
+  const texOf = (f) => {
+    const t = new THREE.DataTexture(f.rgba, f.w, f.h, THREE.RGBAFormat);
+    t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    setFilter(t);
+    t.needsUpdate = true;
+    return t;
+  };
+  const matOf = (map) => new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending });
+  // Texture rows run top-down (v = 0 at the top, as on the models), so the plane's v is flipped.
+  const plane = (w, h) => {
+    const g = new THREE.PlaneGeometry(w, h);
+    const uv = g.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+    return g;
+  };
+  const group = new THREE.Group();
+  const maps = frames.map(texOf);
+  // The playing frame, 1 unit per texel, with every frame laid out in a strip below it.
+  const maxW = Math.max(...frames.map((f) => f.w)), maxH = Math.max(...frames.map((f) => f.h));
+  const main = new THREE.Mesh(plane(frames[0].w, frames[0].h), matOf(maps[0]));
+  group.add(main);
+  // Texture sets and single frames have nothing to play: shown as stills with no playback controls.
+  const still = EFFECTS.textures.includes(id) || frames.length === 1;
+  // Removed rather than hidden: framing measures invisible meshes too, which pushed the view up.
+  if (still) group.remove(main);
+  const cell = Math.max(maxW, maxH) * (still ? 1 : 0.5), perRow = Math.max(1, Math.min(frames.length, still ? 5 : 10));
+  frames.forEach((f, i) => {
+    const s = cell / Math.max(f.w, f.h);
+    const m = new THREE.Mesh(plane(f.w * s, f.h * s), matOf(maps[i]));
+    m.position.set(((i % perRow) - (perRow - 1) / 2) * cell * 1.15, -maxH / 2 - cell * (0.9 + Math.floor(i / perRow) * 1.15), 0);
+    group.add(m);
+  });
+  setRoot(group);
+  scene.background = fxBg;
+  const n = frames.length;
+  // Flipbook: one pass through the frames at the chosen frame rate; the main quad resizes when frame sizes differ (part_spr).
+  const showFrame = (i) => {
+    const f = frames[i];
+    main.material.map = maps[i];
+    main.material.needsUpdate = true;
+    if (main.geometry.parameters.width !== f.w || main.geometry.parameters.height !== f.h) {
+      main.geometry.dispose();
+      main.geometry = plane(f.w, f.h);
+    }
+  };
+  const fx = {
+    reset() { effectClock = 0; showFrame(0); },
+    step(dt) { effectClock += dt * +$('optFxFps').value; showFrame(Math.floor(effectClock) % n); },
+    done: () => effectClock >= n,
+  };
+  frames.forEach((f, i) => (f.map = maps[i]));
+  const def = !still && PARTICLES[id], particle = def && $('optFxMode').value === 'particle';
+  $('fxModeRow').hidden = !def;
+  $('fxBurstRow').hidden = !particle;
+  if (particle) {
+    // The hi-detail fire plays the 20 lo frames with hi frames swapped in for the second half of each step, so it needs both sets.
+    const lo = def.hi ? parseSpriteAnim(await rom.read('data/explo2_IMGS')).filter((f) => f.rgba) : frames;
+    // Sprite copies with upright textures (the strip planes keep theirs).
+    const up = (list) => list.map((f) => ({ ...f, map: uprightTex(f) }));
+    const P = { def, frames: up(lo), hiFrames: def.hi ? up(frames) : null, group: new THREE.Group(), live: [] };
+    // Smoke takes its RGB from smkexp_PAL by level (the game indexes it with gCurrentLevel); level 0's entry here.
+    if (def.kind === 'smoke' && rom.assets.has('data/smkexp_PAL')) {
+      const pal = await rom.read('data/smkexp_PAL');
+      P.tint = new THREE.Color(pal.getUint8(0) / 255, pal.getUint8(1) / 255, pal.getUint8(2) / 255);
+    }
+    main.visible = false;
+    group.add(P.group);
+    fx.particles = P;
+    fx.reset = () => {
+      for (const p of P.live) { P.group.remove(p.sprite); p.sprite.material.dispose(); }
+      P.live = [];
+      seedRnd(fxSeed);
+      spawnParticles();
+    };
+    fx.step = tickParticles;
+    fx.done = () => !P.live.length;
+  }
+  stats = { effect: id, frames: frames.length, size: [...new Set(frames.map((f) => f.w + 'x' + f.h))].join(', '), format: [...new Set(frames.map((f) => TEX_NAMES[f.type] ?? 'type ' + f.type))].join(', ') };
+  hud();
+  if (!keepView) frame(group, new THREE.Vector3(0, 0, 1));
+  $('fxPanel').hidden = still;
+  if (!still) timelineStart(fx);
+}
+// Particle handlers from the game code (asm/main/5FA70.s, constants 3BF00.rodata.s); r = (rand & 0xFF) / 255, dt in seconds:
+// fire 0x80060690: scale (r + 2.5) * s * 0.25, timer += dt * 20, frame = trunc(timer), gone at 20 (hi set: hi frame when frac > 0.5).
+// ion 0x80060900 kind 0: scale0 (|rand7 - 64| / 256 + 0.625) * A, vel B * 0.875 - scale0 per second, frame timer * 20 % 6,
+//   full alpha for 0.5 s then -512/s. kind 1: frame (age * 16) % 8, alpha 255 - 510 * age, scale += vel * dt * 2, gone at 0.5 s.
+// smoke 0x80060D8C: scale (r + 2.5) * s * 0.25, * 1.1 per 30 Hz tick, alpha -512/s, rises 1 unit/s, RGB from smkexp_PAL[level].
+const PARTICLES = {
+  'data/explo2_IMGS': { kind: 'fire', s: 1 }, 'data/explo2hi_IMGS': { kind: 'fire', s: 1, hi: true },
+  'data/ionexp_IMGS': { kind: 'ion0', A: 0.4, B: 0.85 }, 'data/ionex2_IMGS': { kind: 'ion1', A: 0.4, B: 0.8 },
+  'data/smkexp_IMGS': { kind: 'smoke', s: 0.5 },
+};
+function spawnParticles() {
+  const P = effect.particles, frames = P.frames, spread = Math.max(frames[0].w, frames[0].h) * 0.6;
+  for (let k = 0; k < +$('optFxBurst').value; k++) {
+    const r = rnd(), def = P.def;
+    const p = { age: 0, timer: 0, alpha: 255, tick: 0 };
+    if (def.kind === 'fire' || def.kind === 'smoke') p.scale = (r + 2.5) * def.s * 0.25;
+    else {
+      p.scale = (Math.abs(Math.floor(rnd() * 128) - 64) / 256 + 0.625) * def.A;
+      p.vel = def.B * 0.875 - p.scale;
+    }
+    const mat = new THREE.SpriteMaterial({ map: frames[0].map, transparent: true, depthWrite: false, fog: false,
+      blending: $('optFxAdd').checked ? THREE.AdditiveBlending : THREE.NormalBlending, color: P.tint ?? 0xffffff });
+    p.sprite = new THREE.Sprite(mat);
+    p.sprite.scale.setScalar(0);
+    // Spread is a viewer choice (one particle at the centre, the rest around it).
+    if (k) p.sprite.position.set((rnd() - 0.5) * spread, (rnd() - 0.5) * spread, (rnd() - 0.5) * spread);
+    P.group.add(p.sprite);
+    P.live.push(p);
+  }
+}
+// One particle step per its game handler; returns the frame texture to show, or null once the particle is gone.
+function stepParticle(p, def, dt, frames, hiFrames) {
+  p.age += dt;
+  if (def.kind === 'fire') {
+    p.timer += dt * 20;
+    const idx = Math.floor(p.timer);
+    if (idx >= 20) return null;
+    return def.hi && hiFrames && idx < 19 && p.timer - idx > 0.5 ? hiFrames[idx].map : frames[Math.min(idx, frames.length - 1)].map;
+  }
+  if (def.kind === 'ion0') {
+    p.timer += dt * 20;
+    p.scale += p.vel * dt;
+    if (p.age >= 0.5) p.alpha -= dt * 512;
+    return p.alpha > 0 ? frames[Math.floor(p.timer) % frames.length].map : null;
+  }
+  if (def.kind === 'ion1') {
+    if (p.age > 0.5) return null;
+    p.alpha = 255 - 510 * p.age;
+    p.scale += p.vel * dt * 2;
+    return frames[Math.floor(p.age * 16) % frames.length].map;
+  }
+  // Smoke grows per 30 Hz game tick, not per second, and rises 1 unit/s.
+  for (p.tick += dt; p.tick >= 1 / 30; p.tick -= 1 / 30) p.scale *= 1.1;
+  p.alpha -= dt * 512;
+  p.sprite.position.y += dt;
+  return p.alpha > 0 ? frames[0].map : null;
+}
+function tickParticles(dt) {
+  const P = effect.particles;
+  for (const p of P.live) {
+    const map = stepParticle(p, P.def, dt, P.frames, P.hiFrames);
+    if (!map) { p.dead = true; continue; }
+    p.sprite.material.map = map;
+    p.sprite.material.opacity = p.alpha / 255;
+    // shortcut: quad size = scale x frame width in texels; how the game maps scale to world size is not traced.
+    p.sprite.scale.setScalar(p.scale * P.frames[0].w);
+  }
+  for (const p of P.live) if (p.dead) { P.group.remove(p.sprite); p.sprite.material.dispose(); }
+  P.live = P.live.filter((p) => !p.dead);
+}
+// ---------- effect simulations ----------
+// Whole effects rebuilt from the game's spawners (asm/main/738F0.s), in world units on a ground plane (three.js Y up; the game's
+// "up" is -Y). Effect textures come from part_spr in the order of the game's table D_80130C08: 6..11 = srp_f comet fireballs.
+const PART_LABELS = { 'data/part_spr#srp_s': 'Smoke trail puffs', 'data/part_spr#srp_f': 'Comet fireballs (debris)', 'data/part_spr#sm_f': 'Smoke (plume)', 'data/part_spr#wsm_f': 'Water mist (splash)', 'data/part_spr#spark': 'Spark (embers)', 'data/part_spr#starex': 'Star flare', 'data/part_spr#trail': 'Trail streak', 'data/part_spr#halo': 'Halo glow' };
+const SIMS = {
+  ...Object.fromEntries(Object.entries(SHOCKS).map(([k, s]) => [k, { label: s.label, tip: `${s.src}: ${s.rings(1).length} shockwave(s) via func_80072684, all spawned together; the ring meshes grow, spin 640 deg/s and fade over their own lifetimes.${s.sized ? ' Sizes scale with the object size field (Size slider).' : ''}` }])),
+  'sim:ground': { label: 'Ground explosion', tip: 'triggerDistanceScaledExplosion 0x80074600 at 2.5 units from the camera: 7 debris fireballs (50 degree cone around up, 0.8..3.5 units/s, gravity 5) and a shock sphere (0.05 -> 0.18 over 0.5 s) and an ember burst (0x80073E4C: 20 sparks in all directions at 0.4 units/s, shrinking to nothing over 1 s). Each fireball that lands kicks up a brown dust splash (the wtrspray mesh, func_80072EC4 type 3, tinted 0x7C2206: 0.2 rising to 0.4 tall and back over 0.5 s, widening 0.05 -> 0.2).' },
+  ...Object.fromEntries(Object.entries(BURSTS).map(([k, b]) => [k, { label: b.label, tip: `${b.src}: ${b.n} debris1 chunks (spawnDebris1Npc 0x80072384) thrown within ${b.cone} degrees of up at ${b.speed[0]}..${b.speed[1]} units/s${b.radius ? `, starting ${b.radius} units out along their direction` : ''}. Each chunk runs the debris landing effect when it hits the ground.${b.shock ? ` It also spawns its shockwaves (${SHOCKS[b.shock].label} in Shockwaves).` : ''}${b.note ? ' ' + b.note : ''}` }])),
+  'sim:shotdown': { label: 'Craft shot down', tip: 'npcWingmanUpdate shot-down state (+0x5C = 2) -> func_800D8988: three emitters ride the craft (smoke sm_f, tiny srp_f fireballs, srp_s smoke-trail puffs) for 4 s. The crash (a ~60 degree dive, then a short slide to a stop) is a viewer choice; pick the craft above the background colour.' },
+  'sim:land': { label: 'Debris landing', tip: 'triggerObjectDestructionEffects 0x8007483C, called by a landing debris1 chunk (npcDebris1Update): a 0.5 smoke puff, then rand % 100 rolls another chunk (under 2) or a 2-puff smoke plume (0x80073750, 2..9). The Chunk / Plume chances set those odds (game: 2% and 8%, only when the player made the kill).' },
+  'sim:impact_fire': { label: 'Laser impact', tip: 'Projectile impact 0x80076250, weapon types 10/11/13/14: one fire particle at scale 0.6.' },
+  'sim:impact_ion': { label: 'Ion impact', tip: 'Projectile impact 0x80076250, weapon type 12: one ion particle (ionex2, A 0.4, B 0.8).' },
+  'sim:impact_small': { label: 'Small impact', tip: 'Projectile impact 0x80076250, other weapon types: an ember burst (0x80073E4C, 0.05, 0.2) and one fire particle at 0.2.' },
+  'sim:water': { label: 'Water hit', tip: '0x8007483C over water: a 20-puff spray (0x800739A4: +-15 degrees, 0.38 units/s, 0.5 s) water-tinted smoke and the wtrspray splash model (func_80072EC4 type 1: 0.3 tall, widening 0.05 -> 0.4 and fading over 0.3 s, its texture cycling wtrspray_ANM at 12 fps). This is a hit by anyone other than the player.' },
+  'sim:water_player': { label: 'Water hit (player)', tip: 'The water hit when the player made it: 0x8007483C then also calls func_80074600(pos, 0.1, 0.4, 1.0), the full ground explosion (fireballs that splash where they land, the shock sphere, embers).' },
+};
+async function showSim(id, keepView) {
+  // Parsed once per sheet (cleared with the other caches): re-decoding every sheet made each sim slow to open.
+  const art = (path) => {
+    if (!artCache.has(path)) artCache.set(path, rom.read(path).then((dv) => parseSpriteAnim(dv).filter((f) => f.rgba).map((f) => ({ ...f, map: uprightTex(f) }))));
+    return artCache.get(path);
+  };
+  const craftId = id === 'sim:shotdown' && $('optFxCraft').value, craft = craftId && (await loadModel('data/' + craftId));
+  const [spr, fire, ion2, smoke, sfx, wtr, wtrAnm, ionx] = await Promise.all([art('data/part_spr'), art('data/explo2_IMGS'), art('data/ionex2_IMGS'), art('data/smkexp_IMGS'), loadModel('data/gnrc_stuff/sfx'),
+    loadModel('data/gnrc_stuff/wtrspray'), art('data/gnrc_stuff/wtrspray_ANM'), art('data/ionexp_IMGS')]);
+  const pal = await rom.read('data/smkexp_PAL');
+  const smokeTint = new THREE.Color(pal.getUint8(0) / 255, pal.getUint8(1) / 255, pal.getUint8(2) / 255);
+  // Water smoke (D_801398C0) takes its RGB from the palette's second plane at +0x80.
+  const waterTint = new THREE.Color(pal.getUint8(0x80) / 255, pal.getUint8(0x81) / 255, pal.getUint8(0x82) / 255);
+  const group = new THREE.Group();
+  group.add(new THREE.GridHelper(10, 20, 0x444a55, 0x2a2f3a));
+  // Depth-only ground just under the grid: hides what sinks below the surface (the lower half of shock spheres), as terrain and water do in game.
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ colorWrite: false }));
+  ground.position.y = -0.002;
+  ground.renderOrder = -1;
+  group.add(ground);
+  setRoot(group);
+  scene.background = fxBg;
+  const items = [];
+  const blend = () => ($('optFxAdd').checked ? THREE.AdditiveBlending : THREE.NormalBlending);
+  const sprite = (map, tint) => {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map, transparent: true, depthWrite: false, fog: false, blending: blend(), color: tint ?? 0xffffff }));
+    // Zero until its first step sizes it; three's default 1x1 unit quad would flash for a frame when spawned mid-tick.
+    s.scale.setScalar(0);
+    group.add(s);
+    return s;
+  };
+  // Billboard particles reuse the handlers; shortcut: a particle's scale is drawn as its quad size in world units (not traced).
+  const particle = (def, pos, frames, tint) => {
+    const p = { age: 0, timer: 0, alpha: 255, tick: 0 };
+    if (def.kind === 'ion1') {
+      p.scale = (Math.abs(Math.floor(rnd() * 128) - 64) / 256 + 0.625) * def.A;
+      p.vel = def.B * 0.875 - p.scale;
+    } else p.scale = (rnd() + 2.5) * def.s * 0.25;
+    p.sprite = sprite(frames[0].map, tint);
+    p.sprite.position.copy(pos);
+    items.push({ obj: p.sprite, step: (dt) => {
+      const map = stepParticle(p, def, dt, frames, null);
+      if (!map) return false;
+      p.sprite.material.map = map;
+      p.sprite.material.opacity = p.alpha / 255;
+      p.sprite.scale.setScalar(p.scale);
+      return true;
+    } });
+  };
+  // Debris fireball 0x8007413C: launched within 50 degrees of up at 0.8..3.5 units/s, gravity 5, frame += 10/s while falling
+  // (max 5), rolled to its travel direction + 45 degrees, removed on hitting the ground.
+  const debris = (pos, size) => {
+    const tilt = THREE.MathUtils.degToRad(rnd() * 50), az = rnd() * Math.PI * 2, speed = 0.8 + rnd() * 2.7;
+    const vel = new THREE.Vector3(Math.sin(tilt) * Math.cos(az), Math.cos(tilt), Math.sin(tilt) * Math.sin(az)).multiplyScalar(speed);
+    const s = sprite(spr[6].map);
+    s.position.copy(pos);
+    s.scale.setScalar(size);
+    let frame = 0;
+    items.push({ obj: s, step: (dt) => {
+      s.position.addScaledVector(vel, dt);
+      vel.y -= 5 * dt;
+      if (vel.y < 0) frame = Math.min(5, frame + 10 * dt);
+      s.material.map = spr[6 + Math.floor(frame)].map;
+      s.material.rotation = Math.atan2(-vel.x, vel.y) + Math.PI / 4;
+      if (s.position.y > 0) return true;
+      // Landing: a type-3 splash 0.2 above the ground, tinted by the fireball's +0x60 colour: D_8003D0CC 0x7C2206FF, a brown dust kick-up.
+      splash(new THREE.Vector3(s.position.x, 0.2, s.position.z), { sx: 0.05, sy: 0.2, grow: 0.15, rate: 2, amp: 0.4, color: 0x7c2206 });
+      return false;
+    } });
+  };
+  // Shock sphere 0x8006FC90 (sfx shock_sph): 0.5 s, scale 0.05 -> 0.18, alpha 1 -> 0.
+  // Splash func_80072EC4: the wtrspray mesh scaled (sx, sy, sx) with no yaw, primitive colour (white unless given) with alpha 1 - age, age += rate/s
+  // (gone at 1); x/z grow by grow * rate per second. With amp, y follows amp * sin(phase), phase sweeping asin(sy / amp) -> pi over
+  // the life (min 0.01). Its waterwhite_1 texture cycles the wtrspray_ANM frames at 12 fps (func_80072CF0).
+  const splash = (pos, { sx, sy, grow, rate, amp, color = 0xffffff }) => {
+    const obj = wtr.hob.objects.find((o) => o.name === 'wtrspray') ?? wtr.hob.objects[0];
+    const g = buildObject(obj, wtr, 'data/gnrc_stuff/wtrspray', { tris: 0, verts: 0, parts: 0 });
+    g.rotation.x = Math.PI;
+    const tex = new THREE.DataTexture(wtrAnm[0].rgba, wtrAnm[0].w, wtrAnm[0].h, THREE.RGBAFormat);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    setFilter(tex);
+    tex.needsUpdate = true;
+    // shortcut: plain alpha blend; the handler sets only the primitive colour, and its render mode (func_8005955C 0x09010000) is not decoded.
+    const mat = new THREE.MeshBasicMaterial({ map: tex, color, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    g.traverse((o) => o.isMesh && (o.material = mat));
+    const holder = new THREE.Group();
+    holder.add(g);
+    holder.position.copy(pos);
+    holder.scale.set(sx, sy, sx).multiplyScalar(HOB_TO_WORLD);
+    group.add(holder);
+    const phase0 = amp ? Math.asin(Math.min(1, sy / amp)) : 0;
+    let age = 0, t = 0, frame = 0;
+    items.push({ obj: holder, step: (dt) => {
+      age += rate * dt;
+      t += dt;
+      if (age >= 1) { tex.dispose(); return false; }
+      sx += grow * rate * dt;
+      if (amp) sy = Math.max(0.01, amp * Math.sin(phase0 + (Math.PI - phase0) * age));
+      holder.scale.set(sx, sy, sx).multiplyScalar(HOB_TO_WORLD);
+      mat.opacity = 1 - age;
+      const f = Math.floor(t * 12) % wtrAnm.length;
+      if (f !== frame) { frame = f; tex.image.data = wtrAnm[f].rgba; tex.needsUpdate = true; }
+      return true;
+    } });
+  };
+  // Shockwave func_80072684 -> handler func_8006FC90; ring = [mesh, pulse, f1, f2, f3, life, rgb, up] (see SHOCKS). Mesh 0 shock_sml,
+  // 1 shock_big, 2/3 shock_sph. t runs 1 -> 0 over life; p = 1 - t. Scale (s, f3 * s, s): plain s = f1 + (f2 - f1) sin(p pi/2); pulse
+  // (flag 0x8000) s = f1 + (f2 - f1) sin(p pi) to p = 0.5, then f2 sin(p pi). Alpha t, spin 640 deg/s about the up axis. shock_sph's
+  // explo_tex material steps explo2 frames trunc(p * 20) (mesh 2) or ionexp frames trunc(p * 6) (mesh 3); sml/big keep their textures.
+  const SHOCK_MESH = ['shock_sml', 'shock_big', 'shock_sph', 'shock_sph'];
+  const shockwave = (pos, [mi, pulse, f1, f2, f3, life, rgb = 0xffffff, up]) => {
+    const obj = sfx.hob.objects.find((o) => o.name === SHOCK_MESH[mi]);
+    const g = buildObject(obj, sfx, 'data/gnrc_stuff/sfx', { tris: 0, verts: 0, parts: 0 });
+    g.rotation.x = Math.PI;
+    // Model UVs read rows top-down, so the sphere gets unflipped copies of the frames (the sprite maps are flipped for billboards).
+    const anim = (mi === 2 ? fire : mi === 3 ? ionx : null)?.map((f) => (f.modelMap ??= modelTex(f)));
+    const mats = [];
+    g.traverse((o) => {
+      if (!o.isMesh) return;
+      const own = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => m.map ?? null);
+      // shortcut: additive blend; the handler's render flags (model+0x64 | 0x09000000) are not decoded.
+      o.material = own.map((map) => {
+        const m = new THREE.MeshBasicMaterial({ map: anim ? anim[0] : map, color: rgb, transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false });
+        mats.push(m);
+        return m;
+      });
+    });
+    const spin = new THREE.Group(), holder = new THREE.Group();
+    spin.add(g);
+    holder.add(spin);
+    holder.position.copy(pos);
+    if (up) holder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...up).normalize());
+    holder.scale.set(f1, f3 * f1, f1).multiplyScalar(HOB_TO_WORLD);
+    group.add(holder);
+    let t = 1;
+    items.push({ obj: holder, step: (dt) => {
+      t -= dt / life;
+      if (t <= 0) { mats.forEach((m) => m.dispose()); return false; }
+      const p = 1 - t;
+      const s = !pulse ? f1 + (f2 - f1) * Math.sin(p * Math.PI / 2) : p < 0.5 ? f1 + (f2 - f1) * Math.sin(p * Math.PI) : f2 * Math.sin(p * Math.PI);
+      holder.scale.set(s, f3 * s, s).multiplyScalar(HOB_TO_WORLD);
+      spin.rotation.y += THREE.MathUtils.degToRad(640) * dt;
+      const map = anim && anim[Math.min(anim.length - 1, Math.trunc(p * (mi === 2 ? 20 : 6)))];
+      for (const m of mats) {
+        m.opacity = t;
+        if (map && m.map !== map) { m.map = map; m.needsUpdate = true; }
+      }
+      return true;
+    } });
+  };
+  // debris1 model chunk 0x8006F6A0: velocity {vec.x, up 1, vec.z}, spin |v| * 360 deg/s, gravity 4, bounces, 2 s life.
+  const chunk = (pos, vel = new THREE.Vector3((rnd() - 0.5) * 0.6, 1, (rnd() - 0.5) * 0.6), lands = true, scale = 0.1) => {
+    const obj = sfx.hob.objects.find((o) => o.name === 'debris1');
+    const g = buildObject(obj, sfx, 'data/gnrc_stuff/sfx', { tris: 0, verts: 0, parts: 0 });
+    const holder = new THREE.Group();
+    holder.add(g);
+    // shortcut: the record's scale is drawn relative to the landing chunk's 0.1 at a viewer-chosen 0.025; the real mesh scale is not traced.
+    holder.scale.setScalar(0.25 * scale * HOB_TO_WORLD);
+    holder.position.copy(pos);
+    group.add(holder);
+    // The default velocity is the landing chunk's {vec.x, 1, vec.z} with a small random drift standing in for the object's vec.
+    const spin = vel.length() * 2 * Math.PI;
+    let t = 0, landed = !lands;
+    items.push({ obj: holder, step: (dt) => {
+      t += dt;
+      holder.position.addScaledVector(vel, dt);
+      vel.y -= 4 * dt;
+      if (holder.position.y < 0) {
+        holder.position.y = 0;
+        vel.y = -vel.y * 0.5;
+        // shortcut: the landing effect fires on the first ground contact; npcDebris1Update's exact trigger condition is not traced.
+        if (!landed) { landed = true; landing(holder.position.clone().setY(0.3)); }
+      }
+      holder.rotation.x += spin * dt;
+      holder.rotation.z += spin * 0.7 * dt;
+      return t < 2;
+    } });
+  };
+  // Emitter 0x800403EC (spawn func_800409A4, tick func_8004118C in asm/main/40F10.s): `rate` particles/s up to `max`, each launched
+  // at `vel` up, turned by +-spread/2 degrees about Z and X, scattered by +-scatter, moving at v * (1 - drag) with no gravity, size
+  // start -> end over `life`, frames stepped evenly over life, colour/alpha from a 16-step part_pal ramp (alpha in the 0x200 plane).
+  const pp = await rom.read('data/part_pal');
+  const rampColor = (ramp, step) => {
+    const e = ramp * 16 + step;
+    return [pp.getUint8(e * 4) / 255, pp.getUint8(e * 4 + 1) / 255, pp.getUint8(e * 4 + 2) / 255, pp.getUint8(0x200 + e * 4) / 255];
+  };
+  const emitter = (pos, e) => {
+    // e.at(t) moves the source over the emitter's time (attached emitters); e.dir is a launch vector instead of e.vel straight up.
+    let acc = 0, left = e.max, time = 0;
+    const spawnOne = () => {
+      const rot = new THREE.Euler(THREE.MathUtils.degToRad(Math.floor(rnd() * e.spread) - e.spread / 2), 0, THREE.MathUtils.degToRad(Math.floor(rnd() * e.spread) - e.spread / 2));
+      const vel = (e.dir ? new THREE.Vector3(...e.dir) : new THREE.Vector3(0, e.vel, 0)).applyEuler(rot).multiplyScalar(1 - e.drag);
+      const s = sprite(spr[e.frames[0]].map);
+      s.position.copy(e.at ? e.at(time) : pos).add(new THREE.Vector3((rnd() * 2 - 1) * e.scatter, 0, (rnd() * 2 - 1) * e.scatter));
+      let age = 0;
+      items.push({ obj: s, step: (dt) => {
+        age += dt;
+        if (age >= e.life) return false;
+        const f = age / e.life;
+        s.position.addScaledVector(vel, dt);
+        s.material.map = spr[e.frames[Math.min(e.frames.length - 1, Math.floor(f * e.frames.length))]].map;
+        const [r, g, b, a] = rampColor(e.ramp, Math.floor(f * 16));
+        s.material.color.setRGB(r, g, b);
+        s.material.opacity = a;
+        // shortcut: size is drawn as the quad's full width in world units; half-extent vs width is not traced.
+        s.scale.setScalar(Math.max(1e-4, e.size0 + (e.size1 - e.size0) * f));
+        return true;
+      } });
+    };
+    // The emitter itself is an item until its count is spent, spawning floor(accumulated rate) particles per tick.
+    items.push({ obj: new THREE.Object3D(), step: (dt) => {
+      time += dt;
+      for (acc += dt * e.rate; acc >= 1 && left > 0; acc--, left--) spawnOne();
+      return left > 0;
+    } });
+  };
+  // 0x8007483C on land: smoke, then r = rand % 100 picks another chunk (r < 2) or the plume (r < 10). Rolled separately here so each
+  // slider works at any value; the extra chunk does not land-trigger again, or 100% would chain forever.
+  const landing = (pos) => {
+    particle({ kind: 'smoke', s: 0.5 }, pos, smoke, smokeTint);
+    if (chance(+$('optChunkPct').value)) chunk(pos, undefined, false);
+    if (chance(+$('optPlumePct').value)) plume(pos);
+  };
+  const at = new THREE.Vector3(0, 0, 0), above = new THREE.Vector3(0, 0.3, 0);
+  // 0x80073750 (pos, id, 1.2, 0.25, [0.8, 0.5]): 2 smoke puffs at 4.8/s rising 0.8 * 0.2 units/s, 1.5 s, sm_f01 -> sm_f02, ramp 0.
+  const plume = (pos) => emitter(pos, { rate: 4.8, max: 2, vel: 0.8, spread: 0, scatter: 0.03, drag: 0.8, life: 1.5, size0: 33 / 256, size1: 97 / 256, frames: [12, 13], ramp: 0 });
+  // Camera distance the size/count formulas use (dist 2.5 = the ground explosion's full 7-chunk range).
+  const d = 2.5;
+  // 0x80073E4C ember burst (pos, s, vy): n = 20 within 6 units, all directions at vy, 1 s, size 1.5*sz -> ~0, spark, ramp 4.
+  const embers = (pos, s, vy) => {
+    const sz = (s * d) / 4.5;
+    emitter(pos, { rate: 120, max: d <= 6 ? 20 : Math.max(1, Math.trunc(120 / d)), vel: vy, spread: 360, scatter: 0.025, drag: 0, life: 1, size0: 1.5 * sz + 1 / 256, size1: 0.0005 * sz, frames: [15], ramp: 4 });
+  };
+  // triggerDistanceScaledExplosion 0x80074600(pos, 0.1, 0.4, 1.0): dist 2.5 -> ratio 1 -> 7 chunks of size 0.1 +- 0.05, shock sphere, embers.
+  const explosion = (pos) => {
+    for (let i = 0; i < 7; i++) debris(pos, Math.max(0.001, 0.1 + (Math.floor(rnd() * 128) - 64) / 1280));
+    shockwave(pos, SHOCKS['shock:ground'].rings(1)[0]);
+    embers(pos, 0.1, 0.4);
+  };
+  // npcWingmanUpdate's shot-down state calls func_800D8988: three emitters on the craft node at (0, 0.05, -0.2) (game space), all 20/s,
+  // +-2.5 deg, scatter 0.1, part_pal ramp 0: sm_f smoke (80, 1.2 s, 0.33 -> 1, vel (-1, -0.4, -1), drag 0.8), srp_f fireballs (same, size
+  // 4/256) and srp_s puffs (20, 0.5 s, 8/256 -> 21/256, vel (0, 0.5, 0), no drag). Game vectors map to the viewer as (x, -y, -z).
+  // shortcut: the fall path is a viewer choice (see shotDown). the state's real flight is not traced.
+  const shotDown = () => {
+    const obj = craft.hob.objects[0];
+    const g = buildObject(obj, craft, 'data/' + craftId, { tris: 0, verts: 0, parts: 0 });
+    g.rotation.x = Math.PI;
+    const holder = new THREE.Group();
+    holder.add(g);
+    // Placed like a level NPC: flying craft records (TIE patrols, bombers, attack splines) all use item scale 0.014, over the model's +0x34 divisor.
+    holder.scale.setScalar((0.014 / (obj.scaleDiv || 1)) * HOB_TO_WORLD);
+    // Dive, hit the ground at tHit, then slide forward decelerating (s0 at decel a) with the nose easing level over 0.2 s, and rest.
+    // shortcut: the whole crash path is a viewer choice; posed from t alone so seeking and the attached emitters stay in step.
+    const v = new THREE.Vector3(0, -1.6, -0.9), start = new THREE.Vector3(0, 4.2, 2.5), s0 = 1.6, a = 1.4;
+    const dive = Math.atan2(v.y, -v.z), slideDir = new THREE.Vector3(0, 0, -1);
+    // Ground contact from the craft's own vertices: clearance(pitch) = how far its lowest point hangs below the origin at that pitch,
+    // sampled from the dive angle to level, so the nose (or a wingtip) touches down and the wreck rests on its belly.
+    const clear = [];
+    for (let k = 0; k <= 16; k++) {
+      holder.rotation.x = dive * (1 - k / 16);
+      holder.updateMatrixWorld(true);
+      clear.push(-new THREE.Box3().setFromObject(holder, true).min.y);
+    }
+    const clearance = (pitch) => {
+      const f = Math.min(16, Math.max(0, (1 - pitch / dive) * 16)), k = Math.min(15, Math.floor(f));
+      return clear[k] + (clear[k + 1] - clear[k]) * (f - k);
+    };
+    const tHit = (start.y - clear[0]) / -v.y;
+    const pitchAt = (t) => (t <= tHit ? dive : dive * Math.max(0, 1 - (t - tHit) / 0.2));
+    const posAt = (t) => {
+      if (t <= tHit) return start.clone().addScaledVector(v, t);
+      const u = Math.min(t - tHit, s0 / a);
+      return start.clone().addScaledVector(v, tHit).setY(clearance(pitchAt(t))).addScaledVector(slideDir, s0 * u - (a * u * u) / 2);
+    };
+    const at = (t) => posAt(t).add(new THREE.Vector3(0, -0.05, 0.2).applyEuler(new THREE.Euler(pitchAt(t), 0, 0)));
+    holder.position.copy(start);
+    holder.rotation.x = dive;
+    group.add(holder);
+    let t = 0;
+    items.push({ obj: holder, step: (dt) => {
+      t += dt;
+      holder.position.copy(posAt(t));
+      holder.rotation.x = pitchAt(t);
+      // Lingers while the last smoke fades.
+      return t < 5.3;
+    } });
+    const base = { at, spread: 5, scatter: 0.1, rate: 20, ramp: 0 };
+    emitter(null, { ...base, dir: [-1, 0.4, 1], drag: 0.8, max: 80, life: 1.2, size0: 0x55 / 256, size1: 1, frames: [12, 13] });
+    emitter(null, { ...base, dir: [-1, 0.4, 1], drag: 0.8, max: 80, life: 1.2, size0: 4 / 256, size1: 4 / 256, frames: [6, 7, 8, 9, 10, 11] });
+    emitter(null, { ...base, dir: [0, -0.5, 0], drag: 0, max: 20, life: 0.5, size0: 8 / 256, size1: 0x15 / 256, frames: [0, 1, 2, 3, 4, 5] });
+  };
+  const waterHit = (pos) => {
+    const S = (0.1 * d) / 4.5;
+    emitter(pos, { rate: 60, max: 20, vel: 0.4, spread: 30, scatter: 0.025, drag: 0.05, life: 0.5, size0: 0.5 * S + 1 / 256, size1: 1.5 * S + 1 / 256, frames: [14], ramp: 2 });
+    particle({ kind: 'smoke', s: 0.5 }, pos.clone().add(above), smoke, waterTint);
+    // Type-1 splash at the water surface: 0.3 tall, widening 0.05 -> 0.4 over 0.3 s.
+    splash(pos, { sx: 0.05, sy: 0.3, grow: 0.35, rate: 10 / 3 });
+  };
+  const spawn = {
+    'sim:ground': () => explosion(at),
+    // Water hit: 0x800739A4 spray (20 at 60/s, +-15 deg, 0.4 up, drag 0.05, 0.5 s, wsm_f01, ramp 2) plus water-tinted smoke
+    // (smkexp_PAL second plane). The splash model is func_80072EC4.
+    'sim:water': () => waterHit(at),
+    // A player's hit also gets the full explosion, func_80074600(pos, 0.1, 0.4, 1.0).
+    'sim:water_player': () => { waterHit(at); explosion(at); },
+    'sim:land': () => landing(above),
+    'sim:shotdown': () => shotDown(),
+    'sim:impact_fire': () => particle({ kind: 'fire', s: 0.6 }, above, fire),
+    'sim:impact_ion': () => particle({ kind: 'ion1', A: 0.4, B: 0.8 }, above, ion2),
+    'sim:impact_small': () => { embers(above, 0.05, 0.2); particle({ kind: 'fire', s: 0.2 }, above, fire); },
+  }[id] ?? (SHOCKS[id] && (() => {
+    for (const ring of SHOCKS[id].rings(+$('optFxSize').value)) shockwave(at, ring);
+  })) ?? (() => {
+    // composeRandomRotationMatrix: a direction within `cone` degrees of up, the chunk placed `radius` along it, speed uniform in range.
+    const b = BURSTS[id];
+    // The same destruction function also spawns its shockwave group on that frame.
+    if (b.shock) for (const ring of SHOCKS[b.shock].rings(+$('optFxSize').value)) shockwave(at, ring);
+    for (let i = b.count(); i > 0; i--) {
+      const tilt = THREE.MathUtils.degToRad(rnd() * b.cone), az = rnd() * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.sin(tilt) * Math.cos(az), Math.cos(tilt), Math.sin(tilt) * Math.sin(az));
+      const pos = above.clone().addScaledVector(dir, b.radius ?? 0);
+      chunk(pos, dir.multiplyScalar(b.speed[0] + rnd() * (b.speed[1] - b.speed[0])), true, b.scale());
+    }
+  });
+  // Items are removed in place: the spawners hold this same array.
+  const fx = {
+    sim: true,
+    reset() {
+      for (const it of items) { group.remove(it.obj); it.obj.material?.dispose(); }
+      items.length = 0;
+      seedRnd(fxSeed);
+      spawn();
+    },
+    step(dt) {
+      for (let i = items.length - 1; i >= 0; i--) if (!items[i].step(dt)) { group.remove(items[i].obj); items[i].obj.material?.dispose(); items.splice(i, 1); }
+    },
+    done: () => !items.length,
+  };
+  stats = { simulation: SIMS[id].label, source: SIMS[id].tip.split(':')[0] };
+  hud();
+  // Debris bursts fly ~3 units out; shockwaves frame their widest ring (mesh radius x peak scale); the rest stay within half a unit.
+  const meshR = (mi) => new THREE.Box3().setFromObject(buildObject(sfx.hob.objects.find((o) => o.name === SHOCK_MESH[mi]), sfx, 'data/gnrc_stuff/sfx', { tris: 0, verts: 0, parts: 0 })).getSize(new THREE.Vector3()).x / 2;
+  const h = BURSTS[id] ? 2 : SHOCKS[id] ? Math.max(0.5, ...SHOCKS[id].rings(+$('optFxSize').value).map((r) => meshR(r[0]) * r[3] * HOB_TO_WORLD)) : 0.5;
+  // Frame the whole dive and slide from the side.
+  if (!keepView) frameBox(id === 'sim:shotdown' ? new THREE.Box3(new THREE.Vector3(-1.5, 0, -1.5), new THREE.Vector3(1.5, 4.5, 3)) : new THREE.Box3(new THREE.Vector3(-h, 0, -h), new THREE.Vector3(h, h, h)), new THREE.Vector3(id === 'sim:shotdown' ? 1 : 0.6, 0.45, 0.8));
+  timelineStart(fx);
+}
+// ---------- effect timeline ----------
+// Every playback kind exposes reset() / step(dt) / done(); the timeline plays, loops, stops and seeks through them. Effect randomness
+// comes from a seeded rnd(), so seeking replays the same take (reset + fixed 1/60 s steps up to the target time).
+let rnd = Math.random, fxSeed = 1, fxDry = false;
+const chance = (pct) => pct > 0 && (fxDry || rnd() * 100 < pct);
+function seedRnd(seed) {
+  let a = seed >>> 0;
+  rnd = () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const TL = { time: 0, dur: 0, playing: true };
+function timelineStart(fx) {
+  effect = fx;
+  // The timeline spans the longest the effect can run: dry runs over several seeds with every non-zero chance roll passing, capped at 10 s.
+  let dur = 1 / 60;
+  fxDry = true;
+  for (let i = 0; i < 8; i++) {
+    fxSeed = (Math.random() * 2 ** 31) | 0;
+    fx.reset();
+    let t = 0;
+    for (; !fx.done() && t < 10; t += 1 / 60) fx.step(1 / 60);
+    dur = Math.max(dur, t);
+  }
+  fxDry = false;
+  Object.assign(TL, { time: 0, dur, playing: true });
+  fx.reset();
+  syncTimeline();
+}
+function seekTimeline(t) {
+  effect.reset();
+  for (let s = 0; s < t; s += 1 / 60) effect.step(Math.min(1 / 60, t - s));
+  TL.time = t;
+  syncTimeline();
+}
+function syncTimeline() {
+  $('fxTime').max = TL.dur;
+  $('fxTime').value = TL.time;
+  $('fxTimeVal').textContent = `${TL.time.toFixed(2)} / ${TL.dur.toFixed(2)} s`;
+  $('fxPlay').textContent = TL.playing ? 'Pause' : 'Play';
+}
+function applyEffect(dt) {
+  dt *= +$('optFxSpeed').value;
+  if (!effect?.step || !TL.playing) return;
+  effect.step(dt);
+  TL.time += dt;
+  // A short take still plays out the full timeline, so every loop has the same length.
+  if (TL.time >= TL.dur) {
+    if ($('optFxLoop').checked) {
+      // Each loop is a fresh take.
+      fxSeed = (Math.random() * 2 ** 31) | 0;
+      effect.reset();
+      TL.time = 0;
+    } else {
+      TL.playing = false;
+      TL.time = Math.min(TL.time, TL.dur);
+    }
+  }
+  syncTimeline();
+}
+
+// Animations sit beside their model and share its name prefix (atat -> atat_walk/start/stop; atst_hi -> atst_*).
+async function setupAnimations(id, objGroup) {
+  const sel = $('optAnim');
+  if (sel.dataset.id !== id) {
+    sel.dataset.id = id;
+    const dir = id.slice(0, id.lastIndexOf('/') + 1), prefix = id.split('/').pop().split('_')[0] + '_';
+    const found = [];
+    for (const a of rom.assets.values()) {
+      if (!a.path.startsWith(dir) || a.dir + '/' !== dir || !a.name.startsWith(prefix) || /_(HOB|HMT)$/.test(a.name)) continue;
+      const data = parseAnim(await rom.read(a.path));
+      if (data && data.tracks.length) found.push({ name: a.name, data });
+    }
+    for (const name of SPRITE_ANIMS[id.replace(/^data\//, '')] ?? []) {
+      const a = rom.assets.get(dir + name);
+      if (a) found.push({ name, spriteData: await rom.read(a.path) });
+    }
+    // Hinged wings (the S-foils / shuttle wings slider) as animations too: a 1 s sweep each way (the game's sweep time is not traced).
+    const kind = foilKind(id), names = objGroup && modelCache.get(id)?.hob.objects.find((o) => o.name === objGroup.name)?.nodeNames;
+    if (kind && names?.has('wngrot_a') && names.has('wngrot_b')) {
+      const [close, open] = kind === 'shuttle' ? ['wings_lower', 'wings_raise'] : ['sfoils_close', 'sfoils_open'];
+      found.push({ name: close, foil: [0, 1] }, { name: open, foil: [1, 0] });
+    }
+    // Only clips whose nodes this model actually has.
+    for (const [re, clips] of PROC_ANIMS) if (re.test(id)) for (const clip of clips) if (clip[3].every(([node]) => names?.has(node))) found.push({ name: clip[0], proc: clip, nodes: clip[3].map(([node, ...rest]) => [names.get(node), ...rest]) });
+    sel.innerHTML = '<option value="">None (rest pose)</option>' + found.map((f, i) => `<option value="${i}">${esc(f.name)}</option>`).join('');
+    sel.found = found;
+    sel.value = '';
+  }
+  $('animRow').hidden = $('animSpeedRow').hidden = !sel.found.length;
+  const pick = sel.found[sel.value];
+  const rig = objGroup?.userData.rig;
+  if (spriteRestore) {
+    spriteRestore.map.image.data = spriteRestore.data;
+    spriteRestore.map.needsUpdate = true;
+    spriteRestore = null;
+  }
+  if (pick?.spriteData) {
+    // The frames are written over the shown object's textured slot (civ_run, st_run/st_sht) and keyed with its colour key.
+    let info = null;
+    objGroup?.traverse((o) => { info ??= o.userData.infos?.find((i) => i.map && i.tex); });
+    const sprite = info && parseSpriteAnim(pick.spriteData, info.tex.trans);
+    anim = sprite && sprite[0].w === info.tex.w && sprite[0].h === info.tex.h ? { sprite, map: info.map } : null;
+    if (anim) spriteRestore = { map: info.map, data: info.map.image.data };
+    return;
+  }
+  if (pick?.foil) {
+    anim = { foil: pick.foil, seconds: 1 };
+    return;
+  }
+  if (pick?.proc && rig) {
+    anim = { proc: pick.proc, rig, nodes: pick.nodes };
+    return;
+  }
+  // Only play when the track count fits this model's nodes (one per node after the root).
+  anim = pick && rig && pick.data.tracks.length === rig.nodes.length - 1
+    ? { data: pick.data, rig, seconds: (pick.data.lengthMs || 2000) / 1000 }
+    : null;
+}
+
+async function showModel(id, objIndex = -1, keepView = false) {
+  setContext(false);
+  selected = id;
+  selectedObj = objIndex;
+  selectedLevel = false;
+  selectedEffect = false;
+  renderList();
+  const model = await loadModel(id);
+  const { hob, hmt } = model;
+  const sel = $('objSel');
+  $('objRow').hidden = hob.objects.length < 2;
+  if (sel.dataset.id !== id) {
+    sel.dataset.id = id;
+    sel.innerHTML = '<option value="-1">All objects</option>' + hob.objects.map((o, i) => `<option value="${i}">${esc(o.name)}</option>`).join('');
+    sel.onchange = () => showModel(id, +sel.value);
+    if (objIndex < 0 && hob.objects.length > 1) objIndex = 0;
+  }
+  sel.value = String(objIndex);
+  const counts = { tris: 0, verts: 0, parts: 0 };
+  const group = new THREE.Group();
+  const objs = objIndex < 0 ? hob.objects : [hob.objects[objIndex]];
+  objs.forEach((o, i) => {
+    const g = buildObject(o, model, id, counts);
+    if (objIndex < 0 && objs.length > 1) g.position.x = i * 12000;
+    group.add(g);
+  });
+  // The game is Y-down; rotating about X keeps handedness, unlike a Y mirror.
+  group.rotation.x = Math.PI;
+  group.scale.setScalar(MODEL_VIEW_SCALE);
+  // Auto-rotate turns the model about its own centre (not the camera), so panning doesn't throw it off.
+  const pivot = new THREE.Group();
+  pivot.name = 'spin';
+  group.position.sub(new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3()));
+  pivot.add(group);
+  setRoot(pivot);
+  await setupAnimations(id, group.children[0]);
+  setupFoils(id, group.children[0]);
+  setupExhaust(group.children[0]);
+  // The slider only appears when this model has more than one LOD, and stops at its last one.
+  $('lodRow').hidden = counts.lods < 2;
+  $('optLod').max = Math.max(0, counts.lods - 1);
+  $('lodVal').textContent = lodLevel();
+  stats = { model: id, objects: hob.objects.length, 'LOD levels': counts.lods, parts: counts.parts, triangles: counts.tris, vertices: counts.verts, textures: hmt.textures.length };
+  hud();
+  // Models face +Z in game space; after the Y-down flip their nose points at -Z, so frame them from that side.
+  if (!keepView) frame(root, new THREE.Vector3(-0.6, 0.5, -0.8));
+}
+
+// One 64x64 texture per tile, packed into an atlas; tiles get their own vertices so UVs don't share across tile edges.
+function buildTerrain(hmp, texIds, bank) {
+  const W = hmp.w * 4 + 1, H = hmp.h * 4 + 1;
+  const ht = new Float32Array(W * H);
+  const tileAt = (tx, ty) => hmp.tiles[hmp.map[ty * hmp.w + tx]];
+  for (let ty = 0; ty < hmp.h; ty++) for (let tx = 0; tx < hmp.w; tx++) {
+    const tile = tileAt(tx, ty);
+    for (let py = 0; py < 5; py++) for (let px = 0; px < 5; px++) ht[(ty * 4 + py) * W + tx * 4 + px] = tile ? tile.hts[py * 5 + px] * hmp.heightScale : 0;
+  }
+  const hAt = (x, y) => ht[Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))];
+
+  const slots = new Map();
+  for (const t of hmp.tiles) if (texIds[t.tex] !== undefined && !slots.has(texIds[t.tex])) slots.set(texIds[t.tex], slots.size);
+  const cols = 16, AW = cols * 64, AH = Math.max(1, Math.ceil(slots.size / cols)) * 64;
+  const atlas = new Uint8Array(AW * AH * 4).fill(255);
+  for (const [bankId, slot] of slots) {
+    const px = decodeTerrainTex(bank, bankId), ox = (slot % cols) * 64, oy = ((slot / cols) | 0) * 64;
+    for (let y = 0; y < 64; y++) atlas.set(px.subarray(y * 256, y * 256 + 256), ((oy + y) * AW + ox) * 4);
+  }
+  for (let i = 3; i < atlas.length; i += 4) atlas[i] = 255;
+  const map = new THREE.DataTexture(atlas, AW, AH, THREE.RGBAFormat);
+  setFilter(map);
+
+  // LOD drops the 4x4 quads per tile to 2x2 then 1x1, like the game's distant tiles.
+  const st = 1 << +$('optTerrainLod').value, n = 4 / st + 1;
+  const pos = [], nrm = [], uv = [], idx = [], col = [];
+  // Baked like the game: shadow colour as ambient plus world light scaled by N.L, clamped (matches the warm, full-bright Tatooine sand in the PJ64 reference; a plain lerp greyed it out).
+  // The stored horizontal direction points away from the sun used for the baked shading (verified on Tatooine and level 6 in the recomp).
+  const { shadow, world, sunDir } = hmp.light;
+
+  const lit = world.map((w) => w / 255);
+  const dark = shadow.map((s) => s / 255);
+  const L = [-sunDir[0], -Math.abs(sunDir[1]), -sunDir[2]], Ll = Math.hypot(...L) || 1;
+  for (let ty = 0; ty < hmp.h; ty++) for (let tx = 0; tx < hmp.w; tx++) {
+    const slot = slots.get(texIds[tileAt(tx, ty)?.tex]) ?? 0;
+    const u0 = (slot % cols) * 64 + 0.5, v0 = ((slot / cols) | 0) * 64 + 0.5;
+    const base = pos.length / 3;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const x = tx * 4 + i * st, y = ty * 4 + j * st;
+      pos.push(x * 0.5, hAt(x, y), y * 0.5);
+      // Height slope per world unit (grid step 0.5); sign matches the triangle winding below.
+      const gx = hAt(x - 1, y) - hAt(x + 1, y), gz = hAt(x, y - 1) - hAt(x, y + 1), l = Math.hypot(gx, 1, gz);
+      nrm.push(gx / l, 1 / l, gz / l);
+      // Up normal in game (Y-down) space is (-gx, -1, -gz)/l.
+      const ndl = Math.max(0, (gx * L[0] + L[1] + gz * L[2]) / (l * Ll) * -1);
+      col.push(...dark.map((d, k) => Math.min(1, d + lit[k] * ndl)));
+      // Texture rows run opposite to tile z: edge-seam scoring across levels picks this flip over the other 7 orientations.
+      uv.push((u0 + (i * st) / 4 * 63) / AW, (v0 + (1 - (j * st) / 4) * 63) / AH);
+    }
+    for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+      const a = base + j * n + i;
+      idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setIndex(idx);
+  return { g, map, tris: idx.length / 3 };
+}
+// Terrain geometry and atlas are cached per level and terrain LOD (cleared with the other caches); the mesh and material are rebuilt.
+const terrainCache = new Map();
+function terrainMesh(hmp, texIds, bank, key) {
+  if (!terrainCache.has(key)) terrainCache.set(key, buildTerrain(hmp, texIds, bank));
+  const { g, map, tris } = terrainCache.get(key);
+  texCache.set('terrain', { map });
+  const params = { map: $('optTex').checked ? map : null, side: THREE.DoubleSide, wireframe: $('optWire').checked };
+  const m = new THREE.Mesh(g, gameLighting() ? new THREE.MeshBasicMaterial({ ...params, vertexColors: true }) : new THREE.MeshLambertMaterial(params));
+  m.name = 'terrain';
+  m.userData.shared = true;
+  m.userData.terrain = map;
+  m.userData.tiles = { hmp, texIds };
+  return { mesh: m, tris };
+}
+
+
+// Fog colour is byte RGB at +0x28 of the level config table (0x800A05D0, 0x30 per level); the game fogs from 0.9 (level 2: 0.3) of the camera far plane to the far plane, ~32 world units.
+let levelFog = null;
+// Fog controls only show on levels that have a fog setting (frontend scenes have none).
+function syncFogControls() {
+  $('optFog').closest('label').hidden = $('optFogDist').closest('label').hidden = !levelFog;
+  $('optFogDist').disabled = !$('optFog').checked;
+}
+function applyFog() {
+  if (!levelFog || !$('optFog').checked) { scene.fog = null; return; }
+  const far = 32 * +$('optFogDist').value;
+  scene.fog = new THREE.Fog(levelFog.color, far * levelFog.frac, far);
+}
+
+async function showLevel(dir, keepView = false) {
+  setContext(true);
+  $('lodRow').hidden = false;
+  $('optLod').max = 3;
+  $('btnBack').hidden = true;
+  selected = dir;
+  selectedLevel = true;
+  selectedEffect = false;
+  renderList();
+  $('objRow').hidden = true;
+  const counts = { tris: 0, verts: 0, parts: 0 };
+  const world = new THREE.Group();
+  let hmp = null, terrain = null;
+  levelHeight = () => 0;
+  if (rom.assets.has(dir + '/hmp')) {
+    hmp = parseHMP(await rom.read(dir + '/hmp'));
+    const [texIds, bank] = await Promise.all([rom.read(dir + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
+    const t = terrainMesh(hmp, texIds, bank, dir + '|' + $('optTerrainLod').value);
+    // Bilinear ground height on the 0.5-unit vertex grid (4x4 quads per 2-unit tile).
+    const gw = hmp.w * 4, gh = hmp.h * 4;
+    const vert = (gx, gz) => {
+      gx = Math.min(gw, Math.max(0, gx));
+      gz = Math.min(gh, Math.max(0, gz));
+      const tile = hmp.tiles[hmp.map[Math.min(hmp.h - 1, gz >> 2) * hmp.w + Math.min(hmp.w - 1, gx >> 2)]];
+      const px = gx === gw ? 4 : gx & 3, pz = gz === gh ? 4 : gz & 3;
+      return tile ? tile.hts[pz * 5 + px] * hmp.heightScale : 0;
+    };
+    levelHeight = (wx, wz) => {
+      const fx = wx * 2, fz = wz * 2, x0 = Math.floor(fx), z0 = Math.floor(fz), tx = fx - x0, tz = fz - z0;
+      return (vert(x0, z0) * (1 - tx) + vert(x0 + 1, z0) * tx) * (1 - tz) + (vert(x0, z0 + 1) * (1 - tx) + vert(x0 + 1, z0 + 1) * tx) * tz;
+    };
+    terrain = t.mesh;
+    world.add(terrain);
+    counts.tris += t.tris;
+  }
+  // Level-local models (opkg) by object name, then shared models by subtype.
+  const local = new Map();
+  for (const a of rom.assets.values()) {
+    if (a.dir !== dir || !a.name.endsWith('_HOB')) continue;
+    const id = a.path.replace(/_HOB$/, '');
+    if (!rom.assets.has(id + '_HMT')) continue;
+    const m = await loadModel(id);
+    m.hob.objects.forEach((o) => local.set(o.name, { obj: o, model: m, key: id }));
+  }
+  const dat = parseDAT(await rom.read(dir + '/dat'));
+  const homes = await buildObjectIndex();
+  const byName = new Map(dat.items.filter((i) => i.name).map((i) => [i.name, i]));
+  // Resolve zone links (indices into the zone list) so trigger areas know their music zone and vice versa.
+  const zoneList = dat.items.filter((i) => i.type === 6);
+  const links = zoneList.flatMap((z) => (z.zoneLinks || []).map((k) => [z, zoneList[k]])).filter(([z, t]) => t && t !== z);
+  for (const [z, t] of links) (t.linkedFrom ??= []).push(z.name || 'zone #' + z.index);
+  // Music trigger areas (0x39) are unnamed in the DAT; label them by the music zone that owns them.
+  for (const t of zoneList) if (!t.name && t.sub === 0x39 && t.linkedFrom) t.label = 'Music trigger for ' + t.linkedFrom.join(', ');
+  for (const [z, t] of links) (z.linkedTo ??= []).push(t.name || t.label || (TYPES[markerKind(t)]?.label ?? 'zone') + ' #' + t.index);
+  // Spline event nodes name the type-7 item they fire; record the spline (and how far along) on that item.
+  // The event fires at the node, so its marker goes there (the record's own position is not used by the path code).
+  const triggers = dat.items.filter((i) => i.type === 7);
+  for (const s of dat.items) {
+    if (!s.events?.length || s.points?.length < 2) continue;
+    const curve = new THREE.CatmullRomCurve3(s.points.map((p) => new THREE.Vector3(...p)), false, 'centripetal');
+    for (const e of s.events) {
+      const t = triggers[e.trigger];
+      if (!t) continue;
+      (t.paths ??= []).push(`${s.name} at ${Math.round(e.at * 100)}%`);
+      (t.nodePoints ??= []).push(curve.getPointAt(THREE.MathUtils.clamp(e.at, 0, 1)).toArray());
+      (t.nodeTangents ??= []).push(curve.getTangentAt(THREE.MathUtils.clamp(e.at, 0, 1)));
+    }
+  }
+  for (const t of triggers) if (t.pathEvent && t.nodePoints) [t.recordPos, t.pos] = [t.pos, t.nodePoints[0]];
+  // Path events are unnamed in the DAT; label them by what they do (0x1A by its craft mode word).
+  for (const t of triggers) {
+    const e = t.pathEvent;
+    if (!e || t.name) continue;
+    t.label = {
+      0x1A: ['Bombing run', 'Shuttle landing animation', 'Wingman effect'][e.w[0]] ?? 'Craft action',
+      0x1B: 'Speed change', 0x1C: 'Weave change', 0x22: 'Hold order',
+      0x20: e.target && e.target[0] !== '-' ? 'Attack ' + e.target : 'Clear attack target',
+      0x23: e.ia ? 'Landing pitch' : 'Take-off level-out',
+      0x4E: 'Fly to ' + (e.target || 'player'),
+    }[t.sub];
+  }
+  for (const it of dat.items) {
+    if (it.type !== 7) continue;
+    const named = it.strings.filter((s) => s !== it.name && byName.has(s));
+    if (it.pathEvent?.target && byName.has(it.pathEvent.target)) named.push(it.pathEvent.target);
+    if (it.name.startsWith('For_') && byName.has(it.name.slice(4))) named.push(it.name.slice(4));
+    if (it.waypoint?.follow && byName.has(it.waypoint.follow)) named.push(it.waypoint.follow);
+    // A roam area's users are the NPCs whose box name (the string after their own name) is this item.
+    if (it.sub === 0x11 || it.sub === 0x17) {
+      for (const n of dat.items) if (n.type === 0 && n.model === it.name) named.push(n.name);
+    }
+    it.targets = [...new Set(named)];
+    const line = /LINE_(\d+)/i.exec(it.name);
+    if (line) {
+      it.voiceId = +line[1];
+      it.voice = voiceLine(it.voiceId);
+    }
+  }
+  // Group splines by the NPCs that follow them: an NPC names its spline right after its own name (see npcAtAtUpdate).
+  // A spline nobody names joins the group of a sibling with the same name stem (WEDGE_Spline_02 -> WEDGE_Spline_01's).
+  const splines = dat.items.filter((s) => s.type === 3);
+  const npcLabel = (n) => (n.sub === 0x27 ? 'Wingmen' : SUBTYPES[n.sub] ?? 'NPC');
+  for (const s of splines) {
+    const users = dat.items.filter((n) => n.type === 0 && n.model === s.name);
+    if (!users.length) continue;
+    s.users = users.map((n) => n.name);
+    s.pathKind = 'path:' + [...new Set(users.map(npcLabel))].sort().join(' / ');
+  }
+  const stem = (n) => n.replace(/[_\d.]+$/, '');
+  for (const s of splines) s.pathKind ??= splines.find((o) => o.users && stem(o.name) === stem(s.name))?.pathKind;
+  // Hues spread evenly over this level's path kinds so neighbouring groups stay distinguishable.
+  const kinds = [...new Set(splines.map((s) => s.pathKind).filter(Boolean))].sort();
+  kinds.forEach((k, i) => {
+    const label = k.slice(5);
+    TYPES[k] = { color: new THREE.Color().setHSL((0.08 + i / kinds.length) % 1, 0.8, 0.62).getHex(), label, icon: 'cross', tip: `Splines followed by ${label}; the cross marks the start` };
+  });
+  const markers = new THREE.Group();
+  markers.name = 'markers';
+  let placed = 0;
+  for (const it of dat.items) {
+    let src = it.model && local.get(it.model), npc = false;
+    if (!src && it.model && homes.has(it.model)) {
+      const id = homes.get(it.model), m = await loadModel(id), obj = m.hob.objects.find((o) => o.name === it.model);
+      src = { obj, model: m, key: id };
+    }
+    if (!src && it.type === 0 && SUBTYPE_MODEL[it.sub]) {
+      // Prefer the Expansion Pak "_hi" variant when the ROM has one (atst_hi, atpt_i_hi).
+      const [path, objName] = SUBTYPE_MODEL[it.sub].split('#'), base = 'data/' + path;
+      const id = rom.assets.has(base + '_hi_HOB') ? base + '_hi' : base;
+      if (rom.assets.has(id + '_HOB')) {
+        const m = await loadModel(id);
+        src = { obj: (objName && m.hob.objects.find((o) => o.name === objName)) || m.hob.objects[0], model: m, key: id };
+        npc = true;
+      }
+    }
+    // Hangar slots (0x06) are named after what stands there: a craft asset (xwing, ywing) or an object name with a "*N" copy suffix
+    // (gt_rprun*3 = a running pilot).
+    const slot = it.type === 0 && it.sub === 0x06 && it.name.replace(/[*#]\d+$/, '');
+    if (!src && slot && rom.assets.has('data/pl_crafts/' + slot + '_HOB')) {
+      const id = 'data/pl_crafts/' + slot, m = await loadModel(id);
+      src = { obj: m.hob.objects[0], model: m, key: id };
+    } else if (!src && slot && homes.has(slot)) {
+      const id = homes.get(slot), m = await loadModel(id);
+      src = { obj: m.hob.objects.find((o) => o.name === slot), model: m, key: id };
+    }
+    // The hangar's "planet" slot is a flat backdrop image (JPEG in data/backdrop/planet_N, chosen by the menu code), not a model.
+    if (!src && it.type === 0 && it.sub === 0x06 && it.name === 'planet' && rom.assets.has('data/backdrop/planet_0')) {
+      const dv = await rom.read('data/backdrop/planet_0');
+      const bitmap = await createImageBitmap(new Blob([new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)], { type: 'image/jpeg' }));
+      // The JPEG has no alpha: derive it from brightness so the black above the planet's limb shows the stars, while the planet stays opaque.
+      const cv = new OffscreenCanvas(bitmap.width, bitmap.height), cx = cv.getContext('2d');
+      // Rows flipped while drawing: data textures put row 0 at v = 0 (the bottom), and flipY is not applied to them under WebGPU.
+      cx.scale(1, -1);
+      cx.drawImage(bitmap, 0, -bitmap.height);
+      const img = cx.getImageData(0, 0, bitmap.width, bitmap.height), px = img.data;
+      for (let i = 0; i < px.length; i += 4) px[i + 3] = Math.min(255, Math.max(px[i], px[i + 1], px[i + 2]) * 4);
+      const tex = new THREE.DataTexture(px, bitmap.width, bitmap.height, THREE.RGBAFormat);
+      tex.needsUpdate = true;
+      // A fixed panel facing back into the hangar (the bay looks out along +Z), not a camera-facing sprite.
+      // shortcut: 48 world units of width per unit of item scale is tuned by eye (wide enough to span the bay opening), not traced from
+      // the game's sizing code; the image's 640x128 aspect is kept.
+      const pw = it.scale[0] * 48, ph = pw * bitmap.height / bitmap.width;
+      // Top edge on the item point (the horizon), planet hanging below behind the floor; rotated about X so the Y-down world shows it
+      // upright and unmirrored from inside.
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph).translate(0, -ph / 2, 0).rotateX(Math.PI),
+        new THREE.MeshBasicMaterial({ map: tex, fog: false, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+      panel.position.set(...it.pos);
+      panel.userData.item = it;
+      world.add(panel);
+      placed++;
+      continue;
+    }
+    if (src) {
+      const holder = new THREE.Group();
+      holder.userData.source = { id: src.key, name: src.obj.name, objIndex: src.model.hob.objects.indexOf(src.obj) };
+      // NPC spawns divide the item scale by the model's +0x34 value (npcAtStUpdate); buildings use the item scale as is.
+      const div = npc ? src.obj.scaleDiv : 1;
+      // Spline-following NPCs spawn at their path's start (npcAtAtUpdate/npcAtStUpdate record type 3), not the shared item
+      // position. The reference is the spline's full name.
+      const path = npc && it.model && dat.items.find((s) => s.type === 3 && s.points?.length && s.name === it.model);
+      const pos = path ? path.points[0] : it.pos;
+      // Face along the path's first segment: models look down +Z, so yaw = atan2(dx, dz) in (Y-down) game space.
+      const next = path ? path.points.find((p) => Math.hypot(p[0] - pos[0], p[2] - pos[2]) > 1e-3) : null;
+      const rotation = next ? new THREE.Matrix4().makeRotationY(Math.atan2(next[0] - pos[0], next[2] - pos[2])) : placementRotation(it.rot);
+      const sc = (it.scale[0] ? it.scale : [0.25, 0.25, 0.25]).map((s) => (s / div) * HOB_TO_WORLD);
+      holder.matrixAutoUpdate = false;
+      holder.matrix.compose(new THREE.Vector3(...pos), new THREE.Quaternion(), new THREE.Vector3(1, 1, 1))
+        .multiply(new THREE.Matrix4().makeScale(...sc)).multiply(rotation);
+      holder.add(buildObject(src.obj, src.model, src.key, counts));
+      // The hangar's star wall is a backdrop: drawn first without depth (like the skybox) so the planet sprite in front isn't cut by it.
+      if (src.obj.name === 'stars') holder.traverse((o) => {
+        if (!o.isMesh || !o.userData.infos) return;
+        o.material = o.userData.infos.map((i) => new THREE.MeshBasicNodeMaterial({ map: i.map, vertexColors: true, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+        delete o.userData.infos;
+        o.renderOrder = -1;
+      });
+      world.add(holder);
+      placed++;
+    } else {
+      const mk = makeMarker(it);
+      // A path event fired from several nodes gets a bead at each of the others.
+      if (it.pathEvent) (it.nodePoints || []).slice(1).forEach((p, k) => {
+        const d = new THREE.Mesh(beadGeometry(it.nodeTangents[k + 1]), meshMat(markerKind(it)));
+        d.position.set(p[0] - it.pos[0], p[1] - it.pos[1], p[2] - it.pos[2]);
+        d.userData.item = it;
+        mk.add(d);
+      });
+      // Trigger -> target links, drawn under the trigger so they hide with it.
+      for (const t of it.targets || []) {
+        const p = byName.get(t).pos, end = new THREE.Vector3(p[0] - it.pos[0], p[1] - it.pos[1], p[2] - it.pos[2]);
+        // Attack orders (0x20) point at their victim: red, dashed, with an arrowhead at the target.
+        const attack = it.sub === 0x20 && t === it.pathEvent?.target;
+        const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), end]), attack ? attackLineMat : lineMat(markerKind(it), 0.45));
+        if (attack) {
+          link.computeLineDistances();
+          const head = new THREE.Mesh(GEO.arrow, attackHeadMat);
+          head.position.copy(end).addScaledVector(end.clone().normalize(), -0.3);
+          head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().normalize());
+          head.userData.item = it;
+          link.add(head);
+        }
+        link.userData.item = it;
+        mk.add(link);
+      }
+      markers.add(mk);
+    }
+  }
+  // Stacked splines: two splines overlap when 15% of either one's samples lie within 1.5 units of the other. Greedy colouring gives
+  // overlapping splines different layers (fewest layers first); "Spread paths" lifts each spline by its layer.
+  const pathMarkers = markers.children.filter((m) => m.userData.item.type === 3 && m.userData.item.points?.length > 1);
+  const samples = pathMarkers.map((m) => new THREE.CatmullRomCurve3(m.userData.item.points.map((p) => new THREE.Vector3(...p)), false, 'centripetal').getPoints(m.userData.item.points.length * 4));
+  const nearShare = (a, b) => a.filter((p) => b.some((q) => p.distanceToSquared(q) < 2.25)).length / a.length;
+  pathMarkers.forEach((m, j) => {
+    const taken = new Set();
+    for (let i = 0; i < j; i++) if (Math.max(nearShare(samples[j], samples[i]), nearShare(samples[i], samples[j])) >= 0.15) taken.add(pathMarkers[i].userData.spreadRank);
+    let layer = 0;
+    while (taken.has(layer)) layer++;
+    m.userData.spreadRank = layer;
+  });
+  applySpread(markers);
+
+  world.add(markers);
+  world.rotation.x = Math.PI;
+  setRoot(world);
+  if (hmp) applySun(hmp.light, hmp.w * 2, hmp.h * 2);
+
+  world.traverse((o) => { if (o.isMesh && o.parent !== markers) o.castShadow = o.receiveShadow = true; });
+  const lvIndex = parseInt(dir.split('_').pop(), 36);
+  if (dir.includes('/level/lv_') && lvIndex < 21) {
+    const o = 0x800A05D0 - 0x80000400 + 0x1000 + lvIndex * 0x30 + 0x28;
+    levelFog = { color: new THREE.Color().setRGB(romBytes[o] / 255, romBytes[o + 1] / 255, romBytes[o + 2] / 255, THREE.SRGBColorSpace), frac: lvIndex === 2 ? 0.3 : 0.9 };
+    applyFog();
+  }
+  syncFogControls();
+  stats = { level: dir.split('/').pop(), items: dat.items.length, placed, markers: markers.children.length, triangles: counts.tris, vertices: counts.verts };
+  hud();
+  renderLegend(markers);
+  if (!keepView) frameLevel(world, markers);
+  // Added after framing so the dome doesn't inflate the bounds; the render loop keeps it centred on the camera.
+  const skyId = dir.replace(/.*\/lv_/, 'data/level/sky_');
+  if (rom.assets.has(skyId + '_HOB')) {
+    const m = await loadModel(skyId);
+    sky = buildObject(m.hob.objects[0], m, skyId, { tris: 0, verts: 0, parts: 0 });
+    sky.name = 'sky';
+    sky.scale.setScalar(2);
+    sky.visible = $('optSky').checked;
+    // Below the horizon is filled with the sky's bottom edge: the texel (times vertex colour) at each of its lowest vertices, averaged.
+    // Game space is Y-down, so the lowest vertices have the largest y (the horizon ring's bottom row, v = 1, on most skies).
+    const edge = [];
+    for (const parts of m.hob.objects[0].lods[0]) for (const p of parts) for (const f of p.faces) {
+      const mat = m.hmt.materials[f.mat], t = mat && mat.type & 1 ? m.hmt.textures[mat.tex] : null;
+      f.idx.forEach((vi, k) => edge.push({ y: p.verts[vi * 3 + 1], t, uv: f.uvs?.[k], c: f.colors ? (f.colors[k] ?? f.colors[0]) : 0xFFFFFFFF }));
+    }
+    const low = Math.max(...edge.map((q) => q.y));
+    let r = 0, g = 0, b = 0, n = 0;
+    for (const q of edge) {
+      if (q.y < low - 1) continue;
+      let tr = 255, tg = 255, tb = 255;
+      if (q.t?.rgba && q.uv) {
+        const x = THREE.MathUtils.euclideanModulo(Math.floor(q.uv[0] * q.t.w), q.t.w), y = THREE.MathUtils.clamp(Math.floor(q.uv[1] * q.t.h), 0, q.t.h - 1);
+        const i = (y * q.t.w + x) * 4;
+        [tr, tg, tb] = [q.t.rgba[i], q.t.rgba[i + 1], q.t.rgba[i + 2]];
+      }
+      r += tr * (q.c >>> 24) / 255; g += tg * ((q.c >>> 16) & 255) / 255; b += tb * ((q.c >>> 8) & 255) / 255; n++;
+    }
+    if (n) {
+      skyColor = new THREE.Color().setRGB(r / n / 255, g / n / 255, b / n / 255, THREE.SRGBColorSpace);
+      if (sky.visible) scene.background = skyColor;
+    }
+    // The game never fogs the sky.
+    sky.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = o.userData.infos.map((i) => new THREE.MeshBasicMaterial({ map: i.map, vertexColors: true, side: THREE.DoubleSide, depthTest: false, depthWrite: false, fog: false }));
+      delete o.userData.infos;
+      o.userData.shared = true;
+      o.renderOrder = -1;
+    });
+    world.add(sky);
+  }
+}
+
+const busy = (text) => {
+  $('busy').hidden = !text;
+  $('busyText').textContent = text || '';
+};
+async function openFile(file) {
+  busy('Loading ROM...');
+  $('drop').classList.add('loading');
+  // Let the spinner paint before the ROM is parsed on the main thread.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await ready;
+  $('dropErr').textContent = '';
+  try {
+    const buf = await file.arrayBuffer();
+    rom = openRom(buf);
+    romBytes = new Uint8Array(buf);
+    clearCaches();
+    modelCache.clear();
+    objectHome = null;
+    if (rom.assets.has('data/voice_TXT')) voiceLine = parseVoiceLines(romBytes, await rom.read('data/voice_TXT'));
+    $('drop').hidden = true;
+    document.querySelector('header input').hidden = true;
+    document.body.classList.remove('no-rom');
+    renderList();
+    const first = 'data/pl_crafts/xwing';
+    if (rom.assets.has(first + '_HOB')) showModel(first);
+    busy('Indexing object packages...');
+    const pkgs = [...rom.assets.values()].filter((a) => /\/opkg\d*_HOB$/.test(a.path) && a.size > 8);
+    await Promise.all(pkgs.map((a) => loadModel(a.path.replace(/_HOB$/, ''))));
+    buildObjectIndex();
+    renderList();
+  } catch (e) {
+    $('dropErr').textContent = e.message;
+  } finally {
+    busy(null);
+    $('drop').classList.remove('loading');
+  }
+}
+
+// Rebuild the current view in place (same camera).
+const refresh = () => selected && (selectedEffect ? showEffect(selected, true) : selectedLevel ? showLevel(selected, true) : showModel(selected, +$('objSel').value, true));
+
+// ---------- UI wiring ----------
+$('romfile').onchange = (e) => e.target.files[0] && openFile(e.target.files[0]);
+const drop = $('drop');
+// The drop box doubles as a button for the file dialog.
+const dropBox = drop.querySelector('.box');
+dropBox.onclick = () => $('romfile').click();
+dropBox.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), $('romfile').click());
+addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+addEventListener('dragleave', () => drop.classList.remove('over'));
+addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  if (e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]);
+});
+$('filter').oninput = () => {
+  $('filterClear').hidden = !$('filter').value;
+  renderList();
+};
+$('filterClear').onclick = () => {
+  $('filter').value = '';
+  $('filter').oninput();
+  // Keep the current model/level in view in the full list.
+  $('list').querySelector('.row.sel')?.scrollIntoView({ block: 'center' });
+  $('filter').focus();
+};
+const setMode = (m) => {
+  mode = m;
+  for (const [id, k] of [['tabModels', 'models'], ['tabLevels', 'levels'], ['tabEffects', 'effects']]) $(id).classList.toggle('on', k === m);
+  renderList();
+};
+$('tabModels').onclick = () => setMode('models');
+$('tabLevels').onclick = () => setMode('levels');
+$('tabEffects').onclick = () => setMode('effects');
+$('optFxFps').oninput = () => ($('fxFpsVal').textContent = $('optFxFps').value);
+$('optFxAdd').onchange = refresh;
+$('optFxBg').oninput = () => {
+  fxBg.set($('optFxBg').value);
+  if (selectedEffect) scene.background = fxBg;
+};
+$('optFxSize').oninput = () => ($('fxSizeVal').textContent = $('optFxSize').value);
+$('optFxSize').onchange = refresh;
+$('optFxCraft').onchange = refresh;
+$('optFxSpeed').oninput = () => ($('fxSpeedVal').textContent = $('optFxSpeed').value + 'x');
+$('optFxMode').onchange = refresh;
+// New odds apply from the next take.
+// The rolls happen at spawn, so a new chance restarts the take.
+$('optChunkPct').oninput = () => ($('chunkPctVal').textContent = $('optChunkPct').value);
+$('optPlumePct').oninput = () => ($('plumePctVal').textContent = $('optPlumePct').value);
+$('optChunkPct').onchange = $('optPlumePct').onchange = () => effect && timelineStart(effect);
+$('fxPlay').onclick = () => {
+  if (!effect?.step) return;
+  // Play at the end of a finished take starts it over.
+  if (!TL.playing && TL.time >= TL.dur) seekTimeline(0);
+  TL.playing = !TL.playing;
+  syncTimeline();
+};
+$('fxStop').onclick = () => {
+  if (!effect?.step) return;
+  TL.playing = false;
+  seekTimeline(0);
+};
+$('fxTime').oninput = () => {
+  if (!effect?.step) return;
+  TL.playing = false;
+  seekTimeline(+$('fxTime').value);
+};
+$('optFxBurst').oninput = () => ($('fxBurstVal').textContent = $('optFxBurst').value);
+$('optLod').oninput = () => {
+  $('lodVal').textContent = lodLevel();
+  refresh();
+};
+$('optTerrainLod').oninput = () => {
+  $('terrainLodVal').textContent = $('optTerrainLod').value;
+  if (selectedLevel) refresh();
+};
+$('btnBack').onclick = async () => {
+  const b = backTo;
+  $('tabLevels').click();
+  await showLevel(b.level, true);
+  setView(b.view);
+};
+$('optTex').onchange = () => {
+  $('optFilter').disabled = !$('optTex').checked;
+  applyMaterialOptions();
+};
+// Sampler settings don't reliably update on live WebGPU textures, so rebuild them.
+$('optFilter').onchange = () => {
+  clearCaches();
+  refresh();
+};
+$('optWire').onchange = applyMaterialOptions;
+$('optAnim').onchange = () => {
+  animClock = 0;
+  // Rebuilding restores the rest pose when going back to "None", and rebinds the chosen animation otherwise.
+  refresh();
+};
+$('optAnimSpeed').oninput = () => ($('animSpeedVal').textContent = $('optAnimSpeed').value + 'x');
+$('optSpeed').oninput = () => ($('speedVal').textContent = $('optSpeed').value);
+$('optFoils').oninput = () => { $('foilsVal').textContent = Math.round(+$('optFoils').value * 100) + '%'; applyFoils(); };
+$('optSpin').oninput = () => {
+  const v = +$('optSpin').value;
+  $('spinVal').textContent = v;
+  spin = v;
+};
+// Item markers is the master switch for the legend's per-kind toggles: ticking shows every kind, unticking hides them all.
+$('optMarkers').onchange = (e) => {
+  const m = root && root.getObjectByName('markers');
+  if (!m) return;
+  for (const c of m.children) {
+    const k = String(markerKind(c.userData.item));
+    if (e.target.checked) hiddenTypes.delete(k);
+    else hiddenTypes.add(k);
+  }
+  renderLegend(m);
+};
+$('optSky').onchange = (e) => {
+  if (sky) sky.visible = e.target.checked;
+  scene.background = e.target.checked && skyColor ? skyColor : bgColor;
+};
+// Lighting mode swaps material types, so rebuild; shadows only darken anything in dynamic mode.
+$('optLight').onchange = () => {
+  sun.shadow.intensity = gameLighting() ? 0 : 1;
+  refresh();
+};
+$('optFog').onchange = () => {
+  syncFogControls();
+  applyFog();
+};
+$('optSpread').oninput = () => {
+  $('spreadVal').textContent = $('optSpread').value;
+  const m = root?.getObjectByName('markers');
+  if (m) applySpread(m);
+};
+$('optFogDist').oninput = () => {
+  $('fogVal').textContent = $('optFogDist').value + 'x';
+  applyFog();
+};
+// The shown model's skeletal animations as clips: each track key is posed with poseNode (the viewer's own rule, pivots included) and
+// split into position/quaternion/scale. Sprite-sheet animations have no node motion and are skipped.
+function animClips() {
+  let rig = null;
+  root.traverse((o) => (rig ??= o.userData.rig));
+  if (!rig || $('animRow').hidden) return [];
+  const tmp = new THREE.Object3D(), p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+  // Wing sweeps: 17 keys over 1 s, posed by applyFoils on the real hinge nodes, then the slider pose is put back.
+  const foilClips = !foils ? [] : ($('optAnim').found ?? []).filter((f) => f.foil).map((f) => {
+    const times = [], keys = { [foils.a]: [[], [], []], [foils.b]: [[], [], []] };
+    for (let k = 0; k <= 16; k++) {
+      applyFoils(f.foil[0] + (f.foil[1] - f.foil[0]) * (k / 16));
+      times.push(k / 16);
+      for (const i of [foils.a, foils.b]) {
+        foils.rig.nodes[i].matrix.decompose(p, q, s);
+        keys[i][0].push(...p.toArray());
+        keys[i][1].push(...q.toArray());
+        keys[i][2].push(...s.toArray());
+      }
+    }
+    applyFoils();
+    return new THREE.AnimationClip(f.name, 1, [foils.a, foils.b].flatMap((i) => {
+      const id = foils.rig.nodes[i].uuid;
+      return [new THREE.VectorKeyframeTrack(id + '.position', times, keys[i][0]), new THREE.QuaternionKeyframeTrack(id + '.quaternion', times, keys[i][1]), new THREE.VectorKeyframeTrack(id + '.scale', times, keys[i][2])];
+    }));
+  });
+  // Code-driven clips: 33 keys over the clip, posed on the real nodes, then those nodes go back to rest.
+  const procClips = ($('optAnim').found ?? []).filter((f) => f.proc).map((f) => {
+    const a = { proc: f.proc, rig, nodes: f.nodes }, idx = [...new Set(f.nodes.map(([i]) => i))], times = [], keys = new Map(idx.map((i) => [i, [[], [], []]]));
+    for (let k = 0; k <= 32; k++) {
+      poseProcAt(a, k / 32);
+      times.push((k / 32) * f.proc[1]);
+      for (const i of idx) {
+        rig.nodes[i].matrix.decompose(p, q, s);
+        keys.get(i)[0].push(...p.toArray());
+        keys.get(i)[1].push(...q.toArray());
+        keys.get(i)[2].push(...s.toArray());
+      }
+    }
+    for (const i of idx) poseNode(rig.nodes[i], rig.src[i]);
+    return new THREE.AnimationClip(f.name, f.proc[1], idx.flatMap((i) => {
+      const id = rig.nodes[i].uuid, [P, Q, S] = keys.get(i);
+      return [new THREE.VectorKeyframeTrack(id + '.position', times, P), new THREE.QuaternionKeyframeTrack(id + '.quaternion', times, Q), new THREE.VectorKeyframeTrack(id + '.scale', times, S)];
+    }));
+  });
+  return foilClips.concat(procClips,($('optAnim').found ?? []).filter((f) => f.data && f.data.tracks.length === rig.nodes.length - 1).map((f) => {
+    const seconds = (f.data.lengthMs || 2000) / 1000, tracks = [];
+    f.data.tracks.forEach((tr, i) => {
+      const g = rig.nodes[i + 1], n = rig.src[i + 1];
+      if (!tr || !g || !tr.times.length) return;
+      const times = [], P = [], Q = [], S = [];
+      tr.times.forEach((ph, k) => {
+        // Keys must strictly increase; a repeated phase keeps the first key.
+        if (times.length && ph * seconds <= times[times.length - 1]) return;
+        poseNode(tmp, n, tr.rot ? new THREE.Quaternion(...tr.rot[k]).normalize() : null, tr.pos ? new THREE.Vector3(...tr.pos[k]) : null);
+        tmp.matrix.decompose(p, q, s);
+        times.push(ph * seconds);
+        P.push(...p.toArray());
+        Q.push(...q.toArray());
+        S.push(...s.toArray());
+      });
+      tracks.push(new THREE.VectorKeyframeTrack(g.uuid + '.position', times, P), new THREE.QuaternionKeyframeTrack(g.uuid + '.quaternion', times, Q), new THREE.VectorKeyframeTrack(g.uuid + '.scale', times, S));
+    });
+    return new THREE.AnimationClip(f.name, seconds, tracks);
+  }));
+}
+$('btnExport').onclick = async () => {
+  if (!root) return;
+  const btn = $('btnExport');
+  btn.disabled = true;
+  try {
+    const animations = animClips();
+    // glTF cannot animate a node stored as a matrix, so animated exports write each node's transform as TRS (rig nodes keep theirs in .matrix).
+    if (animations.length) root.traverse((o) => !o.matrixAutoUpdate && o.matrix.decompose(o.position, o.quaternion, o.scale));
+    const glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, animations, trs: animations.length > 0 });
+    // Chrome saves a detached link or an already-revoked blob under the blob's UUID with no extension, so attach it and revoke late.
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
+    a.download = selected.split('/').pop() + (selectedLevel ? '' : '_lod' + lodLevel()) + '.glb';
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  } finally {
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
