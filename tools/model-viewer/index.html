@@ -51,6 +51,17 @@
   #opts input[type=range] { flex: 1; padding: 0; }
   #opts output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
   #opts:not(.level) .lvl, #opts.level .mdl, #opts.fx .mdl { display: none; }
+  #opts .aud, body.audio #opts > :not(.aud), body.audio #view, body.audio #hud, body.audio #legend, body.audio #fxPanel, body.audio #info, body.audio #help, body.audio #tip, body.audio #scene { display: none; }
+  body.audio #opts label.aud { display: flex; }
+  body.audio #opts b.aud { display: block; }
+  #audioPanel { top: 16px; left: 16px; right: 16px; max-width: 640px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+  #audioPanel[hidden] { display: none; }
+  #audioPanel b { grid-column: 1 / -1; color: var(--accent); }
+  #audioPanel p, #audioPanel .btns { grid-column: 1 / -1; margin: 0 0 6px; }
+  #audioPanel p { white-space: pre-wrap; }
+  #audioPanel .btns { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+  #audioPanel .btns button { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; }
+  #audioPanel span:nth-of-type(odd) { color: var(--dim); }
   .tl { display: flex; gap: 6px; align-items: center; }
   .tl button { flex: 1; }
   #opts .sec, #scene b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
@@ -109,6 +120,7 @@
 </script>
 <!-- Cache-busted: browsers otherwise keep an old parser after rs64assets.js changes, even on a normal reload. -->
 <script>document.write('<script src="rs64assets.js?v=' + Date.now() + '"><\/script>');</script>
+<script src="voice_cats.js"></script>
 </head>
 <body class="no-rom">
 <aside>
@@ -117,10 +129,13 @@
     <button id="btnBack" hidden style="width:100%;margin-bottom:8px"></button>
     <input type="file" id="romfile" accept=".z64">
   </header>
-  <div class="tabs needs-rom"><button id="tabModels" class="on">Models</button><button id="tabLevels">Levels</button><button id="tabEffects">Effects</button></div>
+  <div class="tabs needs-rom"><button id="tabModels" class="on">Models</button><button id="tabLevels">Levels</button><button id="tabEffects">Effects</button><button id="tabAudio">Audio</button></div>
   <div class="needs-rom filterbox"><input id="filter" placeholder="Filter"><button id="filterClear" title="Clear filter" hidden>&times;</button></div>
   <div id="list" class="needs-rom"></div>
   <div id="opts" class="needs-rom">
+    <b class="sec aud">Audio</b>
+    <label class="aud">Category <select id="audCat" style="flex:1"><option value="">All</option></select></label>
+    <label class="aud">Level <select id="audLevel" style="flex:1"><option value="">All</option></select></label>
     <b class="sec mdl">Model</b><b class="sec lvl">Detail</b>
     <label id="objRow" hidden>Object <select id="objSel" style="flex:1"></select></label>
     <label id="lodRow"><span class="lvl">Model</span>LOD <input type="range" id="optLod" min="0" max="3" value="0"><output id="lodVal">0</output></label>
@@ -141,6 +156,7 @@
   <canvas id="view" tabindex="0"></canvas>
   <div id="hud" class="panel needs-rom"></div>
   <div id="legend" class="panel" hidden><label class="master" title="Show or hide every marker kind"><input type="checkbox" id="optMarkers" checked><b>Markers</b></label><div id="legendRows"></div></div>
+  <div id="audioPanel" class="panel needs-rom" hidden></div>
   <div id="fxPanel" class="panel needs-rom" hidden>
     <b>Effect</b>
     <label id="fxFpsRow" title="Flipbook playback rate; the game steps explosion frames from each particle's lifetime timer">Frame rate <input type="range" id="optFxFps" min="1" max="30" step="1" value="12"><output id="fxFpsVal">12</output></label>
@@ -188,7 +204,8 @@ import * as THREE from 'three/webgpu';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
-const { openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim } = window.RS64;
+const { openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim,
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 // HOB vertices are s16 model units; levels (DAT positions, terrain) use world units. Item scale applies on top.
@@ -948,6 +965,7 @@ function makeMarker(it) {
     }
     const area = new THREE.Mesh(fill, zoneFillMat(kind));
     area.userData.item = it;
+    area.userData.zone = mk.userData.zone = true;
     mk.add(area);
   } else if (it.type === 3) {
     mk = new THREE.LineSegments(GEO.cross, lineMat(markerKind(it)));
@@ -992,7 +1010,7 @@ function makeMarker(it) {
 const ZONE_KINDS = { 0x04: 'zhi', 0x05: 'zlo', 0x10: 'zmus', 0x16: 'zunit', 0x39: 'zmtrig' };
 const SPAWN_KINDS = { 0x01: 'player', 0x02: 'player', 0x26: 'cam', 0x27: 'wing', 0x49: 'wdgun' };
 const PATH_KINDS = { 0x1B: 'pspeed', 0x22: 'phold', 0x20: 'pattack', 0x1A: 'paction', 0x4E: 'pfly', 0x1C: 'pweave', 0x23: 'ppitch' };
-const triggerKind = (it) => (it.sub === 0x11 || it.sub === 0x17 ? 'troam' : it.sub === 0x19 ? 'tspawn' : it.sub === 0x3A ? 'twaypoint' : it.pathEvent ? PATH_KINDS[it.sub] : it.sub !== 0x18 ? 7 : /LINE_\d|say/i.test(it.name) ? 'tvoice' : 'tevent');
+const triggerKind = (it) => (it.sub === 0x11 || it.sub === 0x17 ? 'troam' : it.sub === 0x19 ? 'tspawn' : it.sub === 0x3A ? 'twaypoint' : it.pathEvent ? PATH_KINDS[it.sub] : it.sub !== 0x18 ? 7 : /(?<![a-z])LINE_\d|say/i.test(it.name) ? 'tvoice' : 'tevent');
 const markerKind = (it) => (it.type === 2 && it.sub !== 0x51 ? 'point' : it.type === 3 && it.pathKind ? it.pathKind : it.type === 0 ? SPAWN_KINDS[it.sub] ?? 0 : it.type === 6 ? ZONE_KINDS[it.sub] ?? 6 : it.type === 7 ? triggerKind(it) : it.type);
 // Game space is Y-down, so lifting a spline means subtracting from its y.
 function applySpread(markers) {
@@ -1082,10 +1100,12 @@ function pick(e, targets) {
   const r = canvas.getBoundingClientRect();
   pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
-  return raycaster.intersectObjects(targets, true).find((h) => {
+  const hits = raycaster.intersectObjects(targets, true).filter((h) => {
     for (let o = h.object; o; o = o.parent) if (!o.visible) return false;
     return !isUnderSky(h.object);
   });
+  // Zones (outline and see-through fill) are the last pick: anything else under the cursor wins.
+  return hits.find((h) => !h.object.userData.zone) ?? hits[0];
 }
 const visibleMarkers = () => {
   const m = root && root.getObjectByName('markers');
@@ -1113,7 +1133,7 @@ canvas.addEventListener('pointerleave', () => ($('tip').hidden = true));
 
 function inspect(hit) {
   const o = hit.object;
-  if (o.userData.item) return { title: o.userData.item.name || o.userData.item.label || '(unnamed)', rows: itemRows(o.userData.item) };
+  if (o.userData.item) return { title: o.userData.item.name || o.userData.item.label || '(unnamed)', rows: itemRows(o.userData.item), voiceIds: triggerVoiceIds(o.userData.item, selected?.split('/').pop()) };
   if (o.userData.tiles) {
     const { hmp, texIds } = o.userData.tiles;
     const p = o.worldToLocal(hit.point.clone());
@@ -1153,6 +1173,12 @@ function showInfo(card, x, y) {
       $('btnBack').textContent = '← Back to ' + backTo.level.split('/').pop();
       $('btnBack').hidden = false;
     };
+    el.append(btn);
+  }
+  if (card.voiceIds?.length && audioBank) {
+    const btn = document.createElement('button');
+    btn.textContent = `Play voice line${card.voiceIds.length > 1 ? 's' : ''} ${card.voiceIds.join(', ')}`;
+    btn.onclick = () => playVoiceIds(card.voiceIds);
     el.append(btn);
   }
   const r = canvas.getBoundingClientRect();
@@ -1210,6 +1236,248 @@ function setRoot(obj) {
 // ---------- ROM + lists ----------
 let rom = null, romBytes = null, mode = 'models', selected = null, selectedLevel = false, selectedObj = -1;
 const modelCache = new Map();
+
+// ---------- audio ----------
+// parseMenuVoice table order, matched against the user's listening notes for each part.
+const CRAFT_NAMES = ['Snowspeeder', 'X-wing', 'A-wing', 'Y-wing', 'V-wing', 'Millennium Falcon', 'TIE Interceptor'];
+const PILOT_NAMES = ['Wedge', 'Dack', 'Hobbie', 'Zev', 'Wes', 'Kasan'];
+let missionNames = [];
+const titleCase = (s) => s.toLowerCase().replace(/(^|[\s-])([a-z]+)/g, (m, a, w) => a + (/^[iv]+$/.test(w) ? w.toUpperCase() : a && /^(at|on|of|the|for|from|above)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)));
+// lv_X: X is the level index in base 36 (lv_a = level 10).
+const lvName = (lv) => missionNames[parseInt(lv.slice(3), 36)] ?? lv;
+let audioBank = null, audioCtx = null, audioSel = null, playToken = 0;
+const svgIcon = (d) => `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
+const ICON = { play: svgIcon('M4 2.5v11l9-5.5z'), pause: svgIcon('M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z'), stop: svgIcon('M3 3h10v10H3z') };
+const pcmCache = new Map();
+const u8 = (dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+
+async function loadAudioBank() {
+  const speechDv = await rom.read('data/speech');
+  const vt = parseVoiceTable(romBytes, await rom.read('data/voice_TXT'));
+  const vids = new Map();
+  vt.voiceMap.forEach((s, v) => vids.set(s, [...(vids.get(s) ?? []), v]));
+  const cats = globalThis.RS64_VOICE_CATS ?? {};
+  const voice = parseSpeech(speechDv).filter((e) => e.index).map((e) => {
+    const [cat, levels, src] = cats[e.index] ?? ['Uncategorised', [], 'text'];
+    const text = vt.strings[e.index] ?? '';
+    return { key: 'v' + e.index, kind: 'voice', index: e.index, label: `${e.index} ${text.trim() || (levels.length ? `(${cat.split(': ').pop()}, ${levels.map(lvName).join(', ')})` : '(no subtitle)')}`, text, rate: e.freq, voiceIds: vids.get(e.index) ?? [], levels, cat, src, entry: e };
+  });
+  // Multi-part craft descriptions and pilot bios play as one row, in the order the menus play them.
+  const mv = parseMenuVoice(romBytes), byIndex = new Map(voice.map((r) => [r.index, r])), grouped = new Set();
+  const groups = [[mv.crafts, CRAFT_NAMES, 'Hangar: craft descriptions'], [mv.roster, PILOT_NAMES, 'Pilot roster bios']].flatMap(([lists, names, cat]) => lists.map((ids, i) => {
+    const parts = ids.map((v) => byIndex.get(vt.voiceMap[v])).filter(Boolean);
+    parts.forEach((p) => grouped.add(p));
+    return { key: `g${cat[0]}${i}`, kind: 'group', index: parts[0].index, label: `${names[i]} (${parts.length} parts)`, text: parts.map((p) => p.text.trim()).filter(Boolean).join('\n'),
+      rate: parts[0].rate, voiceIds: ids, levels: [], cat, src: 'code', parts };
+  }));
+  const samples = parseSdir(await rom.read('data/sound/sdir_SND')).filter((e) => e.num).map((e) => ({
+    key: 's' + e.index, kind: 'sample', index: e.index, label: `sample ${e.index}${e.loopLen ? ' (loop)' : ''}`, text: '', rate: e.rate, levels: [], cat: 'Samples', src: 'code', entry: e }));
+  const fill = (id, vals, text = (v) => v) => {
+    const sel = $(id);
+    sel.length = 1;
+    for (const v of vals) sel.append(new Option(text(v), v));
+  };
+  // One row per cutscene that plays its dialogue at the event times.
+  const cuts = [];
+  for (const a of rom.assets.values()) {
+    const m = a.dir === 'data/cuts' && /^id(\d+)_(intro|extro|special)$/.exec(a.name);
+    if (!m) continue;
+    const c = parseCutsceneVoice(await rom.read(a.path));
+    const parts = c.events.map((ev) => ({ row: byIndex.get(vt.voiceMap[ev.voiceId]), at: ev.at, voiceId: ev.voiceId })).filter((p) => p.row);
+    if (!parts.length) continue;
+    const kind = { intro: 'intro', extro: 'outro' }[m[2]] ?? 'medal ceremony', lv = 'lv_' + (+m[1]).toString(36);
+    cuts.push({ key: 'c' + a.name, kind: 'cut', index: +m[1], label: `Full ${kind}${m[2] === 'special' ? '' : ': ' + lvName(lv)}`,
+      text: parts.map((p) => p.row.text.trim()).filter(Boolean).join('\n'), rate: 16000, voiceIds: c.events.map((e) => e.voiceId),
+      levels: m[2] === 'special' ? [] : [lv], cat: 'Cutscene: ' + kind, src: 'code', parts, length: c.length });
+  }
+  cuts.sort((a, b) => a.index - b.index);
+  const sdirAll = parseSdir(await rom.read('data/sound/sdir_SND')), samp = u8(await rom.read('data/sound/samp_SND'));
+  const sfxBank = { pool: parsePool(await rom.read('data/sound/pool_SND')), sdir: new Map(sdirAll.map((e) => [e.id, e])), samp };
+  // Callers come from gen_voice_cats.mjs (constant ids passed to the game's SFX start); the rest are picked at runtime.
+  const sfx = parseSfxTable(await rom.read('data/sound/proj_SND')).sort((a, b) => a.id - b.id).map((s) => {
+    const callers = globalThis.RS64_SFX_CALLERS?.[s.id] ?? [];
+    return { key: 'x' + s.id, kind: 'sfx', index: s.id, callers, text: '', rate: 22050, levels: [], cat: 'SFX', src: 'code', entry: s,
+      label: `sfx ${hex(s.id)}${s.macro & 0x8000 ? ' (layer)' : ''}${callers.length ? ` · ${callers[0]}${callers.length > 1 ? ` +${callers.length - 1}` : ''}` : ''}` };
+  });
+  fill('audCat', [...new Set(voice.map((r) => r.cat))].sort().concat('SFX', 'Samples'));
+  fill('audLevel', [...new Set(voice.flatMap((r) => r.levels))].sort((a, b) => parseInt(a.slice(3), 36) - parseInt(b.slice(3), 36)), (lv) => `${lv.slice(3)} ${lvName(lv)}`);
+  return { speech: u8(speechDv), samp, sfxBank, sfx, voice: [...groups, ...cuts, ...voice.filter((r) => !grouped.has(r))], samples, voiceMap: vt.voiceMap, byIndex };
+}
+// When each cutscene line actually plays (speech queue, playSpeechClip / tickSpeechSubsystem): a line queued while nothing has
+// played for 0.25 s waits the forced 0.5 s lead-in (music duck); a line queued during another waits for it to end. Every clip is
+// then heard 0.29 s after it starts (hand-off measured in recomp captures of all 33 cutscenes).
+function cutSchedule(r) {
+  let end = -1e9;
+  return r.parts.map((p) => {
+    const pcm = rowPcm(p.row), at = (p.at > end + 0.25 ? p.at + 0.5 : Math.max(p.at, end)) + 0.29;
+    end = at + pcm.length / p.row.rate;
+    return { ...p, pcm, at, end };
+  });
+}
+function rowPcm(r) {
+  if (!pcmCache.has(r.key) && r.kind === 'cut') {
+    const parts = cutSchedule(r);
+    const len = Math.max(r.length, ...parts.map((p) => p.end));
+    const mix = new Float32Array(Math.ceil(len * r.rate));
+    for (const p of parts) {
+      const step = p.row.rate / r.rate, o = Math.round(p.at * r.rate);
+      for (let i = 0; o + i < mix.length && i * step < p.pcm.length - 1; i++) {
+        const x = i * step, k = Math.floor(x);
+        mix[o + i] += p.pcm[k] + (p.pcm[k + 1] - p.pcm[k]) * (x - k);
+      }
+    }
+    pcmCache.set(r.key, Int16Array.from(mix, (x) => Math.max(-32768, Math.min(32767, Math.round(x)))));
+  }
+  if (!pcmCache.has(r.key) && r.kind === 'group') {
+    // tickMultiPartVoiceLine waits 0.7 s after each part.
+    const gap = Math.round(0.7 * r.rate), pcms = r.parts.map(rowPcm);
+    const out = new Int16Array(pcms.reduce((n, p) => n + p.length, 0) + gap * (pcms.length - 1));
+    let o = 0;
+    for (const p of pcms) {
+      out.set(p, o);
+      o += p.length + gap;
+    }
+    pcmCache.set(r.key, out);
+  }
+  if (!pcmCache.has(r.key)) {
+    const e = r.entry;
+    pcmCache.set(r.key, r.kind === 'voice' ? decodeMort(audioBank.speech, e.offset, e.size)
+      : r.kind === 'sfx' ? renderSfx(audioBank.sfxBank, e).pcm : decodeMusyxAdpcm(audioBank.samp, e.off, e.num));
+  }
+  return pcmCache.get(r.key);
+}
+// player = { key, buf, loop: [start, end] | null, offset (s), src (null while paused), startedAt }. Buffer sources cannot pause,
+// so pause remembers the offset and resume starts a new source from it.
+let player = null;
+const syncPlayButton = () => {
+  const b = $('audPlay');
+  if (!b) return;
+  const playing = !!(player?.src && player.key === b.dataset.key);
+  b.innerHTML = playing ? ICON.pause : ICON.play;
+  b.title = playing ? 'Pause' : 'Play';
+  b.setAttribute('aria-label', b.title);
+};
+function startPlayer() {
+  const p = player, src = audioCtx.createBufferSource();
+  src.buffer = p.buf;
+  if (p.loop) [src.loop, src.loopStart, src.loopEnd] = [true, ...p.loop];
+  src.connect(audioCtx.destination);
+  src.onended = () => {
+    if (player === p && p.src === src) player = null;
+    syncPlayButton();
+  };
+  src.start(0, p.offset);
+  p.startedAt = audioCtx.currentTime - p.offset;
+  p.src = src;
+  syncPlayButton();
+}
+function pauseAudio() {
+  const p = player;
+  if (!p?.src) return;
+  let t = audioCtx.currentTime - p.startedAt;
+  if (p.loop && t > p.loop[1]) t = p.loop[0] + ((t - p.loop[0]) % (p.loop[1] - p.loop[0]));
+  p.offset = Math.min(t, p.buf.duration);
+  p.src.onended = null;
+  p.src.stop();
+  p.src = null;
+  syncPlayButton();
+}
+function stopAudio() {
+  playToken++;
+  if (player?.src) {
+    player.src.onended = null;
+    player.src.stop();
+  }
+  player = null;
+  syncPlayButton();
+}
+// Called from a click so the context may start (autoplay policy).
+async function playRow(r, loop = false) {
+  stopAudio();
+  const token = playToken;
+  audioCtx ??= new AudioContext();
+  await audioCtx.resume();
+  const pcm = rowPcm(r);
+  if (token !== playToken || !pcm.length) return;
+  const buf = audioCtx.createBuffer(1, pcm.length, r.rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
+  const e = r.entry;
+  const looped = loop && r.kind === 'sample' && e.loopLen && e.loopStart + e.loopLen <= pcm.length;
+  player = { key: r.key, buf, loop: looped ? [e.loopStart / r.rate, (e.loopStart + e.loopLen) / r.rate] : null, offset: 0, src: null };
+  startPlayer();
+}
+// Play / pause toggle for the panel: resumes where it paused, or starts the row fresh.
+async function togglePlay(r, loop) {
+  if (player?.key !== r.key) return playRow(r, loop);
+  if (player.src) return pauseAudio();
+  await audioCtx.resume();
+  startPlayer();
+}
+function saveBlob(blob, name) {
+  // Chrome saves a detached link or an already-revoked blob under the blob's UUID with no extension, so attach it and revoke late.
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+// Plays voice ids one after another with the menus' 0.7 s gap.
+function playVoiceIds(ids) {
+  const rows = [...new Set(ids.map((v) => audioBank?.byIndex.get(audioBank.voiceMap[v])).filter(Boolean))];
+  let at = 0;
+  const parts = rows.map((row) => {
+    const p = { row, at };
+    at += rowPcm(row).length / row.rate + 0.7;
+    return p;
+  });
+  if (parts.length) playRow({ key: 'tv' + ids.join(','), kind: 'cut', rate: 16000, length: 0, parts });
+}
+const triggerVoiceIds = (it, lv) => window.RS64.triggerVoiceIds(it, globalThis.RS64_TRIGGER_VOICES?.[lv]);
+function showAudio(r) {
+  audioSel = r.key;
+  const p = $('audioPanel');
+  const e = r.entry, dur = (n) => (n / r.rate).toFixed(2) + ' s';
+  // A cutscene lists one line per row: when it plays, its subtitle, then its sample and voice id.
+  const clock = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+  const rows = r.kind === 'cut'
+    ? [...cutSchedule(r).map((q) => [clock(q.at), `${esc(q.row.text.trim() || '(no subtitle)')} <small style="color:var(--dim)">sample ${q.row.index} · voice ${q.voiceId}</small>`]),
+      ['Length', clock(r.length)], ['Category', esc(r.cat)]]
+    : r.kind === 'sfx'
+    ? [['SFX id', hex(e.id)], ['Used by', r.callers.length ? r.callers.join(', ') : 'no constant caller (id chosen at runtime)'],
+      [e.macro & 0x8000 ? 'Layer' : 'Macro', hex(e.macro)], ['Key / velocity', `${e.key} / ${e.vel}`],
+      ['Render', 'approximate: SoundMacro subset, pan and vibrato skipped']]
+    : r.kind === 'group'
+    ? [['Samples', r.parts.map((p) => p.index).join(', ')], ['Category', esc(r.cat)], ['Voice ids', r.voiceIds.join(' ')], ['Rate', r.rate + ' Hz']]
+    : r.kind === 'voice'
+    ? [['Sample', r.index], ['Category', esc(r.cat) + (r.src === 'code' ? '' : ` (by ${r.src})`)], ['Levels', r.levels.join(', ') || '-'], ['Voice ids', r.voiceIds.join(' ') || '-'], ['Rate', r.rate + ' Hz'], ['MORT flag', e.flag]]
+    : [['Sample', r.index], ['Id', hex(e.id)], ['Rate', r.rate + ' Hz'], ['Root key', e.root], ['Length', dur(e.num)], ['Loop', e.loopLen ? `${e.loopStart} + ${e.loopLen}` : 'none']];
+  p.innerHTML = `<b>${r.kind === 'group' || r.kind === 'sfx' || r.kind === 'cut' ? esc(r.label) : (r.kind === 'voice' ? 'Voice line ' : 'MusyX sample ') + r.index}</b>` + (r.text.trim() && r.kind !== 'cut' ? `<p>${esc(r.text)}</p>` : '') + rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+  const btns = document.createElement('div');
+  btns.className = 'btns';
+  const btn = (label, fn) => btns.appendChild(Object.assign(document.createElement('button'), { textContent: label, onclick: fn }));
+  const loop = r.kind === 'sample' && e.loopLen ? Object.assign(document.createElement('input'), { type: 'checkbox' }) : null;
+  const play = btn('', () => togglePlay(r, loop?.checked));
+  play.id = 'audPlay';
+  play.dataset.key = r.key;
+  const stop = btn('', stopAudio);
+  stop.innerHTML = ICON.stop;
+  stop.title = 'Stop';
+  stop.setAttribute('aria-label', 'Stop');
+  btn('Save WAV', () => saveBlob(new Blob([wavBytes(rowPcm(r), r.rate)], { type: 'audio/wav' }), r.kind === 'group' || r.kind === 'cut' ? r.label.split(' (')[0].replace(/\W+/g, '_') + '.wav' : `${r.kind}_${r.kind === 'sfx' ? hex(r.index) : r.index}.wav`));
+  if (loop) {
+    const l = document.createElement('label');
+    l.append(loop, ' Loop');
+    btns.append(l);
+  }
+  p.append(btns);
+  p.hidden = false;
+  syncPlayButton();
+  renderList();
+  playRow(r, false);
+}
 // Object name -> model id across every HOB, built once per ROM: placed items often name a model that lives outside the level's
 // opkg (atst, i_lnd_hi in lplatform, train pillars, other levels' shared buildings).
 let objectHome = null;
@@ -1269,6 +1537,19 @@ function renderList() {
       if (!groups.has(dir)) groups.set(dir, []);
       groups.get(dir).push({ id, label, tip: SIMS[id]?.tip });
     }
+  } else if (mode === 'audio') {
+    if (!audioBank) {
+      list.textContent = 'No audio in this ROM';
+      return;
+    }
+    const cat = $('audCat').value, lv = $('audLevel').value;
+    for (const r of cat === 'Samples' ? audioBank.samples : cat === 'SFX' ? audioBank.sfx : cat || lv ? audioBank.voice : [...audioBank.voice, ...audioBank.sfx, ...audioBank.samples]) {
+      if (cat && r.cat !== cat) continue;
+      if (lv && !r.levels.includes(lv)) continue;
+      if (q && !`${r.label} ${(r.voiceIds ?? []).join(' ')} ${(r.callers ?? []).join(' ')}`.toLowerCase().includes(q)) continue;
+      if (!groups.has(r.cat)) groups.set(r.cat, []);
+      groups.get(r.cat).push({ id: r.key, label: r.label.length > 70 ? r.label.slice(0, 67) + '...' : r.label, tip: r.text.trim() || r.label, row: r });
+    }
   } else {
     for (const a of rom.assets.values()) {
       if (a.name !== 'dat') continue;
@@ -1276,7 +1557,8 @@ function renderList() {
       if (q && !id.toLowerCase().includes(q)) continue;
       const dir = id.includes('/level/') ? 'missions' : 'frontend';
       if (!groups.has(dir)) groups.set(dir, []);
-      groups.get(dir).push({ id, label: id.split('/').pop() });
+      const lv = id.split('/').pop();
+      groups.get(dir).push({ id, label: /^lv_/.test(lv) && lvName(lv) !== lv ? `${lv} ${lvName(lv)}` : lv });
     }
   }
   for (const [dir, rows] of groups) {
@@ -1286,10 +1568,10 @@ function renderList() {
     list.append(h);
     for (const r of rows) {
       const d = document.createElement('div');
-      d.className = 'row' + (r.id === selected && (r.obj == null || r.obj === selectedObj) ? ' sel' : '');
+      d.className = 'row' + ((mode === 'audio' ? r.id === audioSel : r.id === selected && (r.obj == null || r.obj === selectedObj)) ? ' sel' : '');
       d.textContent = r.label;
       d.title = r.tip ?? (r.obj == null ? r.id : `${r.id} / ${r.label}`);
-      d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : mode === 'effects' ? showEffect(r.id) : showLevel(r.id));
+      d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : mode === 'effects' ? showEffect(r.id) : mode === 'audio' ? showAudio(r.row) : showLevel(r.id));
       list.append(d);
     }
   }
@@ -2291,7 +2573,8 @@ async function showLevel(dir, keepView = false) {
       for (const n of dat.items) if (n.type === 0 && n.model === it.name) named.push(n.name);
     }
     it.targets = [...new Set(named)];
-    const line = /LINE_(\d+)/i.exec(it.name);
+    // Not "Spline_01": LINE_ must not follow a letter.
+    const line = /(?<![a-z])LINE_(\d+)/i.exec(it.name);
     if (line) {
       it.voiceId = +line[1];
       it.voice = voiceLine(it.voiceId);
@@ -2519,6 +2802,12 @@ async function openFile(file) {
     modelCache.clear();
     objectHome = null;
     if (rom.assets.has('data/voice_TXT')) voiceLine = parseVoiceLines(romBytes, await rom.read('data/voice_TXT'));
+    missionNames = rom.assets.has('data/front_TXT') ? parseFrontText(await rom.read('data/front_TXT')).slice(0, 19).map(titleCase) : [];
+    stopAudio();
+    audioSel = null;
+    $('audioPanel').hidden = true;
+    pcmCache.clear();
+    audioBank = await loadAudioBank().catch((e) => (console.warn('audio', e), null));
     $('drop').hidden = true;
     document.querySelector('header input').hidden = true;
     document.body.classList.remove('no-rom');
@@ -2568,9 +2857,14 @@ $('filterClear').onclick = () => {
 };
 const setMode = (m) => {
   mode = m;
-  for (const [id, k] of [['tabModels', 'models'], ['tabLevels', 'levels'], ['tabEffects', 'effects']]) $(id).classList.toggle('on', k === m);
+  for (const [id, k] of [['tabModels', 'models'], ['tabLevels', 'levels'], ['tabEffects', 'effects'], ['tabAudio', 'audio']]) $(id).classList.toggle('on', k === m);
+  document.body.classList.toggle('audio', m === 'audio');
+  $('audioPanel').hidden = m !== 'audio' || !audioSel;
+  if (m !== 'audio') stopAudio();
   renderList();
 };
+$('tabAudio').onclick = () => setMode('audio');
+$('audCat').onchange = $('audLevel').onchange = renderList;
 $('tabModels').onclick = () => setMode('models');
 $('tabLevels').onclick = () => setMode('levels');
 $('tabEffects').onclick = () => setMode('effects');
@@ -2753,14 +3047,7 @@ $('btnExport').onclick = async () => {
     // glTF cannot animate a node stored as a matrix, so animated exports write each node's transform as TRS (rig nodes keep theirs in .matrix).
     if (animations.length) root.traverse((o) => !o.matrixAutoUpdate && o.matrix.decompose(o.position, o.quaternion, o.scale));
     const glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, animations, trs: animations.length > 0 });
-    // Chrome saves a detached link or an already-revoked blob under the blob's UUID with no extension, so attach it and revoke late.
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }));
-    a.download = selected.split('/').pop() + (selectedLevel ? '' : '_lod' + lodLevel()) + '.glb';
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    saveBlob(new Blob([glb], { type: 'model/gltf-binary' }), selected.split('/').pop() + (selectedLevel ? '' : '_lod' + lodLevel()) + '.glb');
   } finally {
     btn.disabled = false;
   }

@@ -465,8 +465,8 @@ function parseAnim(dv) {
 
 // ---- Voice lines: voice id -> text id (u16 table at 0x8009FFE0 in boot code) -> XOR-chained English string in data/voice_TXT ----
 
-function parseVoiceLines(romBytes, txt) {
-  const strs = [];
+function parseVoiceTable(romBytes, txt) {
+  const strings = [];
   const n = txt.getUint16(2), lang = txt.getUint32(4);
   for (let i = 0; i < n; i++) {
     let o = lang + txt.getUint16(lang + i * 2), prev = 0xF5, s = '';
@@ -476,10 +476,358 @@ function parseVoiceLines(romBytes, txt) {
       if (!c) break;
       s += String.fromCharCode(c);
     }
-    strs.push(s);
+    strings.push(s);
   }
   const map = 0x8009FFE0 - 0x80000400 + 0x1000;
-  return (voiceId) => (voiceId < 0x2F4 ? strs[(romBytes[map + voiceId * 2] << 8) | romBytes[map + voiceId * 2 + 1]] : undefined);
+  const voiceMap = new Uint16Array(0x2F4);
+  for (let v = 0; v < 0x2F4; v++) voiceMap[v] = (romBytes[map + v * 2] << 8) | romBytes[map + v * 2 + 1];
+  return { strings, voiceMap };
+}
+
+// front_TXT / game_TXT: unlike voice_TXT, the XOR chain runs across the whole string block. front_TXT 0-18 = mission names by level.
+function parseFrontText(txt) {
+  const n = txt.getUint16(2), lang = txt.getUint32(4);
+  const offs = Array.from({ length: n }, (_, i) => lang + txt.getUint16(lang + i * 2));
+  const start = Math.min(...offs), plain = new Uint8Array(txt.byteLength - start);
+  let prev = 0xF5;
+  for (let i = 0; i < plain.length; i++) {
+    const c = txt.getUint8(start + i) ^ prev;
+    prev ^= c;
+    plain[i] = c;
+  }
+  return offs.map((o) => {
+    let s = '';
+    for (let k = o - start; k < plain.length && plain[k]; k++) s += String.fromCharCode(plain[k]);
+    return s;
+  });
+}
+
+function parseVoiceLines(romBytes, txt) {
+  const { strings, voiceMap } = parseVoiceTable(romBytes, txt);
+  return (voiceId) => (voiceId < 0x2F4 ? strings[voiceMap[voiceId]] : undefined);
+}
+
+// Voice-id lists the menus and pause screen play (US v1.0; both overlays load at VRAM 0x800A5130: menu ROM 0x10C2D0, mission ROM 0xA5D30).
+function parseMenuVoice(rom) {
+  const be16 = (o) => (rom[o] << 8) | rom[o + 1], be32 = (o) => be16(o) * 0x10000 + be16(o + 2);
+  const menu = (v) => v - 0x800A5130 + 0x10C2D0, mission = (v) => v - 0x800A5130 + 0xA5D30;
+  const list = (o) => {
+    const ids = [];
+    for (let v; ids.length < 8 && (v = be16(o + ids.length * 2)) !== 0xFFFF;) ids.push(v);
+    return ids;
+  };
+  return {
+    // craftSelectionVoiceLineHelper: D_menu_overlay_800CC4F8[bay - 1] -> 0xFFFF-terminated list, parts played with a 0.7 s gap.
+    crafts: Array.from({ length: 7 }, (_, i) => list(menu(be32(menu(0x800CC4F8) + i * 4)))),
+    // menuControllerInput: 0x24-byte pilot records at D_menu_overlay_800CC89C, list at +0x18.
+    roster: Array.from({ length: 6 }, (_, i) => list(menu(0x800CC89C) + i * 0x24 + 0x18)),
+    // startSlotLoopAnimWithVoiceSync: mission-select briefing = level + 0x279.
+    briefings: Array.from({ length: 19 }, (_, l) => l + 0x279),
+    // Pause screen (mission 0C0390): D_mission_overlay_80109D80[level * 4 + i] + 0x2C0, 0xFF = none.
+    objectives: Array.from({ length: 16 }, (_, l) => [...rom.subarray(mission(0x80109D80) + l * 4, mission(0x80109D80) + l * 4 + 4)].filter((b) => b !== 0xFF).map((b) => b + 0x2C0)),
+  };
+}
+
+// data/cuts/idN_{intro,extro,special}: length in seconds f32 +0x50, time units per second f32 +0x54 (20), u16 event count +0x4E,
+// 0x18-byte events at +0x58 {type, time, a, ...}; type 0 plays voice id a (spawnCutsceneEffectsAndCues).
+function parseCutsceneVoice(dv) {
+  const rate = dv.getFloat32(0x54) || 20, events = [];
+  for (let i = 0, n = dv.getUint16(0x4E); i < n && 0x58 + i * 0x18 + 0xC <= dv.byteLength; i++) {
+    const o = 0x58 + i * 0x18;
+    if (dv.getInt32(o) === 0) events.push({ voiceId: dv.getInt32(o + 8), at: dv.getUint32(o + 4) / rate });
+  }
+  return { length: dv.getFloat32(0x50), events };
+}
+
+// Voice ids a DAT trigger leads to: a LINE_n name is a voice id; counters and flags it sets run the handlers the level script
+// registered for them. tv = one level of RS64_TRIGGER_VOICES ({ c: counter -> ids, b: flag -> ids }, from gen_voice_cats.mjs).
+function triggerVoiceIds(it, tv) {
+  const ids = it.voiceId != null ? [it.voiceId] : [];
+  const p = it.pathEvent, acts = [it.onEnter, it.onExit, p && { counter: p.addCounter, flag: p.setFlag, value: p.value }];
+  if (tv) for (const a of acts.filter(Boolean)) ids.push(...(tv.c[a.counter] ?? []), ...(a.value ? (tv.b[a.flag] ?? []) : []));
+  return [...new Set(ids)];
+}
+
+// data/speech: u32 count, then count x u32 (low 24 bits = offset of a MORT stream: "MORT", flag byte, u8, u16 freq, u32 word count).
+function parseSpeech(dv) {
+  const out = [], n = dv.getUint32(0);
+  for (let i = 0; i < n; i++) {
+    const o = dv.getUint32(4 + i * 4) & 0xFFFFFF;
+    if (o + 12 > dv.byteLength || dv.getUint32(o) !== 0x4D4F5254) continue;
+    out.push({ index: i, offset: o, flag: dv.getUint8(o + 4), freq: dv.getUint16(o + 6), size: dv.getUint32(o + 8) * 4 });
+  }
+  return out;
+}
+
+// ---- MORT voice codec: port of tools/mort_decode.py (method names kept for side-by-side diffing) ----
+// Its intermediate/output buffers are write-only for PCM extraction and are left out.
+function decodeMort(speech, offset, size) {
+  const s16 = (x) => (x << 16) >> 16, s32 = (x) => x | 0, u32 = (x) => x >>> 0;
+  const V1T = [-4, -3, -2, -2, -1, -1, -1, -1], V2T = [7, 7, 3, 7, 1, 3, 5, 7];
+  const T738 = [0x0CCD, 0x2CCD, 0x5333, 0x7FFF, 0x852A, 0x0000];
+  const RAW = 0x1000, PRED = 0xA0, S5 = 0x8A0, S6 = 0xA00;
+  const raw = new Uint8Array(RAW);
+  const rd32 = (o) => ((raw[o] << 24) | (raw[o + 1] << 16) | (raw[o + 2] << 8) | raw[o + 3]) >>> 0;
+  const st = {
+    predictor: new Array(PRED).fill(0), skipReset: 0, resetPred: 0, lastBase: 0, lastSample: 0, sampleBuffer: new Array(8).fill(0),
+    curSmoother: 0, spA: new Array(8).fill(0), spB: new Array(8).fill(0),
+    amountSoundLeft: 0, unk3E80: 0, compWordsLeft: 0, bitPos: 0, chunkUsed: 0, chunkLeft: 0, curF08: 0, curF0C: 0,
+    status1: 0, status2: 4, status3: 2, romAddr: offset, romMortAddr: offset,
+    volume: 0x7F, play1: 0xFFFFFFFF, play2: 0xFFFFFFFF, inc2: 0x1F8, mortStatus2: 0, eee8: 0xB8, eeec: 0x194, ced0: 0, cf04: 0, cf20: 1, started: false,
+  };
+  const pcm = [];
+
+  const fn800455DC = (src, dst, n) => {
+    for (let i = 0; i < n; i++) raw[(dst + i) % RAW] = src + i < speech.length ? speech[src + i] : 0;
+  };
+  const fn800456D0 = () => {
+    st.predictor.fill(0); st.skipReset = 0; st.resetPred = 0; st.lastBase = 0x28; st.lastSample = 0;
+    st.sampleBuffer.fill(0); st.curSmoother = 0; st.spA.fill(0); st.spB.fill(0);
+    st.romAddr = st.romMortAddr;
+    st.status2 = 1; st.status1 = 0; st.amountSoundLeft = 0; st.unk3E80 = 0; st.bitPos = 0; st.chunkLeft = 0; st.chunkUsed = 0;
+    st.curF0C = 0; st.curF08 = 0; st.status3 = 2;
+  };
+  // state = [currentInputData (u32), bitsleft, currentOverallBitPosition (u32)]
+  const readBits = (n, s) => {
+    let [cur, left, pos] = s;
+    if (s32(left) >= n + 1) {
+      const r = cur & ((1 << n) - 1);
+      s[0] = cur >>> n; s[1] = left - n; s[2] = pos;
+      return r & 0xFFFF;
+    }
+    const t9 = (1 << left) - 1;
+    pos = u32(pos + 0x20);
+    const t7 = t9 & cur;
+    let r = t7 & 0xFFFF;
+    cur = rd32(((pos >>> 5) & 0x3FF) << 2 & 0xFFFF);
+    if (left !== n) r = (t7 | ((cur & ((1 << (n - left)) - 1)) << left)) & 0xFFFF;
+    s[0] = cur >>> (n - left); s[1] = u32(left + 0x20 - n); s[2] = pos;
+    return r;
+  };
+  const fn80048590 = (spc8, off, sb2, row) => {
+    spc8 = s16(spc8); off = s16(off);
+    let T0, T1;
+    if (spc8 < 8 && spc8 >= 0) { T0 = V1T[spc8]; T1 = V2T[spc8]; } else { T0 = (spc8 - 8) >> 3; T1 = spc8 & 7; }
+    T0 = 6 - T0;
+    const T4 = T1 * 0x800 + 0x47FF;
+    sb2.fill(0);
+    for (let x = 0; x < 0xD; x++) {
+      const v = s16(row[x]);
+      let t5 = s32((v * 0x2000 - 0x7000) * T4 + 0x4000) >> 0xF;
+      // MIPS masks shift amounts to 5 bits: T0 == 0 makes the bias 1 << 31.
+      const bias = 1 << ((T0 - 1) & 0x1F);
+      t5 = s32(t5 + bias) >> (T0 & 0x1F);
+      row[x] = t5 & 0xFFFF;
+      sb2[off + x * 3] = s16(t5);
+    }
+  };
+  const fn80048684 = (spe0, spd0, sb2) => {
+    spe0 = s16(spe0);
+    if (spe0 >= 0x28 && spe0 <= 0x78) st.lastBase = spe0 & 0xFFFF;
+    const p = st.predictor;
+    for (let x = 0; x < 0x78; x++) p[x] = p[x + 0x28];
+    const coef = T738[spd0 & 0xFFFF];
+    for (let x = 0; x < 0x28; x++) {
+      const idx = 0x78 - st.lastBase + x;
+      let T1 = idx >= 0 && idx < PRED ? s16(p[idx]) : 0;
+      T1 = s32(T1 * coef + 0x4000) >> 0xF;
+      p[0x78 + x] = (T1 + s16(sb2[x])) & 0xFFFF;
+    }
+  };
+  const fn80048B3C = (T2) => {
+    T2 = s32(T2);
+    const neg = T2 < 0;
+    if (neg) T2 = -T2;
+    if (T2 < 0x2B33) T2 *= 2;
+    else if (T2 < 0x4E66) T2 += 0x2B33;
+    else T2 = (T2 >> 2) + 0x6600;
+    if (T2 > 0x7FFF) T2 = 0x7FFF;
+    if (neg) T2 = -T2;
+    return T2 & 0xFFFF;
+  };
+  const BLEND = [
+    (a, b) => fn80048B3C((a >> 2) + (b >> 1) + (b >> 2)),
+    (a, b) => fn80048B3C((a >> 1) + (b >> 1)),
+    (a, b) => fn80048B3C((a >> 1) + (b >> 2) + (a >> 2)),
+    (a) => fn80048B3C(a),
+  ];
+  const fn80048A58 = (alg) => {
+    const [sp1, sp2] = st.curSmoother ? [st.spB, st.spA] : [st.spA, st.spB];
+    return sp1.map((v, x) => BLEND[alg](s16(v), s16(sp2[x])));
+  };
+  const fn80048740 = (pOff, count, adjusters, S, A3) => {
+    const adj = adjusters.map(s16);
+    for (let x = 0; x < count; x++) {
+      const pidx = pOff + x;
+      let T2 = pidx >= 0 && pidx < PRED ? s16(st.predictor[pidx]) : 0;
+      T2 = s32(T2 - (s32(s32(S[7]) * adj[7] + 0x4000) >> 0xF));
+      // Each stage updates S[i + 1] with the current tap's adjuster (one stage later than it subtracts).
+      for (let i = 6; i >= 0; i--) {
+        T2 = s32(T2 - (s32(s32(S[i]) * adj[i] + 0x4000) >> 0xF));
+        S[i + 1] = s32((s32(adj[i] * T2 + 0x4000) >> 0xF) + s32(S[i]));
+      }
+      S[0] = T2;
+      T2 = s32(T2 + (s32(0x6E14 * A3[0] + 0x4000) >> 0xF));
+      A3[0] = s16(T2);
+      const sh = s32(T2 << 1);
+      const AT = ((sh >> 0xF) + 1) >> 1;
+      const out = (AT !== 0 ? (AT < 0 ? -0x8000 : 0x7FFF) : sh) & 0xFFF8 & 0xFFFF;
+      pcm.push(out);
+    }
+  };
+  const fn80048904 = () => {
+    const S = st.sampleBuffer.slice(), A3 = [s16(st.lastSample)];
+    fn80048740(0, 0xD, fn80048A58(0), S, A3);
+    fn80048740(0xD, 0xE, fn80048A58(1), S, A3);
+    fn80048740(0x1B, 0xD, fn80048A58(2), S, A3);
+    fn80048740(0x28, 0x78, fn80048A58(3), S, A3);
+    st.sampleBuffer = S;
+    st.lastSample = s16(A3[0]);
+  };
+  const fn80045A80 = (spe8) => {
+    const sp = st.curSmoother ? st.spB : st.spA;
+    const calc = (i, k, coef, bias) => ((s32((s16(spe8[i]) - k) * 0x400 * coef + bias) >> 0xF) << 1) & 0xFFFF;
+    sp[0] = calc(0, 0x20, 0x3333, 0x4000);
+    sp[1] = calc(1, 0x20, 0x3333, 0x4000);
+    sp[2] = calc(2, 0x10, 0x3333, -0x332F000);
+    sp[3] = calc(3, 0x10, 0x3333, 0x04003C00);
+    sp[4] = calc(4, 8, 0x4B17, s32(0xFFC91B1C));
+    sp[5] = calc(5, 8, 0x4444, 0x03BBF800);
+    sp[6] = calc(6, 4, 0x7ADE, 0x0147936C);
+    sp[7] = calc(7, 4, 0x740C, 0x040D6B40);
+    fn80048904();
+    st.curSmoother = st.curSmoother ? 0 : 1;
+  };
+  const fn80045FF0 = () => {
+    const pos0 = st.bitPos;
+    const word = rd32((((s32(pos0) >> 5) & 0x3FF) << 2) & 0xFFFF);
+    const used = pos0 & 0x1F;
+    const s = [word >>> used, u32(0x20 - used), pos0];
+    if (st.skipReset === 0 && st.resetPred === 0) {
+      if (readBits(1, s)) st.resetPred = readBits(4, s) + 1;
+      else st.skipReset = readBits(7, s) + 1;
+    }
+    if (st.resetPred !== 0) {
+      st.resetPred--;
+      // A silence frame takes real time in the game's wall-clock mixer; offline it must emit its 158 samples.
+      for (let i = 0; i < 0x9E; i++) pcm.push(0);
+    } else {
+      const spe8 = [6, 6, 5, 5, 4, 4, 3, 3].map((n) => readBits(n, s));
+      const spe0 = [], spd0 = [], sbOff = [], spc8 = [], sp60 = [];
+      for (let x = 0; x < 4; x++) {
+        spe0.push(readBits(7, s)); spd0.push(readBits(2, s)); sbOff.push(readBits(2, s)); spc8.push(readBits(6, s));
+        const row = [];
+        for (let y = 0; y < 0xD; y++) row.push(readBits(3, s));
+        sp60.push(row);
+      }
+      st.skipReset--;
+      const sb2 = new Array(0x28).fill(0);
+      for (let x = 0; x < 4; x++) {
+        fn80048590(spc8[x], sbOff[x], sb2, sp60[x]);
+        fn80048684(spe0[x], spd0[x], sb2);
+      }
+      fn80045A80(spe8);
+    }
+    st.bitPos = u32(u32(s[2] & 0xFFFFFFE0) - s[1] + 0x20);
+  };
+  const tail = (V1) => {
+    if (st.status2 === 1 && s32(V1) >= 0x8C0) { st.status2 = 2; st.started = true; }
+  };
+  const fn80045780 = () => {
+    if (st.status1 !== 0) {
+      let V1 = st.chunkLeft;
+      if (V1 === 0) {
+        const T9 = rd32(4), T0 = rd32(8);
+        st.bitPos = 0x60;
+        st.amountSoundLeft = (T9 >>> 16) & 0xFFFF;
+        st.compWordsLeft = T0 & 0xFFFFFF;
+        st.unk3E80 = T9 & 0xFFFF;
+        V1 = st.chunkLeft;
+      }
+      const V0 = st.compWordsLeft;
+      st.chunkLeft = u32(V1 + 0x400);
+      st.compWordsLeft = V0 < 0x100 ? 0 : u32(V0 - 0x100);
+      st.status1 = 0;
+    }
+    let S2 = st.status3;
+    if (st.status1 === 0) {
+      if (st.status2 >= 1 && st.status2 <= 3) {
+        const V1 = st.chunkLeft;
+        if (s32(u32(V1 - st.chunkUsed)) < 0xC01) {
+          const A2 = V1 !== 0 ? (st.compWordsLeft < 0x101 ? st.compWordsLeft << 2 : 0x400) : 0x400;
+          if (s32(A2) > 0) {
+            st.status1 = 1;
+            fn800455DC(u32(st.romAddr + V1), ((V1 & 0xFFF) >> 3) << 3, A2);
+          }
+        }
+      }
+      let S1 = st.curF0C;
+      let V1 = u32(S1 - st.curF08);
+      if (s32(V1) < 0x960) {
+        let T5;
+        if (st.status2 === 1) T5 = st.chunkLeft;
+        else {
+          if (s16(st.amountSoundLeft) <= 0) return tail(V1);
+          T5 = st.chunkLeft;
+        }
+        if (s32(u32(T5 - st.chunkUsed)) <= 0 || s32(S2) <= 0) return tail(V1);
+        for (;;) {
+          fn80045FF0();
+          S1 = u32(st.curF0C + 0xA0);
+          V1 = u32(S1 - st.curF08);
+          const T7 = Math.max(0, st.amountSoundLeft - 1);
+          st.chunkUsed = (st.bitPos >>> 3) & 0xFFFFFFFC;
+          st.curF0C = S1;
+          st.amountSoundLeft = T7 & 0xFFFF;
+          S2 = u32(S2 - 1);
+          if (s32(V1) >= 0x960) break;
+          if (st.status2 !== 1 && s16(T7 & 0xFFFF) <= 0) break;
+          if (s32(u32(st.chunkLeft - st.chunkUsed)) <= 0) break;
+          if (s32(S2) <= 0) break;
+        }
+        return tail(V1);
+      }
+    }
+    tail(0);
+  };
+  const fn800459E0 = (A1) => {
+    if (st.status2 !== 3) return 0;
+    const V0 = u32(st.curF0C - st.curF08);
+    let A2;
+    if (A1 < V0) A2 = A1;
+    else {
+      A2 = V0;
+      if (s16(st.amountSoundLeft) <= 0) st.status2 = 4;
+    }
+    st.curF08 = u32(st.curF08 + A2);
+    return A2;
+  };
+
+  let ended = -1, loops = 0;
+  for (;;) {
+    if (st.play1 === 0xFFFFFFFF) { st.play1 = 0xB8; st.play2 = 0xB8; } else {
+      for (let i = 0; i < 3; i++) {
+        if (st.play1 >= 0x8A0) { st.play1 = 0xB8; st.play2 = 0xB8; } else { st.play1 = u32(st.play1 + 0xB8); st.play2 = u32(st.play2 + 0xB8); }
+      }
+    }
+    if (st.mortStatus2 !== 2) {
+      const A0 = st.inc2, V1 = st.play2;
+      const S7 = V1 < A0 ? (A0 - V1 < st.eeec ? st.eeec : st.eee8) : (S5 - st.eeec < V1 - A0 ? st.eeec : st.eee8);
+      fn80045780();
+      if (st.status2 === 2) { st.status2 = 3; st.ced0 = 1; st.cf20 = 0; }
+      fn800459E0(S7);
+      if (st.mortStatus2 === 0) { fn800456D0(); st.mortStatus2 = 4; st.ced0 = 0; st.cf04 = st.volume; }
+    }
+    loops++;
+    if (!st.started) {
+      if (pcm.length) st.started = true;
+    } else if (st.status2 === 4 || loops >= 2000) {
+      if (ended === -1) ended = loops + 1000;
+      else if (loops > ended) break;
+    }
+    if (loops > 50000) break;
+  }
+  return Int16Array.from(pcm);
 }
 
 // Sprite animations (civ_anm_run, trp_anm_run, ...): frames of u32 length + HMT texture entry (offsets frame-relative) + palette + pixels + name, padded to 4.
@@ -507,4 +855,187 @@ function parseSpriteAnim(dv, trans) {
   return frames.length ? frames : null;
 }
 
-globalThis.RS64 = { openRom, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES };
+// ---- Audio: MusyX samples (sdir_SND + samp_SND), port of tools/musyx_n64_decode.py ----
+
+function parseSdir(dv) {
+  const out = [];
+  for (let o = 0; o + 0x18 <= dv.byteLength && dv.getUint16(o) !== 0xFFFF; o += 0x18) {
+    out.push({ index: out.length, id: dv.getUint16(o), off: dv.getUint32(o + 4), root: dv.getUint8(o + 8), rate: dv.getUint16(o + 0xA),
+      num: dv.getUint32(o + 0xC) & 0xFFFFFF, loopStart: dv.getUint32(o + 0x10), loopLen: dv.getUint32(o + 0x14) });
+  }
+  return out;
+}
+
+// Each sample: 8x2x8 s16 coefficient book (256 bytes), then 0x28-byte frames of two self-contained 32-sample halves.
+function decodeMusyxAdpcm(samp, off, num) {
+  const s16 = (v) => (v << 16) >> 16, clamp = (v) => (v < -32768 ? -32768 : v > 32767 ? 32767 : v);
+  const dv = new DataView(samp.buffer, samp.byteOffset, samp.byteLength);
+  const out = new Int16Array(num);
+  if (!num) return out;
+  const book = [];
+  for (let k = 0; k < 16; k++) book.push(Array.from({ length: 8 }, (_, j) => dv.getInt16(off + k * 16 + j * 2)));
+  let n = 0;
+  for (let fp = off + 256; n < num && fp + 0x28 <= samp.length; fp += 0x28) {
+    for (const [rawo, nibo] of [[0, 8], [4, 0x18]]) {
+      const c2 = samp[fp + nibo] % 0x80, bi = (c2 & 0xF0) >> 4, rshift = c2 & 0xF;
+      const b1 = book[bi * 2], b2 = book[bi * 2 + 1];
+      const f = new Array(32);
+      f[0] = s16((samp[fp + rawo] << 8) | samp[fp + rawo + 1]);
+      f[1] = s16((samp[fp + rawo + 2] << 8) | samp[fp + rawo + 3]);
+      for (let i = 1; i < 16; i++) {
+        const b = samp[fp + nibo + i];
+        f[2 * i] = s16((b & 0xF0) << 8) >> rshift;
+        f[2 * i + 1] = s16((b & 0x0F) << 12) >> rshift;
+      }
+      const base = n;
+      for (let k = 0; k < 2 && n < num; k++) out[n++] = f[k];
+      for (const [o, hoff, size] of [[2, 0, 6], [8, 6, 8], [16, 14, 8], [24, 22, 8]]) {
+        const l1 = out[base + hoff], l2 = out[base + hoff + 1];
+        for (let i = 0; i < size && n < num; i++) {
+          let acc = f[o + i] * 2048 + b1[i] * l1 + b2[i] * l2;
+          for (let k = 0; k < i; k++) acc += b2[k] * f[o + i - 1 - k];
+          out[n++] = clamp(Math.floor(acc / 2048));
+        }
+      }
+    }
+  }
+  return n < num ? out.slice(0, n) : out;
+}
+
+// pool_SND: 4 sections (offsets in the first 4 words) of [u32 size, u16 id, pad, data]; 0 macros, 1 ADSR, 2 keymaps, 3 layers.
+function parsePool(dv) {
+  const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  return [0, 1, 2, 3].map((s) => {
+    const m = new Map();
+    for (let o = dv.getUint32(s * 4); o + 8 <= dv.byteLength;) {
+      const size = dv.getUint32(o);
+      if (size === 0xFFFFFFFF || !size) break;
+      m.set(dv.getUint16(o + 4), bytes.subarray(o + 8, o + size));
+      o += size;
+    }
+    return m;
+  });
+}
+
+// proj_SND type-1 section (the SFX group), sub-segment 5: u16 count, pad, 0xC-byte {id, macro (|0x8000 = layer), 2 bytes voices/priority, vel, pan, key}.
+function parseSfxTable(dv) {
+  let off = 0;
+  while (off + 8 <= dv.byteLength && dv.getUint16(off + 6) !== 1) off += dv.getUint32(off);
+  const p = off + 8 + dv.getUint32(off + 8 + 20), out = [];
+  for (let i = 0, n = dv.getUint16(p); i < n; i++) {
+    const e = p + 4 + i * 12;
+    out.push({ id: dv.getUint16(e), macro: dv.getUint16(e + 2), vel: dv.getUint8(e + 6), pan: dv.getUint8(e + 7), key: dv.getUint8(e + 8) });
+  }
+  return out;
+}
+
+// Offline render of one SFX id through its SoundMacro: a subset of the game's VM (tickAudioChannel), ported from tools/musyx_vm.py.
+// Wait timing from computeChannelWaitDuration (0x800895BC): the countdown is ms * 256; WaitMs (or w1 bit 8) = N ms, WaitTicks = N * 1000 / R ms
+// with R = 768 (default at 0x8013ACF0: 120 BPM at 384 ticks per beat), and tickAudioChannel subtracts one 384-sample frame (17.41 ms) per call.
+// shortcut: a 65535 wait on a looped sample holds 1.5 s. Skipped: pan, vibrato, pitch sweeps and the unknown ops (0x28, 0x30+).
+// bank = { pool: parsePool(), sdir: Map(id -> parseSdir entry), samp }.
+function renderSfx(bank, sfx, rate = 22050) {
+  const FRAME = 384 / 22050, TICK = 1 / 768;
+  const voices = [];
+  const runMacro = (macro, key, t0) => {
+    const s8 = (v) => (v << 24) >> 24;
+    let pc = [macro, 0], note = key, vol = 1, t = t0, pendingEnv = null, adsr = null, cur = null, steps = 0;
+    const stack = [], seen = new Set();
+    const sampleEnd = (v) => {
+      const sd = v.sd, step = (sd.rate / rate) * 2 ** ((v.note - sd.root) / 12);
+      return sd.loopLen ? v.start + 1.5 : v.start + (sd.num - v.offset) / step / rate;
+    };
+    const keyOff = () => cur && cur.off == null && (cur.off = t);
+    while (steps++ < 4000) {
+      const code = bank.pool[0].get(pc[0]);
+      if (!code) break;
+      const o = pc[1] * 8;
+      const w0 = o + 8 <= code.length ? ((code[o] << 24) | (code[o + 1] << 16) | (code[o + 2] << 8) | code[o + 3]) >>> 0 : 0;
+      const w1 = o + 8 <= code.length ? ((code[o + 4] << 24) | (code[o + 5] << 16) | (code[o + 6] << 8) | code[o + 7]) >>> 0 : 0;
+      const op = w0 & 0x7F, b0 = w0 >>> 24, b1 = (w0 >>> 16) & 0xFF, b2 = (w0 >>> 8) & 0xFF;
+      pc = [pc[0], pc[1] + 1];
+      if (op === 0x00 || op === 0x01) {
+        if (op === 0x00 && stack.length) { pc = stack.pop(); continue; }
+        break;
+      } else if (op === 0x10) {
+        keyOff();
+        const sd = bank.sdir.get((b1 << 8) | b2);
+        cur = sd ? { sd, note, start: t, offset: w1 < sd.num ? w1 : 0, env: [[t, vol]], adsr } : null;
+        if (cur) voices.push(cur);
+      } else if (op === 0x11 || op === 0x12) keyOff();
+      else if (op === 0x04 || op === 0x07) {
+        const n = w1 >>> 16;
+        if (n >= 0xFFFE) {
+          if (cur) {
+            t = Math.max(t, sampleEnd(cur));
+            keyOff();
+          }
+        } else t += Math.ceil((op === 0x04 && !((w1 >>> 8) & 1) ? n * TICK : n / 1000) / FRAME) * FRAME;
+        if (pendingEnv != null) [vol, pendingEnv] = [pendingEnv, null];
+        cur?.env.push([t, vol]);
+      } else if (op === 0x06) {
+        const tgt = w0 >>> 16, k = tgt + ':' + w1;
+        if (bank.pool[0].has(tgt) && !seen.has(k) && stack.length < 16) {
+          seen.add(k);
+          stack.push(pc);
+          pc = [tgt, w1];
+        }
+      } else if (op === 0x0C) adsr = bank.pool[1].get((b1 << 8) | b2) ?? null;
+      else if (op === 0x0D) cur?.env.push([t, (vol = b2 / 127)]);
+      else if (op === 0x0F) pendingEnv = b2 / 127;
+      else if (op === 0x18) note += s8(b2);
+      else if (op === 0x19) note = b2;
+      else if (op === 0x17) note = b0;
+    }
+    if (cur && cur.off == null) cur.off = Math.min(sampleEnd(cur), t + 1.5);
+  };
+  if (sfx.macro & 0x8000) {
+    // Layer (pool section 3): u32 count, 12-byte entries {u16 macro, keyLo, keyHi, s8 transpose, vol}; every entry covering the key plays.
+    const L = bank.pool[3].get(sfx.macro);
+    for (let i = 0, n = L ? (L[0] << 24 | L[1] << 16 | L[2] << 8 | L[3]) >>> 0 : 0; i < n && 4 + i * 12 + 12 <= L.length; i++) {
+      const e = 4 + i * 12, m = (L[e] << 8) | L[e + 1];
+      if (m !== 0xFFFF && L[e + 2] <= sfx.key && sfx.key <= L[e + 3]) runMacro(m, sfx.key + ((L[e + 4] << 24) >> 24), 0);
+    }
+  } else runMacro(sfx.macro, sfx.key, 0);
+
+  const release = (v) => (v.adsr ? ((v.adsr[6] | (v.adsr[7] << 8)) < 0x8000 ? (v.adsr[6] | (v.adsr[7] << 8)) / 1000 : 0) : 0) || 0.03;
+  const end = Math.min(10, Math.max(0, ...voices.map((v) => v.off + release(v))));
+  const mix = new Float32Array(Math.ceil(end * rate));
+  for (const v of voices) {
+    const sd = v.sd, pcm = decodeMusyxAdpcm(bank.samp, sd.off, sd.num), rel = release(v);
+    const step = (sd.rate / rate) * 2 ** ((v.note - sd.root) / 12);
+    const attack = v.adsr ? (v.adsr[0] | (v.adsr[1] << 8)) / 1000 : 0;
+    let pos = v.offset, k = 0;
+    for (let i = Math.floor(v.start * rate); i < mix.length; i++) {
+      const t = i / rate;
+      if (t > v.off + rel) break;
+      if (pos >= pcm.length - 1) {
+        if (!sd.loopLen) break;
+        pos = sd.loopStart + ((pos - sd.loopStart) % sd.loopLen);
+      }
+      while (k + 1 < v.env.length && v.env[k + 1][0] <= t) k++;
+      const [ta, ga] = v.env[k], [tb, gb] = v.env[k + 1] ?? v.env[k];
+      let g = tb > ta ? ga + ((gb - ga) * (t - ta)) / (tb - ta) : ga;
+      if (attack && t - v.start < attack) g *= (t - v.start) / attack;
+      if (t > v.off) g *= 1 - (t - v.off) / rel;
+      const p = Math.floor(pos), f = pos - p;
+      mix[i] += (pcm[p] + (pcm[p + 1] - pcm[p]) * f) * g * (sfx.vel / 127);
+      pos += step;
+    }
+  }
+  return { pcm: Int16Array.from(mix, (x) => Math.max(-32768, Math.min(32767, Math.round(x)))), rate, voices: voices.length };
+}
+
+function wavBytes(pcm, rate) {
+  const w = new Uint8Array(44 + pcm.length * 2), dv = new DataView(w.buffer);
+  const str = (o, s) => [...s].forEach((c, i) => (w[o + i] = c.charCodeAt(0)));
+  str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVEfmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  str(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, pcm[i], true);
+  return w;
+}
+
+globalThis.RS64 = { openRom, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds };
