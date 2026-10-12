@@ -2,6 +2,8 @@ plugins {
     id 'com.android.application'
 }
 
+base { archivesName = 'RogueSquadron64Recomp' }
+
 // SDL's Java glue (org.libsdl.app.*) must match the SDL2 version CMakeLists.txt builds for Android.
 def sdlVersion = '2.32.10'
 def sdlArchive = layout.buildDirectory.file("sdl/SDL2-${sdlVersion}.tar.gz")
@@ -9,6 +11,13 @@ def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
 
 // Host-built file_to_c from the Windows build; RT64 needs it to embed its SPIR-V shaders when cross-compiling.
 def hostFileToC = rootProject.file("../build/Debug/file_to_c.exe").absolutePath
+
+// Task actions must not touch `project` at execution time (Gradle 9), so file ops come from injected services.
+interface FileOps {
+    @javax.inject.Inject FileSystemOperations getFs()
+    @javax.inject.Inject ArchiveOperations getArchives()
+}
+def fileOps = objects.newInstance(FileOps)
 
 tasks.register('fetchSdlJava') {
     outputs.dir(sdlJavaDir)
@@ -18,8 +27,8 @@ tasks.register('fetchSdlJava') {
             archive.parentFile.mkdirs()
             new URL("https://github.com/libsdl-org/SDL/releases/download/release-${sdlVersion}/SDL2-${sdlVersion}.tar.gz").withInputStream { i -> archive.withOutputStream { it << i } }
         }
-        copy {
-            from(tarTree(resources.gzip(archive))) {
+        fileOps.fs.copy {
+            from(fileOps.archives.tarTree(fileOps.archives.gzip(archive))) {
                 include "SDL2-${sdlVersion}/android-project/app/src/main/java/org/libsdl/app/*.java"
                 eachFile { it.path = "org/libsdl/app/${it.name}" }
                 includeEmptyDirs = false
@@ -41,18 +50,18 @@ tasks.register('bundleMods') {
     outputs.dir(modsAssetsDir)
     doLast {
         def out = modsAssetsDir.get().asFile
-        project.delete(out)
+        fileOps.fs.delete { delete out }
         def lines = []
         androidMods.each { name ->
             def src = new File(modsRoot, name)
             if (src.isFile()) {
                 lines << name
-                project.copy { from src; into new File(out, 'mods') }
+                fileOps.fs.copy { from src; into new File(out, 'mods') }
             } else if (src.isDirectory()) {
                 src.eachFileRecurse(groovy.io.FileType.FILES) { f ->
                     def rel = name + '/' + src.toPath().relativize(f.toPath()).toString().replace('\\', '/')
                     lines << rel
-                    project.copy { from f; into new File(out, 'mods/' + new File(rel).parent) }
+                    fileOps.fs.copy { from f; into new File(out, 'mods/' + new File(rel).parent) }
                 }
             } else {
                 throw new GradleException("mods/platforms.json lists '${name}' for android, but mods/${name} does not exist (code mods must be built first)")
@@ -63,9 +72,9 @@ tasks.register('bundleMods') {
 }
 
 android {
-    namespace 'com.rs64recomp.app'
+    namespace = 'com.rs64recomp.app'
     compileSdk 34
-    ndkVersion '29.0.14206865'
+    ndkVersion = '29.0.14206865'
 
     defaultConfig {
         applicationId 'com.rs64recomp.app'
@@ -100,13 +109,13 @@ android {
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
         }
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging = true
         }
     }
 

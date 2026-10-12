@@ -185,8 +185,8 @@ Needs **Android Studio** (for its SDK, bundled JDK and `adb`) with **NDK 29.0.14
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
 cd android
-.\gradlew.bat assembleRelease   # app\build\outputs\apk\release\app-release.apk
-adb install -r app\build\outputs\apk\release\app-release.apk
+.\gradlew.bat assembleRelease   # app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
+adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 ```
 
 - **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and stutters. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wraps the commands above.
