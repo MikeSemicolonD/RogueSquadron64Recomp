@@ -122,46 +122,6 @@ def test_overlapping_range_siblings_are_flagged(tmp_path=None):
     assert any("a" in e and "b" in e for e in errs)
 
 
-def test_codegen_emits_table_and_counts(tmp_path=None):
-    tmp_path = tmp_path or _fresh_tmp()
-    from gen_state_table import gen_state_table
-    m = load_model(_write(tmp_path, '''
-        [[state]]
-        id = "menu"
-        name = "Menu"
-        parent = ""
-        classify = [ { addr = 0x80130B14, mask = 0xFF000000, op = "eq", value = 0x05000000 } ]
-        force = { slot = "menu_screen", params = { screen = 4 } }
-    '''))
-    c = gen_state_table(m)
-    assert "#define RS_STATE_COUNT 1" in c
-    assert "0x80130B14" in c
-    assert "RS_SLOT_MENU_SCREEN" in c
-    assert '"menu"' in c
-
-
-def test_codegen_emits_reachable(tmp_path=None):
-    tmp_path = tmp_path or _fresh_tmp()
-    from gen_state_table import gen_state_table
-    m = load_model(_write(tmp_path, '''
-        [[state]]
-        id = "menu"
-        name = "Menu"
-        parent = ""
-        classify = [ { addr = 1, mask = 0xFF, op = "eq", value = 5 } ]
-        [[state]]
-        id = "mission"
-        name = "Mission"
-        parent = ""
-        classify = [ { addr = 2, mask = 0xFF, op = "eq", value = 3 } ]
-        force = { slot = "boot_level", params = { level = 0, craft = -1 } }
-        reachable_from = ["menu"]
-    '''))
-    c = gen_state_table(m)
-    assert '"menu"' in c
-    assert "g_state_reachable" in c
-
-
 def _blank_rdram():
     return bytearray(0x800000)
 
@@ -222,15 +182,6 @@ def test_real_descriptor_is_valid():
     root = pathlib.Path(__file__).resolve().parents[2]
     m = load_model(str(root / "tools" / "state" / "state_model.toml"))
     assert validate(m) == []
-
-
-def test_real_descriptor_codegen(tmp_path=None):
-    from gen_state_table import gen_state_table
-    root = pathlib.Path(__file__).resolve().parents[2]
-    m = load_model(str(root / "tools" / "state" / "state_model.toml"))
-    c = gen_state_table(m)
-    assert "#define RS_STATE_COUNT" in c
-    assert len(m.states) >= 3
 
 
 if __name__ == "__main__":

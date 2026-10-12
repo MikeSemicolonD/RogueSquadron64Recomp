@@ -129,7 +129,7 @@ mods/menu-example/menu_example.exp
 mods/menu-example/menu_example.pdb
 
 
-# Generated from tools/state/state_model.toml by tools/state/gen_state_table.py
+# Generated from tools/state/state_model.toml by tools/state/gen_state_table.cpp
 src/main/state_table.inl
 
 
@@ -151,3 +151,16 @@ ci/linux/runner.env
 
 # Local Steamworks SDK for building the steam-relay mod (never committed)
 lib/steamworks/
+
+# Conflict-probe test mods (tests/mods/conflict-probe)
+tests/mods/conflict-probe/*.nrm
+tests/mods/conflict-probe/build/
+tests/mods/conflict-probe/*/build/
+tests/mods/event_probe.nrm
+tests/mods/event-probe/build/
+
+# Patches ELF build outputs (CMakeLists.txt ---- Patches ELF ----)
+patches/patches.elf
+patches/patches.bin
+tests/mods/replay_probe.nrm
+tests/mods/replay-probe/build/

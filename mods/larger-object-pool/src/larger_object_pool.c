@@ -2,7 +2,7 @@
 // When the pool is full the game evicts a live object to make room; vanilla level 1 already runs it dry.
 // Replaces allocNpcContextArrays / destroyNpcContextArrays, the only code that depends on the slot count (everything else pushes/pops the free stack).
 
-#define RECOMP_PATCH __attribute__((section(".recomp_patch")))
+#include "rs64_api.h"
 
 #define POOL_SIZE 384
 #define CONTEXT_SIZE 0x3C
@@ -15,10 +15,10 @@
 
 void* rs_malloc(unsigned int size, unsigned int flags);
 void rs_free(void* ptr);
-void func_8004028C(void);
+void destroyTransientNpcSlots(void);
 
 // allocNpcContextArrays
-RECOMP_PATCH void func_8003FD54(void) {
+RECOMP_PATCH void allocNpcContextArrays(void) {
     int i;
     gNpcContextArray = rs_malloc(POOL_SIZE * CONTEXT_SIZE, 0);
     gNpcContextArrayPtrs = rs_malloc(POOL_SIZE * sizeof(unsigned char*), 0);
@@ -31,10 +31,10 @@ RECOMP_PATCH void func_8003FD54(void) {
 }
 
 // destroyNpcContextArrays: destroyTransientNpcSlots until every slot is free, free both linked lists (next at +0x48), then the arrays.
-RECOMP_PATCH void func_8003FDD8(void) {
+RECOMP_PATCH void destroyNpcContextArrays(void) {
     unsigned char* node;
     while (gNpcNextOpenSlot < POOL_SIZE - 1) {
-        func_8004028C();
+        destroyTransientNpcSlots();
     }
     while ((node = gNpcListA) != 0) {
         gNpcListA = *(unsigned char**)(node + 0x48);

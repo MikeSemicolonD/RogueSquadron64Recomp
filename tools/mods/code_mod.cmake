@@ -14,6 +14,11 @@ set(MIPS_TOOLCHAIN_DIR "E:/mips-toolchain" CACHE PATH "MIPS GCC toolchain root")
 set(MIPS_GCC "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS C compiler")
 set(MIPS_LD  "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-ld${RS64_HOST_EXE_SUFFIX}" CACHE FILEPATH "MIPS linker")
 set(RECOMP_MOD_TOOL "${RS64_MOD_TOOL_DEFAULT}" CACHE FILEPATH "RecompModTool executable")
+set(RS64_MOD_SDK_DIR "${CMAKE_CURRENT_LIST_DIR}/../../mods/sdk")
+# Also used by the base game's patches ELF (CMakeLists.txt). Sibling calls stay off: a tail j into an import or game function fails LiveRecomp.
+set(RS64_MIPS_CFLAGS
+    -mips2 -mabi=32 -O2 -G0 -mno-abicalls -fomit-frame-pointer -fno-builtin -fno-optimize-sibling-calls
+    -nostdinc -I "${RS64_MOD_SDK_DIR}" -Wall -Wextra -Wno-unused-parameter)
 
 function(add_code_mod NRM_NAME)
     set(MOD_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -25,10 +30,7 @@ function(add_code_mod NRM_NAME)
         get_filename_component(stem "${src}" NAME_WE)
         set(obj "${MOD_DIR}/build/${stem}.o")
         add_custom_command(OUTPUT "${obj}"
-            COMMAND "${MIPS_GCC}"
-                -mips2 -mabi=32 -O2 -G0 -mno-abicalls -fomit-frame-pointer -fno-builtin
-                -nostdinc -Wall -Wextra -Wno-unused-parameter
-                -c "${MOD_DIR}/${src}" -o "${obj}"
+            COMMAND "${MIPS_GCC}" ${RS64_MIPS_CFLAGS} -c "${MOD_DIR}/${src}" -o "${obj}"
             DEPENDS "${MOD_DIR}/${src}")
         list(APPEND objs "${obj}")
     endforeach()

@@ -13,7 +13,7 @@ The ROM itself is not a build input (N64Recomp reads code and data from the ELF)
 
 [ci/stage_inputs.py](../ci/stage_inputs.py) copies these into place at the start of each job and removes them, plus `RecompiledFuncs/` and `RecompiledPatches/`, at the end. It reads `RS64_INPUTS` (a directory holding `roguesquadron.elf` and `factor5_ucode/`), or `RS64_ELF` / `RS64_UCODE_DIR` for individual paths.
 
-Each job builds N64Recomp and RecompModTool as their own CMake project (`lib/N64ModernRuntime/N64Recomp` into `build-tools/`), because the game's configure fails while `RecompiledFuncs/` does not exist yet. It then regenerates `RecompiledFuncs/` from scratch, fails if `funcs.h` comes out truncated (the stale-recompiler symptom) or if `tools/coop/gen_relocation.py --verify` finds the co-op relocation patches unapplied, and configures and builds the game with `-DN64RECOMP_EXE` pointing at the fresh recompiler.
+Each job builds N64Recomp and RecompModTool as their own CMake project (`lib/N64ModernRuntime/N64Recomp` into `build-tools/`), because the game's configure fails while `RecompiledFuncs/` does not exist yet. It then regenerates `RecompiledFuncs/` from scratch, fails if `funcs.h` comes out truncated (the stale-recompiler symptom), and configures and builds the game with `-DN64RECOMP_EXE` pointing at the fresh recompiler.
 
 ## Linux runner (Docker, ephemeral)
 
@@ -36,7 +36,7 @@ Windows containers would need Hyper-V isolation and a multi-GB image with VS Bui
 3. Set a machine or user environment variable for the service account, then restart the service:
    - `RS64_ELF=E:\Projects\rogue_squadron64\build\roguesquadron.elf` (point at the live decomp build so symbol renames reach CI)
    - `RS64_UCODE_DIR=E:\Projects\RogueSquadron64Recomp\build\factor5_ucode`
-4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides the `E:/mips-toolchain` default.
+4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides the `E:/mips-toolchain` default. Both the code mods and the game build (its patches ELF) use it.
 
 The job builds the game in Release; `build/dist/` plus a README becomes the zip.
 
@@ -48,7 +48,7 @@ Both jobs build every `.nrm` that [mods/platforms.json](../mods/platforms.json) 
 
 Both desktop jobs configure with `-DRS64_MULTIPLAYER=OFF`, so the exe has no multiplayer code and online co-op ships as the `multiplayer-native` mod ([mods/multiplayer-native](../mods/multiplayer-native/)). The game's CMake builds that mod (`multiplayer_native.dll` / `.so`) as a dependency of the exe into `build/built_mods/<Config>/multiplayer-native` and [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake) stages it. The mod target also restages after its own builds (a multiplayer-source edit that does not relink the exe), and the Release dist gets the mod without its PDB. The Linux package script strips every staged `.so`.
 
-The `desktop` list in `mods/platforms.json` names only `multiplayer-native`; the data-only `multiplayer` (the menu page JSON) is listed under `android` alone. `stage_mods.cmake` takes three arguments that decide what desktop stages:
+Both lists in `mods/platforms.json` name `multiplayer-native`; the data-only `multiplayer` (the menu page JSON) is listed under neither and only stages in place of the native mod in a desktop `RS64_MULTIPLAYER=ON` build. `stage_mods.cmake` takes three arguments that decide what desktop stages:
 
 | Argument | Used when | Effect |
 |---|---|---|
@@ -61,12 +61,12 @@ Each desktop job has a "Check the multiplayer mod" step after the game build. It
 Platform decisions:
 
 - OFF desktop builds are mod-only for multiplayer: with the mod disabled or missing there is no online co-op and no local co-op (`ROGUESQ_COOP_LOCAL` needs the mod).
-- Android is not built by this workflow; its CMake forces `RS64_MULTIPLAYER` on, so multiplayer stays built in there.
+- Android is not built by this workflow. Its Gradle build passes `RS64_MULTIPLAYER=OFF` and packs `libmultiplayer_native.so` into the APK, so multiplayer is a mod there too.
 - macOS is not covered yet: there is no export restriction check for the mod's library and no signing step.
 
 ## Unit tests
 
-Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (no `--config` on Linux) after the game build, and a failing test fails the job. The target builds and runs `lockstep_core_test`, `net_core_test`, `net_link_test`, `nav_target_test` and `host_api_test` (each prints `<name> OK`), then runs the style check (`tools/style/check_style.py`). The tests use [tests/check.h](../tests/check.h) (`CHECK`, never compiled out) so Release checks them too. `net_link_test` adds and removes a UPnP port mapping on the runner's router, which needs the runner to have a LAN address; on a runner with no IPv4 address it skips the address-text check.
+Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (no `--config` on Linux) after the game build, and a failing test fails the job. The target builds and runs `lockstep_core_test`, `net_core_test`, `net_link_test`, `nav_target_test` and `host_api_test` (each prints `<name> OK`), then `style_check` against `tools/style/baseline.txt`. The tests use [tests/check.h](../tests/check.h) (`CHECK`, never compiled out) so Release checks them too. `net_link_test` adds and removes a UPnP port mapping on the runner's router, which needs the runner to have a LAN address; on a runner with no IPv4 address it skips the address-text check.
 
 ## Expected build warnings
 

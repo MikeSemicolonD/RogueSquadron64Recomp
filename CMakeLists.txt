@@ -22,12 +22,8 @@ if(WIN32 AND ROGUESQ_NO_ITER_DEBUG)
     message(STATUS "MSVC debug iterators DISABLED (vector bounds checks off)")
 endif()
 
-# Online co-op built into the game. OFF: the multiplayer-native mod provides it (desktop); Android always builds it in.
+# Online co-op built into the game. OFF: the multiplayer-native mod provides it, as desktop releases and Android ship.
 option(RS64_MULTIPLAYER "Build online co-op into the game" ON)
-if (ANDROID AND NOT RS64_MULTIPLAYER)
-    message(STATUS "RS64_MULTIPLAYER forced ON: Android builds multiplayer in")
-    set(RS64_MULTIPLAYER ON CACHE BOOL "Build online co-op into the game" FORCE)
-endif()
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
@@ -123,6 +119,8 @@ target_include_directories(RecompiledFuncs PRIVATE
 file(GLOB RECOMP_C_SOURCES   CONFIGURE_DEPENDS ${RECOMP_FUNCS_DIR}/*.c)
 file(GLOB RECOMP_CXX_SOURCES CONFIGURE_DEPENDS ${RECOMP_FUNCS_DIR}/*.cpp)
 target_sources(RecompiledFuncs PRIVATE ${RECOMP_C_SOURCES} ${RECOMP_CXX_SOURCES})
+# The rogue_squadron.toml hook bodies; built with the recompiled code so they compile exactly as they did inline.
+target_sources(RecompiledFuncs PRIVATE ${CMAKE_SOURCE_DIR}/src/main/toml_hooks.c)
 
 # ---- N64Recomp ----
 if (CMAKE_HOST_WIN32)
@@ -138,30 +136,101 @@ set(N64RECOMP_EXE "${RS64_N64RECOMP_DEFAULT}" CACHE FILEPATH "N64Recomp executab
 
 # ---- Regenerate RecompiledFuncs (opt-in) ----
 # Not in the default build: needs the decomp ELF (elf_path in rogue_squadron.toml). cmake --build build --config Debug --target regen_funcs
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-# The verify step fails the regen when an N64Recomp without patch_files support silently skips tools/coop/coop_relocation.toml.
 add_custom_target(regen_funcs
     COMMAND ${N64RECOMP_EXE} "${CMAKE_SOURCE_DIR}/rogue_squadron.toml"
-    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/coop/gen_relocation.py" --verify
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Regenerating RecompiledFuncs from rogue_squadron.toml (needs decomp ELF + N64Recomp.exe)"
+    VERBATIM
+)
+# Refreshes syms/ (the names .nrm mods build against; the RogueSquadron64RecompSyms submodule) from the decomp ELF, plus the mods variant of the data symbols. Run after renames, commit in syms/, bump the submodule. cmake --build build --config Debug --target dump_syms
+add_custom_target(dump_syms
+    COMMAND ${N64RECOMP_EXE} "${CMAKE_SOURCE_DIR}/rogue_squadron.toml" --dump-context
+    COMMAND ${CMAKE_COMMAND} -E copy dump.toml "${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml"
+    COMMAND ${CMAKE_COMMAND} -E copy data_dump.toml "${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml"
+    COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml -DOUT=${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.mods.toml -P ${CMAKE_SOURCE_DIR}/tools/mods/mod_datasyms.cmake
+    WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+    COMMENT "Dumping syms/ from the decomp ELF"
     VERBATIM
 )
 # Build the recompiler first so a stale exe can't silently truncate the output.
 if (TARGET N64RecompCLI)
     add_dependencies(regen_funcs N64RecompCLI)
+    add_dependencies(dump_syms N64RecompCLI)
 endif()
+
+# ---- Patches ELF ----
+# Base-game C in patches/src: compiled to MIPS with the code-mod toolchain, recompiled by N64Recomp (patches.toml) and registered with librecomp at boot (register_patches.cpp), as in Zelda64Recomp.
+include(${CMAKE_SOURCE_DIR}/tools/mods/code_mod.cmake)
+if (NOT EXISTS "${MIPS_GCC}" OR NOT EXISTS "${MIPS_LD}")
+    message(FATAL_ERROR "The patches build needs MIPS GCC and ld: set MIPS_TOOLCHAIN_DIR (now ${MIPS_TOOLCHAIN_DIR}) or MIPS_GCC and MIPS_LD.")
+endif()
+set(PATCHES_DIR ${CMAKE_SOURCE_DIR}/patches)
+set(PATCHES_OUT ${CMAKE_SOURCE_DIR}/RecompiledPatches)
+set(PATCHES_BUILD ${CMAKE_BINARY_DIR}/patches)
+file(GLOB_RECURSE PATCH_C_SOURCES CONFIGURE_DEPENDS ${PATCHES_DIR}/src/*.c)
+file(GLOB_RECURSE PATCH_HEADERS CONFIGURE_DEPENDS ${PATCHES_DIR}/src/*.h)
+set(PATCH_OBJS "")
+foreach(src ${PATCH_C_SOURCES})
+    file(RELATIVE_PATH rel "${PATCHES_DIR}/src" "${src}")
+    string(REPLACE "/" "_" obj_name "${rel}")
+    set(obj "${PATCHES_BUILD}/${obj_name}.o")
+    add_custom_command(OUTPUT "${obj}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${PATCHES_BUILD}"
+        COMMAND "${MIPS_GCC}" ${RS64_MIPS_CFLAGS} -c "${src}" -o "${obj}"
+        DEPENDS "${src}" ${PATCH_HEADERS} "${RS64_MOD_SDK_DIR}/rs64_api.h"
+        VERBATIM)
+    list(APPEND PATCH_OBJS "${obj}")
+endforeach()
+# Game functions stay undefined so N64Recomp resolves them by name through patches.toml's syms; --noinhibit-exec keeps the ELF despite ld's out-of-range jal errors for them.
+add_custom_command(OUTPUT ${PATCHES_DIR}/patches.elf
+    COMMAND "${MIPS_LD}" -nostdlib -T "${PATCHES_DIR}/patches.ld" -Map "${PATCHES_BUILD}/patches.map"
+        --unresolved-symbols=ignore-all --emit-relocs --noinhibit-exec -e 0 ${PATCH_OBJS} -o "${PATCHES_DIR}/patches.elf"
+    DEPENDS ${PATCH_OBJS} "${PATCHES_DIR}/patches.ld"
+    VERBATIM)
+set(PATCHES_RECOMP_DEPS "")
+if (TARGET N64RecompCLI AND N64RECOMP_EXE STREQUAL RS64_N64RECOMP_DEFAULT)
+    set(PATCHES_RECOMP_DEPS N64RecompCLI)
+endif()
+add_custom_command(OUTPUT ${PATCHES_OUT}/patches.c ${PATCHES_OUT}/recomp_overlays.inl ${PATCHES_OUT}/funcs.h ${PATCHES_DIR}/patches.bin
+    COMMAND "${N64RECOMP_EXE}" "${CMAKE_SOURCE_DIR}/patches.toml"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.mods.toml ${PATCHES_RECOMP_DEPS} "${N64RECOMP_EXE}"
+    COMMENT "Recompiling patches.elf"
+    VERBATIM)
+add_custom_command(OUTPUT ${PATCHES_BUILD}/patches_bin.c ${PATCHES_BUILD}/patches_bin.h
+    COMMAND file_to_c ${PATCHES_DIR}/patches.bin rs64_patches_bin ${PATCHES_BUILD}/patches_bin.c ${PATCHES_BUILD}/patches_bin.h
+    DEPENDS ${PATCHES_DIR}/patches.bin file_to_c
+    VERBATIM)
+# OBJECT, not STATIC: objects link like the game's own sources, so nothing depends on archive link order.
+add_library(PatchesLib OBJECT ${PATCHES_OUT}/patches.c ${PATCHES_BUILD}/patches_bin.c)
+target_compile_options(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,COMPILE_OPTIONS>)
+target_compile_definitions(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,COMPILE_DEFINITIONS>)
+target_include_directories(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,INCLUDE_DIRECTORIES>)
 
 # ---- Main executable ----
 # Graphics are HLE through RT64; only the audio RSP ucodes (shared boot + MusyX synth, from rsp/*.toml) are recompiled.
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
 set(MUSYX_AUDIO_C   ${CMAKE_SOURCE_DIR}/build/factor5_ucode/musyx_audio_recompiled.c)
-# RSPRecomp emits gotos to missing labels for unhandled jumps (the boot ucode's `jr $7=0x1080` hand-off would printf a register dump per task); the fixup rewrites them to clean exits at configure time.
-foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
-    if (EXISTS ${ucode_c})
-        execute_process(COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.py ${ucode_c})
-    endif()
-endforeach()
+# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android reuses the host-fixed files.
+if (ANDROID)
+    foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
+        file(READ ${ucode_c} ucode_text)
+        string(FIND "${ucode_text}" "/* fixup:" ucode_fixed)
+        if (ucode_fixed EQUAL -1)
+            message(FATAL_ERROR "${ucode_c} is unfixed; run the Windows Debug build first.")
+        endif()
+    endforeach()
+else()
+    add_executable(fixup_factor5_ucode ${CMAKE_SOURCE_DIR}/tools/fixup_factor5_ucode.cpp)
+    set_target_properties(fixup_factor5_ucode PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    add_custom_command(
+        OUTPUT ${CMAKE_BINARY_DIR}/ucode_fixup.stamp
+        COMMAND fixup_factor5_ucode ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C}
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_BINARY_DIR}/ucode_fixup.stamp
+        DEPENDS fixup_factor5_ucode ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C}
+        COMMENT "Fixing up the RSPRecomp ucode output")
+    add_custom_target(ucode_fixup DEPENDS ${CMAKE_BINARY_DIR}/ucode_fixup.stamp)
+endif()
 # arm64 maps the RSP vector ops through sse2neon (rsp_vu.hpp), so -msse4.1 is x86-only.
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64")
     set(RSP_UCODE_ARCH_FLAGS "-msse4.1")
@@ -172,15 +241,19 @@ set_source_files_properties(${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C} PROPERTIES
 
 # Generate the game-state table header from the canonical descriptor (state_model.toml).
 set(STATE_TABLE_INL ${CMAKE_SOURCE_DIR}/src/main/state_table.inl)
-add_custom_command(
-    OUTPUT ${STATE_TABLE_INL}
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.py
-            ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml ${STATE_TABLE_INL}
-    DEPENDS ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml
-            ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.py
-            ${CMAKE_SOURCE_DIR}/tools/state/state_model.py
-    COMMENT "Generating state_table.inl from state_model.toml")
-add_custom_target(gen_state_table DEPENDS ${STATE_TABLE_INL})
+if (ANDROID)
+    add_custom_target(gen_state_table)
+else()
+    add_executable(gen_state_table_tool ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.cpp)
+    set_target_properties(gen_state_table_tool PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    target_link_libraries(gen_state_table_tool PRIVATE tomlplusplus::tomlplusplus)
+    add_custom_command(
+        OUTPUT ${STATE_TABLE_INL}
+        COMMAND gen_state_table_tool ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml ${STATE_TABLE_INL}
+        DEPENDS gen_state_table_tool ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml
+        COMMENT "Generating state_table.inl from state_model.toml")
+    add_custom_target(gen_state_table DEPENDS ${STATE_TABLE_INL})
+endif()
 
 set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
@@ -195,6 +268,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/menu_config.cpp
     ${CMAKE_SOURCE_DIR}/src/main/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/main/upstream_compat.cpp
     ${CMAKE_SOURCE_DIR}/src/main/hook_helpers.cpp
     ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
@@ -239,6 +313,9 @@ else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
+if (NOT ANDROID)
+    add_dependencies(RogueSquadron64Recomp ucode_fixup)
+endif()
 if (MSVC)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
@@ -372,6 +449,12 @@ add_executable(rs64_lights_test EXCLUDE_FROM_ALL
 )
 set_target_properties(rs64_lights_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
+# AGENTS.md style rules for src/main, against tools/style/baseline.txt.
+add_executable(style_check EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/style_check.cpp
+)
+set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
 # One command for the unit tests: cmake --build build --config Release --target rs64_unit_tests
 add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:lockstep_core_test>
@@ -382,8 +465,8 @@ add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:cable_alias_test>
     COMMAND $<TARGET_FILE:crosshair_match_test>
     COMMAND $<TARGET_FILE:rs64_lights_test>
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/style/check_style.py
-    DEPENDS lockstep_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test rs64_lights_test
+    COMMAND $<TARGET_FILE:style_check> ${CMAKE_SOURCE_DIR}
+    DEPENDS lockstep_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test rs64_lights_test style_check
     COMMENT "Running the unit tests")
 
 # Standalone unit test for the mode-change blanking gate.
@@ -393,7 +476,7 @@ add_executable(transition_gate_test EXCLUDE_FROM_ALL
 set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 if (MSVC)
-    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test net_core_test net_link_test host_api_test transition_gate_test cable_alias_test crosshair_match_test rs64_lights_test)
+    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test net_core_test net_link_test host_api_test transition_gate_test cable_alias_test crosshair_match_test rs64_lights_test style_check)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endforeach()
 endif()
@@ -466,12 +549,10 @@ if (WIN32)
     set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
 endif()
 # Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
-set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods")
-if (NOT ANDROID)
-    add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
-    if (NOT RS64_MULTIPLAYER)
-        add_dependencies(RogueSquadron64Recomp multiplayer_native)
-    endif()
+set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
+add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
+if (NOT RS64_MULTIPLAYER)
+    add_dependencies(RogueSquadron64Recomp multiplayer_native)
 endif()
 # The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.
 set(STEAMWORKS_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/steamworks/sdk" CACHE PATH "Steamworks SDK folder (holds public/steam/steam_api_flat.h)")
@@ -497,11 +578,9 @@ add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake")
 endif()
 
-if (PATCHES_BUILD_OK)
-    target_link_libraries(RogueSquadron64Recomp PRIVATE PatchesLib)
-endif()
-
+target_include_directories(RogueSquadron64Recomp PRIVATE ${PATCHES_BUILD})
 target_link_libraries(RogueSquadron64Recomp PRIVATE
+    PatchesLib
     RecompiledFuncs
     librecomp
     ultramodern

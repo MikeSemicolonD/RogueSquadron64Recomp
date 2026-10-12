@@ -87,7 +87,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (N64, USA v1.0) built wi
 | **CMake** | 3.20+ |
 | **Compiler** | MSVC with the ClangCL toolset (Windows), Clang or GCC (Linux/macOS) |
 | **N64Recomp output** | `RecompiledFuncs/`, generated locally from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp (started by [Tmcg2](https://github.com/Tmcg2/rogue_squadron64)), plus the RSPRecomp'd audio microcode; see [Building](#building) |
-| **MIPS cross-compiler** *(optional)* | `mips64-elf-gcc`, only for building `.nrm` code mods (`tools/mods/`); the game itself does not need it. Windows builds are at [n64-tools](https://github.com/n64-tools/gcc-toolchain-mips64/releases); the official LLVM Windows installers lack the MIPS backend. Default path `E:/mips-toolchain`. |
+| **MIPS cross-compiler** | `mips64-elf-gcc` and `mips64-elf-ld`: the game build compiles the base patches ELF (`patches/`) with it, and `.nrm` code mods (`tools/mods/`) use it too. Set `MIPS_TOOLCHAIN_DIR`, or `MIPS_GCC` and `MIPS_LD`. Windows builds are at [n64-tools](https://github.com/n64-tools/gcc-toolchain-mips64/releases); the official LLVM Windows installers lack the MIPS backend. Default path `E:/mips-toolchain`. |
 
 ---
 
@@ -122,12 +122,11 @@ cmake --build build-tools --config Release --target N64RecompCLI RSPRecomp
 
 # From the repo root. Visual Studio puts the tools in build-tools/Release/, Ninja/Make in build-tools/.
 build-tools/Release/N64Recomp rogue_squadron.toml          # RecompiledFuncs/
-python tools/coop/gen_relocation.py --verify              # fails if the co-op relocation patches were not applied
 build-tools/Release/RSPRecomp rsp/factor5_boot_rsp.toml    # build/factor5_ucode/factor5_boot_recompiled.c
 build-tools/Release/RSPRecomp rsp/musyx_rsp.toml           # build/factor5_ucode/musyx_audio_recompiled.c
 ```
 
-Configuring the game runs `tools/fixup_factor5_ucode.py` on both microcode files. Re-run RSPRecomp only when a config under `rsp/` changes.
+The game build fixes up both microcode files in place (`tools/fixup_factor5_ucode.cpp`). Re-run RSPRecomp only when a config under `rsp/` changes.
 
 ### 4. Configure and build
 
@@ -141,12 +140,14 @@ cmake -B build -DCMAKE_BUILD_TYPE=Debug -DN64RECOMP_EXE=build-tools/N64Recomp
 cmake --build build
 ```
 
-After that, the `regen_funcs` target (`cmake --build build --config Debug --target regen_funcs`) regenerates `RecompiledFuncs/` and runs the relocation check. Re-run it when `rogue_squadron.toml`, the symbols, or the decomp ELF changes.
+After that, the `regen_funcs` target (`cmake --build build --config Debug --target regen_funcs`) regenerates `RecompiledFuncs/`. Re-run it when `rogue_squadron.toml`, the symbols, or the decomp ELF changes.
+
+The build generates `src/main/state_table.inl` from `tools/state/state_model.toml` (`tools/state/gen_state_table.cpp`), so edit the TOML, not the `.inl`.
 
 | CMake option | Default | Purpose |
 | --- | --- | --- |
 | `N64RECOMP_EXE=path` | `N64Recomp` in the build dir (`Debug/` for Visual Studio) | Recompiler used by `regen_funcs` and the patches build |
-| `RS64_MULTIPLAYER=OFF` | ON | Leave online co-op out of the exe; it then comes from the `multiplayer-native` mod. Desktop releases build OFF; Android forces ON |
+| `RS64_MULTIPLAYER=OFF` | ON | Leave online co-op out of the exe; it then comes from the `multiplayer-native` mod. Desktop releases and Android build OFF |
 | `ROGUESQ_NO_ITER_DEBUG=ON` | OFF | Disable MSVC debug iterators across the whole build for faster Debug runs (Windows) |
 
 Debug builds compile in the D3D12 debug layer; turn it on at runtime with `ROGUESQ_D3D12_DEBUG=1` (`ROGUESQ_D3D12_GPUVAL=1` adds GPU-based validation).
@@ -158,7 +159,7 @@ Builds and can run on **Ubuntu 24.04 under WSL2** (GCC 13 / Ninja); native Linux
 Install the dependencies, generate the recompiled C (step 3), then configure with Ninja and build the game target:
 
 ```sh
-sudo apt install build-essential cmake ninja-build libsdl2-dev libvulkan-dev libgtk-3-dev python3
+sudo apt install build-essential cmake ninja-build libsdl2-dev libvulkan-dev libgtk-3-dev
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DN64RECOMP_EXE=build-tools/N64Recomp
 cmake --build build --target RogueSquadron64Recomp
 ```
@@ -310,6 +311,8 @@ Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Ad
 
 - Low Resolution mode works but affects how cutscenes are displayed with them appearing more wide than they probably should be.
 
+- Force picking a level + ship via argument or env. variable can result in the ship you specified having the wrong secondary because of what's actually selected in the hangar.. For example picking 'Assault on Kile II' and an 'Y-Wing' but in the menu you'd pick ANY level with ANY ship. That ship that was picked in the hangar will carry over that ship's secondary. In other words for this case the Y-Wing won't be equipped with bombs during 'Assault on Kile II'. Not a big problem given that this case is for testing purposes, but annyoing nonetheless.
+
 #### Game specific Issues
 
 - Some CPU performance hitching and slow down (~20fps) in spots. (although not as bad as the real n64 game) This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep.
@@ -319,12 +322,6 @@ Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Ad
 - Very slight cut off at the top of text rects **BUT** this also existed in the original game.
 
 - Terrain tile textures don't align perfectly and seem to have a slight cut off which is probably a game issue than a recomp. issue.
-
-#### Repo Specific Issues
-
-- CMakeLists needs to be cleaned up of all the python files (6 places where it's used) to reduce the amount of dependencies needed to produce a build.
-
-- Move patches from the base `rogue_squadron.toml` into a patches ELF so every toml hook and instruction patch gets rewritten as a clang-built C. Needed so mods don't interfere with each other. Right now mods have a risk of removing/exlcuding needed patches. Getting this correct will also mean having to potentially decompile functions and match them using pure ASM (some small spots in the code are pure ASM) or C.
 
 ---
 

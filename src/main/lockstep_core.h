@@ -72,7 +72,7 @@ constexpr size_t kRdramSize = 0x800000;
 // Per-player neighbour data moved to host RAM (tools/coop/coop_relocation.toml); original addresses, end-exclusive.
 struct MovedRange { uint32_t lo; uint32_t hi; uint32_t delta = 0; };
 constexpr uint32_t kRelocDelta = 0x00A00000u;
-// R4 (0x80138930, a per-view 4 x 0xF8 block) has its own delta so its index-1 entry clears camera node[1].
+// R4 (0x80138930, a per-view 4 x 0xF8 block) has its own delta so its index-1 entry clears camera node[1]. tools/mods/mod_datasyms.cmake repeats these ranges for the mods data symbols.
 constexpr MovedRange kMovedRanges[] = {{0x80138058u, 0x80138268u, 0x00A00000u}, {0x80138268u, 0x80138838u, 0x00A00000u}, {0x80138930u, 0x80138D10u, 0x00A20000u}, {0x80138E5Cu, 0x80139020u, 0x00A00000u}};
 constexpr size_t kRdramSpan = 0x01000000;
 constexpr uint8_t kRelocPoison = 0xA5;

@@ -7,12 +7,13 @@
 
     .set noreorder
     .set noat
-    .section .recomp_patch, "ax"
+    # Force patch: the base game patches updateTowCable (the co-op lui), and this copy carries that patch.
+    .section .recomp_force_patch, "ax"
 
 # updateTowCable (decomp: updateCinematicCameraStateMachine): lays segments behind the craft, sags and releases them.
-    .globl func_800AD418
-    .type func_800AD418, @function
-func_800AD418:
+    .globl updateCinematicCameraStateMachine
+    .type updateCinematicCameraStateMachine, @function
+updateCinematicCameraStateMachine:
     addiu       $sp, $sp, -0xF0
     sdc1        $f20, 0xD8($sp)
     mtc1        $a2, $f20
@@ -67,7 +68,7 @@ func_800AD418:
     lwc1        $f2, 0x8($s4)
     sub.s       $f0, $f0, $f2
     addiu       $a0, $sp, 0x10
-    jal         func_8001CF2C
+    jal         vec3Length
     swc1        $f0, 0x18($sp)
     mtc1        $zero, $f20
     mov.s       $f22, $f0
@@ -100,7 +101,7 @@ func_800AD418:
     swc1        $f4, 0x38($sp)
     swc1        $f0, 0x44($sp)
     swc1        $f2, 0x50($sp)
-    jal         func_80019548
+    jal         vec3Cross
     swc1        $f6, 0x5C($sp)
     jal         normalize_vector
     addiu       $a0, $sp, 0x90
@@ -112,7 +113,7 @@ func_800AD418:
     addiu       $a2, $sp, 0x90
     swc1        $f0, 0x30($sp)
     swc1        $f2, 0x3C($sp)
-    jal         func_80019548
+    jal         vec3Cross
     swc1        $f4, 0x48($sp)
     addiu       $a0, $sp, 0x60
     lui         $a1, 0x3A2A
@@ -124,11 +125,11 @@ func_800AD418:
     addu        $a2, $a1, $zero
     swc1        $f0, 0x34($sp)
     swc1        $f2, 0x40($sp)
-    jal         func_8001CB64
+    jal         initVec4TripletFromArgs
     swc1        $f4, 0x4C($sp)
     addiu       $a0, $sp, 0x30
     addiu       $a1, $sp, 0x60
-    jal         func_800191C4
+    jal         mat3x4Multiply
     addiu       $a2, $s2, 0x10
     lw          $v0, -0x4920($s1)
     addu        $v1, $v0, $zero
@@ -178,7 +179,7 @@ func_800AD418:
     lwc1        $f2, 0x8($s4)
     sub.s       $f0, $f0, $f2
     addiu       $a0, $sp, 0x10
-    jal         func_8001CF2C
+    jal         vec3Length
     swc1        $f0, 0x18($sp)
     mtc1        $zero, $f24
     mov.s       $f22, $f0
@@ -228,7 +229,7 @@ func_800AD418:
     swc1        $f0, 0x38($sp)
     swc1        $f2, 0x44($sp)
     swc1        $f4, 0x50($sp)
-    jal         func_80019548
+    jal         vec3Cross
     swc1        $f6, 0x5C($sp)
     jal         normalize_vector
     addiu       $a0, $sp, 0x90
@@ -240,7 +241,7 @@ func_800AD418:
     addiu       $a2, $sp, 0x90
     swc1        $f0, 0x30($sp)
     swc1        $f2, 0x3C($sp)
-    jal         func_80019548
+    jal         vec3Cross
     swc1        $f4, 0x48($sp)
     addiu       $a0, $sp, 0x60
     lui         $a1, 0x3A2A
@@ -252,11 +253,11 @@ func_800AD418:
     addu        $a2, $a1, $zero
     swc1        $f0, 0x34($sp)
     swc1        $f2, 0x40($sp)
-    jal         func_8001CB64
+    jal         initVec4TripletFromArgs
     swc1        $f4, 0x4C($sp)
     addiu       $a0, $sp, 0x30
     addiu       $a1, $sp, 0x60
-    jal         func_800191C4
+    jal         mat3x4Multiply
     addiu       $a2, $s1, 0x10
     lui         $at, 0x800A
     lwc1        $f0, 0x5400($at)
@@ -361,7 +362,7 @@ func_800AD418:
     lwc1        $f0, 0x8($v0)
     sub.s       $f2, $f2, $f0
     addiu       $a0, $sp, 0x10
-    jal         func_8001CF2C
+    jal         vec3Length
     swc1        $f2, 0x18($sp)
     mov.s       $f22, $f0
     c.lt.s      $f22, $f20
@@ -413,7 +414,7 @@ func_800AD418:
     nop
     addiu       $s3, $zero, 0x1
 .L_800ADA20:
-    jal         func_800AD380
+    jal         computeTrackedObjectWorldAnchor
     addu        $a0, $s5, $zero
     j           .L_800ADB4C
     addu        $s7, $zero, $zero
@@ -451,7 +452,7 @@ func_800AD418:
     add.s       $f0, $f0, $f4
     addu        $a3, $zero, $zero
     swc1        $f2, 0xC($s0)
-    jal         func_80067D90
+    jal         wrapAngleToCyclicRange
     swc1        $f0, 0x4($s0)
     lwc1        $f2, 0x4($s0)
     c.lt.s      $f0, $f2
@@ -484,7 +485,7 @@ func_800AD418:
     add.s       $f0, $f0, $f4
     addu        $a3, $zero, $zero
     swc1        $f2, 0x44($s5)
-    jal         func_80067D90
+    jal         wrapAngleToCyclicRange
     swc1        $f0, 0x4C($s5)
     lwc1        $f2, 0x44($s5)
     c.lt.s      $f0, $f2
@@ -578,7 +579,7 @@ func_800AD418:
     swc1        $f0, 0x38($sp)
     swc1        $f2, 0x44($sp)
     swc1        $f4, 0x50($sp)
-    jal         func_80019548
+    jal         vec3Cross
     swc1        $f6, 0x5C($sp)
     jal         normalize_vector
     addiu       $a0, $sp, 0x90
@@ -590,7 +591,7 @@ func_800AD418:
     addiu       $a2, $sp, 0x90
     swc1        $f0, 0x30($sp)
     swc1        $f2, 0x3C($sp)
-    jal         func_80019548
+    jal         vec3Cross
     swc1        $f4, 0x48($sp)
     addiu       $a0, $sp, 0x60
     lui         $a1, 0x3A2A
@@ -602,11 +603,11 @@ func_800AD418:
     addu        $a2, $a1, $zero
     swc1        $f0, 0x34($sp)
     swc1        $f2, 0x40($sp)
-    jal         func_8001CB64
+    jal         initVec4TripletFromArgs
     swc1        $f4, 0x4C($sp)
     addiu       $a0, $sp, 0x30
     addiu       $a1, $sp, 0x60
-    jal         func_800191C4
+    jal         mat3x4Multiply
     addiu       $a2, $s0, 0x10
 .L_800ADCFC:
     lbu         $v0, 0x2($s5)
@@ -635,12 +636,12 @@ func_800AD418:
     ldc1        $f20, 0xD8($sp)
     jr          $ra
     addiu       $sp, $sp, 0xF0
-    .size func_800AD418, . - func_800AD418
+    .size updateCinematicCameraStateMachine, . - updateCinematicCameraStateMachine
 
 # drawTowCable (decomp: submitCameraTrackedObjectToRender): submits the live segments newest to oldest.
-    .globl func_800ADD5C
-    .type func_800ADD5C, @function
-func_800ADD5C:
+    .globl submitCameraTrackedObjectToRender
+    .type submitCameraTrackedObjectToRender, @function
+submitCameraTrackedObjectToRender:
     lui         $v0, 0x8011
     lbu         $v1, -0x4918($v0)
     addiu       $sp, $sp, -0x90
@@ -695,7 +696,7 @@ func_800ADD5C:
     lwc1        $f0, 0x18($v0)
     sub.s       $f2, $f2, $f0
     addiu       $a0, $sp, 0x40
-    jal         func_8001CF2C
+    jal         vec3Length
     swc1        $f2, 0x48($sp)
     lui         $at, 0x800A
     lwc1        $f2, 0x5424($at)
@@ -733,17 +734,17 @@ func_800ADD5C:
     add.s       $f2, $f2, $f0
     lui         $a3, 0x3F80
     addu        $a2, $a1, $zero
-    jal         func_8001CB64
+    jal         initVec4TripletFromArgs
     swc1        $f2, 0x58($sp)
     addiu       $a0, $s0, 0x10
     addiu       $a1, $sp, 0x10
-    jal         func_800191C4
+    jal         mat3x4Multiply
     addiu       $a2, $s0, 0x68
     addiu       $a1, $s0, 0x40
     lw          $a0, 0x0($s4)
     lui         $a3, 0x3EA8
     ori         $a3, $a3, 0xF5C3
-    jal         func_80057C8C
+    jal         addNpcToVisibilityBucket
     addiu       $a2, $sp, 0x50
 .L_800ADEEC:
     lbu         $v0, 0x2($s2)
@@ -763,12 +764,12 @@ func_800ADD5C:
     ldc1        $f20, 0x78($sp)
     jr          $ra
     addiu       $sp, $sp, 0x90
-    .size func_800ADD5C, . - func_800ADD5C
+    .size submitCameraTrackedObjectToRender, . - submitCameraTrackedObjectToRender
 
 # loadTowCablePool (decomp: loadEffectModelInstancePool): allocates the segment ring and its cable meshes.
-    .globl func_800AE138
-    .type func_800AE138, @function
-func_800AE138:
+    .globl loadEffectModelInstancePool
+    .type loadEffectModelInstancePool, @function
+loadEffectModelInstancePool:
     addiu       $sp, $sp, -0x28
     ori         $a0, $zero, (SEGMENTS * 0xF8)
     addu        $a1, $zero, $zero
@@ -798,7 +799,7 @@ func_800AE138:
     lw          $a1, -0x4920($s3)
     addiu       $s1, $s1, 0x1
     addu        $a1, $a1, $s0
-    jal         func_80059294
+    jal         createMeshInstanceFromSource
     addiu       $a1, $a1, 0x40
     sltiu       $v0, $s1, SEGMENTS
     bne         $v0, $zero, .L_800AE198
@@ -812,7 +813,7 @@ func_800AE138:
     lui         $v0, 0x8011
     lw          $a0, -0x4920($v0)
     addu        $a3, $a1, $zero
-    jal         func_8005955C
+    jal         applyFlagsToMeshTreeOrList
     addiu       $a0, $a0, 0x40
 .L_800AE1E8:
     lw          $ra, 0x20($sp)
@@ -824,12 +825,12 @@ func_800AE138:
     sw          $zero, -0x48C8($v0)
     jr          $ra
     addiu       $sp, $sp, 0x28
-    .size func_800AE138, . - func_800AE138
+    .size loadEffectModelInstancePool, . - loadEffectModelInstancePool
 
 # freeTowCablePool (decomp: freeEffectModelInstancePool).
-    .globl func_800AE218
-    .type func_800AE218, @function
-func_800AE218:
+    .globl freeEffectModelInstancePool
+    .type freeEffectModelInstancePool, @function
+freeEffectModelInstancePool:
     addiu       $sp, $sp, -0x20
     sw          $s1, 0x14($sp)
     addu        $s1, $zero, $zero
@@ -842,7 +843,7 @@ func_800AE218:
     lw          $a0, -0x4920($s2)
     addiu       $s1, $s1, 0x1
     addu        $a0, $a0, $s0
-    jal         func_8005779C
+    jal         releaseMeshAsset
     addiu       $a0, $a0, 0x40
     sltiu       $v0, $s1, SEGMENTS
     bne         $v0, $zero, .L_800AE238
@@ -857,4 +858,4 @@ func_800AE218:
     lw          $s0, 0x10($sp)
     jr          $ra
     addiu       $sp, $sp, 0x20
-    .size func_800AE218, . - func_800AE218
+    .size freeEffectModelInstancePool, . - freeEffectModelInstancePool

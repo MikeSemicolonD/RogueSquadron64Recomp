@@ -84,7 +84,7 @@ events.onexec(0x8000C07C, function () {
 });
 // Sky/horizon handler DRAW branch (cinematicSplineWalkerNpcHandler a1==4, 0x8005C378). Mirrors the
 // recomp probe: dump a golden at draw #200 (Tatooine demo, ~77s) so we can compare hardware's sky
-// modelview (0x80700040) against ours. See plans/skybox-not-rendering-plan.md.
+// modelview (0x80700040) against ours.
 var sky = 0;
 events.onexec(0x8005C378, function () {
     sky++;

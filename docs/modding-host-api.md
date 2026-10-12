@@ -133,6 +133,24 @@ These ids have no `rogue_squadron.toml` site: the host runs them from inside the
 
 `RS64_HOOK_COUNT` is a sentinel that grows as ids are added (32 in v1, 34 in v2, 36 in v3); mods must not rely on its value.
 
+### Events for `.nrm` mods
+
+Every hook with a `rogue_squadron.toml` site is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [mods/sdk/rs64_api.h](../mods/sdk/rs64_api.h). The host-dispatched ids above have no event.
+
+- Native handlers run first. If one returns `RS64_HOOK_RETURN`, the event does not fire.
+- The callback gets the hook site's registers, so `a0`-`a3` arrive as its arguments. librecomp restores every register after each callback, so a callback changes game state only through memory.
+- At the function-entry sites (`menu_frame`, `mission_end`, `transition_request`, `objective_count`, `result_fail`, `result_success`, `trigger_effect`) a callback can call `rs64_event_return(r2)`: the game function returns at once with `v0 = r2`, as a native `RS64_HOOK_RETURN` would. Everywhere else the call is ignored, because returning mid-function would skip its epilogue.
+- [tests/mods/event-probe/](../tests/mods/event-probe/) is a working example (counts frames, returns once from `menu_frame`, calls the exports below).
+
+`rs64_api.h` also imports these base exports:
+
+| Export | Returns |
+|---|---|
+| `float rs64_draw_dist(void)` | The draw-distance multiplier in effect (1.0 = the game's own; cutscenes may keep 1.0) |
+| `float rs64_terrain_dist(void)` | The terrain reach and fog multiplier, which follows the draw distance capped at 2.5 |
+| `unsigned rs64_tgrid_base(unsigned original)` | Where a terrain-grid table now lives (host RAM, doubled strides); other addresses pass through |
+| `unsigned rs64_relocated(unsigned address)` | Where a per-player field moved for co-op (ranges R1-R4); other addresses pass through |
+
 ## Menu actions, conditions, key and quit handlers
 
 - `add_action("name", fn, user)` registers `void fn(void* user)`, run by a menu `action` or `leave_action` of that name in `roguesq_menu.json`.
@@ -175,6 +193,7 @@ The host API covers behavior added at the sites above. These stay base-game code
 
 - Per-player data relocation (the four ranges moved into host RAM, see AGENTS.md "Per-player data relocation"). Code that touches those fields from a native mod must account for the moved addresses.
 - Every `[[patches.hook]]` site in `rogue_squadron.toml`. Each is a fixed call into `rs64_hook`; mods choose handlers for the ids above, they cannot add new sites.
+- The functions those patches touch. `.nrm` mods can `RECOMP_HOOK` them (the patches are replayed) but can't `RECOMP_PATCH` them; see "Functions the base game patches" in [adding-menus-and-buttons.md](adding-menus-and-buttons.md).
 
 ## Worked example: native-demo
 

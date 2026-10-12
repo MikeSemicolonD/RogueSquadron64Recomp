@@ -19,6 +19,10 @@ set_target_properties(multiplayer_native PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>"
     # Keeps the PDB (and the import lib above) out of the staged folder.
     PDB_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>")
+# Android packs it into the APK's native-library directory, which only takes lib*.so; librecomp falls back to that name there (mods.cpp).
+if (ANDROID)
+    set_target_properties(multiplayer_native PROPERTIES PREFIX "lib")
+endif()
 target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src/main
@@ -40,7 +44,7 @@ add_custom_command(TARGET multiplayer_native POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/mod.json ${MP_OUT}/mod.json
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/mods/multiplayer/roguesq_menu.json ${MP_OUT}/roguesq_menu.json)
 # Built without the exe relinking (an edit to a multiplayer source only): refresh the staged copy and, for Release on Windows, the dist copy too.
-if (NOT RS64_MULTIPLAYER)
+if (NOT RS64_MULTIPLAYER AND NOT ANDROID)
     add_custom_command(TARGET multiplayer_native POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${MP_OUT} $<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods/multiplayer-native)
     if (WIN32)

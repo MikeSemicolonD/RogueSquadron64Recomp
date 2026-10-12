@@ -13,4 +13,4 @@ enabled_by_default = false
 elf_path = "build/mod.elf"
 mod_filename = "invincibility"
 func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
-data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.mods.toml" ]

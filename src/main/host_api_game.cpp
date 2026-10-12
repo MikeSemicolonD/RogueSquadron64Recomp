@@ -2,20 +2,28 @@
 #include "recomp.h"
 #include "librecomp/addresses.hpp"
 #include "librecomp/mods.hpp"
+#include "librecomp/overlays.hpp"
 #include "game_state.h"
+#include "lockstep_core.h"
 #include "mips_call.h"
 #ifdef _WIN32
 #include "SDL.h"
 #else
 #include "SDL2/SDL.h"
 #endif
+#include <cctype>
 #include <cstdio>
+#include <cstring>
 #include <initializer_list>
 #include <string>
+#include <vector>
 
 extern "C" void rs64_register_builtin_hooks();
 extern "C" void osYieldThread_recomp(uint8_t*, recomp_context*);
 extern "C" void rs64_menu_request_quit(void);
+extern "C" float rs64_draw_dist(void);
+extern "C" float rs64_terrain_dist(void);
+extern "C" uint32_t rs64_tgrid_base(uint32_t original);
 
 namespace {
 void svc_yield(uint8_t* rdram, void* c) {
@@ -126,12 +134,91 @@ void init_once(uint8_t* rdram) {
 }
 }
 
-// Built-ins then native mods register on the first hook call (thread-safe static init), then the registry is sealed so dispatch reads it without locks.
+// .nrm mods subscribe to a toml hook site with RECOMP_CALLBACK("*", rs64_on_<hook>). librecomp restores ctx after each callback, so a callback reaches registers only through rs64_event_return.
+namespace {
+size_t s_event_index[RS64_HOOK_COUNT];
+bool s_events_registered = false;
+bool s_event_return = false;
+uint32_t s_event_r2 = 0;
+
+// Only function-entry sites may return: a mid-function return skips the epilogue and leaves sp and the saved registers wrong for the caller.
+bool hook_site_is_entry(uint32_t hook) {
+    switch (hook) {
+    case RS64_HOOK_MENU_FRAME:
+    case RS64_HOOK_MISSION_END:
+    case RS64_HOOK_TRANSITION_REQUEST:
+    case RS64_HOOK_OBJECTIVE_COUNT:
+    case RS64_HOOK_RESULT_FAIL:
+    case RS64_HOOK_RESULT_SUCCESS:
+    case RS64_HOOK_TRIGGER_EFFECT:
+        return true;
+    default:
+        return false;
+    }
+}
+
+std::string event_name(uint32_t hook) {
+    std::string name = rs64::host::hook_name(hook) + std::strlen("RS64_HOOK_");
+    for (char& c : name) c = (char)std::tolower((unsigned char)c);
+    return "rs64_on_" + name;
+}
+
+void rs64_event_return(uint8_t*, recomp_context* ctx) {
+    s_event_r2 = (uint32_t)ctx->r4;
+    s_event_return = true;
+}
+
+// Base exports for .nrm mods (RECOMP_IMPORT("*", ...)): MIPS calling convention, args in a0, results in v0 / f0.
+void rs64_export_draw_dist(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64_draw_dist(); }
+void rs64_export_terrain_dist(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64_terrain_dist(); }
+void rs64_export_tgrid_base(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64_tgrid_base((uint32_t)ctx->r4); }
+void rs64_export_relocated(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64::ls::relocated((uint32_t)ctx->r4); }
+
+int trigger_hook_event(uint32_t hook, uint8_t* rdram, recomp_context* ctx) {
+    const bool outer_return = s_event_return;
+    const uint32_t outer_r2 = s_event_r2;
+    s_event_return = false;
+    recomp_trigger_event(rdram, ctx, (uint32_t)s_event_index[hook]);
+    const bool requested = s_event_return && hook_site_is_entry(hook);
+    const uint32_t r2 = s_event_r2;
+    s_event_return = outer_return;
+    s_event_r2 = outer_r2;
+    if (!requested) return RS64_HOOK_CONTINUE;
+    ctx->r2 = (int32_t)r2;
+    return RS64_HOOK_RETURN;
+}
+}
+
+// Must run before librecomp loads mods, or their callbacks fail to resolve. librecomp numbers base events per call, so the patches ELF's events come in here too.
+void rs64_register_mod_events(const char* const* patch_events) {
+    static std::vector<std::string> names;
+    static std::vector<const char*> list;
+    for (size_t i = 0; patch_events && patch_events[i]; ++i) list.push_back(patch_events[i]);
+    for (uint32_t h = 1; h < RS64_HOOK_COUNT; ++h) {
+        if (rs64::host::hook_has_toml_site(h)) names.push_back(event_name(h));
+    }
+    for (const std::string& n : names) list.push_back(n.c_str());
+    list.push_back(nullptr);
+    recomp::overlays::register_base_events(list.data());
+    for (uint32_t h = 0; h < RS64_HOOK_COUNT; ++h) {
+        s_event_index[h] = rs64::host::hook_has_toml_site(h) ? recomp::overlays::get_base_event_index(event_name(h)) : (size_t)-1;
+    }
+    recomp::overlays::register_base_export("rs64_event_return", rs64_event_return);
+    recomp::overlays::register_base_export("rs64_draw_dist", rs64_export_draw_dist);
+    recomp::overlays::register_base_export("rs64_terrain_dist", rs64_export_terrain_dist);
+    recomp::overlays::register_base_export("rs64_tgrid_base", rs64_export_tgrid_base);
+    recomp::overlays::register_base_export("rs64_relocated", rs64_export_relocated);
+    s_events_registered = true;
+}
+
+// Built-ins then native mods register on the first hook call (thread-safe static init), then the registry is sealed so dispatch reads it without locks. Native handlers run first; a RETURN from one skips the mod events.
 extern "C" int rs64_hook(uint32_t hook, uint8_t* rdram, recomp_context* ctx) {
     static const bool s_ready = [rdram] {
         init_once(rdram);
         return true;
     }();
     (void)s_ready;
-    return rs64::host::dispatch(hook, rdram, ctx);
+    const int r = rs64::host::dispatch(hook, rdram, ctx);
+    if (r == RS64_HOOK_RETURN || !ctx || !s_events_registered || hook >= RS64_HOOK_COUNT || s_event_index[hook] == (size_t)-1) return r;
+    return trigger_hook_event(hook, rdram, ctx);
 }
