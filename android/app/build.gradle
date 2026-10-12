@@ -2,6 +2,15 @@ plugins {
     id 'com.android.application'
 }
 
+base { archivesName = 'RogueSquadron64Recomp' }
+
+// rs64Version (gradle.properties) is major.minor.patch, each part 0-99; versionCode packs it so a higher version always has a higher code.
+def rs64VersionParts = rs64Version.tokenize('.').collect { it.toInteger() }
+if (rs64VersionParts.size() != 3 || rs64VersionParts.any { it < 0 || it > 99 }) {
+    throw new GradleException("rs64Version in gradle.properties must be major.minor.patch with each part 0-99, got '${rs64Version}'")
+}
+def rs64VersionCode = rs64VersionParts[0] * 10000 + rs64VersionParts[1] * 100 + rs64VersionParts[2]
+
 // SDL's Java glue (org.libsdl.app.*) must match the SDL2 version CMakeLists.txt builds for Android.
 def sdlVersion = '2.32.10'
 def sdlArchive = layout.buildDirectory.file("sdl/SDL2-${sdlVersion}.tar.gz")
@@ -9,6 +18,15 @@ def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
 
 // Host-built file_to_c from the Windows build; RT64 needs it to embed its SPIR-V shaders when cross-compiling.
 def hostFileToC = rootProject.file("../build/Debug/file_to_c.exe").absolutePath
+// Host-built N64Recomp from the Windows build; the patches ELF is recompiled with it (MIPS GCC comes from MIPS_TOOLCHAIN_DIR's default).
+def hostN64Recomp = rootProject.file("../build/Debug/N64Recomp.exe").absolutePath
+
+// Task actions must not touch `project` at execution time (Gradle 9), so file ops come from injected services.
+interface FileOps {
+    @javax.inject.Inject FileSystemOperations getFs()
+    @javax.inject.Inject ArchiveOperations getArchives()
+}
+def fileOps = objects.newInstance(FileOps)
 
 tasks.register('fetchSdlJava') {
     outputs.dir(sdlJavaDir)
@@ -18,8 +36,8 @@ tasks.register('fetchSdlJava') {
             archive.parentFile.mkdirs()
             new URL("https://github.com/libsdl-org/SDL/releases/download/release-${sdlVersion}/SDL2-${sdlVersion}.tar.gz").withInputStream { i -> archive.withOutputStream { it << i } }
         }
-        copy {
-            from(tarTree(resources.gzip(archive))) {
+        fileOps.fs.copy {
+            from(fileOps.archives.tarTree(fileOps.archives.gzip(archive))) {
                 include "SDL2-${sdlVersion}/android-project/app/src/main/java/org/libsdl/app/*.java"
                 eachFile { it.path = "org/libsdl/app/${it.name}" }
                 includeEmptyDirs = false
@@ -29,30 +47,39 @@ tasks.register('fetchSdlJava') {
     }
 }
 
-// Mods bundled into the APK: the "android" list in mods/platforms.json (folders or built .nrm files).
-// android_host.cpp installs them into <files>/mods on launch from assets/mods/index.txt.
-def modsRoot = rootProject.file('../mods')
-def androidMods = new groovy.json.JsonSlurper().parse(new File(modsRoot, 'platforms.json')).android
-def modsAssetsDir = layout.buildDirectory.dir("generated/mod-assets")
+// Mods bundled into the APK: the "android" list in mods/platforms.json (folders or built .nrm files). android_host.cpp installs them into <files>/mods on launch from assets/mods/index.txt.
+// A mod the game's CMake builds (a native mod) comes from that build's finished folder, as desktop's tools/mods/stage_mods.cmake does; its .so is already packed with the game's libraries, so it is skipped.
+abstract class BundleMods extends DefaultTask {
+    @Internal abstract DirectoryProperty getModsRoot()
+    @Internal abstract DirectoryProperty getBuiltMods()
+    @OutputDirectory abstract DirectoryProperty getOutputDir()
 
-tasks.register('bundleMods') {
-    inputs.file(new File(modsRoot, 'platforms.json'))
-    inputs.files(androidMods.collect { new File(modsRoot, it) })
-    outputs.dir(modsAssetsDir)
-    doLast {
-        def out = modsAssetsDir.get().asFile
-        project.delete(out)
+    @TaskAction
+    void bundle() {
+        def root = modsRoot.get().asFile
+        def builtRoot = builtMods.get().asFile
+        def out = outputDir.get().asFile
+        out.deleteDir()
         def lines = []
-        androidMods.each { name ->
-            def src = new File(modsRoot, name)
+        def put = { File f, String rel ->
+            def dst = new File(out, 'mods/' + rel)
+            dst.parentFile.mkdirs()
+            java.nio.file.Files.copy(f.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            lines << rel
+        }
+        new groovy.json.JsonSlurper().parse(new File(root, 'platforms.json')).android.each { String name ->
+            File built = null
+            if (builtRoot.isDirectory()) {
+                builtRoot.eachDir { cfg -> if (new File(cfg, name).isDirectory()) built = new File(cfg, name) }
+            }
+            def src = built ?: new File(root, name)
             if (src.isFile()) {
-                lines << name
-                project.copy { from src; into new File(out, 'mods') }
+                put(src, name)
             } else if (src.isDirectory()) {
                 src.eachFileRecurse(groovy.io.FileType.FILES) { f ->
-                    def rel = name + '/' + src.toPath().relativize(f.toPath()).toString().replace('\\', '/')
-                    lines << rel
-                    project.copy { from f; into new File(out, 'mods/' + new File(rel).parent) }
+                    if (built == null || !f.name.endsWith('.so')) {
+                        put(f, name + '/' + src.toPath().relativize(f.toPath()).toString().replace('\\', '/'))
+                    }
                 }
             } else {
                 throw new GradleException("mods/platforms.json lists '${name}' for android, but mods/${name} does not exist (code mods must be built first)")
@@ -62,24 +89,39 @@ tasks.register('bundleMods') {
     }
 }
 
+// One per variant, after that variant's native build (which assembles the native mods' folders under build/built_mods/<variant>).
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def suffix = variant.name.capitalize()
+        def bundle = tasks.register("bundleMods${suffix}", BundleMods) {
+            modsRoot.set(rootProject.file('../mods'))
+            builtMods.set(layout.buildDirectory.dir("built_mods/${variant.name}"))
+            dependsOn "externalNativeBuild${suffix}"
+            doNotTrackState('Reads mods/ and the native build output; cheap to rerun')
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(bundle, { it.outputDir })
+    }
+}
+
 android {
-    namespace 'com.rs64recomp.app'
+    namespace = 'com.rs64recomp.app'
     compileSdk 34
-    ndkVersion '29.0.14206865'
+    ndkVersion = '29.0.14206865'
 
     defaultConfig {
         applicationId 'com.rs64recomp.app'
         minSdk 26
         targetSdk 34
-        versionCode 1
-        versionName '0.1'
+        versionCode rs64VersionCode
+        versionName rs64Version
         ndk {
             abiFilters 'arm64-v8a'
         }
         externalNativeBuild {
             cmake {
-                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}"
-                targets 'RogueSquadron64Recomp', 'SDL2'
+                // Multiplayer ships as the multiplayer-native mod, as on desktop: libmultiplayer_native.so is packed with the game's libraries.
+                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", '-DRS64_MULTIPLAYER=OFF'
+                targets 'RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'
             }
         }
     }
@@ -93,20 +135,31 @@ android {
     sourceSets {
         main {
             java.srcDirs += sdlJavaDir
-            assets.srcDirs += modsAssetsDir
         }
     }
 
     buildTypes {
+        debug {
+            externalNativeBuild {
+                cmake {
+                    arguments "-DRS64_BUILT_MODS_DIR=${layout.buildDirectory.dir('built_mods/debug').get().asFile}"
+                }
+            }
+        }
         release {
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig = signingConfigs.debug
+            externalNativeBuild {
+                cmake {
+                    arguments "-DRS64_BUILT_MODS_DIR=${layout.buildDirectory.dir('built_mods/release').get().asFile}"
+                }
+            }
         }
     }
 
-    packagingOptions {
+    packaging {
         jniLibs {
-            useLegacyPackaging true
+            useLegacyPackaging = true
         }
     }
 
@@ -117,5 +170,5 @@ android {
 }
 
 tasks.named('preBuild') {
-    dependsOn 'fetchSdlJava', 'bundleMods'
+    dependsOn 'fetchSdlJava'
 }

@@ -100,6 +100,8 @@ static inline uint64_t GetTickCount64() {
 // Forward declarations
 // ---------------------------------------------------------------------------
 void rs64_register_overlays();
+const char* const* rs64_register_patches();
+void rs64_register_mod_events(const char* const* patch_events);
 extern "C" void recomp_entrypoint(uint8_t* rdram, recomp_context* ctx);
 
 // Big-endian RDRAM accessors (RDRAM is host-LE-stored; XOR-3 swizzles byte order).
@@ -3426,6 +3428,7 @@ int main(int argc, char* argv[]) {
 #endif
 
     rs64_register_overlays();
+    rs64_register_mod_events(rs64_register_patches());
 
     // Use the working directory as the config/data path (portable mode).
     recomp::register_config_path(std::filesystem::current_path());

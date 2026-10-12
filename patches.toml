@@ -1,39 +1,17 @@
-# Recompiler config for the patches ELF. The patches/Makefile cross-compiles
-# our hand-written C in patches/*.c down to MIPS and links it as
-# patches/patches.elf. This config tells N64Recomp to recompile that ELF
-# back to C so it can be compiled into the main binary; symbols in the
-# output override the same names in the auto-generated funcs_*.c.
-#
-# Pattern lifted from Zelda64Recompiled/patches.toml.
-
+# N64Recomp config for the patches ELF that CMakeLists.txt builds from patches/src (paths are relative to this file).
 [input]
-# Paths are relative to the location of this file.
 elf_path = "patches/patches.elf"
 output_func_path = "RecompiledPatches"
 single_file_output = true
-
-# Allow absolute symbols (the 0x8FXXXXXX runtime-stub pattern in syms.ld) to
-# be used as jump targets — N64Recomp emits direct host-call sequences for these.
-use_absolute_symbols = true
-
-# Tell the recompiler to write the patched binary itself instead of relying on
-# objcopy. Lets it patch MIPS32 relocs that objcopy would mangle.
 output_binary_path = "patches/patches.bin"
-
-# clang produces many unpaired LO16s in -mno-abicalls mode. Suppress noise.
+use_absolute_symbols = true
 unpaired_lo16_warnings = false
-
-# Allow patches to export functions/events for runtime hookup.
 allow_exports = true
-
-# Strict mode validates that every patched symbol name actually exists in the
-# game's function table. Generated 2026-05-08 via:
-#   N64Recomp.exe rogue_squadron.toml --dump-context
-# The syms files are committed under syms/ so reproducing them is just
-# reproducing the dump command.
+# A patch naming a function that doesn't exist (renamed, typo) fails the build.
 strict_patch_mode = true
 
 func_reference_syms_file = "syms/rogue_squadron.syms.toml"
+# The mods variant: patches run in the relocated game, so they see the co-op fields at their host RAM addresses.
 data_reference_syms_files = [
-    "syms/rogue_squadron.datasyms.toml",
+    "syms/rogue_squadron.datasyms.mods.toml",
 ]

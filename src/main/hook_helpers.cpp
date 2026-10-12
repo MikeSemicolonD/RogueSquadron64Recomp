@@ -328,32 +328,6 @@ extern "C" uint32_t rs64_format_reply_slot(uint8_t* rdram, recomp_context* ctx, 
 
 // ---- NPC health guard ----
 
-static inline int32_t& rd_w(uint8_t* rdram, uint32_t addr) {
-    return *reinterpret_cast<int32_t*>(rdram + (addr - 0x80000000u));
-}
-
-// Array health is base[npcHealthTableIndex]; a torn-down NPC leaves base garbage, so the slot must be in RDRAM or the co-op imposter's record (0x80B40000).
-extern "C" int rs64_npc_health_slot_ok(uint8_t* rdram, uint32_t base) {
-    const uint32_t addr = base + (static_cast<uint32_t>(rd_w(rdram, 0x80137CE4u)) << 2);
-    return ((addr & 0xE0000000u) == 0x80000000u && (addr & 0x1FFFFFFFu) < 0x800000u) || (addr >= 0x80B40000u && addr < 0x80B40100u);
-}
-
-// setNpcHealth with an unusable slot: the game's stores with the slot value read as 0.
-extern "C" void rs64_set_npc_health_no_slot(uint8_t* rdram, recomp_context* ctx) {
-    const uint32_t npc = static_cast<uint32_t>(ctx->r4), info = static_cast<uint32_t>(ctx->r6);
-    if (*(rdram + ((npc + 0x1A7u) ^ 3u) - 0x80000000u) == 0) {
-        rd_w(rdram, npc + 0x190u) = static_cast<int32_t>(ctx->r5);
-        if (static_cast<uint32_t>(rd_w(rdram, info + 0x54u)) == 0x80000000u) {
-            rd_w(rdram, info + 0x54u) = 0;
-        }
-        rd_w(rdram, npc + 0x194u) = rd_w(rdram, info + 0x54u);
-    } else {
-        rd_w(rdram, npc + 0x190u) = 0;
-        rd_w(rdram, npc + 0x194u) = 0;
-    }
-    ctx->r2 = 0;
-}
-
 // ---- Mode-change blanking ----
 
 // RT64's present queue presents black while the VI shows this CPU-zeroed buffer. The game has drained every frame before the clear, so the last workload id is stable here.

@@ -13,7 +13,7 @@
 namespace rs64::rumble {
 namespace {
 
-// Player 0 craft record (gPlayers + 4) and the game's rumble slots; see plans/2026-09-26-hotas-support-plan.md.
+// Player 0 craft record (gPlayers + 4) and the game's rumble slots.
 constexpr uint32_t CRAFT            = 0x80137DBC;
 constexpr uint32_t CRAFT_HEALTH     = CRAFT + 0xC0;   // f32
 constexpr uint32_t CRAFT_MAX_HEALTH = CRAFT + 0xC4;   // f32

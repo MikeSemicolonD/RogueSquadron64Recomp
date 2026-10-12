@@ -10,3 +10,6 @@
 [submodule "lib/miniupnp"]
 	path = lib/miniupnp
 	url = https://github.com/miniupnp/miniupnp.git
+[submodule "syms"]
+	path = syms
+	url = https://github.com/MikeSemicolonD/RogueSquadron64RecompSyms.git

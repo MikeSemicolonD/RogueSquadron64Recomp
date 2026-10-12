@@ -1,0 +1,16 @@
+[manifest]
+id = "conflict_probe_hook_patched"
+version = "1.0.0"
+display_name = "Conflict Probe (hook-patched)"
+description = "Test-only mod for the base-patch conflict check."
+short_description = "Test-only."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+enabled_by_default = true
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "conflict_probe_hook_patched"
+func_reference_syms_file = "../../../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../../../syms/rogue_squadron.datasyms.mods.toml" ]

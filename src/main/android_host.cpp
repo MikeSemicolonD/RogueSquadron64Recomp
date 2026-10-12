@@ -76,6 +76,34 @@ namespace rs64::android {
         }
     }
 
+    // Deletes mods an earlier APK bundled and this one doesn't (recorded in mods/.bundled), so a dropped mod doesn't linger; the player's own mods were never bundled and stay.
+    // Installs from before the record existed bundled the multiplayer menu mod, which multiplayer-native replaced.
+    static void remove_unbundled_mods(const std::filesystem::path& root, const std::vector<std::string>& bundled) {
+        const std::filesystem::path record = root / ".bundled";
+        std::vector<std::string> previous;
+        std::ifstream in(record);
+        if (in) {
+            for (std::string line; std::getline(in, line);) {
+                if (!line.empty()) previous.push_back(line);
+            }
+        } else {
+            previous.push_back("multiplayer");
+        }
+        in.close();
+        for (const std::string& name : previous) {
+            if (std::find(bundled.begin(), bundled.end(), name) == bundled.end()) {
+                std::error_code ec;
+                if (std::filesystem::remove_all(root / name, ec) > 0) {
+                    fprintf(stderr, "[mods] removed %s: no longer bundled\n", name.c_str());
+                }
+            }
+        }
+        std::ofstream out(record, std::ios::binary);
+        for (const std::string& name : bundled) {
+            out << name << '\n';
+        }
+    }
+
     void install_bundled_mods() {
         std::string index;
         if (!read_asset("mods/index.txt", &index)) {
@@ -85,6 +113,7 @@ namespace rs64::android {
         const std::filesystem::path root = data_dir() / "mods";
         size_t start = 0;
         int count = 0;
+        std::vector<std::string> bundled;
         while (start < index.size()) {
             size_t end = index.find('\n', start);
             if (end == std::string::npos) {
@@ -96,12 +125,17 @@ namespace rs64::android {
             if (rel.empty() || !read_asset("mods/" + rel, &data)) {
                 continue;
             }
+            const std::string top = rel.substr(0, rel.find('/'));
+            if (std::find(bundled.begin(), bundled.end(), top) == bundled.end()) {
+                bundled.push_back(top);
+            }
             const std::filesystem::path dst = root / rel;
             std::error_code ec;
             std::filesystem::create_directories(dst.parent_path(), ec);
             std::ofstream(dst, std::ios::binary) << data;
             ++count;
         }
+        remove_unbundled_mods(root, bundled);
         fprintf(stderr, "[mods] installed %d bundled mod file(s) into %s\n", count, root.string().c_str());
     }
 

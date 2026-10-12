@@ -213,8 +213,16 @@
             ],
             "group": "build",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
             "dependsOn": "Configure (Linux/WSL)",
             "dependsOrder": "sequence",
@@ -244,8 +252,16 @@
             ],
             "group": "build",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
             "dependsOn": "Configure (Linux/WSL, Release)",
             "dependsOrder": "sequence",
@@ -262,8 +278,16 @@
             ],
             "group": "test",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
             "detail": "Builds and runs rs64_unit_tests in the selected WSL distro's Linux build tree (unit tests + style checker)."
         },
@@ -278,8 +302,16 @@
             ],
             "group": "test",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
             "detail": "Builds and runs one EXCLUDE_FROM_ALL test in the WSL Linux build tree, including the POSIX-only fault_guard_test."
         },
@@ -309,8 +341,16 @@
             ],
             "group": "build",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
             "detail": "Compile-only macOS cross-build via osxcross (~/osxcross/target). Builds host tools and SDL2 on first run, then configures + builds into ~/rs64-build-macos-<arch> (Release: ~/rs64-build-macos-<arch>-release). Metal shaders are embedded as MSL source (no xcrun off-Mac), so the binary links but cannot render."
         },
@@ -338,15 +378,23 @@
             },
             "group": "build",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
-            "detail": "Gradle + NDK arm64 build of libmain.so/libSDL2.so into android/app/build/outputs/apk/debug/app-debug.apk. Needs a prior Windows Debug build (generated RecompiledFuncs/ucode/state table + build/Debug/file_to_c.exe); CMake stops with a clear error if any are missing."
+            "detail": "Gradle + NDK arm64 build of libmain.so/libSDL2.so into android/app/build/outputs/apk/debug/RogueSquadron64Recomp-debug.apk. Needs a prior Windows Debug build (generated RecompiledFuncs/ucode/state table + build/Debug/file_to_c.exe); CMake stops with a clear error if any are missing."
         },
         {
             "label": "Install + Run (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/debug/app-debug.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
+            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/debug/RogueSquadron64Recomp-debug.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -368,15 +416,23 @@
             },
             "group": "build",
             "problemMatcher": {
-                "base": "$gcc",
-                "fileLocation": ["autoDetect", "${workspaceFolder}"]
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
             },
             "detail": "Optimized native build (the Debug APK is -O0 and stutters). Signed with the debug key, so it installs over the Debug APK and keeps the pushed ROM."
         },
         {
             "label": "Install + Run (Android, Release)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/app-release.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
+            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -390,7 +446,7 @@
         {
             "label": "Install (Android, Release)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/app-release.apk",
+            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -404,7 +460,7 @@
         {
             "label": "Build + Install over USB (Android, Release)",
             "type": "shell",
-            "command": "$adb = '${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe'; if ((& $adb -d get-state 2>$null) -ne 'device') { Write-Host 'No USB device found: plug the phone in, enable USB debugging, and accept the RSA prompt.'; exit 1 }; & $adb -d install -r app/build/outputs/apk/release/app-release.apk; if (-not $?) { exit 1 }; & $adb -d shell am start -n com.rs64recomp.app/.MainActivity",
+            "command": "$adb = '${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe'; if ((& $adb -d get-state 2>$null) -ne 'device') { Write-Host 'No USB device found: plug the phone in, enable USB debugging, and accept the RSA prompt.'; exit 1 }; & $adb -d install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if (-not $?) { exit 1 }; & $adb -d shell am start -n com.rs64recomp.app/.MainActivity",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }

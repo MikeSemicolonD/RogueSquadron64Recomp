@@ -1,6 +1,5 @@
 // State-gated BOOT_TARGET navigation sequencer: drives the game's own menus to a
 // target (level / cutscene / demo) instead of poking state-machine fields.
-// See plans/2026-09-22-boot-target-nav-engine-design.md.
 #pragma once
 #include <cstdint>
 

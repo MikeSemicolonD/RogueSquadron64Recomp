@@ -233,7 +233,8 @@ priority 122), which refills the output buffer on each AI event.
 | `loadSndFiles` (0x800663B0) | Loads the SND files (pool/proj/sdir); the sample bank stays on the cartridge |
 | `parseSndFiles` (0x80097518) | Parses SND file sections |
 | `tickAudioSequencerFrame` (0x8008D960) | Per-frame: computes time delta + `tickAllAudioChannels` (0x8008C9AC) → `tickAudioChannel` |
-| `tickAudioChannel` | 81-entry fn-ptr dispatch; drives the active music/SFX channels (`D_8013D880`) |
+| `tickAllAudioChannels` (0x8008C9AC) | Per tick over up to 32 channels (`D_8013D880`, stride 0x17C): LFOs, sweeps, controllers, then pitch/volume/pan/span/reverb into voice slot = channel index via `musyxSetVoicePitchBend` / `setVoiceModulationParams` ([musyx-voice-mixing.md](musyx-voice-mixing.md)) |
+| `tickAudioChannel` | 81-entry fn-ptr dispatch; SoundMacro interpreter, only writes channel fields |
 | `musyxMixActiveVoices` (0x80090E04) | Per-frame DSP cmd builder: iterates the 20-slot voice table `D_80149710`, calls the per-voice mixer |
 | `musyxRenderVoiceSamples` (0x8008FFAC) | Per-voice mixer (pitch/sample-pos, emits DSP descriptors, queues cartridge sample DMAs) |
 | `musyxKeyOnVoice` (0x80090A3C) | Synth voice key-on; un-stubbed by default so music voices flow |
@@ -500,7 +501,7 @@ The host never writes these bytes in the default mode (the old
    text_size    = 0xF80          # only 0xF80 bytes load to IMEM 0x80..0xFFF
    text_address = 0x04001080     # synth text loads to IMEM 0x80
    ```
-   Regenerate with `RSPRecomp rsp/musyx_rsp.toml`, then `python tools/fixup_factor5_ucode.py build/factor5_ucode/musyx_audio_recompiled.c`, then rebuild. The synth then DMAs sample waveforms from the bank and the WAV output is dynamic (music and SFX).
+   Regenerate with `RSPRecomp rsp/musyx_rsp.toml`, then rebuild (the build applies `tools/fixup_factor5_ucode.cpp`). The synth then DMAs sample waveforms from the bank and the WAV output is dynamic (music and SFX).
 
 ### Host dispatch & flow
 
@@ -643,16 +644,14 @@ intended content.
 
 After renaming a symbol (`llvm-objcopy --redefine-sym`):
 
-1. **Regen recompiled C** (needs the decomp ELF at `../rogue_squadron64/build/roguesquadron.elf`; rebuilds `N64RecompCLI` first and runs `tools/coop/gen_relocation.py --verify`):
+1. **Regen recompiled C** (needs the decomp ELF at `../rogue_squadron64/build/roguesquadron.elf`; rebuilds `N64RecompCLI` first):
    ```
    cmake --build build --config Debug --target regen_funcs
    ```
-2. **Regen audio ucode** (only if a config under `rsp/` changed):
+2. **Regen audio ucode** (only if a config under `rsp/` changed; the build applies the fixup):
    ```
    ./build/Debug/RSPRecomp.exe rsp/musyx_rsp.toml
    ./build/Debug/RSPRecomp.exe rsp/factor5_boot_rsp.toml
-   python tools/fixup_factor5_ucode.py build/factor5_ucode/musyx_audio_recompiled.c
-   python tools/fixup_factor5_ucode.py build/factor5_ucode/factor5_boot_recompiled.c
    ```
 3. **Rebuild** (Debug is the dev/debug target; Release for perf):
    ```
@@ -667,7 +666,7 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
 ## What's NOT yet renamed / understood
 
 - ~2000 functions still as `func_XXXXXXXX` (an active renaming pass is in progress — see `tools/rename/`).
-- Big unmapped areas: the **mission overlay** (~900 funcs, per-craft/per-level), remaining **cinematic** helpers, **HMP terrain** inner helpers, the **DMA mutex** functions, and the **music→synth voice-table gather** (the channel→voice-table copy). (The **MORT voice codec** is recompiled and works — see the streamed-voice pipeline; the demo freeze once attributed to it was an N64Recomp link-branch codegen bug, fixed 2026-09-13.)
+- Big unmapped areas: the **mission overlay** (~900 funcs, per-craft/per-level), remaining **cinematic** helpers, **HMP terrain** inner helpers, the **DMA mutex** functions. (The channel→voice transfer is `tickAllAudioChannels`, mapped in [musyx-voice-mixing.md](musyx-voice-mixing.md). The **MORT voice codec** is recompiled and works — see the streamed-voice pipeline; the demo freeze once attributed to it was an N64Recomp link-branch codegen bug, fixed 2026-09-13.)
 
 ## How to extend this document
 

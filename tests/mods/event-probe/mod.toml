@@ -1,0 +1,16 @@
+[manifest]
+id = "event_probe"
+version = "1.0.0"
+display_name = "Event Probe"
+description = "Test-only mod for the rs64_on_* base events."
+short_description = "Test-only."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+enabled_by_default = true
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "event_probe"
+func_reference_syms_file = "../../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../../syms/rogue_squadron.datasyms.mods.toml" ]

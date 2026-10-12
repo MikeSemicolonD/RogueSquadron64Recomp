@@ -4,6 +4,17 @@
 
 #include "../../RecompiledFuncs/recomp_overlays.inl"
 
+static recomp_func_t* const s_statically_patched[] = {
+#define RECOMP_PATCHED_FUNC(f, kinds) f,
+#include "../../RecompiledFuncs/patched_funcs.inl"
+#undef RECOMP_PATCHED_FUNC
+};
+static const int s_statically_patched_kinds[] = {
+#define RECOMP_PATCHED_FUNC(f, kinds) kinds,
+#include "../../RecompiledFuncs/patched_funcs.inl"
+#undef RECOMP_PATCHED_FUNC
+};
+
 #undef main
 
 #include "librecomp/overlays.hpp"
@@ -23,4 +34,6 @@ void rs64_register_overlays() {
     };
 
     recomp::overlays::register_overlays(sections, overlays);
+    recomp::overlays::register_statically_patched_funcs(s_statically_patched, s_statically_patched_kinds, ARRLEN(s_statically_patched));
+    recomp::overlays::register_static_patch_replays(static_patch_hooks, static_patch_instructions);
 }

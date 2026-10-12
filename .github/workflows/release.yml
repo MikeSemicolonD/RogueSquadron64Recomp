@@ -41,7 +41,6 @@ jobs:
           lines=$(wc -l < RecompiledFuncs/funcs.h)
           echo "funcs.h: $lines lines"
           [ "$lines" -ge 2000 ] || { echo "::error::funcs.h truncated ($lines lines): stale or broken N64Recomp"; exit 1; }
-          python3 tools/coop/gen_relocation.py --verify || { echo "::error::coop_relocation.toml not applied: N64Recomp lacks patch_files support"; exit 1; }
 
       - name: Build code mods
         run: |
@@ -51,7 +50,8 @@ jobs:
       - name: Build game
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" -DRS64_MULTIPLAYER=OFF
+            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" -DRS64_MULTIPLAYER=OFF \
+            -DMIPS_GCC="$RS64_MIPS_GCC" -DMIPS_LD="$RS64_MIPS_LD"
           cmake --build build --target RogueSquadron64Recomp
 
       - name: Check the multiplayer mod
@@ -114,8 +114,6 @@ jobs:
           $lines = (Get-Content RecompiledFuncs/funcs.h | Measure-Object -Line).Lines
           Write-Host "funcs.h: $lines lines"
           if ($lines -lt 2000) { Write-Host "::error::funcs.h truncated ($lines lines): stale or broken N64Recomp"; exit 1 }
-          python tools/coop/gen_relocation.py --verify
-          if ($LASTEXITCODE -ne 0) { Write-Host "::error::coop_relocation.toml not applied: N64Recomp lacks patch_files support"; exit 1 }
 
       - name: Build code mods
         run: |
@@ -127,7 +125,7 @@ jobs:
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL `
             "-DN64RECOMP_EXE=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe" `
-            "-DRS64_MULTIPLAYER=OFF"
+            "-DRS64_MULTIPLAYER=OFF" "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           cmake --build build --config Release --target RogueSquadron64Recomp
           if ($LASTEXITCODE -ne 0) { exit 1 }

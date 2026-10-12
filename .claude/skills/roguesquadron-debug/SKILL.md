@@ -101,8 +101,8 @@ helper name to confirm the hook landed.
 
 Case study (jade-moon freeze, [[project-jade-moon-freeze-musyx-ucode-2026-09-13]]): `getNpcCurrentHealth`
 has ZERO direct C callers; it is reached ONLY via `LOOKUP_FUNC(0x800F20EC)`. Its guard used to be a
-`patches/` link-time override, which silently never ran while PatchesLib was a static lib. The guard is now
-an entry hook on all five health accessors, which cannot lose the indirect path.
+`patches/` link-time override, which silently never ran while PatchesLib was a static lib. It is back in
+`patches/src/npc_health.c`, with PatchesLib an OBJECT library so the func_map binds to the patch.
 
 ## Perception-free validation (prove correctness without a screenshot)
 

@@ -1080,7 +1080,7 @@ private:
     // ROGUESQ_BOOT_TARGET=menu | demo:N | level:<id>[,craft]. menu/demo fast-forward the intro
     // and press START (the game's own title skip) once the cinematic overlay is up, stopping when
     // the menu overlay is resident. level:<id> launches from the game thread (rs64_boot_target_level
-    // in upstream_compat.cpp), so it gets the fast-forward only. See plans/boot-into-mission-plan.md.
+    // in upstream_compat.cpp), so it gets the fast-forward only.
     // ROGUESQ_CINE_FASTFWD=N adds N VI ticks per present to the cinematic clock (0x8011A890) until
     // the cutscene's end frame, so the timeline completes through the game's own logic.
     // ROGUESQ_SKIP_DEMO=<n> (alias ROGUESQ_SKIP_TO_JADEMOON=1 for n=1) pins the attract demoId
@@ -1136,8 +1136,7 @@ private:
                 fflush(stderr);
             }
             // All nav targets reach the front-end menu; pulse START through the intro handoff.
-            // (demo-immediate is blocked by the custom menu displacing the attract idle path;
-            // see plans/2026-09-22-boot-target-nav-engine-design.md.)
+            // (demo-immediate is blocked by the custom menu displacing the attract idle path.)
             g_boot_pulse_start = (s_skip_done || g_active_overlay != 2) ? 0 : 1;
         }
 

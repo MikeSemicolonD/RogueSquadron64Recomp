@@ -12,4 +12,4 @@ minimum_recomp_version = "0.0.0"
 elf_path = "build/mod.elf"
 mod_filename = "long_tow_cable"
 func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
-data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.mods.toml" ]

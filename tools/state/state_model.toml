@@ -1,5 +1,5 @@
 # Canonical game-state model. Single source of truth for classification, forcing,
-# and validation. Consumed by tools/state/gen_state_table.py (-> src/main/state_table.inl)
+# and validation. Consumed by tools/state/gen_state_table.cpp (-> src/main/state_table.inl, at build time)
 # and read directly by the Python validation tools. USA v1.0 addresses only.
 #
 # classify predicate op: eq | ne | range (value..value_hi) | flag ((mem & mask) == value).
@@ -7,7 +7,7 @@
 # (byte field at address A: addr=A, mask=0xFF000000, value=byteval<<24).
 #
 # Predicates below are calibrated against a live in-mission RDRAM capture + the boot trace
-# (see plans/2026-09-22-game-state-model-design.md). Struct fields per docs/data-structures.md:
+# Struct fields per docs/data-structures.md:
 #   gGameSettings @0x80130B40: +0x00 currentLevel(u8), +0x01 vehicleId(u8), +0x10 flags(u32; bit0x20=demo active)
 #   gMissionState @0x80130B10: +0x00 numLives(u8), +0x07 numMissionObjectives(u8)
 #   gCurrentCutsceneFile ptr @0x800B1904 (valid KSEG0 only while a cutscene is loaded)
