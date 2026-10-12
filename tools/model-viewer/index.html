@@ -1300,7 +1300,7 @@ async function loadAudioBank() {
       label: `sfx ${hex(s.id)}${s.macro & 0x8000 ? ' (layer)' : ''}${callers.length ? ` · ${callers[0]}${callers.length > 1 ? ` +${callers.length - 1}` : ''}` : ''}` };
   });
   fill('audCat', [...new Set(voice.map((r) => r.cat))].sort().concat('SFX', 'Samples'));
-  fill('audLevel', [...new Set(voice.flatMap((r) => r.levels))].sort((a, b) => parseInt(a.slice(3), 36) - parseInt(b.slice(3), 36)), (lv) => `${lv.slice(3)} ${lvName(lv)}`);
+  fill('audLevel', [...new Set(voice.flatMap((r) => r.levels))].sort((a, b) => parseInt(a.slice(3), 36) - parseInt(b.slice(3), 36)), (lv) => `${parseInt(lv.slice(3), 36)} ${lvName(lv)}`);
   return { speech: u8(speechDv), samp, sfxBank, sfx, voice: [...groups, ...cuts, ...voice.filter((r) => !grouped.has(r))], samples, voiceMap: vt.voiceMap, byIndex };
 }
 // When each cutscene line actually plays (speech queue, playSpeechClip / tickSpeechSubsystem): a line queued while nothing has
