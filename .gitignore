@@ -158,6 +158,7 @@ tests/mods/conflict-probe/build/
 tests/mods/conflict-probe/*/build/
 tests/mods/event_probe.nrm
 tests/mods/event-probe/build/
+tests/mods/menu_probe.nrm
 
 # Patches ELF build outputs (CMakeLists.txt ---- Patches ELF ----)
 patches/patches.elf

@@ -13,5 +13,5 @@ strict_patch_mode = true
 func_reference_syms_file = "syms/rogue_squadron.syms.toml"
 # The mods variant: patches run in the relocated game, so they see the co-op fields at their host RAM addresses.
 data_reference_syms_files = [
-    "syms/rogue_squadron.datasyms.mods.toml",
+    "syms/rogue_squadron.datasyms.toml",
 ]

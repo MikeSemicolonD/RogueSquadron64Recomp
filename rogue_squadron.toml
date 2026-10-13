@@ -3,7 +3,6 @@ entrypoint = 0x80000400
 elf_path = "../rogue_squadron64/build/roguesquadron.elf"
 rom_file_path = "../rogue_squadron64/rogue_squadron.z64"
 output_func_path = "RecompiledFuncs"
-patch_files = ["tools/coop/coop_relocation.toml"]
 # Every [[patches.hook]] text is one call into src/main/toml_hooks.c; this header declares those functions.
 recomp_include = "#include \"recomp.h\"\n#include \"rs64_toml_hooks.h\""
 
@@ -397,6 +396,12 @@ value = 0x00000000
 func = "runMenuModelViewerScreen"   # was func_800C28F0 (renamed in syms)
 before_vram = 0x800C29F8
 text = '{ rs64_th_runMenuModelViewerScreen_800C29F8(rdram, ctx); }'
+
+# Mod assets/<path> files replace ROM assets: point the freshly loaded manifest entries ($s4 = slot) at them.
+[[patches.hook]]
+func = "findManifestEntryByName"
+before_vram = 0x8000496C
+text = '{ rs64_th_findManifestEntryByName_8000496C(rdram, ctx); }'
 
 # tickFormatMessageWorker replies with a pointer to one stack buffer for every request.
 # The host decodes faster than hardware, so queued replies alias and all read the last

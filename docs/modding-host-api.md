@@ -17,7 +17,7 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 
 Init order, on the first hook call after boot: the built-in hooks register, then every enabled mod that exports `rs64_mod_init` is initialised in mod-load order, then the registry is sealed. A mod that refuses (non-zero `r2`) is skipped and everything it registered is rolled back (a log line says so). The host also skips (and rolls back) a mod whose `r3` is newer than the host's version, logging the mod and both versions; a mod built for an older version is accepted.
 
-`add_hook`, `add_text_source`, `add_input_filter`, `add_action`, `add_condition`, `add_key_handler`, `add_quit_handler` and `add_service` work only inside `rs64_mod_init`. After the seal they refuse and log. Flags (`set_flag`, `get_flag`) and `get_service` work any time.
+`add_hook`, `add_text_source`, `add_input_filter`, `add_action`, `add_condition`, `add_key_handler`, `add_quit_handler`, `add_service`, `add_hash_part`, `add_valid_ram` and `add_moved_range` work only inside `rs64_mod_init`. After the seal they refuse and log. Flags (`set_flag`, `get_flag`) and `get_service` work any time.
 
 During `rs64_mod_init`, `rdram` is real and `alloc` works, but `call` has no game context and `yield` must not be used: init runs inside `rs64_hook`'s static initializer, so yielding can deadlock other game threads entering `rs64_hook`.
 
@@ -52,6 +52,9 @@ During `rs64_mod_init`, `rdram` is real and `alloc` works, but `call` has no gam
 | `base_path()` | v2. The exe's directory with a trailing separator, `""` if unknown |
 | `add_service(name, table)` | v3. Publishes a named table for other mods (see Services). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins, the second is logged) |
 | `get_service(name)` | v3. The table published under `name`, or NULL. Works any time; look a service up after the seal (on first use), since mods init in load order and the provider may come after you |
+| `add_hash_part(name, gate_flag, fn, user)` | v4. Adds a column to the lockstep hash log (`ROGUESQ_LS_HASH`): `fn(rdram, user)` returns a 64-bit hash of the mod's state, counted only while the flag `gate_flag` is non-zero. Parts follow the base parts in registration order. Returns 0, or -1 for a null argument or a sealed registry |
+| `add_valid_ram(addr, size)` | v4. Declares a host-RAM range above the game's 8 MB (KSEG0 address) that holds game records the mod built, so base guards such as the NPC health patch accept pointers into it. Returns 0, or -1 for size 0 or a sealed registry |
+| `add_moved_range(lo, hi, delta)` | v5. Declares game data `[lo, hi)` the mod moved to `lo + delta` (its `instruction_patches.json` repoints the game's code), so host code that reads it (lockstep hashes, `rs64_relocated`) follows. Returns 0, or -1 for an empty range, a zero delta, an overlap with a registered range, or a sealed registry |
 
 ## Services
 
@@ -131,14 +134,14 @@ These ids have no `rogue_squadron.toml` site: the host runs them from inside the
 | `RS64_HOOK_MENU_PAD` (32) | Inside the `RS64_HOOK_MENU_INPUT` built-in, before mod-page row navigation | The pressed word at 0x8013A960 may be edited; the flag `menu_page_shown` is 1 while a mod page is up |
 | `RS64_HOOK_MAIN_MENU` (33) | `rs64_menu_install_main` | The main menu is being built; `ctx` is NULL |
 
-`RS64_HOOK_COUNT` is a sentinel that grows as ids are added (32 in v1, 34 in v2, 36 in v3); mods must not rely on its value.
+`RS64_HOOK_COUNT` is a sentinel that grows as ids are added (32 in v1, 34 in v2, 36 in v3 to v5); mods must not rely on its value.
 
 ### Events for `.nrm` mods
 
-Every hook with a `rogue_squadron.toml` site is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [mods/sdk/rs64_api.h](../mods/sdk/rs64_api.h). The host-dispatched ids above have no event.
+Every hook with a `rogue_squadron.toml` site is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [syms/include/rs64_api.h](../syms/include/rs64_api.h). The host-dispatched ids above have no event.
 
 - Native handlers run first. If one returns `RS64_HOOK_RETURN`, the event does not fire.
-- The callback gets the hook site's registers, so `a0`-`a3` arrive as its arguments. librecomp restores every register after each callback, so a callback changes game state only through memory.
+- The callback gets the hook site's registers, so `a0`-`a3` arrive as its arguments. librecomp restores every register after each callback, so a register change goes through `rs64_event_set_gpr(reg, value)` (any GPR but `r0` and `sp`) or `rs64_event_set_fpr(reg, value)` (a single-precision float). Those writes are applied after the last callback, at every hook point, up to 8 per event; at `mission_frame_dt`, `rs64_event_set_fpr(20, dt)` replaces the frame time.
 - At the function-entry sites (`menu_frame`, `mission_end`, `transition_request`, `objective_count`, `result_fail`, `result_success`, `trigger_effect`) a callback can call `rs64_event_return(r2)`: the game function returns at once with `v0 = r2`, as a native `RS64_HOOK_RETURN` would. Everywhere else the call is ignored, because returning mid-function would skip its epilogue.
 - [tests/mods/event-probe/](../tests/mods/event-probe/) is a working example (counts frames, returns once from `menu_frame`, calls the exports below).
 
@@ -149,7 +152,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 | `float rs64_draw_dist(void)` | The draw-distance multiplier in effect (1.0 = the game's own; cutscenes may keep 1.0) |
 | `float rs64_terrain_dist(void)` | The terrain reach and fog multiplier, which follows the draw distance capped at 2.5 |
 | `unsigned rs64_tgrid_base(unsigned original)` | Where a terrain-grid table now lives (host RAM, doubled strides); other addresses pass through |
-| `unsigned rs64_relocated(unsigned address)` | Where a per-player field moved for co-op (ranges R1-R4); other addresses pass through |
+| `unsigned rs64_relocated(unsigned address)` | Where a game field lives now: a per-player field the multiplayer mod moved (ranges R1-R4, only while that mod is enabled); other addresses pass through. `.nrm` mods link against the original addresses, so translate through this before reading such a field |
 
 ## Menu actions, conditions, key and quit handlers
 
@@ -180,7 +183,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 - Handlers run on the game thread inside the hooked function. They must not block or sleep (a host sleep in a game-thread hook holds the run slot and can deadlock the frame pipeline), and may call game functions only through `call`, which saves and restores the context.
 - Registration is init-time only, as above. Keep per-hook state in `user` or your own statics.
 - Text-source strings stay valid until the next call of that source.
-- Flags are process-wide ints, set and read by name from any thread (mutex-guarded). `hangar_launch` is the first one: the lobby sets it while the hangar is launching a mission, and the nav sequencer reads it. All current flags (writer, reader in [multiplayer.md](multiplayer.md#flags)): `hangar_launch`, `ghost_mode`, `coop_imposter`, `mp_lobby_state` and `text_entry` are set by the multiplayer code; `menu_page_shown` by the menu (for `RS64_HOOK_MENU_PAD`); `mp_builtin` by the built-in hook registration when multiplayer is built in (the multiplayer-native mod reads it and stays off).
+- Flags are process-wide ints, set and read by name from any thread (mutex-guarded). `hangar_launch` is the first one: the lobby sets it while the hangar is launching a mission, and the nav sequencer reads it. All current flags (writer, reader in [multiplayer.md](multiplayer.md#flags)): `hangar_launch`, `ghost_mode`, `coop_imposter`, `mp_lobby_state` and `text_entry` are set by the multiplayer code; `menu_page_shown` by the menu (for `RS64_HOOK_MENU_PAD`).
 - Nothing runs before the first hook fires: pad polls and menu text drawn during boot see no filters or sources (an empty source falls back to its JSON label).
 - `rs64_mod_init` runs inside a game-thread hook: it must not block or sleep.
 - Flags set by a mod whose init then refuses are not rolled back.
@@ -210,9 +213,8 @@ In game, open MAIN MENU, NATIVE DEMO: the label reads `DEMO FRAMES n` and counts
 
 ## Worked example: multiplayer-native
 
-[mods/multiplayer-native/mp_mod.cpp](../mods/multiplayer-native/mp_mod.cpp) is online co-op as a native mod: the whole of it, built from the game's own multiplayer sources, reaching the game only through the host API table ([src/main/mp_host.h](../src/main/mp_host.h) wraps it).
+[mods/multiplayer-native/src/mp_mod.cpp](../mods/multiplayer-native/src/mp_mod.cpp) is online co-op as a native mod: the whole of it, its sources in the mod's own `src/`, reaching the game only through the host API table ([mods/multiplayer-native/src/mp_host.h](../mods/multiplayer-native/src/mp_host.h) wraps it).
 
-1. `rs64_mod_init` checks the table and version as in the native-demo steps, sets `r3 = RS64_HOST_API_VERSION`, then calls `rs64_mp_register(api)` ([src/main/mp_register.cpp](../src/main/mp_register.cpp)), which makes the `add_hook` and `add_quit_handler` calls and then calls `rs64_ghost_register_host` ([src/main/ghost_lobby.cpp](../src/main/ghost_lobby.cpp)) for the text sources, the input filter, the `mp_*` actions, the `mp_ready` condition and the key handler.
-2. A game built with `RS64_MULTIPLAYER=ON` already ran that registration from the built-ins and sets the flag `mp_builtin`. The mod reads it first, logs `built into this game; the multiplayer-native mod stays off`, sets `r2 = 1` and returns, so no hook answers twice.
-3. The game's CMake builds the library (`mods/multiplayer-native/CMakeLists.txt`), so it uses the exe's CRT and toolchain and the same `lockstep_core.cpp` rounding (`-ffp-contract=off`). On Linux only `recomp_api_version` and `rs64_mod_init` are exported (version script, `--no-undefined`, `-Bsymbolic`).
-4. The mod folder carries `mod.json` and `roguesq_menu.json` (copied from `mods/multiplayer`), staged by [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake); see [release-ci.md](release-ci.md#native-mods).
+1. `rs64_mod_init` checks the table and version as in the native-demo steps, sets `r3 = RS64_HOST_API_VERSION`, then calls `rs64_mp_register(api)` ([mods/multiplayer-native/src/mp_register.cpp](../mods/multiplayer-native/src/mp_register.cpp)), which makes the `add_hook` and `add_quit_handler` calls and then calls `rs64_ghost_register_host` ([mods/multiplayer-native/src/ghost_lobby.cpp](../mods/multiplayer-native/src/ghost_lobby.cpp)) for the text sources, the input filter, the `mp_*` actions, the `mp_ready` condition and the key handler.
+2. The game's CMake builds the library (`mods/multiplayer-native/CMakeLists.txt`), so it uses the exe's CRT and toolchain and the same `lockstep_core.cpp` / `mp_core.cpp` rounding (`-ffp-contract=off`). On Linux only `recomp_api_version` and `rs64_mod_init` are exported (version script, `--no-undefined`, `-Bsymbolic`).
+3. Its `mod.toml` holds the manifest and its 200 instruction patches; the game's CMake runs RecompModTool on it to write the folder's `mod.json` and `instruction_patches.json`, so a native mod can use the same `mod.toml` format as a code mod. The folder (library, those two files and `roguesq_menu.json`) is staged by [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake); see [release-ci.md](release-ci.md#native-mods).

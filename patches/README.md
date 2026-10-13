@@ -2,7 +2,7 @@
 
 Base-game C patches, built the Zelda64Recomp way: every build compiles `src/**/*.c` to MIPS with the code-mod toolchain, links `patches.elf` with [patches.ld](patches.ld), recompiles it with N64Recomp ([../patches.toml](../patches.toml)) into `RecompiledPatches/`, embeds `patches.bin`, and registers it with librecomp at boot ([src/main/register_patches.cpp](../src/main/register_patches.cpp)). The build needs MIPS GCC: set `MIPS_TOOLCHAIN_DIR` (default `E:/mips-toolchain`) or `MIPS_GCC` and `MIPS_LD`.
 
-Patch sources include `rs64_api.h` ([mods/sdk/](../mods/sdk/rs64_api.h)), the same header code mods use:
+Patch sources include `rs64_api.h` ([syms/include/](../syms/include/rs64_api.h)), the same header code mods use:
 
 - `RECOMP_EXPORT` makes a function a base export that mods import with `RECOMP_IMPORT("*", ...)`. [src/sanity.c](src/sanity.c) exports `rs64_patches_sanity` as a pipeline check.
 - `RECOMP_DECLARE_EVENT` declares a base event; mods subscribe with `RECOMP_CALLBACK("*", ...)`.
@@ -11,7 +11,7 @@ Patch sources include `rs64_api.h` ([mods/sdk/](../mods/sdk/rs64_api.h)), the sa
 
 ## Where most base-game fixes live today
 
-Base-game fixes live in [rogue_squadron.toml](../rogue_squadron.toml), plus the generated co-op relocation in [tools/coop/coop_relocation.toml](../tools/coop/coop_relocation.toml):
+Base-game fixes live in [rogue_squadron.toml](../rogue_squadron.toml):
 
 - `[[patches.hook]]` inserts a call at a function's entry (or at `before_vram`). It is compiled into the recompiled function, so it runs for direct and indirect (`LOOKUP_FUNC`) calls alike. The text is only `{ if (rs64_th_<func>_<vram|entry>(rdram, ctx)) return; }` or `{ rs64_th_<func>_<vram|entry>(rdram, ctx); }`; the body is that function in [src/main/toml_hooks.c](../src/main/toml_hooks.c), declared in `include/rs64_toml_hooks.h`. `return 1` exits the game function; set `ctx->r2` (or `ctx->f0`) first to return a value.
 - `[[patches.instruction]]` replaces a single instruction word.

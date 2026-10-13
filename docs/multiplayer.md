@@ -19,18 +19,18 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 
 | File | Role |
 |---|---|
-| [src/main/net_core.h](../src/main/net_core.h), [net_core.cpp](../src/main/net_core.cpp) | Message encoding, `Lobby` handshake state, `AddressEditor`, discovery packets, UPnP status text. No sockets. |
-| [src/main/net_link.h](../src/main/net_link.h), [net_link.cpp](../src/main/net_link.cpp) | ENet6 transport (`lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
-| [src/main/ghost.cpp](../src/main/ghost.cpp) | Session core: link events, message dispatch, per-frame hooks, shared objectives, deaths and lives, mission result, quit. |
-| [src/main/ghost_lobby.cpp](../src/main/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
-| [src/main/ghost_hud.cpp](../src/main/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
-| [src/main/ghost_internal.h](../src/main/ghost_internal.h) | The `Ghost` state struct and helpers shared by the three files above. |
-| [src/main/lockstep_core.cpp](../src/main/lockstep_core.cpp) | Pure logic with unit tests: `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
-| [src/main/coop_imposter.cpp](../src/main/coop_imposter.cpp) | Imposter spawn and teardown. |
-| [src/main/mp_register.cpp](../src/main/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
-| [src/main/mp_host.h](../src/main/mp_host.h) | The multiplayer sources' only route to the game: the host API table, wrapped (`rs64::mp::call`, `alloc`, `flag`, `add_hook`, ...). |
-| [mods/multiplayer-native](../mods/multiplayer-native/) | The mod build: `mp_mod.cpp` (`rs64_mod_init`) plus the multiplayer sources and `lockstep_core.cpp`, built into `multiplayer_native.dll` / `.so`. |
-| [mods/multiplayer](../mods/multiplayer/roguesq_menu.json) | The MULTIPLAYER menu page definition (the one source; the mod folder copies it). |
+| [mods/multiplayer-native/src/net_core.h](../mods/multiplayer-native/src/net_core.h), [net_core.cpp](../mods/multiplayer-native/src/net_core.cpp) | Message encoding, `Lobby` handshake state, `AddressEditor`, discovery packets, UPnP status text. No sockets. |
+| [mods/multiplayer-native/src/net_link.h](../mods/multiplayer-native/src/net_link.h), [net_link.cpp](../mods/multiplayer-native/src/net_link.cpp) | ENet6 transport (`mods/multiplayer-native/lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
+| [mods/multiplayer-native/src/ghost.cpp](../mods/multiplayer-native/src/ghost.cpp) | Session core: link events, message dispatch, per-frame hooks, shared objectives, deaths and lives, mission result, quit. |
+| [mods/multiplayer-native/src/ghost_lobby.cpp](../mods/multiplayer-native/src/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
+| [mods/multiplayer-native/src/ghost_hud.cpp](../mods/multiplayer-native/src/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
+| [mods/multiplayer-native/src/ghost_internal.h](../mods/multiplayer-native/src/ghost_internal.h) | The `Ghost` state struct and helpers shared by the three files above. |
+| [mods/multiplayer-native/src/mp_core.cpp](../mods/multiplayer-native/src/mp_core.cpp) | Pure logic with unit tests (`mp_core_test`): `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
+| [mods/multiplayer-native/src/coop_imposter.cpp](../mods/multiplayer-native/src/coop_imposter.cpp) | Imposter spawn and teardown. |
+| [mods/multiplayer-native/src/mp_register.cpp](../mods/multiplayer-native/src/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
+| [mods/multiplayer-native/src/mp_host.h](../mods/multiplayer-native/src/mp_host.h) | The multiplayer sources' only route to the game: the host API table, wrapped (`rs64::mp::call`, `alloc`, `flag`, `add_hook`, ...). |
+| [mods/multiplayer-native](../mods/multiplayer-native/) | The mod: `src/` (`mp_mod.cpp` is `rs64_mod_init`) and `tests/`. Its CMakeLists builds `src/` plus the base files it lists (`lockstep_core.cpp` and three headers) into `multiplayer_native.dll` / `.so`; the style check rejects any other base include. |
+| [mods/multiplayer-native/roguesq_menu.json](../mods/multiplayer-native/roguesq_menu.json) | The MULTIPLAYER menu page definition. |
 
 Base code sees multiplayer only through hooks, actions and flags.
 
@@ -38,12 +38,11 @@ Base code sees multiplayer only through hooks, actions and flags.
 
 | Flag | Writer | Reader | Meaning |
 |---|---|---|---|
-| `ghost_mode` | `publish_modes` (`ghost_lobby.cpp`) | `lockstep.cpp` (mission init, per-frame) | Online co-op session active (`ROGUESQ_MP` or a menu-started session) |
-| `coop_imposter` | `publish_modes` | `lockstep.cpp` (hash legend, pad2 replay, hash lines) | Player 2 is the imposter (`ROGUESQ_COOP_LOCAL` or ghost mode) |
+| `ghost_mode` | `publish_modes` (`ghost_lobby.cpp`) | `lockstep.cpp` (mission init: record only, no hashes) | Online co-op session active (`ROGUESQ_MP` or a menu-started session) |
+| `coop_imposter` | `publish_modes` | the `imposter` hash part's gate (`add_hash_part`), `mp_register.cpp` (pad2 replay) | Player 2 is the imposter (`ROGUESQ_COOP_LOCAL` or ghost mode) |
 | `mp_lobby_state` | `ghost_lobby.cpp` (on lobby state changes) | `nav_sequencer.cpp` | The `Lobby` handshake state |
 | `text_entry` | `ghost_lobby.cpp` (per menu tick) | `main.cpp` `update_keyboard_shift` (Android) | The address editor is being typed in |
 | `menu_page_shown` | `rs64_menu_pass` (`menu_config.cpp`) | `mp_register.cpp` `menu_pad` | A mod menu page is up |
-| `mp_builtin` | `rs64_register_builtin_hooks` (`builtin_hooks.cpp`, ON builds) | `mp_mod.cpp` | Multiplayer is built into the exe; the mod stays off |
 | `hangar_launch` | `skip_filter` (`ghost_lobby.cpp`) | `nav_sequencer.cpp` | The hangar is launching a mission after both players picked |
 
 ### Hook placement
@@ -77,9 +76,9 @@ A new base-side need is a flag or a table entry, never a direct call.
 
 ## Build variants
 
-`RS64_MULTIPLAYER` is ON by default for desktop development builds: the multiplayer sources are compiled into the exe and register through the built-ins; the data-only `multiplayer` mod supplies the menu page. Desktop releases and Android build with it OFF: the game has no multiplayer code and online co-op comes only from the `multiplayer-native` mod, which the game's CMake builds and stages (see [release-ci.md](release-ci.md#native-mods)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs multiplayer present either way, so an OFF build needs that mod enabled.
+The game has no multiplayer code on any platform: online and local co-op come only from the `multiplayer-native` mod, which the game's CMake builds as a dependency of the exe and stages (see [release-ci.md](release-ci.md#native-mods)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs the mod enabled.
 
-Unit tests (`cmake --build build --config Release --target rs64_unit_tests` builds and runs all): `net_core_test`, `net_link_test`, `lockstep_core_test`, `nav_target_test`, `host_api_test` (the style checker runs too). `net_link_test` talks to the real router through UPnP.
+Unit tests (`cmake --build build --config Release --target rs64_unit_tests` builds and runs all): the mod's `mp_core_test`, `net_core_test` and `net_link_test` (`mods/multiplayer-native/tests`) next to the base tests (the style checker runs too). `net_link_test` talks to the real router through UPnP.
 
 ## Modes and scripted runs
 
@@ -87,7 +86,7 @@ Unit tests (`cmake --build build --config Release --target rs64_unit_tests` buil
 
 ## Lobby flow
 
-The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer](../mods/multiplayer/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s, a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
+The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s, a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
 
 Link events reach the lobby through `link_poll_edges(up, was_up, connects, seen_connects)`. `Link::connect_count()` counts connects, so a connect that dropped before the poll is neither edge, and a reconnect inside one poll reports lost plus connected.
 
@@ -187,7 +186,7 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 
 ## Puppet interpolation
 
-`Puppet` ([lockstep_core.cpp](../src/main/lockstep_core.cpp)) shows the remote player 50 ms behind the sender's clock by default (entity interpolation, `ROGUESQ_GHOST_INTERP_MS`; 0 selects dead reckoning). Remote states must be finite, inside a sane range and have roughly orthonormal axes before any of it reaches game code. A respawn, teleport or the client's start offset is treated as a jump, not motion. Measured on scripted pair runs at 0-200 ms latency with 5% loss and 40 ms jitter, 50 ms interpolation trails the real ship by latency + ~110 ms (the buffer plus the game's ~30 Hz send cadence) and is 4-6x smoother than dead reckoning whenever there is jitter. The pad goes idle when the peer stops sending (paused, results screen, stalled), so the puppet never keeps firing.
+`Puppet` ([mp_core.cpp](../mods/multiplayer-native/src/mp_core.cpp)) shows the remote player 50 ms behind the sender's clock by default (entity interpolation, `ROGUESQ_GHOST_INTERP_MS`; 0 selects dead reckoning). Remote states must be finite, inside a sane range and have roughly orthonormal axes before any of it reaches game code. A respawn, teleport or the client's start offset is treated as a jump, not motion. Measured on scripted pair runs at 0-200 ms latency with 5% loss and 40 ms jitter, 50 ms interpolation trails the real ship by latency + ~110 ms (the buffer plus the game's ~30 Hz send cadence) and is 4-6x smoother than dead reckoning whenever there is jitter. The pad goes idle when the peer stops sending (paused, results screen, stalled), so the puppet never keeps firing.
 
 ## Mission end and the host's result
 
@@ -199,7 +198,7 @@ The host's result ends the client's mission. On a client in session, `requestMis
 - Upgrades: a pickup ORs one bit into the settings word 0x80130B4C (`npcPowerUpUpdate` 0x800EBDB0-0x800EBE4C; `kUpgradeMask` 0x1FE00). `sync_upgrades` (ghost.cpp) takes the word's upgrade bits on the mission's first frame as the baseline (the pilot's own upgrades, never shared), sends bits gained after it as UPGRADES, and ORs the other player's into the word. Bits already shared either way are not sent again; a peer entering the mission gets them all again. The game's own commit then saves them to each pilot on success and reverts them otherwise.
 - Pickups: power-ups are DAT items. `RS64_HOOK_POWERUP_COLLECT` (0x800EBD34) sends this player's collect as PICKUP (DAT index). The receiver adds that record to `pickups_forced`; `RS64_HOOK_POWERUP_TOUCH` (0x800EBD20) zeroes the touch test's squared distance for it, so the game runs its own pickup there (bonus count, upgrade bit, shrink and removal), with the sound (`play3DSoundEvent`, a1) moved to the local ship so it is heard. A pickup not spawned on the receiver (no ship near it) is collected when it spawns. A peer entering the mission late gets every PICKUP again. Pair test: `construction_yards_bonus.rec` (see tools/recordings/README.md).
 - Shared deaths: level objects are DAT items. Each frame, every tracked item whose health dropped is sent as DAMAGE (a resync sends every item). The receiver applies the drop through the game's own damage path (`dealDamagetoDatItem` 0x800C7390: a hit for a spawned item, a stored-health cut for an unspawned one).
-- Trigger volumes: `ply` DAT events live in player 1's trigger list only (0x80137DF0); `applyDatObjectiveTriggerEffect` (0x80065980) writes the objective state directly, not through `datItemSetObjectiveBooleanCount`. `RS64_HOOK_TRIGGER_EFFECT` makes a client send its edges as TRIGGER and drop them; the host applies them through the same function with `TeamTriggers` (lockstep_core): one effect on the first enter and on the last exit. Test: `run-mp.ps1 -TestTriggerSolo` on the level 3 recording.
+- Trigger volumes: `ply` DAT events live in player 1's trigger list only (0x80137DF0); `applyDatObjectiveTriggerEffect` (0x80065980) writes the objective state directly, not through `datItemSetObjectiveBooleanCount`. `RS64_HOOK_TRIGGER_EFFECT` makes a client send its edges as TRIGGER and drop them; the host applies them through the same function with `TeamTriggers` (mp_core): one effect on the first enter and on the last exit. Test: `run-mp.ps1 -TestTriggerSolo` on the level 3 recording.
 - Tow-cable trips: `RS64_HOOK_WALKER_TRIPPED` (0x800CED7C, an AT-AT accepting the harpoon's action 9 kind 0xE) sends TOW_TRIP; the receiver sends its copy the same message (sender slot 0xFFFF, so the release reply goes nowhere), and its fall kills it and counts the objective. Mirrored DAMAGE skips a tripped walker (DAT item +0x4C bit 31): AT-ATs take x0.1 from a hit with no hit part, and a hit on a tripped one skips the objective count. The trip camera and the cable are seen only by the player who towed.
 - Lives: one pool (`numLives`, 0x80130B10), owned by the host. A client never runs out by itself: it respawns and sends LIFE, and the host rules (`shared_life`: spend, out, game over, ignore). A player who loses the last shared life is out and spectates: the craft rides the survivor's pose, cannot steer, fire or die, and the survivor's lives counter is re-shown (HUD action 0xC). A message line (SPECTATING, WINGMATE DOWN, OUT, LEFT) and the other pilot's name label are mission-font slots 1-2 linked into the 2D overlay list (`runInMissionFrame` 0x800FAC70). The other player is a purple radar dot (palette index 15, unused by the radar's grey ramp and pure red, green and blue).
 

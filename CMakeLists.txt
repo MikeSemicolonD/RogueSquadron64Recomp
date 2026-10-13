@@ -22,8 +22,6 @@ if(WIN32 AND ROGUESQ_NO_ITER_DEBUG)
     message(STATUS "MSVC debug iterators DISABLED (vector bounds checks off)")
 endif()
 
-# Online co-op built into the game. OFF: the multiplayer-native mod provides it, as desktop releases and Android ship.
-option(RS64_MULTIPLAYER "Build online co-op into the game" ON)
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
@@ -65,17 +63,6 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N64ModernRuntime)
 
-# ---- ENet6 (co-op networking, static) ----
-add_subdirectory(${CMAKE_SOURCE_DIR}/lib/enet6 ${CMAKE_BINARY_DIR}/enet6 EXCLUDE_FROM_ALL)
-
-# ---- miniupnpc (co-op internet hosting: UPnP port mapping, static) ----
-set(UPNPC_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
-set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_SOURCE_DIR}/lib/miniupnp/miniupnpc ${CMAKE_BINARY_DIR}/miniupnpc EXCLUDE_FROM_ALL)
-# Linked into the multiplayer-native shared library too, which needs position-independent code on Linux.
-set_target_properties(enet6 libminiupnpc-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # ---- RecompiledFuncs ----
 # N64Recomp output; gitignored (derived from the ROM). Regenerate with the regen_funcs target.
@@ -142,12 +129,11 @@ add_custom_target(regen_funcs
     COMMENT "Regenerating RecompiledFuncs from rogue_squadron.toml (needs decomp ELF + N64Recomp.exe)"
     VERBATIM
 )
-# Refreshes syms/ (the names .nrm mods build against; the RogueSquadron64RecompSyms submodule) from the decomp ELF, plus the mods variant of the data symbols. Run after renames, commit in syms/, bump the submodule. cmake --build build --config Debug --target dump_syms
+# Refreshes syms/ (the names .nrm mods build against; the RogueSquadron64RecompSyms submodule) from the decomp ELF. Run after renames, commit in syms/, bump the submodule. cmake --build build --config Debug --target dump_syms
 add_custom_target(dump_syms
     COMMAND ${N64RECOMP_EXE} "${CMAKE_SOURCE_DIR}/rogue_squadron.toml" --dump-context
     COMMAND ${CMAKE_COMMAND} -E copy dump.toml "${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml"
     COMMAND ${CMAKE_COMMAND} -E copy data_dump.toml "${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml"
-    COMMAND ${CMAKE_COMMAND} -DIN=${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml -DOUT=${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.mods.toml -P ${CMAKE_SOURCE_DIR}/tools/mods/mod_datasyms.cmake
     WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
     COMMENT "Dumping syms/ from the decomp ELF"
     VERBATIM
@@ -183,9 +169,9 @@ foreach(src ${PATCH_C_SOURCES})
 endforeach()
 # Game functions stay undefined so N64Recomp resolves them by name through patches.toml's syms; --noinhibit-exec keeps the ELF despite ld's out-of-range jal errors for them.
 add_custom_command(OUTPUT ${PATCHES_DIR}/patches.elf
-    COMMAND "${MIPS_LD}" -nostdlib -T "${PATCHES_DIR}/patches.ld" -Map "${PATCHES_BUILD}/patches.map"
+    COMMAND "${MIPS_LD}" -nostdlib -T "${PATCHES_DIR}/patches.ld" -T "${PATCHES_DIR}/syms.ld" -Map "${PATCHES_BUILD}/patches.map"
         --unresolved-symbols=ignore-all --emit-relocs --noinhibit-exec -e 0 ${PATCH_OBJS} -o "${PATCHES_DIR}/patches.elf"
-    DEPENDS ${PATCH_OBJS} "${PATCHES_DIR}/patches.ld"
+    DEPENDS ${PATCH_OBJS} "${PATCHES_DIR}/patches.ld" "${PATCHES_DIR}/syms.ld"
     VERBATIM)
 set(PATCHES_RECOMP_DEPS "")
 if (TARGET N64RecompCLI AND N64RECOMP_EXE STREQUAL RS64_N64RECOMP_DEFAULT)
@@ -194,7 +180,7 @@ endif()
 add_custom_command(OUTPUT ${PATCHES_OUT}/patches.c ${PATCHES_OUT}/recomp_overlays.inl ${PATCHES_OUT}/funcs.h ${PATCHES_DIR}/patches.bin
     COMMAND "${N64RECOMP_EXE}" "${CMAKE_SOURCE_DIR}/patches.toml"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.mods.toml ${PATCHES_RECOMP_DEPS} "${N64RECOMP_EXE}"
+    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml ${PATCHES_RECOMP_DEPS} "${N64RECOMP_EXE}"
     COMMENT "Recompiling patches.elf"
     VERBATIM)
 add_custom_command(OUTPUT ${PATCHES_BUILD}/patches_bin.c ${PATCHES_BUILD}/patches_bin.h
@@ -281,22 +267,6 @@ set(RS64_MAIN_SOURCES
     ${MUSYX_AUDIO_C}
     $<$<PLATFORM_ID:Windows>:${CMAKE_SOURCE_DIR}/src/main/app.rc>
 )
-set(RS64_MP_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/main/mp_register.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/coop_imposter.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/net_core.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/net_link.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/ghost.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/ghost_lobby.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/ghost_hud.cpp
-)
-if (RS64_MULTIPLAYER)
-    list(APPEND RS64_MAIN_SOURCES ${RS64_MP_SOURCES})
-    set(RS64_MP_DEF 1)
-else()
-    set(RS64_MP_DEF 0)
-endif()
-set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/builtin_hooks.cpp PROPERTIES COMPILE_DEFINITIONS RS64_MULTIPLAYER=${RS64_MP_DEF})
 # Lockstep simulation math must round identically everywhere: no fused multiply-add.
 if (MSVC)
     set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
@@ -404,23 +374,7 @@ add_executable(lockstep_core_test EXCLUDE_FROM_ALL
 set_target_properties(lockstep_core_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(lockstep_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
 
-# Standalone unit test for the co-op network core (packets, input schedule, hash check).
-add_executable(net_core_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/net_core_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/net_core.cpp
-)
-set_target_properties(net_core_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(net_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
 
-# Loopback test for the co-op network link (ENet, simulated latency and loss).
-add_executable(net_link_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/net_link_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/net_core.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/net_link.cpp
-)
-set_target_properties(net_link_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(net_link_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(net_link_test PRIVATE enet6 libminiupnpc-static)
 
 # Standalone unit test for the mod host API registry.
 add_executable(host_api_test EXCLUDE_FROM_ALL
@@ -429,7 +383,7 @@ add_executable(host_api_test EXCLUDE_FROM_ALL
 )
 set_target_properties(host_api_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(host_api_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
-target_compile_definitions(host_api_test PRIVATE RS64_TOML_PATH="${CMAKE_SOURCE_DIR}/rogue_squadron.toml")
+target_compile_definitions(host_api_test PRIVATE RS64_TOML_PATH="${CMAKE_SOURCE_DIR}/rogue_squadron.toml" RS64_TOML_HOOKS_PATH="${CMAKE_SOURCE_DIR}/src/main/toml_hooks.c")
 
 # Standalone unit test for the tow cable head interpolation alias.
 add_executable(cable_alias_test EXCLUDE_FROM_ALL
@@ -458,6 +412,7 @@ set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIR
 # One command for the unit tests: cmake --build build --config Release --target rs64_unit_tests
 add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:lockstep_core_test>
+    COMMAND $<TARGET_FILE:mp_core_test>
     COMMAND $<TARGET_FILE:net_core_test>
     COMMAND $<TARGET_FILE:net_link_test>
     COMMAND $<TARGET_FILE:nav_target_test>
@@ -466,7 +421,7 @@ add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:crosshair_match_test>
     COMMAND $<TARGET_FILE:rs64_lights_test>
     COMMAND $<TARGET_FILE:style_check> ${CMAKE_SOURCE_DIR}
-    DEPENDS lockstep_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test rs64_lights_test style_check
+    DEPENDS lockstep_core_test mp_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test rs64_lights_test style_check
     COMMENT "Running the unit tests")
 
 # Standalone unit test for the mode-change blanking gate.
@@ -476,7 +431,7 @@ add_executable(transition_gate_test EXCLUDE_FROM_ALL
 set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 if (MSVC)
-    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test net_core_test net_link_test host_api_test transition_gate_test cable_alias_test crosshair_match_test rs64_lights_test style_check)
+    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test host_api_test transition_gate_test cable_alias_test crosshair_match_test rs64_lights_test style_check)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endforeach()
 endif()
@@ -551,9 +506,7 @@ endif()
 # Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
 set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
 add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
-if (NOT RS64_MULTIPLAYER)
-    add_dependencies(RogueSquadron64Recomp multiplayer_native)
-endif()
+add_dependencies(RogueSquadron64Recomp multiplayer_native)
 # The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.
 set(STEAMWORKS_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/steamworks/sdk" CACHE PATH "Steamworks SDK folder (holds public/steam/steam_api_flat.h)")
 if (NOT ANDROID AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")
@@ -562,19 +515,13 @@ if (NOT ANDROID AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h"
 elseif (NOT ANDROID)
     message(STATUS "steam-relay mod not built: no Steamworks SDK at ${STEAMWORKS_SDK_DIR}")
 endif()
-# With multiplayer built in, desktop stages the data-only menu mod in place of the native one; without, the reverse.
-if (RS64_MULTIPLAYER)
-    set(RS64_MOD_STAGE_ARGS -DSWAP=multiplayer-native=multiplayer)
-else()
-    set(RS64_MOD_STAGE_ARGS -DDROP=multiplayer)
-endif()
 
 # Stage the desktop mods listed in mods/platforms.json next to the exe. The user's own mod folders there are left alone.
 # Native mods built by this CMake (multiplayer-native) are staged from build/built_mods/<Config>; a relink restages here, a rebuild of the library alone restages from its own POST_BUILD.
 if (NOT ANDROID)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods -DPLATFORM=desktop
-        -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG> ${RS64_MOD_STAGE_ARGS}
+        -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG>
         -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake")
 endif()
 
@@ -586,9 +533,6 @@ target_link_libraries(RogueSquadron64Recomp PRIVATE
     ultramodern
     rt64
 )
-if (RS64_MULTIPLAYER)
-    target_link_libraries(RogueSquadron64Recomp PRIVATE enet6 libminiupnpc-static)
-endif()
 
 set_property(TARGET RogueSquadron64Recomp PROPERTY VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
@@ -604,7 +548,7 @@ if (WIN32)
             "$<TARGET_FILE_DIR:RogueSquadron64Recomp>/dxcompiler.dll"
             "${RS64_DIST_DIR}"
         COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<IF:$<CONFIG:Release>,${RS64_DIST_DIR}/mods,> -DPLATFORM=desktop
-            -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG> ${RS64_MOD_STAGE_ARGS}
+            -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG>
             -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
         COMMENT "Assembling clean Release folder in ${RS64_DIST_DIR} (Release only)"
         VERBATIM)

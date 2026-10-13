@@ -806,3 +806,8 @@ void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx) {
 void rs64_th_mainGameLoop_8003E10C(uint8_t* rdram, recomp_context* ctx) {
     extern void rs64_nav_boot_cutscene(uint8_t*, uint32_t*, uint32_t*); uint32_t lv = (uint32_t)ctx->r4, kd = (uint32_t)ctx->r5; rs64_nav_boot_cutscene(rdram, &lv, &kd); ctx->r4 = (gpr)(int32_t)lv; ctx->r5 = (gpr)(int32_t)kd;
 }
+
+// findManifestEntryByName 0x8000496C
+void rs64_th_findManifestEntryByName_8000496C(uint8_t* rdram, recomp_context* ctx) {
+    extern void rs64_asset_overrides_patch(uint8_t*, uint32_t); rs64_asset_overrides_patch(rdram, (uint32_t)ctx->r20);
+}

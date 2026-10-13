@@ -1,0 +1,10 @@
+{
+  "buttons": [
+    { "id": "menu_probe_open", "menu": "main_menu", "type": "submenu", "page": "menu_probe", "label": "MENU PROBE" },
+    { "menu": "menu_probe", "type": "toggle", "toggle": "config:mode", "label_on": "MODE: ON", "label_off": "MODE: OFF" },
+    { "menu": "menu_probe", "type": "slider", "slider": "config:level", "label": "LEVEL", "min": 0, "max": 10, "step": 1 },
+    { "menu": "menu_probe", "type": "toggle", "toggle": "config:speed", "label": "SPEED" },
+    { "menu": "menu_probe", "type": "toggle", "toggle": "@probe_toggle", "label_on": "EXPORT: ON", "label_off": "EXPORT: OFF" },
+    { "menu": "menu_probe", "type": "action", "action": "@probe_action", "label": "RUN ACTION" }
+  ]
+}

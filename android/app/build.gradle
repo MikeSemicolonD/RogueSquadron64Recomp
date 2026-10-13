@@ -20,6 +20,8 @@ def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
 def hostFileToC = rootProject.file("../build/Debug/file_to_c.exe").absolutePath
 // Host-built N64Recomp from the Windows build; the patches ELF is recompiled with it (MIPS GCC comes from MIPS_TOOLCHAIN_DIR's default).
 def hostN64Recomp = rootProject.file("../build/Debug/N64Recomp.exe").absolutePath
+// Host-built RecompModTool, which writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
+def hostRecompModTool = rootProject.file("../build/Debug/RecompModTool.exe").absolutePath
 
 // Task actions must not touch `project` at execution time (Gradle 9), so file ops come from injected services.
 interface FileOps {
@@ -120,7 +122,7 @@ android {
         externalNativeBuild {
             cmake {
                 // Multiplayer ships as the multiplayer-native mod, as on desktop: libmultiplayer_native.so is packed with the game's libraries.
-                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", '-DRS64_MULTIPLAYER=OFF'
+                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}"
                 targets 'RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'
             }
         }

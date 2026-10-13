@@ -1,6 +1,6 @@
 # Multiplayer/Co-op mod
 
-This mod is a work in progress and will most likely be refactored soon so it's more issolated from the rest of the recomp.
+This mod is a work in progress
 
 ## Issues
 

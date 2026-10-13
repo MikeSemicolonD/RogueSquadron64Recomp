@@ -1,0 +1,45 @@
+[manifest]
+id = "menu_probe"
+version = "1.0.0"
+display_name = "Menu Probe"
+description = "Test-only mod for .nrm menu files, config: behaviors and .nrm @export actions."
+short_description = "Test-only."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+enabled_by_default = true
+
+[[manifest.config_options]]
+id = "mode"
+name = "Mode"
+description = "An Enum option shown as a toggle."
+type = "Enum"
+options = [ "Off", "On" ]
+default = "Off"
+
+[[manifest.config_options]]
+id = "level"
+name = "Level"
+description = "A Number option shown as a slider."
+type = "Number"
+min = 0
+max = 10
+step = 1
+precision = 0
+percent = false
+default = 3
+
+[[manifest.config_options]]
+id = "speed"
+name = "Speed"
+description = "A three-option Enum shown as a toggle labelled SPEED: OPTION."
+type = "Enum"
+options = [ "Slow", "Normal", "Fast" ]
+default = "Normal"
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "menu_probe"
+func_reference_syms_file = "../../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../../syms/rogue_squadron.datasyms.toml" ]
+additional_files = [ "roguesq_menu.json" ]

@@ -8,6 +8,14 @@
 #include <atomic>
 #include <thread>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <string>
+#include <unordered_map>
+#include <span>
+#include <variant>
+#include <vector>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -16,6 +24,9 @@
 #pragma comment(lib, "winmm.lib")
 #endif
 
+#include "librecomp/game.hpp"
+#include "librecomp/mods.hpp"
+#include "librecomp/patcher.hpp"
 #include "recomp.h"
 #include "video_config.h"
 #include "debug_logs.h"
@@ -549,5 +560,208 @@ extern "C" void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys) {
         fprintf(stderr, "[cimg-walker] dl=0x%08X visited cimg=%d killed=%d passed=%d jumps_used=%d stack_max=%d\n",
                 (dl_phys & 0x3FFFFFFu) | 0x80000000u, cimg_seen, cimg_killed, cimg_passed, 64 - jumps_left, sp);
         fflush(stderr);
+    }
+}
+
+// ---- Asset overrides ----
+
+// Files under <mod>/assets/<manifest path> (e.g. assets/pl_crafts/xwing_HOB) are appended past the ROM end; the game's RAM manifest points at them as raw entries.
+// shortcut: folder mods only (not zipped), later mods win on the same path; read zips through the mod file handle if packaged asset mods appear.
+namespace {
+struct AssetOverride { uint32_t rom_off, size; };
+std::unordered_map<std::string, AssetOverride> s_asset_overrides;
+// Craft HOBs with recoloured exhaust, one per exhaust-color option (index 0 = default, unused).
+std::unordered_map<std::string, std::vector<AssetOverride>> s_exhaust_variants;
+constexpr const char* kExhaustMod = "exhaust-color";
+constexpr uint32_t kExhaustTints[] = { 0, 0xFF2000, 0xFF8000, 0xFFE000, 0x20FF20, 0x20FFFF, 0x2060FF, 0xA040FF, 0xFF40C0, 0xFFFFFF };
+
+uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
+
+// Data-blob manifest walk, as tools/rs64-explorer openRom: path (without the segment name) -> decompressed bytes.
+std::unordered_map<std::string, std::vector<uint8_t>> rom_assets(std::span<const uint8_t> rom, const std::function<bool(const std::string&)>& want) {
+    std::unordered_map<std::string, std::vector<uint8_t>> out;
+    constexpr uint32_t kBlobStart = 0x144340, kBlobData = kBlobStart + 0x40;
+    if (rom.size() < kBlobData) return out;
+    const uint32_t base = kBlobData + be32(&rom[kBlobStart + 0x1C]);
+    const uint32_t manifest = base + be32(&rom[base]);
+    const uint32_t count = (((uint32_t)rom[base + 6] << 8) | rom[base + 7]) / 0x20;
+    std::vector<std::pair<std::string, uint32_t>> dirs;
+    for (uint32_t i = 0; i < count && manifest + (i + 1) * 0x20 <= rom.size(); i++) {
+        while (!dirs.empty() && i >= dirs.back().second) dirs.pop_back();
+        const uint8_t* e = &rom[manifest + i * 0x20];
+        const std::string name(reinterpret_cast<const char*>(e + 0x10), strnlen(reinterpret_cast<const char*>(e + 0x10), 16));
+        std::string path;
+        for (const auto& d : dirs) path += d.first + "/";
+        path += name;
+        if (e[0x0C] & 0x80) {
+            dirs.emplace_back(name, i + ((((uint32_t)e[0x0E] << 8) | e[0x0F]) >> 5));
+            continue;
+        }
+        if (!want(path)) continue;
+        const uint32_t off = base + be32(e), size = be32(e + 4), csize = be32(e + 8);
+        const uint32_t stored = csize == 0xFFFFFFFFu ? size : csize;
+        if (off + stored > rom.size()) continue;
+        std::vector<uint8_t> data(size);
+        if (csize == 0xFFFFFFFFu) {
+            std::memcpy(data.data(), &rom[off], size);
+        } else if (tinfl_decompress_mem_to_mem(data.data(), size, &rom[off], stored, TINFL_FLAG_PARSE_ZLIB_HEADER) != size) {
+            continue;
+        }
+        out.emplace(path, std::move(data));
+    }
+    return out;
+}
+
+// Tint the vertex colours of a HOB's eng_* parts (layout as tools/rs64-explorer parseHOB/parseFaces). The white core stays white: only the coloured part (max - min) takes the tint.
+bool tint_exhaust(std::vector<uint8_t>& hob, uint32_t tint) {
+    const size_t n = hob.size();
+    auto ok = [&](size_t o, size_t len) { return o + len <= n; };
+    if (!ok(0, 2)) return false;
+    bool changed = false;
+    const uint32_t objs = ((uint32_t)hob[0] << 8) | hob[1];
+    for (uint32_t oi = 0; oi < objs && ok(8 + oi * 0x74, 0x74); oi++) {
+        for (uint32_t p = be32(&hob[8 + oi * 0x74 + 0x2C]); p && ok(p, 12) && be32(&hob[p]); p += 12) {
+            if (std::memcmp(&hob[p + 4], "eng_", 4) != 0) continue;
+            const uint32_t part = be32(&hob[p]);
+            if (!ok(part, 0x24)) continue;
+            const uint32_t fg = be32(&hob[part + 0x20]);
+            if (!ok(fg, 16)) continue;
+            uint32_t o = be32(&hob[fg + 8]);
+            for (uint32_t f = 0, nf = be32(&hob[fg + 12]); f < nf && ok(o, 20); f++) {
+                const uint32_t flags = be32(&hob[o]), size = (hob[o + 4] & 0x3Fu) * 4u;
+                const uint32_t nv = (flags & 8) ? 4 : 3;
+                uint32_t c = o + 20 + ((be32(&hob[o + 4]) & 0x2000) ? 8 : 0);
+                const uint32_t nc = (flags & 0x20) ? ((flags & 0x10) ? nv : 1) : 0;
+                for (uint32_t k = 0; k < nc && ok(c, 4); k++, c += 4) {
+                    uint8_t* rgb = &hob[c];
+                    const int lo = std::min({ rgb[0], rgb[1], rgb[2] }), hi = std::max({ rgb[0], rgb[1], rgb[2] });
+                    for (int ch = 0; ch < 3; ch++) rgb[ch] = (uint8_t)(lo + (hi - lo) * ((tint >> (16 - ch * 8)) & 0xFF) / 255);
+                    changed = true;
+                }
+                if (!size) break;
+                o += size;
+            }
+        }
+    }
+    return changed;
+}
+
+uint32_t exhaust_choice() {
+    if (s_exhaust_variants.empty() || !recomp::mods::is_mod_enabled(kExhaustMod)) return 0;
+    const recomp::mods::ConfigValueVariant v = recomp::mods::get_mod_config_value(kExhaustMod, "color");
+    const uint32_t* idx = std::get_if<uint32_t>(&v);
+    return idx ? *idx : 0;
+}
+
+uint32_t rd_w(const uint8_t* rdram, uint32_t a) {
+    const uint32_t o = a - 0x80000000u;
+    return ((uint32_t)rdram[(o + 0) ^ 3] << 24) | ((uint32_t)rdram[(o + 1) ^ 3] << 16) | ((uint32_t)rdram[(o + 2) ^ 3] << 8) | rdram[(o + 3) ^ 3];
+}
+void wr_w(uint8_t* rdram, uint32_t a, uint32_t v) {
+    const uint32_t o = a - 0x80000000u;
+    rdram[(o + 0) ^ 3] = (uint8_t)(v >> 24); rdram[(o + 1) ^ 3] = (uint8_t)(v >> 16);
+    rdram[(o + 2) ^ 3] = (uint8_t)(v >> 8);  rdram[(o + 3) ^ 3] = (uint8_t)v;
+}
+}
+
+// A file named <path>.bps is a BPS patch applied to the player's own copy of <path>, so mods built from game assets ship no game data.
+extern "C" void rs64_asset_overrides_init() {
+    std::vector<uint8_t> rom;
+    auto append = [&rom](const std::vector<uint8_t>& data) {
+        if (rom.empty()) rom.assign(recomp::get_rom().begin(), recomp::get_rom().end());
+        rom.resize((rom.size() + 15) & ~size_t(15));
+        const AssetOverride ov{ (uint32_t)rom.size(), (uint32_t)data.size() };
+        rom.insert(rom.end(), data.begin(), data.end());
+        return ov;
+    };
+    std::unordered_map<std::string, std::pair<std::string, std::vector<uint8_t>>> patches;
+    for (const auto& d : recomp::mods::get_all_mod_details("rs64")) {
+        if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+        const std::filesystem::path dir = recomp::mods::get_mod_filename(d.mod_id) / "assets";
+        std::error_code ec;
+        if (!std::filesystem::is_directory(dir, ec)) continue;
+        for (const auto& f : std::filesystem::recursive_directory_iterator(dir, ec)) {
+            if (!f.is_regular_file()) continue;
+            std::ifstream in(f.path(), std::ios::binary);
+            std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            if (data.empty()) continue;
+            std::string key = std::filesystem::relative(f.path(), dir).generic_string();
+            if (f.path().extension() == ".bps") {
+                key.resize(key.size() - 4);
+                s_asset_overrides.erase(key);
+                patches[key] = { d.mod_id, std::move(data) };
+                continue;
+            }
+            patches.erase(key);
+            s_asset_overrides[key] = append(data);
+            fprintf(stderr, "[assets] %s overrides %s (%zu bytes)\n", d.mod_id.c_str(), key.c_str(), data.size());
+        }
+    }
+    if (!patches.empty()) {
+        for (const auto& [path, src] : rom_assets(recomp::get_rom(), [&](const std::string& p) { return patches.count(p) != 0; })) {
+            const auto& [mod_id, bps] = patches[path];
+            std::vector<uint8_t> out;
+            const auto res = recomp::patcher::patch_rom(src, bps, out);
+            if (res != recomp::patcher::PatcherResult::Success || out.empty()) {
+                fprintf(stderr, "[assets] %s: patch for %s does not apply (%s)\n", mod_id.c_str(), path.c_str(), res == recomp::patcher::PatcherResult::WrongRom ? "made from a different asset" : "invalid patch");
+                continue;
+            }
+            s_asset_overrides[path] = append(out);
+            fprintf(stderr, "[assets] %s patches %s (%zu bytes)\n", mod_id.c_str(), path.c_str(), out.size());
+        }
+    }
+    // Every colour variant is built up front so a change in the mod's config applies at the next level load.
+    if (recomp::mods::is_mod_enabled(kExhaustMod)) {
+        const auto is_craft = [](const std::string& p) { return p.rfind("pl_crafts/", 0) == 0 && p.size() > 4 && p.compare(p.size() - 4, 4, "_HOB") == 0; };
+        for (auto& [path, hob] : rom_assets(recomp::get_rom(), is_craft)) {
+            auto& variants = s_exhaust_variants[path];
+            variants.resize(std::size(kExhaustTints));
+            for (size_t t = 1; t < std::size(kExhaustTints); t++) {
+                std::vector<uint8_t> data = hob;
+                if (!tint_exhaust(data, kExhaustTints[t])) break;
+                variants[t] = append(data);
+            }
+            if (!variants[1].size) s_exhaust_variants.erase(path);
+        }
+        fprintf(stderr, "[assets] exhaust colours for %zu craft models\n", s_exhaust_variants.size());
+    }
+    if (!rom.empty()) recomp::set_rom_contents(std::move(rom));
+}
+
+// findManifestEntryByName exit: slot idx of gManifestTable (0x80110A80, 0x50 each) has just had its manifest loaded.
+extern "C" void rs64_asset_overrides_patch(uint8_t* rdram, uint32_t idx) {
+    if ((s_asset_overrides.empty() && s_exhaust_variants.empty()) || idx >= 4) return;
+    const uint32_t exhaust = exhaust_choice();
+    const uint32_t slot = 0x80110A80u + idx * 0x50u;
+    const uint32_t manifest = rd_w(rdram, slot + 0x40);
+    const uint32_t block_rom = rd_w(rdram, slot + 0x44) & 0x0FFFFFFFu;
+    const uint32_t count = rd_w(rdram, slot + 0x48);
+    if ((manifest & 0xFF800000u) != 0x80000000u) return;
+    std::vector<std::pair<std::string, uint32_t>> dirs;
+    for (uint32_t i = 0; i < count; i++) {
+        while (!dirs.empty() && i >= dirs.back().second) dirs.pop_back();
+        const uint32_t e = manifest + i * 0x20u;
+        char name[17] = {};
+        for (int c = 0; c < 16; c++) name[c] = (char)rdram[(e + 0x10 + c - 0x80000000u) ^ 3];
+        std::string path;
+        for (const auto& d : dirs) path += d.first + "/";
+        path += name;
+        const uint32_t w3 = rd_w(rdram, e + 0x0C);
+        if (w3 & 0x80000000u) {
+            dirs.emplace_back(name, i + ((w3 & 0xFFFFu) >> 5));
+            continue;
+        }
+        AssetOverride ov{};
+        if (const auto it = s_asset_overrides.find(path); it != s_asset_overrides.end()) {
+            ov = it->second;
+        } else if (const auto ex = s_exhaust_variants.find(path); exhaust && ex != s_exhaust_variants.end() && exhaust < ex->second.size()) {
+            ov = ex->second[exhaust];
+        }
+        if (!ov.size) continue;
+        wr_w(rdram, e + 0x00, ov.rom_off - block_rom);
+        wr_w(rdram, e + 0x04, ov.size);
+        wr_w(rdram, e + 0x08, 0xFFFFFFFFu);
+        wr_w(rdram, e + 0x0C, w3 & 0xFFFFu);
+        fprintf(stderr, "[assets] slot %u: %s -> rom 0x%X\n", idx, path.c_str(), ov.rom_off);
     }
 }

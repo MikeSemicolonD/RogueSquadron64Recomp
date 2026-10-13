@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 3
+#define RS64_HOST_API_VERSION 5
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -70,6 +70,7 @@ typedef int (*rs64_condition_fn)(void* user);
 // Typed text (utf8 non-NULL, key 0) or Backspace / Enter (utf8 NULL, key '\b' / '\r'); return 1 to take the event from the game.
 typedef int (*rs64_key_fn)(const char* utf8, int key, void* user);
 typedef void (*rs64_event_fn)(void* user);
+typedef uint64_t (*rs64_hash_fn)(const uint8_t* rdram, void* user);
 
 typedef struct rs64_host_api {
     uint32_t version;
@@ -107,6 +108,12 @@ typedef struct rs64_host_api {
     // v3: a named table one mod publishes for another (e.g. "mp.transport", include/rs64/mp_transport.h). add_service only before the registry seals, first provider wins; get_service any time, NULL if none.
     int (*add_service)(const char* name, const void* table);
     const void* (*get_service)(const char* name);
+    // v4: a frame-hash part (lockstep hash files), appended after the base parts and counted only while flag gate_flag is non-zero; only before the registry seals.
+    int (*add_hash_part)(const char* name, const char* gate_flag, rs64_hash_fn fn, void* user);
+    // A host-RAM range (KSEG0, above the game's 8 MB) the mod keeps game records in, so guards such as the NPC health patch accept pointers into it.
+    int (*add_valid_ram)(uint32_t addr, uint32_t size);
+    // v5: game data [lo, hi) the mod moved to lo + delta (its instruction_patches.json repoints the game's code), so host code that reads it (lockstep hashes, rs64_relocated for .nrm mods) follows; only before the registry seals, no overlaps.
+    int (*add_moved_range)(uint32_t lo, uint32_t hi, uint32_t delta);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

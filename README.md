@@ -21,18 +21,16 @@ A static recompilation of **Star Wars: Rogue Squadron** (N64, USA v1.0) built wi
 
 <table>
   <tr>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture1.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture2.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture3.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture4.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture5.PNG"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture1.png"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture2.png"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture3.png"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture4.png"></td>
   </tr>
   <tr>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture6.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture7.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture8.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture9.PNG"></td>
-    <td><img alt="Recomp screenshot" src="./screenshots/progress2/Capture10.PNG"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture5.png"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture6.png"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture7.png"></td>
+    <td><img alt="Recomp screenshot" src="./screenshots/Capture8.png"></td>
   </tr>
 </table>
 </div>
@@ -147,7 +145,6 @@ The build generates `src/main/state_table.inl` from `tools/state/state_model.tom
 | CMake option | Default | Purpose |
 | --- | --- | --- |
 | `N64RECOMP_EXE=path` | `N64Recomp` in the build dir (`Debug/` for Visual Studio) | Recompiler used by `regen_funcs` and the patches build |
-| `RS64_MULTIPLAYER=OFF` | ON | Leave online co-op out of the exe; it then comes from the `multiplayer-native` mod. Desktop releases and Android build OFF |
 | `ROGUESQ_NO_ITER_DEBUG=ON` | OFF | Disable MSVC debug iterators across the whole build for faster Debug runs (Windows) |
 
 Debug builds compile in the D3D12 debug layer; turn it on at runtime with `ROGUESQ_D3D12_DEBUG=1` (`ROGUESQ_D3D12_GPUVAL=1` adds GPU-based validation).
@@ -338,7 +335,7 @@ Recompiled game code (`RecompiledFuncs/`, generated, with the toml's hooks compi
 | `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` | The Factor 5 GBI module (the render core) |
 | `rsp/*_rsp.toml` | RSPRecomp configs for the boot and MusyX audio ucodes |
 | `include/rs64/host_api.h`, `src/main/host_api*.cpp`, `builtin_hooks.cpp` | Host API for native mods ([docs/modding-host-api.md](docs/modding-host-api.md)) |
-| `src/main/ghost*.cpp`, `net_core.cpp`, `net_link.cpp`, `mp_register.cpp`, `mods/multiplayer-native/` | Online co-op ([docs/multiplayer.md](docs/multiplayer.md)) |
+| `mods/multiplayer-native/` (sources in `src/`, tests in `tests/`) | Online co-op ([docs/multiplayer.md](docs/multiplayer.md)) |
 | `src/main/lockstep*.cpp` | Mission input record/replay with per-frame state hashes |
 
 **Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and validated offline against Project64 dumps with `tools/validate/f5_dl_walk.py`.

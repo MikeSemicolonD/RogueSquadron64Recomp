@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -146,6 +147,8 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
            : (t == "submenu") ? BType::Submenu : (t == "label") ? BType::Label : BType::Action;
     const char* bkey = (b.type == BType::Toggle) ? "toggle" : (b.type == BType::Slider) ? "slider" : "action";
     b.behavior = e.value(bkey, std::string{});
+    // "config:<option>" names an option in the mod's own mod.toml config schema; the key carries the mod id so the registries need no button.
+    if (b.behavior.rfind("config:", 0) == 0 && !mod_id.empty()) b.behavior = "config:" + mod_id + ":" + b.behavior.substr(7);
     b.page  = e.value("page",  std::string{});
     b.title = e.value("title", std::string{});
     b.title_y = e.value("title_y", 0);
@@ -176,11 +179,9 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     out.push_back(std::move(b));
 }
 
-void apply_json(MenuConfig& m, const std::string& path, const std::string& mod_id) {
-    std::ifstream f(path);
-    if (!f.is_open()) return;
+void apply_json_text(MenuConfig& m, const std::string& text, const std::string& mod_id) {
     nlohmann::json j;
-    try { f >> j; } catch (...) { return; }
+    try { j = nlohmann::json::parse(text); } catch (...) { return; }
     try {
         if (j.contains("buttons") && j["buttons"].is_array()) {
             for (const auto& e : j["buttons"]) parse_button(e, mod_id, m.buttons);
@@ -228,13 +229,15 @@ MenuConfig build_config() {
 
     if (char* base = SDL_GetBasePath()) {
         std::string dir = base; SDL_free(base);
-        apply_json(m, dir + "roguesq_menu.json", std::string{});
+        std::ifstream f(dir + "roguesq_menu.json", std::ios::binary);
+        if (f.is_open()) apply_json_text(m, std::string(std::istreambuf_iterator<char>(f), {}), std::string{});
     }
+    // A mod's menu file sits in its folder or inside its .nrm (RecompModTool additional_files).
     for (const auto& d : recomp::mods::get_all_mod_details("rs64")) {
         if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
-        std::filesystem::path root = recomp::mods::get_mod_filename(d.mod_id);
-        if (root.empty()) continue;
-        apply_json(m, (root / "roguesq_menu.json").string(), d.mod_id);
+        bool exists = false;
+        const std::vector<char> text = recomp::mods::read_mod_file(d.mod_id, "roguesq_menu.json", exists);
+        if (exists) apply_json_text(m, std::string(text.begin(), text.end()), d.mod_id);
     }
 
     // A later button with the same id replaces the earlier one in place; id-less buttons are always kept.
@@ -312,6 +315,31 @@ std::unordered_map<std::string, SliderImpl>& sliders() {
     return r;
 }
 
+// "config:<mod>:<option>": an Enum option is a toggle (on = any option but the first; selecting it steps to the next option), a Number option a slider (librecomp saves both).
+bool config_key(const std::string& key, std::string& mod, std::string& opt) {
+    if (key.rfind("config:", 0) != 0) return false;
+    const size_t colon = key.find(':', 7);
+    if (colon == std::string::npos) return false;
+    mod = key.substr(7, colon - 7);
+    opt = key.substr(colon + 1);
+    return true;
+}
+const recomp::mods::ConfigOption* config_option(const std::string& mod, const std::string& opt) {
+    const recomp::mods::ConfigSchema& s = recomp::mods::get_mod_config_schema(mod);
+    auto it = s.options_by_id.find(opt);
+    return it == s.options_by_id.end() ? nullptr : &s.options[it->second];
+}
+uint32_t config_enum(const std::string& mod, const std::string& opt) {
+    const recomp::mods::ConfigValueVariant v = recomp::mods::get_mod_config_value(mod, opt);
+    const uint32_t* u = std::get_if<uint32_t>(&v);
+    return u ? *u : 0;
+}
+double config_number(const std::string& mod, const std::string& opt) {
+    const recomp::mods::ConfigValueVariant v = recomp::mods::get_mod_config_value(mod, opt);
+    const double* d = std::get_if<double>(&v);
+    return d ? *d : 0.0;
+}
+
 void fire_action(const std::string& key) {
     auto it = actions().find(key);
     if (it != actions().end() && it->second) {
@@ -321,24 +349,42 @@ void fire_action(const std::string& key) {
     rs64::host::run_action(key.c_str());
 }
 bool toggle_state(const std::string& key) {
+    std::string mod, opt;
+    if (config_key(key, mod, opt)) return config_enum(mod, opt) != 0;
     auto it = toggles().find(key);
     return it != toggles().end() && it->second.get && it->second.get();
 }
 void toggle_flip(const std::string& key) {
+    std::string mod, opt;
+    if (config_key(key, mod, opt)) {
+        const recomp::mods::ConfigOption* o = config_option(mod, opt);
+        const auto* e = o ? std::get_if<recomp::mods::ConfigOptionEnum>(&o->variant) : nullptr;
+        if (e && !e->options.empty()) recomp::mods::set_mod_config_value(mod, opt, (uint32_t)((config_enum(mod, opt) + 1) % e->options.size()));
+        return;
+    }
     auto it = toggles().find(key);
     if (it != toggles().end() && it->second.toggle) it->second.toggle();
 }
 
-// Call a mod native-library export (native C, no guest stack needed): a zeroed
-// ctx, marshaling via r2 (bool/int return) and r4 (int arg).
+// A zeroed ctx on a stack of its own, so a .nrm export (recompiled MIPS) can call game functions as safely as a native one; marshaling via r2 (bool/int return) and r4 (int arg).
+recomp_context export_ctx(uint8_t* rdram) {
+    static uint32_t stack_top = 0;
+    if (!stack_top) {
+        const uint32_t base = rs64::host::api()->alloc(rdram, 0x4000);
+        stack_top = base ? base + 0x4000 - 0x10 : 0;
+    }
+    recomp_context ctx{};
+    ctx.r29 = (gpr)(int32_t)stack_top;
+    return ctx;
+}
 void call_export(uint8_t* rdram, recomp_func_t* fn) {
     if (!fn) return;
-    recomp_context ctx{};
+    recomp_context ctx = export_ctx(rdram);
     fn(rdram, &ctx);
 }
 bool call_export_bool(uint8_t* rdram, recomp_func_t* fn) {
     if (!fn) return false;
-    recomp_context ctx{};
+    recomp_context ctx = export_ctx(rdram);
     fn(rdram, &ctx);
     return ctx.r2 != 0;
 }
@@ -533,14 +579,46 @@ bool button_toggle_state(uint8_t* rdram, const std::string& key, recomp_func_t* 
     return get_fn ? call_export_bool(rdram, get_fn) : toggle_state(key);
 }
 
+// Menu font 5 text: capitals, digits and spaces (no lower case, no punctuation).
+std::string menu_font_text(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (std::isalnum((unsigned char)c) || c == ' ') out.push_back((char)std::toupper((unsigned char)c));
+    }
+    return out;
+}
+
+// A toggle's label: a config Enum with more than two options (or no label_on/label_off) shows "label: OPTION", else label_on or label_off by state.
+std::string toggle_text(uint8_t* rdram, const std::string& key, recomp_func_t* get_fn, const std::string& label, const std::string& on, const std::string& off) {
+    std::string mod, opt;
+    if (!get_fn && config_key(key, mod, opt)) {
+        const recomp::mods::ConfigOption* o = config_option(mod, opt);
+        const auto* e = o ? std::get_if<recomp::mods::ConfigOptionEnum>(&o->variant) : nullptr;
+        if (e && !e->options.empty() && (e->options.size() > 2 || (on.empty() && off.empty()))) {
+            uint32_t v = config_enum(mod, opt);
+            if (v >= e->options.size()) v = 0;
+            const std::string name = menu_font_text(e->options[v]);
+            return label.empty() ? name : label + ": " + name;
+        }
+    }
+    return button_toggle_state(rdram, key, get_fn) ? on : off;
+}
+
 // Slider value get/set, preferring the mod @export (get -> r2, set arg -> r4).
 int slider_value(uint8_t* rdram, const std::string& key, recomp_func_t* get_fn) {
-    if (get_fn) { recomp_context c{}; get_fn(rdram, &c); return (int)(int32_t)c.r2; }
+    if (get_fn) { recomp_context c = export_ctx(rdram); get_fn(rdram, &c); return (int)(int32_t)c.r2; }
+    std::string mod, opt;
+    if (config_key(key, mod, opt)) return (int)std::lround(config_number(mod, opt));
     auto it = sliders().find(key);
     return (it != sliders().end() && it->second.get) ? it->second.get() : 0;
 }
 void slider_apply(uint8_t* rdram, const std::string& key, recomp_func_t* set_fn, int v) {
-    if (set_fn) { recomp_context c{}; c.r4 = (gpr)(uint32_t)v; set_fn(rdram, &c); return; }
+    if (set_fn) { recomp_context c = export_ctx(rdram); c.r4 = (gpr)(uint32_t)v; set_fn(rdram, &c); return; }
+    std::string mod, opt;
+    if (config_key(key, mod, opt)) {
+        recomp::mods::set_mod_config_value(mod, opt, (double)v);
+        return;
+    }
     auto it = sliders().find(key);
     if (it != sliders().end() && it->second.set) it->second.set(v);
 }
@@ -666,7 +744,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
         BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         std::string text;
         if (b.type == BType::Toggle)
-            text = button_toggle_state(rdram, b.behavior, fns.toggle_get) ? b.label_on : b.label_off;
+            text = toggle_text(rdram, b.behavior, fns.toggle_get, b.label, b.label_on, b.label_off);
         else if (b.type == BType::Slider)
             text = slider_bar_text(b.label, slider_value(rdram, b.behavior, fns.toggle_get),
                                    b.smin, b.smax, b.bar_width, b.bar_filled, b.bar_empty);
@@ -847,7 +925,7 @@ void build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent) {
         BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         std::string text;
         if (b.type == BType::Toggle)
-            text = button_toggle_state(rdram, b.behavior, fns.toggle_get) ? b.label_on : b.label_off;
+            text = toggle_text(rdram, b.behavior, fns.toggle_get, b.label, b.label_on, b.label_off);
         else if (b.type == BType::Slider)
             text = slider_bar_text(b.label, slider_value(rdram, b.behavior, fns.toggle_get),
                                    b.smin, b.smax, b.bar_width, b.bar_filled, b.bar_empty);
@@ -935,6 +1013,10 @@ extern "C" void rs64_menu_install_main(uint8_t* rdram) {
     if (menu == MENU_SOUND_SETTINGS) sound_settings_install(rdram);
 }
 
+// Presses the game delivered to a mod entry; the nav sequencer's menu: target waits on this (some presses are dropped).
+static std::atomic<uint32_t> s_confirms{0};
+extern "C" uint32_t rs64_menu_confirms() { return s_confirms.load(std::memory_order_relaxed); }
+
 extern "C" void rs64_menu_confirm_main(uint8_t* rdram) {
     static const bool off = menu_buttons_off();
     if (off) return;
@@ -949,6 +1031,7 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram) {
         return;
     }
 
+    if (e < MAX_ENTRIES && s_slot[e].set) s_confirms.fetch_add(1, std::memory_order_relaxed);
     if (e >= MAX_ENTRIES || !s_slot[e].set) return;
     const SlotBinding& b = s_slot[e];
     if (b.type == BType::Submenu) {
@@ -1275,7 +1358,7 @@ extern "C" unsigned rs64_pause_label_for(uint8_t* rdram, unsigned marker) {
     const PauseBinding& b = it->second;
     std::string text;
     if (b.type == BType::Toggle)
-        text = button_toggle_state(rdram, b.key, b.toggle_get_fn) ? b.label_on : b.label_off;
+        text = toggle_text(rdram, b.key, b.toggle_get_fn, b.label, b.label_on, b.label_off);
     else if (b.type == BType::Slider)
         text = slider_bar_text(b.label, slider_value(rdram, b.key, b.toggle_get_fn),
                                b.smin, b.smax, b.bar_width, b.bar_filled, b.bar_empty);

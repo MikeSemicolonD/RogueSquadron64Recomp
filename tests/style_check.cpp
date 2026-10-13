@@ -1,4 +1,4 @@
-// Style checks for src/main from AGENTS.md: no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line.
+// Style checks for src/main and mods/multiplayer-native/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line.
 // Usage: style_check <repo root> [--update-baseline]. Exits 1 on findings not in tools/style/baseline.txt.
 #include <algorithm>
 #include <cctype>
@@ -42,15 +42,21 @@ static bool bare_getenv(const std::string& code) {
 static std::vector<std::string> findings(const fs::path& root) {
     static const std::regex side(R"([;{)]\s+//)");
     static const std::regex two(R"(;\s+(if|while)\s*\()");
-    std::vector<fs::path> files;
-    for (auto& e : fs::directory_iterator(root / "src" / "main")) {
-        auto ext = e.path().extension();
-        if (e.is_regular_file() && (ext == ".cpp" || ext == ".h")) files.push_back(e.path());
+    static const std::regex include_re(R"re(^\s*#\s*include\s+"([^"]+)")re");
+    // Base-game headers the multiplayer mod may include; anything else it needs goes through the host API (mods/multiplayer-native/CMakeLists.txt lists the same files).
+    static const std::set<std::string> mp_allowed = {"lockstep_core.h", "debug_logs.h", "rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "json/json.hpp"};
+    const std::string mp_dir = "mods/multiplayer-native/src";
+    std::vector<std::pair<std::string, fs::path>> files;
+    for (const std::string dir : {std::string("src/main"), mp_dir}) {
+        for (auto& e : fs::directory_iterator(root / dir)) {
+            auto ext = e.path().extension();
+            if (e.is_regular_file() && (ext == ".cpp" || ext == ".h")) files.push_back({dir, e.path()});
+        }
     }
     std::sort(files.begin(), files.end());
     std::vector<std::string> out;
-    for (auto& f : files) {
-        std::string rel = "src/main/" + f.filename().string();
+    for (auto& [dir, f] : files) {
+        std::string rel = dir + "/" + f.filename().string();
         std::ifstream in(f, std::ios::binary);
         std::string line, first;
         int run = 0;
@@ -63,6 +69,8 @@ static std::vector<std::string> findings(const fs::path& root) {
                 continue;
             }
             run = 0;
+            std::smatch inc;
+            if (dir == mp_dir && std::regex_search(line, inc, include_re) && !mp_allowed.count(inc[1]) && !fs::exists(root / dir / inc[1].str())) out.push_back(rel + ": includes a base-game header outside the allowed list: " + inc[1].str());
             std::string code = line;
             if (std::count(line.begin(), line.end(), '"') % 2 == 0) code = line.substr(0, line.find('"'));
             if (std::regex_search(code, side)) out.push_back(rel + ": comment after code: " + head60(s));

@@ -4,11 +4,13 @@
 #include "debug_logs.h"
 #include "lockstep_core.h"
 #include "host_api.h"
+#include "menu_config.h"
 #include <atomic>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 // Multiplayer's lobby state, published as a flag (0 idle, 1 hosting, 2 joining, 3 connected, 4 failed); 0 without multiplayer.
 static int lobby_state() { return rs64::host::flag("mp_lobby_state"); }
@@ -46,9 +48,31 @@ extern "C" bool rs64_nav_consume(uint16_t* buttons, float* x, float* y) {
 
 // ---- Target ----
 
+// menu:<label>/<label>/...: the entries to select in turn from the main menu (the last may be an action on a page).
+static std::vector<std::string>& menu_path() {
+    static std::vector<std::string> p;
+    return p;
+}
+
 RsNavTarget rs64_nav_parse(const char* v) {
     RsNavTarget t{ NAV_NONE, -1, -1 };
     if (!v) return t;
+    if (!std::strncmp(v, "menu:", 5) && v[5]) {
+        t.kind = NAV_MENU;
+        menu_path().clear();
+        std::string cur;
+        for (const char* c = v + 5;; ++c) {
+            if (*c == '/' || !*c) {
+                if (!cur.empty()) menu_path().push_back(cur);
+                cur.clear();
+                if (!*c) break;
+            } else {
+                cur.push_back(*c);
+            }
+        }
+        t.a = (int)menu_path().size();
+        return t;
+    }
     auto arg = [](const char* s) { const char* c = std::strchr(s, ':'); return (c && c[1]) ? std::atoi(c + 1) : -1; };
     auto arg2 = [](const char* s) { const char* c = std::strchr(s, ','); return (c && c[1]) ? std::atoi(c + 1) : -1; };
     if (!std::strncmp(v, "level", 5))         { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); }
@@ -359,10 +383,15 @@ static uint32_t nav_word(uint8_t* rdram, uint32_t phys) {
     return ((uint32_t)rdram[(phys + 0) ^ 3] << 24) | ((uint32_t)rdram[(phys + 1) ^ 3] << 16) | ((uint32_t)rdram[(phys + 2) ^ 3] << 8) | rdram[(phys + 3) ^ 3];
 }
 
+// A label ending in '*' matches entries that start with the rest (a slider or live label whose text changes).
 static int nav_find_entry(uint8_t* rdram, const char* label) {
     const int n = rdram[(0xCE730u + 0x95) ^ 3];
-    for (int i = 0; i < n && i < 8; ++i)
-        if (nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)) == label) return i;
+    const size_t len = std::strlen(label);
+    const bool prefix = len && label[len - 1] == '*';
+    for (int i = 0; i < n && i < 8; ++i) {
+        const std::string text = nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4));
+        if (prefix ? text.compare(0, len - 1, label, len - 1) == 0 : text == label) return i;
+    }
     return -1;
 }
 
@@ -371,6 +400,57 @@ static bool nav_pick(uint8_t* rdram, const char* label) {
     if (i < 0) return false;
     nav_write_u8(rdram, 0xCE730u + 0x94, (uint8_t)i);
     return true;
+}
+
+// Each step selects menu_path()[s_step] once it is listed: the cursor is written, and once it has held there, A. The step is done when the menu changes or the press reached a mod entry (rs64_menu_confirms); a press during a page's redraw and sweep transition is dropped, so an unanswered press is repeated.
+static void nav_menu(uint8_t* rdram, const char* st) {
+    static int s_pressed_at = -1;
+    static uint32_t s_title_word = 0, s_confirms = 0;
+    static uint8_t s_menu_id = 0;
+    static int s_stable = 0, s_cursor_held = 0;
+    static uint32_t s_seen_title = 0;
+    static uint8_t s_seen_menu = 0;
+    const std::vector<std::string>& path = menu_path();
+    if (s_step >= (int)path.size()) {
+        fprintf(stderr, "[nav] menu: path done\n");
+        s_disabled = true;
+        return;
+    }
+    if (s_overlay != 1 && std::strncmp(st, "menu", 4) != 0) return;
+    const uint32_t title_word = nav_word(rdram, 0xCE730u);
+    const uint8_t menu_id = rdram[(0xCE730u + 0x04) ^ 3];
+    if (s_pressed_at >= 0) {
+        if (title_word != s_title_word || menu_id != s_menu_id || rs64_menu_confirms() != s_confirms) {
+            fprintf(stderr, "[nav] menu: selected %s\n", path[s_step].c_str());
+            s_pressed_at = -1;
+            nav_advance();
+            return;
+        }
+        // A transition can start late: keep watching, and press again only after a while.
+        if (s_watchdog - s_pressed_at <= 120) return;
+    }
+    if (rdram[(0xCE730u + 0x95) ^ 3] == 0) {
+        nav_repress(N64_START_BUTTON);
+        return;
+    }
+    s_stable = (title_word == s_seen_title && menu_id == s_seen_menu) ? s_stable + 1 : 0;
+    s_seen_title = title_word;
+    s_seen_menu = menu_id;
+    if (s_stable < 45) return;
+    const int want = nav_find_entry(rdram, path[s_step].c_str());
+    if (want < 0) return;
+    if (rdram[(0xCE730u + 0x94) ^ 3] != want) {
+        nav_write_u8(rdram, 0xCE730u + 0x94, (uint8_t)want);
+        s_cursor_held = 0;
+        return;
+    }
+    if (++s_cursor_held < 10) return;
+    s_cursor_held = 0;
+    begin_pulse(N64_A_BUTTON);
+    s_pressed_at = s_watchdog;
+    s_title_word = title_word;
+    s_menu_id = menu_id;
+    s_confirms = rs64_menu_confirms();
 }
 
 static void nav_lobby(uint8_t* rdram, const char* st) {
@@ -579,6 +659,7 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay) {
         case NAV_DEMO:     nav_demo(rdram, st); break;
         case NAV_ABORT:    nav_abort(rdram, st); break;
         case NAV_LOBBY:    nav_lobby(rdram, st); break;
+        case NAV_MENU:     nav_menu(rdram, st); break;
         default: s_disabled = true; break;
     }
 }

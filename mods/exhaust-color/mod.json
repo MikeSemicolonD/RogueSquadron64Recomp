@@ -1,0 +1,16 @@
+{
+  "game_id": "rs64",
+  "id": "exhaust-color",
+  "display_name": "Exhaust Color",
+  "description": "Recolors the engine exhaust of every flyable craft. Applies from the next level load.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": false,
+  "config_schema": {
+    "options": [
+      { "id": "color", "name": "Exhaust color", "description": "Engine exhaust color (Default keeps each craft's own).", "type": "Enum",
+        "options": ["Default", "Red", "Orange", "Yellow", "Green", "Cyan", "Blue", "Purple", "Pink", "White"], "default": "Default" }
+    ]
+  }
+}
