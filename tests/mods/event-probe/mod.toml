@@ -13,4 +13,4 @@ enabled_by_default = true
 elf_path = "build/mod.elf"
 mod_filename = "event_probe"
 func_reference_syms_file = "../../../syms/rogue_squadron.syms.toml"
-data_reference_syms_files = [ "../../../syms/rogue_squadron.datasyms.mods.toml" ]
+data_reference_syms_files = [ "../../../syms/rogue_squadron.datasyms.toml" ]

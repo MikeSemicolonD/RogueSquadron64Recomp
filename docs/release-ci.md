@@ -46,22 +46,16 @@ Both jobs build every `.nrm` that [mods/platforms.json](../mods/platforms.json) 
 
 ## Native mods
 
-Both desktop jobs configure with `-DRS64_MULTIPLAYER=OFF`, so the exe has no multiplayer code and online co-op ships as the `multiplayer-native` mod ([mods/multiplayer-native](../mods/multiplayer-native/)). The game's CMake builds that mod (`multiplayer_native.dll` / `.so`) as a dependency of the exe into `build/built_mods/<Config>/multiplayer-native` and [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake) stages it. The mod target also restages after its own builds (a multiplayer-source edit that does not relink the exe), and the Release dist gets the mod without its PDB. The Linux package script strips every staged `.so`.
+The exe has no multiplayer code; online co-op ships as the `multiplayer-native` mod ([mods/multiplayer-native](../mods/multiplayer-native/)). The game's CMake builds that mod (`multiplayer_native.dll` / `.so`) as a dependency of the exe into `build/built_mods/<Config>/multiplayer-native` and [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake) stages it. The mod target also restages after its own builds (a multiplayer-source edit that does not relink the exe), and the Release dist gets the mod without its PDB. The Linux package script strips every staged `.so`.
 
-Both lists in `mods/platforms.json` name `multiplayer-native`; the data-only `multiplayer` (the menu page JSON) is listed under neither and only stages in place of the native mod in a desktop `RS64_MULTIPLAYER=ON` build. `stage_mods.cmake` takes three arguments that decide what desktop stages:
-
-| Argument | Used when | Effect |
-|---|---|---|
-| `BUILT=build/built_mods/<Config>` | always | a listed mod found there (the built native mod) is staged from it instead of from `mods/` |
-| `SWAP=multiplayer-native=multiplayer` | `RS64_MULTIPLAYER=ON` | stages the data-only `multiplayer` where the list says `multiplayer-native` and removes any staged `multiplayer-native`, including a hand-copied one, on every relink |
-| `DROP=multiplayer` | `RS64_MULTIPLAYER=OFF` | removes a stale staged `multiplayer`; the built native mod's folder carries the menu JSON itself |
+Both lists in `mods/platforms.json` name `multiplayer-native`. `stage_mods.cmake` gets `BUILT=build/built_mods/<Config>`: a listed mod found there (the built native mod, with its `mod.json` and menu JSON) is staged from it instead of from `mods/`.
 
 Each desktop job has a "Check the multiplayer mod" step after the game build. It fails the job if the mod is not staged (`build/mods/...` on Linux, `build/dist/mods/...` on Windows) or if the exe still contains the multiplayer strings. The Windows step uses `Select-String` and ends with an explicit `exit 0`: the `shell: powershell` wrapper ends with `exit $LASTEXITCODE`, and `findstr` finding nothing (the passing case) would leave it at 1.
 
 Platform decisions:
 
-- OFF desktop builds are mod-only for multiplayer: with the mod disabled or missing there is no online co-op and no local co-op (`ROGUESQ_COOP_LOCAL` needs the mod).
-- Android is not built by this workflow. Its Gradle build passes `RS64_MULTIPLAYER=OFF` and packs `libmultiplayer_native.so` into the APK, so multiplayer is a mod there too.
+- Multiplayer is mod-only: with the mod disabled or missing there is no online co-op and no local co-op (`ROGUESQ_COOP_LOCAL` needs the mod).
+- Android is not built by this workflow. Its Gradle build packs `libmultiplayer_native.so` into the APK, so multiplayer is a mod there too.
 - macOS is not covered yet: there is no export restriction check for the mod's library and no signing step.
 
 ## Unit tests

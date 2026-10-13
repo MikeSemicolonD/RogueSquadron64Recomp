@@ -122,8 +122,10 @@ static inline void rdram_wr32(uint8_t* rdram, uint32_t off, uint32_t v) {
 // Wrapper: captures rdram into the watchdog global on first call so the
 // poll/diagnostic threads can attach. Forwards to the real entrypoint.
 extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw;
+extern "C" void rs64_asset_overrides_init();
 extern "C" void rs64_entrypoint_with_rdram_capture(uint8_t* rdram, recomp_context* ctx) {
     g_recomp_rdram_for_wp_raw = rdram;
+    rs64_asset_overrides_init();
     recomp_entrypoint(rdram, ctx);
 }
 // The game's N64 "main" function — renamed to avoid clash with C main()
@@ -3139,7 +3141,7 @@ static const CliFlag kCliFlags[] = {
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
     {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},
-    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
+    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
 };
 
 static void print_cli_usage() {

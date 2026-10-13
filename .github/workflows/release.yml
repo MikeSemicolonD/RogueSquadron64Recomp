@@ -50,7 +50,7 @@ jobs:
       - name: Build game
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" -DRS64_MULTIPLAYER=OFF \
+            -DN64RECOMP_EXE="$PWD/build-tools/N64Recomp" \
             -DMIPS_GCC="$RS64_MIPS_GCC" -DMIPS_LD="$RS64_MIPS_LD"
           cmake --build build --target RogueSquadron64Recomp
 
@@ -125,7 +125,7 @@ jobs:
         run: |
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL `
             "-DN64RECOMP_EXE=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe" `
-            "-DRS64_MULTIPLAYER=OFF" "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR"
+            "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           cmake --build build --config Release --target RogueSquadron64Recomp
           if ($LASTEXITCODE -ne 0) { exit 1 }

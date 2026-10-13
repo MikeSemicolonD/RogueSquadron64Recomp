@@ -1,10 +1,6 @@
 #include "host_api.h"
 #include "recomp.h"
 
-#ifndef RS64_MULTIPLAYER
-#error RS64_MULTIPLAYER must be defined (0 or 1)
-#endif
-
 extern "C" {
 void rs64_menu_pass(uint8_t*, recomp_context*);
 void rs64_menu_pilot_chosen(uint8_t*, recomp_context*);
@@ -12,10 +8,8 @@ void rs64_menu_frame(uint8_t*, recomp_context*);
 void rs64_ls_on_mission_init(uint8_t*, recomp_context*);
 float rs64_ls_frame_dt(uint8_t*, float);
 void rs64_ls_frame_pads(uint8_t*, recomp_context*);
+void rs64_ls_frame_hash(uint8_t*, recomp_context*);
 uint32_t rs64_ls_song_active(uint8_t*, uint32_t);
-#if RS64_MULTIPLAYER
-void rs64_mp_register(const rs64_host_api* api);
-#endif
 }
 
 namespace {
@@ -49,9 +43,9 @@ extern "C" void rs64_register_builtin_hooks() {
     add_hook(RS64_HOOK_MISSION_FRAME_DT, frame_dt, nullptr);
     add_hook(RS64_HOOK_MISSION_FRAME_PADS, forward, (void*)rs64_ls_frame_pads);
     add_hook(RS64_HOOK_SONG_ACTIVE, song_active, nullptr);
-#if RS64_MULTIPLAYER
-    // Multiplayer is built in: a multiplayer-native mod that sees this flag stays off.
-    rs64::host::set_flag("mp_builtin", 1);
-    rs64_mp_register(rs64::host::api());
-#endif
+}
+
+// After the mods, so the frame hash sees what their frame-pads handlers wrote.
+extern "C" void rs64_register_builtin_late_hooks() {
+    rs64::host::add_hook(RS64_HOOK_MISSION_FRAME_PADS, forward, (void*)rs64_ls_frame_hash);
 }

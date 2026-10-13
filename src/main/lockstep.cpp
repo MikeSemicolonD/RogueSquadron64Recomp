@@ -41,10 +41,6 @@ struct State {
     std::map<uint32_t, std::vector<uint8_t>> song;
     uint32_t song_frame = 0xFFFFFFFFu;
     size_t song_idx = 0;
-    // ROGUESQ_LS_PAD2_REPLAY: port 1 flies a recorded port-0 run from mission frame 0.
-    bool pad2 = false;
-    uint32_t pad2_frame = 0;
-    std::vector<FrameInput> pad2_frames;
 };
 
 State& st() {
@@ -68,11 +64,6 @@ uint32_t rw(const uint8_t* rdram, uint32_t a) {
 
 void ww(uint8_t* rdram, uint32_t a, uint32_t v) {
     memcpy(rdram + (a - 0x80000000u), &v, 4);
-}
-
-// Attract demos run runInMissionFrame with their own recorded dt and seed; initMission uses the same test.
-bool demo_active(const uint8_t* rdram) {
-    return (rw(rdram, 0x80130B50u) & 0x60u) != 0;
 }
 
 uint32_t ls_seed() {
@@ -151,7 +142,7 @@ void end_session(const char* why) {
 FILE* open_hash(const std::string& path) {
     FILE* f = fopen(path.c_str(), "wb");
     if (f) {
-        fprintf(f, "%s\n", format_hash_legend(rs64::host::flag("coop_imposter") != 0).c_str());
+        fprintf(f, "%s\n", format_hash_legend(rs64::host::hash_parts()).c_str());
         fflush(f);
     } else {
         fprintf(stderr, "[ls] cannot write %s\n", path.c_str());
@@ -162,74 +153,11 @@ FILE* open_hash(const std::string& path) {
     return f;
 }
 
-bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song) {
-    FILE* f = fopen(path, "rb");
-    if (!f) {
-        fprintf(stderr, "[ls] cannot read %s\n", path);
-        return false;
-    }
-    std::string head;
-    char line[256];
-    bool in_frames = false;
-    while (fgets(line, sizeof(line), f)) {
-        if (!in_frames) {
-            head += line;
-            if (strncmp(line, "---", 3) == 0) {
-                in_frames = true;
-            }
-            continue;
-        }
-        FrameInput fi;
-        uint32_t song_frame = 0;
-        bool song_active = false;
-        if (parse_frame(line, &fi)) {
-            frames->push_back(fi);
-        } else if (parse_song_event(line, &song_frame, &song_active)) {
-            (*song)[song_frame].push_back(song_active ? 1 : 0);
-        } else {
-            break;
-        }
-    }
-    fclose(f);
-    if (!parse_header(head, h)) {
-        fprintf(stderr, "[ls] %s: bad header\n", path);
-        return false;
-    }
-    return true;
-}
-
-void pad2_on_mission_init(uint8_t* rdram) {
-    State& s = st();
-    s.pad2 = false;
-    if (rs64::host::flag("ghost_mode")) {
-        return;
-    }
-    const char* path = recomp::dbg::env_str("ROGUESQ_LS_PAD2_REPLAY");
-    if (!path || !rs64::host::flag("coop_imposter") || demo_active(rdram)) {
-        return;
-    }
-    SessionHeader h;
-    std::map<uint32_t, std::vector<uint8_t>> song;
-    s.pad2_frames.clear();
-    if (!load_replay(path, &h, &s.pad2_frames, &song)) {
-        return;
-    }
-    const SessionHeader running = read_session(rdram, 0);
-    if (running.level != h.level || running.craft != h.craft) {
-        fprintf(stderr, "[coop] player 2 disabled: %s is level %u craft %u, running level %u craft %u\n", path, h.level, h.craft, running.level, running.craft);
-        return;
-    }
-    s.pad2 = true;
-    s.pad2_frame = 0;
-    fprintf(stderr, "[coop] player 2 replays %zu frames from %s\n", s.pad2_frames.size(), path);
-}
-
 }
 
 extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*) {
     State& s = st();
     s.mode = mode();
-    pad2_on_mission_init(rdram);
     if (s.mode == Mode::Off || demo_active(rdram)) {
         return;
     }
@@ -390,19 +318,6 @@ static void ls_pause_point(const State& s) {
 
 extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
     State& s = st();
-    if (s.pad2 && !demo_active(rdram)) {
-        uint8_t pad[6];
-        pad2_bytes(s.pad2_frame < s.pad2_frames.size() ? &s.pad2_frames[s.pad2_frame] : nullptr, pad);
-        for (int i = 0; i < 6; ++i) wb(rdram, 0x80130B8Eu + i, pad[i]);
-        if (s.pad2_frame == 0 || s.pad2_frame == 30) {
-            auto f32 = [rdram](uint32_t a) { uint32_t b = rw(rdram, a); float f; memcpy(&f, &b, 4); return f; };
-            const uint32_t blk = rw(rdram, 0x80B400E0u);
-            fprintf(stderr, "[coop] frame %u: p1 pos=%.1f,%.1f,%.1f  imposter pos=%.1f,%.1f,%.1f\n", s.pad2_frame,
-                f32(0x80137DC0u), f32(0x80137DC4u), f32(0x80137DC8u),
-                blk ? f32(blk) : 0.0f, blk ? f32(blk + 4) : 0.0f, blk ? f32(blk + 8) : 0.0f);
-        }
-        s.pad2_frame++;
-    }
     if (!s.active || demo_active(rdram)) {
         return;
     }
@@ -450,9 +365,17 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
             wb(rdram, 0x80130B88u + i, pad[i]);
         }
     }
+}
+
+// The same hook point after every mod's handler (registered last), so a mod's input writes this frame (the multiplayer mod's player 2) are in the hash.
+extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*) {
+    State& s = st();
+    if (!s.active || demo_active(rdram)) {
+        return;
+    }
     // Hashed next to the input write, so a killed run leaves the two files at most one line apart.
     if (s.hash) {
-        fprintf(s.hash, "%s\n", format_hash_line(s.frame, hash_frame(rdram, rs64::host::flag("coop_imposter") != 0)).c_str());
+        fprintf(s.hash, "%s\n", format_hash_line(s.frame, hash_frame(rdram, rs64::host::hash_parts())).c_str());
         fflush(s.hash);
     }
     if (s.dump && dump_frame(s.frame)) {

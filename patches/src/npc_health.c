@@ -8,9 +8,11 @@
 #define IS_DIRECT(npc) (*(unsigned char*)((npc) + 0x1A7) != 0)
 #define FIELD(npc, off) (*(int*)((npc) + (off)))
 
-// The game's 8 MB of KSEG0 RDRAM, or the co-op imposter's DAT record in host RAM (0x80B40000).
+// Host side (register_patches.cpp, manual patch symbol in patches/syms.ld): the game's 8 MB or a host-RAM range a mod registered (e.g. the co-op imposter's DAT record).
+int rs64_host_ram_ok(unsigned int addr);
+
 static int slot_ok(unsigned int addr) {
-    return ((addr & 0xE0000000u) == 0x80000000u && (addr & 0x1FFFFFFFu) < 0x800000u) || (addr >= 0x80B40000u && addr < 0x80B40100u);
+    return ((addr & 0xE0000000u) == 0x80000000u && (addr & 0x1FFFFFFFu) < 0x800000u) || rs64_host_ram_ok(addr);
 }
 
 static unsigned int slot_addr(unsigned int base) {

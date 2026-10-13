@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-enum RsNavKind { NAV_NONE = 0, NAV_LEVEL, NAV_CUTSCENE, NAV_DEMO, NAV_ABORT, NAV_LOBBY };
+enum RsNavKind { NAV_NONE = 0, NAV_LEVEL, NAV_CUTSCENE, NAV_DEMO, NAV_ABORT, NAV_LOBBY, NAV_MENU };
 struct RsNavTarget { RsNavKind kind; int a; int b; int c = -1; };  // level: a=level b=craft; cutscene/demo: a=index; lobby: a=level b=0 host / 1 join c=craft
 
 RsNavTarget rs64_nav_parse(const char* boot_target);

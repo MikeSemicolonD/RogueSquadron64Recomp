@@ -1,5 +1,6 @@
 #pragma once
 #include "rs64/host_api.h"
+#include "lockstep_core.h"
 #include <cstdint>
 #include <set>
 #include <string>
@@ -36,9 +37,18 @@ struct Mark {
     std::set<std::string> actions, conditions;
     size_t keys = 0, quits = 0;
     std::set<std::string> services;
+    size_t hash_parts = 0, valid_ram = 0, moved = 0;
 };
 int add_service(const char* name, const void* table);
 const void* get_service(const char* name);
+int add_hash_part(const char* name, const char* gate_flag, rs64_hash_fn fn, void* user);
+// The registered hash parts whose flag is set, in registration order.
+std::vector<rs64::ls::HashPart> hash_parts();
+int add_valid_ram(uint32_t addr, uint32_t size);
+int add_moved_range(uint32_t lo, uint32_t hi, uint32_t delta);
+const std::vector<rs64::ls::MovedRange>& moved_ranges();
+// The game's 8 MB or a range a mod registered with add_valid_ram.
+bool ram_ok(uint32_t addr);
 Mark mark();
 void rollback(const Mark& m);
 uint32_t init_version();

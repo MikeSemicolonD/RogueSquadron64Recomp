@@ -19,6 +19,7 @@
 #include <vector>
 
 extern "C" void rs64_register_builtin_hooks();
+extern "C" void rs64_register_builtin_late_hooks();
 extern "C" void osYieldThread_recomp(uint8_t*, recomp_context*);
 extern "C" void rs64_menu_request_quit(void);
 extern "C" float rs64_draw_dist(void);
@@ -130,16 +131,80 @@ void init_once(uint8_t* rdram) {
     rs64::host::bind_services(s);
     rs64_register_builtin_hooks();
     init_mods(rdram);
+    rs64::ls::set_moved_ranges(rs64::host::moved_ranges());
+    rs64_register_builtin_late_hooks();
     rs64::host::seal();
 }
 }
 
-// .nrm mods subscribe to a toml hook site with RECOMP_CALLBACK("*", rs64_on_<hook>). librecomp restores ctx after each callback, so a callback reaches registers only through rs64_event_return.
+// .nrm mods subscribe to a toml hook site with RECOMP_CALLBACK("*", rs64_on_<hook>). librecomp restores ctx after each callback, so a callback reaches registers only through rs64_event_return and the rs64_event_set_* writes, applied once every callback has run.
 namespace {
 size_t s_event_index[RS64_HOOK_COUNT];
 bool s_events_registered = false;
 bool s_event_return = false;
 uint32_t s_event_r2 = 0;
+
+struct RegWrite {
+    bool fpr;
+    uint32_t reg;
+    uint32_t value;
+};
+struct RegWrites {
+    RegWrite writes[8];
+    int count = 0;
+};
+RegWrites s_reg_writes;
+
+void queue_reg_write(bool fpr, uint32_t reg, uint32_t value) {
+    if (s_reg_writes.count < 8) {
+        s_reg_writes.writes[s_reg_writes.count++] = RegWrite{ fpr, reg, value };
+    }
+}
+
+// rs64_event_set_gpr(reg, value): any GPR but r0 and sp (moving sp would break the game function's frame).
+void rs64_event_set_gpr(uint8_t*, recomp_context* ctx) {
+    const uint32_t reg = (uint32_t)ctx->r4;
+    if (reg != 0 && reg != 29 && reg < 32) queue_reg_write(false, reg, (uint32_t)ctx->r5);
+}
+
+// rs64_event_set_fpr(reg, value): a single-precision float register. o32 passes a float that follows an integer argument in a1, as its bits.
+void rs64_event_set_fpr(uint8_t*, recomp_context* ctx) {
+    const uint32_t reg = (uint32_t)ctx->r4;
+    if (reg < 32) queue_reg_write(true, reg, (uint32_t)ctx->r5);
+}
+
+// The hook site's registers while its callbacks run (librecomp hands each callback a copy it then overwrites), for rs64_event_get_*.
+const recomp_context* s_event_site = nullptr;
+
+// Odd float registers in FR=0 mode are the high half of the even register below, as the recompiled code reads them.
+uint32_t read_fpr_bits(const recomp_context* ctx, uint32_t reg) {
+    if ((reg & 1) == 0 || ctx->mips3_float_mode) return (&ctx->f0)[reg].u32l;
+    return (&ctx->f0)[reg - 1].u32h;
+}
+
+// rs64_event_get_gpr(reg) / rs64_event_get_fpr(reg): a register as it was at the hook site; 0 outside a callback.
+void rs64_event_get_gpr(uint8_t*, recomp_context* ctx) {
+    const uint32_t reg = (uint32_t)ctx->r4;
+    ctx->r2 = (s_event_site != nullptr && reg < 32) ? (int32_t)(&s_event_site->r0)[reg] : 0;
+}
+
+void rs64_event_get_fpr(uint8_t*, recomp_context* ctx) {
+    const uint32_t reg = (uint32_t)ctx->r4;
+    ctx->f0.u32l = (s_event_site != nullptr && reg < 32) ? read_fpr_bits(s_event_site, reg) : 0;
+}
+
+void apply_reg_writes(recomp_context* ctx, const RegWrites& pending) {
+    for (int i = 0; i < pending.count; ++i) {
+        const RegWrite& w = pending.writes[i];
+        if (!w.fpr) {
+            (&ctx->r0)[w.reg] = (int32_t)w.value;
+        } else if ((w.reg & 1) == 0 || ctx->mips3_float_mode) {
+            (&ctx->f0)[w.reg].u32l = w.value;
+        } else {
+            (&ctx->f0)[w.reg - 1].u32h = w.value;
+        }
+    }
+}
 
 // Only function-entry sites may return: a mid-function return skips the epilogue and leaves sp and the saved registers wrong for the caller.
 bool hook_site_is_entry(uint32_t hook) {
@@ -175,14 +240,24 @@ void rs64_export_tgrid_base(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)
 void rs64_export_relocated(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64::ls::relocated((uint32_t)ctx->r4); }
 
 int trigger_hook_event(uint32_t hook, uint8_t* rdram, recomp_context* ctx) {
+    if (!recomp::mods::event_has_callbacks(s_event_index[hook])) return RS64_HOOK_CONTINUE;
     const bool outer_return = s_event_return;
     const uint32_t outer_r2 = s_event_r2;
+    const RegWrites outer_writes = s_reg_writes;
+    const recomp_context* outer_site = s_event_site;
+    const recomp_context site = *ctx;
+    s_event_site = &site;
     s_event_return = false;
+    s_reg_writes.count = 0;
     recomp_trigger_event(rdram, ctx, (uint32_t)s_event_index[hook]);
+    s_event_site = outer_site;
     const bool requested = s_event_return && hook_site_is_entry(hook);
     const uint32_t r2 = s_event_r2;
+    const RegWrites writes = s_reg_writes;
     s_event_return = outer_return;
     s_event_r2 = outer_r2;
+    s_reg_writes = outer_writes;
+    apply_reg_writes(ctx, writes);
     if (!requested) return RS64_HOOK_CONTINUE;
     ctx->r2 = (int32_t)r2;
     return RS64_HOOK_RETURN;
@@ -204,6 +279,10 @@ void rs64_register_mod_events(const char* const* patch_events) {
         s_event_index[h] = rs64::host::hook_has_toml_site(h) ? recomp::overlays::get_base_event_index(event_name(h)) : (size_t)-1;
     }
     recomp::overlays::register_base_export("rs64_event_return", rs64_event_return);
+    recomp::overlays::register_base_export("rs64_event_set_gpr", rs64_event_set_gpr);
+    recomp::overlays::register_base_export("rs64_event_set_fpr", rs64_event_set_fpr);
+    recomp::overlays::register_base_export("rs64_event_get_gpr", rs64_event_get_gpr);
+    recomp::overlays::register_base_export("rs64_event_get_fpr", rs64_event_get_fpr);
     recomp::overlays::register_base_export("rs64_draw_dist", rs64_export_draw_dist);
     recomp::overlays::register_base_export("rs64_terrain_dist", rs64_export_terrain_dist);
     recomp::overlays::register_base_export("rs64_tgrid_base", rs64_export_tgrid_base);

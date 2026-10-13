@@ -1,6 +1,8 @@
+# The tow cable is a ring of segment meshes: the head index moves forward as the cable pays out, a count byte says how many segments are live.
+# The game hard-codes the ring size 60 (about 1.5 loops around an AT-AT, the trip needs 3); these patches make it 160. Max 255: head and count are bytes.
 [manifest]
 id = "long_tow_cable"
-version = "1.0.0"
+version = "1.1.0"
 display_name = "Long Tow Cable"
 description = "The snowspeeder tow cable holds 160 segments instead of 60, about four loops around an AT-AT instead of one and a half, so the cable no longer erases its oldest end while you wrap the walker. Takes effect at the next mission start."
 short_description = "Tow cable long enough to wrap an AT-AT."
@@ -9,7 +11,136 @@ game_id = "rs64"
 minimum_recomp_version = "0.0.0"
 
 [inputs]
-elf_path = "build/mod.elf"
 mod_filename = "long_tow_cable"
 func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
-data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.mods.toml" ]
+
+# Pool: 60 * 0xF8-byte segment meshes, created and freed in loops of 60. ori, since addiu would sign-extend 0x9B00.
+[[patches.instruction]]
+func = "loadEffectModelInstancePool"
+vram = 0x800AE13C
+expect_asm = "addiu $a0, $zero, 0x3A20"
+asm = "ori $a0, $zero, 0x9B00"
+
+[[patches.instruction]]
+func = "loadEffectModelInstancePool"
+vram = 0x800AE1B0
+expect_asm = "sltiu $v0, $s1, 60"
+asm = "sltiu $v0, $s1, 160"
+
+[[patches.instruction]]
+func = "freeEffectModelInstancePool"
+vram = 0x800AE24C
+expect_asm = "sltiu $v0, $s1, 60"
+asm = "sltiu $v0, $s1, 160"
+
+# Head advance, head = (head + 1) % 60: the game divides by multiplying with 0x88888889 (about 2^35 / 60).
+# Replaced by head = (head + 1 < 160) ? head + 1 : 0, a compare and a mask; the rest of the old sequence becomes nops (0x800AD81C is unchanged).
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD7E8
+expect_asm = "lui $v0, 0x8888"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD7F0
+expect_asm = "ori $v0, $v0, 0x8889"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD7F8
+expect_asm = "mult $a0, $v0"
+asm = "sltiu $v0, $a0, 160"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD7FC
+expect_asm = "sra $v0, $a0, 31"
+asm = "subu $v0, $zero, $v0"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD800
+expect_asm = "mfhi $t0"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD804
+expect_asm = "addu $v1, $t0, $a0"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD808
+expect_asm = "sra $v1, $v1, 5"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD80C
+expect_asm = "subu $v1, $v1, $v0"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD810
+expect_asm = "sll $v0, $v1, 4"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD814
+expect_asm = "subu $v0, $v0, $v1"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD818
+expect_asm = "sll $v0, $v0, 2"
+asm = "nop"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD820
+expect_asm = "subu $a0, $a0, $v0"
+asm = "and $a0, $a0, $v0"
+
+# Live-segment cap, count = min(count + 1, 60): the limit that erases the cable's oldest end.
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD824
+expect_asm = "sltiu $v0, $v1, 60"
+asm = "sltiu $v0, $v1, 160"
+
+# Walking back from the head, a negative index wraps by adding the ring size: four places in the simulation, one in the renderer.
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD8EC
+expect_asm = "addiu $s1, $s1, 60"
+asm = "addiu $s1, $s1, 160"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800ADA5C
+expect_asm = "addiu $s1, $s1, 60"
+asm = "addiu $s1, $s1, 160"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800ADB70
+expect_asm = "addiu $s1, $s1, 60"
+asm = "addiu $s1, $s1, 160"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800ADBA4
+expect_asm = "addiu $v1, $v1, 60"
+asm = "addiu $v1, $v1, 160"
+
+[[patches.instruction]]
+func = "submitCameraTrackedObjectToRender"
+vram = 0x800ADDD0
+expect_asm = "addiu $a0, $a0, 60"
+asm = "addiu $a0, $a0, 160"

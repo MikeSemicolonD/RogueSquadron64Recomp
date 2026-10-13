@@ -1,10 +1,8 @@
-# cmake -DSRC=<repo mods dir> -DDST=<staged mods dir> -DPLATFORM=desktop [-DBUILT=<dir>] [-DSWAP=<listed>=<instead>] [-DDROP=<names>] -P stage_mods.cmake
+# cmake -DSRC=<repo mods dir> -DDST=<staged mods dir> -DPLATFORM=desktop [-DBUILT=<dir>] -P stage_mods.cmake
 # Copies the mods mods/platforms.json lists for PLATFORM into DST (an empty DST is a no-op, for config-gated callers). User mod folders
 # already in DST are left alone; staged .nrm files are cleared first so a renamed or dropped code mod can't linger (two copies of one mod
 # conflict and block game start).
 # BUILT=<dir>: a listed mod found there (a native mod the game's CMake built) is staged from it instead of SRC.
-# SWAP=<listed>=<instead>: stage <instead> where the list says <listed>, and remove a staged <listed>.
-# DROP=<names>: remove these staged folders first.
 if (NOT DST)
     return()
 endif()
@@ -17,16 +15,6 @@ if (err)
     message(FATAL_ERROR "mods/platforms.json has no \"${PLATFORM}\" list: ${err}")
 endif()
 file(MAKE_DIRECTORY "${DST}")
-set(swap_from "")
-set(swap_to "")
-if (SWAP MATCHES "^([^=]+)=(.+)$")
-    set(swap_from "${CMAKE_MATCH_1}")
-    set(swap_to "${CMAKE_MATCH_2}")
-    file(REMOVE_RECURSE "${DST}/${swap_from}")
-endif()
-foreach(gone ${DROP})
-    file(REMOVE_RECURSE "${DST}/${gone}")
-endforeach()
 file(GLOB staged_nrm "${DST}/*.nrm")
 if (staged_nrm)
     file(REMOVE ${staged_nrm})
@@ -37,9 +25,6 @@ endif()
 math(EXPR last "${count} - 1")
 foreach(i RANGE ${last})
     string(JSON name GET "${manifest}" "${PLATFORM}" ${i})
-    if (swap_from AND name STREQUAL swap_from)
-        set(name "${swap_to}")
-    endif()
     if (BUILT AND EXISTS "${BUILT}/${name}")
         file(COPY "${BUILT}/${name}" DESTINATION "${DST}")
     elseif (EXISTS "${SRC}/${name}/CMakeLists.txt")

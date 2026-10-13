@@ -33,6 +33,17 @@ std::map<std::string, Condition> g_conditions;
 std::vector<Key> g_keys;
 std::vector<Quit> g_quits;
 std::map<std::string, const void*> g_services_by_name;
+// Frame-hash parts a mod adds, each counted while its flag is set.
+struct HashPartReg {
+    std::string name;
+    std::string gate_flag;
+    rs64_hash_fn fn;
+    void* user;
+};
+std::vector<HashPartReg> g_hash_parts;
+// Host-RAM ranges (addr, size) a mod's records live in, besides the game's 8 MB, for checks such as the NPC health guard.
+std::vector<std::pair<uint32_t, uint32_t>> g_valid_ram;
+std::vector<rs64::ls::MovedRange> g_moved;
 
 bool refuse_sealed(const char* what) {
     if (!g_sealed) {
@@ -212,6 +223,56 @@ const void* get_service(const char* name) {
     return it == g_services_by_name.end() ? nullptr : it->second;
 }
 
+int add_hash_part(const char* name, const char* gate_flag, rs64_hash_fn fn, void* user) {
+    if (!name || !gate_flag || !fn || refuse_sealed("add_hash_part")) {
+        return -1;
+    }
+    g_hash_parts.push_back({name, gate_flag, fn, user});
+    return 0;
+}
+
+std::vector<rs64::ls::HashPart> hash_parts() {
+    std::vector<rs64::ls::HashPart> out;
+    for (const HashPartReg& p : g_hash_parts) {
+        if (flag(p.gate_flag.c_str())) out.push_back({p.name, p.fn, p.user});
+    }
+    return out;
+}
+
+int add_valid_ram(uint32_t addr, uint32_t size) {
+    if (size == 0 || refuse_sealed("add_valid_ram")) {
+        return -1;
+    }
+    g_valid_ram.push_back({addr, size});
+    return 0;
+}
+
+int add_moved_range(uint32_t lo, uint32_t hi, uint32_t delta) {
+    if (lo >= hi || delta == 0 || refuse_sealed("add_moved_range")) {
+        return -1;
+    }
+    for (const rs64::ls::MovedRange& r : g_moved) {
+        if (lo < r.hi && r.lo < hi) {
+            log_line("[host] add_moved_range rejected: overlaps a range already registered");
+            return -1;
+        }
+    }
+    g_moved.push_back({lo, hi, delta});
+    return 0;
+}
+
+const std::vector<rs64::ls::MovedRange>& moved_ranges() { return g_moved; }
+
+bool ram_ok(uint32_t addr) {
+    if (addr >= 0x80000000u && addr < 0x80800000u) {
+        return true;
+    }
+    for (const auto& r : g_valid_ram) {
+        if (addr >= r.first && addr - r.first < r.second) return true;
+    }
+    return false;
+}
+
 void run_quit_handlers() {
     const size_t count = g_quits.size();
     for (size_t i = 0; i < count; ++i) {
@@ -239,6 +300,9 @@ void reset_for_tests() {
     g_keys.clear();
     g_quits.clear();
     g_services_by_name.clear();
+    g_hash_parts.clear();
+    g_valid_ram.clear();
+    g_moved.clear();
     g_services = Services{};
     g_sealed = false;
     std::lock_guard<std::mutex> lk(g_flags_mu);
@@ -276,6 +340,9 @@ Mark mark() {
     m.keys = g_keys.size();
     m.quits = g_quits.size();
     for (const auto& s : g_services_by_name) m.services.insert(s.first);
+    m.hash_parts = g_hash_parts.size();
+    m.valid_ram = g_valid_ram.size();
+    m.moved = g_moved.size();
     return m;
 }
 
@@ -296,6 +363,9 @@ void rollback(const Mark& m) {
     for (auto it = g_services_by_name.begin(); it != g_services_by_name.end();) {
         it = m.services.count(it->first) ? std::next(it) : g_services_by_name.erase(it);
     }
+    g_hash_parts.resize(m.hash_parts);
+    g_valid_ram.resize(m.valid_ram);
+    g_moved.resize(m.moved);
 }
 
 uint32_t init_version() { return RS64_HOST_API_VERSION; }
@@ -312,6 +382,8 @@ const rs64_host_api* api() {
         set_flag, flag, call_fwd, alloc_fwd, state_fwd, cut_fwd,
         add_action, add_condition, add_key_handler, add_quit_handler, skips_fwd, yield_fwd, quit_fwd, text_fwd, kb_fwd, held_fwd, base_fwd,
         add_service, get_service,
+        add_hash_part, add_valid_ram,
+        add_moved_range,
     };
     return &table;
 }

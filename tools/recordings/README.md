@@ -42,7 +42,7 @@ A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, th
 | File | Kind | Contents |
 |---|---|---|
 | `mos_eisley.rec` (+ `.hash`) | Mission | The determinism gate: 3766 frames, X-wing. Default pad for both sides of `tools/lockstep/run-mp.ps1`; must replay IDENTICAL after any change that should not affect the simulation |
-| `mos_eisley_coop.rec` (+ `.hash`) | Mission | Gate re-recorded with the co-op imposter on (`ROGUESQ_COOP_LOCAL=1`), so the baseline carries the song answers the imposter changes. `run-replays.ps1` skips it |
+| `mos_eisley_coop.rec` (+ `.hash`) | Mission | Gate re-recorded with the co-op imposter on (`ROGUESQ_COOP_LOCAL=1`), so the baseline carries the song answers the imposter changes. Matches only with player 2 flying the solo run: replay it with `ROGUESQ_COOP_LOCAL=1` and `ROGUESQ_LS_PAD2_REPLAY=mos_eisley.rec` (idle player 2 diverges at frame 0). `run-replays.ps1` skips it |
 | `mos_eisley_dive.rec` | Mission, no baseline | Stick held into a dive from frame 300; the co-op player-death test |
 
 The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod loaded, so replays must run with it staged; other gameplay mods (e.g. invincibility) must not be staged during replays.

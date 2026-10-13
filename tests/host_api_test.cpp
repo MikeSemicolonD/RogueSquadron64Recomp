@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <map>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -149,7 +150,7 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 3 && RS64_HOST_API_VERSION == 3);
+    CHECK(a->version == 5 && RS64_HOST_API_VERSION == 5);
     CHECK(a->add_service == add_service && a->get_service == get_service);
     CHECK(a->add_action == add_action && a->add_condition == add_condition && a->add_key_handler == add_key_handler && a->add_quit_handler == add_quit_handler);
     CHECK(a->cutscene_skips() == 0u && a->screen_keyboard_shown() == -1 && a->any_key_held() == 0 && std::strcmp(a->base_path(), "") == 0);
@@ -186,7 +187,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && !accept_mod_init(0, 4));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && !accept_mod_init(0, 6));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }
@@ -225,18 +226,34 @@ static void test_rollback_drops_refused_registrations() {
     CHECK(b == 0x1000 && x == 0.0f);
 }
 
-// Every `rs64_hook(N, ...)` in rogue_squadron.toml is preceded by a `# hook: NAME` comment that must equal hook_name(N).
-static void test_toml_hook_ids_match_names() {
-    std::ifstream f(RS64_TOML_PATH);
+static std::string read_file(const char* path) {
+    std::ifstream f(path);
     CHECK(f.good());
     std::stringstream ss;
     ss << f.rdbuf();
-    const std::string t = ss.str();
-    std::regex re(R"(# hook: (RS64_HOOK_\w+)[\s\S]*?rs64_hook\((\d+)u?,)");
+    return ss.str();
+}
+
+// Every `# hook: NAME` hook in rogue_squadron.toml calls an rs64_th_* body in toml_hooks.c whose `rs64_hook(N, ...)` must have hook_name(N) == NAME.
+static void test_toml_hook_ids_match_names() {
+    const std::string t = read_file(RS64_TOML_PATH);
+    const std::string c = read_file(RS64_TOML_HOOKS_PATH);
+    std::map<std::string, uint32_t> body_id;
+    std::regex body(R"((?:int|void) (rs64_th_\w+)\([^)]*\) \{[^}]*?rs64_hook\((\d+)u?,)");
+    for (auto it = std::sregex_iterator(c.begin(), c.end(), body); it != std::sregex_iterator(); ++it) {
+        body_id[(*it)[1].str()] = (uint32_t)std::stoul((*it)[2]);
+    }
+    std::regex re(R"(# hook: (RS64_HOOK_\w+)[\s\S]*?(rs64_th_\w+)\()");
     int n = 0;
     std::set<uint32_t> seen;
     for (auto it = std::sregex_iterator(t.begin(), t.end(), re); it != std::sregex_iterator(); ++it, ++n) {
-        const uint32_t id = (uint32_t)std::stoul((*it)[2]);
+        const auto b = body_id.find((*it)[2].str());
+        if (b == body_id.end()) {
+            printf("toml hook %s calls %s, which has no rs64_hook call\n", (*it)[1].str().c_str(), (*it)[2].str().c_str());
+            CHECK(false);
+            continue;
+        }
+        const uint32_t id = b->second;
         seen.insert(id);
         if ((*it)[1].str() != hook_name(id)) {
             printf("toml hook %u is named %s, expected %s\n", id, (*it)[1].str().c_str(), hook_name(id));
@@ -251,7 +268,7 @@ static void test_toml_hook_ids_match_names() {
     CHECK(seen == expected);
     int sites = 0;
     std::regex site(R"(rs64_hook\((\d+))");
-    for (auto it = std::sregex_iterator(t.begin(), t.end(), site); it != std::sregex_iterator(); ++it, ++sites) {
+    for (auto it = std::sregex_iterator(c.begin(), c.end(), site); it != std::sregex_iterator(); ++it, ++sites) {
         const uint32_t id = (uint32_t)std::stoul((*it)[1]);
         CHECK(hook_has_toml_site(id));
     }
@@ -301,6 +318,41 @@ static void test_services() {
     CHECK(get_service("mp.transport") == nullptr);
 }
 
+static uint64_t part_seven(const uint8_t*, void*) { return 7; }
+
+static void test_hash_parts_and_valid_ram() {
+    reset_for_tests();
+    CHECK(add_hash_part("imposter", "coop_imposter", part_seven, nullptr) == 0);
+    CHECK(add_hash_part(nullptr, "f", part_seven, nullptr) != 0 && add_hash_part("x", "f", nullptr, nullptr) != 0);
+    CHECK(hash_parts().empty());
+    set_flag("coop_imposter", 1);
+    CHECK(hash_parts().size() == 1 && hash_parts()[0].name == "imposter" && hash_parts()[0].fn(nullptr, nullptr) == 7);
+    CHECK(ram_ok(0x80000000u) && ram_ok(0x807FFFFFu) && !ram_ok(0x80800000u) && !ram_ok(0x80B40000u));
+    const Mark m = mark();
+    CHECK(api()->add_valid_ram(0x80B40000u, 0x100) == 0 && add_valid_ram(0x80B50000u, 0) != 0);
+    CHECK(ram_ok(0x80B40000u) && ram_ok(0x80B400FFu) && !ram_ok(0x80B40100u) && !ram_ok(0x80B3FFFFu));
+    rollback(m);
+    CHECK(!ram_ok(0x80B40000u) && hash_parts().size() == 1);
+    seal();
+    CHECK(add_valid_ram(0x80B40000u, 0x100) != 0 && add_hash_part("late", "f", part_seven, nullptr) != 0);
+    reset_for_tests();
+    CHECK(hash_parts().empty());
+}
+
+static void test_moved_ranges() {
+    reset_for_tests();
+    CHECK(api()->add_moved_range(0x80138058u, 0x80138268u, 0x00A00000u) == 0);
+    CHECK(add_moved_range(0x80138260u, 0x80138300u, 0x00A00000u) != 0 && add_moved_range(0x80139000u, 0x80139000u, 1) != 0 && add_moved_range(0x80139000u, 0x80139010u, 0) != 0);
+    const Mark m = mark();
+    CHECK(add_moved_range(0x80138268u, 0x80138838u, 0x00A00000u) == 0 && moved_ranges().size() == 2);
+    rollback(m);
+    CHECK(moved_ranges().size() == 1 && moved_ranges()[0].hi == 0x80138268u);
+    seal();
+    CHECK(add_moved_range(0x80139000u, 0x80139010u, 0x00A00000u) != 0);
+    reset_for_tests();
+    CHECK(moved_ranges().empty());
+}
+
 int main() {
 #ifdef _WIN32
     _set_error_mode(_OUT_TO_STDERR);
@@ -322,6 +374,8 @@ int main() {
     test_call_marshals_stack_and_f14();
     test_rollback_drops_refused_registrations();
     test_services();
+    test_hash_parts_and_valid_ram();
+    test_moved_ranges();
     printf("host_api_test OK\n");
     return 0;
 }
