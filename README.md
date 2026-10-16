@@ -35,8 +35,6 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 </table>
 </div>
 
----
-
 ## Features
 
 #### Graphics
@@ -81,8 +79,6 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Any Craft, Any Mission:** fly any ship on any level.
   - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Display Settings' to toggle various RT features.
 
----
-
 ## Requirements
 
 | Requirement | Notes |
@@ -94,8 +90,6 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 *macOS is compile-only so far (see [macOS notes](#macos-notes))
 **Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
-
----
 
 ## Building
 
@@ -243,8 +237,6 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
 - **Not yet done:** an `.app` bundle with SDL2 inside.
 
----
-
 ## Running
 
 Put `rogue_squadron.z64` in the working directory (the executable's folder when you double-click it) and launch. The ROM hash is checked and the ROM is imported on first launch.
@@ -300,8 +292,6 @@ Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Ad
 > In Debug builds (developer mode on by default) the RT64 inspector owns the ImGui overlay, so press **F1** once before **F6**.
 > Release builds open the Controls window with **F6** directly.
 
----
-
 ## Status (PLAYABLE)
 
 > [!NOTE]
@@ -331,8 +321,6 @@ Press **F6** to open the **Controls** window. Click **Rebind** (replace) or **Ad
 
 - Terrain tile textures don't align perfectly and seem to have a slight cut off which is probably a game issue than a recomp. issue.
 
----
-
 ## Architecture
 
 Recompiled game code compiles into one static library, linked against forked builds of N64ModernRuntime (the libultra/runtime host) and RT64 (the renderer).
@@ -357,8 +345,6 @@ Recompiled game code compiles into one static library, linked against forked bui
 
 **Patching.** Overrides live as `[[patches.hook]]` and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with host logic in `src/main/hook_helpers.cpp`. A hook is compiled into the recompiled function itself, reachable via indirect (`LOOKUP_FUNC`) calls.
 
----
-
 ## Debugging
 
 [docs/debugging-with-visual-studio.md](docs/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
@@ -382,7 +368,6 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 | Option | Effect |
 | --- | --- |
-
 | `--fullscreen` | (`ROGUESQ_FULLSCREEN=1`) starts in borderless fullscreen; Alt+Enter toggles it. |
 | `--gfx-api <vulkan\|d3d12>` | Force the graphics API (default auto) |
 | `--[no-]hle-dev-mode` | RT64 ImGui inspector on `F1` *(default **on in Debug**, **off in Release)*** |
@@ -414,8 +399,6 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 **(It's an approximation and is not representative of how DPC performs on *actual hardware*)**
 
----
-
 ## Browser based tools
 
 ### Save editor
@@ -433,8 +416,6 @@ A **MASSIVE** extension to the foundational work originally done by [Dávid Peth
 - View all Visual Effects from complex explosions to simple animated sprited.
 - Sounds Effects and Voicelines including subtitles.
 - MIDI Music Playback and timeline scrubbing allows you to view the layers of instruments [Chris Huelsbeck](https://en.wikipedia.org/wiki/Chris_Huelsbeck) used to masterfully assmeble and recreate the Star Wars score.
-
----
 
 ## 'Proper' AI Agent Usage
 
