@@ -1,5 +1,6 @@
 <div align="center">
-  ![favicon made by thedoctor45](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/favicon.ico)
+
+  ![favicon made by thedoctor45](./favicon.ico)
 
   Icon by [thedoctor45 on DeviantArt](https://www.deviantart.com/thedoctor45/art/Star-Wars-Rogue-Squadron-3D-Custom-Icon-535469296)
 
