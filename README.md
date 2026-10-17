@@ -50,9 +50,10 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replaced the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
-  - > [!NOTE]
-    > Steam-Relay mod on Linux, Steam Deck and macOS are untested.
 - See [docs/multiplayer.md](docs/multiplayer.md) for more details.
+
+> [!NOTE]
+> Steam-Relay mod on Linux, Steam Deck and macOS are untested.
 
 #### Mods
 
@@ -112,7 +113,8 @@ Mouse motion steers the craft, left click fires blasters, right click fires the 
 
 **Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bounded as a joystick. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: *full back* is craft's slowest, *full forward* is fastest, and *middle* is normal speed. Other axes can be bound from the Controls window (**F6**)
 
-> [!TIP] When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
+> [!TIP]
+> When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
 > Twist grip or rudder pedals can do one of two depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction adds together.
 > Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis. Hold the 'Roll' button then twist to roll.
 
@@ -146,7 +148,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Some 'highlights' from the lights or explosions when you destroy the AT-AT will sometimes show the wrong color.
 
-- Forcing a ship selection won't respect it's secondary (for example selecting a y-wing but then selecting an A-wing in the hangar)
+- Forcing a ship selection (via CI) won't respect it's secondary (for example selecting a y-wing but then selecting an A-wing in the hangar)
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existance at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
@@ -324,7 +326,8 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 
 ### macOS notes
 
-> [!IMPORTANT] **Currently doesn't support macOS**.
+> [!IMPORTANT]
+> **Currently doesn't support macOS**.
 > But steps have been taken to get as far as possible to support it by cross compiling using Linux.
 > An arm64 (Apple Silicon) 'Mach-O' builds and links for macOS 11+, but it hasn't been ran/tested on a Mac.
 
