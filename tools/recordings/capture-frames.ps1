@@ -76,6 +76,22 @@ public class RS64Cap {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
+  delegate bool EnumProc(IntPtr h, IntPtr p);
+  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc f, IntPtr p);
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  // The game's own window: the process can also own a console window, which MainWindowHandle may pick.
+  public static IntPtr GameWindow(uint pid) {
+    IntPtr found = IntPtr.Zero;
+    EnumWindows((h, p) => {
+      uint wp; GetWindowThreadProcessId(h, out wp);
+      var s = new System.Text.StringBuilder(256); GetWindowText(h, s, 256);
+      if (wp == pid && IsWindowVisible(h) && s.ToString().StartsWith("Star Wars")) { found = h; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return found;
+  }
 }
 "@
 
@@ -127,7 +143,8 @@ try {
         if ($sw.Elapsed.TotalSeconds -gt $Timeout) { Write-Host "timeout before frame $f"; break }
         Start-Sleep -Milliseconds $SettleMs
         $p.Refresh()
-        $h = $p.MainWindowHandle
+        $h = [RS64Cap]::GameWindow([uint32]$p.Id)
+        if ($h -eq [IntPtr]::Zero) { $h = $p.MainWindowHandle }
         $r = New-Object RS64Cap+RECT
         [RS64Cap]::GetWindowRect($h, [ref]$r) | Out-Null
         $w = $r.R - $r.L; $ht = $r.B - $r.T

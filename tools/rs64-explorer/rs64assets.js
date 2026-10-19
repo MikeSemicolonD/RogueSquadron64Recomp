@@ -35,7 +35,13 @@ async function inflate(bytes) {
 function openRom(buf) {
   const rom = new Uint8Array(buf);
   const dv = new DataView(buf);
-  if (dv.getUint32(0) !== 0x80371240) throw new Error('Not a big-endian .z64 ROM (byte-swapped .v64/.n64 are not supported)');
+  // .v64 swaps byte pairs, .n64 reverses each word; both are put back in place, like librecomp's check_rom_start.
+  const swap = { 0x37804012: 1, 0x40123780: 3 }[dv.getUint32(0)];
+  if (swap) for (let i = 0; i + 3 < rom.length; i += 4) {
+    const w = rom.slice(i, i + 4);
+    for (let k = 0; k < 4; k++) rom[i + (k ^ swap)] = w[k];
+  }
+  if (dv.getUint32(0) !== 0x80371240) throw new Error('Not a Rogue Squadron N64 ROM (.z64, .v64 or .n64)');
   const assets = new Map();
   for (let s = 0; s < 2; s++) {
     const seg = BLOB_START + s * 0x20;
@@ -85,7 +91,9 @@ function openRom(buf) {
     cache.set(path, view);
     return view;
   };
-  return { assets, read };
+  // Replaces an asset's contents for later reads (an edit that changes its size).
+  const write = (path, bytes) => cache.set(path, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  return { assets, read, write };
 }
 
 // ---- HMT: materials + textures decoded to RGBA8 ----
@@ -166,6 +174,25 @@ function decodeTexture(dv, t) {
   return out;
 }
 
+// data/pl_crafts/shadows_TM (loadCraftShadowTextures 0x8006B710): records of u32 size + a 0x34-byte HMT texture header (pixel offset +0,
+// name offset +0x24, w +0x28, h +0x2A); the next record starts at (rec + size + 7) & ~3. Pixels are I4, high nibble first; the intensity
+// is the shadow's alpha. Index order: awng vwng xwng ywng spdr falcon t16 tiein koelsch tie circ sqr destr2 bomber.
+function parseShadowTextures(dv) {
+  const out = [];
+  for (let o = 0; o + 0x38 <= dv.byteLength; o = (o + dv.getUint32(o) + 7) & ~3) {
+    const t = o + 4, w = dv.getUint16(t + 0x28), h = dv.getUint16(t + 0x2A), px = t + dv.getUint32(t);
+    if (!w || !h || px + ((w * h) >> 1) > dv.byteLength) break;
+    const alpha = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const b = dv.getUint8(px + (i >> 1));
+      alpha[i] = ((i & 1 ? b & 15 : b >> 4) * 255) / 15;
+    }
+    out.push({ name: cstr(dv, t + dv.getUint32(t + 0x24), 16), w, h, alpha });
+    if (!dv.getUint32(o)) break;
+  }
+  return out;
+}
+
 function parseHMT(dv) {
   const matCount = dv.getUint16(0);
   const texOff = dv.getUint32(4);
@@ -182,7 +209,7 @@ function parseHMT(dv) {
     const ft = dv.getUint16(o + 0x2E);
     const t = {
       pix: dv.getUint32(o), pal: dv.getUint32(o + 0x20), name: cstr(dv, dv.getUint32(o + 0x24), 16),
-      w: (dv.getUint16(o + 0x28) + 1) & ~1, h: (dv.getUint16(o + 0x2A) + 1) & ~1, depth: dv.getUint8(o + 0x2D),
+      w: (dv.getUint16(o + 0x28) + 1) & ~1, h: (dv.getUint16(o + 0x2A) + 1) & ~1, rows: dv.getUint16(o + 0x2A), depth: dv.getUint8(o + 0x2D),
       type: ft & 0xF, flags: ft >> 4, trans: dv.getUint32(o + 0x30),
     };
     t.rgba = decodeTexture(dv, t);
@@ -206,7 +233,10 @@ function parseFaces(dv, fg) {
     for (let k = 0; k < nv; k++) f.idx.push(dv.getUint16(o + 12 + k * 2));
     let p = o + 20;
     // Normal indices are present when bit 13 of the second header word is set (matches all 21539 ROM faces); flags 0x02/0x40 do not decide it.
-    if (dv.getUint32(o + 4) & 0x2000) p += 8;
+    if (dv.getUint32(o + 4) & 0x2000) {
+      f.nidx = f.idx.map((_, k) => dv.getUint16(p + k * 2));
+      p += 8;
+    }
     if (flags & 0x20) {
       const nc = flags & 0x10 ? nv : 1;
       f.colors = [];
@@ -229,7 +259,11 @@ function parseMeshdef1(dv, off) {
   const vOff = dv.getUint32(off + 0x24);
   const verts = new Float32Array(count * 3);
   for (let i = 0; i < count * 3; i++) verts[i] = dv.getInt16(vOff + (i / 3 | 0) * 8 + (i % 3) * 2);
-  return { offset: off, verts, faces: parseFaces(dv, dv.getUint32(off + 0x20)) };
+  const faces = parseFaces(dv, dv.getUint32(off + 0x20));
+  // Normals (int16 x, y, z, pad) at +0x28, indexed per face corner; the game reads them only to env-map the medals.
+  const nCount = Math.max(0, ...faces.flatMap((f) => f.nidx ?? [])) + 1, nOff = dv.getUint32(off + 0x28);
+  const normals = nOff && nOff + nCount * 8 <= dv.byteLength ? Float32Array.from({ length: nCount * 3 }, (_, i) => dv.getInt16(nOff + (i / 3 | 0) * 8 + (i % 3) * 2)) : null;
+  return { offset: off, verts, normals, faces };
 }
 
 function parseHOB(dv) {
@@ -246,6 +280,14 @@ function parseHOB(dv) {
     const n1 = dv.getUint32(ob + 0x2C);
     // Named parts (+0x2C): 12-byte entries of part pointer, 6-byte name (eng_a, wnd_a, glw_b), u16 node index; zero-terminated.
     if (n1) for (let p = n1; p + 12 <= dv.byteLength && dv.getUint32(p); p += 12) obj.partNames.set(dv.getUint32(p), cstr(dv, p + 4, 6));
+    // Hardpoints (+0x30): name[6], u8 node, u8 count, then count x 36 bytes (position, direction, up; node-local vertex units). Weapons
+    // fire from a / b / a_b / c_d (lookupHmtTextureByName 0x80058360); zf/zl/... and eng/glw/trl mark other attachment points.
+    obj.hardpoints = [];
+    for (let p = dv.getUint32(ob + 0x30); p && p + 8 <= dv.byteLength && dv.getUint8(p); ) {
+      const n = dv.getUint8(p + 7), rec = (k, o) => [0, 1, 2].map((j) => dv.getFloat32(p + 8 + k * 36 + o + j * 4));
+      obj.hardpoints.push({ name: cstr(dv, p, 6), node: dv.getUint8(p + 6), points: Array.from({ length: n }, (_, k) => ({ pos: rec(k, 0), dir: rec(k, 12), up: rec(k, 24) })) });
+      p += 8 + n * 36;
+    }
     // Nodes come from the meshdef0 prelude; +0x08 of each node is its parent node.
     const pre0 = dv.getUint32(ob + 0x14);
     const offs = [];
@@ -311,6 +353,207 @@ function parseHMP(dv) {
     sunDir: [16, 20, 24].map((k) => dv.getFloat32(sun + k)),
   };
   return { heightScale, w, h, map, tiles, light };
+}
+
+// ---- HOB geometry writing ----
+// A part (meshdef1) reaches its geometry only through file offsets: +0x14 vertex count, +0x20 facegroup, +0x24 vertex list, and the
+// word at -4 (end of its face data). New geometry is appended to the file and the part repointed, so nothing else moves.
+// geo = { verts: [[x, y, z], ...] in HOB vertex units, faces: [{ idx: [a, b, c] or [a, b, c, d], mat, colors: [rgba u32 per vertex],
+// uvs: [[u, v] per vertex] or null }] }. Faces are written like the game's own textured, vertex-coloured faces without normals.
+function hobGeometryBlock(base, geo) {
+  const faceSize = (f) => 20 + f.idx.length * 4 + (f.uvs ? f.idx.length * 4 : 0);
+  const vbytes = geo.verts.length * 8, fgAt = base + vbytes, facesAt = fgAt + 16;
+  const total = vbytes + 16 + geo.faces.reduce((s, f) => s + faceSize(f), 0);
+  const out = new Uint8Array(total), o = new DataView(out.buffer);
+  geo.verts.forEach((v, i) => v.forEach((c, a) => o.setInt16(i * 8 + a * 2, Math.max(-32768, Math.min(32767, Math.round(c))))));
+  o.setUint32(vbytes + 8, facesAt);
+  o.setUint32(vbytes + 12, geo.faces.length);
+  let p = vbytes + 16;
+  for (const f of geo.faces) {
+    const n = f.idx.length, size = faceSize(f) / 4, col = 5, uv = col + n;
+    o.setUint32(p, 0x200 | 0x20 | 0x10 | (f.uvs ? 0x4 : 0) | (n === 4 ? 0x8 : 0));
+    o.setUint32(p + 4, (size << 24) | (3 << 18) | (col << 12) | (col << 6) | uv);
+    o.setUint16(p + 8, f.mat);
+    f.idx.forEach((v, k) => o.setUint16(p + 12 + k * 2, v));
+    f.colors.forEach((c, k) => o.setUint32(p + 20 + k * 4, c >>> 0));
+    if (f.uvs) f.uvs.forEach(([u, v], k) => { o.setInt16(p + 20 + n * 4 + k * 4, Math.round(u * 4096)); o.setInt16(p + 22 + n * 4 + k * 4, Math.round(v * 4096)); });
+    p += size * 4;
+  }
+  return { bytes: out, vertsAt: base, fgAt, end: base + total };
+}
+function hobAppend(orig, chunks) {
+  const len = chunks.reduce((s, c) => s + c.length, orig.length), out = new Uint8Array(len);
+  out.set(orig);
+  let p = orig.length;
+  for (const c of chunks) { out.set(c, p); p += c.length; }
+  return out;
+}
+// Replaces one part's geometry. Only unnamed parts: named ones (eng_*, glw_*, wnd_*) keep their geometry inside the header region the game copies per craft, so appended geometry would be addressed wrongly.
+function hobSetPartGeometry(orig, part, geo) {
+  const base = (orig.length + 3) & ~3, g = hobGeometryBlock(base, geo);
+  const out = hobAppend(orig, [new Uint8Array(base - orig.length), g.bytes]), o = new DataView(out.buffer);
+  o.setUint32(part - 4, g.end);
+  o.setUint32(part + 0x14, geo.verts.length);
+  o.setUint32(part + 0x20, g.fgAt);
+  o.setUint32(part + 0x24, g.vertsAt);
+  return out;
+}
+// Craft model import: the texture slots an imported model may take, largest first. One textured material per distinct texture, and
+// never a texture that a named part (exhaust, glow, canopy) draws, since those parts keep their original faces.
+function craftImportSlots(hob, hmt) {
+  const named = new Set();
+  for (const lod of hob.objects[0].lods) for (const list of lod) for (const p of list) if (p.name) p.faces.forEach((f) => named.add(hmt.materials[f.mat]?.tex));
+  const slots = [], seen = new Set();
+  hmt.materials.forEach((m, i) => {
+    const t = m.type & 1 ? hmt.textures[m.tex] : null;
+    if (t && !named.has(m.tex) && !seen.has(m.tex)) { seen.add(m.tex); slots.push({ mat: i, tex: t }); }
+  });
+  return slots.sort((a, b) => b.tex.w * b.tex.h - a.tex.w * a.tex.h);
+}
+// tris: [{ p: [[x, y, z] x3] in three.js display space (Y up), uv: [[u, v] x3] or null, rgba: [u32 x3], node: name, mat (optional, else opts.mat) }].
+// Display maps to HOB as (x, -y, -z); with plusZ the model's nose is +Z (glTF habit) and is turned to face the craft's way.
+// The model is scaled and centred onto the original craft's extent. A triangle goes to the unnamed part of the node it names
+// (model-space nodes only, flags 0/1), otherwise to the body; unnamed parts left without triangles are emptied.
+// shortcut: first object and LOD 0 only (every player craft has one of each); nodes with their own translation (flags 4/8) are not targeted.
+function hobImportCraft(orig, hob, tris, { mat, plusZ = true }) {
+  const obj = hob.objects[0], lod = obj.lods[0];
+  const box = () => ({ mn: [Infinity, Infinity, Infinity], mx: [-Infinity, -Infinity, -Infinity] });
+  const grow = (b, v) => v.forEach((c, a) => { b.mn[a] = Math.min(b.mn[a], c); b.mx[a] = Math.max(b.mx[a], c); });
+  const ob = box(), ib = box();
+  for (const list of lod) for (const p of list) for (let i = 0; i < p.verts.length; i += 3) grow(ob, [p.verts[i], p.verts[i + 1], p.verts[i + 2]]);
+  const toHob = ([x, y, z]) => (plusZ ? [-x, -y, z] : [x, -y, -z]);
+  for (const t of tris) t.p.forEach((v) => grow(ib, toHob(v)));
+  const size = (b) => Math.max(...b.mx.map((v, a) => v - b.mn[a])) || 1;
+  const s = size(ob) / size(ib), oc = ob.mn.map((v, a) => (v + ob.mx[a]) / 2), ic = ib.mn.map((v, a) => (v + ib.mx[a]) / 2);
+  const place = (v) => toHob(v).map((c, a) => (c - ic[a]) * s + oc[a]);
+  const body = lod[0].find((p) => !p.name);
+  const target = (name) => {
+    const n = obj.nodeNames.get(name);
+    const p = n !== undefined && !(obj.nodes[n].flags & 12) && lod[n]?.find((q) => !q.name);
+    return p || body;
+  };
+  const geos = new Map();
+  for (const t of tris) {
+    const part = target(t.node);
+    if (!geos.has(part)) geos.set(part, { verts: [], faces: [], at: new Map() });
+    const g = geos.get(part);
+    const idx = t.p.map((v) => {
+      const h = place(v).map(Math.round), k = h.join(',');
+      if (!g.at.has(k)) { g.at.set(k, g.verts.length); g.verts.push(h); }
+      return g.at.get(k);
+    });
+    g.faces.push({ idx, mat: t.mat ?? mat, colors: t.rgba, uvs: t.uv });
+  }
+  let out = orig;
+  for (const list of lod) for (const p of list) {
+    if (p.name) continue;
+    const g = geos.get(p) || { verts: [], faces: [] };
+    out = hobSetPartGeometry(out, p.offset, g);
+  }
+  return out;
+}
+
+// ---- DAT editing: add / remove items ----
+// Header: (count u32, list offset u32) per type 0..7 at 0x00..0x3C, then (size, offset) of a trailing block at 0x40/0x44.
+// Each type's section is its list of u32 offsets (relative to the list) followed by its records, sections back to back in type
+// order; record fields are relative to the record. So one section can grow or shrink if the later sections' offsets shift with it.
+function datSections(dv) {
+  const ends = [dv.byteLength, dv.getUint32(0x44)];
+  for (let k = 0; k < 8; k++) if (dv.getUint32(k * 8 + 4)) ends.push(dv.getUint32(k * 8 + 4));
+  return (type) => {
+    const list = dv.getUint32(type * 8 + 4);
+    return { count: dv.getUint32(type * 8), list, end: Math.min(...ends.filter((e) => e > list)) };
+  };
+}
+function datRebuild(orig, type, entries, region, extra) {
+  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const listBytes = entries.length * 4;
+  const section = new Uint8Array(listBytes + region.length + extra.length);
+  const sdv = new DataView(section.buffer);
+  entries.forEach((e, i) => sdv.setUint32(i * 4, e));
+  section.set(region, listBytes);
+  section.set(extra, listBytes + region.length);
+  const delta = section.length - (s.end - s.list);
+  const out = new Uint8Array(orig.length + delta);
+  out.set(orig.subarray(0, s.list));
+  out.set(section, s.list);
+  out.set(orig.subarray(s.end), s.list + section.length);
+  const o = new DataView(out.buffer);
+  o.setUint32(type * 8, entries.length);
+  for (let k = 0; k < 8; k++) if (k !== type && o.getUint32(k * 8 + 4) >= s.end) o.setUint32(k * 8 + 4, o.getUint32(k * 8 + 4) + delta);
+  if (o.getUint32(0x44) >= s.end) o.setUint32(0x44, o.getUint32(0x44) + delta);
+  return out;
+}
+// Appends a record (a copy of an existing item, whose offsets are all record-relative) to a type's list; it becomes the last index.
+function datAddItem(orig, type, record) {
+  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const region = orig.subarray(s.list + s.count * 4, s.end), pad = (4 - (region.length % 4)) % 4;
+  const entries = [];
+  for (let i = 0; i < s.count; i++) entries.push(dv.getUint32(s.list + i * 4) + 4);
+  const padded = new Uint8Array(region.length + pad);
+  padded.set(region);
+  entries.push((s.count + 1) * 4 + padded.length);
+  return datRebuild(orig, type, entries, padded, record);
+}
+// Drops one entry from a type's list; later items of that type move down one index. The record's bytes stay, unreferenced.
+function datRemoveItem(orig, type, index) {
+  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const entries = [];
+  for (let i = 0; i < s.count; i++) if (i !== index) entries.push(dv.getUint32(s.list + i * 4) - 4);
+  return datRebuild(orig, type, entries, orig.subarray(s.list + s.count * 4, s.end), new Uint8Array(0));
+}
+
+// Continuous terrain grid for editing: (4w+1) x (4h+1) heights in stored s8 units (neighbouring tiles share their edge row),
+// plus each cell's texmap id. Grid point (x, y) is world (x * 0.5, height * heightScale, y * 0.5), game Y-down.
+function hmpGrid(hmp) {
+  const W = hmp.w * 4 + 1, H = hmp.h * 4 + 1, hts = new Float32Array(W * H), tex = new Uint16Array(hmp.w * hmp.h);
+  for (let ty = 0; ty < hmp.h; ty++) for (let tx = 0; tx < hmp.w; tx++) {
+    const tile = hmp.tiles[hmp.map[ty * hmp.w + tx]];
+    if (!tile) continue;
+    tex[ty * hmp.w + tx] = tile.tex;
+    for (let py = 0; py < 5; py++) for (let px = 0; px < 5; px++) hts[(ty * 4 + py) * W + tx * 4 + px] = tile.hts[py * 5 + px];
+  }
+  return { w: hmp.w, h: hmp.h, W, H, hts, tex };
+}
+
+// Rewrites an HMP from a grid of the same map size. The file is header, tile map (+0x28), lighting, then the tile table last,
+// so only the map, the tile count (+0x18) and the table's tail change. The original tiles stay where they are (a cell reuses one
+// when its heights and texture match) and new tiles are appended, so a BPS patch carries only the changed cells and new tiles.
+// Tile record (0x1E): texmap u16, flags u8 (0 in every level), s8 min and max of its heights, 25 s8 heights.
+function writeHMP(orig, grid) {
+  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength);
+  const tileOff = dv.getUint32(0x1C), count = dv.getUint16(0x18);
+  if (dv.getUint16(0x24) !== grid.w || dv.getUint16(0x26) !== grid.h) throw new Error('Terrain map size changed');
+  const keys = new Map(), added = [], map = new Uint16Array(grid.w * grid.h);
+  for (let i = count - 1; i >= 0; i--) {
+    const p = tileOff + i * 0x1E, hts = [];
+    for (let k = 0; k < 25; k++) hts.push(dv.getInt8(p + 5 + k));
+    keys.set(dv.getUint16(p) + ':' + hts.join(','), i);
+  }
+  for (let ty = 0; ty < grid.h; ty++) for (let tx = 0; tx < grid.w; tx++) {
+    const hts = new Int8Array(25);
+    for (let py = 0; py < 5; py++) for (let px = 0; px < 5; px++) {
+      hts[py * 5 + px] = Math.max(-128, Math.min(127, Math.round(grid.hts[(ty * 4 + py) * grid.W + tx * 4 + px])));
+    }
+    const tex = grid.tex[ty * grid.w + tx], key = tex + ':' + hts.join(',');
+    if (!keys.has(key)) { keys.set(key, count + added.length); added.push({ tex, hts }); }
+    map[ty * grid.w + tx] = keys.get(key);
+  }
+  const total = count + added.length;
+  if (total > 0x1FFF) throw new Error(`Terrain needs ${total} tiles; the map index holds ${0x1FFF}`);
+  const out = new Uint8Array((tileOff + total * 0x1E + 3) & ~3);
+  out.set(orig.subarray(0, Math.min(orig.length, tileOff + count * 0x1E)));
+  const o = new DataView(out.buffer);
+  o.setUint16(0x18, total);
+  map.forEach((v, i) => o.setUint16(0x28 + i * 2, v));
+  added.forEach((t, i) => {
+    const p = tileOff + (count + i) * 0x1E;
+    o.setUint16(p, t.tex);
+    o.setInt8(p + 3, Math.min(...t.hts));
+    o.setInt8(p + 4, Math.max(...t.hts));
+    t.hts.forEach((v, k) => o.setInt8(p + 5 + k, v));
+  });
+  return out;
 }
 
 // ---- Terrain textures: lv_X_TEX maps a tile's texmap id to an entry in the shared data/level/tex bank ----
@@ -1532,7 +1775,713 @@ function wavBytes(pcm, rate, channels = 1) {
   return w;
 }
 
-globalThis.RS64 = { openRom, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+// ---- Cutscenes: data/cuts/idN_{intro,extro,special} (VRML exports; read by the cinematic overlay) ----
+// Header: +0x44 frame count, +0x4A actor count, +0x4E event count, +0x50 length (s), +0x54 frames per second.
+// Events at +0x58 (0x18): type, frame, then params (type 0 = voice id). Camera: the first non-zero of 6 entries of 8 channel starts
+// at +0x1318. Actors at +0x13D8 (0x4C): name[28], flags byte at +0x1F (0x80 model, 0x40 animated, low 6 bits parent actor, 0x3F root),
+// 11 words at +0x20: channel starts when animated, else the static values as floats. Keys at +0x25AC: (value, slope, time 0..1).
+// Camera channels: position xyz, rotation axis xyz, angle (deg), field of view (deg). Actor channels: position xyz, scale input,
+// axis xyz, angle (deg), pivot xyz. Positions and pivots are 4x world units (x 0.25).
+function parseCutscene(dv) {
+  const u16 = (o) => dv.getUint16(o), u32 = (o) => dv.getUint32(o), f = (o) => dv.getFloat32(o);
+  const nKeys = u32(0x25a8), starts = new Set();
+  let camera = null;
+  const cams = [];
+  for (let i = 0; i < 6; i++) {
+    const w = [...Array(8)].map((_, k) => u32(0x1318 + i * 0x20 + k * 4));
+    if (!w.some((x) => x)) continue;
+    camera ??= w;
+    cams[i] = w;
+    w.forEach((s) => starts.add(s));
+  }
+  const actors = [];
+  for (let i = 0; i < u16(0x4a); i++) {
+    const o = 0x13d8 + i * 0x4c, flags = dv.getUint8(o + 0x1f), animated = !!(flags & 0x40);
+    const w = [...Array(11)].map((_, k) => (animated ? u32(o + 0x20 + k * 4) : f(o + 0x20 + k * 4)));
+    if (animated) w.forEach((s) => starts.add(s));
+    actors.push({ name: cstr(dv, o, 28), flags, model: !!(flags & 0x80), animated, parent: (flags & 0x3f) === 0x3f ? -1 : flags & 0x3f, w });
+  }
+  const sorted = [...starts].sort((a, b) => a - b);
+  // Each channel's original start and keys, so writeCutscene keeps unedited channels (and shared runs) where they were.
+  const keyStarts = new Map();
+  // A channel runs to the next start, and never past its end key (time > 1, the cutscene length).
+  const channel = (s) => {
+    let e = Math.min(sorted.find((x) => x > s) ?? nKeys, nKeys);
+    for (let i = s + 1; i < e; i++) if (f(0x25ac + i * 12 + 8) > 1) { e = i + 1; break; }
+    const keys = new Float32Array(Math.max(0, e - s) * 3);
+    for (let i = 0; i < keys.length; i++) keys[i] = f(0x25ac + s * 12 + i * 4);
+    keyStarts.set(keys, { start: s, keys: keys.slice() });
+    return keys;
+  };
+  const events = [];
+  for (let i = 0; i < u16(0x4e); i++) {
+    const o = 0x58 + i * 0x18;
+    events.push({ type: u32(o), frame: u32(o + 4), p: [u32(o + 8), u32(o + 12), u32(o + 16), u32(o + 20)] });
+  }
+  // All six camera entries (unused ones empty); event type 4 switches between them. camera is the first used entry (the same arrays).
+  const cameras = [...Array(6)].map((_, i) => cams[i] && cams[i].map(channel));
+  return {
+    name: cstr(dv, 0, 64), frames: u32(0x44), length: f(0x50), fps: f(0x54), events,
+    camera: cameras.find(Boolean) ?? null, cameras,
+    actors: actors.map((a) => ({ ...a, ch: a.animated ? a.w.map(channel) : null, value: a.animated ? null : a.w })),
+    raw: new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice(), keyStarts,
+  };
+}
+// The inverse of parseCutscene, byte-exact when nothing changed. Any channel change rebuilds the key block gap-free (a channel runs to
+// the next start, so a stale run would join the channel before it): unchanged channels in original order, shared runs kept, then the rest.
+function writeCutscene(data) {
+  const raw = data.raw, oldKeys = new DataView(raw.buffer, raw.byteOffset, raw.byteLength).getUint32(0x25a8);
+  const chans = [...data.cameras.flatMap((c) => c ?? []), ...data.actors.flatMap((a) => (a.animated ? a.ch : []))];
+  const kept = (keys) => {
+    const was = data.keyStarts?.get(keys);
+    return was && was.keys.length === keys.length && was.keys.every((v, i) => Object.is(v, keys[i])) ? was.start : null;
+  };
+  const same = chans.every((k) => kept(k) != null);
+  const newStart = new Map(), runs = [];
+  let nKeys = same ? oldKeys : 0;
+  if (!same) {
+    const byOld = new Map();
+    for (const k of chans.filter((x) => kept(x) != null).sort((a, b) => kept(a) - kept(b))) {
+      if (!byOld.has(kept(k))) {
+        byOld.set(kept(k), nKeys);
+        runs.push(k);
+        nKeys += k.length / 3;
+      }
+      newStart.set(k, byOld.get(kept(k)));
+    }
+    for (const k of chans) if (!newStart.has(k)) {
+      newStart.set(k, nKeys);
+      runs.push(k);
+      nKeys += k.length / 3;
+    }
+    // The game skips a camera entry whose first word (channel 0's start) is 0, so key 0 then holds an unused pad key.
+    if (data.cameras.some((c) => c && newStart.get(c[0]) === 0)) {
+      for (const [k, s] of newStart) newStart.set(k, s + 1);
+      runs.unshift(new Float32Array(3));
+      nKeys++;
+    }
+  }
+  const startOf = (keys) => (same ? kept(keys) : newStart.get(keys));
+  const camStarts = data.cameras.map((c) => c && c.map(startOf));
+  const actorWords = data.actors.map((a) => (a.animated ? a.ch.map(startOf) : null));
+  const out = new Uint8Array(0x25ac + nKeys * 12), dv = new DataView(out.buffer);
+  out.set(raw.subarray(0, Math.min(raw.length, out.length)));
+  const oldEvents = dv.getUint16(0x4e), oldActors = dv.getUint16(0x4a);
+  dv.setUint32(0x44, data.frames);
+  // The game sizes its node pools from these: cameras in use, actors, and non-model (group) actors.
+  dv.setUint16(0x48, data.cameras.filter(Boolean).length);
+  dv.setUint16(0x4a, data.actors.length);
+  dv.setUint16(0x4c, data.actors.filter((a) => !a.model).length);
+  dv.setUint16(0x4e, data.events.length);
+  dv.setFloat32(0x50, data.length);
+  dv.setFloat32(0x54, data.fps);
+  out.fill(0, 0x58 + data.events.length * 0x18, 0x58 + Math.max(oldEvents, data.events.length) * 0x18);
+  data.events.forEach((e, i) => [e.type, e.frame, ...e.p].forEach((v, k) => dv.setUint32(0x58 + i * 0x18 + k * 4, v >>> 0)));
+  for (let i = 0; i < 6; i++) for (let k = 0; k < 8; k++) dv.setUint32(0x1318 + i * 0x20 + k * 4, camStarts[i]?.[k] ?? 0);
+  out.fill(0, 0x13d8 + data.actors.length * 0x4c, 0x13d8 + Math.max(oldActors, data.actors.length) * 0x4c);
+  data.actors.forEach((a, i) => {
+    const o = 0x13d8 + i * 0x4c;
+    // The name block keeps its original tail bytes unless the name changed (or the actor is new).
+    if (i >= oldActors || cstr(new DataView(raw.buffer, raw.byteOffset, raw.byteLength), o, 28) !== a.name) {
+      out.fill(0, o, o + 0x1f);
+      for (let k = 0; k < Math.min(27, a.name.length); k++) out[o + k] = a.name.charCodeAt(k);
+    }
+    out[o + 0x1f] = (a.model ? 0x80 : 0) | (a.animated ? 0x40 : 0) | (a.parent < 0 ? 0x3f : a.parent);
+    for (let k = 0; k < 11; k++) {
+      if (a.animated) dv.setUint32(o + 0x20 + k * 4, actorWords[i][k]);
+      else dv.setFloat32(o + 0x20 + k * 4, a.value[k]);
+    }
+  });
+  dv.setUint32(0x25a8, nKeys);
+  let at = 0x25ac;
+  for (const keys of runs) for (const v of keys) dv.setFloat32((at += 4) - 4, v);
+  return out;
+}
+
+// ---- Edit history: every asset change as before / after bytes; begin/end group a drag into one step ----
+function createHistory() {
+  let open = null;
+  const h = {
+    steps: [], at: 0,
+    begin(label) {
+      open ??= { label, changes: [] };
+    },
+    end() {
+      const s = open;
+      open = null;
+      if (s?.changes.length) h.push(s);
+    },
+    commit(path, before, after, label = path) {
+      if (open) open.changes.push({ path, before, after });
+      else h.push({ label, changes: [{ path, before, after }] });
+    },
+    push(step) {
+      h.steps.length = h.at;
+      h.steps.push(step);
+      h.at = h.steps.length;
+    },
+    undo() {
+      if (!h.at) return [];
+      return h.steps[--h.at].changes.map((c) => ({ path: c.path, bytes: c.before })).reverse();
+    },
+    redo() {
+      if (h.at >= h.steps.length) return [];
+      return h.steps[h.at++].changes.map((c) => ({ path: c.path, bytes: c.after }));
+    },
+  };
+  return h;
+}
+
+// ---- Cutscene edits (in place on parseCutscene data; a limit throws before anything changes) ----
+// The fixed layout allows 200 events (0x58..0x1318), 6 camera entries and 60 actors (0x13D8..0x25A8).
+const CUT_LIMITS = { events: 200, cameras: 6, actors: 60 };
+// Event types whose p0 (type 11: its low 16 bits) is an actor index.
+const CUT_ACTOR_EVENTS = new Set([5, 6, 7, 8, 11, 13, 16, 18]);
+const cutActorRef = (e) => (e.type === 11 ? e.p[0] & 0xffff : e.p[0]);
+const cutChannel = (data, ref) => (ref.cam != null ? data.cameras[ref.cam] : data.actors[ref.actor].ch);
+// Slope of key j: the line to the next key (the game's evaluation is value + slope * (t - time) from the last key); 0 on the last key.
+function cutRecomputeSlopes(keys, from = 0, to = keys.length / 3 - 1) {
+  const n = keys.length / 3;
+  for (let j = Math.max(0, from); j <= Math.min(to, n - 1); j++) {
+    // The last real key holds to the end, and the sentinel after it takes its value.
+    if (j < n - 1 && keys[(j + 1) * 3 + 2] > 1 && keys[j * 3 + 2] <= 1) {
+      keys[j * 3 + 1] = 0;
+      keys[(j + 1) * 3] = keys[j * 3];
+    } else keys[j * 3 + 1] = j < n - 1 ? (keys[(j + 1) * 3] - keys[j * 3]) / (keys[(j + 1) * 3 + 2] - keys[j * 3 + 2]) : 0;
+  }
+  return keys;
+}
+function cutAddEvent(data, ev) {
+  if (data.events.length >= CUT_LIMITS.events) throw new Error(`Cutscene limit: ${CUT_LIMITS.events} events`);
+  let i = data.events.length;
+  while (i > 0 && data.events[i - 1].frame > ev.frame) i--;
+  data.events.splice(i, 0, ev);
+  return i;
+}
+function cutRemoveEvent(data, i) {
+  data.events.splice(i, 1);
+}
+function cutMoveEvent(data, i, frame) {
+  const [ev] = data.events.splice(i, 1);
+  // An event already past the end (it fires once gameplay starts) may stay past it.
+  ev.frame = Math.max(0, Math.min(ev.frame > data.frames ? Infinity : data.frames, Math.round(frame)));
+  let j = data.events.length;
+  while (j > 0 && data.events[j - 1].frame > ev.frame) j--;
+  data.events.splice(j, 0, ev);
+  return j;
+}
+// Sets (within half a frame) or inserts a key at normalised time t; the slopes into and out of it follow.
+function cutSetKey(data, ref, t, value) {
+  const chs = cutChannel(data, ref), keys = chs[ref.ch], n = keys.length / 3, half = 0.5 / data.frames;
+  let j = [...Array(n).keys()].find((k) => Math.abs(keys[k * 3 + 2] - t) < half);
+  let out = keys;
+  if (j == null) {
+    j = 0;
+    while (j < n && keys[j * 3 + 2] < t) j++;
+    out = new Float32Array((n + 1) * 3);
+    out.set(keys.subarray(0, j * 3));
+    out.set(keys.subarray(j * 3), (j + 1) * 3);
+    out.set([value, 0, t], j * 3);
+  } else {
+    out = keys.slice();
+    out[j * 3] = value;
+  }
+  chs[ref.ch] = cutRecomputeSlopes(out, j - 1, j);
+  return j;
+}
+function cutRemoveKey(data, ref, j) {
+  if (j === 0) throw new Error('The first key (time 0) cannot be removed');
+  const chs = cutChannel(data, ref), keys = chs[ref.ch];
+  if (j >= keys.length / 3 - 1) throw new Error('The last key (the channel\'s end marker) cannot be removed');
+  const out = new Float32Array(keys.length - 3);
+  out.set(keys.subarray(0, j * 3));
+  out.set(keys.subarray((j + 1) * 3), j * 3);
+  chs[ref.ch] = cutRecomputeSlopes(out, j - 1, j - 1);
+}
+// Every channel ends in a sentinel key past t = 1 at the cutscene length (seconds) as stock files do: the game samples forward while
+// key time <= t, so without it a channel runs on into the next channel's keys.
+const cutEnd = (data) => (data.length > 1 ? data.length : 2);
+const cutConst = (v, end) => new Float32Array([v, 0, 0, v, 0, end]);
+// A new animated actor at the origin: scale input 1 / 0.2222 (model scale 1) unless given, turned 0 deg about +Y, no pivot.
+function cutAddActor(data, name, parent = -1, scale = 1 / 0.2222) {
+  if (data.actors.length >= CUT_LIMITS.actors) throw new Error(`Cutscene limit: ${CUT_LIMITS.actors} actors`);
+  if (name.length > 27) throw new Error('Actor names are at most 27 characters');
+  const init = [0, 0, 0, scale, 0, 1, 0, 0, 0, 0, 0];
+  data.actors.push({ name, flags: 0, model: true, animated: true, parent, w: null, ch: init.map((v) => cutConst(v, cutEnd(data))), value: null });
+  return data.actors.length - 1;
+}
+// A static actor (fixed values, no keys) becomes animated with constant channels, so it can be keyed.
+function cutAnimateActor(data, i) {
+  const a = data.actors[i];
+  if (a.animated) return;
+  Object.assign(a, { animated: true, ch: a.value.map((v) => cutConst(v, cutEnd(data))), value: null });
+}
+function cutSetActorName(data, i, name) {
+  if (name.length > 27) throw new Error('Actor names are at most 27 characters');
+  data.actors[i].name = name;
+}
+// Removes the actor, its children (recursively) and the events that name any of them; later indices shift down.
+function cutRemoveActor(data, i) {
+  const gone = new Set([i]);
+  for (let grew = true; grew;) {
+    grew = false;
+    data.actors.forEach((a, k) => {
+      if (!gone.has(k) && gone.has(a.parent)) grew = gone.add(k);
+    });
+  }
+  const map = new Map();
+  data.actors.forEach((_, k) => gone.has(k) || map.set(k, map.size));
+  data.events = data.events.filter((e) => !(CUT_ACTOR_EVENTS.has(e.type) && gone.has(cutActorRef(e))));
+  for (const e of data.events) {
+    if (!CUT_ACTOR_EVENTS.has(e.type)) continue;
+    const to = map.get(cutActorRef(e));
+    e.p[0] = e.type === 11 ? ((e.p[0] & ~0xffff) | to) >>> 0 : to;
+  }
+  data.actors = data.actors.filter((_, k) => !gone.has(k));
+  for (const a of data.actors) if (a.parent >= 0) a.parent = map.get(a.parent);
+}
+// A new camera entry holding the first camera's opening pose (or the origin looking down +Z at 50 deg).
+function cutAddCamera(data) {
+  const k = data.cameras.findIndex((c) => !c);
+  if (k < 0 || k >= CUT_LIMITS.cameras) throw new Error(`Cutscene limit: ${CUT_LIMITS.cameras} cameras`);
+  const from = data.cameras.find(Boolean), init = from ? from.map((keys) => keys[0]) : [0, 0, 0, 0, 1, 0, 0, 50];
+  data.cameras[k] = init.map((v) => cutConst(v, cutEnd(data)));
+  data.camera = data.cameras.find(Boolean);
+  return k;
+}
+function cutRemoveCamera(data, k) {
+  if (data.cameras.filter(Boolean).length <= 1) throw new Error('The last camera cannot be removed');
+  data.cameras[k] = undefined;
+  data.events = data.events.filter((e) => !(e.type === 4 && e.p[0] === k));
+  data.camera = data.cameras.find(Boolean);
+}
+// Keeps absolute times: keys rescale, the sentinel moves to the new length, shortening ends channels at t = 1 and drops events in the
+// cut-off time; events past the old end (they fire once gameplay starts) stay past the new end.
+function cutSetLength(data, seconds) {
+  if (Math.abs(seconds - data.length) < 1e-6) return;
+  const r = data.length / seconds, frames = Math.max(1, Math.round(seconds * data.fps)), end = seconds > 1 ? seconds : 2;
+  const fit = (keys) => {
+    const n = keys.length / 3, out = [];
+    for (let j = 0; j < n && keys[j * 3 + 2] <= 1; j++) {
+      const t = keys[j * 3 + 2] * r;
+      if (t > 1 && j > 0) {
+        const [v, s, t0] = out.slice(-3);
+        out.push(v + s * (1 - t0), 0, 1);
+        break;
+      }
+      out.push(keys[j * 3], keys[j * 3 + 1] / r, t);
+    }
+    const last = out.length - 3;
+    out.push(out[last] + out[last + 1] * (1 - out[last + 2]), 0, end);
+    return new Float32Array(out);
+  };
+  for (const c of data.cameras) if (c) c.forEach((keys, i) => (c[i] = fit(keys)));
+  for (const a of data.actors) if (a.ch) a.ch.forEach((keys, i) => (a.ch[i] = fit(keys)));
+  const old = data.frames;
+  data.events = data.events.filter((e) => e.frame <= frames || e.frame > old);
+  for (const e of data.events) if (e.frame > old) e.frame += frames - old;
+  data.frames = frames;
+  data.length = seconds;
+}
+// A blank cutscene to build up: no actors, the first camera held at its opening pose, and only the scene events (draw range, ending
+// transition, render flags) kept, scaled to the new length so the ending transition still comes last.
+const CUT_SCENE_EVENTS = new Set([10, 17, 19, 21, 22]);
+function cutBlank(data, seconds) {
+  const k = data.cameras.findIndex(Boolean), start = data.cameras[k].map((keys) => keys[0]);
+  data.actors = [];
+  data.cameras = data.cameras.map((c, i) => (i === k ? c : undefined));
+  const frames = Math.max(1, Math.round(seconds * data.fps)), old = data.frames;
+  data.events = data.events.filter((e) => CUT_SCENE_EVENTS.has(e.type) || e.frame > old);
+  for (const e of data.events) if (e.frame <= old) e.frame = Math.round((e.frame * frames) / old);
+  cutSetLength(data, seconds);
+  data.cameras[k] = start.map((v) => cutConst(v, cutEnd(data)));
+  data.camera = data.cameras[k];
+}
+// Timeline clips (frames) from the events: a camera shot runs to the next cut; an actor is on screen from a show (6) to its next hide
+// (7); music (1) plays to the next cue or a stop (2); S-foils (11) last p2 frames; walk rate (13) and fog (17) hold to the next of their
+// kind; voice (0) and sounds (3) are as long as their audio (audioLength(e) seconds, or null) with locked ends; the rest are instants.
+// startEvent / endEvent are the events a drag of that end moves (null: the clip's edge is the cutscene's, or a stop to be created).
+const CUT_LANES = { 0: 'audio', 1: 'audio', 2: 'audio', 3: 'audio', 12: 'audio', 4: 'camera', 10: 'scene', 17: 'scene', 19: 'scene', 21: 'scene', 22: 'scene' };
+function cutClips(data, audioLength) {
+  const ev = data.events, F = data.frames, clips = [];
+  const clip = (lane, kind, start, end, extra) => clips.push({ lane, kind, start, end: Math.max(start, Math.min(F, end)), startEvent: null, endEvent: null, lockStart: false, lockEnd: false, ...extra });
+  const cuts = ev.filter((e) => e.type === 4);
+  if (!cuts.length || cuts[0].frame > 0) clip('camera', 'shot', 0, cuts[0]?.frame ?? F, { endEvent: cuts[0] ?? null, lockStart: true, lockEnd: !cuts.length });
+  cuts.forEach((e, i) => clip('camera', 'shot', e.frame, cuts[i + 1]?.frame ?? F, { startEvent: e, endEvent: cuts[i + 1] ?? null, lockEnd: !cuts[i + 1], event: e }));
+  const next = (from, test) => ev.find((x) => x !== from && x.frame >= from.frame && test(x));
+  for (const [i, e] of ev.entries()) {
+    const lane = CUT_LANES[e.type] ?? 'action';
+    if (e.type === 6) {
+      const hide = next(e, (x) => x.type === 7 && x.p[0] === e.p[0]);
+      clip(lane, 'actor', e.frame, hide?.frame ?? F, { startEvent: e, endEvent: hide ?? null, event: e, actor: e.p[0] });
+    } else if (e.type === 7) {
+      if (!ev.slice(0, i).some((x) => x.type === 6 && x.p[0] === e.p[0])) clip(lane, 'actor', 0, e.frame, { endEvent: e, lockStart: true, event: e, actor: e.p[0] });
+    } else if (e.type === 1) {
+      const cue = next(e, (x) => x.type === 1), stop = next(e, (x) => x.type === 2 && (!cue || x.frame <= cue.frame));
+      clip(lane, 'music', e.frame, stop?.frame ?? cue?.frame ?? F, { startEvent: e, endEvent: stop ?? null, event: e });
+    } else if (e.type === 11) {
+      clip(lane, 'foils', e.frame, e.frame + e.p[2], { startEvent: e, event: e });
+    } else if (e.type === 13 || e.type === 17) {
+      const hold = next(e, (x) => x.type === e.type && (e.type === 17 || x.p[0] === e.p[0]));
+      clip(lane, e.type === 13 ? 'walk' : 'fog', e.frame, hold?.frame ?? F, { startEvent: e, endEvent: hold ?? null, lockEnd: !hold, event: e });
+    } else if (e.type === 0 || e.type === 3) {
+      const len = audioLength(e);
+      clip(lane, e.type === 0 ? 'voice' : 'sound', e.frame, e.frame + Math.max(1, Math.round((len ?? 0) * data.fps)), { startEvent: e, lockStart: true, lockEnd: true, event: e });
+    } else if (e.type !== 2 && e.type !== 4) {
+      clip(lane, 'instant', e.frame, e.frame, { startEvent: e, lockStart: true, lockEnd: true, event: e });
+    }
+  }
+  return clips;
+}
+// Drags one end of a clip (or the whole clip with 'move') by dFrames, keeping at least 1 frame and staying inside the cutscene.
+function cutDragClip(data, clip, part, dFrames) {
+  const F = data.frames, at = (e, f) => (e.frame = Math.max(0, Math.min(F, Math.round(f))));
+  if (part === 'move') {
+    const len = clip.end - clip.start, d = Math.max(-clip.start, Math.min(F - clip.end, dFrames));
+    if (clip.startEvent) at(clip.startEvent, clip.start + d);
+    if (clip.endEvent && clip.kind !== 'shot') at(clip.endEvent, clip.start + d + len);
+  } else if (part === 'start' && !clip.lockStart && clip.startEvent) {
+    const s = Math.min(clip.end - 1, clip.start + dFrames);
+    at(clip.startEvent, s);
+    if (clip.kind === 'foils') clip.startEvent.p[2] = Math.max(1, clip.end - clip.startEvent.frame);
+  } else if (part === 'end' && !clip.lockEnd) {
+    const end = Math.max(clip.start + 1, Math.min(F, clip.end + dFrames));
+    if (clip.kind === 'foils') clip.startEvent.p[2] = end - clip.start;
+    else if (clip.endEvent) at(clip.endEvent, end);
+    else if (clip.kind === 'music') cutAddEvent(data, { type: 2, frame: end, p: [0, 0, 0, 0] });
+    else if (clip.kind === 'actor') cutAddEvent(data, { type: 7, frame: end, p: [clip.actor, 0, 0, 0] });
+  }
+  data.events.sort((a, b) => a.frame - b.frame);
+}
+// Value of one channel at normalised time t, as cinematicSlotUpdate (0x800A6904) does: each key is a line (value + slope * (t - time)) from
+// the last key at or before t, blended by a uniform Catmull-Rom over 4 samples on a grid of frames / div steps (div: camera position 8,
+// camera angle 2.5; actor position and scale 6, the rest 3.5); near the ends it is the plain line.
+function cutsceneValue(keys, t, frames, div) {
+  const n = keys.length / 3;
+  if (!n) return 0;
+  const lin = (tt) => {
+    let k = 0;
+    while (k + 1 < n && keys[(k + 1) * 3 + 2] <= tt) k++;
+    return keys[k * 3] + keys[k * 3 + 1] * (tt - keys[k * 3 + 2]);
+  };
+  const N = frames / div, i = Math.trunc(t * N), ts = [i - 1, i, i + 1, i + 2].map((x) => x / N);
+  if (ts[0] < 0 || ts[2] > 1 || ts[3] > 1) return lin(t);
+  const [p0, p1, p2, p3] = ts.map(lin), u = (t - ts[1]) / Math.max(ts[2] - ts[1], 5e-5), u2 = u * u, u3 = u2 * u;
+  return 0.5 * (-u3 + 2 * u2 - u) * p0 + (1.5 * u3 - 2.5 * u2 + 1) * p1 + (-1.5 * u3 + 2 * u2 + 0.5 * u) * p2 + 0.5 * (u3 - u2) * p3;
+}
+
+// ---- Mod export: texture encoding, BPS patches, stored zip ----
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// Median cut over the opaque pixels of an RGBA8 image; returns up to n [r, g, b] colours.
+function medianCut(rgba, n) {
+  const px = [], distinct = new Map();
+  for (let i = 0; i < rgba.length; i += 4) {
+    if (rgba[i + 3] < 128) continue;
+    px.push([rgba[i], rgba[i + 1], rgba[i + 2]]);
+    distinct.set((rgba[i] << 16) | (rgba[i + 1] << 8) | rgba[i + 2], px[px.length - 1]);
+  }
+  if (!px.length) return [[0, 0, 0]];
+  if (distinct.size <= n) return [...distinct.values()];
+  const boxes = [px];
+  while (boxes.length < n) {
+    let best = -1, bestRange = 0, bestCh = 0;
+    boxes.forEach((b, i) => {
+      if (b.length < 2) return;
+      for (let ch = 0; ch < 3; ch++) {
+        let lo = 255, hi = 0;
+        for (const p of b) { lo = Math.min(lo, p[ch]); hi = Math.max(hi, p[ch]); }
+        if (hi - lo > bestRange) { best = i; bestRange = hi - lo; bestCh = ch; }
+      }
+    });
+    if (best < 0) break;
+    const b = boxes[best].sort((p, q) => p[bestCh] - q[bestCh]);
+    boxes.splice(best, 1, b.slice(0, b.length >> 1), b.slice(b.length >> 1));
+  }
+  return boxes.map((b) => [0, 1, 2].map((ch) => Math.round(b.reduce((s, p) => s + p[ch], 0) / b.length)));
+}
+const nearest = (pal, r, g, b, from = 0) => {
+  let best = from, bd = Infinity;
+  for (let k = from; k < pal.length; k++) {
+    const d = (pal[k][0] - r) ** 2 + (pal[k][1] - g) ** 2 + (pal[k][2] - b) ** 2;
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+};
+
+// Writes an RGBA8 image (t.w x t.h) into texture t of an HMT file, in t's own format: the inverse of decodeTexture for HMT textures.
+// A palette another texture shares is kept and the image is mapped onto it. Colour-keyed (flag 0x400) textures write transparent pixels as the key colour.
+function encodeTexture(bytes, t, rgba, textures = []) {
+  const { w, h, type, depth, pix, pal, flags, trans } = t;
+  // The decoder rounds the height up to even; only the stored rows are written, or the last row would overwrite the next texture.
+  const n = w * Math.min(h, t.rows ?? h), dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const key = [(trans >>> 24) & 255, (trans >>> 16) & 255, (trans >>> 8) & 255];
+  const at = (i) => [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2], rgba[i * 4 + 3]];
+  let keyed = false;
+  if (flags & 0x400) for (let i = 0; i < n && !keyed; i++) keyed = rgba[i * 4 + 3] < 128;
+  if (type === 0 || type === 1) {
+    const four = type === 0, size = four ? 16 : 256;
+    const shared = textures.some((o) => o !== t && o.pal === pal);
+    let colors;
+    if (shared) {
+      colors = Array.from({ length: size }, (_, k) => [0, 1, 2].map((c) => dv.getUint8(pal + k * 3 + c)));
+    } else {
+      colors = medianCut(rgba, keyed ? size - 1 : size);
+      if (keyed) colors.unshift(key);
+      while (colors.length < size) colors.push([0, 0, 0]);
+      colors.forEach((c, k) => c.forEach((v, ch) => dv.setUint8(pal + k * 3 + ch, v)));
+    }
+    const keyIndex = keyed ? colors.findIndex((c) => c.every((v, ch) => (v & 0xF8) === (key[ch] & 0xF8))) : -1;
+    for (let i = 0; i < n; i++) {
+      const [r, g, b, a] = at(i);
+      const k = keyed && a < 128 && keyIndex >= 0 ? keyIndex : nearest(colors, r, g, b, keyed && !shared ? 1 : 0);
+      if (four) {
+        const o = pix + (i >> 1), v = dv.getUint8(o);
+        dv.setUint8(o, i & 1 ? (v & 0xF0) | k : (v & 0x0F) | (k << 4));
+      } else {
+        dv.setUint8(pix + i, k);
+      }
+    }
+  } else if (type === 2) {
+    for (let i = 0; i < n; i++) {
+      const [r, g, b, a] = at(i);
+      dv.setUint16(pix + i * 2, (a >= 128 ? 0x8000 : 0) | ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+    }
+  } else if (type === 3) {
+    const bpp = flags & 0x800 ? 4 : 3;
+    for (let i = 0; i < n; i++) for (let c = 0; c < bpp; c++) dv.setUint8(pix + i * bpp + c, at(i)[c]);
+  } else if ((type === 4 || type === 5) && !t.bpp) {
+    const four = type === 4 && depth === 1;
+    for (let i = 0; i < n; i++) {
+      const [r, g, b, a] = at(i);
+      let v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      if (keyed && a < 128) v = key[0];
+      if (four) {
+        const o = pix + (i >> 1), k = v >> 4, old = dv.getUint8(o);
+        dv.setUint8(o, i & 1 ? (old & 0xF0) | k : (old & 0x0F) | (k << 4));
+      } else {
+        dv.setUint8(pix + i, v);
+      }
+    }
+  } else {
+    throw new Error(`Texture format type ${type} cannot be written yet`);
+  }
+}
+
+// BPS patch turning src into dst (both Uint8Array); applied by librecomp's recomp::patcher::patch_rom. Bytes unchanged in place are
+// SourceRead, bytes found elsewhere in src are SourceCopy (data that moved, e.g. DAT sections after an added item), and only what
+// is really new is stored (TargetRead), so a patch made from an original asset carries none of its data.
+function encodeBPS(src, dst) {
+  const out = [];
+  const num = (v) => {
+    for (;;) {
+      const x = v % 128;
+      v = Math.floor(v / 128);
+      if (v === 0) { out.push(0x80 | x); return; }
+      out.push(x);
+      v--;
+    }
+  };
+  const same = (i) => i < src.length && src[i] === dst[i];
+  const key = (a, i) => ((a[i] << 24) | (a[i + 1] << 16) | (a[i + 2] << 8) | a[i + 3]) >>> 0;
+  const where = new Map();
+  for (let i = 0; i + 4 <= src.length; i++) {
+    const k = key(src, i);
+    let l = where.get(k);
+    if (!l) where.set(k, (l = []));
+    if (l.length < 16) l.push(i);
+  }
+  out.push(0x42, 0x50, 0x53, 0x31);
+  num(src.length); num(dst.length); num(0);
+  let pending = -1, srcRel = 0;
+  const flush = (end) => {
+    if (pending < 0) return;
+    num((end - pending - 1) * 4 + 1);
+    for (let k = pending; k < end; k++) out.push(dst[k]);
+    pending = -1;
+  };
+  for (let i = 0; i < dst.length;) {
+    let run = 0;
+    while (i + run < dst.length && same(i + run)) run++;
+    // In-place runs shorter than 4 inside a changed stretch are cheaper as part of it.
+    if (run >= 4 || (run && pending < 0)) {
+      flush(i);
+      num((run - 1) * 4);
+      i += run;
+      continue;
+    }
+    let best = 0, at = 0;
+    if (i + 8 <= dst.length) {
+      for (const p of where.get(key(dst, i)) || []) {
+        let n = 0;
+        while (p + n < src.length && i + n < dst.length && src[p + n] === dst[i + n]) n++;
+        if (n > best) { best = n; at = p; }
+      }
+    }
+    if (best >= 8) {
+      flush(i);
+      num((best - 1) * 4 + 2);
+      const rel = at - srcRel;
+      num(Math.abs(rel) * 2 + (rel < 0 ? 1 : 0));
+      srcRel = at + best;
+      i += best;
+      continue;
+    }
+    if (pending < 0) pending = i;
+    i++;
+  }
+  flush(dst.length);
+  const le = (v) => out.push(v & 255, (v >>> 8) & 255, (v >>> 16) & 255, v >>> 24);
+  le(crc32(src));
+  le(crc32(dst));
+  le(crc32(Uint8Array.from(out)));
+  return Uint8Array.from(out);
+}
+
+// Uncompressed zip of [{ name, data: Uint8Array }].
+function zipStore(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), crc = crc32(f.data), size = f.data.length;
+    const head = (sig, extra) => {
+      const b = new Uint8Array(extra + name.length), dv = new DataView(b.buffer);
+      dv.setUint32(0, sig, true);
+      return { b, dv };
+    };
+    const { b: lh, dv: l } = head(0x04034b50, 30);
+    l.setUint16(4, 20, true); l.setUint16(12, 0x21, true); l.setUint32(14, crc, true); l.setUint32(18, size, true); l.setUint32(22, size, true); l.setUint16(26, name.length, true);
+    lh.set(name, 30);
+    const { b: ch, dv: c } = head(0x02014b50, 46);
+    c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(14, 0x21, true); c.setUint32(16, crc, true); c.setUint32(20, size, true); c.setUint32(24, size, true);
+    c.setUint16(28, name.length, true); c.setUint32(42, off, true);
+    ch.set(name, 46);
+    parts.push(lh, f.data);
+    central.push(ch);
+    off += lh.length + size;
+  }
+  const cdSize = central.reduce((s, b) => s + b.length, 0), end = new Uint8Array(22), e = new DataView(end.buffer);
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+  const all = [...parts, ...central, end], out = new Uint8Array(all.reduce((s, b) => s + b.length, 0));
+  let p = 0;
+  for (const b of all) { out.set(b, p); p += b.length; }
+  return out;
+}
+
+// Reads a stored (uncompressed) zip such as zipStore writes, by its central directory.
+function zipRead(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), dec = new TextDecoder(), out = new Map();
+  let end = bytes.length - 22;
+  while (end >= 0 && dv.getUint32(end, true) !== 0x06054b50) end--;
+  if (end < 0) throw new Error('Not a zip file');
+  let at = dv.getUint32(end + 16, true);
+  for (let i = 0; i < dv.getUint16(end + 10, true); i++) {
+    if (dv.getUint32(at, true) !== 0x02014b50) throw new Error('Bad zip directory');
+    if (dv.getUint16(at + 10, true) !== 0) throw new Error('Compressed zip entries are not supported');
+    const size = dv.getUint32(at + 20, true), nameLen = dv.getUint16(at + 28, true), local = dv.getUint32(at + 42, true);
+    const name = dec.decode(bytes.subarray(at + 46, at + 46 + nameLen));
+    const data = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true);
+    if (data + size > bytes.length) throw new Error('Truncated zip');
+    out.set(name, bytes.subarray(data, data + size));
+    at += 46 + nameLen + dv.getUint16(at + 30, true) + dv.getUint16(at + 32, true);
+  }
+  return out;
+}
+// Applies a BPS patch as encodeBPS writes it (SourceRead, TargetRead, SourceCopy), checking all three CRCs.
+function applyBPS(src, patch) {
+  let p = 4;
+  const num = () => {
+    let data = 0, shift = 1;
+    for (;;) {
+      if (p >= patch.length - 12) throw new Error('Truncated BPS patch');
+      const x = patch[p++];
+      data += (x & 0x7f) * shift;
+      if (x & 0x80) return data;
+      shift *= 128;
+      data += shift;
+    }
+  };
+  if (String.fromCharCode(...patch.subarray(0, 4)) !== 'BPS1' || patch.length < 16) throw new Error('Not a BPS patch');
+  const srcSize = num(), dst = new Uint8Array(num()), meta = num();
+  p += meta;
+  if (srcSize !== src.length) throw new Error('Patch is for a different file');
+  let o = 0, srcOff = 0;
+  while (p < patch.length - 12) {
+    const a = num(), len = Math.floor(a / 4) + 1, type = a % 4;
+    if (type === 0) dst.set(src.subarray(o, o + len), o);
+    else if (type === 1) dst.set(patch.subarray(p, (p += len)), o);
+    else if (type === 2) {
+      const raw = num();
+      srcOff += (raw & 1 ? -1 : 1) * Math.floor(raw / 2);
+      dst.set(src.subarray(srcOff, (srcOff += len)), o);
+    } else throw new Error('TargetCopy is not supported');
+    o += len;
+  }
+  const u32 = (k) => (patch[k] | (patch[k + 1] << 8) | (patch[k + 2] << 16) | (patch[k + 3] << 24)) >>> 0;
+  if (u32(patch.length - 12) !== crc32(src) || u32(patch.length - 8) !== crc32(dst)) throw new Error('Patch checksum mismatch');
+  return dst;
+}
+// Project file: a stored zip of project.json (ROM CRC, steps), assets/<path>.bps (original -> current) and history/<n>.bps (before ->
+// after; each before is the earlier afters replayed from the original). Patches only, no game data.
+const PROJECT_FORMAT = 'rs64-explorer-project';
+function projectWrite({ romCrc, originals, current, history }) {
+  const enc = new TextEncoder(), files = [], steps = [];
+  let n = 0;
+  for (const s of history.steps) {
+    steps.push({ label: s.label, changes: s.changes.map((c) => {
+      files.push({ name: `history/${n}.bps`, data: encodeBPS(c.before, c.after) });
+      return { path: c.path, patch: n++ };
+    }) });
+  }
+  const assets = [...current.keys()].filter((p) => originals.has(p));
+  for (const p of assets) files.push({ name: `assets/${p}.bps`, data: encodeBPS(originals.get(p), current.get(p)) });
+  const json = { format: PROJECT_FORMAT, version: 1, romCrc: romCrc >>> 0, assets, at: history.at, steps };
+  return zipStore([{ name: 'project.json', data: enc.encode(JSON.stringify(json, null, 1)) }, ...files]);
+}
+// readOriginal(path) -> Promise<Uint8Array> of the asset as in the ROM.
+async function projectRead(bytes, romCrc, readOriginal) {
+  let files, json;
+  try {
+    files = zipRead(bytes);
+    json = JSON.parse(new TextDecoder().decode(files.get('project.json')));
+  } catch {
+    throw new Error('Not an RS64 Explorer project');
+  }
+  if (json?.format !== PROJECT_FORMAT) throw new Error('Not an RS64 Explorer project');
+  if (json.romCrc !== romCrc >>> 0) throw new Error('This project was made with a different ROM');
+  const patch = (name) => {
+    const b = files.get(name);
+    if (!b) throw new Error('Not an RS64 Explorer project');
+    return b;
+  };
+  const state = new Map(), history = createHistory();
+  for (const s of json.steps) {
+    const changes = [];
+    for (const c of s.changes) {
+      if (!state.has(c.path)) state.set(c.path, await readOriginal(c.path));
+      const before = state.get(c.path), after = applyBPS(before, patch(`history/${c.patch}.bps`));
+      state.set(c.path, after);
+      changes.push({ path: c.path, before, after });
+    }
+    history.steps.push({ label: s.label, changes });
+  }
+  history.at = json.at;
+  const current = new Map();
+  for (const p of json.assets) current.set(p, applyBPS(await readOriginal(p), patch(`assets/${p}.bps`)));
+  return { current, history };
+}
+
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();
