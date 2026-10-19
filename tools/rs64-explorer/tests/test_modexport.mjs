@@ -613,6 +613,46 @@ await check('cutAddActor takes the scale channel value (default 1 / 0.2222)', as
   assert.equal(r.actors[i].ch[3][0], Math.fround(0.056));
   assert.equal(r.actors[j].ch[3][0], Math.fround(1 / 0.2222));
 });
+// Axis-angle [ax, ay, az, deg] helpers for the motion tests.
+const rotate = ([ax, ay, az, deg], v) => {
+  const n = Math.hypot(ax, ay, az) || 1, [x, y, z] = [ax / n, ay / n, az / n], t = (deg * Math.PI) / 180, c = Math.cos(t), s = Math.sin(t);
+  const d = x * v[0] + y * v[1] + z * v[2];
+  return [0, 1, 2].map((i) => v[i] * c + [y * v[2] - z * v[1], z * v[0] - x * v[2], x * v[1] - y * v[0]][i] * s + [x, y, z][i] * d * (1 - c));
+};
+const angleBetween = (a, b) => {
+  const q = (r) => { const n = Math.hypot(r[0], r[1], r[2]) || 1, h = (r[3] * Math.PI) / 360; return [r[0] / n * Math.sin(h), r[1] / n * Math.sin(h), r[2] / n * Math.sin(h), Math.cos(h)]; };
+  const qa = q(a), qb = q(b), dot = Math.abs(qa.reduce((s, v, i) => s + v * qb[i], 0));
+  return (2 * Math.acos(Math.min(1, dot)) * 180) / Math.PI;
+};
+await check('cutCurve passes through snapshots and holds outside', () => {
+  const s = [{ t: 0.1, p: [0, 0, 0] }, { t: 0.5, p: [10, 0, 0] }, { t: 0.9, p: [10, 0, 10] }];
+  assert.deepEqual(RS64.cutCurve(s, 0.5).map((v) => +v.toFixed(4)), [10, 0, 0]);
+  assert.deepEqual(RS64.cutCurve(s, 0), [0, 0, 0]);
+  assert.deepEqual(RS64.cutCurve(s, 1), [10, 0, 10]);
+  assert.deepEqual(RS64.cutCurve([{ t: 0.3, p: [1, 2, 3] }], 0.7), [1, 2, 3]);
+  assert.ok(RS64.cutCurve([{ t: 0.3, p: [1, 2, 3] }, { t: 0.3, p: [4, 5, 6] }], 0.3).every(Number.isFinite));
+});
+await check('cutSetChannelSpan replaces only its span and re-baking does not grow the channel', async () => {
+  const c = await cutOf('data/cuts/id5_intro');
+  RS64.cutBlank(c, 10);
+  const i = RS64.cutAddActor(c, 'pl_crafts/xwing', -1, 0.0562);
+  const s = [...Array(11).keys()].map((k) => [0.2 + k * 0.05, k]);
+  RS64.cutSetChannelSpan(c, { actor: i, ch: 0 }, 0.2, 0.7, s);
+  const n = c.actors[i].ch[0].length;
+  RS64.cutSetChannelSpan(c, { actor: i, ch: 0 }, 0.2, 0.7, s);
+  assert.equal(c.actors[i].ch[0].length, n);
+  assert.ok(Math.abs(RS64.cutsceneValue(reparse(c).actors[i].ch[0], 0.45, c.frames, 1) - 5) < 1e-3);
+});
+await check('cutBakeActorPath points the nose along travel, banks into turns, never flips', async () => {
+  const c = await cutOf('data/cuts/id5_intro');
+  RS64.cutBlank(c, 10);
+  const i = RS64.cutAddActor(c, 'pl_crafts/xwing', -1, 0.0562);
+  RS64.cutBakeActorPath(c, i, [{ t: 0, p: [0, 0, 0] }, { t: 0.5, p: [400, 0, 0] }, { t: 1, p: [400, 0, 400] }], { rate: 10, bank: 1 });
+  const rot = (t) => [4, 5, 6, 7].map((ch) => RS64.cutsceneValue(c.actors[i].ch[ch], t, c.frames, 1));
+  assert.ok(rotate(rot(0.1), [0, 0, -1])[0] > 0.95, 'nose along +X');
+  assert.ok(rotate(rot(0.5), [0, -1, 0])[2] > 0.05, 'banks toward the turn centre');
+  for (let k = 0; k < 99; k++) assert.ok(angleBetween(rot(k / 100), rot((k + 1) / 100)) < 30, `step ${k}`);
+});
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');

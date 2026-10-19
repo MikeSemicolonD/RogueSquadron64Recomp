@@ -2097,6 +2097,105 @@ function cutBlank(data, seconds) {
   data.cameras[k] = start.map((v) => cutConst(v, cutEnd(data)));
   data.camera = data.cameras[k];
 }
+// ---- Motion authoring: snapshots baked into dense keys (the game plays plain keys) ----
+const v3 = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]],
+  mul: (a, s) => [a[0] * s, a[1] * s, a[2] * s],
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]],
+  len: (a) => Math.hypot(a[0], a[1], a[2]),
+  norm: (a) => { const n = Math.hypot(a[0], a[1], a[2]); return n > 1e-12 ? [a[0] / n, a[1] / n, a[2] / n] : [0, 0, 0]; },
+};
+// Replaces the channel's keys with t0 <= t <= t1 by samples ([t, v], times in t0..t1); the end sentinel stays.
+function cutSetChannelSpan(data, ref, t0, t1, samples) {
+  const chs = cutChannel(data, ref), keys = chs[ref.ch], out = [];
+  for (let j = 0; j < keys.length / 3; j++) {
+    const t = keys[j * 3 + 2];
+    if (t > 1 || t < t0 || t > t1) out.push([keys[j * 3], t]);
+  }
+  for (const [t, v] of samples) out.push([v, t]);
+  out.sort((a, b) => a[1] - b[1]);
+  const k = new Float32Array(out.length * 3);
+  out.forEach(([v, t], j) => k.set([v, 0, t], j * 3));
+  chs[ref.ch] = cutRecomputeSlopes(k);
+}
+// Centripetal Catmull-Rom through snapshots [{ t, p }] (sorted by t), exact at each snapshot and held outside them.
+function cutCurve(snaps, t) {
+  if (!snaps.length) return [0, 0, 0];
+  if (t <= snaps[0].t) return [...snaps[0].p];
+  const last = snaps[snaps.length - 1];
+  if (t >= last.t) return [...last.p];
+  let i = 0;
+  while (i + 1 < snaps.length - 1 && snaps[i + 1].t <= t) i++;
+  const a = snaps[i], b = snaps[i + 1];
+  if (b.t - a.t < 1e-9) return [...b.p];
+  const p0 = (snaps[i - 1] ?? a).p, p1 = a.p, p2 = b.p, p3 = (snaps[i + 2] ?? b).p;
+  const knot = (x, y) => Math.max(Math.sqrt(v3.len(v3.sub(y, x))), 1e-4);
+  const k0 = 0, k1 = k0 + knot(p0, p1), k2 = k1 + knot(p1, p2), k3 = k2 + knot(p2, p3), u = k1 + ((t - a.t) / (b.t - a.t)) * (k2 - k1);
+  const lerp = (x, y, ka, kb) => v3.add(v3.mul(x, (kb - u) / (kb - ka)), v3.mul(y, (u - ka) / (kb - ka)));
+  const a1 = lerp(p0, p1, k0, k1), a2 = lerp(p1, p2, k1, k2), a3 = lerp(p2, p3, k2, k3);
+  return lerp(lerp(a1, a2, k0, k2), lerp(a2, a3, k1, k3), k1, k2);
+}
+function cutAxisAngleToQuat(axis, deg) {
+  const n = v3.norm(axis), h = (deg * Math.PI) / 360, s = Math.sin(h);
+  return v3.len(n) ? [n[0] * s, n[1] * s, n[2] * s, Math.cos(h)] : [0, 0, 0, 1];
+}
+function cutQuatToAxisAngle(q) {
+  const s = Math.hypot(q[0], q[1], q[2]);
+  if (s < 1e-9) return [0, 1, 0, 0];
+  return [q[0] / s, q[1] / s, q[2] / s, (2 * Math.atan2(s, q[3]) * 180) / Math.PI];
+}
+// Rotation (3 columns: where model X, Y, Z go) -> quaternion [x, y, z, w].
+function quatFromBasis([x, y, z]) {
+  const [m00, m10, m20] = x, [m01, m11, m21] = y, [m02, m12, m22] = z, tr = m00 + m11 + m22;
+  if (tr > 0) { const s = Math.sqrt(tr + 1) * 2; return [(m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4]; }
+  if (m00 > m11 && m00 > m22) { const s = Math.sqrt(1 + m00 - m11 - m22) * 2; return [s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s]; }
+  if (m11 > m22) { const s = Math.sqrt(1 + m11 - m00 - m22) * 2; return [(m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s]; }
+  const s = Math.sqrt(1 + m22 - m00 - m11) * 2;
+  return [(m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s];
+}
+// Game space is Y down: up is -Y. One file unit is ~4.5 m, so gravity for the bank angle is ~2.2 units/s^2.
+const CUT_UP = [0, -1, 0], CUT_BANK_G = 2.2;
+// Samples (normalised times) between the first and last snapshot at rate per second of cutscene.
+const cutSampleTimes = (data, t0, t1, rate) => {
+  const n = Math.max(2, Math.ceil((t1 - t0) * data.length * rate) + 1);
+  return [...Array(n).keys()].map((k) => t0 + ((t1 - t0) * k) / (n - 1));
+};
+// Bakes a root actor's position from snapshots and its rotation so the nose (model -Z) points along the path, up = -Y, rolled toward
+// the turn centre by bank x the lateral acceleration (60 deg at most). Axis channels use the stock form 10 x q.xyz (smooth through 0).
+function cutBakeActorPath(data, actor, snaps, { rate = 10, bank = 1 } = {}) {
+  if (!snaps.length) return;
+  const t0 = snaps[0].t, t1 = snaps[snaps.length - 1].t, ref = (ch) => ({ actor, ch });
+  if (t1 - t0 < 1e-9) {
+    [0, 1, 2].forEach((ch) => cutSetChannelSpan(data, ref(ch), t0, t1, [[t0, snaps[0].p[ch]]]));
+    return;
+  }
+  const ts = cutSampleTimes(data, t0, t1, rate), sec = data.length, h = 0.25 / (sec * rate);
+  const at = (t) => cutCurve(snaps, Math.min(t1, Math.max(t0, t)));
+  const cols = [[], [], [], [], [], [], []];
+  let prevQ = null, prevUp = CUT_UP;
+  for (const t of ts) {
+    const p = at(t), vel = v3.mul(v3.sub(at(t + h), at(t - h)), 1 / (2 * h * sec)), acc = v3.mul(v3.add(v3.sub(at(t + h), v3.mul(p, 2)), at(t - h)), 1 / (h * h * sec * sec));
+    const f = v3.len(vel) > 1e-6 ? v3.norm(vel) : (prevQ ? null : [0, 0, -1]);
+    let q = prevQ;
+    if (f) {
+      let up = v3.norm(v3.sub(CUT_UP, v3.mul(f, v3.dot(CUT_UP, f))));
+      if (!v3.len(up)) up = prevUp;
+      prevUp = up;
+      const side = v3.norm(v3.cross(f, up)), roll = Math.max(-60, Math.min(60, bank * (Math.atan2(v3.dot(acc, side), CUT_BANK_G) * 180) / Math.PI)) * (Math.PI / 180);
+      const u = v3.add(v3.mul(up, Math.cos(roll)), v3.mul(side, Math.sin(roll)));
+      const y = v3.mul(u, -1), z = v3.mul(f, -1);
+      q = quatFromBasis([v3.cross(y, z), y, z]);
+      if (prevQ && q.reduce((s, v, i) => s + v * prevQ[i], 0) < 0) q = q.map((v) => -v);
+      prevQ = q;
+    }
+    q ??= [0, 0, 0, 1];
+    const deg = (2 * Math.acos(Math.max(-1, Math.min(1, q[3]))) * 180) / Math.PI;
+    [p[0], p[1], p[2], q[0] * 10, q[1] * 10, q[2] * 10, deg].forEach((v, k) => cols[k].push([t, v]));
+  }
+  [0, 1, 2, 4, 5, 6, 7].forEach((ch, k) => cutSetChannelSpan(data, ref(ch), t0, t1, cols[k]));
+}
 // Timeline clips (frames) from the events: a camera shot runs to the next cut; an actor is on screen from a show (6) to its next hide
 // (7); music (1) plays to the next cue or a stop (2); S-foils (11) last p2 frames; walk rate (13) and fog (17) hold to the next of their
 // kind; voice (0) and sounds (3) are as long as their audio (audioLength(e) seconds, or null) with locked ends; the rest are instants.
@@ -2481,7 +2580,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();
