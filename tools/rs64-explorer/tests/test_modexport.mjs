@@ -731,6 +731,26 @@ await check('cutShootAt refuses a target out of bolt range', async () => {
   const { c, i, j } = await shootScene(60000);
   assert.throws(() => RS64.cutShootAt(c, i, j, 0.3), /range/);
 });
+await check('a project carries an explorer/ authoring sidecar next to its cutscene edit', async () => {
+  const crc = RS64.crc32(new Uint8Array(buf.buffer, buf.byteOffset, buf.length));
+  const cutPath = 'data/cuts/id5_intro', side = 'explorer/' + cutPath + '.json';
+  const dv = await rom.read(cutPath), orig = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+  const c = RS64.parseCutscene(new DataView(orig.slice().buffer));
+  RS64.cutBlank(c, 10);
+  const now = RS64.writeCutscene(c), json = new TextEncoder().encode(JSON.stringify({ version: 1, tracks: { 'act:0': { snaps: [{ t: 0, p: [1, 2, 3] }] } } }));
+  const history = RS64.createHistory();
+  history.begin('Bake');
+  history.commit(cutPath, orig, now, 'Bake');
+  history.commit(side, new Uint8Array(0), json, 'Bake');
+  history.end();
+  const bytes = RS64.projectWrite({ romCrc: crc, originals: new Map([[cutPath, orig], [side, new Uint8Array(0)]]), current: new Map([[cutPath, now], [side, json]]), history });
+  const original = async (p) => (p.startsWith('explorer/') ? new Uint8Array(0) : orig.slice());
+  const back = await RS64.projectRead(bytes, crc, original);
+  assert.deepEqual([...back.current.get(side)], [...json]);
+  assert.deepEqual([...back.current.get(cutPath)], [...now]);
+  assert.equal(back.history.steps.length, 1);
+  assert.equal(back.history.steps[0].changes.length, 2);
+});
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');

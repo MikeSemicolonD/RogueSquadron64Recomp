@@ -439,7 +439,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const { parseShadowTextures, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim,
-  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor } = window.RS64;
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 // HOB vertices are s16 model units; levels (DAT positions, terrain) use world units. Item scale applies on top.
@@ -3937,12 +3937,15 @@ $('btnExport').onclick = async () => {
 // which the game applies to the player's own copy at startup (<mod>/assets/<path>.bps, the path without "data/").
 // edits keeps each touched asset's original; dirty is the ones that differ from it now (undo can bring one back to the original).
 const edits = new Map(), dirty = new Set();
+// The edited game assets a mod exports (the explorer/ authoring sidecars stay in the project).
+const modDirty = () => [...dirty].filter((p) => !p.startsWith('explorer/'));
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 let history = createHistory();
 function updateModButton() {
-  $('btnMod').disabled = !dirty.size;
+  const n = modDirty().length;
+  $('btnMod').disabled = !n;
   $('btnPlay').disabled = !rom;
-  $('btnMod').textContent = dirty.size ? `Export mod (${dirty.size} edited asset${dirty.size > 1 ? 's' : ''})` : 'Export mod';
+  $('btnMod').textContent = n ? `Export mod (${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
   $('btnUndo').disabled = !history.at;
   $('btnRedo').disabled = history.at >= history.steps.length;
 }
@@ -3953,7 +3956,8 @@ function markDirty(path, now) {
 // change() edits the bytes in place, or returns a new array when the asset changes size. Every edit is one history commit; wrap a
 // gesture that makes several in historyGroup so it undoes as one step.
 async function editAsset(path, change, label) {
-  const dv = await rom.read(path);
+  // A virtual explorer/ asset starts out empty.
+  const dv = path.startsWith('explorer/') ? await rom.read(path).catch(() => new DataView(new ArrayBuffer(0))) : await rom.read(path);
   const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
   if (!edits.has(path)) edits.set(path, bytes.slice());
   const before = bytes.slice(), replaced = change(bytes), now = replaced ?? bytes;
@@ -4029,6 +4033,7 @@ async function openProject() {
   if (!file) return;
   const original = async (p) => {
     if (edits.has(p)) return edits.get(p).slice();
+    if (p.startsWith('explorer/')) return new Uint8Array(0);
     const dv = await rom.read(p);
     return new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
   };
@@ -6095,9 +6100,37 @@ function syncSeqUi() {
   $('insCut').querySelector('.insDivider').hidden = s;
   if (s) $('cutLengthRow').style.visibility = 'hidden';
 }
+// Authoring metadata (snapshots and camera modes per track, which the dense keys are baked from) lives in a JSON sidecar stored as the
+// virtual asset explorer/<cutscene path>.json, so the edit history, undo and project files carry it; mod exports skip explorer/ paths.
+const authoringPath = (cutPath) => 'explorer/' + cutPath + '.json';
+const AUTHORING_EMPTY = () => ({ version: 1, tracks: {} });
+async function readAuthoring(cutPath) {
+  try {
+    const dv = await rom.read(authoringPath(cutPath));
+    return dv.byteLength ? JSON.parse(new TextDecoder().decode(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))) : AUTHORING_EMPTY();
+  } catch {
+    return AUTHORING_EMPTY();
+  }
+}
+// Removed actors (a Set of indices) lose their tracks and the camera modes aimed at them; later indices shift down as the file's do.
+function authoringDropActors(doc, gone) {
+  const to = (k) => k - [...gone].filter((g) => g < k).length, tracks = {};
+  for (const [key, tr] of Object.entries(doc.tracks)) {
+    const [kind, n] = key.split(':');
+    if (kind === 'act' && gone.has(+n)) continue;
+    tr.modes = (tr.modes ?? []).filter((m) => !gone.has(m.actor)).map((m) => ({ ...m, actor: to(m.actor) }));
+    tracks[kind === 'act' ? `act:${to(+n)}` : key] = tr;
+  }
+  doc.tracks = tracks;
+}
+async function editAuthoring(cutPath, label, fn) {
+  const doc = await readAuthoring(cutPath);
+  fn(doc);
+  await editAsset(authoringPath(cutPath), () => new TextEncoder().encode(JSON.stringify(doc)), label);
+}
 // Edits queue: each parses the bytes the previous one wrote, so two quick edits never overwrite each other.
 let cutEditQueue = Promise.resolve();
-function editCutFile(label, change) {
+function editCutFile(label, change, authoring = null) {
   if (cut?.seq) {
     $('cutStatus').textContent = 'In a sequence only the shots (hold, target, camera) and level objects can be edited';
     return Promise.resolve(false);
@@ -6111,7 +6144,12 @@ function editCutFile(label, change) {
       return false;
     }
     $('cutStatus').textContent = '';
-    await editAsset(path, () => writeCutscene(fresh), label);
+    // The cutscene and its authoring sidecar (snapshots, modes) change in one undo step.
+    const commit = async () => {
+      await editAsset(path, () => writeCutscene(fresh), label);
+      if (authoring) await editAuthoring(path, label, authoring);
+    };
+    await (authoring ? historyGroup(label, commit) : commit());
     await reopenCutscene();
     return true;
   };
@@ -6758,7 +6796,7 @@ $('cutDelActor').onclick = async () => {
   const kids = gone.size - 1, also = [kids && `${kids} child actor${kids > 1 ? 's' : ''}`, uses && `${uses} event${uses > 1 ? 's' : ''}`].filter(Boolean).join(' and ');
   if (also && !confirm(`Removing ${f.actors[i].name} also removes ${also}.`)) return;
   setCutTrack(null);
-  await editCutFile('Remove actor', (f) => cutRemoveActor(f, i));
+  await editCutFile('Remove actor', (f) => cutRemoveActor(f, i), (doc) => authoringDropActors(doc, gone));
 };
 $('cutBlank').onclick = async () => {
   if (!cut?.file) return;
@@ -6779,7 +6817,7 @@ $('cutDelCam').onclick = async () => {
   const k = cutTrack?.cam;
   if (k == null) return;
   setCutTrack(null);
-  await editCutFile('Remove camera', (f) => cutRemoveCamera(f, k));
+  await editCutFile('Remove camera', (f) => cutRemoveCamera(f, k), (doc) => delete doc.tracks['cam:' + k]);
 };
 $('cutLength').onchange = async () => {
   const s = +$('cutLength').value;
@@ -7478,11 +7516,11 @@ setEditMode(null);
 // The mod's files, named relative to its folder: mod.json and one assets/<path>.bps per edited asset.
 async function modFiles(id, name) {
   const manifest = {
-    game_id: 'rs64', id, display_name: name, description: 'Made with the RS64 Explorer: ' + [...dirty].map((p) => p.replace(/^data\//, '')).join(', '),
+    game_id: 'rs64', id, display_name: name, description: 'Made with the RS64 Explorer: ' + modDirty().map((p) => p.replace(/^data\//, '')).join(', '),
     version: '1.0.0', authors: ['RS64 Explorer'], minimum_recomp_version: '0.0.0',
   };
   const files = [{ name: 'mod.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2) + '\n') }];
-  for (const path of dirty) {
+  for (const path of modDirty()) {
     const now = await rom.read(path);
     files.push({ name: `assets/${path.replace(/^data\//, '')}.bps`, data: encodeBPS(edits.get(path), new Uint8Array(now.buffer, now.byteOffset, now.byteLength)) });
   }
@@ -7538,7 +7576,7 @@ $('btnPlay').onclick = async () => {
     const dir = await gameFolder(), mods = await dir.getDirectoryHandle('mods', { create: true });
     // Rewritten from scratch so an edit that was undone leaves no patch behind.
     await mods.removeEntry(PREVIEW_MOD, { recursive: true }).catch(() => {});
-    if (dirty.size) {
+    if (modDirty().length) {
       const root = await mods.getDirectoryHandle(PREVIEW_MOD, { create: true });
       for (const f of await modFiles(PREVIEW_MOD, 'RS64 Explorer preview')) {
         let d = root;
@@ -7551,7 +7589,8 @@ $('btnPlay').onclick = async () => {
     }
     const target = bootTarget(), cmd = `.\\${GAME_EXE}` + (target ? ` --boot-target=${target}` : '');
     await navigator.clipboard.writeText(cmd).catch(() => {});
-    st.innerHTML = `${dirty.size ? `${dirty.size} edited asset${dirty.size > 1 ? 's' : ''} written to` : 'No edits; removed'} ${esc(dir.name)}\\mods\\${PREVIEW_MOD}.<br>To play it, run this in ${esc(dir.name)} (copied):<br><code>${esc(cmd)}</code>`;
+    const n = modDirty().length;
+    st.innerHTML = `${n ? `${n} edited asset${n > 1 ? 's' : ''} written to` : 'No edits; removed'} ${esc(dir.name)}\\mods\\${PREVIEW_MOD}.<br>To play it, run this in ${esc(dir.name)} (copied):<br><code>${esc(cmd)}</code>`;
   } catch (e) {
     st.textContent = e.name === 'AbortError' ? '' : e.message;
     st.hidden = e.name === 'AbortError';
