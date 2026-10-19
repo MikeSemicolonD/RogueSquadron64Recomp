@@ -7551,7 +7551,7 @@ $('btnPlay').onclick = async () => {
     }
     const target = bootTarget(), cmd = `.\\${GAME_EXE}` + (target ? ` --boot-target=${target}` : '');
     await navigator.clipboard.writeText(cmd).catch(() => {});
-    st.innerHTML = `${dirty.size ? `${dirty.size} edited asset${dirty.size > 1 ? 's' : ''} written to` : 'No edits; removed'} ${esc(dir.name)}\\mods\\${PREVIEW_MOD}.<br><code>${esc(cmd)}</code> in ${esc(dir.name)}.`;
+    st.innerHTML = `${dirty.size ? `${dirty.size} edited asset${dirty.size > 1 ? 's' : ''} written to` : 'No edits; removed'} ${esc(dir.name)}\\mods\\${PREVIEW_MOD}.<br>To play it, run this in ${esc(dir.name)} (copied):<br><code>${esc(cmd)}</code>`;
   } catch (e) {
     st.textContent = e.name === 'AbortError' ? '' : e.message;
     st.hidden = e.name === 'AbortError';
