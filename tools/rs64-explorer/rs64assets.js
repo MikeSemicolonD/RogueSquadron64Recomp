@@ -2264,6 +2264,36 @@ function cutBakeCameraMode(data, cam, { mode, actor, t0, t1, offset = [0, 0, 0],
     if (t1 < 1) cutAddEvent(data, { type: 6, frame: Math.round(t1 * data.frames), p: [actor, 0, 0, 0] });
   }
 }
+// One-action shot: at t the shooter's nose swings onto the target (eased in and out over aimLead seconds), fires a bolt (event 8) fast
+// enough to arrive in 0.5 s, inside the 1.5 s bolt life, and the target explodes (event 5 kind 0) and disappears (event 7) on impact.
+function cutShootAt(data, shooter, target, t, { category = 0, aimLead = 0.3 } = {}) {
+  const fireFrame = Math.round(t * data.frames), tf = fireFrame / data.frames, impactFrame = fireFrame + Math.round(0.5 * data.fps);
+  const from = cutActorPose(data, shooter, tf).p, to = cutActorPose(data, target, tf).p, dist = v3.len(v3.sub(to, from)) / 4;
+  const p2 = Math.round((dist / 0.5) * 10);
+  if (p2 > 0xFFFF) throw new Error(`Target out of bolt range (${dist.toFixed(0)} units; 0.5 s needs speed ${p2 / 10})`);
+  // The game smooths rotation channels over +-2 samples of frames / 3.5, so the aim is held that long either side of the shot.
+  const hold = (2 * 3.5) / data.frames, lead = aimLead / data.length, span = hold + lead;
+  const ts = [...new Set([...cutSampleTimes(data, Math.max(0, tf - span), Math.min(1, tf + span), 30), tf])].sort((a, b) => a - b);
+  const cols = [[], [], [], []];
+  let prev = null;
+  for (const s of ts) {
+    const cur = [4, 5, 6, 7].map((ch) => cutsceneValue(data.actors[shooter].ch[ch], s, data.frames, 1));
+    const pos = cutActorPose(data, shooter, s).p, f = v3.norm(v3.sub(cutActorPose(data, target, s).p, pos));
+    let up = v3.norm(v3.sub(CUT_UP, v3.mul(f, v3.dot(CUT_UP, f))));
+    if (!v3.len(up)) up = [0, 0, 1];
+    const y = v3.mul(up, -1), z = v3.mul(f, -1), aim = quatFromBasis([v3.cross(y, z), y, z]);
+    const d = Math.abs(s - tf) - hold, w = d <= 0 ? 1 : d >= lead ? 0 : 0.5 * (1 + Math.cos((Math.PI * d) / lead));
+    let q = v3.norm4(quat.slerp(cutAxisAngleToQuat(cur.slice(0, 3), cur[3]), aim, w));
+    if (prev && q.reduce((x, v, j) => x + v * prev[j], 0) < 0) q = q.map((v) => -v);
+    prev = q;
+    cutRotValues(q).forEach((v, k) => cols[k].push([s, v]));
+  }
+  cols.forEach((col, k) => cutSetChannelSpan(data, { actor: shooter, ch: 4 + k }, ts[0], ts[ts.length - 1], col));
+  cutAddEvent(data, { type: 8, frame: fireFrame, p: [shooter, category, p2, 0] });
+  cutAddEvent(data, { type: 5, frame: impactFrame, p: [target, 0, 0, 0] });
+  cutAddEvent(data, { type: 7, frame: impactFrame, p: [target, 0, 0, 0] });
+  return { fireFrame, impactFrame };
+}
 // Timeline clips (frames) from the events: a camera shot runs to the next cut; an actor is on screen from a show (6) to its next hide
 // (7); music (1) plays to the next cue or a stop (2); S-foils (11) last p2 frames; walk rate (13) and fog (17) hold to the next of their
 // kind; voice (0) and sounds (3) are as long as their audio (audioLength(e) seconds, or null) with locked ends; the rest are instants.
@@ -2648,7 +2678,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();

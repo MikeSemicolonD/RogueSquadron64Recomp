@@ -706,6 +706,31 @@ await check('camera modes refuse a parented actor', async () => {
   const c = await cutOf('data/cuts/id5_intro'), i = c.actors.findIndex((a) => a.parent >= 0 && a.model);
   assert.throws(() => RS64.cutBakeCameraMode(c, c.cameras.findIndex(Boolean), { mode: 'aim', actor: i, t0: 0, t1: 1 }), /root actor/);
 });
+const shootScene = async (far = 200) => {
+  const { c, i } = await flyingXwing();
+  const j = RS64.cutAddActor(c, 'imp_stuff/probe_droid', -1, 0.24);
+  [0, 1].forEach((t) => [far, -20, 300].forEach((v, ch) => RS64.cutSetKey(c, { actor: j, ch }, t, v)));
+  return { c, i, j };
+};
+await check('cutShootAt aims, fires, and blows up the target on impact', async () => {
+  const { c, i, j } = await shootScene();
+  const n8 = c.events.length;
+  const { fireFrame, impactFrame } = RS64.cutShootAt(c, i, j, 0.3);
+  assert.equal(c.events.length, n8 + 3);
+  const at = (type) => c.events.filter((e) => e.type === type);
+  assert.deepEqual(at(8).map((e) => [e.frame, e.p[0]]), [[fireFrame, i]]);
+  assert.deepEqual(at(5).map((e) => [e.frame, e.p[0]]), [[impactFrame, j]]);
+  assert.deepEqual(at(7).map((e) => [e.frame, e.p[0]]), [[impactFrame, j]]);
+  assert.equal(impactFrame, fireFrame + Math.round(0.5 * c.fps));
+  const s = RS64.cutActorPose(c, i, fireFrame / c.frames), tp = RS64.cutActorPose(c, j, fireFrame / c.frames).p;
+  const nose = rotate([...RS64.cutQuatToAxisAngle(s.q)], [0, 0, -1]), dir = [0, 1, 2].map((k) => tp[k] - s.p[k]), dist = Math.hypot(...dir);
+  assert.ok((nose[0] * dir[0] + nose[1] * dir[1] + nose[2] * dir[2]) / dist > Math.cos((2 * Math.PI) / 180), 'nose on target');
+  assert.ok(Math.abs((at(8)[0].p[2] / 10) * 0.5 - dist / 4) / (dist / 4) < 0.01, 'bolt reaches the target in 0.5 s');
+});
+await check('cutShootAt refuses a target out of bolt range', async () => {
+  const { c, i, j } = await shootScene(60000);
+  assert.throws(() => RS64.cutShootAt(c, i, j, 0.3), /range/);
+});
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');
