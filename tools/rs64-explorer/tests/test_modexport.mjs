@@ -653,6 +653,59 @@ await check('cutBakeActorPath points the nose along travel, banks into turns, ne
   assert.ok(rotate(rot(0.5), [0, -1, 0])[2] > 0.05, 'banks toward the turn centre');
   for (let k = 0; k < 99; k++) assert.ok(angleBetween(rot(k / 100), rot((k + 1) / 100)) < 30, `step ${k}`);
 });
+const camAt = (c, k, t) => c.cameras[k].map((keys) => RS64.cutsceneValue(keys, t, c.frames, 1));
+const flyingXwing = async () => {
+  const c = await cutOf('data/cuts/id5_intro');
+  RS64.cutBlank(c, 10);
+  const i = RS64.cutAddActor(c, 'pl_crafts/xwing', -1, 0.0562);
+  RS64.cutBakeActorPath(c, i, [{ t: 0, p: [0, 0, 0] }, { t: 0.5, p: [400, -40, 0] }, { t: 1, p: [400, -40, 400] }]);
+  return { c, i, k: c.cameras.findIndex(Boolean) };
+};
+await check('cutBakeCameraPath hits each snapshot position and FOV', async () => {
+  const { c, k } = await flyingXwing();
+  const q = RS64.cutAxisAngleToQuat([0, 1, 0], 30);
+  const snaps = [{ t: 0.2, p: [10, -5, 0], q, fov: 50 }, { t: 0.6, p: [30, -5, 20], q, fov: 40 }, { t: 0.9, p: [60, -10, 20], q, fov: 40 }];
+  RS64.cutBakeCameraPath(c, k, snaps);
+  for (const s of snaps) {
+    const v = camAt(c, k, s.t);
+    assert.ok(Math.hypot(v[0] - s.p[0], v[1] - s.p[1], v[2] - s.p[2]) < 1e-3, `pos at ${s.t}`);
+    assert.ok(Math.abs(v[7] - s.fov) < 1e-4, `fov at ${s.t}`);
+  }
+});
+await check('aim keeps the camera looking at the actor', async () => {
+  const { c, i, k } = await flyingXwing();
+  RS64.cutBakeCameraMode(c, k, { mode: 'aim', actor: i, t0: 0.1, t1: 0.9 });
+  for (const t of [0.2, 0.5, 0.8]) {
+    const v = camAt(c, k, t), a = RS64.cutActorPose(c, i, t).p, dir = [0, 1, 2].map((j) => a[j] - v[j]), n = Math.hypot(...dir);
+    const z = rotate([v[3], v[4], v[5], v[6]], [0, 0, 1]);
+    assert.ok((z[0] * dir[0] + z[1] * dir[1] + z[2] * dir[2]) / n > Math.cos(Math.PI / 180), `aim at ${t}`);
+  }
+});
+await check('follow keeps the offset in the actor frame', async () => {
+  const { c, i, k } = await flyingXwing();
+  const offset = [0, -8, 30];
+  RS64.cutBakeCameraMode(c, k, { mode: 'follow', actor: i, t0: 0.1, t1: 0.9, offset });
+  for (const t of [0.2, 0.5, 0.8]) {
+    const v = camAt(c, k, t), pose = RS64.cutActorPose(c, i, t), [x, y, z, w] = pose.q;
+    const qr = (p) => { const u = [x, y, z], uv = [u[1] * p[2] - u[2] * p[1], u[2] * p[0] - u[0] * p[2], u[0] * p[1] - u[1] * p[0]], uuv = [u[1] * uv[2] - u[2] * uv[1], u[2] * uv[0] - u[0] * uv[2], u[0] * uv[1] - u[1] * uv[0]]; return [0, 1, 2].map((j) => p[j] + 2 * (w * uv[j] + uuv[j])); };
+    const want = qr(offset).map((o, j) => pose.p[j] + o);
+    assert.ok(Math.hypot(v[0] - want[0], v[1] - want[1], v[2] - want[2]) < 0.5, `follow at ${t}`);
+  }
+});
+await check('ride hides the actor for the span and shows it after', async () => {
+  const { c, i, k } = await flyingXwing();
+  RS64.cutBakeCameraMode(c, k, { mode: 'ride', actor: i, t0: 0.3, t1: 0.6 });
+  const ev = (type) => c.events.filter((e) => e.type === type && e.p[0] === i).map((e) => e.frame);
+  assert.deepEqual(ev(7), [Math.round(0.3 * c.frames)]);
+  assert.deepEqual(ev(6), [Math.round(0.6 * c.frames)]);
+  const d = await flyingXwing();
+  RS64.cutBakeCameraMode(d.c, d.k, { mode: 'ride', actor: d.i, t0: 0.3, t1: 1 });
+  assert.equal(d.c.events.filter((e) => e.type === 6).length, 0);
+});
+await check('camera modes refuse a parented actor', async () => {
+  const c = await cutOf('data/cuts/id5_intro'), i = c.actors.findIndex((a) => a.parent >= 0 && a.model);
+  assert.throws(() => RS64.cutBakeCameraMode(c, c.cameras.findIndex(Boolean), { mode: 'aim', actor: i, t0: 0, t1: 1 }), /root actor/);
+});
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');

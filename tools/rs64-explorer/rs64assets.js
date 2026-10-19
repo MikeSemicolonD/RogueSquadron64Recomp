@@ -2196,6 +2196,74 @@ function cutBakeActorPath(data, actor, snaps, { rate = 10, bank = 1 } = {}) {
   }
   [0, 1, 2, 4, 5, 6, 7].forEach((ch, k) => cutSetChannelSpan(data, ref(ch), t0, t1, cols[k]));
 }
+const quat = {
+  mul: (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]],
+  rot: (q, p) => { const u = [q[0], q[1], q[2]], uv = v3.cross(u, p), uuv = v3.cross(u, uv); return v3.add(p, v3.mul(v3.add(v3.mul(uv, q[3]), uuv), 2)); },
+  slerp: (a, b, s) => {
+    let d = a.reduce((x, v, i) => x + v * b[i], 0);
+    const bb = d < 0 ? b.map((v) => -v) : b;
+    d = Math.abs(d);
+    if (d > 0.9995) return v3.norm4(a.map((v, i) => v + (bb[i] - v) * s));
+    const th = Math.acos(d), sa = Math.sin((1 - s) * th) / Math.sin(th), sb = Math.sin(s * th) / Math.sin(th);
+    return a.map((v, i) => v * sa + bb[i] * sb);
+  },
+};
+v3.norm4 = (q) => { const n = Math.hypot(...q) || 1; return q.map((v) => v / n); };
+// Camera node rotation looking from pos at target: the camera looks down its +Z, screen up is node -Y = game up (-Y).
+const cutLookQuat = (pos, target) => {
+  const z = v3.norm(v3.sub(target, pos));
+  if (!v3.len(z)) return [0, 0, 0, 1];
+  let y = v3.norm(v3.sub([0, 1, 0], v3.mul(z, z[1])));
+  if (!v3.len(y)) y = [1, 0, 0];
+  return quatFromBasis([v3.cross(y, z), y, z]);
+};
+// A camera / actor rotation as its four channel values (stock form: axis 10 x q.xyz, angle in degrees).
+const cutRotValues = (q) => [q[0] * 10, q[1] * 10, q[2] * 10, (2 * Math.acos(Math.max(-1, Math.min(1, q[3]))) * 180) / Math.PI];
+const CUT_ACTOR_DIVS = [6, 6, 6, 6, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5];
+// A root actor's position and rotation at normalised time t, sampled like the game.
+function cutActorPose(data, actor, t) {
+  const a = data.actors[actor];
+  if (!a || a.parent >= 0) throw new Error('Camera modes need a root actor');
+  const v = a.animated ? a.ch.map((keys, ch) => cutsceneValue(keys, t, data.frames, CUT_ACTOR_DIVS[ch])) : a.value;
+  return { p: [v[0], v[1], v[2]], q: cutAxisAngleToQuat([v[4], v[5], v[6]], v[7]) };
+}
+// Camera snapshots [{ t, p, q, fov }] -> camera channels: position on the curve, rotation slerped (hemisphere-continuous), FOV linear.
+function cutBakeCameraPath(data, cam, snaps, { rate = 10 } = {}) {
+  if (!snaps.length) return;
+  const t0 = snaps[0].t, t1 = snaps[snaps.length - 1].t, ref = (ch) => ({ cam, ch }), cols = [...Array(8)].map(() => []);
+  const ts = t1 - t0 < 1e-9 ? [t0] : cutSampleTimes(data, t0, t1, rate);
+  let prev = null;
+  for (const t of ts) {
+    let i = 0;
+    while (i + 1 < snaps.length - 1 && snaps[i + 1].t <= t) i++;
+    const a = snaps[i], b = snaps[Math.min(i + 1, snaps.length - 1)], s = b.t - a.t > 1e-9 ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 1;
+    let q = v3.norm4(quat.slerp(a.q, b.q, s));
+    if (prev && q.reduce((x, v, j) => x + v * prev[j], 0) < 0) q = q.map((v) => -v);
+    prev = q;
+    [...cutCurve(snaps, t), ...cutRotValues(q), a.fov + (b.fov - a.fov) * s].forEach((v, ch) => cols[ch].push([t, v]));
+  }
+  cols.forEach((col, ch) => cutSetChannelSpan(data, ref(ch), t0, t1, col));
+}
+// Bakes a camera mode over t0..t1 from a root actor's pose: 'follow' (offset in the actor's frame, looking at it), 'aim' (keeps its
+// position, looks at it) or 'ride' (rigidly at the offset facing the nose, the actor hidden for the span as id4_extro's cockpit shot).
+function cutBakeCameraMode(data, cam, { mode, actor, t0, t1, offset = [0, 0, 0], rate = 10 }) {
+  cutActorPose(data, actor, t0);
+  const ref = (ch) => ({ cam, ch }), cols = [...Array(7)].map(() => []), turn = cutAxisAngleToQuat([0, 1, 0], 180);
+  let prev = null;
+  for (const t of cutSampleTimes(data, t0, t1, rate)) {
+    const pose = cutActorPose(data, actor, t);
+    const pos = mode === 'aim' ? [0, 1, 2].map((ch) => cutsceneValue(data.cameras[cam][ch], t, data.frames, 1)) : v3.add(pose.p, quat.rot(pose.q, offset));
+    let q = mode === 'ride' ? quat.mul(pose.q, turn) : cutLookQuat(pos, pose.p);
+    if (prev && q.reduce((x, v, j) => x + v * prev[j], 0) < 0) q = q.map((v) => -v);
+    prev = q;
+    [...pos, ...cutRotValues(q)].forEach((v, ch) => cols[ch].push([t, v]));
+  }
+  cols.forEach((col, ch) => (mode !== 'aim' || ch >= 3) && cutSetChannelSpan(data, ref(ch), t0, t1, col));
+  if (mode === 'ride') {
+    cutAddEvent(data, { type: 7, frame: Math.round(t0 * data.frames), p: [actor, 0, 0, 0] });
+    if (t1 < 1) cutAddEvent(data, { type: 6, frame: Math.round(t1 * data.frames), p: [actor, 0, 0, 0] });
+  }
+}
 // Timeline clips (frames) from the events: a camera shot runs to the next cut; an actor is on screen from a show (6) to its next hide
 // (7); music (1) plays to the next cue or a stop (2); S-foils (11) last p2 frames; walk rate (13) and fog (17) hold to the next of their
 // kind; voice (0) and sounds (3) are as long as their audio (audioLength(e) seconds, or null) with locked ends; the rest are instants.
@@ -2580,7 +2648,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();
