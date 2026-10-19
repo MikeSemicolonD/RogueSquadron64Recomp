@@ -3668,6 +3668,7 @@ async function openFile(file) {
     clearCaches();
     modelCache.clear();
     cutStockScales = null;
+    cutPathModels = null;
     edits.clear();
     dirty.clear();
     history = createHistory();
@@ -5382,6 +5383,7 @@ function syncCutPlay() {
 // path is a cutscene file, or seq:<level dir>:<camera item index> for an in-mission sequence (buildSequenceData).
 let lastCutPath = null;
 async function showCutscene(path) {
+  await cutScanPathModels();
   // A different cutscene drops the selected event (rebuilds of the same one keep it).
   if (path !== lastCutPath) [cutSelEvent, cutSelKey, cutTrack, lastCutPath] = [null, null, null, path];
   const sq = path.match(/^seq:(.+):(\d+)$/);
@@ -5437,7 +5439,7 @@ async function showCutscene(path) {
     // have no path there and are found by object name.
     // A sequence's level units bring the level's own model (src).
     const base = cutBase(a.name), asset = cutAsset(base), tabled = asset.path && 'data/' + asset.path;
-    const id = a.src?.id ?? (tabled && rom.assets.has(tabled + '_HOB') ? tabled : index.get(base));
+    const id = a.src?.id ?? cutPathModelId(a.name) ?? (tabled && rom.assets.has(tabled + '_HOB') ? tabled : index.get(base));
     scale[i] = asset.scale;
     if (!id) continue;
     const m = await loadModel(id), obj = a.src ? m.hob.objects[a.src.objIndex] : m.hob.objects.find((o) => o.name === base) ?? m.hob.objects[0];
@@ -6619,7 +6621,48 @@ $('cutSpace').onclick = () => setCutSpace(cutSpaceMode === 'local' ? 'world' : '
 // ---- Structure: actors (models from the cutscene asset table, or player crafts), camera entries and length ----
 // Only names the game can load: table entries with an asset path, and player crafts by their pl_crafts/ name. The table's own craft
 // entries (awing, xwing, ...) have no path; an actor named after one crashes the game at load (tested in-game).
-const cutModelNames = () => [...new Set([...[...Array(32).keys()].filter((i) => cutStr(CUT_ASSETS + i * 0x5c, 32)).map((i) => cutStr(CUT_ASSETS + i * 0x5c + 0x20, 16)).filter(Boolean), ...CUT_CRAFTS])];
+const cutModelNames = () => [...new Set([...[...Array(32).keys()].filter((i) => cutStr(CUT_ASSETS + i * 0x5c, 32)).map((i) => cutStr(CUT_ASSETS + i * 0x5c + 0x20, 16)).filter(Boolean), ...CUT_CRAFTS, ...(cutPathModels ?? []).map((m) => m.name)])];
+// Any other shipped model by asset path: a name missing from the table makes spawnCutsceneObjectsFromList load that path and find the
+// mesh by the text after the last '/'. A model whose object name differs from its file becomes 'dir/<object>', a mod-added copy (.from).
+let cutPathModels = null;
+async function cutScanPathModels() {
+  if (cutPathModels) return;
+  const table = new Set(cutModelNames()), out = [];
+  for (const k of [...rom.assets.keys()].sort()) {
+    const m = k.match(/^data\/(imp_stuff|reb_stuff|gnrc_stuff)\/([^/]+)_HOB$/);
+    if (!m) continue;
+    let obj = '';
+    try {
+      obj = parseHOB(await rom.read(k)).objects[0]?.name ?? '';
+    } catch {
+      continue;
+    }
+    if (!obj || obj !== obj.toLowerCase() || table.has(obj) || obj.length > 15) continue;
+    if (obj === m[2]) out.push({ name: `${m[1]}/${obj}` });
+    else if (!rom.assets.has(`data/${m[1]}/${obj}_HOB`)) out.push({ name: `${m[1]}/${obj}`, from: `${m[1]}/${m[2]}` });
+  }
+  cutPathModels = out;
+}
+// The model an asset-path actor shows: its own file, or the file a derived name is copied from.
+function cutPathModelId(name) {
+  const n = name.replace(/_\d+$/, '');
+  if (!n.includes('/') || n.startsWith('pl_crafts/')) return null;
+  const id = 'data/' + ((cutPathModels ?? []).find((m) => m.name === n)?.from ?? n);
+  return rom.assets.has(id + '_HOB') ? id : null;
+}
+// The .from files a mod needs for the derived path models its cutscenes name.
+async function cutDerivedModelFiles() {
+  const from = new Map((cutPathModels ?? []).filter((m) => m.from).map((m) => [m.name, m.from])), files = new Map();
+  for (const p of dirty) {
+    if (!p.startsWith('data/cuts/')) continue;
+    for (const a of parseCutscene(await rom.read(p)).actors) {
+      const src = from.get(a.name.replace(/_\d+$/, ''));
+      if (!src) continue;
+      for (const ext of ['_HOB', '_HMT']) if (rom.assets.has(`data/${src}${ext}`)) files.set(`assets/${a.name.replace(/_\d+$/, '')}${ext}.from`, `${src}${ext}\n`);
+    }
+  }
+  return [...files].map(([name, text]) => ({ name, data: new TextEncoder().encode(text) }));
+}
 function fillCutStruct() {
   const f = cut?.file;
   if (!f) return;
@@ -6640,7 +6683,7 @@ function fillCutStruct() {
 // Bounding radius (root units) of an actor model at its table scale, found the way showCutscene loads it; null when it has no model.
 async function cutModelRadius(name) {
   const base = cutBase(name), asset = cutAsset(base), tabled = asset.path && 'data/' + asset.path;
-  const id = tabled && rom.assets.has(tabled + '_HOB') ? tabled : (await buildObjectIndex()).get(base);
+  const id = cutPathModelId(name) ?? (tabled && rom.assets.has(tabled + '_HOB') ? tabled : (await buildObjectIndex()).get(base));
   if (!id) return null;
   const m = await loadModel(id), mesh = buildObject(m.hob.objects.find((o) => o.name === base) ?? m.hob.objects[0], m, id, { tris: 0, verts: 0, parts: 0 });
   mesh.scale.setScalar(HOB_TO_WORLD * (asset.scale || 1));
@@ -7443,7 +7486,7 @@ async function modFiles(id, name) {
     const now = await rom.read(path);
     files.push({ name: `assets/${path.replace(/^data\//, '')}.bps`, data: encodeBPS(edits.get(path), new Uint8Array(now.buffer, now.byteOffset, now.byteLength)) });
   }
-  return files;
+  return [...files, ...(await cutDerivedModelFiles())];
 }
 $('btnMod').onclick = async () => {
   const name = prompt('Mod folder name (letters, digits and dashes)', 'my-rs64-mod');

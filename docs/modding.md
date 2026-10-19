@@ -61,6 +61,10 @@ mods/my-xwing/
 
 A mod built from game assets should not include game data. It can ship `assets/<manifest path>.bps` instead: a BPS patch that the game applies to the player's own copy of that file at startup.
 
+A mod can also add files the game does not have. A file at a new path (for example `assets/reb_stuff/my_ship_HOB` with its `_HMT`) is added to the game's asset list. To add a copy of an existing file under a new name, without shipping it, put a one-line `assets/<new path>.from` naming the existing file (`imp_stuff/prbdroid_HOB`); a `<new path>.bps` next to it patches the copy.
+
+Cutscene actors can name any model by its asset path, such as `imp_stuff/tankdroid`. The game loads that path and uses the model whose object name is the part after the last `/`, so a model whose object name differs from its file name is added under its object name with `.from` (the RS64 Explorer's Actor menu does this for you, for example `imp_stuff/probe_droid`).
+
 The easiest way to make one is the RS64 Explorer (`tools/rs64-explorer`), which writes these patches for you:
 
 1. Make your changes:

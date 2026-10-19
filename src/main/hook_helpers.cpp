@@ -13,6 +13,8 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <array>
 #include <span>
 #include <variant>
 #include <vector>
@@ -662,6 +664,92 @@ void wr_w(uint8_t* rdram, uint32_t a, uint32_t v) {
     rdram[(o + 0) ^ 3] = (uint8_t)(v >> 24); rdram[(o + 1) ^ 3] = (uint8_t)(v >> 16);
     rdram[(o + 2) ^ 3] = (uint8_t)(v >> 8);  rdram[(o + 3) ^ 3] = (uint8_t)v;
 }
+
+// Manifests grown with mod-added files live in host RAM above the game's 8 MB, one 64 KB block per gManifestTable slot: {copy, game's buffer}.
+constexpr uint32_t kManifestCopies = 0x80C00000u, kManifestCopySize = 0x10000u;
+std::pair<uint32_t, uint32_t> s_manifest_copies[4];
+
+// A manifest entry (0x20 bytes, 8 words): +0 offset in block, +4 size, +8 stored size (-1 raw), +0xC flags (0x80 directory) and, for a
+// directory, its own entry plus everything inside in bytes at +0xE; +0x10 name[16].
+struct ManifestNode {
+    uint32_t w[8] = {};
+    std::string name;
+    std::vector<ManifestNode> kids;
+    bool dir() const { return (w[3] & 0x80000000u) != 0; }
+};
+
+// Rewrites slot idx's manifest as a copy with the mod-added files inside their directories (missing directories created, every enclosing
+// directory's size grown), then points the slot at the copy.
+void add_manifest_files(uint8_t* rdram, uint32_t idx, uint32_t block_rom, const std::vector<std::pair<std::string, AssetOverride>>& files) {
+    const uint32_t slot = 0x80110A80u + idx * 0x50u, manifest = rd_w(rdram, slot + 0x40), count = rd_w(rdram, slot + 0x48);
+    std::vector<ManifestNode> top;
+    std::function<ManifestNode(uint32_t&)> read = [&](uint32_t& i) {
+        ManifestNode n;
+        for (int k = 0; k < 8; k++) n.w[k] = rd_w(rdram, manifest + i * 0x20u + k * 4u);
+        for (int c = 0; c < 16; c++) {
+            const char ch = (char)rdram[(manifest + i * 0x20u + 0x10 + c - 0x80000000u) ^ 3];
+            if (!ch) break;
+            n.name += ch;
+        }
+        const uint32_t end = i + ((n.w[3] & 0xFFFFu) >> 5);
+        i++;
+        if (n.dir()) {
+            while (i < end && i < count) n.kids.push_back(read(i));
+        }
+        return n;
+    };
+    for (uint32_t i = 0; i < count;) top.push_back(read(i));
+    auto set_name = [](ManifestNode& n) {
+        char buf[16] = {};
+        std::memcpy(buf, n.name.data(), std::min<size_t>(n.name.size(), 15));
+        for (int k = 0; k < 4; k++) n.w[4 + k] = be32(reinterpret_cast<const uint8_t*>(buf) + k * 4);
+    };
+    for (const auto& [path, ov] : files) {
+        std::vector<ManifestNode>* level = &top;
+        size_t start = 0;
+        for (size_t slash; (slash = path.find('/', start)) != std::string::npos; start = slash + 1) {
+            const std::string part = path.substr(start, slash - start);
+            auto it = std::find_if(level->begin(), level->end(), [&](const ManifestNode& n) { return n.dir() && n.name == part; });
+            if (it == level->end()) {
+                ManifestNode d;
+                d.name = part;
+                d.w[3] = 0x80000000u;
+                set_name(d);
+                level->push_back(std::move(d));
+                it = level->end() - 1;
+            }
+            level = &it->kids;
+        }
+        ManifestNode f;
+        f.name = path.substr(start);
+        f.w[0] = ov.rom_off - block_rom;
+        f.w[1] = ov.size;
+        f.w[2] = 0xFFFFFFFFu;
+        set_name(f);
+        level->push_back(std::move(f));
+        fprintf(stderr, "[assets] slot %u: adds %s -> rom 0x%X\n", idx, path.c_str(), ov.rom_off);
+    }
+    std::vector<std::array<uint32_t, 8>> out;
+    std::function<void(ManifestNode&)> emit = [&](ManifestNode& n) {
+        const size_t at = out.size();
+        out.emplace_back();
+        for (auto& k : n.kids) emit(k);
+        if (n.dir()) n.w[3] = (n.w[3] & 0xFFFF0000u) | (uint32_t)((out.size() - at) * 0x20u);
+        std::copy(std::begin(n.w), std::end(n.w), out[at].begin());
+    };
+    for (auto& n : top) emit(n);
+    if (out.size() * 0x20u > kManifestCopySize) {
+        fprintf(stderr, "[assets] slot %u: %zu manifest entries do not fit the 64 KB copy; mod-added files skipped\n", idx, out.size());
+        return;
+    }
+    const uint32_t copy = kManifestCopies + idx * kManifestCopySize;
+    for (size_t i = 0; i < out.size(); i++) {
+        for (int k = 0; k < 8; k++) wr_w(rdram, copy + (uint32_t)i * 0x20u + k * 4u, out[i][k]);
+    }
+    if (manifest != copy) s_manifest_copies[idx] = { copy, manifest };
+    wr_w(rdram, slot + 0x40, copy);
+    wr_w(rdram, slot + 0x48, (uint32_t)out.size());
+}
 }
 
 // A file named <path>.bps is a BPS patch applied to the player's own copy of <path>, so mods built from game assets ship no game data.
@@ -675,6 +763,7 @@ extern "C" void rs64_asset_overrides_init() {
         return ov;
     };
     std::unordered_map<std::string, std::pair<std::string, std::vector<uint8_t>>> patches;
+    std::unordered_map<std::string, std::pair<std::string, std::string>> derived;
     for (const auto& d : recomp::mods::get_all_mod_details("rs64")) {
         if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
         const std::filesystem::path dir = recomp::mods::get_mod_filename(d.mod_id) / "assets";
@@ -686,6 +775,15 @@ extern "C" void rs64_asset_overrides_init() {
             std::vector<uint8_t> data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
             if (data.empty()) continue;
             std::string key = std::filesystem::relative(f.path(), dir).generic_string();
+            // <path>.from names an existing asset that <path> is a copy of (patched by <path>.bps when present): a new asset made from game data without shipping it.
+            if (f.path().extension() == ".from") {
+                key.resize(key.size() - 5);
+                std::string src(data.begin(), data.end());
+                src.erase(std::remove_if(src.begin(), src.end(), [](char c) { return c == '\r' || c == '\n' || c == ' ' || c == '\t'; }), src.end());
+                s_asset_overrides.erase(key);
+                derived[key] = { d.mod_id, src };
+                continue;
+            }
             if (f.path().extension() == ".bps") {
                 key.resize(key.size() - 4);
                 s_asset_overrides.erase(key);
@@ -695,6 +793,32 @@ extern "C" void rs64_asset_overrides_init() {
             patches.erase(key);
             s_asset_overrides[key] = append(data);
             fprintf(stderr, "[assets] %s overrides %s (%zu bytes)\n", d.mod_id.c_str(), key.c_str(), data.size());
+        }
+    }
+    if (!derived.empty()) {
+        const auto sources = rom_assets(recomp::get_rom(), [&](const std::string& p) {
+            return std::any_of(derived.begin(), derived.end(), [&](const auto& kv) { return kv.second.second == p; });
+        });
+        for (const auto& [path, from] : derived) {
+            const auto& [mod_id, src_path] = from;
+            const auto src = sources.find(src_path);
+            if (src == sources.end()) {
+                fprintf(stderr, "[assets] %s: %s is made from %s, which the game does not have\n", mod_id.c_str(), path.c_str(), src_path.c_str());
+                continue;
+            }
+            std::vector<uint8_t> out = src->second;
+            if (const auto p = patches.find(path); p != patches.end()) {
+                std::vector<uint8_t> patched;
+                if (recomp::patcher::patch_rom(src->second, p->second.second, patched) != recomp::patcher::PatcherResult::Success || patched.empty()) {
+                    fprintf(stderr, "[assets] %s: patch for %s does not apply to %s\n", mod_id.c_str(), path.c_str(), src_path.c_str());
+                    patches.erase(p);
+                    continue;
+                }
+                out = std::move(patched);
+                patches.erase(p);
+            }
+            s_asset_overrides[path] = append(out);
+            fprintf(stderr, "[assets] %s adds %s from %s (%zu bytes)\n", mod_id.c_str(), path.c_str(), src_path.c_str(), out.size());
         }
     }
     if (!patches.empty()) {
@@ -738,6 +862,7 @@ extern "C" void rs64_asset_overrides_patch(uint8_t* rdram, uint32_t idx) {
     const uint32_t count = rd_w(rdram, slot + 0x48);
     if ((manifest & 0xFF800000u) != 0x80000000u) return;
     std::vector<std::pair<std::string, uint32_t>> dirs;
+    std::unordered_set<std::string> seen, top_dirs;
     for (uint32_t i = 0; i < count; i++) {
         while (!dirs.empty() && i >= dirs.back().second) dirs.pop_back();
         const uint32_t e = manifest + i * 0x20u;
@@ -748,9 +873,11 @@ extern "C" void rs64_asset_overrides_patch(uint8_t* rdram, uint32_t idx) {
         path += name;
         const uint32_t w3 = rd_w(rdram, e + 0x0C);
         if (w3 & 0x80000000u) {
+            if (dirs.empty()) top_dirs.insert(name);
             dirs.emplace_back(name, i + ((w3 & 0xFFFFu) >> 5));
             continue;
         }
+        seen.insert(path);
         AssetOverride ov{};
         if (const auto it = s_asset_overrides.find(path); it != s_asset_overrides.end()) {
             ov = it->second;
@@ -764,4 +891,20 @@ extern "C" void rs64_asset_overrides_patch(uint8_t* rdram, uint32_t idx) {
         wr_w(rdram, e + 0x0C, w3 & 0xFFFFu);
         fprintf(stderr, "[assets] slot %u: %s -> rom 0x%X\n", idx, path.c_str(), ov.rom_off);
     }
+    std::vector<std::pair<std::string, AssetOverride>> added;
+    for (const auto& [path, ov] : s_asset_overrides) {
+        if (!seen.count(path) && top_dirs.count(path.substr(0, path.find('/')))) added.emplace_back(path, ov);
+    }
+    if (!added.empty()) add_manifest_files(rdram, idx, block_rom, added);
+}
+
+// rs_free of a manifest copied to host RAM frees the game's own buffer instead (freeManifestSegmentAssets 0x80004A0C / 0x80004A80).
+extern "C" uint32_t rs64_asset_manifest_to_free(uint32_t ptr) {
+    for (auto& [copy, orig] : s_manifest_copies) {
+        if (copy && ptr == copy) {
+            copy = 0;
+            return orig;
+        }
+    }
+    return ptr;
 }

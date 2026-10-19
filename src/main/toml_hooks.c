@@ -820,3 +820,11 @@ void rs64_th_mainGameLoop_8003E114(uint8_t* rdram, recomp_context* ctx) {
 void rs64_th_findManifestEntryByName_8000496C(uint8_t* rdram, recomp_context* ctx) {
     extern void rs64_asset_overrides_patch(uint8_t*, uint32_t); rs64_asset_overrides_patch(rdram, (uint32_t)ctx->r20);
 }
+
+// freeManifestSegmentAssets 0x80004A0C / 0x80004A80 (the rs_free calls)
+void rs64_th_freeManifestSegmentAssets_80004A0C(uint8_t* rdram, recomp_context* ctx) {
+    extern uint32_t rs64_asset_manifest_to_free(uint32_t); ctx->r4 = (gpr)(int32_t)rs64_asset_manifest_to_free((uint32_t)ctx->r4);
+}
+void rs64_th_freeManifestSegmentAssets_80004A80(uint8_t* rdram, recomp_context* ctx) {
+    extern uint32_t rs64_asset_manifest_to_free(uint32_t); ctx->r4 = (gpr)(int32_t)rs64_asset_manifest_to_free((uint32_t)ctx->r4);
+}

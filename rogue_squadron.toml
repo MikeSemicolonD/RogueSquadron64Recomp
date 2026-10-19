@@ -403,6 +403,17 @@ func = "findManifestEntryByName"
 before_vram = 0x8000496C
 text = '{ rs64_th_findManifestEntryByName_8000496C(rdram, ctx); }'
 
+# A manifest grown with mod-added files is a host-RAM copy: rs_free gets the game's own buffer back.
+[[patches.hook]]
+func = "freeManifestSegmentAssets"
+before_vram = 0x80004A0C
+text = '{ rs64_th_freeManifestSegmentAssets_80004A0C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "freeManifestSegmentAssets"
+before_vram = 0x80004A80
+text = '{ rs64_th_freeManifestSegmentAssets_80004A80(rdram, ctx); }'
+
 # tickFormatMessageWorker replies with a pointer to one stack buffer for every request.
 # The host decodes faster than hardware, so queued replies alias and all read the last
 # request id; the SELECT GAME medal/preview slots then never activate. Send each reply
