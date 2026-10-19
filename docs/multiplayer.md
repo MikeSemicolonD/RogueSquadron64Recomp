@@ -76,7 +76,7 @@ A new base-side need is a flag or a table entry, never a direct call.
 
 ## Build variants
 
-The game has no multiplayer code on any platform: online and local co-op come only from the `multiplayer-native` mod, which the game's CMake builds as a dependency of the exe and stages (see [release-ci.md](release-ci.md#native-mods)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs the mod enabled.
+The game has no multiplayer code on any platform: online and local co-op come only from the `multiplayer-native` mod, which the game's CMake builds as a dependency of the exe and stages (see [release-ci.md](release-ci.md#the-multiplayer-mod)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs the mod enabled.
 
 Unit tests (`cmake --build build --config Release --target rs64_unit_tests` builds and runs all): the mod's `mp_core_test`, `net_core_test` and `net_link_test` (`mods/multiplayer-native/tests`) next to the base tests (the style checker runs too). `net_link_test` talks to the real router through UPnP.
 

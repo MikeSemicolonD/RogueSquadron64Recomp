@@ -466,6 +466,10 @@ void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx) {
         extern void rs64_cine_pace(void);
         rs64_cine_pace();
     }
+    {
+        extern void rs64_cine_pause_point(uint8_t* rdram);
+        rs64_cine_pause_point(rdram);
+    }
     // Diagnostic: iterations + gate/cineState. ROGUESQ_LOG_HOOKS=1.
     {
         static int s_log = -1;
@@ -805,6 +809,11 @@ void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx) {
 // mainGameLoop 0x8003E10C
 void rs64_th_mainGameLoop_8003E10C(uint8_t* rdram, recomp_context* ctx) {
     extern void rs64_nav_boot_cutscene(uint8_t*, uint32_t*, uint32_t*); uint32_t lv = (uint32_t)ctx->r4, kd = (uint32_t)ctx->r5; rs64_nav_boot_cutscene(rdram, &lv, &kd); ctx->r4 = (gpr)(int32_t)lv; ctx->r5 = (gpr)(int32_t)kd;
+}
+
+// mainGameLoop 0x8003E114
+void rs64_th_mainGameLoop_8003E114(uint8_t* rdram, recomp_context* ctx) {
+    extern void rs64_nav_boot_cutscene_done(void); rs64_nav_boot_cutscene_done();
 }
 
 // findManifestEntryByName 0x8000496C

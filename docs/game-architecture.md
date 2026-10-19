@@ -70,6 +70,10 @@ recomp accesses via raw address arithmetic with no assigned symbol.
 | 0x80111BC0 | `D_80111BC0` | 16 × 24B event-subscriber slots (claimed by `subscribeEventHandler`) |
 | 0x80111D60 | `D_80111D60` | 8-slot × 116B event ring buffer (producer `pushEventToRingBuffer`) |
 | 0x801128D0 | `D_801128D0` | Service-worker registry linked list: head (+0x00) / tail (+0x04) / count (+0x08) |
+| 0x8011A890 | `D_8011A890` | Submitted-frame counter: zeroed at video init, +1 per `submitGfxFrame`; the intro cutscene's timing reads it |
+| 0x8011A89A | `D_8011A89A`..`D_8011A8A0` | Frame / RSP scheduler flag bytes, one struct (see [Frame loop](#frame-loop-hardware-protocol)): +0 frame being built, +1 vestigial (only written 0), +2 RSP busy, +3 DP-done wanted, +4 graphics SP-done wanted, +5 yield state, +6 audio task running |
+| 0x8011A8C8 | `D_8011A8C8` / `D_8011A8C9` | Swap requested / ack pending byte pair (see [Frame handshake helpers](#7a-frame-handshake-helpers)) |
+| 0x8011A8F0 | `D_8011A8F0`..`D_8011A904` | Frame-timing stats filled by `timeSnapshotFiller` and `submitGfxFrame`: +0 `osGetTime` at the last snapshot (-1 = none), +4 snapshot count (f32), +8/+0xC running sums of the two intervals `readBufferSwapState` reports, +0x10 VI-retrace time seen by the last submit, +0x14 retrace time between the last two submits (the frame period, in ticks) |
 | 0x80128CF0 | `D_80128CF0` | Video queue (one slot): `viRetraceHandlerThread` sends it each VI when a consumer is waiting; received by `waitForPostSwapAck` (game thread) and `waitOnVideoQueue` (video path) |
 | 0x80128F08 | `D_80128F08` | Ptr to the global texture registry (0x24-byte entries: W@8, H@0xA, size@0xC, data*@0x10, name[16]@0x14) |
 | 0x80130B40 | `gGameSettings` | 0x30-byte game state struct (level, craft, cheats, volumes, etc) |
@@ -410,6 +414,10 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 - **Terrain (`05`).** 40-byte records handled by a ucode overlay. `05 05 02 ..` is a flat tile: corner heights in the first two words, corner colors in words 3–6, texcoord size in word 7, position in word 8, z/size in word 9. `05 05 00 ..` DMAs a height grid and color rows and tessellates them (overlays 0x14/0x18).
 - **NDC is y-down.** The ucode adds `ndc × vscale` with no negation; the hardware frame-300 golden has the X-wing at the bottom where the un-negated math puts it at +0.8.
 
+### How the CPU side builds the lists
+
+Where the ucode keeps an F3D opcode, the game emits it with the stock F3D `gbi.h` macros: `gSPDisplayList` (`06000000`), `gSPMatrix(..., G_MTX_MODELVIEW | G_MTX_LOAD)` (`01020040`), the `gDPSet*` other-mode setters (`B9`/`BA`), `gDPPipeSync` (`E7`) and the 16-byte texrect (`E4`). The decomp matches them as written (`beginFrameDLChunk`). Each emitter writes through a cursor (`D_8011DC58`, or a `dl` argument). Before each command it checks the cursor against the chunk's last slot (`D_801163D4`); a full chunk ends with `B5000000 00000000` and continues in a fresh chunk from `allocateDisplayListBuffer`.
+
 ### What the HLE does with it
 
 | Piece | Implementation |
@@ -445,6 +453,18 @@ functions, queues and order). Two VIs per frame:
 2. **VI retrace thread** (`viRetraceHandlerThread`, priority 117), every VI: receive `D_80114388` → take `D_80128D10` → pick the oldest state-3 buffer, mark it 4, `osViSwapBuffer` → `postSwapRdpReset`: if a swap was requested (`D_8011A8C8`) set `D_8011A89D/9E` and send the graphics task (type 1) to the scheduler queue `D_8011A420` → release `D_80128D10` → if a consumer is waiting (`D_80037808`) send the video queue → yield → run the four SI callbacks (`musyxSynthFrame` among them, which blocks on audio-done `D_8011A800` and sends the audio task, type 2).
 3. **RSP scheduler** (`spTaskSchedulerThread`, priority 122): one queue `D_8011A420` for task requests and the SP-done event (type `0x81`, registered with `osSetEventMesg`); a graphics task yields to an audio task; on SP-done it sends `D_8011A818` (graphics) or `D_8011A800` (audio).
 4. **DP handler** (`dpInterruptHandlerThread`, priority 122): on `OS_EVENT_DP` forwards DP-done to `D_8011A7E8` (non-blocking) when `D_8011A89D` is set.
+
+The flags these threads share are adjacent bytes of one `volatile` struct at `0x8011A89A`:
+
+| Byte | Meaning | Set by | Cleared by |
+|------|---------|--------|------------|
+| `0x8011A89A` | Frame being built; `ensureHeapInitialized` leaves the heap alone while it is set | `waitForPrevFrameDone` (after `waitForPostSwapAck`) | `bufferArbiterProducerScanWait` / `avScanWait` at frame end |
+| `0x8011A89B` | Vestigial: only ever written with 0 | none | video init; DP thread, every DP event |
+| `0x8011A89C` | RSP busy (graphics or audio task running) | scheduler on task start | scheduler when both tasks are done |
+| `0x8011A89D` | Waiting for DP-done | `postSwapRdpReset` / `submitGfxFrame` when sending a graphics task | game thread after receiving `D_8011A7E8` |
+| `0x8011A89E` | Waiting for graphics SP-done | same | game thread after receiving `D_8011A818` |
+| `0x8011A89F` | Yield state: 0 = graphics ran to completion, 1 = graphics yielded to audio, 2 = audio started on an idle RSP | scheduler | scheduler |
+| `0x8011A8A0` | Audio task running | scheduler on audio start | scheduler on the audio task's SP-done |
 
 The recomp default (`ROGUESQ_VI_DRIVEN_LOOP`, on) runs exactly this: no host-injected tokens, no forced non-blocking receives, and SP-done delivered after RT64 has parsed the list (`ROGUESQ_SP_COMPLETE_AFTER_PARSE`, implied). Setting `ROGUESQ_VI_DRIVEN_LOOP=0` restores the old mode in which `rs64_vi_callback` posted SP-done/DP-done/VI/frame-sync tokens every VI and the barrier receives were forced non-blocking — that mode is the chunk-reuse race by construction. Remaining difference: the recomp spends three VIs per frame where hardware spends two.
 
@@ -567,6 +587,7 @@ harmless here because every thread has a distinct priority.
 
 - **libultra `OSMesgQueue`** — inter-thread messaging everywhere. Key queues: `D_80114388` VI event, `D_80128D10` frame-sync mutex (one token), `D_80128CF0` video queue (one slot, two consumers: `waitForPostSwapAck` and `waitOnVideoQueue`, sent only when `D_80037808` says a consumer is waiting), `D_8011A420` RSP scheduler, `D_8011A818`/`D_8011A800` SP-done for graphics/audio, `D_8011A7E8` DP-done, `D_8011A408` DP event.
 - **Factor 5 recursive mutex** — audio code; depth counter `D_800A1780`, queue `D_80149990`. Still stubbed in the recomp (see §7).
+- **Scheduler flag bytes** `0x8011A89A`..`0x8011A8A0` and the swap pair `0x8011A8C8`/`C9` — plain `volatile` byte flags shared by the game, VI, scheduler and DP threads (see [Frame loop](#frame-loop-hardware-protocol)); no lock, each byte has one setter and one clearer.
 - **SI busy flag** `D_80110741` — spin-wait for serial idle (save vs controller).
 - **Service-worker registry** `D_801128D0` — linked list of registered workers.
 - **Buffer-arbiter state machine** `D_80128EAA[]` — producer/consumer between the game thread and `viRetraceHandlerThread` (see [Buffer arbiter](#buffer-arbiter)).

@@ -296,6 +296,8 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
                     [] { rs64::touch::set_gyro_enabled(!rs64::touch::gyro_enabled()); } } },
         { "cutscene_draw_distance", { [] { return rs64::video::keep_cutscene_draw_distance(); },
                                       [] { rs64::video::set_keep_cutscene_draw_distance(!rs64::video::keep_cutscene_draw_distance()); } } },
+        { "framebuffer_writeback", { [] { return rs64::video::framebuffer_writeback(); },
+                                     [] { rs64::video::set_framebuffer_writeback(!rs64::video::framebuffer_writeback()); } } },
         { "rt_lights", rt_toggle(rs64lights::Feature::Lights) },
         { "rt_shadows", rt_toggle(rs64lights::Feature::Shadows) },
         { "rt_soft_shadows", rt_toggle(rs64lights::Feature::SoftShadows) },

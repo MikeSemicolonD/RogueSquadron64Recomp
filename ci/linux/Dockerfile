@@ -7,7 +7,7 @@ ARG RUNNER_VERSION=latest
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake ninja-build git python3 \
-        libsdl2-dev libvulkan-dev libgtk-3-dev \
+        libsdl2-dev libvulkan-dev libdbus-1-dev xz-utils \
         gcc-mips-linux-gnu binutils-mips-linux-gnu \
         binutils file curl jq ca-certificates tar gzip zip unzip \
     && rm -rf /var/lib/apt/lists/*

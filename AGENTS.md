@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. The current frontier is the remaining visual and pacing issues (credits text clipping, hitching, frame-interpolation quality), per-frame DL desyncs, and symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
+Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. What's left is the issues listed under Status in the README, plus symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
 
 ## Project layout
 
@@ -74,7 +74,7 @@ for. Any variable can be set on the command line with `--set NAME=VALUE`.
 
 | Env var | Effect |
 |---|---|
-| `ROGUESQ_GFX_API=vulkan\|d3d12` | Force the graphics API (default auto) |
+| `ROGUESQ_GFX_API=vulkan\|d3d12\|d3d11\|d3d10` | Force the graphics API (default auto) |
 | `ROGUESQ_HLE_DEV_MODE=0\|1` | RT64 ImGui inspector on F1 (default on in Debug, off in Release) |
 | `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-paced frame loop instead of the hardware VI protocol (default on). The VI-driven loop matches hardware message order and is the current stability baseline |
 | `ROGUESQ_F5_NATIVE=0` | Parse F5 display lists without emitting geometry |
@@ -134,7 +134,7 @@ The primary correctness workflow — diff a live run against a Project64 golden 
 ### Renaming (`tools/rename/`) and cross-refs (`tools/rz/`)
 
 - `tools/rename/` — the symbol-renaming pipeline (`build_redefs.py`, `find_callers.py`, ...). After a rename batch, regen and build: a name that drifted between the ELF and `rogue_squadron.toml` hooks fails there.
-- `tools/rz/rzq.py <cmd> <sym|0xADDR>` — rizin queries against the symbolized `rogue_squadron64` ELF: `xrefs`, `callees`, `disasm`, `strrefs`, `funcs`, `raw`. `--overlay mission|menu|cinematic` selects which overlay sits at 0x800A5130; `--project <file>` caches the ~25s analysis. See [tools/rz/README.md](tools/rz/README.md).
+- `tools/rz/rzq.py <cmd> <sym|0xADDR>` — rizin queries against the symbolized `rogue_squadron64` ELF: `xrefs`, `callees`, `disasm`, `strrefs`, `funcs`, `raw`. `--overlay mission|menu|cinematic` selects which overlay sits at 0x800A5130; `--project <file>` caches the ~25s analysis. See [tools/rz/README.md](tools/rz/README.md). Use it for tracing (who reads a global, a function's callers) before grepping `RecompiledFuncs/`; it needs rizin plus `pip install rzpipe`.
 
 ## Overriding recompiled functions
 
@@ -146,7 +146,7 @@ The primary correctness workflow — diff a live run against a Project64 golden 
 
 N64Recomp is `build/Debug/N64Recomp.exe` (override `N64RECOMP_EXE`), built from `lib/N64ModernRuntime/N64Recomp` (a directory in the N64ModernRuntime fork) via `N64RecompCLI`; `regen_funcs` depends on it. It supports `--dump-context`, `func_reference_syms_file` and `patch_files`. If a regen truncates `funcs.h` to ~7 lines, the exe is stale; see dead ends.
 
-Base-game fixes go in the toml. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and the "Code mods" paragraph in [docs/adding-menus-and-buttons.md](docs/adding-menus-and-buttons.md). Native-library mods that hook game code through the host API: [docs/modding-host-api.md](docs/modding-host-api.md).
+Base-game fixes go in the toml. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and [docs/modding.md](docs/modding.md). Native-library mods that hook game code through the host API: [docs/modding-host-api.md](docs/modding-host-api.md).
 
 `mods/platforms.json` decides which mods ship per platform: a mod not listed there ships nowhere. `desktop` entries (data-only folders and `.nrm` files) are staged next to the exe by `tools/mods/stage_mods.cmake`; `android` entries are packed into the APK. Release CI builds every `.nrm` listed under `desktop` via `tools/mods/build_code_mods.cmake`, matching each entry to the `mods/*/mod.toml` whose `mod_filename` equals the `.nrm` name, so a new code mod must be added to that list to ship ([docs/release-ci.md](docs/release-ci.md#code-mods)).
 
@@ -175,7 +175,7 @@ Online co-op (`ROGUESQ_MP=host|join`, or the MULTIPLAYER lobby page from the `mu
 - Incoming damage waits for the mission to settle (30 frames, no cutscene), or the objective trigger faults.
 - The menu font has no period; `ensure_menu_period` builds it at runtime, so use the existing dot and blank glyph helpers, not hardcoded glyphs.
 - Android needs the `INTERNET` permission and a Wi-Fi multicast lock (`MainActivity`) for LAN discovery.
-- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, the multiplayer mod's `mp_core_test`, `net_core_test` and `net_link_test` (in `mods/multiplayer-native/tests`), plus `style_check`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
+- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test`, `rs64_lights_test`, the multiplayer mod's `mp_core_test`, `net_core_test` and `net_link_test` (in `mods/multiplayer-native/tests`), plus `style_check`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
 
 ### Game-state model + BOOT_TARGET nav engine
 
@@ -289,8 +289,10 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **Comments are terse and matter-of-fact.** State the fact, not the reasoning journey. No multi-paragraph narration, no dated blow-by-blow history, no "we tried X then Y" storytelling in a comment — one or two plain lines. This applies to config comments (e.g. `rogue_squadron.toml`) too.
 - **At most 1-2 lines per comment block, and don't hard-wrap at ~90 columns** — let a line run long rather than splitting one sentence across several. No trailing side comments after code (`x = 1;  // note`) and no extra notes tacked on after a semicolon; if it matters, it goes in the one comment above the code.
 - Don't reference the current task or session in comments — they rot.
+- **README and docs: write for the reader who needs it.** There are three readers: players (want a download and how to run it), builders (build, run, simple mods) and engine developers (internals, debugging). The README is curated by the maintainer: don't add sections to it without asking. A README build section holds only what a builder needs to act (commands, a gotcha that blocks the build, a link); player details (supported GPUs, distro/board lists, save locations, config keys) go in [docs/building-all-platforms.md](docs/building-all-platforms.md#what-players-need), and a runtime caveat is one bullet under Status. State each fact in one place and link to it; don't copy a doc's details into the README. Mark platforms that only build as untested. [docs/README.md](docs/README.md) is the docs index; add new docs there under the right reader.
 - **Never mention or link `plans/` from committed files** (README, `docs/`, code and config comments). `plans/` is gitignored and never committed, so those references are dead for everyone else. State the fact or direction in plain words instead.
 - Prefer **editing existing files** over creating new ones. The runtime is already large; new files attract drift.
+- **Clean up after yourself** as soon as a test is done: scripts, logs, screenshots, temp folders and debug binaries you created, locally (`build/*/screenshots`, `%TEMP%`, scratch dirs) and on remote test machines such as the Pi. Leave only what the user asked for and the game's own data.
 - For probe instrumentation in `funcs_*.c`, rate-limit:
   ```c
   { static int n=0; ++n; if (n<=10 || (n%50)==0) { fprintf(stderr, "..."); fflush(stderr); } }
@@ -311,8 +313,6 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 Priorities (user-visible issues are listed under [Status](README.md#status-playable) in the README):
 
-1. **Display-list desyncs** — mostly fixed: the texrect handlers left the 16-byte LLE texrect's second word in the stream, so it ran as a command (0x06 calls, 0x07 branches, 0x0D othermode). An `abort:0` run went from 19 garbage color-image rejects to 0 (`ROGUESQ_LOG_DL_HEALTH=1`). Recheck longer runs and other levels; root-cause any remaining ones with [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and `tools/validate/f5_dl_walk.py`.
-2. **Retire render heuristics that a known microcode rule can replace** — e.g. the 0xBD sprite path (the ucode emits a screen-space texrect via overlay 0x2C) and the terrain grid shape. Verify each with the DL/RDRAM validation harness, not screenshots alone.
-3. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Regen and build after each batch.
+1. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Regen and build after each batch.
 
 The render path is HLE through the `GBI_F3DFACTOR5` profile.

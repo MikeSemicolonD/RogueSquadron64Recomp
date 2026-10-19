@@ -26,13 +26,35 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 </div>
 
+## Minimum Requirements
+
+| Requirement | Details |
+| --- | --- |
+| **ROM** | Star Wars: Rogue Squadron, USA v1.0, as `.z64`, `.v64` or `.n64` (16 MB, xxHash3-64 `0x6B66A44153594DEA`), e.g. `rogue_squadron.z64` |
+
+| OS / Platform | Graphics Backend |
+| --- | --- |
+| **Windows 10+ x64** | Vulkan, D3D12, D3D11, D3D10 |
+| **[Windows 10+ x86 (32-bit)](#4-build)** | Vulkan, D3D12, D3D11, D3D10 |
+| **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
+| **[Linux arm64 / armhf](docs/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan; runs on a Raspberry Pi 4 |
+| **[Linux x86 (32-bit)](docs/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
+| **[Android 8+ arm64](#android-notes)** | Vulkan 1.1 |
+| **[*maybe* macOS 11+](#macos-notes)*** | Metal |
+
+*macOS is *compile-only* so far (see [macOS notes](#macos-notes))
+
+**The 32-bit x86 Linux build has only been run on a 64-bit PC with software Vulkan, not yet with a GPU driver.
+
+Per-platform player requirements (GPUs for D3D11 and D3D10, Raspberry Pi models, where the AppImage and Flatpak keep saves) are in [docs/building-all-platforms.md](docs/building-all-platforms.md#what-players-need).
+
 ## Features
 
 #### Graphics
 
-- **High resolutions:** high resolution options, with optional MSAA anti-aliasing, supersampling & HDR.
+- **High resolutions:** high resolution options, with optional MSAA, SSAA or FXAA anti-aliasing & HDR.
 - **Widescreen:** extends the screen (and camera FOV) beyond the old 4:3 aspect ratio.
-- **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some some caveats](#status-playable).
+- **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status-playable).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate. [Might *still* have some visual glitches](#status-playable).
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
 
@@ -48,7 +70,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 #### Multiplayer (experimental)
 
 - **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding). Uses a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6) and [miniupnp](https://github.com/miniupnp/miniupnp). The **Multiplayer** is shipped as a `multiplayer-native` mod.
-- **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replaced the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
+- **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replace the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
 - See [docs/multiplayer.md](docs/multiplayer.md) for more details.
@@ -60,7 +82,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 - **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might requires resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
-  - See [docs/modding-host-api.md for modding info](docs/modding-host-api.md).
+  - See [docs/modding.md for modding info](docs/modding.md).
 - **Included mods:**
   - **Multiplayer:** online co-op (see above).
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
@@ -73,7 +95,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 ## Running
 
-Put `rogue_squadron.z64` in the working directory (the executable's folder when you double-click it) and launch. The ROM hash is checked and the ROM is imported on first launch.
+Put `rogue_squadron.z64` (or `rogue_squadron.v64` / `rogue_squadron.n64`) in the working directory (the executable's folder when you double-click it) and launch. The ROM hash is checked and the ROM is imported on first launch.
 
 ### Controls
 
@@ -94,10 +116,10 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | Speed (positional) | — | — | — | — | Throttle lever |
 | Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick |
 | Special | <kbd>F</kbd> | — | C-Right | Guide | Button 5 |
-| Cockpit | <kbd>F1</kbd> | — | D-Pad Up | D-Pad | — |
-| Standard | <kbd>F2</kbd> | — | D-Pad  Down | D-Pad | — |
-| Close view | <kbd>F3</kbd> | — | D-Pad Right | D-Pad | — |
-| Switch view | <kbd>F4</kbd> | — | L | Left shoulder | Button 8 |
+| Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad | — |
+| Standard | <kbd>V</kbd> | — | D-Pad  Down | D-Pad | — |
+| Close view | <kbd>B</kbd> | — | D-Pad Right | D-Pad | — |
+| Switch view | <kbd>N</kbd> | — | L | Left shoulder | Button 8 |
 | In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — |
 | Look around | <kbd>Q</kbd> | — | C-Up | Y | Hat |
 | Drop camera | <kbd>Z</kbd> | — | D-Pad Left | D-Pad | — |
@@ -110,9 +132,9 @@ Actions are for the game's default **Luke** controller setting. The other contro
 **Mouse flight steering:** mouse cursor is automatically captured when the game window is focused.
 Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon. The cursor displays when the window loses focus, the (**F6**) Controls window is open, or when RT64's (**F1**) inspector is up.
 
-**Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks supporting rumble or force feedback. Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. Rumble and it's individual effects can be tuned in the (**F6**) Controls window, or in the `rumble` section of `roguesq_input.json`.
+**Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks supporting rumble or force feedback. Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. Rumble and its individual effects can be tuned in the (**F6**) Controls window, or in the `rumble` section of `roguesq_input.json`.
 
-**Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bounded as a joystick. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: *full back* is craft's slowest, *full forward* is fastest, and *middle* is normal speed. Other axes can be bound from the Controls window (**F6**)
+**Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bound as a joystick. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: *full back* is craft's slowest, *full forward* is fastest, and *middle* is normal speed. Other axes can be bound from the Controls window (**F6**)
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
@@ -147,17 +169,9 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Recomp. specific Issues
 
-- Some 'highlights' from the lights or explosions when you destroy the AT-AT will sometimes show the wrong color.
-
-- Forcing a ship selection (via CI) won't respect it's secondary (for example selecting a y-wing but then selecting an A-wing in the hangar)
-
-- A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existance at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
+- A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
 - Frame interpolation *can be enabled* **BUT** might still have visual glitches if meshes/objects aren't ID'd properly. The performance hitches (frame rate drops) will also cause a frame stutter. (This has since been improved)
-
-- Low Resolution mode works but affects how cutscenes are displayed with them appearing more wide than they probably should be.
-
-- Force picking a level + ship via argument or env. variable can result in the ship you specified having the wrong secondary because of what's actually selected in the hangar.. For example picking 'Assault on Kile II' and an 'Y-Wing' but in the menu you'd pick ANY level with ANY ship. That ship that was picked in the hangar will carry over that ship's secondary. In other words for this case the Y-Wing won't be equipped with bombs during 'Assault on Kile II'. Not a big problem given that this case is for testing purposes, but annyoing nonetheless.
 
 ### Game specific Issues
 
@@ -171,7 +185,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- Control switching based on menu/display 'context'. For example being able use the RMB to back out of menus while still being able to use it for secondary weapons which is a seperate binding. We already do a form of this for touch inputs on Android.
+- Control switching based on menu/display 'context'. For example being able use the 'RMB' to back out of menus while still being able to use it for secondary weapons which is a separate binding. We already do a form of this for touch inputs on Android.
 
 - Clickable/highlightable menu buttons when using a mouse so we no longer have to hide the cursor when in the menus. We already have a way to defines areas of the screen and associate them to buttons/functionality on Android.
 
@@ -187,33 +201,16 @@ Bindings are saved to `roguesq_input.json` next to the executable.
   - Will greatly benefit Ray Tracing
   - Will greatly benefit visuals and performance when at a 2x+ draw distance
 
-## Requirements
-
-### Run Requirements
-
-| Requirement | Notes |
-| --- | --- |
-| **ROM** | `rogue_squadron.z64`, USA v1.0 (16 MB, xxHash3-64 `0x6B66A44153594DEA`) |
-
-| OS / Platform | Graphics Backend |
-| --- | --- |
-| **Windows 10+** | D3D12 |
-| **Linux** | Metal |
-| **[Android 8+ arm64](#android-notes)** | Vulkan 1.1 |
-| **[*maybe* macOS 11+](#macos-notes)*** | Metal |
-
-*macOS is *compile-only* so far (see [macOS notes](#macos-notes))
+## Building
 
 ### Build Requirements
 
 | OS/Platform | Requirement |
 | --- | --- |
 | **Windows 10+** | CMake 3.20+, [MSVC with the ClangCL toolset](https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild) with a [MIPS Toolchain](https://github.com/n64-tools/gcc-toolchain-mips64/releases)* |
-| **Linux** | CMake 3.20+, [Clang](https://github.com/llvm/llvm-project) or [GCC](https://gcc.gnu.org/wiki/GFortranBinaries#Linux) |
+| **Linux** | CMake 3.20+, [Clang](https://github.com/llvm/llvm-project/releases) or [GCC](https://gcc.gnu.org/install/binaries.html) |
 
 *Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
-
-## Building
 
 ### 1. Clone with submodules
 
@@ -224,46 +221,65 @@ cd RogueSquadron64Recomp
 
 `lib/` holds forks of [N64ModernRuntime](https://github.com/MikeSemicolonD/N64ModernRuntime) and [rt64](https://github.com/MikeSemicolonD/rt64), forked because the upstream libraries don't support Factor 5's custom microcode. N64ModernRuntime also contains a forked/modified version of `N64Recomp`.
 
-[enet6](https://github.com/SirLynix/enet6) and [miniupnp](https://github.com/miniupnp/miniupnp) for used exclusively for the multiplayer co-op mod.
+[enet6](https://github.com/SirLynix/enet6) and [miniupnp](https://github.com/miniupnp/miniupnp) are used exclusively for the multiplayer co-op mod.
 
 ### 2. Produce the decomp ELF
 
-The recompiler needs the ELF from the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp, cloned next to this repo (`rogue_squadron.toml` reads `../rogue_squadron64/build/roguesquadron.elf`):
+The recompiler needs an ELF of the game: the ROM's code with every function named and its bounds. You make it from your ROM with the companion [rogue_squadron64](https://github.com/MikeSemicolonD/rogue_squadron64) decomp, cloned next to this repo. From this repo (using Python 3.11+):
 
 ```sh
-# In the rogue_squadron64 repo:
-splat split roguesquadron.yaml
-python tools/make_elf.py
+git clone https://github.com/MikeSemicolonD/rogue_squadron64.git ../rogue_squadron64
+cp path/to/rogue_squadron.z64 ../rogue_squadron64/   # the ROM goes in the decomp's root
+python tools/make_elf_from_syms.py                   # writes ../rogue_squadron64/build/roguesquadron.elf
+```
+
+`rogue_squadron.toml` reads the ROM and the ELF from exactly those two paths.
+
+The script uses the decomp's `tools/make_elf.py` to write the ELF, but takes the function names from this repo's `syms/rogue_squadron.syms.toml`, so they match `rogue_squadron.toml` and the mods. Only data symbols and unnamed `func_` names come from the decomp.
+
+The decomp's own build (`splat split roguesquadron.yaml && python tools/make_elf.py`) is only for renaming symbols in the decomp. If its names are behind this repo's, N64Recomp fails with this error:
+
+```text
+Function ... is stubbed out in the config file but does not exist!
 ```
 
 ### 3. Generate the recompiled C
 
-The recomp's CMake needs `RecompiledFuncs/`, and the recompiled boot and audio microcode so build `N64Recomp` and `RSPRecomp` first. Why is this needed? Because the game contains custom boot/audio microcode, requiring it's own recompilation process.
+The recomp's CMake needs `RecompiledFuncs/`, and the recompiled boot and audio microcode so build `N64Recomp` and `RSPRecomp` first. Why is this needed? Because the game contains custom boot/audio microcode, requiring its own recompilation process.
 
 ```sh
-cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -DCMAKE_BUILD_TYPE=Release # Build N64Recomp tool
-cmake --build build-tools --config Release --target N64RecompCLI RSPRecomp        # Build RSPRecomp tool
+cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -DCMAKE_BUILD_TYPE=Release # Configure the tools
+cmake --build build-tools --config Release --target N64RecompCLI RSPRecomp        # Build N64Recomp and RSPRecomp
 
-# From the repo root. Visual Studio puts the tools in 'build-tools/Release/', Ninja/Make in 'build-tools/'.
-build-tools/Release/N64Recomp rogue_squadron.toml          # RecompiledFuncs/
-build-tools/Release/RSPRecomp rsp/factor5_boot_rsp.toml    # build/factor5_ucode/factor5_boot_recompiled.c
-build-tools/Release/RSPRecomp rsp/musyx_rsp.toml           # build/factor5_ucode/musyx_audio_recompiled.c
+# From the repo root. Windows (Visual Studio puts the tools in build-tools/Release/)
+build-tools/Release/N64Recomp.exe rogue_squadron.toml          # RecompiledFuncs/
+build-tools/Release/RSPRecomp.exe rsp/factor5_boot_rsp.toml    # build/factor5_ucode/factor5_boot_recompiled.c
+build-tools/Release/RSPRecomp.exe rsp/musyx_rsp.toml           # build/factor5_ucode/musyx_audio_recompiled.c
+
+# Linux / macOS (Ninja or Make put them in build-tools/)
+build-tools/N64Recomp rogue_squadron.toml
+build-tools/RSPRecomp rsp/factor5_boot_rsp.toml
+build-tools/RSPRecomp rsp/musyx_rsp.toml
 ```
 
 The recomp's build process then fixes up both microcode files in place (`tools/fixup_factor5_ucode.cpp`). Re-run RSPRecomp only when a config under `rsp/` changes.
 
 ### 4. Build
 
-Can specificy 'Debug' in `config` when debugging. 'Release' provides MUCH better performance.
+Can specify 'Debug' in `config` when debugging. 'Release' provides MUCH better performance.
 
 ```sh
 # Windows (Visual Studio + ClangCL)
 cmake -B build -T ClangCL -DN64RECOMP_EXE=build-tools/Release/N64Recomp.exe
 cmake --build build --config Release
 
+# Windows 32-bit
+cmake -B build-x86 -A Win32 -T ClangCL -DN64RECOMP_EXE=build-tools/Release/N64Recomp.exe
+cmake --build build-x86 --config Release
+
 # Linux / macOS
-cmake -B build -DCMAKE_BUILD_TYPE=Debug -DN64RECOMP_EXE=build-tools/N64Recomp
-cmake --build build --config Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DN64RECOMP_EXE=build-tools/N64Recomp
+cmake --build build
 ```
 
 After that, the `regen_funcs` target (`cmake --build build --config Debug --target regen_funcs`) regenerates `RecompiledFuncs/`. Re-run it when `rogue_squadron.toml`, the symbols, or the decomp ELF changes.
@@ -289,7 +305,6 @@ cmake --build build --target RogueSquadron64Recomp
 
 `gcc-mips-linux-gnu binutils-mips-linux-gnu` are only needed to build `.nrm` code mods on Linux.
 
-- **Fresh public decomp checkout:** if `N64Recomp rogue_squadron.toml` stops with `Function ... is stubbed out in the config file but does not exist!`, the decomp's ELF is behind the names this config uses. Build the ELF with `python3 tools/make_elf_from_syms.py` instead of the decomp's `tools/make_elf.py`; it takes the function table from `syms/rogue_squadron.syms.toml` and needs only the ROM in the decomp's root (no `splat` run).
 - **Wayland:** if the window stays black and the log shows `fault caught ... lib=.../libdecor-gtk.so`, SDL's GTK decoration plugin crashed. Run through XWayland with `SDL_VIDEODRIVER=x11`.
 
 #### About WSL2
@@ -317,7 +332,7 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 ```
 
 - **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and it stutters a lot. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wraps the commands above.
-- **ROM:** on first launch the system file picker asks for `rogue_squadron.z64`; the ROM is checked and imported once. (Pushing it to `/sdcard/Android/data/com.rs64recomp.app/files/` with `adb push` also works.)
+- **ROM:** on first launch the system file picker asks for `rogue_squadron.z64` (`.v64` and `.n64` also work); the ROM is checked and imported once. (Pushing it to `/sdcard/Android/data/com.rs64recomp.app/files/` with `adb push` also works.)
 - **Controls:** touch controls are on by default: tap menu buttons directly, swipe carousels, and fly with virtual joystick stick and N64-style buttons.
   - Move and resize the touch buttons by using the gear button in the bottom left corner of the screen when navigating menus or by selecting **TOUCH LAYOUT** (Requires [touch-layout](mods/touch-layout) mod) in the pause menu.
   - **GYRO STEERING** (Requires [gyro-toggle](mods/gyro-toggle) mod) in Game Settings turns on tilt steering to allow for fine mouse-like aiming. A paired gamepad will hide the touch overlay.
@@ -387,7 +402,7 @@ Recompiled game code compiles into one static library, linked against forked bui
 | `[[patches.instruction]]` | Overwrite one instruction at a `vram` with a raw `value` (e.g. NOP a `cache` op or a busy-wait branch) |
 | `[[patches.hook]]` | Inject C at a function's entry or before a `vram` — guards, pacing, logging. Host helpers live in `src/main/hook_helpers.cpp` |
 
-Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrides, put the logic in a host function in `src/main/hook_helpers.cpp` and call it from the hook via `LOOKUP_FUNC`.
+Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrides, put the logic in a host function in `src/main/hook_helpers.cpp` and call it from the hook. A hook's text is a single `rs64_th_*` call into `src/main/toml_hooks.c`, and hooks call game functions through `mips_call`.
 
 ## Debugging
 
@@ -413,7 +428,7 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 | Option | Effect |
 | --- | --- |
 | `--fullscreen` | (`ROGUESQ_FULLSCREEN=1`) starts in borderless fullscreen; Alt+Enter toggles it. |
-| `--gfx-api <vulkan\|d3d12>` | Force the graphics API (default auto) |
+| `--gfx-api <vulkan\|d3d12\|d3d11\|d3d10>` | Force the graphics API (default auto) |
 | `--[no-]hle-dev-mode` | RT64 ImGui inspector on `F1` *(default **on in Debug**, **off in Release)*** |
 | `--no-vi-driven-loop` | Old host-paced frame loop instead of the hardware protocol (default is VI-driven) |
 | `--no-f5-native` | Parse F5 display lists without emitting geometry |
@@ -456,9 +471,9 @@ A save editor also exists in *`tools/save-editor`* as an HTML page. Allowing a u
 A **MASSIVE** extension to the foundational work originally done by [Dávid Pethes](https://github.com/dpethes/rerogue) and [jrra](https://github.com/jrra/rerogue).
 
 - View fully textured Models and sprites along with their animations.
-- Fully view the makeup of whole Levels down to the individual triggers, paths andscripted events that make this game come to life.
-- View all Visual Effects from complex explosions to simple animated sprited.
-- Sounds Effects and Voicelines including subtitles.
+- Fully view the makeup of whole Levels down to the individual triggers, paths and scripted events that make this game come to life.
+- View all Visual Effects from complex explosions to simple animated sprites.
+- Sound Effects and Voicelines including subtitles.
 - MIDI Music Playback with timeline scrubbing allowing you to view the layers of instrument samples [Chris Huelsbeck](https://en.wikipedia.org/wiki/Chris_Huelsbeck) used to masterfully assemble and recreate the Star Wars score.
 
 ## 'Proper' AI Agent Usage
@@ -475,7 +490,7 @@ Here's a list of MCPs that could be useful for this project:
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
-> `windows-screenshot-mcp-server` usage can be finicky because Claude (as of September 2026) has no visual capabilities, meaning it can miss things that are visually obvious to a human like visual glitches/artifacts. Claude can *at most* look at the pixel values in the image to figure out what it's looking at. (Technically not vision capable but surprisingly good enough to be dangerous)
+> `windows-screenshot-mcp-server` usage can be finicky because while Claude (as of September 2026) can view screenshots, it can miss things that are visually obvious to a human like visual glitches/artifacts. (Good enough to be useful, not good enough to trust blindly)
 
 ## Tooling
 

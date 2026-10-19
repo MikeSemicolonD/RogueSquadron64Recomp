@@ -104,14 +104,42 @@ namespace rs64::touch {
         };
     }
 
-    bool Engine::hit_button(Context ctx, float x, float y, uint16_t* mask) const {
-        for (const ButtonDef& b : layout(ctx)) {
+    // all: every button under the point, plus both buttons of a close pair when the point lies on the stretch between them (a thumb across two
+    // buttons; flight only). Otherwise the first button under the point (layout editor).
+    bool Engine::hit_button(Context ctx, float x, float y, uint16_t* mask, bool all) const {
+        *mask = 0;
+        const std::vector<ButtonDef> v = layout(ctx);
+        for (const ButtonDef& b : v) {
             if (b.mask != 0 && dist(x - b.cx, y - b.cy) <= b.r * b.hit) {
-                *mask = b.mask;
-                return true;
+                *mask |= b.mask;
+                if (!all) {
+                    return true;
+                }
             }
         }
-        return false;
+        if (!all || ctx != Context::Flight || cfg_.thumb_bridge <= 0.0f) {
+            return *mask != 0;
+        }
+        for (size_t i = 0; i < v.size(); i++) {
+            for (size_t j = i + 1; j < v.size(); j++) {
+                const ButtonDef& a = v[i];
+                const ButtonDef& b = v[j];
+                // Aspect-corrected frame: the pair's axis from a to b, and the point relative to a.
+                const float ax = (b.cx - a.cx) * aspect_, ay = b.cy - a.cy;
+                const float d = std::sqrt(ax * ax + ay * ay);
+                if (a.mask == 0 || b.mask == 0 || d <= 0.0f || d - a.r - b.r > cfg_.thumb_bridge) {
+                    continue;
+                }
+                const float px = (x - a.cx) * aspect_, py = y - a.cy;
+                const float along = (px * ax + py * ay) / d;
+                const float across = std::fabs(px * ay - py * ax) / d;
+                // From a quarter of a's radius past its center to the same short of b's, within a corridor as wide as the smaller button.
+                if (along >= a.r * 0.25f && along <= d - b.r * 0.25f && across <= std::min(a.r, b.r)) {
+                    *mask |= a.mask | b.mask;
+                }
+            }
+        }
+        return *mask != 0;
     }
 
     // Pulses queued while others are pending start after them plus a gap, so the game sees separate presses.
@@ -160,7 +188,7 @@ namespace rs64::touch {
                 begin_edit();
                 return;
             }
-            if (hit_button(ctx, x, y, &mask)) {
+            if (hit_button(ctx, x, y, &mask, true)) {
                 f.role = Finger::Role::Button;
                 f.button = mask;
             } else if (ctx != Context::Flight && (x < pic_x0_ || x > pic_x1_)) {
@@ -195,7 +223,7 @@ namespace rs64::touch {
         if (ev == FingerEvent::Move) {
             if (f.role == Finger::Role::Button) {
                 uint16_t mask = 0;
-                f.button = hit_button(ctx, x, y, &mask) ? mask : 0;
+                f.button = hit_button(ctx, x, y, &mask, true) ? mask : 0;
             } else if (f.role == Finger::Role::Gesture && ctx == Context::Wheel) {
                 // Passcode wheel: a horizontal drag becomes a held joystick; wheel_repeat() steps it from poll().
                 const float dx = (x - f.x0) * aspect_;
@@ -530,7 +558,7 @@ namespace rs64::touch {
                 }
             }
             uint16_t mask = 0;
-            if (hit_button(Context::Flight, x, y, &mask)) {
+            if (hit_button(Context::Flight, x, y, &mask, false)) {
                 std::string bid;
                 Placement p;
                 placement(mask, &bid, &p);

@@ -1247,3 +1247,9 @@ text = '{ rs64_th_npcAtAtUpdate_800CED7C(rdram, ctx); }'
 func = "mainGameLoop"
 before_vram = 0x8003E10C
 text = '{ rs64_th_mainGameLoop_8003E10C(rdram, ctx); }'
+
+# ROGUESQ_BOOT_EXIT=1: quit once the boot cutscene returns.
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E114
+text = '{ rs64_th_mainGameLoop_8003E114(rdram, ctx); }'

@@ -1,82 +1,106 @@
 # Release CI
 
-[.github/workflows/release.yml](../.github/workflows/release.yml) builds the Windows and Linux release packages on two self-hosted runners on the maintainer's machine, then attaches them to a **draft** GitHub release. The build needs ROM-derived inputs that are never committed and never uploaded to GitHub; they stay on the runner host.
+This page is for the maintainer who runs the release pipeline. [.github/workflows/release.yml](../.github/workflows/release.yml) builds the release packages on two self-hosted runners on the maintainer's machine and attaches them to a **draft** GitHub release:
 
-## What the build needs that the repo does not have
+| Package | Built by |
+|---|---|
+| Windows x64 zip | Windows runner |
+| Windows x86 (32-bit) zip | Windows runner, from the same recompiled code |
+| Linux package (needs glibc 2.38+, e.g. Ubuntu 24.04) | Linux runner (Docker) |
 
-| Input | Used by | Where it comes from |
+Android isn't built by this workflow (see [building-all-platforms.md](building-all-platforms.md)), and macOS isn't covered yet.
+
+## Making a release
+
+- **Version:** the repo-root `VERSION` file (`major.minor.patch`, each part 0-99) is the one place it lives; CMake (`--version`, `--help`, the startup log), the Android `versionName`/`versionCode` and the local package names read it. Raise it with the VS Code task **Package: Bump version** or `tools/bump-version.ps1 -Part patch|minor|major` (`-Set 1.2.3` for an exact number).
+- **Test build:** Actions > Release > Run workflow. The three packages are uploaded as run artifacts (kept 3 days); no release is created.
+- **Release:** push a version tag:
+
+  ```sh
+  git tag v0.1.0
+  git push origin v0.1.0
+  ```
+
+  The packages are attached to a draft release with generated notes. Review it, then publish it by hand.
+
+## Why self-hosted runners
+
+The build needs files derived from the ROM that are never committed and never uploaded to GitHub. They stay on the runner machine:
+
+| Input | Used for | Where it comes from |
 |---|---|---|
-| `roguesquadron.elf` | `regen_funcs` (N64Recomp, via `rogue_squadron.toml` `elf_path`) | the decomp build, `rogue_squadron64/build/roguesquadron.elf` |
-| `factor5_boot_recompiled.c`, `musyx_audio_recompiled.c` | the main exe | RSPRecomp output, `build/factor5_ucode/` ([README](../README.md#3-generate-the-recompiled-c) step 3) |
+| `roguesquadron.elf` | Regenerating `RecompiledFuncs/` (N64Recomp reads it via `elf_path` in `rogue_squadron.toml`) | The decomp build, `rogue_squadron64/build/roguesquadron.elf` |
+| `factor5_boot_recompiled.c`, `musyx_audio_recompiled.c` | The main exe | RSPRecomp output in `build/factor5_ucode/` ([README](../README.md#3-generate-the-recompiled-c) step 3) |
 
-The ROM itself is not a build input (N64Recomp reads code and data from the ELF). Players supply their ROM at runtime.
+The ROM itself is not a build input; players supply theirs at runtime.
 
-[ci/stage_inputs.py](../ci/stage_inputs.py) copies these into place at the start of each job and removes them, plus `RecompiledFuncs/` and `RecompiledPatches/`, at the end. It reads `RS64_INPUTS` (a directory holding `roguesquadron.elf` and `factor5_ucode/`), or `RS64_ELF` / `RS64_UCODE_DIR` for individual paths.
+## One-time setup
 
-Each job builds N64Recomp and RecompModTool as their own CMake project (`lib/N64ModernRuntime/N64Recomp` into `build-tools/`), because the game's configure fails while `RecompiledFuncs/` does not exist yet. It then regenerates `RecompiledFuncs/` from scratch, fails if `funcs.h` comes out truncated (the stale-recompiler symptom), and configures and builds the game with `-DN64RECOMP_EXE` pointing at the fresh recompiler.
+### Linux runner (Docker, ephemeral)
 
-## Linux runner (Docker, ephemeral)
+[ci/linux/](../ci/linux/) holds an Ubuntu 24.04 image with the build dependencies, `mips-linux-gnu-gcc` for the code mods, and the GitHub Actions runner. Each container registers as an ephemeral runner, takes one job, deregisters and exits; [run-runner.ps1](../ci/linux/run-runner.ps1) then starts a fresh one. The ELF and microcode sources are mounted read-only, and nothing ROM-derived goes into the image.
 
-[ci/linux/](../ci/linux/) holds an Ubuntu 24.04 image containing the build deps, Ubuntu's `mips-linux-gnu-gcc` for the `.nrm` code mods, and the Actions runner. Each container registers as an `--ephemeral` runner, takes one job, deregisters, and exits; [run-runner.ps1](../ci/linux/run-runner.ps1) then starts a fresh one. The ELF and ucode sources are bind-mounted read-only, and nothing ROM-derived goes into the image.
+1. Create a fine-grained personal access token scoped to this repository only, with **Administration: Read and write** (that permission is what lets it register runners).
+2. Copy `ci\linux\runner.env.example` to `ci\linux\runner.env` (gitignored) and put the token in it.
+3. With Docker Desktop running: `pwsh ci/linux/run-runner.ps1`. Add `-Rebuild` to refresh the image and runner version, or `-Once` to run a single job.
 
-1. Create a fine-grained PAT scoped to this repository only, with **Administration: Read and write** (that permission is what mints runner registration tokens).
-2. `copy ci\linux\runner.env.example ci\linux\runner.env` and fill in the PAT. `runner.env` is gitignored.
-3. With Docker Desktop running: `pwsh ci/linux/run-runner.ps1` (`-Rebuild` refreshes the image and runner version; `-Once` runs a single job).
+The token stays in root-owned processes. The runner and every job run as the unprivileged `runner` user with a clean environment, so a job can't read it.
 
-The entrypoint runs as root and keeps the PAT in root-owned processes. The runner and every job run as the unprivileged `runner` user with a clean environment, so a job cannot read the PAT.
+### Windows runner (no container)
 
-The package is built against glibc 2.39, so players need Ubuntu 24.04 or equivalent.
+Windows containers would need Hyper-V isolation and a multi-GB image with the Visual Studio Build Tools, so the runner runs directly on the dev machine and reuses its toolchain.
 
-## Windows runner (plain, no container)
-
-Windows containers would need Hyper-V isolation and a multi-GB image with VS Build Tools. Running the runner directly on the dev machine reuses the toolchain that already builds the game.
-
-1. Repo **Settings > Actions > Runners > New self-hosted runner > Windows**. Follow the download and `config.cmd` steps, and add the labels `rs64,windows`.
-2. Install it as a service running as **your own account** (not NETWORK SERVICE), so it finds `cmake`, `python`, `mingw32-make`, VS 2022 with ClangCL, and `E:/mips-toolchain`.
-3. Set a machine or user environment variable for the service account, then restart the service:
-   - `RS64_ELF=E:\Projects\rogue_squadron64\build\roguesquadron.elf` (point at the live decomp build so symbol renames reach CI)
+1. In the repo: **Settings > Actions > Runners > New self-hosted runner > Windows**. Follow the download and `config.cmd` steps and add the labels `rs64,windows`.
+2. Install it as a service running as **your own account** (not NETWORK SERVICE), so it finds `cmake`, `python`, `mingw32-make`, Visual Studio 2022 with ClangCL, and `E:/mips-toolchain`.
+3. Set these environment variables for that account, then restart the service:
+   - `RS64_ELF=E:\Projects\rogue_squadron64\build\roguesquadron.elf` (the live decomp build, so symbol renames reach CI)
    - `RS64_UCODE_DIR=E:\Projects\RogueSquadron64Recomp\build\factor5_ucode`
-4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides the `E:/mips-toolchain` default. Both the code mods and the game build (its patches ELF) use it.
+4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides the `E:/mips-toolchain` default for both the code mods and the game's patches ELF.
 
-The job builds the game in Release; `build/dist/` plus a README becomes the zip.
+## What each job does
 
-## Code mods
+1. [ci/stage_inputs.py](../ci/stage_inputs.py) copies the ROM-derived inputs into place. It reads `RS64_INPUTS` (a directory holding `roguesquadron.elf` and `factor5_ucode/`), or `RS64_ELF` / `RS64_UCODE_DIR` separately.
+2. N64Recomp and RecompModTool are built as their own CMake project (`lib/N64ModernRuntime/N64Recomp` into `build-tools/`), because the game's configure step fails until `RecompiledFuncs/` exists.
+3. `RecompiledFuncs/` is regenerated from scratch. The job fails if `funcs.h` comes out truncated, the sign of a stale recompiler.
+4. The code mods are built (see below), so the game build can stage them.
+5. The game is configured with `-DN64RECOMP_EXE` pointing at the fresh recompiler and built in Release. On Windows the exe first precompiles the D3D11 shaders (feature level 11 and 10 sets) for `tools/d3d11/shader_combos.txt` into `build/dist/d3d11_shader_cache/` (`--precompile-d3d11-shaders`; falls back to WARP without a GPU), then `build/dist/` plus a README becomes the x64 zip. A 32-bit copy is built into `build-x86`, gets the same shader cache (the compiled shaders don't depend on the CPU architecture), and `build-x86/dist/` becomes the x86 zip.
+6. The multiplayer mod check and unit tests run (below).
+7. At the end, the staged inputs, `RecompiledFuncs/` and `RecompiledPatches/` are removed.
 
-Both jobs build every `.nrm` that [mods/platforms.json](../mods/platforms.json) lists under `desktop`, using [tools/mods/build_code_mods.cmake](../tools/mods/build_code_mods.cmake). It finds each mod's folder by the `mod_filename` in its `mod.toml`. The mods are built before the game, so the game build stages them next to the exe. To ship a new code mod, add its `.nrm` to the `desktop` list. Locally: `cmake -DPLATFORM=desktop -P tools/mods/build_code_mods.cmake` (optionally `-DRECOMP_MOD_TOOL=`, `-DMIPS_GCC=`/`-DMIPS_LD=`).
+### Code mods
 
-## Native mods
+Both jobs build every `.nrm` listed under `desktop` in [mods/platforms.json](../mods/platforms.json), using [tools/mods/build_code_mods.cmake](../tools/mods/build_code_mods.cmake), which finds each mod's folder by the `mod_filename` in its `mod.toml`. To ship a new code mod, add its `.nrm` to that list. To run the same build locally:
 
-The exe has no multiplayer code; online co-op ships as the `multiplayer-native` mod ([mods/multiplayer-native](../mods/multiplayer-native/)). The game's CMake builds that mod (`multiplayer_native.dll` / `.so`) as a dependency of the exe into `build/built_mods/<Config>/multiplayer-native` and [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake) stages it. The mod target also restages after its own builds (a multiplayer-source edit that does not relink the exe), and the Release dist gets the mod without its PDB. The Linux package script strips every staged `.so`.
+```sh
+cmake -DPLATFORM=desktop -P tools/mods/build_code_mods.cmake
+```
 
-Both lists in `mods/platforms.json` name `multiplayer-native`. `stage_mods.cmake` gets `BUILT=build/built_mods/<Config>`: a listed mod found there (the built native mod, with its `mod.json` and menu JSON) is staged from it instead of from `mods/`.
+Optional: `-DRECOMP_MOD_TOOL=`, `-DMIPS_GCC=` / `-DMIPS_LD=`.
 
-Each desktop job has a "Check the multiplayer mod" step after the game build. It fails the job if the mod is not staged (`build/mods/...` on Linux, `build/dist/mods/...` on Windows) or if the exe still contains the multiplayer strings. The Windows step uses `Select-String` and ends with an explicit `exit 0`: the `shell: powershell` wrapper ends with `exit $LASTEXITCODE`, and `findstr` finding nothing (the passing case) would leave it at 1.
+### The multiplayer mod
 
-Platform decisions:
+The exe has no multiplayer code; online co-op ships as the native mod [mods/multiplayer-native](../mods/multiplayer-native/). The game's CMake builds it (`multiplayer_native.dll` / `.so`) into `build/built_mods/<Config>/multiplayer-native`, and [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake) stages it: a mod listed in `platforms.json` that is found in `build/built_mods/<Config>` is staged from there instead of from `mods/`. The mod also restages after its own builds, so a multiplayer-only edit that doesn't relink the exe still reaches `mods/`. The Release dist gets the mod without its PDB, and the Linux package script strips every staged `.so`.
 
-- Multiplayer is mod-only: with the mod disabled or missing there is no online co-op and no local co-op (`ROGUESQ_COOP_LOCAL` needs the mod).
-- Android is not built by this workflow. Its Gradle build packs `libmultiplayer_native.so` into the APK, so multiplayer is a mod there too.
-- macOS is not covered yet: there is no export restriction check for the mod's library and no signing step.
+After the game build, a "Check the multiplayer mod" step fails the job if the mod wasn't staged (`build/mods/...` on Linux, `build/dist/mods/...` on Windows) or if the exe still contains multiplayer strings. The Windows step uses `Select-String` and ends with an explicit `exit 0`, because the `shell: powershell` wrapper exits with `$LASTEXITCODE` and a `findstr` that finds nothing (the passing case) would leave it at 1.
 
-## Unit tests
+With the mod disabled or missing there is no online or local co-op (`ROGUESQ_COOP_LOCAL` needs the mod). Android packs `libmultiplayer_native.so` into the APK, so multiplayer is a mod there too.
 
-Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (no `--config` on Linux) after the game build, and a failing test fails the job. The target builds and runs `lockstep_core_test`, `net_core_test`, `net_link_test`, `nav_target_test` and `host_api_test` (each prints `<name> OK`), then `style_check` against `tools/style/baseline.txt`. The tests use [tests/check.h](../tests/check.h) (`CHECK`, never compiled out) so Release checks them too. `net_link_test` adds and removes a UPnP port mapping on the runner's router, which needs the runner to have a LAN address; on a runner with no IPv4 address it skips the address-text check.
+### Unit tests
+
+Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (without `--config` on Linux; the Windows job also runs them on the x86 build), and a failing test fails the job. The target runs `lockstep_core_test`, `mp_core_test`, `net_core_test`, `net_link_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test` and `rs64_lights_test` (each prints `<name> OK`), then `style_check` against `tools/style/baseline.txt`. The tests use `CHECK` from [tests/check.h](../tests/check.h), which is never compiled out, so they check in Release too.
+
+`net_link_test` adds and removes a UPnP port mapping on the runner's router, which needs a LAN address; without an IPv4 address it skips the address-text check.
 
 ## Expected build warnings
 
-- `lld-link : warning : found both wmain and main; using latter`: SDL2main provides `wmain`, ours wins.
-- lld-link `duplicate symbol` warnings for `upstream_compat.cpp` (overriding librecomp) and `zmemcpy` (over `RecompiledFuncs`): the intended `/FORCE:MULTIPLE` override pattern (AGENTS.md "Patches build").
-
-## Running it
-
-- **Test build:** Actions > Release > Run workflow. Both packages are uploaded as run artifacts (kept 3 days); no release is created.
-- **Release:** `git tag v0.1.0 && git push origin v0.1.0`. Both packages are attached to a **draft** release. Review it, then publish by hand.
+- `lld-link : warning : found both wmain and main; using latter`: SDL2main provides `wmain`; ours wins.
+- `duplicate symbol` warnings for `upstream_compat.cpp` (overriding librecomp) and `zmemcpy` (over `RecompiledFuncs`): the intended `/FORCE:MULTIPLE` override set in [CMakeLists.txt](../CMakeLists.txt).
 
 ## Security
 
-- The workflow triggers only on `v*` tags and manual dispatch, and each job is gated on the repository owner. **Never add `pull_request`**: a fork PR would run arbitrary code on your machine with the inputs mounted. Also set **Settings > Actions > General > Fork pull request workflows** to require approval.
+- The workflow runs only on `v*` tags and manual dispatch, and each job checks that the repository owner started it. **Never add a `pull_request` trigger**: a fork's pull request would run arbitrary code on your machine with the ROM-derived inputs mounted. Also set **Settings > Actions > General > Fork pull request workflows** to require approval.
 - Keep the self-hosted runners attached to this repository only, not to an organization.
 
 ## Legal
 
-Keeping the ROM and ELF off GitHub does not make the package ROM-free. The exe statically links the recompiled game code (`RecompiledFuncs`), which is derived from the copyrighted game. This is the same position Zelda64Recomp's binaries are in. Decide deliberately whether a release is published or kept private. On a **public** repository, run artifacts can be downloaded by any signed-in GitHub user, including the ones from manual test builds.
+Keeping the ROM and ELF off GitHub doesn't make the package ROM-free. The exe statically links the recompiled game code, which is derived from the copyrighted game; Zelda64Recomp's binaries are in the same position. Decide deliberately whether a release is published or kept private. On a **public** repository any signed-in GitHub user can download run artifacts, including those from manual test builds.

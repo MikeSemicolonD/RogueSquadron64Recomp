@@ -1,25 +1,50 @@
 # Native mod host API
 
-A native mod is a shared library (`.dll` / `.so`) listed under `native_libraries` in its `mod.json`. Besides the menu exports described in [adding-menus-and-buttons.md](adding-menus-and-buttons.md), it can take the host API: a table of function pointers for hooking game code, supplying menu text, filtering the pad, and sharing flags. The contract lives in [include/rs64/host_api.h](../include/rs64/host_api.h); this page explains it. The registry is [src/main/host_api.cpp](../src/main/host_api.cpp) and the delivery code is [src/main/host_api_game.cpp](../src/main/host_api_game.cpp). A complete example is [mods/native-demo/](../mods/native-demo/).
+A native mod is a shared library (`.dll` / `.so`) written in C or C++ and loaded by the game at startup. It can provide menu behavior through `@export` names ([modding.md](modding.md#menu-behavior-from-your-own-code-export)) and take the **host API**: a table of functions for hooking game code at fixed points, supplying live menu text, filtering controller input, sharing flags and services with other mods, and calling game functions.
 
-## Delivery
+Pick a native mod over a `.nrm` code mod ([modding.md](modding.md#code-mods-nrm)) when you need host-side features: networking, files, OS APIs, or a large amount of native code. Online co-op ([mods/multiplayer-native/](../mods/multiplayer-native/)) is one.
+
+The contract is [include/rs64/host_api.h](../include/rs64/host_api.h). The host side is [src/main/host_api.cpp](../src/main/host_api.cpp) (the registry) and [src/main/host_api_game.cpp](../src/main/host_api_game.cpp) (handing the table to mods).
+
+## Your first native mod
+
+[mods/native-demo/](../mods/native-demo/) counts front-end frames and shows the count on a menu page. To build and try it:
+
+```sh
+cmake -S mods/native-demo -B mods/native-demo/build
+cmake --build mods/native-demo/build
+```
+
+The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v5 taken` and `[host] mod native-demo took the host API (...)`.
+
+How [native_demo.cpp](../mods/native-demo/native_demo.cpp) works:
+
+1. It includes `rs64/host_api.h` (its CMake file adds the repo's `include/` directory) and exports `rs64_mod_init` plus `uint32_t recomp_api_version = 1` (librecomp's loader version, separate from the host API version).
+2. `rs64_mod_init` reads the table from `r4` and the host's version from `r5`. If the table is unusable it sets `r2 = 1` and returns, and the mod is skipped. On every return it sets `r3 = RS64_HOST_API_VERSION`.
+3. It registers a `RS64_HOOK_MENU_FRAME` handler that increments a counter and returns `RS64_HOOK_CONTINUE`, and a text source `demo_frames` that formats `DEMO FRAMES n` into a static buffer. Then it sets `r2 = 0`.
+4. [mod.json](../mods/native-demo/mod.json) lists `rs64_mod_init` in its `native_libraries` export array, next to the menu exports. An export that isn't listed can't be loaded.
+5. [roguesq_menu.json](../mods/native-demo/roguesq_menu.json) shows the text: a `label` entry with `"label_src": "demo_frames"` on a page opened from the main menu.
+
+The rest of this page is the reference.
+
+## Initialization
 
 A mod exports `rs64_mod_init` (`RS64_MOD_INIT_EXPORT`), listed in its `mod.json` export array. It has the recomp signature `void(uint8_t* rdram, void* ctx)`, and registers carry the contract:
 
 | Register | Meaning |
 |---|---|
 | `r4` (in) | `const rs64_host_api*`, the table |
-| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 2) |
+| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 5) |
 | `r2` (out) | 0 to accept, non-zero to refuse |
 | `r3` (out) | the `RS64_HOST_API_VERSION` the mod was built against (0 = not set, treated as 1) |
 
-Check `table->size >= sizeof(rs64_host_api)` before using fields, and always return the version you were built against in `r3`. The version is bumped only when a field is appended; existing fields never change.
+Check `table->size >= sizeof(rs64_host_api)` before using fields, and always return the version you were built against in `r3`.
 
-Init order, on the first hook call after boot: the built-in hooks register, then every enabled mod that exports `rs64_mod_init` is initialised in mod-load order, then the registry is sealed. A mod that refuses (non-zero `r2`) is skipped and everything it registered is rolled back (a log line says so). The host also skips (and rolls back) a mod whose `r3` is newer than the host's version, logging the mod and both versions; a mod built for an older version is accepted.
+**Versioning.** The version goes up only when a field is appended to the table; existing fields never change. The host accepts a mod built for its own version or an older one, and skips a mod built for a newer one (logging both versions).
 
-`add_hook`, `add_text_source`, `add_input_filter`, `add_action`, `add_condition`, `add_key_handler`, `add_quit_handler`, `add_service`, `add_hash_part`, `add_valid_ram` and `add_moved_range` work only inside `rs64_mod_init`. After the seal they refuse and log. Flags (`set_flag`, `get_flag`) and `get_service` work any time.
+**When init runs.** On the first hook call after boot: the built-in hooks register, then every enabled mod that exports `rs64_mod_init` is initialized in mod-load order, then the registry is **sealed**. A mod that refuses (non-zero `r2`) or is skipped has everything it registered rolled back, and a log line says so.
 
-During `rs64_mod_init`, `rdram` is real and `alloc` works, but `call` has no game context and `yield` must not be used: init runs inside `rs64_hook`'s static initializer, so yielding can deadlock other game threads entering `rs64_hook`.
+**What works when.** All the `add_*` functions work only inside `rs64_mod_init`; after the seal they refuse and log. `set_flag`, `get_flag` and `get_service` work any time. During init `rdram` is real and `alloc` works, but `call` has no game context and `yield` must not be used: init runs inside `rs64_hook`'s static initializer, so yielding can deadlock other game threads entering it.
 
 ## The table
 
@@ -134,7 +159,7 @@ These ids have no `rogue_squadron.toml` site: the host runs them from inside the
 | `RS64_HOOK_MENU_PAD` (32) | Inside the `RS64_HOOK_MENU_INPUT` built-in, before mod-page row navigation | The pressed word at 0x8013A960 may be edited; the flag `menu_page_shown` is 1 while a mod page is up |
 | `RS64_HOOK_MAIN_MENU` (33) | `rs64_menu_install_main` | The main menu is being built; `ctx` is NULL |
 
-`RS64_HOOK_COUNT` is a sentinel that grows as ids are added (32 in v1, 34 in v2, 36 in v3 to v5); mods must not rely on its value.
+`RS64_HOOK_COUNT` is an end marker that grows as ids are added; mods must not rely on its value.
 
 ### Events for `.nrm` mods
 
@@ -164,7 +189,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 
 ## Text sources
 
-`add_text_source("name", fn, user)` registers `const char* fn(void* user)`. A menu label in a mod's `roguesq_menu.json` with `"label_src": "name"` shows the string live. See "Live labels" in [adding-menus-and-buttons.md](adding-menus-and-buttons.md). Rules:
+`add_text_source("name", fn, user)` registers `const char* fn(void* user)`. A menu label in a mod's `roguesq_menu.json` with `"label_src": "name"` shows the string live. See [Live labels](adding-menus-and-buttons.md#live-labels). Rules:
 
 - Return a NUL-terminated string in the menu font's character set (uppercase).
 - The pointer must stay valid until the next call of that source; a static buffer is the usual answer.
@@ -179,7 +204,6 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 
 - Dispatch order is registration order: the built-in handlers first, then mods in load order. The first handler that returns `RS64_HOOK_RETURN` stops the chain; later handlers do not run.
 - A mod's handler on a hook that has a built-in runs after the whole built-in, so it sees (and can override) what the built-in decided.
-- A v1 mod still loads on a v2 host: the host accepts any `r3` up to its own version, and fields are only ever appended to the table.
 - Handlers run on the game thread inside the hooked function. They must not block or sleep (a host sleep in a game-thread hook holds the run slot and can deadlock the frame pipeline), and may call game functions only through `call`, which saves and restores the context.
 - Registration is init-time only, as above. Keep per-hook state in `user` or your own statics.
 - Text-source strings stay valid until the next call of that source.
@@ -194,27 +218,13 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 
 The host API covers behavior added at the sites above. These stay base-game code and are not exposed:
 
-- Per-player data relocation (the four ranges moved into host RAM, see AGENTS.md "Per-player data relocation"). Code that touches those fields from a native mod must account for the moved addresses.
 - Every `[[patches.hook]]` site in `rogue_squadron.toml`. Each is a fixed call into `rs64_hook`; mods choose handlers for the ids above, they cannot add new sites.
-- The functions those patches touch. `.nrm` mods can `RECOMP_HOOK` them (the patches are replayed) but can't `RECOMP_PATCH` them; see "Functions the base game patches" in [adding-menus-and-buttons.md](adding-menus-and-buttons.md).
+- The functions those patches touch. `.nrm` mods can `RECOMP_HOOK` them (the patches are replayed) but can't `RECOMP_PATCH` them; see [Functions the game already patches](modding.md#functions-the-game-already-patches).
 
-## Worked example: native-demo
-
-[mods/native-demo/native_demo.cpp](../mods/native-demo/native_demo.cpp) counts front-end frames and shows the count on a menu page.
-
-1. Include `rs64/host_api.h` (the CMake file adds the repo `include/` directory) and export `rs64_mod_init` plus `uint32_t recomp_api_version = 1`.
-2. In `rs64_mod_init`, read the table from `r4` and the version from `r5`. If the version is below 1, the table is null or `size < sizeof(rs64_host_api)`, set `r2 = 1` and return (the mod is skipped). On every return set `r3 = RS64_HOST_API_VERSION`; the host uses it to skip mods built for a newer API. `recomp_api_version` (step 1) is librecomp's loader version, separate from `RS64_HOST_API_VERSION`.
-3. Register a `RS64_HOOK_MENU_FRAME` handler that increments a counter and returns `RS64_HOOK_CONTINUE`, and a text source `demo_frames` that formats `DEMO FRAMES n` into a static buffer. Log a line, set `r2 = 0`.
-4. List `rs64_mod_init` in the `native_libraries` array of [mod.json](../mods/native-demo/mod.json), next to the other exports. A library export that is not listed is not loadable.
-5. Reference the source from [roguesq_menu.json](../mods/native-demo/roguesq_menu.json): a `label` entry on the `native_demo` page with `"label_src": "demo_frames"`, reached through the NATIVE DEMO submenu on the main menu.
-6. Build with `cmake -S mods/native-demo -B mods/native-demo/build` then `cmake --build mods/native-demo/build`. The DLL lands beside `mod.json`; copy the whole folder into the game's `mods/` directory and enable the mod (it is off by default).
-
-In game, open MAIN MENU, NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up while the front end runs. The log shows `[native-demo] host API v2 taken` and `[host] mod native-demo took the host API (host v2, mod built for v2, r2=0)`.
-
-## Worked example: multiplayer-native
+## A larger example: multiplayer-native
 
 [mods/multiplayer-native/src/mp_mod.cpp](../mods/multiplayer-native/src/mp_mod.cpp) is online co-op as a native mod: the whole of it, its sources in the mod's own `src/`, reaching the game only through the host API table ([mods/multiplayer-native/src/mp_host.h](../mods/multiplayer-native/src/mp_host.h) wraps it).
 
 1. `rs64_mod_init` checks the table and version as in the native-demo steps, sets `r3 = RS64_HOST_API_VERSION`, then calls `rs64_mp_register(api)` ([mods/multiplayer-native/src/mp_register.cpp](../mods/multiplayer-native/src/mp_register.cpp)), which makes the `add_hook` and `add_quit_handler` calls and then calls `rs64_ghost_register_host` ([mods/multiplayer-native/src/ghost_lobby.cpp](../mods/multiplayer-native/src/ghost_lobby.cpp)) for the text sources, the input filter, the `mp_*` actions, the `mp_ready` condition and the key handler.
 2. The game's CMake builds the library (`mods/multiplayer-native/CMakeLists.txt`), so it uses the exe's CRT and toolchain and the same `lockstep_core.cpp` / `mp_core.cpp` rounding (`-ffp-contract=off`). On Linux only `recomp_api_version` and `rs64_mod_init` are exported (version script, `--no-undefined`, `-Bsymbolic`).
-3. Its `mod.toml` holds the manifest and its 200 instruction patches; the game's CMake runs RecompModTool on it to write the folder's `mod.json` and `instruction_patches.json`, so a native mod can use the same `mod.toml` format as a code mod. The folder (library, those two files and `roguesq_menu.json`) is staged by [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake); see [release-ci.md](release-ci.md#native-mods).
+3. Its `mod.toml` holds the manifest and its 200 instruction patches; the game's CMake runs RecompModTool on it to write the folder's `mod.json` and `instruction_patches.json`, so a native mod can use the same `mod.toml` format as a code mod. The folder (library, those two files and `roguesq_menu.json`) is staged by [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake); see [release-ci.md](release-ci.md#the-multiplayer-mod).

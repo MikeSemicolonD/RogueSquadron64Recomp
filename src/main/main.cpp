@@ -23,6 +23,7 @@ static unsigned g_rs64_audio_underruns = 0;   // dry-queue arrivals (see queue_s
 #include "common/rt64_common.h"
 #include "imgui/imgui.h"
 #include "rhi/rt64_render_hooks.h"
+#include "gui/rt64_file_dialog.h"
 #include "input_bindings.h"
 #include "rumble.h"
 #include "touch_input.h"
@@ -462,7 +463,7 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr) {
         // Gap between synth ticks (retrace-thread starvation shows as gaps far above one VI).
         static auto s_last = t1; static double s_gap_max = 0; static int s_gap_over = 0;
         { const double gap = std::chrono::duration<double, std::milli>(t1 - s_last).count(); s_last = t1; if (gap > s_gap_max) s_gap_max = gap; if (gap > 40.0) ++s_gap_over; }
-        if (s_n <= 6 || (s_n % 64) == 0) {
+        if (recomp::dbg::log_heartbeat() && (s_n <= 6 || (s_n % 64) == 0)) {
             fprintf(stderr, "[musyx-run #%d] audio=%.1fms avg=%.1fms max=%.1fms (n=%d) tick-gap max=%.0fms over40=%d underruns=%u\n",
                 s_n, aud_ms, s_sum / s_cnt, s_max, s_cnt, s_gap_max, s_gap_over, g_rs64_audio_underruns); fflush(stderr);
             s_gap_max = 0;
@@ -1925,7 +1926,7 @@ static void poll_input() {
     } else {
         g_mouse_ax = g_mouse_ay = 0.0f;
     }
-    g_mouse_btn = rbtn;
+    g_mouse_btn = rs64::touch::shared_config().enabled ? 0 : rbtn;
 
     // ROGUESQ_PROFILER_DUMP=1: sample the 7 F5-HUD timing slots (microseconds)
     // so each bar can be labelled. Addresses are the absolute lw sources in
@@ -2702,11 +2703,57 @@ static void draw_touch_overlay() {
     }
 }
 
-// The single ImGui render hook draws the touch overlay and both dev panels.
+// Bottom-right "Compiling shaders" panel while draws wait for their shader (D3D11/D3D10 have no ubershader to draw them meanwhile).
+static void draw_shader_compile_indicator() {
+    uint32_t pending = 0;
+    uint32_t compiled = 0;
+    bool draws_wait = false;
+    RT64::GetShaderCompileStatus(pending, compiled, draws_wait);
+    static bool s_active = false;
+    static uint32_t s_batch_start = 0;
+    if (!draws_wait || (pending == 0)) {
+        s_active = false;
+        return;
+    }
+
+    if (!s_active) {
+        s_active = true;
+        s_batch_start = compiled;
+    }
+
+    const uint32_t done = compiled - s_batch_start;
+    const uint32_t total = done + pending;
+    const ImGuiIO& io = ImGui::GetIO();
+    const float margin = 12.0f;
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin, io.DisplaySize.y - margin), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove;
+    if (ImGui::Begin("##shader_compile", nullptr, flags)) {
+        ImGui::Text("Compiling shaders  %u / %u", done, total);
+        ImGui::ProgressBar(float(done) / float(total), ImVec2(220.0f, 0.0f), "");
+    }
+
+    ImGui::End();
+}
+
+// The single ImGui render hook draws the touch overlay, both dev panels and the shader compile indicator.
 static void draw_dev_ui() {
     draw_touch_overlay();
     draw_controls_ui();
     draw_mods_ui();
+    draw_shader_compile_indicator();
+    // Text input is off by default (see create_gfx); an ImGui text box needs it while focused.
+    static bool s_imgui_text = false;
+    const bool want_text = ImGui::GetIO().WantTextInput;
+    if (want_text != s_imgui_text) {
+        s_imgui_text = want_text;
+        if (want_text) {
+            SDL_StartTextInput();
+        } else {
+            SDL_StopTextInput();
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2723,14 +2770,21 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     // SDL otherwise lists the accelerometer as a joystick, and the raw-joystick bindings turn phone tilt into stick input on every screen.
     SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
 #else
-    // Desktop testing of the touch overlay: mouse clicks arrive as finger events.
+    // Touchscreen on desktop ("enabled" in roguesq_touch.json): compositors often deliver touches as a mouse (Raspberry Pi OS's labwc
+    // mouseEmulation), so the pointer acts as a finger and drives no mouse bindings; real touches don't also become clicks.
     if (rs64::touch::shared_config().enabled) {
+        SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
         SDL_SetHint(SDL_HINT_MOUSE_TOUCH_EVENTS, "1");
     }
 #endif
 #ifndef NDEBUG
     // Debug builds: don't steal focus from the editor when the window first shows.
     SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
+#endif
+#if defined(__linux__) && !defined(__ANDROID__)
+    // The window class names rs64recomp.desktop, where Wayland (and X11 docks) take the icon from.
+    setenv("SDL_VIDEO_WAYLAND_WMCLASS", "rs64recomp", 0);
+    setenv("SDL_VIDEO_X11_WMCLASS", "rs64recomp", 0);
 #endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO | SDL_INIT_SENSOR) != 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
@@ -2760,6 +2814,34 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx() {
     return nullptr;
 }
 
+#if defined(__linux__) && !defined(__ANDROID__)
+#include "favicon_ico.h"
+#include "stb/stb_image.h"
+
+// favicon.ico holds one PNG; its directory entry gives the PNG's size (byte 14) and offset (byte 18).
+static void set_window_icon(SDL_Window* window) {
+    const uint8_t* ico = reinterpret_cast<const uint8_t*>(rs64_favicon_ico);
+    uint32_t size = 0;
+    uint32_t offset = 0;
+    memcpy(&size, ico + 14, sizeof(size));
+    memcpy(&offset, ico + 18, sizeof(offset));
+    if (uint64_t(offset) + size > sizeof(rs64_favicon_ico)) {
+        return;
+    }
+    int w = 0;
+    int h = 0;
+    stbi_uc* pixels = stbi_load_from_memory(ico + offset, (int)size, &w, &h, nullptr, 4);
+    if (!pixels) {
+        return;
+    }
+    SDL_Surface* surface = SDL_CreateRGBSurfaceWithFormatFrom(pixels, w, h, 32, w * 4, SDL_PIXELFORMAT_RGBA32);
+    if (surface) {
+        SDL_SetWindowIcon(window, surface);
+        SDL_FreeSurface(surface);
+    }
+    stbi_image_free(pixels);
+}
+#endif
 
 ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::gfx_data_t) {
     // On non-Windows RT64 renders through Vulkan and needs the window created
@@ -2782,11 +2864,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 #else
     if (!hide_window) {
-        std::string cfg_path;
-        if (char* base = SDL_GetBasePath()) { cfg_path = base; SDL_free(base); }
         if (recomp::dbg::env_str("ROGUESQ_FULLSCREEN")) {
             rs64::video::pin_fullscreen(env_on("ROGUESQ_FULLSCREEN"));
-        } else if (rs64::video::peek_fullscreen(cfg_path + "roguesq_video.json")) {
+        } else if (rs64::video::peek_fullscreen("roguesq_video.json")) {
             rs64::video::set_fullscreen(true);
         }
         if (rs64::video::fullscreen()) {
@@ -2830,6 +2910,11 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         exit(EXIT_FAILURE);
     }
+#if defined(__linux__) && !defined(__ANDROID__)
+    set_window_icon(sdl_window);
+#endif
+    // SDL starts text input by default on desktop, which pops up an on-screen keyboard on touchscreens; the lobby turns it on while typing.
+    SDL_StopTextInput();
     extern SDL_Window* g_sdl_window; g_sdl_window = sdl_window;
 #if defined(_WIN32)
     SDL_SysWMinfo wm{};
@@ -2867,6 +2952,7 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     // Capture the mouse for steering while focused, unless the F6 controls window or the F1 inspector is open.
     // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
     bool want = (SDL_GetKeyboardFocus() != nullptr)
+             && !rs64::touch::shared_config().enabled
              && !g_show_controls.load()
              && !rs64_rt64_inspector_open();
     g_mouse_capture.store(want);
@@ -3122,7 +3208,8 @@ struct CliFlag {
     const char* help;
 };
 static const CliFlag kCliFlags[] = {
-    {"gfx-api",          "ROGUESQ_GFX_API",          CliFlag::Value, "",  "",  "graphics API: vulkan | d3d12 (default auto)"},
+    {"gfx-api",          "ROGUESQ_GFX_API",          CliFlag::Value, "",  "",  "graphics API: vulkan | d3d12 | d3d11 | d3d10 (default auto)"},
+    {"precompile-d3d11-shaders", "ROGUESQ_PRECOMPILE_D3D11", CliFlag::Value, "", "", "compile the D3D11 shaders for every combination in <list> into d3d11_shader_cache/ and exit (no ROM needed)"},
     {"hle-dev-mode",     "ROGUESQ_HLE_DEV_MODE",     CliFlag::Bool,  "1", "0", "RT64 ImGui inspector on F1 (default on in Debug)"},
     {"vi-driven-loop",   "ROGUESQ_VI_DRIVEN_LOOP",   CliFlag::Bool,  "1", "0", "hardware VI/SP/DP frame protocol (default on); --no- restores host-paced loop"},
     {"f5-native",        "ROGUESQ_F5_NATIVE",        CliFlag::Bool,  "1", "0", "emit F5 geometry (default on); --no- parses without emitting"},
@@ -3144,8 +3231,12 @@ static const CliFlag kCliFlags[] = {
     {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
 };
 
+#ifndef RS64_VERSION_STRING
+#define RS64_VERSION_STRING "unknown"
+#endif
+
 static void print_cli_usage() {
-    fprintf(stderr, "Usage: RogueSquadron64Recomp [options]\n\nOptions:\n");
+    fprintf(stderr, "Rogue Squadron 64 Recompiled %s\n\nOptions:\n", RS64_VERSION_STRING);
     fprintf(stderr, "  -m, --mute                 silence output (master gain 0)\n");
     for (const CliFlag& f : kCliFlags) {
         char name[64];
@@ -3157,6 +3248,7 @@ static void print_cli_usage() {
     }
     fprintf(stderr, "  --set NAME=VALUE           set any ROGUESQ_* variable directly\n");
     fprintf(stderr, "  -h, --help                 show this help and exit\n");
+    fprintf(stderr, "  -v, --version              print the version and exit\n");
     fprintf(stderr,
         "\nEvery option maps to a ROGUESQ_* environment variable; NAME=VALUE (bare) works too.\n"
         "Full debug/trace variable list: docs/debug-trace-env-vars.md\n");
@@ -3169,6 +3261,10 @@ static int apply_cli_args(int argc, char* argv[]) {
         const char* a = argv[i];
         if (!strcmp(a, "-h") || !strcmp(a, "--help")) {
             print_cli_usage();
+            return 0;
+        }
+        if (!strcmp(a, "-v") || !strcmp(a, "--version")) {
+            printf("Rogue Squadron 64 Recompiled %s\n", RS64_VERSION_STRING);
             return 0;
         }
         if (!strcmp(a, "--mute") || !strcmp(a, "-m")) {
@@ -3239,6 +3335,23 @@ int main(int argc, char* argv[]) {
 #endif
     if (int rc = apply_cli_args(argc, argv); rc >= 0) {
         return rc;
+    }
+    fprintf(stderr, "[main] Rogue Squadron 64 Recompiled %s\n", RS64_VERSION_STRING);
+    if (const char* comboList = recomp::dbg::env_str("ROGUESQ_PRECOMPILE_D3D11")) {
+        const char* cacheDir = recomp::dbg::env_str("PLUME_D3D11_SHADER_CACHE");
+        const std::string dir = (cacheDir != nullptr) ? cacheDir : "d3d11_shader_cache";
+#ifdef _WIN32
+        SetUnhandledExceptionFilter(crash_handler);
+#endif
+        int failed = RT64::PrecompileD3D11Shaders(comboList, dir);
+#ifdef _WIN32
+        // Feature level 10 GPUs need their own shader model 4 set in the same folder (its keys don't collide).
+        if ((failed == 0) && (recomp::dbg::env_str("PLUME_D3D11_FEATURE_LEVEL") == nullptr)) {
+            _putenv_s("PLUME_D3D11_FEATURE_LEVEL", "10_0");
+            failed = RT64::PrecompileD3D11Shaders(comboList, dir);
+        }
+#endif
+        return (failed == 0) ? 0 : 1;
     }
     rs64_renderdoc_init();
 
@@ -3448,13 +3561,24 @@ int main(int argc, char* argv[]) {
             "rogue squadron.z64",
             "RogueSquadron.z64",
             "rs64.z64",
+            "rogue_squadron.v64",
+            "rogue_squadron.n64",
         };
-        for (const char* name : rom_candidates) {
-            std::filesystem::path p = std::filesystem::current_path() / name;
-            auto result = recomp::select_rom(p, rs_game_id);
-            if (result == recomp::RomValidationError::Good) {
-                fprintf(stderr, "[ROM] Imported %s\n", name);
-                break;
+        // The working directory, the game's own folder, and the folder above it (where a ROM ends up when the package unpacks into its own subfolder).
+        std::vector<std::filesystem::path> rom_dirs{ std::filesystem::current_path() };
+        if (char* base = SDL_GetBasePath()) {
+            const std::filesystem::path game_dir = std::filesystem::path(base).parent_path();
+            SDL_free(base);
+            rom_dirs.push_back(game_dir);
+            rom_dirs.push_back(game_dir.parent_path());
+        }
+        bool imported = false;
+        for (const std::filesystem::path& dir : rom_dirs) {
+            for (const char* name : rom_candidates) {
+                if (!imported && (recomp::select_rom(dir / name, rs_game_id) == recomp::RomValidationError::Good)) {
+                    fprintf(stderr, "[ROM] Imported %s\n", (dir / name).string().c_str());
+                    imported = true;
+                }
             }
         }
     }
@@ -3502,10 +3626,43 @@ int main(int argc, char* argv[]) {
         rom_problem.clear();
     }
 #else
-    if (!recomp::is_rom_valid(rs_game_id)) {
-        fprintf(stderr,
-            "[ROM] Place your Rogue Squadron (USA v1.0) ROM named\n"
-            "      'rogue_squadron.z64' next to the executable and restart.\n");
+    // No ROM found: say where it goes and offer a file picker, instead of starting to a silent black window.
+    std::string rom_problem;
+    while (!recomp::is_rom_valid(rs_game_id)) {
+        const SDL_MessageBoxButtonData buttons[] = {
+            { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Choose ROM..." },
+            { SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Quit" },
+        };
+        const std::string text = rom_problem + "Rogue Squadron 64 Recompiled needs your Star Wars: Rogue Squadron (USA v1.0) N64 ROM.\n\n"
+            "Place it next to the game as rogue_squadron.z64, or choose the file now.";
+        const SDL_MessageBoxData box{ Uint32(rom_problem.empty() ? SDL_MESSAGEBOX_INFORMATION : SDL_MESSAGEBOX_WARNING), nullptr, "ROM needed", text.c_str(), 2, buttons, nullptr };
+        int choice = 0;
+        if (SDL_ShowMessageBox(&box, &choice) != 0) {
+            fprintf(stderr, "[ROM] No ROM found. Place your Rogue Squadron (USA v1.0) ROM next to the game as rogue_squadron.z64.\n");
+            return 1;
+        }
+        if (choice != 1) {
+            return 0;
+        }
+
+        RT64::FileDialog::initialize();
+        const std::filesystem::path picked = RT64::FileDialog::getOpenFilename({ RT64::FileFilter("N64 ROM", "z64,n64,v64") });
+        RT64::FileDialog::finish();
+        rom_problem.clear();
+        if (picked.empty()) {
+            continue;
+        }
+
+        const recomp::RomValidationError r = recomp::select_rom(picked, rs_game_id);
+        fprintf(stderr, "[ROM] picked %s: validation %d\n", picked.string().c_str(), (int)r);
+        if (r == recomp::RomValidationError::Good) {
+            recomp::check_all_stored_roms();
+            continue;
+        }
+
+        rom_problem = (r == recomp::RomValidationError::NotARom) ? "That file is not an N64 ROM.\n\n"
+                    : (r == recomp::RomValidationError::IncorrectRom || r == recomp::RomValidationError::IncorrectVersion) ? "That ROM is not Star Wars: Rogue Squadron (USA v1.0).\n\n"
+                    : "That file could not be read.\n\n";
     }
 #endif
 

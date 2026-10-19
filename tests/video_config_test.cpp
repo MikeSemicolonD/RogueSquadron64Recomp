@@ -59,6 +59,17 @@ static void test_to_friendly_thirdstate_to_advanced() {
     CHECK(j["advanced"].value("aspectRatio", std::string()) == "Manual");
 }
 
+static void test_d3d10_roundtrip() {
+    UC uc; uc.validate();
+    rs64::video::apply_friendly(uc, json{{"graphicsAPI", "d3d10"}});
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D11);
+    CHECK(rs64::video::d3d10());
+    CHECK(rs64::video::to_friendly(uc).value("graphicsAPI", std::string()) == "d3d10");
+    rs64::video::apply_friendly(uc, json{{"graphicsAPI", "d3d11"}});
+    CHECK(!rs64::video::d3d10());
+    CHECK(rs64::video::to_friendly(uc).value("graphicsAPI", std::string()) == "d3d11");
+}
+
 static void test_apply_basic() {
     UC uc; uc.validate();
     json j = {
@@ -251,6 +262,7 @@ int main() {
     test_to_friendly_mapping();
     test_to_friendly_thirdstate_to_advanced();
     test_apply_basic();
+    test_d3d10_roundtrip();
     test_apply_resolution_number();
     test_advanced_wins();
     test_roundtrip();

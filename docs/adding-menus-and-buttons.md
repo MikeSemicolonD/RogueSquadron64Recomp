@@ -1,65 +1,45 @@
 # Adding menus and buttons
 
-How to add or modify menu entries in the front-end menu and the in-mission
-pause menu. Both systems are data-driven: a new button is mostly writing a few
-fields into the right struct and intercepting its selection.
+A mod can add, hide, reorder and replace entries in the front-end menus (title screen and options) and the in-mission pause menu by shipping a `roguesq_menu.json`. No code and no rebuild are needed: edit the JSON and relaunch.
 
-Custom buttons are declared in JSON (see
-[Configuring menus](#configuring-menus-the-button-system)) and applied to the live
-menus by [src/main/menu_config.cpp](../src/main/menu_config.cpp) via
-`[[patches.hook]]` hooks; custom label strings live in extended RDRAM via
-`recomp::alloc`. The rest of this doc explains the underlying game structures the
-button system drives, for when you need to extend it.
+The first half of this page is the guide for mod authors. The second half, [Internals](#internals), documents the game's menu structures and how the button system drives them, for when you need to extend the system itself. For mod packaging in general (folders, `mod.json`, code mods), see [modding.md](modding.md).
 
-Nothing here requires editing `RecompiledFuncs/funcs_*.c` — those are regenerated
-and any hand edits are discarded.
+## Quick start
 
----
+1. Make a folder in `mods/` with a `mod.json` (see [modding.md](modding.md#where-mods-live-and-how-they-are-enabled)). Without it the folder is not loaded.
+2. Add a `roguesq_menu.json` next to it:
 
-## Two separate menu systems
+   ```json
+   {
+     "buttons": [
+       { "id": "fs_menu", "menu": "game_settings", "type": "toggle",
+         "toggle": "fullscreen", "label_on": "FULLSCREEN: ON", "label_off": "FULLSCREEN: OFF",
+         "after": "high_resolution" }
+     ]
+   }
+   ```
 
-| | Front-end menu | Pause menu |
-|---|---|---|
-| Where | Title/options screens | In-mission (START during gameplay) |
-| Overlay | `.ovl.menu` | `.ovl.mission` |
-| State struct | `gCurrentMenuData` @ `0x800CE730` | HUD-ext struct `func_800C0084_type` |
-| Entry model | `menu_entries[8]` + per-entry sub-type | `PauseMenuStuff[]` arrays, `0xFFFF`-terminated |
-| Builder | `setupMenuData` `0x800BA0F0` | `func_800C298C` `0x800C298C` |
-| Input/dispatch | `menuControllerInput` `0x800B47D0` | `func_800C1D3C` `0x800C1D3C` |
+3. Launch the game and enable the mod in the Mods window (**F6**).
 
-They share no state. Pick the one you want and read that section.
+That is the whole of [mods/fullscreen-toggle/](../mods/fullscreen-toggle/). Other working examples:
 
----
+- [mods/quit-prompt/](../mods/quit-prompt/): adds a YES/NO confirm to the built-in QUIT by reusing its id.
+- [mods/menu-example/](../mods/menu-example/): a custom page whose entries call the mod's own native library.
+- [mods/native-demo/](../mods/native-demo/): buttons, toggles and a Sound Settings slider backed by a native library.
+- [mods/ray-tracing/](../mods/ray-tracing/): a RAY TRACING page under Options.
+- [mods/multiplayer-native/roguesq_menu.json](../mods/multiplayer-native/roguesq_menu.json): the co-op lobby, with live status lines.
 
-## Configuring menus: the button system
+## Where menu files are read from
 
-Menu customization is data-driven through JSON, resolved by
-[src/main/menu_config.cpp](../src/main/menu_config.cpp). A **button** is one typed
-menu entry — `{ menu, type, behavior, labels, placement }` — and the same model
-covers the front-end and pause menus. Sources are layered in this order:
+Menu files are layered in this order. A button with the same `id` as an earlier one replaces it in place, so a mod overrides a default (or an earlier mod) by reusing its id.
 
-1. Internal defaults (`default_config()`): the main-menu `QUIT` action and the
-   pause `QUIT TO DESKTOP` action, desktop only (empty on Android). No shipped default JSON.
-2. A single `roguesq_menu.json` next to the exe, if present.
-3. Each enabled **mod** with a `roguesq_menu.json` is applied on top, in mod order: a folder mod
-   (data-only or native) keeps it in its folder, and a `.nrm` code mod packs it into the `.nrm` with
-   `additional_files = [ "roguesq_menu.json" ]` under `[inputs]` in its `mod.toml` (`add_code_mod`
-   repacks the `.nrm` when the file changes). Both are read through librecomp (`read_mod_file`), so
-   every kind of mod uses the same menu file; the multiplayer lobby is one, and
-   [tests/mods/menu-probe/](../tests/mods/menu-probe/) is a `.nrm` example.
+1. Built-in defaults: the main-menu `QUIT` and the pause `QUIT TO DESKTOP` (desktop only).
+2. A `roguesq_menu.json` next to the exe, if present.
+3. Each enabled mod's `roguesq_menu.json`, in mod order. A folder mod keeps it in its folder; a `.nrm` code mod packs it with `additional_files = [ "roguesq_menu.json" ]` under `[inputs]` in its `mod.toml`.
 
-Which repo mods ship where is decided by [mods/platforms.json](../mods/platforms.json): its `desktop` list is staged beside the exe (and into `dist/` for Release) by `tools/mods/stage_mods.cmake`, and its `android` list is packed into the APK. A new mod ships nowhere until it is added there.
+## Button reference
 
-A button with the same **`id`** as an earlier one **replaces it in place**, so a
-mod overrides a default (or an earlier mod) by reusing its id. Editing JSON needs
-no rebuild — relaunch. The menu mods staged to `build/Debug/mods/` on desktop are
-[quit-prompt](../mods/quit-prompt/) (adds a confirm to the default QUIT by id),
-[fullscreen-toggle](../mods/fullscreen-toggle/) (`enabled_by_default: true`, adds
-the FULLSCREEN toggle) and `multiplayer-native` (the lobby page); the rest of the
-`desktop` list is `.nrm` code mods. Android ships `touch-layout`, `gyro-toggle` and
-`multiplayer-native`. Your own mod folders alongside them are never overwritten.
-
-### Schema
+### Example
 
 ```json
 {
@@ -79,148 +59,74 @@ the FULLSCREEN toggle) and `multiplayer-native` (the lobby page); the rest of th
 }
 ```
 
-**Common fields**
+### Common fields
 
-- `id` — stable identifier; a later button with the same id overrides it. Also the
-  handle other buttons anchor to.
-- `menu` — a named location, resolved internally to a menu id or pause array:
-  front-end `main_menu`, `options`, `game_settings`, `sound_settings`,
-  `controller_settings`; pause `pause`, `pause_game_settings`. Mods never touch
-  ids or addresses.
-- `type` — `action`, `toggle`, `slider`, `submenu`, or `label` (a page line the cursor skips, e.g. a live status line; sub-type 13).
-- `menu` — also names a custom **page** (any name that is not a built-in location);
-  buttons with that name are the page's entries.
-- `x`/`y` — position offsets (front-end appended entries).
-- `gap_after` / `scale` (page entries) — extra pixels below the line, and its text scale (default 1). Page lines are drawn in JSON order with BACK last; labels are stored after BACK (a leading non-selectable entry hangs the navigation) and moved up to their place with a y offset.
-- `row` (page entries) — consecutive entries with the same row name share one line, left to right in JSON order; place them with `x` and put `gap_after` on the last one. The game's menus only navigate up and down, so on a page with a row the host moves the cursor (`page_row_nav` in `menu_config.cpp`): up/down by line, wrapping, returning to the column last used in a row; left/right within the row. Left/right on an entry alone on its line is left to the entry (sliders).
-- `title_y` (the page's opener) — the page title's y offset (`gCurrentMenuData+0x50/+0x52` are the title's x/y offsets, title text slot 9; the game zeroes them on every menu build).
-- `flags` — pause entry flag word (default `16385` = `0x4001`, drawn + selectable).
+| Field | Meaning |
+|---|---|
+| `id` | Stable identifier. A later button with the same id overrides this one; other buttons can anchor to it. |
+| `menu` | Where the button goes. Front end: `main_menu`, `options`, `game_settings`, `sound_settings`, `controller_settings`. Pause: `pause`, `pause_game_settings`. Any other name is a custom page (see [Custom pages](#custom-pages)). |
+| `type` | `action`, `toggle`, `slider`, `submenu`, or `label` (a line the cursor skips, such as a status line). |
+| `x` / `y` | Position offsets for front-end entries. |
+| `flags` | Pause entry flag word (default `16385` = `0x4001`, drawn and selectable). |
 
-**Per type**
+Page entries also take:
 
-- `action` — `action` (a behavior key), `label`, optional `confirm` (a non-empty
-  string shows a YES/NO prompt; YES runs the action).
-- `toggle` — `toggle` (a behavior key), `label_on`, `label_off`. The label reflects
-  the state live; selecting it flips the state. A `game_settings` toggle that
-  `replace`s a native entry relabels **in place** (the native handler re-renders
-  the row on confirm, no full-menu rebuild) — like the native STEREO/MONO switch.
-  `replace: crosshairs` is the supported slot. Set `ROGUESQ_NO_TOGGLE_INPLACE=1`
-  to fall back to a full rebuild. Toggles elsewhere (pages, other menus) rebuild.
-- `slider` — `slider` (a behavior key), `label` (title), `label_off`/`label_on`
-  (endpoint text, default OFF/MAX), `min`/`max`/`step`. **Only in `sound_settings`**,
-  and it must `replace` a native entry (the menu is full). It becomes the real
-  native volume-slider widget (left/right edits the bar, orange fill, endpoint
-  labels), with an independent value that does not affect audio. The value maps to
-  `min..max` and is pushed to the behavior's slider-set each frame; the current
-  value is read from slider-get at menu open. Elsewhere (`game_settings`, pause) a
-  `slider` falls back to a text bar in the label, stepped on select.
-- `submenu` — opens a custom **page**. `page` (the page name), `label` (the opener
-  entry text), optional `title` (the page's heading, default = `label`), optional
-  `action` (fired when the page opens) and `leave_action` (fired when the player
-  leaves it). See **Custom pages** below.
+| Field | Meaning |
+|---|---|
+| `gap_after` | Extra pixels below the line. |
+| `scale` | Text scale (default 1). |
+| `row` | Entries with the same row name share one line, left to right in JSON order. Place them with `x` and put `gap_after` on the last one. Up/down moves by line; left/right moves within the row. |
+| `label_src` | Name of a live text source; the label follows it every frame (see [Live labels](#live-labels)). |
 
-**Pilot-first pages** (a main-menu `action`): `"transition": "account"` makes the entry run
-the native transition to the pilot select, like START. With `page` (and optional
-`title`, `leave_action`), the pilot's confirm then opens that page instead of mission
-select (hook at `menuControllerInput` 0x800B5428, which replays the sub-type-1 steps
-including the menu wipe `0x800B3F24`); when its `exit_when` condition holds (a host condition added with `add_condition`, e.g. `mp_ready`), the page leaves the way a chosen pilot does
-(hook 0x800B4CA8: `$s6` = 0xA, sp+0x80 = sp+0x9F = 1, fade from 0x800A6760) and the
-game goes on to mission select with the pilot loaded. The multiplayer lobby uses this: its menu JSON is `mods/multiplayer-native/roguesq_menu.json`.
+The button that opens a page can set `title_y`, the page title's y offset.
 
-**Live labels** (page entries): `label_src` names a host text source; the entry's
-label follows it every frame. A changed label is rewritten in the entry's own RDRAM
-buffer and relaid out in place with `0x800C4C8C(&gCurrentMenuData, 1 << entry, 0)`
-from the `updateMenuPerFrame` hook (`rs64_menu_frame`), with no menu rebuild. `source_text()` in
-`menu_config.cpp` reads the host registry (`rs64::host::text_source`); sources are added with
-`add_text_source` (see [modding-host-api.md](modding-host-api.md)). The only ones today are the
-multiplayer lobby's, registered in `rs64_ghost_register_host` in `ghost_lobby.cpp`: `mp_status`,
-`mp_address`, `mp_host_address`, `mp_host_label`, `mp_join_label`, `mp_online`.
-Text must suit menu font 5: upper case, digits, spaces, `<` `>` (drawn as arrows);
-no `.` and no lower case.
+### Fields per type
 
-**Placement** (optional; default appends after existing entries)
+- **`action`**: `action` (a [behavior key](#behavior-keys)), `label`, and optional `confirm`. A non-empty `confirm` shows a YES/NO prompt with that text; YES runs the action.
+- **`toggle`**: `toggle` (a behavior key), `label_on`, `label_off`. The label shows the current state; selecting it flips the state. On `game_settings`, a toggle that `replace`s a native entry relabels in place, like the native STEREO/MONO switch (`replace: crosshairs` is the supported slot). Toggles elsewhere rebuild the menu.
+- **`slider`**: `slider` (a behavior key), `label` (title), `label_off` / `label_on` (endpoint text, default OFF/MAX), `min` / `max` / `step`. A real slider bar is only available in `sound_settings`, and it must `replace` a native entry because that menu is full. It uses the native volume widget with its own value, which does not affect audio. Elsewhere a slider is a text bar in the label, stepped on select.
+- **`submenu`**: opens a custom page. `page` (the page name), `label` (the opener's text), optional `title` (the page heading, default `label`), optional `action` (run when the page opens) and `leave_action` (run when the player leaves it).
 
-- `order` — integer sort key. Native entries get implicit orders (index × 10), so
-  `order: 45` lands between natives 4 and 5.
-- `before` / `after` — anchor to a native alias or another button id
-  (`"after": "high_resolution"`).
-- `replace` — take a native entry's position and remove the original.
-- top-level `hide` — `{ "<menu>": ["alias", …] }` removes native entries.
+### Placement
 
-### Behavior keys
+By default a button is appended after the existing entries. To place it:
 
-`action` values are keys into the host registry (`add_action`, [modding-host-api.md](modding-host-api.md)); `toggle` and slider values are keys into the registries in `menu_config.cpp`:
-
-- actions: `quit`, `touch_layout` (opens the touch-control layout editor) and `none` (a no-op, for info rows) are built into `menu_config.cpp`'s `actions()`. The multiplayer lobby adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave` with `add_action` in `rs64_ghost_register_host` (`ghost_lobby.cpp`); its `exit_when` condition `mp_ready` is an `add_condition` there.
-- toggles: `fullscreen`, `gyro` (Android gyro aiming) and `cutscene_draw_distance` (the `keepCutsceneDrawDistance` flag from `roguesq_video.json`; on = cutscenes keep the game's own view distance and fog, applies live and is saved), each `{ get, toggle }`. `rt_lights`, `rt_shadows`, `rt_soft_shadows` and `rt_fog_shafts` are the ray-tracing switches (the `rayTracing` object in `roguesq_video.json`): the label shows the live state, selecting one flips the saved setting, and a set `ROGUESQ_RT_*` env var pins the live switch without touching the file. [mods/ray-tracing/](../mods/ray-tracing/) puts them on a RAY TRACING page under Options.
-- sliders: `draw_distance`, the `drawDistance` multiplier from `roguesq_video.json` as a percent (use `"min": 100, "max": 250`). It applies live and is saved. The base game shows no draw-distance UI; a menu mod adds one with this key.
-- mod config options: `"toggle": "config:<option id>"` or `"slider": "config:<option id>"` shows an option from the mod's own `mod.toml` (`[[manifest.config_options]]`, the standard recomp config schema). An `Enum` option is a toggle that steps to the next option when selected. With two options and `label_on`/`label_off` it shows `label_off` for the first option and `label_on` for the second; with more options, or without those labels, it shows `label: OPTION` (the option name in capitals, other characters dropped for the menu font). A `Number` option is a slider over the button's `min`/`max`/`step` (set them to match the schema). librecomp saves the values with the mod's config, and code reads them with `recomp_get_config_u32` / `recomp_get_config_double` (`recompconfig.h`). An in-place `game_settings` toggle (`replace: crosshairs`) has only the two native labels.
-
-**Asset mods.** A folder mod can replace any ROM asset by putting the uncompressed file at `assets/<manifest path>`, e.g. `assets/pl_crafts/xwing_HOB` or `assets/frontend/factor/factor_HMT` (the RS64 Explorer's paths without the leading `data/`). A mod built from game assets ships `assets/<manifest path>.bps` instead: a BPS patch the game applies to the player's own copy of that asset, so the mod holds no game data. The RS64 Explorer writes these: right-click a textured face, *Replace texture from image…*, or, in a level, right-click a placed object or marker and edit its *Placement* (position, rotation, scale or zone size; objects can also be duplicated or deleted, except ones the mission script names), or tick *Edit terrain* to sculpt and repaint the ground (placed objects follow it) or import a grey heightmap PNG, then *Export mod*, and extract the zip into `mods/`. The `exhaust-color` mod recolors every craft's `eng_*` exhaust faces from the player's own ROM at startup; its Mods-panel option applies at the next level load. Files are loaded at startup; when two enabled mods replace the same path, the later one wins. The replacement still loads into the game's 8 MB heap, so keep it close to the original's size.
-
-**Code mods (`.nrm`).** To change game behavior (not just menus), write a code mod: it patches game functions directly (`RECOMP_PATCH` replaces a base function, `RECOMP_HOOK` / `RECOMP_HOOK_RETURN` run around one) and needs no base changes. [mods/infinite-secondary/](../mods/infinite-secondary/), [mods/any-craft/](../mods/any-craft/) and [mods/larger-object-pool/](../mods/larger-object-pool/) (calls game functions) are complete examples: MIPS C in `src/` that includes headers from [syms/include/](../syms/include/) (the SDK, in the syms submodule): the standard recomp modding API (`recomputils.h`, `recompconfig.h`, `recompdata.h`, the mod template's headers) and `rs64_api.h` (`RECOMP_PATCH`, `RECOMP_HOOK`, `RECOMP_CALLBACK` for the `rs64_on_*` events in [modding-host-api.md](modding-host-api.md#events-for-nrm-mods), and the rest), a RecompModTool manifest `mod.toml` that references `syms/rogue_squadron.syms.toml` (patch names must match a function there) and `syms/rogue_squadron.datasyms.mods.toml` (data names, with the co-op relocated fields at their real addresses; `cmake --build build --config Debug --target dump_syms` refreshes both after renames). `syms/` is the [RogueSquadron64RecompSyms](https://github.com/MikeSemicolonD/RogueSquadron64RecompSyms) submodule, so a mod outside this repo can add that repo as its own submodule; the [mod template](https://github.com/MikeSemicolonD/RogueSquadron64RecompModTemplate) does that and builds a working example mod in one step, and a two-line `CMakeLists.txt` calling `add_code_mod` from [tools/mods/code_mod.cmake](../tools/mods/code_mod.cmake). Build RecompModTool once with `cmake --build build/N64ModernRuntime/librecomp/N64Recomp --config Debug --target RecompModTool`, then `cmake -S mods/<name> -B mods/<name>/build` and `cmake --build mods/<name>/build`. The `.nrm` lands in `mods/`; list it in `mods/platforms.json` to stage it beside the exe (the `mods/<name>/` source folder is never listed). Call game functions by their name in the syms file (e.g. `rs_malloc`, `destroyTransientNpcSlots`) and reach game data by absolute address. Mod ids must be C identifiers (`infinite_secondary`). Enable it in the Mods panel (F1) or `mods.json`; code mods apply at startup. A mod is enabled the first time a player has it unless its `mod.toml` `[manifest]` sets `enabled_by_default = false` (cheats like invincibility do); after that the player's `mods.json` decides. [mods/long-tow-cable/](../mods/long-tow-cable/) patches in assembly (`src/*.s`): the game's own instructions with a few changed, for functions too large to rewrite in C. A native-library mod can also take the host API (hooks, text sources, pad filters, flags); see [modding-host-api.md](modding-host-api.md). LiveRecomp does not materialize branch-and-link `$ra` values, so a `RECOMP_HOOK` on a function that reads `$ra` as data will misbehave. RecompModTool takes a hook's target from its output section name (`.recomp_hook.<func>`), so A code mod links with the SDK's `syms/include/mod.ld` unless its folder has its own `mod.ld`; a custom one must not merge hook sections into one output section (that drops every hook without an error), and the shared one leaves them unlisted so `ld` keeps each one separate. Some functions can't be patched or hooked; see the next paragraph.
-
-**Functions the base game patches.** About 90 functions carry `[[patches.hook]]` or `[[patches.instruction]]` entries from `rogue_squadron.toml`. After a regen they are listed in `RecompiledFuncs/patched_funcs.inl`, one `RECOMP_PATCHED_FUNC(name, kinds)` per function (1 = hook, 2 = instruction patch, 4 = a hook that can't be replayed). What a mod may do with one:
-
-- `RECOMP_HOOK` / `RECOMP_HOOK_RETURN` works. A hook makes the game rebuild the function from the ROM with LiveRecomp, and the rebuild re-applies the function's instruction patches and calls its toml hook functions at the same places. Only a function with kind 4 (a hook whose text isn't a single `rs64_th_` call) is refused, with "Hooks a function the base game patches in its recompiler config"; the style check keeps that from happening. Order in the rebuilt function: your `RECOMP_HOOK` runs first, before the base game's entry hook, so it sees the arguments before any base guard has acted on them. When a base hook makes the function return early (a base guard bailing out), the function exits there and your `RECOMP_HOOK_RETURN` does not run for that call.
-- `RECOMP_PATCH` on one fails with "Attempted to replace a function that's been patched by the base recomp". Your replacement would drop the base fix (a crash guard, a pacing change or a relocated address).
-- `RECOMP_FORCE_PATCH` (section `.recomp_force_patch`) is the deliberate escape hatch: the mod loads, and stderr logs `Mod <id> force-replaces 0x...`. Your copy must carry every base patch itself; find them by function name in `rogue_squadron.toml`. Another mod's `instruction_patches.json` patches are applied to your copy for you (see below).
-- To change a few instructions, list them as `[[patches.instruction]]` in `mod.toml` instead of copying the function (next paragraph).
-- To change one of these functions without a force patch, hook it, or use a host-API hook ([modding-host-api.md](modding-host-api.md)). [tests/mods/replay-probe/](../tests/mods/replay-probe/) hooks `mainGameLoop` and `runInMissionFrame`, and replays hash the same with it loaded.
-
-**Instruction patches.** A mod that only changes a few of the game's instructions (a constant, a limit, a load address) lists them in its `mod.toml` instead of copying the function: `[[patches.instruction]]` entries with `func` (a name from `syms/rogue_squadron.syms.toml`), `vram` (the instruction), and the new and original instruction as `asm` / `expect_asm` (assembled by RecompModTool with the mod's MIPS GCC; `add_code_mod` passes `--as`) or as words, `value` / `expect` (needed for branches and jumps). `add_code_mod` also passes `--rom` when `build/Debug/rogue_squadron.z64` exists (`RS64_GAME_ROM`), which reads a missing `expect` from the game and checks every one at build time. A mod can be only patches: `add_code_mod(<name>)` with no sources and no `elf_path` in `mod.toml`. RecompModTool writes `instruction_patches.json` into the `.nrm` (a folder mod can ship that file directly; fields may be numbers or `"0x..."` strings, extra fields are ignored). At load librecomp checks each original word against the ROM (a stale patch is refused, naming the address), refuses two mods writing different words to one instruction, and rebuilds each patched function with LiveRecomp with the patches applied, together with the base game's own patches and any mod hooks on it. A mod that replaces a patched function gets the patches applied to its copy, where the copy keeps the original instruction at that offset (else it is refused). stdout logs `Mod instruction patches: N in M functions`. [mods/long-tow-cable/mod.toml](../mods/long-tow-cable/mod.toml) is 21 commented patches that raise the tow cable's 60-segment ring to 160; the multiplayer mod's per-player data relocation is 200 more in [mods/multiplayer-native/mod.toml](../mods/multiplayer-native/mod.toml), written by its `tools/gen_relocation.py` and turned into the mod folder's files by the game's CMake.
-
-Add built-ins by extending `actions()` / `toggles()`.
-
-**Mod-provided behavior (`@export`)** — a mod references its own exports by name
-with a leading `@`: a `.nrm` code mod's `RECOMP_EXPORT` functions (MIPS C:
-`void f(void)`, `unsigned int f_get(void)`, `void f(int value)`), or a **native
-library**'s (`native_libraries` in `mod.json`; native C `void(uint8_t* rdram,
-recomp_context* ctx)`). `menu_config.cpp` resolves the name via
-`recomp::mods::get_mod_export(mod_id, name)` and calls it with a zeroed `ctx` on a
-16 KB guest stack of its own (so MIPS code can call game and runtime functions),
-marshaling through registers: a **toggle get** and **slider get** return their
-value in `ctx->r2`, a **slider set** reads its value from `ctx->r4`. Naming:
-`"action": "@doThing"` calls export `doThing`; `"toggle": "@myToggle"` calls
-`myToggle` to flip and `myToggle_get` to read state; `"slider": "@myVolume"` calls
-`myVolume` to set (value in `r4`, in `min..max`) and `myVolume_get` to read the
-current value. A DLL must also export `uint32_t recomp_api_version = 1`. See
-[mods/native-demo/](../mods/native-demo/) (native) and [tests/mods/menu-probe/](../tests/mods/menu-probe/) (`.nrm`) for working examples.
+| Field | Effect |
+|---|---|
+| `order` | Integer sort key. Native entries have implicit orders (index × 10), so `order: 45` lands between natives 4 and 5. |
+| `before` / `after` | Anchor to a [native alias](#native-aliases) or another button's id. |
+| `replace` | Take a native entry's position and remove it. |
+| top-level `hide` | `{ "<menu>": ["alias", ...] }` removes native entries. |
 
 ### Native aliases
 
-Anchors (`before`/`after`/`replace`) and `hide` reference **native entries** by a
-per-menu alias, mapped to a match on sub-type (+ param) in `native_aliases()`
-(`main_menu`, `game_settings`) and `snd_alias_slot()` (`sound_settings`):
+Anchors and `hide` name native entries by alias:
 
 - `main_menu`: `start`, `options`.
-- `game_settings`: `auto_roll`, `auto_level`, `free_camera`, `crosshairs`,
-  `high_resolution`, `restore_defaults`, `back`.
-- `sound_settings` (slider `replace` targets): `music`, `sound_fx`, `speech`,
-  `subtitles`, `stereo`, `restore_defaults`, `back`. The menu is a hard 8 slots, so
-  a slider replaces one; pick an expendable entry (the demo replaces `stereo`).
+- `game_settings`: `auto_roll`, `auto_level`, `free_camera`, `crosshairs`, `high_resolution`, `restore_defaults`, `back`.
+- `sound_settings` (slider `replace` targets): `music`, `sound_fx`, `speech`, `subtitles`, `stereo`, `restore_defaults`, `back`. The menu has a hard limit of 8 slots, so a slider must replace an entry you can spare (the demo replaces `stereo`).
 
-Extend the tables to expose more native entries as anchors.
+The tables are `native_aliases()` and `snd_alias_slot()` in [src/main/menu_config.cpp](../src/main/menu_config.cpp); extend them to expose more entries.
 
-### How the Sound Settings slider is wired
+### Behavior keys
 
-The native volume slider is welded to the three audio channels, so a mod slider
-reuses that widget rather than building one. `sound_settings_install` (in the
-`setupMenuData` tail) rewrites the `replace` target to sub-type 21 with the mod's
-title, assigns it an unused channel byte (`0x80130B60 + ch`, ch ≥ 3, past
-music/sfx/speech), and seeds that byte from the behavior's slider-get. Three hooks
-do the rest: the common slider handler entry redirects the channel index at
-`sp+0xEF` to the mod channel (independent value); `getGameOrFrontText` for textId
-`0xB7`/`0xB8` is overridden with the endpoint labels; `updateMenuPerFrame` reads
-the channel byte and pushes it to the behavior's slider-set. All are inert unless a
-mod actually declares a Sound Settings slider.
+The value of `action`, `toggle` or `slider` names what the button does.
+
+Built in:
+
+- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave`.
+- **Toggles:** `fullscreen`, `gyro` (Android gyro aiming), `cutscene_draw_distance` (cutscenes keep the game's own view distance and fog), `framebuffer_writeback` (copy rendered frames back to the emulated RAM; off is faster on slow GPUs), and the ray-tracing switches `rt_lights`, `rt_shadows`, `rt_soft_shadows`, `rt_fog_shafts`. Settings toggles are saved to `roguesq_video.json` and apply live. A set `ROGUESQ_RT_*` env var pins a ray-tracing switch without changing the file.
+- **Sliders:** `draw_distance`, the draw-distance multiplier as a percent (use `"min": 100, "max": 250`). The base game has no draw-distance UI; a menu mod adds one with this key.
+
+From your own mod:
+
+- **`config:<option id>`** shows one of your mod's config options. An `Enum` option is a toggle that steps to the next value when selected: with two values and `label_on` / `label_off` it shows those, otherwise `LABEL: VALUE`. A `Number` option is a slider over the button's `min` / `max` / `step` (match them to the option). The value is saved with the mod's config; code reads it with `recomp_get_config_u32` / `recomp_get_config_double`.
+- **`@name`** calls a function your mod exports. See [modding.md](modding.md#menu-behavior-from-your-own-code-export) for the naming and signatures.
+- Native mods can register named actions and conditions with the host API (`add_action`, `add_condition`; see [modding-host-api.md](modding-host-api.md)).
 
 ### Custom pages
 
-A `submenu` button opens a mod-defined **page**: its own titled screen of entries,
-in the native style, with Back. Buttons whose `menu` is the page name (any name
-that is not a built-in location) are the page's entries; a Back is appended
-automatically.
+A `submenu` button opens a page: its own titled screen in the native style. Buttons whose `menu` is the page name are its entries, and a BACK entry is added automatically.
 
 ```json
 { "type": "submenu", "menu": "main_menu", "page": "mymod", "label": "MY MOD",
@@ -231,21 +137,47 @@ automatically.
   "confirm": "QUIT THE GAME?" }
 ```
 
-Implementation: a fresh menu id (≥ 13) renders blank, because `setupMenuData` skips
-the per-menu builder that sets up the entry text. So a page is **hosted on a real
-menu id** (`game_settings`) whose builder runs the setup first; our install hook
-then overrides its title and entries. It is **flag-gated** by `s_active_page`
-(`menu_config.cpp`): the opener's confirm records the page name and the parent to
-return to, the sub-type-1 transition lands on the host, and the host is rendered
-natively whenever no page is active. See
-`mods/menu-example/` for a working example. The page also sets `gCurrentMenuData+0x05` (the B button's target) to its parent, so B returns where BACK does rather than to the host's native parent (OPTIONS). Limits: 7 entries per page (the 8th is
-Back), and a page cannot be opened from the host menu itself.
+Limits: 7 entries per page (the 8th is BACK), and a page can't be opened from Game Settings (pages are hosted on it; see [Internals](#how-custom-pages-are-hosted)). B returns to the menu that opened the page.
+
+### Pilot-first pages
+
+A `main_menu` action with `"transition": "account"` goes to the pilot select, like START. Add `page` (and optionally `title`, `leave_action`) and choosing a pilot opens that page instead of mission select. When the page's `exit_when` condition holds (a host condition such as `mp_ready`), the game continues to mission select with the pilot loaded. The multiplayer lobby works this way.
+
+### Live labels
+
+A page entry with `label_src` shows text from a named host text source, updated every frame without rebuilding the menu. Sources are registered by native mods with `add_text_source` ([modding-host-api.md](modding-host-api.md#text-sources)). The only ones today are the multiplayer lobby's: `mp_status`, `mp_address`, `mp_host_address`, `mp_host_label`, `mp_join_label`, `mp_online`.
+
+### Text the menu font can draw
+
+Labels use the front-end font: upper-case `A`-`Z`, `0`-`9`, spaces and `;:_'/&",!?-`. `<` and `>` draw as filled arrows, `{` and `}` as hollow ones, and `.` is built at runtime. Lower case and other characters such as `(` `)` `+` `#` draw as blanks.
+
+### Gotchas for mod authors
+
+- A folder mod needs a `mod.json`, or its menu file is never read.
+- The front-end menus hold at most 8 entries, and Options and Game Settings are already full. A new entry there must `replace` or `hide` a native one, or the host drops spacer lines to make room. The main menu fits three entries under the logo; past three the list moves up one line per extra entry.
+- The pause menus show at most 16 lines. Each pause target (`pause`, `pause_game_settings`) currently takes one button.
+- Mods that ship with the game are listed in [mods/platforms.json](../mods/platforms.json); see [modding.md](modding.md#shipping-a-mod-with-the-game).
 
 ---
 
-## Front-end menu
+## Internals
 
-### Data model — `gCurrentMenuData` @ `0x800CE730` (0xF8 bytes)
+The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/main/menu_config.cpp](../src/main/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
+
+### Two separate menu systems
+
+| | Front-end menu | Pause menu |
+|---|---|---|
+| Where | Title/options screens | In-mission (START during gameplay) |
+| Overlay | `.ovl.menu` | `.ovl.mission` |
+| State struct | `gCurrentMenuData` @ `0x800CE730` | HUD-ext struct `func_800C0084_type` |
+| Entry model | `menu_entries[8]` + per-entry sub-type | `PauseMenuStuff[]` arrays, `0xFFFF`-terminated |
+| Builder | `setupMenuData` `0x800BA0F0` | `func_800C298C` `0x800C298C` |
+| Input/dispatch | `menuControllerInput` `0x800B47D0` | `func_800C1D3C` `0x800C1D3C` |
+
+They share no state.
+
+### Front-end data model: `gCurrentMenuData` @ `0x800CE730` (0xF8 bytes)
 
 | off | field | notes |
 |----|----|----|
@@ -263,91 +195,50 @@ Back), and a page cannot be opened from the host menu itself.
 | +0x98 | `u16 active_entries` | bitmask, bit i set if entry i is selectable |
 | +0xA0 | `f32 highlight_timer` | pulse animation |
 
-The `enum Menu`: `MAIN_MENU=0, ACCOUNT_SELECTION=1, OPTIONS=2, GAME_SETTINGS=3,
-ELITE_ROGUES=4, CONTROLLER_SETTINGS=5, SOUND_SETTINGS=6, CHEAT_MENU=7,
-BIOGRAPHIES=8, LANGUAGE_SELECT=9, SHOWROOM=10, CONCERT_HALL=11, AT_THE_MOVIES=12`.
+`enum Menu`: `MAIN_MENU=0, ACCOUNT_SELECTION=1, OPTIONS=2, GAME_SETTINGS=3, ELITE_ROGUES=4, CONTROLLER_SETTINGS=5, SOUND_SETTINGS=6, CHEAT_MENU=7, BIOGRAPHIES=8, LANGUAGE_SELECT=9, SHOWROOM=10, CONCERT_HALL=11, AT_THE_MOVIES=12`.
 
-Ids 13 and up are custom pages (see above) and `0xFF` means none. The game calls `setupMenuData` with constants 0, 2, 4 and 9 (`menuControllerInput`) and 10 (`menuSubtype02Handler`); every other id comes from an entry's `unk74` target. `gCurrentMenuData` is menu-overlay BSS, so before the front end loads (the boot intro) `0x800CE730` is heap: values read there, such as `current_menu = 0x80`, are model data, not menu ids.
+Ids 13 and up are custom pages and `0xFF` means none. The game calls `setupMenuData` with constants 0, 2, 4 and 9 (`menuControllerInput`) and 10 (`menuSubtype02Handler`); every other id comes from an entry's `unk74` target. `gCurrentMenuData` is menu-overlay BSS, so before the front end loads (the boot intro) `0x800CE730` is heap: values read there, such as `current_menu = 0x80`, are model data, not menu ids.
 
-### How a menu is built — `setupMenuData(menuId, controller, flags)` @ `0x800BA0F0`
+### How a menu is built: `setupMenuData(menuId, controller, flags)` @ `0x800BA0F0`
 
-A 13-arm jump table (one arm per `enum Menu`). Each arm fills `screen_title`,
-`menu_entries[]`, `unk28[]`, `unk74[]`, and offsets, incrementing a running
-entry counter. It writes `current_menu` and `back_menu` (+0x04/+0x05) from the
-passed `menuId`.
+A 13-arm jump table, one arm per `enum Menu`. Each arm fills `screen_title`, `menu_entries[]`, `unk28[]`, `unk74[]` and offsets, incrementing a running entry counter, and writes `current_menu` / `back_menu` from `menuId`.
 
-The **MAIN_MENU arm** is at `0x800BA1B4`. It fills exactly two of the eight
-slots:
+The MAIN_MENU arm (`0x800BA1B4`) fills two of the eight slots:
 
-- Entry 0 "START": `menu_entries[0] = getGameOrFrontText(0xA2)`, `unk28[0]=1`
-  (sub-menu), `unk74[0]=1` (→ ACCOUNT_SELECTION).
-- Entry 1 "OPTIONS": `menu_entries[1] = getGameOrFrontText(0xA3)`, `unk28[1]=1`,
-  `unk74[1]=2` (→ OPTIONS).
+- Entry 0 "START": `menu_entries[0] = getGameOrFrontText(0xA2)`, `unk28[0]=1` (sub-menu), `unk74[0]=1` (ACCOUNT_SELECTION).
+- Entry 1 "OPTIONS": `menu_entries[1] = getGameOrFrontText(0xA3)`, `unk28[1]=1`, `unk74[1]=2` (OPTIONS).
 
-So **six entry slots are free** on the main menu, and START does *not* launch a
-mission directly — it opens the account/pilot submenu; gameplay begins several
-menus deeper.
+START opens the pilot submenu; gameplay begins several menus deeper.
 
-All 13 arms fall through to a **common tail at `0x800BAF64`** that finalizes the
-menu generically:
+All arms fall through to a common tail at `0x800BAF64`, which sets `num_menu_entries` (+0x95) to the counter and, for each entry with a non-zero `strlen`, sets its bit in `active_entries` (+0x98). That is the whole activation rule: an entry is visible and selectable if it has a non-empty `char*` and is within `num_menu_entries`.
 
-1. `num_menu_entries (+0x95) = counter`.
-2. For each entry `i < num_menu_entries`: `strlen(menu_entries[i])`; if nonzero,
-   set bit i in `active_entries (+0x98)`.
+### How buttons are placed: full-list rebuild
 
-That is the whole activation rule: **an entry becomes visible and selectable
-simply by having a non-empty `char*` and being within `num_menu_entries`.** No
-per-menu magic counts to update.
+`menu_entries[8]` is a hard cap (index 8 overwrites `unk28[]`), and some menus already use all 8:
 
-### How the install engine places entries — full-list rebuild
+- OPTIONS (menu 2): Biographies, Elite Rogues, Passcodes, Game Settings, Sound Settings, Controller Settings, Back, and a blank spacer.
+- GAME SETTINGS (menu 3): Auto Roll, Auto Level, Free Camera, Crosshairs, High Resolution, a spacer, Restore Defaults, Back.
 
-`menu_entries[8]` is a **hard cap** — writing index 8 overwrites the adjacent
-`unk28[]` array — and some menus already use all 8:
+`rebuild_frontend_menu()` in `menu_config.cpp` owns the whole list. After the game builds a menu it reads the native entries, merges the menu's mod buttons by `order` / anchor, drops `hide` / `replace`d natives and empty spacer entries (`label_is_empty()`) to fit 8, sorts by order, and writes the list back with a new `num_menu_entries`. It runs from the hook on the common tail (`setupMenuData` at `0x800BAF70`, which calls `rs64_menu_install_main`).
 
-- **OPTIONS (menu 2)** is a full hub: Biographies, Elite Rogues, Passcodes,
-  Game Settings, Sound Settings, Controller Settings, Back (+ one blank spacer).
-- **GAME SETTINGS (menu 3)** is full: Auto Roll, Auto Level, Free Camera,
-  Crosshairs, High Resolution, a spacer, Restore Defaults, Back.
+A mod button is a synthesized slot. Toggles and confirm actions get a self-targeting sub-type 1 (`unk74` = current menu id), so selecting one re-runs `setupMenuData`. That is the only way a label re-commits, because the menu measures text once per build, not per frame. Plain actions use sub-type 4, a no-op the confirm intercept owns. Each written slot records a binding in `s_slot[]` for the intercept.
 
-Rather than poke a single slot, `rebuild_frontend_menu()` in `menu_config.cpp`
-**owns the whole list**: after the game builds a menu, it reads the native entries,
-merges this menu's mod buttons by `order`/anchor, drops `hide`/`replace`d natives
-and the invisible **spacer** entries (empty-label, `label_is_empty()`) to fit 8,
-sorts by order, and writes the final list back with a new `num_menu_entries`. This
-is what makes reorder/override/hide work and where a mod button lands next to a
-native anchor (e.g. FULLSCREEN `after high_resolution` reclaims the spacer's room).
+A front-end menu with more than 8 entries would need a scrolling list or a custom-rendered submenu, which doesn't exist yet.
 
-A mod button is a synthesized slot: its label from `label`/`label_on|off`, and a
-**self-targeting sub-type 1** (`unk74 = current menu id`) for toggles and
-confirm-actions so selecting it re-runs `setupMenuData` — the only way the label
-re-commits (the menu measures text once per build, not per frame) and how a live
-toggle shows its new state after the confirm intercept flips it. Plain actions use
-sub-type 4 (a no-op the intercept owns). Each written mod-button slot records a
-binding (`s_slot[]`) the confirm intercept reads.
+### Input and selection: `menuControllerInput` @ `0x800B47D0`
 
-**Beyond 8**: the front-end is hard-capped, so a genuinely large front-end menu
-needs a scrolling list or a custom-rendered submenu (not yet built). The pause
-menus scale to 16 visible lines via array relocation.
+New presses come from `getControllerNewButtonsPressed` (`0x80079F50`): A = `0x8000`, Start = `0x1000` (`0x9000` = confirm), B = `0x4000` (back).
 
-### Input and selection dispatch — `menuControllerInput` @ `0x800B47D0`
+On confirm:
 
-New button presses are read via `getControllerNewButtonsPressed` (`0x80079F50`).
-Masks: **A = 0x8000, Start = 0x1000** (`0x9000` = "confirm"), **B = 0x4000**
-("back").
-
-On confirm, the handler:
-
-- `0x800B51B0`: loads `current_menu_entry (+0x94)`.
-- `0x800B51B8`: **`lbu` the selected entry's sub-type `unk28[current_menu_entry]`**.
-- `0x800B51BC`: range-checks the sub-type to **[1, 26]**; 0 or ≥27 do nothing.
-- `0x800B51DC`: `jr` through a jump table at `0x800A66F8` indexed by
-  `sub-type - 1`.
-
-Sub-types (abridged):
+- `0x800B51B0` loads `current_menu_entry` (+0x94).
+- `0x800B51B8` loads the entry's sub-type `unk28[current_menu_entry]`. The confirm intercept hooks here (`rs64_menu_confirm_main`).
+- `0x800B51BC` range-checks the sub-type to [1, 26]; 0 or 27+ do nothing.
+- `0x800B51DC` jumps through the table at `0x800A66F8`, indexed by `sub-type - 1`.
 
 | sub-type | action on confirm |
 |---|---|
-| **1** | go to sub-menu (target = `unk74[entry]`) |
+| 1 | go to sub-menu (target = `unk74[entry]`) |
 | 3 | account name/rank select |
 | 5 | on/off setting toggle |
 | 6/7/8 | biography back / left / right |
@@ -357,50 +248,48 @@ Sub-types (abridged):
 | 25 | "Back" |
 | 26 | quit-to-attract style transition |
 
-**Sub-type 1 transition** (handler `0x800B521C`): reads `unk74[entry]` low byte
-→ `spBF` (target menu), sets the transition state `var_s6 = 1` (begin fade-out).
-It does **not** call `setupMenuData` immediately. The per-frame state machine
-later, when the fade completes (`var_s6 == 2`), runs
-`setupMenuData(spBF, controller, flags)` at `0x800B5B40`, which rebuilds
-`gCurrentMenuData` for the target menu.
+Sub-type 1 (handler `0x800B521C`) stores `unk74[entry]`'s low byte as the target menu and starts the fade-out (`var_s6 = 1`). When the fade completes (`var_s6 == 2`) the per-frame state machine calls `setupMenuData(target, ...)` at `0x800B5B40`.
 
-### Entry text
+### The YES/NO confirm
 
-`menu_entries[i]` is a plain null-terminated `char*`. The vanilla arms fill it
-from `getGameOrFrontText(textId)` (`0x8005589C`), which returns a pointer into a
-loaded `.txt` bank (`0xA2` = "START/NEW GAME", `0xA3` = "OPTIONS"). The common
-tail `strlen`s it and the glyph builder (`buildScaledFormatTextElement`
-`0x800B3AFC`) walks it byte-by-byte emitting one TEXRECT per character. You can
-point an entry at **any** valid ASCII buffer in RDRAM using glyphs the font
-supports — see [where to store a custom label](#where-to-store-a-custom-label).
-The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`; `<` `>` draw as
-filled arrows, `{` `}` as hollow ones). Characters outside it, e.g. `(` `)` `+` `#`, draw as blanks. It has no period, so
-`ensure_menu_period` (menu_config.cpp) turns its unused `Ü` glyph into one at runtime: the colon's lower dot, with `.` mapped
-to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14).
+Because labels are measured once per build, the confirm prompt rides the game's own menu transition:
 
----
+- A `confirm` entry is a self-targeting sub-type-1 submenu. Selecting it sets `ConfirmState::Pending`; the fade re-runs `setupMenuData`, and the install hook sees Pending and builds a two-entry YES/NO menu.
+- YES and NO are also self-targeting submenus: YES runs the action and clears the state, NO just clears it. Each transition back redraws the normal labels.
 
-## Pause menu
+This is why a confirm shows the menu-swipe animation between steps. Live labels (`label_src`) avoid a rebuild by relaying out one entry with `0x800C4C8C(&gCurrentMenuData, 1 << entry, 0)` from the `updateMenuPerFrame` hook (`rs64_menu_frame`).
 
-Separate system, living in the mission overlay's HUD struct. Three functions,
-all driven every frame from `handleHUD` (`0x800C0084`):
+### Pilot-first page hooks
 
-- **`func_800C1D3C` @ `0x800C1D3C`** — state machine + input + selection
-  dispatch (the interactive work is its `case 3`).
-- **`func_800C298C` @ `0x800C298C`** — layout/text builder (`sprintf` +
-  glyph rasterizer per line, highlight coloring).
-- **`func_800C1B64` @ `0x800C1B64`** — button-edge query
-  (`func_800C1B64(controllerIdx, mode)`; mode 0/1 up/down, 2/3 left/right, 4
-  back, 5/6 confirm).
+The pilot's confirm opens the page through a hook at `menuControllerInput` `0x800B5428`, which replays the sub-type-1 steps including the menu wipe (`0x800B3F24`). Leaving it once `exit_when` holds goes through a hook at `0x800B4CA8`, which sets `$s6 = 0xA`, `sp+0x80 = sp+0x9F = 1` and starts the fade from `0x800A6760`, the same path a chosen pilot takes.
 
-Pause is gated on the master word **`D_8010CA20` (`0x8010CA20`)**: `5` = paused.
-The pause phase is `unk258` in the HUD struct (0 closed, 1 enter anim, 2 exit
-anim, 3 interactive).
+### How custom pages are hosted
 
-### Data model — `PauseMenuStuff` arrays
+A fresh menu id (13+) renders blank, because `setupMenuData` skips the per-menu builder that sets up entry text. So a page is hosted on a real menu id (`game_settings`) whose builder runs first; the install hook then overrides its title and entries. It is gated by `s_active_page` in `menu_config.cpp`: the opener's confirm records the page name and the parent to return to, the sub-type-1 transition lands on the host menu, and the host renders natively whenever no page is active. The page sets `gCurrentMenuData+0x05` (B's target) to its parent. `gCurrentMenuData+0x50/+0x52` are the title's x/y offsets (title text slot 9); the game zeroes them on every build.
 
-`struct PauseMenuStuff { u16 flags; u16 textId; u16 nextMenu; }` (6 bytes).
-Four contiguous rodata arrays, **`0xFFFF`-terminated** (no count field):
+### How the Sound Settings slider is wired
+
+The native volume slider is tied to the three audio channels, so a mod slider reuses that widget. `sound_settings_install` (in the `setupMenuData` tail) rewrites the `replace` target to sub-type 21 with the mod's title, gives it an unused channel byte (`0x80130B60 + ch`, ch ≥ 3, past music/sfx/speech), and seeds that byte from the behavior's get. Three hooks do the rest: the common slider handler redirects the channel index at `sp+0xEF` to the mod channel; `getGameOrFrontText` for textId `0xB7` / `0xB8` returns the endpoint labels; `updateMenuPerFrame` pushes the channel byte to the behavior's set. All are inert unless a mod declares a Sound Settings slider.
+
+### Entry text and the font
+
+`menu_entries[i]` is a null-terminated `char*` in RDRAM. The vanilla arms fill it from `getGameOrFrontText(textId)` (`0x8005589C`), which returns a pointer into a loaded `.txt` bank (`0xA2` = "START/NEW GAME", `0xA3` = "OPTIONS"). The glyph builder (`buildScaledFormatTextElement`, `0x800B3AFC`) emits one TEXRECT per character.
+
+The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_config.cpp`) turns the unused `Ü` glyph into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14).
+
+### Pause menu
+
+The pause menu lives in the mission overlay's HUD struct. Three functions run every frame from `handleHUD` (`0x800C0084`):
+
+- `func_800C1D3C`: state machine, input and selection dispatch (the interactive work is its `case 3`).
+- `func_800C298C`: layout and text builder (`sprintf` plus the glyph rasterizer per line, highlight coloring).
+- `func_800C1B64(controllerIdx, mode)`: button-edge query (mode 0/1 up/down, 2/3 left/right, 4 back, 5/6 confirm).
+
+Pause is gated on `D_8010CA20` (`0x8010CA20`): `5` = paused. The pause phase is `unk258` in the HUD struct (0 closed, 1 enter animation, 2 exit animation, 3 interactive).
+
+#### Data model: `PauseMenuStuff` arrays
+
+`struct PauseMenuStuff { u16 flags; u16 textId; u16 nextMenu; }` (6 bytes). Four contiguous rodata arrays, `0xFFFF`-terminated (no count field):
 
 | array | address | role |
 |---|---|---|
@@ -409,8 +298,7 @@ Four contiguous rodata arrays, **`0xFFFF`-terminated** (no count field):
 | `pauseMenuAudioSettings` | `0x80109E68` | audio settings |
 | `pauseMenuAbortLevel` | `0x80109EEC` | abort confirm |
 
-`current_menu` (u8 @ HUD +0xD6A) selects the array; `current_entry` (u16 @ HUD
-+0xD68) is the highlighted selectable index.
+`current_menu` (u8 @ HUD +0xD6A) selects the array; `current_entry` (u16 @ HUD +0xD68) is the highlighted selectable index.
 
 Flag bits (selection cascade in `func_800C1D3C` case 3):
 
@@ -419,214 +307,54 @@ Flag bits (selection cascade in `func_800C1D3C` case 3):
 | 0x0001 | selectable (participates in up/down nav) |
 | 0x0010 | mission-objective line (`textId` indexes objective table) |
 | 0x0020 | submenu link (target array from `nextMenu`) |
-| 0x0040 | **Continue/Resume** — sets `unk258 = 2` (begin exit) |
-| 0x0080 | **Abort Level** — see below |
+| 0x0040 | Continue/Resume: sets `unk258 = 2` (begin exit) |
+| 0x0080 | Abort Level (below) |
 | 0x0200 | volume slider (left/right edits) |
 | 0x1000 | non-drawn spacer |
 | 0xFFFF | terminator |
 
-(0x0002/0x0004/0x0008 toggle setting bits; 0x0100 inverts displayed state.)
+0x0002/0x0004/0x0008 are setting toggle bits; 0x0100 inverts the displayed state.
 
-**Abort Level (0x0080)** does not directly tear down the mission. It sets
-`D_80130B14 (0x80130B14) = 0` and `D_8010C9E0 (0x8010C9E0) |= 1`, a
-request-pending flag polled by the outer game-state handler which performs the
-return-to-front-end. Mimic those two writes to trigger quit-to-menu.
+Abort Level does not tear down the mission directly. It sets `D_80130B14` (`0x80130B14`) = 0 and `D_8010C9E0` (`0x8010C9E0`) |= 1, a request flag the outer game-state handler polls before returning to the front end. Making those two writes triggers quit-to-menu.
 
-### Rendering budget
+#### Rendering limits
 
-`func_800C298C` renders each non-terminator entry into a **fixed** array
-`menu_elements[16]` (HUD +0x264), with glyph pools sized `0x12C`. So **at most
-16 visible lines per menu**, and total glyphs across visible lines ≤ 0x12C.
-Because the four arrays are contiguous in rodata you cannot grow one in place —
-for a new entry, relocate `current_menu` to point at an extended copy in your
-own memory (patches build), or append before the terminator of an array that has
-slack, keeping the visible count ≤ 16.
+`func_800C298C` renders each entry into a fixed `menu_elements[16]` (HUD +0x264) with glyph pools of `0x12C`, so a pause menu shows at most 16 lines and `0x12C` glyphs in total. The four arrays are contiguous in rodata, so one can't grow in place: point `current_menu` at an extended copy, or append before the terminator of an array with slack.
 
-### Best injection point
+#### How pause buttons are wired
 
-Hook `func_800C1D3C` at **`0x800C2458`** (the `andi $v0,$v1,0x20` on the
-selected entry's flags). There `ctx->r18` = selected `PauseMenuStuff*`,
-`ctx->r3` = its flags, `ctx->r17` = the HUD struct (`current_entry` +0xD68,
-`current_menu` +0xD6A). Detect a custom flag/`textId` and run your logic, or
-fire quit-to-menu via the two Abort writes above.
+`rs64_pause_install` (`menu_config.cpp`), hooked at `initOrUpdatePauseScreenDim`, places pause buttons only while the menu is open (`D_8010CA20 == 5`), so it never touches the arrays during level load or briefing (which starves the audio scheduler). Each button takes a slot:
 
----
+- `menu: "pause"`: the root objectives terminator slot @ `0x80109E1C`.
+- `menu: "pause_game_settings"`: the GAME SETTINGS spacer @ `0x80109E54`.
 
-## Override mechanisms
+Each installed button keeps a valid `textId` (an out-of-range one makes `getGameOrFrontText` return NULL and the layout `sprintf("%s", NULL)` fault) and is tagged with a sentinel in the unused `nextMenu` field, assigned from `0xF010` up. Two hooks dispatch through the sentinel map:
 
-Two ways to inject behavior, both regen-safe:
+- **Render** at `runPauseMenuStateMachine` `0x800C3550` (`ctx->r20` = `&entry.textId`, `nextMenu` at +0x2): `rs64_pause_label_for` overrides `ctx->r2` with the button's label (live ON/OFF for toggles). The pause menu rebuilds text every frame, so no re-setup is needed.
+- **Confirm** at `initOrUpdatePauseScreenDim` `0x800C2458` (`ctx->r18` = `&entry`, `ctx->r3` = its flags, `ctx->r17` = the HUD struct): `rs64_pause_confirm` runs the button's action or flips its toggle.
 
-### 1. TOML hook (`[[patches.hook]]`) — inline host C
+More than one button per slot needs a relocated `PauseMenuStuff` array, keeping the visible count at 16 or fewer.
 
-In `rogue_squadron.toml`. Runs host C at a function entry (`func = "name"`) or a
-specific instruction (`before_vram = 0xADDR`). The block gets `rdram` and `ctx`,
-can read/write game RAM with the `MEM_*` macros, and can call `extern "C"` host
-helpers. Existing examples: the `cinematicLoopBody` and `setupMenuData` hooks.
+### Changing the system itself
 
-```toml
-[[patches.hook]]
-func = "setupMenuData"
-before_vram = 0x800BAF70   # common tail, just after num_menu_entries is written
-text = '''{ extern void rs64_menu_install_main(uint8_t* rdram); rs64_menu_install_main(rdram); }'''
-```
+- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/main/toml_hooks.c](../src/main/toml_hooks.c), which calls the host code in `menu_config.cpp`:
 
-Host helpers live in [src/main/hook_helpers.cpp](../src/main/hook_helpers.cpp)
-as `extern "C"` functions (see `rs64_cine_yield`, `rs64_dbg_log4`).
+  ```toml
+  [[patches.hook]]
+  func = "setupMenuData"
+  before_vram = 0x800BAF70
+  text = '{ rs64_th_setupMenuData_800BAF70(rdram, ctx); }'
+  ```
 
-### 2. Full overrides
+  Hook text is baked in at recompile time, so after changing a hook run `cmake --build build --config Debug --target regen_funcs` before building the game. Changes to `menu_config.cpp` alone need only a normal build.
+- **New built-in behaviors.** Add a toggle to `toggles()` or an action to `actions()` in `menu_config.cpp`, then reference it by name from a menu file. Native mods can add actions without touching the base game (`add_action`).
+- **Label storage.** `menu_entries[i]` must be an RDRAM address; the game reads it with no masking, so a host pointer won't work. Reuse a game string with `getGameOrFrontText(textId)`, or allocate with `recomp::alloc(rdram, size)` (the recomp heap at `0x81000000`+, above the game's 8 MB) and convert with `(uint8_t*)p - rdram + 0x80000000`. Don't write to "unused" addresses inside the game's 8 MB; the game believes it owns all of it.
+- **Quit.** A QUIT button pushes `SDL_QUIT` (`rs64_menu_request_quit`); the event loop in [src/main/main.cpp](../src/main/main.cpp) runs the quit handlers and then `_Exit`. Don't call `exit`: the game threads and RT64 are still running, so static destructors hang or crash.
+- **Writes** use the recomp `MEM_*` address convention (word: no xor, half `^2`, byte `^3`).
 
-A whole-function replacement is an entry hook that does the work in a host
-helper and ends with `return;` (set `ctx->r2` for a return value). The NPC health
-accessor hooks in `rogue_squadron.toml` are the example. For new game-RAM data
-(e.g. a custom label string), use `recomp::alloc` (below).
+### Engine gotchas
 
-### The quit path
-
-The SDL event loop ([src/main/main.cpp](../src/main/main.cpp), the `SDL_QUIT`
-case) runs `rs64::host::run_quit_handlers()` then `_Exit(EXIT_SUCCESS)`. A "Quit"
-button pushes an `SDL_QUIT` event (`rs64_menu_request_quit`). Do not call `exit`:
-the game threads and RT64 are still live, so the static destructors hang or crash.
-
-### Where to store a custom label
-
-`menu_entries[i]` must be a valid **RDRAM** address (the game reads it via
-`MEM_B` = `rdram + (vaddr - 0x80000000)`, with no masking); a host pointer will
-not work. Options:
-
-- **Reuse a text id**: `getGameOrFrontText(textId)` for an existing string — zero
-  new data, but limited to strings the game already has.
-- **Extended RDRAM (recommended, what the QUIT example uses).** The runtime
-  commits **512 MB** (`recomp::mem_size`) and reserves regions *above* the game's
-  8 MB for host/mod use — see `librecomp/addresses.hpp` (`cart_handle`
-  `0x80800000`, `patch_rdram_start` `0x80801000`, `mod_rdram_start` `0x81000000`).
-  A managed allocator, `recomp::alloc(rdram, size)`, hands out buffers from the
-  recomp heap at `0x81000000`+ and returns a pointer into `rdram`; convert it to
-  a KSEG0 vaddr with `(uint8_t*)p - rdram + 0x80000000`. The game can dereference
-  it, and it never collides with game allocations (the game believes it owns only
-  8 MB). This is the clean "our own space" — no runtime surgery needed.
-- **Host scratch (avoid)**: writing to some "unused" high address like
-  `0x807FFF00` works in practice but the game thinks it owns all 8 MB, so it can
-  collide. Prefer `recomp::alloc`.
-
----
-
-## How the front-end implementation works
-
-The whole front-end feature is [src/main/menu_config.cpp](../src/main/menu_config.cpp)
-plus two one-line hooks. It is fully implemented and configured by the
-[button system](#configuring-menus-the-button-system).
-
-**Two hooks** in `rogue_squadron.toml`:
-
-```toml
-[[patches.hook]]
-func = "setupMenuData"
-before_vram = 0x800BAF70   # common tail, after num_menu_entries; before the active-bit loop
-text = '''{ extern void rs64_menu_install_main(uint8_t* rdram); rs64_menu_install_main(rdram); }'''
-
-[[patches.hook]]
-func = "menuControllerInput"
-before_vram = 0x800B51B8   # the sub-type load; A/Start already masked at 0x800B51A8
-text = '''{ extern void rs64_menu_confirm_main(uint8_t* rdram); rs64_menu_confirm_main(rdram); }'''
-```
-
-**`rs64_menu_install_main`** runs inside `setupMenuData`'s common tail on every
-MAIN_MENU (re)build, so its writes are committed by the same setup that renders
-the vanilla labels. It:
-- reads the built-in START/OPTIONS slots, drops the `hide`-listed ones, and
-  **compacts** the kept ones from slot 0 (no gap);
-- appends each configured `add` entry: `alloc_str()` puts the label in extended
-  RDRAM (cached), and the slot gets sub-type **4** (a no-op-on-confirm the
-  intercept owns) — or sub-type **1** if the entry has a `confirm`;
-- sets `num_menu_entries`, so the tail's `strlen` loop lights up the active bits.
-
-RDRAM writes use the recomp `MEM_*` address convention (word: no xor, half `^2`,
-byte `^3`) so what it writes is what the game reads.
-
-**`rs64_menu_confirm_main`** runs at the sub-type load when A/Start is pressed. A
-non-confirm custom entry fires its action immediately (the `actions()` registry →
-e.g. `rs64_menu_request_quit()`, which pushes `SDL_QUIT` for the graceful exit path
-in [main.cpp](../src/main/main.cpp)); a toggle flips its state instead.
-
-**The YES/NO confirmation** is the subtle part. The front-end measures its text
-**once at setup**, not per frame, so a live label swap does *not* redraw — the
-only way to change the on-screen labels is to re-run `setupMenuData`. So confirm
-is a small state machine that rides the engine's own menu transition:
-- a `confirm` entry is a **self-targeting sub-type-1 submenu** (`unk74` = MAIN_MENU);
-  selecting it sets `ConfirmState::Pending` and the vanilla fade → `setupMenuData`
-  re-runs → `install` sees Pending and builds a two-entry **YES/NO** menu (labels
-  commit normally);
-- YES and NO are themselves self-targeting submenus: YES fires the action and
-  clears the state, NO just clears it — each rides another transition back, so the
-  normal menu's labels redraw too.
-
-This is why a confirm shows the game's menu-swipe animation between steps.
-
-**Build**: hook `text` is baked in at recompile time, so changes to the hooks or
-`menu_config.cpp` need `cmake --build build --config Debug --target regen_funcs`
-then `--target RogueSquadron64Recomp` (the module itself only needs the exe
-relink, but the hooks need the regen). Editing a mod's JSON needs no rebuild.
-
-To add a new built-in **action** or **toggle**, register it in `actions()` /
-`toggles()` in `menu_config.cpp` and reference it by name from a mod's `action` /
-`toggle` field.
-
----
-
-## How pause buttons are wired
-
-Pause buttons are placed by `rs64_pause_install` (`menu_config.cpp`), hooked at
-`initOrUpdatePauseScreenDim` and run **only while the menu is open**
-(`D_8010CA20 == 5`) so it never touches the arrays during level-load/briefing
-(which starves the audio scheduler). Each button targets a slot in a
-`PauseMenuStuff` array:
-
-- `menu: "pause"` → the root objectives terminator slot @ 0x80109E1C.
-- `menu: "pause_game_settings"` → the GAME SETTINGS spacer @ 0x80109E54.
-
-Each installed button keeps a **valid `textId`** (an out-of-range sentinel makes
-`getGameOrFrontText` return NULL and the layout `sprintf("%s", NULL)` fault) and is
-tagged with a unique sentinel in the unused **`nextMenu`** field, assigned
-dynamically from `0xF010` up. `rs64_pause_install` records `sentinel -> behavior`
-in a map, and two generic hooks dispatch through it:
-
-- **render** at `runPauseMenuStateMachine` @ 0x800C3550 (`ctx->r20` =
-  `&entry.textId`, `nextMenu` at +0x2): calls `rs64_pause_label_for(rdram, marker)`
-  and overrides `ctx->r2` with the returned label pointer (live ON/OFF for
-  toggles), or leaves it if the marker isn't ours. The pause menu rebuilds text
-  each frame, so no front-end-style re-setup is needed.
-- **confirm** at `initOrUpdatePauseScreenDim` @ 0x800C2458 (`ctx->r18` = `&entry`,
-  `nextMenu` at +0x4): calls `rs64_pause_confirm(rdram, marker)`, which runs the
-  button's action or flips its toggle.
-
-Adding a pause button is therefore pure JSON — no new hooks. Phase 1 supports one
-button per target slot; more than that needs a relocated `PauseMenuStuff` array
-(`current_menu`/base redirected), keeping the visible line count ≤ 16.
-
----
-
-## Gotchas
-
-- **Front-end text is laid out at setup, not per frame.** Changing a
-  `menu_entries[i]` pointer alone updates the nav data but **not** the drawn label.
-  Either relay the entry out with `0x800C4C8C(&gCurrentMenuData, 1 << i, 0)` (what
-  `label_src` does) or re-run `setupMenuData` (a self-targeting sub-type-1 entry,
-  which is how the YES/NO confirm works).
-- **A data mod needs a `mod.json`** (`enabled_by_default: true`) beside its
-  `roguesq_menu.json`, or it never loads.
-- **Sub-type range check**: front-end sub-types outside `[1, 26]` are ignored on
-  confirm. A data-only new sub-type cannot trigger custom behavior — you must
-  hook (or extend the `0x800A66F8` jump table + range check). Use an in-range
-  no-op (4 or 20) plus an intercept hook.
-- **A leading non-selectable entry hangs the nav loop.** Keep active entries
-  contiguous from slot 0 (the confirm YES/NO uses two active entries, not a
-  question-line-plus-choices layout).
-- **Activation is `strlen`-based**: a front-end entry with an empty/`NULL`
-  pointer is skipped. Ensure the label pointer is valid before the common tail
-  runs.
-- **`menu_entries` has 8 slots**; the main menu uses 2. Do not exceed 8. The main menu fits three entries under the logo; past three, `rebuild_frontend_menu` lifts the whole list one line (36) per extra entry.
-- **Pause menu caps at 16 visible lines** and shares a `0x12C` glyph pool.
-- **Contiguous pause arrays**: cannot grow in place; relocate for new entries.
-- **Never hand-edit `RecompiledFuncs/funcs_*.c`** — regen discards it. Use TOML
-  hooks.
-- **Label strings must be in RDRAM**, not host memory.
+- Front-end text is laid out at setup, not per frame. Changing a `menu_entries[i]` pointer updates navigation but not the drawn label; relay the entry out with `0x800C4C8C` or re-run `setupMenuData`.
+- Front-end sub-types outside [1, 26] are ignored on confirm. Use an in-range no-op (4 or 20) plus an intercept hook rather than a new sub-type.
+- A non-selectable entry in slot 0 hangs the navigation loop. Keep active entries contiguous from slot 0 (page labels are stored after BACK and moved into place with a y offset for this reason).
+- An entry with an empty or NULL label is skipped; make sure the pointer is valid before the common tail runs.

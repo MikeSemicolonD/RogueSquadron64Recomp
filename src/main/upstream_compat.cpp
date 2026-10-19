@@ -272,7 +272,12 @@ static LONG CALLBACK rs64_bp_veh(EXCEPTION_POINTERS* ep) {
     const uint32_t value = addr ? *addr : 0;
     if (s_bp_white_only && !rs64_word_is_white(value)) return EXCEPTION_CONTINUE_EXECUTION;
     const unsigned i = s_bp_nhits.fetch_add(1);
-    s_bp_hits[i & 255] = { value, GetCurrentThreadId(), ep->ContextRecord->Rip, slot };
+#if defined(_M_IX86)
+    const DWORD64 pc = ep->ContextRecord->Eip;
+#else
+    const DWORD64 pc = ep->ContextRecord->Rip;
+#endif
+    s_bp_hits[i & 255] = { value, GetCurrentThreadId(), pc, slot };
     return EXCEPTION_CONTINUE_EXECUTION;
 }
 

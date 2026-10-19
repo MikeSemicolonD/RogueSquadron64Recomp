@@ -3,22 +3,13 @@
 #include <cstdio>
 #include <fstream>
 #include "json/json.hpp"
-#ifndef RS64_TOUCH_NO_SDL
-#include "SDL.h"
-#endif
 
 using nlohmann::json;
 
 namespace rs64::touch {
+    // In the working directory with saves and mods: the exe's folder can be read-only (AppImage, Flatpak).
     std::string config_path() {
-        std::string dir;
-#ifndef RS64_TOUCH_NO_SDL
-        if (char* base = SDL_GetBasePath()) {
-            dir = base;
-            SDL_free(base);
-        }
-#endif
-        return dir + "roguesq_touch.json";
+        return "roguesq_touch.json";
     }
 
     Config load_config(const std::string& path) {
@@ -47,6 +38,7 @@ namespace rs64::touch {
             c.rate_assist = j.value("rate_assist", c.rate_assist);
             c.pitch_gain = j.value("pitch_gain", c.pitch_gain);
             c.pitch_min = j.value("pitch_min", c.pitch_min);
+            c.thumb_bridge = j.value("thumb_bridge", c.thumb_bridge);
             if (j.contains("layout") && j["layout"].is_object()) {
                 for (const auto& [id, p] : j["layout"].items()) {
                     c.layout[id] = { p.value("x", 0.5f), p.value("y", 0.5f), p.value("scale", 1.0f) };
@@ -64,7 +56,7 @@ namespace rs64::touch {
                    { "debug_hitboxes", c.debug_hitboxes }, { "stick_split", c.stick_split },
                    { "steer_dead_deg", c.steer_dead_deg }, { "steer_full_deg", c.steer_full_deg },
                    { "steer_curve", c.steer_curve }, { "rate_assist", c.rate_assist },
-                   { "pitch_gain", c.pitch_gain }, { "pitch_min", c.pitch_min } };
+                   { "pitch_gain", c.pitch_gain }, { "pitch_min", c.pitch_min }, { "thumb_bridge", c.thumb_bridge } };
         json layout = json::object();
         for (const auto& [id, p] : c.layout) {
             layout[id] = { { "x", p.cx }, { "y", p.cy }, { "scale", p.scale } };

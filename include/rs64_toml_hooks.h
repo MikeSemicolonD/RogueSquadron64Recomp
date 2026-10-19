@@ -132,6 +132,7 @@ void rs64_th_npcPowerUpUpdate_800EBD34(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_applyDatObjectiveTriggerEffect_80065980(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E10C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_mainGameLoop_8003E114(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_findManifestEntryByName_8000496C(uint8_t* rdram, recomp_context* ctx);
 
 #ifdef __cplusplus
