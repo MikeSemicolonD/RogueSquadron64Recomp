@@ -405,8 +405,8 @@
           <div class="insRow" id="insTools" role="group" aria-label="Pose tool"><button data-ctool="translate" data-icon="move" title="Move (W)"></button><button data-ctool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-ctool="scale" data-icon="scale" title="Scale (R)"></button><button id="cutCamView" data-icon="eye" title="Snapshot from view (V): a camera takes the free view (untick Camera and fly there first), field of view included; an actor goes ahead of the view. Snapshots at different times curve into a path"></button><button id="cutSpace" title="Local axes: the actor's own frame. Click or press X for global axes">Local</button></div>
           <div class="insRow">
             <label id="insModel">Model <select id="cutModel" title="Model of the picked actor (from the game's cutscene model table)"><option value="">Model…</option></select></label>
-            <button id="cutDelActor" data-icon="delete" title="Remove the picked actor, its children and the events that name it"></button>
-            <button id="cutDelCam" data-icon="delete" title="Remove the picked camera and its cuts (the last camera stays)"></button>
+            <button id="cutDelActor" data-icon="delete" title="Remove the picked actor, its children and the events that name it (Delete key)"></button>
+            <button id="cutDelCam" data-icon="delete" title="Remove the picked camera and its cuts (Delete key; the last camera stays)"></button>
           </div>
           <div class="insRow" id="insMode"><label>Mode <select id="cutMode" title="Over the shot under the playhead: follow an actor at the camera's current offset, aim at it from where the camera is, or ride inside it (the actor hides)"><option value="">None</option><option value="follow">Follow</option><option value="aim">Aim</option><option value="ride">Ride</option></select></label><select id="cutModeActor" title="The actor the mode works from"></select></div>
           <div class="insRow" id="insShoot"><select id="cutShoot" title="Shoot at: the actor turns to the target, fires at the playhead, and the target blows up when the bolt arrives"></select></div>
@@ -6278,6 +6278,8 @@ function syncCutEditUi() {
 // position, 3 scale input, 4-6 axis, 7 angle, 8-10 pivot. Its keys show on the Keys row: click one to select it (and its values), drag
 // to retime it, Delete removes it (never the first, at time 0).
 let cutTrack = null, cutSelKey = null;
+// Backspace too: Mac keyboards have no Delete key.
+const DELETE_KEYS = new Set(['Delete', 'Backspace']);
 const cutTrackChannels = (f, tr) => (tr.cam != null ? f.cameras[tr.cam] : f.actors[tr.actor].ch);
 const CUT_DIVS = { cam: [8, 8, 8, 2.5, 2.5, 2.5, 2.5, 8], actor: [6, 6, 6, 6, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5] };
 const CUT_CH_NAMES = { cam: ['x', 'y', 'z', 'axis x', 'axis y', 'axis z', 'angle', 'FOV'], actor: ['x', 'y', 'z', 'scale', 'axis x', 'axis y', 'axis z', 'angle', 'pivot x', 'pivot y', 'pivot z'] };
@@ -6562,7 +6564,10 @@ addEventListener('keydown', async (e) => {
   if (mode && (mode !== 'scale' || cutTrack.cam == null)) setCutTool(mode);
   else if (e.code === 'KeyX') setCutSpace(cutSpaceMode === 'local' ? 'world' : 'local');
   else if (e.code === 'KeyV' && !cutTrack.holder) await snapFromView();
-  else if (e.key === 'Delete' && cutSelKey != null && (cutSelKey || cutSnaps(cutTrack).length) && cutSelEvent == null) await deleteSelKey();
+  else if (!DELETE_KEYS.has(e.key) || cutSelEvent != null) return;
+  // Delete removes the selected key or snapshot, or else the picked actor or camera (undo brings it back).
+  else if (cutSelKey != null) (cutSelKey || cutSnaps(cutTrack).length) && (await deleteSelKey());
+  else if (!cutTrack.holder) $(cutTrack.cam != null ? 'cutDelCam' : 'cutDelActor').click();
 });
 // Ctrl+C copies the selected event, or else the picked camera's or actor's pose at the playhead; Ctrl+V pastes the event at the playhead
 // (onto the picked actor when it names one) or keys the pose onto the picked track of the same kind.
@@ -7589,7 +7594,7 @@ function editKey(e) {
   if (editMode !== 'objects' && editMode !== 'events') return false;
   if (TOOL_KEYS[e.code] && !rmbHeld && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(TOOL_KEYS[e.code]);
   else if (e.code === 'KeyX' && !e.ctrlKey && !e.metaKey) setEditSpace(editSpace === 'world' ? 'local' : 'world');
-  else if (e.code === 'Delete' && sel?.it.type === 0 && editMode === 'objects') deleteItem(sel.it);
+  else if (DELETE_KEYS.has(e.key) && sel?.it.type === 0 && editMode === 'objects') deleteItem(sel.it);
   else if (e.code === 'KeyD' && (e.ctrlKey || e.metaKey) && sel && !sel.fixed && !sel.it.pathEvent) {
     e.preventDefault();
     addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
