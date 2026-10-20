@@ -33,6 +33,8 @@
   .histRow { display: flex; gap: 8px; }
   .histRow > button { flex: 1; display: inline-flex; align-items: center; justify-content: center; min-height: 28px; }
   .histRow > #btnPlay { flex: 0 0 40px; }
+  #btnMod { gap: 6px; }
+  #btnMod svg, #btnPlay svg { width: 16px; height: 16px; }
   #playStatus { font-size: 11px; color: var(--muted, #9aa3b5); overflow-wrap: anywhere; }
   #playStatus code { user-select: all; }
   #editBody .pair > * { flex: 1; }
@@ -290,7 +292,7 @@
     <label class="mdl" title="For the import above: on when the .glb nose points along +Z (the usual glTF export) so it is turned to the game&apos;s -Z; off when it already faces -Z"><input type="checkbox" id="importPlusZ" checked> Imported nose points +Z</label>
     <hr class="divider mdl">
     <div class="histRow"><button id="btnOpen" data-icon="open" title="Open project (.rs64proj): your saved edits and their undo history"></button><button id="btnSave" data-icon="save" title="Save project (Ctrl+S): every edit and the undo history, as patches against your ROM (no game data), to reopen later or share"></button><button id="btnUndo" data-icon="undo" disabled title="Undo (Ctrl+Z)"></button><button id="btnRedo" data-icon="redo" disabled title="Redo (Ctrl+Y or Ctrl+Shift+Z)"></button></div>
-    <div class="histRow"><button id="btnMod" disabled title="Saves your edits as a mod folder (zip): BPS patches against the original assets, so it holds no game data. Extract it into the game's mods folder">Export mod</button><button id="btnPlay" data-icon="play" disabled title="Play in game: writes your edits as the rs64-explorer-preview mod into the game's folder (asked once) and copies a command that starts the game at what is open here"></button></div>
+    <div class="histRow"><button id="btnMod" data-icon="modExport" disabled title="Saves your edits as a mod folder (zip): BPS patches against the original assets, so it holds no game data. Extract it into the game's mods folder"></button><button id="btnPlay" data-icon="modPlay" disabled title="Play in game: writes your edits as the rs64-explorer-preview mod into the game's folder (asked once) and copies a command that starts the game at what is open here"></button></div>
     <div id="playStatus" hidden></div>
   </div>
 </aside>
@@ -3947,7 +3949,7 @@ function updateModButton() {
   const n = modDirty().length;
   $('btnMod').disabled = !n;
   $('btnPlay').disabled = !rom;
-  $('btnMod').textContent = n ? `Export mod (${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
+  $('btnModLabel').textContent = n ? `Export mod (${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
   $('btnUndo').disabled = !history.at;
   $('btnRedo').disabled = history.at >= history.steps.length;
 }
@@ -7181,17 +7183,22 @@ const EDIT_ICONS = {
   undo: { stroke: 'M5.5 3.5L2.5 6.5l3 3M2.8 6.5h6.7a4 4 0 0 1 0 8H7' },
   redo: { stroke: 'M10.5 3.5l3 3-3 3M13.2 6.5H6.5a4 4 0 0 0 0 8H9' },
   play: 'M4 2l10 6-10 6z',
+  // The mod package: a box with a play badge (play in game) or an arrow out of it (export).
+  modPlay: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M10 9l6 3.5-6 3.5z' },
+  modExport: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M12 8h1.6v3.6h1.9L12.8 15.5 10.1 11.6H12z' },
   blank: { stroke: 'M3 1.5h6.5l3.5 3.5v9.5H3zM9.5 1.5V5H13' },
   eye: { stroke: 'M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z' },
 };
 // An icon is a filled path, or { stroke } for line drawings (rotate, scale).
 function setEditIcon(b, name) {
   const i = EDIT_ICONS[name];
-  b.innerHTML = i.stroke ? `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="${i.stroke}"/></svg>` : svgIcon(i);
+  b.innerHTML = i.stroke ? `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="${i.stroke}"/>${i.fill ? `<path fill="currentColor" d="${i.fill}"/>` : ''}</svg>` : svgIcon(i);
   b.setAttribute('aria-label', b.title);
 }
 for (const b of $('editPanel').querySelectorAll('[data-icon]')) setEditIcon(b, b.dataset.icon);
 for (const b of document.querySelectorAll('.histRow [data-icon], #cutEdit, #cutInspector [data-icon]')) setEditIcon(b, b.dataset.icon);
+$('btnMod').append(Object.assign(document.createElement('span'), { id: 'btnModLabel', textContent: 'Export mod' }));
+$('btnMod').removeAttribute('aria-label');
 $('btnOpen').onclick = openProject;
 $('btnSave').onclick = saveProject;
 $('btnUndo').onclick = undoEdit;
