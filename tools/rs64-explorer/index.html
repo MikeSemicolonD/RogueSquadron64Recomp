@@ -3676,6 +3676,7 @@ async function openFile(file) {
     edits.clear();
     dirty.clear();
     history = createHistory();
+    savedStep = null;
     updateModButton();
     objectHome = null;
     if (rom.assets.has('data/voice_TXT')) voiceLine = parseVoiceLines(romBytes, await rom.read('data/voice_TXT'));
@@ -3743,11 +3744,17 @@ const setMode = (m) => {
   if (m !== 'audio') stopAudio();
   renderList();
 };
-$('tabAudio').onclick = () => setMode('audio');
+// Leaving a tab with edits not yet in a project file offers to save them first (they stay in this session either way).
+const switchMode = async (m) => {
+  if (m !== mode && unsavedEdits() && confirm('You have edits not saved in a project file. Save the project first?')) await saveProject();
+  setMode(m);
+};
+$('tabAudio').onclick = () => switchMode('audio');
 $('audCat').onchange = $('audLevel').onchange = renderList;
-$('tabModels').onclick = () => setMode('models');
-$('tabLevels').onclick = () => setMode('levels');
-$('tabEffects').onclick = () => setMode('effects');
+$('tabModels').onclick = () => switchMode('models');
+$('tabLevels').onclick = () => switchMode('levels');
+$('tabEffects').onclick = () => switchMode('effects');
+addEventListener('beforeunload', (e) => unsavedEdits() && e.preventDefault());
 $('optFxFps').oninput = () => ($('fxFpsVal').textContent = $('optFxFps').value);
 $('optFxAdd').onchange = refresh;
 $('optFxBg').oninput = () => {
@@ -3999,6 +4006,9 @@ async function refreshView() {
 }
 // ---- Project files: every edit plus the undo history, as patches against the ROM's assets (projectWrite / projectRead) ----
 let romCrc = 0, projectHandle = null;
+// The history step the last save or open left us at; any other step means unsaved edits.
+let savedStep = null;
+const unsavedEdits = () => (history.steps[history.at - 1] ?? null) !== savedStep;
 async function saveProject() {
   if (!rom) return;
   const current = new Map();
@@ -4013,6 +4023,7 @@ async function saveProject() {
       const w = await projectHandle.createWritable();
       await w.write(blob);
       await w.close();
+      savedStep = history.steps[history.at - 1] ?? null;
       return;
     } catch (e) {
       if (e.name === 'AbortError') return;
@@ -4020,6 +4031,7 @@ async function saveProject() {
     }
   }
   saveBlob(blob, 'my-rs64-project.rs64proj');
+  savedStep = history.steps[history.at - 1] ?? null;
 }
 async function openProject() {
   if (!rom) return;
@@ -4059,6 +4071,7 @@ async function openProject() {
     markDirty(p, now);
   }
   history = loaded.history;
+  savedStep = history.steps[history.at - 1] ?? null;
   projectHandle = handle;
   updateModButton();
   await refreshView();
@@ -6998,7 +7011,7 @@ $('cutAddKind').onchange = async () => {
   if (await editCutFile('Add ' + (TL_KIND[type] ?? 'event'), (f) => (at = cutAddEvent(f, { type, frame, p: like ? [...like.p] : [0, 0, 0, 0] })))) selectCutEvent(at);
 };
 addEventListener('keydown', async (e) => {
-  if (e.key !== 'Delete' || !cutEditing || cutSelEvent == null || !cut?.file || e.target.closest?.('input,select,textarea')) return;
+  if (!DELETE_KEYS.has(e.key) || !cutEditing || cutSelEvent == null || !cut?.file || e.target.closest?.('input,select,textarea')) return;
   const i = cutSelEvent;
   selectCutEvent(null);
   await editCutFile('Delete ' + (TL_KIND[cut.file.events[i]?.type] ?? 'event'), (f) => cutRemoveEvent(f, i));
