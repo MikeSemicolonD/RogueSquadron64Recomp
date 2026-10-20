@@ -26,10 +26,10 @@ if (-not (Test-Path $Binary)) {
 $logDir = Join-Path (Get-Location) "logs\stability\$Tag"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
-# Apply env vars (semicolon-delimited NAME=VALUE pairs)
+# Apply env vars (semicolon-delimited NAME=VALUE pairs); the outcome classifier reads the heartbeat lines, which Release builds omit by default.
 $savedEnv = @{}
-if ($EnvVars) {
-    foreach ($kv in $EnvVars.Split(';')) {
+foreach ($kv in ("ROGUESQ_LOG_HEARTBEAT=1;" + $EnvVars).Split(';')) {
+    if ($kv) {
         if ($kv -match '^([^=]+)=(.*)$') {
             $name = $Matches[1]
             $val  = $Matches[2]

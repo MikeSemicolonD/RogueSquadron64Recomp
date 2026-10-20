@@ -29,6 +29,8 @@ namespace rs64::touch {
         float rate_assist = 0.3f;       // steering: stick added per rad/s of roll motion, so corrections answer at once
         float pitch_gain = 0.8f;        // up/down (mouse-like): stick per rad/s of pitch motion
         float pitch_min = 0.08f;        // up/down: smallest output once moving, to clear the game's stick dead zone
+        // Screen heights: buttons whose edges are this close form a pair; a touch on the line between them presses both.
+        float thumb_bridge = 0.05f;
         bool debug_hitboxes = false;
         std::map<std::string, Placement> layout;   // flight button id -> placement; missing ids keep their default
         float stick_split = 0.5f;                  // flight: touches left of this window x drive the stick
@@ -83,6 +85,8 @@ namespace rs64::touch {
         void set_menu_hover(MenuHoverFn fn);
         // Queues a host-driven press lasting `polls` game polls, after any pending presses.
         void inject(uint16_t buttons, float x, float y, int polls, int gap = 1);
+        // A finger tap's per-context menu action at (x, y); also used for mouse clicks, so it works with touch disabled.
+        void tap(Context ctx, float x, float y);
         Pad poll(Context ctx, uint32_t ms);
         bool active() const;
         OverlayState draw_state(Context ctx) const;
@@ -114,10 +118,11 @@ namespace rs64::touch {
         struct Pulse { uint16_t buttons; float x, y; int polls; int delay; };
 
         std::vector<ButtonDef> layout(Context ctx) const;
-        bool hit_button(Context ctx, float x, float y, uint16_t* mask) const;
+        bool hit_button(Context ctx, float x, float y, uint16_t* mask, bool all) const;
         float dist(float dx, float dy) const;
         void queue(uint16_t buttons, float x, float y, int polls = 3, int gap = 2);
         void apply_tap_action(TapAction a);
+        void drain_pulses(Pad* p);
 
         Config cfg_;
         float aspect_ = 16.0f / 9.0f;

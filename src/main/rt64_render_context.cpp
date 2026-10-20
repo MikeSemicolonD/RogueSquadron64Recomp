@@ -84,13 +84,9 @@ static std::atomic<RT64::Application*> g_rt64_app{nullptr};
 // capture so the cursor is free for the inspector.
 extern "C" int rs64_rt64_inspector_open(void) {
     RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
-    if (!app || !app->presentQueue) return 0;
-    // Only the developer-mode F1 inspector counts. Outside developer mode the
-    // inspector object still exists to host our own ImGui render hook (the
-    // Controls window), but the F1 developer UI can't be opened, so that object
-    // being non-null must not suppress capture.
-    if (!app->userConfig.developerMode) return 0;
-    return app->presentQueue->inspector != nullptr ? 1 : 0;
+    if (!app) return 0;
+    // The inspector object always exists to host the Controls window, so only the F1 visibility counts.
+    return (app->userConfig.developerMode && app->inspectorVisible) ? 1 : 0;
 }
 
 extern "C" void rs64_render_suspend_surface(void) {
@@ -144,6 +140,14 @@ extern "C" float rs64_cull_widen(void) {
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
 }
 
+// Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
+extern "C" float rs64_res_scale(void) {
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+    if (!app || !app->presentQueue) return 1.0f;
+    const float y = float(app->presentQueue->ext.sharedResources->resolutionScale.y);
+    return (y >= 1.0f) ? y : 1.0f;
+}
+
 #ifdef _WIN32
 // Symbolizes on the faulting thread inside the filter; capped to bound loader-lock exposure.
 static int hle_seh_filter(EXCEPTION_POINTERS* ep) {
@@ -162,6 +166,20 @@ static int hle_seh_filter(EXCEPTION_POINTERS* ep) {
     return EXCEPTION_EXECUTE_HANDLER;
 }
 #endif
+
+// /proc/cpuinfo rather than the device tree: Flatpak hides /sys.
+static bool is_raspberry_pi() {
+#ifdef __linux__
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    std::string line;
+    while (std::getline(cpuinfo, line)) {
+        if (line.rfind("Model", 0) == 0) {
+            return line.find("Raspberry Pi") != std::string::npos;
+        }
+    }
+#endif
+    return false;
+}
 
 static uint8_t DMEM[0x1000];
 static uint8_t IMEM[0x1000];
@@ -259,6 +277,9 @@ public:
         RT64::ApplicationConfiguration appConfig;
         appConfig.useConfigurationFile = false;
         appConfig.detectDataPath = false;
+        appConfig.shaderComboList =
+#include "rs64_shader_combos.inl"
+            ;
 
         app = std::make_unique<RT64::Application>(appCore, appConfig);
         // F1 inspector: default on in Debug, off in Release. ROGUESQ_HLE_DEV_MODE=0/1 overrides.
@@ -277,15 +298,15 @@ public:
         // ROGUESQ_RT_INTERP=<hz> re-enables it; the majority-vote pacing + node-id paths stay behind it.
         app->userConfig.refreshRate = UC::RefreshRate::Original;
         app->userConfig.refreshRateTarget = 60;
+        // A Raspberry Pi's GPU can't keep up above the N64's own resolution, and RT64's framebuffer write-back costs it about half its frame time.
+        if (is_raspberry_pi()) {
+            app->userConfig.resolution = UC::Resolution::Original;
+            rs64::video::set_framebuffer_writeback(false);
+        }
 
-        // roguesq_video.json next to the exe (same convention as roguesq_input.json): present keys
-        // override the baseline above; a default file is written on first run so every RT64 display
-        // setting is discoverable/editable. RT64's to_json/from_json handle the enums as strings.
-        // The ROGUESQ_* env vars below still override the file (dev/testing escape hatch).
+        // roguesq_video.json in the working directory overrides the baseline above (a default is written on first run); the ROGUESQ_* env vars below override the file.
         {
-            std::string cfgPath;
-            if (char* base = SDL_GetBasePath()) { cfgPath = base; SDL_free(base); }
-            cfgPath += "roguesq_video.json";
+            std::string cfgPath = "roguesq_video.json";
             video_cfg_path_ = cfgPath;                           // enables F1-menu save-back
             rs64::video::LoadResult lr = rs64::video::load(app->userConfig, cfgPath);
             if (lr.loaded) {
@@ -326,6 +347,11 @@ public:
             {
                 int d = env_int("ROGUESQ_SSAA");
                 if (d >= 1) { app->userConfig.downsampleMultiplier = d; fprintf(stderr, "[RT64] downsample=%d\n", d); }
+            }
+            // ROGUESQ_FXAA=0|1: FXAA on the presented image.
+            if (const char* v = env_str("ROGUESQ_FXAA")) {
+                app->userConfig.fxaa = (v[0] != '0');
+                fprintf(stderr, "[RT64] fxaa=%d\n", app->userConfig.fxaa ? 1 : 0);
             }
             // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1 expands to the window.
             if (const char* v = env_str("ROGUESQ_ASPECT")) {
@@ -389,7 +415,7 @@ public:
         // Zelda64Recomp's enhancement settings; without them glyph texrects sample stale TMEM.
         app->enhancementConfig.f3dex.forceBranch = true;
         app->enhancementConfig.textureLOD.scale = true;
-        // ROGUESQ_GFX_API=vulkan|d3d12 forces the backend (default Automatic).
+        // ROGUESQ_GFX_API=vulkan|d3d12|d3d11|d3d10 forces the backend (default Automatic).
         if (const char* api = env_str("ROGUESQ_GFX_API")) {
             if (std::string_view(api) == "vulkan") {
                 app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan;
@@ -397,8 +423,19 @@ public:
             } else if (std::string_view(api) == "d3d12") {
                 app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D12;
                 fprintf(stderr, "[RT64] graphics API forced to D3D12 via ROGUESQ_GFX_API\n");
+            } else if ((std::string_view(api) == "d3d11") || (std::string_view(api) == "d3d10")) {
+                app->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D11;
+                rs64::video::set_d3d10(std::string_view(api) == "d3d10");
+                fprintf(stderr, "[RT64] graphics API forced to %s via ROGUESQ_GFX_API\n", rs64::video::d3d10() ? "D3D10" : "D3D11");
             }
         }
+
+#ifdef _WIN32
+        // D3D10 is the D3D11 backend on a device capped at feature level 10; an explicit PLUME_D3D11_FEATURE_LEVEL wins.
+        if ((app->userConfig.graphicsAPI == RT64::UserConfiguration::GraphicsAPI::D3D11) && rs64::video::d3d10() && (env_str("PLUME_D3D11_FEATURE_LEVEL") == nullptr)) {
+            _putenv_s("PLUME_D3D11_FEATURE_LEVEL", "10_0");
+        }
+#endif
 
         // Snapshot the resolved config; update_screen rewrites roguesq_video.json when the F1 menu edits it.
         try { video_cfg_snapshot_ = rs64::video::to_friendly(app->userConfig).dump(); } catch (...) {}
@@ -787,6 +824,7 @@ private:
 
     // First 8 tasks, every 64th, and every ucode change.
     void log_task(const OSTask* task) {
+        if (!recomp::dbg::log_heartbeat()) return;
         static int s_count = 0;
         static uint32_t s_last_ucode = 0, s_last_data = 0;
         int n = ++s_count;
@@ -869,6 +907,10 @@ private:
         const auto pdl0 = std::chrono::high_resolution_clock::now();
         app->state->RDRAM = parseMem;
         app->state->writeBackRDRAM = (parseMem != app->core.RDRAM) ? app->core.RDRAM : nullptr;
+        app->emulatorConfig.framebuffer.writeBack = rs64::video::framebuffer_writeback();
+        // ROGUESQ_FB_COPY_GPU=0: textures read from a known framebuffer come from RDRAM instead of RT64's GPU render-target copy (A/B for fb-as-texture alignment).
+        static const bool s_fb_copy_gpu = env_on("ROGUESQ_FB_COPY_GPU", true);
+        app->emulatorConfig.framebuffer.copyWithGPU = s_fb_copy_gpu;
         app->processDisplayLists(parseMem, task->t.data_ptr & 0x3FFFFFF, 0, /*isHLE*/ true);
         app->state->RDRAM = app->core.RDRAM;
         app->state->writeBackRDRAM = nullptr;
@@ -880,7 +922,7 @@ private:
 
         static int s_n = 0;
         int n = ++s_n;
-        if ((n <= 8 || (n & 63) == 0) && app->workloadQueue) {
+        if (recomp::dbg::log_heartbeat() && (n <= 8 || (n & 63) == 0) && app->workloadQueue) {
             auto& q = *app->workloadQueue;
             const size_t wc = q.writeCursor;
             const size_t prev = (wc + q.workloads.size() - 1) % q.workloads.size();
@@ -1081,7 +1123,7 @@ private:
     // and press START (the game's own title skip) once the cinematic overlay is up, stopping when
     // the menu overlay is resident. level:<id> launches from the game thread (rs64_boot_target_level
     // in upstream_compat.cpp), so it gets the fast-forward only.
-    // ROGUESQ_CINE_FASTFWD=N adds N VI ticks per present to the cinematic clock (0x8011A890) until
+    // ROGUESQ_CINE_FASTFWD=N adds N per present to the submitted-frame counter the cinematic times from (0x8011A890) until
     // the cutscene's end frame, so the timeline completes through the game's own logic.
     // ROGUESQ_SKIP_DEMO=<n> (alias ROGUESQ_SKIP_TO_JADEMOON=1 for n=1) pins the attract demoId
     // (0x80130B54) and its cycle byte so that demo loops. 0=Tatooine 1=JadeMoon 2=KileII
@@ -1341,6 +1383,19 @@ private:
     // First 4 presents and every 64th: VI regs, queue cursors, and whether the scanout buffer
     // has any pixel data.
     void log_vi_state() {
+        // ROGUESQ_LOG_VI_CHANGES=1: the VI registers as presented (after the menu fix) whenever any of them changes.
+        static const bool s_vi_changes = env_on("ROGUESQ_LOG_VI_CHANGES");
+        if (s_vi_changes) {
+            const ultramodern::renderer::ViRegs* v = ultramodern::renderer::get_vi_regs();
+            static uint32_t s_prev[7] = {};
+            const uint32_t cur[7] = { v->VI_ORIGIN_REG, v->VI_WIDTH_REG, v->VI_X_SCALE_REG, v->VI_Y_SCALE_REG, v->VI_H_START_REG, v->VI_V_START_REG, v->VI_STATUS_REG };
+            if (std::memcmp(cur, s_prev, sizeof(cur)) != 0) {
+                std::memcpy(s_prev, cur, sizeof(cur));
+                fprintf(stderr, "[vi-change] #%d origin=%08X width=%u xscale=%X yscale=%X hstart=%X vstart=%X status=%X drawn=%06X dw=%u\n",
+                        vi_count_, cur[0], cur[1], cur[2], cur[3], cur[4], cur[5], cur[6], (unsigned)g_most_drawn_fb, (unsigned)g_most_drawn_fb_width);
+            }
+        }
+        if (!recomp::dbg::log_heartbeat()) return;
         static bool s_filter_logged = false;
         if (!s_filter_logged && app->appWindow && app->appWindow->sdlEventFilterInstalled) {
             fprintf(stderr, "[RT64] sdlEventFilter NOW installed at update_screen #%d (sdlWindow=%p)\n",
@@ -1356,8 +1411,8 @@ private:
             for (int i = 0; i < 16; i++) any_nonzero |= app->core.RDRAM[origin + i];
         }
         fprintf(stderr,
-            "[vi] update_screen #%d origin=0x%08X width=%u status=0x%X v_current=%u nonzero=%d pq.wc=%d wq.wc=%d drawn=0x%08X dw=%u\n",
-            vi_count_, vi->VI_ORIGIN_REG, vi->VI_WIDTH_REG, vi->VI_STATUS_REG, vi->VI_V_CURRENT_LINE_REG,
+            "[vi] update_screen #%d origin=0x%08X width=%u status=0x%X xscale=0x%X yscale=0x%X v_current=%u nonzero=%d pq.wc=%d wq.wc=%d drawn=0x%08X dw=%u\n",
+            vi_count_, vi->VI_ORIGIN_REG, vi->VI_WIDTH_REG, vi->VI_STATUS_REG, vi->VI_X_SCALE_REG, vi->VI_Y_SCALE_REG, vi->VI_V_CURRENT_LINE_REG,
             any_nonzero != 0, present_cursor(), workload_cursor(),
             (unsigned)g_most_drawn_fb, (unsigned)g_most_drawn_fb_width);
         fflush(stderr);

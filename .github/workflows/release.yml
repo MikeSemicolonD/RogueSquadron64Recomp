@@ -65,8 +65,8 @@ jobs:
       - name: Package
         run: |
           ver="${GITHUB_REF_NAME//\//-}"
-          bash tools/package-linux.sh "$PWD/rs64-linux-x64-$ver.tar.gz" "$PWD/build"
-          echo "PKG=rs64-linux-x64-$ver.tar.gz" >> "$GITHUB_ENV"
+          bash tools/package-linux.sh "$PWD/rs64-linux-x64-$ver.tar.xz" "$PWD/build"
+          echo "PKG=rs64-linux-x64-$ver.tar.xz" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -141,6 +141,13 @@ jobs:
           cmake --build build --config Release --target rs64_unit_tests
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      # D3D11 has no ubershader, so every known shader combination ships precompiled (WARP is enough; no ROM needed).
+      - name: D3D11 shader cache
+        run: |
+          $env:PLUME_D3D11_SHADER_CACHE = "build/dist/d3d11_shader_cache"
+          build/dist/RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Package
         run: |
           $ver = $env:GITHUB_REF_NAME -replace '/', '-'
@@ -153,6 +160,38 @@ jobs:
         with:
           name: windows-x64
           path: ${{ env.PKG }}
+          retention-days: 3
+          if-no-files-found: error
+
+      # 32-bit build from the same RecompiledFuncs, N64Recomp and code mods.
+      - name: Build game (x86)
+        run: |
+          cmake -S . -B build-x86 -G "Visual Studio 17 2022" -A Win32 -T ClangCL `
+            "-DN64RECOMP_EXE=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe" `
+            "-DMIPS_TOOLCHAIN_DIR=$env:MIPS_DIR"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          cmake --build build-x86 --config Release --target RogueSquadron64Recomp
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (-not (Test-Path build-x86/dist/mods/multiplayer-native/multiplayer_native.dll)) { Write-Host "::error::multiplayer-native not staged (x86)"; exit 1 }
+
+      - name: Unit tests (x86)
+        run: |
+          cmake --build build-x86 --config Release --target rs64_unit_tests
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Package (x86)
+        run: |
+          $ver = $env:GITHUB_REF_NAME -replace '/', '-'
+          $pkg = "rs64-windows-x86-$ver.zip"
+          Copy-Item ci/release-readme.txt build-x86/dist/README.txt
+          Copy-Item -Recurse build/dist/d3d11_shader_cache build-x86/dist/
+          Compress-Archive -Path build-x86/dist/* -DestinationPath $pkg -Force
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_X86=$pkg" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86
+          path: ${{ env.PKG_X86 }}
           retention-days: 3
           if-no-files-found: error
 

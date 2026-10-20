@@ -296,6 +296,8 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
                     [] { rs64::touch::set_gyro_enabled(!rs64::touch::gyro_enabled()); } } },
         { "cutscene_draw_distance", { [] { return rs64::video::keep_cutscene_draw_distance(); },
                                       [] { rs64::video::set_keep_cutscene_draw_distance(!rs64::video::keep_cutscene_draw_distance()); } } },
+        { "framebuffer_writeback", { [] { return rs64::video::framebuffer_writeback(); },
+                                     [] { rs64::video::set_framebuffer_writeback(!rs64::video::framebuffer_writeback()); } } },
         { "rt_lights", rt_toggle(rs64lights::Feature::Lights) },
         { "rt_shadows", rt_toggle(rs64lights::Feature::Shadows) },
         { "rt_soft_shadows", rt_toggle(rs64lights::Feature::SoftShadows) },
@@ -520,6 +522,9 @@ struct SlotBinding {
     // Live label: the entry points at its own RDRAM buffer (never an alloc_str cache entry, which other labels share).
     std::string label_src, live_text;
     uint32_t live_buf = 0;
+    // Text slider bar layout, for click-to-position.
+    std::string bar_label, bar_filled, bar_empty;
+    int bar_width = 10;
 };
 SlotBinding s_slot[MAX_ENTRIES];
 // The current page's line per selectable slot (-1: not selectable); set only when the page has a shared row.
@@ -640,6 +645,40 @@ int slider_next(int value, int vmin, int vmax, int step) {
     if (v > vmax) v = vmin;
     if (v < vmin) v = vmin;
     return v;
+}
+
+void set_bar_layout(SlotBinding* s, const Button& b) {
+    s->bar_label = b.label;
+    s->bar_width = b.bar_width;
+    s->bar_filled = b.bar_filled;
+    s->bar_empty = b.bar_empty;
+}
+
+// Value for a click at fraction f across a text slider's "LABEL |||..." line; -1 when the click is on the label text.
+// Measured at the minimum value: exact when the filled and empty glyph strings have the same length (the defaults do).
+int slider_value_at_click(const std::string& label, int vmin, int vmax, int step, int width,
+                          const std::string& fch, const std::string& ech, float f) {
+    const std::string text = slider_bar_text(label, vmin, vmin, vmax, width, fch, ech);
+    const float start = label.empty() ? 0.0f : (float)label.size() + 0.5f;
+    const float pos = f * (float)text.size();
+    if (pos < start || (float)text.size() <= start || vmax <= vmin) return -1;
+    const float t = std::clamp((pos - start) / ((float)text.size() - start), 0.0f, 1.0f);
+    const int q = step > 0 ? step : 1;
+    const int v = vmin + (int)std::lround(t * (float)(vmax - vmin) / (float)q) * q;
+    return std::clamp(v, vmin, vmax);
+}
+
+// Last tap/click on a menu entry (rs64_menu_slider_click); consumed by the next slider confirm.
+std::atomic<int> s_click_key{-1};
+std::atomic<float> s_click_frac{0.0f};
+std::atomic<uint32_t> s_click_ms{0};
+
+int confirmed_slider_value(int key, int value, int vmin, int vmax, int step, const std::string& label, int width,
+                           const std::string& fch, const std::string& ech) {
+    const float f = s_click_frac.load();
+    const bool fresh = SDL_GetTicks() - s_click_ms.load() < 1000;
+    const int v = (s_click_key.exchange(-1) == key && fresh) ? slider_value_at_click(label, vmin, vmax, step, width, fch, ech, f) : -1;
+    return v >= 0 ? v : slider_next(value, vmin, vmax, step);
 }
 
 // One item in a menu's merged entry list (native or synthesized mod button).
@@ -775,6 +814,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id) {
         Item it; it.order = ord; it.slot = s; it.is_native = false; it.is_spacer = false;
         it.binding = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                        b.smin, b.smax, b.sstep, b.label_on, b.label_off };
+        set_bar_layout(&it.binding, b);
         if (b.transition == "account") {
             it.binding.pilot_page = b.page;
             it.binding.exit_when = b.exit_when;
@@ -951,6 +991,7 @@ void build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent) {
         gap += b.gap_after;
         s_slot[j] = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                       b.smin, b.smax, b.sstep, b.label_on, b.label_off };
+        set_bar_layout(&s_slot[j], b);
         if (live) {
             s_slot[j].label_src = b.label_src;
             s_slot[j].live_text = text;
@@ -1046,7 +1087,8 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram) {
         // them; reload toggles ride the sub-type-1 self-target. Either way, just flip.
     } else if (b.type == BType::Slider) {
         int v = slider_value(rdram, b.key, b.toggle_get_fn);
-        slider_apply(rdram, b.key, b.toggle_set_fn, slider_next(v, b.smin, b.smax, b.sstep));
+        slider_apply(rdram, b.key, b.toggle_set_fn, confirmed_slider_value(e, v, b.smin, b.smax, b.sstep, b.bar_label,
+                                                                           b.bar_width, b.bar_filled, b.bar_empty));
     } else if (!b.confirm.empty()) {
         s_confirm_state = ConfirmState::Pending;
         s_confirm_action = b.key;
@@ -1171,10 +1213,59 @@ extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx) {
 // updateMenuPerFrame syncs the byte to the mod @export.
 
 // Redirect the channel index for a mod slider (hook: 0x800b5920, sp = ctx->r29).
+// menuControllerInput's state dispatch (0x800B4E64), every pass of the menu loop: state = $s6, 0x11 while a Sound Settings volume bar is being edited.
+static std::atomic<bool> s_slider_editing{false};
+// Hover moved a highlight (touch/mouse, any thread): 1 front end, 2 pause. The game thread plays the game's own cursor sound.
+static std::atomic<int> s_hover_sound{0};
+
+extern "C" void rs64_menu_hover_sound(int pause) {
+    s_hover_sound.store(pause ? 2 : 1);
+}
+
+static bool take_hover_sound(int kind) {
+    int want = kind;
+    return s_hover_sound.compare_exchange_strong(want, 0);
+}
+
+extern "C" void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx) {
+    s_slider_editing.store(ctx->r22 == 0x11 && rd_b(rdram, GCMD_OFF + 0x04) == MENU_SOUND_SETTINGS);
+    // As menuControllerInput does on a move (0x800B5108): sfx 0x17, then restart the highlight pulse.
+    if (take_hover_sound(1)) {
+        rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, { 0x17, 0x7F, 0x40 });
+        wr_w(rdram, GCMD_OFF + 0x9C, 0);
+        wr_w(rdram, GCMD_OFF + 0xA0, rd_w(rdram, 0x800A66F0u - 0x80000000u));
+    }
+}
+
+// Pause HUD frame entry: the pause menu's move sound (0x800C28F0, quieter than the front end's).
+extern "C" void rs64_pause_hover_sound(uint8_t* rdram, recomp_context* ctx) {
+    if (take_hover_sound(2)) {
+        rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, { 0x17, 0x5F, 0x40 });
+    }
+}
+
+extern "C" int rs64_menu_slider_editing(void) {
+    return s_slider_editing.load() ? 1 : 0;
+}
+
 extern "C" void rs64_slider_redirect(uint8_t* rdram, uint32_t sp) {
     if (rd_b(rdram, GCMD_OFF + 0x04) != MENU_SOUND_SETTINGS || sp < 0x80000000u) return;
     const SndSlider* ss = snd_slider_for_slot(rd_b(rdram, GCMD_OFF + 0x94));
     if (ss) wr_b(rdram, (sp - 0x80000000u) + 0xEF, (uint8_t)ss->channel);
+}
+
+// A tap/click at fraction f across a front-end entry's text (key = slot) or a pause line (key = record nextMenu); if that entry is a text
+// slider and the point is on its bar, its next confirm sets the value there instead of stepping. Any thread.
+extern "C" void rs64_menu_slider_click(int key, float f) {
+    s_click_frac.store(f);
+    s_click_ms.store(SDL_GetTicks());
+    s_click_key.store(key);
+}
+
+// Volume channel byte of a mod Sound Settings slider at `slot` (the entry's sub-type says music); -1 for a native entry.
+extern "C" int rs64_menu_slider_channel(int slot) {
+    const SndSlider* ss = snd_slider_for_slot(slot);
+    return ss ? ss->channel : -1;
 }
 
 // Override a textId's returned string (hook: getGameOrFrontText jr-ra 0x800558c4):
@@ -1376,7 +1467,8 @@ extern "C" void rs64_pause_confirm(uint8_t* rdram, unsigned marker) {
         if (b.toggle_set_fn) call_export(rdram, b.toggle_set_fn); else toggle_flip(b.key);
     } else if (b.type == BType::Slider) {
         int v = slider_value(rdram, b.key, b.toggle_get_fn);
-        slider_apply(rdram, b.key, b.toggle_set_fn, slider_next(v, b.smin, b.smax, b.sstep));
+        slider_apply(rdram, b.key, b.toggle_set_fn, confirmed_slider_value((int)(uint16_t)marker, v, b.smin, b.smax, b.sstep, b.label,
+                                                                           b.bar_width, b.bar_filled, b.bar_empty));
     } else {
         if (b.action_fn) call_export(rdram, b.action_fn); else fire_action(b.key);
     }

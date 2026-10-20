@@ -536,6 +536,23 @@ namespace rs64::touch {
         return -1;
     }
 
+    int pause_entry_next(const uint8_t* r, int menu, int k) {
+        if (menu < 0 || menu > 3) {
+            return -1;
+        }
+        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        for (int i = 0; i < 64; ++i) {
+            const uint16_t f = rh(r, recs + 6u * i);
+            if (f == 0xFFFF) {
+                break;
+            }
+            if ((f & 0x0001) && k-- == 0) {
+                return rh(r, recs + 6u * i + 4);
+            }
+        }
+        return -1;
+    }
+
     std::string describe_pause_records(const uint8_t* r, int menu) {
         std::string s;
         if (menu < 0 || menu > 3) {

@@ -32,11 +32,7 @@ src/main/input_bindings.cpp: comment after code: add(Target::CLeft, key(SDL_SCAN
 src/main/input_bindings.cpp: comment after code: add(Target::CLeft, mb(SDL_BUTTON_RIGHT));       // fire seco
 src/main/input_bindings.cpp: comment after code: add(Target::CRight,key(SDL_SCANCODE_F));        // special
 src/main/input_bindings.cpp: comment after code: add(Target::CUp,      key(SDL_SCANCODE_Q));     // look arou
-src/main/input_bindings.cpp: comment after code: add(Target::DpadDown, key(SDL_SCANCODE_F2));    // standard 
 src/main/input_bindings.cpp: comment after code: add(Target::DpadLeft, key(SDL_SCANCODE_Z));     // drop came
-src/main/input_bindings.cpp: comment after code: add(Target::DpadRight,key(SDL_SCANCODE_F3));    // close vie
-src/main/input_bindings.cpp: comment after code: add(Target::DpadUp,   key(SDL_SCANCODE_F1));    // cockpit v
-src/main/input_bindings.cpp: comment after code: add(Target::LTrig,    key(SDL_SCANCODE_F4));    // switch vi
 src/main/input_bindings.cpp: comment after code: add(Target::RTrig, key(SDL_SCANCODE_E));        // roll
 src/main/input_bindings.cpp: comment after code: add(Target::Start, key(SDL_SCANCODE_ESCAPE));   // pause
 src/main/input_bindings.cpp: comment after code: add(Target::StickDown,  max(1, +1)); add(Target::StickUp,   
@@ -135,7 +131,6 @@ src/main/main.cpp: comment block over 2 lines: // Drain-loop diagnostic — boot
 src/main/main.cpp: comment block over 2 lines: // EXPERIMENT (ROGUESQ_BRIDGE_WORD2): the CPU pipeline write
 src/main/main.cpp: comment block over 2 lines: // Forward declaration so the crash handler can render the o
 src/main/main.cpp: comment block over 2 lines: // Frame-rate-aware exponential low-pass on the mouse veloci
-src/main/main.cpp: comment block over 2 lines: // Fullscreen: set/toggled from any thread (menu, UI); appli
 src/main/main.cpp: comment block over 2 lines: // Headless automation overrides resolved input and must run
 src/main/main.cpp: comment block over 2 lines: // Input bindings: load roguesq_input.json next to the exe, 
 src/main/main.cpp: comment block over 2 lines: // Log PE base so we can resolve absolute addresses from SEH
@@ -157,7 +152,6 @@ src/main/main.cpp: comment block over 2 lines: // ROGUESQ_LOG_AUDIO_OUT=1: one-t
 src/main/main.cpp: comment block over 2 lines: // ROGUESQ_PROFILER_DUMP=1: sample the 7 F5-HUD timing slots
 src/main/main.cpp: comment block over 2 lines: // RT64's RT64_LOG_PRINTF macro (debug builds) writes to Glo
 src/main/main.cpp: comment block over 2 lines: // Return 1 to SUPPRESS the abort. STL bounds-check assertio
-src/main/main.cpp: comment block over 2 lines: // Rogue Squadron uses Factor5's MusyX audio ucode, NOT stoc
 src/main/main.cpp: comment block over 2 lines: // Run the shared Factor5 boot ucode first — it's the SAME u
 src/main/main.cpp: comment block over 2 lines: // SDL_syswm.h is only needed for the Win32 HWND path in cre
 src/main/main.cpp: comment block over 2 lines: // Song REGISTRY (loadSongAssetByName 3rd loop, base 0x8009F
@@ -209,7 +203,6 @@ src/main/nav_sequencer.h: comment after code: struct RsNavTarget { RsNavKind kin
 src/main/nav_sequencer.h: comment after code: void rs64_nav_inject(uint16_t buttons, float x, float y);  /
 src/main/nav_sequencer.h: comment after code: void rs64_nav_set_target(const char* boot_target);  // calle
 src/main/nav_sequencer.h: comment after code: void rs64_nav_tick(uint8_t* rdram, int overlay);  // called 
-src/main/nav_sequencer.h: comment block over 2 lines: // State-gated BOOT_TARGET navigation sequencer: drives the 
 src/main/rt64_render_context.cpp: comment after code: app->userConfig.threePointFiltering = false;             // 
 src/main/rt64_render_context.cpp: comment after code: if ((vi_count_ % 15) != 0) return;                 // ~4x/se
 src/main/rt64_render_context.cpp: comment after code: rs64_state_poll((const uint8_t*)app->core.RDRAM);   // every
@@ -218,7 +211,6 @@ src/main/rt64_render_context.cpp: comment after code: std::string video_cfg_path
 src/main/rt64_render_context.cpp: comment after code: std::string video_cfg_snapshot_;  // last-persisted userConf
 src/main/rt64_render_context.cpp: comment after code: uint32_t game_vi_origin_ = 0;     // VI origin/width as the 
 src/main/rt64_render_context.cpp: comment after code: video_cfg_path_ = cfgPath;                           // enab
-src/main/rt64_render_context.cpp: comment block over 2 lines: // All nav targets reach the front-end menu; pulse START thr
 src/main/rt64_render_context.cpp: comment block over 2 lines: // Erases framebuffers RT64 registered outside [0x400000, 0x
 src/main/rt64_render_context.cpp: comment block over 2 lines: // Frame interpolation OFF by default: it smooths rigid obje
 src/main/rt64_render_context.cpp: comment block over 2 lines: // Host-side buffer-arbiter consumer for the legacy host-pac
@@ -234,7 +226,6 @@ src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_LOG_FRA
 src/main/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_TEX_FILTER=nearest|linear|aa. This drives BOTH th
 src/main/rt64_render_context.cpp: comment block over 2 lines: // The menu buffer is a 512x448 full frame but VI is still i
 src/main/rt64_render_context.cpp: comment block over 2 lines: // True while RT64's F1 developer inspector (ImGui) is up. T
-src/main/rt64_render_context.cpp: comment block over 2 lines: // roguesq_video.json next to the exe (same convention as ro
 src/main/rt64_render_context.cpp: two statements on one line: if (s_iters.empty()) { for (const char* c = s_on_cine; *c; )
 src/main/rumble.cpp: comment after code: bool              g_base_state = false;   // motor state bef
 src/main/rumble.cpp: comment after code: constexpr uint32_t CRAFT_EFFECT_ID  = CRAFT + 0x1C4;  // s32

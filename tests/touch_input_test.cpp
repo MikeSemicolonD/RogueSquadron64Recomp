@@ -182,6 +182,38 @@ static void test_layout_override_moves_and_scales() {
     CHECK((e.poll(Context::Flight, 116).buttons & A) == 0);
 }
 
+// One thumb across two close buttons presses both; on one button's center only that one; beside the pair's line, neither.
+static void test_thumb_across_two_buttons() {
+    Engine e;
+    Config c;
+    c.enabled = true;
+    c.layout["A"] = { 0.60f, 0.50f, 1.0f };
+    c.layout["B"] = { 0.70f, 0.50f, 1.0f };
+    e.set_config(c);
+    e.set_screen(2000.0f, 1000.0f);
+    e.poll(Context::Flight, 0);
+    e.finger(1, FingerEvent::Down, 0.655f, 0.50f, 0);
+    CHECK((e.poll(Context::Flight, 16).buttons & (A | B)) == (A | B));
+    e.finger(1, FingerEvent::Up, 0.655f, 0.50f, 30);
+    e.poll(Context::Flight, 46);
+    e.finger(2, FingerEvent::Down, 0.601f, 0.50f, 100);
+    CHECK((e.poll(Context::Flight, 116).buttons & (A | B)) == A);
+    e.finger(2, FingerEvent::Up, 0.601f, 0.50f, 130);
+    e.poll(Context::Flight, 146);
+    e.finger(5, FingerEvent::Down, 0.62f, 0.50f, 150);
+    CHECK((e.poll(Context::Flight, 166).buttons & (A | B)) == (A | B));
+    e.finger(5, FingerEvent::Up, 0.62f, 0.50f, 180);
+    e.poll(Context::Flight, 196);
+    e.finger(3, FingerEvent::Down, 0.655f, 0.60f, 200);
+    CHECK((e.poll(Context::Flight, 216).buttons & (A | B)) == 0);
+    e.finger(3, FingerEvent::Up, 0.655f, 0.60f, 230);
+    e.poll(Context::Flight, 246);
+    c.thumb_bridge = 0.0f;
+    e.set_config(c);
+    e.finger(4, FingerEvent::Down, 0.655f, 0.50f, 300);
+    CHECK((e.poll(Context::Flight, 316).buttons & (A | B)) == 0);
+}
+
 static void test_stick_split() {
     Engine e;
     Config c;
@@ -1281,6 +1313,7 @@ int main() {
     test_pitch_follows_motion();
     test_steer_rate_assist();
     test_layout_override_moves_and_scales();
+    test_thumb_across_two_buttons();
     test_stick_split();
     test_gear_only_in_menus_opens_editor();
     test_edit_drag_moves_button_and_blocks_input();

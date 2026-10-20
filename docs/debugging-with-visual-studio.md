@@ -1,122 +1,110 @@
-# Debugging the recompile with Visual Studio
+# Debugging with Visual Studio
 
-The N64Recomp / RSPRecomp toolchain emits plain C, so all of Visual Studio's
-normal C/C++ debugger features work on this project unmodified — including
-on the recompiled CPU code under `RecompiledFuncs\` and the recompiled RSP
-audio ucode under `build/factor5_ucode/`. Reaching for the debugger before
-adding more `printf` is almost always faster.
+N64Recomp and RSPRecomp turn the game into plain C, so Visual Studio's normal debugger works on all of it: the recompiled game code in `RecompiledFuncs\`, the recompiled audio microcode in `build\factor5_ucode\`, the runtime and RT64. Breakpoints, stepping, watches and the memory window all behave as they do in any C++ project. Reaching for the debugger before adding more `printf` calls is usually faster.
 
-The recompiler keeps the original MIPS PC of every instruction as a comment,
-e.g. `// 0x800907B0: div.d $f20, $f0, $f2`, so once you have a host-side
-breakpoint you can correlate exactly to the disassembly of the original ROM.
+Every recompiled instruction keeps its original MIPS address and disassembly as a comment, for example `// 0x800907B0: div.d $f20, $f0, $f2`, so any line you stop on maps straight back to the original ROM code.
+
+This page covers setup, how to read recompiled code, breakpoint techniques, crashes and hangs, and when logging is the better tool.
 
 ## Setup
 
-1. Build a Debug configuration:
+1. Build the Debug configuration. This assumes you have done the first-time steps in the [README](../README.md#building) (decomp ELF, `RecompiledFuncs/`, microcode); after that, the recompiler defaults to the one built inside `build/`:
+
    ```sh
    cmake -B build -T ClangCL
    cmake --build build --config Debug --target RogueSquadron64Recomp
    ```
+
 2. Open `build\RogueSquadron64Recomp.sln` in Visual Studio 2022.
-3. In Solution Explorer, right-click `RogueSquadron64Recomp` →
-   **Set as Startup Project**.
-4. F5 (Debug → Start Debugging) launches the binary under the debugger.
+3. In Solution Explorer, right-click `RogueSquadron64Recomp` and pick **Set as Startup Project**.
+4. Press F5 to start it under the debugger.
 
-`Ctrl+,` opens "Go to All" — type a filename like `funcs_24.c` to jump to
-recompiled CPU code, or `musyx_audio_recompiled.c` for the RSP audio
-synth.
+`Ctrl+,` (Go to All) finds files quickly: type `funcs_24.c` for recompiled game code or `musyx_audio_recompiled.c` for the audio synth.
 
-## The recompile context
+## Reading recompiled code
 
-Most recompiled functions take `(uint8_t* rdram, recomp_context* ctx)`.
-`ctx` is the MIPS register file plus FP regs, and is the most important
-thing to watch when stepping:
+A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_context* ctx)`. The two arguments are what you will watch most:
 
-```
-ctx->r0 .. ctx->r31    — general-purpose MIPS registers (uint32_t)
-ctx->f0 .. ctx->f31    — FP registers; .d = double, .f = float, .u64 = raw bits, .u32l = lo word
-ctx->lo, ctx->hi       — multiply/divide result registers
-```
+- **`ctx`** is the MIPS CPU state:
 
-`rdram` is the RAM blob, based at KSEG0 `0x80000000`; the helpers `MEM_B / MEM_H / MEM_W / LD`
-(byte / halfword / word / doubleword, in `lib/N64ModernRuntime/N64Recomp/include/recomp.h`)
-translate MIPS-style `0x80xxxxxx` addresses to host bytes inside `rdram`. RDRAM is stored as
-native little-endian 32-bit words, so a word lives at `rdram + (addr - 0x80000000)`, a halfword
-at `rdram + ((addr ^ 2) - 0x80000000)` and a byte at `rdram + ((addr ^ 3) - 0x80000000)`. GPRs are
-64-bit and sign-extended, so compare them as `(uint32_t)ctx->rN`.
+  | Field | Contents |
+  |---|---|
+  | `ctx->r0` .. `ctx->r31` | General-purpose registers. They are 64-bit and sign-extended, so compare them as `(uint32_t)ctx->rN`. |
+  | `ctx->f0` .. `ctx->f31` | Floating-point registers. `.d` = double, `.f` = float, `.u64` = raw bits, `.u32l` = low word. |
+  | `ctx->lo`, `ctx->hi` | Multiply/divide results. |
 
-## Common patterns
+  MIPS register names map to numbers as usual: `a0`-`a3` are `r4`-`r7`, `v0` is `r2`, `sp` is `r29`, `ra` is `r31`.
 
-### Catching a specific failure mode without stopping every iteration
+- **`rdram`** is the N64's RAM. A game address `0x80xxxxxx` lives at `rdram + (addr - 0x80000000)`, but RAM is stored as little-endian 32-bit words, so smaller values are swizzled:
 
-The recompile faithfully reproduces tight loops. Setting an unconditional
-breakpoint inside one will break thousands of times before the failure
-condition appears. Use **conditional breakpoints** instead:
+  | Size | Host location | Macro |
+  |---|---|---|
+  | word (32-bit) | `rdram + (addr - 0x80000000)` | `MEM_W` |
+  | halfword | `rdram + ((addr ^ 2) - 0x80000000)` | `MEM_H` |
+  | byte | `rdram + ((addr ^ 3) - 0x80000000)` | `MEM_B` |
 
-- Right-click the red dot → **Conditions…**
-- Tick **Conditional Expression**
-- Enter a host-language predicate that's true only at the failure
+  The macros are in `lib/N64ModernRuntime/N64Recomp/include/recomp.h`.
 
-Examples:
+The game's function names come from the decomp. To find what calls a function, or what it calls, use `tools/rz/rzq.py` ([tools/rz/README.md](../tools/rz/README.md)).
 
-| Failure | Conditional expression |
+## Breakpoint techniques
+
+### Conditional breakpoints
+
+Game code runs tight loops, so an ordinary breakpoint inside one can stop thousands of times before the interesting case. Make it conditional instead: right-click the breakpoint, pick **Conditions…**, and enter an expression that is true only when things go wrong.
+
+| To stop when... | Condition |
 |---|---|
-| `ctx->f2` becomes NaN | `ctx->f2.d != ctx->f2.d` |
-| Pointer arithmetic produces a kernel address | `(uint32_t)ctx->r17 >= 0x80800000` |
-| Specific memory address gets touched (`sw $x, 0x10($a0)`) | `(uint32_t)(ctx->r4 + 0x10) == 0x80128000` |
-| Nth iteration only | switch the dropdown from Conditional Expression to **Hit Count**, set "is equal to N" |
+| `f2` becomes NaN | `ctx->f2.d != ctx->f2.d` |
+| a pointer leaves the game's 8 MB | `(uint32_t)ctx->r17 >= 0x80800000` |
+| a store hits one address (`sw $x, 0x10($a0)`) | `(uint32_t)(ctx->r4 + 0x10) == 0x80128000` |
+| the Nth time only | change the dropdown to **Hit Count**, "is equal to N" |
 
-Conditional breakpoints are evaluated in the debugger every time the line
-executes, so they slow that line down significantly while in use — fine for
-a single failure-isolation session, not something to leave on.
+Conditions are evaluated every time the line runs, which slows it down a lot. Use them for one investigation and then remove them.
 
-### Running to "the next anomalous frame"
+### Skipping past boot
 
-Many regressions only manifest after the title fade or N64 logo transition.
-Two ways to skip the boring frames:
+Many bugs only show after the logos or in a particular mission.
 
-1. **Disable** (don't delete) any noisy breakpoints during boot, then enable
-   them once the logo is on screen via Debug → Windows → Breakpoints
-   (`Ctrl+Alt+B`).
-2. Add a **tracepoint** somewhere known-good (e.g. an `osViSwapBuffer`
-   handler) — right-click red dot → Actions → "Log a message to Output
-   window" — to print frame counts without halting. Then set conditional
-   breakpoints downstream that reference that frame counter.
+- **Disable** (don't delete) noisy breakpoints during boot and re-enable them later from Debug > Windows > Breakpoints (`Ctrl+Alt+B`).
+- Use a **tracepoint** (right-click a breakpoint, Actions, "Log a message to Output window") to print a counter without stopping, then condition later breakpoints on that counter.
+- Get to the right screen without a controller: `ROGUESQ_BOOT_TARGET=level:<id>` drives the menus to a mission. See [debug-trace-env-vars.md](debug-trace-env-vars.md).
 
-### Walking back through a NaN / bad-value
+### Tracing a bad value backwards
 
-The MIPS recompile does not collapse temporaries the way a high-level
-compiler would: every register write is its own line in the C output, so
-you can scrub backwards through a few hundred lines of one function and
-see exactly which load or arithmetic op produced the value you don't like.
-Some helpful debugger features:
+Recompiled code doesn't fold temporaries the way a normal compiler does: every register write is its own line. You can step backwards through a function and see exactly which load or arithmetic op produced a bad value. Useful tools:
 
-- **Make Object ID** on `ctx` (right-click in Watch / Locals → Make Object
-  ID, then `Ctrl+H` to refer to it as `$1`). Lets you compare register
-  state across calls or threads quickly.
-- **Memory window** (Debug → Windows → Memory → Memory 1) — paste
-  `rdram + ((uint32_t)ctx->r4 - 0x80000000)` to see what the surrounding
-  RDRAM looks like at the moment of the read.
-- **Trace Into Specific Function** (right-click → Step Into Specific) —
-  recompiled call sites show as a sequence of register stores then a `func_XXXX(rdram, ctx)` call; this lets you skip the stores and step
-  directly into the next recompiled function.
+- **Make Object ID** on `ctx` (right-click it in Watch or Locals) lets you refer to it as `$1` and compare register state across calls or threads.
+- **Memory window** (Debug > Windows > Memory > Memory 1): enter `rdram + ((uint32_t)ctx->r4 - 0x80000000)` to see the RAM around a pointer.
+- **Step Into Specific** (right-click a line): call sites are a run of register stores followed by `func_XXXX(rdram, ctx)`; this jumps straight into the call.
 
-### When data breakpoints don't work — in-source `[mem-watch]` instrumentation
+### Recompiler bug or game logic?
 
-VS hardware data breakpoints have only 4 slots and sometimes don't fire on
-writes that go through MEM_W / SD store macros (memory address changes
-across runs from VirtualAlloc, possible cache-line / TLB interactions).
-A reliable alternative is to add a tiny watcher *inside* the recompile
-itself.
+| Symptom | Likely cause |
+|---|---|
+| `f2.u64 == 0x7FF8000000000000` (the standard quiet NaN) | An earlier float op produced NaN: a game-logic divide by zero, square root of a negative, and so on. |
+| A NaN with random-looking low bits | Uninitialized RAM read as a double. |
+| An address that points into the host stack, not RDRAM | `r1` or `r29` clobbered: a recompiler bug. |
+| A sensible address, but the bytes look wrong | Byte-order mismatch for that load size. |
+| Same code, same RAM, different result each run | A race with another thread (graphics, audio, scheduler). Check the Threads window. |
 
-Add at the top of a function whose entry you want to sample:
+If a recompiled function hangs or crashes on data that decodes fine offline, suspect the recompiler's translation of a rare instruction (the `bltzal` / `bgezal` link-branches caused this once) before digging into the game system.
+
+## Finding who changed a value
+
+Visual Studio's data breakpoints have only four slots, and RDRAM moves between runs, so they are awkward here. The game has two built-in alternatives, both described in [debug-trace-env-vars.md](debug-trace-env-vars.md):
+
+- `ROGUESQ_WATCH_ADDRS=0x80128000,...` logs every change to up to 16 addresses, once per frame.
+- `ROGUESQ_DATA_BP=0x80128000` (Windows) sets a hardware breakpoint on one RAM word on every thread and logs each access with the recompiled function and source line.
+
+If you need a finer check, add a probe at the top of a suspect function in `RecompiledFuncs\funcs_*.c`. Those files are regenerated, so this is only for diagnosis; a real fix goes in `rogue_squadron.toml` (see [AGENTS.md](../AGENTS.md#overriding-recompiled-functions)).
 
 ```c
 {
     static uint64_t prev = 0;
-    uint64_t cur = *(uint64_t*)(rdram + 0x3DDB0);   // your suspect address
+    uint64_t cur = *(uint64_t*)(rdram + 0x3DDB0);
     if (cur != prev) {
-        fprintf(stderr, "[mem-watch] funcname entry: 0x3DDB0 was 0x%016llX, now 0x%016llX\n",
+        fprintf(stderr, "[mem-watch] funcname: 0x3DDB0 0x%016llX -> 0x%016llX\n",
             (unsigned long long)prev, (unsigned long long)cur);
         fflush(stderr);
         prev = cur;
@@ -124,14 +112,7 @@ Add at the top of a function whose entry you want to sample:
 }
 ```
 
-Place these at multiple points in a call chain (the chronic-crasher
-function plus its callers) — the value transitions get bracketed between
-the function whose watcher last logged "good" and the one that first
-logged "bad", narrowing the corrupter to a small region of code.
-
-For finding the offending function via an indirect dispatch loop (e.g.
-`LOOKUP_FUNC(ctx->r2)(rdram, ctx);`), use a *one-shot* check after the
-call so it doesn't disturb timing on every iteration:
+Put a few along a call chain: the bad write happened between the last probe that saw a good value and the first that saw a bad one. For an indirect dispatch loop (`LOOKUP_FUNC(ctx->r2)(rdram, ctx);`), check once after the call so the probe doesn't change timing on every iteration:
 
 ```c
 {
@@ -140,70 +121,45 @@ call so it doesn't disturb timing on every iteration:
     static int logged = 0;
     if (!logged && *(uint64_t*)(rdram + 0x3DDB0) == 0xFFFFFFFFFFFFFFFFULL) {
         logged = 1;
-        fprintf(stderr, "[mem-watch] FIRST corruption observed after dispatching func 0x%08X\n", f);
+        fprintf(stderr, "[mem-watch] first corruption after func 0x%08X\n", f);
         fflush(stderr);
     }
 }
 ```
 
-Heavier `before/after` watchers (read both before *and* after each
-dispatch) can shift threading timing enough to mask race-condition bugs —
-prefer the lightest possible probe.
+Keep probes as light as possible. Heavier ones (checking before and after every call) can shift thread timing enough to hide a race.
 
-### Recompile bug vs. game logic
+## Crashes and hangs
 
-A few patterns reliably distinguish a recompile bug from genuine in-game
-state:
+Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around emulated memory, so a bad game pointer wraps into the 512 MB RDRAM window instead of crashing where it goes wrong.
 
-| Symptom | Likely cause |
-|---|---|
-| `f2.u64 == 0x7FF8000000000000` (canonical quiet NaN) | A previous FP op produced NaN — game logic divide-by-zero, sqrt of negative, etc. |
-| `f2.u64` non-canonical NaN with random low bits | Reading uninitialized RDRAM as a double |
-| Address loaded is at a host-stack offset, not RDRAM | `r1` / `r29` being clobbered — recompile dispatch bug |
-| Address is sensible but the bytes look wrong | Endian swizzle mismatch — likely a missing `BSWAP_*` macro for that load width |
-| Same code path, same RDRAM → different outcome each run | Race with another thread (gfx, audio, scheduler) — check `Threads` window |
+**Crash.** The crash handlers in `src\main\main.cpp` print a stack trace to stderr and write a full minidump to `dumps\crash-dumps\crash_<date>_<time>.dmp`. Open it in Visual Studio (File > Open > File, then **Debug with Native Only**). It needs the matching exe and PDB from `build\Debug\`. `python tools/inspect-dump.py` lists the dump's threads and marks the few running game code (`in_exe`); those are the ones worth opening.
 
-### The crash handler
+**Hang.** While the game is frozen, run `pwsh tools/dump-game.ps1` from another shell to capture it (F12 also writes a dump, but not if the window has stopped responding). Then:
 
-`src\main\main.cpp` installs a Win32 `SetUnhandledExceptionFilter` and a
-SIGABRT handler that print symbolicated stack traces using DbgHelp.
-Output goes to stderr. If a crash happens **outside the debugger** (e.g. a
-release build a tester is running), the printed `rva` values can be matched
-back to source via the .pdb in `build/Debug/RogueSquadron64Recomp.pdb`:
+- `python tools/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
+- `python tools/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).
 
-```
-windbg -z RogueSquadron64Recomp.exe
-0:000> ln <module-rva>
-```
+[AGENTS.md](../AGENTS.md#when-investigating-a-new-crash) lists the common crash signatures and what they usually mean.
 
-…or simply load the PDB in VS via File → Open → File on the .pdb, then
-**Debug → Windows → Disassembly** with the rva pasted into Address.
-
-## Specific files worth knowing about
+## Files worth knowing
 
 | File | What it is |
 |---|---|
-| `RecompiledFuncs\funcs_*.c` | Recompiled CPU code from the ROM; thousands of `func_8xxxxxxx` functions (in-repo, gitignored, regenerated). |
-| `build\factor5_ucode\musyx_audio_recompiled.c` | Recompiled MusyX audio synth RSP ucode. |
-| `build\factor5_ucode\factor5_boot_recompiled.c` | Recompiled boot ucode that DMAs the audio ucode data into place. |
-| `lib\rt64\src\hle\rt64_interpreter.cpp` | RT64's HLE display-list interpreter loop. |
-| `lib\rt64\src\gbi\rt64_gbi.cpp`, `lib\rt64\src\hle\rt64_rsp.cpp` | Ucode identification selects `GBIUCode::F3DFACTOR5` (`GBI_F3DFACTOR5::setup`); `rt64_rsp.cpp` applies its F5-specific RSP state. |
-| `lib\rt64\src\gbi\rt64_gbi_f3dfactor5.cpp` | The Factor 5 opcode handlers. |
+| `RecompiledFuncs\funcs_*.c` | Recompiled game code, thousands of `func_8xxxxxxx` and named functions. Generated locally and gitignored. |
+| `build\factor5_ucode\musyx_audio_recompiled.c` | Recompiled MusyX audio synth microcode. |
+| `build\factor5_ucode\factor5_boot_recompiled.c` | Recompiled boot microcode that loads the audio microcode's data. |
+| `src\main\toml_hooks.c` | The bodies of the hooks `rogue_squadron.toml` inserts into game functions. |
+| `lib\rt64\src\hle\rt64_interpreter.cpp` | RT64's display-list interpreter loop. |
+| `lib\rt64\src\gbi\rt64_gbi_f3dfactor5.cpp` | The Factor 5 display-list opcode handlers. |
+| `lib\rt64\src\gbi\rt64_gbi.cpp`, `lib\rt64\src\hle\rt64_rsp.cpp` | Microcode identification (selects `F3DFACTOR5`) and its RSP state. |
 
-## When printf is still the right tool
+## When logging is the better tool
 
-A debugger is best for catching a single failure once you know roughly
-where to look. Logging is still better for:
+The debugger is best for catching one failure once you know roughly where it is. Logging is better for:
 
-- Following a high-rate event you can't stop on without losing context
-  (RDP submissions, VI retraces).
-- Validating that a code path is reached at all.
-- Comparing across threads when stepping would change the timing.
+- following high-rate events you can't stop on without losing context (display-list submissions, VI retraces),
+- checking that a code path runs at all,
+- comparing threads when stepping would change the timing.
 
-Trace categories are off by default and enabled with `ROGUESQ_LOG_*`
-environment variables; the catalog is [debug-trace-env-vars.md](debug-trace-env-vars.md).
-New probes use the rate-limited `static int n=0; if (++n<=N || (n%K)==0) { … }`
-pattern. Prefer redirecting stderr to a file
-(`> log.txt 2>&1`) — Windows console I/O is synchronous and orders of
-magnitude slower than file I/O, and at high event rates a console-bound
-process will appear to hang as the message-pump starves.
+Logging categories are off by default and enabled with `ROGUESQ_LOG_*` environment variables; [debug-trace-env-vars.md](debug-trace-env-vars.md) lists them all. Rate-limit new probes (`static int n=0; if (++n<=10 || (n%50)==0) { ... }`) and send stderr to a file, not the console: Windows console output is synchronous and slow enough at high rates to make the game look hung.

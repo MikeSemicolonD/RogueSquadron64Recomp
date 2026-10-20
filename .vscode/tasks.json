@@ -37,6 +37,81 @@
             "detail": "Release exe (unvalidated config). POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
+            "label": "Configure (Windows x86)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build-x86",
+                "-G", "Visual Studio 17 2022", "-A", "Win32", "-T", "ClangCL",
+                "-DN64RECOMP_EXE=${workspaceFolder}/build/Debug/N64Recomp.exe"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "32-bit Windows tree in build-x86. Reuses the x64 build's N64Recomp.exe, so build the x64 Debug target first."
+        },
+        {
+            "label": "Build: RogueSquadron64Recomp (x86 Debug)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build-x86",
+                "--config", "Debug",
+                "--target", "RogueSquadron64Recomp"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "detail": "32-bit Windows exe in build-x86/Debug. Copy rogue_squadron.z64 next to it to run."
+        },
+        {
+            "label": "Build: RogueSquadron64Recomp (x86 Release)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build-x86",
+                "--config", "Release",
+                "--target", "RogueSquadron64Recomp"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "detail": "32-bit Windows Release; assembles build-x86/dist/."
+        },
+        {
+            "label": "Package: Bump version",
+            "type": "shell",
+            "command": "& .\\tools\\bump-version.ps1 -Part '${input:versionPart}'",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Raises the release version in VERSION (read by CMake, Gradle and the packaging scripts). For an exact number, edit VERSION or run tools/bump-version.ps1 -Set 1.2.3."
+        },
+        {
+            "label": "Package: Release bundle (all platforms)",
+            "type": "shell",
+            "command": "& .\\tools\\bundle-release.ps1 -OutDir '${input:releaseOutDir}' -Only '${input:releaseTargets}' -WslDistro '${input:wslDistro}'",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
+        },
+        {
             "label": "Run: Game (pick level / craft)",
             "type": "shell",
             "command": "$l = '${input:rsLevel}'; $c = '${input:rsCraft}'; $a = @(); if ($l -ne '') { $a += '--force-level', $l }; if ($c -ne '') { $a += '--force-craft', $c }; Write-Host \"RogueSquadron64Recomp.exe $a\"; & .\\RogueSquadron64Recomp.exe @a",
@@ -322,13 +397,91 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/package-linux.sh\" \"$HOME/rs64-linux-release.tar.gz\""
+                "bash \"$(wslpath '${workspaceFolder}')/tools/package-linux.sh\" \"$HOME/rs64-linux-release.tar.xz\""
             ],
             "group": "build",
             "problemMatcher": [],
             "dependsOn": "Build (Linux/WSL, Release): RogueSquadron64Recomp",
             "dependsOrder": "sequence",
-            "detail": "Build then package the Release exe into a stripped self-contained bundle (exe + app libs + run.sh launcher) at ~/rs64-linux-release.tar.gz. Excludes glibc core, the Vulkan loader, and the ROM (all host-provided). tools/package-linux.sh takes an output path arg; point it at /mnt/c/... to drop straight on Windows."
+            "detail": "Build then package the Release exe into a stripped self-contained bundle (exe + app libs + run.sh launcher) at ~/rs64-linux-release.tar.xz. Excludes glibc core, the Vulkan loader, and the ROM (all host-provided). tools/package-linux.sh takes an output path arg; point it at /mnt/c/... to drop straight on Windows."
+        },
+        {
+            "label": "Test: Linux remotes (Raspberry Pi)",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/test-remote.sh\" '${input:linuxReleaseDir}' '${input:romPath}'"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "For every machine in ~/.config/rs64/remotes (WSL; lines '<name> <user>@<host> <remote-dir>'): detects arch/OS/glibc/Vulkan, deploys the matching rs64-linux-<arch>-*.tar.xz, copies the ROM, runs --help and a headless boot in the logged-in desktop session, and pulls the logs back to logs/platform-tests/."
+        },
+        {
+            "label": "Linux: Copy build out of WSL",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/export-build.sh\" '${input:linuxBuildDir}' '${input:linuxExportDir}'"
+            ],
+            "problemMatcher": [],
+            "detail": "Packages a WSL build tree (x64 or arm64, detected) into <folder>/rs64-linux-<arch>.tar.xz: exe, libs, run.sh and mods. A tarball keeps the execute bits a copy through a Windows folder loses."
+        },
+        {
+            "label": "Linux: Deploy build to remote machine",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/deploy-remote.sh\" '${input:linuxPackage}' '${input:remoteUser}' '${input:remoteHost}' '${input:remoteDir}'"
+            ],
+            "problemMatcher": [],
+            "detail": "Streams a rs64-linux-<arch>.tar.xz (or an .AppImage/other file) to user@host over one ssh connection and unpacks it into the remote folder. ssh asks for the password in this terminal unless a key is set up."
+        },
+        {
+            "label": "Linux: Copy ROM to remote machine",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/deploy-remote.sh\" '${input:romPath}' '${input:remoteUser}' '${input:remoteHost}' '${input:remoteDir}'"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Copies the ROM into the remote folder next to run.sh. ssh asks for the password in this terminal unless a key is set up."
+        },
+        {
+            "label": "Build (Linux cross, WSL): tarball + AppImage",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/cross-build.sh\" ${input:crossArch} Release \"$(wslpath '${workspaceFolder}')/build/release\""
+            ],
+            "group": "build",
+            "problemMatcher": {
+                "owner": "gcc",
+                "fileLocation": ["autoDetect", "${workspaceFolder}"],
+                "pattern": {
+                    "regexp": "^(.*?):(\\d+):(\\d*):?\\s+(?:fatal\\s+)?(warning|error):\\s+(.*)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            },
+            "detail": "arm64 (Raspberry Pi 64-bit OS), armhf (32-bit Pi OS, Pi 2+) or i386. Cross-compiles into ~/rs64-build-<arch>-release (build-time tools run under qemu-user), then writes the tarball, AppImage and, for arm64, Flatpak to build/release/. One-time packages: docs/building-all-platforms.md."
         },
         {
             "label": "Build (macOS cross, WSL/osxcross): RogueSquadron64Recomp",
@@ -496,6 +649,13 @@
     ],
     "inputs": [
         {
+            "id": "versionPart",
+            "type": "pickString",
+            "description": "Which part of VERSION to raise",
+            "options": ["patch", "minor", "major"],
+            "default": "patch"
+        },
+        {
             "id": "rsConfig",
             "type": "pickString",
             "description": "Build configuration to run",
@@ -627,6 +787,82 @@
             "description": "Standalone test to build and run in WSL",
             "options": ["fault_guard_test", "touch_input_test", "video_config_test", "transition_gate_test", "input_bindings_test"],
             "default": "fault_guard_test"
+        },
+        {
+            "id": "releaseOutDir",
+            "type": "promptString",
+            "description": "Folder for the release packages (a <version> subfolder is created; %VARS% are expanded)",
+            "default": "%USERPROFILE%\\Desktop\\rs64-release"
+        },
+        {
+            "id": "releaseTargets",
+            "type": "promptString",
+            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, android",
+            "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386"
+        },
+        {
+            "id": "crossArch",
+            "type": "pickString",
+            "description": "Linux target architecture",
+            "options": [
+                "arm64",
+                "armhf",
+                "i386"
+            ],
+            "default": "arm64"
+        },
+        {
+            "id": "linuxReleaseDir",
+            "type": "promptString",
+            "description": "Folder holding the rs64-linux-<arch>-*.tar.xz packages (Windows or WSL path)",
+            "default": "build/release"
+        },
+        {
+            "id": "linuxBuildDir",
+            "type": "pickString",
+            "description": "WSL build tree to package",
+            "options": [
+                "~/rs64-build-release",
+                "~/rs64-build-arm64-release",
+                "~/rs64-build"
+            ],
+            "default": "~/rs64-build-release"
+        },
+        {
+            "id": "linuxExportDir",
+            "type": "promptString",
+            "description": "Folder to write rs64-linux-<arch>.tar.xz into (Windows or WSL path)",
+            "default": "build/release"
+        },
+        {
+            "id": "linuxPackage",
+            "type": "promptString",
+            "description": "Package to deploy (Windows or WSL path)",
+            "default": "build/release/rs64-linux-arm64.tar.xz"
+        },
+        {
+            "id": "remoteHost",
+            "type": "promptString",
+            "description": "Remote Linux host name or IP",
+            "default": "raspberrypi.local"
+        },
+        {
+            "id": "remoteUser",
+            "type": "promptString",
+            "description": "Remote user name",
+            "default": "pi"
+        },
+        {
+            "id": "remoteDir",
+            "type": "promptString",
+            "description": "Remote folder for the game (created if missing)",
+            "default": "~/rs64"
+        },
+        {
+            "id": "romPath",
+            "type": "promptString",
+            "description": "ROM to copy (Windows or WSL path)",
+            "default": "rogue_squadron.z64"
         },
         {
             "id": "wslDistro",

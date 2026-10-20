@@ -403,6 +403,17 @@ func = "findManifestEntryByName"
 before_vram = 0x8000496C
 text = '{ rs64_th_findManifestEntryByName_8000496C(rdram, ctx); }'
 
+# A manifest grown with mod-added files is a host-RAM copy: rs_free gets the game's own buffer back.
+[[patches.hook]]
+func = "freeManifestSegmentAssets"
+before_vram = 0x80004A0C
+text = '{ rs64_th_freeManifestSegmentAssets_80004A0C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "freeManifestSegmentAssets"
+before_vram = 0x80004A80
+text = '{ rs64_th_freeManifestSegmentAssets_80004A80(rdram, ctx); }'
+
 # tickFormatMessageWorker replies with a pointer to one stack buffer for every request.
 # The host decodes faster than hardware, so queued replies alias and all read the last
 # request id; the SELECT GAME medal/preview slots then never activate. Send each reply
@@ -964,6 +975,23 @@ func = "menuControllerInput"
 before_vram = 0x800B5920
 text = '{ rs64_th_menuControllerInput_800B5920(rdram, ctx); }'
 
+# Menu loop state dispatch, every pass: $s6 = 0x11 while a Sound Settings volume bar is being edited (touch/mouse keep the highlight on it).
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B4E64
+text = '{ rs64_th_menuControllerInput_800B4E64(rdram, ctx); }'
+
+# Menu backdrop wipe swaps only the column it lands on each tick; a step of >= 1 column (a 6+ VI frame) skips one and leaves it on an old picture. Clamp dt ($a1) below one column.
+[[patches.hook]]
+func = "integrateTieInterceptorPhysics"
+text = '{ rs64_th_integrateTieInterceptorPhysics_entry(rdram, ctx); }'
+
+# Wipe edge strip (built each tick): map it to the static tile grid (full 64x32 texels, camera scale corrected, outer edges closed) and clamp it to the picture so widescreen doesn't show it in the side bars.
+[[patches.hook]]
+func = "playerTieInterceptorMainUpdate"
+before_vram = 0x800BCE00
+text = '{ rs64_th_playerTieInterceptorMainUpdate_800BCE00(rdram, ctx); }'
+
 # Override a mod slider's OFF/MAX endpoint text (getGameOrFrontText textId 0xB7/0xB8).
 # Hook the jr-ra; the delay slot computes v0=v1+v0, so zero v1 and set v0.
 [[patches.hook]]
@@ -1247,3 +1275,9 @@ text = '{ rs64_th_npcAtAtUpdate_800CED7C(rdram, ctx); }'
 func = "mainGameLoop"
 before_vram = 0x8003E10C
 text = '{ rs64_th_mainGameLoop_8003E10C(rdram, ctx); }'
+
+# ROGUESQ_BOOT_EXIT=1: quit once the boot cutscene returns.
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E114
+text = '{ rs64_th_mainGameLoop_8003E114(rdram, ctx); }'

@@ -242,10 +242,11 @@ Bindings default_bindings() {
     add(Target::CDown, key(SDL_SCANCODE_X));        // fire mode
     add(Target::CRight,key(SDL_SCANCODE_F));        // special
     add(Target::Start, key(SDL_SCANCODE_ESCAPE));   // pause
-    add(Target::DpadUp,   key(SDL_SCANCODE_F1));    // cockpit view
-    add(Target::DpadDown, key(SDL_SCANCODE_F2));    // standard view
-    add(Target::DpadRight,key(SDL_SCANCODE_F3));    // close view
-    add(Target::LTrig,    key(SDL_SCANCODE_F4));    // switch view
+    // Views: C cockpit, V standard, B close, N switch.
+    add(Target::DpadUp,   key(SDL_SCANCODE_C));
+    add(Target::DpadDown, key(SDL_SCANCODE_V));
+    add(Target::DpadRight,key(SDL_SCANCODE_B));
+    add(Target::LTrig,    key(SDL_SCANCODE_N));
     add(Target::CUp,      key(SDL_SCANCODE_Q));     // look around (F5 = profiler HUD host hotkey)
     add(Target::DpadLeft, key(SDL_SCANCODE_Z));     // drop camera
 
@@ -536,11 +537,9 @@ std::string source_label(const Source& s) {
     }
 }
 
+// In the working directory with saves and mods: the exe's folder can be read-only (AppImage, Flatpak).
 std::string default_config_path() {
-    std::string dir;
-    char* base = SDL_GetBasePath();
-    if (base) { dir = base; SDL_free(base); }
-    return dir + "roguesq_input.json";
+    return "roguesq_input.json";
 }
 
 bool load_bindings(Bindings& b, const std::string& path) {

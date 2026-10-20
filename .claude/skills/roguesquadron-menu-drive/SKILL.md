@@ -14,8 +14,8 @@ because those need real button presses. This skill drives those presses. Read `A
 
 Keyboard input is on by default (see project memory `project_keyboard_mouse_input_2026_09_15`):
 a keyboard alone clears the NO-CONTROLLER gate. Default map (PC-port layout) — **Esc = Start,
-Enter = A (confirm)**, W = A, Space/Backspace = B, S = Z, E = Rtrig, F4 = Ltrig, arrows/A/D =
-stick, Alt = C-Left, X = C-Down, F = C-Right, F5 = C-Up, F1/F2/F3/Z = D-pad up/down/right/left.
+Enter = A (confirm)**, W = A, Space/Backspace = B, S = Z, E = Rtrig, N = Ltrig, arrows/A/D =
+stick, Alt = C-Left, X = C-Down, F = C-Right, Q = C-Up, C/V/B/Z = D-pad up/down/right/left.
 Esc also releases mouse capture (harmless).
 
 Input is injected with Win32 `SendInput` using **scancodes** (set 1), which is what SDL reads. The

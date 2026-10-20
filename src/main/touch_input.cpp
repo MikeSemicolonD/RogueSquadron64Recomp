@@ -104,14 +104,42 @@ namespace rs64::touch {
         };
     }
 
-    bool Engine::hit_button(Context ctx, float x, float y, uint16_t* mask) const {
-        for (const ButtonDef& b : layout(ctx)) {
+    // all: every button under the point, plus both buttons of a close pair when the point lies on the stretch between them (a thumb across two
+    // buttons; flight only). Otherwise the first button under the point (layout editor).
+    bool Engine::hit_button(Context ctx, float x, float y, uint16_t* mask, bool all) const {
+        *mask = 0;
+        const std::vector<ButtonDef> v = layout(ctx);
+        for (const ButtonDef& b : v) {
             if (b.mask != 0 && dist(x - b.cx, y - b.cy) <= b.r * b.hit) {
-                *mask = b.mask;
-                return true;
+                *mask |= b.mask;
+                if (!all) {
+                    return true;
+                }
             }
         }
-        return false;
+        if (!all || ctx != Context::Flight || cfg_.thumb_bridge <= 0.0f) {
+            return *mask != 0;
+        }
+        for (size_t i = 0; i < v.size(); i++) {
+            for (size_t j = i + 1; j < v.size(); j++) {
+                const ButtonDef& a = v[i];
+                const ButtonDef& b = v[j];
+                // Aspect-corrected frame: the pair's axis from a to b, and the point relative to a.
+                const float ax = (b.cx - a.cx) * aspect_, ay = b.cy - a.cy;
+                const float d = std::sqrt(ax * ax + ay * ay);
+                if (a.mask == 0 || b.mask == 0 || d <= 0.0f || d - a.r - b.r > cfg_.thumb_bridge) {
+                    continue;
+                }
+                const float px = (x - a.cx) * aspect_, py = y - a.cy;
+                const float along = (px * ax + py * ay) / d;
+                const float across = std::fabs(px * ay - py * ax) / d;
+                // From a quarter of a's radius past its center to the same short of b's, within a corridor as wide as the smaller button.
+                if (along >= a.r * 0.25f && along <= d - b.r * 0.25f && across <= std::min(a.r, b.r)) {
+                    *mask |= a.mask | b.mask;
+                }
+            }
+        }
+        return *mask != 0;
     }
 
     // Pulses queued while others are pending start after them plus a gap, so the game sees separate presses.
@@ -160,7 +188,7 @@ namespace rs64::touch {
                 begin_edit();
                 return;
             }
-            if (hit_button(ctx, x, y, &mask)) {
+            if (hit_button(ctx, x, y, &mask, true)) {
                 f.role = Finger::Role::Button;
                 f.button = mask;
             } else if (ctx != Context::Flight && (x < pic_x0_ || x > pic_x1_)) {
@@ -195,7 +223,7 @@ namespace rs64::touch {
         if (ev == FingerEvent::Move) {
             if (f.role == Finger::Role::Button) {
                 uint16_t mask = 0;
-                f.button = hit_button(ctx, x, y, &mask) ? mask : 0;
+                f.button = hit_button(ctx, x, y, &mask, true) ? mask : 0;
             } else if (f.role == Finger::Role::Gesture && ctx == Context::Wheel) {
                 // Passcode wheel: a horizontal drag becomes a held joystick; wheel_repeat() steps it from poll().
                 const float dx = (x - f.x0) * aspect_;
@@ -262,27 +290,36 @@ namespace rs64::touch {
                 apply_tap_action(menu_tap_ ? menu_tap_(x, y) : TapAction::None);
             }
         } else if (tap) {
-            if (ctx == Context::Cutscene) {
-                queue(START, 0.0f, 0.0f);
-            } else if (ctx == Context::ListMenu) {
-                apply_tap_action(menu_tap_ ? menu_tap_(x, y) : TapAction::None);
-            } else if (ctx == Context::Wheel) {
-                // A letter tap queues its own steps (Handled); ENTER CODE/BACK select; anything else enters the center letter.
-                const TapAction a = menu_tap_ ? menu_tap_(x, y) : TapAction::None;
-                apply_tap_action(a == TapAction::None ? TapAction::Confirm : a);
-            } else if (ctx == Context::Carousel) {
-                // The menu layer may select a tapped entry or map it to a step (side save slot); otherwise A.
-                const TapAction a = menu_tap_ ? menu_tap_(x, y) : TapAction::None;
-                apply_tap_action(a == TapAction::None ? TapAction::Confirm : a);
-            } else if (ctx == Context::PauseMenu) {
-                // Only a tap on a pause line confirms; a miss must not confirm the highlighted line (CONTINUE unpauses).
-                apply_tap_action(menu_tap_ ? menu_tap_(x, y) : TapAction::None);
-            }
+            this->tap(ctx, x, y);
         }
         if (id == stick_id_) {
             stick_id_ = -1;
         }
         fingers_.erase(it);
+    }
+
+    void Engine::tap(Context ctx, float x, float y) {
+        const auto hit = [&] { return menu_tap_ ? menu_tap_(x, y) : TapAction::None; };
+        switch (ctx) {
+        case Context::Cutscene:
+            queue(START, 0.0f, 0.0f);
+            break;
+        case Context::ListMenu:
+        // Only a tap on a pause line confirms; a miss must not confirm the highlighted line (CONTINUE unpauses).
+        case Context::PauseMenu:
+            apply_tap_action(hit());
+            break;
+        // Wheel: a letter tap queues its own steps (Handled); ENTER CODE/BACK select; anything else enters the center letter.
+        // Carousel: the menu layer may select a tapped entry or map it to a step (side save slot); otherwise A.
+        case Context::Wheel:
+        case Context::Carousel: {
+            const TapAction a = hit();
+            apply_tap_action(a == TapAction::None ? TapAction::Confirm : a);
+            break;
+        }
+        default:
+            break;
+        }
     }
 
     void Engine::physical_input() {
@@ -359,7 +396,13 @@ namespace rs64::touch {
     Pad Engine::poll(Context ctx, uint32_t ms) {
         last_ctx_ = ctx;
         Pad p;
-        if (!cfg_.enabled || editing_) {
+        if (editing_) {
+            return p;
+        }
+        // Touch off: only presses queued by mouse clicks (tap) come through.
+        if (!cfg_.enabled) {
+            drain_pulses(&p);
+            p.has_input = p.buttons != 0 || p.x != 0.0f || p.y != 0.0f;
             return p;
         }
         if (ctx == Context::Wheel) {
@@ -413,19 +456,23 @@ namespace rs64::touch {
                 p.y = gy;
             }
         }
+        drain_pulses(&p);
+        p.has_input = active_ || p.buttons != 0 || p.x != 0.0f || p.y != 0.0f;
+        return p;
+    }
+
+    void Engine::drain_pulses(Pad* p) {
         for (Pulse& q : pulses_) {
             if (q.delay > 0) {
                 --q.delay;
                 continue;
             }
-            p.buttons |= q.buttons;
-            if (std::fabs(q.x) > std::fabs(p.x)) p.x = q.x;
-            if (std::fabs(q.y) > std::fabs(p.y)) p.y = q.y;
+            p->buttons |= q.buttons;
+            if (std::fabs(q.x) > std::fabs(p->x)) p->x = q.x;
+            if (std::fabs(q.y) > std::fabs(p->y)) p->y = q.y;
             --q.polls;
         }
         pulses_.erase(std::remove_if(pulses_.begin(), pulses_.end(), [](const Pulse& q) { return q.polls <= 0; }), pulses_.end());
-        p.has_input = active_ || p.buttons != 0 || p.x != 0.0f || p.y != 0.0f;
-        return p;
     }
 
     OverlayState Engine::draw_state(Context ctx) const {
@@ -530,7 +577,7 @@ namespace rs64::touch {
                 }
             }
             uint16_t mask = 0;
-            if (hit_button(Context::Flight, x, y, &mask)) {
+            if (hit_button(Context::Flight, x, y, &mask, false)) {
                 std::string bid;
                 Placement p;
                 placement(mask, &bid, &p);

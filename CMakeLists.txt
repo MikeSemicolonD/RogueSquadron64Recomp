@@ -4,7 +4,11 @@ if (APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum OS X deployment version")
 endif()
 
-project(RogueSquadron64Recomp LANGUAGES C CXX)
+# The release version lives in VERSION (also read by Gradle and the packaging scripts); editing it re-runs configure.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" RS64_VERSION LIMIT_COUNT 1)
+string(STRIP "${RS64_VERSION}" RS64_VERSION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+project(RogueSquadron64Recomp VERSION ${RS64_VERSION} LANGUAGES C CXX)
 set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -44,20 +48,38 @@ if (ANDROID)
     endforeach()
 endif()
 
-# Android: SDL2 is built from source (libSDL2.so, loaded by SDLActivity); must exist before RT64 configures.
-if (ANDROID)
+# Android and Linux build SDL2 from source; it must exist before RT64 configures. Android ships libSDL2.so for SDLActivity.
+# Linux links it statically: SDL then loads its audio and video backends from the host, so packages don't carry the distro's PulseAudio/codec stack.
+if (ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     include(FetchContent)
     FetchContent_Declare(SDL2 URL https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz)
-    set(SDL_SHARED ON CACHE BOOL "" FORCE)
-    set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    if (ANDROID)
+        set(SDL_SHARED ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+    else()
+        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+        set(SDL_STATIC ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC_PIC ON CACHE BOOL "" FORCE)
+    endif()
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(SDL2)
+    if (NOT TARGET SDL2::SDL2)
+        add_library(SDL2::SDL2 ALIAS SDL2-static)
+    endif()
+endif()
+# RT64's file dialogs (inspector only) go through xdg-desktop-portal over D-Bus instead of linking GTK.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 
 # ---- RT64 renderer ----
 set(RT64_STATIC TRUE)
 set(RT64_SDL_WINDOW_VULKAN TRUE)
 add_compile_definitions(HLSL_CPU)
+# ImGui's D3D12 backend stores 64-bit GPU descriptor handles in ImTextureID.
+if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+    add_compile_definitions(ImTextureID=unsigned\ long\ long)
+endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
 
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
@@ -289,9 +311,26 @@ endif()
 if (MSVC)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
+target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}")
+# The shader combos warmed at startup without an ubershader are compiled into the exe.
+set(RS64_SHADER_COMBOS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/tools/d3d11/shader_combos.txt")
+file(READ "${RS64_SHADER_COMBOS_FILE}" RS64_SHADER_COMBOS)
+file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/generated/rs64_shader_combos.inl" CONTENT "R\"RS64(@RS64_SHADER_COMBOS@)RS64\"\n" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RS64_SHADER_COMBOS_FILE}")
+target_include_directories(RogueSquadron64Recomp PRIVATE "${CMAKE_BINARY_DIR}/generated")
 if (ANDROID)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE SSE2NEON_SUPPRESS_WARNINGS)
     target_compile_options(RogueSquadron64Recomp PRIVATE -Wno-deprecated-literal-operator)
+endif()
+
+# Linux executables carry no icon resource: favicon.ico is embedded and set as the window icon at startup.
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
+        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/favicon.ico rs64_favicon_ico ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
+        DEPENDS ${CMAKE_SOURCE_DIR}/favicon.ico file_to_c
+        VERBATIM)
+    target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/favicon_ico.c)
+    target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR})
 endif()
 
 target_include_directories(RogueSquadron64Recomp PRIVATE
@@ -338,7 +377,6 @@ add_executable(touch_input_test EXCLUDE_FROM_ALL
 )
 set_target_properties(touch_input_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
-target_compile_definitions(touch_input_test PRIVATE RS64_TOUCH_NO_SDL)
 
 # Not part of the default build: cmake --build build --config Debug --target video_config_test
 add_executable(video_config_test EXCLUDE_FROM_ALL
@@ -352,6 +390,10 @@ target_include_directories(video_config_test PRIVATE
     ${CMAKE_SOURCE_DIR}/lib/rt64/src
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib
 )
+if(WIN32)
+    # Matches the game, which gets it from plume; without it validate() turns D3D11 into Automatic.
+    target_compile_definitions(video_config_test PRIVATE PLUME_D3D11_ENABLED)
+endif()
 
 # Standalone unit test for the nav-sequencer target parser.
 add_executable(nav_target_test EXCLUDE_FROM_ALL
@@ -448,13 +490,20 @@ if (WIN32)
         URL https://github.com/libsdl-org/SDL/releases/download/release-${SDL2_VERSION}/SDL2-devel-${SDL2_VERSION}-VC.zip
     )
     FetchContent_MakeAvailable(sdl2)
+    if (CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(RS64_WIN_ARCH x86)
+        # 4GB of address space on a 64-bit OS instead of 2GB; RDRAM alone takes 512MB.
+        target_link_options(RogueSquadron64Recomp PRIVATE /LARGEADDRESSAWARE)
+    else()
+        set(RS64_WIN_ARCH x64)
+    endif()
     target_include_directories(RogueSquadron64Recomp PRIVATE ${sdl2_SOURCE_DIR}/include)
-    target_link_directories(RogueSquadron64Recomp PRIVATE ${sdl2_SOURCE_DIR}/lib/x64)
+    target_link_directories(RogueSquadron64Recomp PRIVATE ${sdl2_SOURCE_DIR}/lib/${RS64_WIN_ARCH})
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${sdl2_SOURCE_DIR}/lib/x64/SDL2.dll"
-            "${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/x64/dxil.dll"
-            "${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/x64/dxcompiler.dll"
+            "${sdl2_SOURCE_DIR}/lib/${RS64_WIN_ARCH}/SDL2.dll"
+            "${RT64_DXC_BIN_DIR}/dxil.dll"
+            "${RT64_DXC_BIN_DIR}/dxcompiler.dll"
             $<TARGET_FILE_DIR:RogueSquadron64Recomp>)
     set_target_properties(RogueSquadron64Recomp PROPERTIES
         LINK_FLAGS_DEBUG          "/SUBSYSTEM:CONSOLE"
@@ -473,9 +522,7 @@ elseif (APPLE)
     target_include_directories(RogueSquadron64Recomp PRIVATE ${SDL2_INCLUDE_DIRS})
     target_link_libraries(RogueSquadron64Recomp PRIVATE ${CMAKE_DL_LIBS} Threads::Threads SDL2::SDL2)
 else()
-    find_package(SDL2 REQUIRED)
     find_package(Threads REQUIRED)
-    target_include_directories(RogueSquadron64Recomp PRIVATE ${SDL2_INCLUDE_DIRS})
     target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2::SDL2 ${CMAKE_DL_LIBS} Threads::Threads)
 endif()
 
@@ -489,11 +536,11 @@ if (NOT ANDROID)
     target_include_directories(input_bindings_test PRIVATE ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
     if (WIN32)
         target_include_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/include)
-        target_link_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/lib/x64)
+        target_link_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/lib/${RS64_WIN_ARCH})
         target_link_libraries(input_bindings_test PRIVATE SDL2)
         target_link_options(input_bindings_test PRIVATE /NODEFAULTLIB:SDL2main.lib)
         add_custom_command(TARGET input_bindings_test POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${sdl2_SOURCE_DIR}/lib/x64/SDL2.dll" $<TARGET_FILE_DIR:input_bindings_test>)
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${sdl2_SOURCE_DIR}/lib/${RS64_WIN_ARCH}/SDL2.dll" $<TARGET_FILE_DIR:input_bindings_test>)
     else()
         target_include_directories(input_bindings_test PRIVATE ${SDL2_INCLUDE_DIRS})
         target_link_libraries(input_bindings_test PRIVATE SDL2::SDL2)

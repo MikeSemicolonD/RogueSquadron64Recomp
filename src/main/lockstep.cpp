@@ -250,16 +250,19 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
 
 // ROGUESQ_LS_PAUSE_AT=<f>[,<f>...]: a replay holds before frame f, writing <hash log>.paused, until <hash log>.resume appears (30 s cap), so
 // tools/recordings/capture-frames.ps1 can screenshot an exact frame at any ROGUESQ_SPEED. Off by default: it blocks the game thread.
+static std::vector<uint32_t> env_frame_list(const char* name) {
+    std::vector<uint32_t> v;
+    const char* e = recomp::dbg::env_str(name);
+    for (const char* p = e; p && *p;) {
+        v.push_back((uint32_t)strtoul(p, const_cast<char**>(&p), 10));
+        while (*p == ',' || *p == ' ') ++p;
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+}
+
 static const std::vector<uint32_t>& ls_pause_frames() {
-    static const std::vector<uint32_t> frames = [] {
-        std::vector<uint32_t> v;
-        const char* e = recomp::dbg::env_str("ROGUESQ_LS_PAUSE_AT");
-        for (const char* p = e; p && *p;) {
-            v.push_back((uint32_t)strtoul(p, const_cast<char**>(&p), 10));
-            while (*p == ',' || *p == ' ') ++p;
-        }
-        return v;
-    }();
+    static const std::vector<uint32_t> frames = env_frame_list("ROGUESQ_LS_PAUSE_AT");
     return frames;
 }
 
@@ -277,15 +280,12 @@ static void ls_renderdoc_point(const State& s) {
     }
 }
 
-static void ls_pause_point(const State& s) {
-    const auto& frames = ls_pause_frames();
-    if (frames.empty() || s.hash_path.empty() || std::find(frames.begin(), frames.end(), s.frame) == frames.end()) {
-        return;
-    }
-    const std::string paused = s.hash_path + ".paused";
-    const std::string resume = s.hash_path + ".resume";
+// Writes <base>.paused (the frame) and holds the calling game thread until <base>.resume names that frame (30 s cap).
+static void hold_for_capture(const std::string& base, uint32_t frame, const char* tag) {
+    const std::string paused = base + ".paused";
+    const std::string resume = base + ".resume";
     if (FILE* f = fopen(paused.c_str(), "wb")) {
-        fprintf(f, "%u\n", s.frame);
+        fprintf(f, "%u\n", frame);
         fclose(f);
     }
     std::error_code ec;
@@ -305,7 +305,7 @@ static void ls_pause_point(const State& s) {
         return v;
     };
     bool resumed = false;
-    while (!(resumed = (resume_frame() == (long)s.frame)) && std::chrono::steady_clock::now() < until) {
+    while (!(resumed = (resume_frame() == (long)frame)) && std::chrono::steady_clock::now() < until) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     while (std::filesystem::exists(resume, ec) && !std::filesystem::remove(resume, ec) && std::chrono::steady_clock::now() < until) {
@@ -313,7 +313,38 @@ static void ls_pause_point(const State& s) {
     }
     std::filesystem::remove(paused, ec);
     const long long ms = (long long)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
-    fprintf(stderr, "[ls] paused at frame %u: %s after %lld ms\n", s.frame, resumed ? "resumed" : "timed out", ms);
+    fprintf(stderr, "[%s] paused at frame %u: %s after %lld ms\n", tag, frame, resumed ? "resumed" : "timed out", ms);
+}
+
+static void ls_pause_point(const State& s) {
+    const auto& frames = ls_pause_frames();
+    if (frames.empty() || s.hash_path.empty() || std::find(frames.begin(), frames.end(), s.frame) == frames.end()) {
+        return;
+    }
+    hold_for_capture(s.hash_path, s.frame, "ls");
+}
+
+// ROGUESQ_CINE_PAUSE_AT=<f>[,<f>...] with ROGUESQ_CINE_PAUSE_FILE=<base>: a playing cutscene holds once its frame counter (gateCtr 0x800B0B28, the
+// file's own frames) reaches each f, by the same .paused / .resume handshake as the replay pause (capture-frames.ps1 -Cutscene).
+extern "C" void rs64_cine_pause_point(uint8_t* rdram) {
+    static const std::vector<uint32_t> frames = env_frame_list("ROGUESQ_CINE_PAUSE_AT");
+    static const char* base = recomp::dbg::env_str("ROGUESQ_CINE_PAUSE_FILE");
+    static size_t next = 0;
+    if (next >= frames.size() || !base || !*base) {
+        return;
+    }
+    auto rd = [rdram](uint32_t a) { return ((uint32_t)rdram[(a - 0x80000000u) ^ 3] << 24) | ((uint32_t)rdram[(a + 1 - 0x80000000u) ^ 3] << 16) | ((uint32_t)rdram[(a + 2 - 0x80000000u) ^ 3] << 8) | (uint32_t)rdram[(a + 3 - 0x80000000u) ^ 3]; };
+    const uint32_t cut = rd(0x800B1904u);
+    if (cut < 0x80000000u || cut >= 0x80800000u) {
+        return;
+    }
+    const uint32_t gate = rd(0x800B0B28u);
+    while (next < frames.size() && gate >= frames[next]) {
+        if (gate != frames[next]) {
+            fprintf(stderr, "[cine] frame %u reached at %u\n", frames[next], gate);
+        }
+        hold_for_capture(base, frames[next++], "cine");
+    }
 }
 
 extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {

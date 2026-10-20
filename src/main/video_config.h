@@ -33,6 +33,15 @@ void set_draw_distance(float mult);
 bool keep_cutscene_draw_distance();
 void set_keep_cutscene_draw_distance(bool on);
 
+// RT64 copies each rendered frame back to RDRAM ("framebufferWriteback", default on; off by default on a Raspberry Pi). This game never reads them
+// back, and the copy plus the GPU wait it needs cost slow GPUs about half their frame time. Applies live.
+bool framebuffer_writeback();
+void set_framebuffer_writeback(bool on);
+
+// "graphicsAPI": "d3d10" is D3D11 with the device capped at feature level 10 (the path D3D10-class GPUs get).
+bool d3d10();
+void set_d3d10(bool on);
+
 // Fullscreen ("fullscreen" in roguesq_video.json, default off). Alt+Enter and the menu toggle change it and the change is saved.
 bool fullscreen();
 void set_fullscreen(bool on);

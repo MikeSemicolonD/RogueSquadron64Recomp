@@ -19,6 +19,8 @@ void adv_get(const json& a, const char* key, T& out) {
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+std::atomic<bool> g_fb_writeback{true};
+std::atomic<bool> g_d3d10{false};
 std::atomic<bool> g_fullscreen{false};
 // -1 = follow the setting; 0/1 = ROGUESQ_FULLSCREEN pins the live state until the player toggles, and the file keeps the setting.
 std::atomic<int> g_fullscreen_pin{-1};
@@ -61,6 +63,22 @@ void set_keep_cutscene_draw_distance(bool on) {
     g_keep_cutscene.store(on, std::memory_order_relaxed);
 }
 
+bool framebuffer_writeback() {
+    return g_fb_writeback.load(std::memory_order_relaxed);
+}
+
+void set_framebuffer_writeback(bool on) {
+    g_fb_writeback.store(on, std::memory_order_relaxed);
+}
+
+bool d3d10() {
+    return g_d3d10.load(std::memory_order_relaxed);
+}
+
+void set_d3d10(bool on) {
+    g_d3d10.store(on, std::memory_order_relaxed);
+}
+
 bool fullscreen() {
     const int pin = g_fullscreen_pin.load(std::memory_order_relaxed);
     return pin >= 0 ? pin != 0 : g_fullscreen.load(std::memory_order_relaxed);
@@ -95,6 +113,9 @@ void apply_friendly(UC& uc, const json& j) {
     }
     if (has("keepCutsceneDrawDistance") && j["keepCutsceneDrawDistance"].is_boolean()) {
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
+    }
+    if (has("framebufferWriteback") && j["framebufferWriteback"].is_boolean()) {
+        set_framebuffer_writeback(j["framebufferWriteback"].get<bool>());
     }
     if (has("fullscreen") && j["fullscreen"].is_boolean()) {
         g_fullscreen.store(j["fullscreen"].get<bool>(), std::memory_order_relaxed);
@@ -134,6 +155,8 @@ void apply_friendly(UC& uc, const json& j) {
                                    : UC::Antialiasing::None;
     }
     if (has("supersampling")) uc.downsampleMultiplier = j["supersampling"].get<int>();
+    if (has("ssaa")) uc.downsampleMultiplier = j["ssaa"].get<int>();
+    if (has("fxaa")) uc.fxaa = j["fxaa"].get<bool>();
     if (has("smoothUpscale")) {
         uc.filtering = j["smoothUpscale"].get<bool>() ? UC::Filtering::AntiAliasedPixelScaling
                                                       : UC::Filtering::Nearest;
@@ -157,7 +180,9 @@ void apply_friendly(UC& uc, const json& j) {
         uc.graphicsAPI = (a == "vulkan") ? UC::GraphicsAPI::Vulkan
                        : (a == "d3d12")  ? UC::GraphicsAPI::D3D12
                        : (a == "metal")  ? UC::GraphicsAPI::Metal
+                       : ((a == "d3d11") || (a == "d3d10")) ? UC::GraphicsAPI::D3D11
                                          : UC::GraphicsAPI::Automatic;
+        set_d3d10(a == "d3d10");
     }
     if (has("developerMode")) uc.developerMode = j["developerMode"].get<bool>();
 
@@ -191,6 +216,7 @@ json to_friendly(const UC& uc) {
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
+    j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
     json rt = json::object();
     for (const auto& [key, feature] : kRtKeys) {
@@ -223,7 +249,8 @@ json to_friendly(const UC& uc) {
         default:                       j["antialiasing"] = 0; break;
     }
 
-    j["supersampling"] = uc.downsampleMultiplier;
+    j["ssaa"] = uc.downsampleMultiplier;
+    j["fxaa"] = uc.fxaa;
 
     if (uc.filtering == UC::Filtering::AntiAliasedPixelScaling) {
         j["smoothUpscale"] = true;
@@ -258,6 +285,7 @@ json to_friendly(const UC& uc) {
         case UC::GraphicsAPI::Vulkan: j["graphicsAPI"] = "vulkan"; break;
         case UC::GraphicsAPI::D3D12:  j["graphicsAPI"] = "d3d12"; break;
         case UC::GraphicsAPI::Metal:  j["graphicsAPI"] = "metal"; break;
+        case UC::GraphicsAPI::D3D11:  j["graphicsAPI"] = d3d10() ? "d3d10" : "d3d11"; break;
         default:                      j["graphicsAPI"] = "auto"; break;
     }
 

@@ -42,6 +42,17 @@ inline bool log_vi() {
     return v;
 }
 
+// Periodic health lines ([vi] update_screen, [hle send_dl], [musyx-run], [sp] yields). On in Debug, off in Release;
+// ROGUESQ_LOG_HEARTBEAT=0/1 overrides. tools/run-stability.ps1 reads them.
+inline bool log_heartbeat() {
+#ifdef NDEBUG
+    static const bool v = env_flag("ROGUESQ_LOG_HEARTBEAT");
+#else
+    static const bool v = !recomp::os::getenv("ROGUESQ_LOG_HEARTBEAT") || env_flag("ROGUESQ_LOG_HEARTBEAT");
+#endif
+    return v;
+}
+
 // Thread lifecycle shims: osDestroyThread victim + queue check. ROGUESQ_LOG_THREADS=1.
 inline bool log_threads() {
     static const bool v = env_flag("ROGUESQ_LOG_THREADS");

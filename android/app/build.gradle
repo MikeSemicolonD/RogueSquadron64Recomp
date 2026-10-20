@@ -4,10 +4,11 @@ plugins {
 
 base { archivesName = 'RogueSquadron64Recomp' }
 
-// rs64Version (gradle.properties) is major.minor.patch, each part 0-99; versionCode packs it so a higher version always has a higher code.
+// The repo-root VERSION file is major.minor.patch, each part 0-99; versionCode packs it so a higher version always has a higher code.
+def rs64Version = file("${rootDir}/../VERSION").text.trim()
 def rs64VersionParts = rs64Version.tokenize('.').collect { it.toInteger() }
 if (rs64VersionParts.size() != 3 || rs64VersionParts.any { it < 0 || it > 99 }) {
-    throw new GradleException("rs64Version in gradle.properties must be major.minor.patch with each part 0-99, got '${rs64Version}'")
+    throw new GradleException("VERSION must be major.minor.patch with each part 0-99, got '${rs64Version}'")
 }
 def rs64VersionCode = rs64VersionParts[0] * 10000 + rs64VersionParts[1] * 100 + rs64VersionParts[2]
 

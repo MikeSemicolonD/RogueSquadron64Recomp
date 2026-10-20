@@ -5,6 +5,7 @@
 #include "lockstep_core.h"
 #include "host_api.h"
 #include "menu_config.h"
+#include "main.h"               // rs64_menu_request_quit
 #include <atomic>
 #include <cstring>
 #include <cstdlib>
@@ -78,7 +79,14 @@ RsNavTarget rs64_nav_parse(const char* v) {
     if (!std::strncmp(v, "level", 5))         { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); }
     else if (!std::strncmp(v, "hangar", 6))   { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); t.c = 1; }
     else if (!std::strncmp(v, "abort", 5))    { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); }
-    else if (!std::strncmp(v, "cutscene", 8)) { t.kind = NAV_CUTSCENE; t.a = arg(v); t.b = arg2(v) < 0 ? 0 : arg2(v); }
+    else if (!std::strncmp(v, "cutscene", 8)) {
+        t.kind = NAV_CUTSCENE;
+        t.a = arg(v);
+        t.b = arg2(v) < 0 ? 0 : arg2(v);
+        const char* c1 = std::strchr(v, ',');
+        const char* c2 = c1 ? std::strchr(c1 + 1, ',') : nullptr;
+        if (c2 && c2[1]) t.c = std::atoi(c2 + 1);
+    }
     else if (!std::strncmp(v, "demo", 4))     { t.kind = NAV_DEMO;     t.a = arg(v) < 0 ? 0 : arg(v); }
     else if (!std::strncmp(v, "lobby:page", 10)) {
         // Test: stop on the multiplayer page with nothing pressed, handing the pad back.
@@ -139,6 +147,20 @@ static void nav_advance() { s_step++; s_watchdog = 0; s_since_press = 9999; }
 
 static void nav_write_u8(uint8_t* rdram, uint32_t phys, uint8_t val) { rdram[phys ^ 3] = val; }
 
+// Craft byte gGameSettings+1 plus the secondary weapon gGameSettings+3 that menuOverlayInit derives from it; the craft byte alone keeps the old craft's secondary.
+// Mirrors getSecondaryWeaponForLevelAndCraft (0x800C6728, menu overlay) for pilot slot 0, as menuOverlayInit calls it.
+static void nav_write_craft(uint8_t* rdram, int level, int craft) {
+    static const uint8_t kBase[9] = { 5, 4, 2, 7, 6, 8, 0xFF, 0xFF, 8 };
+    uint8_t w = (craft >= 0 && craft < 9) ? kBase[craft] : 0xFF;
+    if (level == 8 && craft == 0) w = 1;
+    const uint32_t upgrades = ((uint32_t)rdram[0x130B4C ^ 3] << 24) | ((uint32_t)rdram[0x130B4D ^ 3] << 16) | ((uint32_t)rdram[0x130B4E ^ 3] << 8) | rdram[0x130B4F ^ 3];
+    if (w == 2 && (upgrades & 0x800)) w = 3;
+    else if (w == 5 && (upgrades & 0x2000)) w = 8;
+    else if (w == 7 && (upgrades & 0x4000)) w = 9;
+    rdram[0x130B41 ^ 3] = (uint8_t)craft;
+    rdram[0x130B43 ^ 3] = w;
+}
+
 static void nav_write_u32(uint8_t* rdram, uint32_t phys, uint32_t val) {
     rdram[(phys + 0) ^ 3] = (uint8_t)(val >> 24);
     rdram[(phys + 1) ^ 3] = (uint8_t)(val >> 16);
@@ -172,19 +194,44 @@ static void nav_mission_reached() {
     }
 }
 
+// Craft select: step the bays (u8 0x800CD6E4 -> craft table 0x800CC3F8) until the requested craft shows; true once it does or after a full lap.
+// The game takes the secondary weapon from the selected bay, so the craft byte alone is not enough.
+static bool nav_step_craft(uint8_t* rdram, int want, const char* who) {
+    // A bay turn animates before the bay byte changes: after a press, wait for the change (or 240 presents) before judging again.
+    static int s_bay_seen = -1, s_bay_wait = 0, s_presses = 0;
+    const int bay = rdram[0xCD6E4u ^ 3];
+    const int here = rdram[(0xCC3F8u + bay) ^ 3];
+    if (bay != s_bay_seen) {
+        fprintf(stderr, "[nav] %s: craft bay %d = craft %d (want %d)\n", who, bay, here, want);
+        s_bay_seen = bay;
+        s_bay_wait = 0;
+    }
+    if (want < 0 || here == want || s_presses >= 12) {
+        return true;
+    }
+    if (s_bay_wait > 0) {
+        --s_bay_wait;
+        return false;
+    }
+    begin_pulse(N64_R_JPAD);
+    s_bay_wait = 240;
+    ++s_presses;
+    return false;
+}
+
 static void nav_level(uint8_t* rdram, const char* st) {
     // A new pilot auto-launches a forced level, so there is no select screen; pin level+craft only after name entry (step >= 2), since writing currentLevel earlier freezes the flow.
     if (s_step >= 2) {
         // gGameSettings currentLevel (u8), gCurrentLevel (u32)
         nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
         nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
-        if (g_target.b >= 0) nav_write_u8(rdram, 0x130B41, (uint8_t)g_target.b);
+        if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
     }
 
     // Success as soon as the mission launches (once past name entry).
     if (s_step >= 2 && is(st, "mission")) {
-        fprintf(stderr, "[nav] level target=%d reached; currentLevel=0x%02X craft=0x%02X\n",
-                g_target.a, rdram[0x130B40 ^ 3], rdram[0x130B41 ^ 3]);
+        fprintf(stderr, "[nav] level target=%d reached; currentLevel=0x%02X craft=0x%02X secondary=0x%02X\n",
+                g_target.a, rdram[0x130B40 ^ 3], rdram[0x130B41 ^ 3], rdram[0x130B43 ^ 3]);
         fflush(stderr);
         nav_mission_reached();
         return;
@@ -217,9 +264,9 @@ static void nav_level(uint8_t* rdram, const char* st) {
                 nav_advance();
             }
             break;
-        case 4:  // AVAILABLE CRAFT: write target craft, confirm, until mission
-            if (is(st, "menu.account.craft_select")) {
-                if (g_target.b >= 0) nav_write_u8(rdram, 0x130B41, (uint8_t)g_target.b);
+        case 4:  // AVAILABLE CRAFT: turn the hangar to the target craft, confirm, until mission
+            if (is(st, "menu.account.craft_select") && nav_step_craft(rdram, g_target.b, "level")) {
+                if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
                 nav_repress(N64_A_BUTTON);
             } else if (is(st, "mission")) {
                 nav_advance();
@@ -521,24 +568,7 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
                     const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : 0;
                     if (btn) nav_repress(btn);
                 } else if (screen == 0) {
-                    // Craft select: step the bays (u8 0x800CD6E4 -> craft table 0x800CC3F8) to the requested craft, then confirm.
-                    // A bay turn animates before the bay byte changes: after a press, wait for the change (or 240 presents) before judging again.
-                    static int s_bay_seen = -1, s_bay_wait = 0;
-                    const int bay = rdram[0xCD6E4u ^ 3];
-                    const int here = rdram[(0xCC3F8u + bay) ^ 3];
-                    if (bay != s_bay_seen) {
-                        fprintf(stderr, "[nav] lobby: craft bay %d = craft %d (want %d)\n", bay, here, g_target.c);
-                        s_bay_seen = bay;
-                        s_bay_wait = 0;
-                    }
-                    if (s_bay_wait > 0) {
-                        --s_bay_wait;
-                        break;
-                    }
-                    if (g_target.c >= 0 && here != g_target.c) {
-                        begin_pulse(N64_R_JPAD);
-                        s_bay_wait = 240;
-                    } else {
+                    if (nav_step_craft(rdram, g_target.c, "lobby")) {
                         // START confirms the craft and then skips the hangar launch; a watching client confirms with A and skips nothing itself.
                         static const bool s_watch_launch = recomp::dbg::env_on("ROGUESQ_NAV_WATCH_CUTSCENES");
                         nav_repress(s_watch_launch ? N64_A_BUTTON : N64_START_BUTTON);
@@ -561,20 +591,33 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
     }
 }
 
-// Cutscene target: mainGameLoop's boot intro call (cinematicLoopBody(0x13, 2, 0) at 0x8003E10C, after the attribution screens) plays cutscene:<level>[,<kind>] instead, once; it loads cuts/id<level>_<intro|extro|special> (kind 0/1/2), and only 3,2 and 19,2 exist for kind 2.
+// Cutscene target: mainGameLoop's boot intro call (cinematicLoopBody(0x13, 2, 0) at 0x8003E10C, after the attribution screens) plays cutscene:<level>[,<kind>[,<medal tier 0-3>]] instead, once; it loads cuts/id<level>_<intro|extro|special> (kind 0/1/2), and only 3,2 and 19,2 exist for kind 2.
 // The craft byte gGameSettings+1 is set from the per-level table 0x8009EC50 (+3), as the game's cutscene viewer loop does.
+static bool s_boot_cutscene_played = false;
+
 extern "C" void rs64_nav_boot_cutscene(uint8_t* rdram, uint32_t* level, uint32_t* kind) {
-    static bool s_done = false;
+    static bool& s_done = s_boot_cutscene_played;
     static const RsNavTarget t = rs64_nav_parse(recomp::dbg::env_str("ROGUESQ_BOOT_TARGET"));
     const bool mission = t.a >= 0 && t.a <= 15 && t.b >= 0 && t.b <= 1;
     const bool special = t.b == 2 && (t.a == 3 || t.a == 19);
     if (s_done || t.kind != NAV_CUTSCENE || !(mission || special)) return;
     s_done = true;
     if (t.a <= 15) nav_write_u8(rdram, 0x130B41, rdram[(0x9EC50u + (uint32_t)t.a * 4 + 3) ^ 3]);
+    // The ceremony's medal tier D_800B0B1E (dispatchCinematicFromMainLoop normally sets it); the cinematic overlay is loaded by now.
+    if (special && t.a == 3 && t.c >= 0) nav_write_u8(rdram, 0xB0B1E, (uint8_t)(t.c > 3 ? 3 : t.c));
     *level = (uint32_t)t.a;
     *kind = (uint32_t)t.b;
     fprintf(stderr, "[nav] boot cutscene level %d kind %d\n", t.a, t.b);
     fflush(stderr);
+}
+
+// Runs when the boot intro call returns; ROGUESQ_BOOT_EXIT=1 closes the game there, so scripted cutscene runs end on their own.
+extern "C" void rs64_nav_boot_cutscene_done(void) {
+    static const bool s_exit = recomp::dbg::env_on("ROGUESQ_BOOT_EXIT");
+    if (!s_exit || !s_boot_cutscene_played) return;
+    fprintf(stderr, "[nav] boot cutscene finished, exiting (ROGUESQ_BOOT_EXIT)\n");
+    fflush(stderr);
+    rs64_menu_request_quit();
 }
 
 // Demo target: the custom menu is auto-disabled so the attract-idle path runs and the demo fires on the natural idle timeout.
@@ -595,6 +638,11 @@ static void nav_demo(uint8_t* rdram, const char* st) {
 
 // ROGUESQ_FORCE_LEVEL / ROGUESQ_FORCE_CRAFT: no input, the player drives; the fields are pinned from SELECT LEVEL, AVAILABLE CRAFT or the end of ENTER NAME (a new pilot auto-launches) until the mission starts.
 static void force_tick(uint8_t* rdram) {
+    // ROGUESQ_FORCE_LOWRES=1: from the main menu on, keep the game's HIGH RESOLUTION option off (gGameSettings+0x10 bit 0, byte 0x80130B53), like switching it in Options after a hi-res boot.
+    static const bool lowres = recomp::dbg::env_on("ROGUESQ_FORCE_LOWRES");
+    static bool s_lowres_on = false;
+    if (lowres && rdram && !s_lowres_on && is(rs64_state_current_id(), "menu.main")) s_lowres_on = true;
+    if (s_lowres_on) rdram[0x130B53 ^ 3] &= (uint8_t)~1u;
     static const int level = recomp::dbg::env_int("ROGUESQ_FORCE_LEVEL", -1);
     static const int craft = recomp::dbg::env_int("ROGUESQ_FORCE_CRAFT", -1);
     if ((level < 0 && craft < 0) || !rdram) return;
@@ -616,7 +664,7 @@ static void force_tick(uint8_t* rdram) {
         nav_write_u8(rdram, 0x130B40, (uint8_t)level);
         nav_write_u32(rdram, 0x130B70, (uint32_t)level);
     }
-    if (craft >= 0) nav_write_u8(rdram, 0x130B41, (uint8_t)craft);
+    if (craft >= 0) nav_write_craft(rdram, rdram[0x130B40 ^ 3], craft);
 }
 
 extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay) {

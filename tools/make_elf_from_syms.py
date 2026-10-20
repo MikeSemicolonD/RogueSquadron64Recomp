@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build ../rogue_squadron64/build/roguesquadron.elf when the public decomp lags the names rogue_squadron.toml uses.
 
-Function bounds come from syms/rogue_squadron.syms.toml, names from the decomp where the vram matches, and RENAMES for the rest (each pinned to an overlay by the instruction its hook or patch expects at that vram).
+Function bounds and names come from syms/rogue_squadron.syms.toml (the names the config and mods use); data symbols and any remaining func_ names from the decomp where the vram matches.
 Needs rogue_squadron.z64 in the decomp's root: python tools/make_elf_from_syms.py
 """
 import os, sys, tomllib, importlib.util
@@ -13,35 +13,6 @@ DECOMP_ELF = "build/roguesquadron.decomp.elf"
 
 spec = importlib.util.spec_from_file_location("mk", DECOMP / "tools/make_elf.py")
 mk = importlib.util.module_from_spec(spec); spec.loader.exec_module(mk)
-
-# (section, name) -> vram of a vram inside the target function
-RENAMES = {
-    ".ovl.mission": {
-        "computeOrientedTransformFromQuat": 0x800B10DC, "findClosestRadarContactAndSetSweep": 0x800C55E0,
-        "findNearestSceneObjectToPoint": 0x800AFD4C, "loadPlayerStartPosition": 0x800AFF8C,
-        "onPlayerCraftGroundCrash": 0x800B02DC, "updatePlayerCraftPhysics": 0x800B2E48,
-        "updatePlayerDeathSpiral": 0x800B0D14, "updateProbeDroidHopState": 0x800CAB38,
-        "updateXwingFlightControls": 0x800B48EC, "updateAwingFlightControls": 0x800B5D54,
-        "updateYwingFlightControls": 0x800B7984, "updateVwingFlightControls": 0x800B9280,
-        "updateFalconFlightControls": 0x800BA8F4, "updateTieInterceptorFlightControls": 0x800BC190,
-        "updateT16FlightControls": 0x800BD148, "updateNabooStarfighterFlightControls": 0x800BDEB0,
-        "updateSnowSpeederFlightControls": 0x800ABDA0,
-        "runPauseMenuStateMachine": 0x800C3550, "initOrUpdatePauseScreenDim": 0x800C2458,
-        "tickSongFadeTimer": 0x800EE82C, "requestSpeechResponseMode2": 0x800FBB08,
-        "requestSpeechResponseMode1": 0x800FBB64, "endMissionCleanup": 0x800FB9E4,
-        "requestMissionTransitionMode": 0x800FB190, "setHudEnableBit4": 0x800C7738,
-        "setHudEnableBit8": 0x800C776C, "drawRadarIcon": 0x800C5E84, "renderRadarMinimap": 0x800C6290,
-    },
-    ".ovl.menu": {
-        "runMenuModelViewerScreen": 0x800C29F8, "tickFormatMessageWorker": 0x800B380C,
-        "runMenuShipSelectScreen": 0x800C14A8, "setupMenuData": 0x800BAF70,
-        "menuControllerInput": 0x800B51B8, "menuOverlayInit": 0x800C593C,
-        "updateMenuPerFrame": 0x800BB394, "initCraftSelectScreen": 0x800AF0D0,
-        "tickCraftSelectScreen": 0x800AF3EC, "hangarVehicleDisplayNpcHandler": 0x800C6D90, "runHangarSelectionFrame": 0x800AADD8,
-    },
-    ".ovl.cinematic": {"cinematicLoopBody": 0x800A6024, "playCutsceneObjectImpactSound": 0x800AEFAC,
-                       "updateCinematicCameraStateMachine": 0x800ADA48},
-}
 
 def read_elf_syms(path):
     """(name, vram, size, type, shndx) for every symbol in a make_elf.py ELF."""
@@ -76,11 +47,6 @@ def main():
         shndx = secidx[sec["name"]]
         _, base, size, _ = mk.SECTIONS[shndx - 1]
         funcs = sec.get("functions", [])
-        for new, v in RENAMES.get(sec["name"], {}).items():
-            hit = [f for f in funcs if f["vram"] <= v < f["vram"] + f["size"]]
-            if len(hit) != 1: sys.exit(f"{new}: {len(hit)} candidates at {v:#x} in {sec['name']}")
-            print(f"  {sec['name']:15} {hit[0]['name']:28} -> {new}")
-            hit[0]["name"] = new
         for f in funcs:
             # make_elf.py hardcodes the entry symbols (func_80000400/func_8000040C).
             if sec["name"] != ".entry" and f["name"] not in manual and base <= f["vram"] < base + size:
