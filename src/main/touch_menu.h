@@ -95,6 +95,8 @@ namespace rs64::touch {
     int pause_entry(const uint8_t* rdram);
     // Selectable index in pause submenu `menu` whose record nextMenu (+4) equals `next`; -1 if none.
     int pause_find_entry(const uint8_t* rdram, int menu, uint16_t next);
+    // Record nextMenu (+4) of selectable k in pause submenu `menu`; -1 if none.
+    int pause_entry_next(const uint8_t* rdram, int menu, int k);
     // Raw records (flags, +2, nextMenu) of pause submenu `menu`, for logs.
     std::string describe_pause_records(const uint8_t* rdram, int menu);
     bool read_pause_lines(const uint8_t* rdram, float win_w, float win_h, std::vector<PauseLine>* lines);

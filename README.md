@@ -28,9 +28,11 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 ## Minimum Requirements
 
+<div align="center">
+
 | Requirement | Details |
 | --- | --- |
-| **ROM** | Star Wars: Rogue Squadron, USA v1.0, as `.z64`, `.v64` or `.n64` (16 MB, xxHash3-64 `0x6B66A44153594DEA`), e.g. `rogue_squadron.z64` |
+| **ROM** | Star Wars: Rogue Squadron (USA v1.0) `.z64`, `.v64` or `.n64` (xxHash3-64 `0x6B66A44153594DEA`) |
 
 | OS / Platform | Graphics Backend |
 | --- | --- |
@@ -41,6 +43,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Linux x86 (32-bit)](docs/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
 | **[Android 8+ arm64](#android-notes)** | Vulkan 1.1 |
 | **[*maybe* macOS 11+](#macos-notes)*** | Metal |
+
+</div>
 
 *macOS is *compile-only* so far (see [macOS notes](#macos-notes))
 
@@ -57,6 +61,7 @@ Per-platform player requirements (GPUs for D3D11 and D3D10, Raspberry Pi models,
 - **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status-playable).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate. [Might *still* have some visual glitches](#status-playable).
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
+- **Ray Tracing Support (experimental):** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog.
 
 #### Input
 
@@ -162,10 +167,10 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 > In Debug builds the RT64 inspector owns the ImGui overlay, so press **F1** *first* before **F6**.
 > Release builds open the Controls window with **F6** directly.
 
-## Status (PLAYABLE)
+## Status
 
 > [!NOTE]
-> I have personally managed to play it (on windows) all the way through from the first level to the credits sequence.
+> The game is completely playable from beginning to end.
 
 ### Recomp. specific Issues
 
@@ -185,13 +190,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- Control switching based on menu/display 'context'. For example being able use the 'RMB' to back out of menus while still being able to use it for secondary weapons which is a separate binding. We already do a form of this for touch inputs on Android.
-
-- Clickable/highlightable menu buttons when using a mouse so we no longer have to hide the cursor when in the menus. We already have a way to defines areas of the screen and associate them to buttons/functionality on Android.
-
-- Level/Model editing using RS64 Explorer to assist modding efforts
-  - Terrain editing
-  - Model/Texture editing
+- Level editing using RS64 Explorer to assist modding efforts
   - Level/Event authoring
   - Cutscene authoring
 

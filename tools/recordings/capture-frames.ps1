@@ -105,7 +105,6 @@ function Get-PausedFrame {
     return -1
 }
 
-if (-not $Cutscene) { Get-Process RogueSquadron64Recomp -ErrorAction SilentlyContinue | Stop-Process }
 $p = Start-Process -FilePath $exe -WorkingDirectory (Split-Path $exe) -PassThru -RedirectStandardError $log -RedirectStandardOutput "$log.stdout"
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $captured = 0

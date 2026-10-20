@@ -4,6 +4,7 @@
 #include "recomp.h"
 #include "../../RecompiledFuncs/funcs.h"
 #include "rs64_toml_hooks.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 // cinematicLoopBody entry
@@ -569,6 +570,78 @@ void rs64_th_menuControllerInput_800B5920(uint8_t* rdram, recomp_context* ctx) {
     extern void rs64_slider_redirect(uint8_t* rdram, unsigned sp); rs64_slider_redirect(rdram, (unsigned)ctx->r29);
 }
 
+// menuControllerInput 0x800B4E64
+void rs64_th_menuControllerInput_800B4E64(uint8_t* rdram, recomp_context* ctx) {
+    extern void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx); rs64_menu_input_state(rdram, ctx);
+}
+
+// integrateTieInterceptorPhysics entry
+void rs64_th_integrateTieInterceptorPhysics_entry(uint8_t* rdram, recomp_context* ctx) {
+    (void)rdram;
+    // 0.095 s * 10.5 columns/s (D_800A6C30) stays under one column per tick.
+    union { uint32_t u; float f; } dt = { (uint32_t)ctx->r5 };
+    if (dt.f > 0.095f) {
+        dt.f = 0.095f;
+        ctx->r5 = (gpr)(int32_t)dt.u;
+    }
+}
+
+// playerTieInterceptorMainUpdate 0x800BCE00
+void rs64_th_playerTieInterceptorMainUpdate_800BCE00(uint8_t* rdram, recomp_context* ctx) {
+    // Wipe strip at W->0x14: faces at +0xBC (stride 0x34, st words +0x14..+0x20 in vertex order 0,1,3,2), vertices at +0xA7C (xyz floats, 4 per face).
+    // Vertices are in tile units centred on the picture (tile edges on integers); the builder rewrites x, y and s every call, t only once.
+    // The game maps each 64x32 tile to texels 0..63 x 0..31 and its camera lands the strip a fraction of a native pixel off the static tiles; Scale/Offset are fitted from RenderDoc against the texrect grid.
+    const gpr w = ctx->r22;
+    const gpr strip = MEM_W(w, 0x14);
+    const uint32_t faces = (uint32_t)MEM_W(strip, 0xB8);
+    if (faces == 0 || faces > 64) {
+        return;
+    }
+
+    static const int StOrder[4] = { 0, 1, 3, 2 };
+    const float SRawPerTile = 4161.1f;
+    const float TRawFull = 4228.2f;
+    const float ScaleX = 1.00179f, OffsetX = 0.00438f, ScaleY = 1.00122f, OffsetY = 0.0055f;
+    // Bilinear centres texels on integers; the point-sampled static texrects sample at each output pixel's corner, so line up at half a texel minus half an output pixel.
+    extern float rs64_res_scale(void);
+    const float SOffsetTexels = 0.5f - 0.5f / rs64_res_scale(), TOffsetTexels = SOffsetTexels;
+    const float Push = 0.003f;
+    const float half = (float)MEM_HU(MEM_W(MEM_W(w, 0x4), 0xC), 0x8) * 0.5f;
+    union { uint32_t u; float f; } v;
+
+    float lo = 1e30f, hi = -1e30f;
+    for (uint32_t i = 0; i < faces * 4; i++) {
+        v.u = (uint32_t)MEM_W(strip, 0xA7C + i * 12);
+        lo = (v.f < lo) ? v.f : lo;
+        hi = (v.f > hi) ? v.f : hi;
+    }
+
+    for (uint32_t f = 0; f < faces; f++) {
+        const gpr st = strip + 0xBC + f * 0x34 + 0x14;
+        v.u = (uint32_t)MEM_W(strip, 0xA7C + f * 4 * 12);
+        const float colStart = floorf(v.f - (float)MEM_HU(st, StOrder[0] * 4) / 4096.0f + 0.5f);
+        for (int j = 0; j < 4; j++) {
+            const uint32_t vx = 0xA7C + (f * 4 + j) * 12;
+            const gpr stj = st + StOrder[j] * 4;
+            v.u = (uint32_t)MEM_W(strip, vx);
+            float x = v.f;
+            x += (x == lo) ? -Push : ((x == hi) ? Push : 0.0f);
+            x = (x < -half) ? -half : ((x > half) ? half : x);
+            MEM_H(stj, 0) = (int16_t)lrintf((x - colStart - SOffsetTexels / 64.0f) * SRawPerTile);
+            if (MEM_HU(stj, 2) == 0) {
+                MEM_H(stj, 2) = (int16_t)lrintf(-TRawFull * TOffsetTexels / 32.0f);
+            } else if (MEM_HU(stj, 2) == 0x1000) {
+                MEM_H(stj, 2) = (int16_t)lrintf(TRawFull - TRawFull * TOffsetTexels / 32.0f);
+            }
+            v.f = x * ScaleX + OffsetX;
+            MEM_W(strip, vx) = (int32_t)v.u;
+            v.u = (uint32_t)MEM_W(strip, vx + 4);
+            v.f = v.f * ScaleY + OffsetY;
+            MEM_W(strip, vx + 4) = (int32_t)v.u;
+        }
+    }
+}
+
 // getGameOrFrontText 0x800558C4
 void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx) {
     extern unsigned rs64_gof_override(uint8_t* rdram, unsigned textId); unsigned s = rs64_gof_override(rdram, (unsigned)ctx->r4); if (s) { ctx->r3 = 0; ctx->r2 = (gpr)(int32_t)s; }
@@ -577,6 +650,7 @@ void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx) {
 // initOrUpdatePauseScreenDim entry
 void rs64_th_initOrUpdatePauseScreenDim_entry(uint8_t* rdram, recomp_context* ctx) {
     extern void rs64_pause_install(uint8_t* rdram); rs64_pause_install(rdram);
+    extern void rs64_pause_hover_sound(uint8_t* rdram, recomp_context* ctx); rs64_pause_hover_sound(rdram, ctx);
 }
 
 // runPauseMenuStateMachine 0x800C3550

@@ -90,6 +90,9 @@ int rs64_th_menuControllerInput_800B4CA8(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_menuControllerInput_800B5428(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_updateMenuPerFrame_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B5920(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_menuControllerInput_800B4E64(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_integrateTieInterceptorPhysics_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_playerTieInterceptorMainUpdate_800BCE00(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_initOrUpdatePauseScreenDim_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runPauseMenuStateMachine_800C3550(uint8_t* rdram, recomp_context* ctx);
@@ -134,9 +137,9 @@ void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E10C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E114(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_findManifestEntryByName_8000496C(uint8_t* rdram, recomp_context* ctx);
-
 void rs64_th_freeManifestSegmentAssets_80004A0C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_freeManifestSegmentAssets_80004A80(uint8_t* rdram, recomp_context* ctx);
+
 #ifdef __cplusplus
 }
 #endif

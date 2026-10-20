@@ -85,6 +85,8 @@ namespace rs64::touch {
         void set_menu_hover(MenuHoverFn fn);
         // Queues a host-driven press lasting `polls` game polls, after any pending presses.
         void inject(uint16_t buttons, float x, float y, int polls, int gap = 1);
+        // A finger tap's per-context menu action at (x, y); also used for mouse clicks, so it works with touch disabled.
+        void tap(Context ctx, float x, float y);
         Pad poll(Context ctx, uint32_t ms);
         bool active() const;
         OverlayState draw_state(Context ctx) const;
@@ -120,6 +122,7 @@ namespace rs64::touch {
         float dist(float dx, float dy) const;
         void queue(uint16_t buttons, float x, float y, int polls = 3, int gap = 2);
         void apply_tap_action(TapAction a);
+        void drain_pulses(Pad* p);
 
         Config cfg_;
         float aspect_ = 16.0f / 9.0f;

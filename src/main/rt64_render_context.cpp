@@ -84,13 +84,9 @@ static std::atomic<RT64::Application*> g_rt64_app{nullptr};
 // capture so the cursor is free for the inspector.
 extern "C" int rs64_rt64_inspector_open(void) {
     RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
-    if (!app || !app->presentQueue) return 0;
-    // Only the developer-mode F1 inspector counts. Outside developer mode the
-    // inspector object still exists to host our own ImGui render hook (the
-    // Controls window), but the F1 developer UI can't be opened, so that object
-    // being non-null must not suppress capture.
-    if (!app->userConfig.developerMode) return 0;
-    return app->presentQueue->inspector != nullptr ? 1 : 0;
+    if (!app) return 0;
+    // The inspector object always exists to host the Controls window, so only the F1 visibility counts.
+    return (app->userConfig.developerMode && app->inspectorVisible) ? 1 : 0;
 }
 
 extern "C" void rs64_render_suspend_surface(void) {
@@ -142,6 +138,14 @@ extern "C" float rs64_cull_widen(void) {
     const float y = float(rs.y);
     const float w = (y > 0.0f) ? float(rs.x) / y : 1.0f;
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
+}
+
+// Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
+extern "C" float rs64_res_scale(void) {
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+    if (!app || !app->presentQueue) return 1.0f;
+    const float y = float(app->presentQueue->ext.sharedResources->resolutionScale.y);
+    return (y >= 1.0f) ? y : 1.0f;
 }
 
 #ifdef _WIN32

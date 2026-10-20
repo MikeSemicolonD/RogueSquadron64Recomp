@@ -290,27 +290,36 @@ namespace rs64::touch {
                 apply_tap_action(menu_tap_ ? menu_tap_(x, y) : TapAction::None);
             }
         } else if (tap) {
-            if (ctx == Context::Cutscene) {
-                queue(START, 0.0f, 0.0f);
-            } else if (ctx == Context::ListMenu) {
-                apply_tap_action(menu_tap_ ? menu_tap_(x, y) : TapAction::None);
-            } else if (ctx == Context::Wheel) {
-                // A letter tap queues its own steps (Handled); ENTER CODE/BACK select; anything else enters the center letter.
-                const TapAction a = menu_tap_ ? menu_tap_(x, y) : TapAction::None;
-                apply_tap_action(a == TapAction::None ? TapAction::Confirm : a);
-            } else if (ctx == Context::Carousel) {
-                // The menu layer may select a tapped entry or map it to a step (side save slot); otherwise A.
-                const TapAction a = menu_tap_ ? menu_tap_(x, y) : TapAction::None;
-                apply_tap_action(a == TapAction::None ? TapAction::Confirm : a);
-            } else if (ctx == Context::PauseMenu) {
-                // Only a tap on a pause line confirms; a miss must not confirm the highlighted line (CONTINUE unpauses).
-                apply_tap_action(menu_tap_ ? menu_tap_(x, y) : TapAction::None);
-            }
+            this->tap(ctx, x, y);
         }
         if (id == stick_id_) {
             stick_id_ = -1;
         }
         fingers_.erase(it);
+    }
+
+    void Engine::tap(Context ctx, float x, float y) {
+        const auto hit = [&] { return menu_tap_ ? menu_tap_(x, y) : TapAction::None; };
+        switch (ctx) {
+        case Context::Cutscene:
+            queue(START, 0.0f, 0.0f);
+            break;
+        case Context::ListMenu:
+        // Only a tap on a pause line confirms; a miss must not confirm the highlighted line (CONTINUE unpauses).
+        case Context::PauseMenu:
+            apply_tap_action(hit());
+            break;
+        // Wheel: a letter tap queues its own steps (Handled); ENTER CODE/BACK select; anything else enters the center letter.
+        // Carousel: the menu layer may select a tapped entry or map it to a step (side save slot); otherwise A.
+        case Context::Wheel:
+        case Context::Carousel: {
+            const TapAction a = hit();
+            apply_tap_action(a == TapAction::None ? TapAction::Confirm : a);
+            break;
+        }
+        default:
+            break;
+        }
     }
 
     void Engine::physical_input() {
@@ -387,7 +396,13 @@ namespace rs64::touch {
     Pad Engine::poll(Context ctx, uint32_t ms) {
         last_ctx_ = ctx;
         Pad p;
-        if (!cfg_.enabled || editing_) {
+        if (editing_) {
+            return p;
+        }
+        // Touch off: only presses queued by mouse clicks (tap) come through.
+        if (!cfg_.enabled) {
+            drain_pulses(&p);
+            p.has_input = p.buttons != 0 || p.x != 0.0f || p.y != 0.0f;
             return p;
         }
         if (ctx == Context::Wheel) {
@@ -441,19 +456,23 @@ namespace rs64::touch {
                 p.y = gy;
             }
         }
+        drain_pulses(&p);
+        p.has_input = active_ || p.buttons != 0 || p.x != 0.0f || p.y != 0.0f;
+        return p;
+    }
+
+    void Engine::drain_pulses(Pad* p) {
         for (Pulse& q : pulses_) {
             if (q.delay > 0) {
                 --q.delay;
                 continue;
             }
-            p.buttons |= q.buttons;
-            if (std::fabs(q.x) > std::fabs(p.x)) p.x = q.x;
-            if (std::fabs(q.y) > std::fabs(p.y)) p.y = q.y;
+            p->buttons |= q.buttons;
+            if (std::fabs(q.x) > std::fabs(p->x)) p->x = q.x;
+            if (std::fabs(q.y) > std::fabs(p->y)) p->y = q.y;
             --q.polls;
         }
         pulses_.erase(std::remove_if(pulses_.begin(), pulses_.end(), [](const Pulse& q) { return q.polls <= 0; }), pulses_.end());
-        p.has_input = active_ || p.buttons != 0 || p.x != 0.0f || p.y != 0.0f;
-        return p;
     }
 
     OverlayState Engine::draw_state(Context ctx) const {

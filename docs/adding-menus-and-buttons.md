@@ -84,7 +84,7 @@ The button that opens a page can set `title_y`, the page title's y offset.
 
 - **`action`**: `action` (a [behavior key](#behavior-keys)), `label`, and optional `confirm`. A non-empty `confirm` shows a YES/NO prompt with that text; YES runs the action.
 - **`toggle`**: `toggle` (a behavior key), `label_on`, `label_off`. The label shows the current state; selecting it flips the state. On `game_settings`, a toggle that `replace`s a native entry relabels in place, like the native STEREO/MONO switch (`replace: crosshairs` is the supported slot). Toggles elsewhere rebuild the menu.
-- **`slider`**: `slider` (a behavior key), `label` (title), `label_off` / `label_on` (endpoint text, default OFF/MAX), `min` / `max` / `step`. A real slider bar is only available in `sound_settings`, and it must `replace` a native entry because that menu is full. It uses the native volume widget with its own value, which does not affect audio. Elsewhere a slider is a text bar in the label, stepped on select.
+- **`slider`**: `slider` (a behavior key), `label` (title), `label_off` / `label_on` (endpoint text, default OFF/MAX), `min` / `max` / `step`. A real slider bar is only available in `sound_settings`, and it must `replace` a native entry because that menu is full. It uses the native volume widget with its own value, which does not affect audio. Elsewhere a slider is a text bar in the label, stepped on select; `bar_width` (cells, default 10), `bar_filled` (default `|`) and `bar_empty` (default a space) shape it.
 - **`submenu`**: opens a custom page. `page` (the page name), `label` (the opener's text), optional `title` (the page heading, default `label`), optional `action` (run when the page opens) and `leave_action` (run when the player leaves it).
 
 ### Placement
@@ -146,6 +146,15 @@ A `main_menu` action with `"transition": "account"` goes to the pilot select, li
 ### Live labels
 
 A page entry with `label_src` shows text from a named host text source, updated every frame without rebuilding the menu. Sources are registered by native mods with `add_text_source` ([modding-host-api.md](modding-host-api.md#text-sources)). The only ones today are the multiplayer lobby's: `mp_status`, `mp_address`, `mp_host_address`, `mp_host_label`, `mp_join_label`, `mp_online`.
+
+### Mouse and touch
+
+Mouse and touch need no extra fields. Hit areas come from each entry's drawn text, position and scale, so they follow your `x`, `y`, `scale`, rows and live labels. Hovering or tapping highlights an entry and clicking confirms it; a `label` gets no hit area; right click is back. A `confirm` prompt's YES and NO are clickable too.
+
+Sliders:
+
+- A `sound_settings` slider uses the native volume bar: click or drag it to set the value.
+- Any other slider is a text bar. Clicking on the bar part of the label sets the value at that point, rounded to `step`; clicking the label text steps it once, like confirming with a pad. The position is exact only when `bar_filled` and `bar_empty` are strings of the same length (the defaults are).
 
 ### Text the menu font can draw
 

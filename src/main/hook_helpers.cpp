@@ -730,15 +730,20 @@ void add_manifest_files(uint8_t* rdram, uint32_t idx, uint32_t block_rom, const 
         fprintf(stderr, "[assets] slot %u: adds %s -> rom 0x%X\n", idx, path.c_str(), ov.rom_off);
     }
     std::vector<std::array<uint32_t, 8>> out;
+    size_t largest_dir = 0;
     std::function<void(ManifestNode&)> emit = [&](ManifestNode& n) {
         const size_t at = out.size();
         out.emplace_back();
         for (auto& k : n.kids) emit(k);
-        if (n.dir()) n.w[3] = (n.w[3] & 0xFFFF0000u) | (uint32_t)((out.size() - at) * 0x20u);
+        if (n.dir()) {
+            largest_dir = std::max(largest_dir, (out.size() - at) * 0x20u);
+            n.w[3] = (n.w[3] & 0xFFFF0000u) | (uint32_t)((out.size() - at) * 0x20u);
+        }
         std::copy(std::begin(n.w), std::end(n.w), out[at].begin());
     };
     for (auto& n : top) emit(n);
-    if (out.size() * 0x20u > kManifestCopySize) {
+    // A directory's byte size is 16 bits.
+    if (out.size() * 0x20u > kManifestCopySize || largest_dir > 0xFFFFu) {
         fprintf(stderr, "[assets] slot %u: %zu manifest entries do not fit the 64 KB copy; mod-added files skipped\n", idx, out.size());
         return;
     }
@@ -857,6 +862,8 @@ extern "C" void rs64_asset_overrides_patch(uint8_t* rdram, uint32_t idx) {
     if ((s_asset_overrides.empty() && s_exhaust_variants.empty()) || idx >= 4) return;
     const uint32_t exhaust = exhaust_choice();
     const uint32_t slot = 0x80110A80u + idx * 0x50u;
+    // Loaded slots have +0x4E = 1; findManifestEntryByName also reaches this exit (from 0x800048D0) with a free slot.
+    if (rdram[(slot + 0x4E - 0x80000000u) ^ 3] != 1) return;
     const uint32_t manifest = rd_w(rdram, slot + 0x40);
     const uint32_t block_rom = rd_w(rdram, slot + 0x44) & 0x0FFFFFFFu;
     const uint32_t count = rd_w(rdram, slot + 0x48);

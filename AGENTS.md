@@ -158,7 +158,7 @@ librecomp's section table covers all three `.ovl.*` overlays (mission / menu / c
 
 ### Terrain grid is 128x128 in host RAM
 
-The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/main/hook_helpers.cpp)); keep other host tables clear of it. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
 
 ### Per-player data relocation (co-op)
 

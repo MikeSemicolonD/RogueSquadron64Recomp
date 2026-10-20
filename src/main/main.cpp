@@ -1463,9 +1463,16 @@ static uint8_t* touch_rdram() {
 }
 
 extern "C" int rs64_menu_page_shown(void);
+extern "C" int rs64_menu_slider_channel(int slot);
+extern "C" void rs64_menu_slider_click(int key, float f);
+extern "C" int rs64_menu_slider_editing(void);
+extern "C" void rs64_menu_hover_sound(int pause);
 namespace RT64 {
     extern std::atomic<float> presentShiftY;
 }
+
+static bool touch_state_is(const char* want);
+static void window_size(float* w, float* h);
 
 static rs64::touch::Context touch_context() {
     uint8_t* r = touch_rdram();
@@ -1476,6 +1483,16 @@ static rs64::touch::Context touch_context() {
     // The account menu (select game / level / craft) is carousel-like on every screen; its classifier sub-states are unreliable.
     if (r && g_active_overlay == 1 && rs64::touch::account_screen(r) != rs64::touch::AccountScreen::NotAccount) {
         return rs64::touch::Context::Carousel;
+    }
+    // A menu whose title lives on the mod heap (mod YES/NO confirms, relabeled menus) classifies as "unknown"; resident menu entries make it a list.
+    if (r && g_active_overlay == 1 && touch_state_is("unknown") && !rs64_state_in_cinematic()) {
+        float w, h;
+        window_size(&w, &h);
+        rs64::touch::MenuSnapshot snap{};
+        std::vector<rs64::touch::Box> boxes;
+        if (rs64::touch::read_menu(r, &snap, &boxes, w, h) && !boxes.empty()) {
+            return rs64::touch::Context::ListMenu;
+        }
     }
     return rs64::touch::classify(g_active_overlay, rs64_state_current_id(), r && rs64::touch::read_paused(r), r && rs64::touch::read_demo(r));
 }
@@ -1491,6 +1508,11 @@ static rs64::touch::AccountScreen touch_account_screen() {
 static bool touch_state_is(const char* want) {
     const char* id = rs64_state_current_id();
     return id && std::strcmp(id, want) == 0;
+}
+
+// A Sound Settings volume bar is open (opened by any input): the highlight must not move until it closes.
+static bool sound_bar_editing() {
+    return rs64_menu_slider_editing() && touch_state_is("menu.sound_settings");
 }
 
 // Tap-to-select only where the resident menu data is what's on screen: list menus, Passcodes' ENTER CODE/BACK, SELECT GAME's ERASE GAME.
@@ -1527,10 +1549,28 @@ static bool touch_slider_event(rs64::touch::FingerEvent ev, int64_t finger, floa
     uint8_t* r = touch_rdram();
     float w, h;
     window_size(&w, &h);
+    // The bar is open only while the game edits it (a tap's open takes a moment to reach the game); a stale one would turn
+    // the next touch into a stick nudge, which steps the highlight.
+    if (s.active && !sound_bar_editing() && SDL_GetTicks() - s.opened_ms > 300) {
+        s.active = false;
+    }
+    // A bar opened from the keyboard or pad takes touches too.
+    if (!s.active && r && ev == FingerEvent::Down && sound_bar_editing()) {
+        rs64::touch::MenuSnapshot snap{};
+        std::vector<rs64::touch::Box> boxes;
+        if (rs64::touch::read_menu(r, &snap, &boxes, w, h)) {
+            s = TouchSlider{};
+            s.active = true;
+            s.entry = snap.current;
+        }
+    }
     rs64::touch::SliderBar bar{};
     if (!s.active || !r || !touch_state_is("menu.sound_settings") || !rs64::touch::sound_slider(r, s.entry, w, h, &bar)) {
         s.active = false;
         return false;
+    }
+    if (const int ch = rs64_menu_slider_channel(s.entry); ch >= 0) {
+        bar.channel = ch;
     }
     if (ev == FingerEvent::Down) {
         if (y < bar.y0 || y > bar.y1) {
@@ -1579,7 +1619,26 @@ static rs64::touch::TapAction touch_menu_tap(float x, float y) {
     // A tap on the picture slid up above the keyboard lands where that spot is drawn unshifted.
     y += RT64::presentShiftY.load();
     if (touch_context() == rs64::touch::Context::PauseMenu) {
-        return rs64::touch::pause_tap_select(r, x, y, w, h) ? TapAction::Confirm : TapAction::None;
+        const int k = rs64::touch::pause_hover(r, x, y, w, h);
+        if (k < 0) {
+            return TapAction::None;
+        }
+        // A mod text slider on this row takes the value under the point (its line's drawn text extent).
+        std::vector<rs64::touch::PauseLine> lines;
+        float x0 = 1.0f, x1 = 0.0f;
+        if (rs64::touch::read_pause_lines(r, w, h, &lines)) {
+            for (const rs64::touch::PauseLine& l : lines) {
+                if (l.selectable == k && !l.bar) {
+                    x0 = std::min(x0, l.x0);
+                    x1 = std::max(x1, l.x1);
+                }
+            }
+        }
+        const int next = rs64::touch::pause_entry_next(r, rs64::touch::pause_submenu(r), k);
+        if (next >= 0 && x1 > x0) {
+            rs64_menu_slider_click(next, (x - x0) / (x1 - x0));
+        }
+        return TapAction::Confirm;
     }
     // PASSCODES: the engine steps on side touches itself; a tap on the wheel's center enters the letter.
     if (touch_context() == rs64::touch::Context::Wheel && rs64::touch::on_wheel(y)) {
@@ -1602,7 +1661,7 @@ static rs64::touch::TapAction touch_menu_tap(float x, float y) {
         }
     }
     // The first tap after leaving an open volume bar only closes the game's slider edit (A), without moving the highlight.
-    if (g_touch_slider.close_ms != 0 && SDL_GetTicks() - g_touch_slider.close_ms < 600) {
+    if (sound_bar_editing() || (g_touch_slider.close_ms != 0 && SDL_GetTicks() - g_touch_slider.close_ms < 600)) {
         g_touch_slider.close_ms = 0;
         return TapAction::Confirm;
     }
@@ -1615,7 +1674,13 @@ static rs64::touch::TapAction touch_menu_tap(float x, float y) {
     rs64::touch::MenuSnapshot snap{};
     std::vector<rs64::touch::Box> boxes;
     rs64::touch::SliderBar bar{};
-    if (rs64::touch::read_menu(r, &snap, &boxes, w, h) && rs64::touch::sound_slider(r, snap.current, w, h, &bar)) {
+    const bool menu_ok = rs64::touch::read_menu(r, &snap, &boxes, w, h);
+    for (const rs64::touch::Box& b : boxes) {
+        if (menu_ok && b.entry == snap.current && b.x1 > b.x0) {
+            rs64_menu_slider_click(b.entry, (x - b.x0) / (b.x1 - b.x0));
+        }
+    }
+    if (menu_ok && rs64::touch::sound_slider(r, snap.current, w, h, &bar)) {
         g_touch_slider.active = true;
         g_touch_slider.entry = snap.current;
         g_touch_slider.opened_ms = SDL_GetTicks();
@@ -1684,6 +1749,91 @@ static bool touch_pause_slider_event(rs64::touch::FingerEvent ev, int64_t finger
         g_touch.inject(0, 1.0f, 0.0f, 1);
     }
     return true;
+}
+
+// Menus where the cursor is freed from steering capture and clicks go through the touch menu layer.
+static bool mouse_menu_context(rs64::touch::Context ctx) {
+    using rs64::touch::Context;
+    return ctx == Context::ListMenu || ctx == Context::Carousel || ctx == Context::PauseMenu || ctx == Context::Wheel;
+}
+
+// Free cursor in a menu: hover highlights, left click acts as a tap, right click is B. In a cutscene a left click is START (skip), captured or not.
+static void menu_mouse_event(const SDL_Event& e) {
+    const uint32_t which = (e.type == SDL_MOUSEMOTION) ? e.motion.which : e.button.which;
+    if (which == SDL_TOUCH_MOUSEID || g_show_controls.load() || rs64_rt64_inspector_open() || rs64::touch::shared_config().enabled) {
+        return;
+    }
+    const rs64::touch::Context ctx = touch_context();
+    if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && (ctx == rs64::touch::Context::Cutscene || rs64_state_in_cinematic())) {
+        std::lock_guard<std::mutex> lk(g_touch_mtx);
+        g_touch.inject(rs64::touch::START, 0.0f, 0.0f, 3);
+        return;
+    }
+    if (g_mouse_capture.load()) {
+        return;
+    }
+    float w, h;
+    window_size(&w, &h);
+    uint8_t* r = touch_rdram();
+    if (!r || !mouse_menu_context(ctx) || w <= 0.0f || h <= 0.0f) {
+        return;
+    }
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    // Clicks use the last motion position, the point hover tested (an injected button event can carry a stale one).
+    static float s_mx = -1.0f, s_my = -1.0f;
+    if (e.type == SDL_MOUSEMOTION) {
+        s_mx = e.motion.x / w;
+        s_my = e.motion.y / h;
+    }
+    const float fx = (s_mx >= 0.0f) ? s_mx : e.button.x / w;
+    const float fy = (s_my >= 0.0f) ? s_my : e.button.y / h;
+    // Volume bars: the left button acts as a finger, so a click sets the value and a drag slides it.
+    if (e.type == SDL_MOUSEMOTION || e.button.button == SDL_BUTTON_LEFT) {
+        using rs64::touch::FingerEvent;
+        constexpr int64_t kMouseFinger = -2;
+        const FingerEvent ev = (e.type == SDL_MOUSEBUTTONDOWN) ? FingerEvent::Down : (e.type == SDL_MOUSEBUTTONUP) ? FingerEvent::Up : FingerEvent::Move;
+        if (touch_slider_event(ev, kMouseFinger, fx, fy) || touch_pause_slider_event(ev, kMouseFinger, fx, fy)) {
+            return;
+        }
+    }
+    rs64::touch::MenuSnapshot snap{};
+    std::vector<rs64::touch::Box> boxes;
+    if (e.type == SDL_MOUSEMOTION) {
+        // Highlight only when the cursor enters a different entry, so a bump doesn't undo a keyboard/pad choice.
+        static int64_t s_hovered = -1;
+        const float x = fx, y = fy;
+        int64_t hovered = -1;
+        std::vector<rs64::touch::PauseLine> lines;
+        if (ctx == rs64::touch::Context::PauseMenu) {
+            if (rs64::touch::read_pause_lines(r, w, h, &lines)) {
+                for (const rs64::touch::PauseRow& row : rs64::touch::pause_rows(lines)) {
+                    if (x >= row.x0 && x <= row.x1 && y >= row.y0 && y <= row.y1) {
+                        hovered = ((int64_t)rs64::touch::pause_submenu(r) << 8) | row.selectable;
+                    }
+                }
+            }
+        } else if (touch_menu_hits_allowed() && rs64::touch::read_menu(r, &snap, &boxes, w, h)) {
+            for (const rs64::touch::Box& b : boxes) {
+                if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1) {
+                    hovered = ((int64_t)snap.menu_ptr << 16) | ((int64_t)snap.menu_id << 8) | b.entry;
+                }
+            }
+        }
+        if (hovered != s_hovered && hovered >= 0 && !sound_bar_editing()) {
+            const bool pause = ctx == rs64::touch::Context::PauseMenu;
+            const bool moved = pause ? rs64::touch::pause_hover(r, x, y, w, h) >= 0 : rs64::touch::tap_select(r, snap, x, y, w, h);
+            if (moved) {
+                rs64_menu_hover_sound(pause ? 1 : 0);
+            }
+        }
+        s_hovered = hovered;
+    } else if (e.button.button == SDL_BUTTON_LEFT && e.type == SDL_MOUSEBUTTONDOWN) {
+        rs64::touch::read_menu(r, &g_touch_menu_at_down, &boxes, w, h);
+    } else if (e.button.button == SDL_BUTTON_LEFT && e.type == SDL_MOUSEBUTTONUP) {
+        g_touch.tap(ctx, fx, fy);
+    } else if (e.button.button == SDL_BUTTON_RIGHT && e.type == SDL_MOUSEBUTTONDOWN) {
+        g_touch.inject(rs64::touch::B, 0.0f, 0.0f, 3);
+    }
 }
 
 static void touch_event(const SDL_Event& e) {
@@ -1820,6 +1970,9 @@ static void poll_input() {
         if (e.type == SDL_FINGERDOWN || e.type == SDL_FINGERMOTION || e.type == SDL_FINGERUP) {
             touch_event(e);
             continue;
+        }
+        if (e.type == SDL_MOUSEMOTION || e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
+            menu_mouse_event(e);
         }
         if (e.type == SDL_SENSORUPDATE && g_gyro_sensor && e.sensor.which == SDL_SensorGetInstanceID(g_gyro_sensor)) {
             gyro_event(e);
@@ -2949,12 +3102,13 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t) {
     { static bool s_rumble = false;
       if (!s_rumble) { s_rumble = true; std::thread(rumble_thread_main).detach(); } }
 
-    // Capture the mouse for steering while focused, unless the F6 controls window or the F1 inspector is open.
+    // Capture the mouse for steering while focused, unless the F6 controls window, the F1 inspector or a clickable menu is up.
     // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
     bool want = (SDL_GetKeyboardFocus() != nullptr)
              && !rs64::touch::shared_config().enabled
              && !g_show_controls.load()
-             && !rs64_rt64_inspector_open();
+             && !rs64_rt64_inspector_open()
+             && !mouse_menu_context(touch_context());
     g_mouse_capture.store(want);
     static bool s_rel = false;
     if (want != s_rel) {
