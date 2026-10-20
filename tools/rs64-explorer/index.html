@@ -6744,7 +6744,7 @@ async function snapFromView() {
 $('cutCamView').onclick = snapFromView;
 // Mode of the picked camera over the shot under the playhead: follow / aim / ride a root actor, offset = the camera's pose now.
 function cutShotSpan(f, t) {
-  const fr = t * f.frames, c = cutClips(f, cutAudioLength).find((x) => x.lane === 'camera' && x.start <= fr && fr < Math.max(x.end, x.start + 1));
+  const fr = Math.round(t * f.frames), c = cutClips(f, cutAudioLength).find((x) => x.lane === 'camera' && x.start <= fr && fr < Math.max(x.end, x.start + 1));
   return c ? [c.start / f.frames, Math.min(1, c.end / f.frames)] : [0, 1];
 }
 function fillCutMode() {

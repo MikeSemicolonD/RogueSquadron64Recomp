@@ -2077,9 +2077,12 @@ function cutSetLength(data, seconds) {
   };
   for (const c of data.cameras) if (c) c.forEach((keys, i) => (c[i] = fit(keys)));
   for (const a of data.actors) if (a.ch) a.ch.forEach((keys, i) => (a.ch[i] = fit(keys)));
-  const old = data.frames;
-  data.events = data.events.filter((e) => e.frame <= frames || e.frame > old);
-  for (const e of data.events) if (e.frame > old) e.frame += frames - old;
+  // The ending transition (10) keeps its distance from the end; other events keep their frame.
+  const old = data.frames, ending = new Set(data.events.filter((e) => e.type === 10 && e.frame <= old));
+  data.events = data.events.filter((e) => ending.has(e) || e.frame <= frames || e.frame > old);
+  for (const e of data.events) if (ending.has(e)) e.frame = Math.max(0, e.frame + frames - old);
+  else if (e.frame > old) e.frame += frames - old;
+  data.events.sort((x, y) => x.frame - y.frame);
   data.frames = frames;
   data.length = seconds;
 }

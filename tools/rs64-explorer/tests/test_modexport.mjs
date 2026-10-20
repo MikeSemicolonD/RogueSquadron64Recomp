@@ -361,7 +361,7 @@ await check('cutSetLength keeps absolute times', async () => {
   assert.ok(Math.abs(back.length - (L + 2)) < 1e-4);
   assert.equal(back.frames, Math.round((L + 2) * c.fps));
   assert.ok(Math.abs(back.actors[0].ch[0][5] - keyT * L / (L + 2)) < 1e-6);
-  assert.deepEqual(back.events.map((e) => e.frame), ev);
+  assert.deepEqual(back.events.map((e) => e.frame), c.events.map((e, i) => (e.type === 10 ? ev[i] + back.frames - frames : ev[i])));
   assert.ok(Math.abs(camAt(back, frames / 2) - v) < 0.05 * Math.max(1, Math.abs(v)), 'camera value kept');
 });
 await check('limits throw and leave data unchanged', async () => {
@@ -757,6 +757,14 @@ await check('cutRetimeSnaps keeps absolute times and drops snapshots past the ne
   assert.deepEqual(short.map((s) => s.t), [0, 0.5, 1]);
   assert.deepEqual(short[1].p, [1, 0, 0]);
   assert.deepEqual(RS64.cutRetimeSnaps(snaps, 10, 20).map((s) => s.t), [0, 0.125, 0.25, 0.5]);
+});
+await check('cutSetLength keeps the ending transition its distance from the end', async () => {
+  const dv = await rom.read('data/cuts/id0_intro'), c = RS64.parseCutscene(new DataView(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice().buffer));
+  const end = (d) => d.frames - d.events.find((e) => e.type === 10).frame, before = end(c);
+  RS64.cutSetLength(c, 30);
+  assert.equal(end(c), before);
+  RS64.cutSetLength(c, 10);
+  assert.equal(end(c), before);
 });
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
