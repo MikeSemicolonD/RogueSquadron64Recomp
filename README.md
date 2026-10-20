@@ -39,7 +39,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **Windows 10+ x64** | Vulkan, D3D12, D3D11, D3D10 |
 | **[Windows 10+ x86 (32-bit)](#4-build)** | Vulkan, D3D12, D3D11, D3D10 |
 | **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
-| **[Linux arm64 / armhf](docs/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan; runs on a Raspberry Pi 4 |
+| **[Linux arm64 / armhf](docs/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
 | **[Linux x86 (32-bit)](docs/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
 | **[Android 8+ arm64](#android-notes)** | Vulkan 1.1 |
 | **[*maybe* macOS 11+](#macos-notes)*** | Metal |
@@ -48,9 +48,9 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 *macOS is *compile-only* so far (see [macOS notes](#macos-notes))
 
-**The 32-bit x86 Linux build has only been run on a 64-bit PC with software Vulkan, not yet with a GPU driver.
+**The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
 
-Per-platform player requirements (GPUs for D3D11 and D3D10, Raspberry Pi models, where the AppImage and Flatpak keep saves) are in [docs/building-all-platforms.md](docs/building-all-platforms.md#what-players-need).
+[Per-platform minimum requirements](docs/building-all-platforms.md#what-players-need).
 
 ## Features
 
@@ -61,11 +61,12 @@ Per-platform player requirements (GPUs for D3D11 and D3D10, Raspberry Pi models,
 - **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status-playable).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate. [Might *still* have some visual glitches](#status-playable).
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
-- **Ray Tracing Support (experimental):** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog.
+- **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status-playable).
 
 #### Input
 
 - **Keyboard and mouse:** fly with the mouse and fire with the mouse buttons.
+    - **Menu navigation with the Mouse:** ability to seamlessly select and control menu navigation exclusively with the mouse via cursor placement, LMB (Start) & RMB (Back)
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
@@ -173,6 +174,13 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 > The game is completely playable from beginning to end.
 
 ### Recomp. specific Issues
+
+- Ray Tracing is implemented but has various issues:
+  - Shadows and emmisives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
+  - Terrain rendering causing issues with shadows because of the hard edges and the fact that it changes on the fly
+  - The sun's direction in a level does not aligned exactly with the none ray traced shadows being projected. In this situation it might be better to disable the games fake non ray traced shadows..
+  - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
+  - Better Ray Tracing mod menu button placement. (It's below the back button in the Options menu which is awkward)
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
