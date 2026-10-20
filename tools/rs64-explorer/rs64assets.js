@@ -2157,6 +2157,8 @@ function quatFromBasis([x, y, z]) {
 }
 // Game space is Y down: up is -Y. One file unit is ~4.5 m, so gravity for the bank angle is ~2.2 units/s^2.
 const CUT_UP = [0, -1, 0], CUT_BANK_G = 2.2;
+// Snapshots after a length change: same seconds, so t scales by oldLen / newLen; ones past the new end are dropped.
+const cutRetimeSnaps = (snaps, oldLen, newLen) => snaps.map((s) => ({ ...s, t: (s.t * oldLen) / newLen })).filter((s) => s.t <= 1 + 1e-9);
 // Samples (normalised times) between the first and last snapshot at rate per second of cutscene.
 const cutSampleTimes = (data, t0, t1, rate) => {
   const n = Math.max(2, Math.ceil((t1 - t0) * data.length * rate) + 1);
@@ -2678,7 +2680,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();

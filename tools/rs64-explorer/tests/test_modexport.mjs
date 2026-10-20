@@ -751,6 +751,13 @@ await check('a project carries an explorer/ authoring sidecar next to its cutsce
   assert.equal(back.history.steps.length, 1);
   assert.equal(back.history.steps[0].changes.length, 2);
 });
+await check('cutRetimeSnaps keeps absolute times and drops snapshots past the new end', async () => {
+  const snaps = [{ t: 0, p: [0, 0, 0] }, { t: 0.25, p: [1, 0, 0] }, { t: 0.5, p: [2, 0, 0] }, { t: 1, p: [3, 0, 0] }];
+  const short = RS64.cutRetimeSnaps(snaps, 10, 5);
+  assert.deepEqual(short.map((s) => s.t), [0, 0.5, 1]);
+  assert.deepEqual(short[1].p, [1, 0, 0]);
+  assert.deepEqual(RS64.cutRetimeSnaps(snaps, 10, 20).map((s) => s.t), [0, 0.125, 0.25, 0.5]);
+});
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');
