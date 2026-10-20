@@ -1947,7 +1947,10 @@ function cutRecomputeSlopes(keys, from = 0, to = keys.length / 3 - 1) {
     if (j < n - 1 && keys[(j + 1) * 3 + 2] > 1 && keys[j * 3 + 2] <= 1) {
       keys[j * 3 + 1] = 0;
       keys[(j + 1) * 3] = keys[j * 3];
-    } else keys[j * 3 + 1] = j < n - 1 ? (keys[(j + 1) * 3] - keys[j * 3]) / (keys[(j + 1) * 3 + 2] - keys[j * 3 + 2]) : 0;
+    } else {
+      const dt = j < n - 1 ? keys[(j + 1) * 3 + 2] - keys[j * 3 + 2] : 0;
+      keys[j * 3 + 1] = dt > 0 ? (keys[(j + 1) * 3] - keys[j * 3]) / dt : 0;
+    }
   }
   return keys;
 }
@@ -2095,7 +2098,8 @@ function cutBlank(data, seconds) {
   data.cameras = data.cameras.map((c, i) => (i === k ? c : undefined));
   const frames = Math.max(1, Math.round(seconds * data.fps)), old = data.frames;
   data.events = data.events.filter((e) => CUT_SCENE_EVENTS.has(e.type) || e.frame > old);
-  for (const e of data.events) if (e.frame <= old) e.frame = Math.round((e.frame * frames) / old);
+  // The ending transition (10) is cutSetLength's: it keeps its distance from the end.
+  for (const e of data.events) if (e.frame <= old && e.type !== 10) e.frame = Math.round((e.frame * frames) / old);
   cutSetLength(data, seconds);
   data.cameras[k] = start.map((v) => cutConst(v, cutEnd(data)));
   data.camera = data.cameras[k];
@@ -2110,12 +2114,13 @@ const v3 = {
   len: (a) => Math.hypot(a[0], a[1], a[2]),
   norm: (a) => { const n = Math.hypot(a[0], a[1], a[2]); return n > 1e-12 ? [a[0] / n, a[1] / n, a[2] / n] : [0, 0, 0]; },
 };
-// Replaces the channel's keys with t0 <= t <= t1 by samples ([t, v], times in t0..t1); the end sentinel stays.
+// Replaces the channel's keys with t0 <= t <= t1 (a quarter frame either way: key times are float32) by samples ([t, v], times in
+// t0..t1); the end sentinel stays.
 function cutSetChannelSpan(data, ref, t0, t1, samples) {
-  const chs = cutChannel(data, ref), keys = chs[ref.ch], out = [];
+  const chs = cutChannel(data, ref), keys = chs[ref.ch], out = [], eps = 0.25 / data.frames;
   for (let j = 0; j < keys.length / 3; j++) {
     const t = keys[j * 3 + 2];
-    if (t > 1 || t < t0 || t > t1) out.push([keys[j * 3], t]);
+    if (t > 1 || t < t0 - eps || t > t1 + eps) out.push([keys[j * 3], t]);
   }
   for (const [t, v] of samples) out.push([v, t]);
   out.sort((a, b) => a[1] - b[1]);
@@ -2173,7 +2178,7 @@ function cutBakeActorPath(data, actor, snaps, { rate = 10, bank = 1 } = {}) {
   if (!snaps.length) return;
   const t0 = snaps[0].t, t1 = snaps[snaps.length - 1].t, ref = (ch) => ({ actor, ch });
   if (t1 - t0 < 1e-9) {
-    [0, 1, 2].forEach((ch) => cutSetChannelSpan(data, ref(ch), t0, t1, [[t0, snaps[0].p[ch]]]));
+    [0, 1, 2].forEach((ch) => cutSetChannelSpan(data, ref(ch), 0, 1, cutHeld([[t0, snaps[0].p[ch]]])));
     return;
   }
   const ts = cutSampleTimes(data, t0, t1, rate), sec = data.length, h = 0.25 / (sec * rate);
@@ -2199,8 +2204,10 @@ function cutBakeActorPath(data, actor, snaps, { rate = 10, bank = 1 } = {}) {
     const deg = (2 * Math.acos(Math.max(-1, Math.min(1, q[3]))) * 180) / Math.PI;
     [p[0], p[1], p[2], q[0] * 10, q[1] * 10, q[2] * 10, deg].forEach((v, k) => cols[k].push([t, v]));
   }
-  [0, 1, 2, 4, 5, 6, 7].forEach((ch, k) => cutSetChannelSpan(data, ref(ch), t0, t1, cols[k]));
+  [0, 1, 2, 4, 5, 6, 7].forEach((ch, k) => cutSetChannelSpan(data, ref(ch), 0, 1, cutHeld(cols[k])));
 }
+// Samples extended to hold their first value from 0 and their last to 1 (a snapshot track owns the whole channel).
+const cutHeld = (col) => [...(col[0][0] > 0 ? [[0, col[0][1]]] : []), ...col, ...(col[col.length - 1][0] < 1 ? [[1, col[col.length - 1][1]]] : [])];
 const quat = {
   mul: (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]],
   rot: (q, p) => { const u = [q[0], q[1], q[2]], uv = v3.cross(u, p), uuv = v3.cross(u, uv); return v3.add(p, v3.mul(v3.add(v3.mul(uv, q[3]), uuv), 2)); },
@@ -2228,7 +2235,7 @@ const CUT_ACTOR_DIVS = [6, 6, 6, 6, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5];
 // A root actor's position and rotation at normalised time t, sampled like the game.
 function cutActorPose(data, actor, t) {
   const a = data.actors[actor];
-  if (!a || a.parent >= 0) throw new Error('Camera modes need a root actor');
+  if (!a || a.parent >= 0) throw new Error(`${a?.name ?? 'This actor'} rides on a parent: camera modes and shots need a root actor`);
   const v = a.animated ? a.ch.map((keys, ch) => cutsceneValue(keys, t, data.frames, CUT_ACTOR_DIVS[ch])) : a.value;
   return { p: [v[0], v[1], v[2]], q: cutAxisAngleToQuat([v[4], v[5], v[6]], v[7]) };
 }
@@ -2247,7 +2254,7 @@ function cutBakeCameraPath(data, cam, snaps, { rate = 10 } = {}) {
     prev = q;
     [...cutCurve(snaps, t), ...cutRotValues(q), a.fov + (b.fov - a.fov) * s].forEach((v, ch) => cols[ch].push([t, v]));
   }
-  cols.forEach((col, ch) => cutSetChannelSpan(data, ref(ch), t0, t1, col));
+  cols.forEach((col, ch) => cutSetChannelSpan(data, ref(ch), 0, 1, cutHeld(col)));
 }
 // Bakes a camera mode over t0..t1 from a root actor's pose: 'follow' (offset in the actor's frame, looking at it), 'aim' (keeps its
 // position, looks at it) or 'ride' (rigidly at the offset facing the nose, the actor hidden for the span as id4_extro's cockpit shot).
@@ -2269,6 +2276,8 @@ function cutBakeCameraMode(data, cam, { mode, actor, t0, t1, offset = [0, 0, 0],
     if (t1 < 1) cutAddEvent(data, { type: 6, frame: Math.round(t1 * data.frames), p: [actor, 0, 0, 0] });
   }
 }
+// How far either side of the shot time cutShootAt keys the shooter's rotation.
+const cutShotSpan = (data, aimLead = 0.3) => (2 * 3.5) / data.frames + aimLead / data.length;
 // One-action shot: at t the shooter's nose swings onto the target (eased in and out over aimLead seconds), fires a bolt (event 8) fast
 // enough to arrive in 0.5 s, inside the 1.5 s bolt life, and the target explodes (event 5 kind 0) and disappears (event 7) on impact.
 function cutShootAt(data, shooter, target, t, { category = 0, aimLead = 0.3 } = {}) {
@@ -2277,7 +2286,8 @@ function cutShootAt(data, shooter, target, t, { category = 0, aimLead = 0.3 } = 
   const p2 = Math.round((dist / 0.5) * 10);
   if (p2 > 0xFFFF) throw new Error(`Target out of bolt range (${dist.toFixed(0)} units; 0.5 s needs speed ${p2 / 10})`);
   // The game smooths rotation channels over +-2 samples of frames / 3.5, so the aim is held that long either side of the shot.
-  const hold = (2 * 3.5) / data.frames, lead = aimLead / data.length, span = hold + lead;
+  const span = cutShotSpan(data, aimLead), hold = (2 * 3.5) / data.frames;
+  const lead = span - hold;
   const ts = [...new Set([...cutSampleTimes(data, Math.max(0, tf - span), Math.min(1, tf + span), 30), tf])].sort((a, b) => a - b);
   const cols = [[], [], [], []];
   let prev = null;
@@ -2298,6 +2308,49 @@ function cutShootAt(data, shooter, target, t, { category = 0, aimLead = 0.3 } = 
   cutAddEvent(data, { type: 5, frame: impactFrame, p: [target, 0, 0, 0] });
   cutAddEvent(data, { type: 7, frame: impactFrame, p: [target, 0, 0, 0] });
   return { fireFrame, impactFrame };
+}
+// Undoes a bake before the next: removes the events it added (ride hide / show, shots) and the keys inside its spans (t = 0 stays).
+function cutUnbake(f, doc) {
+  const drop = (type, frame, a) => {
+    const i = f.events.findIndex((e) => e.type === type && e.frame === frame && e.p[0] === a);
+    if (i >= 0) f.events.splice(i, 1);
+  };
+  // The key at 0 starts each channel and stays.
+  const clear = (ref, chs, t0, t1) => chs.forEach((ch) => cutSetChannelSpan(f, { ...ref, ch }, Math.max(t0, 0.5 / f.frames), t1, []));
+  for (const [key, tr] of Object.entries(doc.tracks)) {
+    const n = +key.split(':')[1], cam = key.startsWith('cam:');
+    if (cam ? !f.cameras[n] : !f.actors[n]?.animated) continue;
+    const snaps = tr.snaps ?? [], ref = cam ? { cam: n } : { actor: n };
+    if (snaps.length) clear(ref, cam ? [0, 1, 2, 3, 4, 5, 6, 7] : snaps.length > 1 ? [0, 1, 2, 4, 5, 6, 7] : [0, 1, 2], 0, 1);
+    for (const m of tr.modes ?? []) {
+      clear(ref, m.mode === 'aim' ? [3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6], m.t0, m.t1);
+      if (m.mode === 'ride') {
+        drop(7, Math.round(m.t0 * f.frames), m.actor);
+        if (m.t1 < 1) drop(6, Math.round(m.t1 * f.frames), m.actor);
+      }
+    }
+    for (const s of tr.shots ?? []) {
+      const fire = Math.round(s.t * f.frames), hit = fire + Math.round(0.5 * f.fps), tf = fire / f.frames, span = cutShotSpan(f);
+      [[8, fire, n], [5, hit, s.target], [7, hit, s.target]].forEach((d) => drop(...d));
+      clear(ref, [4, 5, 6, 7], tf - span, tf + span);
+    }
+  }
+}
+// Actor paths first (camera modes and shots read them), then shots, then camera paths and modes in order.
+function cutBake(f, doc) {
+  const tracks = Object.entries(doc.tracks).map(([k, tr]) => [k.startsWith('cam:'), +k.split(':')[1], tr]);
+  for (const [cam, n, tr] of tracks) if (!cam && f.actors[n] && tr.snaps?.length) {
+    cutAnimateActor(f, n);
+    cutBakeActorPath(f, n, tr.snaps);
+  }
+  for (const [cam, n, tr] of tracks) if (!cam && f.actors[n] && tr.shots?.length) {
+    cutAnimateActor(f, n);
+    for (const s of tr.shots) cutShootAt(f, n, s.target, s.t);
+  }
+  for (const [cam, n, tr] of tracks) if (cam && f.cameras[n]) {
+    if (tr.snaps?.length) cutBakeCameraPath(f, n, tr.snaps);
+    for (const m of tr.modes ?? []) cutBakeCameraMode(f, n, m);
+  }
 }
 // Timeline clips (frames) from the events: a camera shot runs to the next cut; an actor is on screen from a show (6) to its next hide
 // (7); music (1) plays to the next cue or a stop (2); S-foils (11) last p2 frames; walk rate (13) and fog (17) hold to the next of their
@@ -2683,7 +2736,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();

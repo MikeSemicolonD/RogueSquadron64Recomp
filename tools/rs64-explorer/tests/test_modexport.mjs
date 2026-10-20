@@ -766,6 +766,79 @@ await check('cutSetLength keeps the ending transition its distance from the end'
   RS64.cutSetLength(c, 10);
   assert.equal(end(c), before);
 });
+// Unbake the old sidecar, bake the new one, and write / parse as an edit does.
+const rebake = (c, old, next) => {
+  RS64.cutUnbake(c, old);
+  RS64.cutBake(c, next);
+  return reparse(c);
+};
+const bakeScene = async () => {
+  const c = await cutOf('data/cuts/id5_intro');
+  RS64.cutBlank(c, 10);
+  return { c, i: RS64.cutAddActor(c, 'pl_crafts/xwing', -1, 0.056) };
+};
+const keyCount = (c, i) => c.actors[i].ch.reduce((n, k) => n + k.length / 3, 0);
+const allFinite = (c, i) => c.actors[i].ch.every((k) => k.every(Number.isFinite));
+const xAt = (c, i, t) => RS64.cutsceneValue(c.actors[i].ch[0], t, c.frames, 1);
+await check('re-baking the same snapshots keeps the key count and finite slopes (float32 key times)', async () => {
+  let { c, i } = await bakeScene();
+  const doc = { tracks: { [`act:${i}`]: { snaps: [{ t: 0.1, p: [0, 0, 0] }, { t: 0.2, p: [100, 0, 0] }, { t: 0.3, p: [200, 0, 50] }] } } };
+  const counts = [];
+  for (let k = 0; k < 4; k++) {
+    c = rebake(c, k ? doc : { tracks: {} }, doc);
+    counts.push(keyCount(c, i));
+  }
+  assert.ok(allFinite(c, i), 'finite');
+  assert.deepEqual(counts.slice(1), [counts[0], counts[0], counts[0]]);
+});
+await check('moving the last snapshot earlier leaves no key of the old path', async () => {
+  let { c, i } = await bakeScene();
+  const a = { tracks: { [`act:${i}`]: { snaps: [{ t: 0.1, p: [0, 0, 0] }, { t: 0.3, p: [400, 0, 0] }] } } };
+  const b = { tracks: { [`act:${i}`]: { snaps: [{ t: 0.1, p: [0, 0, 0] }, { t: 0.2, p: [100, 0, 0] }] } } };
+  c = rebake(c, { tracks: {} }, a);
+  c = rebake(c, a, b);
+  assert.ok(Math.abs(xAt(c, i, 0.5) - 100) < 1, `x at 0.5 = ${xAt(c, i, 0.5)}`);
+});
+await check('a single snapshot holds its value everywhere and moves cleanly', async () => {
+  let { c, i } = await bakeScene();
+  const a = { tracks: { [`act:${i}`]: { snaps: [{ t: 0.3, p: [400, 0, 0] }] } } }, b = { tracks: { [`act:${i}`]: { snaps: [{ t: 0.6, p: [800, 0, 0] }] } } };
+  c = rebake(c, { tracks: {} }, a);
+  for (const t of [0, 0.15, 0.3, 0.9]) assert.ok(Math.abs(xAt(c, i, t) - 400) < 1e-3, `t ${t}: ${xAt(c, i, t)}`);
+  const n = keyCount(c, i);
+  c = rebake(c, a, b);
+  c = rebake(c, b, b);
+  for (const t of [0, 0.3, 0.6, 0.9]) assert.ok(Math.abs(xAt(c, i, t) - 800) < 1e-3, `t ${t}: ${xAt(c, i, t)}`);
+  assert.equal(keyCount(c, i), n);
+  assert.ok(allFinite(c, i));
+});
+await check('a path holds its first and last snapshot outside them', async () => {
+  let { c, i } = await bakeScene();
+  c = rebake(c, { tracks: {} }, { tracks: { [`act:${i}`]: { snaps: [{ t: 0.3, p: [400, 0, 0] }, { t: 0.6, p: [800, 0, 0] }] } } });
+  assert.ok(Math.abs(xAt(c, i, 0) - 400) < 1e-3 && Math.abs(xAt(c, i, 0.15) - 400) < 1e-3, 'held before');
+  assert.ok(Math.abs(xAt(c, i, 0.9) - 800) < 1e-3, 'held after');
+});
+await check('cutBlank keeps the ending transition its distance from the end at any length', async () => {
+  const c0 = await cutOf('data/cuts/id0_intro'), end = (d) => d.frames - d.events.find((e) => e.type === 10).frame, d0 = end(c0);
+  for (const s of [6, 10, 30]) {
+    const c = await cutOf('data/cuts/id0_intro');
+    RS64.cutBlank(c, s);
+    assert.equal(end(c), d0, `${s} s`);
+  }
+});
+await check('re-baking a shot keeps its eased aim and its three events', async () => {
+  let { c, i } = await bakeScene();
+  const j = RS64.cutAddActor(c, 'imp_stuff/probe_droid', -1, 0.24);
+  [0, 1].forEach((t) => RS64.cutSetKey(c, { actor: j, ch: 0 }, t, 200));
+  c = reparse(c);
+  const doc = { tracks: { [`act:${i}`]: { shots: [{ target: j, t: 0.4 }] } } }, rot = (d) => [0.3, 0.37, 0.4, 0.43, 0.5].map((t) => d.actors[i].ch.slice(4, 8).map((k) => +RS64.cutsceneValue(k, t, d.frames, 1).toFixed(4)));
+  c = rebake(c, { tracks: {} }, doc);
+  const first = rot(c), evs = c.events.length;
+  c = rebake(c, doc, doc);
+  c = rebake(c, doc, doc);
+  assert.deepEqual(rot(c), first);
+  assert.equal(c.events.length, evs);
+  assert.ok(allFinite(c, i));
+});
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');
