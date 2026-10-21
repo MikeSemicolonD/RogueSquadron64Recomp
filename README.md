@@ -86,14 +86,14 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Mods
 
-- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might requires resetting the game)
+- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
   - See [docs/modding.md for modding info](docs/modding.md).
 - **Included mods:**
   - **Multiplayer:** online co-op (see above).
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
-  - **Fullscreen toggle:** an option in the option's and pause menu's display settings.
+  - **Fullscreen toggle:** an option in the options and pause menus' display settings.
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
   - **Invincibility:** your craft takes no damage.
   - **Any Craft, Any Mission:** fly any ship on any level.
@@ -144,7 +144,7 @@ Mouse motion steers the craft, left click fires blasters, right click fires the 
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
-> Twist grip or rudder pedals can do one of two depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction adds together.
+> Twist grip or rudder pedals can do one of two depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction add together.
 > Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis. Hold the 'Roll' button then twist to roll.
 
 In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
@@ -178,13 +178,13 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Recomp. specific Issues
 
 - Ray Tracing is implemented but has various issues:
-  - Shadows and emmisives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
+  - Shadows and emissives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
   - Terrain rendering causing issues with shadows because of the hard edges and the fact that it changes on the fly
-  - The sun's direction in a level does not aligned exactly with the none ray traced shadows being projected. In this situation it might be better to disable the games fake non ray traced shadows..
+  - The sun's direction in a level does not align exactly with the non-ray-traced shadows being projected. In this situation it might be better to disable the game's fake non-ray-traced shadows.
   - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
   - Better Ray Tracing mod menu button placement. (It's below the back button in the Options menu which is awkward)
 
-- A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
+- A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
 ### Game specific Issues
 
@@ -338,7 +338,7 @@ cd android
 adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 ```
 
-- **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and it stutters a lot. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wraps the commands above.
+- **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and it stutters a lot. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wrap the commands above.
 - **ROM:** on first launch the system file picker asks for `rogue_squadron.z64` (`.v64` and `.n64` also work); the ROM is checked and imported once. (Pushing it to `/sdcard/Android/data/com.rs64recomp.app/files/` with `adb push` also works.)
 - **Controls:** touch controls are on by default: tap menu buttons directly, swipe carousels, and fly with virtual joystick stick and N64-style buttons.
   - Move and resize the touch buttons by using the gear button in the bottom left corner of the screen when navigating menus or by selecting **TOUCH LAYOUT** (Requires [touch-layout](mods/touch-layout) mod) in the pause menu.
@@ -352,7 +352,7 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 > [!IMPORTANT]
 > **Currently doesn't support macOS**.
 > But steps have been taken to get as far as possible to support it by cross compiling using Linux.
-> An arm64 (Apple Silicon) 'Mach-O' builds and links for macOS 11+, but it hasn't been ran/tested on a Mac.
+> An arm64 (Apple Silicon) 'Mach-O' builds and links for macOS 11+, but it hasn't been run/tested on a Mac.
 
 On a Mac, the Linux / macOS commands above should apply (Xcode Command Line Tools + `brew install cmake ninja sdl2`)
 
@@ -496,9 +496,9 @@ A **MASSIVE** extension to the foundational work originally done by [Dávid Peth
 
 ## 'Proper' AI Agent Usage
 
-Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.MD** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.MD)* are use to provide instructions for things like tools, specific task and/or processes. **MCP** servers/tools can further augment existing application by giving handles/methods for agents to *better* perform tasks.
+Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.MD** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.MD)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
 
-This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and setup by the user themselves and is something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harness in `tools` to performs test, perform multiple runs to verify robustness or drive an agent to particular menu to chase a bug.
+This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and setup by the user themselves and is something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to particular menu to chase a bug.
 
 Once your agent is setup, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
 
