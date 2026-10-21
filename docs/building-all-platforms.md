@@ -36,7 +36,7 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 | --- | --- |
 | Visual Studio 2022 with **Desktop development with C++**, **C++ Clang Compiler for Windows** and **MSBuild support for LLVM (clang-cl)** | Windows x64 and x86 (`-T ClangCL`) |
 | CMake 3.20+ | All |
-| Android Studio (SDK, bundled JDK 17, `adb`) with **NDK 29.0.14206865**; compile/target SDK 34, min SDK 26 | Android. Gradle 9.2 fetches SDL 2.32.10 and its own CMake |
+| Android Studio (SDK, bundled JDK 17 or newer, `adb`) with **NDK 29.0.14206865**; compile/target SDK 34, min SDK 26 | Android. Gradle 9.6 (Android Gradle Plugin 9.4.1) fetches SDL 2.32.10 and its own CMake |
 | WSL2 with Ubuntu-24.04 | Linux targets from `bundle-release.ps1` |
 
 Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and for x86 Microsoft's DXC v1.8.2403.2 zip (the in-tree `dxc-bin` has no x86 `dxcompiler.dll`).
