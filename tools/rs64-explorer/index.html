@@ -28,19 +28,67 @@
   #editPanel button[data-icon] { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; min-width: 32px; }
   #editPanel:not(.open) #editBody { display: none; }
   #editBody { display: grid; gap: 6px; }
-  #editBody label { display: flex; gap: 6px; align-items: center; }
+  #editBody label { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  #editBody label > select { min-width: 0; }
+  #editBody > * { min-width: 0; }
+  .addPalette > hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 2px 0; }
+  .addPalette > .addHead { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  #addSearch { background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Cpath fill=%27none%27 stroke=%27%238a92a3%27 stroke-width=%271.6%27 d=%27M7 2.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 0 1 0-9zM10.4 10.4L14 14%27/%3E%3C/svg%3E") no-repeat 7px center / 14px; border: 1px solid var(--line); padding-left: 27px; }
+  #addSearch:focus { border-color: var(--accent); }
+  #addList { display: grid; gap: 1px; max-height: 240px; overflow: auto; }
+  .addPalette { position: relative; }
+  #addOverlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center; background: color-mix(in srgb, var(--panel) 55%, transparent); backdrop-filter: blur(4px); border-radius: 6px; }
+  #addOverlay[hidden] { display: none; }
+  #addOverlay small { color: var(--dim); }
+  #addList > b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 6px 0 2px; }
+  #addList .addRow { display: flex; align-items: center; gap: 6px; text-align: left; padding: 3px 6px; background: none; border-color: transparent; }
+  #addList .addRow:hover { background: var(--sel); }
+  #addList .addRow.active { border-color: var(--accent); background: var(--sel); }
+  #addList .addRow em { margin-left: auto; color: var(--dim); font-style: normal; font-size: 11px; white-space: nowrap; }
   #editBody .pair { display: flex; gap: 8px; }
   .histRow { display: flex; gap: 8px; }
   .histRow > button { flex: 1; display: inline-flex; align-items: center; justify-content: center; min-height: 28px; }
   .histRow > #btnPlay { flex: 0 0 40px; }
   #btnMod { gap: 6px; }
   #btnMod svg, #btnPlay svg { width: 16px; height: 16px; }
+  .shotRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .shotNote { display: block; flex-basis: 100%; opacity: 0.75; white-space: normal; margin-top: 4px; }
+  .shotPersonal { display: inline-flex; align-items: center; gap: 4px; }
+  .destroyChip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; border: 1px solid var(--line); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
+  .destroyChip.warn { border-color: var(--accent); }
+  .destroyChip button { padding: 0 4px; }
+  .shotRow select { min-width: 0; max-width: 100%; flex: 1 1 6em; }
+  .levelDialog { max-width: min(640px, 92vw); display: grid; gap: 8px; background: var(--panel); color: var(--text); opacity: 1; }
+  .levelDialog > * { min-width: 0; }
+  .levelDialog > b, .levelDialog > small { text-align: center; }
+  #btnLevelSettings, #btnBlankLevel { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  #btnLevelSettings[hidden], #btnBlankLevel[hidden] { display: none; }
+  .levelDialog > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  .levelDialog label.stacked { flex-direction: column; align-items: center; }
+  .levelDialog label.stacked > input, .levelDialog label.stacked > textarea { align-self: stretch; }
+  .levelDialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+  .levelDialog label, .levelDialog th, .levelDialog b { color: var(--text); }
+  .levelDialog label { display: flex; gap: 6px; align-items: baseline; }
+  .levelDialog input:not([type]), .levelDialog textarea, .levelDialog select { flex: 1; min-width: 0; }
+  .craftGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 8px; }
+  .medalGrid td { text-align: center; }
+  .medalGrid input { width: 5em; }
+  .levelDialog .recRow, .levelDialog .actions { display: flex; justify-content: center; gap: 8px; }
+  .levelDialog .actions button { display: inline-flex; align-items: center; gap: 6px; }
+  .levelDialog .dlgClose { position: absolute; top: 6px; right: 6px; display: inline-flex; padding: 4px; }
+  .levelDialog .crawlBox { display: grid; gap: 8px; }
+  .levelDialog .crawlBox[hidden] { display: none; }
+  .levelDialog .objectives { display: grid; gap: 10px; }
+  .levelDialog .objRow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; }
+  .levelDialog .objRow > :nth-child(n+4) { grid-column: 1 / -1; }
+  .levelDialog .objRow [hidden] { display: none; }
+  .levelDialog > .addObjective { justify-self: center; }
   #playStatus { font-size: 11px; color: var(--muted, #9aa3b5); overflow-wrap: anywhere; }
   #playStatus code { user-select: all; }
   #editBody .pair > * { flex: 1; }
   #editBody input[type=range] { flex: 1; padding: 0; }
   #editBody output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
-  #editBody .rows { display: grid; gap: 6px; }
+  #editBody .rows { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); }
   #editBody .modes, #editBody .tools { display: flex; gap: 4px; }
   #editBody .modes button, #editBody .tools button { flex: 1; padding: 4px 2px; }
   #editBody .dim { color: var(--dim); font-size: 12px; }
@@ -200,6 +248,7 @@
   #scene input[type=range] { width: 65px; margin-left: auto; padding: 0; }
   #fxPanel input[type=range] { width: 130px; margin-left: auto; padding: 0; }
   #scene select { width: 100%; max-width: 160px; }
+  #cutPickRow select { max-width: none; }
   #scene output, #fxPanel output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
   select:disabled, input:disabled, button:disabled { opacity: .45; }
   button:disabled { cursor: default; }
@@ -208,7 +257,7 @@
   .panel { position: absolute; background: rgba(15,17,21,.85); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
   #hud { font: 12px/1.5 ui-monospace, monospace; pointer-events: none; white-space: pre; }
   #hud:empty { display: none; }
-  #legend { top: 10px; right: 10px; display: grid; gap: 4px; max-height: calc(100% - 300px); overflow: auto; }
+  #legend { top: 10px; right: 10px; display: grid; gap: 4px; max-height: calc(100% - var(--scene-h, 290px) - 30px); overflow: auto; }
   #legend b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
   #legend label { display: grid; grid-template-columns: auto 14px 1fr auto; align-items: center; gap: 6px; cursor: pointer; }
   #legend label.group { grid-template-columns: auto 1fr auto; margin-top: 4px; font-weight: 600; }
@@ -319,10 +368,13 @@
           <div class="tools" role="group" aria-label="Transform tool"><button data-tool="view" data-icon="view" title="View: select only (Q)"></button><button data-tool="translate" data-icon="move" title="Move (W)"></button><button data-tool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-tool="scale" data-icon="scale" title="Scale (R)"></button></div>
           <span id="selInfo" class="dim"></span>
           <div id="selFields" class="rows"></div>
-          <div class="pair"><button id="btnDup" data-icon="duplicate" title="Duplicate: adds a copy 4 units along X as the last item of its kind (Ctrl+D)"></button><button id="btnDel" data-modes="objects" data-icon="delete" title="Delete the placed object (Delete key). Mission scripts find objects by name, so named ones are checked first"></button></div>
+          <div class="pair"><button id="btnDup" data-icon="duplicate" title="Duplicate: adds a copy 4 units along X as the last item of its kind (Ctrl+D)"></button><button id="btnDel" data-icon="delete" title="Delete the selected object, spawn, zone or trigger (Delete key). Mission scripts find objects by name, so named ones are checked first; a trigger a path fires stays"></button></div>
         </div>
-        <div data-modes="events" class="rows">
-          <label title="Add an event: kinds in this level; a new one copies the selected event of that kind, or the level's first">Add <select id="addKind" style="flex:1"></select><button id="btnPlace" data-icon="place" title="Place on ground: then click where it goes"></button></label>
+        <div data-modes="objects events" class="rows addPalette">
+          <hr><b class="addHead">Add to level</b>
+          <input id="addSearch" type="search" placeholder="Search to add…" title="Pick something to add, then click where it goes (Esc cancels). Kinds marked 'from another level' are copied from a stock level; a new copy of an event takes the selected one of that kind, or the level's first">
+          <div id="addList"></div>
+          <div id="addOverlay" hidden><span id="addOverlayText"></span><small>Esc cancels</small><button id="addCancel">Cancel</button></div>
         </div>
       </div>
     </div>
@@ -354,6 +406,8 @@
     <label title="Drag to scrub; the take replays deterministically">Time <input type="range" id="fxTime" min="0" max="1" step="0.001" value="0"><output id="fxTimeVal" style="min-width:7em">0.00 s</output></label>
   </div>
   <div id="scene" class="panel needs-rom" hidden>
+    <button id="btnLevelSettings" hidden></button>
+    <button id="btnBlankLevel" hidden title="A new level with only a player start on flat ground and blank intro and outro cutscenes, with this level's sky, textures and music">New blank level…</button>
     <b id="cutPickHead">Cutscene</b>
     <label id="cutPickRow" title="The level's intro and extro, the ending ceremony, and its in-mission camera placements (the mission script cuts to these by name)"><select id="cutPick"></select></label>
     <b>Scene</b>
@@ -443,7 +497,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 const { parseShadowTextures, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim,
-  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor } = window.RS64;
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, splineSetPoints, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 // HOB vertices are s16 model units; levels (DAT positions, terrain) use world units. Item scale applies on top.
@@ -1236,8 +1290,13 @@ function describe(it) {
   }
   return SUBTYPES[it.sub] ?? 'subtype ' + hex(it.sub);
 }
+// The item's category and subtype names; one when the category is just the subtype's plural (Music trigger areas / Music trigger area).
+function kindParts(it) {
+  const cat = TYPES[markerKind(it)]?.label ?? 'Type ' + it.type, sub = SUBTYPES[it.sub] ?? hex(it.sub);
+  return cat.toLowerCase().replace(/s$/, '') === sub.toLowerCase() ? [sub] : [cat, sub];
+}
 function itemRows(it) {
-  return [['What it is', esc(describe(it)).replaceAll('\n', '<br>')], ['Kind', `${TYPES[markerKind(it)]?.label ?? 'Type ' + it.type} · ${SUBTYPES[it.sub] ?? hex(it.sub)}`],
+  return [['What it is', esc(describe(it)).replaceAll('\n', '<br>')], ['Kind', kindParts(it).join(' · ')],
     ['DAT type / subtype', `${it.type} / ${hex(it.sub)}`], ['Index / offset', `${it.index} / ${hex(it.offset)}`],
     it.model && ['Reference', esc(it.model)], [it.recordPos ? 'Position (node)' : 'Position', fmt(it.pos)], it.recordPos && ['Record position', fmt(it.recordPos)], it.rot && ['Rotation°', fmt(it.rot)],
     it.scale && ['Scale', fmt(it.scale)], it.size && ['Footprint', it.size[0].toFixed(1) + ' × ' + it.size[2].toFixed(1)], it.points && ['Spline points', it.points.length]];
@@ -1466,7 +1525,9 @@ canvas.addEventListener('pointermove', (e) => {
     const others = new Set(raycaster.intersectObjects(visibleMarkers(), true).map((h) => h.object.userData.item).filter((o) => o && o.type === 3 && o !== it).map((o) => o.name));
     if (others.size) what += '\nAlso here: ' + [...others].join(', ');
   }
-  tip.innerHTML = `<b>${esc(it.name || it.label || '(unnamed)')}</b><br>${esc(what).replaceAll('\n', '<br>')}<br>${it.type === 6 ? `Footprint ${it.size[0].toFixed(1)} × ${it.size[2].toFixed(1)}<br>` : ''}<span>${TYPES[markerKind(it)]?.label ?? 'Type ' + it.type} · ${SUBTYPES[it.sub] ?? hex(it.sub)}</span>`;
+  // The kind line keeps only what the description does not already say; an area's description opens with its kind ("Music zone (0x10): ...").
+  const kind = it.type === 6 ? '' : kindParts(it).filter((p) => !what.toLowerCase().includes(p.toLowerCase())).join(' · ');
+  tip.innerHTML = `<b>${esc(it.name || it.label || '(unnamed)')}</b><br>${esc(what).replaceAll('\n', '<br>')}${it.type === 6 ? `<br>Footprint ${it.size[0].toFixed(1)} × ${it.size[2].toFixed(1)}` : ''}${kind ? `<br><span>${esc(kind)}</span>` : ''}`;
   const r = canvas.getBoundingClientRect();
   tip.style.left = e.clientX - r.left + 14 + 'px';
   tip.style.top = e.clientY - r.top + 14 + 'px';
@@ -1535,11 +1596,36 @@ function showInfo(card, x, y) {
     btn.textContent = `Play voice line${card.voiceIds.length > 1 ? 's' : ''} ${card.voiceIds.join(', ')}`;
     btn.onclick = () => playVoiceIds(card.voiceIds);
     el.append(btn);
+  } else if (card.place?.type === 7 && (card.place.onEnter || card.place.pathEvent)) {
+    const note = Object.assign(document.createElement('small'), { className: 'shotNote' });
+    el.append(note);
+    triggerEffect(card.place, selected).then((t) => (note.textContent = t));
   }
   const r = canvas.getBoundingClientRect();
   el.style.left = Math.min(x, r.width - 390) + 'px';
   el.style.top = Math.min(y, r.height - 220) + 'px';
   el.hidden = false;
+}
+// What a trigger that plays no line does: who reads the flags and counters it writes (the level script, or DAT items gated on them:
+// units and restart points by flag +0x60 / counter +0x64 (isDatItemConditionMet), other triggers, objective arrows).
+async function triggerEffect(it, dir) {
+  const p = it.pathEvent, acts = [it.onEnter, it.onExit, p && { counter: p.addCounter, flag: p.setFlag }].filter(Boolean);
+  const flags = [...new Set(acts.map((a) => a.flag).filter(Boolean))], counters = [...new Set(acts.map((a) => a.counter).filter(Boolean))];
+  if (!flags.length && !counters.length) return 'It sets no flag or counter, so it does nothing.';
+  const reads = new Set(globalThis.RS64_TRIGGER_VOICES?.[(modLevelOf(dir) ? 'lv_' + modLevelOf(dir).template.toString(36) : dir.split('/').pop())]?.reads ?? []);
+  const dv = await rom.read(dir + '/dat'), users = [];
+  for (const x of parseDAT(dv).items) {
+    if (x === it || x.offset === it.offset) continue;
+    const size = dv.getUint32(x.offset + 8);
+    const gate = x.type === 0 && size > 0x6C ? { flag: dv.getUint32(x.offset + 0x60), counter: dv.getUint32(x.offset + 0x64) } : null;
+    const uses = [gate, x.requires, x.waypoint && { flag: x.waypoint.flag }, x.pathEvent && { flag: x.pathEvent.flag, counter: x.pathEvent.counter }].filter(Boolean);
+    if (uses.some((u) => flags.includes(u.flag) || counters.includes(u.counter))) users.push(x.name || TYPES[markerKind(x)]?.label || 'item');
+  }
+  const what = [...flags.map((f) => `flag ${f}`), ...counters.map((c) => `counter ${c}`)].join(' and ');
+  const script = [...flags.map((f) => 'b' + f), ...counters.map((c) => 'c' + c)].some((k) => reads.has(k));
+  if (users.length) return `It plays no voice line; ${what} enables ${users.slice(0, 4).join(', ')}${users.length > 4 ? ` and ${users.length - 4} more` : ''}${script ? ', and the level script reads it' : ''}.`;
+  if (script) return `It plays no voice line; the level script reads ${what} (objectives, camera cuts or spawns).`;
+  return `It has no effect: nothing in the level or its script reads ${what}.`;
 }
 // A press that barely moves is a click; anything longer is an orbit drag.
 const downAt = {};
@@ -1600,7 +1686,9 @@ const modelCache = new Map();
 // parseMenuVoice table order, matched against the user's listening notes for each part.
 const CRAFT_NAMES = ['Snowspeeder', 'X-wing', 'A-wing', 'Y-wing', 'V-wing', 'Millennium Falcon', 'TIE Interceptor'];
 const PILOT_NAMES = ['Wedge', 'Dack', 'Hobbie', 'Zev', 'Wes', 'Kasan'];
-let missionNames = [];
+let missionNames = [], frontText = [];
+// A voice line's words: the SELECT LEVEL briefings (0x279 + level) are their level's description (front_TXT 0x21 + level), the rest are in voice_TXT.
+const voiceWords = (v) => (v >= 0x279 && v <= 0x28B ? frontText[0x21 + v - 0x279] : voiceLine(v));
 const titleCase = (s) => s.toLowerCase().replace(/(^|[\s-])([a-z]+)/g, (m, a, w) => a + (/^[iv]+$/.test(w) ? w.toUpperCase() : a && /^(at|on|of|the|for|from|above)$/.test(w) ? w : w[0].toUpperCase() + w.slice(1)));
 // lv_X: X is the level index in base 36 (lv_a = level 10).
 const lvName = (lv) => missionNames[parseInt(lv.slice(3), 36)] ?? lv;
@@ -2345,10 +2433,11 @@ function renderList() {
       if (a.name !== 'dat') continue;
       const id = a.dir;
       if (q && !id.toLowerCase().includes(q)) continue;
-      const dir = id.includes('/level/') ? 'missions' : 'frontend';
+      const ml = modLevelOf(id), dir = ml ? 'mod levels' : id.includes('/level/') ? 'missions' : 'frontend';
       if (!groups.has(dir)) groups.set(dir, []);
       const lv = id.split('/').pop();
-      groups.get(dir).push({ id, label: /^lv_/.test(lv) && lvName(lv) !== lv ? `${lv} ${lvName(lv)}` : lv });
+      groups.get(dir).push({ id, label: ml ? ml.title : /^lv_/.test(lv) && lvName(lv) !== lv ? `${lv} ${lvName(lv)}` : lv,
+        tip: ml ? `Mod level ${ml.folder}, plays as ${lvName('lv_' + ml.template.toString(36))}` : undefined });
     }
     // A level's cutscenes are picked in its Scene panel; only the logo sequence (id19) has no level.
     if (rom.assets.has('data/cuts/id19_special') && (!q || 'factor 5 logo'.includes(q))) groups.set('other', [{ id: 'cut:data/cuts/id19_special', label: 'Factor 5 logo' }]);
@@ -3318,7 +3407,7 @@ const _cfp = new THREE.Vector3();
 function fogFar() {
   let lo = 16, hi = 24, at = -1;
   if (cut) for (const e of cut.data.events) if (e.type === 17 && e.frame <= cut.t * cut.data.frames && e.frame >= at) [lo, hi, at] = [e.p[0], e.p[1], e.frame];
-  const lv = parseInt((cut ? cutLevel : selected)?.split('/lv_')[1] ?? '', 36), [a0, a1] = lv === 12 ? [-2, -20] : [2, -8];
+  const lv = parseInt(stockDir(cut ? cutLevel : selected)?.split('/lv_')[1] ?? '', 36), [a0, a1] = lv === 12 ? [-2, -20] : [2, -8];
   const gy = -camera.getWorldPosition(_cfp).y;
   const D = lv === 10 ? 22 : lo + (hi - lo) * THREE.MathUtils.clamp((a0 - gy) / (a0 - a1), 0, 1);
   return 2 * (0.75 * D + 1);
@@ -3345,6 +3434,7 @@ async function showLevel(dir, keepView = false, skyOverride = null) {
   selectedLevel = true;
   selectedEffect = false;
   renderList();
+  fillLevelButton();
   $('objRow').hidden = true;
   const counts = { tris: 0, verts: 0, parts: 0 };
   const world = new THREE.Group();
@@ -3352,7 +3442,7 @@ async function showLevel(dir, keepView = false, skyOverride = null) {
   levelHeight = () => 0;
   if (rom.assets.has(dir + '/hmp')) {
     hmp = parseHMP(await rom.read(dir + '/hmp'));
-    const [texIds, bank] = await Promise.all([rom.read(dir + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
+    const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
     const t = terrainMesh(hmp, texIds, bank, dir + '|' + $('optTerrainLod').value);
     // Bilinear ground height on the 0.5-unit vertex grid (4x4 quads per 2-unit tile).
     const gw = hmp.w * 4, gh = hmp.h * 4;
@@ -3597,8 +3687,8 @@ async function showLevel(dir, keepView = false, skyOverride = null) {
   if (hmp) applySun(hmp.light, hmp.w * 2, hmp.h * 2);
 
   world.traverse((o) => { if (o.isMesh && o.parent !== markers) o.castShadow = o.receiveShadow = true; });
-  const lvIndex = parseInt(dir.split('_').pop(), 36);
-  if (dir.includes('/level/lv_') && lvIndex < 21) {
+  const lvIndex = parseInt(stockDir(dir).split('_').pop(), 36);
+  if (stockDir(dir).includes('/level/lv_') && lvIndex < 21) {
     const o = 0x800A05D0 - 0x80000400 + 0x1000 + lvIndex * 0x30 + 0x28;
     levelFog = { color: new THREE.Color().setRGB(romBytes[o] / 255, romBytes[o + 1] / 255, romBytes[o + 2] / 255, THREE.SRGBColorSpace), frac: lvIndex === 2 ? 0.3 : 0.9 };
     applyFog();
@@ -3609,7 +3699,7 @@ async function showLevel(dir, keepView = false, skyOverride = null) {
   renderLegend(markers);
   if (!keepView) frameLevel(world, markers);
   // Added after framing so the dome doesn't inflate the bounds; the render loop keeps it centred on the camera.
-  const skyId = skyOverride ?? dir.replace(/.*\/lv_/, 'data/level/sky_');
+  const skyId = skyOverride ?? stockDir(dir).replace(/.*\/lv_/, 'data/level/sky_');
   if (rom.assets.has(skyId + '_HOB')) {
     const m = await loadModel(skyId);
     sky = buildObject(m.hob.objects[0], m, skyId, { tris: 0, verts: 0, parts: 0 });
@@ -3678,9 +3768,11 @@ async function openFile(file) {
     history = createHistory();
     savedStep = null;
     updateModButton();
+    applyModLevelsText('');
     objectHome = null;
     if (rom.assets.has('data/voice_TXT')) voiceLine = parseVoiceLines(romBytes, await rom.read('data/voice_TXT'));
-    missionNames = rom.assets.has('data/front_TXT') ? parseFrontText(await rom.read('data/front_TXT')).slice(0, 19).map(titleCase) : [];
+    frontText = rom.assets.has('data/front_TXT') ? parseFrontText(await rom.read('data/front_TXT')) : [];
+    missionNames = frontText.slice(0, 19).map(titleCase);
     stopAudio();
     audioSel = null;
     musicSel = null;
@@ -3950,6 +4042,7 @@ $('btnExport').onclick = async () => {
 const edits = new Map(), dirty = new Set();
 // The edited game assets a mod exports (the explorer/ authoring sidecars stay in the project).
 const modDirty = () => [...dirty].filter((p) => !p.startsWith('explorer/'));
+const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/');
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 let history = createHistory();
 function updateModButton() {
@@ -3967,8 +4060,8 @@ function markDirty(path, now) {
 // change() edits the bytes in place, or returns a new array when the asset changes size. Every edit is one history commit; wrap a
 // gesture that makes several in historyGroup so it undoes as one step.
 async function editAsset(path, change, label) {
-  // A virtual explorer/ asset starts out empty.
-  const dv = path.startsWith('explorer/') ? await rom.read(path).catch(() => new DataView(new ArrayBuffer(0))) : await rom.read(path);
+  // A virtual asset (explorer/ authoring sidecars, mod/ files written raw at the mod root) starts out empty.
+  const dv = virtualAsset(path) ? await rom.read(path).catch(() => new DataView(new ArrayBuffer(0))) : await rom.read(path);
   const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
   if (!edits.has(path)) edits.set(path, bytes.slice());
   const before = bytes.slice(), replaced = change(bytes), now = replaced ?? bytes;
@@ -3995,13 +4088,14 @@ async function applyHistory(changes) {
     markDirty(path, bytes);
   }
   updateModButton();
+  if (changes.some((c) => c.path === MOD_LEVELS)) await applyModLevels();
   await refreshView();
 }
 async function refreshView() {
   modelCache.clear();
   clearCaches();
   if (cut && selected?.startsWith('cut:')) await reopenCutscene();
-  else if (selectedLevel) await reloadLevel(selected);
+  else if (selectedLevel) await reloadLevel(rom.assets.has(selected + '/dat') ? selected : 'data/level/lv_0');
   else if (selected) await showModel(selected, selectedObj, true);
 }
 // ---- Project files: every edit plus the undo history, as patches against the ROM's assets (projectWrite / projectRead) ----
@@ -4049,7 +4143,7 @@ async function openProject() {
   if (!file) return;
   const original = async (p) => {
     if (edits.has(p)) return edits.get(p).slice();
-    if (p.startsWith('explorer/')) return new Uint8Array(0);
+    if (virtualAsset(p)) return new Uint8Array(0);
     const dv = await rom.read(p);
     return new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
   };
@@ -4060,6 +4154,8 @@ async function openProject() {
     alert(e.message);
     return;
   }
+  // A mod level's files are aliases of its template's: they must exist before their originals are read.
+  applyModLevelsText(new TextDecoder().decode(loaded.current.get(MOD_LEVELS) ?? new Uint8Array(0)));
   const originals = new Map();
   for (const p of new Set([...edits.keys(), ...loaded.current.keys(), ...loaded.history.steps.flatMap((s) => s.changes.map((c) => c.path))])) originals.set(p, await original(p));
   edits.clear();
@@ -4225,7 +4321,7 @@ async function loadSculpt() {
   }
   const dir = selected, dv = await rom.read(dir + '/hmp');
   const base = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
-  const [texIds, bank] = await Promise.all([rom.read(dir + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
+  const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
   sculpt = { dir, base, grid: hmpGrid(parseHMP(dv)), texIds, bank, undo: [], tex: null, bytes: null };
   sculpt.committed = sculpt.grid.hts.slice();
   controls.mouseButtons.LEFT = null;
@@ -4435,10 +4531,10 @@ for (const id of ['sculptRadius', 'sculptStrength']) $(id).oninput = () => ($(id
 let cutLevel = null;
 function fillCutPick(dir) {
   cutLevel = dir;
-  const n = parseInt(dir.split('/lv_')[1], 36), files = [], cams = [];
+  const ml = modLevelOf(dir), n = parseInt(dir.split('/lv_')[1], 36), files = [], cams = [];
   for (const [kind, label] of [['intro', 'Intro'], ['extro', 'Extro'], ['special', 'Ending ceremony']]) {
-    const path = `data/cuts/id${n}_${kind}`;
-    if (n <= 15 && rom.assets.has(path)) files.push([`cut:${path}`, label]);
+    const path = ml ? `data/cuts/${ml.folder}_${kind}` : `data/cuts/id${n}_${kind}`;
+    if ((ml || n <= 15) && rom.assets.has(path)) files.push([`cut:${path}`, label]);
   }
   const camItems = (root?.getObjectByName('markers')?.children ?? []).map((m) => m.userData.item).filter((it) => it.type === 0 && it.sub === 0x26);
   for (const it of camItems) cams.push([`cam:${it.index}`, it.name || 'camera #' + it.index]);
@@ -5410,7 +5506,9 @@ async function showCutscene(path) {
   if (path !== lastCutPath) [cutSelEvent, cutSelKey, cutTrack, lastCutPath] = [null, null, null, path];
   cutAuth = path.startsWith('seq:') ? AUTHORING_EMPTY() : await readAuthoring(path);
   const sq = path.match(/^seq:(.+):(\d+)$/);
-  const n = sq ? parseInt(sq[1].slice(-1), 36) : +path.match(/id(\d+)_/)[1], lv = sq ? sq[1] : n <= 15 ? 'data/level/lv_' + n.toString(36) : null;
+  const mc = modLevels.find((l) => path === `data/cuts/${l.folder}_intro` || path === `data/cuts/${l.folder}_extro`);
+  const n = sq ? parseInt(sq[1].slice(-1), 36) : mc ? mc.template : +path.match(/id(\d+)_/)[1];
+  const lv = sq ? sq[1] : mc ? 'data/level/' + mc.folder : n <= 15 ? 'data/level/lv_' + n.toString(36) : null;
   // The medal ceremony (cinematicLoopBody(3, 2), medal byte 0x80130B38) loads lv_3 but forces sky index 0x11 -> sky_5 (0x8005BD70).
   const ceremony = path.endsWith('id3_special');
   if (lv && rom.assets.has(lv + '/dat')) {
@@ -5429,6 +5527,7 @@ async function showCutscene(path) {
   if (editMode) setEditMode(null);
   $('editPanel').hidden = true;
   selected = 'cut:' + path;
+  fillLevelButton();
   selectedLevel = true;
   renderList();
   const data = sq ? await buildSequenceData(lv, +sq[2]) : parseCutscene(await rom.read(path)), index = await buildObjectIndex(), world = root;
@@ -5930,6 +6029,13 @@ const cutAudioLength = (e) => {
 function buildClipLanes(tracks) {
   const data = cut.file, F = data.frames, at = (f) => `${(f / F) * 100}%`, clips = cutClips(data, cutAudioLength), rows = {};
   cut.clips = clips;
+  // Events a camera mode or shot added move with it, never by hand (a hand-moved one would be added again by the next bake).
+  const baked = cut.seq ? [] : cutBakedEvents(data, cutAuth);
+  for (const c of clips) if ([c.event, c.startEvent, c.endEvent].some((e) => e && baked.includes(e))) {
+    c.baked = true;
+    c.lockStart ||= baked.includes(c.startEvent);
+    c.lockEnd ||= baked.includes(c.endEvent);
+  }
   // A sequence's shots trim at their end (hold time); its other clips come from scripts and paths and stay put.
   if (cut.seq) for (const c of clips) Object.assign(c, c.kind === 'shot' ? { lockStart: true, lockEnd: false } : { lockStart: true, lockEnd: true });
   // Rows that do not move as clips are dragged: one group per actor (action lane) or per kind, groups in a fixed order, and overlaps
@@ -6033,6 +6139,7 @@ $('cutTimeline').addEventListener('pointerdown', (e) => {
   selectCutEvent(clip.event ? cut.file.events.indexOf(clip.event) : null);
   // In a sequence only a shot's end drags (its hold time); everything else just selects.
   if (cut.seq && (clip.kind !== 'shot' || part !== 'end')) return;
+  if (clip.baked && part === 'move') return void ($('cutStatus').textContent = 'Set by a camera mode or a shot: change it there');
   clipDrag = { el, clip, part, x0: e.clientX, d: 0, perFrame: el.parentElement.getBoundingClientRect().width / cut.file.frames };
   el.setPointerCapture(e.pointerId);
 }, true);
@@ -6069,7 +6176,10 @@ $('cutTimeline').addEventListener('pointerup', async (e) => {
     const k = cut.clips.filter((c) => c.kind === 'shot').indexOf(g.clip);
     return setSeqHold(k, seqShot(k).hold + g.d / cut.file.fps);
   }
-  await editCutFile('Timeline: ' + (g.part === 'move' ? 'move' : 'trim') + ' ' + g.clip.kind, (f) => cutDragClip(f, cutClips(f, cutAudioLength)[+g.el.dataset.clip], g.part, g.d));
+  const label = 'Timeline: ' + (g.part === 'move' ? 'move' : 'trim') + ' ' + g.clip.kind, drag = (f) => cutDragClip(f, cutClips(f, cutAudioLength)[+g.el.dataset.clip], g.part, g.d);
+  // Moving a cut moves the camera modes of the shots on either side, so they re-bake.
+  if (g.clip.kind === 'shot' && Object.keys(cutAuth.tracks).length) await cutAuthEdit(label, (doc, f) => cutSyncModeSpans(doc, f), drag, true);
+  else await editCutFile(label, drag);
 }, true);
 // Every cutscene edit: change a fresh parse of the stored file, write it as one history step, rebuild. A limit error shows in the bar.
 // ---- In-mission sequences: edits go to the level's camera records (DAT 0/0x26): hold +0x60, target name +0x64 (item-relative, 32-bit),
@@ -6291,6 +6401,9 @@ function syncCutEditUi() {
 // position, 3 scale input, 4-6 axis, 7 angle, 8-10 pivot. Its keys show on the Keys row: click one to select it (and its values), drag
 // to retime it, Delete removes it (never the first, at time 0).
 let cutTrack = null, cutSelKey = null;
+let cutLastClickTimeline = false;
+// A click on the timeline outside a clip (scrubbing, or deselecting a key) disarms Delete for the picked actor or camera.
+addEventListener('pointerdown', (e) => (cutLastClickTimeline = !!e.target.closest?.('#cutTimeline') && !e.target.closest('.tlClip')), true);
 // Backspace too: Mac keyboards have no Delete key.
 const DELETE_KEYS = new Set(['Delete', 'Backspace']);
 const cutTrackChannels = (f, tr) => (tr.cam != null ? f.cameras[tr.cam] : f.actors[tr.actor].ch);
@@ -6567,7 +6680,10 @@ $('cutTimeline').addEventListener('pointerup', async (e) => {
   cutSelKey = g.to;
   if (snaps.length) await cutAuthEdit('Retime snapshot', (doc) => {
     const at = cutAuthTrack(doc, cutTrack), s = at.snaps.find((x) => Math.abs(x.t - g.t) < half);
-    if (s) at.snaps = cutPutSnap(at.snaps.filter((x) => x !== s), { ...s, t: g.to }, half);
+    if (!s) return;
+    // It stops a frame short of its neighbours rather than replacing one.
+    const i = at.snaps.indexOf(s), lo = at.snaps[i - 1]?.t ?? -Infinity, hi = at.snaps[i + 1]?.t ?? Infinity;
+    at.snaps = cutPutSnap(at.snaps.filter((x) => x !== s), { ...s, t: Math.min(1, Math.max(0, lo + 4 * half, Math.min(hi - 4 * half, g.to))) }, half);
   });
   else await editCutFile('Retime key', (f) => cutRetimeKeys(f, cutTrack, g.t, g.to));
 }, true);
@@ -6580,7 +6696,8 @@ addEventListener('keydown', async (e) => {
   else if (!DELETE_KEYS.has(e.key) || cutSelEvent != null) return;
   // Delete removes the selected key or snapshot, or else the picked actor or camera (undo brings it back).
   else if (cutSelKey != null) (cutSelKey || cutSnaps(cutTrack).length) && (await deleteSelKey());
-  else if (!cutTrack.holder) $(cutTrack.cam != null ? 'cutDelCam' : 'cutDelActor').click();
+  // Not right after a scrub or deselect on the timeline, where Delete more likely meant a key.
+  else if (!cutTrack.holder && !cutLastClickTimeline) $(cutTrack.cam != null ? 'cutDelCam' : 'cutDelActor').click();
 });
 // Ctrl+C copies the selected event, or else the picked camera's or actor's pose at the playhead; Ctrl+V pastes the event at the playhead
 // (onto the picked actor when it names one) or keys the pose onto the picked track of the same kind.
@@ -6630,10 +6747,12 @@ async function deleteSelKey() {
 function fillCutKeyPanel() {
   const p = $('cutEvPanel');
   if (!cutTrack || cutSelKey == null || !cut?.file) return;
-  const names = CUT_CH_NAMES[cutTrack.cam != null ? 'cam' : 'actor'], v = cutTrackValues(cut.file, cutTrack, cutSelKey);
+  const names = CUT_CH_NAMES[cutTrack.cam != null ? 'cam' : 'actor'], v = cutTrackValues(cut.file, cutTrack, cutSelKey), snap = cutSnaps(cutTrack).length > 0;
+  // A snapshot track's values come from its snapshots (move the view and press V to change one), so they show read-only.
+  const ro = snap ? ' disabled title="Baked from the snapshots: fly the view and press V to change it"' : '';
   p.hidden = false;
-  p.innerHTML = `<b>Key at ${(cutSelKey * cut.file.length).toFixed(2)} s</b>` + names.map((n, c) => `<label>${n} <input type="number" step="any" data-ch="${c}" value="${+v[c].toFixed(4)}"></label>`).join('')
-    + `<button id="cutKeyDel" data-icon="delete" title="${cutSelKey ? 'Delete this key (Delete key)' : 'The key at 0 s starts the channel and stays'}"${cutSelKey ? '' : ' disabled'}></button>`;
+  p.innerHTML = `<b>${snap ? 'Snapshot' : 'Key'} at ${(cutSelKey * cut.file.length).toFixed(2)} s</b>` + names.map((n, c) => `<label>${n} <input type="number" step="any" data-ch="${c}" value="${+v[c].toFixed(4)}"${ro}></label>`).join('')
+    + `<button id="cutKeyDel" data-icon="delete" title="${snap ? 'Delete this snapshot (Delete key)' : cutSelKey ? 'Delete this key (Delete key)' : 'The key at 0 s starts the channel and stays'}"${cutSelKey || snap ? '' : ' disabled'}></button>`;
   setEditIcon($('cutKeyDel'), 'delete');
   $('cutKeyDel').onclick = deleteSelKey;
   for (const inp of p.querySelectorAll('[data-ch]')) inp.onchange = async () => {
@@ -6687,13 +6806,15 @@ let cutAuth = AUTHORING_EMPTY();
 const cutTrackKey = (tr) => (tr.cam != null ? `cam:${tr.cam}` : `act:${tr.actor}`);
 const cutSnaps = (tr) => (tr && !tr.holder ? cutAuth.tracks[cutTrackKey(tr)]?.snaps ?? [] : []);
 const cutAuthTrack = (doc, tr) => (doc.tracks[cutTrackKey(tr)] ??= {});
-// One undo step: edit(doc, file) changes a copy of the sidecar (fileEdit first changes the file), then every track re-bakes.
-function cutAuthEdit(label, edit, fileEdit = null) {
+// One undo step: edit(doc, file) changes a copy of the sidecar (fileEdit first changes the file), then every track re-bakes. fileFirst
+// runs fileEdit before the old bake is undone (an edit that finds its target by index, such as a clip drag).
+function cutAuthEdit(label, edit, fileEdit = null, fileFirst = false) {
   let next = null;
   return editCutFile(label, (f) => {
     next = structuredClone(cutAuth);
+    if (fileFirst) fileEdit?.(f);
     cutUnbake(f, cutAuth);
-    fileEdit?.(f);
+    if (!fileFirst) fileEdit?.(f);
     edit(next, f);
     cutBake(f, next);
   }, (doc) => (doc.tracks = next.tracks));
@@ -6945,12 +7066,14 @@ $('cutLength').onchange = async () => {
   if (!(s > 0) || !cut?.file || Math.abs(s - cut.file.length) < 1e-3) return;
   // Snapshots, modes and shots keep their seconds; ones past the new end go.
   const old = cut.file.length;
-  await cutAuthEdit('Length', (doc) => {
+  await cutAuthEdit('Length', (doc, f) => {
     for (const tr of Object.values(doc.tracks)) {
       if (tr.snaps) tr.snaps = cutRetimeSnaps(tr.snaps, old, s);
       if (tr.modes) tr.modes = tr.modes.map((m) => ({ ...m, t0: (m.t0 * old) / s, t1: Math.min(1, (m.t1 * old) / s) })).filter((m) => m.t0 < 1);
       if (tr.shots) tr.shots = cutRetimeSnaps(tr.shots, old, s);
     }
+    // Rounded to frames, a mode span can miss its cut by one; snap each to its shot.
+    cutSyncModeSpans(doc, f);
   }, (f) => cutSetLength(f, s));
 };
 $('cutTrack').onchange = () => {
@@ -6975,6 +7098,7 @@ $('cutAddKind').onchange = async () => {
 addEventListener('keydown', async (e) => {
   if (!DELETE_KEYS.has(e.key) || !cutEditing || cutSelEvent == null || !cut?.file || e.target.closest?.('input,select,textarea')) return;
   const i = cutSelEvent;
+  if (cutBakedEvents(cut.file, cutAuth).includes(cut.file.events[i])) return void ($('cutStatus').textContent = 'Set by a camera mode or a shot: change it there');
   selectCutEvent(null);
   await editCutFile('Delete ' + (TL_KIND[cut.file.events[i]?.type] ?? 'event'), (f) => cutRemoveEvent(f, i));
 });
@@ -7005,6 +7129,10 @@ function fillCutEvPanel() {
   p.hidden = !cutEditing || !e;
   if (p.hidden) return void (cutEditing && cutSelKey != null && fillCutKeyPanel());
   const info = cutEventInfo(e, cut.file);
+  if (!cut.seq && cutBakedEvents(cut.file, cutAuth).includes(e)) {
+    p.innerHTML = `<b>${esc(info?.[2] ?? 'Event type ' + e.type)}</b><label>From <input disabled value="a camera mode or a shot"></label>`;
+    return;
+  }
   if (cut.seq) {
     if (e.type === 4) return fillSeqShotPanel(p, e.p[0]);
     p.innerHTML = `<b>${esc(info?.[2] ?? 'Event type ' + e.type)}</b><label>From <input disabled value="the level script / paths"></label>`;
@@ -7109,6 +7237,7 @@ async function reloadLevel(dir) {
   clearCaches();
   await showLevel(dir, true);
   if (editMode === 'events') fillAddKinds();
+  if (editMode === 'objects') fillAddEnemies();
 }
 async function deleteItem(it) {
   const dir = selected;
@@ -7119,9 +7248,16 @@ async function deleteItem(it) {
   const dv = await rom.read(dir + '/dat'), bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
   const refs = it.name ? nameUses(bytes, it.name, it.offset, it.offset + dv.getUint32(it.offset + 8)) : 0;
   if (refs && !confirm(`Other items in this level mention "${it.name}" (${refs}x: triggers, paths or areas). Delete it anyway?`)) return;
-  await editAsset(dir + '/dat', (b) => datRemoveItem(b, 0, it.index));
+  try {
+    // Zones and triggers are referred to by index: the rest are renumbered.
+    await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveItem(b, 0, it.index) : datRemoveIndexed(b, it.type, it.index)));
+  } catch (e) {
+    alert(`${e.message}, so it cannot be deleted. Move it away instead.`);
+    return;
+  }
   await reloadLevel(dir);
 }
+const canDelete = (it) => !it.pathEvent && [0, 6, 7].includes(it.type);
 
 // ---- Level editing ----
 // The Edit button switches the level view from viewing to editing: Terrain (sculpt and paint), Objects (placed type-0 items) and Events
@@ -7168,6 +7304,7 @@ const EDIT_ICONS = {
   modExport: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M12 8h1.6v3.6h1.9L12.8 15.5 10.1 11.6H12z' },
   blank: { stroke: 'M3 1.5h6.5l3.5 3.5v9.5H3zM9.5 1.5V5H13' },
   eye: { stroke: 'M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z' },
+  close: { stroke: 'M3.5 3.5l9 9M12.5 3.5l-9 9' },
 };
 // An icon is a filled path, or { stroke } for line drawings (rotate, scale).
 function setEditIcon(b, name) {
@@ -7322,6 +7459,7 @@ function setEditMode(m) {
   loadSculpt();
   $('info').hidden = true;
   if (m === 'events') fillAddKinds();
+  if (m === 'objects') fillAddEnemies();
   select(null);
 }
 $('editTab').onclick = () => setEditMode(editMode ? null : lastEditMode);
@@ -7469,10 +7607,767 @@ async function commitSel() {
     select(nm);
   } else select(o);
 }
+// Mid-mission camera shot: the trigger's first firing in a mission plays one of the level's camera items (DAT 0/0x26) and its next
+// cameras. The links live in the mod's camera_shots.txt (virtual asset mod/camera_shots.txt, exported raw at the mod root).
+const SHOT_LINKS = 'mod/camera_shots.txt';
+function shotLinkRow(it) {
+  const dir = selected, lv = dir.split('/').pop(), row = Object.assign(document.createElement('div'), { className: 'shotRow' });
+  const cams = (root?.getObjectByName('markers')?.children ?? []).map((m) => m.userData.item).filter((c) => c?.type === 0 && c.sub === 0x26 && c.name);
+  const pick = Object.assign(document.createElement('select'), { title: 'When this trigger first fires in a mission, the game cuts to this camera (and its next cameras) while the fight keeps running, then hands control back' });
+  pick.append(new Option('None', ''), ...cams.map((c) => new Option(c.name, c.name)));
+  const preview = Object.assign(document.createElement('button'), { title: 'Preview the camera shot (opens it in the Scene panel)' });
+  setEditIcon(preview, 'eye');
+  const personal = Object.assign(document.createElement('input'), { type: 'checkbox', title: 'Personal: in online co-op only the player who set the trigger off sees the shot (use it when the camera chain ends at a restart point that moves the player). Off: both players see it' });
+  const personalLabel = Object.assign(document.createElement('label'), { className: 'shotPersonal' });
+  personalLabel.append(personal, ' Personal');
+  const text = async () => new TextDecoder().decode(await rom.read(SHOT_LINKS).then((dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)).catch(() => new Uint8Array(0)));
+  // A target flying a path exists only once the level spawns it; before that the game holds the camera's own direction (verified lv_3).
+  const note = Object.assign(document.createElement('small'), { className: 'shotNote' });
+  const warn = async () => {
+    note.textContent = '';
+    const cam = cams.find((c) => c.name === pick.value);
+    if (!cam) {
+      if (pick.value) note.textContent = `${pick.value} is not a camera in this level (deleted, or another level's): the game drops this shot. Pick a camera or None.`;
+      return;
+    }
+    const dv = await rom.read(dir + '/dat'), { items } = parseDAT(dv), tgt = camRecord(cam, dv).target, t = items.find((i) => i.type === 0 && i.name === tgt);
+    if (t?.model && items.some((s) => s.type === 3 && s.name === t.model)) note.textContent = `Aims at ${tgt}, which flies a path: if the level has not spawned it when the shot plays, the camera keeps its own direction instead.`;
+  };
+  text().then((t) => {
+    const link = shotLinkGet(t, lv, it.name);
+    if (link && !cams.some((c) => c.name === link.camera)) {
+      pick.append(new Option(`${link.camera} (missing)`, link.camera));
+      pick.disabled = false;
+    }
+    pick.value = link?.camera ?? '';
+    personal.checked = !!link?.personal;
+    preview.disabled = personal.disabled = !pick.value;
+    warn();
+  });
+  const save = async (label) => {
+    const t = await text();
+    await editAsset(SHOT_LINKS, () => new TextEncoder().encode(shotLinkSet(t, lv, it.name, pick.value || null, personal.checked)), label);
+    preview.disabled = personal.disabled = !pick.value;
+    warn();
+  };
+  pick.onchange = () => save(pick.value ? `Camera shot: ${it.name} -> ${pick.value}` : `No camera shot: ${it.name}`);
+  personal.onchange = () => save(`Camera shot ${personal.checked ? 'personal' : 'shared'}: ${it.name}`);
+  preview.onclick = (e) => {
+    e.preventDefault();
+    const cam = cams.find((c) => c.name === pick.value);
+    if (cam) showCutscene(`seq:${dir}:${cam.index}`);
+  };
+  row.append('Play camera shot ', pick, preview, personalLabel, note);
+  if (!cams.length) Object.assign(pick, { disabled: true, title: 'This level has no camera items; add one first' });
+  return row;
+}
+const virtualText = async (path) => new TextDecoder().decode(await rom.read(path).then((dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)).catch(() => new Uint8Array(0)));
+// ---- Mod levels (mod/levels.json): new levels that play as a stock template level, with copies of its files as their own ----
+const MOD_LEVELS = 'mod/levels.json';
+let modLevels = [];
+// Aliases every mod level's folder and intro/extro onto its template's files (and drops those of removed levels).
+function applyModLevelsText(text) {
+  modLevels = modLevelsParse(text);
+  const want = new Map(modLevels.flatMap((l) => modLevelAliases(l, [...rom.assets.keys()].filter((k) => !rom.aliases.has(k)))));
+  for (const p of [...rom.aliases.keys()]) if (want.get(p) !== rom.aliases.get(p)) rom.unalias(p);
+  for (const [p, from] of want) rom.alias(p, from);
+}
+const applyModLevels = async () => applyModLevelsText(await virtualText(MOD_LEVELS));
+const modLevelOf = (dir) => modLevels.find((l) => dir === 'data/level/' + l.folder);
+// The stock level a level directory plays as (its own for a stock level): per-level game data (textures, sky, fog) comes from it.
+const stockDir = (dir) => {
+  const l = dir && modLevelOf(dir);
+  return l ? 'data/level/lv_' + l.template.toString(36) : dir;
+};
+async function editModLevels(change, label) {
+  const levels = modLevelsParse(await virtualText(MOD_LEVELS));
+  change(levels);
+  await editAsset(MOD_LEVELS, () => new TextEncoder().encode(modLevelsWrite(levels)), label);
+  await applyModLevels();
+}
+const CRAFT = [['xwing', 'X-wing'], ['ywing', 'Y-wing'], ['awing', 'A-wing'], ['vwing', 'V-wing'], ['speeder', 'Snowspeeder'], ['falcon', 'Millennium Falcon'], ['tie', 'TIE interceptor'], ['t16', 'T-16 Skyhopper'], ['naboo', 'Naboo starfighter']];
+// What a template brings that the new level cannot change (yet).
+const TEMPLATE_NOTES = { 0: 'opening crawl (chapter 1)', 5: 'opening crawl (chapter 2)', 10: 'opening crawl (chapter 3); no Y-wing or speeder', 15: 'opening crawl (chapter 4)', 16: 'no craft select (T-16), friendlies-saved medal', 3: 'speeder only', 6: 'speeder only', 11: 'speeder only', 18: 'speeder only', 8: 'X-wing and Y-wing only', 17: 'X-wing only' };
+// blank: only a player start on flat ground, with this level's look (sky, textures, music); give it objectives in Level settings.
+async function newModLevel(fromDir, blank = false) {
+  const tmpl = parseInt(fromDir.split('/lv_')[1], 36), from = lvName(fromDir.split('/').pop());
+  const ask = blank
+    ? `New blank level with the look of ${from}: only a player start on flat ground. Give it objectives in Level settings.\n\nTitle:`
+    : `New level from ${from}${TEMPLATE_NOTES[tmpl] ? ` (it keeps: ${TEMPLATE_NOTES[tmpl]})` : ''}.\nIt plays this level's mission script, so keep the objects it uses.\n\nTitle:`;
+  const title = prompt(ask, 'New level')?.trim();
+  if (!title) return;
+  let made;
+  // A copy starts from the template's medal thresholds, a blank level from simple ones.
+  const medals = blank ? undefined : medalInfo(await rom.read('data/medal_info'), tmpl);
+  await historyGroup(`New level: ${title}`, async () => {
+    await editModLevels((levels) => levels.push((made = modLevelNew(levels, title, tmpl, medals))), `New level: ${title}`);
+    if (!blank) return;
+    const dir = 'data/level/' + made.folder;
+    await editAsset(dir + '/dat', (b) => datBlank(b), `Blank level: ${title}`);
+    await editAsset(dir + '/hmp', (b) => hmpFlat(b), `Flat ground: ${title}`);
+    // Its intro and outro start blank (3 s on the template's opening camera), not the template's scenes; templates past 15 have none.
+    for (const kind of ['intro', 'extro']) {
+      const p = `data/cuts/${made.folder}_${kind}`;
+      if (!rom.aliases.has(p)) continue;
+      await editAsset(p, (b) => {
+        const f = parseCutscene(new DataView(b.buffer, b.byteOffset, b.byteLength));
+        cutBlank(f, 3);
+        return writeCutscene(f);
+      }, `Blank ${kind}: ${title}`);
+    }
+  });
+  renderList();
+  await showLevel('data/level/' + made.folder);
+}
+// Level settings: title, briefing (text and voice), approved craft and medal thresholds, shown in SELECT LEVEL and the debrief.
+async function modLevelDialog(dir) {
+  const l = modLevelOf(dir);
+  if (!l) return;
+  const d = document.createElement('dialog');
+  d.className = 'panel levelDialog';
+  const fld = (label, el, tip) => {
+    const row = Object.assign(document.createElement('label'), { title: tip ?? '' });
+    row.append(label, el);
+    return row;
+  };
+  // Label centred above its field.
+  const stacked = (row) => (row.classList.add('stacked'), row);
+  const title = Object.assign(document.createElement('input'), { value: l.title, maxLength: 40, autofocus: true });
+  const desc = Object.assign(document.createElement('textarea'), { value: l.description ?? '', rows: 4 });
+  const fontNote = Object.assign(document.createElement('small'), { className: 'shotNote' });
+  const checkFont = () => {
+    const bad = [...new Set([...(title.value + desc.value).toUpperCase()].filter((c) => !/[A-Z0-9 \n!()_\-/\\,.:']/.test(c)))];
+    fontNote.textContent = bad.length ? `The game's menu font cannot draw ${bad.join(' ')}; they are left out. Letters show in capitals.` : 'Letters show in capitals.';
+  };
+  title.oninput = desc.oninput = checkFont;
+  checkFont();
+  const voice = document.createElement('select');
+  voice.append(new Option('None', ''));
+  const briefing = document.createElement('optgroup');
+  briefing.label = 'Level briefings';
+  for (let v = 0x279; v <= 0x28B; v++) briefing.append(new Option(`${lvName('lv_' + (v - 0x279).toString(36))}: ${voiceWords(v) ?? ''}`.slice(0, 90), String(v)));
+  const others = document.createElement('optgroup');
+  others.label = 'Other voice lines';
+  // Lines without a subtitle get the Audio tab's description (category and levels, by speech index).
+  const voiceMap = parseVoiceTable(romBytes, await rom.read('data/voice_TXT')).voiceMap, cats = globalThis.RS64_VOICE_CATS ?? {};
+  const unsubtitled = (v) => {
+    const [cat, levels] = cats[voiceMap[v]] ?? ['', []];
+    return levels.length ? `(${cat.split(': ').pop()}, ${levels.map(lvName).join(', ')})` : cat ? `(${cat})` : '(no subtitle)';
+  };
+  // Ids mapped to speech 0 (a one-frame silence) have no audio.
+  for (let v = 0; v < 0x2F4; v++) if ((v < 0x279 || v > 0x28B) && voiceMap[v] && voiceLine(v)) others.append(new Option(`${v} ${voiceLine(v).trim() || unsubtitled(v)}`.slice(0, 90), String(v)));
+  voice.append(briefing, others);
+  voice.value = l.voice != null ? String(l.voice) : '';
+  const useSub = Object.assign(document.createElement('button'), { textContent: 'Copy voiceline subtitles to Description', title: 'Stock descriptions are the exact words of their briefing line' });
+  // Only offered when the chosen line has words to copy.
+  const syncUseSub = () => (useSub.hidden = voice.disabled || !voice.value || !(voiceWords(+voice.value) ?? '').trim());
+  voice.onchange = syncUseSub;
+  syncUseSub();
+  useSub.onclick = (e) => {
+    e.preventDefault();
+    if (voice.value) desc.value = (voiceWords(+voice.value) ?? '').trim();
+    checkFont();
+  };
+  // Its own briefing recording: any audio file the browser decodes (.wav, .mp3, .ogg), stored as an 8 kHz MORT stream the game streams.
+  const briefPath = `mod/assets/level/${l.folder}/brief`;
+  const recNote = Object.assign(document.createElement('small'), { className: 'shotNote' });
+  const recImport = Object.assign(document.createElement('button'), { textContent: 'Import recording…', title: 'A .wav or .mp3 played instead of the briefing voice; converted to the game\'s 8 kHz voice codec' });
+  const recPlay = Object.assign(document.createElement('button'), { textContent: 'Play', title: 'How it will sound in the game' });
+  const recRemove = Object.assign(document.createElement('button'), { textContent: 'Remove' });
+  const recording = async () => {
+    const dv = await rom.read(briefPath).catch(() => null);
+    return dv?.byteLength ? new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength) : null;
+  };
+  const showRec = async () => {
+    const m = await recording();
+    recPlay.hidden = recRemove.hidden = recNote.hidden = !m;
+    voice.disabled = !!m;
+    syncUseSub();
+    recNote.textContent = m ? `Recording: ${((new DataView(m.buffer, m.byteOffset).getUint16(4) * 160) / 8000).toFixed(1)} s, played instead of the voice line.` : '';
+  };
+  recImport.onclick = (e) => {
+    e.preventDefault();
+    const pick = Object.assign(document.createElement('input'), { type: 'file', accept: 'audio/*' });
+    pick.onchange = async () => {
+      const f = pick.files[0];
+      if (!f) return;
+      try {
+        audioCtx ??= new AudioContext();
+        const buf = await audioCtx.decodeAudioData(await f.arrayBuffer());
+        const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(buf.duration * 8000)), 8000);
+        const src = off.createBufferSource();
+        src.buffer = buf;
+        src.connect(off.destination);
+        src.start();
+        const pcm = Int16Array.from((await off.startRendering()).getChannelData(0), (v) => Math.round(Math.max(-1, Math.min(1, v)) * 32767));
+        await editAsset(briefPath, () => encodeMort(pcm), `Briefing recording: ${l.title}`);
+      } catch (err) {
+        recNote.textContent = `Could not read ${f.name}: ${err.message}`;
+        return;
+      }
+      await showRec();
+    };
+    pick.click();
+  };
+  recPlay.onclick = async (e) => {
+    e.preventDefault();
+    const m = await recording();
+    if (!m) return;
+    const pcm = decodeMort(m, 0, m.length);
+    audioCtx ??= new AudioContext();
+    await audioCtx.resume();
+    const b = audioCtx.createBuffer(1, pcm.length, 8000);
+    b.getChannelData(0).set(Float32Array.from(pcm, (v) => v / 32768));
+    const s = audioCtx.createBufferSource();
+    s.buffer = b;
+    s.connect(audioCtx.destination);
+    s.start();
+  };
+  recRemove.onclick = async (e) => {
+    e.preventDefault();
+    await editAsset(briefPath, () => new Uint8Array(0), `Remove briefing recording: ${l.title}`);
+    await showRec();
+  };
+  showRec();
+  const recRow = Object.assign(document.createElement('div'), { className: 'recRow' });
+  recRow.append(recImport, recPlay, recRemove);
+  const crafts = CRAFT.map(([k, name]) => {
+    const c = Object.assign(document.createElement('input'), { type: 'checkbox', checked: (l.craft ?? []).includes(k) });
+    const lab = document.createElement('label');
+    lab.append(c, ' ' + name);
+    return [k, c, lab];
+  });
+  const craftBox = Object.assign(document.createElement('div'), { className: 'craftGrid', title: 'Craft approved for this level; none ticked keeps the template\'s' });
+  craftBox.append(...crafts.map(([, , lab]) => lab));
+  const tiers = ['bronze', 'silver', 'gold'], cols = [['time', 'Time (min)', 0.5], ['kills', 'Kills', 1], ['accuracy', 'Accuracy %', 1], ['friendlies', 'Friendlies saved', 1]];
+  const medals = Object.assign(document.createElement('table'), { className: 'medalGrid', title: 'A medal needs all of: time at most, the rest at least. Empty keeps the template\'s thresholds' });
+  medals.innerHTML = `<tr><th></th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}</tr>`;
+  const cells = tiers.map((t) => {
+    const tr = document.createElement('tr');
+    tr.append(Object.assign(document.createElement('th'), { textContent: t[0].toUpperCase() + t.slice(1) }));
+    const ins = cols.map(([k, , step]) => {
+      const i = Object.assign(document.createElement('input'), { type: 'number', min: 0, step, value: l.medals?.[t]?.[k] ?? '' });
+      const td = document.createElement('td');
+      td.append(i);
+      tr.append(td);
+      return [k, i];
+    });
+    medals.append(tr);
+    return [t, ins];
+  });
+  // Opening crawl: the template's (0, 5, 10 and 15 have one), none, or its own text ending on one of the four crawls' planets.
+  const crawlMode = document.createElement('select'), tmplCrawl = [0, 5, 10, 15].includes(l.template);
+  if (tmplCrawl) crawlMode.append(new Option("The template's", 'tmpl'));
+  crawlMode.append(new Option('None', 'none'), new Option('Its own', 'own'));
+  crawlMode.value = l.crawl && typeof l.crawl === 'object' ? 'own' : l.crawl === false || !tmplCrawl ? 'none' : 'tmpl';
+  const c0 = typeof l.crawl === 'object' && l.crawl ? l.crawl : {};
+  const chapter = Object.assign(document.createElement('input'), { value: c0.chapter ?? '', placeholder: 'Chapter V' });
+  const crawlTitle = Object.assign(document.createElement('input'), { value: c0.title ?? '', placeholder: 'THE ICE MOON' });
+  const body = Object.assign(document.createElement('textarea'), { value: c0.body ?? '', rows: 5 });
+  const planet = document.createElement('select');
+  // The four chapter crawls end on the planet of the level they open.
+  [['Tatooine', 0], ['the Jade Moon', 5], ['Taloraan', 10], ['Mon Calamari', 15]].forEach(([p, t], i) => planet.append(new Option(`${p} (as in ${lvName('lv_' + t.toString(36))})`, String(i))));
+  planet.value = String(c0.planet ?? 0);
+  const crawlNote = Object.assign(document.createElement('small'), { className: 'shotNote' });
+  const crawlBox = Object.assign(document.createElement('div'), { className: 'crawlBox' });
+  crawlBox.append(stacked(fld('Chapter', chapter, 'Small line above the title; may be empty')), stacked(fld('Title', crawlTitle)), stacked(fld('Text', body, 'Wrapped to the crawl width')), fld('Pans down to ', planet, 'The planet the camera pans down to after the text'), crawlNote);
+  const checkCrawl = () => {
+    crawlBox.hidden = crawlMode.value !== 'own';
+    const bad = [...new Set([...(chapter.value + crawlTitle.value + body.value)].filter((c) => !/[A-Za-z0-9 \n!?,.:;'/\\\-_()]/.test(c)))];
+    crawlNote.textContent = bad.length ? `The crawl font cannot draw ${bad.join(' ')}; they are left out.` : '';
+  };
+  crawlMode.onchange = chapter.oninput = crawlTitle.oninput = body.oninput = checkCrawl;
+  checkCrawl();
+  // Objectives: the level's own success and failure (the template's mission script then does not run). Targets are wired into the DAT.
+  const datPath = dir + '/dat', datView = await rom.read(datPath), datItems = parseDAT(datView).items;
+  const itemName = (it) => it.name || `${it.label ?? 'item'} ${it.index}`;
+  const units = datItems.map((it, i) => [it, i]).filter(([it]) => isUnit(it));
+  const zones = datItems.map((it, i) => [it, i]).filter(([it]) => it.type === 7 && it.onEnter);
+  const GOALS = [['destroy', 'Destroy units'], ['reach', 'Reach an area'], ['protect', 'Protect a unit'], ['survive', 'Survive for'], ['timelimit', 'Finish within']];
+  const objRows = [], objBox = Object.assign(document.createElement('div'), { className: 'objectives' });
+  const objNote = Object.assign(document.createElement('small'), { className: 'shotNote' });
+  const addObjective = (o = { goal: 'destroy', text: '' }) => {
+    const row = Object.assign(document.createElement('div'), { className: 'objRow' });
+    const text = Object.assign(document.createElement('input'), { value: o.text ?? '', placeholder: 'Shown in the pause menu', maxLength: 40 });
+    const goal = document.createElement('select');
+    for (const [k, n] of GOALS) goal.append(new Option(n, k));
+    goal.value = o.goal;
+    const pickUnits = Object.assign(document.createElement('select'), { multiple: true, size: 5, title: 'Ctrl-click to pick several' });
+    for (const [it, i] of units) pickUnits.append(new Option(itemName(it), String(i)));
+    const pickUnit = document.createElement('select'), pickZone = document.createElement('select');
+    for (const [it, i] of units) pickUnit.append(new Option(itemName(it), String(i)));
+    for (const [it, i] of zones) pickZone.append(new Option(itemName(it), String(i)));
+    const minutes = Object.assign(document.createElement('input'), { type: 'number', min: 0.25, step: 0.25, value: o.seconds ? o.seconds / 60 : 5, title: 'Minutes' });
+    const targets = o.counter || o.flag ? objectiveTargets(datView, o).map((it) => String(datItems.findIndex((x) => x.offset === it.offset))) : [];
+    for (const opt of pickUnits.options) opt.selected = targets.includes(opt.value);
+    if (targets[0]) pickUnit.value = pickZone.value = targets[0];
+    const minutesRow = fld('Minutes ', minutes);
+    const remove = Object.assign(document.createElement('button'), { title: 'Remove objective' });
+    setEditIcon(remove, 'delete');
+    const sync = () => {
+      pickUnits.hidden = goal.value !== 'destroy';
+      pickUnit.hidden = goal.value !== 'protect';
+      pickZone.hidden = goal.value !== 'reach';
+      minutesRow.hidden = goal.value !== 'survive' && goal.value !== 'timelimit';
+    };
+    goal.onchange = sync;
+    sync();
+    remove.onclick = (e) => {
+      e.preventDefault();
+      objRows.splice(objRows.indexOf(entry), 1);
+      row.remove();
+      addBtn.hidden = false;
+    };
+    row.append(text, goal, remove, pickUnits, pickUnit, pickZone, minutesRow);
+    const entry = {
+      value: () => ({
+        text: text.value.trim(), goal: goal.value, seconds: +minutes.value * 60,
+        targets: goal.value === 'destroy' ? [...pickUnits.selectedOptions].map((x) => +x.value) : goal.value === 'protect' ? [+pickUnit.value] : goal.value === 'reach' ? [+pickZone.value] : [],
+      }),
+    };
+    objRows.push(entry);
+    objBox.append(row);
+    addBtn.hidden = objRows.length >= 4;
+  };
+  const addBtn = Object.assign(document.createElement('button'), { className: 'addObjective', textContent: 'Add objective', title: 'Up to 4; the mission is won when every destroy, reach and survive objective is done' });
+  addBtn.onclick = (e) => {
+    e.preventDefault();
+    addObjective();
+  };
+  for (const o of l.objectives ?? []) addObjective(o);
+  objNote.textContent = l.objectives?.length ? '' : "Without objectives the level keeps its template's mission script.";
+  const save = Object.assign(document.createElement('button'), { title: 'Save' });
+  const del = Object.assign(document.createElement('button'), { title: 'Removes the level from the mod (its edited files stay in the project history)' });
+  const shut = Object.assign(document.createElement('button'), { className: 'dlgClose', title: 'Close without saving' });
+  setEditIcon(save, 'save');
+  setEditIcon(del, 'delete');
+  setEditIcon(shut, 'close');
+  save.append('Save');
+  del.append('Delete level');
+  save.removeAttribute('aria-label');
+  del.removeAttribute('aria-label');
+  const close = () => d.remove();
+  shut.onclick = close;
+  d.addEventListener('close', close);
+  del.onclick = async () => {
+    if (!confirm(`Delete ${l.title}?`)) return;
+    close();
+    await editModLevels((levels) => levels.splice(levels.findIndex((x) => x.folder === l.folder), 1), `Delete level: ${l.title}`);
+    renderList();
+    await showLevel(stockDir('data/level/lv_' + l.template.toString(36)));
+  };
+  save.onclick = async () => {
+    const m = Object.fromEntries(cells.map(([t, ins]) => [t, Object.fromEntries(ins.filter(([, i]) => i.value !== '').map(([k, i]) => [k, +i.value]))]));
+    const hasMedals = tiers.every((t) => Object.keys(m[t]).length);
+    const objs = objRows.map((r) => r.value());
+    const bad = objs.find((o) => !o.text || (['destroy', 'protect', 'reach'].includes(o.goal) && !o.targets.length));
+    if (objs.length && (bad || !objs.some((o) => ['destroy', 'reach', 'survive'].includes(o.goal)))) {
+      objNote.textContent = bad ? `"${bad.text || 'An objective'}" needs text and a target.` : 'At least one objective must be destroy, reach or survive, or the mission cannot be won.';
+      return;
+    }
+    close();
+    let objectives = [];
+    await historyGroup(`Level settings: ${title.value.trim()}`, async () => {
+      if (objs.length || l.objectives?.length) {
+        await editAsset(datPath, (b) => {
+          const r = objectivesApply(b, l.objectives, objs);
+          objectives = r.objectives;
+          b.set(r.bytes);
+        }, `Objectives: ${l.title}`);
+      }
+      await editModLevels((levels) => {
+        const x = levels.find((y) => y.folder === l.folder);
+        x.title = title.value.trim() || x.title;
+        x.description = desc.value.trim();
+        if (voice.value) x.voice = +voice.value;
+        else delete x.voice;
+        const craft = crafts.filter(([, c]) => c.checked).map(([k]) => k);
+        if (craft.length) x.craft = craft;
+        else delete x.craft;
+        if (hasMedals) x.medals = m;
+        else delete x.medals;
+        if (crawlMode.value === 'none' && tmplCrawl) x.crawl = false;
+        else if (crawlMode.value === 'own') x.crawl = { chapter: chapter.value.trim(), title: crawlTitle.value.trim(), body: body.value.trim(), planet: +planet.value };
+        else delete x.crawl;
+        if (objectives.length) x.objectives = objectives;
+        else delete x.objectives;
+      }, `Level settings: ${title.value.trim()}`);
+    });
+    renderList();
+  };
+  const tmplNote = TEMPLATE_NOTES[l.template], hr = () => document.createElement('hr');
+  d.append(shut, Object.assign(document.createElement('b'), { textContent: l.title }),
+    ...(tmplNote ? [Object.assign(document.createElement('small'), { className: 'shotNote', textContent: 'From its template it keeps: ' + tmplNote })] : []),
+    stacked(fld('Title', title)), fontNote, stacked(fld('Description', desc, 'The SELECT LEVEL briefing text')), fld('Briefing voice ', voice, 'Played when the level is highlighted in SELECT LEVEL'), useSub, recRow, recNote, hr(),
+    Object.assign(document.createElement('b'), { textContent: 'Approved craft' }), craftBox, hr(),
+    Object.assign(document.createElement('b'), { textContent: 'Objectives' }), objBox, addBtn, objNote, hr(),
+    Object.assign(document.createElement('b'), { textContent: 'Medals' }), medals, hr(),
+    fld(Object.assign(document.createElement('b'), { textContent: 'Opening crawl ' }), crawlMode), crawlBox,
+    hr(), Object.assign(document.createElement('div'), { className: 'actions' }));
+  d.lastChild.append(save, del);
+  document.body.append(d);
+  d.showModal();
+}
+// The marker legend stops above the scene panel, whatever height its buttons give it.
+new ResizeObserver(() => document.documentElement.style.setProperty('--scene-h', $('scene').offsetHeight + 'px')).observe($('scene'));
+function fillLevelButton() {
+  const b = $('btnLevelSettings'), dir = selectedLevel && !String(selected).startsWith('cut:') ? selected : null;
+  $('btnBlankLevel').hidden = true;
+  b.hidden = !dir || !(modLevelOf(dir) || /\/lv_[0-9a-i]$/.test(dir));
+  if (b.hidden) return;
+  if (modLevelOf(dir)) b.textContent = 'Level settings…';
+  else {
+    setEditIcon(b, 'duplicate');
+    b.append('New level from this one…');
+    b.removeAttribute('aria-label');
+  }
+  b.onclick = () => (modLevelOf(dir) ? modLevelDialog(dir) : newModLevel(dir));
+  const blank = $('btnBlankLevel');
+  blank.hidden = !!modLevelOf(dir);
+  if (!blank.firstChild?.tagName) {
+    setEditIcon(blank, 'blank');
+    blank.append('New blank level…');
+    blank.removeAttribute('aria-label');
+  }
+  blank.onclick = () => newModLevel(dir, true);
+}
+// The selected item again after its level reloads (an edit can move or grow its record).
+async function reselect(type, index) {
+  await reloadLevel(selected);
+  let found = null;
+  root.traverse((o) => {
+    const x = editItemOf(o);
+    if (x && x.type === type && x.index === index && !x.pathEvent) found = o;
+  });
+  select(found);
+}
+// Objects a trigger can destroy (camera_shots.txt destroy lines): named units and props; a far one may not be loaded when it fires.
+const DESTROY_SKIP = new Set([0x01, 0x02, 0x26, 0x27]), DESTROY_FAR = 40;
+function destroyRow(it) {
+  const dir = selected, lv = dir.split('/').pop(), row = Object.assign(document.createElement('div'), { className: 'shotRow' });
+  const dist = (x) => Math.hypot(x.pos[0] - it.pos[0], x.pos[2] - it.pos[2]);
+  Promise.all([rom.read(dir + '/dat'), virtualText(SHOT_LINKS)]).then(([dv, text]) => {
+    const objs = parseDAT(dv).items.filter((x) => x.type === 0 && x.name && !DESTROY_SKIP.has(x.sub)).sort((a, b) => dist(a) - dist(b));
+    const names = shotDestroyGet(text, lv, it.name);
+    const save = (next, label) => virtualText(SHOT_LINKS).then((t) => editAsset(SHOT_LINKS, () => new TextEncoder().encode(shotDestroySet(t, lv, it.name, next)), label)).then(syncSelPanel);
+    row.append('Destroy ');
+    for (const n of names) {
+      const o = objs.find((x) => x.name === n), chip = Object.assign(document.createElement('span'), { className: 'destroyChip' });
+      const del = Object.assign(document.createElement('button'), { textContent: '×', title: `Stop destroying ${n}` });
+      del.onclick = () => save(names.filter((x) => x !== n), `Keep ${n}: ${it.name}`);
+      chip.append(n, del);
+      chip.title = !o ? `${n} is not in this level: the game skips it` : dist(o) > DESTROY_FAR ? `${n} is ${dist(o).toFixed(0)} units from the trigger: if it is not loaded when the trigger fires it only loses its health (rubble, no explosion)` : `Destroyed with its own explosion when the trigger fires; the camera shot starts half a second later`;
+      if (!o || dist(o) > DESTROY_FAR) chip.classList.add('warn');
+      row.append(chip);
+    }
+    const add = Object.assign(document.createElement('select'), { title: 'When this trigger first fires, destroy an object: it dies with its own explosion and counts for objectives like any kill' });
+    add.append(new Option(names.length ? 'Add…' : 'Nothing', ''), ...objs.filter((x) => !names.includes(x.name)).map((x) => new Option(`${x.name} (${SUBTYPES[x.sub] ?? 'object'}, ${dist(x).toFixed(0)} away)`, x.name)));
+    add.onchange = () => add.value && save([...names, add.value], `Destroy ${add.value}: ${it.name}`);
+    row.append(add);
+  });
+  return row;
+}
+// Waves: enemies wait for a mission flag that a trigger raises. Modders see wave names; the flags live in the sidecar
+// explorer/<level dir>/waves.json ({ name: flag }), chosen by waveFlagFor.
+const wavesPath = (dir) => `explorer/${dir}/waves.json`;
+async function readWaves(dir) {
+  try {
+    return JSON.parse((await virtualText(wavesPath(dir))) || '{}');
+  } catch {
+    return {};
+  }
+}
+function wavePicker(waves, flag, title) {
+  const pick = Object.assign(document.createElement('select'), { title });
+  pick.append(new Option('None', '0'), ...Object.entries(waves).map(([n, f]) => new Option(n, String(f))));
+  if (flag && !Object.values(waves).includes(flag)) pick.append(new Option(`Stock flag ${flag}`, String(flag)));
+  pick.append(new Option('New wave…', 'new'));
+  pick.value = String(flag);
+  return pick;
+}
+// The picked wave's flag (0 = none); a new wave asks for its name and is stored. null when cancelled.
+async function chooseWave(pick, dir, waves) {
+  if (pick.value !== 'new') return +pick.value;
+  const name = prompt('Wave name', `Wave ${Object.keys(waves).length + 1}`)?.trim();
+  if (!name) return null;
+  const flag = waveFlagFor(waves, name, levelUsedFlags(await rom.read(dir + '/dat')));
+  if (!flag) {
+    alert('No free mission flag left in this level');
+    return null;
+  }
+  if (!waves[name]) await editAsset(wavesPath(dir), () => new TextEncoder().encode(JSON.stringify({ ...waves, [name]: flag }, null, 1)));
+  return flag;
+}
+// Trigger side: entering the area raises the wave's flag (its enter block, +0x38 for 0x18 / +0x48 for 0x19, sets flag = 1).
+function waveTriggerRow(it) {
+  const dir = selected, row = Object.assign(document.createElement('div'), { className: 'shotRow' }), base = it.sub === 0x18 ? 0x38 : 0x48;
+  readWaves(dir).then((waves) => {
+    const stock = triggerWave(it.onEnter, waves) === 'stock';
+    const pick = wavePicker(waves, it.onEnter.flag, 'Start a wave: entering this area brings in every enemy waiting for it');
+    pick.onchange = () => historyGroup(`Start wave: ${it.name}`, async () => {
+      if (stock && !confirm(`${it.name} already ${it.onEnter.value ? 'sets' : 'clears'} mission flag ${it.onEnter.flag}, which the level's script may need. Replace that with the wave?`)) return syncSelPanel();
+      const flag = await chooseWave(pick, dir, waves);
+      if (flag === null) return syncSelPanel();
+      const old = it.onEnter.flag;
+      await editAsset(dir + '/dat', (bytes) => {
+        const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), o = it.offset + base;
+        dv.setUint32(o + 8, flag);
+        dv.setUint8(o + 0xF, flag ? 1 : 0);
+        // An exit effect clearing the old flag would clear the wave's.
+        if (old && dv.getUint32(o + 0x18) === old) {
+          dv.setUint32(o + 0x18, 0);
+          dv.setUint8(o + 0x1F, 0);
+        }
+      });
+      await reselect(it.type, it.index);
+    });
+    row.append('Start wave ', pick);
+  });
+  return row;
+}
+// A stock fly-to-the-player event record (path event 0x4E, target "+"), the template the attack switch copies.
+let attackTemplate = null;
+async function getAttackTemplate() {
+  for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)).sort()) {
+    if (attackTemplate) break;
+    const dv = await rom.read(p), t = parseDAT(dv).items.find((x) => x.type === 7 && x.sub === 0x4E && !x.pathEvent?.target);
+    if (t) attackTemplate = new Uint8Array(dv.buffer, dv.byteOffset + t.offset, dv.getUint32(t.offset + 8)).slice();
+  }
+  return attackTemplate;
+}
+function pathAttackRow(it) {
+  const label = Object.assign(document.createElement('label'), { className: 'shotPersonal', title: 'At the end of this path, NPCs flying it turn on the player (a fly-to event with no target at the very end)' });
+  const box = Object.assign(document.createElement('input'), { type: 'checkbox', disabled: true });
+  label.append(box, ' At the end: attack the player');
+  rom.read(selected + '/dat').then((dv) => {
+    box.checked = splineAttackEnd(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength), it);
+    box.disabled = false;
+  });
+  box.onchange = async () => {
+    if (!box.checked && !confirm('A craft that reaches the end of a path that leads nowhere crashes the game. Untick only if this path continues into another one or the craft is sent off it before the end. Remove the attack?')) {
+      box.checked = true;
+      return;
+    }
+    const tpl = await getAttackTemplate();
+    await editAsset(selected + '/dat', (bytes) => splineSetAttackEnd(bytes, it, box.checked, tpl), `${box.checked ? 'Attack' : 'No attack'} at the end: ${it.name || 'path'}`);
+    await reselect(3, it.index);
+  };
+  return label;
+}
+// Stock paths that waves can fly (named by an enemy of a WAVE_FIELDS kind), from every level, for "Copy from another level".
+let pathCatalog = null;
+async function getPathCatalog() {
+  if (pathCatalog) return pathCatalog;
+  pathCatalog = [];
+  for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)).sort()) {
+    const dv = await rom.read(p), items = parseDAT(dv).items, kinds = new Map();
+    for (const e of items.filter((x) => x.type === 0 && WAVE_FIELDS[x.sub])) {
+      const path = waveGet(dv, e).path;
+      if (!kinds.has(path)) kinds.set(path, new Set());
+      kinds.get(path).add(SUBTYPES[e.sub]);
+    }
+    for (const s of items.filter((x) => x.type === 3 && x.sub === 3 && x.name && kinds.has(x.name) && x.points?.length >= 4)) pathCatalog.push({ dir: p.slice(0, -4), name: s.name, index: s.index, kinds: [...kinds.get(s.name)].join(', ') });
+  }
+  return pathCatalog;
+}
+// Copies a stock path next to the enemy (its first interior point, where the NPC starts, at the enemy) and puts the enemy on it.
+async function copyPathFor(it, src) {
+  await historyGroup(`Copy path ${src.name}: ${it.name}`, async () => {
+    const fdv = await rom.read(src.dir + '/dat'), from = new Uint8Array(fdv.buffer, fdv.byteOffset, fdv.byteLength).slice();
+    const attack = await getAttackTemplate();
+    const s = parseDAT(new DataView(from.buffer)).items.find((x) => x.type === 3 && x.index === src.index);
+    let dropped = 0;
+    await editAsset(selected + '/dat', (bytes) => {
+      const r = splineCopy(from, s, bytes, { name: uniqueName(bytes, src.name), at: it.pos, attack });
+      dropped = r.dropped;
+      const copy = parseDAT(new DataView(r.bytes.buffer)).items.filter((x) => x.type === 3).at(-1);
+      const enemy = parseDAT(new DataView(r.bytes.buffer)).items.find((x) => x.type === 0 && x.index === it.index);
+      return npcSetPath(r.bytes, enemy, copy.name);
+    });
+    if (dropped) alert(`${dropped} of ${src.name}'s path events named things in its own level (attack targets, holds) and were left out.`);
+  });
+  await reselect(it.type, it.index);
+}
+// Enemy side: waits for a wave (WAVE_FIELDS gate, spawned when its flag is raised) and flies a path once it appears.
+function waveEnemyRow(it) {
+  const dir = selected, row = Object.assign(document.createElement('div'), { className: 'shotRow' });
+  Promise.all([readWaves(dir), rom.read(dir + '/dat')]).then(([waves, dv]) => {
+    const w = waveGet(dv, it);
+    const pick = wavePicker(waves, w.flag, 'Wait for a wave: it stays out of the level until a trigger starts the wave, then appears and flies its path');
+    pick.onchange = () => historyGroup(`Wave: ${it.name}`, async () => {
+      const flag = await chooseWave(pick, dir, waves);
+      if (flag === null) return syncSelPanel();
+      await editAsset(dir + '/dat', (bytes) => waveSet(bytes, it, flag ? { flag, counter: 0, atLeast: 0, gridSpawn: 0 } : { flag: 0 }));
+      await reselect(it.type, it.index);
+    });
+    row.append('Waits for wave ', pick, ' Path ', npcPathSelect(it, dv, '-', 'None (goes for the player)'));
+  });
+  return row;
+}
+// The path an enemy or wingman flies: the level's paths, or one copied from another level. none = the "no path" value and its label.
+function npcPathSelect(it, dv, none, noneLabel) {
+  const dir = selected, items = parseDAT(dv).items, splines = items.filter((x) => x.type === 3 && x.name), cur = npcPathGet(dv, it) || none;
+  // A path event 0x4E with no target sends the craft at the player.
+  const triggers = items.filter((x) => x.type === 7);
+  const attacks = (s) => (s.events ?? []).some((e) => triggers.find((t) => t.index === e.trigger && t.sub === 0x4E && !t.pathEvent?.target));
+  const path = Object.assign(document.createElement('select'), { title: 'The path it flies from where it appears (a path starts it at the path\'s first point)' });
+  path.append(new Option(noneLabel, none), ...splines.map((s) => new Option(s.name + (attacks(s) ? ' (then attacks the player)' : ''), s.name)));
+  if (![none, ...splines.map((s) => s.name)].includes(cur)) path.append(new Option(`${cur} (${cur.startsWith('+') ? 'roam area' : 'missing'})`, cur));
+  path.append(new Option('Copy from another level…', '__copy'));
+  path.value = cur;
+  path.onchange = async () => {
+    if (path.value !== '__copy') return editAsset(dir + '/dat', (bytes) => npcSetPath(bytes, it, path.value), `Path: ${it.name} -> ${path.value}`).then(() => reselect(it.type, it.index));
+    const cat = await getPathCatalog(), from = Object.assign(document.createElement('select'), { title: 'A stock flight path to copy into this level (level, path, what flies it); drag its points in Events mode afterwards' });
+    from.append(new Option('Pick a path to copy…', ''), ...cat.map((c, k) => new Option(`${c.dir.split('/').pop()} ${c.name} (${c.kinds})`, String(k))));
+    from.onchange = () => (from.value ? copyPathFor(it, cat[+from.value]) : syncSelPanel());
+    path.replaceWith(from);
+  };
+  return path;
+}
+// A wingman spawn's path (without one it stays where it is placed).
+function wingmanPathRow(it) {
+  const row = Object.assign(document.createElement('div'), { className: 'shotRow' });
+  rom.read(selected + '/dat').then((dv) => row.append('Path ', npcPathSelect(it, dv, '', 'None (stays put)')));
+  return row;
+}
+// Enemies from any level: the level's own record of that kind, else the first in another level (its gate and path reset, as they
+// name that level's flags and splines).
+async function enemyTemplate(sub) {
+  const own = parseDAT(await rom.read(selected + '/dat')).items.find((x) => x.type === 0 && x.sub === sub);
+  if (own) return { dir: selected, item: own };
+  for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)).sort()) {
+    const item = parseDAT(await rom.read(p)).items.find((x) => x.type === 0 && x.sub === sub);
+    if (item) return { dir: p.slice(0, -4), item };
+  }
+  return null;
+}
+// The Add palette: what the current edit mode can place, by category, filtered by the search box. Picking one arms placement.
+const ENEMY_GROUPS = [
+  ['Imperial fighters', [0x0C, 0x12, 0x13, 0x29]],
+  ['Imperial ground units', [0x1F, 0x0F, 0x47, 0x25, 0x3B]],
+  ['Imperial transports', [0x24, 0x2C, 0x3E, 0x30, 0x31, 0x2F]],
+  ['Rebels and civilians', [0x2E, 0x2B, 0x3C, 0x3D, 0x35, 0x34, 0x2D]],
+  ['Other', [0x21, 0x48]],
+];
+let addEntries = [];
+function renderAddList() {
+  const q = $('addSearch').value.trim().toLowerCase(), el = $('addList');
+  el.innerHTML = '';
+  let group = null;
+  for (const e of addEntries) {
+    if (q && !`${e.label} ${e.group}`.toLowerCase().includes(q)) continue;
+    if (e.group !== group) {
+      group = e.group;
+      el.append(Object.assign(document.createElement('b'), { textContent: group }));
+    }
+    const row = Object.assign(document.createElement('button'), { className: 'addRow' + (placing === e.key ? ' active' : ''), title: e.tip ?? '' });
+    row.innerHTML = `${e.icon ?? ''}<span>${esc(e.label)}</span>`;
+    row.onclick = () => {
+      placing = placing === e.key ? null : e.key;
+      select(null);
+      renderAddList();
+    };
+    el.append(row);
+  }
+  if (!el.childElementCount) el.append(Object.assign(document.createElement('small'), { className: 'shotNote', textContent: q ? 'Nothing matches.' : 'Nothing to add here.' }));
+  // While placing, the list is covered so the next step is clear: click the ground, or cancel.
+  $('addOverlay').hidden = !placing;
+  if (!placing) dropGhost();
+  $('addOverlayText').textContent = `Click the ground to place: ${addEntries.find((e) => e.key === placing)?.label ?? 'it'}`;
+}
+// While placing, a see-through marker of the kind follows the cursor over the ground, where a click would put it.
+let ghost = null;
+function dropGhost() {
+  ghost?.removeFromParent();
+  ghost = null;
+}
+const placingTemplate = () => (placing && !placing.startsWith('enemy:') ? addTemplates.get(placing)?.it ?? addTemplates.get(placing) : null);
+function placeGhost(e, zone) {
+  const markers = root?.getObjectByName('markers');
+  if (!placing || !markers || editMode === 'terrain') return dropGhost();
+  if (zone || ghost?.userData.kind !== placing || ghost.parent !== markers) {
+    dropGhost();
+    const t = placingTemplate();
+    const it = !t ? { type: 0, sub: +placing.slice(6), name: '', pos: [0, 0, 0], rot: [0, 0, 0], scale: [1, 1, 1] } : { ...t, pos: zone?.pos ?? [0, 0, 0], ...(zone && { size: zone.size, rot: zone.rot }) };
+    ghost = makeMarker(it);
+    ghost.traverse((o) => {
+      o.raycast = () => {};
+      if (!o.material) return;
+      o.material = o.material.clone();
+      Object.assign(o.material, { transparent: true, opacity: 0.55, depthWrite: false });
+    });
+    ghost.userData = { kind: placing };
+    markers.add(ghost);
+    if (zone) return;
+  }
+  const hit = cursorGround(e);
+  ghost.visible = !!hit;
+  if (hit) ghost.position.copy(hit);
+}
+// The ground point under the cursor in game space (the markers' frame), or null.
+function cursorGround(e) {
+  const markers = root?.getObjectByName('markers'), terrain = root?.getObjectByName('terrain'), hit = markers && pick(e, terrain ? [terrain] : [root]);
+  return hit ? markers.worldToLocal(hit.point.clone()) : null;
+}
+canvas.addEventListener('pointermove', (e) => zoneDrag || placeGhost(e));
+// Zones are dragged out: press on one corner, release on the opposite one (a click keeps the copied zone's size).
+let zoneDrag = null;
+const zoneFrom = (a, b, t) => ({ pos: [Math.min(a.x, b.x), a.y, Math.min(a.z, b.z)], size: [Math.abs(b.x - a.x), t.size[1], Math.abs(b.z - a.z)], rot: [0, 0, 0] });
+canvas.addEventListener('pointerdown', (e) => {
+  const t = placingTemplate();
+  if (e.button !== 0 || t?.type !== 6 || !(editMode === 'events')) return;
+  const a = cursorGround(e);
+  if (!a) return;
+  zoneDrag = { a, t };
+  controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
+  e.stopImmediatePropagation();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!zoneDrag) return;
+  const b = cursorGround(e);
+  if (b) placeGhost(e, zoneFrom(zoneDrag.a, b, zoneDrag.t));
+}, true);
+canvas.addEventListener('pointerup', (e) => {
+  if (!zoneDrag) return;
+  e.stopImmediatePropagation();
+  const { a, t } = zoneDrag, b = cursorGround(e) ?? a, z = zoneFrom(a, b, t), src = addTemplates.get(placing);
+  zoneDrag = null;
+  controls.enabled = true;
+  placing = null;
+  renderAddList();
+  // A press that barely moved places the zone as copied, at the press point.
+  if (z.size[0] < 0.5 && z.size[2] < 0.5) addItem(src, [a.x, a.y, a.z]);
+  else addItem(src, z.pos, z);
+}, true);
+$('addSearch').oninput = renderAddList;
+$('addCancel').onclick = () => {
+  placing = null;
+  renderAddList();
+};
+function fillAddEnemies() {
+  const have = new Set();
+  root?.traverse((o) => editItemOf(o)?.type === 0 && have.add(editItemOf(o).sub));
+  addEntries = [];
+  for (const [group, subs] of ENEMY_GROUPS) {
+    for (const s of subs.filter((x) => WAVE_FIELDS[x] && (have.has(x) || WAVE_FOREIGN.has(x))).sort((a, b) => SUBTYPES[a].localeCompare(SUBTYPES[b]))) {
+      addEntries.push({ key: 'enemy:' + s, group, label: SUBTYPES[s], foreign: !have.has(s), icon: icon(TYPES[0]) });
+    }
+  }
+  renderAddList();
+}
+async function addEnemy(sub, pos) {
+  const t = await enemyTemplate(sub);
+  if (!t) return;
+  const dv = await rom.read(t.dir + '/dat'), rec = new Uint8Array(dv.buffer, dv.byteOffset + t.item.offset, dv.getUint32(t.item.offset + 8)).slice();
+  await editAsset(selected + '/dat', (bytes) => datAddEnemy(bytes, rec, pos), `Add ${SUBTYPES[sub]}`);
+  const count = parseDAT(await rom.read(selected + '/dat')).items.filter((x) => x.type === 0).length;
+  await reselect(0, count - 1);
+}
 function syncSelPanel() {
   const it = sel?.it;
-  $('selInfo').textContent = placing ? 'Click the ground to place it (Esc cancels)'
-    : !sel ? `Click ${editMode === 'objects' ? 'an object' : 'an event marker'} to select it`
+  $('selInfo').textContent = !sel
+    ? `Click ${editMode === 'objects' ? 'an object' : 'an event marker'} to select it`
     : `${it.name || '(unnamed)'}: ${it.type === 0 && it.model ? it.model : TYPES[markerKind(it)]?.label ?? 'item'}` + (sel.fixed ?? '');
   const f = $('selFields');
   f.textContent = '';
@@ -7510,15 +8405,23 @@ function syncSelPanel() {
     });
     f.append(row);
   }
+  if (sel && editMode === 'events' && it.type === 7 && (it.sub === 0x18 || it.sub === 0x19) && it.name) f.append(shotLinkRow(it), destroyRow(it), waveTriggerRow(it));
+  if (sel && editMode === 'objects' && it.type === 0 && WAVE_FIELDS[it.sub]) f.append(waveEnemyRow(it));
+  if (sel && editMode === 'events' && it.type === 0 && it.sub === 0x27) f.append(wingmanPathRow(it));
+  if (sel && editMode === 'events' && it.type === 3 && it.sub === 3 && it.points?.length >= 4 && !sel.pathNode) f.append(pathAttackRow(it));
   $('btnDup').disabled = !sel || !!sel.fixed || !!it.pathEvent;
-  $('btnDel').disabled = !sel || it.type !== 0 || editMode !== 'objects';
+  $('btnDel').disabled = !sel || !canDelete(it);
   hud();
 }
 // Copies an item's record with a new position and appends it as the last of its kind, so no existing index moves.
-async function addItem(it, pos) {
-  const dir = selected, dv = await rom.read(dir + '/dat');
-  const rec = new Uint8Array(dv.buffer, dv.byteOffset + it.offset, dv.getUint32(it.offset + 8)).slice();
+// src is an item of this level, or { it, dv } from another level's DAT (copied inert).
+// zone: { size, rot } written over a zone's footprint (+0x28) and rotation (+0x1C) when it was dragged out.
+async function addItem(src, pos, zone) {
+  const it = src.it ?? src, dir = selected, dv = src.dv ?? (await rom.read(dir + '/dat'));
+  let rec = new Uint8Array(dv.buffer, dv.byteOffset + it.offset, dv.getUint32(it.offset + 8)).slice();
+  if (src.dv) rec = recordInert(rec, it);
   pos.forEach((v, a) => new DataView(rec.buffer).setFloat32(0x10 + a * 4, v));
+  if (zone) zone.size.concat(zone.rot).forEach((v, a) => new DataView(rec.buffer).setFloat32((a < 3 ? 0x28 : 0x1C - 12) + a * 4, v));
   await editAsset(dir + '/dat', (bytes) => datAddItem(bytes, it.type, rec));
   await reloadLevel(dir);
   let found = null;
@@ -7529,20 +8432,37 @@ async function addItem(it, pos) {
   if (found) select(found);
 }
 $('btnDup').onclick = () => sel && !sel.fixed && !sel.it.pathEvent && addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
-$('btnDel').onclick = () => sel?.it.type === 0 && deleteItem(sel.it);
-function fillAddKinds() {
+$('btnDel').onclick = () => sel && canDelete(sel.it) && deleteItem(sel.it);
+// Event kinds any level can add, copied from another level when this one has none (a blank level starts with only its player start):
+// the template's stock DAT first, then the stock levels in order.
+const FOREIGN_KINDS = ['player', 'wing', 'cam', 'zhi', 'zlo', 'zmus', 'zunit', 'zmtrig', 'tvoice', 'tevent', 'tspawn', 'troam', 'twaypoint'];
+async function foreignTemplates(dir) {
+  const tmpl = modLevelOf(dir)?.template, first = tmpl != null ? `data/level/lv_${tmpl.toString(36)}/dat` : null, out = new Map();
+  const dats = [...rom.assets.keys()].filter((k) => /^data\/level\/lv_[0-9a-i]\/dat$/.test(k)).sort((a, b) => (b === first) - (a === first) || a.localeCompare(b));
+  for (const p of dats) {
+    const dv = await rom.read(p);
+    for (const it of parseDAT(dv).items) {
+      const k = String(markerKind(it));
+      if (FOREIGN_KINDS.includes(k) && !it.pathEvent && !out.has(k)) out.set(k, { it, dv });
+    }
+  }
+  return out;
+}
+async function fillAddKinds() {
   addTemplates = new Map();
   for (const m of root?.getObjectByName('markers')?.children ?? []) {
     const it = m.userData.item, k = String(markerKind(it));
     if (!it.pathEvent && !addTemplates.has(k)) addTemplates.set(k, it);
   }
-  $('addKind').innerHTML = [...addTemplates.keys()].map((k) => `<option value="${esc(k)}">${esc(TYPES[k]?.label ?? k)}</option>`).join('');
-  $('btnPlace').disabled = !addTemplates.size;
+  const local = new Set(addTemplates.keys()), dir = selected;
+  for (const [k, t] of await foreignTemplates(dir)) if (!addTemplates.has(k)) addTemplates.set(k, t);
+  if (dir !== selected || editMode !== 'events') return;
+  addEntries = [];
+  for (const [group, kinds] of LEGEND_GROUPS) {
+    for (const k of kinds ?? [...addTemplates.keys()].filter((x) => x.startsWith('path:') || x === '3')) if (addTemplates.has(k)) addEntries.push({ key: k, group, label: TYPES[k]?.label ?? k, tip: TYPES[k]?.tip, foreign: !local.has(k), icon: TYPES[k] ? icon(TYPES[k]) : '' });
+  }
+  renderAddList();
 }
-$('btnPlace').onclick = () => {
-  placing = $('addKind').value;
-  select(null);
-};
 // Left clicks in Objects / Events mode select (or place) instead of opening the info card.
 function editClick(e) {
   if (editMode !== 'objects' && editMode !== 'events') return false;
@@ -7550,9 +8470,11 @@ function editClick(e) {
   if (placing) {
     const terrain = root.getObjectByName('terrain'), hit = pick(e, terrain ? [terrain] : [root]);
     if (!hit) return true;
-    const kind = placing, tpl = sel && String(markerKind(sel.it)) === kind ? sel.it : addTemplates.get(kind);
+    const kind = placing, at = root.worldToLocal(hit.point.clone()).toArray();
     placing = null;
-    addItem(tpl, root.worldToLocal(hit.point.clone()).toArray());
+    renderAddList();
+    if (kind.startsWith('enemy:')) return addEnemy(+kind.slice(6), at), true;
+    addItem(sel && String(markerKind(sel.it)) === kind ? sel.it : addTemplates.get(kind), at);
     return true;
   }
   select(editHit(e));
@@ -7569,12 +8491,13 @@ function editKey(e) {
   if (editMode !== 'objects' && editMode !== 'events') return false;
   if (TOOL_KEYS[e.code] && !rmbHeld && !e.ctrlKey && !e.metaKey && !e.altKey) setTool(TOOL_KEYS[e.code]);
   else if (e.code === 'KeyX' && !e.ctrlKey && !e.metaKey) setEditSpace(editSpace === 'world' ? 'local' : 'world');
-  else if (DELETE_KEYS.has(e.key) && sel?.it.type === 0 && editMode === 'objects') deleteItem(sel.it);
+  else if (DELETE_KEYS.has(e.key) && sel && canDelete(sel.it)) deleteItem(sel.it);
   else if (e.code === 'KeyD' && (e.ctrlKey || e.metaKey) && sel && !sel.fixed && !sel.it.pathEvent) {
     e.preventDefault();
     addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
   } else if (e.code === 'Escape') {
     placing = null;
+    renderAddList();
     select(null);
   } else return false;
   return true;
@@ -7591,9 +8514,22 @@ function cornerPoint(it, cu, cv) {
   p.y = levelHeight(p.x, p.z) - 0.2;
   return p;
 }
+// A selected path gets a handle per control point: drag moves it over the ground, Shift+drag changes its height.
+const pathPointMat = new THREE.MeshBasicMaterial({ color: 0x4ac0e8, depthTest: false, transparent: true });
 function showCorners() {
   for (const c of corners) c.removeFromParent();
   corners = [];
+  if (sel && editMode === 'events' && sel.it.type === 3 && sel.it.sub === 3 && sel.it.points?.length >= 4 && !sel.pathNode) {
+    sel.it.points.forEach((p, k) => {
+      const h = new THREE.Mesh(cornerGeo, pathPointMat);
+      h.position.set(...p);
+      h.renderOrder = 10;
+      h.userData.pathPoint = k;
+      sel.o.parent.add(h);
+      corners.push(h);
+    });
+    return;
+  }
   if (!sel || sel.it.type !== 6 || editTool !== 'scale') return;
   for (const [cu, cv] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
     const h = new THREE.Mesh(cornerGeo, cornerMat);
@@ -7609,6 +8545,13 @@ canvas.addEventListener('pointerdown', (e) => {
   if (e.button !== 0 || !corners.length) return;
   const h = pick(e, corners);
   if (!h) return;
+  if (h.object.userData.pathPoint !== undefined) {
+    cornerDrag = { point: h.object.userData.pathPoint, handle: h.object, vertical: e.shiftKey };
+    controls.enabled = false;
+    canvas.setPointerCapture(e.pointerId);
+    e.stopImmediatePropagation();
+    return;
+  }
   const it = sel.it, rot = placementRotation(it.rot), [cu, cv] = h.object.userData.corner;
   const A = new THREE.Vector3((1 - cu) * it.size[0], 0, (1 - cv) * it.size[2]).applyMatrix4(rot).add(new THREE.Vector3(...it.pos));
   cornerDrag = { cu, cv, A, rot, inv: rot.clone().invert(), y: h.object.position.y, pos0: new THREE.Vector3(...it.pos), size0: it.size.slice() };
@@ -7622,6 +8565,18 @@ canvas.addEventListener('pointermove', (e) => {
   const r = canvas.getBoundingClientRect(), c = cornerDrag, it = sel.it, o = sel.o;
   pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
+  if (c.point !== undefined) {
+    // Over the ground: a level plane through the point; height: an upright plane through it facing the camera.
+    const at = root.localToWorld(c.handle.position.clone()), up = root.localToWorld(new THREE.Vector3(0, 1, 0)).sub(root.localToWorld(new THREE.Vector3()));
+    const normal = c.vertical ? camera.getWorldDirection(new THREE.Vector3()).projectOnPlane(up).normalize() : up.normalize();
+    const w = raycaster.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(normal, at), new THREE.Vector3());
+    if (!w) return;
+    const l = root.worldToLocal(w), p = c.handle.position;
+    if (c.vertical) p.y = l.y;
+    else p.set(l.x, p.y, l.z);
+    it.points[c.point] = p.toArray();
+    return;
+  }
   const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), root.localToWorld(new THREE.Vector3(0, c.y, 0)));
   const w = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
   if (!w) return;
@@ -7641,23 +8596,32 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', (e) => {
   if (!cornerDrag) return;
   e.stopImmediatePropagation();
+  const c = cornerDrag;
   cornerDrag = null;
   controls.enabled = true;
-  commitSel();
+  if (c.point === undefined) return commitSel();
+  const it = sel.it;
+  editAsset(selected + '/dat', (bytes) => splineSetPoints(bytes, it, it.points), `Move point ${c.point + 1}: ${it.name || 'path'}`).then(() => reselect(3, it.index));
 }, true);
 setTool('translate');
 setEditMode(null);
 // The mod's files, named relative to its folder: mod.json and one assets/<path>.bps per edited asset.
 async function modFiles(id, name) {
   const manifest = {
-    game_id: 'rs64', id, display_name: name, description: 'Made with the RS64 Explorer: ' + modDirty().map((p) => p.replace(/^data\//, '')).join(', '),
+    game_id: 'rs64', id, display_name: name, description: 'Made with the RS64 Explorer: ' + modDirty().map((p) => p.replace(/^(data|mod)\//, '')).join(', '),
     version: '1.0.0', authors: ['RS64 Explorer'], minimum_recomp_version: '0.0.0',
   };
   const files = [{ name: 'mod.json', data: new TextEncoder().encode(JSON.stringify(manifest, null, 2) + '\n') }];
   for (const path of modDirty()) {
     const now = await rom.read(path);
+    if (path.startsWith('mod/')) {
+      files.push({ name: path.slice(4), data: new Uint8Array(now.buffer, now.byteOffset, now.byteLength).slice() });
+      continue;
+    }
     files.push({ name: `assets/${path.replace(/^data\//, '')}.bps`, data: encodeBPS(edits.get(path), new Uint8Array(now.buffer, now.byteOffset, now.byteLength)) });
   }
+  // A mod level's files: copies of its template's (.from), patched by the .bps above when edited.
+  for (const [path, from] of rom.aliases) files.push({ name: `assets/${path.replace(/^data\//, '')}.from`, data: new TextEncoder().encode(from.replace(/^data\//, '') + '\n') });
   return [...files, ...(await cutDerivedModelFiles())];
 }
 $('btnMod').onclick = async () => {
@@ -7693,9 +8657,14 @@ async function gameFolder() {
   return dir;
 }
 // The game's --boot-target for what is open: a cutscene file plays on its own, a level (or one of its sequences) starts its mission.
+// A mod level boots as its template with ROGUESQ_MOD_LEVEL naming it.
 function bootTarget() {
+  const mc = modLevels.find((l) => selected === `cut:data/cuts/${l.folder}_intro` || selected === `cut:data/cuts/${l.folder}_extro`);
+  if (mc) return `cutscene:${mc.template},${selected.endsWith('_intro') ? 0 : 1} --set ROGUESQ_MOD_LEVEL=${mc.id}`;
   const c = selected?.match(/^cut:data\/cuts\/id(\d+)_(intro|extro|special)$/);
   if (c) return `cutscene:${c[1]},${['intro', 'extro', 'special'].indexOf(c[2])}`;
+  const ml = selectedLevel && modLevelOf(selected);
+  if (ml) return `level:${ml.template} --set ROGUESQ_MOD_LEVEL=${ml.id}`;
   const lv = selectedLevel && selected.match(/\/lv_([0-9a-z])(:\d+)?$/);
   return lv ? `level:${parseInt(lv[1], 36)}` : '';
 }

@@ -96,7 +96,7 @@ override belongs in a `[[patches.hook]]` in `rogue_squadron.toml`.
 See AGENTS.md "Overriding recompiled functions". A hook's C is compiled into the recompiled body (at entry
 or `before_vram`), so it covers direct and `LOOKUP_FUNC`/`func_map` indirect calls alike. A bare `return`
 exits the game function (set `ctx->r2`/`ctx->f0` first). Put real logic in an `extern "C"` helper in
-`src/main/hook_helpers.cpp`. Regen (`regen_funcs`) after editing the toml, then grep `funcs_*.c` for the
+`src/game/hook_helpers.cpp`. Regen (`regen_funcs`) after editing the toml, then grep `funcs_*.c` for the
 helper name to confirm the hook landed.
 
 Case study (jade-moon freeze, [[project-jade-moon-freeze-musyx-ucode-2026-09-13]]): `getNpcCurrentHealth`

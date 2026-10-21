@@ -575,7 +575,8 @@ void Link::run() {
     while (!quit_) {
         ENetEvent ev;
         while (enet_host_service(host, &ev, 1) > 0) {
-            if (ev.type == ENET_EVENT_TYPE_CONNECT) {
+            switch (ev.type) {
+            case ENET_EVENT_TYPE_CONNECT:
                 peer = ev.peer;
                 enet_peer_timeout(peer, 0, 5000, 10000);
                 last_rx_ms_ = now_ms();
@@ -583,19 +584,25 @@ void Link::run() {
                 lost_ = false;
                 connected_ = true;
                 ++connects_;
-            } else if (ev.type == ENET_EVENT_TYPE_RECEIVE) {
+                break;
+            case ENET_EVENT_TYPE_RECEIVE:
                 last_rx_ms_ = now_ms();
                 {
                     std::lock_guard<std::mutex> lock(mu_);
                     in_.emplace_back(ev.packet->data, ev.packet->data + ev.packet->dataLength);
                 }
                 enet_packet_destroy(ev.packet);
-            } else if (ev.type == ENET_EVENT_TYPE_DISCONNECT || ev.type == ENET_EVENT_TYPE_DISCONNECT_TIMEOUT) {
+                break;
+            case ENET_EVENT_TYPE_DISCONNECT:
+            case ENET_EVENT_TYPE_DISCONNECT_TIMEOUT:
                 if (connected_) {
                     lost_ = true;
                 }
                 connected_ = false;
                 peer = nullptr;
+                break;
+            default:
+                break;
             }
         }
         // A client that hasn't connected yet (the host not listening, or its attempt timed out) keeps trying.

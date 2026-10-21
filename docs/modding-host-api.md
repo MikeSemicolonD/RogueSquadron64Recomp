@@ -4,7 +4,7 @@ A native mod is a shared library (`.dll` / `.so`) written in C or C++ and loaded
 
 Pick a native mod over a `.nrm` code mod ([modding.md](modding.md#code-mods-nrm)) when you need host-side features: networking, files, OS APIs, or a large amount of native code. Online co-op ([mods/multiplayer-native/](../mods/multiplayer-native/)) is one.
 
-The contract is [include/rs64/host_api.h](../include/rs64/host_api.h). The host side is [src/main/host_api.cpp](../src/main/host_api.cpp) (the registry) and [src/main/host_api_game.cpp](../src/main/host_api_game.cpp) (handing the table to mods).
+The contract is [include/rs64/host_api.h](../include/rs64/host_api.h). The host side is [src/host_api/host_api.cpp](../src/host_api/host_api.cpp) (the registry) and [src/host_api/host_api_game.cpp](../src/host_api/host_api_game.cpp) (handing the table to mods).
 
 ## Your first native mod
 
@@ -198,7 +198,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 
 ## Input filters
 
-`add_input_filter(fn, user)` registers `void fn(int port, uint16_t* buttons, float* x, float* y, void* user)`. It runs after the host reads the pad, with the N64 button bits and a stick in -1..1, and may change any of them. Only port 0 is filtered today (`main.cpp` calls `run_input_filters(0, ...)`); check `port` in the filter anyway. Filters run in registration order.
+`add_input_filter(fn, user)` registers `void fn(int port, uint16_t* buttons, float* x, float* y, void* user)`. It runs after the host reads the pad, with the N64 button bits and a stick in -1..1, and may change any of them. Only port 0 is filtered today (`input_host.cpp` calls `run_input_filters(0, ...)`); check `port` in the filter anyway. Filters run in registration order.
 
 ## Rules
 

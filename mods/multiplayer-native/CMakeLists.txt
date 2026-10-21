@@ -14,14 +14,14 @@ set(MP_OUT "${RS64_BUILT_MODS_DIR}/$<CONFIG>/multiplayer-native")
 file(GLOB MP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
 # The only base-game files the mod may use (tests/style_check.cpp enforces this for src/).
 set(MP_BASE_FILES
-    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.h
-    ${CMAKE_SOURCE_DIR}/src/main/debug_logs.h
+    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.h
+    ${CMAKE_SOURCE_DIR}/src/util/debug_logs.h
     ${CMAKE_SOURCE_DIR}/include/os_compat.h
-    ${CMAKE_SOURCE_DIR}/src/main/rdram_words.h)
+    ${CMAKE_SOURCE_DIR}/src/util/rdram_words.h)
 add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES})
 # Same rounding as the game's copy of lockstep_core: no fused multiply-add in the flight model.
-set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp)
+set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp)
 if (MSVC)
     set_source_files_properties(${MP_NO_FMA} PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
     target_compile_definitions(multiplayer_native PRIVATE _CRT_SECURE_NO_WARNINGS)
@@ -45,7 +45,7 @@ endif()
 target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/src/main
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 target_link_libraries(multiplayer_native PRIVATE enet6 libminiupnpc-static)
@@ -98,14 +98,14 @@ if (NOT ANDROID)
 endif()
 
 # Unit tests, run by the game's rs64_unit_tests target.
-add_executable(mp_core_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/mp_core_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp)
+add_executable(mp_core_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/mp_core_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp)
 add_executable(net_core_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_core_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/net_core.cpp)
 # Loopback test for the network link (ENet, simulated latency and loss); also talks to the real router through UPnP.
 add_executable(net_link_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_link_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/net_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/net_link.cpp)
 target_link_libraries(net_link_test PRIVATE enet6 libminiupnpc-static)
 foreach(t mp_core_test net_core_test net_link_test)
     set_target_properties(${t} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-    target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
+    target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
     if (MSVC)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endif()

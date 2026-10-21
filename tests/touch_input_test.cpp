@@ -3,9 +3,9 @@
 #include <cstdio>
 #include <cstring>
 #include <vector>
-#include "touch_input.h"
-#include "touch_menu.h"
-#include "touch_config.h"
+#include "input/touch_input.h"
+#include "input/touch_menu.h"
+#include "input/touch_config.h"
 #include <string>
 
 using namespace rs64::touch;

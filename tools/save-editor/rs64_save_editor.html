@@ -156,7 +156,6 @@
     </div>
     <input type="file" id="fileInput" accept=".eep,.bin,.sra,.srm,.raw,application/octet-stream" hidden>
     <button class="btn ghost" id="themeBtn" title="Toggle theme" aria-label="Toggle theme">&#9681;</button>
-    <button class="btn ghost" id="newBtn">New blank</button>
     <button class="btn" id="loadBtn">Load file&hellip;</button>
     <span class="exportgrp">
       <button class="btn primary" id="exportBtn">Export</button>
@@ -180,7 +179,7 @@
     <button class="tab" role="tab" aria-selected="false" data-tab="raw">Raw / Hex</button>
   </nav>
 
-  <div class="banner" id="exampleBanner">Showing <b>example accounts</b> so you can see how the editor works &mdash; this is <b>not a real save</b>. Choose <b>Load file&hellip;</b> to edit your EEPROM, or <b>New blank</b> to start from an empty save.</div>
+  <div class="banner" id="exampleBanner">Showing <b>example accounts</b> so you can see how the editor works &mdash; this is <b>not a real save</b>. Choose <b>Load file&hellip;</b> to edit your EEPROM.</div>
 
   <section class="panel" id="tab-pilots" role="tabpanel">
     <h2>Pilot accounts</h2>
@@ -593,12 +592,6 @@
     fr.onload=function(){ loadBytes(new Uint8Array(fr.result),f.name); };
     fr.readAsArrayBuffer(f);
   });
-  document.getElementById("newBtn").addEventListener("click",function(){
-    buf=new Uint8Array(FILE_SIZE); dv=new DataView(buf.buffer);
-    seedDefaultHighScores(); recomputeAll();
-    currentName="new.eep"; isExample=false; renderAll();
-    toast("New blank save created (default high scores seeded).");
-  });
 
   // CRC32 + a minimal store-only ZIP writer (for the sandbox, where the
   // downloads capability only accepts a fixed extension allowlist that has no
@@ -623,6 +616,8 @@
   }
 
   async function exportSave(){
+    // Only edits of a loaded save are exported, never a save built from scratch.
+    if(isExample){ toast("Load your save file first.",true); return; }
     recomputeAll(); renderStatus(); renderHex();
     // Base name from the loaded file (or a default); extension from the dropdown.
     var base=(currentName&&!isExample)?currentName.replace(/\.[^.]*$/,""):"rogue_squadron";

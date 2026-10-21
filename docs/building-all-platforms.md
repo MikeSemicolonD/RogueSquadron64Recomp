@@ -43,7 +43,7 @@ Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs)
 
 D3D11 shader cache: Windows packages carry `d3d11_shader_cache/`, built by `RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt` (no ROM; `PLUME_D3D11_SHADER_CACHE` sets the output folder; WARP is used without a GPU). It compiles the list twice into the same folder, for feature level 11 (shader model 5) and feature level 10 (shader model 4, plus the raw-TMEM variant of each textured combination), about 5 minutes and 4 MB. Release CI and `tools/bundle-release.ps1` run it. The list was collected by playing the mission recordings, the other levels, the demos and the cutscenes on D3D11 and D3D10; to extend it, merge new lines from a play session's `d3d11_shader_cache/rt64_combos.txt`.
 
-Configure once per architecture: `cmake -B build -T ClangCL` (x64), `cmake -B build-x86 -A Win32 -T ClangCL` (x86). Android reuses `RecompiledFuncs/`, `src/main/state_table.inl` and `build/factor5_ucode/*.c` from a Windows Debug build.
+Configure once per architecture: `cmake -B build -T ClangCL` (x64), `cmake -B build-x86 -A Win32 -T ClangCL` (x86). Android reuses `RecompiledFuncs/`, `src/game/state_table.inl` and `build/factor5_ucode/*.c` from a Windows Debug build.
 
 ## Ubuntu 24.04 host (native or WSL2)
 

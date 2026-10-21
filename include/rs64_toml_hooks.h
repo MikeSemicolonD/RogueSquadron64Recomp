@@ -1,4 +1,4 @@
-// Declarations for src/main/toml_hooks.c; N64Recomp includes this in every RecompiledFuncs file (recomp_include in rogue_squadron.toml).
+// Declarations for src/game/toml_hooks.c; N64Recomp includes this in every RecompiledFuncs file (recomp_include in rogue_squadron.toml).
 #pragma once
 #include "recomp.h"
 
@@ -104,6 +104,7 @@ void rs64_th_renderLitMeshFaceGroup_800138A4(uint8_t* rdram, recomp_context* ctx
 void rs64_th_renderLitMeshFaceGroup_800146F0(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_initMission_800FA28C(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_runInMissionFrame_800FA7D0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_applyDatObjectiveTriggerEffect_80065A0C(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_runInMissionFrame_800FA7D8(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_tickSongFadeTimer_800EE82C(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_requestSpeechResponseMode2_800FBB08(uint8_t* rdram, recomp_context* ctx);
@@ -122,6 +123,36 @@ int rs64_th_isNpcWithinActiveReferenceRange_80047D9C(uint8_t* rdram, recomp_cont
 int rs64_th_lookupActivePlayerCraftGridCell_80047E44(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_drawRadarIcon_800C5E84(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_drawRadarIcon_800C5ED8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_drawRadarIcon_800C5EE0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initCraftSelectScreen_800AF18C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_handleCraftSelectInput_800AFDDC(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_handleCraftSelectInput_800AFB58(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initCraftSelectScreen_800AF270(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_handleCraftSelectInput_800AF878(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_getAvailablePlayerCraftFlagsConsiderUnlocks_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_getAvailablePlayerCraftFlagsIgnoreUnlocks_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_startSlotLoopAnimWithVoiceSync_800B1C00(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_startSlotLoopAnimWithVoiceSync_800B1D18(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_allocAndConfigureNewVoice_8009B114(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_allocAndConfigureNewVoice_8009B1F4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_find_manifest_entry_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_postLevelStatScreen_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_postLevelStatScreen_800C092C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_postLevelStatScreen_800C09C4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_postLevelStatScreen_800C0A78(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_postLevelStatScreen_800C0A9C(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_highScoreBubbleSort_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_unlockMissleUpgradeOnLevelCompletion_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_unlockLevelsAndCraftsBasedOnMedalsEarned_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_loadAccountDataIntoStruct_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_generateUnlockString_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runMenuRandomBackdropScreen_800BF9E4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_mainGameLoop_8003E424(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_mainGameLoop_8003E444(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_getLevelIntroCrawlId_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_setupCraftAnimationFlagSet_800B9334(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_buildModelViewerTextPage_800CA77C(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_initCraftSelectScreen_800AF0D0(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_tickCraftSelectScreen_800AF3EC(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_hangarInitialize_800AAC44(uint8_t* rdram, recomp_context* ctx);
@@ -139,6 +170,10 @@ void rs64_th_mainGameLoop_8003E114(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_findManifestEntryByName_8000496C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_freeManifestSegmentAssets_80004A0C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_freeManifestSegmentAssets_80004A80(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_initializeObjectiveTracking_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_checkComplexObjectives_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_calculateFriendliesSaved_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runPauseMenuStateMachine_800C2F1C(uint8_t* rdram, recomp_context* ctx);
 
 #ifdef __cplusplus
 }

@@ -329,7 +329,7 @@ cmake --build build --target RogueSquadron64Recomp
 
 Builds as an arm64 APK and runs on a **(Snapdragon 8 Gen 3 / Adreno 750, Android 16)**; other arm64 phones with Vulkan 1.1 should work, but driver quality varies. The Gradle project in `android/` builds the same `CMakeLists.txt` with the NDK.
 
-Needs **Android Studio** (for its SDK, bundled JDK and `adb`) with **NDK 29.0.14206865**; Gradle fetches SDL 2.32.10 and installs its CMake itself. Run the Windows Debug build first: the Android build reuses the generated `RecompiledFuncs/`, `src/main/state_table.inl` and `build/factor5_ucode/*.c`.
+Needs **Android Studio** (for its SDK, bundled JDK and `adb`) with **NDK 29.0.14206865**; Gradle fetches SDL 2.32.10 and installs its CMake itself. Run the Windows Debug build first: the Android build reuses the generated `RecompiledFuncs/`, `src/game/state_table.inl` and `build/factor5_ucode/*.c`.
 
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"
@@ -380,14 +380,22 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 Recompiled game code compiles into one static library, linked against forked builds of N64ModernRuntime (the libultra/runtime host) and RT64 (the renderer).
 
 ```text
-src/main/
-├── main.cpp                    Entry point: SDL2 window/audio/input, RSP task dispatch
-├── rt64_render_context.cpp     RT64 integration: send_dl, VI registers, framebuffer sanitizer
-├── register_overlays.cpp       Boot-time overlay function-table registration
-├── upstream_compat.cpp         libultra shims, overlay loader, HMT-load capture
-├── hook_helpers.cpp            Host logic called from rogue_squadron.toml hooks
-├── host_api*.cpp               Host API for native mods (with builtin_hooks.cpp)
-└── lockstep*.cpp               Mission input record/replay with per-frame state hashes
+src/
+├── main/
+│   └── main.cpp                Entry point, game registration, SDL2 window
+├── audio/
+│   └── audio.cpp               RSP task dispatch and SDL2 audio output
+├── input/
+│   └── input_host.cpp          Gamepads, joysticks, keyboard/mouse and touch input
+├── video/
+│   └── rt64_render_context.cpp RT64 integration: send_dl, VI registers, framebuffer sanitizer
+├── game/
+│   ├── register_overlays.cpp   Boot-time overlay function-table registration
+│   ├── upstream_compat.cpp     libultra shims, overlay loader, HMT-load capture
+│   ├── hook_helpers.cpp        Host logic called from rogue_squadron.toml hooks
+│   └── builtin_hooks.cpp       Built-in hooks registered through the host API
+├── host_api/                   Host API for native mods
+└── lockstep/                   Mission input record/replay with per-frame state hashes
 include/rs64/host_api.h         Public header for native mods
 lib/
 ├── N64ModernRuntime/           libultra/runtime host (fork)
@@ -408,7 +416,7 @@ Online co-op: [docs/multiplayer.md](docs/multiplayer.md).
 
 **Audio.** MusyX drives SFX and music; samples stream from the cartridge via PI DMA as on hardware.
 
-**Patching.** Overrides live as `[[patches.hook]]` and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with host logic in `src/main/hook_helpers.cpp`. A hook is compiled into the recompiled function itself, reachable via indirect (`LOOKUP_FUNC`) calls.
+**Patching.** Overrides live as `[[patches.hook]]` and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with host logic in `src/game/hook_helpers.cpp`. A hook is compiled into the recompiled function itself, reachable via indirect (`LOOKUP_FUNC`) calls.
 
 #### The recompiler config (`rogue_squadron.toml`)
 
@@ -418,9 +426,9 @@ Online co-op: [docs/multiplayer.md](docs/multiplayer.md).
 | --- | --- |
 | `stubs = [...]` | Replace a function body with an empty no-op (RSP blobs, cache-instruction leaves, splat fragments) |
 | `[[patches.instruction]]` | Overwrite one instruction at a `vram` with a raw `value` (e.g. NOP a `cache` op or a busy-wait branch) |
-| `[[patches.hook]]` | Inject C at a function's entry or before a `vram` — guards, pacing, logging. Host helpers live in `src/main/hook_helpers.cpp` |
+| `[[patches.hook]]` | Inject C at a function's entry or before a `vram` — guards, pacing, logging. Host helpers live in `src/game/hook_helpers.cpp` |
 
-Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrides, put the logic in a host function in `src/main/hook_helpers.cpp` and call it from the hook. A hook's text is a single `rs64_th_*` call into `src/main/toml_hooks.c`, and hooks call game functions through `mips_call`.
+Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrides, put the logic in a host function in `src/game/hook_helpers.cpp` and call it from the hook. A hook's text is a single `rs64_th_*` call into `src/game/toml_hooks.c`, and hooks call game functions through `mips_call`.
 
 ## Debugging
 
@@ -480,7 +488,7 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 ### Save editor
 
-A save editor also exists in *`tools/save-editor`* as an HTML page. Allowing a user to easily create, edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
+A save editor also exists in *`tools/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 
 ### RS64 Explorer
 

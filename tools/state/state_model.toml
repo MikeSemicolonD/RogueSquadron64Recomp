@@ -1,5 +1,5 @@
 # Canonical game-state model. Single source of truth for classification, forcing,
-# and validation. Consumed by tools/state/gen_state_table.cpp (-> src/main/state_table.inl, at build time)
+# and validation. Consumed by tools/state/gen_state_table.cpp (-> src/game/state_table.inl, at build time)
 # and read directly by the Python validation tools. USA v1.0 addresses only.
 #
 # classify predicate op: eq | ne | range (value..value_hi) | flag ((mem & mask) == value).
@@ -31,7 +31,7 @@ reachable_from = ["cinematic", "menu"]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 # Front-end menu sub-pages: menu id at gCurrentMenuData+0x04 (0x800CE734, u8), enum from
-# src/main/menu_config.cpp FrontMenu. Each also requires the menu pointer-valid guard so it
+# src/game/menu_config.cpp FrontMenu. Each also requires the menu pointer-valid guard so it
 # can't match at boot (where the field is 0 == MENU_MAIN). Children (depth 1) beat the
 # "menu" parent when matched.
 

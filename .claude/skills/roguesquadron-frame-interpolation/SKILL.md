@@ -11,7 +11,7 @@ RT64 buffers one real game frame and draws in-between frames by pairing each tra
 
 ## Enabling
 
-- `roguesq_video.json`: `"frameInterpolation": true`, `"targetFramerate": 60` ([src/main/video_config.cpp:69](../../../src/main/video_config.cpp)). Code default is OFF ([src/main/rt64_render_context.cpp:210](../../../src/main/rt64_render_context.cpp)); its "effect quads flicker" rationale predates the sprite-id work and is stale.
+- `roguesq_video.json`: `"frameInterpolation": true`, `"targetFramerate": 60` ([src/video/video_config.cpp:69](../../../src/video/video_config.cpp)). Code default is OFF ([src/video/rt64_render_context.cpp:210](../../../src/video/rt64_render_context.cpp)); its "effect quads flicker" rationale predates the sprite-id work and is stale.
 - Env: `ROGUESQ_RT_INTERP=<hz>` (`0` = off). Deterministic repro: `ROGUESQ_BOOT_TARGET=level:N` (attract demo is too noisy) plus a recorded input replay (`ROGUESQ_INPUT_REPLAY`, files in `tools/recordings/`); mute with `ROGUESQ_NO_AUDIO_UCODE=1`. **Test in the Release build**: Debug adds background work that distorts frame timing.
 
 ## Pipeline (lib/rt64/src)

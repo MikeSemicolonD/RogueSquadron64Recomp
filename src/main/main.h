@@ -1,4 +1,4 @@
-// main.h — the public C-linkage surface of main.cpp consumed by other host
+// main.h — the public C-linkage surface of main.cpp and input_host.cpp consumed by other host
 // TUs (window/fullscreen, quit, touch layout, throttle and the reloc guard).
 #ifndef RS64_MAIN_H
 #define RS64_MAIN_H
@@ -6,6 +6,7 @@
 #include <cstdint>
 
 extern "C" {
+    void rs64_set_fullscreen(int on);
     int  rs64_get_fullscreen(void);
     void rs64_toggle_fullscreen(void);
     void rs64_menu_request_quit(void);

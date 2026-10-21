@@ -398,6 +398,21 @@ static void test_skip_message() {
     CHECK(!decode_skip(h.data(), h.size()));
 }
 
+static void test_shot_message() {
+    const std::vector<uint8_t> b = encode_shot(9, "Camera_CM_1", "Sayline_Hey");
+    CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Shot);
+    uint8_t e = 0;
+    std::string cam, trig;
+    CHECK(decode_shot(b.data(), b.size(), &e, &cam, &trig) && e == 9 && cam == "Camera_CM_1" && trig == "Sayline_Hey");
+    CHECK(!decode_shot(b.data(), b.size() - 1, &e, &cam, &trig));
+    const std::vector<uint8_t> no_cam = encode_shot(9, "", "t");
+    CHECK(!decode_shot(no_cam.data(), no_cam.size(), &e, &cam, &trig));
+    const std::vector<uint8_t> no_trig = encode_shot(9, "c", "");
+    CHECK(!decode_shot(no_trig.data(), no_trig.size(), &e, &cam, &trig));
+    const std::vector<uint8_t> t = encode_trigger(9, 1, true);
+    CHECK(!decode_shot(t.data(), t.size(), &e, &cam, &trig));
+}
+
 static void test_trigger_message() {
     const std::vector<uint8_t> b = encode_trigger(9, 0x2A, true);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Trigger);
@@ -694,6 +709,7 @@ int main() {
     test_briefing_done_message();
     test_upgrades_message();
     test_trigger_message();
+    test_shot_message();
     test_tow_trip_message();
     test_address_editor_typing();
     test_lobby_idle_status();

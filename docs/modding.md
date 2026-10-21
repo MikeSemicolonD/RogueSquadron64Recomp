@@ -65,6 +65,10 @@ A mod can also add files the game does not have. A file at a new path (for examp
 
 Cutscene actors can name any model by its asset path, such as `imp_stuff/tankdroid`. The game loads that path and uses the model whose object name is the part after the last `/`, so a model whose object name differs from its file name is added under its object name with `.from` (the RS64 Explorer's Actor menu does this for you, for example `imp_stuff/probe_droid`).
 
+A mod can also play an in-level camera shot during a mission. A `camera_shots.txt` at the mod root links a level's trigger to a camera item, one `<level> <trigger> <camera>` per line (`lv_0 canyon_entry cam_atat_reveal`; `#` starts a comment). The first time the trigger fires in a mission, the game cuts to that camera, follows its next cameras, then hands control back while the fight keeps running. A later line or mod wins for the same trigger. In online co-op both players see the shot whoever set the trigger off; a fourth word `personal` (`lv_0 canyon_entry cam_reveal personal`) shows it only to the player who did, for example when the camera chain ends at a restart point that moves the player. Both players need the mod. In the RS64 Explorer, pick the trigger in the level editor's Events mode and set *Play camera shot*; the cameras are the level's in-mission camera items.
+
+The same trigger can destroy level objects by name, one `<level> <trigger> destroy <object>` per object (`lv_0 canyon_entry destroy tower_1`); these lines add up rather than replace each other. The objects die with their own explosion and count for objectives like any kill, and the trigger's camera shot (if any) starts half a second later so the explosion is in frame. An object not loaded at that moment (far from the player) only loses its health and shows as rubble when it streams in.
+
 The easiest way to make one is the RS64 Explorer (`tools/rs64-explorer`), which writes these patches for you:
 
 1. Make your changes:
@@ -78,6 +82,39 @@ Rules:
 
 - When two enabled mods replace the same file, the one loaded later wins.
 - A replacement still loads into the game's 8 MB heap, so keep it close to the original's size.
+
+### New levels
+
+A mod can add levels. They show in SELECT LEVEL after the last level the player has unlocked, and each plays as a stock *template* level: its mission script (objectives), craft rules and per-level settings, with its own files, intro, extro, title, briefing, approved craft and medals. Its medals are kept apart from the game's in `roguesq_mod_medals.json` (never in the cartridge save, and they stay when the mod is disabled); finishing it changes no stock progress and returns to SELECT LEVEL.
+
+A `levels.json` at the mod root lists them:
+
+```json
+{ "levels": [ {
+  "id": "dune_sea", "title": "Dune Sea Ambush", "template": 0, "folder": "dune_sea",
+  "description": "Walkers are crossing the Dune Sea.\n\nStop them.", "voice": 636,
+  "craft": ["xwing", "awing"],
+  "medals": { "bronze": { "time": 20, "kills": 10 }, "silver": { "time": 12, "kills": 25 }, "gold": { "time": 8, "kills": 40, "accuracy": 50 } },
+  "crawl": { "chapter": "Chapter V", "title": "THE DUNE SEA", "body": "Imperial walkers march on Anchorhead...", "planet": 0 }
+} ] }
+```
+
+- `template`: a playable stock level, 0-18. Its mission script runs, so keep the objects it uses (start from a copy of its files). Templates 0, 5, 10 and 15 play their chapter crawl first; Beggar's Canyon (16) has no craft select.
+- `folder`: the level's files are `assets/level/<folder>/` (the template's file names: `dat`, `hmp`, ...), its cutscenes `assets/cuts/<folder>_intro` and `_extro`. A file the folder lacks is the template's; `.from` and `.bps` work as anywhere in `assets/`.
+- `title` and `description` show in capitals; characters the menu fonts lack are left out (letters, digits and `! ( ) _ - / \ , . : '` show).
+- `voice`: a stock voice line played as the SELECT LEVEL briefing (none if left out). A recording of your own goes in `assets/level/<folder>/brief` and plays instead: a MORT stream (the game's 8 kHz GSM 06.10 voice codec). The explorer's *Import recording…* makes it from a .wav or .mp3.
+- `craft`: approved craft, any of `xwing`, `ywing`, `awing`, `vwing`, `speeder`, `falcon`, `tie`, `t16`, `naboo` (the template's if left out).
+- `crawl`: an opening crawl played before the level. Left out, the template's plays (if it has one); `false` plays none; an object gives `chapter` (the small line, may be empty), `title` and `body` (wrapped to the crawl width), and `planet` 0-3, the planet the camera pans down to (the one after the crawl of level 0, 5, 10 or 15). The crawl font has letters in both cases, digits and `! ? , . : ; ' / \ - _ ( )`; anything else is left out.
+- `medals`: a medal needs all of time (minutes) at most and kills, accuracy (%) and friendlies saved at least; all three tiers or none (the template's). The bonus threshold (secret pickups) is always the template's. Medals earned on mod levels show on SELECT GAME as a second set of counts (blue digits) beside the game's, per save slot.
+- `objectives`: the level's own goals (1-4, shown on the pause screen). With them, none of the template's mission script runs and the level is won when every `destroy`, `reach` and `survive` goal is done:
+  - `{ "text": "Destroy the walkers", "goal": "destroy", "counter": 120, "count": 6 }`: objective counter 120 reaches 6. Units add to a counter when destroyed (DAT record +0x80/+0x84).
+  - `{ "goal": "reach", "flag": 121 }`: objective flag 121 is set, by an area trigger's on-enter block.
+  - `{ "goal": "protect", "flag": 122 }`: the mission fails when flag 122 is set, by the unit's death (DAT record +0x78/+0x7C).
+  - `{ "goal": "survive", "seconds": 120 }` / `{ "goal": "timelimit", "seconds": 600 }`: time passes / the mission fails when it runs out.
+
+  The explorer's *Level settings* writes all of this: pick the units or area for each objective and it chooses free counters and flags.
+
+The RS64 Explorer makes all of this: open a stock level and click *New level from this one…* (a copy to change) or *New blank level…* (only a player start on flat ground, blank 3-second intro and outro, and that level's sky, textures and music; give it objectives), edit it like any level, set *Level settings…* (title, description, briefing voice or recording, craft, objectives, medals, opening crawl), then *Export mod*. Camera-shot links (`camera_shots.txt`) for a new level use its folder name in place of `lv_<n>`.
 
 The [exhaust-color](../mods/exhaust-color/) mod is a different approach: it recolors every craft's exhaust from the player's ROM at startup, driven by a config option.
 

@@ -133,7 +133,7 @@ Keep probes as light as possible. Heavier ones (checking before and after every 
 
 Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around emulated memory, so a bad game pointer wraps into the 512 MB RDRAM window instead of crashing where it goes wrong.
 
-**Crash.** The crash handlers in `src\main\main.cpp` print a stack trace to stderr and write a full minidump to `dumps\crash-dumps\crash_<date>_<time>.dmp`. Open it in Visual Studio (File > Open > File, then **Debug with Native Only**). It needs the matching exe and PDB from `build\Debug\`. `python tools/inspect-dump.py` lists the dump's threads and marks the few running game code (`in_exe`); those are the ones worth opening.
+**Crash.** The crash handlers in `src\main\crash.cpp` print a stack trace to stderr and write a full minidump to `dumps\crash-dumps\crash_<date>_<time>.dmp`. Open it in Visual Studio (File > Open > File, then **Debug with Native Only**). It needs the matching exe and PDB from `build\Debug\`. `python tools/inspect-dump.py` lists the dump's threads and marks the few running game code (`in_exe`); those are the ones worth opening.
 
 **Hang.** While the game is frozen, run `pwsh tools/dump-game.ps1` from another shell to capture it (F12 also writes a dump, but not if the window has stopped responding). Then:
 
@@ -149,7 +149,7 @@ Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around
 | `RecompiledFuncs\funcs_*.c` | Recompiled game code, thousands of `func_8xxxxxxx` and named functions. Generated locally and gitignored. |
 | `build\factor5_ucode\musyx_audio_recompiled.c` | Recompiled MusyX audio synth microcode. |
 | `build\factor5_ucode\factor5_boot_recompiled.c` | Recompiled boot microcode that loads the audio microcode's data. |
-| `src\main\toml_hooks.c` | The bodies of the hooks `rogue_squadron.toml` inserts into game functions. |
+| `src\game\toml_hooks.c` | The bodies of the hooks `rogue_squadron.toml` inserts into game functions. |
 | `lib\rt64\src\hle\rt64_interpreter.cpp` | RT64's display-list interpreter loop. |
 | `lib\rt64\src\gbi\rt64_gbi_f3dfactor5.cpp` | The Factor 5 display-list opcode handlers. |
 | `lib\rt64\src\gbi\rt64_gbi.cpp`, `lib\rt64\src\hle\rt64_rsp.cpp` | Microcode identification (selects `F3DFACTOR5`) and its RSP state. |

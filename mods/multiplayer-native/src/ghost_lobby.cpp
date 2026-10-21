@@ -1,6 +1,6 @@
 // Ghost co-op front-end lobby: host/join, LAN discovery, address editing, and the mission/craft select hooks.
 #include "ghost_internal.h"
-#include "debug_logs.h"
+#include "util/debug_logs.h"
 #include "mp_host.h"
 #include <algorithm>
 #include <atomic>

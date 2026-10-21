@@ -10,7 +10,7 @@ function dump(tag) {
     console.log("[rs64_dump] wrote " + tag);
 }
 // State-matched goldens for tools/validate/state_diff.ps1. Mirrors the host game-state classifier
-// (src/main/game_state.cpp + state_model.toml): dump rdram_state_<id>.bin once per logical state so
+// (src/game/game_state.cpp + state_model.toml): dump rdram_state_<id>.bin once per logical state so
 // the PJ64 golden lines up with the recomp's ROGUESQ_DUMP_RDRAM_ON_STATE dump.
 var stateDone = {};
 function inKseg0(p) { return (p >>> 0) >= 0x80000000 && (p >>> 0) < 0x80800000; }

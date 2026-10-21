@@ -106,7 +106,7 @@ Anchors and `hide` name native entries by alias:
 - `game_settings`: `auto_roll`, `auto_level`, `free_camera`, `crosshairs`, `high_resolution`, `restore_defaults`, `back`.
 - `sound_settings` (slider `replace` targets): `music`, `sound_fx`, `speech`, `subtitles`, `stereo`, `restore_defaults`, `back`. The menu has a hard limit of 8 slots, so a slider must replace an entry you can spare (the demo replaces `stereo`).
 
-The tables are `native_aliases()` and `snd_alias_slot()` in [src/main/menu_config.cpp](../src/main/menu_config.cpp); extend them to expose more entries.
+The tables are `native_aliases()` and `snd_alias_slot()` in [src/game/menu_config.cpp](../src/game/menu_config.cpp); extend them to expose more entries.
 
 ### Behavior keys
 
@@ -171,7 +171,7 @@ Labels use the front-end font: upper-case `A`-`Z`, `0`-`9`, spaces and `;:_'/&",
 
 ## Internals
 
-The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/main/menu_config.cpp](../src/main/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
+The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/game/menu_config.cpp](../src/game/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
 
 ### Two separate menu systems
 
@@ -346,7 +346,7 @@ More than one button per slot needs a relocated `PauseMenuStuff` array, keeping 
 
 ### Changing the system itself
 
-- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/main/toml_hooks.c](../src/main/toml_hooks.c), which calls the host code in `menu_config.cpp`:
+- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/game/toml_hooks.c](../src/game/toml_hooks.c), which calls the host code in `menu_config.cpp`:
 
   ```toml
   [[patches.hook]]
@@ -358,7 +358,7 @@ More than one button per slot needs a relocated `PauseMenuStuff` array, keeping 
   Hook text is baked in at recompile time, so after changing a hook run `cmake --build build --config Debug --target regen_funcs` before building the game. Changes to `menu_config.cpp` alone need only a normal build.
 - **New built-in behaviors.** Add a toggle to `toggles()` or an action to `actions()` in `menu_config.cpp`, then reference it by name from a menu file. Native mods can add actions without touching the base game (`add_action`).
 - **Label storage.** `menu_entries[i]` must be an RDRAM address; the game reads it with no masking, so a host pointer won't work. Reuse a game string with `getGameOrFrontText(textId)`, or allocate with `recomp::alloc(rdram, size)` (the recomp heap at `0x81000000`+, above the game's 8 MB) and convert with `(uint8_t*)p - rdram + 0x80000000`. Don't write to "unused" addresses inside the game's 8 MB; the game believes it owns all of it.
-- **Quit.** A QUIT button pushes `SDL_QUIT` (`rs64_menu_request_quit`); the event loop in [src/main/main.cpp](../src/main/main.cpp) runs the quit handlers and then `_Exit`. Don't call `exit`: the game threads and RT64 are still running, so static destructors hang or crash.
+- **Quit.** A QUIT button pushes `SDL_QUIT` (`rs64_menu_request_quit`); the event loop in [src/input/input_host.cpp](../src/input/input_host.cpp) runs the quit handlers and then `_Exit`. Don't call `exit`: the game threads and RT64 are still running, so static destructors hang or crash.
 - **Writes** use the recomp `MEM_*` address convention (word: no xor, half `^2`, byte `^3`).
 
 ### Engine gotchas
