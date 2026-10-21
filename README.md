@@ -59,7 +59,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **High resolutions:** high resolution options, with optional MSAA, SSAA or FXAA anti-aliasing & HDR.
 - **Widescreen:** extends the screen (and camera FOV) beyond the old 4:3 aspect ratio.
 - **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status-playable).
-- **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate. [Might *still* have some visual glitches](#status-playable).
+- **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
 - **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status-playable).
 
@@ -153,6 +153,8 @@ In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
 - **F3** toggles ViewRDRAM mode.
 - **F4** toggles texture replacement.
 
+**F12** writes a crash dump to `dumps/crash-dumps/` in Debug and Release builds (Windows only). Set `ROGUESQ_FULL_DUMP=1` for a full-memory dump.
+
 #### Rebinding controls
 
 Press **F6** to open the **Controls** window.
@@ -183,8 +185,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
   - Better Ray Tracing mod menu button placement. (It's below the back button in the Options menu which is awkward)
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll noticed structure and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
-
-- Frame interpolation *can be enabled* **BUT** might still have visual glitches if meshes/objects aren't ID'd properly. The performance hitches (frame rate drops) will also cause a frame stutter. (This has since been improved)
 
 ### Game specific Issues
 
@@ -379,17 +379,28 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 Recompiled game code compiles into one static library, linked against forked builds of N64ModernRuntime (the libultra/runtime host) and RT64 (the renderer).
 
-| Path | Role |
-| --- | --- |
-| `src/main/main.cpp` | Entry point — SDL2 window/audio/input, RSP task dispatch |
-| `src/main/rt64_render_context.cpp` | RT64 integration — `send_dl`, VI registers, framebuffer sanitizer |
-| `src/main/register_overlays.cpp` | Boot-time overlay function-table registration |
-| `src/main/upstream_compat.cpp` | libultra shims, overlay loader, HMT-load capture |
-| `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` | The Factor 5 GBI module (the render core) |
-| `rsp/*_rsp.toml` | RSPRecomp configs for the boot and MusyX audio ucodes |
-| `include/rs64/host_api.h`, `src/main/host_api*.cpp`, `builtin_hooks.cpp` | [Host API for native mods](docs/modding-host-api.md) |
-| `mods/multiplayer-native/` (sources in `src/`, tests in `tests/`) | [Online co-op](docs/multiplayer.md) |
-| `src/main/lockstep*.cpp` | Mission input record/replay with per-frame state hashes |
+```text
+src/main/
+├── main.cpp                    Entry point: SDL2 window/audio/input, RSP task dispatch
+├── rt64_render_context.cpp     RT64 integration: send_dl, VI registers, framebuffer sanitizer
+├── register_overlays.cpp       Boot-time overlay function-table registration
+├── upstream_compat.cpp         libultra shims, overlay loader, HMT-load capture
+├── hook_helpers.cpp            Host logic called from rogue_squadron.toml hooks
+├── host_api*.cpp               Host API for native mods (with builtin_hooks.cpp)
+└── lockstep*.cpp               Mission input record/replay with per-frame state hashes
+include/rs64/host_api.h         Public header for native mods
+lib/
+├── N64ModernRuntime/           libultra/runtime host (fork)
+└── rt64/                       Renderer (fork)
+    └── src/gbi/rt64_gbi_f3dfactor5.cpp   The Factor 5 GBI module (the render core)
+rsp/*_rsp.toml                  RSPRecomp configs for the boot and MusyX audio ucodes
+mods/multiplayer-native/        Online co-op (sources in src/, tests in tests/)
+rogue_squadron.toml             N64Recomp config and override layer
+```
+
+Native mods: [docs/modding-host-api.md](docs/modding-host-api.md).
+
+Online co-op: [docs/multiplayer.md](docs/multiplayer.md).
 
 **Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and validated against Project64 dumps.
 
@@ -417,7 +428,7 @@ Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrid
 
 AI written helpers under [tools/](tools/):
 
-- `dump-game.ps1` writes a full-memory minidump of a running instance, even when the window is unresponsive. `F12` in-game does the same.
+- `dump-game.ps1` writes a full-memory minidump of a running instance, even when the window is unresponsive.
 - `inspect-dump.py` and `dump_stackscan.py` list and symbolize threads from a minidump.
 - `reconstruct-freeze.py` rebuilds blocked game threads and queues from a hang dump; `host-stacks.py` symbolizes host stacks (Debug build).
 - `run-stability.ps1` launches N timed runs and classifies each by stderr markers.
