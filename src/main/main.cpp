@@ -313,12 +313,25 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
     }
 
-    SDL_Window* sdl_window = SDL_CreateWindow(
-        "Star Wars: Rogue Squadron 64 Recompiled",
-        window_x, window_y,
-        window_w, window_h,
-        window_flags
-    );
+    auto create = [&] { return SDL_CreateWindow("Star Wars: Rogue Squadron 64 Recompiled", window_x, window_y, window_w, window_h, window_flags); };
+
+    SDL_Window* sdl_window = create();
+
+#ifdef __ANDROID__
+
+    // On a portrait phone's first launch the activity is still turning to landscape, so its surface isn't there yet.
+    int tries = 0;
+
+    for (; !sdl_window && tries < 50; ++tries) {
+        SDL_Delay(100);
+        sdl_window = create();
+    }
+
+    if (tries > 0) {
+        fprintf(stderr, "[window] native window ready after %d retries (%s)\n", tries, sdl_window ? "ok" : SDL_GetError());
+    }
+
+#endif
 
     if (!sdl_window) {
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
