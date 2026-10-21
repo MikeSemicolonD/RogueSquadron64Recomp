@@ -58,15 +58,15 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 - **High resolutions:** high resolution options, with optional MSAA, SSAA or FXAA anti-aliasing & HDR.
 - **Widescreen:** extends the screen (and camera FOV) beyond the old 4:3 aspect ratio.
-- **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status-playable).
+- **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
-- **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status-playable).
+- **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status).
 
 #### Input
 
 - **Keyboard and mouse:** fly with the mouse and fire with the mouse buttons.
-    - **Menu navigation with the Mouse:** ability to seamlessly select and control menu navigation exclusively with the mouse via cursor placement, LMB (Start) & RMB (Back)
+  - **Menu navigation with the Mouse:** ability to seamlessly select and control menu navigation exclusively with the mouse via cursor placement, LMB (Start) & RMB (Back)
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
