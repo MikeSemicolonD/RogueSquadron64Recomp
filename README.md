@@ -152,7 +152,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
   - Other axes can be bound from the Controls window (**F6**)
   
 - **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game. 
-  - Colors configurable from the `lightbar` section of `roguesq_input.json`
+  - Colors configurable from the `lightbar` section in `roguesq_input.json`
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
