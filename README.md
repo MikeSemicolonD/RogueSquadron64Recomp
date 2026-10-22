@@ -212,10 +212,14 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Build Requirements
 
+<div align="center">
+
 | OS/Platform | Requirement |
 | --- | --- |
 | **Windows 10+** | CMake 3.20+, [MSVC with the ClangCL toolset](https://learn.microsoft.com/en-us/cpp/build/clang-support-msbuild) with a [MIPS Toolchain](https://github.com/n64-tools/gcc-toolchain-mips64/releases)* |
 | **Linux** | CMake 3.20+, [Clang](https://github.com/llvm/llvm-project/releases) or [GCC](https://gcc.gnu.org/install/binaries.html) |
+
+</div>
 
 *Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
 
