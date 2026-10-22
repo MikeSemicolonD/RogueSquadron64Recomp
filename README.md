@@ -75,7 +75,10 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Multiplayer (experimental)
 
-- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding). Uses a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6) and [miniupnp](https://github.com/miniupnp/miniupnp). The **Multiplayer** is shipped as a `multiplayer-native` mod.
+- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. 
+  - Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
+  - Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
+  - The **Multiplayer** is shipped as a `multiplayer-native` mod.
 - **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replace the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
@@ -97,7 +100,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
   - **Invincibility:** your craft takes no damage.
   - **Any Craft, Any Mission:** fly any ship on any level.
-  - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Display Settings' to toggle various RT features.
+  - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Game Settings' to toggle various RT features.
 
 ## Running
 
@@ -135,12 +138,21 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 </div>
 
-**Mouse flight steering:** mouse cursor is automatically captured when the game window is focused.
-Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon. The cursor displays when the window loses focus, the (**F6**) Controls window is open, or when RT64's (**F1**) inspector is up.
+- **Mouse flight steering:** mouse cursor is automatically captured when the game window is focused.
+  - Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon. 
+  - The cursor displays when the window loses focus, the (**F6**) Controls window is open, or when RT64's (**F1**) inspector is up.
 
-**Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks supporting rumble or force feedback. Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. Rumble and its individual effects can be tuned in the (**F6**) Controls window, or in the `rumble` section of `roguesq_input.json`.
+- **Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks supporting rumble or force feedback. 
+  - Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. 
+  - Rumble and its individual effects can be tuned in the (**F6**) Controls window, or in the `rumble` section of `roguesq_input.json`.
 
-**Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bound as a joystick. A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. The throttle sets your speed by position: *full back* is craft's slowest, *full forward* is fastest, and *middle* is normal speed. Other axes can be bound from the Controls window (**F6**)
+- **Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bound as a joystick. 
+  - A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. 
+  - The throttle sets your speed by position: *full back* is craft's slowest, *full forward* is fastest, and *middle* is normal speed.
+  - Other axes can be bound from the Controls window (**F6**)
+  
+- **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game. 
+  - Colors configurable from the `lightbar` section in `roguesq_input.json`
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
