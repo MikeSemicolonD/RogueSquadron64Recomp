@@ -100,7 +100,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
   - **Invincibility:** your craft takes no damage.
   - **Any Craft, Any Mission:** fly any ship on any level.
-  - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Display Settings' to toggle various RT features.
+  - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Game Settings' to toggle various RT features.
 
 ## Running
 
