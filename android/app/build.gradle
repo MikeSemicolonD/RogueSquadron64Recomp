@@ -113,7 +113,8 @@ android {
 
     defaultConfig {
         applicationId 'com.rs64recomp.app'
-        minSdk 26
+        // Android 9: the first release whose Vulkan loader exposes 1.1, which RT64 needs (devices without a 1.1 driver get the startup error).
+        minSdk 28
         targetSdk 34
         versionCode rs64VersionCode
         versionName rs64Version

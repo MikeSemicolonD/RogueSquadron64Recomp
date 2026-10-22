@@ -41,7 +41,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
 | **[Linux arm64 / armhf](docs/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
 | **[Linux x86 (32-bit)](docs/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
-| **[Android 8+ arm64](#android-notes)** | Vulkan 1.1 |
+| **[Android 9+ arm64](#android-notes)** | Vulkan 1.1 |
 | **[*maybe* macOS 11+](#macos-notes)*** | Metal |
 
 </div>
