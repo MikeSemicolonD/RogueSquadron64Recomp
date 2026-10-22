@@ -8,13 +8,13 @@ All targets compile the same generated game code, so every host needs the shared
 
 | Package | Host | Script / task | Status |
 | --- | --- | --- | --- |
-| `rs64-windows-x64-<ver>.zip` | Windows | `bundle-release.ps1 -Only windows-x64` | Release CI |
-| `rs64-windows-x86-<ver>.zip` | Windows | `bundle-release.ps1 -Only windows-x86` | Release CI; replay-verified |
-| `rs64-android-arm64-<ver>.apk` | Windows | `bundle-release.ps1 -Only android` | Device-tested |
-| `rs64-linux-x64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `bundle-release.ps1 -Only linux-x64` | Release CI (tarball); Flatpak boots to the menus |
-| `rs64-linux-arm64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `tools/linux/cross-build.sh arm64` | Runs on a Raspberry Pi 4 (Ubuntu 26.04) |
-| `rs64-linux-armhf-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/linux/cross-build.sh armhf` | Runs on a Raspberry Pi 4 (32-bit libraries on Ubuntu 26.04 arm64) |
-| `rs64-linux-i386-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/linux/cross-build.sh i386` | Runs to the menus on an x64 PC (WSL, 32-bit libraries, software Vulkan); untested with a GPU driver |
+| `RogueSquadron64Recomp-windows-x64-<ver>.zip` | Windows | `bundle-release.ps1 -Only windows-x64` | Release CI |
+| `RogueSquadron64Recomp-windows-x86-<ver>.zip` | Windows | `bundle-release.ps1 -Only windows-x86` | Release CI; replay-verified |
+| `RogueSquadron64Recomp-android-arm64-<ver>.apk` | Windows | `bundle-release.ps1 -Only android` | Device-tested |
+| `RogueSquadron64Recomp-linux-x64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `bundle-release.ps1 -Only linux-x64` | Release CI (tarball); Flatpak boots to the menus |
+| `RogueSquadron64Recomp-linux-arm64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `tools/linux/cross-build.sh arm64` | Runs on a Raspberry Pi 4 (Ubuntu 26.04) |
+| `RogueSquadron64Recomp-linux-armhf-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/linux/cross-build.sh armhf` | Runs on a Raspberry Pi 4 (32-bit libraries on Ubuntu 26.04 arm64) |
+| `RogueSquadron64Recomp-linux-i386-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/linux/cross-build.sh i386` | Runs to the menus on an x64 PC (WSL, 32-bit libraries, software Vulkan); untested with a GPU driver |
 
 Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Flatpak only exists for x86_64 and aarch64 (the Flathub runtimes have no 32-bit builds).
 

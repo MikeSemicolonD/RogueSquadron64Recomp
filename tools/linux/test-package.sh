@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Checks one Linux package (rs64-linux-<arch>-*.tar.xz, *.AppImage or *.flatpak) and prints PASS/FAIL/SKIP lines; exits 1 on any FAIL.
+# Checks one Linux package (RogueSquadron64Recomp-linux-<arch>-*.tar.xz, *.AppImage or *.flatpak) and prints PASS/FAIL/SKIP lines; exits 1 on any FAIL.
 # Usage: tools/linux/test-package.sh <package> [--boot <rom>] [--replay <rom> <save> <recording.rec>]
 #   always: arch of every binary, glibc floor, no host-only libraries bundled, launcher bits, no ROM/saves inside, --help (foreign arches via qemu)
 #   --boot: 90 s headless boot with the fake controller (host arch only); must reach the account menus with no fault
