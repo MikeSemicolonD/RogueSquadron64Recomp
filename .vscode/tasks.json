@@ -418,7 +418,7 @@
                 "cwd": "${workspaceFolder}"
             },
             "problemMatcher": [],
-            "detail": "For every machine in ~/.config/rs64/remotes (WSL; lines '<name> <user>@<host> <remote-dir>'): detects arch/OS/glibc/Vulkan, deploys the matching rs64-linux-<arch>-*.tar.xz, copies the ROM, runs --help and a headless boot in the logged-in desktop session, and pulls the logs back to logs/platform-tests/."
+            "detail": "For every machine in ~/.config/rs64/remotes (WSL; lines '<name> <user>@<host> <remote-dir>'): detects arch/OS/glibc/Vulkan, deploys the matching RogueSquadron64Recomp-linux-<arch>-*.tar.xz, copies the ROM, runs --help and a headless boot in the logged-in desktop session, and pulls the logs back to logs/platform-tests/."
         },
         {
             "label": "Linux: Copy build out of WSL",
@@ -814,7 +814,7 @@
         {
             "id": "linuxReleaseDir",
             "type": "promptString",
-            "description": "Folder holding the rs64-linux-<arch>-*.tar.xz packages (Windows or WSL path)",
+            "description": "Folder holding the RogueSquadron64Recomp-linux-<arch>-*.tar.xz packages (Windows or WSL path)",
             "default": "build/release"
         },
         {

@@ -65,8 +65,8 @@ jobs:
       - name: Package
         run: |
           ver="${GITHUB_REF_NAME//\//-}"
-          bash tools/package-linux.sh "$PWD/rs64-linux-x64-$ver.tar.xz" "$PWD/build"
-          echo "PKG=rs64-linux-x64-$ver.tar.xz" >> "$GITHUB_ENV"
+          bash tools/package-linux.sh "$PWD/RogueSquadron64Recomp-linux-x64-$ver.tar.xz" "$PWD/build"
+          echo "PKG=RogueSquadron64Recomp-linux-x64-$ver.tar.xz" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -151,7 +151,7 @@ jobs:
       - name: Package
         run: |
           $ver = $env:GITHUB_REF_NAME -replace '/', '-'
-          $pkg = "rs64-windows-x64-$ver.zip"
+          $pkg = "RogueSquadron64Recomp-windows-x64-$ver.zip"
           Copy-Item ci/release-readme.txt build/dist/README.txt
           Compress-Archive -Path build/dist/* -DestinationPath $pkg -Force
           Add-Content -Path $env:GITHUB_ENV -Value "PKG=$pkg" -Encoding ascii
@@ -182,7 +182,7 @@ jobs:
       - name: Package (x86)
         run: |
           $ver = $env:GITHUB_REF_NAME -replace '/', '-'
-          $pkg = "rs64-windows-x86-$ver.zip"
+          $pkg = "RogueSquadron64Recomp-windows-x86-$ver.zip"
           Copy-Item ci/release-readme.txt build-x86/dist/README.txt
           Copy-Item -Recurse build/dist/d3d11_shader_cache build-x86/dist/
           Compress-Archive -Path build-x86/dist/* -DestinationPath $pkg -Force

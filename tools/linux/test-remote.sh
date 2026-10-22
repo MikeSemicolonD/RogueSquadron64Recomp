@@ -46,8 +46,8 @@ test_remote() {
         return
     fi
     local pkg
-    pkg="$(ls -t "$RELEASE_DIR"/rs64-linux-"$arch"-*.tar.xz 2>/dev/null | head -1)"
-    [ -n "$pkg" ] || { fail "package" "no rs64-linux-$arch-*.tar.xz in $RELEASE_DIR"; return; }
+    pkg="$(ls -t "$RELEASE_DIR"/RogueSquadron64Recomp-linux-"$arch"-*.tar.xz 2>/dev/null | head -1)"
+    [ -n "$pkg" ] || { fail "package" "no RogueSquadron64Recomp-linux-$arch-*.tar.xz in $RELEASE_DIR"; return; }
     echo "INFO $name deploying $(basename "$pkg") to $dir"
 
     if r "rm -rf $dir/lib $dir/mods && mkdir -p $dir && tar xJf - -C $dir --strip-components=1" < "$pkg"; then

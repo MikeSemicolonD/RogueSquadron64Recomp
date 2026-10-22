@@ -48,7 +48,7 @@ cmake --build "$BUILD" --target RogueSquadron64Recomp -j"$(nproc)"
 
 ver="${RS64_VERSION:-v$(head -n1 "$REPO/VERSION" | tr -d '[:space:]')}"
 mkdir -p "$OUT_DIR"
-tarball="$OUT_DIR/rs64-linux-$ARCH-$ver.tar.xz"
+tarball="$OUT_DIR/RogueSquadron64Recomp-linux-$ARCH-$ver.tar.xz"
 LDD="$qemu -L / $loader --list" STRIP="$triple-strip" bash "$REPO/tools/package-linux.sh" "$tarball" "$BUILD"
 bash "$REPO/tools/linux/make-appimage.sh" "$tarball" "$appimage_arch" "$OUT_DIR/RogueSquadron64Recomp-$ver-$appimage_arch.AppImage"
 # flatpak-builder runs target binaries inside its sandbox, where only a binfmt handler registered with the F (fix binary) flag can reach qemu.

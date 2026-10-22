@@ -52,7 +52,7 @@ function Build-Windows([string]$arch, [string]$buildDir, [string]$cmakeArch) {
 
     Copy-Item -Path $shaderCache -Destination "$stage\d3d11_shader_cache" -Recurse
     Copy-Item ci\release-readme.txt "$stage\README.txt"
-    $zip = Join-Path $out "rs64-windows-$arch-$Version.zip"
+    $zip = Join-Path $out "RogueSquadron64Recomp-windows-$arch-$Version.zip"
     Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
     Remove-Item -Recurse -Force $stage
     return $zip
@@ -65,7 +65,7 @@ foreach ($target in $Only) {
             "windows-x64" { $file = Build-Windows "x64" "build" "x64" }
             "windows-x86" { $file = Build-Windows "x86" "build-x86" "Win32" }
             "linux-x64" {
-                $file = Join-Path $out "rs64-linux-x64-$Version.tar.xz"
+                $file = Join-Path $out "RogueSquadron64Recomp-linux-x64-$Version.tar.xz"
                 $wslOut = (wsl.exe -d $WslDistro -e wslpath -a ($file -replace '\\', '/')).Trim()
                 $script = 'set -e; cd "$(wslpath -a ''' + ($repo -replace '\\', '/') + ''')"; ' +
                     'cmake -S . -B "$HOME/rs64-build-release" -G Ninja -DCMAKE_BUILD_TYPE=Release; ' +
@@ -77,7 +77,7 @@ foreach ($target in $Only) {
             }
             { $_ -in "linux-arm64", "linux-armhf", "linux-i386" } {
                 $arch = $target -replace '^linux-', ''
-                $file = Join-Path $out "rs64-linux-$arch-$Version.tar.xz"
+                $file = Join-Path $out "RogueSquadron64Recomp-linux-$arch-$Version.tar.xz"
                 $wslOutDir = (wsl.exe -d $WslDistro -e wslpath -a ($out -replace '\\', '/')).Trim()
                 $script = "RS64_VERSION='$Version' " + 'bash "$(wslpath -a ''' + ($repo -replace '\\', '/') + ''')/tools/linux/cross-build.sh" ' + "$arch Release '$wslOutDir'"
                 Invoke-Checked $target { Invoke-Wsl $script }
@@ -86,7 +86,7 @@ foreach ($target in $Only) {
                 Push-Location android
                 try { Invoke-Checked "android" { .\gradlew.bat assembleRelease --console=plain } } finally { Pop-Location }
                 $apk = Get-ChildItem android\app\build\outputs\apk\release\*.apk | Select-Object -First 1
-                $file = Join-Path $out "rs64-android-arm64-$Version.apk"
+                $file = Join-Path $out "RogueSquadron64Recomp-android-arm64-$Version.apk"
                 Copy-Item $apk.FullName $file
             }
             default { throw "unknown target '$target'" }
