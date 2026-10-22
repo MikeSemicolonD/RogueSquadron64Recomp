@@ -23,6 +23,10 @@ if (-not (Test-Path $Binary)) {
     exit 1
 }
 
+# The game reads and writes its roguesq_*.json configs in the working directory, so run it from the exe's folder, not the repo root.
+$Binary = (Resolve-Path $Binary).Path
+$binDir = Split-Path $Binary
+
 $logDir = Join-Path (Get-Location) "logs\stability\$Tag"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -47,7 +51,7 @@ for ($i = 1; $i -le $Runs; $i++) {
     # Start the process with stderr redirected. PowerShell's Start-Process can't merge
     # stderr cleanly with a wait+kill on timeout, so we use cmd's redirect via & call.
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $proc = Start-Process -FilePath $Binary `
+    $proc = Start-Process -FilePath $Binary -WorkingDirectory $binDir `
         -RedirectStandardError $log `
         -RedirectStandardOutput "$log.stdout" `
         -PassThru -WindowStyle Hidden
