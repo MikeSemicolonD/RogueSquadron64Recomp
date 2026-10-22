@@ -109,7 +109,7 @@ uint8_t message_type(const uint8_t* data, size_t n) {
     if (data[1] == (uint8_t)Msg::Hello) {
         return data[1];
     }
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::TowTrip) {
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Shot) {
         return 0;
     }
     return data[1];
@@ -799,6 +799,43 @@ std::vector<uint8_t> encode_trigger(uint8_t epoch, uint16_t event, bool enter) {
     w.u16(event);
     w.u8(enter ? 1 : 0);
     return w.b;
+}
+
+std::vector<uint8_t> encode_shot(uint8_t epoch, const std::string& camera, const std::string& trigger) {
+    Writer w;
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Shot);
+    w.u8(epoch);
+    for (const std::string* s : {&camera, &trigger}) {
+        const size_t len = std::min<size_t>(s->size(), 255);
+        w.u8((uint8_t)len);
+        w.b.insert(w.b.end(), s->begin(), s->begin() + len);
+    }
+    return w.b;
+}
+
+bool decode_shot(const uint8_t* data, size_t n, uint8_t* epoch, std::string* camera, std::string* trigger) {
+    Reader r{data, n};
+    if (!header(r, Msg::Shot)) {
+        return false;
+    }
+    const uint8_t e = r.u8();
+    std::string names[2];
+    for (std::string& s : names) {
+        const uint8_t len = r.u8();
+        if (!r.ok || len == 0 || !r.need(len)) {
+            return false;
+        }
+        s.assign((const char*)data + r.at, len);
+        r.at += len;
+    }
+    if (!r.done()) {
+        return false;
+    }
+    *epoch = e;
+    *camera = std::move(names[0]);
+    *trigger = std::move(names[1]);
+    return true;
 }
 
 bool decode_trigger(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* event, bool* enter) {

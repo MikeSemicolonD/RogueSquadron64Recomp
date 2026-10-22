@@ -1,4 +1,4 @@
-#include "../src/main/nav_sequencer.h"
+#include "../src/game/nav_sequencer.h"
 #include "check.h"
 #include <cstdio>
 #include <cstdint>

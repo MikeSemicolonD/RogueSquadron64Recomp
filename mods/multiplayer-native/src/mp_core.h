@@ -1,6 +1,6 @@
 #pragma once
 // Multiplayer-only logic (local and online co-op): the imposter craft and its flight model, the ghost puppet, and the lobby, HUD, lives, skip and trigger rules. Built into the multiplayer code only; base code uses lockstep_core.h.
-#include "lockstep_core.h"
+#include "lockstep/lockstep_core.h"
 
 namespace rs64::ls {
 

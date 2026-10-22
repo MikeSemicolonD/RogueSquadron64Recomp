@@ -5,7 +5,7 @@
 #else
 #include "SDL2/SDL.h"
 #endif
-#include "../src/main/input_bindings.h"
+#include "../src/input/input_bindings.h"
 #include <cassert>
 #include <cmath>
 #include <cstdio>

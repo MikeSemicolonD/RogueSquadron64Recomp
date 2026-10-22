@@ -3,7 +3,7 @@
 #include "mp_core.h"
 #include "net_core.h"
 #include "net_link.h"
-#include "rdram_words.h"
+#include "util/rdram_words.h"
 #include "mp_host.h"
 #include <cstdint>
 #include <cstdio>

@@ -40,7 +40,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
 # Android consumes the code the Windows build generated (N64Recomp, RSPRecomp, state table); it cannot run those tools itself.
 if (ANDROID)
-    foreach(f RecompiledFuncs/funcs.h src/main/state_table.inl
+    foreach(f RecompiledFuncs/funcs.h src/game/state_table.inl
               build/factor5_ucode/factor5_boot_recompiled.c build/factor5_ucode/musyx_audio_recompiled.c)
         if (NOT EXISTS "${CMAKE_SOURCE_DIR}/${f}")
             message(FATAL_ERROR "Android build needs host-generated ${f}; run the Windows Debug build first.")
@@ -129,7 +129,7 @@ file(GLOB RECOMP_C_SOURCES   CONFIGURE_DEPENDS ${RECOMP_FUNCS_DIR}/*.c)
 file(GLOB RECOMP_CXX_SOURCES CONFIGURE_DEPENDS ${RECOMP_FUNCS_DIR}/*.cpp)
 target_sources(RecompiledFuncs PRIVATE ${RECOMP_C_SOURCES} ${RECOMP_CXX_SOURCES})
 # The rogue_squadron.toml hook bodies; built with the recompiled code so they compile exactly as they did inline.
-target_sources(RecompiledFuncs PRIVATE ${CMAKE_SOURCE_DIR}/src/main/toml_hooks.c)
+target_sources(RecompiledFuncs PRIVATE ${CMAKE_SOURCE_DIR}/src/game/toml_hooks.c)
 
 # ---- N64Recomp ----
 if (CMAKE_HOST_WIN32)
@@ -248,7 +248,7 @@ set_source_files_properties(${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C} PROPERTIES
     COMPILE_OPTIONS "${RSP_UCODE_ARCH_FLAGS};-Wno-unused-variable;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-braces>;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-shift-op-parentheses>;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-bitwise-op-parentheses>")
 
 # Generate the game-state table header from the canonical descriptor (state_model.toml).
-set(STATE_TABLE_INL ${CMAKE_SOURCE_DIR}/src/main/state_table.inl)
+set(STATE_TABLE_INL ${CMAKE_SOURCE_DIR}/src/game/state_table.inl)
 if (ANDROID)
     add_custom_target(gen_state_table)
 else()
@@ -265,35 +265,41 @@ endif()
 
 set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/game_state.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/nav_sequencer.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/input_bindings.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/rumble.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_input.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/video_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/menu_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/rt64_render_context.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/register_overlays.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/register_patches.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/upstream_compat.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/hook_helpers.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/lockstep.cpp
+    ${CMAKE_SOURCE_DIR}/src/audio/audio.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/cli.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/crash.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/debug_pollers.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/input_host.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/ui_panels.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/game_state.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/nav_sequencer.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/input_bindings.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/rumble.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_input.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menu_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/upstream_compat.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/hook_helpers.cpp
+    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp
     ${CMAKE_SOURCE_DIR}/src/main/renderdoc_capture.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/host_api_game.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/builtin_hooks.cpp
+    ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/host_api/host_api_game.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/builtin_hooks.cpp
     ${FACTOR5_BOOT_C}
     ${MUSYX_AUDIO_C}
     $<$<PLATFORM_ID:Windows>:${CMAKE_SOURCE_DIR}/src/main/app.rc>
 )
 # Lockstep simulation math must round identically everywhere: no fused multiply-add.
 if (MSVC)
-    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
 else()
-    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+    set_source_files_properties(${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 # Android: the game is libmain.so, loaded by SDL's SDLActivity (which calls SDL_main).
 if (ANDROID)
@@ -334,6 +340,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 target_include_directories(RogueSquadron64Recomp PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${RECOMP_FUNCS_DIR}
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
@@ -353,7 +360,7 @@ endif()
 
 if (MSVC)
     target_link_options(RogueSquadron64Recomp PRIVATE /OPT:NOICF)
-    # The src/main overrides redefine RecompiledFuncs/runtime symbols; the first definition wins. Masks accidental duplicates too.
+    # The src/ overrides redefine RecompiledFuncs/runtime symbols; the first definition wins. Masks accidental duplicates too.
     target_link_options(RogueSquadron64Recomp PRIVATE /FORCE:MULTIPLE)
 elseif (APPLE)
 else()
@@ -371,22 +378,22 @@ endif()
 # Touch engine + menu layer unit tests: cmake --build build --config Debug --target touch_input_test
 add_executable(touch_input_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/touch_input_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_input.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_input.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
 )
 set_target_properties(touch_input_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
+target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 
 # Not part of the default build: cmake --build build --config Debug --target video_config_test
 add_executable(video_config_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/video_config_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/video_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/common/rt64_user_configuration.cpp
 )
 set_target_properties(video_config_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(video_config_test PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/main
+    ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/rt64/src
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib
 )
@@ -398,40 +405,52 @@ endif()
 # Standalone unit test for the nav-sequencer target parser.
 add_executable(nav_target_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/nav_target_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/nav_sequencer.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/game_state.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/touch_menu.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/nav_sequencer.cpp
+    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/game_state.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
 )
 set_target_properties(nav_target_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(nav_target_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(nav_target_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include)
 add_dependencies(nav_target_test gen_state_table)
 
 # Standalone unit test for the lockstep record/replay core.
 add_executable(lockstep_core_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/lockstep_core_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/lockstep_core.cpp
+    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
 )
 set_target_properties(lockstep_core_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(lockstep_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main)
+target_include_directories(lockstep_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 
 
 # Standalone unit test for the mod host API registry.
 add_executable(host_api_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/host_api_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/host_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
 )
 set_target_properties(host_api_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(host_api_test PRIVATE ${CMAKE_SOURCE_DIR}/src/main ${CMAKE_SOURCE_DIR}/include)
-target_compile_definitions(host_api_test PRIVATE RS64_TOML_PATH="${CMAKE_SOURCE_DIR}/rogue_squadron.toml" RS64_TOML_HOOKS_PATH="${CMAKE_SOURCE_DIR}/src/main/toml_hooks.c")
+target_include_directories(host_api_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(host_api_test PRIVATE RS64_TOML_PATH="${CMAKE_SOURCE_DIR}/rogue_squadron.toml" RS64_TOML_HOOKS_PATH="${CMAKE_SOURCE_DIR}/src/game/toml_hooks.c")
 
 # Standalone unit test for the tow cable head interpolation alias.
 add_executable(cable_alias_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/cable_alias_test.cpp
 )
 set_target_properties(cable_alias_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# Standalone unit test for the mid-mission camera shot links.
+add_executable(camera_shots_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/camera_shots_test.cpp
+)
+set_target_properties(camera_shots_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(camera_shots_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_executable(mod_levels_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/mod_levels_test.cpp
+)
+set_target_properties(mod_levels_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(mod_levels_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 
 # Standalone unit test for the crosshair texrect matcher.
 add_executable(crosshair_match_test EXCLUDE_FROM_ALL
@@ -445,7 +464,7 @@ add_executable(rs64_lights_test EXCLUDE_FROM_ALL
 )
 set_target_properties(rs64_lights_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
-# AGENTS.md style rules for src/main, against tools/style/baseline.txt.
+# AGENTS.md style rules for src/, against tools/style/baseline.txt.
 add_executable(style_check EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/style_check.cpp
 )
@@ -460,10 +479,12 @@ add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:nav_target_test>
     COMMAND $<TARGET_FILE:host_api_test>
     COMMAND $<TARGET_FILE:cable_alias_test>
+    COMMAND $<TARGET_FILE:camera_shots_test>
+    COMMAND $<TARGET_FILE:mod_levels_test>
     COMMAND $<TARGET_FILE:crosshair_match_test>
     COMMAND $<TARGET_FILE:rs64_lights_test>
     COMMAND $<TARGET_FILE:style_check> ${CMAKE_SOURCE_DIR}
-    DEPENDS lockstep_core_test mp_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test crosshair_match_test rs64_lights_test style_check
+    DEPENDS lockstep_core_test mp_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test style_check
     COMMENT "Running the unit tests")
 
 # Standalone unit test for the mode-change blanking gate.
@@ -473,7 +494,7 @@ add_executable(transition_gate_test EXCLUDE_FROM_ALL
 set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 if (MSVC)
-    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test host_api_test transition_gate_test cable_alias_test crosshair_match_test rs64_lights_test style_check)
+    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test host_api_test transition_gate_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test style_check)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endforeach()
 endif()
@@ -530,10 +551,10 @@ endif()
 if (NOT ANDROID)
     add_executable(input_bindings_test EXCLUDE_FROM_ALL
         ${CMAKE_SOURCE_DIR}/tests/input_bindings_test.cpp
-        ${CMAKE_SOURCE_DIR}/src/main/input_bindings.cpp
+        ${CMAKE_SOURCE_DIR}/src/input/input_bindings.cpp
     )
     set_target_properties(input_bindings_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-    target_include_directories(input_bindings_test PRIVATE ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
+    target_include_directories(input_bindings_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
     if (WIN32)
         target_include_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/include)
         target_link_directories(input_bindings_test PRIVATE ${sdl2_SOURCE_DIR}/lib/${RS64_WIN_ARCH})

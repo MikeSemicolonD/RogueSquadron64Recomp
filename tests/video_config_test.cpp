@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <fstream>
 
-#include "video_config.h"
+#include "video/video_config.h"
 
 using nlohmann::json;
 using UC = RT64::UserConfiguration;

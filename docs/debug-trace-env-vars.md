@@ -28,7 +28,7 @@ The user-facing options also have `--flags` (run with `--help`); see the first t
 
 ### How values are read
 
-- Most gates are on when the variable is non-empty and does not start with `0` (`recomp::dbg::env_on` in `src/main/debug_logs.h`, and the local `env_on` in `lib/rt64`). `false` and `no` count as on for these.
+- Most gates are on when the variable is non-empty and does not start with `0` (`recomp::dbg::env_on` in `src/util/debug_logs.h`, and the local `env_on` in `lib/rt64`). `false` and `no` count as on for these.
 - `recomp::dbg::env_flag` (`LOG_VI`, `LOG_THREADS`, `LOG_RUMBLE`, `LOG_THROTTLE`) also treats `false` and `no` as off.
 - Some gates are on only when the value starts with `1` (e.g. `F5_SLOT_ID`, `F5_UNIQUE_ONLY`, `F5_NO_NEAR_CLIP`, `F5_NO_TILE_SPLIT`, `SKY_NOCULL`, `INTERP_HASH_TRIS`). Default-on kill switches mostly turn off only for a leading `0`.
 - A few test only that the variable exists, so even `0` turns them on: `LOG_STATE`, `LOG_PHASE`, `LOG_UCODESRC`, `BRIDGE_WORD2`, `D3D12_DEBUG`, `D3D12_GPUVAL`.
@@ -78,7 +78,7 @@ Other user options without flags:
 
 ### RT64 display overrides
 
-Applied in `create_render_context` (`src/main/rt64_render_context.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
+Applied in `create_render_context` (`src/video/rt64_render_context.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -99,7 +99,7 @@ Applied in `create_render_context` (`src/main/rt64_render_context.cpp`) after `r
 
 ## Boot / attract-demo navigation
 
-Driven from `update_screen` (`src/main/rt64_render_context.cpp`) and the nav sequencer (`src/main/nav_sequencer.cpp`); both poke game RDRAM or inject input each present.
+Driven from `update_screen` (`src/video/rt64_render_context.cpp`) and the nav sequencer (`src/game/nav_sequencer.cpp`); both poke game RDRAM or inject input each present.
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -110,6 +110,7 @@ Driven from `update_screen` (`src/main/rt64_render_context.cpp`) and the nav seq
 | `ROGUESQ_SKIP_TO_JADEMOON` | off | Alias for `ROGUESQ_SKIP_DEMO=1`. |
 | `ROGUESQ_NAV_STEP_BUDGET` | 1200 | Presents per nav step before the sequencer gives up. Raise for slow builds (e.g. `12000` for Linux Debug under WSL). |
 | `ROGUESQ_NAV_WATCH_CUTSCENES` | off | `1`: the nav sequencer presses nothing while a cutscene plays. |
+| `ROGUESQ_MOD_LEVEL` | unset | `<id>` of an installed mod level (a mod's levels.json): whenever its template plays (a `BOOT_TARGET` run, a replay of the template's recording), it plays as that mod level: its files, cutscenes, craft, medals and debrief. Logs the `[levels]` redirects. |
 
 ### Cutscene targets
 
@@ -166,7 +167,7 @@ Probes:
 - `ROGUESQ_MEM_SIZE_MB` (upstream_compat.cpp) — reported RDRAM size, default 8; 4 crashes boot.
 - `ROGUESQ_DUMP_ARBITER` (rt64_render_context.cpp) — log the buffer-arbiter progress pokes.
 - `ROGUESQ_TRIS_SCALE` / `ROGUESQ_DRAW_SCALE` / `ROGUESQ_TEX_SCALE` (upstream_compat.cpp) — scale of the RT64 workload proxies shown on the F5 profiler HUD (64 / 256 / 256).
-- `ROGUESQ_PROFILER_DUMP` (main.cpp) — sample the F5 profiler HUD's timing slots.
+- `ROGUESQ_PROFILER_DUMP` (input_host.cpp) — sample the F5 profiler HUD's timing slots.
 
 ## Rendering and the F5 GBI
 
@@ -209,7 +210,7 @@ Kill switches and A/B switches (`lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`, `rt6
 | `ROGUESQ_FBTEX_FIXED_CAP` | on | Fixed-capacity framebuffer-texture descriptor set (the cinematic descriptor-heap crash). `0` = legacy growth. |
 | `ROGUESQ_TGRID_MAP_CLAMP` | off | Also clamp the terrain view box to the map bounds (vanilla repeats edge tiles past the map). |
 
-Draw distance and terrain grid (`src/main/hook_helpers.cpp`):
+Draw distance and terrain grid (`src/game/hook_helpers.cpp`):
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -219,7 +220,7 @@ Draw distance and terrain grid (`src/main/hook_helpers.cpp`):
 | `ROGUESQ_LOG_TERRAIN_GRID` | off | `[tgrid]` terrain view bounding box (cells), level cell budget, running max dimension, peak cells streamed and budget hits, every 60 grid builds. |
 | `ROGUESQ_TGRID_BUDGET_MULT=<1-2>` | 2 when terrain dist >= 2, else 1 | Scales the level's terrain cell budget (and its heap pools) at level load. 3x exhausts the game heap and stalls the level load. |
 
-Presentation (`lib/rt64/src/hle/rt64_present_queue.cpp`, `src/main/rt64_render_context.cpp`):
+Presentation (`lib/rt64/src/hle/rt64_present_queue.cpp`, `src/video/rt64_render_context.cpp`):
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -306,7 +307,7 @@ Probes (`lib/rt64/src/gbi/rt64_gbi_f5_rdpstate.cpp` unless noted):
 
 | Env var | Default | Effect |
 |---|---|---|
-| `ROGUESQ_DUMP_FRAME_DL=N` | off | Debug builds only (a no-op in Release). Counts graphics tasks from launch and prints the opcode streams of tasks N..N+15 to stderr: per-command detail for N and N+1, texrect count and bounding box for all. `src/main/hook_helpers.cpp`. |
+| `ROGUESQ_DUMP_FRAME_DL=N` | off | Debug builds only (a no-op in Release). Counts graphics tasks from launch and prints the opcode streams of tasks N..N+15 to stderr: per-command detail for N and N+1, texrect count and bounding box for all. `src/game/hook_helpers.cpp`. |
 | `ROGUESQ_DUMP_TEXTURES` | off | With `DUMP_FRAME_DL`: writes 0x2000 bytes of each SETTIMG source in the detailed tasks to `dumps/tex/<addr>_fmt<f>_siz<s>.bin`. Debug only. |
 | `ROGUESQ_LOG_DL_HEALTH` | off | Every 10 s: `[dl-health] consume=… texrect=N followupOp=N cimgReject hi= low= past= width= window= ops: OP:count…`. Counts texrect follow-up words whose top byte is a nonzero opcode, and garbage color-image rejects (the walk-desync signal). |
 | `ROGUESQ_DESYNC_TRACE` | off | Keep a ring of the last 96 walked opcodes (`rt64_interpreter.cpp`) to dump at a desync. |
@@ -366,16 +367,11 @@ Probes: `ROGUESQ_TEST_DEVICE_LOST_AT_SUBMIT=<n>` (plume_vulkan.cpp) — report d
 
 ## Audio
 
-| Env var | Default | Effect |
-|---|---|---|
-| `ROGUESQ_SONGTABLE_FIX` | on | Pre-fill the uninitialized song table at 0x80139A00 with 0xFFFFFFFF so the intro song loads. |
-
-Probes (`src/main/main.cpp` unless noted):
+Probes (`src/audio/audio.cpp` unless noted):
 - `ROGUESQ_AUDIO_ASYNC` (ultramodern events.cpp) — run the MusyX synth without blocking the frame.
 - `ROGUESQ_LOG_AUDIO_OUT` (also librecomp ai.cpp) — PCM flow, silence vs content, AI buffer addresses.
 - `ROGUESQ_LOG_DMEM` — synth output buffers in DMEM.
 - `ROGUESQ_LOG_UCODESRC` — live synth ucode vs the recompiled source.
-- `ROGUESQ_DUMP_AUDIO_UCODE` — dump the MusyX ucode text and data once.
 - `ROGUESQ_DUMP_SYNTH_FRAME=<n>` + `ROGUESQ_DUMP_SYNTH_PATH` — RDRAM image and OSTask of the n-th audio task for `tools/musyx_replay`.
 - `ROGUESQ_BRIDGE_WORD2` — point task word2 at data_ptr.
 
@@ -389,7 +385,7 @@ Keyboard, mouse and gamepad bindings load from `roguesq_input.json` next to the 
 
 ## RDRAM dump triggers
 
-One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/validate/rdram_golden_diff.py`, from `src/main/rt64_render_context.cpp`. First match wins.
+One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/validate/rdram_golden_diff.py`, from `src/video/rt64_render_context.cpp`. First match wins.
 
 | Env var | Effect |
 |---|---|
@@ -426,7 +422,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/valida
 | `ROGUESQ_LOG_ZPRIM` | off | zSource=PRIM states | Each distinct PRIM-depth draw state once (and at 1000 / 100000 hits): otherMode, Z bits, cull bits, the game's primDepth and the value sent. |
 | `ROGUESQ_LOG_TERRAIN_CRACKS` | off | `[tcrack]` | Terrain tile-edge height mismatches every 5 s; expect 0 (thousands with `F5_TERRAIN_SEAMS=0`). |
 | `ROGUESQ_LOG_GAMESTATE` | off | engine globals | Level, craft, cinematic stage, screen, menu id on change and every 512 presents; `gateCtr` vs `cuts44` shows whether a cinematic is advancing. |
-| `ROGUESQ_LOG_STATE` / `ROGUESQ_LOG_PHASE` | off (presence) | scene state / slot dispatcher | Poller threads in `main.cpp`. |
+| `ROGUESQ_LOG_STATE` / `ROGUESQ_LOG_PHASE` | off (presence) | scene state / slot dispatcher | Poller threads in `debug_pollers.cpp`. |
 | `ROGUESQ_LOG_HOOKS` | off | `[hook t=...]` | Debug only: stderr from hook code (`rs64_dbg_log4`). |
 | `ROGUESQ_LOG_THROTTLE` | off | throttle | Positional HOTAS throttle about once a second: lever position, the craft's speed range, game vs. applied target. |
 | `ROGUESQ_LOG_RUMBLE` | off | rumble | Rumble Pak motor calls, effect id (0-12), health drops with hit scale, death-spiral sustain, host output; a state line every 2 s in missions. |
@@ -483,7 +479,7 @@ Test knobs used by `tools/lockstep/run-mp.ps1` (flag in brackets):
 ## How to add a new debug trace
 
 1. Reuse an existing category if one fits; otherwise pick a `ROGUESQ_LOG_<AREA>` name and add it to this file.
-2. Read the variable once and cache it. In `src/main`, use the helpers in `src/main/debug_logs.h`:
+2. Read the variable once and cache it. In `src/`, use the helpers in `src/util/debug_logs.h`:
 
    ```cpp
    static const bool s_log = recomp::dbg::env_on("ROGUESQ_LOG_X");

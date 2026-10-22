@@ -93,7 +93,63 @@ function openRom(buf) {
   };
   // Replaces an asset's contents for later reads (an edit that changes its size).
   const write = (path, bytes) => cache.set(path, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
-  return { assets, read, write };
+  // A new path that reads as an existing asset (a mod level's copies of its template's files); edits to it stay its own.
+  const aliases = new Map();
+  const alias = (path, from) => {
+    const a = assets.get(from);
+    if (!a || assets.has(path) && !aliases.has(path)) return;
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    assets.set(path, { ...a, path, name, dir: path.slice(0, path.lastIndexOf('/')) });
+    aliases.set(path, from);
+  };
+  const unalias = (path) => {
+    if (!aliases.delete(path)) return;
+    assets.delete(path);
+    cache.delete(path);
+  };
+  return { assets, read, write, alias, unalias, aliases };
+}
+
+// ---- Mod levels: a mod's levels.json (new levels that play as a stock template level, see src/game/mod_levels.h) ----
+function modLevelsParse(text) {
+  try {
+    const doc = JSON.parse(text || '{}');
+    return Array.isArray(doc.levels) ? doc.levels : [];
+  } catch {
+    return [];
+  }
+}
+const modLevelsWrite = (levels) => JSON.stringify({ levels }, null, 1) + '\n';
+// A new level from a template: id and folder from the title, made unique and kept to the game's 48-character folder limit.
+// data/medal_info: per level, bronze/silver/gold records of f32 minutes, then u16 kills, accuracy %, friendlies saved, bonus (bonus is not a mod level's).
+function medalInfo(dv, level) {
+  return Object.fromEntries(['bronze', 'silver', 'gold'].map((t, i) => {
+    const o = (level * 3 + i) * 0xC;
+    return [t, { time: Math.round(dv.getFloat32(o) * 100) / 100, kills: dv.getUint16(o + 4), accuracy: dv.getUint16(o + 6), friendlies: dv.getUint16(o + 8) }];
+  }));
+}
+// Thresholds for a level not made from a stock one.
+const MEDALS_SIMPLE = {
+  bronze: { time: 10, kills: 10, accuracy: 20, friendlies: 0 },
+  silver: { time: 8, kills: 20, accuracy: 35, friendlies: 0 },
+  gold: { time: 6, kills: 30, accuracy: 50, friendlies: 0 },
+};
+function modLevelNew(levels, title, template, medals = MEDALS_SIMPLE) {
+  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 44) || 'level';
+  let folder = base;
+  for (let k = 2; levels.some((l) => l.folder === folder || l.id === folder); k++) folder = `${base}_${k}`;
+  return { id: folder, title, description: '', template, folder, medals: structuredClone(medals) };
+}
+// [new path, template path] for a mod level: every file of its template's folder, and the template's intro/extro (levels 0-15 have them).
+function modLevelAliases(level, assetKeys) {
+  const dir = 'data/level/lv_' + level.template.toString(36) + '/', out = [];
+  for (const k of assetKeys) if (k.startsWith(dir)) out.push(['data/level/' + level.folder + '/' + k.slice(dir.length), k]);
+  const keys = new Set(out.map(([, k]) => k));
+  for (const kind of ['intro', 'extro']) {
+    const src = `data/cuts/id${level.template}_${kind}`;
+    if (level.template <= 15) out.push([`data/cuts/${level.folder}_${kind}`, src]);
+  }
+  return keys.size ? out : [];
 }
 
 // ---- HMT: materials + textures decoded to RGBA8 ----
@@ -482,6 +538,47 @@ function datRebuild(orig, type, entries, region, extra) {
   o.setUint32(type * 8, entries.length);
   for (let k = 0; k < 8; k++) if (k !== type && o.getUint32(k * 8 + 4) >= s.end) o.setUint32(k * 8 + 4, o.getUint32(k * 8 + 4) + delta);
   if (o.getUint32(0x44) >= s.end) o.setUint32(0x44, o.getUint32(0x44) + delta);
+  return datRebuildNameMap(out);
+}
+// The name map (last in the file; size +0x40, offset +0x44) is how the game finds items by name (getLevelDatItemByName): 256 bucket
+// offsets relative to the map, each to { type, index } pairs ending in { -1, -1 }, sorted by type then index. Bucket = this hash.
+const datNameHash = (name) => {
+  let h = 0xffff;
+  for (let i = 0; i < name.length; i++) h = (name.charCodeAt(i) + (h & 0xffff) * 0x21) >>> 0;
+  return h & 0xff;
+};
+function datLookup(bytes, name) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), map = dv.getUint32(0x44), rel = dv.getUint32(map + datNameHash(name) * 4);
+  if (!rel) return null;
+  const items = parseDAT(dv).items;
+  for (let e = map + rel; dv.getInt32(e) !== -1; e += 8) {
+    const it = items.find((x) => x.type === dv.getUint32(e) && x.index === dv.getUint32(e + 4));
+    if (it?.name === name) return { type: it.type, index: it.index };
+  }
+  return null;
+}
+// Rewrites the name map from the items, so added, removed or moved items are found by name.
+function datRebuildNameMap(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), map = dv.getUint32(0x44);
+  const buckets = Array.from({ length: 256 }, () => []);
+  for (const it of parseDAT(dv).items.filter((x) => x.name).sort((a, b) => a.type - b.type || a.index - b.index)) buckets[datNameHash(it.name)].push(it);
+  const size = 0x400 + buckets.reduce((n, b) => n + (b.length ? (b.length + 1) * 8 : 0), 0);
+  const out = new Uint8Array(map + size), o = new DataView(out.buffer);
+  out.set(bytes.subarray(0, map));
+  o.setUint32(0x40, size);
+  let at = 0x400;
+  buckets.forEach((b, k) => {
+    if (!b.length) return;
+    o.setUint32(map + k * 4, at);
+    for (const it of b) {
+      o.setUint32(map + at, it.type);
+      o.setUint32(map + at + 4, it.index);
+      at += 8;
+    }
+    o.setInt32(map + at, -1);
+    o.setInt32(map + at + 4, -1);
+    at += 8;
+  });
   return out;
 }
 // Appends a record (a copy of an existing item, whose offsets are all record-relative) to a type's list; it becomes the last index.
@@ -494,6 +591,340 @@ function datAddItem(orig, type, record) {
   padded.set(region);
   entries.push((s.count + 1) * 4 + padded.length);
   return datRebuild(orig, type, entries, padded, record);
+}
+// Points a type's list entry at a new record appended to the section, so the item keeps its index; the old bytes stay, unreferenced.
+function datReplaceItem(orig, type, index, record) {
+  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const region = orig.subarray(s.list + s.count * 4, s.end), pad = (4 - (region.length % 4)) % 4;
+  const entries = [];
+  for (let i = 0; i < s.count; i++) entries.push(dv.getUint32(s.list + i * 4));
+  const padded = new Uint8Array(region.length + pad);
+  padded.set(region);
+  entries[index] = s.count * 4 + padded.length;
+  return datRebuild(orig, type, entries, padded, record);
+}
+// Enemies and NPCs that can wait for a wave: the type-0 subtypes the game defers (+0x88 == 0, parseDatSpawnPositions) and spawns once
+// flag +0x60 is set and counter +0x64 >= +0x68 (isDatItemConditionMet; 0 = no condition), flying the path named at +0x8C (record-relative
+// offset to the record's last string; "-" none, "+name" a roam box). Only subtypes stock levels defer this way; World Devastators (0x37)
+// are left out because data follows their path string.
+const WAVE_LAYOUT = { flag: 0x60, counter: 0x64, atLeast: 0x68, gridSpawn: 0x88, path: 0x8C };
+const WAVE_FIELDS = Object.fromEntries([0x3B, 0x3D, 0x12, 0x0C, 0x13, 0x1F, 0x3C, 0x25, 0x47, 0x21, 0x24, 0x0F, 0x2E, 0x2B, 0x2C, 0x3E, 0x29, 0x35, 0x2D, 0x30, 0x31, 0x2F, 0x34, 0x48].map((s) => [s, WAVE_LAYOUT]));
+function waveGet(dv, item) {
+  const L = item.type === 0 && WAVE_FIELDS[item.sub], o = item.offset;
+  if (!L) return null;
+  const size = dv.getUint32(o + 8), po = dv.getUint32(o + L.path);
+  let path = '';
+  for (let i = po; i < size && dv.getUint8(o + i); i++) path += String.fromCharCode(dv.getUint8(o + i));
+  return { flag: dv.getUint32(o + L.flag), counter: dv.getUint32(o + L.counter), atLeast: dv.getUint32(o + L.atLeast), gridSpawn: dv.getUint32(o + L.gridSpawn), path };
+}
+// Path (type 3 sub 3) geometry: point count +0x1C, offset +0x20 (XYZ relative to the item position +0x10), arc length +0x24, then a
+// table of n-2 cumulative fractions after the points. Length and table are the Catmull-Rom arc length over the interior segments.
+function splinePoints(dv, item) {
+  const o = item.offset, n = dv.getUint32(o + 0x1C), po = o + dv.getUint32(o + 0x20), base = [0x10, 0x14, 0x18].map((c) => dv.getFloat32(o + c));
+  return Array.from({ length: n }, (_, k) => [0, 1, 2].map((a) => dv.getFloat32(po + k * 12 + a * 4) + base[a]));
+}
+function splineSetPoints(bytes, item, points) {
+  const out = bytes.slice(), dv = new DataView(out.buffer), o = item.offset, n = points.length, po = o + dv.getUint32(o + 0x20);
+  const base = [0x10, 0x14, 0x18].map((c) => dv.getFloat32(o + c)), rel = points.map((p) => p.map((v, a) => Math.fround(v - base[a])));
+  rel.forEach((p, k) => p.forEach((v, a) => dv.setFloat32(po + k * 12 + a * 4, v)));
+  const cr = (p0, p1, p2, p3, t) => [0, 1, 2].map((a) => 0.5 * (2 * p1[a] + (p2[a] - p0[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t * t + (3 * p1[a] - p0[a] - 3 * p2[a] + p3[a]) * t * t * t));
+  const cum = [0];
+  for (let k = 1; k < n - 2; k++) {
+    let l = 0, prev = rel[k];
+    for (let i = 1; i <= 16; i++) {
+      const q = cr(rel[k - 1], rel[k], rel[k + 1], rel[k + 2], i / 16);
+      l += Math.hypot(q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]);
+      prev = q;
+    }
+    cum.push(cum.at(-1) + l);
+  }
+  const total = cum.at(-1);
+  dv.setFloat32(o + 0x24, total);
+  cum.forEach((c, k) => dv.setFloat32(po + n * 12 + k * 4, total > 0 ? c / total : k / (cum.length - 1)));
+  return out;
+}
+// Path events: nodes (count +0x28, offset +0x2C; f32 fraction, u16 0, u16 k) index a reference table (count +0xD4, offset +0xD8 relative
+// to +0xD4; u16 type, u16 index). Eight 16-byte blocks at +0x60 start with an offset to a lead-count list of continuation path names.
+function splineEvents(dv, item) {
+  const o = item.offset, nn = dv.getUint32(o + 0x28), no = o + dv.getUint32(o + 0x2C), nr = dv.getUint32(o + 0xD4), ro = o + 0xD4 + dv.getUint32(o + 0xD8);
+  return {
+    nodes: Array.from({ length: nn }, (_, k) => ({ at: dv.getFloat32(no + k * 8), k: dv.getUint16(no + k * 8 + 6) })),
+    refs: Array.from({ length: nr }, (_, k) => ({ type: dv.getUint16(ro + k * 4), index: dv.getUint16(ro + k * 4 + 2) })),
+  };
+}
+// The record with new events (and optionally a new name and its continuation links cleared), all appended at its end.
+function splineRecord(dv, item, { name, nodes, refs, clearLinks }) {
+  const o = item.offset, size = dv.getUint32(o + 8), text = name ? new TextEncoder().encode(name) : new Uint8Array(0);
+  const nameAt = size, nodesAt = (nameAt + (name ? text.length + 1 : 0) + 3) & ~3, refsAt = nodesAt + nodes.length * 8;
+  const rec = new Uint8Array(refsAt + refs.length * 4), r = new DataView(rec.buffer);
+  rec.set(new Uint8Array(dv.buffer, dv.byteOffset + o, size));
+  if (name) {
+    rec.set(text, nameAt);
+    r.setUint32(0x0C, nameAt);
+  }
+  if (clearLinks) for (let k = 0; k < 8; k++) r.setUint32(0x60 + k * 16, nameAt + text.length);
+  nodes.forEach((n, k) => {
+    r.setFloat32(nodesAt + k * 8, n.at);
+    r.setUint16(nodesAt + k * 8 + 6, n.k);
+  });
+  refs.forEach((x, k) => {
+    r.setUint16(refsAt + k * 4, x.type);
+    r.setUint16(refsAt + k * 4 + 2, x.index);
+  });
+  r.setUint32(8, rec.length);
+  r.setUint32(0x28, nodes.length);
+  r.setUint32(0x2C, nodes.length ? nodesAt : 0);
+  r.setUint32(0xD4, refs.length);
+  r.setUint32(0xD8, refsAt - 0xD4);
+  return rec;
+}
+const uniqueName = (bytes, base) => {
+  let name = base;
+  for (let k = 2; datLookup(bytes, name); k++) name = `${base}_${k}`;
+  return name;
+};
+// Events a copied path keeps: craft action, speed, weave, landing pitch, and fly-to the player. Others name their old level's items or
+// flags (attack targets, holds, named fly-to) and are dropped.
+const PATH_EVENT_KEEP = new Set([0x1A, 0x1B, 0x1C, 0x23, 0x4E]);
+const keepsEvent = (t) => t && PATH_EVENT_KEEP.has(t.sub) && (t.sub !== 0x4E || !t.pathEvent?.target);
+// A craft that reaches the end of a path with no continuation reads a NULL next path (crash), and an event at exactly 1.0 never fires
+// first; the end attack sits just before the end.
+const PATH_ATTACK_AT = 0.95;
+const isEndAttack = (n, refs, t7) => n.at >= 0.9 && refs[n.k]?.type === 7 && t7.some((x) => x.index === refs[n.k].index && x.sub === 0x4E && !x.pathEvent?.target);
+// Copies a path into another DAT under name, moved so its first interior point (where an NPC starts) is at `at`. Its continuation
+// links are cleared, so unless it keeps a fly-to-the-player event it gets one from `attack` (a stock 0x4E "+" record).
+function splineCopy(fromBytes, spline, toBytes, { name, at, attack }) {
+  const fdv = new DataView(fromBytes.buffer, fromBytes.byteOffset, fromBytes.byteLength), t7 = parseDAT(fdv).items.filter((x) => x.type === 7);
+  const { nodes, refs } = splineEvents(fdv, spline), keepNodes = [], keepRefs = [];
+  let out = toBytes, dropped = 0;
+  for (const n of nodes) {
+    const ref = refs[n.k], t = ref?.type === 7 && t7.find((x) => x.index === ref.index);
+    if (!keepsEvent(t)) {
+      dropped++;
+      continue;
+    }
+    keepRefs.push({ type: 7, index: new DataView(out.buffer, out.byteOffset, out.byteLength).getUint32(7 * 8) });
+    out = datAddItem(out, 7, fromBytes.slice(t.offset, t.offset + fdv.getUint32(t.offset + 8)));
+    keepNodes.push({ at: n.at, k: keepRefs.length - 1 });
+  }
+  if (attack && !nodes.some((n) => isEndAttack(n, refs, t7))) {
+    keepRefs.push({ type: 7, index: new DataView(out.buffer, out.byteOffset, out.byteLength).getUint32(7 * 8) });
+    out = datAddItem(out, 7, attack);
+    keepNodes.push({ at: PATH_ATTACK_AT, k: keepRefs.length - 1 });
+  }
+  const rec = splineRecord(fdv, spline, { name, nodes: keepNodes, refs: keepRefs, clearLinks: true }), r = new DataView(rec.buffer);
+  const start = splinePoints(fdv, spline)[1];
+  for (let a = 0; a < 3; a++) r.setFloat32(0x10 + a * 4, r.getFloat32(0x10 + a * 4) + at[a] - start[a]);
+  return { bytes: datAddItem(out, 3, rec), dropped };
+}
+// True when the path ends by sending its NPC at the player (a fly-to event with no target at the end).
+function splineAttackEnd(bytes, item) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), t7 = parseDAT(dv).items.filter((x) => x.type === 7), { nodes, refs } = splineEvents(dv, item);
+  return nodes.some((n) => isEndAttack(n, refs, t7));
+}
+// Adds (copying template, a stock fly-to-player record) or removes the end attack; the path keeps its index.
+function splineSetAttackEnd(bytes, item, on, template) {
+  let out = bytes;
+  const dv0 = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), t7 = parseDAT(dv0).items.filter((x) => x.type === 7);
+  let { nodes, refs } = splineEvents(dv0, item);
+  if (on) {
+    refs = [...refs, { type: 7, index: dv0.getUint32(7 * 8) }];
+    nodes = [...nodes, { at: PATH_ATTACK_AT, k: refs.length - 1 }];
+    out = datAddItem(out, 7, template);
+  } else {
+    nodes = nodes.filter((n) => !isEndAttack(n, refs, t7));
+  }
+  const dv = new DataView(out.buffer, out.byteOffset, out.byteLength), now = parseDAT(dv).items.find((x) => x.type === 3 && x.index === item.index);
+  return datReplaceItem(out, 3, item.index, splineRecord(dv, now, { nodes, refs }));
+}
+// Mission flags (1-based bytes at 0x801388A0; stock levels use up to 128) the level's DAT reads or writes: wave gates, trigger
+// conditions and effects, HUD arrow conditions. Level scripts set more that the DAT never names (mostly low numbers).
+function levelUsedFlags(dv) {
+  const used = new Set();
+  for (const it of parseDAT(dv).items) {
+    const w = waveGet(dv, it);
+    for (const f of [w?.flag, it.requires?.flag, it.onEnter?.flag, it.onExit?.flag, it.waypoint?.flag, it.waypoint?.hideFlag]) if (f) used.add(f);
+    const d = isUnit(it) && unitDeath(dv, it).flag;
+    if (d > 0 && d <= 128) used.add(d);
+  }
+  return used;
+}
+// A type-0 unit's death effect (datItemSetObjectiveBooleanCount, record-relative): counter +0x70 += +0x74, flag +0x78 = +0x7C,
+// counter2 +0x80 += +0x84. All 1-based; 0 = none. Only units the game can destroy run it.
+const UNIT_DEATH = { counter: 0x70, add: 0x74, flag: 0x78, value: 0x7C, counter2: 0x80, add2: 0x84 };
+const isUnit = (it) => it.type === 0 && ![0x01, 0x02, 0x26, 0x27].includes(it.sub);
+const unitDeath = (dv, it) => Object.fromEntries(Object.entries(UNIT_DEATH).map(([k, o]) => [k, dv.getInt32(it.offset + o)]));
+// Objective counters and flags the level's DAT already uses (so objectives take others).
+function levelUsedObjectiveSlots(dv) {
+  const counters = new Set(), flags = levelUsedFlags(dv);
+  for (const it of parseDAT(dv).items) {
+    for (const b of [it.onEnter, it.onExit]) if (b?.counter) counters.add(b.counter);
+    if (it.requires?.counter) counters.add(it.requires.counter);
+    if (it.pathEvent?.addCounter) counters.add(it.pathEvent.addCounter);
+    if (isUnit(it)) {
+      const d = unitDeath(dv, it);
+      for (const c of [d.counter, d.counter2]) if (c > 0 && c <= 128) counters.add(c);
+      if (d.flag > 0 && d.flag <= 128) flags.add(d.flag);
+    }
+  }
+  return { counters, flags };
+}
+// The DAT items an objective uses: destroy = units adding to its counter (counter2), protect = the unit setting its flag on death,
+// reach = the area triggers setting its flag on enter.
+function objectiveTargets(dv, obj) {
+  const items = parseDAT(dv).items;
+  if (obj.goal === 'destroy') return items.filter((it) => isUnit(it) && unitDeath(dv, it).counter2 === obj.counter);
+  if (obj.goal === 'protect') return items.filter((it) => isUnit(it) && unitDeath(dv, it).flag === obj.flag);
+  if (obj.goal === 'reach') return items.filter((it) => it.type === 7 && it.onEnter && it.onEnter.flag === obj.flag);
+  return [];
+}
+// Writes objectives into a level DAT. objs: [{ text, goal, seconds, targets: [DAT indices] }] (destroy/protect: type-0 units, reach:
+// type-7 area triggers). Old objective wiring (prev, as returned before) is cleared first. Returns { bytes, objectives } with the
+// counters/flags picked (top down from 128, away from what the level uses) and the levels.json objectives.
+function objectivesApply(orig, prev, objs) {
+  const bytes = orig.slice(), dv = new DataView(bytes.buffer), items = parseDAT(dv).items;
+  const put = (it, o, v) => dv.setInt32(it.offset + o, v);
+  for (const p of prev ?? []) {
+    for (const it of objectiveTargets(dv, p)) {
+      if (p.goal === 'destroy') put(it, UNIT_DEATH.counter2, 0), put(it, UNIT_DEATH.add2, 0);
+      else if (p.goal === 'protect') put(it, UNIT_DEATH.flag, 0), put(it, UNIT_DEATH.value, 0);
+      else if (p.goal === 'reach') dv.setUint32(it.offset + (it.sub === 0x18 ? 0x38 : 0x48) + 8, 0);
+    }
+  }
+  const used = levelUsedObjectiveSlots(dv), pick = (set) => {
+    for (let i = 128; i >= 1; i--) if (!set.has(i)) return set.add(i), i;
+    throw new Error('No free objective counter or flag');
+  };
+  const out = objs.map((o) => {
+    const targets = o.targets.map((i) => items[i]);
+    if (o.goal === 'destroy') {
+      const counter = pick(used.counters);
+      for (const it of targets) put(it, UNIT_DEATH.counter2, counter), put(it, UNIT_DEATH.add2, 1);
+      return { text: o.text, goal: o.goal, counter, count: o.count ?? targets.length };
+    }
+    if (o.goal === 'protect' || o.goal === 'reach') {
+      const flag = pick(used.flags);
+      for (const it of targets) {
+        if (o.goal === 'protect') put(it, UNIT_DEATH.flag, flag), put(it, UNIT_DEATH.value, 1);
+        else {
+          const b = it.offset + (it.sub === 0x18 ? 0x38 : 0x48);
+          dv.setUint32(b + 8, flag);
+          dv.setUint8(b + 0xF, 1);
+        }
+      }
+      return { text: o.text, goal: o.goal, flag };
+    }
+    return { text: o.text, goal: o.goal, seconds: o.seconds };
+  });
+  return { bytes, objectives: out };
+}
+// A blank level's DAT: every item removed but the player start (the only one a level needs; the game ran one like this to its debrief).
+function datBlank(orig) {
+  let bytes = orig;
+  for (const type of Object.keys(DAT_TYPES).map(Number)) {
+    for (;;) {
+      const left = parseDAT(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)).items.filter((it) => it.type === type && !(type === 0 && it.sub === 0x01));
+      if (!left.length) break;
+      bytes = datRemoveItem(bytes, type, left[left.length - 1].index);
+    }
+  }
+  return bytes;
+}
+// Flat ground at the terrain's median height (cells keep their textures, so the ground still looks like the level's).
+function hmpFlat(orig) {
+  const hmp = parseHMP(new DataView(orig.buffer, orig.byteOffset, orig.byteLength)), g = hmpGrid(hmp);
+  const h = [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
+  g.hts.fill(h);
+  return writeHMP(orig, g);
+}
+// A record copied from another level starts inert: an area trigger's condition and enter/exit effects are cleared, a wingman's path dropped.
+function recordInert(rec, it) {
+  const dv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength);
+  // A wingman spawn names its path right after its own name; without one it stays put (like lv_3's Han_Solo_Stationary).
+  if (it.type === 0 && it.sub === 0x27 && it.name) rec.fill(0, dv.getUint32(0x0C) + it.name.length + 1, dv.getUint32(0x0C) + it.name.length + 2);
+  if (it.type === 7 && it.onEnter) {
+    const base = it.sub === 0x18 ? 0x38 : 0x48;
+    for (let o = base; o < base + 0x20; o += 4) dv.setUint32(o, 0);
+    if (it.sub === 0x18) for (const o of [0x28, 0x2C, 0x30]) dv.setUint32(o, 0);
+  }
+  return rec;
+}
+// A wave's flag: its own if named before, else the highest flag up to 128 that neither the level nor another wave uses (top down, away
+// from the low numbers level scripts use).
+function waveFlagFor(waves, name, used) {
+  if (waves[name]) return waves[name];
+  const taken = new Set(Object.values(waves));
+  for (let f = 128; f >= 1; f--) if (!used.has(f) && !taken.has(f)) return f;
+  return 0;
+}
+// A trigger's enter block for waves: 'free' (no flag), 'wave' (raises a wave's flag), 'stock' (sets or clears a flag the mission uses).
+const triggerWave = (onEnter, waves) => (!onEnter.flag ? 'free' : onEnter.value && Object.values(waves).includes(onEnter.flag) ? 'wave' : 'stock');
+// Subtypes proven to spawn with their model when copied into a level that has none (TIE fighter, TIE interceptor).
+const WAVE_FOREIGN = new Set([0x0C, 0x12]);
+// Appends a copied enemy record at pos with no wave gate and no path: a template's gate and spline name belong to its own level.
+function datAddEnemy(bytes, record, pos) {
+  const rec = record.slice();
+  pos.forEach((v, a) => new DataView(rec.buffer).setFloat32(0x10 + a * 4, v));
+  const out = datAddItem(bytes, 0, rec), it = parseDAT(new DataView(out.buffer)).items.filter((x) => x.type === 0).at(-1);
+  return waveSet(out, it, { flag: 0, counter: 0, atLeast: 0, gridSpawn: 0, path: '-' });
+}
+// Copy of the DAT with the given wave fields of one item changed. A path that does not fit where the old one was grows the record
+// (datReplaceItem, same index), so re-parse the result for the item's offset.
+function waveSet(bytes, item, fields) {
+  const L = WAVE_FIELDS[item.sub], o = item.offset, out = bytes.slice(), dv = new DataView(out.buffer);
+  for (const k of ['flag', 'counter', 'atLeast', 'gridSpawn']) if (fields[k] !== undefined) dv.setUint32(o + L[k], fields[k]);
+  return fields.path === undefined ? out : npcSetPath(out, item, fields.path);
+}
+// The field holding the record offset of an NPC's path (or roam area) name, the record's last string: enemies +0x8C, wingman spawns +0x94
+// (all 139 stock ones). 0 for items that fly no path.
+const npcPathField = (it) => (it.type !== 0 ? 0 : WAVE_FIELDS[it.sub] ? WAVE_LAYOUT.path : it.sub === 0x27 ? 0x94 : 0);
+function npcPathGet(dv, it) {
+  const o = it.offset, size = dv.getUint32(o + 8), po = dv.getUint32(o + npcPathField(it));
+  let path = '';
+  for (let i = po; i < size && dv.getUint8(o + i); i++) path += String.fromCharCode(dv.getUint8(o + i));
+  return path;
+}
+function npcSetPath(bytes, item, path) {
+  const o = item.offset, out = bytes.slice(), dv = new DataView(out.buffer);
+  const size = dv.getUint32(o + 8), po = dv.getUint32(o + npcPathField(item)), text = new TextEncoder().encode(path);
+  if (text.length < size - po) {
+    out.fill(0, o + po, o + size);
+    out.set(text, o + po);
+    return out;
+  }
+  const grown = new Uint8Array((po + text.length + 1 + 3) & ~3);
+  grown.set(out.subarray(o, o + po));
+  grown.set(text, po);
+  new DataView(grown.buffer).setUint32(8, grown.length);
+  return datReplaceItem(out, item.type, item.index, grown);
+}
+// Removes a zone (type 6) or trigger (type 7) and renumbers what refers to them by index: paths' reference tables (4-byte entries,
+// u16 type + u16 index, at item + [+0xD8] + 0xD4; count +0xD4) and zones' link lists (count +0xA4, u16s at item + [+0xA8] + 0xA6).
+// A trigger a path fires cannot go (throws with the path's name); links to a removed zone are dropped.
+function datRemoveIndexed(orig, type, index) {
+  const before = parseDAT(new DataView(orig.buffer, orig.byteOffset, orig.byteLength)).items;
+  const user = before.find((it) => it.type === 3 && it.events?.some((e) => e.trigger === index) && type === 7);
+  if (user) throw new Error(`The path "${user.name}" fires it`);
+  const out = datRemoveItem(orig, type, index), dv = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  for (const it of parseDAT(dv).items) {
+    const o = it.offset, size = dv.getUint32(o + 8);
+    if (type === 7 && it.type === 3 && size > 0xDC) {
+      const n = dv.getUint32(o + 0xD4), ref = o + 0xD4 + dv.getUint32(o + 0xD8);
+      for (let k = 0; k < n && n < 256; k++) {
+        const i = dv.getUint16(ref + k * 4 + 2);
+        if (dv.getUint16(ref + k * 4) === 7 && i > index) dv.setUint16(ref + k * 4 + 2, i - 1);
+      }
+    }
+    if (type === 6 && it.type === 6 && size >= 0xAC) {
+      const n = dv.getUint32(o + 0xA4), lo = o + dv.getUint32(o + 0xA8) + 0xA6;
+      if (!n || n >= 64) continue;
+      const links = Array.from({ length: n }, (_, k) => dv.getUint16(lo + k * 2)).filter((i) => i !== index).map((i) => (i > index ? i - 1 : i));
+      links.forEach((i, k) => dv.setUint16(lo + k * 2, i));
+      for (let k = links.length; k < n; k++) dv.setUint16(lo + k * 2, 0);
+      dv.setUint32(o + 0xA4, links.length);
+    }
+  }
+  return out;
 }
 // Drops one entry from a type's list; later items of that type move down one index. The record's bytes stay, unreferenced.
 function datRemoveItem(orig, type, index) {
@@ -589,7 +1020,7 @@ function parseDAT(dv) {
     for (let i = 0; i < count; i++) {
       const it = list + dv.getUint32(list + i * 4);
       const nameOff = dv.getUint32(it + 0x0C);
-      const name = nameOff ? cstr(dv, it + nameOff, 48) : '';
+      const name = nameOff ? cstr(dv, it + nameOff, 255) : '';
       const f = (o) => dv.getFloat32(it + o);
       const item = { type: +type, index: i, offset: it, sub: dv.getUint16(it), name, pos: [f(0x10), f(0x14), f(0x18)] };
       if (+type === 0) {
@@ -784,12 +1215,17 @@ function parseCutsceneVoice(dv) {
   return { length: dv.getFloat32(0x50), events };
 }
 
-// Voice ids a DAT trigger leads to: a LINE_n name is a voice id; counters and flags it sets run the handlers the level script
-// registered for them. tv = one level of RS64_TRIGGER_VOICES ({ c: counter -> ids, b: flag -> ids }, from tools/rs64-explorer-data/gen_voice_cats.mjs).
+// Voice ids a DAT trigger leads to: a LINE_n name is a voice id; counters and flags it sets run the handlers the level script registered
+// for them (c, b) or that its checks poll (pc, pb: flag -> value written -> ids). tv = one level of RS64_TRIGGER_VOICES (gen_voice_cats.mjs).
 function triggerVoiceIds(it, tv) {
   const ids = it.voiceId != null ? [it.voiceId] : [];
   const p = it.pathEvent, acts = [it.onEnter, it.onExit, p && { counter: p.addCounter, flag: p.setFlag, value: p.value }];
-  if (tv) for (const a of acts.filter(Boolean)) ids.push(...(tv.c[a.counter] ?? []), ...(a.value ? (tv.b[a.flag] ?? []) : []));
+  if (tv) {
+    for (const a of acts.filter(Boolean)) {
+      if (a.counter) ids.push(...(tv.c[a.counter] ?? []), ...(tv.pc?.[a.counter] ?? []));
+      if (a.flag) ids.push(...(a.value ? (tv.b[a.flag] ?? []) : []), ...(tv.pb?.[a.flag]?.[a.value] ?? []));
+    }
+  }
   return [...new Set(ids)];
 }
 
@@ -1073,6 +1509,256 @@ function decodeMort(speech, offset, size) {
     if (loops > 50000) break;
   }
   return Int16Array.from(pcm);
+}
+
+// 8 kHz mono PCM -> one MORT stream: a GSM 06.10 full-rate coder (port of libgsm's fixed-point encoder, the decoder above is its
+// inverse). Header "MORT", u16 frames, u16 rate, u32 words with the header; from bit 96, runs of 1-128 coded frames (bit 0, 7 bits
+// count - 1) of 260 bits each, packed LSB-first into big-endian words.
+function encodeMort(pcm) {
+  const sat = (x) => (x < -32768 ? -32768 : x > 32767 ? 32767 : x);
+  const lsat = (x) => (x < -2147483648 ? -2147483648 : x > 2147483647 ? 2147483647 : x);
+  const add = (a, b) => sat(a + b), sub = (a, b) => sat(a - b);
+  const multR = (a, b) => (a === -32768 && b === -32768 ? 32767 : Math.floor((a * b + 16384) / 32768));
+  const mult = (a, b) => (a === -32768 && b === -32768 ? 32767 : Math.floor((a * b) / 32768));
+  const asr = (a, n) => Math.floor(a / 2 ** n);
+  const abs = (a) => (a === -32768 ? 32767 : Math.abs(a));
+  const norm = (a) => Math.clz32(a < 0 ? (a <= -1073741824 ? 0 : ~a) : a) - 1;
+  const div = (num, den) => {
+    let r = 0, L_num = num;
+    for (let k = 15; k--;) {
+      r <<= 1;
+      L_num <<= 1;
+      if (L_num >= den) {
+        L_num -= den;
+        r++;
+      }
+    }
+    return r;
+  };
+  const STEPS = [[20480, 0, 31, -32], [20480, 0, 31, -32], [20480, 2048, 15, -16], [20480, -2560, 15, -16], [13964, 94, 7, -8], [15360, -1792, 7, -8], [8534, -341, 3, -4], [9036, -1144, 3, -4]];
+  const INVA = [13107, 13107, 13107, 13107, 19223, 17476, 31454, 29708];
+  const H = [-134, -374, 0, 2054, 5741, 8192, 5741, 2054, 0, -374, -134];
+  const DLB = [6554, 16384, 26214, 32767], QLB = [3277, 11469, 21299, 32767];
+  const NRFAC = [29128, 26215, 23832, 21846, 20165, 18725, 17476, 16384], FAC = [18431, 20479, 22527, 24575, 26623, 28671, 30719, 32767];
+  const st = { z1: 0, L_z2: 0, mp: 0, u: new Array(8).fill(0), LARpp: [new Array(8).fill(0), new Array(8).fill(0)], j: 0, dp0: new Array(280).fill(0) };
+
+  const frame = (s) => {
+    // Preprocessing: downscale to 13 bits, offset compensation, pre-emphasis.
+    const so = new Array(160);
+    for (let k = 0; k < 160; k++) {
+      const SO = asr(s[k], 3) * 4;
+      const s1 = SO - st.z1;
+      st.z1 = SO;
+      let L_s2 = s1 * 32768;
+      const msp = asr(st.L_z2, 15), lsp = st.L_z2 - msp * 32768;
+      L_s2 += multR(lsp, 32735);
+      st.L_z2 = lsat(msp * 32735 + L_s2);
+      const L_temp = lsat(st.L_z2 + 16384);
+      const m = multR(st.mp, -28180);
+      st.mp = asr(L_temp, 15);
+      so[k] = add(st.mp, m);
+    }
+    // LPC analysis: autocorrelation, Schur reflection coefficients, log-area ratios, quantization.
+    let smax = 0;
+    for (const v of so) smax = Math.max(smax, abs(v));
+    const scal = smax === 0 ? 0 : 4 - norm(smax << 16);
+    const ss = scal > 0 ? so.map((v) => multR(v, 16384 >> (scal - 1))) : so.slice();
+    const L_ACF = new Array(9).fill(0);
+    for (let k = 0; k < 9; k++) {
+      let acc = 0;
+      for (let i = k; i < 160; i++) acc += ss[i] * ss[i - k];
+      L_ACF[k] = acc * 2;
+    }
+    const r = new Array(8).fill(0);
+    if (L_ACF[0] !== 0) {
+      const t = norm(L_ACF[0]);
+      const ACF = L_ACF.map((v) => asr(v * 2 ** t, 16));
+      const P = ACF.slice(), K = ACF.slice();
+      for (let n = 1; n <= 8; n++) {
+        const temp = abs(P[1]);
+        if (P[0] < temp) break;
+        let rn = div(temp, P[0]);
+        if (P[1] > 0) rn = -rn;
+        r[n - 1] = rn;
+        if (n === 8) break;
+        P[0] = add(P[0], multR(P[1], rn));
+        for (let m = 1; m <= 8 - n; m++) {
+          P[m] = add(P[m + 1], multR(K[m], rn));
+          K[m] = add(K[m], multR(P[m + 1], rn));
+        }
+      }
+    }
+    const LARc = r.map((v, i) => {
+      let t = abs(v);
+      t = t < 22118 ? t >> 1 : t < 31130 ? t - 11059 : (t - 26112) << 2;
+      const lar = v < 0 ? -t : t;
+      const [A, B, MAC, MIC] = STEPS[i];
+      const q = asr(add(add(mult(A, lar), B), 256), 9);
+      return q > MAC ? MAC - MIC : q < MIC ? 0 : q - MIC;
+    });
+    // Short-term analysis filter with the decoded, interpolated LARs (as the decoder will see them).
+    const cur = st.LARpp[st.j], prev = st.LARpp[st.j ^ 1];
+    st.j ^= 1;
+    LARc.forEach((c, i) => {
+      const [, B, , MIC] = STEPS[i];
+      const t = multR(INVA[i], sub(add(c, MIC) * 1024, B * 2));
+      cur[i] = add(t, t);
+    });
+    const toRp = (v) => {
+      let t = abs(v);
+      t = t < 11059 ? t << 1 : t < 20070 ? t + 11059 : (t >> 2) + 26112;
+      return v < 0 ? -t : t;
+    };
+    const filt = (lar, from, n) => {
+      const rp = lar.map(toRp);
+      for (let k = from; k < from + n; k++) {
+        let di = so[k], sav = di;
+        for (let i = 0; i < 8; i++) {
+          const ui = st.u[i];
+          st.u[i] = sav;
+          sav = add(ui, multR(rp[i], di));
+          di = add(di, multR(rp[i], ui));
+        }
+        so[k] = di;
+      }
+    };
+    filt(cur.map((c, i) => (prev[i] >> 2) + (c >> 2) + (prev[i] >> 1)), 0, 13);
+    filt(cur.map((c, i) => (prev[i] >> 1) + (c >> 1)), 13, 14);
+    filt(cur.map((c, i) => (prev[i] >> 2) + (c >> 2) + (c >> 1)), 27, 13);
+    filt(cur, 40, 120);
+    // Four subframes: long-term predictor, then RPE.
+    const out = [LARc];
+    const dp = st.dp0;
+    for (let sf = 0; sf < 4; sf++) {
+      const base = 120 + sf * 40, d = so.slice(sf * 40, sf * 40 + 40);
+      let dmax = 0;
+      for (const v of d) dmax = Math.max(dmax, abs(v));
+      const tn = dmax === 0 ? 0 : norm(dmax << 16), sc = tn > 6 ? 0 : 6 - tn;
+      const wt = d.map((v) => asr(v, sc));
+      let Nc = 40, L_max = 0;
+      for (let lambda = 40; lambda <= 120; lambda++) {
+        let acc = 0;
+        for (let k = 0; k < 40; k++) acc += wt[k] * dp[base + k - lambda];
+        if (acc > L_max) {
+          Nc = lambda;
+          L_max = acc;
+        }
+      }
+      L_max = asr(L_max * 2, 6 - sc);
+      let L_power = 0;
+      for (let k = 0; k < 40; k++) L_power += asr(dp[base + k - Nc], 3) ** 2;
+      L_power *= 2;
+      let bc = 0;
+      if (L_max <= 0) bc = 0;
+      else if (L_max >= L_power) bc = 3;
+      else {
+        const t = norm(L_power), R = asr(L_max * 2 ** t, 16), S = asr(L_power * 2 ** t, 16);
+        for (bc = 0; bc <= 2; bc++) if (R <= mult(S, DLB[bc])) break;
+      }
+      const dpp = new Array(40), e = new Array(50).fill(0);
+      for (let k = 0; k < 40; k++) {
+        dpp[k] = multR(QLB[bc], dp[base + k - Nc]);
+        e[k + 5] = sub(d[k], dpp[k]);
+      }
+      const x = new Array(40);
+      for (let k = 0; k < 40; k++) {
+        let acc = 4096;
+        for (let i = 0; i < 11; i++) acc += e[k + i] * H[i];
+        x[k] = sat(asr(acc, 13));
+      }
+      let Mc = 0, EM = -1;
+      for (let m = 0; m < 4; m++) {
+        let acc = 0;
+        for (let i = 0; i < 13; i++) acc += asr(x[m + 3 * i], 2) ** 2;
+        if (acc * 2 > EM) {
+          Mc = m;
+          EM = acc * 2;
+        }
+      }
+      const xM = Array.from({ length: 13 }, (_, i) => x[Mc + 3 * i]);
+      let xmax = 0;
+      for (const v of xM) xmax = Math.max(xmax, abs(v));
+      let exp = 0, temp = asr(xmax, 9), itest = 0;
+      for (let i = 0; i <= 5; i++) {
+        itest |= temp <= 0;
+        temp = asr(temp, 1);
+        if (!itest) exp++;
+      }
+      const xmaxc = add(asr(xmax, exp + 5), exp << 3);
+      let mexp = 0, mant;
+      if (xmaxc > 15) mexp = (xmaxc >> 3) - 1;
+      mant = xmaxc - (mexp << 3);
+      if (mant === 0) {
+        mexp = -4;
+        mant = 7;
+      } else {
+        while (mant <= 7) {
+          mant = (mant << 1) | 1;
+          mexp--;
+        }
+        mant -= 8;
+      }
+      const xMc = xM.map((v) => asr(mult(v * 2 ** (6 - mexp), NRFAC[mant]), 12) + 4);
+      // Reconstruct exactly as the decoder does, so the predictor history matches.
+      const t2 = 6 - mexp, t3 = t2 - 1 >= 0 ? 1 << (t2 - 1) : 0;
+      const ep = new Array(40).fill(0);
+      xMc.forEach((c, i) => {
+        const t = add(multR(FAC[mant], ((c << 1) - 7) << 12), t3);
+        ep[Mc + 3 * i] = t2 >= 0 ? asr(t, t2) : t << -t2;
+      });
+      for (let k = 0; k < 40; k++) dp[base + k] = add(ep[k], dpp[k]);
+      out.push([Nc, bc, Mc, xmaxc, ...xMc]);
+    }
+    for (let k = 0; k < 120; k++) dp[k] = dp[k + 160];
+    return out;
+  };
+
+  const frames = Math.ceil(pcm.length / 160);
+  const words = [0, 0, 0];
+  let bit = 96;
+  const put = (v, n) => {
+    for (let i = 0; i < n; i++, bit++) {
+      if ((bit >> 5) >= words.length) words.push(0);
+      if ((v >> i) & 1) words[bit >> 5] |= 1 << (bit & 31);
+    }
+  };
+  const LAR_BITS = [6, 6, 5, 5, 4, 4, 3, 3];
+  const block = (f) => Array.from({ length: 160 }, (_, k) => pcm[f * 160 + k] ?? 0);
+  // Frames below about -54 dBFS RMS are stored as silence runs (1-16 frames in 5 bits) instead of 260 coded bits.
+  const silent = Array.from({ length: frames }, (_, f) => block(f).reduce((a, v) => a + v * v, 0) < 64 * 64 * 160);
+  for (let f = 0; f < frames;) {
+    let n = 1;
+    const max = silent[f] ? 16 : 128;
+    while (n < max && f + n < frames && silent[f + n] === silent[f]) n++;
+    put(silent[f] ? 1 : 0, 1);
+    put(n - 1, silent[f] ? 4 : 7);
+    if (silent[f]) {
+      f += n;
+      continue;
+    }
+    for (const end = f + n; f < end; f++) coded(block(f));
+  }
+  function coded(s) {
+    const [LARc, ...subs] = frame(s);
+    LARc.forEach((c, i) => put(c, LAR_BITS[i]));
+    for (const [Nc, bc, Mc, xmaxc, ...xMc] of subs) {
+      put(Nc, 7);
+      put(bc, 2);
+      put(Mc, 2);
+      put(xmaxc, 6);
+      for (const c of xMc) put(c, 3);
+    }
+  }
+  // The player prebuffers ~15 frames before it checks the frame count: an uncounted silence run makes reads past a short line silent.
+  put(1, 1);
+  put(15, 4);
+  const out = new Uint8Array(words.length * 4), dv = new DataView(out.buffer);
+  words.forEach((w, i) => dv.setUint32(i * 4, w >>> 0));
+  dv.setUint32(0, 0x4D4F5254);
+  dv.setUint16(4, frames);
+  dv.setUint16(6, 8000);
+  dv.setUint32(8, words.length);
+  return out;
 }
 
 // Sprite animations (civ_anm_run, trp_anm_run, ...): frames of u32 length + HMT texture entry (offsets frame-relative) + palette + pixels + name, padded to 4.
@@ -2165,6 +2851,50 @@ function quatFromBasis([x, y, z]) {
 }
 // Game space is Y down: up is -Y. One file unit is ~4.5 m, so gravity for the bank angle is ~2.2 units/s^2.
 const CUT_UP = [0, -1, 0], CUT_BANK_G = 2.2;
+// Mid-mission camera shots: a mod's camera_shots.txt, one "<level> <trigger> <camera> [personal]" (a later line wins) or
+// "<level> <trigger> destroy <object>" (they add up) per line, '#' comments, as the game reads it (src/game/camera_shots.h).
+// personal: in co-op only the player who set the trigger off sees it.
+const shotFields = (line) => (line.trim().startsWith('#') ? [] : line.trim().split(/\s+/).filter(Boolean));
+const shotIsCamera = (f, level, trigger) => f.length >= 3 && f[0] === level && f[1] === trigger && f[2] !== 'destroy';
+const shotIsDestroy = (f, level, trigger) => f.length >= 4 && f[0] === level && f[1] === trigger && f[2] === 'destroy';
+const shotLines = (text) => text.replace(/\r/g, '').split('\n').filter((l, i, a) => i < a.length - 1 || l);
+function shotLinkGet(text, level, trigger) {
+  let link = null;
+  for (const line of text.split('\n')) {
+    const f = shotFields(line);
+    if (shotIsCamera(f, level, trigger)) link = { camera: f[2], personal: f[3] === 'personal' };
+  }
+  return link;
+}
+function shotDestroyGet(text, level, trigger) {
+  const names = [];
+  for (const line of text.split('\n')) {
+    const f = shotFields(line);
+    if (shotIsDestroy(f, level, trigger) && !names.includes(f[3])) names.push(f[3]);
+  }
+  return names;
+}
+// The text with that trigger's destroy lines replaced by one per name, appended at the end; other lines kept, LF endings.
+function shotDestroySet(text, level, trigger, names) {
+  const out = shotLines(text).filter((l) => !shotIsDestroy(shotFields(l), level, trigger));
+  for (const n of names) out.push(`${level} ${trigger} destroy ${n}`);
+  return out.length ? out.join('\n') + '\n' : '';
+}
+// The text with that link replaced in place, appended, or removed (camera null); other lines kept, LF endings.
+function shotLinkSet(text, level, trigger, camera, personal = false) {
+  const lines = shotLines(text), out = [];
+  const line = `${level} ${trigger} ${camera}${personal ? ' personal' : ''}`;
+  let done = !camera;
+  for (const l of lines) {
+    const f = shotFields(l);
+    if (shotIsCamera(f, level, trigger)) {
+      if (!done) out.push(line);
+      done = true;
+    } else out.push(l);
+  }
+  if (!done) out.push(line);
+  return out.length ? out.join('\n') + '\n' : '';
+}
 // Snapshots after a length change: same seconds, so t scales by oldLen / newLen; ones past the new end are dropped.
 const cutRetimeSnaps = (snaps, oldLen, newLen) => snaps.map((s) => ({ ...s, t: (s.t * oldLen) / newLen })).filter((s) => s.t <= 1 + 1e-9);
 // Samples (normalised times) between the first and last snapshot at rate per second of cutscene.
@@ -2172,7 +2902,7 @@ const cutSampleTimes = (data, t0, t1, rate) => {
   const n = Math.max(2, Math.ceil((t1 - t0) * data.length * rate) + 1);
   return [...Array(n).keys()].map((k) => t0 + ((t1 - t0) * k) / (n - 1));
 };
-// Bakes a root actor's position from snapshots and its rotation so the nose (model -Z) points along the path, up = -Y, rolled toward
+// Bakes a root actor's position from snapshots and its rotation so the nose (model +Z, as every stock craft) points along the path, up = -Y, rolled toward
 // the turn centre by bank x the lateral acceleration (60 deg at most). Axis channels use the stock form 10 x q.xyz (smooth through 0).
 function cutBakeActorPath(data, actor, snaps, { rate = 10, bank = 1 } = {}) {
   if (!snaps.length) return;
@@ -2195,7 +2925,7 @@ function cutBakeActorPath(data, actor, snaps, { rate = 10, bank = 1 } = {}) {
       prevUp = up;
       const side = v3.norm(v3.cross(f, up)), roll = Math.max(-60, Math.min(60, bank * (Math.atan2(v3.dot(acc, side), CUT_BANK_G) * 180) / Math.PI)) * (Math.PI / 180);
       const u = v3.add(v3.mul(up, Math.cos(roll)), v3.mul(side, Math.sin(roll)));
-      const y = v3.mul(u, -1), z = v3.mul(f, -1);
+      const y = v3.mul(u, -1), z = f;
       q = quatFromBasis([v3.cross(y, z), y, z]);
       if (prevQ && q.reduce((s, v, i) => s + v * prevQ[i], 0) < 0) q = q.map((v) => -v);
       prevQ = q;
@@ -2257,15 +2987,15 @@ function cutBakeCameraPath(data, cam, snaps, { rate = 10 } = {}) {
   cols.forEach((col, ch) => cutSetChannelSpan(data, ref(ch), 0, 1, cutHeld(col)));
 }
 // Bakes a camera mode over t0..t1 from a root actor's pose: 'follow' (offset in the actor's frame, looking at it), 'aim' (keeps its
-// position, looks at it) or 'ride' (rigidly at the offset facing the nose, the actor hidden for the span as id4_extro's cockpit shot).
+// position, looks at it) or 'ride' (rigidly at the offset, looking down the nose, the actor hidden for the span as id4_extro's cockpit shot).
 function cutBakeCameraMode(data, cam, { mode, actor, t0, t1, offset = [0, 0, 0], rate = 10 }) {
   cutActorPose(data, actor, t0);
-  const ref = (ch) => ({ cam, ch }), cols = [...Array(7)].map(() => []), turn = cutAxisAngleToQuat([0, 1, 0], 180);
+  const ref = (ch) => ({ cam, ch }), cols = [...Array(7)].map(() => []);
   let prev = null;
   for (const t of cutSampleTimes(data, t0, t1, rate)) {
     const pose = cutActorPose(data, actor, t);
     const pos = mode === 'aim' ? [0, 1, 2].map((ch) => cutsceneValue(data.cameras[cam][ch], t, data.frames, 1)) : v3.add(pose.p, quat.rot(pose.q, offset));
-    let q = mode === 'ride' ? quat.mul(pose.q, turn) : cutLookQuat(pos, pose.p);
+    let q = mode === 'ride' ? pose.q : cutLookQuat(pos, pose.p);
     if (prev && q.reduce((x, v, j) => x + v * prev[j], 0) < 0) q = q.map((v) => -v);
     prev = q;
     [...pos, ...cutRotValues(q)].forEach((v, ch) => cols[ch].push([t, v]));
@@ -2296,7 +3026,7 @@ function cutShootAt(data, shooter, target, t, { category = 0, aimLead = 0.3 } = 
     const pos = cutActorPose(data, shooter, s).p, f = v3.norm(v3.sub(cutActorPose(data, target, s).p, pos));
     let up = v3.norm(v3.sub(CUT_UP, v3.mul(f, v3.dot(CUT_UP, f))));
     if (!v3.len(up)) up = [0, 0, 1];
-    const y = v3.mul(up, -1), z = v3.mul(f, -1), aim = quatFromBasis([v3.cross(y, z), y, z]);
+    const y = v3.mul(up, -1), z = f, aim = quatFromBasis([v3.cross(y, z), y, z]);
     const d = Math.abs(s - tf) - hold, w = d <= 0 ? 1 : d >= lead ? 0 : 0.5 * (1 + Math.cos((Math.PI * d) / lead));
     let q = v3.norm4(quat.slerp(cutAxisAngleToQuat(cur.slice(0, 3), cur[3]), aim, w));
     if (prev && q.reduce((x, v, j) => x + v * prev[j], 0) < 0) q = q.map((v) => -v);
@@ -2309,12 +3039,31 @@ function cutShootAt(data, shooter, target, t, { category = 0, aimLead = 0.3 } = 
   cutAddEvent(data, { type: 7, frame: impactFrame, p: [target, 0, 0, 0] });
   return { fireFrame, impactFrame };
 }
-// Undoes a bake before the next: removes the events it added (ride hide / show, shots) and the keys inside its spans (t = 0 stays).
-function cutUnbake(f, doc) {
-  const drop = (type, frame, a) => {
-    const i = f.events.findIndex((e) => e.type === type && e.frame === frame && e.p[0] === a);
-    if (i >= 0) f.events.splice(i, 1);
+// The events a bake of doc added to f (ride hide / show; shot fire, explosion, disappear), found by type, frame and actor.
+function cutBakedEvents(f, doc) {
+  const out = [];
+  const find = (type, frame, a) => {
+    const e = f.events.find((x) => !out.includes(x) && x.type === type && x.frame === frame && x.p[0] === a);
+    if (e) out.push(e);
   };
+  for (const [key, tr] of Object.entries(doc.tracks)) {
+    const n = +key.split(':')[1], cam = key.startsWith('cam:');
+    if (cam ? !f.cameras[n] : !f.actors[n]?.animated) continue;
+    for (const m of cam ? tr.modes ?? [] : []) if (m.mode === 'ride') {
+      find(7, Math.round(m.t0 * f.frames), m.actor);
+      if (m.t1 < 1) find(6, Math.round(m.t1 * f.frames), m.actor);
+    }
+    for (const s of cam ? [] : tr.shots ?? []) {
+      const fire = Math.round(s.t * f.frames), hit = fire + Math.round(0.5 * f.fps);
+      [[8, fire, n], [5, hit, s.target], [7, hit, s.target]].forEach((d) => find(...d));
+    }
+  }
+  return out;
+}
+// Undoes a bake before the next: removes the events it added and the keys inside its spans (t = 0 stays).
+function cutUnbake(f, doc) {
+  const baked = cutBakedEvents(f, doc);
+  f.events = f.events.filter((e) => !baked.includes(e));
   // The key at 0 starts each channel and stays.
   const clear = (ref, chs, t0, t1) => chs.forEach((ch) => cutSetChannelSpan(f, { ...ref, ch }, Math.max(t0, 0.5 / f.frames), t1, []));
   for (const [key, tr] of Object.entries(doc.tracks)) {
@@ -2322,17 +3071,22 @@ function cutUnbake(f, doc) {
     if (cam ? !f.cameras[n] : !f.actors[n]?.animated) continue;
     const snaps = tr.snaps ?? [], ref = cam ? { cam: n } : { actor: n };
     if (snaps.length) clear(ref, cam ? [0, 1, 2, 3, 4, 5, 6, 7] : snaps.length > 1 ? [0, 1, 2, 4, 5, 6, 7] : [0, 1, 2], 0, 1);
-    for (const m of tr.modes ?? []) {
-      clear(ref, m.mode === 'aim' ? [3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6], m.t0, m.t1);
-      if (m.mode === 'ride') {
-        drop(7, Math.round(m.t0 * f.frames), m.actor);
-        if (m.t1 < 1) drop(6, Math.round(m.t1 * f.frames), m.actor);
-      }
-    }
+    for (const m of tr.modes ?? []) clear(ref, m.mode === 'aim' ? [3, 4, 5, 6] : [0, 1, 2, 3, 4, 5, 6], m.t0, m.t1);
     for (const s of tr.shots ?? []) {
-      const fire = Math.round(s.t * f.frames), hit = fire + Math.round(0.5 * f.fps), tf = fire / f.frames, span = cutShotSpan(f);
-      [[8, fire, n], [5, hit, s.target], [7, hit, s.target]].forEach((d) => drop(...d));
+      const tf = Math.round(s.t * f.frames) / f.frames, span = cutShotSpan(f);
       clear(ref, [4, 5, 6, 7], tf - span, tf + span);
+    }
+  }
+}
+// After the cuts move, each camera mode takes the span of its camera's shot that overlaps its old span most.
+function cutSyncModeSpans(doc, f) {
+  const first = f.cameras.findIndex(Boolean), shots = cutClips(f, () => null).filter((c) => c.lane === 'camera');
+  for (const [key, tr] of Object.entries(doc.tracks)) {
+    if (!key.startsWith('cam:')) continue;
+    const k = +key.split(':')[1], mine = shots.filter((c) => (c.startEvent?.p[0] ?? first) === k).map((c) => [c.start / f.frames, Math.min(1, c.end / f.frames)]);
+    for (const m of tr.modes ?? []) {
+      const over = (sp) => Math.min(sp[1], m.t1) - Math.max(sp[0], m.t0), best = mine.reduce((a, b) => (!a || over(b) > over(a) ? b : a), null);
+      if (best) [m.t0, m.t1] = best;
     }
   }
 }
@@ -2736,7 +3490,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
-  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
+globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();

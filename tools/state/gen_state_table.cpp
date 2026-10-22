@@ -1,4 +1,4 @@
-// Generates src/main/state_table.inl from tools/state/state_model.toml after validating it (the same checks as validate() in state_model.py).
+// Generates src/game/state_table.inl from tools/state/state_model.toml after validating it (the same checks as validate() in state_model.py).
 // Usage: gen_state_table <state_model.toml> <out.inl>
 #include <algorithm>
 #include <cstdarg>

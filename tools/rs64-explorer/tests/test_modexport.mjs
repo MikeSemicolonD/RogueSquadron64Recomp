@@ -159,6 +159,41 @@ await check('a raised hill keeps tile edges shared and re-tiles under the index 
   assert.ok(hmp.tiles.length < 0x1FFF);
 });
 
+// The game finds items by name only through the DAT's name map (getLevelDatItemByName 0x80047B48).
+const lookupAll = (bytes) => {
+  const items = RS64.parseDAT(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)).items;
+  for (const it of items.filter((x) => x.name)) {
+    const hit = RS64.datLookup(bytes, it.name), first = items.find((x) => x.name === it.name);
+    assert.deepEqual(hit, { type: first.type, index: first.index }, it.name);
+  }
+};
+await check('the name map rebuilds every stock level byte for byte', async () => {
+  for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p))) {
+    const orig = bytesOf(await rom.read(p));
+    assert.deepEqual(RS64.datRebuildNameMap(orig), orig, p);
+    lookupAll(orig);
+  }
+});
+await check('added, removed and replaced items stay findable by name', async () => {
+  const orig = bytesOf(await rom.read('data/level/lv_3/dat')), dv = new DataView(orig.buffer), it = RS64.parseDAT(dv).items.find((x) => x.name === 'TIE_Attack_Madine_1');
+  const rec = orig.slice(it.offset, it.offset + dv.getUint32(it.offset + 8)), rv = new DataView(rec.buffer);
+  const no = rv.getUint32(0x0C), name = 'Brand_New_TIE_X';
+  const renamed = new Uint8Array(no + name.length + 1 + 3 & ~3);
+  renamed.set(rec.subarray(0, no));
+  renamed.set(new TextEncoder().encode(name), no);
+  new DataView(renamed.buffer).setUint32(8, renamed.length);
+  new DataView(renamed.buffer).setUint32(0x8C, 0);
+  const added = RS64.datAddItem(orig, 0, renamed);
+  const count0 = RS64.parseDAT(new DataView(added.buffer)).items.filter((x) => x.type === 0).length;
+  assert.deepEqual(RS64.datLookup(added, name), { type: 0, index: count0 - 1 });
+  assert.equal(RS64.datLookup(orig, name), null);
+  lookupAll(added);
+  const removed = RS64.datRemoveItem(added, 0, 0);
+  assert.deepEqual(RS64.datLookup(removed, name), { type: 0, index: count0 - 2 });
+  lookupAll(removed);
+  const grown = RS64.waveSet(removed, RS64.parseDAT(new DataView(removed.buffer)).items.find((x) => x.name === 'TIE_Attack_Madine_2'), { path: 'A_Longer_Path_Name_Than_Before_X' });
+  lookupAll(grown);
+});
 // Every item of every type must parse the same after an add or remove, apart from the one added or removed.
 const strip = (it) => { const { offset, index, ...rest } = it; return JSON.stringify(rest); };
 const datLevels = [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p));
@@ -181,11 +216,12 @@ await check(`duplicating and deleting objects keeps every other item intact (${d
     // The shifted sections and the copied record come from the original (SourceCopy); only the rewritten offset list is new data.
     assert.deepEqual(applyBPS(orig, RS64.encodeBPS(orig, added)), added, p);
     assert.deepEqual(applyBPS(orig, RS64.encodeBPS(orig, removed)), removed, p);
-    assert.ok(RS64.encodeBPS(orig, removed).length < 300 + objs.length * 5, `${p} delete patch ${RS64.encodeBPS(orig, removed).length} bytes`);
-    assert.ok(RS64.encodeBPS(orig, added).length < 300 + objs.length * 5, `${p} duplicate patch ${RS64.encodeBPS(orig, added).length} bytes`);
-    // Header block at 0x40 (trailing data) moves with the sections and keeps its bytes.
-    const o0 = new DataView(orig.buffer), o1 = new DataView(added.buffer);
-    assert.deepEqual(added.subarray(o1.getUint32(0x44), o1.getUint32(0x44) + o1.getUint32(0x40)), orig.subarray(o0.getUint32(0x44), o0.getUint32(0x44) + o0.getUint32(0x40)), p);
+    // The name map changes too: a delete shifts later indices, an add shifts the later bucket offsets (0x400 list).
+    assert.ok(RS64.encodeBPS(orig, removed).length < 300 + objs.length * 5 + before.length * 8, `${p} delete patch ${RS64.encodeBPS(orig, removed).length} bytes`);
+    assert.ok(RS64.encodeBPS(orig, added).length < 300 + objs.length * 5 + 0x400, `${p} duplicate patch ${RS64.encodeBPS(orig, added).length} bytes`);
+    // The name map (block at 0x40) moves with the sections and lists the copy too.
+    lookupAll(added);
+    lookupAll(removed);
   }
 });
 
@@ -649,7 +685,7 @@ await check('cutBakeActorPath points the nose along travel, banks into turns, ne
   const i = RS64.cutAddActor(c, 'pl_crafts/xwing', -1, 0.0562);
   RS64.cutBakeActorPath(c, i, [{ t: 0, p: [0, 0, 0] }, { t: 0.5, p: [400, 0, 0] }, { t: 1, p: [400, 0, 400] }], { rate: 10, bank: 1 });
   const rot = (t) => [4, 5, 6, 7].map((ch) => RS64.cutsceneValue(c.actors[i].ch[ch], t, c.frames, 1));
-  assert.ok(rotate(rot(0.1), [0, 0, -1])[0] > 0.95, 'nose along +X');
+  assert.ok(rotate(rot(0.1), [0, 0, 1])[0] > 0.95, 'nose (model +Z, as every stock craft) along +X');
   assert.ok(rotate(rot(0.5), [0, -1, 0])[2] > 0.05, 'banks toward the turn centre');
   for (let k = 0; k < 99; k++) assert.ok(angleBetween(rot(k / 100), rot((k + 1) / 100)) < 30, `step ${k}`);
 });
@@ -698,6 +734,9 @@ await check('ride hides the actor for the span and shows it after', async () => 
   const ev = (type) => c.events.filter((e) => e.type === type && e.p[0] === i).map((e) => e.frame);
   assert.deepEqual(ev(7), [Math.round(0.3 * c.frames)]);
   assert.deepEqual(ev(6), [Math.round(0.6 * c.frames)]);
+  const t = 0.45, cam = camAt(c, k, t), a = [4, 5, 6, 7].map((ch) => RS64.cutsceneValue(c.actors[i].ch[ch], t, c.frames, 1));
+  const look = rotate([cam[3], cam[4], cam[5], cam[6]], [0, 0, 1]), nose = rotate(a, [0, 0, 1]);
+  assert.ok(look[0] * nose[0] + look[1] * nose[1] + look[2] * nose[2] > 0.99, 'ride looks where the nose points');
   const d = await flyingXwing();
   RS64.cutBakeCameraMode(d.c, d.k, { mode: 'ride', actor: d.i, t0: 0.3, t1: 1 });
   assert.equal(d.c.events.filter((e) => e.type === 6).length, 0);
@@ -723,7 +762,7 @@ await check('cutShootAt aims, fires, and blows up the target on impact', async (
   assert.deepEqual(at(7).map((e) => [e.frame, e.p[0]]), [[impactFrame, j]]);
   assert.equal(impactFrame, fireFrame + Math.round(0.5 * c.fps));
   const s = RS64.cutActorPose(c, i, fireFrame / c.frames), tp = RS64.cutActorPose(c, j, fireFrame / c.frames).p;
-  const nose = rotate([...RS64.cutQuatToAxisAngle(s.q)], [0, 0, -1]), dir = [0, 1, 2].map((k) => tp[k] - s.p[k]), dist = Math.hypot(...dir);
+  const nose = rotate([...RS64.cutQuatToAxisAngle(s.q)], [0, 0, 1]), dir = [0, 1, 2].map((k) => tp[k] - s.p[k]), dist = Math.hypot(...dir);
   assert.ok((nose[0] * dir[0] + nose[1] * dir[1] + nose[2] * dir[2]) / dist > Math.cos((2 * Math.PI) / 180), 'nose on target');
   assert.ok(Math.abs((at(8)[0].p[2] / 10) * 0.5 - dist / 4) / (dist / 4) < 0.01, 'bolt reaches the target in 0.5 s');
 });
@@ -838,6 +877,278 @@ await check('re-baking a shot keeps its eased aim and its three events', async (
   assert.deepEqual(rot(c), first);
   assert.equal(c.events.length, evs);
   assert.ok(allFinite(c, i));
+});
+await check('cutSyncModeSpans moves a camera mode with its shot when a cut moves', async () => {
+  const { c } = await bakeScene();
+  const k = RS64.cutAddCamera(c), F = c.frames, cut = { type: 4, frame: 100, p: [k, 0, 0, 0] };
+  RS64.cutAddEvent(c, cut);
+  const doc = { tracks: { [`cam:${k}`]: { modes: [{ mode: 'aim', actor: 0, t0: 100 / F, t1: 1 }] } } };
+  cut.frame = 140;
+  RS64.cutSyncModeSpans(doc, c);
+  assert.deepEqual([doc.tracks[`cam:${k}`].modes[0].t0, doc.tracks[`cam:${k}`].modes[0].t1], [140 / F, 1]);
+});
+await check('shotLinkSet adds, replaces and removes one link and keeps the rest', async () => {
+  let t = RS64.shotLinkSet('# mine\nlv_1 a cam_x\n', 'lv_0', 't', 'cam_a');
+  assert.equal(t, '# mine\nlv_1 a cam_x\nlv_0 t cam_a\n');
+  t = RS64.shotLinkSet(t, 'lv_0', 't', 'cam_b');
+  assert.equal(t, '# mine\nlv_1 a cam_x\nlv_0 t cam_b\n');
+  assert.equal(RS64.shotLinkSet(t, 'lv_0', 't', null), '# mine\nlv_1 a cam_x\n');
+  assert.equal(RS64.shotLinkSet(t, 'lv_0', 't', 'cam_b', true), '# mine\nlv_1 a cam_x\nlv_0 t cam_b personal\n');
+});
+await check('shotDestroySet keeps camera lines and shotLinkSet keeps destroy lines', async () => {
+  let t = RS64.shotDestroySet('# mine\nlv_0 t cam_a\nlv_0 t destroy old\nlv_1 t destroy x\n', 'lv_0', 't', ['tower_1', 'tower_2']);
+  assert.equal(t, '# mine\nlv_0 t cam_a\nlv_1 t destroy x\nlv_0 t destroy tower_1\nlv_0 t destroy tower_2\n');
+  assert.deepEqual(RS64.shotDestroyGet(t, 'lv_0', 't'), ['tower_1', 'tower_2']);
+  assert.deepEqual(RS64.shotDestroyGet('lv_0 t destroy a\r\nlv_0 t destroy a\nlv_0 t destroy\n', 'lv_0', 't'), ['a']);
+  assert.deepEqual(RS64.shotLinkGet(t, 'lv_0', 't'), { camera: 'cam_a', personal: false });
+  assert.equal(RS64.shotLinkGet('lv_0 u destroy gate\n', 'lv_0', 'u'), null);
+  t = RS64.shotLinkSet(t, 'lv_0', 't', 'cam_b');
+  assert.equal(t, '# mine\nlv_0 t cam_b\nlv_1 t destroy x\nlv_0 t destroy tower_1\nlv_0 t destroy tower_2\n');
+  t = RS64.shotLinkSet(t, 'lv_0', 't', null);
+  assert.deepEqual(RS64.shotDestroyGet(t, 'lv_0', 't'), ['tower_1', 'tower_2']);
+  assert.equal(RS64.shotDestroySet(t, 'lv_0', 't', []), '# mine\nlv_1 t destroy x\n');
+});
+const lv3 = async () => bytesOf(await rom.read('data/level/lv_3/dat'));
+const itemNamed = (bytes, name) => RS64.parseDAT(new DataView(bytes.buffer)).items.find((x) => x.name === name);
+await check('waveGet reads stock TIE gating', async () => {
+  const b = await lv3(), dv = new DataView(b.buffer);
+  assert.deepEqual(RS64.waveGet(dv, itemNamed(b, 'TIE_Attack_Madine_1')), { flag: 0x1D, counter: 0, atLeast: 0, gridSpawn: 0, path: 'Madine_Attack' });
+  assert.ok(RS64.WAVE_FIELDS[0x0C] && RS64.WAVE_FIELDS[0x13] && RS64.WAVE_FIELDS[0x1F]);
+  assert.ok(!RS64.WAVE_FIELDS[0x0D] && !RS64.WAVE_FIELDS[0x37] && !RS64.WAVE_FIELDS[0x26]);
+  assert.equal(RS64.waveGet(dv, itemNamed(b, 'Wedge')), null);
+});
+await check('waveSet then waveGet round-trips and changes only those bytes', async () => {
+  const b = await lv3(), it = itemNamed(b, 'TIE_Attack_Madine_1');
+  const same = RS64.waveSet(b, it, { flag: 7, counter: 3, atLeast: 2 });
+  assert.equal(same.length, b.length);
+  for (let i = 0; i < b.length; i++) if (same[i] !== b[i]) assert.ok(i >= it.offset + 0x60 && i < it.offset + 0x6C, `byte ${i - it.offset} changed`);
+  assert.deepEqual(RS64.waveGet(new DataView(same.buffer), itemNamed(same, 'TIE_Attack_Madine_1')), { flag: 7, counter: 3, atLeast: 2, gridSpawn: 0, path: 'Madine_Attack' });
+  const short = RS64.waveSet(b, it, { path: 'Ab' });
+  assert.equal(short.length, b.length);
+  assert.equal(RS64.waveGet(new DataView(short.buffer), itemNamed(short, 'TIE_Attack_Madine_1')).path, 'Ab');
+  // A longer path grows the record; it keeps its index and every other item parses the same.
+  const long = RS64.waveSet(b, it, { path: 'A_Much_Longer_Spline_Name_Than_Before', gridSpawn: 0 });
+  const before = RS64.parseDAT(new DataView(b.buffer)).items, after = RS64.parseDAT(new DataView(long.buffer)).items;
+  assert.equal(after.length, before.length);
+  const moved = after.find((x) => x.name === 'TIE_Attack_Madine_1');
+  assert.equal(moved.index, it.index);
+  assert.equal(RS64.waveGet(new DataView(long.buffer), moved).path, 'A_Much_Longer_Spline_Name_Than_Before');
+  assert.deepEqual(after.filter((x) => x !== moved).map(strip), before.filter((x) => x.name !== 'TIE_Attack_Madine_1').map(strip));
+  const ldv = new DataView(long.buffer), odv = new DataView(b.buffer);
+  for (let k = 0; k < 0x8C; k += 4) if (k !== 8) assert.equal(ldv.getUint32(moved.offset + k), odv.getUint32(it.offset + k), `word +${k.toString(16)}`);
+});
+await check('wave flags avoid the level\'s flags and reuse a wave\'s own', async () => {
+  const b = bytesOf(await rom.read('data/level/lv_2/dat')), used = RS64.levelUsedFlags(new DataView(b.buffer));
+  assert.ok(used.has(128) && used.has(99) && used.has(1) && !used.has(127) && !used.has(0));
+  assert.equal(RS64.waveFlagFor({}, 'Ambush', used), 127);
+  assert.equal(RS64.waveFlagFor({ Ambush: 127 }, 'Ambush', used), 127);
+  assert.equal(RS64.waveFlagFor({ Ambush: 127 }, 'Second', used), 126);
+  assert.equal(RS64.waveFlagFor({ Old: 126 }, 'Old', new Set([126])), 126);
+  const lv3b = await lv3(), lv3used = RS64.levelUsedFlags(new DataView(lv3b.buffer));
+  assert.ok(lv3used.has(0x1D) && lv3used.has(40));
+});
+await check('an enemy copied from another level parses intact', async () => {
+  const from = await lv3(), it = itemNamed(from, 'TIE_Attack_Madine_1'), fdv = new DataView(from.buffer);
+  const to = bytesOf(await rom.read('data/level/lv_0/dat'));
+  const out = RS64.datAddItem(to, 0, from.slice(it.offset, it.offset + fdv.getUint32(it.offset + 8)));
+  const odv = new DataView(out.buffer), copy = RS64.parseDAT(odv).items.filter((x) => x.type === 0).at(-1);
+  assert.equal(strip(copy), strip(it));
+  assert.deepEqual(RS64.waveGet(odv, copy), RS64.waveGet(fdv, it));
+});
+await check('a trigger whose enter block sets or clears a stock flag is not free for a wave', async () => {
+  assert.equal(RS64.triggerWave({ flag: 0, value: 0 }, {}), 'free');
+  assert.equal(RS64.triggerWave({ flag: 128, value: 1 }, { Ambush: 128 }), 'wave');
+  assert.equal(RS64.triggerWave({ flag: 5, value: 1 }, { Ambush: 128 }), 'stock');
+  assert.equal(RS64.triggerWave({ flag: 5, value: 0 }, {}), 'stock');
+});
+await check('datAddEnemy places a copied enemy with no wave and no path, whatever its source', async () => {
+  const from = await lv3(), it = itemNamed(from, 'TIE_Attack_Madine_1'), fdv = new DataView(from.buffer);
+  const to = bytesOf(await rom.read('data/level/lv_0/dat'));
+  const out = RS64.datAddEnemy(to, from.slice(it.offset, it.offset + fdv.getUint32(it.offset + 8)), [1, 2, 3]);
+  const odv = new DataView(out.buffer), copy = RS64.parseDAT(odv).items.filter((x) => x.type === 0).at(-1);
+  assert.deepEqual(copy.pos, [1, 2, 3]);
+  assert.deepEqual(RS64.waveGet(odv, copy), { flag: 0, counter: 0, atLeast: 0, gridSpawn: 0, path: '-' });
+  assert.ok(RS64.WAVE_FOREIGN.has(0x0C) && RS64.WAVE_FOREIGN.has(0x12) && !RS64.WAVE_FOREIGN.has(0x0F));
+});
+const splineTable = (dv, s) => {
+  const n = dv.getUint32(s.offset + 0x1C), fo = s.offset + dv.getUint32(s.offset + 0x20) + n * 12;
+  return Array.from({ length: n - 2 }, (_, k) => dv.getFloat32(fo + k * 4));
+};
+await check('spline recompute matches stock on every path', async () => {
+  let n = 0;
+  for (const p of datLevels) {
+    const b = bytesOf(await rom.read(p)), dv = new DataView(b.buffer);
+    for (const s of RS64.parseDAT(dv).items.filter((x) => x.type === 3 && x.sub === 3 && x.points?.length >= 4)) {
+      const out = RS64.splineSetPoints(b, s, RS64.splinePoints(dv, s)), odv = new DataView(out.buffer), o = RS64.parseDAT(odv).items.find((x) => x.type === 3 && x.index === s.index);
+      assert.ok(Math.abs(odv.getFloat32(o.offset + 0x24) - dv.getFloat32(s.offset + 0x24)) <= 0.01 * dv.getFloat32(s.offset + 0x24) + 1e-3, `${p} ${s.name} length`);
+      splineTable(odv, o).forEach((v, k) => assert.ok(Math.abs(v - splineTable(dv, s)[k]) < 0.01, `${p} ${s.name} k${k}`));
+      n++;
+    }
+  }
+  assert.ok(n > 600, `${n} paths`);
+});
+await check('dragging a path point recomputes length and table', async () => {
+  const b = await lv3(), s = itemNamed(b, 'Madine_Attack'), dv = new DataView(b.buffer), pts = RS64.splinePoints(dv, s);
+  assert.deepEqual(pts[0].map((v) => +v.toFixed(2)), [7.93, -7.5, 134.52]);
+  pts[4] = [pts[4][0] + 20, pts[4][1], pts[4][2]];
+  const out = RS64.splineSetPoints(b, s, pts), odv = new DataView(out.buffer), o = itemNamed(out, 'Madine_Attack');
+  assert.ok(odv.getFloat32(o.offset + 0x24) > dv.getFloat32(s.offset + 0x24) + 5);
+  assert.deepEqual(RS64.splinePoints(odv, o).map((p) => p.map((v) => +v.toFixed(3))), pts.map((p) => p.map((v) => +v.toFixed(3))));
+  const t = splineTable(odv, o);
+  assert.equal(t[0], 0);
+  assert.equal(t.at(-1), 1);
+  for (let k = 1; k < t.length; k++) assert.ok(t[k] >= t[k - 1]);
+  pts[3] = pts[2].slice();
+  const flat = RS64.splineSetPoints(b, s, pts), fdv = new DataView(flat.buffer);
+  assert.ok(splineTable(fdv, itemNamed(flat, 'Madine_Attack')).every(Number.isFinite));
+});
+const eventSubs = (bytes, s) => {
+  const items = RS64.parseDAT(new DataView(bytes.buffer)).items;
+  return (s.events ?? []).map((e) => items.find((x) => x.type === 7 && x.index === e.trigger)).map((t) => (t.sub === 0x4E ? '78:' + t.pathEvent.target : t.sub));
+};
+await check('a path copied from another level keeps its shape and safe events, under a findable unique name', async () => {
+  const from = await lv3(), to = bytesOf(await rom.read('data/level/lv_0/dat'));
+  const src = itemNamed(from, 'Madine_Attack'), name = RS64.uniqueName(to, 'Madine_Attack');
+  assert.equal(name, 'Madine_Attack');
+  const e0 = bytesOf(await rom.read('data/level/lv_e/dat')), t0 = RS64.parseDAT(new DataView(e0.buffer)).items.find((x) => x.type === 7 && x.sub === 0x4E && !x.pathEvent.target);
+  const attack = e0.slice(t0.offset, t0.offset + new DataView(e0.buffer).getUint32(t0.offset + 8));
+  const { bytes, dropped } = RS64.splineCopy(from, src, to, { name, at: [10, -5, 20], attack });
+  assert.equal(dropped, 0);
+  // A copy with no continuation would run its craft off the end (a crash), so it ends in an attack on the player.
+  assert.equal(RS64.splineAttackEnd(bytes, itemNamed(bytes, name)), true);
+  const dv = new DataView(bytes.buffer), copy = itemNamed(bytes, name);
+  assert.deepEqual(RS64.datLookup(bytes, name), { type: 3, index: copy.index });
+  const a = RS64.splinePoints(new DataView(from.buffer), src), b = RS64.splinePoints(dv, copy);
+  assert.deepEqual(b[1].map((v) => +v.toFixed(3)), [10, -5, 20]);
+  b.forEach((p, k) => p.forEach((v, ax) => assert.ok(Math.abs(v - a[k][ax] - (b[1][ax] - a[1][ax])) < 1e-3)));
+  // Continuation blocks no longer name Madine_Attack_2.
+  for (let k = 0; k < 8; k++) assert.equal(dv.getUint8(copy.offset + dv.getUint32(copy.offset + 0x60 + k * 16)), 0);
+  assert.equal(RS64.uniqueName(bytes, 'Madine_Attack'), 'Madine_Attack_2');
+  lookupAll(bytes);
+  // A path with events: kept ones point at copied items of the same kind, the others are dropped and counted.
+  let found = false;
+  for (const p of datLevels) {
+    const f = bytesOf(await rom.read(p));
+    for (const s of RS64.parseDAT(new DataView(f.buffer)).items.filter((x) => x.type === 3 && x.events?.length > 1)) {
+      const subs = eventSubs(f, s), keep = subs.filter((x) => [0x1A, 0x1B, 0x1C, 0x23].includes(x) || x === '78:');
+      if (!keep.length || keep.length === subs.length) continue;
+      const r = RS64.splineCopy(f, s, to, { name: 'Copied_Path_X', at: [0, 0, 0] });
+      assert.equal(r.dropped, subs.length - keep.length);
+      assert.deepEqual(eventSubs(r.bytes, itemNamed(r.bytes, 'Copied_Path_X')), keep);
+      found = true;
+      break;
+    }
+    if (found) break;
+  }
+  assert.ok(found, 'a stock path with mixed events');
+});
+await check('the attack-at-end switch adds and removes one fly-at-player event', async () => {
+  const b = await lv3(), s = itemNamed(b, 'Madine_Attack'), e = bytesOf(await rom.read('data/level/lv_e/dat'));
+  const tpl = RS64.parseDAT(new DataView(e.buffer)).items.find((x) => x.type === 7 && x.sub === 0x4E && !x.pathEvent.target), tdv = new DataView(e.buffer);
+  const template = e.slice(tpl.offset, tpl.offset + tdv.getUint32(tpl.offset + 8));
+  assert.equal(RS64.splineAttackEnd(b, s), false);
+  const on = RS64.splineSetAttackEnd(b, s, true, template), so = itemNamed(on, 'Madine_Attack');
+  assert.equal(RS64.splineAttackEnd(on, so), true);
+  assert.deepEqual(eventSubs(on, so), ['78:']);
+  assert.ok(Math.abs(so.events[0].at - RS64.PATH_ATTACK_AT) < 1e-6 && RS64.PATH_ATTACK_AT < 1);
+  lookupAll(on);
+  const off = RS64.splineSetAttackEnd(on, so, false), sf = itemNamed(off, 'Madine_Attack');
+  assert.equal(RS64.splineAttackEnd(off, sf), false);
+  assert.equal(sf.events?.length ?? 0, 0);
+});
+await check('levels.json round-trips and a new level gets a unique plain folder', async () => {
+  let levels = RS64.modLevelsParse('');
+  assert.deepEqual(levels, []);
+  const a = RS64.modLevelNew(levels, 'Dune Sea Ambush!', 0);
+  assert.deepEqual(a, { id: 'dune_sea_ambush', title: 'Dune Sea Ambush!', description: '', template: 0, folder: 'dune_sea_ambush', medals: RS64.MEDALS_SIMPLE });
+  levels = [a];
+  assert.equal(RS64.modLevelNew(levels, 'dune sea ambush', 3).folder, 'dune_sea_ambush_2');
+  const text = RS64.modLevelsWrite(levels);
+  assert.deepEqual(RS64.modLevelsParse(text), levels);
+  assert.deepEqual(RS64.modLevelsParse('not json'), []);
+  assert.ok(RS64.modLevelNew([], 'x'.repeat(80), 1).folder.length <= 48);
+});
+await check('objectives wire units and triggers in the DAT and read back; re-applying clears the old wiring', async () => {
+  const dv = await rom.read('data/level/lv_1/dat'), orig = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+  const items = RS64.parseDAT(dv).items, units = items.map((it, i) => [it, i]).filter(([it]) => RS64.isUnit(it)).map(([, i]) => i);
+  const zone = items.findIndex((it) => it.type === 7 && it.sub === 0x19);
+  const objs = [
+    { text: 'Kill', goal: 'destroy', targets: units.slice(0, 3) },
+    { text: 'Go', goal: 'reach', targets: [zone] },
+    { text: 'Guard', goal: 'protect', targets: [units[5]] },
+    { text: 'Wait', goal: 'survive', seconds: 30, targets: [] },
+  ];
+  const a = RS64.objectivesApply(orig, null, objs), adv = new DataView(a.bytes.buffer);
+  assert.equal(a.bytes.length, orig.length);
+  const [kill, go, guard, wait] = a.objectives;
+  assert.equal(kill.count, 3);
+  assert.ok(kill.counter >= 1 && kill.counter <= 128 && go.flag !== guard.flag);
+  assert.deepEqual(RS64.objectiveTargets(adv, kill).map((it) => items.indexOf(items.find((x) => x.offset === it.offset))), units.slice(0, 3));
+  assert.equal(RS64.objectiveTargets(adv, go).length, 1);
+  assert.equal(RS64.objectiveTargets(adv, guard)[0].offset, items[units[5]].offset);
+  assert.deepEqual(wait, { text: 'Wait', goal: 'survive', seconds: 30 });
+  const b = RS64.objectivesApply(a.bytes, a.objectives, [{ text: 'Kill', goal: 'destroy', targets: [units[0]] }]);
+  assert.equal(RS64.objectiveTargets(new DataView(b.bytes.buffer), b.objectives[0]).length, 1);
+  assert.equal(RS64.objectiveTargets(new DataView(b.bytes.buffer), go).length, 0);
+});
+await check('deleting a zone or trigger keeps every path event and zone link on the same item', async () => {
+  for (const lv of ['lv_0', 'lv_1', 'lv_f']) {
+    const dv = await rom.read(`data/level/${lv}/dat`), orig = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+    const items = RS64.parseDAT(dv).items, key = (it) => it && `${it.sub}:${it.name}:${it.pos.join(',')}`;
+    const t7 = (list, i) => list.find((x) => x.type === 7 && x.index === i), t6 = (list, i) => list.find((x) => x.type === 6 && x.index === i);
+    const fired = new Set(items.filter((x) => x.type === 3).flatMap((x) => (x.events ?? []).map((e) => e.trigger)));
+    const victims = [items.find((x) => x.type === 7 && !x.pathEvent && !fired.has(x.index)), items.find((x) => x.type === 6)].filter(Boolean);
+    for (const v of victims) {
+      const out = RS64.datRemoveIndexed(orig, v.type, v.index), after = RS64.parseDAT(new DataView(out.buffer, out.byteOffset, out.byteLength)).items;
+      const paths = (list) => list.filter((x) => x.type === 3).map((p) => (p.events ?? []).map((e) => key(t7(list, e.trigger))).join('|'));
+      assert.deepEqual(paths(after), paths(items), `${lv} path events after deleting ${v.name}`);
+      const links = (list) => list.filter((x) => x.type === 6 && x !== v && key(x) !== key(v)).map((z) => (z.zoneLinks ?? []).filter((i) => !(v.type === 6 && list === items && i === v.index)).map((i) => key(t6(list, i))).join('|'));
+      assert.deepEqual(links(after), links(items), `${lv} zone links after deleting ${v.name}`);
+    }
+    const used = items.find((x) => x.type === 7 && fired.has(x.index));
+    if (used) assert.throws(() => RS64.datRemoveIndexed(orig, 7, used.index), /fires it/);
+  }
+});
+await check('a blank level keeps only the player start, on flat ground', async () => {
+  const dv = await rom.read('data/level/lv_1/dat'), blank = RS64.datBlank(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice());
+  const items = RS64.parseDAT(new DataView(blank.buffer, blank.byteOffset, blank.byteLength)).items;
+  assert.deepEqual(items.map((it) => it.name), ['player_StartPosition']);
+  const hv = await rom.read('data/level/lv_1/hmp'), flat = RS64.hmpFlat(new Uint8Array(hv.buffer, hv.byteOffset, hv.byteLength).slice());
+  const g = RS64.hmpGrid(RS64.parseHMP(new DataView(flat.buffer, flat.byteOffset, flat.byteLength)));
+  assert.ok(g.hts.every((h) => h === g.hts[0]));
+});
+await check('a mod level aliases its template folder and cutscenes, and an alias reads the template bytes', async () => {
+  const al = RS64.modLevelAliases({ folder: 'dune', template: 0 }, rom.assets.keys());
+  const map = new Map(al);
+  assert.equal(map.get('data/level/dune/dat'), 'data/level/lv_0/dat');
+  assert.equal(map.get('data/level/dune/hmp'), 'data/level/lv_0/hmp');
+  assert.equal(map.get('data/cuts/dune_intro'), 'data/cuts/id0_intro');
+  assert.equal(map.get('data/cuts/dune_extro'), 'data/cuts/id0_extro');
+  assert.ok(![...map.keys()].some((k) => k.includes('lv_0_TEX') || k.startsWith('data/level/lv_1')));
+  const r = RS64.openRom(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.length));
+  for (const [to, from] of al) r.alias(to, from);
+  assert.deepEqual(bytesOf(await r.read('data/level/dune/dat')), bytesOf(await r.read('data/level/lv_0/dat')));
+  assert.equal(r.aliases.get('data/cuts/dune_intro'), 'data/cuts/id0_intro');
+  // Templates 16-18 have no intro/extro of their own: none are aliased.
+  assert.ok(!RS64.modLevelAliases({ folder: 'b', template: 16 }, rom.assets.keys()).some(([k]) => k.startsWith('data/cuts/')));
+});
+await check('shotLinkGet reads hand-written files', async () => {
+  const t = '# c\r\nlv_0\tt\tcam_a\r\n\n  lv_0 t   cam_b  \nlv_2 only_two\n';
+  assert.deepEqual(RS64.shotLinkGet(t, 'lv_0', 't'), { camera: 'cam_b', personal: false });
+  assert.deepEqual(RS64.shotLinkGet('lv_0 t cam_c personal\nlv_0 u cam_d other\n', 'lv_0', 't'), { camera: 'cam_c', personal: true });
+  assert.deepEqual(RS64.shotLinkGet('lv_0 u cam_d other\n', 'lv_0', 'u'), { camera: 'cam_d', personal: false });
+  assert.equal(RS64.shotLinkGet(t, 'lv_2', 'only_two'), null);
+  assert.equal(RS64.shotLinkGet('', 'lv_0', 't'), null);
+});
+await check('a project carries mod/camera_shots.txt with an empty original', async () => {
+  const crc = RS64.crc32(new Uint8Array(buf.buffer, buf.byteOffset, buf.length)), p = 'mod/camera_shots.txt';
+  const now = new TextEncoder().encode('lv_0 t cam_a\n'), history = RS64.createHistory();
+  history.begin('Link');
+  history.commit(p, new Uint8Array(0), now, 'Link');
+  history.end();
+  const bytes = RS64.projectWrite({ romCrc: crc, originals: new Map([[p, new Uint8Array(0)]]), current: new Map([[p, now]]), history });
+  const back = await RS64.projectRead(bytes, crc, async () => new Uint8Array(0));
+  assert.deepEqual([...back.current.get(p)], [...now]);
 });
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }

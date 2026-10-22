@@ -58,6 +58,45 @@ for (const [idx, n, hash, freq] of VOICE_REF) await check(`voice ${idx} matches 
   assert.equal(pcm.length, n);
   assert.equal(sha1(pcm), hash);
 });
+// A GSM 06.10 coder round trip keeps roughly 10 dB SNR on speech; a broken bit order or wrong parameter decodes to noise (< 1 dB).
+const snr = (a, b) => {
+  // Per 800-sample block at its best lag: the offline decoder emits 158 samples per silence frame, so silence runs shift what follows.
+  let s = 0, n = 0;
+  for (let o = 200; o + 1000 < Math.min(a.length, b.length); o += 800) {
+    let bs = 0, bn = Infinity;
+    for (let lag = -96; lag <= 4; lag++) {
+      let ss = 0, nn = 0;
+      for (let i = o; i < o + 800; i++) {
+        ss += a[i] * a[i];
+        nn += (a[i] - (b[i + lag] ?? 0)) ** 2;
+      }
+      if (nn < bn) [bs, bn] = [ss, nn];
+    }
+    s += bs;
+    n += bn;
+  }
+  return 10 * Math.log10(s / n);
+};
+await check('encodeMort round-trips a stock line through decodeMort', () => {
+  const e = vBy.get(5), src = RS64.decodeMort(bytes(speechDv), e.offset, e.size);
+  const mort = RS64.encodeMort(src);
+  const dv = new DataView(mort.buffer);
+  assert.equal(dv.getUint32(0), 0x4D4F5254);
+  assert.equal(dv.getUint16(4), Math.ceil(src.length / 160));
+  assert.equal(dv.getUint16(6), 8000);
+  assert.equal(dv.getUint32(8) * 4, mort.length);
+  const back = RS64.decodeMort(mort, 0, mort.length);
+  assert.ok(Math.abs(back.length - src.length) <= 320, `${back.length} vs ${src.length}`);
+  const db = snr(src, back);
+  assert.ok(db > 6, `SNR ${db.toFixed(1)} dB`);
+});
+await check('encodeMort: silence and a long line (more than 128 frames per run)', () => {
+  const tone = Int16Array.from({ length: 160 * 300 }, (_, i) => Math.round(8000 * Math.sin(i * 0.05) * Math.sin(i * 0.0007)));
+  const back = RS64.decodeMort(RS64.encodeMort(tone), 0, RS64.encodeMort(tone).length);
+  assert.ok(snr(tone, back) > 6);
+  const quiet = RS64.encodeMort(new Int16Array(800));
+  assert.ok(RS64.decodeMort(quiet, 0, quiet.length).every((v) => Math.abs(v) < 64));
+});
 const romBytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
 const txt = await rom.read('data/voice_TXT');
 const vt = RS64.parseVoiceTable(romBytes, txt);

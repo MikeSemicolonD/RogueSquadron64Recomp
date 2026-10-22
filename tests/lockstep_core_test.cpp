@@ -1,4 +1,4 @@
-#include "../src/main/lockstep_core.h"
+#include "../src/lockstep/lockstep_core.h"
 #include <algorithm>
 #include "check.h"
 #include <cstdio>

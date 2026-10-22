@@ -41,9 +41,10 @@ Base code sees multiplayer only through hooks, actions and flags.
 | `ghost_mode` | `publish_modes` (`ghost_lobby.cpp`) | `lockstep.cpp` (mission init: record only, no hashes) | Online co-op session active (`ROGUESQ_MP` or a menu-started session) |
 | `coop_imposter` | `publish_modes` | the `imposter` hash part's gate (`add_hash_part`), `mp_register.cpp` (pad2 replay) | Player 2 is the imposter (`ROGUESQ_COOP_LOCAL` or ghost mode) |
 | `mp_lobby_state` | `ghost_lobby.cpp` (on lobby state changes) | `nav_sequencer.cpp` | The `Lobby` handshake state |
-| `text_entry` | `ghost_lobby.cpp` (per menu tick) | `main.cpp` `update_keyboard_shift` (Android) | The address editor is being typed in |
+| `text_entry` | `ghost_lobby.cpp` (per menu tick) | `input_host.cpp` `update_keyboard_shift` (Android) | The address editor is being typed in |
 | `menu_page_shown` | `rs64_menu_pass` (`menu_config.cpp`) | `mp_register.cpp` `menu_pad` | A mod menu page is up |
 | `hangar_launch` | `skip_filter` (`ghost_lobby.cpp`) | `nav_sequencer.cpp` | The hangar is launching a mission after both players picked |
+| `mp_trigger_for_peer` | `apply_remote_triggers` (`ghost.cpp`) | `hook_helpers.cpp` (mid-mission camera shots) | The host is applying the other player's trigger, so a personal camera shot goes to that player only |
 
 ### Hook placement
 
@@ -103,7 +104,7 @@ The hooks live in the menu overlay (`drawRadarIcon`, `tickCraftSelectScreen`, th
 Mod menu pages are defined in `roguesq_menu.json` (format: [adding-menus-and-buttons.md](adding-menus-and-buttons.md)). Two fields exist for the multiplayer page:
 
 - `title_y`: the page title's y offset (written at `gCurrentMenuData+0x52`).
-- `row`: entries sharing a `row` string sit on one line (HOST GAME and JOIN GAME). `page_row_nav` in [menu_config.cpp](../src/main/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
+- `row`: entries sharing a `row` string sit on one line (HOST GAME and JOIN GAME). `page_row_nav` in [menu_config.cpp](../src/game/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
 
 ## LAN discovery
 
@@ -149,16 +150,16 @@ HOST GAME (`host_on_row` in `ghost_lobby.cpp`, choice in `choose_host_address`):
 A typed `:port` (keyboard only, 1-65535) applies to JOIN, HOST and the LAN search; without one, `port` (or `ROGUESQ_MP_PORT`) applies. A LAN-found host on another port is written to the row with its port.
 
 - Pad: up/down step the octet (held: every 3 frames after 12, by 10 from 45), left/right move between octets, A or B ends editing. While editing, the editor takes the pad and clears the pressed word so the menu neither moves nor confirms.
-- Keyboard (`typing`): digits, `.` and `:`, at most 21 characters, shown with a caret. `begin_typing` / `type_text` / `type_backspace` / `end_typing`; a typed address that parses replaces the octets. Editing starts in this mode. SDL text input is on exactly while typing (`ghost_lobby.cpp` calls `rs64::mp::text_input`, which reaches `SDL_StartTextInput` / `SDL_StopTextInput` in `host_api_game.cpp`; `main.cpp` passes `SDL_TEXTINPUT` and Backspace/Return to the lobby through `rs64::host::run_key_handlers`); on desktop and Android alike the pad only ends it. Presses from held keys (Backspace and Space are bound to B, Return to A) count as typing, and `swallow_frames` drops the A/START presses for a few frames after it ends so they do not reach the menu. On Android a keyboard hidden by the system ends typing.
+- Keyboard (`typing`): digits, `.` and `:`, at most 21 characters, shown with a caret. `begin_typing` / `type_text` / `type_backspace` / `end_typing`; a typed address that parses replaces the octets. Editing starts in this mode. SDL text input is on exactly while typing (`ghost_lobby.cpp` calls `rs64::mp::text_input`, which reaches `SDL_StartTextInput` / `SDL_StopTextInput` in `host_api_game.cpp`; `input_host.cpp` passes `SDL_TEXTINPUT` and Backspace/Return to the lobby through `rs64::host::run_key_handlers`); on desktop and Android alike the pad only ends it. Presses from held keys (Backspace and Space are bound to B, Return to A) count as typing, and `swallow_frames` drops the A/START presses for a few frames after it ends so they do not reach the menu. On Android a keyboard hidden by the system ends typing.
 - A saved address the octets cannot show (hostname, IPv6) is kept and joined as-is until the octets are edited. A hostname's `:port` is kept apart from it.
 
 ### Android keyboard
 
-While typing on a phone, the picture slides up so the highlighted entry clears the on-screen keyboard. `MainActivity.imeFraction()` (the keyboard height as a fraction of the window) reaches the host as `rs64::android::ime_fraction()`; `update_keyboard_shift` in `main.cpp` computes the needed shift and stores it in `RT64::presentShiftY`, which `rt64_vi_renderer.cpp` applies when presenting. Touch taps add the same shift (`y += RT64::presentShiftY`) so they land where that spot is drawn unshifted. Android needs the `INTERNET` permission and `CHANGE_WIFI_MULTICAST_STATE`; `MainActivity` holds a multicast lock so the phone hears discovery broadcasts while hosting.
+While typing on a phone, the picture slides up so the highlighted entry clears the on-screen keyboard. `MainActivity.imeFraction()` (the keyboard height as a fraction of the window) reaches the host as `rs64::android::ime_fraction()`; `update_keyboard_shift` in `input_host.cpp` computes the needed shift and stores it in `RT64::presentShiftY`, which `rt64_vi_renderer.cpp` applies when presenting. Touch taps add the same shift (`y += RT64::presentShiftY`) so they land where that spot is drawn unshifted. Android needs the `INTERNET` permission and `CHANGE_WIFI_MULTICAST_STATE`; `MainActivity` holds a multicast lock so the phone hears discovery broadcasts while hosting.
 
 ### Touch on mod pages
 
-`rs64_menu_page_shown()` (menu_config.cpp) reports that a mod page is up. `touch_context()` in `main.cpp` then classifies the screen as a list menu, since the page's title lives in host RAM and the state classifier would say "unknown". Label entries (sub-type 13, `kSubtypeLabel` in `touch_menu.cpp`) are drawn and active but get no tap box.
+`rs64_menu_page_shown()` (menu_config.cpp) reports that a mod page is up. `touch_context()` in `input_host.cpp` then classifies the screen as a list menu, since the page's title lives in host RAM and the state classifier would say "unknown". Label entries (sub-type 13, `kSubtypeLabel` in `touch_menu.cpp`) are drawn and active but get no tap box.
 
 ## Session protocol
 
@@ -177,12 +178,13 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | PICKUP | A power-up a player collected (DAT index); the other side collects its own copy. |
 | TRIGGER | Client to host: the client's craft entered or left a player trigger volume (DAT event index). |
 | TOW_TRIP | A player's tow cable tripped a walker (DAT index); the other side trips its own copy. |
+| SHOT | Host to client: a mod-linked mid-mission camera shot for the client (camera item and trigger names; a shared one the host also plays, or a personal one the client set off); the client plays it through the `camera.shots` service unless that trigger already fired in its own world. |
 | RESULT | Host's mission result. |
 | PICK, READY, BROWSE, BRIEFING_DONE | Lobby screens. |
 | SKIP | Cutscene skip. |
 | BYE | Quit or mismatch. |
 
-`rs64_ghost_quit` (called from the quit path in `main.cpp` before `_Exit`) sends BYE (`Quit`) and flushes for up to 200 ms, so the other player is told at once instead of waiting for the connection timeout. The 200 ms wait is acceptable only on that exit path. `ROGUESQ_MP_TEST_QUIT` ends the host abruptly; with `ROGUESQ_MP_TEST_QUIT_CLEAN=1` it takes the menu quit path and sends BYE.
+`rs64_ghost_quit` (called from the quit path in `input_host.cpp` before `_Exit`) sends BYE (`Quit`) and flushes for up to 200 ms, so the other player is told at once instead of waiting for the connection timeout. The 200 ms wait is acceptable only on that exit path. `ROGUESQ_MP_TEST_QUIT` ends the host abruptly; with `ROGUESQ_MP_TEST_QUIT_CLEAN=1` it takes the menu quit path and sends BYE.
 
 ## Puppet interpolation
 

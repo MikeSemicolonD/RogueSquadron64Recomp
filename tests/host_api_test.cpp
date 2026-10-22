@@ -1,4 +1,4 @@
-#include "host_api.h"
+#include "host_api/host_api.h"
 #include "check.h"
 #include <cstddef>
 #include <cstdio>
@@ -239,7 +239,7 @@ static void test_toml_hook_ids_match_names() {
     const std::string t = read_file(RS64_TOML_PATH);
     const std::string c = read_file(RS64_TOML_HOOKS_PATH);
     std::map<std::string, uint32_t> body_id;
-    std::regex body(R"((?:int|void) (rs64_th_\w+)\([^)]*\) \{[^}]*?rs64_hook\((\d+)u?,)");
+    std::regex body(R"((?:int|void) (rs64_th_\w+)\([^)]*\)\s*\{[^}]*?rs64_hook\((\d+)u?,)");
     for (auto it = std::sregex_iterator(c.begin(), c.end(), body); it != std::sregex_iterator(); ++it) {
         body_id[(*it)[1].str()] = (uint32_t)std::stoul((*it)[2]);
     }

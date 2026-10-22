@@ -1,6 +1,6 @@
 // Ghost co-op HUD, radar dot and puppet pose hooks.
 #include "ghost_internal.h"
-#include "debug_logs.h"
+#include "util/debug_logs.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>

@@ -13,7 +13,6 @@
         android:appCategory="game"        android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:hasCode="true"
-        android:extractNativeLibs="true"
         android:hardwareAccelerated="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
         <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />

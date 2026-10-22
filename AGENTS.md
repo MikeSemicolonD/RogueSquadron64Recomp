@@ -5,14 +5,15 @@ Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a
 ## Project layout
 
 ```
-src/main/main.cpp                       Game registration + RSP/audio/input/gfx callbacks
-src/main/register_overlays.cpp          Overlay registration (all 3 .ovl.* at boot; switched at runtime by the loadOverlay hook)
-src/main/rt64_render_context.cpp        RT64 host context; HLE send_dl, present-side fixes, boot-target driver
-src/main/upstream_compat.cpp            libultra shims, scheduler overrides, rs64_load_overlay
-src/main/hook_helpers.cpp               Host entry points for rogue_squadron.toml hooks (pacing, matpool, draw distance / terrain grid, DL walkers)
-src/main/game_state.cpp, nav_sequencer.cpp  Game-state classifier and the BOOT_TARGET menu driver
-src/main/host_api*.cpp, builtin_hooks.cpp   Mod host API (public header include/rs64/host_api.h)
-src/main/lockstep*.cpp                  Input record/replay and frame hashing
+src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
+  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture
+  ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
+  ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
+  ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
+  ├── game/                             Code that hooks the recompiled game: hook_helpers (entry points for rogue_squadron.toml hooks), toml_hooks.c, upstream_compat (libultra shims, scheduler overrides, rs64_load_overlay), register_overlays / register_patches, game_state + nav_sequencer (state classifier, BOOT_TARGET driver), menu_config, builtin_hooks, camera_shots.h, mod_levels.h
+  ├── host_api/                         Mod host API (public header include/rs64/host_api.h)
+  ├── lockstep/                         Input record/replay and frame hashing
+  └── util/                             debug_logs.h (env_* helpers), mips_call.h, rdram_words.h
 mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
 patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
 mods/multiplayer-native/                Online co-op as a native mod, always built by the game's CMake (the exe has no multiplayer code)
@@ -106,7 +107,7 @@ Files written to `logs/` and `dumps/crash-dumps/` during a run:
 
 ### Crash / hang triage
 
-1. **Crash**: a `crash_*.dmp` is written automatically by the handlers in `src/main/main.cpp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
+1. **Crash**: a `crash_*.dmp` is written automatically by the handlers in `src/main/crash.cpp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
 2. **Hang**: from another shell, `pwsh tools/dump-game.ps1` captures the running process even when the window is "Not Responding". Don't use F12 if the message pump is starved — it won't fire.
 3. **Triage threads**: `python tools/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
 
@@ -138,10 +139,10 @@ The primary correctness workflow — diff a live run against a Project64 golden 
 
 ## Overriding recompiled functions
 
-**Do not hand-edit `RecompiledFuncs/funcs_*.c` for defensive guards or game-logic overrides.** Those edits are regeneration-hostile and made the codebase brittle for months. Base-game fixes are `[[patches.hook]]` (C inserted at the function's entry or `before_vram`) and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with any non-trivial host logic in [src/main/hook_helpers.cpp](src/main/hook_helpers.cpp) as an `extern "C"` function the hook declares and calls. Re-run `regen_funcs` after editing the toml. Whole-function C goes in the patches ELF instead ([patches/README.md](patches/README.md)); it rebuilds with the game.
+**Do not hand-edit `RecompiledFuncs/funcs_*.c` for defensive guards or game-logic overrides.** Those edits are regeneration-hostile and made the codebase brittle for months. Base-game fixes are `[[patches.hook]]` (C inserted at the function's entry or `before_vram`) and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with any non-trivial host logic in [src/game/hook_helpers.cpp](src/game/hook_helpers.cpp) as an `extern "C"` function the hook declares and calls. Re-run `regen_funcs` after editing the toml. Whole-function C goes in the patches ELF instead ([patches/README.md](patches/README.md)); it rebuilds with the game.
 
 - A hook is compiled into the recompiled body, so it runs for direct and `LOOKUP_FUNC` (indirect, `func_map`) calls alike. No link-order tricks.
-- A hook's text is one call, `{ if (rs64_th_<func>_<vram|entry>(rdram, ctx)) return; }` or `{ rs64_th_<func>_<vram|entry>(rdram, ctx); }`; the style check rejects anything else. The body lives in [src/main/toml_hooks.c](src/main/toml_hooks.c) (declared in `include/rs64_toml_hooks.h`), compiled with the recompiled code, so it sees `rdram`, `ctx`, the `MEM_*` macros and `funcs.h`. `return 1` exits the whole game function (the first form only); set `ctx->r2` (or `ctx->f0`) first to return a value.
+- A hook's text is one call, `{ if (rs64_th_<func>_<vram|entry>(rdram, ctx)) return; }` or `{ rs64_th_<func>_<vram|entry>(rdram, ctx); }`; the style check rejects anything else. The body lives in [src/game/toml_hooks.c](src/game/toml_hooks.c) (declared in `include/rs64_toml_hooks.h`), compiled with the recompiled code, so it sees `rdram`, `ctx`, the `MEM_*` macros and `funcs.h`. `return 1` exits the whole game function (the first form only); set `ctx->r2` (or `ctx->f0`) first to return a value.
 - Call recompiled game functions from a hook only through `mips_call`.
 
 N64Recomp is `build/Debug/N64Recomp.exe` (override `N64RECOMP_EXE`), built from `lib/N64ModernRuntime/N64Recomp` (a directory in the N64ModernRuntime fork) via `N64RecompCLI`; `regen_funcs` depends on it. It supports `--dump-context`, `func_reference_syms_file` and `patch_files`. If a regen truncates `funcs.h` to ~7 lines, the exe is stale; see dead ends.
@@ -154,11 +155,11 @@ Base-game fixes go in the toml. Self-contained gameplay mods are `.nrm` code mod
 
 ### Overlays: registered at boot, switched by a hook
 
-librecomp's section table covers all three `.ovl.*` overlays (mission / menu / cinematic), which share `ram_addr 0x800A5130`. They are all registered at boot in [src/main/register_overlays.cpp](src/main/register_overlays.cpp) via `recomp::overlays::register_overlays` (the Zelda64Recomp pattern). Which one the `func_map` resolves to is switched at runtime by a `[[patches.hook]]` on `loadOverlay` (0x80000B3C, `s0` = id 0 mission / 1 menu / 2 cinematic) calling `rs64_load_overlay` in [upstream_compat.cpp](src/main/upstream_compat.cpp), which unloads and loads the overlay through librecomp's API. Keep overlay logic there; don't modify librecomp's DMA path.
+librecomp's section table covers all three `.ovl.*` overlays (mission / menu / cinematic), which share `ram_addr 0x800A5130`. They are all registered at boot in [src/game/register_overlays.cpp](src/game/register_overlays.cpp) via `recomp::overlays::register_overlays` (the Zelda64Recomp pattern). Which one the `func_map` resolves to is switched at runtime by a `[[patches.hook]]` on `loadOverlay` (0x80000B3C, `s0` = id 0 mission / 1 menu / 2 cinematic) calling `rs64_load_overlay` in [upstream_compat.cpp](src/game/upstream_compat.cpp), which unloads and loads the overlay through librecomp's API. Keep overlay logic there; don't modify librecomp's DMA path.
 
 ### Terrain grid is 128x128 in host RAM
 
-The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/main/hook_helpers.cpp)); keep other host tables clear of it. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/game/hook_helpers.cpp)); the camera name for a mod-linked mid-mission shot sits at 0x80C40000-0x80C400FF, a mod level's redirected asset name at 0x80C40100-0x80C401FF, its medal_info records at 0x80C40200-0x80C40223, SELECT GAME's mod medal text at 0x80C40300-0x80C40367, its opening crawl text at 0x80C41000-0x80C41FFF and its pause-list objective text at 0x80C42000-0x80C420FF. Keep other host tables clear of them. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
 
 ### Per-player data relocation (co-op)
 
@@ -179,9 +180,9 @@ Online co-op (`ROGUESQ_MP=host|join`, or the MULTIPLAYER lobby page from the `mu
 
 ### Game-state model + BOOT_TARGET nav engine
 
-A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/main/state_table.inl`, host classifier in [src/main/game_state.cpp](src/main/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-step 0x800CE626). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
+A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/game/state_table.inl`, host classifier in [src/game/game_state.cpp](src/game/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-step 0x800CE626). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
 
-`ROGUESQ_BOOT_TARGET=level:<id>[,craft]` is a state-gated **nav sequencer** ([src/main/nav_sequencer.cpp](src/main/nav_sequencer.cpp)) that drives the real menus to a mission (replacing the old field-poke that jumped the state machine and bailed to attract). Never call a recompiled function from the host to force state — inject input + write fields the game's own confirm path reads (e.g. `gCurrentLevel` 0x130B70 is a **u32**, not a byte — a byte write = out-of-range id = crash). `demo:<n>` auto-disables the custom menu (it displaced the attract idle path) so the chosen attract demo plays; firing it *instantly* is unsolved (idle trigger is `(clock − lastInputFrame) > threshold`, `lastInputFrame` not locatable statically). See project memory `project_boot_target_nav_engine_2026_09_22` and `project_game_state_model_2026_09_22`.
+`ROGUESQ_BOOT_TARGET=level:<id>[,craft]` is a state-gated **nav sequencer** ([src/game/nav_sequencer.cpp](src/game/nav_sequencer.cpp)) that drives the real menus to a mission (replacing the old field-poke that jumped the state machine and bailed to attract). Never call a recompiled function from the host to force state — inject input + write fields the game's own confirm path reads (e.g. `gCurrentLevel` 0x130B70 is a **u32**, not a byte — a byte write = out-of-range id = crash). `demo:<n>` auto-disables the custom menu (it displaced the attract idle path) so the chosen attract demo plays; firing it *instantly* is unsolved (idle trigger is `(clock − lastInputFrame) > threshold`, `lastInputFrame` not locatable statically). See project memory `project_boot_target_nav_engine_2026_09_22` and `project_game_state_model_2026_09_22`.
 
 ### Factor 5 GBI — custom opcodes
 
@@ -200,7 +201,7 @@ Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content lin
 
 ### Audio — MusyX synth and MORT voice
 
-Rogue Squadron drives audio through Factor 5's **MusyX** engine, and **SFX and music work**: the CPU-side MusyX sequencer submits `M_AUDTASK`s, which run the **RSPRecomp'd MusyX synth ucode** (`musyx_audio_runner`, from `rsp/musyx_rsp.toml`) on the host audio-task thread; the synthesized PCM flows through `queue_samples` → SDL ([main.cpp](src/main/main.cpp)). This is the default (`get_rsp_microcode` returns `musyx_audio_runner` for `M_AUDTASK`); `ROGUESQ_NO_AUDIO_UCODE=1` falls back to the silent `musyx_stub`. Stock `aspMain` is **not** on the audio path; MusyX has no shared format with the stock ucode. `ROGUESQ_DUMP_PCM` drives offline capture. See [docs/game-architecture.md](docs/game-architecture.md#audio-pipeline).
+Rogue Squadron drives audio through Factor 5's **MusyX** engine, and **SFX and music work**: the CPU-side MusyX sequencer submits `M_AUDTASK`s, which run the **RSPRecomp'd MusyX synth ucode** (`musyx_audio_runner`, from `rsp/musyx_rsp.toml`) on the host audio-task thread; the synthesized PCM flows through `queue_samples` → SDL ([audio.cpp](src/audio/audio.cpp)). This is the default (`get_rsp_microcode` returns `musyx_audio_runner` for `M_AUDTASK`); `ROGUESQ_NO_AUDIO_UCODE=1` falls back to the silent `musyx_stub`. Stock `aspMain` is **not** on the audio path; MusyX has no shared format with the stock ucode. `ROGUESQ_DUMP_PCM` drives offline capture. See [docs/game-architecture.md](docs/game-architecture.md#audio-pipeline).
 
 Subtitled **dialogue uses a separate codec, MORT** (per the [rerogue](https://github.com/dpethes/rerogue) PC-version RE). Contrary to earlier notes, MORT is **fully recompiled and works** — `tools/mort_decode.py` / `tools/MORTDecoder.cpp` are the offline reference. Voice-decode freezes were an **N64Recomp codegen bug** in the conditional branch-and-link (`bgezal`/`bltzal`) `$ra`-as-data-pointer idiom: the MusyX/voice filters do `bltzal $zero, T` then read `$ra` (= PC+8) as the base of an embedded coefficient table (`addiu $t7, $ra, 0xD4; lb …`). The recompiler emitted the branch but **never materialized the link *value***, so `$ra` stayed 0 (indirect-call entry), the table pointer computed to `~0x800000DB`, and the read AV'd — SEH-swallowed, killing the thread and deadlocking the frame pipeline (`filterVoiceSampleBlock`, on `viRetraceHandlerThread`, was the SELECT-LEVEL→load voiceline freeze; `applyVoiceDelayFilter` was the earlier demo/FrontEnd one). **Fixed (2026-09-20)**: `recompilation.cpp` now emits `ctx->r31 = PC+8` for the conditional branch-and-link ops before the branch condition (`Generator::emit_link_address`, implemented in `CGenerator`); `jal`/`jalr` still do not write `r31`. Diagnose these from a full-memory `dump-game.ps1` dump with `tools/reconstruct-freeze.py` (frozen-machine state from RDRAM) + `tools/host-stacks.py` (symbolized host stacks; refuses on a stale-exe/PDB mismatch). See project memory `craftselect-voiceline-freeze-2026-09-16` (root cause + the fix) and `demo-voiceline-freeze-2026-09-13`. The old `ROGUESQ_VOICE_UNSTICK` host watchdog has been removed. `tools/extract_speech_table.py` extracts the voiceId→text table.
 
@@ -220,7 +221,7 @@ Game time is variable-timestep, not frame-counted: `timeSnapshotFiller` (0x8000B
 
 - **C++ exceptions** (SEH `0xE06D7363`): the `__except` filter in [librecomp/src/recomp.cpp](lib/N64ModernRuntime/librecomp/src/recomp.cpp) **must** let these propagate (`EXCEPTION_CONTINUE_SEARCH`). Catching them with `std::exit(1)` kills the game on any throw; the outer `try/catch` in [ultramodern/src/threads.cpp](lib/N64ModernRuntime/ultramodern/src/threads.cpp) recovers.
 - **Hardware SEH** (AVs, illegal instructions): caught, the thread terminates, the process continues.
-- **STL bounds checks** ("vector subscript out of range"): the `_CrtSetReportHook` in [main.cpp](src/main/main.cpp) returns 1 to suppress the abort. Trade-off: occasional visual glitch over a hard crash.
+- **STL bounds checks** ("vector subscript out of range"): the `_CrtSetReportHook` in [crash.cpp](src/main/crash.cpp) returns 1 to suppress the abort. Trade-off: occasional visual glitch over a hard crash.
 - **`get_function` on an unmapped address** (NULL or stray fn-ptr call): stubbed to a no-op in [librecomp/src/overlays.cpp](lib/N64ModernRuntime/librecomp/src/overlays.cpp) so the recompiled MIPS continues; logs `[null-call] addr=...` with the calling MIPS function (MSVC builds) or `Failed to find function at 0x...` (other compilers).
 
 ### RT64 interpreter safety
@@ -281,7 +282,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 ## Style conventions
 
-`style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/main` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists); the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
+`style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists); the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
 
 - **No emojis** in code, comments, or docs unless explicitly requested.
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.
@@ -299,14 +300,67 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
   ```
 - **Diagnostic accumulators must be bounded.** Any `static` set/map/vector that a debug probe grows keyed by an ever-changing value (address, hash, DL/frame id) leaks to runaway memory over a long logging session if it is never evicted — a distinct-hash set is the classic offender. Cap them keep-recent instead: in `lib/rt64` use `rt64diag::BoundedSet` / `BoundedMap` ([lib/rt64/src/common/rt64_diag_bounds.h](lib/rt64/src/common/rt64_diag_bounds.h), FIFO eviction, default 5000, override `ROGUESQ_DIAG_CAP`); once saturated a set reports a recent-window count (`<= cap`), not an all-time total. Address/config-keyed trackers are naturally small and need no cap; hash/id-keyed ones do. (Note: normal runs are memory-flat in both Debug and Release — the fixed ~4.9GB Private / ~11GB Virtual at boot is RT64's GPU commit, not a leak; runaway shows up only under diag flags.)
 - When renaming symbols, avoid address-encoded names (`clearByteAt801128CC`) — they add nothing over `func_HHHHHHHH`. If you can't see the semantics, leave it as `func_*`.
-- **One statement per line for control flow.** An `if` (or other statement) that begins a new logical statement gets its own line — don't trail it after another statement on the same physical line separated by `;`. Split the guard onto the next line:
+- **One statement per line.** Every statement gets its own line — don't trail one after another on the same physical line separated by `;` (`extern T* g; g = x;` is two lines). Split a trailing guard onto the next line:
   ```c
   static int s_lo = -1;
   if (s_lo < 0) s_lo = env_on("ROGUESQ_LOG_AUDIO_OUT");
   ```
   Exempt: single-line loop bodies, aligned lookup/return ladders and tabular min/max updates, and the env-gated diagnostic probe blocks — keep those terse.
+- **Name repeated strings.** A literal used more than once goes in a `static constexpr const char*` (`kAppName`) or a small helper (`rom_problem_text`); a local string that never changes is `const`. Env var names stay literal at each use so they can be grepped.
+- **No bare `{ ... }` blocks.** A brace block needs a statement that owns it (`if`, loop, `switch` case, function, lambda). Unwrap a bare block into the surrounding code, renaming any locals that then clash.
+- **Separate logical steps with blank lines.** Put a blank line after the opening brace of a function body, or of a lambda assigned to a variable (unless the body is one line or starts with a comment, which sits right under the brace); a lambda passed inline (an argument or an initializer field like `.message_box = [](...) {`) gets none. Add one before and after each `if`/loop block, and between steps (type aliases, setup, a guard, the call, its log line, the return). Keep declarations that belong together on adjacent lines, and leave no blank line before a closing brace. The opening brace goes on its own line for an early-exit guard whose body is only a `return`, and for an `if`, loop, `switch` or named function whose condition / parameter list or any direct body line is 70+ characters (or whose header spans lines); every other block, and every lambda, keeps it on the statement's line:
+  ```cpp
+  void set_window_frame_rate(void* native_window)
+  {
+
+      using SetFrameRate = int32_t (*)(ANativeWindow*, float, int8_t);
+
+      static const auto s_fn = [] {
+
+          void* lib = dlopen("libnativewindow.so", RTLD_NOW);
+          void* sym = lib ? dlsym(lib, "ANativeWindow_setFrameRate") : nullptr;
+
+          if (!sym) {
+              sym = dlsym(RTLD_DEFAULT, "ANativeWindow_setFrameRate");
+          }
+
+          return reinterpret_cast<SetFrameRate>(sym);
+      }();
+
+      if (!s_fn || !native_window)
+      {
+          return;
+      }
+
+      int32_t rc = s_fn(static_cast<ANativeWindow*>(native_window), 60.0f, 1);
+
+      fprintf(stderr, "[perf] ANativeWindow_setFrameRate = %d\n", rc);
+  }
+  ```
+  A comment that follows a statement starts a new step, so it gets a blank line above it; so does a log line (`fprintf`) after a non-log statement, and a multi-line statement ending in `};` (a lambda, struct or initializer) gets one before and after it.
+  Preprocessor conditionals follow the same rule: a blank line before `#if` and after `#endif`, including between two conditionals in a row. A branch that holds more than a one-line statement (and its comment) also gets a blank line after its `#if`/`#elif`/`#else` and before the next directive, on both sides; a one-line branch stays tight:
+  ```cpp
+  #if defined(__linux__) && !defined(__ANDROID__)
+      set_window_icon(sdl_window);
+  #endif
+
+      SDL_StopTextInput();
+
+  #if defined(_WIN32)
+
+      SDL_SysWMinfo wm{};
+
+      SDL_VERSION(&wm.version);
+      SDL_GetWindowWMInfo(sdl_window, &wm);
+
+      return { wm.info.win.window };
+
+  #else
+      return sdl_window;
+  #endif
+  ```
 - **Env gates on hot paths must read the environment once.** Use a `static const` initializer, or a distinct uninitialized sentinel checked with `== -1`. Never cache "off" as a negative value that a `< 0` check re-reads: 12 such gates in the F5 GBI ran `getenv()` on every command and were half the walk time.
-- **Read env vars through the shared `recomp::dbg::env_*` helpers** (`src/main/debug_logs.h`: `env_on`/`env_int`/`env_str`/`env_u32`), not open-coded `getenv` parsing.
+- **Read env vars through the shared `recomp::dbg::env_*` helpers** (`src/util/debug_logs.h`: `env_on`/`env_int`/`env_str`/`env_u32`), not open-coded `getenv` parsing.
 - **Remove a debug env var once the fix or feature it served is done** — the gate, the code behind it, its row in [docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md), and any comment naming it. Keep one only if it can test, validate or probe for other bugs (a trace category, a dump, an address watch, an A/B toggle for a still-heuristic path). A probe for one frame, one address or one already-verified fix does not qualify.
 
 ## Open work

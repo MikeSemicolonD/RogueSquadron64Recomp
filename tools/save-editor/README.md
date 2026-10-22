@@ -29,9 +29,8 @@ preserves the loaded filename, so an edited `<game-id>.bin` is a drop-in replace
   arbitrary byte poke, manual checksum recompute, and copy-0 → copy-1 mirror.
 
 Structured edits mirror both body copies and recompute all checksums automatically, so the
-exported file passes the game's `initSaveData` sanity check. **New blank** seeds the default
-Elite Rogues board (the dev-team scores from `loadDefaultHighScores` / `0x8006DCCC`), matching
-a fresh in-game save.
+exported file passes the game's `initSaveData` sanity check. The editor only exports edits of
+a loaded save; the example data it opens with can't be exported.
 
 The confirmed weapon-upgrade bits are the seeker toggles (`0x800`/`0x2000`/`0x4000`, per
 `func_800C6728`); the remaining "advanced" toggles are inferred (shown dashed) and not yet

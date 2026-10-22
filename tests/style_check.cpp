@@ -1,4 +1,4 @@
-// Style checks for src/main and mods/multiplayer-native/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line.
+// Style checks for src/ and mods/multiplayer-native/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line.
 // Usage: style_check <repo root> [--update-baseline]. Exits 1 on findings not in tools/style/baseline.txt.
 #include <algorithm>
 #include <cctype>
@@ -44,11 +44,11 @@ static std::vector<std::string> findings(const fs::path& root) {
     static const std::regex two(R"(;\s+(if|while)\s*\()");
     static const std::regex include_re(R"re(^\s*#\s*include\s+"([^"]+)")re");
     // Base-game headers the multiplayer mod may include; anything else it needs goes through the host API (mods/multiplayer-native/CMakeLists.txt lists the same files).
-    static const std::set<std::string> mp_allowed = {"lockstep_core.h", "debug_logs.h", "rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "json/json.hpp"};
+    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/camera_shots.h", "json/json.hpp"};
     const std::string mp_dir = "mods/multiplayer-native/src";
     std::vector<std::pair<std::string, fs::path>> files;
-    for (const std::string dir : {std::string("src/main"), mp_dir}) {
-        for (auto& e : fs::directory_iterator(root / dir)) {
+    for (const std::string dir : {std::string("src"), mp_dir}) {
+        for (auto& e : fs::recursive_directory_iterator(root / dir)) {
             auto ext = e.path().extension();
             if (e.is_regular_file() && (ext == ".cpp" || ext == ".h")) files.push_back({dir, e.path()});
         }
@@ -56,7 +56,7 @@ static std::vector<std::string> findings(const fs::path& root) {
     std::sort(files.begin(), files.end());
     std::vector<std::string> out;
     for (auto& [dir, f] : files) {
-        std::string rel = dir + "/" + f.filename().string();
+        std::string rel = fs::relative(f, root).generic_string();
         std::ifstream in(f, std::ios::binary);
         std::string line, first;
         int run = 0;
@@ -78,7 +78,7 @@ static std::vector<std::string> findings(const fs::path& root) {
             if (std::regex_search(code, two) && s.rfind("for", 0) != 0) out.push_back(rel + ": two statements on one line: " + head60(s));
         }
     }
-    // A [[patches.hook]] text is one call into src/main/toml_hooks.c, in one of two forms, so the hook's C stays out of the toml.
+    // A [[patches.hook]] text is one call into src/game/toml_hooks.c, in one of two forms, so the hook's C stays out of the toml.
     static const std::regex hook_form(R"(^text = '\{ (if \(rs64_th_\w+\(rdram, ctx\)\) return;|rs64_th_\w+\(rdram, ctx\);) \}'$)");
     std::ifstream toml(root / "rogue_squadron.toml", std::ios::binary);
     std::string line;

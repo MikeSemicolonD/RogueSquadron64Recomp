@@ -105,7 +105,7 @@ const voicesOf = (name, depth = 2, seen = new Set()) => {
   if (depth) for (const m of f.body.matchAll(/^\s*(\w+)\(rdram, ctx\);/gm)) if (mission.has(m[1]) && !SPEECH_FNS.has(m[1])) out.push(...voicesOf(m[1], depth - 1, seen));
   return out;
 };
-const triggerVoices = {};
+const triggerVoices = {}, scriptReads = new Map();
 for (const [name, f] of funcs) {
   if (!mission.has(name)) continue;
   for (const m of f.body.matchAll(/^\s*addBooleanCountHandleWrapper\(rdram, ctx\);/gm)) {
@@ -116,14 +116,68 @@ for (const [name, f] of funcs) {
     const handler = missionByAddr.get(((parseInt(hi[1], 16) << 16) + parseInt(lo[1])) >>> 0);
     const lv = ranges.find(([, a, b]) => a <= f.addr && f.addr <= b)?.[0];
     const ids = handler ? [...new Set(voicesOf(handler))] : [];
+    const b = lastImm(before, 'r5'), c = lastImm(before, 'r7');
+    if (lv && b) add(scriptReads, lv, 'b' + b);
+    if (lv && c) add(scriptReads, lv, 'c' + c);
     if (!lv || !ids.length) continue;
     const t = (triggerVoices[lv] ??= { c: {}, b: {} });
-    const b = lastImm(before, 'r5'), c = lastImm(before, 'r7');
     if (c) (t.c[c] ??= []).push(...ids.filter((v) => !t.c[c].includes(v)));
     if (b) (t.b[b] ??= []).push(...ids.filter((v) => !t.b[b].includes(v)));
   }
 }
 
+// Lines a level script plays when it polls a flag or counter (lvX_checkComplexObjectives and its helpers, decomp C): each speech call is
+// keyed by the getObjectiveBoolean / getObjectiveCount reads of every `if` around it. pb: flag -> value tested -> voice ids (a bare or
+// != 0 test is 1, ! or == 0 is 0); pc: counter -> voice ids.
+const num = (s) => parseInt(s);
+const matchEnd = (src, i, open, close) => {
+  for (let d = 0; i < src.length; i++) {
+    if (src[i] === open) d++;
+    else if (src[i] === close && --d === 0) return i;
+  }
+  return src.length;
+};
+const lvSrc = join(decomp, 'src/mission_overlay/level_objective_handling');
+for (const f of readdirSync(lvSrc).filter((f) => /^lv_\w+\.c$/.test(f))) {
+  const lv = f.slice(0, -2), src = readFileSync(join(lvSrc, f), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  for (const m of src.matchAll(/getObjective(Boolean|Count)\((0x[0-9A-Fa-f]+|\d+)\)/g)) add(scriptReads, lv, (m[1] === 'Boolean' ? 'b' : 'c') + num(m[2]));
+  // Speech calls with a constant id, and calls to this file's functions that make them.
+  const speechAt = [...src.matchAll(/\b(?:playObjectiveVoiceLine[12]|playSpeechClip\w*|enqueueSpeechClip)\((0x[0-9A-Fa-f]+|\d+)/g)].map((m) => [m.index, [num(m[1])]]);
+  const local = new Map();
+  for (const m of src.matchAll(/^\w[\w\s*]*?\b(\w+)\([^;{]*\)\s*\{/gm)) {
+    const end = matchEnd(src, m.index + m[0].length - 1, '{', '}');
+    local.set(m[1], speechAt.filter(([i]) => i > m.index && i < end).flatMap(([, ids]) => ids));
+  }
+  for (const m of src.matchAll(/\b(\w+)\(/g)) if (local.get(m[1])?.length && !/^\w[\w\s*]*$/.test(src.slice(src.lastIndexOf('\n', m.index) + 1, m.index))) speechAt.push([m.index, local.get(m[1])]);
+  const ifs = [];
+  for (const m of src.matchAll(/\bif\s*\(/g)) {
+    const ce = matchEnd(src, m.index + m[0].length - 1, '(', ')');
+    let b = ce + 1;
+    while (/\s/.test(src[b])) b++;
+    ifs.push({ cond: src.slice(m.index, ce + 1), from: b, to: src[b] === '{' ? matchEnd(src, b, '{', '}') : src.indexOf(';', b) });
+  }
+  for (const [at, ids] of speechAt) {
+    for (const c of ifs.filter((x) => x.from <= at && at <= x.to)) {
+      const t = (triggerVoices[lv] ??= { c: {}, b: {} });
+      for (const r of c.cond.matchAll(/(!\s*)?getObjective(Boolean|Count)\((0x[0-9A-Fa-f]+|\d+)\)\s*(==|!=|>=|>|<=|<)?\s*(0x[0-9A-Fa-f]+|\d+)?/g)) {
+        const n = num(r[3]);
+        if (r[2] === 'Count') (((t.pc ??= {})[n] ??= []).push(...ids));
+        else {
+          const v = r[1] ? 0 : r[4] === '==' ? num(r[5]) : r[4] === '!=' && num(r[5]) === 0 ? 1 : r[4] ? null : 1;
+          if (v !== null) ((((t.pb ??= {})[n] ??= {})[v] ??= []).push(...ids));
+        }
+      }
+    }
+  }
+}
+// lv0_checkComplexObjectives is still asm: it plays 549 when flag 5 is cleared (with flags 0x1F and 0x1A clear, 0x80101778).
+(((triggerVoices.lv_0 ??= { c: {}, b: {} }).pb ??= {})[5] ??= {})[0] = [549];
+add(scriptReads, 'lv_0', 'b5');
+for (const t of Object.values(triggerVoices)) {
+  for (const ids of Object.values(t.pc ?? {})) ids.splice(0, ids.length, ...new Set(ids));
+  for (const byV of Object.values(t.pb ?? {})) for (const ids of Object.values(byV)) ids.splice(0, ids.length, ...new Set(ids));
+}
+for (const [lv, s] of scriptReads) (triggerVoices[lv] ??= { c: {}, b: {} }).reads = [...s].sort();
 
 // Categories decided outright by code tables. First writer wins, except cutscenes merge their levels.
 const byCode = new Map();

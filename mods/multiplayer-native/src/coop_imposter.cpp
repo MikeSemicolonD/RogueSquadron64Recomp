@@ -1,7 +1,7 @@
 #include "mp_core.h"
-#include "debug_logs.h"
+#include "util/debug_logs.h"
 #include "ghost_internal.h"
-#include "rdram_words.h"
+#include "util/rdram_words.h"
 #include "mp_host.h"
 #include <cstdio>
 #include <cstring>

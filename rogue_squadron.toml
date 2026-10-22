@@ -3,7 +3,7 @@ entrypoint = 0x80000400
 elf_path = "../rogue_squadron64/build/roguesquadron.elf"
 rom_file_path = "../rogue_squadron64/rogue_squadron.z64"
 output_func_path = "RecompiledFuncs"
-# Every [[patches.hook]] text is one call into src/main/toml_hooks.c; this header declares those functions.
+# Every [[patches.hook]] text is one call into src/game/toml_hooks.c; this header declares those functions.
 recomp_include = "#include \"recomp.h\"\n#include \"rs64_toml_hooks.h\""
 
 # The 3 overlays (.ovl.mission/menu/cinematic) share VA 0x800A5130 and swap at
@@ -324,7 +324,7 @@ vram = 0x800934BC
 value = 0x00000000
 
 # =============================================================================
-# Host hooks. Every entry here calls into src/main/hook_helpers.cpp or
+# Host hooks. Every entry here calls into src/game/hook_helpers.cpp or
 # upstream_compat.cpp; the inline KSEG0 guards that used to sit here are gone.
 # =============================================================================
 
@@ -933,7 +933,7 @@ text = '{ rs64_th_emitFrameRdpInitDl_entry(rdram, ctx); }'
 
 
 # Custom main-menu entries (e.g. QUIT). Config: roguesq_menu.json. Logic in
-# src/main/menu_config.cpp. This runs in the setupMenuData common tail, after
+# src/game/menu_config.cpp. This runs in the setupMenuData common tail, after
 # num_menu_entries (+0x95) is written and before the active-bitmask strlen loop,
 # so appended entries activate automatically.
 [[patches.hook]]
@@ -1057,6 +1057,12 @@ text = '{ rs64_th_renderLitMeshFaceGroup_800146F0(rdram, ctx); }'
 func = "initMission"
 before_vram = 0x800FA28C
 text = '{ if (rs64_th_initMission_800FA28C(rdram, ctx)) return; }'
+
+# Mid-mission camera shots: past the trigger's own flag / counter gates (a0 = its DAT item, a1 = 1 on enter) it queues the camera a mod linked to it.
+[[patches.hook]]
+func = "applyDatObjectiveTriggerEffect"
+before_vram = 0x80065A0C
+text = '{ rs64_th_applyDatObjectiveTriggerEffect_80065A0C(rdram, ctx); }'
 
 # Frame start: force a fixed dt ($f20, stored to 0x88($sp) by the next delay slot).
 # hook: RS64_HOOK_MISSION_FRAME_DT
@@ -1186,6 +1192,165 @@ func = "drawRadarIcon"
 before_vram = 0x800C5ED8
 text = '{ if (rs64_th_drawRadarIcon_800C5ED8(rdram, ctx)) return; }'
 
+# Mod levels in SELECT LEVEL: the screen's shared exit (confirm and back) ends the mod entries' redirects.
+[[patches.hook]]
+func = "drawRadarIcon"
+before_vram = 0x800C5EE0
+text = '{ rs64_th_drawRadarIcon_800C5EE0(rdram, ctx); }'
+
+# Mod levels: an entry's title (v0 from getGameOrFrontText(cursor)), when the screen opens and when the cursor moves.
+[[patches.hook]]
+func = "initCraftSelectScreen"
+before_vram = 0x800AF18C
+text = '{ rs64_th_initCraftSelectScreen_800AF18C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "handleCraftSelectInput"
+before_vram = 0x800AFDDC
+text = '{ rs64_th_handleCraftSelectInput_800AFDDC(rdram, ctx); }'
+
+# Mod levels: an entry's description (v0 from getGameOrFrontText(cursor + 0x21)).
+[[patches.hook]]
+func = "handleCraftSelectInput"
+before_vram = 0x800AFB58
+text = '{ rs64_th_handleCraftSelectInput_800AFB58(rdram, ctx); }'
+
+# Mod levels: an entry's preview image (a2 = the N of "level%d" before the sprintf).
+[[patches.hook]]
+func = "initCraftSelectScreen"
+before_vram = 0x800AF270
+text = '{ rs64_th_initCraftSelectScreen_800AF270(rdram, ctx); }'
+
+[[patches.hook]]
+func = "handleCraftSelectInput"
+before_vram = 0x800AF878
+text = '{ rs64_th_handleCraftSelectInput_800AF878(rdram, ctx); }'
+
+# Mod levels: a mod level's approved craft (v0), or its template's (a0 = level) when it lists none.
+[[patches.hook]]
+func = "getAvailablePlayerCraftFlagsConsiderUnlocks"
+text = '{ if (rs64_th_getAvailablePlayerCraftFlagsConsiderUnlocks_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "getAvailablePlayerCraftFlagsIgnoreUnlocks"
+text = '{ if (rs64_th_getAvailablePlayerCraftFlagsIgnoreUnlocks_entry(rdram, ctx)) return; }'
+
+# Mod levels: an entry's briefing voice (v0 = voice id before mallocVoiceLineStruct; 0xFFFF = none).
+[[patches.hook]]
+func = "startSlotLoopAnimWithVoiceSync"
+before_vram = 0x800B1C00
+text = '{ rs64_th_startSlotLoopAnimWithVoiceSync_800B1C00(rdram, ctx); }'
+
+[[patches.hook]]
+func = "startSlotLoopAnimWithVoiceSync"
+before_vram = 0x800B1D18
+text = '{ rs64_th_startSlotLoopAnimWithVoiceSync_800B1D18(rdram, ctx); }'
+
+# Mod levels: a level's own briefing recording starts as its template's briefing line, at 8 kHz from the mod's stream.
+[[patches.hook]]
+func = "allocAndConfigureNewVoice"
+before_vram = 0x8009B114
+text = '{ rs64_th_allocAndConfigureNewVoice_8009B114(rdram, ctx); }'
+
+[[patches.hook]]
+func = "allocAndConfigureNewVoice"
+before_vram = 0x8009B1F4
+text = '{ rs64_th_allocAndConfigureNewVoice_8009B1F4(rdram, ctx); }'
+
+# Mod levels: while one is played (as its template), a lookup of the template's level file or intro/extro (a1 = path) finds the mod's copy.
+[[patches.hook]]
+func = "find_manifest_entry"
+text = '{ rs64_th_find_manifest_entry_entry(rdram, ctx); }'
+
+# Mod levels, debrief (menu overlay state 3): the mod level's medal thresholds and best medal stand in for the template's (a1 = level).
+[[patches.hook]]
+func = "postLevelStatScreen"
+text = '{ rs64_th_postLevelStatScreen_entry(rdram, ctx); }'
+
+# Mod levels: the medal earned (v0 from getMissionMedal), kept in the mod medal record.
+[[patches.hook]]
+func = "postLevelStatScreen"
+before_vram = 0x800C092C
+text = '{ rs64_th_postLevelStatScreen_800C092C(rdram, ctx); }'
+
+# Mod levels: the pilot rank stays (v0 = rank from the medals).
+[[patches.hook]]
+func = "postLevelStatScreen"
+before_vram = 0x800C09C4
+text = '{ rs64_th_postLevelStatScreen_800C09C4(rdram, ctx); }'
+
+# Mod levels: the debrief header shows the mod level's title (v0 = level name).
+[[patches.hook]]
+func = "postLevelStatScreen"
+before_vram = 0x800C0A78
+text = '{ rs64_th_postLevelStatScreen_800C0A78(rdram, ctx); }'
+
+[[patches.hook]]
+func = "postLevelStatScreen"
+before_vram = 0x800C0A9C
+text = '{ rs64_th_postLevelStatScreen_800C0A9C(rdram, ctx); }'
+
+# Mod levels: no high score, upgrade, unlock or account write for a mod level's debrief.
+[[patches.hook]]
+func = "highScoreBubbleSort"
+text = '{ if (rs64_th_highScoreBubbleSort_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "unlockMissleUpgradeOnLevelCompletion"
+text = '{ if (rs64_th_unlockMissleUpgradeOnLevelCompletion_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "unlockLevelsAndCraftsBasedOnMedalsEarned"
+text = '{ if (rs64_th_unlockLevelsAndCraftsBasedOnMedalsEarned_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "loadAccountDataIntoStruct"
+text = '{ if (rs64_th_loadAccountDataIntoStruct_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "generateUnlockString"
+text = '{ if (rs64_th_generateUnlockString_entry(rdram, ctx)) return; }'
+
+# Mod levels: the debrief returned; the template's data comes back.
+[[patches.hook]]
+func = "runMenuRandomBackdropScreen"
+before_vram = 0x800BF9E4
+text = '{ rs64_th_runMenuRandomBackdropScreen_800BF9E4(rdram, ctx); }'
+
+# Mod levels: after a mod level the unlock byte keeps its value (a1 = new, s0 = old) and no next level follows (v1 = level, < 0x10 advances).
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E424
+text = '{ rs64_th_mainGameLoop_8003E424(rdram, ctx); }'
+
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E444
+text = '{ rs64_th_mainGameLoop_8003E444(rdram, ctx); }'
+
+# Mod levels: SELECT LEVEL shows a mod entry's own medal (v1 = 0x80130B1C[cursor]).
+[[patches.hook]]
+func = "applyPlayerSlotAnimChannelKeyframe"
+before_vram = 0x800B1FD4
+text = '{ rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(rdram, ctx); }'
+
+# Mod levels: SELECT GAME shows the profile's mod level medals beside its game medals (s1 = slot record).
+[[patches.hook]]
+func = "setupCraftAnimationFlagSet"
+before_vram = 0x800B9334
+text = '{ rs64_th_setupCraftAnimationFlagSet_800B9334(rdram, ctx); }'
+
+# Mod levels: their own opening crawl, or none (v0 = crawl 0-3 for the planet pan-down, 0xFF none; a0 = level).
+[[patches.hook]]
+func = "getLevelIntroCrawlId"
+text = '{ if (rs64_th_getLevelIntroCrawlId_entry(rdram, ctx)) return; }'
+
+# Mod levels: the crawl's text (v0 = the front_TXT string the page is built from).
+[[patches.hook]]
+func = "buildModelViewerTextPage"
+before_vram = 0x800CA77C
+text = '{ rs64_th_buildModelViewerTextPage_800CA77C(rdram, ctx); }'
+
 # Lobby mission select: font 2 gets a third slot (status line) in a session.
 # hook: RS64_HOOK_MISSION_SELECT_FONTS
 [[patches.hook]]
@@ -1281,3 +1446,21 @@ text = '{ rs64_th_mainGameLoop_8003E10C(rdram, ctx); }'
 func = "mainGameLoop"
 before_vram = 0x8003E114
 text = '{ rs64_th_mainGameLoop_8003E114(rdram, ctx); }'
+
+# Mod levels with their own objectives: none of the template's mission script runs; the host checks the objectives and ends the mission.
+[[patches.hook]]
+func = "initializeObjectiveTracking"
+text = '{ if (rs64_th_initializeObjectiveTracking_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "checkComplexObjectives"
+text = '{ if (rs64_th_checkComplexObjectives_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "calculateFriendliesSaved"
+text = '{ if (rs64_th_calculateFriendliesSaved_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C2F1C
+text = '{ rs64_th_runPauseMenuStateMachine_800C2F1C(rdram, ctx); }'

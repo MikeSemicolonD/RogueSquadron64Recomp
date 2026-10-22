@@ -40,10 +40,14 @@ The host glue lives in `src/`:
 
 | File | Role |
 |---|---|
-| `src/main/main.cpp` | Entry point; SDL2 window/audio/input; `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); minidump/watchdog infra |
-| `src/main/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer, RDRAM dump triggers |
-| `src/main/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
-| `src/main/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
+| `src/main/main.cpp` | Entry point; SDL2 window, gfx and VI callbacks |
+| `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, touch, sensors, the SDL event loop |
+| `src/main/ui_panels.cpp` | ImGui panels: controls/rebind, mods, touch overlay |
+| `src/main/crash.cpp` | Crash handlers and minidumps (Windows) |
+| `src/audio/audio.cpp` | `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); SDL2 audio output |
+| `src/video/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer, RDRAM dump triggers |
+| `src/game/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
+| `src/game/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
 | `patches/` | Hand-written C cross-compiled to MIPS, run back through N64Recomp, linked *ahead* of `RecompiledFuncs/` so its symbols win — the regen-safe place for guards/overrides |
 
 `lib/rt64` and `lib/N64ModernRuntime` are MikeSemicolonD forks carrying the
@@ -269,7 +273,7 @@ Three helpers around the swap handshake, used by the frame loop (see
 | `getControllerNewButtonsPressed` (0x80079F50) | Returns `D_8013A960[idx]` |
 | `initControllerSettingsStructs` (0x800BCE2C) / `controllerSettingsScreen` (0x800BD274) | Controller settings UI |
 
-Controller settings — 4 named profiles: LUKE / WEDGE / JANSON / HOBBIE, 18 inputs each. SDL2 gamepad input works; the host can fake a controller for headless runs (`ROGUESQ_FAKE_CONTROLLER=1`, with `ROGUESQ_AUTO_START=<ms>` to pulse START) so automated runs clear the "NO CONTROLLER" gate. Keyboard, mouse and gamepad are resolved through the bindings profile in `src/main/input_bindings.cpp` (`roguesq_input.json`, F6 rebind UI).
+Controller settings — 4 named profiles: LUKE / WEDGE / JANSON / HOBBIE, 18 inputs each. SDL2 gamepad input works; the host can fake a controller for headless runs (`ROGUESQ_FAKE_CONTROLLER=1`, with `ROGUESQ_AUTO_START=<ms>` to pulse START) so automated runs clear the "NO CONTROLLER" gate. Keyboard, mouse and gamepad are resolved through the bindings profile in `src/input/input_bindings.cpp` (`roguesq_input.json`, F6 rebind UI).
 
 ### 9. Menus
 
@@ -525,7 +529,7 @@ The host never writes these bytes in the default mode (the old
 
 ### Host dispatch & flow
 
-- `src/main/main.cpp` `get_rsp_microcode`: `M_AUDTASK` → `musyx_audio_runner` by default (opt out `ROGUESQ_NO_AUDIO_UCODE=1` to fall back to the silent `musyx_stub`). The runner DMAs the ucode to DMEM, writes the OSTask, runs `factor5_boot` then the recompiled `musyx_audio`.
+- `src/audio/audio.cpp` `get_rsp_microcode`: `M_AUDTASK` → `musyx_audio_runner` by default (opt out `ROGUESQ_NO_AUDIO_UCODE=1` to fall back to the silent `musyx_stub`). The runner DMAs the ucode to DMEM, writes the OSTask, runs `factor5_boot` then the recompiled `musyx_audio`.
 - CPU side (`musyxSynthFrame`, 0x8009123C, run as an SI callback by the VI retrace thread each VI): `tickAudioSequencerFrame` drives channels each frame; `musyxMixActiveVoices` (0x80090E04) builds DSP descriptors from the 20-slot voice table `D_80149710`; `musyxBuildVoiceCommandList` (0x80091034) assembles the DSP task; key-on via `musyxKeyOnVoice`.
 - PCM/WAV capture: `ROGUESQ_DUMP_PCM=<path>` writes a streaming 22050 Hz stereo s16 WAV of the real synth output (the output dir must exist); `ROGUESQ_DUMP_PCM=1` writes `dumps/wav/capture.wav`.
 

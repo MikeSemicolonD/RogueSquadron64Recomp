@@ -36,14 +36,14 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 | --- | --- |
 | Visual Studio 2022 with **Desktop development with C++**, **C++ Clang Compiler for Windows** and **MSBuild support for LLVM (clang-cl)** | Windows x64 and x86 (`-T ClangCL`) |
 | CMake 3.20+ | All |
-| Android Studio (SDK, bundled JDK 17, `adb`) with **NDK 29.0.14206865**; compile/target SDK 34, min SDK 26 | Android. Gradle 9.2 fetches SDL 2.32.10 and its own CMake |
+| Android Studio (SDK, bundled JDK 17 or newer, `adb`) with **NDK 29.0.14206865**; compile/target SDK 34, min SDK 28 | Android. Gradle 9.6 (Android Gradle Plugin 9.4.1) fetches SDL 2.32.10 and its own CMake |
 | WSL2 with Ubuntu-24.04 | Linux targets from `bundle-release.ps1` |
 
 Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and for x86 Microsoft's DXC v1.8.2403.2 zip (the in-tree `dxc-bin` has no x86 `dxcompiler.dll`).
 
 D3D11 shader cache: Windows packages carry `d3d11_shader_cache/`, built by `RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt` (no ROM; `PLUME_D3D11_SHADER_CACHE` sets the output folder; WARP is used without a GPU). It compiles the list twice into the same folder, for feature level 11 (shader model 5) and feature level 10 (shader model 4, plus the raw-TMEM variant of each textured combination), about 5 minutes and 4 MB. Release CI and `tools/bundle-release.ps1` run it. The list was collected by playing the mission recordings, the other levels, the demos and the cutscenes on D3D11 and D3D10; to extend it, merge new lines from a play session's `d3d11_shader_cache/rt64_combos.txt`.
 
-Configure once per architecture: `cmake -B build -T ClangCL` (x64), `cmake -B build-x86 -A Win32 -T ClangCL` (x86). Android reuses `RecompiledFuncs/`, `src/main/state_table.inl` and `build/factor5_ucode/*.c` from a Windows Debug build.
+Configure once per architecture: `cmake -B build -T ClangCL` (x64), `cmake -B build-x86 -A Win32 -T ClangCL` (x86). Android reuses `RecompiledFuncs/`, `src/game/state_table.inl` and `build/factor5_ucode/*.c` from a Windows Debug build.
 
 ## Ubuntu 24.04 host (native or WSL2)
 
@@ -119,7 +119,7 @@ sudo apt install flatpak flatpak-builder
 | Linux armhf | As above, on a 32-bit OS; ARMv7 with NEON (Raspberry Pi 2 or newer) |
 | Linux i386 | As above; SSE4.1 CPU |
 | Flatpak | Flatpak with Flathub; the runtime installs with the bundle |
-| Android | Android 8+, arm64, Vulkan 1.1 |
+| Android | Android 9+, arm64, Vulkan 1.1 (expected on phones launched with Android 10; optional on Android 9, untested there) |
 
 The Linux tarball and AppImage bundle the game's own libraries (SDL2, GTK and their dependencies) but take glibc, `libstdc++` and everything GPU drivers load into the process (Vulkan, Wayland, X11/xcb, `libdrm`, `libz`, fonts) from the host: a bundled older copy would shadow the host's and the drivers would fail to load. The Flatpak also drops every library the runtime provides.
 

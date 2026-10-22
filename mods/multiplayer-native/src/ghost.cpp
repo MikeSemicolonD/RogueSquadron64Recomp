@@ -3,9 +3,10 @@
 #include "ghost_internal.h"
 #include "mp_core.h"
 #include "net_link.h"
-#include "debug_logs.h"
-#include "rdram_words.h"
+#include "util/debug_logs.h"
+#include "util/rdram_words.h"
 #include "mp_host.h"
+#include "rs64/camera_shots.h"
 #include "json/json.hpp"
 #include <algorithm>
 #include <chrono>
@@ -362,13 +363,31 @@ void send_game_over() {
     }
 }
 
+// Mod camera shots (camera_shots.txt) start from trigger effects, which in session only the host's world applies: the host sends each one it plays.
+void on_local_shot(const char* camera, const char* trigger, void*) {
+    Ghost& s = g();
+    if (s.in_session && !s.peer_left && s.player == 0) {
+        s.link.send(rs64::net::encode_shot(mission_tag(), camera, trigger), true);
+    }
+}
+
+const rs64_camera_shots* camera_shots() {
+    static const auto* svc = (const rs64_camera_shots*)rs64::mp::service(RS64_CAMERA_SHOTS_SERVICE);
+    static bool listening = false;
+    if (svc && !listening) {
+        svc->set_listener(on_local_shot, nullptr);
+        listening = true;
+    }
+    return svc;
+}
+
 void drain() {
     Ghost& s = g();
     // The connect edge first: the peer's HELLO can arrive in the same batch as the connection, and the lobby ignores a HELLO before it knows it is connected.
     lobby_poll();
     for (const auto& m : s.link.receive()) {
-        const uint8_t type = rs64::net::message_type(m.data(), m.size());
-        if (type == (uint8_t)rs64::net::Msg::State) {
+        switch ((rs64::net::Msg)rs64::net::message_type(m.data(), m.size())) {
+        case rs64::net::Msg::State: {
             rs64::net::StatePacket p;
             if (!rs64::net::decode_state(m.data(), m.size(), &p) || !valid_state(p)) {
                 continue;
@@ -398,7 +417,9 @@ void drain() {
             ps.down = {p.down[0], p.down[1], p.down[2]};
             ps.vel = {p.vel[0], p.vel[1], p.vel[2]};
             s.puppet.on_state(ps, s.remote_rx_s, p.sent_ms / 1000.0);
-        } else if (type == (uint8_t)rs64::net::Msg::Presence) {
+            break;
+        }
+        case rs64::net::Msg::Presence: {
             uint8_t e = 0, in = 0;
             if (!rs64::net::decode_presence(m.data(), m.size(), &e, &in)) {
                 continue;
@@ -419,7 +440,9 @@ void drain() {
                 s.team_triggers.forget(1);
                 fprintf(stderr, "[ghost] peer left the mission\n");
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Result) {
+            break;
+        }
+        case rs64::net::Msg::Result: {
             uint8_t e = 0, r = 0;
             // One result per mission: the host also repeats it at its mission end, and applying it again mid-transition re-raises the end request.
             if (rs64::net::decode_result(m.data(), m.size(), &e, &r) && s.player == 1 && s.in_session && s.host_result < 0 && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch)) {
@@ -427,14 +450,18 @@ void drain() {
                 s.host_result = r;
                 fprintf(stderr, "[ghost] host result %u received\n", r);
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Obj) {
+            break;
+        }
+        case rs64::net::Msg::Obj: {
             rs64::net::ObjSnapshot o;
             if (s.player == 1 && s.in_session && rs64::net::decode_obj(m.data(), m.size(), &o) && o.epoch == s.mission_id && o.seq > s.obj_last_seq) {
                 s.obj_last_seq = o.seq;
                 s.obj_pending = o;
                 s.obj_have = true;
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Life) {
+            break;
+        }
+        case rs64::net::Msg::Life: {
             uint8_t e = 0;
             if (s.player == 0 && s.in_session && s.rdram && rs64::net::decode_life_lost(m.data(), m.size(), &e) && e == s.epoch) {
                 uint8_t& lives = s.rdram[(kLives - 0x80000000u) ^ 3];
@@ -457,25 +484,33 @@ void drain() {
                     break;
                 }
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Out) {
+            break;
+        }
+        case rs64::net::Msg::Out: {
             uint8_t e = 0;
             if (s.player == 1 && s.in_session && rs64::net::decode_out(m.data(), m.size(), &e) && e == s.mission_id && !s.out) {
                 s.out = true;
                 fprintf(stderr, "[ghost] out of shared lives: spectating\n");
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Damage) {
+            break;
+        }
+        case rs64::net::Msg::Damage: {
             uint8_t e = 0;
             std::vector<std::pair<uint16_t, int32_t>> items;
             if (s.in_session && rs64::net::decode_damage(m.data(), m.size(), &e, &items) && e == mission_tag()) {
                 s.dat_apply.insert(s.dat_apply.end(), items.begin(), items.end());
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Upgrades) {
+            break;
+        }
+        case rs64::net::Msg::Upgrades: {
             uint8_t e = 0;
             uint32_t bits = 0;
             if (s.in_session && rs64::net::decode_upgrades(m.data(), m.size(), &e, &bits) && e == mission_tag()) {
                 s.upgrades_in |= bits;
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Pickup) {
+            break;
+        }
+        case rs64::net::Msg::Pickup: {
             uint8_t e = 0;
             uint16_t i = 0;
             if (s.in_session && s.rdram && rs64::net::decode_pickup(m.data(), m.size(), &e, &i) && e == mission_tag() && i < dat_count(s.rdram)) {
@@ -485,25 +520,41 @@ void drain() {
                     fprintf(stderr, "[ghost] the other player collected power-up %u\n", i);
                 }
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Trigger) {
+            break;
+        }
+        case rs64::net::Msg::Trigger: {
             uint8_t e = 0;
             uint16_t idx = 0;
             bool enter = false;
             if (s.player == 0 && s.in_session && rs64::net::decode_trigger(m.data(), m.size(), &e, &idx, &enter) && e == mission_tag()) {
                 s.trigger_in.emplace_back(idx, enter);
             }
-        } else if (type == (uint8_t)rs64::net::Msg::TowTrip) {
+            break;
+        }
+        case rs64::net::Msg::Shot: {
+            uint8_t e = 0;
+            std::string cam, trig;
+            if (s.player == 1 && s.in_session && rs64::net::decode_shot(m.data(), m.size(), &e, &cam, &trig) && e == mission_tag() && camera_shots()) {
+                camera_shots()->play(cam.c_str(), trig.c_str());
+            }
+            break;
+        }
+        case rs64::net::Msg::TowTrip: {
             uint8_t e = 0;
             uint16_t i = 0;
             if (s.in_session && s.rdram && rs64::net::decode_tow_trip(m.data(), m.size(), &e, &i) && e == mission_tag() && i < dat_count(s.rdram) && std::find(s.tow_in.begin(), s.tow_in.end(), i) == s.tow_in.end()) {
                 s.tow_in.push_back(i);
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Mission) {
+            break;
+        }
+        case rs64::net::Msg::Mission: {
             uint8_t id = 0;
             if (s.player == 1 && rs64::net::decode_mission(m.data(), m.size(), &id)) {
                 s.latest_mission = id;
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Hello) {
+            break;
+        }
+        case rs64::net::Msg::Hello: {
             rs64::net::Hello h;
             if (rs64::net::decode_hello(m.data(), m.size(), &h)) {
                 s.remote_name.assign(h.name, strnlen(h.name, 3));
@@ -512,22 +563,30 @@ void drain() {
                     fprintf(stderr, "[lobby] peer build %08X protocol %u, this build %08X protocol %u\n", h.build, h.protocol, s.lobby.local_build(), rs64::net::kProtocol);
                 }
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Skip) {
+            break;
+        }
+        case rs64::net::Msg::Skip: {
             if (rs64::net::decode_skip(m.data(), m.size())) {
                 s.skip.on_remote(now_s());
                 fprintf(stderr, "[ghost] the other player skipped the cutscene\n");
             }
-        } else if (type == (uint8_t)rs64::net::Msg::BriefingDone) {
+            break;
+        }
+        case rs64::net::Msg::BriefingDone: {
             if (s.player == 0 && rs64::net::decode_briefing_done(m.data(), m.size())) {
                 s.brief_done_ms = now_ms32();
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Browse) {
+            break;
+        }
+        case rs64::net::Msg::Browse: {
             uint8_t level = 0, state = 0;
             if (s.player == 1 && rs64::net::decode_browse(m.data(), m.size(), &level, &state)) {
                 s.host_cursor = level;
                 s.host_state = state;
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Ready) {
+            break;
+        }
+        case rs64::net::Msg::Ready: {
             uint8_t craft = 0;
             if (rs64::net::decode_ready(m.data(), m.size(), &craft)) {
                 s.craft.on_remote(craft == 0xFF ? -1 : craft);
@@ -540,17 +599,27 @@ void drain() {
                 }
                 fprintf(stderr, "[lobby] partner %s\n", craft == 0xFF ? "left craft select" : "picked a craft");
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Pick) {
+            break;
+        }
+        case rs64::net::Msg::Pick: {
             uint8_t level = 0;
             if (s.player == 1 && rs64::net::decode_pick(m.data(), m.size(), &level)) {
                 s.host_pick = level;
                 fprintf(stderr, "[lobby] host picked level %u\n", level);
             }
-        } else if (type == (uint8_t)rs64::net::Msg::Launch) {
+            break;
+        }
+        case rs64::net::Msg::Launch:
             rs64::net::decode_launch(m.data(), m.size(), &s.launch);
-        } else if (type == (uint8_t)rs64::net::Msg::Bye && !s.peer_left) {
-            s.peer_left = true;
-            fprintf(stderr, "[ghost] peer left\n");
+            break;
+        case rs64::net::Msg::Bye:
+            if (!s.peer_left) {
+                s.peer_left = true;
+                fprintf(stderr, "[ghost] peer left\n");
+            }
+            break;
+        default:
+            break;
         }
     }
     if (s.link.lost() && !s.peer_left) {
@@ -856,7 +925,9 @@ void apply_remote_triggers(uint8_t* rdram, recomp_context* ctx) {
             continue;
         }
         s.trigger_applying = true;
+        rs64::mp::set_flag("mp_trigger_for_peer", 1);
         rs64::mp::call(rdram, ctx, 0x80065980u, {ev, t.second ? 1u : 0u});
+        rs64::mp::set_flag("mp_trigger_for_peer", 0);
         s.trigger_applying = false;
         fprintf(stderr, "[ghost] trigger %u %s from the other player applied\n", t.first, t.second ? "enter" : "exit");
     }
@@ -1218,6 +1289,7 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx) {
     if (!s.started) {
         return;
     }
+    camera_shots();
     drain();
     if (!s.in_session || demo_active(rdram)) {
         return;
