@@ -87,6 +87,10 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 > [!NOTE]
 > Steam-Relay mod on Linux, Steam Deck and macOS are untested.
 
+#### Languages
+
+- **English, German and French:** menus, mission text and subtitles, picked under **OPTIONS > LANGUAGE** (or `--language en|de|fr`). The US cartridge already holds all three; the original only offered the choice on PAL consoles. Voice acting stays English.
+
 #### Mods
 
 - **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
