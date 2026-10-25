@@ -25,6 +25,7 @@
 #include "json/json.hpp"
 #include "librecomp/mods.hpp"
 #include "recomp.h"   // recomp_context, recomp_func_t (for mod-provided @exports)
+#include "game/menu_layout.h"
 #include "video/video_config.h"
 
 // Menu button system v2: one typed button model { menu, type, behavior, labels, placement } for the front-end and pause menus, driven by mod JSON (docs/adding-menus-and-buttons.md).
@@ -123,6 +124,12 @@ struct Button {
     bool has_order = false;
     int order = 0;
     std::string before, after, replace;   // anchor to a native alias / button id
+
+    // index: final visible position, negative counts from the end (wins over anchors). requires_cond: a condition that must hold for the button to show.
+    bool has_index = false;
+    int index = 0;
+    std::string requires_cond;
+
     int x = 0, y = 0;
 
     // Page entries: extra space below this line (pixels) and the text scale.
@@ -191,6 +198,18 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     b.before  = e.value("before",  std::string{});
     b.after   = e.value("after",   std::string{});
     b.replace = e.value("replace", std::string{});
+
+    if (e.contains("index") && e["index"].is_number_integer()) {
+        b.has_index = true;
+        b.index = e["index"].get<int>();
+
+        if (!b.before.empty() || !b.after.empty() || e.contains("order"))
+        {
+            fprintf(stderr, "[menu] %s: index overrides its anchor\n", b.id.c_str());
+        }
+    }
+
+    b.requires_cond = e.value("requires", std::string{});
     b.x = e.value("x", 0);
     b.y = e.value("y", 0);
     b.gap_after = e.value("gap_after", 0);
@@ -884,6 +903,26 @@ int confirmed_slider_value(int key, int value, int vmin, int vmax, int step, con
     return v >= 0 ? v : slider_next(value, vmin, vmax, step);
 }
 
+// A button's `requires` condition: built-in names first, then the host API's registered conditions.
+bool button_visible(uint8_t* rdram, const Button& b)
+{
+
+    const std::string& c = b.requires_cond;
+
+    if (c.empty()) return true;
+
+#ifdef __ANDROID__
+    if (c == "desktop") return false;
+#else
+    if (c == "desktop") return true;
+#endif
+
+    if (c == "ray_query") return rs64::video::ray_query_supported();
+    if (c == "expansion_pak") return rd_b(rdram, 0x130B63) != 0;
+
+    return rs64::host::condition(c.c_str()) > 0;
+}
+
 // One item in a menu's merged entry list (native or synthesized mod button).
 struct Item {
     double order;
@@ -891,7 +930,25 @@ struct Item {
     bool is_native;
     bool is_spacer;
     SlotBinding binding;
+    int index_seq = -1;
+    int index = 0;
 };
+
+// Move each indexed mod item (index_seq = its config order) to its `index` among the visible items.
+void apply_indices(std::vector<Item>& items)
+{
+
+    for (int k = 0; ; ++k)
+    {
+        auto it = std::find_if(items.begin(), items.end(), [k](const Item& i) { return i.index_seq == k; });
+
+        if (it == items.end()) return;
+
+        const int to = it->index;
+
+        rs64::menu::move_to_index(items, (size_t)(it - items.begin()), to);
+    }
+}
 
 bool alias_matches(const Slot& s, const NativeAlias& a) {
     return s.sub == a.sub && (!a.match_param || s.param == a.param);
@@ -964,10 +1021,13 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         }
     }
 
+    int index_seq = 0;
+
     // merge mod buttons for this menu
     for (const auto& b : config().buttons)
     {
         if (frontend_menu_id(b.menu) != menu_id) continue;
+        if (!button_visible(rdram, b)) continue;
 
         // Sound Settings sliders are placed natively by sound_settings_install.
         if (menu_id == MENU_SOUND_SETTINGS && b.type == BType::Slider) continue;
@@ -1010,6 +1070,8 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
                             (int16_t)b.x, (int16_t)b.y, ref_scaler };
             it.binding = { true, BType::Submenu, b.page };
             it.binding.open_action = b.behavior;
+            it.index_seq = b.has_index ? index_seq++ : -1;
+            it.index = b.index;
             items.push_back(it);
             continue;
         }
@@ -1066,6 +1128,8 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         it.binding = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                        b.smin, b.smax, b.sstep, b.label_on, b.label_off };
         set_bar_layout(&it.binding, b);
+        it.index_seq = b.has_index ? index_seq++ : -1;
+        it.index = b.index;
 
         if (b.transition == "account") {
             it.binding.pilot_page = b.page;
@@ -1085,6 +1149,8 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
     {
         if (vi->is_spacer) vi = items.erase(vi); else ++vi;
     }
+
+    apply_indices(items);
 
     if ((int)items.size() > MAX_ENTRIES) items.resize(MAX_ENTRIES);
 
@@ -1230,7 +1296,15 @@ void build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
     std::vector<const Button*> lines;
 
     for (const auto& b : config().buttons)
-        if (b.menu == page) lines.push_back(&b);
+        if (b.menu == page && button_visible(rdram, b)) lines.push_back(&b);
+
+    for (const auto& b : config().buttons)
+        if (b.menu == page && b.has_index && button_visible(rdram, b))
+        {
+            const size_t from = (size_t)(std::find(lines.begin(), lines.end(), &b) - lines.begin());
+
+            rs64::menu::move_to_index(lines, from, b.index);
+        }
 
     // Reserve a slot for Back.
     if ((int)lines.size() > MAX_ENTRIES - 1) lines.resize(MAX_ENTRIES - 1);
@@ -1888,6 +1962,7 @@ extern "C" void rs64_pause_install(uint8_t* rdram)
         PauseTarget tgt;
 
         if (!pause_target(b.menu, tgt)) continue;
+        if (!button_visible(rdram, b)) continue;
         if (next_mark - PAUSE_MARK_BASE >= 0xF0) break;
 
         const uint16_t mark = next_mark++;

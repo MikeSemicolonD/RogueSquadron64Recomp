@@ -23,6 +23,7 @@ std::atomic<bool> g_keep_cutscene{true};
 std::atomic<bool> g_fb_writeback{true};
 std::atomic<bool> g_d3d10{false};
 std::atomic<bool> g_fullscreen{false};
+std::atomic<bool> g_ray_query{false};
 
 // -1 = follow the setting; 0/1 = ROGUESQ_FULLSCREEN pins the live state until the player toggles, and the file keeps the setting.
 std::atomic<int> g_fullscreen_pin{-1};
@@ -76,6 +77,14 @@ bool framebuffer_writeback() {
 
 void set_framebuffer_writeback(bool on) {
     g_fb_writeback.store(on, std::memory_order_relaxed);
+}
+
+bool ray_query_supported() {
+    return g_ray_query.load(std::memory_order_relaxed);
+}
+
+void set_ray_query_supported(bool on) {
+    g_ray_query.store(on, std::memory_order_relaxed);
 }
 
 bool d3d10() {

@@ -55,6 +55,10 @@ bool peek_fullscreen(const std::string& path);
 bool rt_setting(rs64lights::Feature f);
 void set_rt_setting(rs64lights::Feature f, bool on);
 
+// The GPU supports ray queries (set once RT64 has a device); menus hide the ray-tracing page without it.
+bool ray_query_supported();
+void set_ray_query_supported(bool on);
+
 // Battle Above Taloraan pins its own far plane and fog and has no terrain, so the multiplier stays 1.0 there.
 constexpr uint32_t kGameViewLevel = 10;
 float effective_draw_distance(float setting, bool game_view, uint32_t level);

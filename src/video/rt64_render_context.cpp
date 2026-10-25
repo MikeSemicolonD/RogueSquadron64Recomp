@@ -573,6 +573,7 @@ public:
         else {
             // setup() snapshots enhancementConfig before the edits above; push them through.
             app->updateEnhancementConfig();
+            rs64::video::set_ray_query_supported(app->device && app->device->getCapabilities().raytracing);
 
             fprintf(stderr, "[RT64] enhancementConfig: presentMode=%d forceBranch=%d textureLOD.scale=%d\n",
                     (int)app->enhancementConfig.presentation.mode,

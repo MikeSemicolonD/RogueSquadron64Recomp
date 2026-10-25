@@ -452,6 +452,13 @@ add_executable(mod_levels_test EXCLUDE_FROM_ALL
 set_target_properties(mod_levels_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(mod_levels_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 
+# Standalone unit test for menu button index placement.
+add_executable(menu_layout_test EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tests/menu_layout_test.cpp
+)
+set_target_properties(menu_layout_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(menu_layout_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 # Standalone unit test for the crosshair texrect matcher.
 add_executable(crosshair_match_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tests/crosshair_match_test.cpp
@@ -483,8 +490,9 @@ add_custom_target(rs64_unit_tests
     COMMAND $<TARGET_FILE:mod_levels_test>
     COMMAND $<TARGET_FILE:crosshair_match_test>
     COMMAND $<TARGET_FILE:rs64_lights_test>
+    COMMAND $<TARGET_FILE:menu_layout_test>
     COMMAND $<TARGET_FILE:style_check> ${CMAKE_SOURCE_DIR}
-    DEPENDS lockstep_core_test mp_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test style_check
+    DEPENDS lockstep_core_test mp_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test menu_layout_test style_check
     COMMENT "Running the unit tests")
 
 # Standalone unit test for the mode-change blanking gate.
@@ -494,7 +502,7 @@ add_executable(transition_gate_test EXCLUDE_FROM_ALL
 set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 if (MSVC)
-    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test host_api_test transition_gate_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test style_check)
+    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test host_api_test transition_gate_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test menu_layout_test style_check)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endforeach()
 endif()
