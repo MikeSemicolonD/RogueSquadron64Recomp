@@ -41,8 +41,9 @@ jobs:
       - name: Assemble site
         run: |
           mkdir -p _site/save-editor
-          cp tools/web/rs64-explorer/index.html tools/web/rs64-explorer/*.js _site/
+          cp tools/web/rs64-explorer/index.html tools/web/rs64-explorer/style.css tools/web/rs64-explorer/*.js _site/
           cp tools/web/save-editor/rs64_save_editor.html _site/save-editor/index.html
+          cp tools/web/save-editor/style.css tools/web/save-editor/save_editor.js _site/save-editor/
           cp tools/web/site-version.txt _site/version.txt
 
       - name: Setup Pages
