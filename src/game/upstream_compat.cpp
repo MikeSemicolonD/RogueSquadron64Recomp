@@ -461,7 +461,7 @@ extern "C" void rs64_data_bp_drain(int vi)
 
 // ROGUESQ_LOG_MESG_TRACE=1: thread/message order for cinematic frames ROGUESQ_MESG_TRACE_FRAMES=lo-hi
 // (default 60-70) -> logs/mesg_trace_recomp.csv, same first six columns as the PJ64 hook in
-// tools/validate/pj64_rs64_dump.js, plus effective flags, host thread id, host caller.
+// tools/debug/validate/pj64_rs64_dump.js, plus effective flags, host thread id, host caller.
 static void rs64_mesg_trace(uint8_t* rdram, const char* ev, uint32_t q, int flags, uint32_t ra, int eff_flags = -1)
 {
 

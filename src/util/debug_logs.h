@@ -43,7 +43,7 @@ inline bool log_vi() {
 }
 
 // Periodic health lines ([vi] update_screen, [hle send_dl], [musyx-run], [sp] yields). On in Debug, off in Release;
-// ROGUESQ_LOG_HEARTBEAT=0/1 overrides. tools/run-stability.ps1 reads them.
+// ROGUESQ_LOG_HEARTBEAT=0/1 overrides. tools/debug/run-stability.ps1 reads them.
 inline bool log_heartbeat() {
 #ifdef NDEBUG
     static const bool v = env_flag("ROGUESQ_LOG_HEARTBEAT");

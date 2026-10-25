@@ -331,7 +331,7 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
 }
 
 // ROGUESQ_LS_PAUSE_AT=<f>[,<f>...]: a replay holds before frame f, writing <hash log>.paused, until <hash log>.resume appears (30 s cap), so
-// tools/recordings/capture-frames.ps1 can screenshot an exact frame at any ROGUESQ_SPEED. Off by default: it blocks the game thread.
+// tools/debug/recordings/capture-frames.ps1 can screenshot an exact frame at any ROGUESQ_SPEED. Off by default: it blocks the game thread.
 static std::vector<uint32_t> env_frame_list(const char* name) {
 
     std::vector<uint32_t> v;
