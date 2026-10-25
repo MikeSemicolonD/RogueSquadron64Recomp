@@ -45,7 +45,7 @@ A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_cont
 
   The macros are in `lib/N64ModernRuntime/N64Recomp/include/recomp.h`.
 
-The game's function names come from the decomp. To find what calls a function, or what it calls, use `tools/rz/rzq.py` ([tools/rz/README.md](../tools/rz/README.md)).
+The game's function names come from the decomp. To find what calls a function, or what it calls, use `tools/re/rz/rzq.py` ([tools/re/rz/README.md](../tools/re/rz/README.md)).
 
 ## Breakpoint techniques
 
@@ -133,12 +133,12 @@ Keep probes as light as possible. Heavier ones (checking before and after every 
 
 Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around emulated memory, so a bad game pointer wraps into the 512 MB RDRAM window instead of crashing where it goes wrong.
 
-**Crash.** The crash handlers in `src\main\crash.cpp` print a stack trace to stderr and write a full minidump to `dumps\crash-dumps\crash_<date>_<time>.dmp`. Open it in Visual Studio (File > Open > File, then **Debug with Native Only**). It needs the matching exe and PDB from `build\Debug\`. `python tools/inspect-dump.py` lists the dump's threads and marks the few running game code (`in_exe`); those are the ones worth opening.
+**Crash.** The crash handlers in `src\main\crash.cpp` print a stack trace to stderr and write a full minidump to `dumps\crash-dumps\crash_<date>_<time>.dmp`. Open it in Visual Studio (File > Open > File, then **Debug with Native Only**). It needs the matching exe and PDB from `build\Debug\`. `python tools/debug/inspect-dump.py` lists the dump's threads and marks the few running game code (`in_exe`); those are the ones worth opening.
 
-**Hang.** While the game is frozen, run `pwsh tools/dump-game.ps1` from another shell to capture it (F12 also writes a dump, but not if the window has stopped responding). Then:
+**Hang.** While the game is frozen, run `pwsh tools/debug/dump-game.ps1` from another shell to capture it (F12 also writes a dump, but not if the window has stopped responding). Then:
 
-- `python tools/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
-- `python tools/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).
+- `python tools/debug/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
+- `python tools/debug/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).
 
 [AGENTS.md](../AGENTS.md#when-investigating-a-new-crash) lists the common crash signatures and what they usually mean.
 

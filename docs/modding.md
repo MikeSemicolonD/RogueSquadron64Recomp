@@ -69,7 +69,7 @@ A mod can also play an in-level camera shot during a mission. A `camera_shots.tx
 
 The same trigger can destroy level objects by name, one `<level> <trigger> destroy <object>` per object (`lv_0 canyon_entry destroy tower_1`); these lines add up rather than replace each other. The objects die with their own explosion and count for objectives like any kill, and the trigger's camera shot (if any) starts half a second later so the explosion is in frame. An object not loaded at that moment (far from the player) only loses its health and shows as rubble when it streams in.
 
-The easiest way to make one is the RS64 Explorer (`tools/rs64-explorer`), which writes these patches for you:
+The easiest way to make one is the RS64 Explorer (`tools/web/rs64-explorer`), which writes these patches for you:
 
 1. Make your changes:
    - **Textures:** right-click a textured face and pick *Replace texture from image…*
@@ -105,12 +105,15 @@ A `levels.json` at the mod root lists them:
 - `voice`: a stock voice line played as the SELECT LEVEL briefing (none if left out). A recording of your own goes in `assets/level/<folder>/brief` and plays instead: a MORT stream (the game's 8 kHz GSM 06.10 voice codec). The explorer's *Import recording…* makes it from a .wav or .mp3.
 - `craft`: approved craft, any of `xwing`, `ywing`, `awing`, `vwing`, `speeder`, `falcon`, `tie`, `t16`, `naboo` (the template's if left out).
 - `crawl`: an opening crawl played before the level. Left out, the template's plays (if it has one); `false` plays none; an object gives `chapter` (the small line, may be empty), `title` and `body` (wrapped to the crawl width), and `planet` 0-3, the planet the camera pans down to (the one after the crawl of level 0, 5, 10 or 15). The crawl font has letters in both cases, digits and `! ? , . : ; ' / \ - _ ( )`; anything else is left out.
+- `music`: the starting song, a song id from the in-mission music cue table (the template's if left out). Music regions placed in the level (zone 0x10) change it as the player flies into them; the explorer picks both by song name.
 - `medals`: a medal needs all of time (minutes) at most and kills, accuracy (%) and friendlies saved at least; all three tiers or none (the template's). The bonus threshold (secret pickups) is always the template's. Medals earned on mod levels show on SELECT GAME as a second set of counts (blue digits) beside the game's, per save slot.
 - `objectives`: the level's own goals (1-4, shown on the pause screen). With them, none of the template's mission script runs and the level is won when every `destroy`, `reach` and `survive` goal is done:
   - `{ "text": "Destroy the walkers", "goal": "destroy", "counter": 120, "count": 6 }`: objective counter 120 reaches 6. Units add to a counter when destroyed (DAT record +0x80/+0x84).
   - `{ "goal": "reach", "flag": 121 }`: objective flag 121 is set, by an area trigger's on-enter block.
   - `{ "goal": "protect", "flag": 122 }`: the mission fails when flag 122 is set, by the unit's death (DAT record +0x78/+0x7C).
   - `{ "goal": "survive", "seconds": 120 }` / `{ "goal": "timelimit", "seconds": 600 }`: time passes / the mission fails when it runs out.
+
+  Any objective can also carry `"voice"` (a stock voice id, played with its subtitle when it completes, or fails for `protect` and `timelimit`), `"recording"` (a file in `assets/level/<folder>/` played instead), `"camera"` (a camera position the game cuts to then), and `"pauseVoice"` / `"pauseRecording"` (what the pause screen reads aloud for the line; silent without one).
 
   The explorer's *Level settings* writes all of this: pick the units or area for each objective and it chooses free counters and flags.
 
@@ -129,7 +132,7 @@ The quickest start is the [mod template](https://github.com/MikeSemicolonD/Rogue
 To build a mod inside this repo instead:
 
 1. Install MIPS GCC (`mips64-elf-gcc`, `mips64-elf-ld`).
-2. Build RecompModTool once:
+2. Download RecompModTool from a `modtool-v*` [release](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/releases) (the upstream N64Recomp build can't write `instruction_patches.json`), or build it once:
 
    ```sh
    cmake --build build/N64ModernRuntime/librecomp/N64Recomp --config Debug --target RecompModTool

@@ -12,7 +12,7 @@ Android isn't built by this workflow (see [building-all-platforms.md](building-a
 
 ## Making a release
 
-- **Version:** the repo-root `VERSION` file (`major.minor.patch`, each part 0-99) is the one place it lives; CMake (`--version`, `--help`, the startup log), the Android `versionName`/`versionCode` and the local package names read it. Raise it with the VS Code task **Package: Bump version** or `tools/bump-version.ps1 -Part patch|minor|major` (`-Set 1.2.3` for an exact number).
+- **Version:** the repo-root `VERSION` file (`major.minor.patch`, each part 0-99) is the one place it lives; CMake (`--version`, `--help`, the startup log), the Android `versionName`/`versionCode` and the local package names read it. Raise it with the VS Code task **Package: Bump version** or `tools/release/bump-version.ps1 -Part patch|minor|major` (`-Set 1.2.3` for an exact number).
 - **Test build:** Actions > Release > Run workflow. The three packages are uploaded as run artifacts (kept 3 days); no release is created.
 - **Release:** push a version tag:
 
@@ -21,7 +21,11 @@ Android isn't built by this workflow (see [building-all-platforms.md](building-a
   git push origin v0.1.0
   ```
 
-  The packages are attached to a draft release with generated notes. Review it, then publish it by hand.
+  The packages are attached to a draft release with generated notes, plus a `SHA256SUMS.txt` covering every package. Each package also gets a build provenance attestation; anyone can check a download with `gh attestation verify <file> --repo MikeSemicolonD/RogueSquadron64Recomp`. Review it, then publish it by hand.
+
+## RecompModTool release
+
+[.github/workflows/modtool-release.yml](../.github/workflows/modtool-release.yml) builds RecompModTool from the N64Recomp fork for Windows x64 and Linux x64 on GitHub-hosted runners (it needs nothing ROM-derived) and runs on a `modtool-v*` tag (`git tag modtool-v1 && git push origin modtool-v1`) or by manual dispatch. It makes a draft release with `SHA256SUMS.txt` and attestations and never marks it Latest. The VS Code task **Package: RecompModTool (Windows + Linux)** (`tools/release/package-modtool.ps1`) builds the same packages locally, Linux through WSL.
 
 ## Why self-hosted runners
 

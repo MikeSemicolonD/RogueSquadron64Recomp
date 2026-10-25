@@ -157,7 +157,7 @@ fetches the chunk named by the current chunk's FIRST WORD and continues at `+8` 
 own w1 is never read). `06` pushes `{chunk, cursor}` and fetches w1; `07` fetches w1
 without pushing; `B8` pops, or ends the task when the stack is empty. The allocated chunk
 list is doubly linked: a valid next chunk's second word points back to the current chunk
-(the HLE and `tools/validate/f5_dl_walk.py` require this; a stale call into a recycled
+(the HLE and `tools/debug/validate/f5_dl_walk.py` require this; a stale call into a recycled
 chunk would otherwise walk the free list).
 
 | op | handler (real) | meaning | length |

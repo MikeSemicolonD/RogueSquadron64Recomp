@@ -52,7 +52,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_HIDE_WINDOW` | `--[no-]hide-window` | off | Create the window hidden. RT64 still renders and presents; window screenshots are lost. |
 | `ROGUESQ_MAXIMIZED` / `ROGUESQ_WINDOW_SIZE=WxH` | `--maximized`, `--window-size` | off | Start maximized / initial client size. |
 | `ROGUESQ_FULLSCREEN` | `--fullscreen` | `fullscreen` in `roguesq_video.json` | Start in borderless fullscreen without changing the saved setting; Alt+Enter toggles and saves. |
-| `ROGUESQ_UNFOCUSED` | `--unfocused` | off | Show the window without taking focus (test runs; input still works through `tools/drive-input.ps1`). |
+| `ROGUESQ_UNFOCUSED` | `--unfocused` | off | Show the window without taking focus (test runs; input still works through `tools/debug/drive-input.ps1`). |
 | `ROGUESQ_WIDESCREEN` | `--[no-]widescreen` | off | `aspectRatio=Expand` (fill the window aspect). |
 | `ROGUESQ_DRAW_DIST=<mult>` | `--draw-distance` | `drawDistance` in `roguesq_video.json` (1.0) | Accepts 0.25-8 (outside that = unset). Camera far plane and object far cull; terrain reach and fog follow it through `ROGUESQ_TERRAIN_DIST`, capped at 2.5. |
 | `ROGUESQ_FORCE_LEVEL` / `ROGUESQ_FORCE_CRAFT` | `--force-level`, `--force-craft` | unset | Level id (0-18) / craft id (0-8) pinned while you navigate the menus yourself (no injected input, unlike `BOOT_TARGET`): from SELECT LEVEL, AVAILABLE CRAFT or the end of ENTER NAME (a new pilot auto-launches level 0) until the mission starts. Writes the same fields as `level:<id>,<craft>` (0x130B40, 0x130B70 u32, 0x130B41, plus the matching secondary weapon at 0x130B43). |
@@ -331,7 +331,7 @@ Probes (`lib/rt64/src/gbi/rt64_gbi_f5_rdpstate.cpp` unless noted):
 | `ROGUESQ_RT_LIGHTS_EXHAUST_GAIN` / `_EXHAUST_RADIUS` | 0.8 / 4000 | Engine-glow point lights at the player crafts' nozzles (X-wing, Y-wing, A-wing; table `rs64lights::exhaustTable`, positions from `ROGUESQ_DUMP_MESH_VERTS`). Radius is in model units (scaled by the part's transform); unshadowed. Gain 0 = off. |
 | `ROGUESQ_DUMP_MESH_VERTS` | unset | `=<mesh name prefix>`: writes that mesh's unique (part, model-space position, colour) vertices once to `dumps/mesh-verts-<prefix>.txt` (relative to the exe). For locating parts such as engine nozzles (glow cards are flat parts at the rear). |
 | `ROGUESQ_LOG_RT_TIMING` | off | `[rt-timing]` every 120 workloads: average GPU ms per workload of the RS64 scene build (BLAS/TLAS), sun shadows (trace + soft blur), fog shafts and point lights, from timestamp queries around each pass. |
-| `ROGUESQ_RENDERDOC` / `_OUT` / `_LEAD` / `_FRAMES` | unset / RenderDoc default / 2 / 3 | Windows: `=<path to renderdoc.dll>` loads RenderDoc's in-app API at startup (before the GPU device), with captures written to the `_OUT` path prefix. During a replay with `ROGUESQ_LS_PAUSE_AT`, each pause frame is captured from `_LEAD` frames before it over `_FRAMES` presents: a held game sends no new display lists, so a capture taken during the pause would hold only a re-present. `tools/recordings/capture-frames.ps1 -RenderDoc` sets all of this (prefers the local 1.47 build the renderdoc MCP uses) and lists the `.rdc` files under `dumps/capture/<tag>/rdc/`. |
+| `ROGUESQ_RENDERDOC` / `_OUT` / `_LEAD` / `_FRAMES` | unset / RenderDoc default / 2 / 3 | Windows: `=<path to renderdoc.dll>` loads RenderDoc's in-app API at startup (before the GPU device), with captures written to the `_OUT` path prefix. During a replay with `ROGUESQ_LS_PAUSE_AT`, each pause frame is captured from `_LEAD` frames before it over `_FRAMES` presents: a held game sends no new display lists, so a capture taken during the pause would hold only a re-present. `tools/debug/recordings/capture-frames.ps1 -RenderDoc` sets all of this (prefers the local 1.47 build the renderdoc MCP uses) and lists the `.rdc` files under `dumps/capture/<tag>/rdc/`. |
 | `ROGUESQ_RT_SHADOWS_HISTORY` / `_HISTORY_INTERVAL` / `_HISTORY_SKIP` | 2 / 8 / 0 | Off-screen sun casters: every `_INTERVAL` frames on a terrain level the frame's caster BLAS is kept (up to `_HISTORY` slots, 0-4, 0 = off) and re-placed each frame through the terrain transform. Craft (player and wingmen) have their own BLAS (instance 8) and never enter a slot, so a platform passed under keeps its shadow. Sun rays test history only after leaving the current view frustum (inside, everything is drawn now) and skip a `_SKIP`-radius sphere around each slot's camera (0 = none). Debug 4: magenta. `ROGUESQ_LOG_RT_LIGHTS=1` logs the slot mask and camera offsets. |
 | `ROGUESQ_RT_SHADOWS_TERRAIN_NORMAL_WINDOW` | 0.03 | Depth window (fraction of view distance, 0-0.5) in which the camera ray must find static terrain for a pixel to take the smooth terrain normal. Wider catches far geomorphed tiles but lets objects in front of terrain (ships, edges) pick up the terrain normal; 0.10 showed no gain on level 6. |
 | `ROGUESQ_RT_LIGHTS_SPRITE_SHADOW_START` | 1.0 | Explosion (0xBD sprite) lights ignore occluders within this many sprite sizes of the light, so wreckage inside the fireball does not block its glow; the larger of this and `_SHADOW_END` x radius wins. `0` = radius fraction only. |
@@ -385,11 +385,11 @@ Keyboard, mouse and gamepad bindings load from `roguesq_input.json` next to the 
 
 ## RDRAM dump triggers
 
-One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/validate/rdram_golden_diff.py`, from `src/video/rt64_render_context.cpp`. First match wins.
+One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/validate/rdram_golden_diff.py`, from `src/video/rt64_render_context.cpp`. First match wins.
 
 | Env var | Effect |
 |---|---|
-| `ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]` | Dump `dumps/rdram_state_<id>.bin` the first present each listed game state becomes current, all in one run. Feeds `tools/validate/state_diff.ps1`. |
+| `ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]` | Dump `dumps/rdram_state_<id>.bin` the first present each listed game state becomes current, all in one run. Feeds `tools/debug/validate/state_diff.ps1`. |
 | `ROGUESQ_DUMP_RDRAM_STATE_SETTLE` | Presents a state must stay current before its dump fires (default 0). |
 | `ROGUESQ_DUMP_RDRAM_AT_VI=<n>` | At present n. |
 | `ROGUESQ_DUMP_RDRAM_ON_CINE_ITER=<n>[,<n>...]` | At cinematic loop iterations; one file per entry. |
@@ -415,7 +415,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/valida
 | `ROGUESQ_LOG_FRAME_PROFILE` | off | `[frameprof]`, `[frameprof HITCH]` | Real fps and per-hitch phase attribution (walk / snapshot memcpy / present). |
 | `ROGUESQ_LOG_WALK_PROFILE` | off | `[walkprof]` | Per-opcode timing for walks over 20 ms. |
 | `ROGUESQ_LOG_BATCH` | off | batching counters | Pipeline/scissor binds a per-scene sort could save. |
-| `ROGUESQ_LOG_MESG_TRACE` | off | message-order trace | For `tools/validate/compare_mesg_trace.py`. Scope with `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`. |
+| `ROGUESQ_LOG_MESG_TRACE` | off | message-order trace | For `tools/debug/validate/compare_mesg_trace.py`. Scope with `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`. |
 | `ROGUESQ_LOG_FRAMEQ` | off | `[frameq]` | Every send/recv on the frame-protocol queues; the last line shows which thread stopped calling the OS. |
 | `ROGUESQ_LOG_PRESENT_EARLY` | off | PresentEarly matcher | Why `viHistory` stays empty or no workload matches. |
 | `ROGUESQ_LOG_MENU_FIX` | off | menu present fix | Decisions of the menu present fix. |
@@ -431,7 +431,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/valida
 
 ## Record / replay and co-op
 
-Inert unless set. Record and replay are active only in real missions (never attract demos); one recording covers one mission attempt. Precedence: replay, record, delay. See [tools/recordings/README.md](../tools/recordings/README.md).
+Inert unless set. Record and replay are active only in real missions (never attract demos); one recording covers one mission attempt. Precedence: replay, record, delay. See [tools/debug/recordings/README.md](../tools/debug/recordings/README.md).
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -442,16 +442,16 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_LS_KEEP_RUNNING` | unset | `1`: a replay keeps running after its last frame, to reach mission-end teardown and the ending cutscene. |
 | `ROGUESQ_LS_HASH_OUT` | unset | Replay hash log path. |
 | `ROGUESQ_LS_DUMP_FRAMES` | unset | `lo-hi` (or one frame): also write the raw bytes of every hashed region for those frames to `<hash log>.dump`. |
-| `ROGUESQ_LS_PAUSE_AT` | unset | `<f>[,<f>...]`: a replay holds before each listed frame, writing `<hash log>.paused` (the frame number), until `<hash log>.resume` appears (30 s cap), so a window capture lands on an exact frame at any `ROGUESQ_SPEED`. Used by `tools/recordings/capture-frames.ps1`. Blocks the game thread while held. |
-| `ROGUESQ_CINE_PAUSE_AT` / `ROGUESQ_CINE_PAUSE_FILE` | unset | `<f>[,<f>...]` and a path base: a playing cutscene holds once its frame counter (gateCtr 0x800B0B28, the cutscene file's own frames, as the RS64 Explorer timeline counts them) reaches each listed frame, with the same `<base>.paused` / `<base>.resume` handshake as `ROGUESQ_LS_PAUSE_AT`. Used by `tools/recordings/capture-frames.ps1 -Cutscene`. Blocks the game thread while held. |
+| `ROGUESQ_LS_PAUSE_AT` | unset | `<f>[,<f>...]`: a replay holds before each listed frame, writing `<hash log>.paused` (the frame number), until `<hash log>.resume` appears (30 s cap), so a window capture lands on an exact frame at any `ROGUESQ_SPEED`. Used by `tools/debug/recordings/capture-frames.ps1`. Blocks the game thread while held. |
+| `ROGUESQ_CINE_PAUSE_AT` / `ROGUESQ_CINE_PAUSE_FILE` | unset | `<f>[,<f>...]` and a path base: a playing cutscene holds once its frame counter (gateCtr 0x800B0B28, the cutscene file's own frames, as the RS64 Explorer timeline counts them) reaches each listed frame, with the same `<base>.paused` / `<base>.resume` handshake as `ROGUESQ_LS_PAUSE_AT`. Used by `tools/debug/recordings/capture-frames.ps1 -Cutscene`. Blocks the game thread while held. |
 | `ROGUESQ_LS_SEED` | 1 | Seed for record and delay modes. |
 | `ROGUESQ_LS_INPUT_DELAY` | 0 | Feel test: live play with local input delayed N frames, fixed dt. |
 | `ROGUESQ_COOP_LOCAL` | unset | `1`: player 2 is an imposter, an allied X-wing wingman NPC spawned 1.5 units right of player 1 on the first mission frame from a fake DAT record at 0x80B40000. It flies a port of the player X-wing's handling from port 1 through control-map slot 1 (layout 0: B fire, A boost, Z brake, C-up hold rotation, C-right S-foils), is invulnerable and is targeted like any ally. Activation range and grid streaming also follow it outside cutscenes. Off = the original single player, bit-identical. Needs the `multiplayer-native` mod enabled. |
 | `ROGUESQ_LS_PAD2_REPLAY` | unset | `<path.rec>` (needs `COOP_LOCAL=1`): port 1 plays a recorded port-0 run from mission frame 0, START masked. Must match the running level and craft. The hash log gains an `imposter` column (a hash part the multiplayer code registers). Single-player recordings' song answers stop matching once the imposter changes the mission; re-record with co-op on. |
-| `ROGUESQ_MP` | unset | `host` or `join`: online co-op, ghost model. Each instance flies its own player 1 in its own world; the other player is the imposter, posed from the state that player streams at 30 Hz (dead reckoning up to 0.5 s, corrections blended over 0.1 s, snaps past 20 units). Both must enter the same level and craft; the host sends LAUNCH at `initMission` and the client checks it. The host owns the mission result, objectives and the lives pool; DAT health is mirrored both ways (drops sent as DAMAGE batches through the game's own hit). The same session starts from the front end (MAIN MENU -> MULTIPLAYER). A HELLO handshake checks protocol + `kBuildId` (`VERSION MISMATCH` otherwise). Implies `COOP_LOCAL`. Logs `[ghost]`. Pairs: `tools/lockstep/run-mp.ps1`. Details in [multiplayer.md](multiplayer.md). |
+| `ROGUESQ_MP` | unset | `host` or `join`: online co-op, ghost model. Each instance flies its own player 1 in its own world; the other player is the imposter, posed from the state that player streams at 30 Hz (dead reckoning up to 0.5 s, corrections blended over 0.1 s, snaps past 20 units). Both must enter the same level and craft; the host sends LAUNCH at `initMission` and the client checks it. The host owns the mission result, objectives and the lives pool; DAT health is mirrored both ways (drops sent as DAMAGE batches through the game's own hit). The same session starts from the front end (MAIN MENU -> MULTIPLAYER). A HELLO handshake checks protocol + `kBuildId` (`VERSION MISMATCH` otherwise). Implies `COOP_LOCAL`. Logs `[ghost]`. Pairs: `tools/debug/lockstep/run-mp.ps1`. Details in [multiplayer.md](multiplayer.md). |
 | `ROGUESQ_GHOST_OBJ_TRACE` | unset | `1`: every 150 frames, hashes of objective booleans, counts and DAT health plus the alive count, to compare the two worlds. |
 | `ROGUESQ_GHOST_INTERP_MS` | 50 | Show the remote player N ms in the past between buffered states (0 = dead reckoning from the latest state). |
-| `ROGUESQ_GHOST_TRACE` | unset | `<path.csv>`: per frame `ms,local_x,local_y,local_z,puppet_x,puppet_y,puppet_z`; `tools/lockstep/ghost_error.py` compares two traces. |
+| `ROGUESQ_GHOST_TRACE` | unset | `<path.csv>`: per frame `ms,local_x,local_y,local_z,puppet_x,puppet_y,puppet_z`; `tools/debug/lockstep/ghost_error.py` compares two traces. |
 | `ROGUESQ_WINDOW_POS` | centered | `x,y`, `left` or `right` (either side of the primary display's centre, 8 px apart). |
 | `ROGUESQ_NET_CONFIG` | `roguesq_net.json` next to the exe | Lobby config `{ "last_address": "a.b.c.d", "port": 27064 }` (JOIN address saved on each JOIN; the port both roles use unless `MP_PORT` is set). |
 | `ROGUESQ_MP_ADDR` / `ROGUESQ_MP_PORT` | 127.0.0.1 / 27064 | Host address for `join`, and the UDP port. |
@@ -463,7 +463,7 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_MP_SIM_LATENCY_MS` / `ROGUESQ_MP_SIM_LOSS_PCT` / `ROGUESQ_MP_SIM_JITTER_MS` | 0 / 0 / 0 | Simulated one-way latency, unreliable-send loss, and 0..N ms jitter (order kept). |
 | `ROGUESQ_RELOC_GUARD` | unset | `1`: at the first present, fill the old addresses of the relocated per-player ranges (R1-R4, see AGENTS.md "Per-player data relocation") with 0xA5, then log `[reloc] write to old address X` on any write there. Pair with `ROGUESQ_DATA_BP=X` to catch the writer. |
 
-Test knobs used by `tools/lockstep/run-mp.ps1` (flag in brackets):
+Test knobs used by `tools/debug/lockstep/run-mp.ps1` (flag in brackets):
 - `ROGUESQ_MP_TEST_PAUSE=<frame>` [-TestPause] — press START on that frame; the world and camera keep running.
 - `ROGUESQ_MP_TEST_END=<frame>:<result>` [-TestEnd] — host ends the mission (0 abort, 1 success, 2 failed, 3 out of lives).
 - `ROGUESQ_MP_TEST_VERSION=<n>` [-TestVersion] — send and compare build id n.

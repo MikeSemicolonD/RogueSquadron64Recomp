@@ -8,7 +8,7 @@
 > Symbol-name source of truth: `E:/Projects/rogue_squadron64/symbol_files/`
 > (per-overlay `.txt`); unnamed globals use the splat `D_<ADDR>` convention.
 > Hardware truth comes from Project64 RDRAM goldens and message-order traces
-> (`tools/validate/`), and the graphics ucode grammar from its IMEM listing
+> (`tools/debug/validate/`), and the graphics ucode grammar from its IMEM listing
 > ([f5-model-dl-spec.md §7](f5-model-dl-spec.md)).
 
 ## At a glance
@@ -366,7 +366,7 @@ Stored as CRC32 hashes in `gCheatCodeCrc32Table` (0x800A0ED0). Active flags in `
 | `getVoiceText` (0x80055978) | Voice text decrypt (forces uppercase) |
 | `getGameOrFrontText` (0x8005589C) | Get string by ID (Front/Game) |
 
-Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTextIdMap` (0x8009FFE0, 756 entries). `drawSubtitleText` (0x800159B4). The voice/speech ROM data uses the MORT codec (the same codec the PC version uses); `tools/extract_speech_table.py` extracts the table (419 MORT clips + 549 strings + voiceId map).
+Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTextIdMap` (0x8009FFE0, 756 entries). `drawSubtitleText` (0x800159B4). The voice/speech ROM data uses the MORT codec (the same codec the PC version uses); `tools/re/extract_speech_table.py` extracts the table (419 MORT clips + 549 strings + voiceId map).
 
 ### 16. Player crafts
 
@@ -405,7 +405,7 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 > flow) and `rt64_gbi_f5_rdpstate.cpp` (RDP state, the color-image filter); the
 > desync ring is in `hle/rt64_interpreter.cpp`. The grammar below was read off the
 > ucode's IMEM listing on 2026-09-07 and is validated offline by
-> `tools/validate/f5_dl_walk.py`, which walks any RDRAM dump's task list with
+> `tools/debug/validate/f5_dl_walk.py`, which walks any RDRAM dump's task list with
 > the same rules (every Project64 golden walks clean).
 
 ### Ucode facts the HLE reproduces
@@ -437,8 +437,8 @@ Where the ucode keeps an F3D opcode, the game emits it with the stock F3D `gbi.h
 
 ### Validation
 
-- `tools/validate/f5_dl_walk.py dump.bin task` walks a task list offline with the ucode rules and reports faces, rects, unknown opcodes and runaway; `f5_dl_ndc.py` adds the matrices and prints where each face group lands in NDC.
-- Project64 goldens (`tools/validate/capture_pj64_golden.ps1`, script `pj64_rs64_dump.js`) dump RDRAM at cinematic frames 1/78/79/120/300/600/900; the recomp's chunk pool was byte-identical to hardware at frame 78. Rendering the golden's framebuffer (RGBA16 at the arbiter's displayed slot) gives a reference image for the same frame.
+- `tools/debug/validate/f5_dl_walk.py dump.bin task` walks a task list offline with the ucode rules and reports faces, rects, unknown opcodes and runaway; `f5_dl_ndc.py` adds the matrices and prints where each face group lands in NDC.
+- Project64 goldens (`tools/debug/validate/capture_pj64_golden.ps1`, script `pj64_rs64_dump.js`) dump RDRAM at cinematic frames 1/78/79/120/300/600/900; the recomp's chunk pool was byte-identical to hardware at frame 78. Rendering the golden's framebuffer (RGBA16 at the arbiter's displayed slot) gives a reference image for the same frame.
 - `ROGUESQ_LOG_GFX_TASK=1` logs each task's parse time, chunk transitions and faces; `ROGUESQ_LOG_GBI=1` adds per-handler logs.
 
 ### Rendered output
@@ -450,7 +450,7 @@ Where the ucode keeps an F3D opcode, the game emits it with the stock F3D `gbi.h
 ## Frame loop (hardware protocol)
 
 From the Project64 message-order trace of cinematic frames 60–70
-(`tools/validate/compare_mesg_trace.py` shows the recomp emits the same
+(`tools/debug/validate/compare_mesg_trace.py` shows the recomp emits the same
 functions, queues and order). Two VIs per frame:
 
 1. **Game thread** (`mainBootstrapWorker`, priority 10): `pollControllerInputs` → `waitForPostSwapAck` (two blocking receives on the video queue `D_80128CF0`, one per VI) → builds the display list into pool chunks → `submitGfxFrame` (0x8000C07C): blocking receive of SP-done on `D_8011A818` (only if `D_8011A89E` is set) … blocking receive of DP-done on `D_8011A7E8` (if `D_8011A89D`) → `bufferArbiterProducerMark` marks the buffer ready under the frame-sync mutex `D_80128D10` → `awaitFrameSyncMesgBlock`. The game thread never kicks the RSP task or swaps buffers itself.
@@ -501,7 +501,7 @@ The host never writes these bytes in the default mode (the old
 | `ROGUESQ_LOG_GBI` / `ROGUESQ_LOG_GFX_TASK` / `ROGUESQ_LOG_CIMG` | Per-handler logs / per-task parse timing / color-image counters |
 | `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-token frame loop (see above) |
 | `ROGUESQ_FB_GUARDS=<mask>` | 1 = display-list neutralizer (off by default: it rewrote payload words), 2 = matpool repair, 4 = framebuffer-registry sanitizer (default 6) |
-| `ROGUESQ_DUMP_RDRAM_ON_SCENE/ON_SCREEN/AT_VI/ON_CINE_ITER/ON_CINE_STALL` | RDRAM dumps for golden diffs (`tools/validate/rdram_golden_diff.py`) |
+| `ROGUESQ_DUMP_RDRAM_ON_SCENE/ON_SCREEN/AT_VI/ON_CINE_ITER/ON_CINE_STALL` | RDRAM dumps for golden diffs (`tools/debug/validate/rdram_golden_diff.py`) |
 | `ROGUESQ_LOG_MESG_TRACE=1` (+`ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Message-order trace in the PJ64 script's format for `compare_mesg_trace.py` |
 
 
@@ -683,14 +683,14 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
    cd E:/Projects/RogueSquadron64Recomp && cmake --build build --config Debug -j 4
    ```
    Check the executable's timestamp afterwards: a failed build leaves the previous binary in place and the run scripts will happily launch it.
-4. **Smoke test**: `tools/validate/capture_menu_rdram.ps1 -Screen "menu,400" -Timeout 420 -FastFwd 0` boots headless to the menu and dumps RDRAM there; `tools/validate/rdram_golden_diff.py` compares it with a Project64 golden. `./tools/run-stability.ps1 -Runs 1 -Timeout 30` is the shorter check.
+4. **Smoke test**: `tools/debug/validate/capture_menu_rdram.ps1 -Screen "menu,400" -Timeout 420 -FastFwd 0` boots headless to the menu and dumps RDRAM there; `tools/debug/validate/rdram_golden_diff.py` compares it with a Project64 golden. `./tools/debug/run-stability.ps1 -Runs 1 -Timeout 30` is the shorter check.
 
 > Regen overwrites hand-edits in `RecompiledFuncs/funcs_*.c`; load-bearing logic belongs in `rogue_squadron.toml` hooks or `patches/`.
 
 
 ## What's NOT yet renamed / understood
 
-- ~2000 functions still as `func_XXXXXXXX` (an active renaming pass is in progress — see `tools/rename/`).
+- ~2000 functions still as `func_XXXXXXXX` (an active renaming pass is in progress — see `tools/re/rename/`).
 - Big unmapped areas: the **mission overlay** (~900 funcs, per-craft/per-level), remaining **cinematic** helpers, **HMP terrain** inner helpers, the **DMA mutex** functions. (The channel→voice transfer is `tickAllAudioChannels`, mapped in [musyx-voice-mixing.md](musyx-voice-mixing.md). The **MORT voice codec** is recompiled and works — see the streamed-voice pipeline; the demo freeze once attributed to it was an N64Recomp link-branch codegen bug, fixed 2026-09-13.)
 
 ## How to extend this document

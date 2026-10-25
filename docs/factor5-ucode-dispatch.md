@@ -8,7 +8,7 @@ authoritative in [f5-model-dl-spec.md §7](f5-model-dl-spec.md).
 - `dumps/f5_ucode.imem.bin` (8 KB IMEM image, BE; offset 0 = IMEM `0x04001000`, matches ROM `0x25610`)
 - `dumps/f5_ucode.dmem.bin` (4 KB DMEM image, BE; starts with the ROM data segment at `0x39900`)
 
-Read by `tools/disasm_rsp_entry.py`, `tools/disasm_op01_area.py`, `tools/decode_dmem_vtx_area.py` and siblings.
+Read by `tools/re/disasm_rsp_entry.py`, `tools/re/disasm_op01_area.py`, `tools/re/decode_dmem_vtx_area.py` and siblings.
 
 ## Dispatch loop (IMEM 0x010 - 0x05C)
 

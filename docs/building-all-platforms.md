@@ -1,6 +1,6 @@
 # Building every platform
 
-What each release target needs installed, and how it is built. Two hosts cover everything: **Windows** (Windows builds, Android) and **Ubuntu 24.04**, native or WSL2 (every Linux build). `tools/bundle-release.ps1` (VS Code task **Package: Release bundle**) drives both from Windows and writes the packages to `build/packages/<version>/` (the VS Code task asks for a folder, default your Desktop).
+What each release target needs installed, and how it is built. Two hosts cover everything: **Windows** (Windows builds, Android) and **Ubuntu 24.04**, native or WSL2 (every Linux build). `tools/release/bundle-release.ps1` (VS Code task **Package: Release bundle**) drives both from Windows and writes the packages to `build/packages/<version>/` (the VS Code task asks for a folder, default your Desktop).
 
 All targets compile the same generated game code, so every host needs the shared inputs first.
 
@@ -12,9 +12,9 @@ All targets compile the same generated game code, so every host needs the shared
 | `RogueSquadron64Recomp-windows-x86-<ver>.zip` | Windows | `bundle-release.ps1 -Only windows-x86` | Release CI; replay-verified |
 | `RogueSquadron64Recomp-android-arm64-<ver>.apk` | Windows | `bundle-release.ps1 -Only android` | Device-tested |
 | `RogueSquadron64Recomp-linux-x64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `bundle-release.ps1 -Only linux-x64` | Release CI (tarball); Flatpak boots to the menus |
-| `RogueSquadron64Recomp-linux-arm64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `tools/linux/cross-build.sh arm64` | Runs on a Raspberry Pi 4 (Ubuntu 26.04) |
-| `RogueSquadron64Recomp-linux-armhf-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/linux/cross-build.sh armhf` | Runs on a Raspberry Pi 4 (32-bit libraries on Ubuntu 26.04 arm64) |
-| `RogueSquadron64Recomp-linux-i386-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/linux/cross-build.sh i386` | Runs to the menus on an x64 PC (WSL, 32-bit libraries, software Vulkan); untested with a GPU driver |
+| `RogueSquadron64Recomp-linux-arm64-<ver>.tar.xz` + `.AppImage` + `.flatpak` | Ubuntu | `tools/release/linux/cross-build.sh arm64` | Runs on a Raspberry Pi 4 (Ubuntu 26.04) |
+| `RogueSquadron64Recomp-linux-armhf-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/release/linux/cross-build.sh armhf` | Runs on a Raspberry Pi 4 (32-bit libraries on Ubuntu 26.04 arm64) |
+| `RogueSquadron64Recomp-linux-i386-<ver>.tar.xz` + `.AppImage` | Ubuntu | `tools/release/linux/cross-build.sh i386` | Runs to the menus on an x64 PC (WSL, 32-bit libraries, software Vulkan); untested with a GPU driver |
 
 Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Flatpak only exists for x86_64 and aarch64 (the Flathub runtimes have no 32-bit builds).
 
@@ -41,7 +41,7 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 
 Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and for x86 Microsoft's DXC v1.8.2403.2 zip (the in-tree `dxc-bin` has no x86 `dxcompiler.dll`).
 
-D3D11 shader cache: Windows packages carry `d3d11_shader_cache/`, built by `RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt` (no ROM; `PLUME_D3D11_SHADER_CACHE` sets the output folder; WARP is used without a GPU). It compiles the list twice into the same folder, for feature level 11 (shader model 5) and feature level 10 (shader model 4, plus the raw-TMEM variant of each textured combination), about 5 minutes and 4 MB. Release CI and `tools/bundle-release.ps1` run it. The list was collected by playing the mission recordings, the other levels, the demos and the cutscenes on D3D11 and D3D10; to extend it, merge new lines from a play session's `d3d11_shader_cache/rt64_combos.txt`.
+D3D11 shader cache: Windows packages carry `d3d11_shader_cache/`, built by `RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt` (no ROM; `PLUME_D3D11_SHADER_CACHE` sets the output folder; WARP is used without a GPU). It compiles the list twice into the same folder, for feature level 11 (shader model 5) and feature level 10 (shader model 4, plus the raw-TMEM variant of each textured combination), about 5 minutes and 4 MB. Release CI and `tools/release/bundle-release.ps1` run it. The list was collected by playing the mission recordings, the other levels, the demos and the cutscenes on D3D11 and D3D10; to extend it, merge new lines from a play session's `d3d11_shader_cache/rt64_combos.txt`.
 
 Configure once per architecture: `cmake -B build -T ClangCL` (x64), `cmake -B build-x86 -A Win32 -T ClangCL` (x86). Android reuses `RecompiledFuncs/`, `src/game/state_table.inl` and `build/factor5_ucode/*.c` from a Windows Debug build.
 
@@ -77,7 +77,7 @@ sudo apt -o Dpkg::Options::="--force-overwrite" install g++-aarch64-linux-gnu bi
 
 - `--force-overwrite`: Ubuntu's `libpango1.0-dev` ships an arch-specific `Pango-1.0.gir`, so the amd64 and arm64 copies clash. The build never reads it.
 - The installs bring 30-odd amd64 updates with them (systemd, udev): multiarch keeps every architecture's copy of a library at the same version.
-- `qemu-user` runs the arm64 build-time tools (state table, ucode fixup); `tools/linux/cross-build.sh` builds a host `file_to_c` into `~/rs64-host-tools` on first use.
+- `qemu-user` runs the arm64 build-time tools (state table, ucode fixup); `tools/release/linux/cross-build.sh` builds a host `file_to_c` into `~/rs64-host-tools` on first use.
 - Undo: delete `arm64-ports.sources`, drop the `Architectures: amd64` lines, `sudo apt remove '*:arm64'`.
 
 ### Linux armhf and i386 (cross)
@@ -95,12 +95,12 @@ sudo apt -o Dpkg::Options::="--force-overwrite" install \
     g++-i686-linux-gnu binutils-i686-linux-gnu libsdl2-dev:i386 libvulkan-dev:i386 libgtk-3-dev:i386
 ```
 
-- armhf builds in ARM mode (not Thumb) with NEON (`tools/linux/arm-linux-gnueabihf.cmake`): librecomp's patch trampolines need plain function addresses, and the RSP vector code goes through sse2neon. That needs ARMv7 with NEON, i.e. a Raspberry Pi 2 or newer.
-- i386 builds with `-msse4.1 -mfpmath=sse` (`tools/linux/i686-linux-gnu.cmake`): x87 math would round differently from every other build.
+- armhf builds in ARM mode (not Thumb) with NEON (`tools/release/linux/arm-linux-gnueabihf.cmake`): librecomp's patch trampolines need plain function addresses, and the RSP vector code goes through sse2neon. That needs ARMv7 with NEON, i.e. a Raspberry Pi 2 or newer.
+- i386 builds with `-msse4.1 -mfpmath=sse` (`tools/release/linux/i686-linux-gnu.cmake`): x87 math would round differently from every other build.
 
 ### AppImage
 
-Nothing to install on the build host: `tools/linux/make-appimage.sh` downloads appimagetool 1.9.1 and the type-2 runtime 20251108 into `~/.cache/rs64-appimage`. On WSL it runs them with `APPIMAGE_EXTRACT_AND_RUN=1` (no FUSE). Players need `libfuse2t64` (or the same variable) to run it.
+Nothing to install on the build host: `tools/release/linux/make-appimage.sh` downloads appimagetool 1.9.1 and the type-2 runtime 20251108 into `~/.cache/rs64-appimage`. On WSL it runs them with `APPIMAGE_EXTRACT_AND_RUN=1` (no FUSE). Players need `libfuse2t64` (or the same variable) to run it.
 
 ### Flatpak
 
@@ -108,7 +108,7 @@ Nothing to install on the build host: `tools/linux/make-appimage.sh` downloads a
 sudo apt install flatpak flatpak-builder
 ```
 
-`tools/linux/make-flatpak.sh` adds Flathub for the current user and installs `org.freedesktop.Platform` and `org.freedesktop.Sdk` 26.08 for the target architecture on first use, a few hundred MB each. aarch64 bundles also need `sudo apt install qemu-user-static`: its emulator registrations carry the `F` (fix-binary) flag, without which the arm64 SDK's `/bin/sh` can't start inside Flatpak's sandbox (`bwrap: execvp /bin/sh: No such file or directory`).
+`tools/release/linux/make-flatpak.sh` adds Flathub for the current user and installs `org.freedesktop.Platform` and `org.freedesktop.Sdk` 26.08 for the target architecture on first use, a few hundred MB each. aarch64 bundles also need `sudo apt install qemu-user-static`: its emulator registrations carry the `F` (fix-binary) flag, without which the arm64 SDK's `/bin/sh` can't start inside Flatpak's sandbox (`bwrap: execvp /bin/sh: No such file or directory`).
 
 ## What players need
 

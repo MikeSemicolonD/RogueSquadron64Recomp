@@ -451,7 +451,7 @@ by `load_dat_file_assets` (funcs_15.c:1110).
 ## MusyX runtime state
 
 Three live in-RAM structs (distinct from the SND file format). The CPU `tickAudioChannel`
-runs an 81-entry SoundMacro opcode dispatch — the engine `renderVoice` in `tools/rs64-explorer/rs64assets.js` ports.
+runs an 81-entry SoundMacro opcode dispatch — the engine `renderVoice` in `tools/web/rs64-explorer/rs64assets.js` ports.
 
 ### Voice slot — `*0x801496F8 + idx*0x88` (confirmed)
 
@@ -669,7 +669,7 @@ points/knots) differ; the conversion step in `load_level_dat` was not located.
   **sid** (0xFFFF terminates). Confirmed funcs_26.c:628-2072.
 - **sdir entry** (0x18): +0x00 id, +0x04 offset into samp_SND, +0x08 root key, +0x0A rate, +0x0C
   num_samples (low 24 bits; top byte flags), +0x10 loopStart, +0x14 loopLen. Samp data = 256B ADPCM
-  coefficient book + 0x28-byte frames. Confirmed (decodeMusyxAdpcm / parsePool in tools/rs64-explorer/rs64assets.js).
+  coefficient book + 0x28-byte frames. Confirmed (decodeMusyxAdpcm / parsePool in tools/web/rs64-explorer/rs64assets.js).
 - **pool sections**: section 0 = SoundMacro VM programs (the 81-op engine; see docs/musyx-voice-mixing.md), 1 keymaps,
   3 Layers. Sample descriptor → `musyxInitVoiceFromSample`: +0x04 data ptr+flags, +0x08 length,
   +0x0C/+0x10/+0x14 loop start/end/len, +0x18 key (maps 1:1 to the sdir entry).
@@ -760,7 +760,7 @@ Pool header = 4 section offsets (0=SoundMacros, 1=Keymaps, 3=Layers); each subse
 
 These tables live in ROM rodata and are fetched at runtime via `MEM_W` (the recomp
 does NOT inline them). Dumped/decoded from the built ELF by
-`tools/render/decode_rodata_tables.py`; full output in
+`tools/re/render/decode_rodata_tables.py`; full output in
 [factor5-render-rodata.txt](factor5-render-rodata.txt).
 
 ### Combiner table @0x80037860 (512 × 8B `gsDPSetCombine{w0,w1}`)

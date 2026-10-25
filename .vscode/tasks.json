@@ -95,12 +95,12 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Raises the release version in VERSION (read by CMake, Gradle and the packaging scripts). For an exact number, edit VERSION or run tools/bump-version.ps1 -Set 1.2.3."
+            "detail": "Raises the release version in VERSION (read by CMake, Gradle and the packaging scripts). For an exact number, edit VERSION or run tools/release/bump-version.ps1 -Set 1.2.3."
         },
         {
             "label": "Package: Release bundle (all platforms)",
             "type": "shell",
-            "command": "& .\\tools\\bundle-release.ps1 -OutDir '${input:releaseOutDir}' -Only '${input:releaseTargets}' -WslDistro '${input:wslDistro}'",
+            "command": "& .\\tools\\release\\bundle-release.ps1 -OutDir '${input:releaseOutDir}' -Only '${input:releaseTargets}' -WslDistro '${input:wslDistro}'",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -110,6 +110,20 @@
             },
             "problemMatcher": [],
             "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
+        },
+        {
+            "label": "Package: RecompModTool (Windows + Linux)",
+            "type": "shell",
+            "command": "& .\\tools\\release\\package-modtool.ps1 -OutDir '${input:releaseOutDir}' -Only '${input:modtoolTargets}' -WslDistro '${input:wslDistro}'",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Builds RecompModTool from the N64Recomp fork (Windows x64 here, Linux x64 through WSL) and writes RecompModTool-<platform>-modtool-<commit>.zip/.tar.gz plus SHA256SUMS.txt to <folder>/modtool-<commit>/."
         },
         {
             "label": "Run: Game (pick level / craft)",
@@ -137,7 +151,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Record controller input into tools/recordings/<id>-<mission>/ (folder created if missing). Mission = lockstep .rec + .hash baseline, boots straight into the level; session = from launch with the level forced. Blank name = <mission>_<timestamp>."
+            "detail": "Record controller input into tools/debug/recordings/<id>-<mission>/ (folder created if missing). Mission = lockstep .rec + .hash baseline, boots straight into the level; session = from launch with the level forced. Blank name = <mission>_<timestamp>."
         },
         {
             "label": "Record: Co-op client recording (you fly player 2)",
@@ -187,7 +201,7 @@
             "command": "powershell",
             "args": [
                 "-NoProfile", "-ExecutionPolicy", "Bypass",
-                "-File", "${workspaceFolder}/tools/build-mods.ps1"
+                "-File", "${workspaceFolder}/tools/release/build-mods.ps1"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -397,13 +411,13 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/package-linux.sh\" \"$HOME/rs64-linux-release.tar.xz\""
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/package-linux.sh\" \"$HOME/rs64-linux-release.tar.xz\""
             ],
             "group": "build",
             "problemMatcher": [],
             "dependsOn": "Build (Linux/WSL, Release): RogueSquadron64Recomp",
             "dependsOrder": "sequence",
-            "detail": "Build then package the Release exe into a stripped self-contained bundle (exe + app libs + run.sh launcher) at ~/rs64-linux-release.tar.xz. Excludes glibc core, the Vulkan loader, and the ROM (all host-provided). tools/package-linux.sh takes an output path arg; point it at /mnt/c/... to drop straight on Windows."
+            "detail": "Build then package the Release exe into a stripped self-contained bundle (exe + app libs + run.sh launcher) at ~/rs64-linux-release.tar.xz. Excludes glibc core, the Vulkan loader, and the ROM (all host-provided). tools/release/package-linux.sh takes an output path arg; point it at /mnt/c/... to drop straight on Windows."
         },
         {
             "label": "Test: Linux remotes (Raspberry Pi)",
@@ -412,7 +426,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/test-remote.sh\" '${input:linuxReleaseDir}' '${input:romPath}'"
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/linux/test-remote.sh\" '${input:linuxReleaseDir}' '${input:romPath}'"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -427,7 +441,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/export-build.sh\" '${input:linuxBuildDir}' '${input:linuxExportDir}'"
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/linux/export-build.sh\" '${input:linuxBuildDir}' '${input:linuxExportDir}'"
             ],
             "problemMatcher": [],
             "detail": "Packages a WSL build tree (x64 or arm64, detected) into <folder>/rs64-linux-<arch>.tar.xz: exe, libs, run.sh and mods. A tarball keeps the execute bits a copy through a Windows folder loses."
@@ -439,7 +453,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/deploy-remote.sh\" '${input:linuxPackage}' '${input:remoteUser}' '${input:remoteHost}' '${input:remoteDir}'"
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/linux/deploy-remote.sh\" '${input:linuxPackage}' '${input:remoteUser}' '${input:remoteHost}' '${input:remoteDir}'"
             ],
             "problemMatcher": [],
             "detail": "Streams a rs64-linux-<arch>.tar.xz (or an .AppImage/other file) to user@host over one ssh connection and unpacks it into the remote folder. ssh asks for the password in this terminal unless a key is set up."
@@ -451,7 +465,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/deploy-remote.sh\" '${input:romPath}' '${input:remoteUser}' '${input:remoteHost}' '${input:remoteDir}'"
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/linux/deploy-remote.sh\" '${input:romPath}' '${input:remoteUser}' '${input:remoteHost}' '${input:remoteDir}'"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
@@ -466,7 +480,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/linux/cross-build.sh\" ${input:crossArch} Release \"$(wslpath '${workspaceFolder}')/build/release\""
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/linux/cross-build.sh\" ${input:crossArch} Release \"$(wslpath '${workspaceFolder}')/build/release\""
             ],
             "group": "build",
             "problemMatcher": {
@@ -490,7 +504,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/macos/cross-build.sh\" ${input:macArch} ${input:macConfig}"
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/macos/cross-build.sh\" ${input:macArch} ${input:macConfig}"
             ],
             "group": "build",
             "problemMatcher": {
@@ -514,7 +528,7 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "bash \"$(wslpath '${workspaceFolder}')/tools/run-wsl-gpu.sh\""
+                "bash \"$(wslpath '${workspaceFolder}')/tools/release/run-wsl-gpu.sh\""
             ],
             "group": "test",
             "problemMatcher": [],
@@ -711,7 +725,7 @@
         {
             "id": "rsRecLevel",
             "type": "pickString",
-            "description": "Level to record (selects the tools/recordings folder)",
+            "description": "Level to record (selects the tools/debug/recordings folder)",
             "options": [
                 { "label": "0  Ambush at Mos Eisley", "value": "0" },
                 { "label": "1  Rendezvous on Barkhesh", "value": "1" },
@@ -799,6 +813,12 @@
             "type": "promptString",
             "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, android",
             "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386"
+        },
+        {
+            "id": "modtoolTargets",
+            "type": "promptString",
+            "description": "RecompModTool targets, comma-separated: windows-x64, linux-x64",
+            "default": "windows-x64,linux-x64"
         },
         {
             "id": "crossArch",
