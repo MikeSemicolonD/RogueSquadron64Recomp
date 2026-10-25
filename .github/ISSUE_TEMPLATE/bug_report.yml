@@ -1,0 +1,81 @@
+name: Bug report
+description: A crash, hang, rendering, audio, input or gameplay problem.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the [Status](https://github.com/MikeSemicolonD/RogueSquadron64Recomp#status) section of the README for known issues first. Never attach or link a ROM.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Issue type
+      description: See [CONTRIBUTING.md](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/CONTRIBUTING.md#fixing-bugsissues) if you're unsure.
+      options:
+        - Recomp. Issue (this port, its rendering, input, hooks or features)
+        - Game Issue (also happens on a real N64 or in an emulator)
+        - Mod Issue (only happens with a mod enabled)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead. Screenshots or video help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start "Ambush at Mos Eisley" in the X-wing
+        2. Fly to ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release version, or commit hash if you built it yourself.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux
+        - Steam Deck
+        - macOS
+        - Android
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: hardware
+    attributes:
+      label: GPU and graphics API
+      placeholder: e.g. RTX 3060, Vulkan
+
+  - type: input
+    id: mods
+    attributes:
+      label: Mods enabled
+      placeholder: none
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Console output around the problem. For a crash, mention whether a `dumps/crash-dumps/crash_*.dmp` was written (attach it zipped if you can).
+      render: text
