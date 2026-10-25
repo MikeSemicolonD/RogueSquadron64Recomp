@@ -11,7 +11,7 @@
 
 namespace rs64levels {
 
-constexpr int kVoiceNone = -1;
+constexpr int kVoiceNone = -1, kMusicTemplate = -1;
 // Highest SELECT LEVEL index: the selector's mask is (1 << (max + 1)) - 1, which wraps at 0x1F.
 constexpr int kMaxEntry = 0x1E;
 constexpr size_t kMaxFolder = 48;
@@ -31,6 +31,14 @@ struct Objective {
     int index = 0;
     int amount = 0;
     float seconds = 0;
+    // Called out when it completes (or fails, for Protect / TimeLimit): a stock voice line and a DAT camera to cut to.
+    int voice = kVoiceNone;
+    std::string camera;
+    // The mod's own recording at assets/level/<folder>/<recording>, played instead of voice.
+    std::string recording;
+    // Read aloud when the pause screen comes to its line (none by default): a stock voice id or a recording in the level folder.
+    int pauseVoice = kVoiceNone;
+    std::string pauseRecording;
 };
 constexpr size_t kMaxObjectives = 4;
 
@@ -48,11 +56,13 @@ struct ModLevel {
     int crawl = -2;
     std::string crawlChapter, crawlTitle, crawlBody;
     std::vector<Objective> objectives;
+    // Starting song: a song id from the music cue table (0x8010B1C0), or kMusicTemplate for the template's.
+    int music = kMusicTemplate;
 };
 
 // Objective progress from the game's 1-based objective counters and flags (counts[i - 1], flags[i - 1]) and the mission's elapsed time.
 struct ObjectiveState {
-    unsigned done = 0;
+    unsigned done = 0, failed = 0;
     bool success = false, fail = false;
 };
 inline ObjectiveState evaluateObjectives(const std::vector<Objective>& objs, const int32_t* counts, const uint8_t* flags, float elapsed) {
@@ -65,12 +75,13 @@ inline ObjectiveState evaluateObjectives(const std::vector<Objective>& objs, con
             case Goal::Destroy: done = counts[o.index - 1] >= o.amount; break;
             case Goal::Reach: done = flags[o.index - 1] != 0; break;
             case Goal::Survive: done = elapsed >= o.seconds; break;
-            case Goal::Protect: st.fail |= flags[o.index - 1] != 0; continue;
-            case Goal::TimeLimit: st.fail |= elapsed >= o.seconds; continue;
+            case Goal::Protect: st.failed |= (flags[o.index - 1] != 0) << i; continue;
+            case Goal::TimeLimit: st.failed |= (elapsed >= o.seconds) << i; continue;
         }
         if (done) st.done |= 1u << i;
         all &= done;
     }
+    st.fail = st.failed != 0;
     st.success = all && !st.fail;
     if (st.success) st.done = (1u << objs.size()) - 1;
     return st;
@@ -204,6 +215,12 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
             }
             if (!l.hasMedals) errors.push_back(mod + ": level '" + l.id + "' medals need bronze, silver and gold; the template's apply");
         }
+        if (e.contains("music") && e["music"].is_number_integer()) {
+            const int m = e["music"].get<int>();
+
+            if (m >= 0 && m <= 0xFF) l.music = m;
+            else errors.push_back(mod + ": level '" + l.id + "' music must be a song id 0-255; the template's plays");
+        }
         if (e.contains("objectives") && e["objectives"].is_array()) {
             static const std::map<std::string, Goal> kGoals = { { "destroy", Goal::Destroy }, { "reach", Goal::Reach }, { "protect", Goal::Protect }, { "survive", Goal::Survive }, { "timelimit", Goal::TimeLimit } };
             const size_t before = errors.size();
@@ -218,6 +235,11 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
                 o.index = j.value(o.goal == Goal::Destroy ? "counter" : "flag", 0);
                 o.amount = j.value("count", 0);
                 o.seconds = j.value("seconds", 0.0f);
+                o.voice = j.value("voice", kVoiceNone);
+                o.camera = j.value("camera", std::string());
+                o.recording = j.value("recording", std::string());
+                o.pauseVoice = j.value("pauseVoice", kVoiceNone);
+                o.pauseRecording = j.value("pauseRecording", std::string());
                 const bool timed = o.goal == Goal::Survive || o.goal == Goal::TimeLimit;
                 if (timed ? o.seconds <= 0 : (o.index < 1 || o.index > 128 || (o.goal == Goal::Destroy && o.amount < 1))) {
                     errors.push_back(mod + ": level '" + l.id + "' objective '" + o.text + "' needs " + (timed ? "seconds" : o.goal == Goal::Destroy ? "a counter 1-128 and a count" : "a flag 1-128"));

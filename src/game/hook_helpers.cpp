@@ -105,6 +105,18 @@ extern "C" float rs64_terrain_dist(void)
     return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view(), rs64_state_level());
 }
 
+extern "C" int rs64_language(void) {
+    return rs64::video::language();
+}
+
+extern "C" void rs64_set_language(int lang)
+{
+
+    rs64::video::set_language(lang);
+
+    fprintf(stderr, "[lang] language %d chosen in the menu\n", lang);
+}
+
 // ROGUESQ_LOG_FOG=1: level, far-range base D and its bounds, fog start/end/color the game set, cutscene flag and our multipliers, on change.
 extern "C" void rs64_fog_probe(uint8_t* rdram)
 {
@@ -774,7 +786,7 @@ constexpr uint32_t kExhaustTints[] = { 0, 0xFF2000, 0xFF8000, 0xFFE000, 0x20FF20
 
 uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
 
-// Data-blob manifest walk, as tools/rs64-explorer openRom: path (without the segment name) -> decompressed bytes.
+// Data-blob manifest walk, as tools/web/rs64-explorer openRom: path (without the segment name) -> decompressed bytes.
 std::unordered_map<std::string, std::vector<uint8_t>> rom_assets(std::span<const uint8_t> rom, const std::function<bool(const std::string&)>& want)
 {
 
@@ -829,7 +841,7 @@ std::unordered_map<std::string, std::vector<uint8_t>> rom_assets(std::span<const
     return out;
 }
 
-// Tint the vertex colours of a HOB's eng_* parts (layout as tools/rs64-explorer parseHOB/parseFaces). The white core stays white: only the coloured part (max - min) takes the tint.
+// Tint the vertex colours of a HOB's eng_* parts (layout as tools/web/rs64-explorer parseHOB/parseFaces). The white core stays white: only the coloured part (max - min) takes the tint.
 bool tint_exhaust(std::vector<uint8_t>& hob, uint32_t tint) {
 
     const size_t n = hob.size();
@@ -1695,7 +1707,8 @@ extern "C" void rs64_mod_levels_brief_rate(recomp_context* ctx)
     if (s_brief_now) ctx->r18 = 8000;
 }
 
-// allocAndConfigureNewVoice 0x8009B1F4: a1 = the stream's address (speech base + table offset), here the recording's.
+// allocAndConfigureNewVoice 0x8009B1F4: a1 = the stream's table offset; the call's delay slot adds the speech base, so the recording's
+// cart offset goes in relative to that base.
 extern "C" void rs64_mod_levels_brief_stream(uint8_t* rdram, recomp_context* ctx) {
 
     if (!s_brief_now) return;
@@ -1703,7 +1716,7 @@ extern "C" void rs64_mod_levels_brief_stream(uint8_t* rdram, recomp_context* ctx
     s_brief_now = false;
     s_brief_index = -1;
     const uint32_t base = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80154684u);
-    ctx->r5 = (gpr)(int32_t)((base & 0xF0000000u) | s_brief_rom);
+    ctx->r5 = (gpr)(int32_t)(s_brief_rom - (base & 0x0FFFFFFFu));
 }
 
 // Back in the menus (menuOverlayInit state; 3 = a mission's debrief, after which a death replays the level): no mod level is being
@@ -1894,7 +1907,7 @@ extern "C" void rs64_mod_levels_select_game(uint8_t* rdram, recomp_context* ctx)
 // ---- Mod level objectives: a level with its own objectives runs none of its template's mission script ----
 namespace {
 float s_obj_elapsed = 0;
-unsigned s_obj_done = 0;
+unsigned s_obj_done = 0, s_obj_failed = 0;
 const std::vector<rs64levels::Objective>* own_objectives() {
 
     if (s_current_mod_level < 0) return nullptr;
@@ -1916,15 +1929,108 @@ extern "C" int rs64_mod_levels_objectives_init(uint8_t* rdram)
 
     s_obj_elapsed = 0;
     s_obj_done = 0;
+    s_obj_failed = 0;
     const uint32_t row = 0x80109D2Cu + ram_w(rdram, 0x80130B70u) * 4u;
 
     for (uint32_t i = 0; i < rs64levels::kMaxObjectives; i++) ram_b(rdram, row + i) = i < objs->size() ? 1 : 0;
+
+    // The pause screen reads a line aloud unless its byte in this table is 0xFF; the voice itself comes from rs64_mod_levels_pause_voice.
+    const uint32_t voices = 0x80109D80u + ram_w(rdram, 0x80130B70u) * 4u;
+
+    for (uint32_t i = 0; i < rs64levels::kMaxObjectives; i++)
+    {
+        const auto* o = i < objs->size() ? &(*objs)[i] : nullptr;
+        const bool rec = o && !o->pauseRecording.empty() && s_asset_overrides.count("level/" + s_mod_levels[s_current_mod_level].folder + "/" + o->pauseRecording);
+
+        ram_b(rdram, voices + i) = o && (o->pauseVoice >= 0 || rec) ? 0 : 0xFF;
+    }
 
     ram_b(rdram, 0x80130B17u) = (uint8_t)objs->size();
     ram_b(rdram, 0x80130B16u) = 0;
     ram_b(rdram, 0x80130B15u) = 0;
 
     return 1;
+}
+
+// The voice id to play for the mod level: its recording (level/<folder>/<recording>) when it ships one, else the stock voice. A
+// recording plays as a voice line whose speech is the silent entry 0 (blank subtitle), redirected to it like the briefing's.
+static int mod_level_voice(uint8_t* rdram, int voice, const std::string& recording)
+{
+
+    const auto& l = s_mod_levels[s_current_mod_level];
+    const auto rec = recording.empty() ? s_asset_overrides.end() : s_asset_overrides.find("level/" + l.folder + "/" + recording);
+
+    if (rec == s_asset_overrides.end()) return voice;
+
+    s_brief_index = 0;
+    s_brief_rom = rec->second.rom_off;
+
+    for (uint32_t v = 1; v < 0x2F4; v++)
+    {
+        if (MEM_H(0, (gpr)(int32_t)(0x8009FFE0u + v * 2u)) == 0) return (int)v;
+    }
+
+    return rs64levels::kVoiceNone;
+}
+
+// An objective's callout, as the stock scripts make one: its voice line through playObjectiveVoiceLine2 0x800C7D1C (half a second
+// late) and a cut to its DAT camera through setHudFlagBit40AndStoreArg 0x800C7884, which needs a name the level has.
+static void objective_callout(uint8_t* rdram, recomp_context* ctx, uint32_t i)
+{
+
+    const auto& o = s_mod_levels[s_current_mod_level].objectives[i];
+    const int voice = mod_level_voice(rdram, o.voice, o.recording);
+    constexpr uint32_t kHalfSecond = 0x3F000000u;
+
+    if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, kHalfSecond });
+
+    if (o.camera.empty()) return;
+
+    constexpr uint32_t kObjectiveCamera = 0x80C42100u;
+    const uint32_t name = kObjectiveCamera + i * 0x20u;
+
+    write_cstr(rdram, name, o.camera.substr(0, 0x1F));
+
+    if (rs64::mips::mips_call(rdram, ctx, 0x80047B48u, { name }).v0) rs64::mips::mips_call(rdram, ctx, 0x800C7884u, { name });
+}
+
+// initMission entry, before the level's songs are preloaded: a mod level's starting song goes in the per-level song table
+// (0x8010B2EC, a song id per level that startLevelBackgroundMusic plays). The template's own byte comes back for the next mission.
+extern "C" void rs64_mod_levels_music(uint8_t* rdram)
+{
+
+    static int s_saved_level = -1;
+    static uint8_t s_saved = 0;
+    constexpr uint32_t kLevelSongs = 0x8010B2ECu;
+
+    if (s_saved_level >= 0) ram_b(rdram, kLevelSongs + (uint32_t)s_saved_level) = s_saved;
+
+    s_saved_level = -1;
+
+    if (s_current_mod_level < 0 || s_mod_levels[s_current_mod_level].music < 0) return;
+
+    s_saved_level = (int)ram_w(rdram, 0x80130B70u);
+    s_saved = ram_b(rdram, kLevelSongs + (uint32_t)s_saved_level);
+    ram_b(rdram, kLevelSongs + (uint32_t)s_saved_level) = (uint8_t)s_mod_levels[s_current_mod_level].music;
+}
+
+// Pause screen 0x800C227C (initOrUpdatePauseScreenDim; s1 + 0x7C4 = the line it is reading aloud): the line's own voice. The call's
+// delay slot adds 0x2C0 to a0 after this, so the id goes in less 0x2C0.
+extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const auto* objs = own_objectives();
+
+    if (!objs) return;
+
+    const uint32_t i = ram_b(rdram, (uint32_t)ctx->r17 + 0x7C4u);
+
+    if (i >= objs->size()) return;
+
+    const auto& o = (*objs)[i];
+    const int voice = mod_level_voice(rdram, o.pauseVoice, o.pauseRecording);
+
+    if (voice >= 0) ctx->r4 = (gpr)(int32_t)(voice - 0x2C0);
 }
 
 // checkComplexObjectives entry ($f12 = frame time): green each objective as it completes, then end the mission through the game's
@@ -1948,15 +2054,29 @@ extern "C" int rs64_mod_levels_objectives_tick(uint8_t* rdram, recomp_context* c
 
     const auto st = rs64levels::evaluateObjectives(*objs, counts, flags, s_obj_elapsed);
 
+    // The outcome first: its setter resets speech playback, so a callout queued before it in the same frame would be dropped.
+    if (st.fail) rs64::mips::mips_call(rdram, ctx, 0x800C7738u, {});
+    else if (st.success) rs64::mips::mips_call(rdram, ctx, 0x800C776Cu, {});
+
     for (uint32_t i = 0; i < objs->size(); i++)
     {
-        if ((st.done & ~s_obj_done) & (1u << i)) rs64::mips::mips_call(rdram, ctx, 0x800C76B0u, { i + 1 });
+        if (!((st.done & ~s_obj_done) & (1u << i))) continue;
+
+        rs64::mips::mips_call(rdram, ctx, 0x800C76B0u, { i + 1 });
+
+        const auto g = (*objs)[i].goal;
+
+        if (g != rs64levels::Goal::Protect && g != rs64levels::Goal::TimeLimit) objective_callout(rdram, ctx, i);
     }
 
     s_obj_done |= st.done;
 
-    if (st.fail) rs64::mips::mips_call(rdram, ctx, 0x800C7738u, {});
-    else if (st.success) rs64::mips::mips_call(rdram, ctx, 0x800C776Cu, {});
+    for (uint32_t i = 0; i < objs->size(); i++)
+    {
+        if ((st.failed & ~s_obj_failed) & (1u << i)) objective_callout(rdram, ctx, i);
+    }
+
+    s_obj_failed |= st.failed;
 
     return 1;
 }

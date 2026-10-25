@@ -126,6 +126,25 @@ int main() {
         CHECK(lv[0].objectives[3].goal == Goal::TimeLimit && lv[0].objectives[3].seconds == 300.0f);
         CHECK(lv[1].objectives.empty() && lv[2].objectives.empty());
     }
+    // objective_callouts: a voice line (stock id, -1 = none) and a DAT camera to cut to when it completes (or fails, for protect / timelimit)
+    {
+        std::vector<std::string> errors;
+        const auto l = parseModLevels("m", R"({ "levels": [ { "id": "a", "title": "A", "template": 1, "folder": "a", "objectives": [
+            { "text": "D", "goal": "destroy", "counter": 3, "count": 1, "voice": 93, "camera": "Camera_01", "recording": "obj_a1" },
+            { "text": "P", "goal": "protect", "flag": 5, "voice": 80, "pauseVoice": 704, "pauseRecording": "pause_b2" },
+            { "text": "R", "goal": "reach", "flag": 4 } ] } ] })", errors)[0];
+        CHECK(errors.empty() && l.objectives.size() == 3);
+        CHECK(l.objectives[0].voice == 93 && l.objectives[0].camera == "Camera_01" && l.objectives[0].recording == "obj_a1");
+        CHECK(l.objectives[1].voice == 80 && l.objectives[1].camera.empty());
+        // The pause screen reads each line aloud: its own voice (stock id or recording), none by default.
+        CHECK(l.objectives[1].pauseVoice == 704 && l.objectives[1].pauseRecording == "pause_b2" && l.objectives[0].pauseVoice == kVoiceNone);
+        CHECK(l.objectives[2].voice == kVoiceNone);
+        std::vector<int32_t> counts(128);
+        std::vector<uint8_t> flags(128);
+        flags[4] = 1;
+        const auto st = evaluateObjectives(l.objectives, counts.data(), flags.data(), 1.0f);
+        CHECK(st.fail && st.failed == 2 && st.done == 0);
+    }
     // objectives_evaluate: lines go green as they complete; success when every completing goal is done, fail on a protect flag or the time limit
     {
         std::vector<std::string> errors;
@@ -150,6 +169,16 @@ int main() {
         const auto s = parseModLevels("m", R"({ "levels": [ { "id": "s", "title": "S", "template": 1, "folder": "s", "objectives": [ { "text": "Hold", "goal": "survive", "seconds": 90 } ] } ] })", errors)[0];
         CHECK(!evaluateObjectives(s.objectives, counts.data(), flags.data(), 89.0f).success);
         CHECK(evaluateObjectives(s.objectives, counts.data(), flags.data(), 90.0f).success);
+    }
+    // starting_song: a song id from the game's music cue table (0-255), the template's when left out or out of range
+    {
+        std::vector<std::string> errors;
+        const auto lv = parseModLevels("m", R"({ "levels": [
+            { "id": "a", "title": "A", "template": 1, "folder": "a", "music": 23 },
+            { "id": "b", "title": "B", "template": 1, "folder": "b" },
+            { "id": "c", "title": "C", "template": 1, "folder": "c", "music": 300 } ] })", errors);
+        CHECK(lv.size() == 3 && errors.size() == 1);
+        CHECK(lv[0].music == 23 && lv[1].music == kMusicTemplate && lv[2].music == kMusicTemplate);
     }
     // menu_text_is_uppercase: the SELECT LEVEL fonts have no lowercase letters (stock titles and descriptions are all caps)
     CHECK(menuText("Strike the city before dawn.\nGo.") == "STRIKE THE CITY BEFORE DAWN.\nGO.");
