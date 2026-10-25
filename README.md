@@ -73,6 +73,10 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings. See [Controls](#controls).
 - **Touch controls on Android:** tap menu and in-game buttons and fly with an on-screen stick. You can move and resize the buttons, and turn on 'gyro steering' to help fine tune your aim.
 
+#### Languages
+
+- **English (en), German (de) and French (fr):** picked under **OPTIONS > LANGUAGE**. Affects menus, mission text and subtitles while voice acting remains in English.
+
 #### Multiplayer (experimental)
 
 - **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. 
@@ -87,24 +91,19 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 > [!NOTE]
 > Steam-Relay mod on Linux, Steam Deck and macOS are untested.
 
-#### Languages
-
-- **English, German and French:** menus, mission text and subtitles, picked under **OPTIONS > LANGUAGE** (or `--language en|de|fr`). The US cartridge already holds all three; the original only offered the choice on PAL consoles. Voice acting stays English.
-
 #### Mods
 
 - **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
   - See [docs/modding.md for modding info](docs/modding.md).
 - **Included mods:**
+  - **Display Settings:** Adds a 'Display Settings' in the main menu under 'Options' -> 'Game Settings' and in the pause menu. Also contains the Ray Tracing and Fullscreen toggle settings menus replacing their standalone UI mods.
   - **Multiplayer:** online co-op (see above).
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
-  - **Fullscreen toggle:** an option in the options and pause menus' display settings.
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
   - **Invincibility:** your craft takes no damage.
   - **Any Craft, Any Mission:** fly any ship on any level.
-  - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Game Settings' to toggle various RT features.
 
 ## Running
 
@@ -201,6 +200,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
   - Better Ray Tracing mod menu button placement. (It's below the back button in the Options menu which is awkward)
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
+
+- 'CHICKEN' level is virtually unplayable do to the control scheme. Can't seem to aim up/down and steering affects head direction and requires constantly moving the mouse in a direction.
 
 ### Game specific Issues
 
@@ -532,7 +533,7 @@ Once your agent is setup, tasks that would've taken weeks/months/years to do can
 
 Here's a list of MCPs that could be useful for this project:
 
-- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [python 3.10+](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs)
+- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
@@ -556,10 +557,10 @@ Here's a list of MCPs that could be useful for this project:
 - **[jrra](https://github.com/jrra/rerogue)**: a community fork of rerogue.
 - **[Tmcg2](https://github.com/Tmcg2/rogue_squadron64)**: started the companion decomp project.
 
-## ~~License~~
+## License
 
-This is a hobby project.
+The code in this repository (the host runtime, patches, hooks, mods, tools and docs) is licensed under [GPL-3.0](LICENSE).
 
-This project is in **no way** associated with, sponsored or endorsed by Nintendo, Disney, LucasArts (now known as Lucasfilm Games LLC), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
+The license covers only that code. **The game itself is not part of this project and is not covered by it:** this repository and its releases contain no ROM data, no game code and no game assets. The recompiled code is generated locally from your own ROM and is never committed or distributed. You need a legally obtained copy of the game.
 
-This project contains no ROM data and requires a legally obtained copy of the game.
+Star Wars and Rogue Squadron are trademarks of Lucasfilm Ltd. This is an unofficial hobby project with **no** association with, sponsorship by or endorsement from Nintendo, Disney, Lucasfilm (including Lucasfilm Games, formerly LucasArts), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
