@@ -55,6 +55,24 @@ namespace RT64 {
 // in poll_input via SDL_SetWindowFullscreen (RT64 resizes its swapchain off the resulting resize event).
 SDL_Window* g_sdl_window = nullptr;
 
+// The refresh rates of the display the window is on, for the menu's TARGET FPS choices.
+static void publish_refresh_rates()
+{
+
+    const int disp = SDL_GetWindowDisplayIndex(g_sdl_window);
+    const int n = disp >= 0 ? SDL_GetNumDisplayModes(disp) : 0;
+    std::vector<int> hz;
+
+    for (int i = 0; i < n; ++i)
+    {
+        SDL_DisplayMode m{};
+
+        if (SDL_GetDisplayMode(disp, i, &m) == 0 && m.refresh_rate > 0) hz.push_back(m.refresh_rate);
+    }
+
+    rs64::video::set_refresh_rates(std::move(hz));
+}
+
 namespace rs64::app {
 SDL_GameController* controller = nullptr;
 
@@ -1336,11 +1354,21 @@ void poll_input()
         g_touch.physical_input();
     };
 
+    static bool s_rates_known = false;
+
+    if (!s_rates_known && g_sdl_window) {
+        publish_refresh_rates();
+        s_rates_known = true;
+    }
+
     SDL_Event e;
 
     while (SDL_PollEvent(&e)) {
         switch (e.type)
         {
+        case SDL_WINDOWEVENT:
+            if (e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) publish_refresh_rates();
+            break;
         case SDL_FINGERDOWN:
         case SDL_FINGERMOTION:
         case SDL_FINGERUP:

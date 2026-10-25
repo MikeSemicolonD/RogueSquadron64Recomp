@@ -1,0 +1,10 @@
+{
+  "game_id": "rs64",
+  "id": "display-settings",
+  "display_name": "Display Settings",
+  "description": "Replaces HIGH RESOLUTION in Game Settings (front end and pause) with a DISPLAY SETTINGS page: resolution, widescreen, fullscreen, anti-aliasing, high resolution, ray tracing (needs a GPU with ray query support) and an ADVANCED page with frame interpolation (experimental), target fps, draw distance and filtering. Saved in roguesq_video.json.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true
+}

@@ -279,6 +279,10 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 #endif
 
+    if (const char* lang = recomp::dbg::env_str("ROGUESQ_LANGUAGE")) {
+        rs64::video::pin_language(rs64::video::parse_language(lang));
+    }
+
     int window_w = 640, window_h = 480;
 
     if (const char* ws = recomp::dbg::env_str("ROGUESQ_WINDOW_SIZE")) {

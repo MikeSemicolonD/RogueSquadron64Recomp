@@ -21,6 +21,12 @@ int main() {
     rs64::menu::move_to_index(v, 2, 99);
     CHECK((v == std::vector<int>{40, 20, 10, 30}));
 
+    // to_latin1_maps_utf8_to_font_bytes
+    CHECK(rs64::menu::to_latin1("BACK") == "BACK");
+    CHECK(rs64::menu::to_latin1("ZUR\xC3\x9C" "CK") == "ZUR\xDC" "CK");
+    CHECK(rs64::menu::to_latin1("A\xE2\x82\xAC" "B") == "A?B");
+    CHECK(rs64::menu::to_latin1("\xC3") == "?");
+
     std::printf("menu_layout_test: ok\n");
 
     return 0;

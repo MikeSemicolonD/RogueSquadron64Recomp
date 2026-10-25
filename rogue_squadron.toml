@@ -941,6 +941,11 @@ func = "setupMenuData"
 before_vram = 0x800BAF70   # after `sb $s3,0x95($v1)`; before the active-bit loop
 text = '{ rs64_th_setupMenuData_800BAF70(rdram, ctx); }'
 
+# A HIGH RESOLUTION change made from the pause menu is applied here, before the screen setup reads the bit (menu_config.cpp).
+[[patches.hook]]
+func = "applyLevelScreenAndCameraSettings"
+text = '{ rs64_th_applyLevelScreenAndCameraSettings_entry(rdram, ctx); }'
+
 # Intercept confirm on a custom entry. This instruction is only reached when
 # A/Start was pressed (masked+branched at 0x800B51A8), so no button re-check.
 [[patches.hook]]
@@ -980,6 +985,23 @@ text = '{ rs64_th_menuControllerInput_800B5920(rdram, ctx); }'
 func = "menuControllerInput"
 before_vram = 0x800B4E64
 text = '{ rs64_th_menuControllerInput_800B4E64(rdram, ctx); }'
+
+# The LANGUAGE page (menu 9: ENGLISH / DEUTSCH / FRANCAIS) opens from OPTIONS (a built-in button in menu_config.cpp) instead of PAL-only GAME SETTINGS, so its B/BACK target is OPTIONS (2), not 3.
+[[patches.instruction]]
+func = "setupMenuData"
+vram = 0x800BACAC
+value = 0x24020002
+
+# LANGUAGE pick: $v0 = the entry's language, stored to gGameSettings+6 in the delay slot of the text reload; saved as the language setting.
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B5830
+text = '{ rs64_th_menuControllerInput_800B5830(rdram, ctx); }'
+
+# Every text file load (front/game/voice) reads its language slot from gGameSettings+6: the language setting or ROGUESQ_LANGUAGE goes there first.
+[[patches.hook]]
+func = "loadTxtFile"
+text = '{ rs64_th_loadTxtFile_entry(rdram, ctx); }'
 
 # Menu backdrop wipe swaps only the column it lands on each tick; a step of >= 1 column (a 6+ VI frame) skips one and leaves it on an old picture. Clamp dt ($a1) below one column.
 [[patches.hook]]
@@ -1022,6 +1044,38 @@ text = '{ rs64_th_runPauseMenuStateMachine_800C3550(rdram, ctx); }'
 func = "initOrUpdatePauseScreenDim"
 before_vram = 0x800C2458   # andi 0x20 on the selected entry's flags
 text = '{ rs64_th_initOrUpdatePauseScreenDim_800C2458(rdram, ctx); }'
+
+# Pause submenus: the four joins after the game picks a PauseMenuStuff array for a menu id (HUD+0xD6A; at 0x800C24A8 the link's nextMenu) take ours for GAME SETTINGS and mod pages.
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C214C
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C214C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C24A8
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C24A8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C2A74
+text = '{ rs64_th_runPauseMenuStateMachine_800C2A74(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C3794
+text = '{ rs64_th_runPauseMenuStateMachine_800C3794(rdram, ctx); }'
+
+# B in a pause submenu always returns to the root (0x800C2400); a mod page returns to its parent instead.
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C23EC
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C23EC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C240C
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C240C(rdram, ctx); }'
 
 [[patches.hook]]
 func = "traverseSceneGraphRecursive"
@@ -1464,3 +1518,14 @@ text = '{ if (rs64_th_calculateFriendliesSaved_entry(rdram, ctx)) return; }'
 func = "runPauseMenuStateMachine"
 before_vram = 0x800C2F1C
 text = '{ rs64_th_runPauseMenuStateMachine_800C2F1C(rdram, ctx); }'
+
+# Mod levels with their own objectives: the pause screen reads each line aloud with the level's own voice (a0 + 0x2C0 in the delay slot).
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C227C
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C227C(rdram, ctx); }'
+
+# Mod levels: their own starting song, written into the per-level song table before initMission preloads the level's songs.
+[[patches.hook]]
+func = "initMission"
+text = '{ rs64_th_initMission_entry(rdram, ctx); }'

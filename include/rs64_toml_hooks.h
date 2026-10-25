@@ -85,17 +85,26 @@ void rs64_th_heapFreeListInsert_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_beginFrameDLChunk_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_emitFrameRdpInitDl_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupMenuData_800BAF70(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_applyLevelScreenAndCameraSettings_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B51B8(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_menuControllerInput_800B4CA8(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_menuControllerInput_800B5428(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_updateMenuPerFrame_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B5920(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B4E64(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_menuControllerInput_800B5830(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_loadTxtFile_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_integrateTieInterceptorPhysics_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_playerTieInterceptorMainUpdate_800BCE00(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_initOrUpdatePauseScreenDim_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runPauseMenuStateMachine_800C3550(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initOrUpdatePauseScreenDim_800C214C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initOrUpdatePauseScreenDim_800C24A8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runPauseMenuStateMachine_800C2A74(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runPauseMenuStateMachine_800C3794(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initOrUpdatePauseScreenDim_800C23EC(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initOrUpdatePauseScreenDim_800C240C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_initOrUpdatePauseScreenDim_800C2458(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_traverseSceneGraphRecursive_800155E4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_renderLitMeshFaceGroup_800137D4(uint8_t* rdram, recomp_context* ctx);
@@ -174,6 +183,8 @@ int rs64_th_initializeObjectiveTracking_entry(uint8_t* rdram, recomp_context* ct
 int rs64_th_checkComplexObjectives_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_calculateFriendliesSaved_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runPauseMenuStateMachine_800C2F1C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initOrUpdatePauseScreenDim_800C227C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_initMission_entry(uint8_t* rdram, recomp_context* ctx);
 
 #ifdef __cplusplus
 }

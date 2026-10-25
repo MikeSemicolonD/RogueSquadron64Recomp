@@ -252,7 +252,73 @@ static void test_ray_tracing_settings() {
     _putenv("ROGUESQ_RT_FOG_SHAFTS=");
 }
 
+static void test_aa_presets() {
+    UC uc; uc.validate();
+    rs64::video::apply_aa_preset(uc, 3);
+    CHECK(uc.antialiasing == UC::Antialiasing::MSAA4X && uc.downsampleMultiplier == 1 && !uc.fxaa);
+    CHECK(rs64::video::aa_preset(uc) == 3);
+    rs64::video::apply_aa_preset(uc, 1);
+    CHECK(uc.antialiasing == UC::Antialiasing::None && uc.fxaa);
+    rs64::video::apply_aa_preset(uc, 6);
+    CHECK(uc.antialiasing == UC::Antialiasing::None && uc.downsampleMultiplier == 4 && !uc.fxaa);
+    uc.antialiasing = UC::Antialiasing::MSAA4X;
+    uc.downsampleMultiplier = 2;
+    CHECK(rs64::video::aa_preset(uc) == -1);
+}
+
+static void test_resolution_and_upscale_choices() {
+    UC uc; uc.validate();
+    rs64::video::apply_resolution_choice(uc, 0);
+    CHECK(uc.resolution == UC::Resolution::WindowIntegerScale);
+    CHECK(rs64::video::resolution_choice(uc) == 0);
+    rs64::video::apply_resolution_choice(uc, 1);
+    CHECK(uc.resolution == UC::Resolution::Original);
+    rs64::video::apply_resolution_choice(uc, 3);
+    CHECK(uc.resolution == UC::Resolution::Manual && uc.resolutionMultiplier == 3.0);
+    CHECK(rs64::video::resolution_choice(uc) == 3);
+    rs64::video::apply_upscale_choice(uc, 1);
+    CHECK(uc.filtering == UC::Filtering::Linear);
+    CHECK(rs64::video::upscale_choice(uc) == 1);
+    json j = rs64::video::to_friendly(uc);
+    CHECK(j["advanced"].value("filtering", std::string()) == "Linear");
+}
+
+static void test_target_display_roundtrip() {
+    UC u2; u2.validate();
+    rs64::video::apply_friendly(u2, json{{"frameInterpolation", false}, {"targetFramerate", "display"}});
+    CHECK(u2.refreshRate == UC::RefreshRate::Original);
+    CHECK(rs64::video::to_friendly(u2)["targetFramerate"] == "display");
+    CHECK(rs64::video::to_friendly(u2)["frameInterpolation"] == false);
+    rs64::video::apply_friendly(u2, json{{"frameInterpolation", true}});
+    CHECK(u2.refreshRate == UC::RefreshRate::Display);
+    rs64::video::apply_friendly(u2, json{{"targetFramerate", 120}, {"frameInterpolation", true}});
+    CHECK(u2.refreshRate == UC::RefreshRate::Manual && u2.refreshRateTarget == 120);
+    CHECK(rs64::video::to_friendly(u2)["targetFramerate"] == 120);
+
+    UC u3; u3.validate();
+    rs64::video::apply_friendly(u3, json{{"advanced", {{"refreshRate", UC::RefreshRate::Display}}}});
+    CHECK(rs64::video::to_friendly(u3)["frameInterpolation"] == true);
+    CHECK(rs64::video::to_friendly(u3)["targetFramerate"] == "display");
+    CHECK(!rs64::video::to_friendly(u3)["advanced"].contains("refreshRate"));
+    rs64::video::apply_friendly(u3, json{{"targetFramerate", 60}});
+}
+
+static void test_custom_aa_steps_to_fxaa() {
+    UC uc; uc.validate();
+    uc.antialiasing = UC::Antialiasing::MSAA4X;
+    uc.downsampleMultiplier = 2;
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::display_value(rs64::video::Display::AntiAliasing) == -1);
+    rs64::video::step_display(rs64::video::Display::AntiAliasing);
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::aa_preset(uc) == 1);
+}
+
 int main() {
+    test_custom_aa_steps_to_fxaa();
+    test_aa_presets();
+    test_resolution_and_upscale_choices();
+    test_target_display_roundtrip();
     test_ray_tracing_settings();
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();

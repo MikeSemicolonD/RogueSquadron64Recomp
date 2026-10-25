@@ -754,8 +754,18 @@ void rs64_th_emitFrameRdpInitDl_entry(uint8_t* rdram, recomp_context* ctx) {
 // setupMenuData 0x800BAF70
 void rs64_th_setupMenuData_800BAF70(uint8_t* rdram, recomp_context* ctx) {
 
-    extern void rs64_menu_install_main(uint8_t* rdram);
-    rs64_menu_install_main(rdram);
+    extern int rs64_menu_install_main(uint8_t* rdram);
+    const int n = rs64_menu_install_main(rdram);
+
+    // A mod page (id 13+) skipped the per-menu builders with $s3 = 0; the tail's active-mask loop counts $s3, not +0x95.
+    if (n >= 0) ctx->r19 = n;
+}
+
+// applyLevelScreenAndCameraSettings entry
+void rs64_th_applyLevelScreenAndCameraSettings_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_menu_hires_apply(uint8_t* rdram);
+    rs64_menu_hires_apply(rdram);
 }
 
 // menuControllerInput 0x800B51B8
@@ -808,6 +818,31 @@ void rs64_th_menuControllerInput_800B4E64(uint8_t* rdram, recomp_context* ctx)
 
     extern void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx);
     rs64_menu_input_state(rdram, ctx);
+}
+
+// menuControllerInput 0x800B5830
+void rs64_th_menuControllerInput_800B5830(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)rdram;
+
+    extern void rs64_set_language(int lang);
+    rs64_set_language((int)ctx->r2);
+}
+
+// loadTxtFile entry
+void rs64_th_loadTxtFile_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern int rs64_language(void);
+    extern void rs64_menu_text_language(int lang);
+    const int lang = rs64_language();
+
+    if (lang >= 0) MEM_B(0x6, (gpr)(int32_t)0x80130B40u) = (int8_t)lang;
+
+    rs64_menu_text_language((int)MEM_BU(0x6, (gpr)(int32_t)0x80130B40u));
 }
 
 // integrateTieInterceptorPhysics entry
@@ -902,8 +937,8 @@ void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx)
 void rs64_th_initOrUpdatePauseScreenDim_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
-    extern void rs64_pause_install(uint8_t* rdram);
-    rs64_pause_install(rdram);
+    extern void rs64_pause_install(uint8_t* rdram, recomp_context* ctx);
+    rs64_pause_install(rdram, ctx);
     extern void rs64_pause_hover_sound(uint8_t* rdram, recomp_context* ctx);
     rs64_pause_hover_sound(rdram, ctx);
 }
@@ -912,8 +947,8 @@ void rs64_th_initOrUpdatePauseScreenDim_entry(uint8_t* rdram, recomp_context* ct
 void rs64_th_runPauseMenuStateMachine_800C3550(uint8_t* rdram, recomp_context* ctx)
 {
 
-    extern unsigned rs64_pause_label_for(uint8_t* rdram, unsigned marker);
-    unsigned v = rs64_pause_label_for(rdram, MEM_HU(0x2, ctx->r20));
+    extern unsigned rs64_pause_label_for(uint8_t* rdram, unsigned marker, unsigned entry);
+    unsigned v = rs64_pause_label_for(rdram, MEM_HU(0x2, ctx->r20), (unsigned)ctx->r20 - 2);
 
     if (v) ctx->r2 = (gpr)(int32_t)v;
 }
@@ -923,6 +958,40 @@ void rs64_th_initOrUpdatePauseScreenDim_800C2458(uint8_t* rdram, recomp_context*
 
     extern void rs64_pause_confirm(uint8_t* rdram, unsigned marker);
     rs64_pause_confirm(rdram, MEM_HU(0x4, ctx->r18));
+}
+
+extern unsigned rs64_pause_array_for(uint8_t* rdram, unsigned id, unsigned native);
+
+// initOrUpdatePauseScreenDim 0x800C214C: $s2 = the array for HUD+0xD6A ($s1 = HUD).
+void rs64_th_initOrUpdatePauseScreenDim_800C214C(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r18 = (gpr)(int32_t)rs64_pause_array_for(rdram, MEM_BU(0xD6A, ctx->r17), (unsigned)ctx->r18);
+}
+
+// initOrUpdatePauseScreenDim 0x800C24A8: $s0 = the array a confirmed link ($s2) opens.
+void rs64_th_initOrUpdatePauseScreenDim_800C24A8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r16 = (gpr)(int32_t)rs64_pause_array_for(rdram, MEM_HU(0x4, ctx->r18), (unsigned)ctx->r16);
+}
+
+// runPauseMenuStateMachine 0x800C2A74 / 0x800C3794: $s7 = the array for HUD+0xD6A ($fp = HUD).
+void rs64_th_runPauseMenuStateMachine_800C2A74(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r23 = (gpr)(int32_t)rs64_pause_array_for(rdram, MEM_BU(0xD6A, ctx->r30), (unsigned)ctx->r23);
+}
+
+void rs64_th_runPauseMenuStateMachine_800C3794(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r23 = (gpr)(int32_t)rs64_pause_array_for(rdram, MEM_BU(0xD6A, ctx->r30), (unsigned)ctx->r23);
+}
+
+// initOrUpdatePauseScreenDim 0x800C23EC / 0x800C240C: B in a submenu, before and after the game resets HUD+0xD6A to the root.
+void rs64_th_initOrUpdatePauseScreenDim_800C23EC(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_pause_back_begin(uint8_t* rdram, unsigned hud);
+    rs64_pause_back_begin(rdram, (unsigned)ctx->r17);
+}
+
+void rs64_th_initOrUpdatePauseScreenDim_800C240C(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_pause_back_end(uint8_t* rdram, unsigned hud);
+    rs64_pause_back_end(rdram, (unsigned)ctx->r17);
 }
 
 // traverseSceneGraphRecursive 0x800155E4
@@ -1572,4 +1641,20 @@ void rs64_th_runPauseMenuStateMachine_800C2F1C(uint8_t* rdram, recomp_context* c
 
     extern void rs64_mod_levels_objective_text(uint8_t*, recomp_context*);
     rs64_mod_levels_objective_text(rdram, ctx);
+}
+
+// initOrUpdatePauseScreenDim 0x800C227C: the voice the pause screen reads the current objective line with (a0, less 0x2C0).
+void rs64_th_initOrUpdatePauseScreenDim_800C227C(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_mod_levels_pause_voice(uint8_t*, recomp_context*);
+    rs64_mod_levels_pause_voice(rdram, ctx);
+}
+
+// initMission entry: a mod level's starting song (per-level song table 0x8010B2EC).
+void rs64_th_initMission_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_mod_levels_music(uint8_t*);
+    rs64_mod_levels_music(rdram);
 }

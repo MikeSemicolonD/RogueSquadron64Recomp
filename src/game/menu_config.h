@@ -7,7 +7,7 @@
 
 extern "C" {
 // Append the custom entries to gCurrentMenuData when the MAIN_MENU is (re)built.
-void rs64_menu_install_main(uint8_t* rdram);
+int rs64_menu_install_main(uint8_t* rdram);
 // Handle a confirm press on a custom MAIN_MENU entry.
 void rs64_menu_confirm_main(uint8_t* rdram);
 uint32_t rs64_menu_confirms();

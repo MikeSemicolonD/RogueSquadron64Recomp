@@ -573,7 +573,7 @@ public:
         else {
             // setup() snapshots enhancementConfig before the edits above; push them through.
             app->updateEnhancementConfig();
-            rs64::video::set_ray_query_supported(app->device && app->device->getCapabilities().raytracing);
+            rs64::video::set_ray_query_supported(app->device && app->device->getCapabilities().rayQuery);
 
             fprintf(stderr, "[RT64] enhancementConfig: presentMode=%d forceBranch=%d textureLOD.scale=%d\n",
                     (int)app->enhancementConfig.presentation.mode,
@@ -716,6 +716,13 @@ public:
                     vi_count_, g_f5_heur[0], g_f5_heur[2], g_f5_heur[3]);
 
         log_vi_state();
+
+        // Menu display settings: MSAA recreates the render targets first, as the F1 inspector does.
+        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig);
+
+        if (menu_cfg.msaa) app->updateMultisampling();
+        if (menu_cfg.changed) app->updateUserConfig(menu_cfg.discard_fbs);
+
         maybe_persist_video_cfg();
         const auto pres0 = std::chrono::high_resolution_clock::now();
         app->updateScreen();
@@ -1644,7 +1651,7 @@ private:
     }
 
     // One-shot RDRAM dump (un-swizzled to MIPS byte order, same layout as a PJ64 dump) for
-    // tools/validate/rdram_golden_diff.py. Triggers, first match wins:
+    // tools/debug/validate/rdram_golden_diff.py. Triggers, first match wins:
     //   ROGUESQ_DUMP_RDRAM_AT_VI=<n>              present number
     //   ROGUESQ_DUMP_RDRAM_ON_CINE_ITER=<n>       cinematic loop iteration (rs64_cine_iter_get)
     //   ROGUESQ_DUMP_RDRAM_ON_CINE_STALL=<ms>     cinematic frame counter (0x8013889C) unchanged that long
@@ -1655,7 +1662,7 @@ private:
     {
         // ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]: multi-milestone dump keyed to the game-state
         // classifier -- dumps dumps/rdram_state_<id>.bin the first present each listed state becomes
-        // current, ALL in one run (unlike the one-shot triggers below). Feeds tools/validate/state_diff.ps1.
+        // current, ALL in one run (unlike the one-shot triggers below). Feeds tools/debug/validate/state_diff.ps1.
         static const char* s_on_state = env_str("ROGUESQ_DUMP_RDRAM_ON_STATE");
 
         if (s_on_state && app->core.RDRAM)
