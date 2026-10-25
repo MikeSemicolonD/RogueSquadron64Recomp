@@ -33,7 +33,12 @@ lib/rt64/                               Submodule — fork at MikeSemicolonD/rt6
 syms/                                   Submodule (RogueSquadron64RecompSyms): function + data symbols and the mods data variant. dump_syms rewrites them; commit inside syms/, then bump the pointer
 android/, ci/                           Android Gradle project; release CI runner scripts
 docs/                                   Project notes (GBI, DL spec, data structures, env vars)
-tools/                                  PowerShell + Python diagnostic and validation helpers
+tools/
+  ├── debug/                            Crash/hang triage, stability + leak harnesses, menu driving, validate/, lockstep/, recordings/
+  ├── re/                               Reverse-engineering helpers: rz/, rename/, render/, MORT decoders, one-off disasm/decode probes
+  ├── release/                          Versioning, release bundling, packaging and cross-builds (linux/, macos/, android/)
+  ├── mods/, state/, style/, d3d11/     Build inputs read by CMake/CI (mod build scripts, state model, style baseline, D3D11 shader combos)
+  └── web/                              Browser tools (rs64-explorer/, its data generator, save-editor/), deployed to GitHub Pages by .github/workflows/static.yml when site-version.txt is bumped
 build/                                  CMake out-of-source build dir
 ```
 
@@ -87,7 +92,7 @@ for. Any variable can be set on the command line with `--set NAME=VALUE`.
 | `ROGUESQ_DUMP_PCM=<path>\|1` | Write the synth output to a 22050 Hz stereo WAV (`1` = `dumps/wav/capture.wav`) |
 | `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>` | Headless runs: fake a controller, pulse START |
 | `ROGUESQ_LOG_GBI=1` / `ROGUESQ_LOG_GFX_TASK=1` | Per-handler GBI logs (high volume) / one line per graphics task |
-| `ROGUESQ_LOG_MESG_TRACE=1` (+ `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Thread/message-order trace for `tools/validate/compare_mesg_trace.py` |
+| `ROGUESQ_LOG_MESG_TRACE=1` (+ `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Thread/message-order trace for `tools/debug/validate/compare_mesg_trace.py` |
 | `ROGUESQ_DUMP_FRAME_DL=N` / `ROGUESQ_DUMP_TEXTURES=1` | Debug builds only: log gfx tasks N..N+15 to stderr (full detail for N, N+1); textures of those tasks go to `dumps/tex/` |
 
 There is no catch-all log switch; enable each category by name.
@@ -98,28 +103,28 @@ With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mod
 
 Files written to `logs/` and `dumps/crash-dumps/` during a run:
 
-- `logs/stability/<tag>/run_N.log` — per-run stderr captured by `tools/run-stability.ps1`. Companion `summary.csv` classifies outcomes.
-- `logs/stability/<tag>/memory.csv` — per-second WS / private / VM samples from `tools/measure-leak.ps1`.
-- `mqdiag_NNN.txt` — no longer written (the periodic watchdog was removed). For a hang, take a full dump with `tools/dump-game.ps1` and run `tools/reconstruct-freeze.py` (game threads and queues from RDRAM) plus `tools/host-stacks.py` (symbolized host stacks; Debug build only).
-- `dumps/crash-dumps/crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump from the SEH handler, the SIGABRT handler, the F12 hotkey, or external `tools/dump-game.ps1`.
+- `logs/stability/<tag>/run_N.log` — per-run stderr captured by `tools/debug/run-stability.ps1`. Companion `summary.csv` classifies outcomes.
+- `logs/stability/<tag>/memory.csv` — per-second WS / private / VM samples from `tools/debug/measure-leak.ps1`.
+- `mqdiag_NNN.txt` — no longer written (the periodic watchdog was removed). For a hang, take a full dump with `tools/debug/dump-game.ps1` and run `tools/debug/reconstruct-freeze.py` (game threads and queues from RDRAM) plus `tools/debug/host-stacks.py` (symbolized host stacks; Debug build only).
+- `dumps/crash-dumps/crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump from the SEH handler, the SIGABRT handler, the F12 hotkey, or external `tools/debug/dump-game.ps1`.
 
 ## Tooling (under `tools/`)
 
 ### Crash / hang triage
 
 1. **Crash**: a `crash_*.dmp` is written automatically by the handlers in `src/main/crash.cpp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
-2. **Hang**: from another shell, `pwsh tools/dump-game.ps1` captures the running process even when the window is "Not Responding". Don't use F12 if the message pump is starved — it won't fire.
-3. **Triage threads**: `python tools/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
+2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` captures the running process even when the window is "Not Responding". Don't use F12 if the message pump is starved — it won't fire.
+3. **Triage threads**: `python tools/debug/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
 
 Note: the Windows debugger CLI (`cdb.exe`) is currently broken on this machine (`STATUS_DLL_INIT_FAILED`). Don't try to drive it from PowerShell — use VS interactively or the `minidump` Python package via `inspect-dump.py`.
 
 ### Stability / leak harness
 
-- `tools/run-stability.ps1 -Runs N -Timeout S -Tag <label>` — N timed launches, per-run stderr, outcome classification by marker grep. `-EnvVars "A=1;B=1"` forwards debug vars. `-Runs 1` for data capture, `-Runs 3` for stability-rate.
-- `tools/measure-leak.ps1 -Timeout S -Tag <label>` — single run, per-second WS/Private/VM to `memory.csv`.
-- `tools/recordings/` — per-mission input recordings (folder prefix = level id) plus `run-replays.ps1`, which replays every mission recording against its `.hash` baseline. See [tools/recordings/README.md](tools/recordings/README.md).
+- `tools/debug/run-stability.ps1 -Runs N -Timeout S -Tag <label>` — N timed launches, per-run stderr, outcome classification by marker grep. `-EnvVars "A=1;B=1"` forwards debug vars. `-Runs 1` for data capture, `-Runs 3` for stability-rate.
+- `tools/debug/measure-leak.ps1 -Timeout S -Tag <label>` — single run, per-second WS/Private/VM to `memory.csv`.
+- `tools/debug/recordings/` — per-mission input recordings (folder prefix = level id) plus `run-replays.ps1`, which replays every mission recording against its `.hash` baseline. See [tools/debug/recordings/README.md](tools/debug/recordings/README.md).
 
-### Validation harness (`tools/validate/`)
+### Validation harness (`tools/debug/validate/`)
 
 The primary correctness workflow — diff a live run against a Project64 golden rather than eyeballing screenshots:
 
@@ -132,10 +137,10 @@ The primary correctness workflow — diff a live run against a Project64 golden 
 - `compare_mesg_trace.py` / `symbolize_mesg_trace.py` — message-order trace comparison (pair with `ROGUESQ_LOG_MESG_TRACE`).
 - `checkpoint.ps1` — orchestrates a capture + diff checkpoint.
 
-### Renaming (`tools/rename/`) and cross-refs (`tools/rz/`)
+### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
 
-- `tools/rename/` — the symbol-renaming pipeline (`build_redefs.py`, `find_callers.py`, ...). After a rename batch, regen and build: a name that drifted between the ELF and `rogue_squadron.toml` hooks fails there.
-- `tools/rz/rzq.py <cmd> <sym|0xADDR>` — rizin queries against the symbolized `rogue_squadron64` ELF: `xrefs`, `callees`, `disasm`, `strrefs`, `funcs`, `raw`. `--overlay mission|menu|cinematic` selects which overlay sits at 0x800A5130; `--project <file>` caches the ~25s analysis. See [tools/rz/README.md](tools/rz/README.md). Use it for tracing (who reads a global, a function's callers) before grepping `RecompiledFuncs/`; it needs rizin plus `pip install rzpipe`.
+- `tools/re/rename/` — the symbol-renaming pipeline (`build_redefs.py`, `find_callers.py`, ...). After a rename batch, regen and build: a name that drifted between the ELF and `rogue_squadron.toml` hooks fails there.
+- `tools/re/rz/rzq.py <cmd> <sym|0xADDR>` — rizin queries against the symbolized `rogue_squadron64` ELF: `xrefs`, `callees`, `disasm`, `strrefs`, `funcs`, `raw`. `--overlay mission|menu|cinematic` selects which overlay sits at 0x800A5130; `--project <file>` caches the ~25s analysis. See [tools/re/rz/README.md](tools/re/rz/README.md). Use it for tracing (who reads a global, a function's callers) before grepping `RecompiledFuncs/`; it needs rizin plus `pip install rzpipe`.
 
 ## Overriding recompiled functions
 
@@ -159,7 +164,7 @@ librecomp's section table covers all three `.ovl.*` overlays (mission / menu / c
 
 ### Terrain grid is 128x128 in host RAM
 
-The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/game/hook_helpers.cpp)); the camera name for a mod-linked mid-mission shot sits at 0x80C40000-0x80C400FF, a mod level's redirected asset name at 0x80C40100-0x80C401FF, its medal_info records at 0x80C40200-0x80C40223, SELECT GAME's mod medal text at 0x80C40300-0x80C40367, its opening crawl text at 0x80C41000-0x80C41FFF and its pause-list objective text at 0x80C42000-0x80C420FF. Keep other host tables clear of them. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/game/hook_helpers.cpp)); the camera name for a mod-linked mid-mission shot sits at 0x80C40000-0x80C400FF, a mod level's redirected asset name at 0x80C40100-0x80C401FF, its medal_info records at 0x80C40200-0x80C40223, SELECT GAME's mod medal text at 0x80C40300-0x80C40367, its opening crawl text at 0x80C41000-0x80C41FFF and its pause-list objective text at 0x80C42000-0x80C420FF and the pause menu's GAME SETTINGS and mod-page arrays at 0x80C43000-0x80C43FFF and its objective camera names at 0x80C42100-0x80C4217F. Keep other host tables clear of them. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
 
 ### Per-player data relocation (co-op)
 
@@ -203,7 +208,7 @@ Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content lin
 
 Rogue Squadron drives audio through Factor 5's **MusyX** engine, and **SFX and music work**: the CPU-side MusyX sequencer submits `M_AUDTASK`s, which run the **RSPRecomp'd MusyX synth ucode** (`musyx_audio_runner`, from `rsp/musyx_rsp.toml`) on the host audio-task thread; the synthesized PCM flows through `queue_samples` → SDL ([audio.cpp](src/audio/audio.cpp)). This is the default (`get_rsp_microcode` returns `musyx_audio_runner` for `M_AUDTASK`); `ROGUESQ_NO_AUDIO_UCODE=1` falls back to the silent `musyx_stub`. Stock `aspMain` is **not** on the audio path; MusyX has no shared format with the stock ucode. `ROGUESQ_DUMP_PCM` drives offline capture. See [docs/game-architecture.md](docs/game-architecture.md#audio-pipeline).
 
-Subtitled **dialogue uses a separate codec, MORT** (per the [rerogue](https://github.com/dpethes/rerogue) PC-version RE). Contrary to earlier notes, MORT is **fully recompiled and works** — `tools/mort_decode.py` / `tools/MORTDecoder.cpp` are the offline reference. Voice-decode freezes were an **N64Recomp codegen bug** in the conditional branch-and-link (`bgezal`/`bltzal`) `$ra`-as-data-pointer idiom: the MusyX/voice filters do `bltzal $zero, T` then read `$ra` (= PC+8) as the base of an embedded coefficient table (`addiu $t7, $ra, 0xD4; lb …`). The recompiler emitted the branch but **never materialized the link *value***, so `$ra` stayed 0 (indirect-call entry), the table pointer computed to `~0x800000DB`, and the read AV'd — SEH-swallowed, killing the thread and deadlocking the frame pipeline (`filterVoiceSampleBlock`, on `viRetraceHandlerThread`, was the SELECT-LEVEL→load voiceline freeze; `applyVoiceDelayFilter` was the earlier demo/FrontEnd one). **Fixed (2026-09-20)**: `recompilation.cpp` now emits `ctx->r31 = PC+8` for the conditional branch-and-link ops before the branch condition (`Generator::emit_link_address`, implemented in `CGenerator`); `jal`/`jalr` still do not write `r31`. Diagnose these from a full-memory `dump-game.ps1` dump with `tools/reconstruct-freeze.py` (frozen-machine state from RDRAM) + `tools/host-stacks.py` (symbolized host stacks; refuses on a stale-exe/PDB mismatch). See project memory `craftselect-voiceline-freeze-2026-09-16` (root cause + the fix) and `demo-voiceline-freeze-2026-09-13`. The old `ROGUESQ_VOICE_UNSTICK` host watchdog has been removed. `tools/extract_speech_table.py` extracts the voiceId→text table.
+Subtitled **dialogue uses a separate codec, MORT** (per the [rerogue](https://github.com/dpethes/rerogue) PC-version RE). Contrary to earlier notes, MORT is **fully recompiled and works** — `tools/re/mort_decode.py` / `tools/re/MORTDecoder.cpp` are the offline reference. Voice-decode freezes were an **N64Recomp codegen bug** in the conditional branch-and-link (`bgezal`/`bltzal`) `$ra`-as-data-pointer idiom: the MusyX/voice filters do `bltzal $zero, T` then read `$ra` (= PC+8) as the base of an embedded coefficient table (`addiu $t7, $ra, 0xD4; lb …`). The recompiler emitted the branch but **never materialized the link *value***, so `$ra` stayed 0 (indirect-call entry), the table pointer computed to `~0x800000DB`, and the read AV'd — SEH-swallowed, killing the thread and deadlocking the frame pipeline (`filterVoiceSampleBlock`, on `viRetraceHandlerThread`, was the SELECT-LEVEL→load voiceline freeze; `applyVoiceDelayFilter` was the earlier demo/FrontEnd one). **Fixed (2026-09-20)**: `recompilation.cpp` now emits `ctx->r31 = PC+8` for the conditional branch-and-link ops before the branch condition (`Generator::emit_link_address`, implemented in `CGenerator`); `jal`/`jalr` still do not write `r31`. Diagnose these from a full-memory `dump-game.ps1` dump with `tools/debug/reconstruct-freeze.py` (frozen-machine state from RDRAM) + `tools/debug/host-stacks.py` (symbolized host stacks; refuses on a stale-exe/PDB mismatch). See project memory `craftselect-voiceline-freeze-2026-09-16` (root cause + the fix) and `demo-voiceline-freeze-2026-09-13`. The old `ROGUESQ_VOICE_UNSTICK` host watchdog has been removed. `tools/re/extract_speech_table.py` extracts the voiceId→text table.
 
 The **structure-destruction attract-demo freeze** (jade moon and any demo that blows up a structure) is **FIXED**: during an explosion an NPC has `npc+0x190 == NULL`, so `getNpcCurrentHealth` derefs a wild address and AVs; the SEH-swallowed AV leaves the gfx-frame barrier inconsistent → deadlock. [patches/src/npc_health.c](patches/src/npc_health.c) replaces `getNpcCurrentHealth` and the other four health accessors in the patches ELF and guards the slot read/write. getNpcCurrentHealth is reached only through the `func_map`/`LOOKUP_FUNC` indirect path; the patch covers it because `PatchesLib` is an OBJECT library, so the func_map's address-of binds to the patch (a STATIC patches library once bound it to the unguarded body). When a recompiled function hangs on data that decodes fine offline, suspect a codegen mistranslation of a rare instruction (especially the `*al` link-branches) before deep subsystem RE.
 
@@ -240,7 +245,7 @@ There is no global iteration cap in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64
    - `[null-call] addr=0x...` / `Failed to find function at 0x...` — recompiled MIPS called an unmapped fn-ptr. Stubbed.
    - `Unable to find a matching GBI in the current database` — unrecognized ucode task; the mid-task NULL guard catches the resulting deref, that geometry doesn't render.
 3. **Rerun with the gfx traces**: `ROGUESQ_LOG_GFX_TASK=1` (one line per graphics task), `ROGUESQ_LOG_DL_HEALTH=1` (garbage color-image rejects, a desync signal) and `ROGUESQ_DESYNC_TRACE=1` (recent F5 commands ring) show which DL was in flight.
-4. **Use `tools/reconstruct-freeze.py` on a full dump** to validate queue-level theories before instrumenting: it lists every blocked game thread and its wait queue. `tools/host-stacks.py` gives the symbolized host stacks.
+4. **Use `tools/debug/reconstruct-freeze.py` on a full dump** to validate queue-level theories before instrumenting: it lists every blocked game thread and its wait queue. `tools/debug/host-stacks.py` gives the symbolized host stacks.
 
 For a hang specifically: if it's a cutscene/demo, suspect a recompiler codegen mistranslation of a rare instruction on the hung path (the demo-freeze root cause — see the Audio quirk) before deep subsystem RE.
 

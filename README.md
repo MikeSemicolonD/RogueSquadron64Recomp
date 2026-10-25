@@ -253,7 +253,7 @@ The recompiler needs an ELF of the game: the ROM's code with every function name
 ```sh
 git clone https://github.com/MikeSemicolonD/rogue_squadron64.git ../rogue_squadron64
 cp path/to/rogue_squadron.z64 ../rogue_squadron64/   # the ROM goes in the decomp's root
-python tools/make_elf_from_syms.py                   # writes ../rogue_squadron64/build/roguesquadron.elf
+python tools/re/make_elf_from_syms.py                   # writes ../rogue_squadron64/build/roguesquadron.elf
 ```
 
 `rogue_squadron.toml` reads the ROM and the ELF from exactly those two paths.
@@ -339,7 +339,7 @@ cmake --build build --target RogueSquadron64Recomp
 - Keep the build directory on the Linux filesystem (e.g. `~/rs64-build`), **not** under `/mnt/…` — CMake's compiler checks can fail with `Operation not permitted` on the Windows drive mount. Source can stay on `/mnt`.
 - WSLg supplies the display, PulseAudio (sound), and keyboard/mouse, so the game runs directly. A physical gamepad needs `usbipd-win` to route the USB device to wsl; the keyboard works out of the box.
 - WSL's default Vulkan is **llvmpipe (software)** — it runs but hitches. For GPU acceleration, build [Mesa's](https://gitlab.freedesktop.org/mesa/mesa) **[Dozen (`dzn`)](https://gitlab.freedesktop.org/mesa/mesa/-/tree/main/src/microsoft/vulkan?ref_type=heads)** driver (Vulkan → D3D12 → the real GPU via `/dev/dxg`). If the game doesn't detect `dzn` it'll default to software (CPU) rendering.
-- The `tools/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
+- The `tools/release/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
 
 ### Android notes
 
@@ -385,7 +385,7 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
    ./build_compiler_rt.sh   # no need to run the install commands it prints
    ```
 
-3. Build the game with `tools/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp` for Debug, `~/rs64-build-macos-<arch>-<config>/` (lowercase, e.g. `-release`) otherwise.
+3. Build the game with `tools/release/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp` for Debug, `~/rs64-build-macos-<arch>-<config>/` (lowercase, e.g. `-release`) otherwise.
 
 - **Can't render when cross-built.** Metal shaders need `xcrun metal`, which exists only on macOS, so a cross-build embeds the MSL source (`RT64_METAL_COMPILE=OFF`) instead of compiled metallibs. A build meant to run has to be made on a Mac (or a macOS CI runner).
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
@@ -450,13 +450,13 @@ Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrid
 
 [docs/debugging-with-visual-studio.md](docs/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
 
-AI written helpers under [tools/](tools/):
+AI written helpers under [tools/debug/](tools/debug/):
 
 - `dump-game.ps1` writes a full-memory minidump of a running instance, even when the window is unresponsive.
 - `inspect-dump.py` and `dump_stackscan.py` list and symbolize threads from a minidump.
 - `reconstruct-freeze.py` rebuilds blocked game threads and queues from a hang dump; `host-stacks.py` symbolizes host stacks (Debug build).
 - `run-stability.ps1` launches N timed runs and classifies each by stderr markers.
-- `recordings/` holds per-mission input recordings; `run-replays.ps1` replays them against their state-hash baselines ([README](tools/recordings/README.md)).
+- `recordings/` holds per-mission input recordings; `run-replays.ps1` replays them against their state-hash baselines ([README](tools/debug/recordings/README.md)).
 - `validate/` captures Project64 goldens, diffs RDRAM, compares message-order traces, and walks display lists offline.
 
 `cmake --build build --config Release --target rs64_unit_tests` builds and runs the unit tests and the style check.
@@ -504,11 +504,11 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 ### Save editor
 
-A save editor also exists in *`tools/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
+A save editor also exists in *`tools/web/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 
 ### RS64 Explorer
 
-*`tools/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
+*`tools/web/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
 
 A **MASSIVE** extension to the foundational work originally done by [Dávid Pethes](https://github.com/dpethes/rerogue) and [jrra](https://github.com/jrra/rerogue).
 

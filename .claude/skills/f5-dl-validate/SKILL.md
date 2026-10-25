@@ -1,6 +1,6 @@
 ---
 name: f5-dl-validate
-description: Perception-free validation and bug-fixing of the Factor 5 (F3DFACTOR5) HLE display-list pipeline in RogueSquadron64Recomp by diffing recomp output against Project64 goldens at the RDRAM / DL-seam / parser layers, so rendering bugs are localized to an opcode and chunk without ever judging pixels. Use when investigating cinematic or in-mission rendering desyncs, garbage geometry after a sub-DL return, missing or exploding face counts, runaway / capped gfx-task parses, or validating any change to rt64_gbi_f3dfactor5.cpp or the F5 GBI. Covers capturing the parser-visible RDRAM snapshot at a game-state landmark, walking the DL to normalized records (tools/validate/f5_dl_walk.py --json), two-sided diffing (dl_diff.py), the one-command checkpoint driver (checkpoint.ps1), and the walker-adjudicates-grammar -> fix-live-parser -> rebuild -> validate-live loop. Triggers on f5_dl_walk, dl_diff, checkpoint.ps1, ROGUESQ_DUMP_PARSE_SNAPSHOT_ON_ITER, op_b4_quad / op_13_quad / f5_emit_face, f5_enter_chunk, F5 chunk/opcode/stride desyncs, and PJ64 golden RDRAM diffs.
+description: Perception-free validation and bug-fixing of the Factor 5 (F3DFACTOR5) HLE display-list pipeline in RogueSquadron64Recomp by diffing recomp output against Project64 goldens at the RDRAM / DL-seam / parser layers, so rendering bugs are localized to an opcode and chunk without ever judging pixels. Use when investigating cinematic or in-mission rendering desyncs, garbage geometry after a sub-DL return, missing or exploding face counts, runaway / capped gfx-task parses, or validating any change to rt64_gbi_f3dfactor5.cpp or the F5 GBI. Covers capturing the parser-visible RDRAM snapshot at a game-state landmark, walking the DL to normalized records (tools/debug/validate/f5_dl_walk.py --json), two-sided diffing (dl_diff.py), the one-command checkpoint driver (checkpoint.ps1), and the walker-adjudicates-grammar -> fix-live-parser -> rebuild -> validate-live loop. Triggers on f5_dl_walk, dl_diff, checkpoint.ps1, ROGUESQ_DUMP_PARSE_SNAPSHOT_ON_ITER, op_b4_quad / op_13_quad / f5_emit_face, f5_enter_chunk, F5 chunk/opcode/stride desyncs, and PJ64 golden RDRAM diffs.
 ---
 
 # F5 Display-List Validation (perception-free)
@@ -30,7 +30,7 @@ never move to a lower layer until the higher ones are clean:
 3. **PARSER** (does `f3dfactor5` walk those bytes correctly) - `f5_dl_walk.py` + `dl_diff.py`.
 4. **PIXELS** - HLE, not byte-comparable; human glance only. Never debug here from the terminal.
 
-## Tools (all in `tools/validate/`)
+## Tools (all in `tools/debug/validate/`)
 
 - **`f5_dl_walk.py <dump.bin> [addr|task] [--json] [--b4 auto|16|32]`** - walks an 8 MB big-endian RDRAM
   dump with the F5 ucode's chunk rules. `--json` emits a normalized, address-normalized record stream
