@@ -264,6 +264,21 @@
             "detail": "Builds and runs rs64_unit_tests: lockstep_core, mp_core, net_core, net_link, nav_target, host_api, cable_alias, crosshair_match, rs64_lights, then the style checker."
         },
         {
+            "label": "Test: Unit tests (standalone, no game build)",
+            "type": "shell",
+            "command": "cmake -S tests -B build-tests; if ($?) { cmake --build build-tests --config ${input:rsConfig} --target rs64_unit_tests }",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "group": "test",
+            "problemMatcher": "$msCompile",
+            "detail": "Runs rs64_unit_tests from its own tree in build-tests: needs only the submodules, no ROM, recompiled code or MIPS toolchain."
+        },
+        {
             "label": "Test: Standalone test",
             "type": "shell",
             "command": "cmake --build build --config ${input:rsConfig} --target ${input:rsTest}; if ($?) { & \"build/${input:rsConfig}/${input:rsTest}.exe\" }",
