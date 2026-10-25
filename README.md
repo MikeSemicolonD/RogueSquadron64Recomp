@@ -201,8 +201,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
-- 'CHICKEN' level is virtually unplayable do to the control scheme. Can't seem to aim up/down and steering affects head direction and requires constantly moving the mouse in a direction.
-
 ### Game specific Issues
 
 - Some CPU performance hitching and slow down (~20fps) in spots. (although not as bad as the real n64 game) This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep.
