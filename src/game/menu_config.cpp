@@ -299,12 +299,12 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     }
 
     // "requires": one condition or a list, all of which must hold.
-    if (e.contains("requires") && e["requires"].is_string()) b.requires_conds.push_back(e["requires"].get<std::string>());
+    if (e.contains("requires") && e["requires"].is_string()) b.requires_conds.push_back(rs64::menu::condition_key(e["requires"].get<std::string>(), mod_id));
 
     if (e.contains("requires") && e["requires"].is_array())
     {
         for (const auto& c : e["requires"])
-            if (c.is_string()) b.requires_conds.push_back(c.get<std::string>());
+            if (c.is_string()) b.requires_conds.push_back(rs64::menu::condition_key(c.get<std::string>(), mod_id));
     }
 
     if (e.contains("labels") && e["labels"].is_array())
@@ -339,6 +339,22 @@ void apply_json_text(MenuConfig& m, const std::string& text, const std::string& 
                 auto& v = m.hides[it.key()];
 
                 for (const auto& a : it.value()) v.push_back(a.get<std::string>());
+            }
+        }
+
+        if (j.contains("titles") && j["titles"].is_object())
+        {
+            for (auto it = j["titles"].begin(); it != j["titles"].end(); ++it)
+            {
+                if (!it.value().is_object()) continue;
+
+                MenuTitle t;
+                t.text = text_field(it.value(), "label", lang);
+                t.x = it.value().value("x", 0);
+                t.has_x = it.value().contains("x");
+                t.has_y = it.value().contains("y");
+                t.y = it.value().value("y", 0);
+                m.titles[it.key()] = t;
             }
         }
     } catch (...) {}
@@ -396,6 +412,17 @@ MenuConfig default_config(int lang) {
 
     m.buttons.push_back(std::move(language));
 
+    // MODS: the host's mod list (mods_install), on the main menu between OPTIONS and QUIT.
+    Button mods;
+    mods.id = "mods";
+    mods.menu = "main_menu";
+    mods.type = BType::Submenu;
+    mods.page = kModsPage;
+    mods.label = "MODS";
+    mods.title = "MODS";
+    mods.x = -163;
+    m.buttons.push_back(std::move(mods));
+
     // No quitting to desktop on Android; the system handles app exit.
 #ifndef __ANDROID__
 
@@ -412,17 +439,6 @@ MenuConfig default_config(int lang) {
     pause_quit.id = "pause_quit";
     pause_quit.menu = "pause";
     pause_quit.type = BType::Action;
-    // MODS: the host's mod list (mods_install), on the main menu between OPTIONS and QUIT.
-    Button mods;
-    mods.id = "mods";
-    mods.menu = "main_menu";
-    mods.type = BType::Submenu;
-    mods.page = kModsPage;
-    mods.label = "MODS";
-    mods.title = "MODS";
-    mods.x = -163;
-    m.buttons.push_back(std::move(mods));
-
     pause_quit.behavior = "quit";
     pause_quit.label = "QUIT TO DESKTOP";
     m.buttons.push_back(std::move(pause_quit));
@@ -648,6 +664,9 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
         { "frame_interpolation", display_toggle(rs64::video::Display::FrameInterpolation) },
         { "cutscene_draw_distance", { [] { return rs64::video::keep_cutscene_draw_distance(); },
                                       [] { rs64::video::set_keep_cutscene_draw_distance(!rs64::video::keep_cutscene_draw_distance()); } } },
+        // The game's own terrain (caps the draw distance at 1.3X); takes effect at the next frame.
+        { "legacy_terrain", { [] { return rs64::video::legacy_terrain(); },
+                              [] { rs64::video::set_legacy_terrain(!rs64::video::legacy_terrain()); } } },
         { "framebuffer_writeback", { [] { return rs64::video::framebuffer_writeback(); },
                                      [] { rs64::video::set_framebuffer_writeback(!rs64::video::framebuffer_writeback()); } } },
         { "rt_lights", rt_toggle(rs64lights::Feature::Lights) },
@@ -670,7 +689,7 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
     return r;
 }
 
-// draw_distance: the roguesq_video.json drawDistance multiplier as a percent (100-250), for mod menus; applies live and is saved.
+// draw_distance: the roguesq_video.json drawDistance multiplier as a percent (100-800), for mod menus; applies live and is saved.
 std::unordered_map<std::string, SliderImpl>& sliders() {
 
     static std::unordered_map<std::string, SliderImpl> r = {
@@ -706,22 +725,38 @@ CycleImpl display_cycle(rs64::video::Display d)
              [d](int v) { return rs64::video::display_label(d, v); } };
 }
 
-// draw_distance as a cycle: the multiplier in quarter steps from 1X to 2.5X, shown as text (the menu font has no bar glyph). -1 = a saved value between steps.
-constexpr int kDrawSteps = 7;
+// draw_distance as a cycle of multipliers from 1X to 8X, shown as text (the menu font has no bar glyph). -1 = a saved value between steps.
+// Legacy terrain caps whatever is chosen at 1.3X (hook_helpers.cpp draw_dist_setting).
+constexpr int kDrawSteps = 9;
+constexpr float kDrawStepValues[kDrawSteps] = { 1.0f, 1.25f, 1.5f, 2.0f, 2.5f, 3.0f, 4.0f, 6.0f, 8.0f };
 
 int draw_step()
 {
 
-    const float q = rs64::video::draw_distance() * 4.0f - 4.0f;
-    const int i = (int)std::lround(q);
+    const float d = rs64::video::draw_distance();
 
-    return (i >= 0 && i < kDrawSteps && std::fabs(q - (float)i) < 0.01f) ? i : -1;
+    for (int i = 0; i < kDrawSteps; i++) {
+        if (std::fabs(d - kDrawStepValues[i]) < 0.01f) return i;
+    }
+
+    return -1;
+}
+
+// The next step above d that the current maximum allows (legacy terrain stops at 1.3X), wrapping to 1X.
+float next_draw_step(float d, float max)
+{
+
+    for (float v : kDrawStepValues) {
+        if (v > d + 0.01f && v <= max + 0.01f) return v;
+    }
+
+    return kDrawStepValues[0];
 }
 
 std::string draw_step_text(int i)
 {
 
-    static const char* const kText[kDrawSteps] = { "1X", "1.25X", "1.5X", "1.75X", "2X", "2.25X", "2.5X" };
+    static const char* const kText[kDrawSteps] = { "1X", "1.25X", "1.5X", "2X", "2.5X", "3X", "4X", "6X", "8X" };
 
     if (i >= 0) return kText[i];
 
@@ -736,7 +771,7 @@ std::unordered_map<std::string, CycleImpl>& cycles() {
 
     static std::unordered_map<std::string, CycleImpl> r = {
         { "draw_distance", { [] { return draw_step(); },
-                             [] { rs64::video::set_draw_distance(1.0f + 0.25f * (float)((draw_step() + 1) % kDrawSteps)); },
+                             [] { rs64::video::set_draw_distance(next_draw_step(rs64::video::draw_distance(), rs64::video::draw_distance_max())); },
                              [](int i) { return draw_step_text(i); } } },
         { "resolution", display_cycle(rs64::video::Display::Resolution) },
         { "antialiasing", display_cycle(rs64::video::Display::AntiAliasing) },
@@ -2217,6 +2252,8 @@ void controls_poll_capture(uint8_t* rdram)
     s_ctl.flash_until = SDL_GetTicks() + kCtlFlashMs;
 }
 
+bool mods_on_screen(uint8_t* rdram);
+
 // Each front-end pass before the menu reads the pad: tab stops on entry/exit, the capture, and up/down scrolling the window (left/right would cycle presets).
 void controls_pass(uint8_t* rdram, recomp_context* ctx)
 {
@@ -2229,7 +2266,8 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx)
 
         if (s_ctl.shown) controls_show_model(rdram, false);
 
-        s_ctl_wheel.store(0);
+        // The MODS page reads the wheel too (mods_pass, after this pass).
+        if (!mods_on_screen(rdram)) s_ctl_wheel.store(0);
 
         s_ctl.shown = false;
         s_ctl.tabs = false;
@@ -2252,8 +2290,6 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx)
 
         wr_h(rdram, s_stops - 0x80000000u, (int16_t)kCtlTabStop);
         wr_h(rdram, s_stops - 0x80000000u + 2, (int16_t)kCtlEndStop);
-bool mods_on_screen(uint8_t* rdram);
-
         rs64::mips::mips_call(rdram, ctx, 0x80063E98u, {5u, s_stops, 2u});
         s_ctl.tabs = true;
         s_ctl.dirty = (1u << kCtlRows) - 1;
@@ -2268,8 +2304,7 @@ bool mods_on_screen(uint8_t* rdram);
     // Wheel notches while waiting for an input are dropped.
     if (s_ctl.capturing >= 0)
     {
-        // The MODS page reads the wheel too (mods_pass, after this pass).
-        if (!mods_on_screen(rdram)) s_ctl_wheel.store(0);
+        s_ctl_wheel.store(0);
         controls_poll_capture(rdram);
 
         return;
@@ -2379,41 +2414,6 @@ void controls_frame(uint8_t* rdram, recomp_context* ctx)
     rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, s_ctl.dirty, 0u});
     s_ctl.dirty = 0;
 }
-}
-
-// Mission start (initAllPlayersHudTracking copies D_80109AD0[preset] per player): with the controls mod on, every preset slot points at Luke's
-// table, so gameplay matches the list while the saved preset byte stays the player's. Replays keep their recorded preset.
-extern "C" int rs64_ls_replaying(void);
-
-// loadControllerModel, after the N64 controller is set up (0x800C4BD8): the keyboard and gamepad models load the same way
-// (load_hmt_and_hob, walkMeshdef0List by object name, 0x8005955C), from the mod's frontend/controller/<name> assets.
-extern "C" void rs64_controls_load_models(uint8_t* rdram, recomp_context* ctx)
-{
-
-    s_ctl_mesh_orig = (uint32_t)rd_w(rdram, kControllerMesh);
-    std::fill(std::begin(s_ctl_mesh), std::end(s_ctl_mesh), 0u);
-
-    if (!controls_enabled()) return;
-
-    for (const auto& [dev, name] : { std::pair{ ri::Device::Keyboard, "keyboard" }, std::pair{ ri::Device::Gamepad, "gamepad" }, std::pair{ ri::Device::Joystick, "joystick" } })
-    {
-        rs64::mips::mips_call(rdram, ctx, 0x8005645Cu, {alloc_str(rdram, std::string("frontend/controller/") + name), 0u, 0u, 0u});
-
-        const uint32_t mesh = rs64::mips::mips_call(rdram, ctx, 0x80056EB0u, {alloc_str(rdram, name)}).v0;
-
-        if (!mesh) {
-            fprintf(stderr, "[controls] %s model not found\n", name);
-            continue;
-        }
-
-        rs64::mips::mips_call(rdram, ctx, 0x8005955Cu, {mesh, 0u, 0x01060000u, 0u});
-        s_ctl_mesh[(int)dev] = mesh;
-    }
-
-    fprintf(stderr, "[controls] models: controller %08X keyboard %08X gamepad %08X joystick %08X\n", s_ctl_mesh_orig, s_ctl_mesh[0], s_ctl_mesh[1], s_ctl_mesh[2]);
-}
-
-extern "C" void rs64_controls_wheel(int steps) {
 
 // ---- MODS page (main menu > MODS): every installed mod in load order, ON/OFF on the right, A carries a mod to a new place ----
 
@@ -3012,6 +3012,41 @@ extern "C" void rs64_mods_drag(int op, int entry)
     std::lock_guard<std::mutex> lk(s_mods_drag_mtx);
 
     s_mods_drag_ops.emplace_back(op, entry);
+}
+
+// Mission start (initAllPlayersHudTracking copies D_80109AD0[preset] per player): with the controls mod on, every preset slot points at Luke's
+// table, so gameplay matches the list while the saved preset byte stays the player's. Replays keep their recorded preset.
+extern "C" int rs64_ls_replaying(void);
+
+// loadControllerModel, after the N64 controller is set up (0x800C4BD8): the keyboard and gamepad models load the same way
+// (load_hmt_and_hob, walkMeshdef0List by object name, 0x8005955C), from the mod's frontend/controller/<name> assets.
+extern "C" void rs64_controls_load_models(uint8_t* rdram, recomp_context* ctx)
+{
+
+    s_ctl_mesh_orig = (uint32_t)rd_w(rdram, kControllerMesh);
+    std::fill(std::begin(s_ctl_mesh), std::end(s_ctl_mesh), 0u);
+
+    if (!controls_enabled()) return;
+
+    for (const auto& [dev, name] : { std::pair{ ri::Device::Keyboard, "keyboard" }, std::pair{ ri::Device::Gamepad, "gamepad" }, std::pair{ ri::Device::Joystick, "joystick" } })
+    {
+        rs64::mips::mips_call(rdram, ctx, 0x8005645Cu, {alloc_str(rdram, std::string("frontend/controller/") + name), 0u, 0u, 0u});
+
+        const uint32_t mesh = rs64::mips::mips_call(rdram, ctx, 0x80056EB0u, {alloc_str(rdram, name)}).v0;
+
+        if (!mesh) {
+            fprintf(stderr, "[controls] %s model not found\n", name);
+            continue;
+        }
+
+        rs64::mips::mips_call(rdram, ctx, 0x8005955Cu, {mesh, 0u, 0x01060000u, 0u});
+        s_ctl_mesh[(int)dev] = mesh;
+    }
+
+    fprintf(stderr, "[controls] models: controller %08X keyboard %08X gamepad %08X joystick %08X\n", s_ctl_mesh_orig, s_ctl_mesh[0], s_ctl_mesh[1], s_ctl_mesh[2]);
+}
+
+extern "C" void rs64_controls_wheel(int steps) {
     s_ctl_wheel.fetch_add(steps);
 }
 
@@ -3132,6 +3167,7 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram)
     }
 
     if (controls_confirm(rdram, e)) return;
+    if (mods_confirm(rdram, e)) return;
 
     if (e < MAX_ENTRIES && s_slot[e].set) s_confirms.fetch_add(1, std::memory_order_relaxed);
     if (e >= MAX_ENTRIES || !s_slot[e].set) return;
@@ -3167,7 +3203,6 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram)
         }
     }
 }
-    if (mods_confirm(rdram, e)) return;
 
 // The pilot select's carousel and medals, hidden while a pilot-first page is up (the chosen-pilot fade, state 0xA, that would clear them is skipped); re-entering SELECT GAME resets it (readAccountForSelectionScreen).
 // Carousel slots 0x800CF180 (stride 0x48): load fade +0x18, transition fade +0x1C drive element alpha and visibility; the medals (font 8 slots 1-3) copy alpha from the front slot only while it is visible.
@@ -3322,6 +3357,7 @@ extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx)
     if (page_shown) page_row_nav(rdram);
 
     controls_pass(rdram, ctx);
+    mods_pass(rdram, ctx);
 
     // The pilot-first page or a page opened from it (multiplayer's FIND GAME list): the exit condition takes either on to mission select.
     const std::vector<uint8_t> chain = page_chain(menu);
@@ -3360,7 +3396,6 @@ extern "C" void rs64_menu_hover_sound(int pause) {
 }
 
 static bool take_hover_sound(int kind) {
-    mods_pass(rdram, ctx);
 
     int want = kind;
 
@@ -3710,6 +3745,7 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
     ensure_menu_period(rdram);
     rs64::lang::flush(rdram);
     controls_frame(rdram, ctx);
+    mods_frame(rdram, ctx);
 
     // A changed live label is rewritten in its buffer and relaid out in place (0x800C4C8C(menu, entry mask, 0), as the name entry does).
     if (page_name(rd_b(rdram, GCMD_OFF + 0x04)))
@@ -3745,7 +3781,6 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
 
     // Only a moved slider is applied: setters save their settings file.
     for (auto& ss : s_snd_sliders)
-    mods_frame(rdram, ctx);
     {
         const int byte = rd_b(rdram, VOL_BYTES + ss.channel);
 

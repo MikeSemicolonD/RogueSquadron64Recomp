@@ -26,9 +26,16 @@ nlohmann::json to_friendly(const RT64::UserConfiguration& uc);
 
 // Draw distance multiplier ("drawDistance" in roguesq_video.json), host-side and not part of RT64's config. Read live by the draw-distance hooks.
 constexpr float kDrawDistanceMin = 1.0f;
-constexpr float kDrawDistanceMax = 2.5f;
+constexpr float kDrawDistanceMax = 8.0f;
 float draw_distance();
 void set_draw_distance(float mult);
+
+// The game's own terrain instead of RT64's whole-map pass ("legacyTerrain", default off; ROGUESQ_F5_STATIC_TERRAIN overrides). Its grid breaks up
+// past kLegacyTerrainDrawDistanceMax, so turning it on clamps the saved draw distance and set_draw_distance clamps to draw_distance_max().
+constexpr float kLegacyTerrainDrawDistanceMax = 1.3f;
+bool legacy_terrain();
+void set_legacy_terrain(bool on);
+float draw_distance_max();
 
 // Cutscenes keep the view distance the game sets per shot ("keepCutsceneDrawDistance", default on); ROGUESQ_CINE_DRAW_DIST overrides.
 bool keep_cutscene_draw_distance();

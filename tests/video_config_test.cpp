@@ -184,6 +184,43 @@ static void test_keep_cutscene_default_and_roundtrip() {
     rs64::video::set_draw_distance(1.0f);
 }
 
+static void test_legacy_terrain_default_and_roundtrip() {
+    rs64::video::set_legacy_terrain(false);
+    UC uc; uc.validate();
+    json j = rs64::video::to_friendly(uc);
+    CHECK(j.value("legacyTerrain", true) == false);
+    json in = { {"schema", 2}, {"drawDistance", 1.0}, {"legacyTerrain", true} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::legacy_terrain() == true);
+    CHECK(rs64::video::to_friendly(uc).value("legacyTerrain", false) == true);
+    rs64::video::set_legacy_terrain(false);
+}
+
+// Legacy terrain caps the draw distance at 1.3: switching it on clamps the saved value, values set while it is on are clamped, and a file with
+// both keys loads capped. Off, the range is 1 to 8.
+static void test_legacy_terrain_caps_draw_distance() {
+    rs64::video::set_legacy_terrain(false);
+    rs64::video::set_draw_distance(8.0f);
+    CHECK(rs64::video::draw_distance() == 8.0f);
+    rs64::video::set_draw_distance(20.0f);
+    CHECK(rs64::video::draw_distance() == rs64::video::kDrawDistanceMax);
+    rs64::video::set_draw_distance(4.0f);
+    rs64::video::set_legacy_terrain(true);
+    CHECK(rs64::video::draw_distance() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    CHECK(rs64::video::draw_distance_max() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    rs64::video::set_draw_distance(6.0f);
+    CHECK(rs64::video::draw_distance() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    rs64::video::set_draw_distance(1.25f);
+    CHECK(rs64::video::draw_distance() == 1.25f);
+    rs64::video::set_legacy_terrain(false);
+    UC uc; uc.validate();
+    json in = { {"schema", 2}, {"drawDistance", 6.0}, {"legacyTerrain", true} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::draw_distance() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    rs64::video::set_legacy_terrain(false);
+    rs64::video::set_draw_distance(1.0f);
+}
+
 static void test_keep_cutscene_absent_key_not_migrated() {
     rs64::video::set_keep_cutscene_draw_distance(true);
     UC uc; uc.validate();
@@ -341,6 +378,8 @@ int main() {
     test_ray_tracing_settings();
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
+    test_legacy_terrain_default_and_roundtrip();
+    test_legacy_terrain_caps_draw_distance();
     test_fullscreen_roundtrip_and_peek();
     test_language_code_roundtrip();
     test_effective_draw_distance();

@@ -194,10 +194,12 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Ray Tracing is implemented but has various issues:
   - Shadows and emissives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
-  - Terrain rendering causing issues with shadows because of the hard edges and the fact that it changes on the fly
-  - The sun's direction in a level does not align exactly with the non-ray-traced shadows being projected. In this situation it might be better to disable the game's fake non-ray-traced shadows.
+  - There are situations where light 'sticks' to the player like for example, collecting the Upgrade during Raid on Sullust
   - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
-  - Better Ray Tracing mod menu button placement. (It's below the back button in the Options menu which is awkward)
+
+- Frame interpolation issues:
+  - The bomb drop crosshair, good example y-wing during Raid on Sullust
+  - Lava explosion particles flicker in place indicating they aren't being ID'd, good example Raid on Sullust
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
@@ -213,15 +215,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- Level editing using RS64 Explorer to assist modding efforts
-  - Level/Event authoring
-  - Cutscene authoring
-
-- Mod to replace terrain rendering with a pre-baked mesh and use a shader for LOD tiling taking advantage of the GPU (Modern games do this)
-  - Relieves one of the games biggest bottlenecks
-  - Will require another pre-process to procedurally create bodies of water over parts or large sections of the terrain because bodies of water are basically animated sprites painted onto the terrain.
-  - Will greatly benefit Ray Tracing
-  - Will greatly benefit visuals and performance when at a 2x+ draw distance
+- RS64 Explorer Fixs & Improvements
 
 ## Building
 

@@ -22,6 +22,7 @@ void adv_get(const json& a, const char* key, T& out)
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+std::atomic<bool> g_legacy_terrain{false};
 std::atomic<bool> g_fb_writeback{true};
 std::atomic<bool> g_d3d10{false};
 std::atomic<bool> g_fullscreen{false};
@@ -186,11 +187,26 @@ float draw_distance() {
 
 void set_draw_distance(float mult)
 {
-    g_draw_distance.store(std::clamp(mult, kDrawDistanceMin, kDrawDistanceMax), std::memory_order_relaxed);
+    g_draw_distance.store(std::clamp(mult, kDrawDistanceMin, draw_distance_max()), std::memory_order_relaxed);
+}
+
+float draw_distance_max() {
+    return legacy_terrain() ? kLegacyTerrainDrawDistanceMax : kDrawDistanceMax;
 }
 
 bool keep_cutscene_draw_distance() {
     return g_keep_cutscene.load(std::memory_order_relaxed);
+}
+
+bool legacy_terrain() {
+    return g_legacy_terrain.load(std::memory_order_relaxed);
+}
+
+void set_legacy_terrain(bool on)
+{
+
+    g_legacy_terrain.store(on, std::memory_order_relaxed);
+    set_draw_distance(draw_distance());
 }
 
 void set_keep_cutscene_draw_distance(bool on) {
@@ -457,6 +473,10 @@ void apply_friendly(UC& uc, const json& j)
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
     }
 
+    if (has("legacyTerrain") && j["legacyTerrain"].is_boolean()) {
+        set_legacy_terrain(j["legacyTerrain"].get<bool>());
+    }
+
     if (has("framebufferWriteback") && j["framebufferWriteback"].is_boolean()) {
         set_framebuffer_writeback(j["framebufferWriteback"].get<bool>());
     }
@@ -600,6 +620,7 @@ json to_friendly(const UC& uc)
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
+    j["legacyTerrain"] = legacy_terrain();
     j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
 
