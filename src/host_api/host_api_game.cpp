@@ -4,6 +4,7 @@
 #include "librecomp/mods.hpp"
 #include "librecomp/overlays.hpp"
 #include "game/game_state.h"
+#include "game/terrain_edit.h"
 #include "lockstep/lockstep_core.h"
 #include "util/mips_call.h"
 #ifdef _WIN32
@@ -173,6 +174,9 @@ void init_once(uint8_t* rdram) {
     for (const rs64::ls::MovedRange& r : rs64::host::moved_ranges()) {
         rs64_snapshot_add_range(r.lo + r.delta - 0x80000000u, r.hi + r.delta - 0x80000000u);
     }
+
+    // The tile table terrain_set_cell moves the map's tiles to.
+    rs64_snapshot_add_range(rs64::terrain::kTable - 0x80000000u, rs64::terrain::kTableEnd - 0x80000000u);
 
     rs64_register_builtin_late_hooks();
     rs64::host::seal();

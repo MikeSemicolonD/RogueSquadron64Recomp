@@ -94,7 +94,7 @@ RsNavTarget rs64_nav_parse(const char* v)
     auto arg2 = [](const char* s) { const char* c = std::strchr(s, ','); return (c && c[1]) ? std::atoi(c + 1) : -1; };
 
     if (!std::strncmp(v, "level", 5))         { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); }
-    else if (!std::strncmp(v, "hangar", 6))   { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); t.c = 1; }
+    else if (!std::strncmp(v, "hangar", 6))   { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); t.c = 1; }
     else if (!std::strncmp(v, "abort", 5))    { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); }
     else if (!std::strncmp(v, "pause", 5))    { t.kind = NAV_ABORT;    t.a = arg(v); t.c = 10 + (arg2(v) < 0 ? 0 : arg2(v)); }
     else if (!std::strncmp(v, "cutscene", 8)) {
@@ -332,6 +332,16 @@ static void nav_level(uint8_t* rdram, const char* st)
         case 4:  // AVAILABLE CRAFT: turn the hangar to the target craft, confirm, until mission
             if (is(st, "menu.account.craft_select") && nav_step_craft(rdram, g_target.b, "level"))
             {
+                // hangar target: stop here with the craft showing.
+                if (g_target.c == 1)
+                {
+                    fprintf(stderr, "[nav] hangar reached (level %d)\n", g_target.a);
+                    fflush(stderr);
+                    s_disabled = true;
+
+                    return;
+                }
+
                 if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
 
                 nav_repress(N64_A_BUTTON);

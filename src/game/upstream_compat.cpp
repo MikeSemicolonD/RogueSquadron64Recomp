@@ -531,10 +531,8 @@ extern "C" void osYieldThread_recomp(uint8_t* rdram, recomp_context* ctx)
     ultramodern::run_next_thread_and_wait(rdram);
 }
 
-// Attribution-loop pacing: wait for the next host VI tick by yielding through the N64 scheduler
-// (~1 ms per step, cap ~40), so pending VI/DP events are delivered and the higher-priority VI
-// handler preempts the loop as on hardware. A host Sleep here holds the run slot and let the
-// frame-buffer arbiter deadlock (producer waiting SP-done, VI handler blocked on its ack).
+// Attribution and credits loop pacing: yield through the N64 scheduler until the next host VI tick (~1 ms a step, cap ~40), so the VI handler preempts the loop as on hardware.
+// A host Sleep here holds the run slot and deadlocked the frame-buffer arbiter.
 extern "C" volatile unsigned g_vi_tick;
 extern "C" void rs64_attrib_wait_vi_yield(uint8_t* rdram, recomp_context* ctx)
 {

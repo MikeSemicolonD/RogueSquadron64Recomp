@@ -15,7 +15,7 @@ cmake -S mods/native-demo -B mods/native-demo/build
 cmake --build mods/native-demo/build
 ```
 
-The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v6 taken` and `[host] mod native-demo took the host API (...)`.
+The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v7 taken` and `[host] mod native-demo took the host API (...)`.
 
 How [native_demo.cpp](../../mods/native-demo/native_demo.cpp) works:
 
@@ -34,7 +34,7 @@ A mod exports `rs64_mod_init` (`RS64_MOD_INIT_EXPORT`), listed in its `mod.json`
 | Register | Meaning |
 |---|---|
 | `r4` (in) | `const rs64_host_api*`, the table |
-| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 5) |
+| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 7) |
 | `r2` (out) | 0 to accept, non-zero to refuse |
 | `r3` (out) | the `RS64_HOST_API_VERSION` the mod was built against (0 = not set, treated as 1) |
 
@@ -82,6 +82,8 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `add_moved_range(lo, hi, delta)` | v5. Declares game data `[lo, hi)` the mod moved to `lo + delta` (its `instruction_patches.json` repoints the game's code), so host code that reads it (lockstep hashes, `rs64_relocated`) follows. Returns 0, or -1 for an empty range, a zero delta, an overlap with a registered range, or a sealed registry |
 | `add_rule_action(name, fn, user)` | v6. Adds a level rules action that a level's `rules.json` names with `"do": name` (see Level rules actions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
 | `fire_rule_event(name, object)` | v6. Raises the level rules "when" `custom` named `name` for `object` (may be `""`). Works any time and from any thread; the rules see it on the next mission frame, and events fired outside a mission are dropped. Returns 0, or -1 for a null name |
+| `terrain_get_cell(rdram, col, row, heights, tex)` | v7. Reads the level map's cell (`col`, `row`): its 25 heights (`int8_t`, the HMP's units; larger is lower, 16 record units a step) and, when `tex` is non-null, its texture id (an `lv_X_TEX` index). Returns 0, -1 with no map loaded, or -2 for a cell outside the map |
+| `terrain_set_cell(rdram, col, row, heights, tex)` | v7. Writes the cell's 25 heights and, when `tex` >= 0, its texture id into the game's own map, so its height queries (collision) and the renderer (the whole-map terrain pass and its ray-traced mesh) follow. Cells share tiles, so the map's first edit moves its tile table to host RAM (0x80A10000) and an edited cell that shares its tile gets its own copy. Neighbouring cells share their edge heights (a cell's last row and column of 5 are the next cell's first): keep them equal, or the legacy terrain renderer shows cracks between the cells. The legacy renderer shows height edits at once and a texture change when the cell next streams in. From the game thread (a hook). Returns 0, -1 / -2 as above, or -3 when the map has 8192 tiles already |
 
 ## Services
 

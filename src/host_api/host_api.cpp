@@ -1,4 +1,5 @@
 #include "host_api/host_api.h"
+#include "game/terrain_edit.h"
 #include <cstdio>
 #include <iterator>
 #include <map>
@@ -403,6 +404,16 @@ int fire_rule_event(const char* name, const char* object) {
     return 0;
 }
 
+int terrain_get_cell(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex) {
+
+    return (rdram && heights) ? rs64::terrain::get_cell(rdram, col, row, heights, tex) : rs64::terrain::NoMap;
+}
+
+int terrain_set_cell(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex) {
+
+    return (rdram && heights) ? rs64::terrain::set_cell(rdram, col, row, heights, tex) : rs64::terrain::NoMap;
+}
+
 std::vector<std::pair<std::string, std::string>> take_rule_events() {
 
     std::lock_guard<std::mutex> lk(g_rule_events_mu);
@@ -578,6 +589,7 @@ const rs64_host_api* api() {
         add_hash_part, add_valid_ram,
         add_moved_range,
         add_rule_action, fire_rule_event,
+        terrain_get_cell, terrain_set_cell,
     };
 
     return &table;

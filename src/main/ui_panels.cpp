@@ -4,6 +4,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <chrono>
+#include <mutex>
+#include <vector>
 #include "os_compat.h"
 #include "imgui/imgui.h"
 #include "rhi/rt64_render_hooks.h"
@@ -614,6 +617,9 @@ static void draw_touch_overlay()
     }
 }
 
+// Height of the compile indicator this frame, so notices stack above it.
+static float s_compile_height = 0.0f;
+
 // Bottom-right "Compiling shaders" panel while draws wait for their shader (D3D11/D3D10 have no ubershader to draw them meanwhile).
 static void draw_shader_compile_indicator()
 {
@@ -627,6 +633,7 @@ static void draw_shader_compile_indicator()
 
     if (!draws_wait || (pending == 0)) {
         s_active = false;
+        s_compile_height = 0.0f;
 
         return;
     }
@@ -649,12 +656,80 @@ static void draw_shader_compile_indicator()
     {
         ImGui::Text("Compiling shaders  %u / %u", done, total);
         ImGui::ProgressBar(float(done) / float(total), ImVec2(220.0f, 0.0f), "");
+        s_compile_height = ImGui::GetWindowHeight() + 6.0f;
     }
 
     ImGui::End();
 }
 
-// The single ImGui render hook draws the touch overlay, both dev panels and the shader compile indicator.
+struct Notice {
+    std::string key;
+    std::string text;
+    double until = 0.0;
+};
+
+static std::mutex s_notice_mutex;
+static std::vector<Notice> s_notices;
+
+static double notice_clock() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void notify(const char* key, const std::string& text, float seconds)
+{
+
+    std::lock_guard<std::mutex> lock(s_notice_mutex);
+
+    std::erase_if(s_notices, [key](const Notice& n) { return n.key == key; });
+    s_notices.push_back({ key, text, notice_clock() + seconds });
+}
+
+static std::vector<std::string> live_notices()
+{
+
+    const double now = notice_clock();
+    std::lock_guard<std::mutex> lock(s_notice_mutex);
+
+    std::erase_if(s_notices, [now](const Notice& n) { return n.until <= now; });
+
+    std::vector<std::string> out;
+
+    for (const Notice& n : s_notices) {
+        out.push_back(n.text);
+    }
+
+    return out;
+}
+
+// Bottom-right notices (captures, dumps), above the compile indicator.
+static void draw_notices()
+{
+
+    const std::vector<std::string> lines = live_notices();
+
+    if (lines.empty())
+    {
+        return;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    const float margin = 12.0f;
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin, io.DisplaySize.y - margin - s_compile_height), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.7f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove;
+
+    if (ImGui::Begin("##notices", nullptr, flags))
+    {
+        for (const std::string& line : lines) {
+            ImGui::TextUnformatted(line.c_str());
+        }
+    }
+
+    ImGui::End();
+}
+
+// The single ImGui render hook draws the touch overlay, both dev panels, the shader compile indicator and the notices.
 void draw_dev_ui()
 {
 
@@ -662,6 +737,7 @@ void draw_dev_ui()
     draw_controls_ui();
     draw_mods_ui();
     draw_shader_compile_indicator();
+    draw_notices();
 
     // Text input is off by default (see create_gfx); an ImGui text box needs it while focused.
     static bool s_imgui_text = false;

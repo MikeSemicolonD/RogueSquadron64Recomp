@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -68,12 +69,16 @@ static float env_mult(const char* name, float def) {
     return (m >= 0.25f && m <= 8.0f) ? m : def;
 }
 
+extern "C" int rs64_static_terrain_mode(void);
+
 // Draw distance multiplier for the camera far plane and object culls: the in-game DRAW DISTANCE setting (roguesq_video.json), live; ROGUESQ_DRAW_DIST overrides.
+// Capped while the game draws its own terrain, whose grid breaks up further out.
 static float draw_dist_setting() {
 
     static const float s_env = env_mult("ROGUESQ_DRAW_DIST", 0.0f);
+    const float d = (s_env > 0.0f) ? s_env : rs64::video::draw_distance();
 
-    return (s_env > 0.0f) ? s_env : rs64::video::draw_distance();
+    return (rs64_static_terrain_mode() == 1) ? d : std::min(d, rs64::video::kLegacyTerrainDrawDistanceMax);
 }
 
 static float terrain_dist_setting() {
@@ -101,10 +106,39 @@ extern "C" float rs64_draw_dist(void)
     return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view(), rs64_state_level());
 }
 
-// Terrain reach and fog multiplier, following the draw distance unless ROGUESQ_TERRAIN_DIST overrides. Capped at 2.5 (128-cell grid).
+// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own
+// terrain ("legacyTerrain"), 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides the setting.
+extern "C" int rs64_static_terrain_mode(void)
+{
+
+    static const int s_env = env_int("ROGUESQ_F5_STATIC_TERRAIN", -1);
+
+    if (s_env >= 0) return s_env;
+
+    return rs64::video::legacy_terrain() ? 0 : 1;
+}
+
+static bool terrain_pass_on() {
+    return rs64_static_terrain_mode() == 1;
+}
+
+// Terrain grid reach, following the draw distance unless ROGUESQ_TERRAIN_DIST overrides. Capped at 2.5 (128-cell grid); stock reach while the
+// terrain pass draws the map, since the grid's records are dropped.
 extern "C" float rs64_terrain_dist(void)
 {
+
+    if (terrain_pass_on()) return 1.0f;
+
     return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view(), rs64_state_level());
+}
+
+// Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map.
+extern "C" float rs64_fog_dist(void)
+{
+
+    if (terrain_pass_on()) return rs64_draw_dist();
+
+    return rs64_terrain_dist();
 }
 
 // The game's text slot for the language setting: a built-in's own slot, 0 (English fallback) for a mod language, -1 when unset.
@@ -430,20 +464,6 @@ extern "C" void rs64_sleep_ms(unsigned ms) {
 
 // Bumped once per host VI retrace (main.cpp).
 extern "C" { volatile unsigned g_vi_tick = 0; }
-
-// Block until the next VI tick (cap ~40 ms). Paces a menu fade loop (attribution screen,
-// credits sequence) to real time so the VI-driven glyph-layout producer thread gets to run.
-extern "C" void rs64_attrib_wait_vi(void)
-{
-
-    unsigned start = g_vi_tick;
-
-#ifdef _WIN32
-    for (int i = 0; i < 40 && g_vi_tick == start; ++i) ::Sleep(1);
-#else
-    for (int i = 0; i < 40 && g_vi_tick == start; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-#endif
-}
 
 // ---- Service replies ----
 
@@ -1384,6 +1404,41 @@ extern "C" uint32_t rs64_asset_manifest_to_free(uint32_t ptr) {
     }
 
     return ptr;
+}
+
+// Terrain textures for RT64's whole-map pass, read from the ROM once: level/tex (2080-byte CI4 + RGBA5551 entries) and lv_<level, base 36>_TEX.
+// shortcut: stock ROM data only, ignores asset-override mods and mod-level aliases; read through the override table when terrain mods need it.
+extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint32_t* bank_size, const uint8_t** ids, uint32_t* ids_size)
+{
+
+    static std::once_flag s_once;
+    static std::unordered_map<std::string, std::vector<uint8_t>> s_files;
+
+    std::call_once(s_once, [] {
+        s_files = rom_assets(recomp::get_rom(), [](const std::string& p) { return p == "level/tex" || (p.rfind("level/lv_", 0) == 0 && p.size() > 4 && p.compare(p.size() - 4, 4, "_TEX") == 0); });
+    });
+
+    static constexpr char kDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+    if (level >= 36)
+    {
+        return 0;
+    }
+
+    const auto b = s_files.find("level/tex");
+    const auto t = s_files.find(std::string("level/lv_") + kDigits[level] + "_TEX");
+
+    if (b == s_files.end() || t == s_files.end())
+    {
+        return 0;
+    }
+
+    *bank = b->second.data();
+    *bank_size = (uint32_t)b->second.size();
+    *ids = t->second.data();
+    *ids_size = (uint32_t)t->second.size();
+
+    return 1;
 }
 
 // ---- Mid-mission camera shots: mods link a level trigger to an in-level camera item in camera_shots.txt ----

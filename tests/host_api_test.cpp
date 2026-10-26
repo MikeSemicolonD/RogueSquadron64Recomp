@@ -150,7 +150,8 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 6 && RS64_HOST_API_VERSION == 6);
+    CHECK(a->version == 7 && RS64_HOST_API_VERSION == 7);
+    CHECK(a->terrain_get_cell == terrain_get_cell && a->terrain_set_cell == terrain_set_cell);
     CHECK(a->add_rule_action == add_rule_action && a->fire_rule_event == fire_rule_event);
     CHECK(a->add_service == add_service && a->get_service == get_service);
     CHECK(a->add_action == add_action && a->add_condition == add_condition && a->add_key_handler == add_key_handler && a->add_quit_handler == add_quit_handler);
@@ -188,7 +189,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && !accept_mod_init(0, 7));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && !accept_mod_init(0, 8));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }

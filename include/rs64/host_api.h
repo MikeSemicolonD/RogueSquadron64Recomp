@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 6
+#define RS64_HOST_API_VERSION 7
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -120,6 +120,11 @@ typedef struct rs64_host_api {
     // v6: a level rules action named in rules.json ("do": name), only before the registry seals; fire_rule_event raises a rule "custom" when (name, object) any time.
     int (*add_rule_action)(const char* name, rs64_rule_action_fn fn, void* user);
     int (*fire_rule_event)(const char* name, const char* object);
+    // v7: the level map's cell (col, row): its 25 heights (s8, the HMP's units) and texture id (an lv_X_TEX index). terrain_set_cell writes the game's own map, so
+    // its height queries (collision) and the renderer follow; tex < 0 keeps the texture. Neighbouring cells share edge heights: keep them equal or the legacy renderer shows cracks. The legacy renderer shows a texture change once the cell restreams.
+    // Game thread (a hook). 0 = ok, -1 no map, -2 out of range, -3 too many tiles.
+    int (*terrain_get_cell)(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex);
+    int (*terrain_set_cell)(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

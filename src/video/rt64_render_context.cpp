@@ -9,6 +9,7 @@
 #include <vector>
 #include <filesystem>
 #include <fstream>
+#include "main/renderdoc_capture.h"
 #include "SDL.h"
 #ifdef __ANDROID__
 #include "SDL_syswm.h"
@@ -176,6 +177,16 @@ extern "C" float rs64_cull_widen(void)
     const float w = (y > 0.0f) ? float(rs.x) / y : 1.0f;
 
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
+}
+
+// Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
+// this frame's shadow (moving craft never enter the shadow history). Gameplay view tests are untouched. ROGUESQ_RT_SHADOWS_CULL_MARGIN overrides.
+extern "C" float rs64_shadow_cull_margin(void)
+{
+
+    static const float s_margin = std::clamp(rs64lights::envFloat("ROGUESQ_RT_SHADOWS_CULL_MARGIN", 1.6f), 1.0f, 4.0f);
+
+    return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_margin : 1.0f;
 }
 
 // Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
@@ -682,6 +693,8 @@ public:
         if (rebuild_renderer_if_lost() || !app) return;
 
         ++vi_count_;
+
+        rs64_renderdoc_poll();
 
         if (ultramodern::renderer::ViRegs* vi0 = ultramodern::renderer::get_vi_regs())
         {

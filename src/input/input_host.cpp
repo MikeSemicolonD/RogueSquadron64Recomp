@@ -24,6 +24,7 @@
 #include "video/rt64_render_context.h"
 #include "video/video_config.h"
 #include "main/crash.h"
+#include "main/ui_panels.h"
 #ifdef __ANDROID__
 #include "main/android_host.h"
 #endif
@@ -1557,6 +1558,10 @@ void poll_input()
                         fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
                         fflush(stderr);
                     }
+                } else if (e.key.keysym.scancode == SDL_SCANCODE_F9) {
+                    const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
+
+                    rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (F9 next, Shift+F9 previous)", 3.0f);
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                     // Esc closes the controls window; otherwise it falls through to
                     // the game (bound to Start/pause).
@@ -1567,7 +1572,19 @@ void poll_input()
             if (sym == SDLK_F12) {
                 fprintf(stderr, "[F12] manual minidump requested\n");
                 fflush(stderr);
-                rs64::crash::write_minidump_safe(nullptr);
+                rs64::app::notify("dump", "Saving a memory dump (F12). The game may freeze until it is written.", 60.0f);
+
+                // A moment's delay lets the notice draw before the dump stalls the process.
+                std::thread([] {
+
+                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+                    if (rs64::crash::write_minidump_safe(nullptr)) {
+                        rs64::app::notify("dump", std::string("Memory dump saved: ") + rs64::crash::last_minidump_path(), 6.0f);
+                    } else {
+                        rs64::app::notify("dump", "Memory dump failed (see the log).", 6.0f);
+                    }
+                }).detach();
             }
 
             // Diagnostic: F1-F4 reaching PollEvent means SDL delivers them; RT64's filter (which runs first) may have consumed them already.

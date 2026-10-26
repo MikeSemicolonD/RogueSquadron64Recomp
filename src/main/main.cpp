@@ -448,7 +448,7 @@ static void rs64_vi_callback()
 
     if (s_on < 0) s_on = env_on("ROGUESQ_VI_BARRIER_SIGNAL", true);
 
-    // Tick for rs64_attrib_wait_vi (attribution loop paces to the real VI).
+    // Tick for rs64_attrib_wait_vi_yield (attribution and credits loops pace to the real VI).
     g_vi_tick = g_vi_tick + 1;
 
     if (!s_on)

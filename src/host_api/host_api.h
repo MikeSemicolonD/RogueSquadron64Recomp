@@ -49,6 +49,8 @@ int add_moved_range(uint32_t lo, uint32_t hi, uint32_t delta);
 int add_rule_action(const char* name, rs64_rule_action_fn fn, void* user);
 bool run_rule_action(const char* name, uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count);
 int fire_rule_event(const char* name, const char* object);
+int terrain_get_cell(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex);
+int terrain_set_cell(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex);
 // The (name, object) events fired since the last call, in order.
 std::vector<std::pair<std::string, std::string>> take_rule_events();
 const std::vector<rs64::ls::MovedRange>& moved_ranges();

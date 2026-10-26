@@ -21,9 +21,13 @@ void rs64_th_updateTieInterceptorFlightControls_800BC190(uint8_t* rdram, recomp_
 void rs64_th_updateT16FlightControls_800BD148(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateNabooStarfighterFlightControls_800BDEB0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_addNpcToVisibilityBucket_80057D84(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_addNpcToVisibilityBucket_80057E08(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E078(uint8_t* rdram, recomp_context* ctx);

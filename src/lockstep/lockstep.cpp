@@ -471,9 +471,12 @@ extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
 
     const std::string c = clock;
 
+    // Targets fire in the order listed, so a later one can wait for an earlier state (attract.demo:30,cutscene:580 = the intro after a demo).
     for (PauseTarget& t : pause_targets())
     {
-        if (t.done || !pause_clock_matches(t.clock, c) || frame < t.frame) continue;
+        if (t.done) continue;
+
+        if (!pause_clock_matches(t.clock, c) || frame < t.frame) return;
 
         t.done = true;
 

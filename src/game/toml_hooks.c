@@ -241,18 +241,70 @@ void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_con
     if (!(held & brakes)) ctx->f22.fl = rs64_throttle_hook(rdram, ctx->f22.fl, 0, half ? 0x800A5318 : 0x800A531C, half ? 0x800A5308 : 0x800A530C, half ? 0x800A5328 : 0x800A532C, 0);
 }
 
-// transformVec3ToNpcLocalWithScale 0x8001DEA0
+// Set just before the render paths call the view test; the view test takes it on entry, so its gameplay callers keep the exact test.
+static int s_render_view_test_next;
+static int s_render_view_test;
+
+// addNpcToVisibilityBucket 0x80057D84
+void rs64_th_addNpcToVisibilityBucket_80057D84(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
+}
+
+// addNpcToVisibilityBucket 0x80057E08
+void rs64_th_addNpcToVisibilityBucket_80057E08(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
+}
+
+// addNpcToVisibilityBucket 0x80057E48
+void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
+}
+
+// selectMeshLodAndSubmitForRender 0x80058104
+void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
+}
+
+// transformVec3ToNpcLocalWithScale entry
+void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test = s_render_view_test_next;
+    s_render_view_test_next = 0;
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001DEA0: the sphere test's projected x, y and radius ($f10, $f12, $f22); shrinking them widens its field of view.
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx) {
 
     extern float rs64_cull_widen(void);
+    extern float rs64_shadow_cull_margin(void);
     ctx->f2.fl *= rs64_cull_widen();
+
+    if (s_render_view_test) {
+        const float m = rs64_shadow_cull_margin();
+
+        ctx->f10.fl /= m;
+        ctx->f12.fl /= m;
+        ctx->f22.fl /= m;
+    }
 }
 
-// transformVec3ToNpcLocalWithScale 0x8001E168
+// transformVec3ToNpcLocalWithScale 0x8001E168: the point test's projected x ($f8) and the scale its y is projected with next ($f20).
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx) {
 
     extern float rs64_cull_widen(void);
+    extern float rs64_shadow_cull_margin(void);
     ctx->f2.fl *= rs64_cull_widen();
+
+    if (s_render_view_test) {
+        const float m = rs64_shadow_cull_margin();
+
+        ctx->f8.fl /= m;
+        ctx->f20.fl /= m;
+    }
 }
 
 // setupCameraMatrices 0x80016CE0
@@ -538,15 +590,15 @@ void rs64_th_buildVisibleTerrainGridAroundCamera_80043A8C(uint8_t* rdram, recomp
 // setupCameraMatrices 0x800170D0
 void rs64_th_setupCameraMatrices_800170D0(uint8_t* rdram, recomp_context* ctx) {
 
-    extern float rs64_terrain_dist(void);
-    ctx->f4.fl *= rs64_terrain_dist();
+    extern float rs64_fog_dist(void);
+    ctx->f4.fl *= rs64_fog_dist();
 }
 
 // setupCameraMatrices 0x80017168
 void rs64_th_setupCameraMatrices_80017168(uint8_t* rdram, recomp_context* ctx) {
 
-    extern float rs64_terrain_dist(void);
-    ctx->f4.fl *= rs64_terrain_dist();
+    extern float rs64_fog_dist(void);
+    ctx->f4.fl *= rs64_fog_dist();
 }
 
 // cutsceneActorNpcHandler 0x80044924
@@ -576,7 +628,7 @@ void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ct
     static int s_off = -1;
 
     if (s_off < 0) { const char* e = getenv("ROGUESQ_CREDITS_NOPACE"); s_off = (e && *e && *e != '0') ? 1 : 0; }
-    if (!s_off) { extern void rs64_attrib_wait_vi(void); rs64_attrib_wait_vi(); }
+    if (!s_off) { extern void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*); rs64_attrib_wait_vi_yield(rdram, ctx); }
 }
 
 // menuOverlayInit entry
