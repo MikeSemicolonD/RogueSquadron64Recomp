@@ -12,7 +12,7 @@ extern "C" {
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
 
 // Registration (add_hook, add_text_source, add_input_filter, add_action, add_condition, add_key_handler, add_quit_handler) works only during rs64_mod_init; flags (set_flag, get_flag) are runtime and may be set/read any time.
-// Stable hook ids (docs/modding-host-api.md lists each one's site and register contract). Never renumber.
+// Stable hook ids (docs/engine/modding-host-api.md lists each one's site and register contract). Never renumber.
 typedef enum rs64_hook_id {
     RS64_HOOK_NONE = 0,
     RS64_HOOK_MENU_INPUT = 1,            // menuControllerInput 0x800B4CA8, after the pad poll: pressed word 0x8013A960 + 4*port may be edited

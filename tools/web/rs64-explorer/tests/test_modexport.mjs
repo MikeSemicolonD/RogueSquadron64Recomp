@@ -1323,7 +1323,7 @@ await check('crawl backdrop JPEG has the stock layout', async () => {
 });
 
 await check('glyph pack round trip (RSG1, as lang_core.h parse_glyph_pack)', () => {
-  // The fixture from docs/modding-languages.md: U+30A2 width 3, space width 2, 4 x 2 cells.
+  // The fixture from docs/guides/modding-languages.md: U+30A2 width 3, space width 2, 4 x 2 cells.
   const bytes = new Uint8Array([0x52, 0x53, 0x47, 0x31, 0, 4, 0, 2, 0, 0, 0, 2, 0, 0, 0x30, 0xA2, 3, 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0x20, 2, 0, 0, 0, 0]);
   const pack = RS64.glyphPackParse(bytes);
   assert.equal(pack.cellW, 4);

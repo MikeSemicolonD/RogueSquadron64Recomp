@@ -405,7 +405,7 @@ inline const Glyph* find_glyph(const GlyphPack& pack, uint32_t cp)
     return it == pack.glyphs.end() ? nullptr : &it->second;
 }
 
-// Cell sizes and drawn heights of the fonts that gain code page glyphs (docs/adding-menus-and-buttons.md "Fonts").
+// Cell sizes and drawn heights of the fonts that gain code page glyphs (docs/guides/adding-menus-and-buttons.md "Fonts").
 struct FontCell {
     const char* name;
     uint16_t w, h, drawn;

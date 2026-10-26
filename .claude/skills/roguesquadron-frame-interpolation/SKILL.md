@@ -81,4 +81,4 @@ The id must be: **the same** for the same logical object across frames; **differ
 
 ~1 real frame (~33 ms) extra latency; mispairs smear rather than pop; vertex-baked motion and late real frames stay at game rate.
 
-Env var catalog: [docs/debug-trace-env-vars.md](../../../docs/debug-trace-env-vars.md).
+Env var catalog: [docs/engine/debug-trace-env-vars.md](../../../docs/engine/debug-trace-env-vars.md).

@@ -8,7 +8,7 @@ This page covers setup, how to read recompiled code, breakpoint techniques, cras
 
 ## Setup
 
-1. Build the Debug configuration. This assumes you have done the first-time steps in the [README](../README.md#building) (decomp ELF, `RecompiledFuncs/`, microcode); after that, the recompiler defaults to the one built inside `build/`:
+1. Build the Debug configuration. This assumes you have done the first-time steps in the [README](../../README.md#building) (decomp ELF, `RecompiledFuncs/`, microcode); after that, the recompiler defaults to the one built inside `build/`:
 
    ```sh
    cmake -B build -T ClangCL
@@ -45,7 +45,7 @@ A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_cont
 
   The macros are in `lib/N64ModernRuntime/N64Recomp/include/recomp.h`.
 
-The game's function names come from the decomp. To find what calls a function, or what it calls, use `tools/re/rz/rzq.py` ([tools/re/rz/README.md](../tools/re/rz/README.md)).
+The game's function names come from the decomp. To find what calls a function, or what it calls, use `tools/re/rz/rzq.py` ([tools/re/rz/README.md](../../tools/re/rz/README.md)).
 
 ## Breakpoint techniques
 
@@ -97,7 +97,7 @@ Visual Studio's data breakpoints have only four slots, and RDRAM moves between r
 - `ROGUESQ_WATCH_ADDRS=0x80128000,...` logs every change to up to 16 addresses, once per frame.
 - `ROGUESQ_DATA_BP=0x80128000` (Windows) sets a hardware breakpoint on one RAM word on every thread and logs each access with the recompiled function and source line.
 
-If you need a finer check, add a probe at the top of a suspect function in `RecompiledFuncs\funcs_*.c`. Those files are regenerated, so this is only for diagnosis; a real fix goes in `rogue_squadron.toml` (see [AGENTS.md](../AGENTS.md#overriding-recompiled-functions)).
+If you need a finer check, add a probe at the top of a suspect function in `RecompiledFuncs\funcs_*.c`. Those files are regenerated, so this is only for diagnosis; a real fix goes in `rogue_squadron.toml` (see [AGENTS.md](../../AGENTS.md#overriding-recompiled-functions)).
 
 ```c
 {
@@ -140,7 +140,7 @@ Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around
 - `python tools/debug/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
 - `python tools/debug/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).
 
-[AGENTS.md](../AGENTS.md#when-investigating-a-new-crash) lists the common crash signatures and what they usually mean.
+[AGENTS.md](../../AGENTS.md#when-investigating-a-new-crash) lists the common crash signatures and what they usually mean.
 
 ## Files worth knowing
 

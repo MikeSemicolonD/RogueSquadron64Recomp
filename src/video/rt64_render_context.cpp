@@ -1568,7 +1568,7 @@ private:
         }
     }
 
-    // ROGUESQ_LOG_GAMESTATE=1: log engine globals (docs/game-architecture.md) on change and
+    // ROGUESQ_LOG_GAMESTATE=1: log engine globals (docs/reference/game-architecture.md) on change and
     // every 512 presents. gateCtr vs cuts44 shows whether the cinematic timeline is advancing.
     void poll_gamestate()
     {

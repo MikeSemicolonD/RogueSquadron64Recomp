@@ -1,29 +1,29 @@
 # Native mod host API
 
-A native mod is a shared library (`.dll` / `.so`) written in C or C++ and loaded by the game at startup. It can provide menu behavior through `@export` names ([modding.md](modding.md#menu-behavior-from-your-own-code-export)) and take the **host API**: a table of functions for hooking game code at fixed points, supplying live menu text, filtering controller input, sharing flags and services with other mods, and calling game functions.
+A native mod is a shared library (`.dll` / `.so`) written in C or C++ and loaded by the game at startup. It can provide menu behavior through `@export` names ([modding.md](../guides/modding.md#menu-behavior-from-your-own-code-export)) and take the **host API**: a table of functions for hooking game code at fixed points, supplying live menu text, filtering controller input, sharing flags and services with other mods, and calling game functions.
 
-Pick a native mod over a `.nrm` code mod ([modding.md](modding.md#code-mods-nrm)) when you need host-side features: networking, files, OS APIs, or a large amount of native code. Online co-op ([mods/multiplayer-native/](../mods/multiplayer-native/)) is one.
+Pick a native mod over a `.nrm` code mod ([modding.md](../guides/modding.md#code-mods-nrm)) when you need host-side features: networking, files, OS APIs, or a large amount of native code. Online co-op ([mods/multiplayer-native/](../../mods/multiplayer-native/)) is one.
 
-The contract is [include/rs64/host_api.h](../include/rs64/host_api.h). The host side is [src/host_api/host_api.cpp](../src/host_api/host_api.cpp) (the registry) and [src/host_api/host_api_game.cpp](../src/host_api/host_api_game.cpp) (handing the table to mods).
+The contract is [include/rs64/host_api.h](../../include/rs64/host_api.h). The host side is [src/host_api/host_api.cpp](../../src/host_api/host_api.cpp) (the registry) and [src/host_api/host_api_game.cpp](../../src/host_api/host_api_game.cpp) (handing the table to mods).
 
 ## Your first native mod
 
-[mods/native-demo/](../mods/native-demo/) counts front-end frames and shows the count on a menu page. To build and try it:
+[mods/native-demo/](../../mods/native-demo/) counts front-end frames and shows the count on a menu page. To build and try it:
 
 ```sh
 cmake -S mods/native-demo -B mods/native-demo/build
 cmake --build mods/native-demo/build
 ```
 
-The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v5 taken` and `[host] mod native-demo took the host API (...)`.
+The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v6 taken` and `[host] mod native-demo took the host API (...)`.
 
-How [native_demo.cpp](../mods/native-demo/native_demo.cpp) works:
+How [native_demo.cpp](../../mods/native-demo/native_demo.cpp) works:
 
 1. It includes `rs64/host_api.h` (its CMake file adds the repo's `include/` directory) and exports `rs64_mod_init` plus `uint32_t recomp_api_version = 1` (librecomp's loader version, separate from the host API version).
 2. `rs64_mod_init` reads the table from `r4` and the host's version from `r5`. If the table is unusable it sets `r2 = 1` and returns, and the mod is skipped. On every return it sets `r3 = RS64_HOST_API_VERSION`.
 3. It registers a `RS64_HOOK_MENU_FRAME` handler that increments a counter and returns `RS64_HOOK_CONTINUE`, and a text source `demo_frames` that formats `DEMO FRAMES n` into a static buffer. Then it sets `r2 = 0`.
-4. [mod.json](../mods/native-demo/mod.json) lists `rs64_mod_init` in its `native_libraries` export array, next to the menu exports. An export that isn't listed can't be loaded.
-5. [roguesq_menu.json](../mods/native-demo/roguesq_menu.json) shows the text: a `label` entry with `"label_src": "demo_frames"` on a page opened from the main menu.
+4. [mod.json](../../mods/native-demo/mod.json) lists `rs64_mod_init` in its `native_libraries` export array, next to the menu exports. An export that isn't listed can't be loaded.
+5. [roguesq_menu.json](../../mods/native-demo/roguesq_menu.json) shows the text: a `label` entry with `"label_src": "demo_frames"` on a page opened from the main menu.
 
 The rest of this page is the reference.
 
@@ -80,6 +80,8 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `add_hash_part(name, gate_flag, fn, user)` | v4. Adds a column to the lockstep hash log (`ROGUESQ_LS_HASH`): `fn(rdram, user)` returns a 64-bit hash of the mod's state, counted only while the flag `gate_flag` is non-zero. Parts follow the base parts in registration order. Returns 0, or -1 for a null argument or a sealed registry |
 | `add_valid_ram(addr, size)` | v4. Declares a host-RAM range above the game's 8 MB (KSEG0 address) that holds game records the mod built, so base guards such as the NPC health patch accept pointers into it. Returns 0, or -1 for size 0 or a sealed registry |
 | `add_moved_range(lo, hi, delta)` | v5. Declares game data `[lo, hi)` the mod moved to `lo + delta` (its `instruction_patches.json` repoints the game's code), so host code that reads it (lockstep hashes, `rs64_relocated`) follows. Returns 0, or -1 for an empty range, a zero delta, an overlap with a registered range, or a sealed registry |
+| `add_rule_action(name, fn, user)` | v6. Adds a level rules action that a level's `rules.json` names with `"do": name` (see Level rules actions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
+| `fire_rule_event(name, object)` | v6. Raises the level rules "when" `custom` named `name` for `object` (may be `""`). Works any time and from any thread; the rules see it on the next mission frame, and events fired outside a mission are dropped. Returns 0, or -1 for a null name |
 
 ## Services
 
@@ -87,7 +89,7 @@ A service is a versioned C table one mod hands another through the host, so a mo
 
 | Name | Header | Provider | Consumer |
 |---|---|---|---|
-| `mp.transport` | [include/rs64/mp_transport.h](../include/rs64/mp_transport.h) | [mods/steam-relay](../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; see [multiplayer.md](multiplayer.md#steam-relay-mod) |
+| `mp.transport` | [include/rs64/mp_transport.h](../../include/rs64/mp_transport.h) | [mods/steam-relay](../../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; see [multiplayer.md](../guides/multiplayer.md#steam-relay-mod) |
 
 ## Hooks
 
@@ -149,6 +151,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 | `RS64_HOOK_POWERUP_COLLECT` (35) | `npcPowerUpUpdate` 0x800EBD34 | A power-up is being collected: `s1` = it, `a1` = its pickup sound position, may be replaced. Never RETURN (mid-function) |
 | `RS64_HOOK_TRIGGER_EFFECT` (36) | `applyDatObjectiveTriggerEffect` 0x80065980 | A DAT trigger volume's effect is about to run: `a0` = the event, `a1` = 1 enter / 0 exit, `s0` = the caller's trigger-list entry (player 1's list is 0x80137DF0, 63 entries). RETURN drops the effect |
 | `RS64_HOOK_WALKER_TRIPPED` (37) | `npcAtAtUpdate` 0x800CED7C | An AT-AT accepts a tow-cable trip (action 9, message kind 0xE): `s1` = its ext (`+0x34` its DAT item), `s0` = the message. Never RETURN (mid-function) |
+| `RS64_HOOK_ATST_TICK` (38) | `updatePlayerAtStBehavior` entry | The player's AT-ST (level 20, CHICKEN) is about to read the pads (0x80130B88, 6 bytes per port) and the normalized stick (0x8010BDD8, x/y floats per port): `a0` = the walker, `a1` = dt (float bits). Stick Y sets walk speed (`+0x60`), X times Y turns, holding BRAKES1 moves the head (`+0x68` yaw, `+0x6C` pitch) instead; the cannons auto-aim inside a cone. RETURN skips the step. The built-in sets the flag `atst_active` |
 
 ### Host-dispatched
 
@@ -163,12 +166,12 @@ These ids have no `rogue_squadron.toml` site: the host runs them from inside the
 
 ### Events for `.nrm` mods
 
-Every hook with a `rogue_squadron.toml` site is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [syms/include/rs64_api.h](../syms/include/rs64_api.h). The host-dispatched ids above have no event.
+Every hook with a `rogue_squadron.toml` site is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [syms/include/rs64_api.h](../../syms/include/rs64_api.h). The host-dispatched ids above have no event.
 
 - Native handlers run first. If one returns `RS64_HOOK_RETURN`, the event does not fire.
 - The callback gets the hook site's registers, so `a0`-`a3` arrive as its arguments. librecomp restores every register after each callback, so a register change goes through `rs64_event_set_gpr(reg, value)` (any GPR but `r0` and `sp`) or `rs64_event_set_fpr(reg, value)` (a single-precision float). Those writes are applied after the last callback, at every hook point, up to 8 per event; at `mission_frame_dt`, `rs64_event_set_fpr(20, dt)` replaces the frame time.
 - At the function-entry sites (`menu_frame`, `mission_end`, `transition_request`, `objective_count`, `result_fail`, `result_success`, `trigger_effect`) a callback can call `rs64_event_return(r2)`: the game function returns at once with `v0 = r2`, as a native `RS64_HOOK_RETURN` would. Everywhere else the call is ignored, because returning mid-function would skip its epilogue.
-- [tests/mods/event-probe/](../tests/mods/event-probe/) is a working example (counts frames, returns once from `menu_frame`, calls the exports below).
+- [tests/mods/event-probe/](../../tests/mods/event-probe/) is a working example (counts frames, returns once from `menu_frame`, calls the exports below).
 
 `rs64_api.h` also imports these base exports:
 
@@ -187,9 +190,30 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 - `add_key_handler(fn, user)` registers `int fn(const char* utf8, int key, void* user)`. Typed text arrives as `utf8` non-NULL with `key` 0; Backspace and Enter arrive as `utf8` NULL with `key` `'\b'` / `'\r'`. Handlers run in registration order and the first that returns 1 takes the event; later ones and the game do not see it.
 - `add_quit_handler(fn, user)` registers `void fn(void* user)`. Quit handlers run in registration order before `_Exit`, on window close or the menu QUIT.
 
+## Level rules actions
+
+A native mod can add actions and "when"s to the [level rules](../guides/modding.md#level-rules) a level author builds in the explorer.
+
+- `add_rule_action("shake", fn, user)` registers `void fn(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user)`. A rule action `{ "do": "shake", "seconds": 2 }` calls it on the game thread with the action's other fields as `count` key/value strings (`"seconds"`, `"2"`). Call game functions from it only through `call`. A built-in action of the same name runs instead of yours.
+- `fire_rule_event("mod.tripped", "gate")` raises a `custom` when. A rule `{ "when": "custom", "custom": "mod.tripped" }` fires for any object; one that also names `"object": "gate"` fires only for that object.
+- A rule that names an action no loaded mod registered is skipped, and the log says `no action <name>; skipped`.
+
+[native-demo](../../mods/native-demo/) has a working example: its `demo_log` action logs the rule's fields and then fires `demo.ping`, and its `rules_ext.json` describes both for the explorer.
+
+The explorer offers a mod's actions and events once it knows them: put a `rules_ext.json` in the mod's folder and press *Mod actions…* in the Level events window (it reads `mods/*/rules_ext.json` in the game folder). A rule using one of them shows "needs a mod" when that mod is not there.
+
+```json
+{
+  "actions": [ { "do": "shake", "label": "Shake the camera", "params": [ { "key": "seconds", "picker": "seconds" } ] } ],
+  "events": [ { "custom": "mod.tripped", "label": "The tripwire is crossed" } ]
+}
+```
+
+A parameter's `picker` is one of `area`, `path`, `pathPoint`, `unit`, `camera`, `song`, `enemyKind`, `objective`, `voice`, `recording`, `text`, `number`, `seconds` or `flag`; any other value becomes a text box.
+
 ## Text sources
 
-`add_text_source("name", fn, user)` registers `const char* fn(void* user)`. A menu label in a mod's `roguesq_menu.json` with `"label_src": "name"` shows the string live. See [Live labels](adding-menus-and-buttons.md#live-labels). Rules:
+`add_text_source("name", fn, user)` registers `const char* fn(void* user)`. A menu label in a mod's `roguesq_menu.json` with `"label_src": "name"` shows the string live. See [Live labels](../guides/adding-menus-and-buttons.md#live-labels). Rules:
 
 - Return a NUL-terminated string in the menu font's character set (uppercase).
 - The pointer must stay valid until the next call of that source; a static buffer is the usual answer.
@@ -207,7 +231,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 - Handlers run on the game thread inside the hooked function. They must not block or sleep (a host sleep in a game-thread hook holds the run slot and can deadlock the frame pipeline), and may call game functions only through `call`, which saves and restores the context.
 - Registration is init-time only, as above. Keep per-hook state in `user` or your own statics.
 - Text-source strings stay valid until the next call of that source.
-- Flags are process-wide ints, set and read by name from any thread (mutex-guarded). `hangar_launch` is the first one: the lobby sets it while the hangar is launching a mission, and the nav sequencer reads it. All current flags (writer, reader in [multiplayer.md](multiplayer.md#flags)): `hangar_launch`, `ghost_mode`, `coop_imposter`, `mp_lobby_state` and `text_entry` are set by the multiplayer code; `menu_page_shown` by the menu (for `RS64_HOOK_MENU_PAD`).
+- Flags are process-wide ints, set and read by name from any thread (mutex-guarded). `hangar_launch` is the first one: the lobby sets it while the hangar is launching a mission, and the nav sequencer reads it. All current flags (writer, reader in [multiplayer.md](../guides/multiplayer.md#flags)): `hangar_launch`, `ghost_mode`, `coop_imposter`, `mp_lobby_state` and `text_entry` are set by the multiplayer code; `menu_page_shown` by the menu (for `RS64_HOOK_MENU_PAD`); `atst_active` by the `RS64_HOOK_ATST_TICK` built-in (1 while the player drives an AT-ST, cleared by the next mission init or end; while it is set and the mouse is captured, the mouse aims the head instead of driving the stick, the layout's THRUST and BRAKES1 buttons walk forward and back, and a hook at 0x800D1AE0 writes the head angles after `RS64_HOOK_ATST_TICK` handlers ran).
 - Nothing runs before the first hook fires: pad polls and menu text drawn during boot see no filters or sources (an empty source falls back to its JSON label).
 - `rs64_mod_init` runs inside a game-thread hook: it must not block or sleep.
 - Flags set by a mod whose init then refuses are not rolled back.
@@ -219,12 +243,12 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 The host API covers behavior added at the sites above. These stay base-game code and are not exposed:
 
 - Every `[[patches.hook]]` site in `rogue_squadron.toml`. Each is a fixed call into `rs64_hook`; mods choose handlers for the ids above, they cannot add new sites.
-- The functions those patches touch. `.nrm` mods can `RECOMP_HOOK` them (the patches are replayed) but can't `RECOMP_PATCH` them; see [Functions the game already patches](modding.md#functions-the-game-already-patches).
+- The functions those patches touch. `.nrm` mods can `RECOMP_HOOK` them (the patches are replayed) but can't `RECOMP_PATCH` them; see [Functions the game already patches](../guides/modding.md#functions-the-game-already-patches).
 
 ## A larger example: multiplayer-native
 
-[mods/multiplayer-native/src/mp_mod.cpp](../mods/multiplayer-native/src/mp_mod.cpp) is online co-op as a native mod: the whole of it, its sources in the mod's own `src/`, reaching the game only through the host API table ([mods/multiplayer-native/src/mp_host.h](../mods/multiplayer-native/src/mp_host.h) wraps it).
+[mods/multiplayer-native/src/mp_mod.cpp](../../mods/multiplayer-native/src/mp_mod.cpp) is online co-op as a native mod: the whole of it, its sources in the mod's own `src/`, reaching the game only through the host API table ([mods/multiplayer-native/src/mp_host.h](../../mods/multiplayer-native/src/mp_host.h) wraps it).
 
-1. `rs64_mod_init` checks the table and version as in the native-demo steps, sets `r3 = RS64_HOST_API_VERSION`, then calls `rs64_mp_register(api)` ([mods/multiplayer-native/src/mp_register.cpp](../mods/multiplayer-native/src/mp_register.cpp)), which makes the `add_hook` and `add_quit_handler` calls and then calls `rs64_ghost_register_host` ([mods/multiplayer-native/src/ghost_lobby.cpp](../mods/multiplayer-native/src/ghost_lobby.cpp)) for the text sources, the input filter, the `mp_*` actions, the `mp_ready` condition and the key handler.
+1. `rs64_mod_init` checks the table and version as in the native-demo steps, sets `r3 = RS64_HOST_API_VERSION`, then calls `rs64_mp_register(api)` ([mods/multiplayer-native/src/mp_register.cpp](../../mods/multiplayer-native/src/mp_register.cpp)), which makes the `add_hook` and `add_quit_handler` calls and then calls `rs64_ghost_register_host` ([mods/multiplayer-native/src/ghost_lobby.cpp](../../mods/multiplayer-native/src/ghost_lobby.cpp)) for the text sources, the input filter, the `mp_*` actions, the `mp_ready` condition and the key handler.
 2. The game's CMake builds the library (`mods/multiplayer-native/CMakeLists.txt`), so it uses the exe's CRT and toolchain and the same `lockstep_core.cpp` / `mp_core.cpp` rounding (`-ffp-contract=off`). On Linux only `recomp_api_version` and `rs64_mod_init` are exported (version script, `--no-undefined`, `-Bsymbolic`).
-3. Its `mod.toml` holds the manifest and its 200 instruction patches; the game's CMake runs RecompModTool on it to write the folder's `mod.json` and `instruction_patches.json`, so a native mod can use the same `mod.toml` format as a code mod. The folder (library, those two files and `roguesq_menu.json`) is staged by [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake); see [release-ci.md](release-ci.md#the-multiplayer-mod).
+3. Its `mod.toml` holds the manifest and its 200 instruction patches; the game's CMake runs RecompModTool on it to write the folder's `mod.json` and `instruction_patches.json`, so a native mod can use the same `mod.toml` format as a code mod. The folder (library, those two files and `roguesq_menu.json`) is staged by [tools/mods/stage_mods.cmake](../../tools/mods/stage_mods.cmake); see [release-ci.md](release-ci.md#the-multiplayer-mod).

@@ -510,7 +510,7 @@
                     "message": 5
                 }
             },
-            "detail": "arm64 (Raspberry Pi 64-bit OS), armhf (32-bit Pi OS, Pi 2+) or i386. Cross-compiles into ~/rs64-build-<arch>-release (build-time tools run under qemu-user), then writes the tarball, AppImage and, for arm64, Flatpak to build/release/. One-time packages: docs/building-all-platforms.md."
+            "detail": "arm64 (Raspberry Pi 64-bit OS), armhf (32-bit Pi OS, Pi 2+) or i386. Cross-compiles into ~/rs64-build-<arch>-release (build-time tools run under qemu-user), then writes the tarball, AppImage and, for arm64, Flatpak to build/release/. One-time packages: docs/guides/building-all-platforms.md."
         },
         {
             "label": "Build (macOS cross, WSL/osxcross): RogueSquadron64Recomp",

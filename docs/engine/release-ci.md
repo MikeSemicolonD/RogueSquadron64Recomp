@@ -1,6 +1,6 @@
 # Release CI
 
-This page is for the maintainer who runs the release pipeline. [.github/workflows/release.yml](../.github/workflows/release.yml) builds the release packages on two self-hosted runners on the maintainer's machine and attaches them to a **draft** GitHub release:
+This page is for the maintainer who runs the release pipeline. [.github/workflows/release.yml](../../.github/workflows/release.yml) builds the release packages on two self-hosted runners on the maintainer's machine and attaches them to a **draft** GitHub release:
 
 | Package | Built by |
 |---|---|
@@ -8,7 +8,7 @@ This page is for the maintainer who runs the release pipeline. [.github/workflow
 | Windows x86 (32-bit) zip | Windows runner, from the same recompiled code |
 | Linux package (needs glibc 2.38+, e.g. Ubuntu 24.04) | Linux runner (Docker) |
 
-Android isn't built by this workflow (see [building-all-platforms.md](building-all-platforms.md)), and macOS isn't covered yet.
+Android isn't built by this workflow (see [building-all-platforms.md](../guides/building-all-platforms.md)), and macOS isn't covered yet.
 
 ## Making a release
 
@@ -25,7 +25,7 @@ Android isn't built by this workflow (see [building-all-platforms.md](building-a
 
 ## RecompModTool release
 
-[.github/workflows/modtool-release.yml](../.github/workflows/modtool-release.yml) builds RecompModTool from the N64Recomp fork for Windows x64 and Linux x64 on GitHub-hosted runners (it needs nothing ROM-derived) and runs on a `modtool-v*` tag (`git tag modtool-v1 && git push origin modtool-v1`) or by manual dispatch. It makes a draft release with `SHA256SUMS.txt` and attestations and never marks it Latest. The VS Code task **Package: RecompModTool (Windows + Linux)** (`tools/release/package-modtool.ps1`) builds the same packages locally, Linux through WSL.
+[.github/workflows/modtool-release.yml](../../.github/workflows/modtool-release.yml) builds RecompModTool from the N64Recomp fork for Windows x64 and Linux x64 on GitHub-hosted runners (it needs nothing ROM-derived) and runs on a `modtool-v*` tag (`git tag modtool-v1 && git push origin modtool-v1`) or by manual dispatch. It makes a draft release with `SHA256SUMS.txt` and attestations and never marks it Latest. The VS Code task **Package: RecompModTool (Windows + Linux)** (`tools/release/package-modtool.ps1`) builds the same packages locally, Linux through WSL.
 
 ## Why self-hosted runners
 
@@ -34,7 +34,7 @@ The build needs files derived from the ROM that are never committed and never up
 | Input | Used for | Where it comes from |
 |---|---|---|
 | `roguesquadron.elf` | Regenerating `RecompiledFuncs/` (N64Recomp reads it via `elf_path` in `rogue_squadron.toml`) | The decomp build, `rogue_squadron64/build/roguesquadron.elf` |
-| `factor5_boot_recompiled.c`, `musyx_audio_recompiled.c` | The main exe | RSPRecomp output in `build/factor5_ucode/` ([README](../README.md#3-generate-the-recompiled-c) step 3) |
+| `factor5_boot_recompiled.c`, `musyx_audio_recompiled.c` | The main exe | RSPRecomp output in `build/factor5_ucode/` ([README](../../README.md#3-generate-the-recompiled-c) step 3) |
 
 The ROM itself is not a build input; players supply theirs at runtime.
 
@@ -42,7 +42,7 @@ The ROM itself is not a build input; players supply theirs at runtime.
 
 ### Linux runner (Docker, ephemeral)
 
-[ci/linux/](../ci/linux/) holds an Ubuntu 24.04 image with the build dependencies, `mips-linux-gnu-gcc` for the code mods, and the GitHub Actions runner. Each container registers as an ephemeral runner, takes one job, deregisters and exits; [run-runner.ps1](../ci/linux/run-runner.ps1) then starts a fresh one. The ELF and microcode sources are mounted read-only, and nothing ROM-derived goes into the image.
+[ci/linux/](../../ci/linux/) holds an Ubuntu 24.04 image with the build dependencies, `mips-linux-gnu-gcc` for the code mods, and the GitHub Actions runner. Each container registers as an ephemeral runner, takes one job, deregisters and exits; [run-runner.ps1](../../ci/linux/run-runner.ps1) then starts a fresh one. The ELF and microcode sources are mounted read-only, and nothing ROM-derived goes into the image.
 
 1. Create a fine-grained personal access token scoped to this repository only, with **Administration: Read and write** (that permission is what lets it register runners).
 2. Copy `ci\linux\runner.env.example` to `ci\linux\runner.env` (gitignored) and put the token in it.
@@ -63,7 +63,7 @@ Windows containers would need Hyper-V isolation and a multi-GB image with the Vi
 
 ## What each job does
 
-1. [ci/stage_inputs.py](../ci/stage_inputs.py) copies the ROM-derived inputs into place. It reads `RS64_INPUTS` (a directory holding `roguesquadron.elf` and `factor5_ucode/`), or `RS64_ELF` / `RS64_UCODE_DIR` separately.
+1. [ci/stage_inputs.py](../../ci/stage_inputs.py) copies the ROM-derived inputs into place. It reads `RS64_INPUTS` (a directory holding `roguesquadron.elf` and `factor5_ucode/`), or `RS64_ELF` / `RS64_UCODE_DIR` separately.
 2. N64Recomp and RecompModTool are built as their own CMake project (`lib/N64ModernRuntime/N64Recomp` into `build-tools/`), because the game's configure step fails until `RecompiledFuncs/` exists.
 3. `RecompiledFuncs/` is regenerated from scratch. The job fails if `funcs.h` comes out truncated, the sign of a stale recompiler.
 4. The code mods are built (see below), so the game build can stage them.
@@ -73,7 +73,7 @@ Windows containers would need Hyper-V isolation and a multi-GB image with the Vi
 
 ### Code mods
 
-Both jobs build every `.nrm` listed under `desktop` in [mods/platforms.json](../mods/platforms.json), using [tools/mods/build_code_mods.cmake](../tools/mods/build_code_mods.cmake), which finds each mod's folder by the `mod_filename` in its `mod.toml`. To ship a new code mod, add its `.nrm` to that list. To run the same build locally:
+Both jobs build every `.nrm` listed under `desktop` in [mods/platforms.json](../../mods/platforms.json), using [tools/mods/build_code_mods.cmake](../../tools/mods/build_code_mods.cmake), which finds each mod's folder by the `mod_filename` in its `mod.toml`. To ship a new code mod, add its `.nrm` to that list. To run the same build locally:
 
 ```sh
 cmake -DPLATFORM=desktop -P tools/mods/build_code_mods.cmake
@@ -83,7 +83,7 @@ Optional: `-DRECOMP_MOD_TOOL=`, `-DMIPS_GCC=` / `-DMIPS_LD=`.
 
 ### The multiplayer mod
 
-The exe has no multiplayer code; online co-op ships as the native mod [mods/multiplayer-native](../mods/multiplayer-native/). The game's CMake builds it (`multiplayer_native.dll` / `.so`) into `build/built_mods/<Config>/multiplayer-native`, and [tools/mods/stage_mods.cmake](../tools/mods/stage_mods.cmake) stages it: a mod listed in `platforms.json` that is found in `build/built_mods/<Config>` is staged from there instead of from `mods/`. The mod also restages after its own builds, so a multiplayer-only edit that doesn't relink the exe still reaches `mods/`. The Release dist gets the mod without its PDB, and the Linux package script strips every staged `.so`.
+The exe has no multiplayer code; online co-op ships as the native mod [mods/multiplayer-native](../../mods/multiplayer-native/). The game's CMake builds it (`multiplayer_native.dll` / `.so`) into `build/built_mods/<Config>/multiplayer-native`, and [tools/mods/stage_mods.cmake](../../tools/mods/stage_mods.cmake) stages it: a mod listed in `platforms.json` that is found in `build/built_mods/<Config>` is staged from there instead of from `mods/`. The mod also restages after its own builds, so a multiplayer-only edit that doesn't relink the exe still reaches `mods/`. The Release dist gets the mod without its PDB, and the Linux package script strips every staged `.so`.
 
 After the game build, a "Check the multiplayer mod" step fails the job if the mod wasn't staged (`build/mods/...` on Linux, `build/dist/mods/...` on Windows) or if the exe still contains multiplayer strings. The Windows step uses `Select-String` and ends with an explicit `exit 0`, because the `shell: powershell` wrapper exits with `$LASTEXITCODE` and a `findstr` that finds nothing (the passing case) would leave it at 1.
 
@@ -91,14 +91,14 @@ With the mod disabled or missing there is no online or local co-op (`ROGUESQ_COO
 
 ### Unit tests
 
-Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (without `--config` on Linux; the Windows job also runs them on the x86 build), and a failing test fails the job. The target runs `lockstep_core_test`, `mp_core_test`, `net_core_test`, `net_link_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test` and `rs64_lights_test` (each prints `<name> OK`), then `style_check` against `tools/style/baseline.txt`. The tests use `CHECK` from [tests/check.h](../tests/check.h), which is never compiled out, so they check in Release too.
+Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (without `--config` on Linux; the Windows job also runs them on the x86 build), and a failing test fails the job. The target runs `lockstep_core_test`, `mp_core_test`, `net_core_test`, `net_link_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test` and `rs64_lights_test` (each prints `<name> OK`), then `style_check` against `tools/style/baseline.txt`. The tests use `CHECK` from [tests/check.h](../../tests/check.h), which is never compiled out, so they check in Release too.
 
 `net_link_test` adds and removes a UPnP port mapping on the runner's router, which needs a LAN address; without an IPv4 address it skips the address-text check.
 
 ## Expected build warnings
 
 - `lld-link : warning : found both wmain and main; using latter`: SDL2main provides `wmain`; ours wins.
-- `duplicate symbol` warnings for `upstream_compat.cpp` (overriding librecomp) and `zmemcpy` (over `RecompiledFuncs`): the intended `/FORCE:MULTIPLE` override set in [CMakeLists.txt](../CMakeLists.txt).
+- `duplicate symbol` warnings for `upstream_compat.cpp` (overriding librecomp) and `zmemcpy` (over `RecompiledFuncs`): the intended `/FORCE:MULTIPLE` override set in [CMakeLists.txt](../../CMakeLists.txt).
 
 ## Security
 

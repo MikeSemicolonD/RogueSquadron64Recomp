@@ -19,7 +19,7 @@ static void set_env(const char* name, const char* value) {
 
 // User-facing runtime flags. Each maps a --flag to a ROGUESQ_* env var that the
 // getenv-based knobs elsewhere read. The full debug/trace catalog stays env-only
-// (docs/debug-trace-env-vars.md); reach any of those with --set NAME=VALUE.
+// (docs/engine/debug-trace-env-vars.md); reach any of those with --set NAME=VALUE.
 struct CliFlag {
     const char* flag;   // long name without leading "--"
     const char* env;    // target ROGUESQ_* variable
@@ -76,7 +76,7 @@ static void print_cli_usage()
     fprintf(stderr, "  -v, --version              print the version and exit\n");
     fprintf(stderr,
         "\nEvery option maps to a ROGUESQ_* environment variable; NAME=VALUE (bare) works too.\n"
-        "Full debug/trace variable list: docs/debug-trace-env-vars.md\n");
+        "Full debug/trace variable list: docs/engine/debug-trace-env-vars.md\n");
 }
 
 // Translate argv into the ROGUESQ_* env vars the rest of main reads. Returns an

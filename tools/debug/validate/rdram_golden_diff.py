@@ -22,7 +22,7 @@ import sys
 
 RDRAM = 0x800000
 
-# (name, address, size) from docs/data-structures.md. Extend freely.
+# (name, address, size) from docs/reference/data-structures.md. Extend freely.
 KNOWN_GLOBALS = [
     ("gMissionState",        0x80130B10, 0x28),
     ("gGameSettings",        0x80130B40, 0x30),
@@ -106,7 +106,7 @@ def read_image(path):
     return d
 
 
-OVERLAYS = [  # (name, ROM offset, size) from docs/game-architecture.md; all load at 0x800A5130
+OVERLAYS = [  # (name, ROM offset, size) from docs/reference/game-architecture.md; all load at 0x800A5130
     ("mission",   0x000A5D30, 0x000665A0),
     ("menu",      0x0010C2D0, 0x000283F0),
     ("cinematic", 0x00137580, 0x0000B810),

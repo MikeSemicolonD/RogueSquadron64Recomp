@@ -1,5 +1,5 @@
 {
-  "//": "CONTROLS page, shared by the front end (in place of OPTIONS > CONTROLLER SETTINGS) and the pause Game Settings: input sliders and the rumble toggle bind built-in keys saved in roguesq_input.json; BINDINGS opens the rebind list on CONTROLLER SETTINGS (front end only). See docs/adding-menus-and-buttons.md.",
+  "//": "CONTROLS page, shared by the front end (in place of OPTIONS > CONTROLLER SETTINGS) and the pause Game Settings: input sliders and the rumble toggle bind built-in keys saved in roguesq_input.json; BINDINGS opens the rebind list on CONTROLLER SETTINGS (front end only). See docs/guides/adding-menus-and-buttons.md.",
   "buttons": [
     { "id": "ctl_open", "menu": "options", "type": "submenu", "page": "controls", "replace": "controller_settings",
       "label": { "en": "CONTROLLER SETTINGS", "de": "STEUERUNG", "fr": "COMMANDES" },

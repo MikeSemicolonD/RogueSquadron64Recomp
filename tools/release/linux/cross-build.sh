@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-builds the Linux game for another architecture from x86-64 Ubuntu 24.04 / WSL, then packages a tarball, an AppImage and (arm64) a Flatpak.
 # Usage: tools/release/linux/cross-build.sh <arm64|armhf|i386> [Debug|Release] [out-dir]
-# Needs the host's x64 N64Recomp and RecompModTool (N64RECOMP_EXE / RECOMP_MOD_TOOL, default ~/rs64-build) and the packages in docs/building-all-platforms.md.
+# Needs the host's x64 N64Recomp and RecompModTool (N64RECOMP_EXE / RECOMP_MOD_TOOL, default ~/rs64-build) and the packages in docs/guides/building-all-platforms.md.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../../.." && pwd)"
 ARCH="${1:?usage: cross-build.sh <arm64|armhf|i386> [Debug|Release] [out-dir]}"
@@ -26,7 +26,7 @@ for lib in libSDL2.so libgtk-3.so libvulkan.so; do
     [ -e "/usr/lib/$libdir/$lib" ] || missing+=("/usr/lib/$libdir/$lib")
 done
 if [ ${#missing[@]} -gt 0 ]; then
-    echo "missing: ${missing[*]} (one-time setup: docs/building-all-platforms.md)" >&2
+    echo "missing: ${missing[*]} (one-time setup: docs/guides/building-all-platforms.md)" >&2
     exit 1
 fi
 [ -x "$N64RECOMP_EXE" ] && [ -x "$RECOMP_MOD_TOOL" ] || { echo "need x64 N64Recomp and RecompModTool (build the WSL Debug tree, or set N64RECOMP_EXE / RECOMP_MOD_TOOL)" >&2; exit 1; }

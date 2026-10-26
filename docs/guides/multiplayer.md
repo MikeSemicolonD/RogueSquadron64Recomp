@@ -1,6 +1,6 @@
 # Online co-op (ghost model)
 
-Online co-op runs one game per player. Each instance flies its own player 1 in its own world and streams that state to the other, which poses a wingman NPC (the "imposter", see [AGENTS.md](../AGENTS.md#co-op-player-2-is-an-imposter-npc)) from it. The two worlds are independent: only a few things are shared on purpose (objectives, deaths and lives, picked-up upgrades, the mission result, cutscene skips). Env vars are in [debug-trace-env-vars.md](debug-trace-env-vars.md).
+Online co-op runs one game per player. Each instance flies its own player 1 in its own world and streams that state to the other, which poses a wingman NPC (the "imposter", see [AGENTS.md](../../AGENTS.md#co-op-player-2-is-an-imposter-npc)) from it. The two worlds are independent: only a few things are shared on purpose (objectives, deaths and lives, picked-up upgrades, the mission result, cutscene skips). Env vars are in [debug-trace-env-vars.md](../engine/debug-trace-env-vars.md).
 
 ## What players see
 
@@ -19,18 +19,18 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 
 | File | Role |
 |---|---|
-| [mods/multiplayer-native/src/net_core.h](../mods/multiplayer-native/src/net_core.h), [net_core.cpp](../mods/multiplayer-native/src/net_core.cpp) | Message encoding, `Lobby` handshake state, `AddressEditor`, discovery packets, UPnP status text. No sockets. |
-| [mods/multiplayer-native/src/net_link.h](../mods/multiplayer-native/src/net_link.h), [net_link.cpp](../mods/multiplayer-native/src/net_link.cpp) | ENet6 transport (`mods/multiplayer-native/lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
-| [mods/multiplayer-native/src/ghost.cpp](../mods/multiplayer-native/src/ghost.cpp) | Session core: link events, message dispatch, per-frame hooks, shared objectives, deaths and lives, mission result, quit. |
-| [mods/multiplayer-native/src/ghost_lobby.cpp](../mods/multiplayer-native/src/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
-| [mods/multiplayer-native/src/ghost_hud.cpp](../mods/multiplayer-native/src/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
-| [mods/multiplayer-native/src/ghost_internal.h](../mods/multiplayer-native/src/ghost_internal.h) | The `Ghost` state struct and helpers shared by the three files above. |
-| [mods/multiplayer-native/src/mp_core.cpp](../mods/multiplayer-native/src/mp_core.cpp) | Pure logic with unit tests (`mp_core_test`): `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
-| [mods/multiplayer-native/src/coop_imposter.cpp](../mods/multiplayer-native/src/coop_imposter.cpp) | Imposter spawn and teardown. |
-| [mods/multiplayer-native/src/mp_register.cpp](../mods/multiplayer-native/src/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
-| [mods/multiplayer-native/src/mp_host.h](../mods/multiplayer-native/src/mp_host.h) | The multiplayer sources' only route to the game: the host API table, wrapped (`rs64::mp::call`, `alloc`, `flag`, `add_hook`, ...). |
-| [mods/multiplayer-native](../mods/multiplayer-native/) | The mod: `src/` (`mp_mod.cpp` is `rs64_mod_init`) and `tests/`. Its CMakeLists builds `src/` plus the base files it lists (`lockstep_core.cpp` and three headers) into `multiplayer_native.dll` / `.so`; the style check rejects any other base include. |
-| [mods/multiplayer-native/roguesq_menu.json](../mods/multiplayer-native/roguesq_menu.json) | The MULTIPLAYER menu page definition. |
+| [mods/multiplayer-native/src/net_core.h](../../mods/multiplayer-native/src/net_core.h), [net_core.cpp](../../mods/multiplayer-native/src/net_core.cpp) | Message encoding, `Lobby` handshake state, `AddressEditor`, discovery packets, UPnP status text. No sockets. |
+| [mods/multiplayer-native/src/net_link.h](../../mods/multiplayer-native/src/net_link.h), [net_link.cpp](../../mods/multiplayer-native/src/net_link.cpp) | ENet6 transport (`mods/multiplayer-native/lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
+| [mods/multiplayer-native/src/ghost.cpp](../../mods/multiplayer-native/src/ghost.cpp) | Session core: link events, message dispatch, per-frame hooks, shared objectives, deaths and lives, mission result, quit. |
+| [mods/multiplayer-native/src/ghost_lobby.cpp](../../mods/multiplayer-native/src/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
+| [mods/multiplayer-native/src/ghost_hud.cpp](../../mods/multiplayer-native/src/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
+| [mods/multiplayer-native/src/ghost_internal.h](../../mods/multiplayer-native/src/ghost_internal.h) | The `Ghost` state struct and helpers shared by the three files above. |
+| [mods/multiplayer-native/src/mp_core.cpp](../../mods/multiplayer-native/src/mp_core.cpp) | Pure logic with unit tests (`mp_core_test`): `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
+| [mods/multiplayer-native/src/coop_imposter.cpp](../../mods/multiplayer-native/src/coop_imposter.cpp) | Imposter spawn and teardown. |
+| [mods/multiplayer-native/src/mp_register.cpp](../../mods/multiplayer-native/src/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
+| [mods/multiplayer-native/src/mp_host.h](../../mods/multiplayer-native/src/mp_host.h) | The multiplayer sources' only route to the game: the host API table, wrapped (`rs64::mp::call`, `alloc`, `flag`, `add_hook`, ...). |
+| [mods/multiplayer-native](../../mods/multiplayer-native/) | The mod: `src/` (`mp_mod.cpp` is `rs64_mod_init`) and `tests/`. Its CMakeLists builds `src/` plus the base files it lists (`lockstep_core.cpp` and three headers) into `multiplayer_native.dll` / `.so`; the style check rejects any other base include. |
+| [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json) | The MULTIPLAYER menu page definition. |
 
 Base code sees multiplayer only through hooks, actions and flags.
 
@@ -63,7 +63,7 @@ Built-ins register first, then the multiplayer registration, so every multiplaye
 
 Hooks 2 and 7 have only a built-in part; every other hook not listed above has only a multiplayer part.
 
-Hooks the registration takes (sites and contracts in [modding-host-api.md](modding-host-api.md#hooks)):
+Hooks the registration takes (sites and contracts in [modding-host-api.md](../engine/modding-host-api.md#hooks)):
 
 | Area | Hooks |
 |---|---|
@@ -77,7 +77,7 @@ A new base-side need is a flag or a table entry, never a direct call.
 
 ## Build variants
 
-The game has no multiplayer code on any platform: online and local co-op come only from the `multiplayer-native` mod, which the game's CMake builds as a dependency of the exe and stages (see [release-ci.md](release-ci.md#the-multiplayer-mod)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs the mod enabled.
+The game has no multiplayer code on any platform: online and local co-op come only from the `multiplayer-native` mod, which the game's CMake builds as a dependency of the exe and stages (see [release-ci.md](../engine/release-ci.md#the-multiplayer-mod)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs the mod enabled.
 
 Unit tests (`cmake --build build --config Release --target rs64_unit_tests` builds and runs all): the mod's `mp_core_test`, `net_core_test` and `net_link_test` (`mods/multiplayer-native/tests`) next to the base tests (the style checker runs too). `net_link_test` talks to the real router through UPnP.
 
@@ -87,7 +87,7 @@ Unit tests (`cmake --build build --config Release --target rs64_unit_tests` buil
 
 ## Lobby flow
 
-The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s, a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
+The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s, a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
 
 Link events reach the lobby through `link_poll_edges(up, was_up, connects, seen_connects)`. `Link::connect_count()` counts connects, so a connect that dropped before the poll is neither edge, and a reconnect inside one poll reports lost plus connected.
 
@@ -104,7 +104,7 @@ The hooks live in the menu overlay (`drawRadarIcon`, `tickCraftSelectScreen`, th
 Mod menu pages are defined in `roguesq_menu.json` (format: [adding-menus-and-buttons.md](adding-menus-and-buttons.md)). Two fields exist for the multiplayer page:
 
 - `title_y`: the page title's y offset (written at `gCurrentMenuData+0x52`).
-- `row`: entries sharing a `row` string sit on one line (HOST GAME and JOIN GAME). `page_row_nav` in [menu_config.cpp](../src/game/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
+- `row`: entries sharing a `row` string sit on one line (HOST GAME and JOIN GAME). `page_row_nav` in [menu_config.cpp](../../src/game/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
 
 ## LAN discovery
 
@@ -112,7 +112,7 @@ The host answers searches while it waits. Discovery is plain UDP on the game por
 
 ## Steam relay mod
 
-[mods/steam-relay](../mods/steam-relay/) (desktop only, on by default) publishes the `mp.transport` service ([include/rs64/mp_transport.h](../include/rs64/mp_transport.h), see [modding-host-api.md](modding-host-api.md#services)). It runs the session over Steam's relay network as app id 480 (Spacewar), so nobody forwards a port or types an IP. The player supplies the Steamworks runtime library next to the mod (`steam_api64.dll`, `libsteam_api.so` or `libsteam_api.dylib`, from the SDK version the mod was built with); the mod loads it at run time and never links it.
+[mods/steam-relay](../../mods/steam-relay/) (desktop only, on by default) publishes the `mp.transport` service ([include/rs64/mp_transport.h](../../include/rs64/mp_transport.h), see [modding-host-api.md](../engine/modding-host-api.md#services)). It runs the session over Steam's relay network as app id 480 (Spacewar), so nobody forwards a port or types an IP. The player supplies the Steamworks runtime library next to the mod (`steam_api64.dll`, `libsteam_api.so` or `libsteam_api.dylib`, from the SDK version the mod was built with); the mod loads it at run time and never links it.
 
 - Multiplayer looks the service up on first use (`relay()` in `ghost_lobby.cpp`, after the registry seals) and uses it while `available()` is true; `ROGUESQ_MP_TRANSPORT=enet` ignores it. `Link` forwards to the table (`LinkConfig::external`), so the session code is unchanged; the simulated latency / loss / jitter apply to ENet only.
 - Steam starts when the MULTIPLAYER page first reads the address row (`available()`), and shuts down (`relay_shutdown`) when the page is left without a session, when the main menu ends a session, and on quit after the BYE. STOP HOSTING / CANCEL JOIN keep it up.
@@ -188,7 +188,7 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 
 ## Puppet interpolation
 
-`Puppet` ([mp_core.cpp](../mods/multiplayer-native/src/mp_core.cpp)) shows the remote player 50 ms behind the sender's clock by default (entity interpolation, `ROGUESQ_GHOST_INTERP_MS`; 0 selects dead reckoning). Remote states must be finite, inside a sane range and have roughly orthonormal axes before any of it reaches game code. A respawn, teleport or the client's start offset is treated as a jump, not motion. Measured on scripted pair runs at 0-200 ms latency with 5% loss and 40 ms jitter, 50 ms interpolation trails the real ship by latency + ~110 ms (the buffer plus the game's ~30 Hz send cadence) and is 4-6x smoother than dead reckoning whenever there is jitter. The pad goes idle when the peer stops sending (paused, results screen, stalled), so the puppet never keeps firing.
+`Puppet` ([mp_core.cpp](../../mods/multiplayer-native/src/mp_core.cpp)) shows the remote player 50 ms behind the sender's clock by default (entity interpolation, `ROGUESQ_GHOST_INTERP_MS`; 0 selects dead reckoning). Remote states must be finite, inside a sane range and have roughly orthonormal axes before any of it reaches game code. A respawn, teleport or the client's start offset is treated as a jump, not motion. Measured on scripted pair runs at 0-200 ms latency with 5% loss and 40 ms jitter, 50 ms interpolation trails the real ship by latency + ~110 ms (the buffer plus the game's ~30 Hz send cadence) and is 4-6x smoother than dead reckoning whenever there is jitter. The pad goes idle when the peer stops sending (paused, results screen, stalled), so the puppet never keeps firing.
 
 ## Mission end and the host's result
 

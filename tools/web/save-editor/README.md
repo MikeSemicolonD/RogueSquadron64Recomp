@@ -10,7 +10,7 @@ Works on any raw EEPROM image — the recomp's on-disk `Eep4k` save (512 bytes) 
 dump made with the Pico dumper (`gamepak.c`). Load a file, edit, export a corrected copy.
 
 The recompilation stores its save as `saves/<game-id>.bin` (see
-[librecomp `pi.cpp`](../../lib/N64ModernRuntime/librecomp/src/pi.cpp)): a raw 512-byte linear
+[librecomp `pi.cpp`](../../../lib/N64ModernRuntime/librecomp/src/pi.cpp)): a raw 512-byte linear
 EEPROM image, no header, no byte-swap — byte-for-byte what this editor reads and writes. So you
 can load that `.bin` directly and drop the exported copy back in (with the game closed). Export
 preserves the loaded filename, so an edited `<game-id>.bin` is a drop-in replacement.
@@ -53,7 +53,7 @@ the `0xB0` body, `+0x04` over the `0x10` unk08 block). The header is a fixed con
 (`"GAME"`/`"GSYS"`/`F5F5F5F5`/`AAAAAAAA`/`55555555` + `(0xB0<<16)|2`) with its own two
 adler32s. All multi-byte fields are big-endian.
 
-Sources: [docs/data-structures.md](../../docs/data-structures.md) "Save data", and the sister
+Sources: [docs/reference/data-structures.md](../../../docs/reference/data-structures.md) "Save data", and the sister
 decomp's `func_80006338` (header build), `func_80006798` (body checksums), `func_8006EB48`
 (medal bit layout).
 

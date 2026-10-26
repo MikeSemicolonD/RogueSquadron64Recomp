@@ -7,7 +7,7 @@
 # (byte field at address A: addr=A, mask=0xFF000000, value=byteval<<24).
 #
 # Predicates below are calibrated against a live in-mission RDRAM capture + the boot trace
-# Struct fields per docs/data-structures.md:
+# Struct fields per docs/reference/data-structures.md:
 #   gGameSettings @0x80130B40: +0x00 currentLevel(u8), +0x01 vehicleId(u8), +0x10 flags(u32; bit0x20=demo active)
 #   gMissionState @0x80130B10: +0x00 numLives(u8), +0x07 numMissionObjectives(u8)
 #   gCurrentCutsceneFile ptr @0x800B1904 (valid KSEG0 only while a cutscene is loaded)

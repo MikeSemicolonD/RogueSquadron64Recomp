@@ -132,8 +132,8 @@ Functions whose current name is known to be wrong, with the role found by RE. No
 | 0x800BDC9C | `updateNabooStarfighterFlightControls` (mission overlay) | `updateNabooStarfighterSpeed` | Naboo starfighter speed update. toml hooks use the name | rogue_squadron.toml |
 | 0x800AADD4 | `updateSnowSpeederFlightControls` (mission overlay) | `updateSnowSpeederSpeed` | snowspeeder speed update. toml hooks use the name. The V-wing, Falcon, TIE interceptor and T-16 copies likely need the same rename (check) | rogue_squadron.toml |
 | 0x800C131C | `runMenuShipSelectScreen` (menu overlay) | `runCreditsScreen` | credits sequence. toml hook uses the name | rogue_squadron.toml credits pacing |
-| 0x800C7738 | `setHudEnableBit4` | `requestMissionFailure` | sets request bit 4 in 0x8010C9E0 when mode 0x8010CA20 == 0; the mode tick at 0x800FB538 turns bit 4 into mode 4 (failure). Called from level scripts | disasm 2026-10-01, docs/multiplayer.md |
-| 0x800C776C | `setHudEnableBit8` | `requestMissionSuccess` | same, bit 8 -> mode 3 (success) | disasm 2026-10-01, docs/multiplayer.md |
+| 0x800C7738 | `setHudEnableBit4` | `requestMissionFailure` | sets request bit 4 in 0x8010C9E0 when mode 0x8010CA20 == 0; the mode tick at 0x800FB538 turns bit 4 into mode 4 (failure). Called from level scripts | disasm 2026-10-01, docs/guides/multiplayer.md |
+| 0x800C776C | `setHudEnableBit8` | `requestMissionSuccess` | same, bit 8 -> mode 3 (success) | disasm 2026-10-01, docs/guides/multiplayer.md |
 | 0x80067A80 | `isSpeechBusyOrQueued` | `isSpeechIdle` | returns 1 when the speech queue is empty and the current voice handle is inactive (`isVoiceHandleActive`) | disasm 2026-10-01, co-op research notes |
 | 0x800C794C | `getScaledPlayerCraftSpeed` | `getPlayerCraftScaledY` | `getCraftRecordByIdx(0)`+4 (Y) times the constant at 0x800A6964 | disasm 2026-10-01, co-op research notes |
 | 0x800668B0 | `waitForAnyAudioSlot` | `freeAudioBuffers` (check) | ticks MusyX, calls `anyAudioSlotActive` (result unused), then `rs_free`s 0x80139B4C/50/54 unless byte 0x80130B39 is set | disasm 2026-10-01, co-op research notes |

@@ -39,8 +39,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **Windows 10+ x64** | Vulkan, D3D12, D3D11, D3D10 |
 | **[Windows 10+ x86 (32-bit)](#4-build)** | Vulkan, D3D12, D3D11, D3D10 |
 | **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
-| **[Linux arm64 / armhf](docs/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
-| **[Linux x86 (32-bit)](docs/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
+| **[Linux arm64 / armhf](docs/guides/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
+| **[Linux x86 (32-bit)](docs/guides/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
 | **[Android 9+ arm64](#android-notes)** | Vulkan 1.1 |
 | **[*maybe* macOS 11+](#macos-notes)*** | Metal |
 
@@ -50,7 +50,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
 
-[Per-platform minimum requirements](docs/building-all-platforms.md#what-players-need).
+[Per-platform minimum requirements](docs/guides/building-all-platforms.md#what-players-need).
 
 ## Features
 
@@ -86,7 +86,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replace the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
-- See [docs/multiplayer.md](docs/multiplayer.md) for more details.
+- See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 
 > [!NOTE]
 > Steam-Relay mod on Linux, Steam Deck and macOS are untested.
@@ -95,7 +95,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 - **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
-  - See [docs/modding.md for modding info](docs/modding.md).
+  - See [docs/guides/modding.md for modding info](docs/guides/modding.md).
 - **Included mods:**
   - **Display Settings:** 'Display Settings' UI in the main menu under 'Options' -> 'Game Settings' and in the pause menu. Also contains the Ray Tracing and Fullscreen toggle.
   - **Control Settings:** new Controls UI allowing the adjustment of sensitivity, acceleration, deadzone, rumble and Input Bindings. *All while using in-game UI.*
@@ -426,11 +426,11 @@ mods/multiplayer-native/        Online co-op (sources in src/, tests in tests/)
 rogue_squadron.toml             N64Recomp config and override layer
 ```
 
-Native mods: [docs/modding-host-api.md](docs/modding-host-api.md).
+Native mods: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
 
-Online co-op: [docs/multiplayer.md](docs/multiplayer.md).
+Online co-op: [docs/guides/multiplayer.md](docs/guides/multiplayer.md).
 
-**Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and validated against Project64 dumps.
+**Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md) and validated against Project64 dumps.
 
 **Frame pacing.** By default the game's own VI / SP / DP message protocol runs as on hardware, with SP-done delivered after RT64 parses the list. `--no-vi-driven-loop` (`ROGUESQ_VI_DRIVEN_LOOP=0`) restores the older host-paced loop.
 
@@ -452,7 +452,7 @@ Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrid
 
 ## Debugging
 
-[docs/debugging-with-visual-studio.md](docs/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
+[docs/engine/debugging-with-visual-studio.md](docs/engine/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
 
 AI written helpers under [tools/debug/](tools/debug/):
 
@@ -465,7 +465,7 @@ AI written helpers under [tools/debug/](tools/debug/):
 
 `cmake --build build --config Release --target rs64_unit_tests` builds and runs the unit tests and the style check.
 
-The full debug/trace/experiment catalog, logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles lives in [docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md).
+The full debug/trace/experiment catalog, logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles lives in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md).
 
 ### Command-line options
 

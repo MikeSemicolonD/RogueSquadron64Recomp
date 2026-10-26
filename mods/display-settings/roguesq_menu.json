@@ -1,5 +1,5 @@
 {
-  "//": "DISPLAY SETTINGS page, the same in the front end (in HIGH RESOLUTION's Game Settings slot) and the pause Game Settings. Pages are shared: an entry is written once and shows in both. Toggles and cycles bind built-in keys (menu_config.cpp) saved in roguesq_video.json; high_resolution is the game's own setting. Labels are en/de/fr maps (French drops accents, as the game's own text does). See docs/adding-menus-and-buttons.md.",
+  "//": "DISPLAY SETTINGS page, the same in the front end (in HIGH RESOLUTION's Game Settings slot) and the pause Game Settings. Pages are shared: an entry is written once and shows in both. Toggles and cycles bind built-in keys (menu_config.cpp) saved in roguesq_video.json; high_resolution is the game's own setting. Labels are en/de/fr maps (French drops accents, as the game's own text does). See docs/guides/adding-menus-and-buttons.md.",
   "buttons": [
     { "id": "ds_open", "menu": "game_settings", "type": "submenu", "page": "display", "replace": "high_resolution",
       "label": { "en": "DISPLAY SETTINGS", "de": "ANZEIGE", "fr": "AFFICHAGE" },

@@ -24,7 +24,7 @@ using rs64::mips::ww;
 std::vector<Language> s_languages;
 std::once_flag s_loaded;
 
-// Font objects by font id (docs/adding-menus-and-buttons.md "Fonts").
+// Font objects by font id (docs/guides/adding-menus-and-buttons.md "Fonts").
 constexpr uint32_t kFontTable = 0x8009FC10;
 constexpr unsigned kFontIds = 12;
 

@@ -1,4 +1,4 @@
-// ---- Fonts tab: the game's fonts and a language mod's glyph packs (lang/glyphs/<font>.bin, see docs/modding-languages.md) ----
+// ---- Fonts tab: the game's fonts and a language mod's glyph packs (lang/glyphs/<font>.bin, see docs/guides/modding-languages.md) ----
 // A font shows the game's own glyphs (from data/fonts/<name>, read-only: ASCII always draws with them) and the mod's pack glyphs, which
 // can be drawn from a font file for every character the language's text needs and touched up by hand. The language's files live in
 // the project as mod/lang/... and Export mod writes them out.

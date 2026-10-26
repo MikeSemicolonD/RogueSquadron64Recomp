@@ -51,9 +51,8 @@ The host glue lives in `src/`:
 | `patches/` | Hand-written C cross-compiled to MIPS, run back through N64Recomp, linked *ahead* of `RecompiledFuncs/` so its symbols win — the regen-safe place for guards/overrides |
 
 `lib/rt64` and `lib/N64ModernRuntime` are MikeSemicolonD forks carrying the
-Factor 5 GBI backend and a handful of runtime hooks; see
-[docs/audit-changes.md](audit-changes.md) for a full inventory of every fork
-modification.
+Factor 5 GBI backend and a handful of runtime hooks; each fork's git history
+lists its modifications.
 
 ## Memory map (key globals)
 
@@ -292,7 +291,7 @@ Main menu state `gCurrentMenuData` (0x800CE730, 0xF8 bytes). 13 menus enumerated
 Menu UI text is G_TEXRECT (one textured rect per IA16 glyph); the title strip ("STAR WARS / ROGUE SQUADRON") and the photographic background tiles decode and draw. Per-tile positioning is open (see [Rendering pipeline](#rendering-pipeline)).
 
 To add or modify menu entries (front-end or pause menu), see
-[adding-menus-and-buttons.md](adding-menus-and-buttons.md) — the entry data
+[adding-menus-and-buttons.md](../guides/adding-menus-and-buttons.md) — the entry data
 model, sub-type dispatch, and a worked "Quit button" example.
 
 ### 10. HUD
@@ -648,7 +647,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 | Attribution text | Renders (glyph rect count matches the hardware walk) |
 | Intro cinematic | Ships, trench, exploding logo, Factor 5 letters + fire, heightfield and flat terrain, billboards, grey sky |
 | Main menu | Renders (bg + title) |
-| In-mission gameplay | Playable from the first level through the credits; see [Status](../README.md#status-playable) |
+| In-mission gameplay | Playable from the first level through the credits; see [Status](../../README.md#status-playable) |
 | Audio (music + SFX) | Recompiled MusyX synth, cartridge-streamed samples, synth tick and voice pool registered as on hardware |
 | Input | Keyboard, mouse and SDL2 gamepad through `input_bindings.cpp`; `ROGUESQ_FAKE_CONTROLLER=1` for headless runs |
 | Save (EEPROM 4K) | Works; Memory Pak stubbed |
@@ -702,14 +701,13 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
 
 ## See also
 
-- [docs/data-structures.md](data-structures.md) — field-offset layouts for the entity/gameplay objects, global game state, HUD/menu, and cinematic/scene-graph structs.
+- [docs/reference/data-structures.md](data-structures.md) — field-offset layouts for the entity/gameplay objects, global game state, HUD/menu, and cinematic/scene-graph structs.
 - `E:/Projects/rogue_squadron64/symbol_files/` — authoritative symbol names (per-overlay).
 - `E:/Projects/rogue_squadron64/docs/` — per-subsystem detail (HOB/HMT/SND/DAT/save/menus + partial m2c decomp).
-- [docs/audit-changes.md](audit-changes.md) — inventory of fork modifications by category.
-- [docs/f5-model-dl-spec.md](f5-model-dl-spec.md) — display-list grammar; §7 is the ucode-derived truth (chunk fetch, opcodes, terrain records).
-- [docs/factor5-gbi.md](factor5-gbi.md) — Factor 5 graphics microcode docs (older runtime priors).
-- [docs/factor5-ucode-dispatch.md](factor5-ucode-dispatch.md) — dispatch-table notes; its handler readings are offset by 0x80 (see the spec §7).
-- [docs/debug-trace-env-vars.md](debug-trace-env-vars.md) — `ROGUESQ_LOG_*` runtime tracing.
+- [docs/reference/f5-model-dl-spec.md](f5-model-dl-spec.md) — display-list grammar; §7 is the ucode-derived truth (chunk fetch, opcodes, terrain records).
+- [docs/reference/factor5-gbi.md](factor5-gbi.md) — Factor 5 graphics microcode docs (older runtime priors).
+- [docs/reference/factor5-ucode-dispatch.md](factor5-ucode-dispatch.md) — dispatch-table notes; its handler readings are offset by 0x80 (see the spec §7).
+- [docs/engine/debug-trace-env-vars.md](../engine/debug-trace-env-vars.md) — `ROGUESQ_LOG_*` runtime tracing.
 - `rsp/musyx_rsp.toml` — RSPRecomp config for the MusyX audio synth (`text_address = 0x04001080`).
 - `rsp/factor5_boot_rsp.toml` — RSPRecomp config for the shared boot ucode (ROM 0x831D0, size 0xD0).
 </content>

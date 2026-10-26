@@ -6,7 +6,7 @@
 #include "input/touch_input.h"
 
 // Menu awareness for touch: context from the game-state classifier, and tap-to-select on the
-// front-end menu (gCurrentMenuData @ 0x800CE730, layout in docs/adding-menus-and-buttons.md).
+// front-end menu (gCurrentMenuData @ 0x800CE730, layout in docs/guides/adding-menus-and-buttons.md).
 namespace rs64::touch {
     // Context from the loaded overlay (g_active_overlay: 0 mission, 1 menu, 2 cinematic, -1 none), refined by
     // the classifier id on menu screens, the pause master word, and the attract-demo bit.

@@ -31,7 +31,7 @@
 #include "game/menu_layout.h"
 #include "video/video_config.h"
 
-// Menu button system v2: one typed button model { menu, type, behavior, labels, placement } for the front-end and pause menus, driven by mod JSON (docs/adding-menus-and-buttons.md).
+// Menu button system v2: one typed button model { menu, type, behavior, labels, placement } for the front-end and pause menus, driven by mod JSON (docs/guides/adding-menus-and-buttons.md).
 // The install engine rebuilds the target menu's entry list, merging native entries with mod buttons by order/anchor; behavior keys resolve to a host registry or a mod @export.
 
 namespace recomp { void* alloc(uint8_t* rdram, size_t size); }

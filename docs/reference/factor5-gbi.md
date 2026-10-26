@@ -9,7 +9,7 @@ grammar itself (chunk fetch, per-opcode semantics from the IMEM listing) is in
 
 - ROM text offset `0x25610`, size `0x1FA0`, hash `0xC8B0316823094FD2`.
 - ROM data offset `0x39900`, size `0x100`, hash `0xF2150F53524F1EFA`.
-- RT64 profile: `GBI_F3DFACTOR5` in [lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp](../lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp), inherits `GBI_F3DEX`.
+- RT64 profile: `GBI_F3DFACTOR5` in [lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp](../../lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp), inherits `GBI_F3DEX`.
 - The real data segment extends to ~`0x3C0` bytes; only the first `0x100` are hashed for identification.
 
 ## Factor 5-specific opcodes
@@ -82,8 +82,8 @@ cull. Honored when `ROGUESQ_F5_CULL` is on (default).
 
 ## Crash classes safety-netted (post-credits / intro scenes)
 
-1. Chunks with no recognized terminator march past RDRAM — caught by the iteration cap in [rt64_interpreter.cpp](../lib/rt64/src/hle/rt64_interpreter.cpp).
+1. Chunks with no recognized terminator march past RDRAM — caught by the iteration cap in [rt64_interpreter.cpp](../../lib/rt64/src/hle/rt64_interpreter.cpp).
 2. Unrecognized ucode (`getGBIForUCode` returns null) — caught by null-`hleGBI` skip + mid-task null guard.
-3. `G_MOVEMEM` with idx outside F3D set — was `assert(false)`, now logs and skips ([rt64_gbi_f3d.cpp](../lib/rt64/src/gbi/rt64_gbi_f3d.cpp)).
-4. Unimplemented framebuffer readback formats — was assert, now logs and returns 0 ([rt64_native_target.cpp](../lib/rt64/src/render/rt64_native_target.cpp)).
+3. `G_MOVEMEM` with idx outside F3D set — was `assert(false)`, now logs and skips ([rt64_gbi_f3d.cpp](../../lib/rt64/src/gbi/rt64_gbi_f3d.cpp)).
+4. Unimplemented framebuffer readback formats — was assert, now logs and returns 0 ([rt64_native_target.cpp](../../lib/rt64/src/render/rt64_native_target.cpp)).
 5. STL bounds checks — `_CrtSetReportHook` returns 1 to suppress the abort.

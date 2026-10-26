@@ -1,5 +1,5 @@
 # Release build on self-hosted runners that hold the ROM-derived inputs (decomp ELF + RSP ucode sources).
-# Nothing ROM-derived is in the repo or the runner images; see docs/release-ci.md.
+# Nothing ROM-derived is in the repo or the runner images; see docs/engine/release-ci.md.
 # Only tags and manual dispatch trigger this: never add pull_request, a fork PR would run on the self-hosted machines.
 name: Release
 

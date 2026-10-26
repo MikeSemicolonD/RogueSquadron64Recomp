@@ -356,31 +356,38 @@ EEPROM is 256 bytes: a 0x20 `save_file_header` + 2 × 0xC8 `save_data_body` (dua
 
 ### `gSaveDataBody` / `D_8013A5C0_type` @ 0x8013A5C0 (0xB0) (mixed)
 
-Size 0xB0 confirmed by memset (funcs_17.c:3164). Settings header (+0x00..+0x13) and tail
+Size 0xB0 confirmed by memset (funcs_17.c:3164). The rest of the settings header (+0x00..+0x07) and tail
 (+0xA0..) are copied opaquely (doc names). Confirmed body:
 
 | off | size | field | evidence |
 |----|----|----|----|
+| +0x08 | u32 | cheat-code flags, rebuilt bit by bit from `gGameSettings+0x18` (0x80130B58) | confirmed `serializeSettingsToSaveAndPersist` 0x8006E1BC |
+| +0x10 / +0x11 / +0x12 | u8 | music / sound FX / speech volume, 0-127 (the pause slider clamps to 127.0 at 0x800A6614), from `gGameSettings+0x20..0x22` | confirmed 0x8006E22C, `initOrUpdatePauseScreenDim` |
+| +0x13 | u8 | controller layout 0-3 (`gGameSettings+0x05`; menu cycles 0-3, table of 4 button layouts at 0x800CC9D8 in the menu overlay) | confirmed 0x8006E238, `controllerSettingsScreen` 0x800BD274 |
 | +0x14 | 0x3C | `accounts[3]` (account_data, 0x14 each) | confirmed funcs_17.c:6703 (`getAccountDataPtr` base 0x8013A5D4, stride 0x14) |
 | +0x50 | u8 | active-account bitmask (`1<<slot`) | confirmed funcs_17.c:6806 |
 | +0x51 | u8 | current/selected account id | confirmed funcs_17.c:6810 |
 | +0x52 | 0x50 | `highscores[10]` (EliteRogueData, 0x8 each) | confirmed funcs_17.c:7694 |
+| +0xA8 | u8 | language, `gGameSettings+0x06` (0 English, 1 German, 2 French) | confirmed 0x8006E23C |
+| +0xAC | u32 | Naboo Starfighter key: the CRC of `!YNGWIE!` (0x050FE09C) once that code is typed after `HALIFAX?` (which clears cheat bit 0x10); 0 = no Naboo. Loaded back into `gGameSettings+0x28`, which the hangar and `load_hmt_and_hob` decrypt the ship with | confirmed `applyCheatCodeFromInput` 0x800822D0, `setUnlockBitAndPersist` 0x8006E414, `loadSaveDataIfNotLoaded` 0x8006F184 |
 
 ### `account_data` (0x14) @ body+0x14 (mixed)
 
 | off | size | field | evidence |
 |----|----|----|----|
 | +0x00 | char[4] | name (null-term) | confirmed funcs_17.c:6086 |
-| +0x05 | u8 | current_level (clamp ≤0x10) | confirmed funcs_17.c:6716 |
+| +0x05 | u8 | current_level (clamp ≤0x10): progress, not a cursor. SELECT LEVEL lists campaign levels up to min(this, 15); the all-missions and bonus cheats raise that | confirmed funcs_17.c:6716, SELECT LEVEL setup 0x800C5DAC |
 | +0x06 | u8[5] | level_medals — 2 bits/level, 19 levels (`parseAccountDataBytes`) | confirmed funcs_17.c:6174 |
 | +0x0C | u32 | unlock word (`&0x7FFE00`) — overlaps doc's separate +0x08 | confirmed funcs_17.c:6111 |
-| +0x10 | u8 | accountNumber | confirmed funcs_17.c:6113 |
+| +0x10 | u8 | accountNumber: the pilot's ID, the first of 1-254 no Elite Rogues row uses when the pilot is created; links the pilot to its board row | confirmed funcs_17.c:6113, `findUnusedAccountId` 0x8006EC1C, `createAccountProfile` 0x8006E8CC |
 
 ### `EliteRogueData` (0x8) @ body+0x52 (mixed)
 
 +0x00 name[3], +0x03 current_level, +0x04 u16 medal bitfield (bits 0-4 bronze ×1, 5-9
-silver ×2, 10-14 gold ×4 → score `(v&0x1F)+((v>>4)&0x3E)+((v>>8)&0x7C)`), +0x06
-accountNumber. Confirmed funcs_17.c:7698-7715.
+silver ×2, 10-14 gold ×4 → score `(v&0x1F)+((v>>4)&0x3E)+((v>>8)&0x7C)`), +0x06 u8
+accountNumber (the owning pilot's, 0 for the default entries), +0x07 unused. Confirmed funcs_17.c:7698-7715 and
+`setAccountHighscore` 0x8006F39C. The board stays in score order, highest first: `highScoreBubbleSort` (0x8006DD50, called from
+`postLevelStatScreen`) swaps only a strictly lower score, so ties keep their order.
 
 ### `save_data_body` (0xC8) — EEPROM record (confirmed, with checksum-order correction)
 
@@ -670,7 +677,7 @@ points/knots) differ; the conversion step in `load_level_dat` was not located.
 - **sdir entry** (0x18): +0x00 id, +0x04 offset into samp_SND, +0x08 root key, +0x0A rate, +0x0C
   num_samples (low 24 bits; top byte flags), +0x10 loopStart, +0x14 loopLen. Samp data = 256B ADPCM
   coefficient book + 0x28-byte frames. Confirmed (decodeMusyxAdpcm / parsePool in tools/web/rs64-explorer/rs64assets.js).
-- **pool sections**: section 0 = SoundMacro VM programs (the 81-op engine; see docs/musyx-voice-mixing.md), 1 keymaps,
+- **pool sections**: section 0 = SoundMacro VM programs (the 81-op engine; see docs/reference/musyx-voice-mixing.md), 1 keymaps,
   3 Layers. Sample descriptor → `musyxInitVoiceFromSample`: +0x04 data ptr+flags, +0x08 length,
   +0x0C/+0x10/+0x14 loop start/end/len, +0x18 key (maps 1:1 to the sdir entry).
 
@@ -760,8 +767,7 @@ Pool header = 4 section offsets (0=SoundMacros, 1=Keymaps, 3=Layers); each subse
 
 These tables live in ROM rodata and are fetched at runtime via `MEM_W` (the recomp
 does NOT inline them). Dumped/decoded from the built ELF by
-`tools/re/render/decode_rodata_tables.py`; full output in
-[factor5-render-rodata.txt](factor5-render-rodata.txt).
+`tools/re/render/decode_rodata_tables.py`; run it for the full output.
 
 ### Combiner table @0x80037860 (512 × 8B `gsDPSetCombine{w0,w1}`)
 

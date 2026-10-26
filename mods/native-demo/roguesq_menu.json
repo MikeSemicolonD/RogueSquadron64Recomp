@@ -1,5 +1,5 @@
 {
-  "//": "Example: buttons whose behavior comes from this mod's native library (native_demo.cpp -> native_demo.dll, built by this folder's CMakeLists.txt). The leading @ resolves to the library export of the same name; a toggle also uses <name>_get, a slider <name>_get to read its value. A Sound Settings slider is the real native volume-slider widget (independent value + custom OFF/MAX labels); it must `replace` a native entry since that menu is full. See docs/adding-menus-and-buttons.md.",
+  "//": "Example: buttons whose behavior comes from this mod's native library (native_demo.cpp -> native_demo.dll, built by this folder's CMakeLists.txt). The leading @ resolves to the library export of the same name; a toggle also uses <name>_get, a slider <name>_get to read its value. A Sound Settings slider is the real native volume-slider widget (independent value + custom OFF/MAX labels); it must `replace` a native entry since that menu is full. See docs/guides/adding-menus-and-buttons.md.",
   "buttons": [
     { "id": "demo_toggle", "menu": "game_settings", "type": "toggle", "toggle": "@demo_toggle",
       "label_on": "DEMO: ON", "label_off": "DEMO: OFF" },

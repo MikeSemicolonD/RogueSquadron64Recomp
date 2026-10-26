@@ -1,5 +1,5 @@
 {
-  "//": "A self-contained mod that adds its own custom menu page. A `submenu` button opens a named page; buttons whose menu is that page name are its entries, and Back is added automatically. The entries mix this mod's native library (menu_example.cpp -> menu_example.dll, @exports) with a built-in behavior (fullscreen). See docs/adding-menus-and-buttons.md.",
+  "//": "A self-contained mod that adds its own custom menu page. A `submenu` button opens a named page; buttons whose menu is that page name are its entries, and Back is added automatically. The entries mix this mod's native library (menu_example.cpp -> menu_example.dll, @exports) with a built-in behavior (fullscreen). See docs/guides/adding-menus-and-buttons.md.",
   "buttons": [
     { "id": "example_open", "menu": "main_menu", "type": "submenu", "page": "example",
       "label": "EXAMPLE MENU", "title": "EXAMPLE MENU" },
