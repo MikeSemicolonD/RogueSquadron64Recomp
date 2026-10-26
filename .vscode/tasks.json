@@ -140,6 +140,36 @@
             "detail": "Launch the game with an optional forced level and/or craft (--force-level / --force-craft). You drive the menus; whatever mission you launch uses the forced values."
         },
         {
+            "label": "Build: Relay server",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "${input:rsConfig}",
+                "--target", "rs64_relay"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "detail": "Builds rs64_relay (the co-op relay server, relay-server/) into build/<config>."
+        },
+        {
+            "label": "Run: Relay server",
+            "type": "shell",
+            "command": "cmake --build ${workspaceFolder}/build --config ${input:rsConfig} --target rs64_relay; if ($LASTEXITCODE -eq 0) { Start-Process -FilePath .\\rs64_relay.exe -WorkingDirectory (Get-Location) }",
+            "options": {
+                "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": "$msCompile",
+            "detail": "Builds rs64_relay, then opens it in its own console window on UDP 27070, run from build/<config> (its rs64_relay.cfg is saved there). Type help in that window for commands; quit or Ctrl+C stops it. Point the game at it with \"relay_server\": \"127.0.0.1\" in roguesq_net.json (docs/guides/relay-server.md)."
+        },
+        {
             "label": "Record: Input recording (pick level / craft)",
             "type": "shell",
             "command": "& .\\tools\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
