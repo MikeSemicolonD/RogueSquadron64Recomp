@@ -1,10 +1,10 @@
-# Builds every release package locally into <OutDir>/<version>/ (default build/packages): Windows x64 and x86 zips, Linux x64, arm64, armhf and i386 tarballs plus AppImages and Flatpaks (WSL) and the Android APK, then a SHA256SUMS.txt over the folder.
-# Usage: .\tools\release\bundle-release.ps1 [-Version v1.2] [-OutDir %USERPROFILE%\Desktop\rs64-release] [-Only windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386,android] [-WslDistro Ubuntu-24.04]
+# Builds every release package locally into <OutDir>/<version>/ (default build/packages): Windows x64 and x86 zips, Linux x64, arm64, armhf and i386 tarballs plus AppImages and Flatpaks (WSL), the universal macOS .app zip (WSL) and the Android APK, then a SHA256SUMS.txt over the folder.
+# Usage: .\tools\release\bundle-release.ps1 [-Version v1.2] [-OutDir %USERPROFILE%\Desktop\rs64-release] [-Only windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386,macos,android] [-WslDistro Ubuntu-24.04]
 # Windows zips are staged fresh (exe, DLLs, mods from mods/platforms.json), so ROMs, saves and stale mods in build*/dist never ship.
 param(
     [string]$Version = "",
     [string]$OutDir = "",
-    [string[]]$Only = @("windows-x64", "windows-x86", "linux-x64", "linux-arm64", "linux-armhf", "linux-i386", "android"),
+    [string[]]$Only = @("windows-x64", "windows-x86", "linux-x64", "linux-arm64", "linux-armhf", "linux-i386", "macos", "android"),
     [string]$WslDistro = "Ubuntu-24.04"
 )
 $ErrorActionPreference = "Stop"
@@ -52,6 +52,7 @@ function Build-Windows([string]$arch, [string]$buildDir, [string]$cmakeArch) {
 
     Copy-Item -Path $shaderCache -Destination "$stage\d3d11_shader_cache" -Recurse
     Copy-Item ci\release-readme.txt "$stage\README.txt"
+    Copy-Item LICENSE "$stage\LICENSE.txt"
     $zip = Join-Path $out "RogueSquadron64Recomp-windows-$arch-$Version.zip"
     Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
     Remove-Item -Recurse -Force $stage
@@ -81,6 +82,14 @@ foreach ($target in $Only) {
                 $wslOutDir = (wsl.exe -d $WslDistro -e wslpath -a ($out -replace '\\', '/')).Trim()
                 $script = "RS64_VERSION='$Version' " + 'bash "$(wslpath -a ''' + ($repo -replace '\\', '/') + ''')/tools/release/linux/cross-build.sh" ' + "$arch Release '$wslOutDir'"
                 Invoke-Checked $target { Invoke-Wsl $script }
+            }
+            "macos" {
+                $file = Join-Path $out "RogueSquadron64Recomp-macos-$Version.zip"
+                $wslOut = (wsl.exe -d $WslDistro -e wslpath -a ($file -replace '\\', '/')).Trim()
+                $script = 'set -e; cd "$(wslpath -a ''' + ($repo -replace '\\', '/') + ''')"; ' +
+                    'bash tools/release/macos/cross-build.sh arm64 Release; bash tools/release/macos/cross-build.sh x86_64 Release; ' +
+                    "bash tools/release/macos/package.sh '$wslOut' `"`$HOME/rs64-build-macos-arm64-release`" `"`$HOME/rs64-build-macos-x86_64-release`""
+                Invoke-Checked "macos" { Invoke-Wsl $script }
             }
             "android" {
                 Push-Location android

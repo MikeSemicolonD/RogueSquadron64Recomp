@@ -40,11 +40,12 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Linux arm64 / armhf](docs/guides/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
 | **[Linux x86 (32-bit)](docs/guides/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
 | **[Android 9+ arm64](#android-notes)** | Vulkan 1.1 |
-| **[*maybe* macOS 11+](#macos-notes)*** | Metal |
+| **[macOS 11+ arm64 (Apple Silicon)](#macos-notes)*** | Metal |
+| **[macOS 11+ x86_64 (Intel)](#macos-notes)*** | Metal |
 
 </div>
 
-*macOS is *compile-only* so far (see [macOS notes](#macos-notes))
+*macOS builds but hasn't been run on a Mac yet (see [macOS notes](#macos-notes))
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
 
@@ -368,9 +369,8 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 ### macOS notes
 
 > [!IMPORTANT]
-> **Currently doesn't support macOS**.
-> But steps have been taken to get as far as possible to support it by cross compiling using Linux.
-> An arm64 (Apple Silicon) 'Mach-O' builds and links for macOS 11+, but it hasn't been run/tested on a Mac.
+> **Untested on a Mac.** The release has a universal `RogueSquadron64Recomp.app` (Apple Silicon and Intel, macOS 11+) cross-built from Windows with compiled Metal shaders, but nobody has run it on a Mac yet.
+> It isn't notarized: run `xattr -dr com.apple.quarantine RogueSquadron64Recomp.app` once before opening it.
 
 On a Mac, the Linux / macOS commands above should apply (Xcode Command Line Tools + `brew install cmake ninja sdl2`)
 
@@ -387,11 +387,13 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
    ./build_compiler_rt.sh   # no need to run the install commands it prints
    ```
 
-3. Build the game with `tools/release/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp` for Debug, `~/rs64-build-macos-<arch>-<config>/` (lowercase, e.g. `-release`) otherwise.
+3. Install Apple's **Metal Developer Tools for Windows** (search "Metal Developer Tools" at [developer.apple.com/download/all](https://developer.apple.com/download/all/?q=Metal%20Developer%20Tools)). The script compiles the Metal shaders with it; without it the build links but can't render. A different install folder than `C:\Program Files\Metal Developer Tools` goes in `METAL_TOOLS_DIR` (the WSL path of its `bin` folder).
+   - **On native Linux** the tools run under Wine (`sudo apt install wine64`): copy the `Metal Developer Tools` folder from a Windows install and point `METAL_TOOLS_DIR` at its `bin` folder. Wine makes byte-identical metallibs, a few seconds per shader slower.
+4. Run a native Windows or Linux build first: the cross-build can't run its own build tools, so it reuses that build's generated `state_table.inl` and fixed-up audio ucode.
+5. Build the game with `tools/release/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp` for Debug, `~/rs64-build-macos-<arch>-<config>/` (lowercase, e.g. `-release`) otherwise.
+6. Package with `tools/release/macos/package.sh <out.zip> <arm64-build-dir> [x86_64-build-dir]`, or the `Package (macOS .app, WSL/osxcross)` VS Code task: two build dirs make a universal `.app`.
 
-- **Can't render when cross-built.** Metal shaders need `xcrun metal`, which exists only on macOS, so a cross-build embeds the MSL source (`RT64_METAL_COMPILE=OFF`) instead of compiled metallibs. A build meant to run has to be made on a Mac (or a macOS CI runner).
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
-- **Not yet done:** an `.app` bundle with SDL2 inside.
 
 ## Architecture
 

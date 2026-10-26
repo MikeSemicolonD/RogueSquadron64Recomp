@@ -7,6 +7,10 @@ Star Wars: Rogue Squadron (N64, USA v1.0) as a .z64 ROM.
 1. Put the ROM in this folder and name it rogue_squadron.z64.
 2. Run RogueSquadron64Recomp (Windows) or ./run.sh (Linux) from this folder.
    The game looks for the ROM in the working directory, not next to the executable.
+   macOS (untested): the app isn't notarized, so in Terminal run once, from this folder,
+   xattr -dr com.apple.quarantine RogueSquadron64Recomp.app
+   then open RogueSquadron64Recomp.app. It asks for the ROM on first launch and keeps saves,
+   settings and mods in ~/Library/Application Support/RogueSquadron64Recomp.
 
 The ROM is checked on load; other regions or revisions are rejected.
 

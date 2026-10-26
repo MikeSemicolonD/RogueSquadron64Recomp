@@ -534,7 +534,19 @@
                     "message": 5
                 }
             },
-            "detail": "Compile-only macOS cross-build via osxcross (~/osxcross/target). Builds host tools and SDL2 on first run, then configures + builds into ~/rs64-build-macos-<arch> (Release: ~/rs64-build-macos-<arch>-release). Metal shaders are embedded as MSL source (no xcrun off-Mac), so the binary links but cannot render."
+            "detail": "macOS cross-build via osxcross (~/osxcross/target). Builds host tools and SDL2 on first run, then configures + builds into ~/rs64-build-macos-<arch> (Release: ~/rs64-build-macos-<arch>-release). Metal shaders compile with Apple's Metal Developer Tools for Windows (C:\\Program Files\\Metal Developer Tools, or METAL_TOOLS_DIR); without them the binary links but cannot render."
+        },
+        {
+            "label": "Package (macOS .app, WSL/osxcross)",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "set -e; R=\"$(wslpath '${workspaceFolder}')\"; bash \"$R/tools/release/macos/cross-build.sh\" arm64 Release; bash \"$R/tools/release/macos/cross-build.sh\" x86_64 Release; mkdir -p \"$R/build/release\"; bash \"$R/tools/release/macos/package.sh\" \"$R/build/release/RogueSquadron64Recomp-macos.zip\" ~/rs64-build-macos-arm64-release ~/rs64-build-macos-x86_64-release"
+            ],
+            "problemMatcher": [],
+            "detail": "Release cross-builds for arm64 and x86_64, then one universal RogueSquadron64Recomp.app zipped with README.txt and LICENSE.txt into build/release/RogueSquadron64Recomp-macos.zip."
         },
         {
             "label": "Run (Linux/WSL, GPU via dzn)",
@@ -826,7 +838,7 @@
         {
             "id": "releaseTargets",
             "type": "promptString",
-            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, android",
+            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, macos, android",
             "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386"
         },
         {

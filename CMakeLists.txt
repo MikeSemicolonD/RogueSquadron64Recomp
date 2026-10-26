@@ -219,8 +219,8 @@ target_include_directories(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,
 # Graphics are HLE through RT64; only the audio RSP ucodes (shared boot + MusyX synth, from rsp/*.toml) are recompiled.
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
 set(MUSYX_AUDIO_C   ${CMAKE_SOURCE_DIR}/build/factor5_ucode/musyx_audio_recompiled.c)
-# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android reuses the host-fixed files.
-if (ANDROID)
+# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android and the macOS cross-build reuse the host-fixed files.
+if (ANDROID OR (APPLE AND CMAKE_CROSSCOMPILING))
     foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
         file(READ ${ucode_c} ucode_text)
         string(FIND "${ucode_text}" "/* fixup:" ucode_fixed)
@@ -298,7 +298,7 @@ else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
-if (NOT ANDROID)
+if (TARGET ucode_fixup)
     add_dependencies(RogueSquadron64Recomp ucode_fixup)
 endif()
 if (MSVC)

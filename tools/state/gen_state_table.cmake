@@ -1,7 +1,8 @@
 # Generate the game-state table header from the canonical descriptor (state_model.toml). Needs tomlplusplus::tomlplusplus.
 get_filename_component(STATE_TABLE_ROOT ${CMAKE_CURRENT_LIST_DIR}/../.. ABSOLUTE)
 set(STATE_TABLE_INL ${STATE_TABLE_ROOT}/src/game/state_table.inl)
-if (ANDROID)
+# Android and the macOS cross-build can't run a target-built tool; they use the host build's state_table.inl.
+if (ANDROID OR (APPLE AND CMAKE_CROSSCOMPILING))
     add_custom_target(gen_state_table)
 else()
     add_executable(gen_state_table_tool ${STATE_TABLE_ROOT}/tools/state/gen_state_table.cpp)

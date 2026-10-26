@@ -7,8 +7,10 @@ This page is for the maintainer who runs the release pipeline. [.github/workflow
 | Windows x64 zip | Windows runner |
 | Windows x86 (32-bit) zip | Windows runner, from the same recompiled code |
 | Linux package (needs glibc 2.38+, e.g. Ubuntu 24.04) | Linux runner (Docker) |
+| macOS zip: one universal `.app`, arm64 + x86_64 (untested on a Mac) | Windows runner, cross-built in WSL from the same recompiled code |
+| Android arm64 APK | Windows runner, Gradle, from the same recompiled code |
 
-Android isn't built by this workflow (see [building-all-platforms.md](../guides/building-all-platforms.md)), and macOS isn't covered yet.
+Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/release-readme.txt)) and the repo's `LICENSE` as `LICENSE.txt`; the APK is a single file.
 
 ## Making a release
 
@@ -60,6 +62,8 @@ Windows containers would need Hyper-V isolation and a multi-GB image with the Vi
    - `RS64_ELF=E:\Projects\rogue_squadron64\build\roguesquadron.elf` (the live decomp build, so symbol renames reach CI)
    - `RS64_UCODE_DIR=E:\Projects\RogueSquadron64Recomp\build\factor5_ucode`
 4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides the `E:/mips-toolchain` default for both the code mods and the game's patches ELF.
+5. For the macOS package: the account's default WSL distro needs the osxcross setup from the README's macOS notes (`~/osxcross`, `cmake`, `ninja`, `zip`, `mips-linux-gnu-gcc`), and Windows needs Apple's Metal Developer Tools for Windows in `C:\Program Files\Metal Developer Tools`. The job builds a Linux N64Recomp into `~/rs64-ci-tools`, then runs `tools/release/macos/cross-build.sh` for arm64 and x86_64 (Release, into `~/rs64-ci-macos-<arch>`) and merges them with `tools/release/macos/package.sh`.
+6. For the APK: Android Studio's SDK with NDK 29.0.14206865, found through the account's `ANDROID_HOME` (a CI checkout has no `local.properties`). `gradlew assembleRelease` gets the Release host tools through `-Prs64FileToC`, `-Prs64N64Recomp`, `-Prs64RecompModTool` and `-Prs64MipsDir`, and signs with the account's `~/.android/debug.keystore`, the same key as local builds, so CI APKs install over them.
 
 ## What each job does
 
