@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rogue Squadron 64 Recompiled</title>
+<meta name="description" content="A native PC port of Star Wars: Rogue Squadron (N64), built with N64Recomp and RT64. Bring your own 1.0 US ROM.">
+<meta property="og:title" content="Star Wars: Rogue Squadron 64 Recompiled">
+<meta property="og:description" content="Native port built with N64Recomp + RT64. Bring your own 1.0 US ROM.">
+<meta property="og:image" content="https://mikesemicolond.github.io/RogueSquadron64Recomp/docs/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.ico">
+<style>
+/* Self-hosted (OFL, licenses beside the files) so visitors' IPs aren't sent to Google. Latin subset only. */
+@font-face { font-family: Rajdhani; font-weight: 700; font-display: swap; src: url("tools/web/fonts/rajdhani-700-latin.woff2") format("woff2"); }
+@font-face { font-family: Inter; font-weight: 100 900; font-display: swap; src: url("tools/web/fonts/inter-latin.woff2") format("woff2"); }
+
+:root {
+  --gold-hi: #fff2a8;
+  --gold: #f5c542;
+  --gold-lo: #c8790f;
+  --ink: #f4ede4;
+  --muted: #d9c7b0;
+  --night: #120804;
+}
+
+* { box-sizing: border-box; }
+
+html { background: var(--night); scroll-behavior: smooth; }
+
+:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 3px; }
+
+section, .hero { scroll-margin-top: 52px; }
+
+.tabs {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 16px;
+  overflow-x: auto;
+  background: rgba(18, 8, 4, .8);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(245, 197, 66, .25);
+}
+
+.tabs a {
+  flex: none;
+  padding: 6px 14px;
+  border-radius: 4px;
+  color: var(--muted);
+  font: 700 16px Rajdhani, sans-serif;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+/* Underline is a background stripe: an inset box-shadow on a rounded box leaks specks at the top corners. */
+.tabs a {
+  --line: rgba(245, 197, 66, .5);
+  background: linear-gradient(var(--line), var(--line)) center bottom / 0 2px no-repeat;
+  transition: color .2s, background-size .25s;
+}
+
+.tabs a:hover { color: var(--ink); background-size: 100% 2px; }
+
+.tabs a[aria-current] { --line: var(--gold); color: var(--gold); background-size: 100% 2px; }
+
+@media (max-width: 480px) {
+  .tabs { justify-content: flex-start; padding: 6px 8px; }
+  .tabs a { padding: 6px 10px; font-size: 14px; letter-spacing: .08em; }
+  .hero { min-height: 80svh; }
+  .kicker, .sub { letter-spacing: .3em; margin-right: -.3em; }
+  .subrow { gap: 12px; }
+  main { padding-top: 32px; }
+  .download { font-size: 26px; padding: 16px 36px; }
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font: 16px/1.5 Inter, system-ui, sans-serif;
+  background:
+    radial-gradient(120% 80% at 75% 20%, #e0731c 0%, #a3400e 35%, #4a1906 70%, var(--night) 100%);
+  background-attachment: fixed;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 88vh;
+  padding: 48px 16px;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(90deg, rgba(18, 8, 4, .92) 10%, rgba(18, 8, 4, .2) 65%);
+  -webkit-mask-image: linear-gradient(180deg, #000 55%, transparent);
+  mask-image: linear-gradient(180deg, #000 55%, transparent);
+}
+
+/* The mask sits on a wrapper that doesn't zoom, so the image's bottom always melts into the page. */
+.hero > .bgs {
+  --show: 8s;
+  --fade: 1.6s;
+  position: absolute;
+  inset: 0;
+  width: auto;
+  z-index: -2;
+  -webkit-mask-image: linear-gradient(180deg, #000 40%, transparent 92%);
+  mask-image: linear-gradient(180deg, #000 40%, transparent 92%);
+}
+
+/* Two oversized layers cross-fade through the screenshots, so no image edge ever shows. */
+.bgs .bg {
+  position: absolute;
+  inset: -12%;
+  background: center 40% / cover no-repeat;
+  opacity: 0;
+  transition: opacity var(--fade) ease-in-out;
+  /* Pans for the whole time it is visible: on screen, then fading out. */
+  animation: hero-pan calc(var(--show) + var(--fade)) linear forwards;
+}
+
+.bgs .bg.on { opacity: 1; }
+
+.bgs .bg.rev { animation-name: hero-pan-rev; }
+
+@keyframes hero-pan {
+  from { transform: scale(1.08) translate(3%, 2%); }
+  to { transform: scale(1.22) translate(-4%, -2%); }
+}
+
+@keyframes hero-pan-rev {
+  from { transform: scale(1.22) translate(-3%, 1%); }
+  to { transform: scale(1.08) translate(3%, -1%); }
+}
+
+@keyframes pan {
+  from { transform: scale(1.08) translate(1.5%, 1%); }
+  to { transform: scale(1.22) translate(-2.5%, -1.5%); }
+}
+
+/* Screen-edge vignette. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .55) 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bgs .bg, .shots img, .download, .download::after { animation: none; }
+  * { transition: none !important; }
+}
+
+@media (min-width: 900px) {
+  .hero { align-items: flex-start; padding-left: 8vw; }
+  .hero > * { width: 640px; }
+  .subrow { justify-content: center; }
+  .actions { justify-content: center; }
+
+  .hero > .download {
+    position: absolute;
+    right: 12vw;
+    top: 58%;
+    width: auto;
+    margin: 0;
+  }
+}
+
+.kicker, .sub {
+  font-family: Rajdhani, sans-serif;
+  font-weight: 700;
+  letter-spacing: .45em;
+  margin: 0;
+}
+
+.kicker { font-size: clamp(18px, 3vw, 28px); margin-right: -.45em; }
+
+h1 {
+  margin: 4px 0;
+  font: 700 clamp(56px, 12vw, 120px)/.9 Rajdhani, sans-serif;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 45%, var(--gold-lo) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 4px 0 #3a1a02) drop-shadow(0 0 24px rgba(245, 160, 40, .45));
+}
+
+.subrow {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin: 8px 0 28px;
+}
+
+.subrow::before, .subrow::after {
+  content: "";
+  width: clamp(40px, 10vw, 100px);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold));
+}
+
+.subrow::after { transform: scaleX(-1); }
+
+.sub { font-size: clamp(20px, 3.4vw, 32px); margin-right: -.45em; }
+
+.sub b { color: var(--gold); }
+
+.tag { margin: 0; font-weight: 600; font-size: 18px; }
+
+.rom { margin: 4px 0 32px; color: var(--gold); font-weight: 600; }
+
+/* Below the download button when stacked; on wide screens the button is pulled out to the right. */
+.actions {
+  order: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 22px;
+  border: 2px solid var(--gold);
+  border-radius: 4px;
+  color: var(--ink);
+  background: rgba(18, 8, 4, .55);
+  font: 700 18px Rajdhani, sans-serif;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .45);
+  transition: transform .2s, box-shadow .2s, background-color .2s;
+}
+
+.btn:hover, .btn:focus-visible {
+  background-color: rgba(245, 197, 66, .18);
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .5), 0 0 18px rgba(245, 197, 66, .35);
+}
+
+.btn.primary {
+  color: #2a1402;
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 50%, var(--gold-lo));
+}
+
+.btn[hidden] { display: none; }
+
+.download {
+  position: relative;
+  overflow: hidden;
+  margin: 4px 0 24px;
+  padding: 18px 56px;
+  font-size: 34px;
+  letter-spacing: .2em;
+  border-color: var(--gold-hi);
+  animation: glow 2.4s ease-in-out infinite;
+}
+
+/* Light sweep across the face. */
+.download::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .55) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: sweep 3.2s ease-in-out infinite;
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 0 18px rgba(245, 197, 66, .35); }
+  50% { box-shadow: 0 10px 30px rgba(0, 0, 0, .55), 0 0 44px rgba(255, 210, 90, .8); }
+}
+
+@keyframes sweep {
+  0%, 55% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 48px 16px 64px;
+}
+
+h2 {
+  font: 700 28px Rajdhani, sans-serif;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 0 0 16px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+.card {
+  display: block;
+  padding: 20px;
+  border: 1px solid rgba(245, 197, 66, .35);
+  border-radius: 6px;
+  background: rgba(18, 8, 4, .6);
+  color: var(--ink);
+  text-decoration: none;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .5);
+  transition: transform .25s, box-shadow .25s, border-color .25s;
+}
+
+a.card:hover, a.card:focus-visible {
+  border-color: var(--gold);
+  transform: translateY(-4px);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, .6), 0 0 22px rgba(245, 197, 66, .25);
+}
+
+/* Points up-right: the tools open in a new tab. */
+a.card h3::after {
+  content: "\2197";
+  display: inline-block;
+  margin-left: .3em;
+  color: var(--gold);
+  transition: transform .25s;
+}
+
+a.card:hover h3::after, a.card:focus-visible h3::after { transform: translate(4px, -4px); }
+
+/* At most 3 columns (2 gaps of 16px); fewer when a column would drop under 240px. */
+.features { grid-template-columns: repeat(auto-fit, minmax(max(240px, calc((100% - 32px) / 3)), 1fr)); }
+
+.features .card { padding: 16px 18px; }
+
+.features h3 { font-size: 19px; color: var(--gold-hi); }
+
+.pill {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1px solid var(--gold);
+  border-radius: 999px;
+  font: 600 11px Inter, sans-serif;
+  letter-spacing: .04em;
+  color: var(--gold);
+  vertical-align: middle;
+}
+
+.card h3 {
+  margin: 0 0 6px;
+  font: 700 22px Rajdhani, sans-serif;
+  letter-spacing: .08em;
+}
+
+.card p { margin: 0; color: var(--muted); }
+
+.shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 45%), 1fr));
+  gap: 8px;
+}
+
+.shots button {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 4px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .5);
+  transition: transform .25s, box-shadow .25s;
+}
+
+.shots button:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .6), 0 0 0 2px var(--gold);
+}
+
+.shots img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  animation: pan 24s ease-in-out infinite alternate;
+}
+
+.shots button:nth-child(even) img { animation-direction: alternate-reverse; }
+
+.shots button:nth-child(3n) img { animation-duration: 19s; }
+
+/* The dialog's own background is the dimmer, so it can fade with the image; ::backdrop can't be animated. */
+.lightbox {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(0, 0, 0, .9);
+  cursor: zoom-out;
+  overflow: hidden;
+}
+
+.lightbox[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lightbox::backdrop { background: none; }
+
+/* Sized to the picture itself, so its box is exactly what flies in from the thumbnail. */
+.lightbox img {
+  display: block;
+  max-width: 100vw;
+  max-height: 100vh;
+  transform-origin: 0 0;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .7);
+}
+
+footer {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 16px 40px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+footer a { color: var(--gold); }
+
+.credits {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 8px 24px;
+  margin: 0 0 32px;
+  padding-left: 18px;
+  font-size: 15px;
+}
+
+.credits li::marker { color: var(--gold); }
+
+.fine {
+  padding-top: 20px;
+  border-top: 1px solid rgba(245, 197, 66, .2);
+  text-align: center;
+  font-size: 13px;
+}
+</style>
+</head>
+<body>
+<nav class="tabs" aria-label="Sections">
+  <a href="#home" aria-current="true">Home</a>
+  <a href="#features">Features</a>
+  <a href="#tools">Web tools</a>
+  <a href="#screenshots">Screenshots</a>
+  <a href="#credits">Credits</a>
+  <a href="https://github.com/MikeSemicolonD/RogueSquadron64Recomp">GitHub</a>
+</nav>
+
+<header class="hero" id="home">
+  <div class="bgs">
+    <div class="bg on" style="background-image: url('screenshots/Capture7.png')"></div>
+    <div class="bg"></div>
+  </div>
+  <p class="kicker">STAR WARS</p>
+  <h1>Rogue<br>Squadron</h1>
+  <div class="subrow"><p class="sub"><b>64</b> RECOMP</p></div>
+  <p class="tag">Native port &middot; N64Recomp + RT64</p>
+  <p class="rom">Bring your own 1.0 US ROM</p>
+  <nav class="actions">
+    <a class="btn" href="https://github.com/MikeSemicolonD/RogueSquadron64Recomp">GitHub</a>
+  </nav>
+  <!-- Remove hidden once the first release is out. -->
+  <a class="btn primary download" href="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/releases/latest" hidden>Download</a>
+</header>
+
+<main>
+  <section id="features">
+  <h2>Features</h2>
+  <div class="cards features">
+    <div class="card">
+      <h3>Widescreen &amp; HD</h3>
+      <p>Any resolution with widescreen. Using frame interpolation to match your monitor's refresh rate.</p>
+    </div>
+    <div class="card">
+      <h3>Draw distance</h3>
+      <p>Up to 2.5x the draw distance.</p>
+    </div>
+    <div class="card">
+      <h3>Controls</h3>
+      <p>Mouse, gamepad, H.O.T.A.S. or touch controls via virtual buttons/joystick.</p>
+    </div>
+    <div class="card">
+      <h3>Platforms</h3>
+      <p>Windows, Linux and Android.</p>
+    </div>
+    <div class="card">
+      <h3>Ray tracing <span class="pill">Experimental</span></h3>
+      <p>Laser light, real shadows and reflections, sunbeams through the fog.</p>
+    </div>
+    <div class="card">
+      <h3>Multiplayer Co-op <span class="pill">Experimental</span></h3>
+      <p>Online co-op. Same mission, shared victory.</p>
+    </div>
+  </div>
+  </section>
+
+  <section id="tools">
+  <h2>Web tools</h2>
+  <div class="cards">
+    <a class="card" href="tools/web/rs64-explorer/" target="_blank" rel="noopener">
+      <h3>RS64 Explorer</h3>
+      <p>Browse the ROM's models, levels, cutscenes, audio and fonts in the browser, and build mods from them.</p>
+    </a>
+    <a class="card" href="tools/web/save-editor/rs64_save_editor.html" target="_blank" rel="noopener">
+      <h3>Save Editor</h3>
+      <p>Open a recomp save or cart EEPROM dump, edit pilots, medals and unlocks, and export it back.</p>
+    </a>
+  </div>
+  </section>
+
+  <section id="screenshots">
+  <h2>Screenshots</h2>
+  <div class="shots">
+    <button type="button"><img src="screenshots/Capture1.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture2.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture4.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture5.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture6.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture8.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+  </div>
+  </section>
+</main>
+
+<dialog class="lightbox" aria-label="Screenshot"><img alt="Rogue Squadron recomp screenshot"></dialog>
+
+<footer id="credits">
+  <h2>Credits</h2>
+  <ul class="credits">
+    <li><a href="https://github.com/Tmcg2/rogue_squadron64">Tmcg2</a>: the companion decomp project</li>
+    <li><a href="https://github.com/terminalcommand">terminalcommand</a>: Wayland fixes</li>
+    <li><a href="https://github.com/dpethes/rerogue">Dávid Pethes</a>: rerogue and the <a href="https://satd.sk/pages/rs/">PC format write-up</a></li>
+    <li><a href="https://github.com/jrra/rerogue">jrra</a>: a community fork of rerogue</li>
+    <li><a href="https://github.com/N64Recomp/N64Recomp">N64Recomp</a> and <a href="https://github.com/N64Recomp/N64ModernRuntime">N64ModernRuntime</a>: the static recompiler and the runtime it runs on, <a href="https://github.com/MikeSemicolonD/N64ModernRuntime">forked</a> with both in one repo</li>
+    <li><a href="https://github.com/rt64/rt64">RT64</a>: the renderer, <a href="https://github.com/MikeSemicolonD/rt64">forked</a> to read Factor 5's display lists</li>
+    <li><a href="https://www.deviantart.com/thedoctor45/art/Star-Wars-Rogue-Squadron-3D-Custom-Icon-535469296">thedoctor45</a>: the icon</li>
+  </ul>
+  <p class="fine">Heavily AI-assisted: most of the debugging, design and code was produced with Claude.<br>
+  Star Wars and Rogue Squadron are trademarks of Lucasfilm Ltd. This is an unofficial fan project, not affiliated with or endorsed by Nintendo, Disney, Lucasfilm or Factor 5.<br>
+  No ROM data or game assets are hosted here or shipped in releases; you need your own legally obtained copy of the game. Code under <a href="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/LICENSE">GPL-3.0</a>.</p>
+</footer>
+
+<script>
+// Marks the tab of the section in view.
+const tabs = [...document.querySelectorAll('.tabs a[href^="#"]')];
+const seen = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    for (const t of tabs) t.hash === '#' + e.target.id ? t.setAttribute('aria-current', 'true') : t.removeAttribute('aria-current');
+  }
+}, { rootMargin: '-45% 0px -50% 0px' });
+for (const t of tabs) seen.observe(document.querySelector(t.hash));
+
+// Click a screenshot to view it full screen; arrows step through, any click or Esc closes.
+// Header background cycles from the one it opens on through the grid's screenshots. Each swap
+// happens --show after the previous one; the next image preloads meanwhile so the swap is never late.
+const layers = document.querySelectorAll('.bgs .bg');
+const urls = ['screenshots/Capture7.png', ...[...document.querySelectorAll('.shots img')].map(img => img.getAttribute('src'))];
+const showMs = parseFloat(getComputedStyle(document.querySelector('.bgs')).getPropertyValue('--show')) * 1000;
+let bgAt = 0;
+let front = 0;
+let shownAt = performance.now();
+
+const queueNext = () => {
+
+  const url = urls[bgAt = (bgAt + 1) % urls.length];
+  const next = new Image();
+
+  next.onload = () => setTimeout(() => {
+
+    const [cur, nxt] = [layers[front], layers[front ^= 1]];
+
+    nxt.style.backgroundImage = `url('${url}')`;
+    nxt.classList.toggle('rev', bgAt % 2 === 1);
+    nxt.style.animation = 'none';
+    nxt.offsetWidth;
+    nxt.style.animation = '';
+    nxt.classList.add('on');
+    cur.classList.remove('on');
+    shownAt = performance.now();
+    queueNext();
+  }, Math.max(0, showMs - (performance.now() - shownAt)));
+  next.src = url;
+};
+
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  queueNext();
+}
+
+// The full-size image flies out of its thumbnail and back into it on close.
+const box = document.querySelector('.lightbox');
+const big = box.firstChild;
+const shots = [...document.querySelectorAll('.shots img')];
+const motion = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 1;
+const ease = 'cubic-bezier(.2, .8, .2, 1)';
+let shown = 0;
+let closing = null;
+
+// Transform that lays the full image exactly over thumbnail i.
+const fromThumb = i => {
+
+  const t = shots[i].parentElement.getBoundingClientRect();
+
+  // Offsets ignore transforms, so this holds even when closing mid-flight.
+  return `translate(${t.left - big.offsetLeft}px, ${t.top - big.offsetTop}px) scale(${t.width / big.offsetWidth}, ${t.height / big.offsetHeight})`;
+};
+
+const fly = (i, opening) => {
+
+  const frames = [{ transform: fromThumb(i), borderRadius: '24px' }, { transform: 'none', borderRadius: '0' }];
+  const dim = [{ backgroundColor: 'rgba(0, 0, 0, 0)' }, { backgroundColor: 'rgba(0, 0, 0, .9)' }];
+
+  // Not a reversed open: that would start slow and snap shut at the end.
+  if (!opening) {
+    frames.reverse();
+    dim.reverse();
+  }
+
+  const timing = opening ? { duration: 420 * motion, easing: ease, fill: 'both' } : { duration: 320 * motion, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'both' };
+
+  box.animate(dim, timing);
+  return big.animate(frames, timing).finished;
+};
+
+const setThumbHidden = (i, hidden) => shots[i].parentElement.style.visibility = hidden ? 'hidden' : '';
+
+const open = async i => {
+
+  shown = i;
+  big.src = shots[i].src;
+  await big.decode().catch(() => {});
+  box.showModal();
+  setThumbHidden(i, true);
+  await fly(i, true);
+};
+
+const close = () => closing ??= fly(shown, false).then(() => {
+
+  box.close();
+  setThumbHidden(shown, false);
+  big.getAnimations().forEach(a => a.cancel());
+  box.getAnimations().forEach(a => a.cancel());
+  closing = null;
+});
+
+// Arrow keys: the new picture slides in from the side it comes from.
+const step = dir => {
+
+  setThumbHidden(shown, false);
+  shown = (shown + dir + shots.length) % shots.length;
+  setThumbHidden(shown, true);
+  big.src = shots[shown].src;
+  big.animate([{ opacity: 0, transform: `translateX(${dir * 60}px)` }, { opacity: 1, transform: 'none' }], { duration: 260 * motion, easing: ease });
+};
+
+shots.forEach((img, i) => img.parentElement.addEventListener('click', () => open(i)));
+box.addEventListener('click', close);
+box.addEventListener('cancel', e => {
+  e.preventDefault();
+  close();
+});
+box.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') step(1);
+  if (e.key === 'ArrowLeft') step(-1);
+});
+</script>
+</body>
+</html>
