@@ -1,0 +1,4 @@
+{
+  "actions": [ { "do": "demo_log", "label": "Log a line (native demo)", "params": [ { "key": "text", "picker": "text" } ] } ],
+  "events": [ { "custom": "demo.ping", "label": "The native demo pinged" } ]
+}
