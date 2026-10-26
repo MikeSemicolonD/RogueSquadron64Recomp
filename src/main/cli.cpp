@@ -19,7 +19,7 @@ static void set_env(const char* name, const char* value) {
 
 // User-facing runtime flags. Each maps a --flag to a ROGUESQ_* env var that the
 // getenv-based knobs elsewhere read. The full debug/trace catalog stays env-only
-// (docs/debug-trace-env-vars.md); reach any of those with --set NAME=VALUE.
+// (docs/engine/debug-trace-env-vars.md); reach any of those with --set NAME=VALUE.
 struct CliFlag {
     const char* flag;   // long name without leading "--"
     const char* env;    // target ROGUESQ_* variable
@@ -45,7 +45,8 @@ static const CliFlag kCliFlags[] = {
     {"maximized",        "ROGUESQ_MAXIMIZED",        CliFlag::Bool,  "1", "0", "start with the window maximized"},
     {"unfocused",        "ROGUESQ_UNFOCUSED",        CliFlag::Bool,  "1", "0", "show the window without taking focus (test runs)"},
     {"fullscreen",       "ROGUESQ_FULLSCREEN",       CliFlag::Bool,  "1", "0", "start in borderless fullscreen (Alt+Enter toggles)"},
-    {"window-size",      "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
+    {"language",         "ROGUESQ_LANGUAGE",         CliFlag::Value, "",  "",  "game text language for this run: en | de | fr or a language mod's code (the saved setting is unchanged)"},
+    {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
     {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
@@ -75,7 +76,7 @@ static void print_cli_usage()
     fprintf(stderr, "  -v, --version              print the version and exit\n");
     fprintf(stderr,
         "\nEvery option maps to a ROGUESQ_* environment variable; NAME=VALUE (bare) works too.\n"
-        "Full debug/trace variable list: docs/debug-trace-env-vars.md\n");
+        "Full debug/trace variable list: docs/engine/debug-trace-env-vars.md\n");
 }
 
 // Translate argv into the ROGUESQ_* env vars the rest of main reads. Returns an

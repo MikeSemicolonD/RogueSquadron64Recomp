@@ -17,12 +17,14 @@ def sdlVersion = '2.32.10'
 def sdlArchive = layout.buildDirectory.file("sdl/SDL2-${sdlVersion}.tar.gz")
 def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
 
-// Host-built file_to_c from the Windows build; RT64 needs it to embed its SPIR-V shaders when cross-compiling.
-def hostFileToC = rootProject.file("../build/Debug/file_to_c.exe").absolutePath
-// Host-built N64Recomp from the Windows build; the patches ELF is recompiled with it (MIPS GCC comes from MIPS_TOOLCHAIN_DIR's default).
-def hostN64Recomp = rootProject.file("../build/Debug/N64Recomp.exe").absolutePath
-// Host-built RecompModTool, which writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
-def hostRecompModTool = rootProject.file("../build/Debug/RecompModTool.exe").absolutePath
+// Host tools come from the Windows Debug build unless -Prs64FileToC / -Prs64N64Recomp / -Prs64RecompModTool name them (release CI builds Release).
+// file_to_c embeds RT64's SPIR-V shaders when cross-compiling.
+def hostFileToC = findProperty('rs64FileToC') ?: rootProject.file("../build/Debug/file_to_c.exe").absolutePath
+// N64Recomp recompiles the patches ELF (MIPS GCC from MIPS_TOOLCHAIN_DIR's default, or -Prs64MipsDir).
+def hostN64Recomp = findProperty('rs64N64Recomp') ?: rootProject.file("../build/Debug/N64Recomp.exe").absolutePath
+// RecompModTool writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
+def hostRecompModTool = findProperty('rs64RecompModTool') ?: rootProject.file("../build/Debug/RecompModTool.exe").absolutePath
+def mipsDirArgs = findProperty('rs64MipsDir') ? ["-DMIPS_TOOLCHAIN_DIR=${findProperty('rs64MipsDir')}"] : []
 
 // Task actions must not touch `project` at execution time (Gradle 9), so file ops come from injected services.
 interface FileOps {
@@ -125,7 +127,7 @@ android {
         externalNativeBuild {
             cmake {
                 // Multiplayer ships as the multiplayer-native mod, as on desktop: libmultiplayer_native.so is packed with the game's libraries.
-                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}"
+                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs
                 targets 'RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'
             }
         }

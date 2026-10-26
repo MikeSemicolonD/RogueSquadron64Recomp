@@ -150,7 +150,9 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 5 && RS64_HOST_API_VERSION == 5);
+    CHECK(a->version == 7 && RS64_HOST_API_VERSION == 7);
+    CHECK(a->terrain_get_cell == terrain_get_cell && a->terrain_set_cell == terrain_set_cell);
+    CHECK(a->add_rule_action == add_rule_action && a->fire_rule_event == fire_rule_event);
     CHECK(a->add_service == add_service && a->get_service == get_service);
     CHECK(a->add_action == add_action && a->add_condition == add_condition && a->add_key_handler == add_key_handler && a->add_quit_handler == add_quit_handler);
     CHECK(a->cutscene_skips() == 0u && a->screen_keyboard_shown() == -1 && a->any_key_held() == 0 && std::strcmp(a->base_path(), "") == 0);
@@ -187,7 +189,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && !accept_mod_init(0, 6));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && !accept_mod_init(0, 8));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }
@@ -353,6 +355,32 @@ static void test_moved_ranges() {
     CHECK(moved_ranges().empty());
 }
 
+static std::string g_rule_seen;
+static void r_record(uint8_t*, void*, const char* const* keys, const char* const* values, int count, void* user) {
+    g_rule_seen = (const char*)user;
+    for (int i = 0; i < count; i++) g_rule_seen += std::string(" ") + keys[i] + "=" + values[i];
+}
+
+static void test_rule_actions_and_events() {
+    reset_for_tests();
+    CHECK(api()->add_rule_action("shake", r_record, (void*)"shake") == 0);
+    CHECK(add_rule_action("shake", r_record, (void*)"again") != 0 && add_rule_action(nullptr, r_record, nullptr) != 0 && add_rule_action("x", nullptr, nullptr) != 0);
+    const char* keys[] = { "seconds", "power" };
+    const char* values[] = { "2", "high" };
+    CHECK(run_rule_action("shake", nullptr, nullptr, keys, values, 2));
+    CHECK(g_rule_seen == "shake seconds=2 power=high");
+    CHECK(!run_rule_action("missing", nullptr, nullptr, keys, values, 2));
+    CHECK(api()->fire_rule_event("tripped", "bridge") == 0 && fire_rule_event(nullptr, "x") != 0);
+    const auto events = take_rule_events();
+    CHECK(events.size() == 1 && events[0].first == "tripped" && events[0].second == "bridge" && take_rule_events().empty());
+    const Mark m = mark();
+    add_rule_action("drop", r_record, nullptr);
+    rollback(m);
+    CHECK(!run_rule_action("drop", nullptr, nullptr, nullptr, nullptr, 0) && run_rule_action("shake", nullptr, nullptr, nullptr, nullptr, 0));
+    seal();
+    CHECK(add_rule_action("late", r_record, nullptr) != 0 && fire_rule_event("late", "") == 0);
+}
+
 int main() {
 #ifdef _WIN32
     _set_error_mode(_OUT_TO_STDERR);
@@ -376,6 +404,7 @@ int main() {
     test_services();
     test_hash_parts_and_valid_ram();
     test_moved_ranges();
+    test_rule_actions_and_events();
     printf("host_api_test OK\n");
     return 0;
 }

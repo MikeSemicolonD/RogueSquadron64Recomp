@@ -74,8 +74,8 @@ echo 0xNNNNNN | "C:/Program Files/LLVM/bin/llvm-symbolizer.exe" \
 the PDB. Do this for EVERY distinct `av_rva` in the run (`grep -oE "av_rva=0x[0-9A-Fa-f]+" | sort -u`).
 
 ### Hang dumps (game "Not Responding")
-- `pwsh tools/dump-game.ps1` captures the running process (works when the window is starved and F12
-  can't fire). `python tools/inspect-dump.py` lists threads and tags the 2-4 `in_exe` ones worth opening
+- `pwsh tools/debug/dump-game.ps1` captures the running process (works when the window is starved and F12
+  can't fire). `python tools/debug/inspect-dump.py` lists threads and tags the 2-4 `in_exe` ones worth opening
   in Visual Studio (File > Open > .dmp > Debug Native). `cdb.exe` is broken on this machine — use VS
   interactively or the `minidump` python package via inspect-dump.py; do not try to drive cdb.
 - Crash dumps land in `dumps/crash-dumps/crash_*.dmp` (SEH handler / SIGABRT / F12 / dump-game.ps1).
@@ -120,8 +120,8 @@ Dump the parser-visible RDRAM at a chosen moment, then walk the display list off
 ROGUESQ_DUMP_RDRAM_AT_VI=<n>  ROGUESQ_DUMP_RDRAM_PATH=dumps/foo.bin      # by present/VI count
 #   other triggers: ROGUESQ_DUMP_RDRAM_ON_CINE_ITER=<n>, ON_SCENE=<id>, ON_SCREEN=<n|menu>, ON_CINE_STALL=<ms>
 # Then walk it (auto-resolves the DL start from the task pointer W(0x377C8+0x30)):
-python tools/validate/f5_dl_walk.py dumps/foo.bin --tex          # per-face UV + material summary
-python tools/validate/f5_dl_walk.py dumps/foo.bin --json         # normalized records for dl_diff.py
+python tools/debug/validate/f5_dl_walk.py dumps/foo.bin --tex          # per-face UV + material summary
+python tools/debug/validate/f5_dl_walk.py dumps/foo.bin --json         # normalized records for dl_diff.py
 ```
 `--tex` prints, per bound texture: `timg fmt siz tile WxH cms/cmt mask faces` and the UV range. Face
 count + `end=clean/unknown` tells you the DL is structurally healthy. The `[vi] ... screen=N` log line
@@ -163,14 +163,14 @@ CI4 rows of SRC vs the loaded TMEM. Use it to answer, with hard state:
 ### 5. PJ64 golden diffs (the strongest oracle)
 Capture a Project64 golden at a game-state LANDMARK (not a frame number — the VI loop is not
 bit-deterministic) and diff:
-- `tools/validate/capture_pj64_golden.ps1` / `capture_menu_rdram.ps1` — scripted goldens.
-- `tools/validate/rdram_golden_diff.py` — RDRAM diff vs PJ64.
-- `tools/validate/dl_diff.py` — layer-by-layer DL diff (pair with `f5_dl_walk.py --json` both sides).
-- `tools/validate/checkpoint.ps1` — one-command capture+diff.
+- `tools/debug/validate/capture_pj64_golden.ps1` / `capture_menu_rdram.ps1` — scripted goldens.
+- `tools/debug/validate/rdram_golden_diff.py` — RDRAM diff vs PJ64.
+- `tools/debug/validate/dl_diff.py` — layer-by-layer DL diff (pair with `f5_dl_walk.py --json` both sides).
+- `tools/debug/validate/checkpoint.ps1` — one-command capture+diff.
 See `f5-dl-validate` for the full parser/DL/RDRAM-layer method and the landmark-not-timing rule.
 
 ### 6. Audio (perception-free)
-`tools/validate/audio_cmd_walk.py` + `audio_diff.py` walk and diff the MusyX voice-command stream; a
+`tools/debug/validate/audio_cmd_walk.py` + `audio_diff.py` walk and diff the MusyX voice-command stream; a
 cinematic golden is an active-voice oracle. `ROGUESQ_DUMP_PCM=<wav>` drives
 offline capture. You never have to listen.
 

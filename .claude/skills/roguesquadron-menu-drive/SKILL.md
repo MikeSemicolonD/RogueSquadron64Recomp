@@ -1,6 +1,6 @@
 ---
 name: roguesquadron-menu-drive
-description: Drive RogueSquadron64Recomp through its boot cinematic and front-end MENUS with scripted keyboard input to reach an interactive state the env-var demo shortcuts cannot — profile (pilot) creation, SELECT GAME, ENTER NAME, SELECT LEVEL, AVAILABLE CRAFT, the hangar, or actual in-mission gameplay — and then observe it with a window screenshot plus the ROGUESQ_LOG_GAMESTATE log. Use whenever a bug is reproduced only by navigating the real menus (e.g. "the hangar is black", "crash after selecting a mission", "ship select does X"), when a screenshot of a specific menu/hangar/mission screen is needed, or when the ROGUESQ_BOOT_TARGET / ROGUESQ_SKIP_DEMO attract-demo shortcuts (covered by roguesquadron-debug) don't reach the screen in question. Keyboard input is on by default in this build (no controller needed): keys are injected with Win32 SendInput scancodes to the focused game window (SDL reads scancodes). Provides tools/drive-input.ps1 (send a key sequence) and tools/repro-hangar.ps1 (one-shot launch + full boot->profile->level->craft->hangar navigation). Triggers on: "drive the menu", "get to the hangar/ship select/mission", "press start/create a profile/select a level", scripted keyboard input, SendInput, reproduce an interactive (non-attract) screen. Complements roguesquadron-debug (evidence-first triage; freeze signatures; taskkill) — use that for the analysis once this skill has you on the screen.
+description: Drive RogueSquadron64Recomp through its boot cinematic and front-end MENUS with scripted keyboard input to reach an interactive state the env-var demo shortcuts cannot — profile (pilot) creation, SELECT GAME, ENTER NAME, SELECT LEVEL, AVAILABLE CRAFT, the hangar, or actual in-mission gameplay — and then observe it with a window screenshot plus the ROGUESQ_LOG_GAMESTATE log. Use whenever a bug is reproduced only by navigating the real menus (e.g. "the hangar is black", "crash after selecting a mission", "ship select does X"), when a screenshot of a specific menu/hangar/mission screen is needed, or when the ROGUESQ_BOOT_TARGET / ROGUESQ_SKIP_DEMO attract-demo shortcuts (covered by roguesquadron-debug) don't reach the screen in question. Keyboard input is on by default in this build (no controller needed): keys are injected with Win32 SendInput scancodes to the focused game window (SDL reads scancodes). Provides tools/debug/drive-input.ps1 (send a key sequence) and tools/debug/repro-hangar.ps1 (one-shot launch + full boot->profile->level->craft->hangar navigation). Triggers on: "drive the menu", "get to the hangar/ship select/mission", "press start/create a profile/select a level", scripted keyboard input, SendInput, reproduce an interactive (non-attract) screen. Complements roguesquadron-debug (evidence-first triage; freeze signatures; taskkill) — use that for the analysis once this skill has you on the screen.
 ---
 
 # RogueSquadron64Recomp — driving the front-end menus
@@ -24,9 +24,9 @@ game window must be foreground; the helper focuses it first. Window title:
 
 ## Tools
 
-- `tools/drive-input.ps1 -Keys "esc:100:1500,enter:100:800"` — send a key sequence to the running
+- `tools/debug/drive-input.ps1 -Keys "esc:100:1500,enter:100:800"` — send a key sequence to the running
   window. Each token is `name:holdMs:afterMs` (hold/after optional, default 90/400).
-- `tools/repro-hangar.ps1 [-Env "NAME=VAL;NAME2=VAL2"] [-BootMs 13000]` — **one-shot**: kill any
+- `tools/debug/repro-hangar.ps1 [-Env "NAME=VAL;NAME2=VAL2"] [-BootMs 13000]` — **one-shot**: kill any
   running instance, launch (with `ROGUESQ_LOG_GAMESTATE=1 ROGUESQ_LOG_MENU_FIX=1` plus any `-Env`),
   wait for boot, then drive boot -> profile -> level -> craft -> **hangar** in a single input run.
   Writes the redirected log path into `dumps/hangar-session/latest.txt`.

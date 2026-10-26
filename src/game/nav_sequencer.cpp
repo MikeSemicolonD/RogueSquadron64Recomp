@@ -94,8 +94,9 @@ RsNavTarget rs64_nav_parse(const char* v)
     auto arg2 = [](const char* s) { const char* c = std::strchr(s, ','); return (c && c[1]) ? std::atoi(c + 1) : -1; };
 
     if (!std::strncmp(v, "level", 5))         { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); }
-    else if (!std::strncmp(v, "hangar", 6))   { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); t.c = 1; }
+    else if (!std::strncmp(v, "hangar", 6))   { t.kind = NAV_LEVEL;    t.a = arg(v); t.b = arg2(v); t.c = 1; }
     else if (!std::strncmp(v, "abort", 5))    { t.kind = NAV_ABORT;    t.a = arg(v); t.b = arg2(v); }
+    else if (!std::strncmp(v, "pause", 5))    { t.kind = NAV_ABORT;    t.a = arg(v); t.c = 10 + (arg2(v) < 0 ? 0 : arg2(v)); }
     else if (!std::strncmp(v, "cutscene", 8)) {
         t.kind = NAV_CUTSCENE;
         t.a = arg(v);
@@ -289,6 +290,15 @@ static void nav_level(uint8_t* rdram, const char* st)
         return;
     }
 
+    // The opening crawl runs inside the menu (a new pilot's from ENTER NAME); ROGUESQ_NAV_WATCH_CUTSCENES=1 sits through it.
+    static const bool s_watch_crawl = recomp::dbg::env_on("ROGUESQ_NAV_WATCH_CUTSCENES");
+
+    if (s_watch_crawl && rs64::host::flag("crawl"))
+    {
+        s_watchdog = 0;
+        return;
+    }
+
     switch (s_step)
     {
         case 0:  // reach ENTER NAME: press A through main-menu -> select-game -> (new profile)
@@ -322,6 +332,16 @@ static void nav_level(uint8_t* rdram, const char* st)
         case 4:  // AVAILABLE CRAFT: turn the hangar to the target craft, confirm, until mission
             if (is(st, "menu.account.craft_select") && nav_step_craft(rdram, g_target.b, "level"))
             {
+                // hangar target: stop here with the craft showing.
+                if (g_target.c == 1)
+                {
+                    fprintf(stderr, "[nav] hangar reached (level %d)\n", g_target.a);
+                    fflush(stderr);
+                    s_disabled = true;
+
+                    return;
+                }
+
                 if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
 
                 nav_repress(N64_A_BUTTON);
@@ -392,6 +412,25 @@ static void nav_abort(uint8_t* rdram, const char* st) {
 
         // root: ABORT MISSION -> confirm submenu
         case 12: {
+            // pause:<level>[,<submenu>] stops on that pause menu (0 root, 1 GAME SETTINGS, 2 SOUND SETTINGS) for a capture.
+            if (g_target.c >= 10)
+            {
+                const int want = g_target.c - 10;
+
+                if (menu == want)
+                {
+                    nav_log_pause(rdram, "pause reached");
+                    s_disabled = true;
+                } else if (menu == 0) {
+                    const int k = rs64::touch::pause_find_entry(rdram, 0, want);
+
+                    if (k < 0) s_disabled = true;
+                    else nav_select_and_confirm(rdram, k);
+                }
+
+                break;
+            }
+
             if (menu == 3)
             {
                 nav_log_pause(rdram, "confirm open");
@@ -526,6 +565,19 @@ static uint32_t nav_word(uint8_t* rdram, uint32_t phys)
     return ((uint32_t)rdram[(phys + 0) ^ 3] << 24) | ((uint32_t)rdram[(phys + 1) ^ 3] << 16) | ((uint32_t)rdram[(phys + 2) ^ 3] << 8) | rdram[(phys + 3) ^ 3];
 }
 
+// The untranslated text of an entry shown in a language mod's text (lang.cpp).
+extern "C" void rs64_lang_original(const char* shown, char* out, size_t cap);
+
+static std::string nav_original(const std::string& shown)
+{
+
+    char buf[256];
+
+    rs64_lang_original(shown.c_str(), buf, sizeof buf);
+
+    return buf;
+}
+
 // A label ending in '*' matches entries that start with the rest (a slider or live label whose text changes).
 static int nav_find_entry(uint8_t* rdram, const char* label) {
 
@@ -535,7 +587,7 @@ static int nav_find_entry(uint8_t* rdram, const char* label) {
 
     for (int i = 0; i < n && i < 8; ++i)
     {
-        const std::string text = nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4));
+        const std::string text = nav_original(nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)));
 
         if (prefix ? text.compare(0, len - 1, label, len - 1) == 0 : text == label) return i;
     }

@@ -31,7 +31,6 @@ void rs64_lobby_tick(void);
 const char* rs64_lobby_status(void);
 const char* rs64_lobby_host_address(void);
 // The host page ONLINE row: the router mapping state or the internet address to give a remote player.
-const char* rs64_lobby_online_label(void);
 const char* rs64_lobby_address_label(void);
 // Lobby address keyboard entry, driven from the SDL event loop.
 int rs64_lobby_typing(void);
@@ -139,6 +138,17 @@ struct Ghost {
     // With a relay transport (mp.transport service) the address row holds a join code instead; relay_session: this lobby runs over it.
     rs64::net::CodeEditor code;
     bool relay_session = false;
+    // The relay this session runs over (Steam's service or the relay server); relay_server: roguesq_net.json's "host[:port]" of an rs64_relay (ROGUESQ_MP_RELAY overrides).
+    const rs64_mp_transport* relay_t = nullptr;
+    std::string relay_server;
+    // HOST SETTINGS (roguesq_net.json host_name / host_password): the advertised name (empty: the pilot's) and the password a joiner must send (host_pin_set false: none).
+    rs64::net::NameEditor host_name;
+    rs64::net::CodeEditor host_pin;
+    bool host_pin_set = false;
+    // The password this player sends when joining (join_pin_set false: none); pin_mode: a host refused it, so the MULTIPLAYER page's address row edits it until the next JOIN.
+    rs64::net::CodeEditor join_pin;
+    bool join_pin_set = false;
+    bool pin_mode = false;
     // SDL text input is on (the address is being typed); the phone keyboard was seen up; frames left to drop the A/START presses after typing ends.
     bool text_on = false;
     bool kb_shown = false;
@@ -151,11 +161,12 @@ struct Ghost {
     uint16_t skip_prev_buttons = 0;
     // 0 none, 1 hangar launch, 2 cutscene timeline.
     int skip_scene = 0;
+    // The current skippable scene as SkipShare counts it (phase << 8 | scenes entered); craft select init and mission init start a phase.
+    uint16_t skip_tag = 0;
     // LAN discovery: the host answers searches while it waits; JOIN searches for kSearchMs before falling back to the typed address.
     rs64::net::DiscoveryResponder responder;
     // Internet hosting: the router's UPnP mapping of the game port while this side hosts.
     rs64::net::PortMapper mapper;
-    std::string online_text;
     rs64::net::DiscoveryFinder finder;
     bool searching = false;
     uint32_t search_until_ms = 0;
@@ -242,7 +253,9 @@ void lobby_start(const rs64::net::LinkConfig& cfg);
 rs64::net::LinkConfig link_config();
 // The mp.transport a mod published (mods/steam-relay), unless ROGUESQ_MP_TRANSPORT=enet; looked up on first use, which must be after the registry sealed. Does not initialize it.
 const rs64_mp_transport* relay();
-// relay() when it can host or join now (available() may initialize it: call only while the MULTIPLAYER page is up or a session runs).
+// The relay server's transport when one is configured, else null (its available() is false while the server does not answer).
+const rs64_mp_transport* server_relay();
+// The relay HOST GAME and a join code use now: Steam when available, else the relay server (available() may initialize it: call only while the MULTIPLAYER page is up or a session runs).
 const rs64_mp_transport* relay_ready();
 // Releases the relay (Steam shuts down) when the lobby or session ends.
 void relay_shutdown();

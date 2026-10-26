@@ -1,8 +1,6 @@
 <div align="center">
 
-  ![favicon made by thedoctor45](./favicon.ico)
-
-  Icon by [thedoctor45 on DeviantArt](https://www.deviantart.com/thedoctor45/art/Star-Wars-Rogue-Squadron-3D-Custom-Icon-535469296)
+  ![Rogue Squadron 64 Recompiled icon](./favicon.ico)
 
 # Star Wars: Rogue Squadron 64 Recompiled
 
@@ -39,18 +37,19 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **Windows 10+ x64** | Vulkan, D3D12, D3D11, D3D10 |
 | **[Windows 10+ x86 (32-bit)](#4-build)** | Vulkan, D3D12, D3D11, D3D10 |
 | **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
-| **[Linux arm64 / armhf](docs/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
-| **[Linux x86 (32-bit)](docs/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
+| **[Linux arm64 / armhf](docs/guides/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
+| **[Linux x86 (32-bit)](docs/guides/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
 | **[Android 9+ arm64](#android-notes)** | Vulkan 1.1 |
-| **[*maybe* macOS 11+](#macos-notes)*** | Metal |
+| **[macOS 11+ arm64 (Apple Silicon)](#macos-notes)*** | Metal |
+| **[macOS 11+ x86_64 (Intel)](#macos-notes)*** | Metal |
 
 </div>
 
-*macOS is *compile-only* so far (see [macOS notes](#macos-notes))
+*macOS builds but hasn't been run on a Mac yet (see [macOS notes](#macos-notes))
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
 
-[Per-platform minimum requirements](docs/building-all-platforms.md#what-players-need).
+[Per-platform minimum requirements](docs/guides/building-all-platforms.md#what-players-need).
 
 ## Features
 
@@ -70,8 +69,12 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
-- **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings. See [Controls](#controls).
+- **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Control Settings Mod](#mods). See [Controls](#controls).
 - **Touch controls on Android:** tap menu and in-game buttons and fly with an on-screen stick. You can move and resize the buttons, and turn on 'gyro steering' to help fine tune your aim.
+
+#### Languages
+
+- **English (en), German (de) and French (fr):** picked under **OPTIONS > LANGUAGE**. Affects menus, mission text and subtitles while voice acting remains in English.
 
 #### Multiplayer (experimental)
 
@@ -82,7 +85,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replace the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
-- See [docs/multiplayer.md](docs/multiplayer.md) for more details.
+- See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 
 > [!NOTE]
 > Steam-Relay mod on Linux, Steam Deck and macOS are untested.
@@ -91,16 +94,16 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 - **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
-  - See [docs/modding.md for modding info](docs/modding.md).
+  - See [docs/guides/modding.md for modding info](docs/guides/modding.md).
 - **Included mods:**
+  - **Display Settings:** 'Display Settings' UI in the main menu under 'Options' -> 'Game Settings' and in the pause menu. Also contains the Ray Tracing and Fullscreen toggle.
+  - **Control Settings:** new Controls UI allowing the adjustment of sensitivity, acceleration, deadzone, rumble and Input Bindings. *All while using in-game UI.*
   - **Multiplayer:** online co-op (see above).
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
-  - **Fullscreen toggle:** an option in the options and pause menus' display settings.
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
   - **Invincibility:** your craft takes no damage.
   - **Any Craft, Any Mission:** fly any ship on any level.
-  - **Ray Tracing:** Adds a Ray Tracing menu in 'Options' -> 'Game Settings' to toggle various RT features.
 
 ## Running
 
@@ -191,10 +194,12 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Ray Tracing is implemented but has various issues:
   - Shadows and emissives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
-  - Terrain rendering causing issues with shadows because of the hard edges and the fact that it changes on the fly
-  - The sun's direction in a level does not align exactly with the non-ray-traced shadows being projected. In this situation it might be better to disable the game's fake non-ray-traced shadows.
+  - There are situations where light 'sticks' to the player like for example, collecting the Upgrade during Raid on Sullust
   - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
-  - Better Ray Tracing mod menu button placement. (It's below the back button in the Options menu which is awkward)
+
+- Frame interpolation issues:
+  - The bomb drop crosshair, good example y-wing during Raid on Sullust
+  - Lava explosion particles flicker in place indicating they aren't being ID'd, good example Raid on Sullust
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
@@ -210,15 +215,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- Level editing using RS64 Explorer to assist modding efforts
-  - Level/Event authoring
-  - Cutscene authoring
-
-- Mod to replace terrain rendering with a pre-baked mesh and use a shader for LOD tiling taking advantage of the GPU (Modern games do this)
-  - Relieves one of the games biggest bottlenecks
-  - Will require another pre-process to procedurally create bodies of water over parts or large sections of the terrain because bodies of water are basically animated sprites painted onto the terrain.
-  - Will greatly benefit Ray Tracing
-  - Will greatly benefit visuals and performance when at a 2x+ draw distance
+- RS64 Explorer Fixs & Improvements
 
 ## Building
 
@@ -253,7 +250,7 @@ The recompiler needs an ELF of the game: the ROM's code with every function name
 ```sh
 git clone https://github.com/MikeSemicolonD/rogue_squadron64.git ../rogue_squadron64
 cp path/to/rogue_squadron.z64 ../rogue_squadron64/   # the ROM goes in the decomp's root
-python tools/make_elf_from_syms.py                   # writes ../rogue_squadron64/build/roguesquadron.elf
+python tools/re/make_elf_from_syms.py                   # writes ../rogue_squadron64/build/roguesquadron.elf
 ```
 
 `rogue_squadron.toml` reads the ROM and the ELF from exactly those two paths.
@@ -339,7 +336,7 @@ cmake --build build --target RogueSquadron64Recomp
 - Keep the build directory on the Linux filesystem (e.g. `~/rs64-build`), **not** under `/mnt/…` — CMake's compiler checks can fail with `Operation not permitted` on the Windows drive mount. Source can stay on `/mnt`.
 - WSLg supplies the display, PulseAudio (sound), and keyboard/mouse, so the game runs directly. A physical gamepad needs `usbipd-win` to route the USB device to wsl; the keyboard works out of the box.
 - WSL's default Vulkan is **llvmpipe (software)** — it runs but hitches. For GPU acceleration, build [Mesa's](https://gitlab.freedesktop.org/mesa/mesa) **[Dozen (`dzn`)](https://gitlab.freedesktop.org/mesa/mesa/-/tree/main/src/microsoft/vulkan?ref_type=heads)** driver (Vulkan → D3D12 → the real GPU via `/dev/dxg`). If the game doesn't detect `dzn` it'll default to software (CPU) rendering.
-- The `tools/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
+- The `tools/release/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
 
 ### Android notes
 
@@ -366,9 +363,8 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 ### macOS notes
 
 > [!IMPORTANT]
-> **Currently doesn't support macOS**.
-> But steps have been taken to get as far as possible to support it by cross compiling using Linux.
-> An arm64 (Apple Silicon) 'Mach-O' builds and links for macOS 11+, but it hasn't been run/tested on a Mac.
+> **Untested on a Mac.** The release has a universal `RogueSquadron64Recomp.app` (Apple Silicon and Intel, macOS 11+) cross-built from Windows with compiled Metal shaders, but nobody has run it on a Mac yet.
+> It isn't notarized: run `xattr -dr com.apple.quarantine RogueSquadron64Recomp.app` once before opening it.
 
 On a Mac, the Linux / macOS commands above should apply (Xcode Command Line Tools + `brew install cmake ninja sdl2`)
 
@@ -385,11 +381,13 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
    ./build_compiler_rt.sh   # no need to run the install commands it prints
    ```
 
-3. Build the game with `tools/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp` for Debug, `~/rs64-build-macos-<arch>-<config>/` (lowercase, e.g. `-release`) otherwise.
+3. Install Apple's **Metal Developer Tools for Windows** (search "Metal Developer Tools" at [developer.apple.com/download/all](https://developer.apple.com/download/all/?q=Metal%20Developer%20Tools)). The script compiles the Metal shaders with it; without it the build links but can't render. A different install folder than `C:\Program Files\Metal Developer Tools` goes in `METAL_TOOLS_DIR` (the WSL path of its `bin` folder).
+   - **On native Linux** the tools run under Wine (`sudo apt install wine64`): copy the `Metal Developer Tools` folder from a Windows install and point `METAL_TOOLS_DIR` at its `bin` folder. Wine makes byte-identical metallibs, a few seconds per shader slower.
+4. Run a native Windows or Linux build first: the cross-build can't run its own build tools, so it reuses that build's generated `state_table.inl` and fixed-up audio ucode.
+5. Build the game with `tools/release/macos/cross-build.sh [arm64|x86_64] [Debug|Release]`, or the `Build (macOS cross, WSL/osxcross)` VS Code task. The script builds the host tools and SDL2 on first run. Output: `~/rs64-build-macos-<arch>/RogueSquadron64Recomp` for Debug, `~/rs64-build-macos-<arch>-<config>/` (lowercase, e.g. `-release`) otherwise.
+6. Package with `tools/release/macos/package.sh <out.zip> <arm64-build-dir> [x86_64-build-dir]`, or the `Package (macOS .app, WSL/osxcross)` VS Code task: two build dirs make a universal `.app`.
 
-- **Can't render when cross-built.** Metal shaders need `xcrun metal`, which exists only on macOS, so a cross-build embeds the MSL source (`RT64_METAL_COMPILE=OFF`) instead of compiled metallibs. A build meant to run has to be made on a Mac (or a macOS CI runner).
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
-- **Not yet done:** an `.app` bundle with SDL2 inside.
 
 ## Architecture
 
@@ -422,11 +420,11 @@ mods/multiplayer-native/        Online co-op (sources in src/, tests in tests/)
 rogue_squadron.toml             N64Recomp config and override layer
 ```
 
-Native mods: [docs/modding-host-api.md](docs/modding-host-api.md).
+Native mods: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
 
-Online co-op: [docs/multiplayer.md](docs/multiplayer.md).
+Online co-op: [docs/guides/multiplayer.md](docs/guides/multiplayer.md).
 
-**Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/f5-model-dl-spec.md](docs/f5-model-dl-spec.md) and validated against Project64 dumps.
+**Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md) and validated against Project64 dumps.
 
 **Frame pacing.** By default the game's own VI / SP / DP message protocol runs as on hardware, with SP-done delivered after RT64 parses the list. `--no-vi-driven-loop` (`ROGUESQ_VI_DRIVEN_LOOP=0`) restores the older host-paced loop.
 
@@ -448,20 +446,20 @@ Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrid
 
 ## Debugging
 
-[docs/debugging-with-visual-studio.md](docs/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
+[docs/engine/debugging-with-visual-studio.md](docs/engine/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
 
-AI written helpers under [tools/](tools/):
+AI written helpers under [tools/debug/](tools/debug/):
 
 - `dump-game.ps1` writes a full-memory minidump of a running instance, even when the window is unresponsive.
 - `inspect-dump.py` and `dump_stackscan.py` list and symbolize threads from a minidump.
 - `reconstruct-freeze.py` rebuilds blocked game threads and queues from a hang dump; `host-stacks.py` symbolizes host stacks (Debug build).
 - `run-stability.ps1` launches N timed runs and classifies each by stderr markers.
-- `recordings/` holds per-mission input recordings; `run-replays.ps1` replays them against their state-hash baselines ([README](tools/recordings/README.md)).
+- `recordings/` holds per-mission input recordings; `run-replays.ps1` replays them against their state-hash baselines ([README](tools/debug/recordings/README.md)).
 - `validate/` captures Project64 goldens, diffs RDRAM, compares message-order traces, and walks display lists offline.
 
 `cmake --build build --config Release --target rs64_unit_tests` builds and runs the unit tests and the style check.
 
-The full debug/trace/experiment catalog, logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles lives in [docs/debug-trace-env-vars.md](docs/debug-trace-env-vars.md).
+The full debug/trace/experiment catalog, logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles lives in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md).
 
 ### Command-line options
 
@@ -502,13 +500,9 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 ## Browser based tools
 
-### Save editor
-
-A save editor also exists in *`tools/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
-
 ### RS64 Explorer
 
-*`tools/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
+*`tools/web/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
 
 A **MASSIVE** extension to the foundational work originally done by [Dávid Pethes](https://github.com/dpethes/rerogue) and [jrra](https://github.com/jrra/rerogue).
 
@@ -517,6 +511,11 @@ A **MASSIVE** extension to the foundational work originally done by [Dávid Peth
 - View all Visual Effects from complex explosions to simple animated sprites.
 - Sound Effects and Voicelines including subtitles.
 - MIDI Music Playback with timeline scrubbing allowing you to view the layers of instrument samples [Chris Huelsbeck](https://en.wikipedia.org/wiki/Chris_Huelsbeck) used to masterfully assemble and recreate the Star Wars score.
+- [WebMCP Support](https://developer.chrome.com/docs/ai/webmcp) for agentic usage.
+
+### Save editor
+
+A save editor also exists in *`tools/web/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 
 ## 'Proper' AI Agent Usage
 
@@ -528,7 +527,7 @@ Once your agent is setup, tasks that would've taken weeks/months/years to do can
 
 Here's a list of MCPs that could be useful for this project:
 
-- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [python 3.10+](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs)
+- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
@@ -552,10 +551,10 @@ Here's a list of MCPs that could be useful for this project:
 - **[jrra](https://github.com/jrra/rerogue)**: a community fork of rerogue.
 - **[Tmcg2](https://github.com/Tmcg2/rogue_squadron64)**: started the companion decomp project.
 
-## ~~License~~
+## License
 
-This is a hobby project.
+The code in this repository (the host runtime, patches, hooks, mods, tools and docs) is licensed under [GPL-3.0](LICENSE).
 
-This project is in **no way** associated with, sponsored or endorsed by Nintendo, Disney, LucasArts (now known as Lucasfilm Games LLC), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".
+The license covers only that code. **The game itself is not part of this project and is not covered by it:** this repository contains no ROM data, no game code and no game assets. The recompiled code is generated from the ROM at build time and is never committed. Release builds include that compiled code but no ROM data or game assets. You need a legally obtained copy of the game.
 
-This project contains no ROM data and requires a legally obtained copy of the game.
+Star Wars and Rogue Squadron are trademarks of Lucasfilm Ltd. This is an unofficial hobby project with **no** association with, sponsorship by or endorsement from Nintendo, Disney, Lucasfilm (including Lucasfilm Games, formerly LucasArts), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".

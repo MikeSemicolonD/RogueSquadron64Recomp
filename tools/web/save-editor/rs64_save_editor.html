@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RS64 Save Editor</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f1115'/><path d='M7 6h14l4 4v16H7z' fill='none' stroke='%23e8b84a' stroke-width='2.2' stroke-linejoin='round'/><path d='M11 6v6h9V6' fill='none' stroke='%23e8b84a' stroke-width='2.2' stroke-linejoin='round'/><rect x='10.5' y='17' width='11' height='9' rx='1' fill='%23e8b84a'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="topin">
+    <div class="brand">
+      <h1>RS64 Save Editor</h1>
+    </div>
+    <div class="status" id="status">
+      <span class="pill" id="filePill"><span class="dot"></span><span id="fileName">Example data</span></span>
+      <span class="pill" id="chkPill"><span class="dot"></span><span id="chkText">checksums</span></span>
+    </div>
+    <input type="file" id="fileInput" accept=".eep,.bin,.sra,.srm,.raw,application/octet-stream" hidden>
+    <button class="btn ghost" id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button>
+    <button class="btn" id="loadBtn" title="Open a save: the recomp's saves/&lt;game-id&gt;.bin or a cart EEPROM dump">Load file&hellip;</button>
+    <span class="exportgrp">
+      <button class="btn primary" id="exportBtn">Export</button>
+      <select class="extsel" id="extSel" aria-label="Export file type" title="File type to export as (.bin for the recomp); the bytes are the same, only the name changes">
+        <option value=".bin">.bin</option>
+        <option value=".eep">.eep</option>
+        <option value=".srm">.srm</option>
+        <option value=".sra">.sra</option>
+        <option value=".raw">.raw</option>
+      </select>
+    </span>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" aria-selected="true" data-tab="pilots" title="The three pilot profiles: names, levels, medals and weapon upgrades">Pilots</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="elite" title="The Elite Rogues high-score board">Elite Rogues</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="settings" title="Volumes, controller and language">Settings</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="unlocks" title="Ships, bonus levels and cheats">Unlocks</button>
+  </nav>
+
+  <div class="dropbox" id="dropBox" role="button" tabindex="0" title="Choose a save file, or drop one anywhere on the page"><b>Load file&hellip;</b> to begin</div>
+
+  <section class="panel" id="tab-pilots" role="tabpanel">
+    <h2>Pilot accounts</h2>
+    <p class="hint">Click a level tile to cycle its medal: none &rarr; bronze &rarr; silver &rarr; gold.</p>
+    <div class="grid-pilots" id="pilots"></div>
+  </section>
+
+  <section class="panel" id="tab-elite" role="tabpanel" hidden>
+    <h2>Elite Rogues (high scores)</h2>
+    <p class="hint">The ten-entry high-score board.</p>
+    <div class="tablewrap">
+      <table id="eliteTable">
+        <thead><tr>
+          <th>#</th><th>Name</th><th class="num">Level</th>
+          <th class="num">Bronze</th><th class="num">Silver</th><th class="num">Gold</th>
+          <th class="num" title="Links a row to its pilot: the pilot with this ID updates it after each mission. 0 = one of the game's default entries">Pilot ID</th><th class="num" title="Score = golds &times; 4 + silvers &times; 2 + bronzes &times; 1">Score</th><th id="rankHead">Rank</th>
+        </tr></thead>
+        <tbody id="eliteBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-settings" role="tabpanel" hidden>
+    <h2>Options</h2>
+    <p class="hint">Global options stored in the save body.</p>
+    <div class="row3">
+      <div class="field"><label for="volMusic">Music volume <output id="volMusicVal"></output></label><input type="range" id="volMusic" title="Music volume, 0 (silent) to 127 (full), the range of the game's pause-menu slider" min="0" max="127"></div>
+      <div class="field"><label for="volSfx">Sound FX volume <output id="volSfxVal"></output></label><input type="range" id="volSfx" title="Sound effects volume, 0 (silent) to 127 (full), the range of the game's pause-menu slider" min="0" max="127"></div>
+      <div class="field"><label for="volSpeech">Speech volume <output id="volSpeechVal"></output></label><input type="range" id="volSpeech" title="Speech volume, 0 (silent) to 127 (full), the range of the game's pause-menu slider" min="0" max="127"></div>
+    </div>
+    <div class="row3">
+      <div class="field"><label for="ctrlSet">Controller layout</label><select id="ctrlSet" title="Which of the four button layouts on the game's CONTROLLER SETTINGS screen is chosen. All four pause on Start, pick camera views on the D-pad, roll on R and use C-right for Special"><option value="0" title="Blasters B, thrust A, brakes Z and R, switch view L, look around C-up, fire mode C-down, secondary C-left">Layout 1: fire B, view L</option><option value="1" title="Blasters B, thrust A, brakes Z and R, switch view C-up, look around C-down, fire mode L, secondary C-left">Layout 2: fire B, view C-up</option><option value="2" title="Blasters B, thrust A, brakes Z only, switch view C-up, look around C-down, fire mode L, secondary C-left">Layout 3: fire B, brake Z only</option><option value="3" title="Blasters Z, thrust B, brakes A, switch view L, look around C-up, fire mode C-left, secondary C-down">Layout 4: fire Z, thrust B</option></select></div>
+      <div class="field"><label for="langSel">Language</label><select id="langSel" title="The language of the game's menus, briefings and subtitles"><option value="0">English</option><option value="1">Deutsch</option><option value="2">Fran&ccedil;ais</option></select></div>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-unlocks" role="tabpanel" hidden>
+    <h2>Ships, bonus levels &amp; cheats</h2>
+    <p class="hint">The game's cheat-code unlocks, stored in the save and shared by all pilots. Ticking a box sets the same flag typing the code on the passcode screen would. Codes shown greyed out only work when typed there, so they can't be set here.</p>
+    <div id="unlocks"></div>
+  </section>
+
+  <textarea class="b64" id="b64out" readonly aria-label="The edited save as base64, to copy out where downloads are blocked" title="The edited save as base64: copy it out where downloads are blocked" hidden></textarea>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="save_editor.js"></script>
+</body>
+</html>

@@ -155,6 +155,12 @@ static void testSunCameraDir() {
     CHECK(near(out[0], 0.0f, 1e-5f) && near(out[2], -1.0f, 1e-5f));
     const float zero[3] = { 0, 0, 0 };
     CHECK(!sunCameraDir(zero, identity, out));
+    // A horizon sun is lifted to the minimum elevation (y-down world); a higher one is left alone.
+    const float tan25 = std::tan(25.0f * 3.14159265f / 180.0f);
+    CHECK(sunCameraDir(L2, identity, out, tan25));
+    CHECK(near(out[1], -std::sin(25.0f * 3.14159265f / 180.0f), 1e-5f) && near(out[0], std::cos(25.0f * 3.14159265f / 180.0f), 1e-5f));
+    CHECK(sunCameraDir(L, identity, out, tan25));
+    CHECK(near(out[1], -0.624f, 1e-3f));
     // Level 6 stores a sun below the horizon (unused by the game); it is mirrored above it (y-down world: negative y is up).
     const float below[3] = { 0.0f, -0.832f, 0.555f };
     CHECK(sunCameraDir(below, identity, out));
@@ -227,6 +233,67 @@ static void testBuildTerrainMesh() {
     m.present[0] = 0;
     buildTerrainMesh(m, 1, pos, idx);
     CHECK(pos.size() == 25 * 3 && pos[0] == 512.0f);
+
+    // A shore cell adds a flat quad TerrainWaterDip units under the water level (heights grow downward), facing up like the ground (same winding).
+    m.present = { 1, 1 };
+    m.waterKind = { 0, 2 };
+    m.waterLevel = 10;
+    buildTerrainMesh(m, 1, pos, idx);
+
+    // Every margin cell is water too (the map never ends in a void), row-major from the margin's corner, the outer ring reaching TerrainWaterFarCells
+    // further; the ground cell in the map is not.
+    const size_t spanW = size_t(2 * TerrainWaterMargin + 2);
+    const size_t span = spanW * size_t(2 * TerrainWaterMargin + 1);
+    const size_t shore = 50 + 4 * (size_t(TerrainWaterMargin) * spanW + size_t(TerrainWaterMargin));
+    const size_t shoreIdx = 2 * 16 * 6 + 6 * (shore - 50) / 4;
+
+    CHECK(pos.size() == (2 * 25 + 4 * (span - 1)) * 3);
+    CHECK(pos[50 * 3] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512) && pos[50 * 3 + 2] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512));
+    CHECK(pos[53 * 3] == float((1 - TerrainWaterMargin) * 512));
+    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == float((10 + TerrainWaterDip) * 16) && pos[shore * 3 + 2] == 0.0f);
+    CHECK(pos[(shore + 3) * 3] == 1024.0f && pos[(shore + 3) * 3 + 2] == 512.0f);
+    CHECK(idx[shoreIdx] == shore && idx[shoreIdx + 1] == shore + 3 && idx[shoreIdx + 2] == shore + 2);
+}
+
+static void testTerrainHitColors() {
+
+    // Two present cells, the second also water: header, both ground cells in order, then the water quad.
+    TerrainMap m;
+    m.width = 2;
+    m.height = 1;
+    m.heights.assign(2 * 25, 0);
+    m.present = { 1, 1 };
+    m.waterKind = { 0, 2 };
+    m.colors.assign(2 * 75, 255);
+
+    for (int k = 0; k < 25; ++k) {
+        m.colors[75 + k * 3] = 102;
+    }
+
+    const std::vector<uint32_t> texAvg = { 0x00FF8040u, 0x00808080u };
+    std::vector<uint32_t> out;
+
+    terrainHitColors(m, 1, texAvg, out);
+
+    m.waterLevel = 10;
+    terrainHitColors(m, 1, texAvg, out);
+
+    float surfaceY = 0.0f;
+
+    memcpy(&surfaceY, &out[3], sizeof(float));
+    const size_t spanW = size_t(2 * TerrainWaterMargin + 2);
+
+    // The water quads: the margin (each the nearest edge cell's colour) around the shore cell.
+    CHECK(out.size() == 4 + 2 + spanW * size_t(2 * TerrainWaterMargin + 1) - 1);
+    CHECK(out[0] == 32 && out[1] == 64 && out[2] == 2);
+    CHECK(surfaceY == 160.0f - TerrainWaterLift);
+    CHECK(out[4] == 0x00FF8040u);
+    CHECK(out[5] == ((128u * 102u + 127u) / 255u | (128u << 8) | (128u << 16)));
+    CHECK(out[6] == out[4] && out[6 + size_t(TerrainWaterMargin) * spanW + size_t(TerrainWaterMargin)] == out[5]);
+
+    m.waterKind = { 0, 0 };
+    terrainHitColors(m, 1, texAvg, out);
+    CHECK((out.size() == 6) && (out[1] == 0));
 }
 
 static void testSolveTerrainOrigin() {
@@ -427,6 +494,72 @@ static void testLastPassPerTarget() {
     const void* t2[2] = { &a, &a };
     lastPassPerTarget(t2, on2, 2);
     CHECK(on2[0] && !on2[1]);
+}
+
+static void testConsensusUp() {
+    // Floor and platform (level) outvote one large tilted prop.
+    const float ups[9] = { 0.0f, -0.96f, -0.28f, 0.0f, -0.89f, -0.457f, 0.0f, -0.96f, -0.28f };
+    const uint32_t weights[3] = { 40, 84, 80 };
+    float up[3];
+    CHECK(consensusUp(ups, weights, 3, 0.9994f, up) && near(up[2], -0.28f, 1e-6f));
+    CHECK(!consensusUp(ups, weights, 0, 0.9994f, up));
+}
+
+static void testDedupeLights() {
+    Resolved l[4];
+    for (Resolved& r : l) {
+        r.color[0] = r.color[1] = r.color[2] = 1.0f;
+        r.intensity = 0.8f;
+    }
+    l[1].pos[0] = 0.5f;
+    l[1].intensity = 0.9f;
+    l[2].pos[0] = 50.0f;
+    l[3].color[0] = 0.5f;
+    CHECK(dedupeLights(l, 4, 1.0f) == 3);
+    CHECK(near(l[0].intensity, 0.9f, 1e-6f) && near(l[1].pos[0], 50.0f, 1e-6f) && near(l[2].color[0], 0.5f, 1e-6f));
+
+    // An engine glow's sprite light on an exhaust light goes; a sprite inside a non-engine mesh light's reach (the hologram) stays.
+    Resolved e[3];
+    e[0].kind = KindMesh;
+    e[0].engine = true;
+    e[0].radius = 800.0f;
+    e[1].kind = KindSprite;
+    e[1].pos[0] = 300.0f;
+    e[1].color[0] = 0.5f;
+    e[2].kind = KindSprite;
+    e[2].pos[0] = 500.0f;
+    e[2].color[0] = 0.25f;
+    CHECK(dedupeLights(e, 3, 1.0f) == 2);
+    CHECK(near(e[1].pos[0], 500.0f, 1e-6f));
+    Resolved h[2];
+    h[0].kind = KindMesh;
+    h[0].radius = 20000.0f;
+    h[1].kind = KindSprite;
+    h[1].pos[0] = 300.0f;
+    h[1].color[0] = 0.5f;
+    CHECK(dedupeLights(h, 2, 1.0f) == 2);
+}
+
+static void testConsensusCameraDelta() {
+    // Two static objects agree on a 10-unit camera move; the moving ship (same weight as one of them) is outvoted.
+    Mat4 cam = identity();
+    cam.m[3][0] = 10.0f;
+    Mat4 ship = identity();
+    ship.m[3][1] = 40.0f;
+    const Mat4 deltas[3] = { cam, cam, ship };
+    const uint32_t weights[3] = { 50, 30, 50 };
+    Mat4 out;
+    CHECK(consensusCameraDelta(deltas, weights, 3, 0.002f, 2.0f, out) && near(out.m[3][0], 10.0f, 1e-6f) && near(out.m[3][1], 0.0f, 1e-6f));
+
+    // No candidate carries half the weight: no history.
+    const Mat4 split[2] = { cam, ship };
+    const uint32_t even[2] = { 50, 50 };
+    CHECK(consensusCameraDelta(split, even, 2, 0.002f, 2.0f, out));
+    const uint32_t uneven[2] = { 40, 60 };
+    CHECK(consensusCameraDelta(split, uneven, 2, 0.002f, 2.0f, out) && near(out.m[3][1], 40.0f, 1e-6f));
+    const Mat4 three[3] = { cam, ship, identity() };
+    const uint32_t thirds[3] = { 30, 30, 40 };
+    CHECK(!consensusCameraDelta(three, thirds, 3, 0.002f, 2.0f, out));
 }
 
 static void testMenuHoloLight() {
@@ -834,6 +967,119 @@ static void testPixelsPerUnit() {
     CHECK(near(pixelsPerUnit(proj, 480.0f), 2.0f * 240.0f, 1e-3f));
 }
 
+// Tatooine cell (41, 13) and its neighbours from the PJ64 golden rdram_tatooine_demo_f300; expected = the game's cell+0x54 colours (LOD 1: even samples).
+static void testTerrainCellColorsGolden() {
+
+    static const int8_t kHeights[9][25] = {
+        { -26, -27, -28, -30, -32, -26, -27, -29, -32, -36, -28, -29, -31, -35, -40, -30, -32, -35, -39, -44, -33, -36, -40, -45, -52 },
+        { -32, -36, -39, -44, -48, -36, -39, -44, -50, -55, -40, -43, -49, -56, -63, -44, -49, -56, -64, -72, -52, -59, -67, -77, -85 },
+        { -48, -54, -60, -66, -71, -55, -61, -66, -72, -77, -63, -69, -75, -81, -85, -72, -80, -86, -92, -95, -85, -94, -99, -102, -104 },
+        { -33, -36, -40, -45, -52, -38, -43, -48, -55, -63, -46, -53, -60, -67, -76, -56, -64, -72, -81, -91, -68, -77, -86, -95, -105 },
+        { -52, -59, -67, -77, -85, -63, -72, -81, -91, -100, -76, -86, -97, -105, -112, -91, -101, -109, -116, -120, -105, -113, -119, -123, -125 },
+        { -85, -94, -99, -102, -104, -100, -106, -110, -112, -111, -112, -116, -118, -119, -116, -120, -123, -124, -122, -118, -125, -127, -125, -123, -121 },
+        { -68, -77, -86, -95, -105, -82, -92, -101, -109, -117, -98, -107, -114, -120, -124, -111, -117, -123, -126, -128, -121, -125, -127, -127, -127 },
+        { -105, -113, -119, -123, -125, -117, -122, -126, -128, -127, -124, -127, -127, -127, -127, -128, -127, -127, -127, -127, -127, -127, -127, -127, -127 },
+        { -125, -127, -125, -123, -121, -127, -126, -125, -125, -124, -127, -126, -126, -126, -126, -127, -127, -126, -126, -126, -127, -127, -127, -126, -126 }
+    };
+    static const int kSamples[9] = { 0, 2, 4, 10, 12, 14, 20, 22, 24 };
+    static const uint8_t kExpected[9][3] = { { 255, 255, 236 }, { 255, 255, 235 }, { 255, 255, 235 }, { 255, 255, 234 }, { 255, 255, 234 }, { 255, 255, 236 }, { 255, 255, 235 }, { 255, 255, 235 }, { 255, 255, 215 } };
+
+    TerrainMap m;
+
+    m.width = 3;
+    m.height = 3;
+    m.heights.assign(kHeights[0], kHeights[0] + 9 * 25);
+
+    TerrainShade s;
+    const float ambient[3] = { 117.0f, 96.0f, 74.0f };
+    const float sunRgb[3] = { 203.0f, 190.0f, 163.0f };
+    const float sunDir[3] = { 0.3742697238922119f, 0.6237828731536865f, 0.6861611604690552f };
+
+    std::copy(ambient, ambient + 3, s.ambient);
+    std::copy(sunRgb, sunRgb + 3, s.sunRgb);
+    std::copy(sunDir, sunDir + 3, s.sunDir);
+    s.cellScale = 12.8f;
+
+    uint8_t out[25 * 3];
+
+    terrainCellColors(m, 1, 1, s, nullptr, 0, out);
+
+    for (int i = 0; i < 9; ++i) {
+        for (int c = 0; c < 3; ++c) {
+            CHECK(out[kSamples[i] * 3 + c] == kExpected[i][c]);
+        }
+    }
+}
+
+// Lights add on top of the sun term: a point light only lights receivers it faces within its radius, a box light fades towards its edge.
+static void testTerrainTextureAnims() {
+
+    auto table = [](std::initializer_list<uint16_t> v) {
+
+        std::vector<uint8_t> t;
+
+        for (uint16_t x : v) {
+            t.insert(t.end(), { uint8_t(x >> 8), uint8_t(x), 0, 0 });
+        }
+
+        return t;
+    };
+
+    // Ids 0-1 used by the map; id 2 is a plain entry no cell uses, so the blocks start at 3.
+    const std::vector<uint8_t> t = table({ 0xC8, 0xC9, 0xCA, 0x0001, 3, 8, 0xC9, 0x10, 0x11, 0xFFFF });
+    const std::vector<TerrainTexAnim> a = terrainTextureAnims(t.data(), uint32_t(t.size()), 0x200, 2);
+
+    CHECK(a.size() == 1);
+    CHECK(a[0].id == 1 && a[0].fps == 8);
+    CHECK((a[0].banks == std::vector<uint32_t>{ 0xC9, 0x10, 0x11 }));
+
+    const std::vector<uint8_t> plain = table({ 0xC8, 0xC9, 0xFFFF });
+
+    CHECK(terrainTextureAnims(plain.data(), uint32_t(plain.size()), 0x200, 2).empty());
+    CHECK(terrainTextureAnims(t.data(), uint32_t(t.size()), 0x11, 2).empty());
+}
+
+static void testTerrainVertexColorLights() {
+
+    TerrainShade s;
+
+    s.ambient[0] = s.ambient[1] = s.ambient[2] = 10.0f;
+
+    const float up[3] = { 0.0f, 1.0f, 0.0f };
+    const float p[3] = { 5.0f, 0.0f, 5.0f };
+    TerrainLight point;
+
+    point.rgb[0] = 100.0f;
+    point.pos[0] = 5.0f;
+    point.pos[1] = -1.0f;
+    point.pos[2] = 5.0f;
+    point.radius = 2.0f;
+
+    uint8_t out[3];
+
+    terrainVertexColor(s, up, p, &point, 1, out);
+    CHECK(out[0] == 10 + 50);
+    CHECK(out[1] == 10);
+
+    point.pos[1] = 1.0f;
+    terrainVertexColor(s, up, p, &point, 1, out);
+    CHECK(out[0] == 10);
+
+    TerrainLight box;
+
+    box.box = true;
+    box.rgb[2] = 100.0f;
+    box.pos[0] = 5.0f;
+    box.pos[2] = 6.0f;
+    box.radius = 4.0f;
+    terrainVertexColor(s, up, p, &box, 1, out);
+    CHECK(out[2] == 10 + 86);
+
+    box.pos[2] = 9.0f;
+    terrainVertexColor(s, up, p, &box, 1, out);
+    CHECK(out[2] == 10);
+}
+
 static void testBuildTerrainNormals() {
     std::vector<float> pos;
     std::vector<uint32_t> idx;
@@ -1137,6 +1383,8 @@ static void testHitColorTable() {
     CHECK(movingCraft("snowspeeder#s0.p3.0"));
     CHECK(movingCraft("xwing#s0.p1.2"));
     CHECK(movingCraft("tie_fighter#s1.p0.0"));
+    CHECK(movingCraft("wmvwng#s0.p0.0") && movingCraft("wmxwng#s0.p2.1"));
+    CHECK(!movingCraft("wmvwngx#s0.p0.0"));
     CHECK(!movingCraft("xwing_hangar#s0.p0.0"));
     CHECK(!movingCraft("platform#s0.p0.0"));
     CHECK(!movingCraft("snowspeeder"));
@@ -1230,6 +1478,7 @@ int main() {
     testTileCells();
     testTerrainTileMesh();
     testBuildTerrainMesh();
+    testTerrainHitColors();
     testSolveTerrainOrigin();
     testTerrainInstanceTransform();
     testNoteTerrainTransform();
@@ -1242,6 +1491,9 @@ int main() {
     testMenuSun();
     testCasterFragment();
     testLastPassPerTarget();
+    testConsensusUp();
+    testConsensusCameraDelta();
+    testDedupeLights();
     testMenuHoloLight();
     testMenuRingLights();
     testLaserLight();
@@ -1269,6 +1521,9 @@ int main() {
     testPenumbraPixels();
     testShadowDepthWeight();
     testPixelsPerUnit();
+    testTerrainCellColorsGolden();
+    testTerrainVertexColorLights();
+    testTerrainTextureAnims();
     testBuildTerrainNormals();
     testCofactorNormal();
     testTerminatorShadow();

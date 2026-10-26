@@ -7,6 +7,7 @@
 #endif
 #include "../src/input/input_bindings.h"
 #include <cassert>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -15,12 +16,240 @@ using namespace rs64::input;
 
 static bool near(float a, float b) { return std::fabs(a - b) < 1e-3f; }
 
+static Source key(int sc) { return Source{ SourceKind::Key, sc, 0 }; }
+
+static bool same(const Source& p, const Source& q) {
+    return p.kind == q.kind && p.code == q.code && p.dir == q.dir && p.dev == q.dev;
+}
+
+static bool holds(const Bindings& b, Target t, const Source& s)
+{
+
+    for (const Source& x : b.targets[(int)t]) {
+        if (same(x, s)) return true;
+    }
+
+    return false;
+}
+
+static bool font_safe(const std::string& s)
+{
+
+    for (char c : s) {
+        if (!(std::isupper((unsigned char)c) || std::isdigit((unsigned char)c) || std::strchr(" ;:_'/&\",!?-<>{}.", c))) return false;
+    }
+
+    return !s.empty();
+}
+
+// Rebind-menu logic: device classes, rows, swap.
+static void controls_menu_checks()
+{
+
+    // device_of_classifies_sources
+    assert(device_of(key(SDL_SCANCODE_W)) == Device::Keyboard);
+    assert(device_of(Source{ SourceKind::MouseButton, 1, 0 }) == Device::Keyboard);
+    assert(device_of(Source{ SourceKind::MouseAxis, 0, 1 }) == Device::Keyboard);
+    assert(device_of(Source{ SourceKind::PadAxis, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 1 }) == Device::Gamepad);
+    assert(device_of(Source{ SourceKind::JoyHat, 0, SDL_HAT_UP, 0 }) == Device::Joystick);
+
+    // rows_for_keyboard_skip_start_throttle_roll
+    const std::vector<ControlRow> kr = control_rows(Device::Keyboard);
+    assert(!kr.empty() && kr[0].target == Target::A && std::strcmp(kr[0].action, "THRUST") == 0);
+
+    for (const ControlRow& r : kr) {
+        assert(r.target != Target::Start && r.target != Target::Throttle && r.target != Target::RollLeft && r.target != Target::RollRight);
+        assert(font_safe(r.action));
+    }
+
+    // rows_for_joystick_include_throttle_and_roll
+    bool thr = false, roll = false;
+
+    for (const ControlRow& r : control_rows(Device::Joystick)) {
+        thr = thr || r.target == Target::Throttle;
+        roll = roll || r.target == Target::RollLeft;
+        assert(r.target != Target::Start);
+    }
+
+    assert(thr && roll);
+
+    // rebind_keeps_other_sources
+    Bindings b = default_bindings();
+    assert(b.targets[(int)Target::A][0].code == SDL_SCANCODE_W);
+    assert(rebind(b, Target::A, Device::Keyboard, key(SDL_SCANCODE_G)) == Target::Count);
+    assert(b.targets[(int)Target::A][0].code == SDL_SCANCODE_G);
+    assert(holds(b, Target::A, key(SDL_SCANCODE_RETURN)) && !holds(b, Target::A, key(SDL_SCANCODE_W)));
+    assert(b.targets[(int)Target::A][shown_source(b, Target::A, Device::Keyboard)].code == SDL_SCANCODE_G);
+    assert(holds(b, Target::A, Source{ SourceKind::PadButton, SDL_CONTROLLER_BUTTON_A, 0 }));
+
+    // rebind_swaps_matched_source_in_place
+    b = default_bindings();
+    const size_t b_space = 0;
+    assert(same(b.targets[(int)Target::B][b_space], key(SDL_SCANCODE_SPACE)));
+    assert(rebind(b, Target::A, Device::Keyboard, key(SDL_SCANCODE_SPACE)) == Target::B);
+    assert(same(b.targets[(int)Target::A][0], key(SDL_SCANCODE_SPACE)));
+    assert(same(b.targets[(int)Target::B][b_space], key(SDL_SCANCODE_W)));
+    assert(holds(b, Target::B, key(SDL_SCANCODE_BACKSPACE)) && holds(b, Target::B, Source{ SourceKind::MouseButton, SDL_BUTTON_LEFT, 0 }));
+    assert(holds(b, Target::A, key(SDL_SCANCODE_RETURN)));
+
+    // rebind_swap_with_second_source
+    b = default_bindings();
+    assert(rebind(b, Target::B, Device::Keyboard, key(SDL_SCANCODE_RETURN)) == Target::Count);
+    assert(same(b.targets[(int)Target::B][0], key(SDL_SCANCODE_RETURN)));
+    assert(!holds(b, Target::A, key(SDL_SCANCODE_RETURN)) && !holds(b, Target::A, key(SDL_SCANCODE_SPACE)));
+    assert(same(b.targets[(int)Target::A][0], key(SDL_SCANCODE_W)));
+
+    // rebind_same_source_is_noop
+    b = default_bindings();
+    const size_t n_a = b.targets[(int)Target::A].size();
+    assert(rebind(b, Target::A, Device::Keyboard, key(SDL_SCANCODE_W)) == Target::Count);
+    assert(b.targets[(int)Target::A].size() == n_a && same(b.targets[(int)Target::A][0], key(SDL_SCANCODE_W)));
+
+    // rebind_hidden_source_is_taken_not_swapped: B's mouse-left is not its shown keyboard binding (Space is), so B just loses it.
+    b = default_bindings();
+    const Source lmb{ SourceKind::MouseButton, SDL_BUTTON_LEFT, 0 };
+    assert(rebind(b, Target::A, Device::Keyboard, lmb) == Target::Count);
+    assert(same(b.targets[(int)Target::A][0], lmb));
+    assert(!holds(b, Target::B, lmb) && !holds(b, Target::B, key(SDL_SCANCODE_W)));
+    assert(same(b.targets[(int)Target::B][shown_source(b, Target::B, Device::Keyboard)], key(SDL_SCANCODE_SPACE)));
+
+    // A target with no source of the device gets the captured one appended; the giver loses it.
+    b = default_bindings();
+    assert(shown_source(b, Target::LookUp, Device::Keyboard) == -1);
+    assert(rebind(b, Target::LookUp, Device::Keyboard, key(SDL_SCANCODE_Q)) == Target::Count);
+    assert(holds(b, Target::LookUp, key(SDL_SCANCODE_Q)) && !holds(b, Target::CUp, key(SDL_SCANCODE_Q)));
+
+    // default_device_bindings restores one device only.
+    b = default_bindings();
+    rebind(b, Target::A, Device::Keyboard, key(SDL_SCANCODE_G));
+    rebind(b, Target::A, Device::Gamepad, Source{ SourceKind::PadButton, SDL_CONTROLLER_BUTTON_Y, 0 });
+    b = default_device_bindings(b, Device::Keyboard);
+    assert(same(b.targets[(int)Target::A][shown_source(b, Target::A, Device::Keyboard)], key(SDL_SCANCODE_W)));
+    assert(b.targets[(int)Target::A][shown_source(b, Target::A, Device::Gamepad)].code == SDL_CONTROLLER_BUTTON_Y);
+
+    // menu_source_name_is_font_safe
+    assert(menu_source_name(key(SDL_SCANCODE_LSHIFT)) == "L SHIFT");
+    assert(menu_source_name(Source{ SourceKind::PadButton, SDL_CONTROLLER_BUTTON_A, 0 }) == "PAD A");
+    assert(font_safe(menu_source_name(Source{ SourceKind::PadAxis, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 1 })));
+    assert(menu_source_name(Source{ SourceKind::MouseButton, 1, 0 }) == "MOUSE 1");
+    assert(menu_source_name(Source{ SourceKind::JoyAxis, 2, -1, 0 }) == "J1 AX 2 <");
+    assert(menu_source_name(Source{ SourceKind::JoyButton, 3, 0, 0 }) == "J1 BTN 3");
+    assert(menu_source_name(Source{ SourceKind::PadAxis, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 1 }) == "LT");
+    assert(menu_source_name(Source{ SourceKind::PadAxis, SDL_CONTROLLER_AXIS_RIGHTX, -1 }) == "RS X <");
+    assert(menu_source_name(Source{}) == "--");
+    assert(font_safe(menu_source_name(key(SDL_SCANCODE_KP_PLUS))));
+
+    // Punctuation keys get names: ';' '/' '"' '&' '_' are scroll arrows, the period and blank in the menu font.
+    assert(menu_source_name(key(SDL_SCANCODE_SEMICOLON)) == "SEMICOLON");
+    assert(menu_source_name(key(SDL_SCANCODE_SLASH)) == "SLASH");
+    assert(menu_source_name(key(SDL_SCANCODE_LEFTBRACKET)) == "L BRACKET");
+    assert(menu_source_name(key(SDL_SCANCODE_GRAVE)) == "GRAVE");
+
+    // menu_buttons_fixed_wins: a held menu key's own button replaces what its binding adds (Return bound to fire must not also back out).
+    assert(menu_buttons(0x4000, 0x8000) == 0x8000);
+    assert(menu_buttons(0x4000 | 0x0020, 0x8000) == (0x8000 | 0x0020));
+    assert(menu_buttons(0x4000, 0) == 0x4000);
+
+    // capture_filter_keyboard_takes_mouse_buttons_not_motion
+    const CaptureFilter kf{ false, Device::Keyboard };
+    assert(capture_accepts(kf, key(SDL_SCANCODE_G)));
+    assert(capture_accepts(kf, Source{ SourceKind::MouseButton, 2, 0 }));
+    assert(!capture_accepts(kf, Source{ SourceKind::MouseAxis, 0, 1 }));
+    assert(!capture_accepts(kf, Source{ SourceKind::PadButton, SDL_CONTROLLER_BUTTON_A, 0 }));
+
+    // capture_filter_gamepad_takes_pad_axis
+    const CaptureFilter gf{ false, Device::Gamepad };
+    assert(capture_accepts(gf, Source{ SourceKind::PadAxis, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 1 }));
+    assert(capture_accepts(gf, Source{ SourceKind::PadButton, SDL_CONTROLLER_BUTTON_B, 0 }));
+    assert(!capture_accepts(gf, key(SDL_SCANCODE_G)));
+
+    // capture_filter_joystick_rejects_keys
+    const CaptureFilter jf{ false, Device::Joystick };
+    assert(!capture_accepts(jf, key(SDL_SCANCODE_G)));
+    assert(capture_accepts(jf, Source{ SourceKind::JoyAxis, 2, -1, 1 }));
+
+    // The F6 window takes anything but mouse motion.
+    const CaptureFilter af{};
+    assert(capture_accepts(af, key(SDL_SCANCODE_G)) && capture_accepts(af, Source{ SourceKind::JoyHat, 0, 1, 0 }));
+    assert(!capture_accepts(af, Source{ SourceKind::MouseAxis, 1, -1 }));
+
+    // menu_fixed_mask_keyboard: confirm/back/start/arrows act in menus whatever the bindings say.
+    uint8_t keys[SDL_NUM_SCANCODES] = {0};
+    RawState st;
+    st.keys = keys;
+    st.keys_len = SDL_NUM_SCANCODES;
+    assert(menu_fixed_mask(st) == 0);
+    keys[SDL_SCANCODE_RETURN] = 1;
+    keys[SDL_SCANCODE_BACKSPACE] = 1;
+    assert(menu_fixed_mask(st) == (0x8000 | 0x4000));
+    keys[SDL_SCANCODE_RETURN] = 0;
+    keys[SDL_SCANCODE_BACKSPACE] = 0;
+    keys[SDL_SCANCODE_ESCAPE] = 1;
+    keys[SDL_SCANCODE_UP] = 1;
+    assert(menu_fixed_mask(st) == (0x1000 | 0x0800));
+}
+
+// menu_fixed_mask_pad: pad A/B/Start and the D-pad.
+static void menu_fixed_pad_checks()
+{
+
+    const int vi = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_GAMECONTROLLER, 6, SDL_CONTROLLER_BUTTON_MAX, 0);
+    assert(vi >= 0 && SDL_IsGameController(vi));
+    SDL_GameController* pad = SDL_GameControllerOpen(vi);
+    SDL_Joystick* pj = SDL_GameControllerGetJoystick(pad);
+    assert(pad);
+
+    RawState st;
+    st.pad = pad;
+    SDL_JoystickSetVirtualButton(pj, SDL_CONTROLLER_BUTTON_B, 1);
+    SDL_JoystickSetVirtualButton(pj, SDL_CONTROLLER_BUTTON_START, 1);
+    SDL_GameControllerUpdate();
+    assert(menu_fixed_mask(st) == (0x4000 | 0x1000));
+    SDL_JoystickSetVirtualButton(pj, SDL_CONTROLLER_BUTTON_B, 0);
+    SDL_JoystickSetVirtualButton(pj, SDL_CONTROLLER_BUTTON_START, 0);
+    SDL_JoystickSetVirtualButton(pj, SDL_CONTROLLER_BUTTON_A, 1);
+    SDL_JoystickSetVirtualButton(pj, SDL_CONTROLLER_BUTTON_DPAD_DOWN, 1);
+    SDL_GameControllerUpdate();
+    assert(menu_fixed_mask(st) == (0x8000 | 0x0400));
+
+    // pad_deadzone_is_tunable: a stick at 40% steers at the default dead zone and not at 0.5.
+    Bindings b = default_bindings();
+    uint8_t keys[SDL_NUM_SCANCODES] = {0};
+    uint16_t btn = 0;
+    float x = 0, y = 0;
+    st.keys = keys;
+    st.keys_len = SDL_NUM_SCANCODES;
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_LEFTX, (int16_t)(0.4f * 32767));
+    SDL_GameControllerUpdate();
+    resolve(b, st, &btn, &x, &y);
+    assert(x > 0.0f);
+    b.pad_deadzone = 0.5f;
+    resolve(b, st, &btn, &x, &y);
+    assert(near(x, 0.0f));
+
+    Bindings r;
+    assert(save_bindings(b, "pad_deadzone_test.json") && load_bindings(r, "pad_deadzone_test.json"));
+    remove("pad_deadzone_test.json");
+    assert(near(r.pad_deadzone, 0.5f));
+
+    SDL_GameControllerClose(pad);
+    SDL_JoystickDetachVirtual(vi);
+}
+
 int main() {
+
+#ifdef _WIN32
+    // A failed assert prints and exits instead of opening the Debug CRT abort dialog.
+    _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+#endif
+
+    controls_menu_checks();
     SDL_SetMainReady();
-    if (SDL_Init(SDL_INIT_JOYSTICK) != 0) {
+    if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
+    menu_fixed_pad_checks();
     // Virtual 4-axis, 10-button, 1-hat stick standing in for a flight stick.
     int vidx = SDL_JoystickAttachVirtual(SDL_JOYSTICK_TYPE_FLIGHT_STICK, 4, 10, 1);
     assert(vidx >= 0);

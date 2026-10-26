@@ -184,6 +184,43 @@ static void test_keep_cutscene_default_and_roundtrip() {
     rs64::video::set_draw_distance(1.0f);
 }
 
+static void test_legacy_terrain_default_and_roundtrip() {
+    rs64::video::set_legacy_terrain(false);
+    UC uc; uc.validate();
+    json j = rs64::video::to_friendly(uc);
+    CHECK(j.value("legacyTerrain", true) == false);
+    json in = { {"schema", 2}, {"drawDistance", 1.0}, {"legacyTerrain", true} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::legacy_terrain() == true);
+    CHECK(rs64::video::to_friendly(uc).value("legacyTerrain", false) == true);
+    rs64::video::set_legacy_terrain(false);
+}
+
+// Legacy terrain caps the draw distance at 1.3: switching it on clamps the saved value, values set while it is on are clamped, and a file with
+// both keys loads capped. Off, the range is 1 to 8.
+static void test_legacy_terrain_caps_draw_distance() {
+    rs64::video::set_legacy_terrain(false);
+    rs64::video::set_draw_distance(8.0f);
+    CHECK(rs64::video::draw_distance() == 8.0f);
+    rs64::video::set_draw_distance(20.0f);
+    CHECK(rs64::video::draw_distance() == rs64::video::kDrawDistanceMax);
+    rs64::video::set_draw_distance(4.0f);
+    rs64::video::set_legacy_terrain(true);
+    CHECK(rs64::video::draw_distance() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    CHECK(rs64::video::draw_distance_max() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    rs64::video::set_draw_distance(6.0f);
+    CHECK(rs64::video::draw_distance() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    rs64::video::set_draw_distance(1.25f);
+    CHECK(rs64::video::draw_distance() == 1.25f);
+    rs64::video::set_legacy_terrain(false);
+    UC uc; uc.validate();
+    json in = { {"schema", 2}, {"drawDistance", 6.0}, {"legacyTerrain", true} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::draw_distance() == rs64::video::kLegacyTerrainDrawDistanceMax);
+    rs64::video::set_legacy_terrain(false);
+    rs64::video::set_draw_distance(1.0f);
+}
+
 static void test_keep_cutscene_absent_key_not_migrated() {
     rs64::video::set_keep_cutscene_draw_distance(true);
     UC uc; uc.validate();
@@ -222,6 +259,25 @@ static void test_fullscreen_roundtrip_and_peek() {
     CHECK(rs64::video::fullscreen() == false);
 }
 
+static void test_language_code_roundtrip() {
+    UC uc; uc.validate();
+    rs64::video::set_language("");
+    CHECK(!rs64::video::to_friendly(uc).contains("language"));
+    std::string p = write_tmp("tmp_language_video.json", R"({"schema":2,"drawDistance":1.0,"language":"ja"})");
+    rs64::video::load(uc, p);
+    std::remove(p.c_str());
+    CHECK(rs64::video::language() == "ja");
+    CHECK(rs64::video::to_friendly(uc).value("language", std::string{}) == "ja");
+
+    // The env pin wins live and is never saved; a menu pick clears it.
+    rs64::video::pin_language("de");
+    CHECK(rs64::video::language() == "de");
+    CHECK(rs64::video::to_friendly(uc).value("language", std::string{}) == "ja");
+    rs64::video::set_language("fr");
+    CHECK(rs64::video::language() == "fr");
+    rs64::video::set_language("");
+}
+
 static void test_effective_draw_distance() {
     using rs64::video::effective_draw_distance;
     CHECK(effective_draw_distance(2.0f, false, 15) == 2.0f);
@@ -252,11 +308,80 @@ static void test_ray_tracing_settings() {
     _putenv("ROGUESQ_RT_FOG_SHAFTS=");
 }
 
+static void test_aa_presets() {
+    UC uc; uc.validate();
+    rs64::video::apply_aa_preset(uc, 3);
+    CHECK(uc.antialiasing == UC::Antialiasing::MSAA4X && uc.downsampleMultiplier == 1 && !uc.fxaa);
+    CHECK(rs64::video::aa_preset(uc) == 3);
+    rs64::video::apply_aa_preset(uc, 1);
+    CHECK(uc.antialiasing == UC::Antialiasing::None && uc.fxaa);
+    rs64::video::apply_aa_preset(uc, 6);
+    CHECK(uc.antialiasing == UC::Antialiasing::None && uc.downsampleMultiplier == 4 && !uc.fxaa);
+    uc.antialiasing = UC::Antialiasing::MSAA4X;
+    uc.downsampleMultiplier = 2;
+    CHECK(rs64::video::aa_preset(uc) == -1);
+}
+
+static void test_resolution_and_upscale_choices() {
+    UC uc; uc.validate();
+    rs64::video::apply_resolution_choice(uc, 0);
+    CHECK(uc.resolution == UC::Resolution::WindowIntegerScale);
+    CHECK(rs64::video::resolution_choice(uc) == 0);
+    rs64::video::apply_resolution_choice(uc, 1);
+    CHECK(uc.resolution == UC::Resolution::Original);
+    rs64::video::apply_resolution_choice(uc, 3);
+    CHECK(uc.resolution == UC::Resolution::Manual && uc.resolutionMultiplier == 3.0);
+    CHECK(rs64::video::resolution_choice(uc) == 3);
+    rs64::video::apply_upscale_choice(uc, 1);
+    CHECK(uc.filtering == UC::Filtering::Linear);
+    CHECK(rs64::video::upscale_choice(uc) == 1);
+    json j = rs64::video::to_friendly(uc);
+    CHECK(j["advanced"].value("filtering", std::string()) == "Linear");
+}
+
+static void test_target_display_roundtrip() {
+    UC u2; u2.validate();
+    rs64::video::apply_friendly(u2, json{{"frameInterpolation", false}, {"targetFramerate", "display"}});
+    CHECK(u2.refreshRate == UC::RefreshRate::Original);
+    CHECK(rs64::video::to_friendly(u2)["targetFramerate"] == "display");
+    CHECK(rs64::video::to_friendly(u2)["frameInterpolation"] == false);
+    rs64::video::apply_friendly(u2, json{{"frameInterpolation", true}});
+    CHECK(u2.refreshRate == UC::RefreshRate::Display);
+    rs64::video::apply_friendly(u2, json{{"targetFramerate", 120}, {"frameInterpolation", true}});
+    CHECK(u2.refreshRate == UC::RefreshRate::Manual && u2.refreshRateTarget == 120);
+    CHECK(rs64::video::to_friendly(u2)["targetFramerate"] == 120);
+
+    UC u3; u3.validate();
+    rs64::video::apply_friendly(u3, json{{"advanced", {{"refreshRate", UC::RefreshRate::Display}}}});
+    CHECK(rs64::video::to_friendly(u3)["frameInterpolation"] == true);
+    CHECK(rs64::video::to_friendly(u3)["targetFramerate"] == "display");
+    CHECK(!rs64::video::to_friendly(u3)["advanced"].contains("refreshRate"));
+    rs64::video::apply_friendly(u3, json{{"targetFramerate", 60}});
+}
+
+static void test_custom_aa_steps_to_fxaa() {
+    UC uc; uc.validate();
+    uc.antialiasing = UC::Antialiasing::MSAA4X;
+    uc.downsampleMultiplier = 2;
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::display_value(rs64::video::Display::AntiAliasing) == -1);
+    rs64::video::step_display(rs64::video::Display::AntiAliasing);
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::aa_preset(uc) == 1);
+}
+
 int main() {
+    test_custom_aa_steps_to_fxaa();
+    test_aa_presets();
+    test_resolution_and_upscale_choices();
+    test_target_display_roundtrip();
     test_ray_tracing_settings();
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
+    test_legacy_terrain_default_and_roundtrip();
+    test_legacy_terrain_caps_draw_distance();
     test_fullscreen_roundtrip_and_peek();
+    test_language_code_roundtrip();
     test_effective_draw_distance();
     test_to_friendly_basic();
     test_to_friendly_mapping();

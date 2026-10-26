@@ -1,14 +1,6 @@
 # Online co-op as a native mod: multiplayer_native.dll / .so, which reaches the game only through the host API table.
 # Added by the game's CMake; one folder per config, staged by tools/mods/stage_mods.cmake and by the POST_BUILD below.
-# ---- ENet6 (networking) and miniupnpc (UPnP port mapping for internet hosting), static, used only by this mod ----
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/enet6 ${CMAKE_BINARY_DIR}/enet6 EXCLUDE_FROM_ALL)
-set(UPNPC_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
-set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/miniupnp/miniupnpc ${CMAKE_BINARY_DIR}/miniupnpc EXCLUDE_FROM_ALL)
-# Linked into a shared library, which needs position-independent code on Linux.
-set_target_properties(enet6 libminiupnpc-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+include(${CMAKE_CURRENT_SOURCE_DIR}/net_libs.cmake)
 
 set(MP_OUT "${RS64_BUILT_MODS_DIR}/$<CONFIG>/multiplayer-native")
 file(GLOB MP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
@@ -19,7 +11,9 @@ set(MP_BASE_FILES
     ${CMAKE_SOURCE_DIR}/src/util/debug_logs.h
     ${CMAKE_SOURCE_DIR}/include/os_compat.h
     ${CMAKE_SOURCE_DIR}/src/util/rdram_words.h)
-add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES})
+# The relay server's protocol (relay-server/src), shared with rs64_relay.
+set(MP_RELAY_FILES ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.cpp ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.h)
+add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES} ${MP_RELAY_FILES})
 # Same rounding as the game's copy of lockstep_core: no fused multiply-add in the flight model.
 set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp)
 if (MSVC)
@@ -44,6 +38,7 @@ if (ANDROID)
 endif()
 target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/relay-server/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
@@ -96,17 +91,3 @@ if (NOT ANDROID)
             COMMAND ${CMAKE_COMMAND} -E $<IF:$<CONFIG:Release>,copy_directory,true> ${MP_OUT} ${RS64_DIST_DIR}/mods/multiplayer-native)
     endif()
 endif()
-
-# Unit tests, run by the game's rs64_unit_tests target.
-add_executable(mp_core_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/mp_core_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp)
-add_executable(net_core_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_core_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/net_core.cpp)
-# Loopback test for the network link (ENet, simulated latency and loss); also talks to the real router through UPnP.
-add_executable(net_link_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_link_test.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/net_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/net_link.cpp)
-target_link_libraries(net_link_test PRIVATE enet6 libminiupnpc-static)
-foreach(t mp_core_test net_core_test net_link_test)
-    set_target_properties(${t} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-    target_include_directories(${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/tests)
-    if (MSVC)
-        target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
-    endif()
-endforeach()

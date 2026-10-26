@@ -30,7 +30,7 @@ RecompiledPatches/
 # Build directories
 build*/
 build-*
-!tools/build-mods.ps1
+!tools/release/build-mods.ps1
 cmake-build-*
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -106,13 +106,13 @@ dumps/
 /wav
 __pycache__/
 *.py[cod]
-/tools/rename
+/tools/re/rename
 /plans
 .claude/settings.json
 
 # Lockstep replay run outputs (the .rec/.rec.hash recordings are inputs and stay)
-tools/recordings/**/*.out
-tools/recordings/**/*.hash.dump
+tools/debug/recordings/**/*.out
+tools/debug/recordings/**/*.hash.dump
 
 # native-demo example mod: separate-build DLL artifacts (built via mods/native-demo/CMakeLists.txt)
 mods/native-demo/build/
@@ -166,3 +166,4 @@ patches/patches.bin
 tests/mods/replay_probe.nrm
 tests/mods/replay-probe/build/
 /.playwright-mcp
+*.blend1

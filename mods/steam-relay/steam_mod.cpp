@@ -92,6 +92,7 @@ struct Api {
     decltype(&SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter) StringFilter = nullptr;
     decltype(&SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter) DistanceFilter = nullptr;
     decltype(&SteamAPI_ISteamMatchmaking_AddRequestLobbyListResultCountFilter) CountFilter = nullptr;
+    decltype(&SteamAPI_ISteamMatchmaking_AddRequestLobbyListFilterSlotsAvailable) SlotsFilter = nullptr;
     decltype(&SteamAPI_ISteamMatchmaking_RequestLobbyList) RequestLobbyList = nullptr;
     decltype(&SteamAPI_ISteamMatchmaking_GetLobbyByIndex) LobbyByIndex = nullptr;
     decltype(&SteamAPI_ISteamMatchmaking_JoinLobby) JoinLobby = nullptr;
@@ -101,6 +102,40 @@ struct Api {
 };
 
 enum class Load { NotTried, Missing, Blocked, WrongVersion, Loaded };
+
+constexpr int kListMax = 50;
+constexpr size_t kNameMax = 16;
+
+struct Game {
+    std::string peer;
+    std::string label;
+    bool locked = false;
+};
+
+// The lobby's "rs64r" value: the multiplayer build id in hex.
+std::string key_of(uint32_t build) {
+    char b[16];
+    snprintf(b, sizeof b, "%08X", build);
+    return b;
+}
+
+// Menu-font text: A-Z, 0-9 and single spaces, at most kNameMax (lobby data comes from any app-480 user).
+std::string menu_name(const char* s) {
+    std::string out;
+    for (; s && *s && out.size() < kNameMax; ++s) {
+        char c = *s;
+        if (c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == ' ' && !out.empty() && out.back() != ' ')) {
+            out += c;
+        }
+    }
+    while (!out.empty() && out.back() == ' ') {
+        out.pop_back();
+    }
+    return out;
+}
 
 class Steam {
 public:
@@ -119,6 +154,10 @@ public:
     const char* status() const { return status_.c_str(); }
     const char* host_label() const { return host_label_.c_str(); }
     const char* pending_join();
+    void refresh(uint32_t build);
+    int game_count();
+    const Game* game(int i) const { return i >= 0 && i < (int)games_.size() ? &games_[i] : nullptr; }
+    void set_info(const char* name, bool locked);
 
 private:
     bool load();
@@ -131,7 +170,9 @@ private:
     void fail(const std::string& why);
     void search(const std::string& code);
     void join_lobby(uint64_t lobby);
-    std::string build_key() const;
+    void on_list(SteamAPICall_t call);
+    void publish_info();
+    std::string build_key() const { return key_of(build_); }
 
     Api f_;
     Load load_ = Load::NotTried;
@@ -160,6 +201,10 @@ private:
     std::string pending_;
     std::string pending_out_;
     std::mt19937 rng_{std::random_device{}()};
+    SteamAPICall_t list_call_ = k_uAPICallInvalid;
+    std::vector<Game> games_;
+    std::string name_;
+    bool locked_ = false;
 };
 
 Steam g_steam;
@@ -283,6 +328,7 @@ bool Steam::load() {
     get(f_.StringFilter, "SteamAPI_ISteamMatchmaking_AddRequestLobbyListStringFilter");
     get(f_.DistanceFilter, "SteamAPI_ISteamMatchmaking_AddRequestLobbyListDistanceFilter");
     get(f_.CountFilter, "SteamAPI_ISteamMatchmaking_AddRequestLobbyListResultCountFilter");
+    get(f_.SlotsFilter, "SteamAPI_ISteamMatchmaking_AddRequestLobbyListFilterSlotsAvailable");
     get(f_.RequestLobbyList, "SteamAPI_ISteamMatchmaking_RequestLobbyList");
     get(f_.LobbyByIndex, "SteamAPI_ISteamMatchmaking_GetLobbyByIndex");
     get(f_.JoinLobby, "SteamAPI_ISteamMatchmaking_JoinLobby");
@@ -379,12 +425,6 @@ void Steam::fail(const std::string& why) {
     failed_ = true;
 }
 
-std::string Steam::build_key() const {
-    char b[16];
-    snprintf(b, sizeof b, "%08X", build_);
-    return b;
-}
-
 bool Steam::start(int role, const char* peer, uint32_t build) {
     if (!available()) {
         return false;
@@ -427,6 +467,60 @@ void Steam::search(const std::string& code) {
     call_ = f_.RequestLobbyList(mm_);
     call_id_ = LobbyMatchList_t::k_iCallback;
     set_status("FINDING GAME " + code);
+}
+
+void Steam::refresh(uint32_t build) {
+    games_.clear();
+    list_call_ = k_uAPICallInvalid;
+    if (!available()) {
+        return;
+    }
+    f_.StringFilter(mm_, "rs64r", key_of(build).c_str(), k_ELobbyComparisonEqual);
+    f_.SlotsFilter(mm_, 1);
+    f_.DistanceFilter(mm_, k_ELobbyDistanceFilterWorldwide);
+    f_.CountFilter(mm_, kListMax);
+    list_call_ = f_.RequestLobbyList(mm_);
+}
+
+int Steam::game_count() {
+    pump();
+    return list_call_ != k_uAPICallInvalid ? -1 : (int)games_.size();
+}
+
+void Steam::on_list(SteamAPICall_t call) {
+    list_call_ = k_uAPICallInvalid;
+    LobbyMatchList_t r{};
+    bool failed = false;
+    if (!f_.MDCallResult(pipe_, call, &r, sizeof r, LobbyMatchList_t::k_iCallback, &failed) || failed) {
+        log("game list request failed");
+        return;
+    }
+    for (uint32_t i = 0; i < r.m_nLobbiesMatching && (int)games_.size() < kListMax; ++i) {
+        const uint64_t id = f_.LobbyByIndex(mm_, (int)i);
+        // Our own lobby while hosting.
+        if (id == lobby_) {
+            continue;
+        }
+        const char* locked = f_.GetLobbyData(mm_, id, "locked");
+        const std::string name = menu_name(f_.GetLobbyData(mm_, id, "name"));
+        games_.push_back(Game{"lobby:" + std::to_string(id), name.empty() ? "STEAM GAME" : name, locked && strcmp(locked, "1") == 0});
+    }
+    log("game list: " + std::to_string(games_.size()) + " games");
+}
+
+void Steam::set_info(const char* name, bool locked) {
+    name_ = menu_name(name);
+    locked_ = locked;
+    publish_info();
+}
+
+// The host's name and lock flag on its lobby (once it exists).
+void Steam::publish_info() {
+    if (!inited_ || !lobby_ || role_ != RS64_MP_ROLE_HOST) {
+        return;
+    }
+    f_.SetLobbyData(mm_, lobby_, "name", name_.c_str());
+    f_.SetLobbyData(mm_, lobby_, "locked", locked_ ? "1" : "0");
 }
 
 void Steam::join_lobby(uint64_t lobby) {
@@ -474,6 +568,8 @@ void Steam::shutdown() {
     inited_ = false;
     retry_at_ = 0;
     pending_.clear();
+    games_.clear();
+    list_call_ = k_uAPICallInvalid;
     status_ = "";
     log("shut down");
 }
@@ -509,7 +605,9 @@ void Steam::pump() {
 void Steam::on_callback(const CallbackMsg_t& m) {
     if (m.m_iCallback == SteamAPICallCompleted_t::k_iCallback) {
         const auto* c = (const SteamAPICallCompleted_t*)m.m_pubParam;
-        if (c->m_hAsyncCall == call_) {
+        if (c->m_hAsyncCall == list_call_) {
+            on_list(c->m_hAsyncCall);
+        } else if (c->m_hAsyncCall == call_) {
             on_call(c->m_hAsyncCall, c->m_iCallback);
         } else {
             leave_stale(c->m_hAsyncCall, c->m_iCallback);
@@ -554,6 +652,7 @@ void Steam::on_call(SteamAPICall_t call, int id) {
         code_ = code;
         f_.SetLobbyData(mm_, lobby_, "code", code_.c_str());
         f_.SetLobbyData(mm_, lobby_, "rs64r", build_key().c_str());
+        publish_info();
         host_label_ = "JOIN CODE " + code_;
         set_status("SHARE THE JOIN CODE");
         log("lobby " + std::to_string(lobby_) + " code " + code_);
@@ -692,6 +791,12 @@ const rs64_mp_transport kTransport = {
     [](void* u) -> const char* { return S(u).status(); },
     [](void* u) -> const char* { return S(u).host_label(); },
     [](void* u) -> const char* { return S(u).pending_join(); },
+    [](void* u, uint32_t build) { S(u).refresh(build); },
+    [](void* u) -> int { return S(u).game_count(); },
+    [](void* u, int i) -> const char* { return S(u).game(i) ? S(u).game(i)->label.c_str() : ""; },
+    [](void* u, int i) -> const char* { return S(u).game(i) ? S(u).game(i)->peer.c_str() : ""; },
+    [](void* u, int i) -> int { return S(u).game(i) && S(u).game(i)->locked ? 1 : 0; },
+    [](void* u, const char* name, int locked) { S(u).set_info(name, locked != 0); },
 };
 
 }

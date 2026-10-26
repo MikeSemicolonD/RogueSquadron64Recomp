@@ -1,0 +1,30 @@
+{
+  "//": "CONTROLS page, shared by the front end (in place of OPTIONS > CONTROLLER SETTINGS) and the pause Game Settings: input sliders and the rumble toggle bind built-in keys saved in roguesq_input.json; BINDINGS opens the rebind list on CONTROLLER SETTINGS (front end only). See docs/guides/adding-menus-and-buttons.md.",
+  "buttons": [
+    { "id": "ctl_open", "menu": "options", "type": "submenu", "page": "controls", "replace": "controller_settings",
+      "label": { "en": "CONTROLLER SETTINGS", "de": "STEUERUNG", "fr": "COMMANDES" },
+      "title": { "en": "CONTROLS", "de": "STEUERUNG", "fr": "COMMANDES" } },
+    { "id": "ctl_pause_open", "menu": "pause_game_settings", "type": "submenu", "page": "controls",
+      "label": { "en": "CONTROLS", "de": "STEUERUNG", "fr": "COMMANDES" } },
+
+    { "id": "ctl_mouse_sensitivity", "menu": "controls", "type": "slider", "slider": "mouse_sensitivity",
+      "label": { "en": "MOUSE SENSITIVITY", "de": "MAUS-EMPFINDLICHKEIT", "fr": "SENSIBILITE SOURIS" },
+      "label_off": { "en": "LOW", "de": "NIEDRIG", "fr": "BAS" }, "label_on": { "en": "HIGH", "de": "HOCH", "fr": "HAUT" },
+      "min": 5, "max": 300, "step": 15 },
+    { "id": "ctl_mouse_smoothing", "menu": "controls", "type": "slider", "slider": "mouse_smoothing",
+      "label": { "en": "MOUSE SMOOTHING", "de": "MAUS-GLÄTTUNG", "fr": "LISSAGE SOURIS" },
+      "label_off": { "en": "NONE", "de": "KEINE", "fr": "AUCUN" }, "label_on": { "en": "HIGH", "de": "HOCH", "fr": "FORT" },
+      "min": 0, "max": 100, "step": 10 },
+    { "id": "ctl_deadzone", "menu": "controls", "type": "slider", "slider": "deadzone",
+      "label": { "en": "DEAD ZONE", "de": "TOTZONE", "fr": "ZONE MORTE" },
+      "label_off": { "en": "NONE", "de": "KEINE", "fr": "AUCUNE" }, "label_on": { "en": "LARGE", "de": "GROSS", "fr": "GRANDE" },
+      "min": 0, "max": 50, "step": 5 },
+    { "id": "ctl_rumble", "menu": "controls", "type": "toggle", "toggle": "rumble",
+      "label_on":  { "en": "RUMBLE: ON",  "de": "VIBRATION: AN",  "fr": "VIBRATION: OUI" },
+      "label_off": { "en": "RUMBLE: OFF", "de": "VIBRATION: AUS", "fr": "VIBRATION: NON" } },
+    { "id": "ctl_reset", "menu": "controls", "type": "action", "action": "reset_controls", "gap_after": 24,
+      "label": { "en": "RESET TO DEFAULTS", "de": "STANDARDWERTE", "fr": "PAR DEFAUT" } },
+    { "id": "ctl_bindings", "menu": "controls", "type": "submenu", "page": "controller_settings", "requires": "front_end", "gap_after": 24,
+      "label": { "en": "BINDINGS", "de": "BELEGUNG", "fr": "TOUCHES" } }
+  ]
+}

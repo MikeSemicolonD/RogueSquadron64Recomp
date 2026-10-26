@@ -1,6 +1,7 @@
 #include "game/mod_levels.h"
 #include <set>
 #include "check.h"
+#include <cmath>
 #include <cstdio>
 
 using namespace rs64levels;
@@ -126,6 +127,25 @@ int main() {
         CHECK(lv[0].objectives[3].goal == Goal::TimeLimit && lv[0].objectives[3].seconds == 300.0f);
         CHECK(lv[1].objectives.empty() && lv[2].objectives.empty());
     }
+    // objective_callouts: a voice line (stock id, -1 = none) and a DAT camera to cut to when it completes (or fails, for protect / timelimit)
+    {
+        std::vector<std::string> errors;
+        const auto l = parseModLevels("m", R"({ "levels": [ { "id": "a", "title": "A", "template": 1, "folder": "a", "objectives": [
+            { "text": "D", "goal": "destroy", "counter": 3, "count": 1, "voice": 93, "camera": "Camera_01", "recording": "obj_a1" },
+            { "text": "P", "goal": "protect", "flag": 5, "voice": 80, "pauseVoice": 704, "pauseRecording": "pause_b2" },
+            { "text": "R", "goal": "reach", "flag": 4 } ] } ] })", errors)[0];
+        CHECK(errors.empty() && l.objectives.size() == 3);
+        CHECK(l.objectives[0].voice == 93 && l.objectives[0].camera == "Camera_01" && l.objectives[0].recording == "obj_a1");
+        CHECK(l.objectives[1].voice == 80 && l.objectives[1].camera.empty());
+        // The pause screen reads each line aloud: its own voice (stock id or recording), none by default.
+        CHECK(l.objectives[1].pauseVoice == 704 && l.objectives[1].pauseRecording == "pause_b2" && l.objectives[0].pauseVoice == kVoiceNone);
+        CHECK(l.objectives[2].voice == kVoiceNone);
+        std::vector<int32_t> counts(128);
+        std::vector<uint8_t> flags(128);
+        flags[4] = 1;
+        const auto st = evaluateObjectives(l.objectives, counts.data(), flags.data(), 1.0f);
+        CHECK(st.fail && st.failed == 2 && st.done == 0);
+    }
     // objectives_evaluate: lines go green as they complete; success when every completing goal is done, fail on a protect flag or the time limit
     {
         std::vector<std::string> errors;
@@ -151,11 +171,131 @@ int main() {
         CHECK(!evaluateObjectives(s.objectives, counts.data(), flags.data(), 89.0f).success);
         CHECK(evaluateObjectives(s.objectives, counts.data(), flags.data(), 90.0f).success);
     }
+    // starting_song: a song id from the game's music cue table (0-255), the template's when left out or out of range
+    {
+        std::vector<std::string> errors;
+        const auto lv = parseModLevels("m", R"({ "levels": [
+            { "id": "a", "title": "A", "template": 1, "folder": "a", "music": 23 },
+            { "id": "b", "title": "B", "template": 1, "folder": "b" },
+            { "id": "c", "title": "C", "template": 1, "folder": "c", "music": 300 } ] })", errors);
+        CHECK(lv.size() == 3 && errors.size() == 1);
+        CHECK(lv[0].music == 23 && lv[1].music == kMusicTemplate && lv[2].music == kMusicTemplate);
+    }
     // menu_text_is_uppercase: the SELECT LEVEL fonts have no lowercase letters (stock titles and descriptions are all caps)
     CHECK(menuText("Strike the city before dawn.\nGo.") == "STRIKE THE CITY BEFORE DAWN.\nGO.");
     // menu_text_drops_what_the_fonts_lack: only characters every SELECT LEVEL candidate font has (normal10/11, starwars50) survive
     CHECK(menuText("Who's there? 3 TIEs & 1 AT-ST (east/west): go!") == "WHO'S THERE 3 TIES  1 AT-ST (EAST/WEST): GO!");
     CHECK(menuText("Caf\xc3\xa9 #1") == "CAF 1");
+    // crawl_file_parses: chapter, title, body, a stock planet or its own backdrop on a base planet, and the chapter it replaces
+    {
+        std::vector<std::string> errors;
+        const auto c = parseCrawl("shadows", R"({ "chapter": "Chapter V", "title": "Shadows", "body": "Text", "planet": "own", "base": 2, "replaces": 1 })", errors);
+        CHECK(errors.empty() && c && c->name == "shadows" && c->chapter == "Chapter V" && c->title == "Shadows" && c->body == "Text");
+        CHECK(c->ownPlanet && c->planet == 2 && c->replaces == 1);
+
+        const auto s = parseCrawl("plain", R"({ "title": "T", "planet": 3 })", errors);
+        CHECK(s && !s->ownPlanet && s->planet == 3 && s->replaces == -1 && errors.empty());
+    }
+    // crawl_file_mistyped_fields: wrong types fall back with one error each, never throw; bad JSON gives no crawl
+    {
+        std::vector<std::string> errors;
+        const auto c = parseCrawl("x", R"({ "planet": "x", "replaces": "9", "title": 5 })", errors);
+        CHECK(c && c->planet == 0 && !c->ownPlanet && c->replaces == -1 && c->title.empty() && errors.size() == 3);
+
+        errors.clear();
+        CHECK(!parseCrawl("y", "not json", errors) && errors.size() == 1);
+    }
+    // crawl_text_filtered: the crawl file's text keeps only the starwars50 font's characters, like the inline form
+    {
+        std::vector<std::string> errors;
+        const auto c = parseCrawl("z", R"({ "chapter": "Chapter V", "title": "The \"Dune\" Sea", "body": "A#B" })", errors);
+        CHECK(crawlString(*c) == "*}Chapter V\n\n*{The Dune Sea\n\nAB");
+    }
+    // level_names_a_crawl: "crawl": "<name>" names a crawl file; the template's crawl until it is found
+    {
+        std::vector<std::string> errors;
+        const auto lv = parseModLevels("m", R"({ "levels": [ { "id": "a", "title": "A", "template": 1, "folder": "a", "crawl": "shadows" } ] })", errors);
+        CHECK(errors.empty() && lv.size() == 1 && lv[0].crawlName == "shadows" && lv[0].crawl == kCrawlTemplate);
+    }
+    // which crawl plays: a mod level's named crawl, a stock chapter's replacement (the later mod's), else the game's own (nullptr)
+    {
+        std::vector<std::string> errors;
+        std::vector<Crawl> crawls;
+        crawls.push_back(*parseCrawl("shadows", R"({ "title": "S" })", errors));
+        crawls.push_back(*parseCrawl("first", R"({ "title": "F", "replaces": 1 })", errors));
+        crawls.push_back(*parseCrawl("second", R"({ "title": "G", "replaces": 1 })", errors));
+        const auto lv = parseModLevels("m", R"({ "levels": [
+            { "id": "a", "title": "A", "template": 1, "folder": "a", "crawl": "shadows" },
+            { "id": "b", "title": "B", "template": 1, "folder": "b", "crawl": "nobody" },
+            { "id": "c", "title": "C", "template": 0, "folder": "c", "crawl": { "title": "Inline", "planet": 1 } } ] })", errors);
+
+        // crawl_by_name / missing_crawl_falls_back
+        CHECK(pickCrawl(1, &lv[0], crawls) == &crawls[0]);
+        CHECK(pickCrawl(1, &lv[1], crawls) == nullptr);
+        // later_mod_replaces_chapter: chapter 1 plays at level 5
+        CHECK(pickCrawl(5, nullptr, crawls) == &crawls[2]);
+        // stock_level_without_replacement
+        CHECK(pickCrawl(0, nullptr, crawls) == nullptr && pickCrawl(3, nullptr, crawls) == nullptr);
+        // inline_crawl_still_wins_for_its_level: a mod level with its own inline crawl ignores crawl files, even a replacement of its template's chapter
+        crawls.push_back(*parseCrawl("c", R"({ "title": "R", "replaces": 0 })", errors));
+        CHECK(pickCrawl(0, &lv[2], crawls) == nullptr);
+    }
+    // A crawl's own files are served under the scene's directories (a manifest only takes files under its own top directories)
+    {
+        std::vector<std::string> errors;
+        auto own = *parseCrawl("shadows", R"({ "title": "T", "planet": "own", "base": 1 })", errors);
+        own.folder = "crawl/shadows";
+        CHECK(crawlServedPath("crawl/shadows/backdrop") == "backdrop/shadows");
+        CHECK(crawlServedPath("crawl/shadows/dat") == "frontend/starwars/shadows");
+        CHECK(crawlServedPath("crawl/shadows/crawl.json").empty() && crawlServedPath("level/x/dat").empty());
+
+        // own_planet_redirects: the stock backdrop the crawl looks up maps to its own
+        const std::set<std::string> both = { "crawl/shadows/backdrop", "crawl/shadows/dat" };
+        CHECK(crawlAsset(own, "backdrop/planet_1", both) == std::optional<std::string>("backdrop/shadows"));
+
+        // own_planet_partial_fallback: without its own backdrop the stock one stays
+        CHECK(!crawlAsset(own, "backdrop/planet_1", { "crawl/shadows/dat" }));
+
+        // stock_planet_never_redirects: a stock planet keeps the stock backdrop even when the file is there
+        auto stock = *parseCrawl("plain", R"({ "title": "T", "planet": 2 })", errors);
+        stock.folder = "crawl/plain";
+        CHECK(!crawlAsset(stock, "backdrop/planet_2", { "crawl/plain/backdrop" }));
+
+        // own_scene_dat: the crawl's own scene DAT (its fly-by routes) replaces the stock one, with either planet
+        CHECK(crawlAsset(stock, "frontend/starwars/dat", { "crawl/plain/dat" }) == std::optional<std::string>("frontend/starwars/plain"));
+        CHECK(!crawlAsset(own, "frontend/starwars/dat", { "crawl/shadows/backdrop" }));
+        CHECK(!crawlAsset(own, "level/lv_0/dat", both));
+
+        // long_crawl_name: manifest names are 15 characters, so a longer crawl name is an error
+        CHECK(errors.empty());
+        parseCrawl("a_very_long_crawl_name", R"({ "title": "T" })", errors);
+        CHECK(errors.size() == 1);
+    }
+    // crawl_camera_parsed: keys sorted by time, rotation optional, a malformed key skipped with one error
+    {
+        std::vector<std::string> errors;
+        const auto c = parseCrawl("cam", R"({ "title": "T", "camera": [
+            { "at": 88.5, "pos": [0, 5, 0] }, { "at": 0, "pos": [0, 0, 0], "rot": [10, 20, 30] }, { "at": "x", "pos": [1] } ] })", errors);
+        CHECK(c && c->camera.size() == 2 && errors.size() == 1);
+        CHECK(c->camera[0].at == 0 && c->camera[0].rot[0] == 10 && c->camera[0].rot[2] == 30);
+        CHECK(c->camera[1].at == 88.5f && c->camera[1].pos[1] == 5 && c->camera[1].rot[1] == 0);
+        CHECK(parseCrawl("plain", R"({ "title": "T" })", errors)->camera.empty());
+    }
+    // crawl_camera_eases: quadratic in/out between keys (the stock pan: 0 -> 5 over 84.5-88.5 s), held before the first and after the last
+    {
+        std::vector<CrawlKey> keys(3);
+        keys[1].at = 84.5f;
+        keys[2].at = 88.5f;
+        keys[2].pos[1] = 5;
+        keys[2].rot[0] = 40;
+        float pos[3], rot[3];
+        const auto near = [](float a, float b) { return std::fabs(a - b) < 1e-4f; };
+        CHECK(crawlCameraAt(keys, 50, pos, rot) && pos[1] == 0);
+        CHECK(crawlCameraAt(keys, 85.5f, pos, rot) && near(pos[1], 0.625f) && near(rot[0], 5));
+        CHECK(crawlCameraAt(keys, 86.5f, pos, rot) && near(pos[1], 2.5f));
+        CHECK(crawlCameraAt(keys, 120, pos, rot) && pos[1] == 5 && rot[0] == 40);
+        CHECK(!crawlCameraAt({}, 1, pos, rot));
+    }
     std::printf("mod_levels_test: ok\n");
     return 0;
 }

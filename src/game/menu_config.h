@@ -7,7 +7,7 @@
 
 extern "C" {
 // Append the custom entries to gCurrentMenuData when the MAIN_MENU is (re)built.
-void rs64_menu_install_main(uint8_t* rdram);
+int rs64_menu_install_main(uint8_t* rdram);
 // Handle a confirm press on a custom MAIN_MENU entry.
 void rs64_menu_confirm_main(uint8_t* rdram);
 uint32_t rs64_menu_confirms();
@@ -21,4 +21,8 @@ int rs64_menu_slider_editing(void);
 void rs64_menu_hover_sound(int pause);
 // A tap/click at fraction f across a menu entry's text (front-end slot, or pause record nextMenu); a text slider's next confirm uses it.
 void rs64_menu_slider_click(int key, float f);
+// 1 while a letter wheel (ENTER NAME, PASSCODES) takes typed keys; safe from any thread.
+int rs64_menu_typing(void);
+// SDL thread: typed UTF-8 text, or key '\b' (Backspace), for the letter wheel; 1 when taken.
+int rs64_menu_type(const char* utf8, int key);
 }

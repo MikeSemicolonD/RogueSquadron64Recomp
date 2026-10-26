@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <string>
 #include "rs64/host_api.h"
 
 #ifdef _WIN32
@@ -72,6 +73,15 @@ static int demo_menu_frame(uint32_t, uint8_t*, void*, void*) {
     return RS64_HOOK_CONTINUE;
 }
 
+// Level rules (host API v6): a rule action { "do": "demo_log", ... } logs its fields, then raises the custom when "demo.ping",
+// which a rule { "when": "custom", "custom": "demo.ping" } in a level's rules.json can answer.
+static void demo_log(uint8_t*, void*, const char* const* keys, const char* const* values, int count, void*) {
+    std::string line = "[native-demo] rule action demo_log";
+    for (int i = 0; i < count; i++) line += std::string(" ") + keys[i] + "=" + values[i];
+    g_api->log(line.c_str());
+    g_api->fire_rule_event("demo.ping", "");
+}
+
 MOD_EXPORT void rs64_mod_init(uint8_t* rdram, void* ctx) {
     (void)rdram;
     RecompRegs* r = (RecompRegs*)ctx;
@@ -83,6 +93,7 @@ MOD_EXPORT void rs64_mod_init(uint8_t* rdram, void* ctx) {
     }
     g_api->add_hook(RS64_HOOK_MENU_FRAME, demo_menu_frame, nullptr);
     g_api->add_text_source("demo_frames", demo_text, nullptr);
+    g_api->add_rule_action("demo_log", demo_log, nullptr);
     char line[64];
     std::snprintf(line, sizeof line, "[native-demo] host API v%d taken", (int)RS64_HOST_API_VERSION);
     g_api->log(line);

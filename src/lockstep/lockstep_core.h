@@ -2,6 +2,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <deque>
 #include <map>
 #include <string>
@@ -112,5 +113,42 @@ std::string dump_regions(const uint8_t* rdram);
 bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song);
 // An attract demo is playing (gGameSettings flags 0x80130B50 & 0x60).
 bool demo_active(const uint8_t* rdram);
+
+// A ROGUESQ_PAUSE_AT target: hold once `clock` reaches `frame`.
+struct PauseTarget { std::string clock; uint32_t frame = 0; bool done = false; };
+
+// "clock[:frame],..." (spaces around commas ignored, no frame = 0).
+inline std::vector<PauseTarget> parse_pause_targets(const std::string& spec)
+{
+
+    std::vector<PauseTarget> out;
+
+    for (size_t at = 0; at <= spec.size();)
+    {
+        size_t end = spec.find(',', at);
+
+        if (end == std::string::npos) end = spec.size();
+
+        std::string item = spec.substr(at, end - at);
+
+        item.erase(0, item.find_first_not_of(' '));
+        item.erase(item.find_last_not_of(' ') + 1);
+
+        const size_t colon = item.rfind(':');
+
+        if (!item.empty()) out.push_back({ item.substr(0, colon), colon == std::string::npos ? 0u : (uint32_t)std::strtoul(item.c_str() + colon + 1, nullptr, 10) });
+
+        at = end + 1;
+    }
+
+    return out;
+}
+
+// A target names its clock or, at a dot, any of its sub-states (menu covers menu.options).
+inline bool pause_clock_matches(const std::string& target, const std::string& clock)
+{
+
+    return clock == target || (clock.size() > target.size() && clock.compare(0, target.size(), target) == 0 && clock[target.size()] == '.');
+}
 
 }

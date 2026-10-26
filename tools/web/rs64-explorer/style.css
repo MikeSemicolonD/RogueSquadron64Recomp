@@ -1,0 +1,474 @@
+/* Dark by default; light follows the OS unless the theme button picked one (data-theme on <html>, remembered). */
+:root {
+  color-scheme: dark;
+  --bg: #0f1115; --panel: #171a21; --line: #2a2f3a; --text: #d9dde6; --dim: #8a92a3; --accent: #e8b84a; --sel: #2b3242;
+  --control: #222733; --control-hover: #2a303d; --control-hover-line: #4a5366; --track: #3a4150; --row-hover: #20252f; --lane: #1b1f27;
+  --obj: #9fdcf2; --obj-line: #4ac0e8; --bad: #ff9a9a; --bad-line: #ff5f5f; --err: #ff8a7a; --warn: #e0a64a; --strong: #fff;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f3f4f7; --panel: #ffffff; --line: #d3d7df; --text: #1b1f27; --dim: #5c6474; --accent: #9a6a10; --sel: #e2e7f1;
+    --control: #eceef3; --control-hover: #e2e5ec; --control-hover-line: #9aa3b5; --track: #c9ced8; --row-hover: #e8ebf1; --lane: #e4e7ed;
+    --obj: #0b6f99; --obj-line: #1f8fbf; --bad: #b42b26; --bad-line: #d93636; --err: #b8352a; --warn: #a2660e; --strong: #0f1115;
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f3f4f7; --panel: #ffffff; --line: #d3d7df; --text: #1b1f27; --dim: #5c6474; --accent: #9a6a10; --sel: #e2e7f1;
+  --control: #eceef3; --control-hover: #e2e5ec; --control-hover-line: #9aa3b5; --track: #c9ced8; --row-hover: #e8ebf1; --lane: #e4e7ed;
+  --obj: #0b6f99; --obj-line: #1f8fbf; --bad: #b42b26; --bad-line: #d93636; --err: #b8352a; --warn: #a2660e; --strong: #0f1115;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, sans-serif; }
+body { display: grid; grid-template-columns: 280px 1fr; grid-template-rows: 100%; transition: grid-template-columns .2s, grid-template-rows .2s; }
+body.nav-closed { grid-template-columns: 0 1fr; }
+body.nav-closed aside { border: 0; }
+body.no-rom .needs-rom { display: none !important; }
+aside { background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+/* Fixed-width content slides out with the drawer instead of reflowing while it closes. */
+aside > * { min-width: 279px; }
+#navToggle { position: absolute; top: 50%; left: 0; z-index: 2; transform: translateY(-50%); width: 16px; height: 48px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border-left: 0; border-radius: 0 4px 4px 0; color: var(--dim); }
+/* Edit panel and stats share the top-left corner; the stats sit right of the panel whatever its width. */
+#topLeft { position: absolute; top: 10px; left: 24px; display: flex; gap: 10px; align-items: flex-start; max-height: calc(100% - 20px); pointer-events: none; }
+#topLeft > .panel { position: static; }
+#editPanel { width: 260px; max-height: calc(100vh - 20px); overflow: auto; display: grid; gap: 6px; pointer-events: auto; }
+#editPanel:not(.open) { width: auto; }
+#editPanel .editHead { display: flex; justify-content: space-between; gap: 6px; }
+#editPanel button[data-icon] { display: inline-flex; align-items: center; justify-content: center; min-height: 28px; min-width: 32px; }
+#editPanel:not(.open) #editBody { display: none; }
+#editBody { display: grid; gap: 6px; }
+#editBody label { display: flex; gap: 6px; align-items: center; min-width: 0; }
+#editBody label > select { min-width: 0; }
+#editBody > * { min-width: 0; }
+.addPalette > hr { width: 100%; border: 0; border-top: 1px solid var(--line); margin: 2px 0; }
+.addPalette > .addHead { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+#addSearch { background: var(--bg) url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Cpath fill=%27none%27 stroke=%27%238a92a3%27 stroke-width=%271.6%27 d=%27M7 2.5a4.5 4.5 0 1 1 0 9a4.5 4.5 0 0 1 0-9zM10.4 10.4L14 14%27/%3E%3C/svg%3E") no-repeat 7px center / 14px; border: 1px solid var(--line); padding-left: 27px; }
+#addSearch:focus { border-color: var(--accent); }
+#addList { display: grid; gap: 1px; max-height: 240px; overflow: auto; }
+.rulesBox, .rulesBox .rule, .levelRules { grid-template-columns: minmax(0, 1fr); }
+.rulesBox { display: grid; gap: 6px; min-width: 0; }
+.rulesBox .rulesHead { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.rulesBox .rule { border: 1px solid var(--line); border-radius: 6px; padding: 6px; display: grid; gap: 4px; background: var(--bg); }
+.rulesBox .when { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rulesBox .when > select:first-child { color: var(--accent); font-weight: 600; }
+.rulesBox .act { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: 12px; }
+.rulesBox select, .rulesBox input:not([type=checkbox]) { min-width: 0; max-width: 100%; }
+.rulesBox .obj { border-color: var(--obj-line); color: var(--obj); }
+.rulesBox .bad { border-color: var(--bad-line); color: var(--bad); }
+.rulesBox .warn { color: var(--bad); }
+#rulesPanel, #crawlPanel { top: 10px; right: 270px; width: 400px; max-height: calc(100% - 20px); overflow: auto; z-index: 5; display: grid; gap: 6px; align-content: start; }
+#rulesPanel[hidden], #crawlPanel[hidden] { display: none; }
+#rulesPanel .rulesPanelHead, #crawlPanel .rulesPanelHead { display: flex; justify-content: space-between; align-items: center; }
+/* The crawl window resizes from its corner; its text box takes the height. */
+#crawlPanel { resize: both; display: flex; flex-direction: column; min-width: 280px; min-height: 220px; }
+#crawlPanel[hidden] { display: none; }
+#crawlBody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.crawlEdit label.crawlText { flex: 1; min-height: 0; }
+.crawlEdit > .shotNote { flex: none; }
+#crawlPanel .crawlEdit label.crawlText > textarea { flex: 1; min-height: 6em; resize: none; }
+#btnRules { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#btnRules[hidden] { display: none; }
+.levelRules { display: grid; gap: 6px; min-width: 0; }
+.levelRules > b { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+.levelRules input[type=search] { flex: 1; min-width: 0; }
+.levelRules .when { display: flex; gap: 6px; align-items: center; }
+.levelRules .ruleList { display: grid; gap: 2px; max-height: 40vh; overflow-y: auto; }
+.levelRules .ruleRow { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.levelRules .ruleRow b { color: var(--obj); font-weight: 600; }
+.levelRules .ruleRow.bad, .levelRules .ruleRow.bad b { color: var(--bad); border-color: var(--bad-line); }
+.rulesBox .addAct { margin-left: 12px; justify-self: start; }
+.rulesBox .addRule { justify-self: start; }
+.addPalette { position: relative; }
+#addOverlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center; background: color-mix(in srgb, var(--panel) 55%, transparent); backdrop-filter: blur(4px); border-radius: 6px; }
+#addOverlay[hidden] { display: none; }
+#addOverlay small { color: var(--dim); }
+#addList > b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin: 6px 0 2px; }
+#addList .addRow { display: flex; align-items: center; gap: 6px; text-align: left; padding: 3px 6px; background: none; border-color: transparent; }
+#addList .addRow:hover { background: var(--sel); }
+#addList .addRow.active { border-color: var(--accent); background: var(--sel); }
+#addList .addRow em { margin-left: auto; color: var(--dim); font-style: normal; font-size: 11px; white-space: nowrap; }
+#editBody .pair { display: flex; gap: 8px; }
+.histRow { display: flex; gap: 8px; }
+.histRow > button { flex: 1; display: inline-flex; align-items: center; justify-content: center; min-height: 28px; }
+.histRow > #btnPlay { flex: 0 0 40px; }
+#btnMod { gap: 6px; }
+#btnMod svg, #btnPlay svg { width: 16px; height: 16px; }
+.shotRow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.shotNote { display: block; flex-basis: 100%; opacity: 0.75; white-space: normal; margin-top: 4px; }
+.shotPersonal { display: inline-flex; align-items: center; gap: 4px; }
+.destroyChip { display: inline-flex; align-items: center; gap: 2px; padding: 0 2px 0 6px; border: 1px solid var(--line); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
+.destroyChip.warn { border-color: var(--accent); }
+.destroyChip button { padding: 0 4px; }
+.shotRow select { min-width: 0; max-width: 100%; flex: 1 1 6em; }
+dialog.levelDialog { max-width: min(640px, 92vw); display: grid; gap: 8px; background: var(--panel); color: var(--text); opacity: 1; }
+.levelDialog > * { min-width: 0; }
+.levelDialog > b, .levelDialog > small { text-align: center; }
+#btnLevelSettings, #btnBlankLevel { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#btnLevelSettings[hidden], #btnBlankLevel[hidden] { display: none; }
+.levelDialog > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.levelDialog label.stacked, .crawlEdit label.stacked { flex-direction: column; align-items: center; }
+.levelDialog label.stacked > input, .levelDialog label.stacked > textarea, .crawlEdit label.stacked > input, .crawlEdit label.stacked > textarea { align-self: stretch; }
+.levelDialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+.levelDialog label, .levelDialog th, .levelDialog b { color: var(--text); }
+.levelDialog label, .crawlEdit label { display: flex; gap: 6px; align-items: baseline; }
+.levelDialog input:not([type]), .levelDialog textarea, .levelDialog select, .crawlEdit input, .crawlEdit textarea, .crawlEdit select { flex: 1; min-width: 0; }
+/* A stacked text box fills the width and is resized by height (in the column layout flex: 1 would override a dragged height). */
+.levelDialog label.stacked > textarea, .crawlEdit label.stacked > textarea { flex: none; resize: vertical; }
+.craftGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 8px; }
+.medalGrid td { text-align: center; }
+.medalGrid input { width: 5em; }
+.levelDialog .recRow, .levelDialog .actions { display: flex; justify-content: center; gap: 8px; }
+.levelDialog .actions button { display: inline-flex; align-items: center; gap: 6px; }
+.levelDialog .dlgClose { position: absolute; top: 6px; right: 6px; display: inline-flex; padding: 4px; }
+.levelDialog .objectives { display: grid; gap: 10px; }
+.levelDialog .objRow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; }
+.levelDialog .objRow > :nth-child(n+4) { grid-column: 1 / -1; }
+.levelDialog .objCallout { display: grid; gap: 6px; padding-left: 12px; border-left: 2px solid var(--line); }
+.levelDialog .objRow > *, .levelDialog .objCallout > *, .levelDialog .objCallout select { min-width: 0; }
+.levelDialog .objRow [hidden] { display: none; }
+.levelDialog > .addObjective { justify-self: center; }
+#playStatus { font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
+#playStatus code { user-select: all; }
+#editBody .pair > * { flex: 1; }
+#editBody input[type=range] { flex: 1; padding: 0; }
+#editBody output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
+#editBody .rows { display: grid; gap: 6px; grid-template-columns: minmax(0, 1fr); }
+#editBody .modes, #editBody .tools { display: flex; gap: 4px; }
+#editBody .modes button, #editBody .tools button { flex: 1; padding: 4px 2px; }
+#editBody .dim { color: var(--dim); font-size: 12px; }
+#selFields input[type=number] { width: 0; flex: 1; padding: 2px 4px; }
+header { padding: 12px; border-bottom: 1px solid var(--line); }
+header .titleRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+header h1 { margin: 0; font-size: 17px; letter-spacing: .04em; color: var(--accent); }
+#themeBtn { padding: 2px 8px; line-height: 1.2; }
+header .titleBtns { display: flex; gap: 4px; }
+#audioBtn { padding: 2px 6px; line-height: 0; }
+#audioBtn.muted { color: var(--dim); }
+header .toolLink { display: inline-block; margin-bottom: 8px; color: var(--dim); font-size: 12px; text-decoration: none; }
+header .toolLink:hover { color: var(--text); text-decoration: underline; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 12px 0; }
+.tabs button { flex: 1 0 30%; min-width: 0; padding-left: 2px; padding-right: 2px; }
+button, select, input { font: inherit; color: var(--text); background: var(--control); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; }
+button, select, input:not([type=checkbox], [type=range]) { transition: border-color .15s, background-color .15s, color .15s; }
+button:not(:disabled), select { cursor: pointer; }
+:where(button, select, input:not([type=checkbox], [type=range])):not(:disabled):hover { border-color: var(--control-hover-line); background-color: var(--control-hover); }
+:where(button, select, input:not([type=checkbox], [type=range])):focus-visible { border-color: var(--accent); outline: none; }
+/* Sliders are drawn here rather than left to the browser, whose native thumb can come out as a dark square on this theme. */
+input[type=range] { -webkit-appearance: none; appearance: none; height: 16px; padding: 0; background: transparent; border: 0; cursor: pointer; }
+input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--track); }
+input[type=range]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--track); }
+input[type=range]::-moz-range-progress { height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 55%, var(--track)); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%; border: 0; background: var(--accent); transition: transform .15s, box-shadow .15s; }
+input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; border: 0; background: var(--accent); transition: transform .15s, box-shadow .15s; }
+input[type=range]:hover::-webkit-slider-thumb { transform: scale(1.25); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+input[type=range]:hover::-moz-range-thumb { transform: scale(1.25); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+input[type=range]:focus-visible { outline: none; }
+input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
+button.on, button.on:hover { border-color: var(--accent); color: var(--accent); }
+.filterbox { position: relative; padding: 0 12px; }
+#filter { width: 100%; margin: 8px 0 0; padding-right: 26px; }
+#filterClear { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); margin-top: 4px; border: 0; background: none; color: var(--dim); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; }
+#filterClear:hover { color: var(--text); }
+#list { overflow: auto; flex: 1; min-height: 0; padding: 4px 0; }
+#list .dir { padding: 8px 12px 2px; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+#list .row { padding: 3px 12px 3px 20px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#list .row:hover { background: var(--row-hover); }
+#list .row.sel { background: var(--sel); color: var(--accent); }
+#opts { padding: 8px 12px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+#opts label { display: flex; gap: 6px; align-items: center; }
+#opts .pair { display: flex; gap: 16px; }
+#opts input[type=range] { flex: 1; padding: 0; }
+#opts output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
+#opts:not(.level) .lvl, #opts.level .mdl, #opts.fx .mdl { display: none; }
+#opts .aud, body.audio #opts > :not(.aud), body.audio #view, body.audio #hud, body.audio #legend, body.audio #fxPanel, body.audio #info, body.audio #help, body.audio #tip, body.audio #scene, body.audio #editPanel, body.audio #cutPanel, body.audio #cutInspector, body.audio #rulesPanel, body.audio #crawlPanel,
+body.fonts #opts, body.fonts #view, body.fonts #hud, body.fonts #legend, body.fonts #fxPanel, body.fonts #info, body.fonts #help, body.fonts #tip, body.fonts #scene, body.fonts #editPanel, body.fonts #cutPanel, body.fonts #cutInspector, body.fonts #rulesPanel, body.fonts #crawlPanel { display: none; }
+body.audio #opts label.aud { display: flex; }
+body.audio #opts b.aud { display: block; }
+#audioPanel { top: 16px; left: 16px; right: 16px; max-width: 640px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+#audioPanel[hidden] { display: none; }
+#audioPanel b { grid-column: 1 / -1; color: var(--accent); }
+#audioPanel p, #audioPanel .btns { grid-column: 1 / -1; margin: 0 0 6px; }
+#audioPanel p { white-space: pre-wrap; }
+#audioPanel .btns { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+#audioPanel .btns button { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; }
+#audioPanel span:nth-of-type(odd) { color: var(--dim); }
+#musicPanel { top: 16px; left: 16px; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+#musicPanel[hidden] { display: none; }
+#musicHead b { color: var(--accent); font-size: 14px; }
+#musicHead .meta { color: var(--dim); }
+#musicHead .warn { color: var(--warn); }
+#musicBtns { display: flex; gap: 8px; align-items: center; }
+#musicBtns button { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; }
+#musicBtns button[hidden] { display: none; }
+#musicBtns button.on { color: var(--accent); border-color: var(--accent); }
+#musicLanes { flex: 1; min-height: 0; display: flex; overflow: auto; border-top: 1px solid var(--line); }
+#musicCtl { flex: none; width: 190px; position: sticky; left: 0; z-index: 1; background: var(--bg); align-self: flex-start; }
+#musicCtl .lane { height: 26px; display: flex; align-items: center; gap: 8px; padding-left: 4px; font-size: 11px; color: var(--dim); white-space: nowrap; }
+#opts label.aud select { min-width: 0; width: 100%; }
+#musicCtl .lane span { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+#musicCtl .laneBtn { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 20px; padding: 0; color: var(--dim); background: none; border: 1px solid transparent; }
+#musicCtl .laneBtn:hover { border-color: var(--line); }
+#musicCtl .laneBtn.on { color: var(--accent); border-color: var(--accent); }
+#musicCtl .laneBtn:last-child { margin-right: 6px; }
+#musicScroll { position: relative; flex: none; }
+#musicScroll canvas { position: absolute; left: 0; top: 0; }
+#musicTip { position: fixed; background: color-mix(in srgb, var(--bg) 97%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; pointer-events: none; z-index: 10; min-width: 220px; }
+#musicTip .hd, #musicNote .hd { font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+#musicTip dl, #musicNote dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+#musicTip dt, #musicNote dt { color: var(--dim); }
+#musicTip dd, #musicNote dd { margin: 0; font-variant-numeric: tabular-nums; }
+.voiceRow { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+#musicNote { border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+#musicNote button { padding: 2px 8px; }
+body.audio #musicPanel:not([hidden]) ~ #audioPanel { display: none; }
+.tl { display: flex; gap: 6px; align-items: center; }
+.tl button { flex: 1; }
+#opts .sec, #scene b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+#opts .sec:first-child { margin-top: 0; }
+#opts .divider { border: 0; border-top: 1px solid var(--line); margin: 6px 0 2px; width: 100%; }
+#scene, #fxPanel { bottom: 10px; right: 10px; display: grid; gap: 6px; padding-right: 14px; }
+#cutPanel { top: 10px; left: 190px; right: 290px; max-width: 980px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; white-space: nowrap; }
+#cutPanel > label { display: inline-flex; align-items: center; gap: 4px; }
+#cutPanel > label > input[type="checkbox"] { margin: 0; }
+#cutTimeline { flex: 1 0 100%; position: relative; display: grid; grid-template-columns: 58px 1fr; gap: 2px 6px; font-size: 11px; user-select: none; }
+#cutTimeline .tlName { color: var(--dim); cursor: pointer; text-align: right; line-height: 14px; }
+#cutTimeline .tlName.off { opacity: 0.4; text-decoration: line-through; }
+#cutTimeline .tlTrack { position: relative; height: 14px; background: var(--lane); border-radius: 3px; cursor: pointer; }
+#cutTimeline .tlTrack.off .tlm { display: none; }
+#cutTimeline .tlRuler { position: relative; height: 12px; cursor: pointer; }
+#cutTimeline .tlRuler span { position: absolute; top: 0; transform: translateX(-50%); color: var(--dim); font-family: ui-monospace, monospace; font-size: 10px; }
+#cutTimeline .tlRuler i { position: absolute; bottom: 0; width: 1px; height: 3px; background: var(--line); }
+#cutLegend { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 2px 12px; padding-left: 64px; font-size: 11px; color: var(--dim); }
+#cutLegend span { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+#cutLegend i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; }
+#cutTimeline .tlm { position: absolute; top: 2px; width: 4px; height: 10px; margin-left: -2px; border-radius: 1px; }
+#cutTimeline .tlm::before { content: ""; position: absolute; inset: -2px -3px; }
+#cutTimeline .tlm.after { background: none !important; border: 1px solid; box-sizing: border-box; }
+#cutTimeline .tlm:hover { outline: 1px solid var(--strong); z-index: 1; }
+#cutTimeline .tlBand { position: absolute; top: 0; height: 14px; border-radius: 3px; color: #0f1115; font-size: 10px; line-height: 14px; padding-left: 4px; overflow: hidden; }
+#cutTimeline .tlKey { position: absolute; top: 3px; width: 8px; height: 8px; margin-left: -4px; background: #e8c35a; transform: rotate(45deg); cursor: pointer; }
+#cutTimeline .tlKey:active { cursor: grabbing; }
+#cutTimeline .tlKey.sel { background: var(--strong); outline: 2px solid #6be0d0; }
+#cutPanel.editing { outline: 2px solid var(--accent); }
+#cutPanel .cutResize { position: absolute; display: none; z-index: 3; }
+#cutPanel.editing .cutResize { display: block; }
+#cutResizeB { left: 0; right: 16px; bottom: -4px; height: 8px; cursor: ns-resize; }
+#cutResizeC { right: -4px; bottom: -4px; width: 16px; height: 16px; cursor: nwse-resize; }
+/* Grips: a short bar centred on the bottom edge and diagonal lines in the corner. */
+#cutResizeB::after { content: ""; position: absolute; left: 50%; top: 2px; width: 44px; height: 4px; margin-left: -22px; border-radius: 2px; background: var(--accent); opacity: .7; }
+#cutResizeC::after { content: ""; position: absolute; right: 6px; bottom: 6px; width: 10px; height: 10px;
+  background: linear-gradient(135deg, transparent 0 45%, var(--accent) 45% 55%, transparent 55% 70%, var(--accent) 70% 80%, transparent 80%); opacity: .8; }
+#cutResizeB:hover::after, #cutResizeC:hover::after { opacity: 1; }
+#cutEdit[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+#cutEditBadge { color: var(--accent); font-weight: 600; font-size: 11px; letter-spacing: .04em; }
+#cutEditor { flex: 1 0 100%; display: flex; gap: 10px; align-items: flex-start; }
+#cutTlCol { flex: 1; min-width: 0; }
+#cutInspector { box-sizing: border-box; top: 10px; right: 10px; width: 270px; max-height: calc(100% - 520px); min-height: 120px; overflow-y: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-content: start; font-size: 11px; white-space: normal; outline: 2px solid var(--accent); }
+#cutInspector[hidden] { display: none; }
+#cutInspector section { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 4px 6px; align-items: center; }
+#cutInspector h4, #cutInspector section > b { grid-column: 1 / -1; margin: 0; font-size: 11px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+#cutInspector label { min-width: 0; grid-column: 1 / -1; display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 6px; align-items: center; color: var(--dim); }
+#cutInspector select, #cutInspector input { width: 100%; min-width: 0; box-sizing: border-box; }
+#cutInspector select:not(label select) { grid-column: 1 / -1; }
+#cutInspector .insRow { grid-column: 1 / -1; display: flex; gap: 4px; align-items: center; min-width: 0; }
+#cutInspector .insRow > select, #cutInspector .insRow > label { flex: 1; min-width: 0; }
+#cutInspector .insRow > button { flex: 0 0 32px; }
+/* Mode and the actor it works from take a full row each (side by side they squeezed the mode picker). */
+#cutInspector #insMode { flex-wrap: wrap; }
+#cutInspector #insMode > label, #cutInspector #insMode > select { flex: 1 1 100%; }
+#cutInspector #cutDelActor { flex: 0 0 48px; }
+#cutInspector #cutDelCam { flex: 1 1 auto; }
+#cutInspector #cutEvDel, #cutInspector #cutKeyDel { grid-column: 1 / -1; }
+#insCut > h4 { cursor: move; user-select: none; }
+#cutInspector .insDivider { grid-column: 1 / -1; width: 100%; margin: 2px 0; }
+#cutInspector #insTools > button { flex: 1 1 0; }
+#cutInspector #insTools > button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+#cutInspector button[data-icon] { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; }
+#cutTimeline .tlClip { position: absolute; top: 1px; height: 12px; border-radius: 3px; color: #0f1115; font-size: 9px; line-height: 12px; padding: 0 6px; overflow: hidden; white-space: nowrap; box-sizing: border-box; cursor: grab; }
+#cutTimeline .tlClip:active { cursor: grabbing; }
+#cutTimeline .tlClip.inst { width: 6px; margin-left: -3px; padding: 0; }
+#cutTimeline .tlClip.sel { outline: 2px solid var(--strong); z-index: 2; }
+#cutTimeline .tlClip.hl:not(.sel) { outline: 2px solid #6be0d0; z-index: 1; }
+#cutTimeline .tlClip .h { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; background: rgba(0,0,0,.25); }
+#cutTimeline .tlClip .h.s { left: 0; }
+#cutTimeline .tlClip .h.e { right: 0; }
+/* The playhead: a colour none of the lanes use, its time on top of it (kept inside the timeline at either end). */
+#cutTimeline .tlHead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #ff4f7a; pointer-events: none; z-index: 2; }
+#cutTimeline .tlHead .tlHeadTime { position: absolute; top: 0; left: 50%; transform: translateX(-50%); padding: 0 3px; border-radius: 2px; background: #ff4f7a; color: #fff; font-size: 10px; line-height: 13px; white-space: nowrap; }
+#cutTimeline .tlHead.atStart .tlHeadTime { left: 0; transform: none; }
+#cutTimeline .tlHead.atEnd .tlHeadTime { left: auto; right: 0; transform: none; }
+#cutFade { position: absolute; inset: 0; background: #000; pointer-events: none; opacity: 0; }
+#cutBars { position: absolute; inset: 0; border: 0 solid #000; box-sizing: border-box; pointer-events: none; }
+#cutPanel output { min-width: 5em; font-family: ui-monospace, monospace; color: var(--dim); }
+#fxPanel b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
+#scene label, #fxPanel label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+#scene input[type=range] { width: 65px; margin-left: auto; padding: 0; }
+#fxPanel input[type=range] { width: 130px; margin-left: auto; padding: 0; }
+#scene select { width: 100%; max-width: 160px; }
+#cutPickRow select { max-width: none; }
+#scene output, #fxPanel output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
+select:disabled, input:disabled, button:disabled { opacity: .45; }
+button:disabled { cursor: default; }
+main { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+.panel { position: absolute; background: color-mix(in srgb, var(--bg) 85%, transparent); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; }
+#hud { font: 12px/1.5 ui-monospace, monospace; pointer-events: none; white-space: pre; }
+#hud:empty { display: none; }
+#legend { top: 10px; right: 10px; display: grid; gap: 4px; max-height: calc(100% - var(--scene-h, 290px) - 30px); overflow: auto; }
+#legend b { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+#legend label { display: grid; grid-template-columns: auto 14px 1fr auto; align-items: center; gap: 6px; cursor: pointer; }
+#legend label.group { grid-template-columns: auto 1fr auto; margin-top: 4px; font-weight: 600; }
+#legend label.sub { padding-left: 18px; }
+#legend label.master { grid-template-columns: auto 1fr; }
+#legendRows { display: contents; }
+#legend em { color: var(--dim); font-style: normal; text-align: right; margin-left: 12px; }
+#tip { pointer-events: none; background: color-mix(in srgb, var(--bg) 94%, transparent); max-width: 340px; }
+#tip span { color: var(--dim); font-family: ui-monospace, monospace; }
+#tip q { color: var(--accent); }
+#info { background: color-mix(in srgb, var(--bg) 96%, transparent); border-color: var(--accent); max-width: 380px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+#info b { grid-column: 1 / -1; color: var(--accent); margin-bottom: 4px; }
+#info button { grid-column: 1 / -1; margin-top: 6px; }
+#info span:nth-of-type(odd) { color: var(--dim); }
+#info span:nth-of-type(even) { font-family: ui-monospace, monospace; word-break: break-word; }
+#info .pickRow { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+#info .pickRow:hover, #info .pickRow:focus-visible { background: var(--sel); outline: none; }
+#info .pickRow i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+#info .pickRow .kd { margin-left: auto; color: var(--dim); font-size: 11px; white-space: nowrap; }
+#info .pickHead { text-align: center; }
+#info .pickList { grid-column: 1 / -1; max-height: 50vh; overflow: auto; display: grid; gap: 1px; }
+#help { bottom: 10px; left: 10px; display: grid; grid-template-columns: auto auto; gap: 2px 16px; color: var(--dim); pointer-events: none; }
+#help span:nth-child(odd) { color: var(--text); font-family: ui-monospace, monospace; }
+#help span:nth-child(even) { text-align: right; }
+#drop { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; }
+#drop .box { border: 2px dashed var(--line); border-radius: 10px; padding: 40px 48px; max-width: min(640px, calc(100vw - 32px)); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+#drop.over .box, #drop .box:hover, #drop .box:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); outline: none; }
+#drop p { color: var(--dim); }
+.err { color: var(--err); }
+#busy { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
+.spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+#drop.loading .box { pointer-events: none; border-color: var(--accent); }
+#drop .loadingMsg { display: none; align-items: center; justify-content: center; gap: 8px; color: var(--text); }
+#drop.loading .loadingMsg { display: flex; }
+#drop.loading .box > :not(.loadingMsg) { display: none; }
+@media (max-width: 700px) { body, body.nav-closed { grid-template-columns: 1fr; grid-template-rows: 40% 60%; } body.nav-closed { grid-template-rows: 0 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } aside > * { min-width: 0; } }
+/* Marker icons use their marker's own colour; on the light theme a thin outline keeps the pale ones (white wingmen) visible. */
+:root[data-theme="light"] :is(#legend label, #addList .addRow) svg { filter: drop-shadow(0 0 .6px rgba(0,0,0,.85)); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) :is(#legend label, #addList .addRow) svg { filter: drop-shadow(0 0 .6px rgba(0,0,0,.85)); }
+}
+.crawlEdit { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; min-height: 0; }
+.crawlEdit .actions { display: flex; gap: 4px; }
+/* The cutscene inspector posing an opening crawl's camera: no events, actors, models or camera modes to add. */
+#cutInspector.crawlMode #insCut > .insRow, #cutInspector.crawlMode #insCut > .insDivider, #cutInspector.crawlMode #insModel, #cutInspector.crawlMode #cutDelActor,
+#cutInspector.crawlMode #cutDelCam, #cutInspector.crawlMode #insMode, #cutInspector.crawlMode #insShoot, #cutInspector.crawlMode [data-ctool="scale"] { display: none; }
+/* The cutscene Audio lane's add menu (right-click on empty lane). */
+#cutAudioMenu { position: fixed; z-index: 30; width: 360px; max-height: 420px; display: flex; flex-direction: column; gap: 6px; }
+#cutAudioMenu .cutAudioTabs { display: flex; gap: 4px; }
+#cutAudioMenu .cutAudioTabs button { flex: 1; }
+#cutAudioMenu .cutAudioTabs button.on { border-color: var(--accent); color: var(--accent); }
+#cutAudioMenu .cutAudioList { overflow-y: auto; display: grid; gap: 1px; min-height: 0; flex: 1; }
+#cutAudioMenu .cutAudioList button { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The Fonts tab: a font's glyph sheet and editor over the whole view area. */
+#fontPanel { position: absolute; inset: 16px; overflow: auto; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+#fontPanel[hidden] { display: none; }
+#fontPanel > * { flex: none; }
+#fontPanel > b { color: var(--accent); font-size: 15px; }
+#fontPanel h4 { margin: 8px 0 0; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+#fontPanel .fontTools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#fontPanel .fontTools input { width: 260px; }
+#fontPanel .glyphGrid { display: flex; flex-wrap: wrap; gap: 4px; }
+#fontPanel .glyphCell { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 3px; background: #000; }
+#fontPanel canvas { position: static; inset: auto; image-rendering: pixelated; }
+#fontPanel .glyphCell small { color: #ccc; font-size: 11px; }
+#fontPanel .glyphCell.mine { cursor: pointer; }
+#fontPanel .glyphCell.mine:hover, #fontPanel .glyphCell.sel { border-color: var(--accent); }
+#fontPanel .glyphEditor { display: flex; flex-direction: column; gap: 12px; }
+#fontPanel .glyphEditTop { display: flex; gap: 12px; align-items: stretch; }
+#fontPanel .glyphEditControls { flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; }
+#fontPanel .glyphEditControls label { display: flex; gap: 6px; align-items: center; }
+#fontPanel .glyphEdit { cursor: crosshair; border: 1px solid var(--line); }
+#fontPanel .glyphEditTools { display: flex; flex-direction: column; gap: 10px; width: 280px; }
+#fontPanel .glyphEditHead { display: flex; align-items: center; gap: 10px; }
+#fontPanel .glyphEditChar { font-size: 32px; line-height: 1; color: var(--text); }
+#fontPanel .glyphEditCode { font-size: 16px; font-family: monospace; color: var(--dim); }
+#fontPanel .glyphEditHead button { margin-left: auto; }
+#fontPanel .fontDivider { align-self: stretch; width: auto; border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+#fontPanel .inkSwatch { display: inline-block; width: 14px; height: 14px; margin-left: 6px; vertical-align: middle; border: 1px solid var(--line); }
+#exportDialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 16px; width: min(560px, calc(100vw - 32px)); }
+#exportDialog::backdrop { background: rgba(0, 0, 0, .5); }
+#exportDialog h3 { margin: 0 0 6px; color: var(--accent); }
+#exportDialog .exportRow { border-top: 1px solid var(--line); padding: 8px 0; display: grid; gap: 4px; }
+#exportDialog .exportHead { display: flex; gap: 8px; align-items: center; }
+#exportDialog .exportHead input:not([type]) { flex: 1; }
+#exportDialog .exportKeys > div { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 2px 0; }
+#exportDialog .exportKeys span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#exportDialog .exportFoot { display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--line); padding-top: 10px; }
+#exportDialog .exportFoot .spacer { flex: 1; }
+#menuPanel { position: absolute; inset: 16px; overflow: auto; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+#menuPanel[hidden] { display: none; }
+#menuPanel > * { flex: none; }
+#menuPanel > b { color: var(--accent); font-size: 15px; text-transform: uppercase; }
+#menuPanel .fontTools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; align-self: stretch; }
+#menuPanel .fontDivider { align-self: stretch; width: auto; border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+#menuPanel .menuEditor { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+#menuPanel .menuPreview { position: relative; flex: none; width: 640px; height: 480px; background: #000; border: 1px solid var(--line); overflow: hidden; }
+#menuPanel .menuValue { position: absolute; top: 1px; }
+#menuPanel .menuStatus { margin-left: auto; display: flex; align-items: baseline; gap: 10px; max-width: 520px; }
+#menuPanel .menuSlots { font-size: 20px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+#menuPanel .menuSlots.full { color: #e05050; }
+#menuPanel .menuLine { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+#menuPanel .menuCut { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 6px; }
+#menuPanel canvas { position: static; inset: auto; image-rendering: pixelated; }
+#menuPanel .menuRow { outline: 1px dashed transparent; outline-offset: 3px; border-radius: 3px; cursor: pointer; min-height: 12px; line-height: 0; }
+#menuPanel .menuRow:hover { outline-color: #444; }
+#menuPanel .menuRow.sel { outline-color: var(--accent); z-index: 5; }
+#menuPanel .menuRow.cut { opacity: .45; outline-color: #a33; line-height: normal; }
+#menuPanel .menuGap { color: #555; font-size: 10px; }
+#menuPanel .menuInspector { display: grid; gap: 6px; width: 340px; }
+#menuPanel .menuInspectorPair { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+#menuPanel .menuActionEdit { width: 250px; border-left: 1px solid var(--line); padding-left: 16px; }
+#menuPanel .menuActionEdit .menuField { grid-template-columns: 1fr; }
+#menuPanel .menuInspector > b { color: var(--accent); }
+#menuPanel .menuField { display: grid; grid-template-columns: 110px 1fr; gap: 6px; align-items: center; }
+#menuPanel .menuField > span:first-child { color: var(--dim); font-size: 12px; }
+#menuPanel .menuText { display: grid; grid-template-columns: 1fr auto; gap: 4px; }
+#menuPanel .menuConds { display: flex; flex-wrap: wrap; gap: 2px 10px; font-size: 12px; }
+#menuPanel .menuConds > input { flex: 1 0 100%; margin-top: 4px; }
+#menuPanel .menuActions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; justify-content: center; }
+#menuPanel .menuEditor { flex-wrap: nowrap; align-self: stretch; }
+#menuPanel .menuEntries { margin-left: auto; width: 260px; flex: none; border-left: 1px solid var(--line); padding-left: 16px; display: grid; gap: 2px; align-content: start; }
+#menuPanel .menuEntries > b { color: var(--accent); margin-bottom: 4px; }
+#menuPanel .menuEntry { display: flex; gap: 8px; align-items: center; padding: 3px 6px; border-radius: 3px; cursor: pointer; }
+#menuPanel .menuEntry:hover { background: var(--sel); }
+#menuPanel .menuEntry.sel { outline: 1px solid var(--accent); }
+#menuPanel .menuEntry span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#menuPanel .menuEntry small { color: var(--dim); font-size: 11px; }
+#menuPanel .menuEntry.cut span { text-decoration: line-through; color: #e05050; }
+#menuPanel .menuEntry.hidden { cursor: default; }
+#menuPanel .menuEntry.hidden span { color: var(--dim); }
+#menuPanel .menuEntry button { padding: 1px 6px; font-size: 11px; }
+#menuPanel .menuPlus { position: absolute; left: 50%; width: 20px; height: 20px; padding: 0; border-radius: 50%; display: grid; place-items: center; transform: translate(-50%, -50%); background: var(--accent); color: #000; border: 0; z-index: 10; }
+#menuPanel .menuPlus svg { width: 12px; height: 12px; }
+#menuPanel .menuPlusAbove { top: -4px; }
+#menuPanel .menuPlusBelow { top: calc(100% + 4px); }
+#menuLangDialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 16px; width: min(480px, calc(100vw - 32px)); }
+#menuLangDialog::backdrop { background: rgba(0, 0, 0, .5); }
+#menuLangDialog h3 { margin: 0 0 10px; color: var(--accent); }
+#menuLangDialog .menuLangRow { display: grid; grid-template-columns: 70px 1fr 30px; gap: 6px; align-items: center; margin: 4px 0; }
+#menuLangDialog .menuLangRow small { grid-column: 2 / 4; }
+#menuLangDialog .exportFoot { display: flex; gap: 8px; align-items: center; border-top: 1px solid var(--line); padding-top: 10px; margin-top: 8px; }
+#menuLangDialog .exportFoot .spacer { flex: 1; }
+#menuPanel .menuEntry .menuLangs { position: relative; flex: none; display: inline-grid; place-items: center; color: var(--dim); margin-right: 8px; overflow: visible; }
+#menuPanel .menuLangs svg { width: 14px; height: 14px; }
+#menuPanel .menuEntry .menuLangs b { position: absolute; top: -7px; right: -8px; min-width: 13px; height: 13px; padding: 0 2px; border-radius: 7px; background: var(--accent); color: #000; font-size: 9px; line-height: 13px; text-align: center; }
+#menuPanel .menuKeyPick { display: grid; gap: 4px; }
+#list .row .grip { display: inline-flex; vertical-align: -2px; margin: 0 4px 0 -16px; color: var(--dim); cursor: grab; opacity: .4; }
+#list .row:hover .grip { opacity: 1; }
+#list .row .grip:active { cursor: grabbing; }
+.dropOk { outline: 2px dashed var(--accent); outline-offset: -2px; }

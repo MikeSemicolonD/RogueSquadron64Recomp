@@ -353,6 +353,12 @@ func = "viRetraceHandlerThread"
 before_vram = 0x800198E8   # L_800198E8 — top of per-frame loop
 text = '{ rs64_th_viRetraceHandlerThread_800198E8(rdram, ctx); }'
 
+# Post-swap ack send NOBLOCK (`li $a2,1` -> `move $a2,$zero`): bufferArbiterAllocSlot leaves the ack flag 0x80037808 set, so a stale ack in the 1-slot queue blocked this send before musyxSynthFrame while the main thread spun on it (boot stall).
+[[patches.instruction]]
+func = "viRetraceHandlerThread"
+vram = 0x80019B54
+value = 0x00003021
+
 # RETIRED NOBLOCK experiments. VI-driven mode (default) runs the hardware
 # protocol, where these recvs must BLOCK; the host osRecvMesg override applies
 # NOBLOCK only when ROGUESQ_VI_DRIVEN_LOOP=0. Reverted sites (func @ vram):
@@ -477,6 +483,31 @@ func = "updateSnowSpeederFlightControls"   # snowspeeder speed update (misnamed)
 before_vram = 0x800ABDA0
 text = '{ rs64_th_updateSnowSpeederFlightControls_800ABDA0(rdram, ctx); }'
 
+# RT shadows: the render paths' object view tests (addNpcToVisibilityBucket, selectMeshLodAndSubmitForRender) also widen by rs64_shadow_cull_margin, so craft just off screen still cast.
+[[patches.hook]]
+func = "addNpcToVisibilityBucket"
+before_vram = 0x80057D84
+text = '{ rs64_th_addNpcToVisibilityBucket_80057D84(rdram, ctx); }'
+
+[[patches.hook]]
+func = "addNpcToVisibilityBucket"
+before_vram = 0x80057E08
+text = '{ rs64_th_addNpcToVisibilityBucket_80057E08(rdram, ctx); }'
+
+[[patches.hook]]
+func = "addNpcToVisibilityBucket"
+before_vram = 0x80057E48
+text = '{ rs64_th_addNpcToVisibilityBucket_80057E48(rdram, ctx); }'
+
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x80058104
+text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_entry(rdram, ctx); }'
+
 # Widescreen: widen the game's 4:3 culls by rs64_cull_widen. transformVec3ToNpcLocalWithScale (misnamed) is the object view test; $f2 is its aspect factor.
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"
@@ -487,7 +518,6 @@ text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(rdram, ctx); }'
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E168
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E168(rdram, ctx); }'
-
 # Draw distance: scale each read of the camera far plane (cam+0x28, in $f0) by rs64_draw_dist, except for the unseen-spawn trigger (caller 0x800F27B4), and the terrain trapezoid far distance ($f2) by rs64_terrain_dist.
 [[patches.hook]]
 func = "setupCameraMatrices"
@@ -750,7 +780,7 @@ func = "buildVisibleTerrainGridAroundCamera"
 before_vram = 0x80043A8C
 text = '{ rs64_th_buildVisibleTerrainGridAroundCamera_80043A8C(rdram, ctx); }'
 
-# Fog start/end (world units, $f4) follow the terrain reach so the ground fades out where it ends.
+# Fog start/end (world units, $f4) follow the terrain reach (rs64_fog_dist; the whole draw distance under RT64's terrain pass) so the ground fades out where it ends.
 [[patches.hook]]
 func = "setupCameraMatrices"
 before_vram = 0x800170D0
@@ -941,6 +971,11 @@ func = "setupMenuData"
 before_vram = 0x800BAF70   # after `sb $s3,0x95($v1)`; before the active-bit loop
 text = '{ rs64_th_setupMenuData_800BAF70(rdram, ctx); }'
 
+# A HIGH RESOLUTION change made from the pause menu is applied here, before the screen setup reads the bit (menu_config.cpp).
+[[patches.hook]]
+func = "applyLevelScreenAndCameraSettings"
+text = '{ rs64_th_applyLevelScreenAndCameraSettings_entry(rdram, ctx); }'
+
 # Intercept confirm on a custom entry. This instruction is only reached when
 # A/Start was pressed (masked+branched at 0x800B51A8), so no button re-check.
 [[patches.hook]]
@@ -968,6 +1003,27 @@ text = '{ if (rs64_th_menuControllerInput_800B5428(rdram, ctx)) return; }'
 func = "updateMenuPerFrame"
 text = '{ if (rs64_th_updateMenuPerFrame_entry(rdram, ctx)) return; }'
 
+# Controls menu mod: every mission uses the Luke preset (the copy below reads D_80109AD0[preset]); the saved preset byte is left alone.
+[[patches.hook]]
+func = "initAllPlayersHudTracking"
+text = '{ rs64_th_initAllPlayersHudTracking_entry(rdram, ctx); }'
+
+# Controls menu mod: the controller model's button callouts are never filled, so the list is the only text.
+[[patches.hook]]
+func = "controllerSettingsScreen"
+text = '{ if (rs64_th_controllerSettingsScreen_entry(rdram, ctx)) return; }'
+
+# Controls menu mod: the keyboard and gamepad models load beside the N64 controller once it is set up.
+[[patches.hook]]
+func = "loadControllerModel"
+before_vram = 0x800C4BD8
+text = '{ rs64_th_loadControllerModel_800C4BD8(rdram, ctx); }'
+
+# Controls menu mod: the callouts' lines are never faded in or linked into the render list (this function, misnamed, does only that each frame).
+[[patches.hook]]
+func = "easeT16AnimationKeyframe"
+text = '{ if (rs64_th_easeT16AnimationKeyframe_entry(rdram, ctx)) return; }'
+
 # Redirect a mod slider's channel index (sp+0xEF) to its unused settings byte so
 # its value is independent of the real audio channels. Common slider handler entry.
 [[patches.hook]]
@@ -980,6 +1036,88 @@ text = '{ rs64_th_menuControllerInput_800B5920(rdram, ctx); }'
 func = "menuControllerInput"
 before_vram = 0x800B4E64
 text = '{ rs64_th_menuControllerInput_800B4E64(rdram, ctx); }'
+
+# Keyboard typing on the letter wheels: right after the wheel returns its letter index ($v0), ENTER NAME (0x800B6700) and PASSCODES (0x800B6DE8) take a typed letter or Backspace (menu_config.cpp).
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B6700
+text = '{ rs64_th_menuControllerInput_800B6700(rdram, ctx); }'
+
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B6DE8
+text = '{ rs64_th_menuControllerInput_800B6DE8(rdram, ctx); }'
+
+# PASSCODES row check (`lbu $v0,0x94($s4)`, the wheel is row 0): a typed key moves the cursor to the wheel first.
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B6DA4
+text = '{ rs64_th_menuControllerInput_800B6DA4(rdram, ctx); }'
+
+# The LANGUAGE page (menu 9: ENGLISH / DEUTSCH / FRANCAIS) opens from OPTIONS (a built-in button in menu_config.cpp) instead of PAL-only GAME SETTINGS, so its B/BACK target is OPTIONS (2), not 3.
+[[patches.instruction]]
+func = "setupMenuData"
+vram = 0x800BACAC
+value = 0x24020002
+
+# LANGUAGE pick: $v0 = the entry's language, stored to gGameSettings+6 in the delay slot of the text reload; saved as the language setting.
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B5830
+text = '{ rs64_th_menuControllerInput_800B5830(rdram, ctx); }'
+
+# Every text file load (front/game/voice) reads its language slot from gGameSettings+6: the language setting or ROGUESQ_LANGUAGE goes there first.
+[[patches.hook]]
+func = "loadTxtFile"
+text = '{ rs64_th_loadTxtFile_entry(rdram, ctx); }'
+
+# Language mods: the scene's texture pool bounds were just stored (0x8011A850 start, 0x8011A854 end); the pool moves to host RAM with room for code page glyphs.
+[[patches.hook]]
+func = "buildAndRegisterDefaultMaterial"
+before_vram = 0x80017D04
+text = '{ rs64_th_buildAndRegisterDefaultMaterial_80017D04(rdram, ctx); }'
+
+# Language mods: the texture record table and its two arrays (0x80128F08, 0x80128EFC, 0x80128F00) were just allocated and cleared; they move to bigger host buffers
+# (room for the code page glyph records beside the scene's own), and destroyTextureLUTs gets the game's blocks back to free.
+[[patches.hook]]
+func = "initTextureLUTAndAllocBuffers"
+before_vram = 0x8001E304
+text = '{ rs64_th_initTextureLUTAndAllocBuffers_8001E304(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initTextureMaterialPools"
+text = '{ rs64_th_initTextureMaterialPools_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initTextureMaterialPools"
+before_vram = 0x80022920
+text = '{ rs64_th_initTextureMaterialPools_80022920(rdram, ctx); }'
+
+[[patches.hook]]
+func = "destroyTextureLUTs"
+text = '{ rs64_th_destroyTextureLUTs_entry(rdram, ctx); }'
+
+# Language mods: the HMT material slot table and its two arrays (0x8011A444, 0x801163B4, 0x801143AC) were just allocated; they move to host buffers with a bigger
+# capacity (0x8011A8B4) before the init loop clears them, and freeRenderSubsystemResources gets the game's blocks back to free.
+[[patches.hook]]
+func = "buildAndRegisterDefaultMaterial"
+before_vram = 0x80017D94
+text = '{ rs64_th_buildAndRegisterDefaultMaterial_80017D94(rdram, ctx); }'
+
+[[patches.hook]]
+func = "freeRenderSubsystemResources"
+text = '{ rs64_th_freeRenderSubsystemResources_entry(rdram, ctx); }'
+
+# Language mods: before a font loads ($a1 = font id), its charset, widths and glyph count gain the code page bytes 0x80-0xFE.
+[[patches.hook]]
+func = "loadCharTextureSet"
+text = '{ rs64_th_loadCharTextureSet_entry(rdram, ctx); }'
+
+# Language mods: a font has loaded ($s0 = the font object whose map was built, $s4 = the one whose glyphs loaded); point its map's 0x80-0xFE at the code page glyphs.
+[[patches.hook]]
+func = "loadCharTextureSet"
+before_vram = 0x80061A54
+text = '{ rs64_th_loadCharTextureSet_80061A54(rdram, ctx); }'
 
 # Menu backdrop wipe swaps only the column it lands on each tick; a step of >= 1 column (a 6+ VI frame) skips one and leaves it on an old picture. Clamp dt ($a1) below one column.
 [[patches.hook]]
@@ -1018,10 +1156,63 @@ text = '{ rs64_th_runPauseMenuStateMachine_800C3550(rdram, ctx); }'
 
 # Run the button behavior when a marked pause entry is confirmed. r18 = &entry,
 # so entry.nextMenu is at +0x4.
+# Native pause sliders for mod pages (menu_config.cpp): a mod slider row loads, stores and draws its own value byte, with its own end labels.
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C2660
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C2660(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C27CC
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C27CC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C3418
+text = '{ rs64_th_runPauseMenuStateMachine_800C3418(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C3314
+text = '{ rs64_th_runPauseMenuStateMachine_800C3314(rdram, ctx); }'
+
 [[patches.hook]]
 func = "initOrUpdatePauseScreenDim"
 before_vram = 0x800C2458   # andi 0x20 on the selected entry's flags
 text = '{ rs64_th_initOrUpdatePauseScreenDim_800C2458(rdram, ctx); }'
+
+# Pause submenus: the four joins after the game picks a PauseMenuStuff array for a menu id (HUD+0xD6A; at 0x800C24A8 the link's nextMenu) take ours for GAME SETTINGS and mod pages.
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C214C
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C214C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C24A8
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C24A8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C2A74
+text = '{ rs64_th_runPauseMenuStateMachine_800C2A74(rdram, ctx); }'
+
+[[patches.hook]]
+func = "runPauseMenuStateMachine"
+before_vram = 0x800C3794
+text = '{ rs64_th_runPauseMenuStateMachine_800C3794(rdram, ctx); }'
+
+# B in a pause submenu always returns to the root (0x800C2400); a mod page returns to its parent instead.
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C23EC
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C23EC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C240C
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C240C(rdram, ctx); }'
 
 [[patches.hook]]
 func = "traverseSceneGraphRecursive"
@@ -1351,6 +1542,16 @@ func = "buildModelViewerTextPage"
 before_vram = 0x800CA77C
 text = '{ rs64_th_buildModelViewerTextPage_800CA77C(rdram, ctx); }'
 
+# Crawl files: their camera keys build the crawl camera, and its height drives the backdrop's rise.
+[[patches.hook]]
+func = "setModelViewerObjectTransform"
+text = '{ if (rs64_th_setModelViewerObjectTransform_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "runModelViewerLoop"
+before_vram = 0x800CA080
+text = '{ rs64_th_runModelViewerLoop_800CA080(rdram, ctx); }'
+
 # Lobby mission select: font 2 gets a third slot (status line) in a session.
 # hook: RS64_HOOK_MISSION_SELECT_FONTS
 [[patches.hook]]
@@ -1435,6 +1636,18 @@ func = "npcAtAtUpdate"
 before_vram = 0x800CED7C
 text = '{ rs64_th_npcAtAtUpdate_800CED7C(rdram, ctx); }'
 
+# Player AT-ST (CHICKEN) tick: sets the atst_active flag for the mouse remap; mods may rewrite its input or replace the step.
+# hook: RS64_HOOK_ATST_TICK
+[[patches.hook]]
+func = "updatePlayerAtStBehavior"
+text = '{ if (rs64_th_updatePlayerAtStBehavior_entry(rdram, ctx)) return; }'
+
+# AT-ST head from the mouse (rs64_atst_head): after every branch set the target (+0x68/+0x6C), before the ease; writes the eased angles too so the head tracks the mouse.
+[[patches.hook]]
+func = "updatePlayerAtStBehavior"
+before_vram = 0x800D1AE0
+text = '{ rs64_th_updatePlayerAtStBehavior_800D1AE0(rdram, ctx); }'
+
 # BOOT_TARGET=cutscene:<level>[,<kind>]: the boot intro call cinematicLoopBody(0x13, 2, 0) plays that cutscene instead.
 [[patches.hook]]
 func = "mainGameLoop"
@@ -1464,3 +1677,40 @@ text = '{ if (rs64_th_calculateFriendliesSaved_entry(rdram, ctx)) return; }'
 func = "runPauseMenuStateMachine"
 before_vram = 0x800C2F1C
 text = '{ rs64_th_runPauseMenuStateMachine_800C2F1C(rdram, ctx); }'
+
+# Mod levels with their own objectives: the pause screen reads each line aloud with the level's own voice (a0 + 0x2C0 in the delay slot).
+[[patches.hook]]
+func = "initOrUpdatePauseScreenDim"
+before_vram = 0x800C227C
+text = '{ rs64_th_initOrUpdatePauseScreenDim_800C227C(rdram, ctx); }'
+
+# Mod levels: their own starting song, written into the per-level song table before initMission preloads the level's songs.
+[[patches.hook]]
+func = "initMission"
+text = '{ rs64_th_initMission_entry(rdram, ctx); }'
+
+# Level rules: a unit's death effect (v1 = its DAT record), for "when destroyed" rules.
+[[patches.hook]]
+func = "updateDestructionDebrisNpc"
+before_vram = 0x8006D6F0
+text = '{ rs64_th_updateDestructionDebrisNpc_8006D6F0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcPowerGeneratorUpdate"
+before_vram = 0x80078CC8
+text = '{ rs64_th_npcPowerGeneratorUpdate_80078CC8(rdram, ctx); }'
+
+# Level-rule messages: the text id getVoiceText decrypts, and its decrypted text (a blank line's becomes the message).
+[[patches.hook]]
+func = "getVoiceText"
+text = '{ rs64_th_getVoiceText_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "getVoiceText"
+before_vram = 0x80055A10
+text = '{ rs64_th_getVoiceText_80055A10(rdram, ctx); }'
+
+# Level rules: a path event as an NPC reaches it (a1 = the event's DAT record), for "when an NPC passes this point" rules.
+[[patches.hook]]
+func = "updateNpcEffectIntensity"
+text = '{ rs64_th_updateNpcEffectIntensity_entry(rdram, ctx); }'

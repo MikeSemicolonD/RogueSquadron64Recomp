@@ -1,0 +1,96 @@
+# The co-op relay server (relay-server/), for anyone hosting one. Nothing ROM-derived is built here, so it runs on GitHub-hosted runners.
+name: Relay server release
+
+on:
+  push:
+    tags: ['relay-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository_owner == 'MikeSemicolonD'
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          # Oldest hosted image, so the binary runs on older glibc.
+          - os: ubuntu-22.04
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch ENet6
+        run: git submodule update --init mods/multiplayer-native/lib/enet6
+
+      - name: Build
+        run: |
+          cmake -S relay-server -B build-relay -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-relay --config Release --target rs64_relay relay_core_test
+
+      - name: Test
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then build-relay/Release/relay_core_test.exe; else build-relay/relay_core_test; fi
+
+      - name: Package
+        run: |
+          ver="${GITHUB_REF_NAME//\//-}"
+          mkdir stage
+          cp docs/guides/relay-server.md stage/README.md
+          cp LICENSE stage/LICENSE.txt
+          cp mods/multiplayer-native/lib/enet6/LICENSE stage/LICENSE-enet6.txt
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp build-relay/Release/rs64_relay.exe stage/
+            pkg="rs64_relay-${{ matrix.name }}-$ver.zip"
+            (cd stage && 7z a "../$pkg" *)
+          else
+            cp build-relay/rs64_relay stage/
+            pkg="rs64_relay-${{ matrix.name }}-$ver.tar.gz"
+            tar -czf "$pkg" -C stage .
+          fi
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.PKG }}
+          retention-days: 3
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/relay-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: Relay server ${{ github.ref_name }}
+          # Keeps the game release as the repo's "Latest".
+          make_latest: false
+          files: dist/*

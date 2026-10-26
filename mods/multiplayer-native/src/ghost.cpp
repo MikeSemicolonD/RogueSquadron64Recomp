@@ -231,6 +231,11 @@ void load_net_config() {
         f >> j;
         g().editor.load(j.value("last_address", std::string{}));
         g().last_host = j.value("last_host", std::string{});
+        g().relay_server = j.value("relay_server", std::string{});
+        g().host_name.name = rs64::net::NameEditor::clean(j.value("host_name", std::string{}));
+        const std::string pin = j.value("host_password", std::string{});
+        g().host_pin_set = rs64::net::CodeEditor::valid(pin);
+        g().host_pin.load(pin);
         const int port = j.value("port", 27064);
         config_port() = (port > 0 && port < 65536) ? port : 27064;
     } catch (...) {
@@ -244,6 +249,11 @@ void save_net_config() {
     if (!s.last_host.empty()) {
         j["last_host"] = s.last_host;
     }
+    if (!s.relay_server.empty()) {
+        j["relay_server"] = s.relay_server;
+    }
+    j["host_name"] = s.host_name.name;
+    j["host_password"] = s.host_pin_set ? s.host_pin.code() : std::string{};
     j["port"] = config_port();
     std::ofstream f(net_config_path());
     if (f.is_open()) {
@@ -267,6 +277,7 @@ void lobby_start(const rs64::net::LinkConfig& cfg) {
         s.lobby.set_local_build((uint32_t)test_build);
     }
     if (cfg.role == rs64::net::Role::Host) {
+        s.lobby.set_password(s.host_pin_set ? s.host_pin.code() : std::string{});
         s.lobby.host();
     } else {
         s.lobby.join();
@@ -312,11 +323,23 @@ void lobby_poll() {
             }
         }
         s.link.send(rs64::net::encode_hello(h), true);
+        // The client's password for this game (none: empty); the host answers ACCEPT or BYE WrongPassword.
+        if (s.player == 1) {
+            s.link.send(rs64::net::encode_auth(s.join_pin_set ? s.join_pin.code() : std::string{}), true);
+        }
     }
     s.was_connected = c;
+    // A join whose host or relay server cannot be reached fails now, with the transport's reason (COULD NOT CONNECT TO SERVER, NO GAME WITH THAT CODE).
+    if (s.player == 1 && s.lobby.state() == rs64::net::LobbyState::Joining && s.link.lost()) {
+        const char* why = s.relay_session && s.relay_t ? s.relay_t->status(s.relay_t->user) : nullptr;
+        s.lobby.on_join_failed(why ? why : "");
+    }
     s.lobby.tick(now);
     const bool ready = s.lobby.ready();
     if (ready && !s.was_ready) {
+        if (s.player == 0) {
+            s.link.send(rs64::net::encode_accept(), true);
+        }
         s.lobby_session = true;
         s.peer_left = false;
         fprintf(stderr, "[lobby] %s (version ok)\n", s.player == 0 ? "player connected" : "connected to the host");
@@ -566,9 +589,10 @@ void drain() {
             break;
         }
         case rs64::net::Msg::Skip: {
-            if (rs64::net::decode_skip(m.data(), m.size())) {
-                s.skip.on_remote(now_s());
-                fprintf(stderr, "[ghost] the other player skipped the cutscene\n");
+            uint16_t scene = 0;
+            if (rs64::net::decode_skip(m.data(), m.size(), &scene)) {
+                s.skip.on_remote(scene);
+                fprintf(stderr, "[ghost] the other player skipped cutscene %04X (here %04X)\n", scene, s.skip_tag);
             }
             break;
         }
@@ -612,12 +636,35 @@ void drain() {
         case rs64::net::Msg::Launch:
             rs64::net::decode_launch(m.data(), m.size(), &s.launch);
             break;
-        case rs64::net::Msg::Bye:
+        case rs64::net::Msg::Auth: {
+            std::string pin;
+            if (s.player == 0 && rs64::net::decode_auth(m.data(), m.size(), &pin) && !s.lobby.on_auth(pin)) {
+                // shortcut: the refused player is trusted to leave on this BYE; a modified client could hold the host's one slot until it does.
+                s.link.send(rs64::net::encode_bye(rs64::net::ByeReason::WrongPassword, 0), true);
+                fprintf(stderr, "[lobby] refused a player: %s password\n", pin.empty() ? "no" : "wrong");
+            }
+            break;
+        }
+        case rs64::net::Msg::Accept:
+            if (s.player == 1 && rs64::net::decode_accept(m.data(), m.size())) {
+                s.lobby.on_accept();
+            }
+            break;
+        case rs64::net::Msg::Bye: {
+            rs64::net::ByeReason why = rs64::net::ByeReason::Finished;
+            uint32_t frame = 0;
+            if (s.player == 1 && rs64::net::decode_bye(m.data(), m.size(), &why, &frame) && why == rs64::net::ByeReason::WrongPassword) {
+                s.lobby.on_refused(s.join_pin_set);
+                s.pin_mode = true;
+                fprintf(stderr, "[lobby] the host wants a password (%s)\n", s.join_pin_set ? "wrong one sent" : "none sent");
+                break;
+            }
             if (!s.peer_left) {
                 s.peer_left = true;
                 fprintf(stderr, "[ghost] peer left\n");
             }
             break;
+        }
         default:
             break;
         }
@@ -716,8 +763,11 @@ void sync_dat(uint8_t* rdram, recomp_context* ctx) {
         if (local > 0 && local > d.second) {
             const uint32_t slot = rs64::mips::rh(rdram, item + 6);
             const uint32_t dmg = (uint32_t)(local - d.second);
-            if (slot == 0xFFFFu) {
-                // Unspawned: dealDamagetoDatItem cuts the stored health, so the item streams in damaged or as rubble.
+            if (slot == 0xFFFFu && d.second > 0) {
+                // Unspawned, not lethal: the health word directly, since dealDamagetoDatItem counts a type-0x14 item's objective on every unspawned hit (0x800C74B0).
+                ww(rdram, item + 0x6C + (rw(rdram, 0x80137CE4u) & 3u) * 4u, (uint32_t)d.second);
+            } else if (slot == 0xFFFFu) {
+                // Unspawned, lethal: dealDamagetoDatItem cuts the stored health, so the item streams in as rubble.
                 rs64::mp::call(rdram, ctx, 0x800C7390u, {rw(rdram, item + 0xC), dmg});
             } else {
                 // Spawned: the HIT dealDamagetoDatItem sends (action 5, weapon 7), without its follow-up lookup, which reads the freed slot after a lethal hit.
@@ -1162,6 +1212,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx) {
     s.in_hangar = false;
     s.follow_out = false;
     s.lives_seen = -1;
+    s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) + 0x100u);
     if (!rs64_ghost_mode() || demo_active(rdram)) {
         return;
     }

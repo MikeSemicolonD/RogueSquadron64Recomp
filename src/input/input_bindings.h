@@ -98,6 +98,10 @@ struct Bindings {
     bool  keyboard_enabled  = true;   // report a controller and read the keyboard
     bool  joystick_enabled  = true;   // read connected raw joysticks
     float stick_range       = 80.0f;  // raw N64 stick value at full gamepad/joystick deflection (hardware ~80; the game saturates at 75/80)
+
+    // Fraction of each gamepad half-axis ignored (joysticks have their own per device).
+    float pad_deadzone      = 0.15f;
+
     float throttle_cruise   = 0.5f;   // throttle position [0,1] that gives the craft's cruise speed
     RumbleConfig rumble;
     LightbarConfig lightbar;
@@ -146,6 +150,40 @@ int find_or_add_joy_device(Bindings& b, const std::string& guid, int ordinal, co
 // "throttle", or a stick with exactly three axes (X, Y, throttle), gets its throttle axis bound
 // to Throttle (positional speed). Other axes are left for the Controls window.
 void add_joystick_defaults(Bindings& b, int dev, int num_axes, int num_buttons, int num_hats);
+
+// The in-game Controls screen: bindings shown and edited per device (the mouse counts as keyboard).
+enum class Device : uint8_t { Keyboard, Gamepad, Joystick };
+
+Device device_of(const Source& s);
+
+// One list row: a target named by its action under the game's Luke preset (menu font: upper case).
+struct ControlRow { Target target; const char* action; };
+
+std::vector<ControlRow> control_rows(Device d);
+
+// Index into b.targets[t] of the first source of device d, or -1.
+int shown_source(const Bindings& b, Target t, Device d);
+
+// Bind `got` as t's shown source for device d, in place. If another target holds `got`, it takes t's old
+// shown source in that slot (or loses it if t had none) and is returned; otherwise Target::Count.
+Target rebind(Bindings& b, Target t, Device d, const Source& got);
+
+// Upper-case, menu-font-safe name ("LEFT SHIFT", "PAD A", "J1 AXIS 2 <"); "--" for no source.
+std::string menu_source_name(const Source& s);
+
+// N64 buttons from inputs that always work in menus, whatever the bindings say: Return/Enter, Backspace, Esc, arrows; pad A, B, Start, D-pad.
+uint16_t menu_fixed_mask(const RawState& s);
+
+// A menu's buttons: while a fixed menu input is held, its button replaces the menu buttons the bindings add (Return bound to fire is only A).
+uint16_t menu_buttons(uint16_t bound, uint16_t fixed);
+
+// Which inputs a rebind capture takes: anything (the F6 window), or one device's. Mouse motion never binds.
+struct CaptureFilter { bool any = true; Device device = Device::Keyboard; };
+
+bool capture_accepts(const CaptureFilter& f, const Source& s);
+
+// `cur` with device d's sources on every target reset to default_bindings().
+Bindings default_device_bindings(const Bindings& cur, Device d);
 
 // roguesq_input.json next to the executable.
 std::string default_config_path();

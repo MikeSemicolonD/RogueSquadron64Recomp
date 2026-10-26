@@ -12,7 +12,7 @@ RT64 buffers one real game frame and draws in-between frames by pairing each tra
 ## Enabling
 
 - `roguesq_video.json`: `"frameInterpolation": true`, `"targetFramerate": 60` ([src/video/video_config.cpp:69](../../../src/video/video_config.cpp)). Code default is OFF ([src/video/rt64_render_context.cpp:210](../../../src/video/rt64_render_context.cpp)); its "effect quads flicker" rationale predates the sprite-id work and is stale.
-- Env: `ROGUESQ_RT_INTERP=<hz>` (`0` = off). Deterministic repro: `ROGUESQ_BOOT_TARGET=level:N` (attract demo is too noisy) plus a recorded input replay (`ROGUESQ_INPUT_REPLAY`, files in `tools/recordings/`); mute with `ROGUESQ_NO_AUDIO_UCODE=1`. **Test in the Release build**: Debug adds background work that distorts frame timing.
+- Env: `ROGUESQ_RT_INTERP=<hz>` (`0` = off). Deterministic repro: `ROGUESQ_BOOT_TARGET=level:N` (attract demo is too noisy) plus a recorded input replay (`ROGUESQ_INPUT_REPLAY`, files in `tools/debug/recordings/`); mute with `ROGUESQ_NO_AUDIO_UCODE=1`. **Test in the Release build**: Debug adds background work that distorts frame timing.
 
 ## Pipeline (lib/rt64/src)
 
@@ -65,7 +65,7 @@ The id must be: **the same** for the same logical object across frames; **differ
 | Whole-frame lurch / speed spike | Rate dropped or a stretched frame timed as 1 VI | A/B `ROGUESQ_INTERP_RATE=strict` / `ROGUESQ_INTERP_VARIABLE=0` |
 | Uneven motion that survives correct pairing | Game-side unevenness (e.g. camera and objects updated on different cadences) or late real frames | Not an interp bug; interpolation shows it faithfully |
 
-**Measuring coverage:** replay a recording (`tools/recordings/`, Release) with `ROGUESQ_LOG_INTERP_PAIR=1` and aggregate `[pair]` per class. `[autodraw]` counts draws made with no id per draw site (tile_quad, tile_grid, sprite, face; every mesh face goes through `f5_emit_face`), and is the real coverage number. AUTO transforms left in `[pair]` are `op_04` vertex-cache loads that are never drawn directly (faces copy them into their own group), so they don't matter. Unpaired id'd transforms are first-frame spawns, which can't pair. Remaining gaps show up as trackers issuing fresh ids; `[facesprite]` and `[baked-miss]` say why.
+**Measuring coverage:** replay a recording (`tools/debug/recordings/`, Release) with `ROGUESQ_LOG_INTERP_PAIR=1` and aggregate `[pair]` per class. `[autodraw]` counts draws made with no id per draw site (tile_quad, tile_grid, sprite, face; every mesh face goes through `f5_emit_face`), and is the real coverage number. AUTO transforms left in `[pair]` are `op_04` vertex-cache loads that are never drawn directly (faces copy them into their own group), so they don't matter. Unpaired id'd transforms are first-frame spawns, which can't pair. Remaining gaps show up as trackers issuing fresh ids; `[facesprite]` and `[baked-miss]` say why.
 
 **First step for jitter:** toggle one path at a time on the same scene (`ROGUESQ_F5_SPRITE_FACE_ID=0`, `ROGUESQ_F5_SPRITE_WORLD_MATCH=0`, `ROGUESQ_INTERP_ID_MAXJUMP=0`, `ROGUESQ_INTERP_AUTO_MAX_SCREEN=0`). `ROGUESQ_F5_SPRITE_XFORM=0` is not a single-path toggle: it also re-enables the dense-sprite no-id path and isolates id-less sprites. `ROGUESQ_LOG_INTERP_PAIR=1` logs per-class paired/total, flips and in-frame duplicate ids (`[pair]`), jump rejects, and face-sprite id outcomes; aggregate it over gameplay frames with awk. Judge fixes by eye on a live A/B (`mcp__windows-screenshot__capture_burst`, title "Rogue Squadron 64 Recompiled"). A higher match rate that visibly warps is a failure.
 
@@ -81,4 +81,4 @@ The id must be: **the same** for the same logical object across frames; **differ
 
 ~1 real frame (~33 ms) extra latency; mispairs smear rather than pop; vertex-baked motion and late real frames stay at game rate.
 
-Env var catalog: [docs/debug-trace-env-vars.md](../../../docs/debug-trace-env-vars.md).
+Env var catalog: [docs/engine/debug-trace-env-vars.md](../../../docs/engine/debug-trace-env-vars.md).

@@ -1,7 +1,7 @@
 {
-  "//": "Menu button system v2. Overrides the built-in QUIT button (same id) with one that shows a YES/NO confirm prompt. A non-empty 'confirm' pops the host-managed prompt before the action runs. action='quit' binds to the built-in quit action. See docs/adding-menus-and-buttons.md.",
+  "//": "Menu button system v2. Overrides the built-in QUIT button (same id) with one that shows a YES/NO confirm prompt. A non-empty 'confirm' pops the host-managed prompt before the action runs. action='quit' binds to the built-in quit action. See docs/guides/adding-menus-and-buttons.md.",
   "buttons": [
     { "id": "quit", "menu": "main_menu", "type": "action", "action": "quit",
-      "label": "QUIT", "confirm": "QUIT THE GAME?", "x": -165, "y": 0 }
+      "label": "QUIT", "confirm": "QUIT THE GAME?", "x": -170, "y": 0 }
   ]
 }

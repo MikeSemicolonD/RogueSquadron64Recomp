@@ -191,7 +191,101 @@ static void test_lobby_join_connects_and_checks_version() {
     l.on_connected(1000);
     CHECK(!l.ready());
     l.on_hello(Hello{kProtocol, kBuildId, 0});
+    CHECK(!l.ready() && l.status() == "CONNECTING");
+    l.on_accept();
     CHECK(l.ready() && l.state() == LobbyState::Connected && l.status() == "CONNECTED");
+}
+
+static void test_lobby_password() {
+    // No password: any AUTH is accepted once HELLO matched.
+    Lobby h;
+    h.host();
+    h.on_connected(0);
+    CHECK(h.on_auth("123456") && !h.ready());
+    h.on_hello(Hello{kProtocol, kBuildId, 1});
+    CHECK(h.ready());
+
+    // A password: a wrong or missing PIN sends the host back to waiting; the right one connects.
+    Lobby p;
+    p.set_password("424242");
+    p.host();
+    p.on_connected(0);
+    p.on_hello(Hello{kProtocol, kBuildId, 1});
+    CHECK(!p.on_auth("") && p.state() == LobbyState::Hosting && p.status() == "WAITING FOR PLAYER");
+    p.on_connected(10);
+    p.on_hello(Hello{kProtocol, kBuildId, 1});
+    CHECK(!p.on_auth("111111") && !p.ready());
+    p.on_connected(20);
+    p.on_hello(Hello{kProtocol, kBuildId, 1});
+    CHECK(p.on_auth("424242") && p.ready());
+
+    // The client: refused with or without a typed PIN.
+    Lobby c;
+    c.join();
+    c.on_connected(0);
+    c.on_hello(Hello{kProtocol, kBuildId, 0});
+    c.on_refused(false);
+    CHECK(c.state() == LobbyState::Failed && c.status() == "PASSWORD NEEDED" && c.password_failed());
+    c.join();
+    CHECK(!c.password_failed());
+    c.on_connected(0);
+    c.on_refused(true);
+    CHECK(c.status() == "WRONG PASSWORD");
+
+    // A client never takes AUTH, a host never takes ACCEPT.
+    Lobby x;
+    x.join();
+    x.on_connected(0);
+    x.on_hello(Hello{kProtocol, kBuildId, 0});
+    CHECK(x.on_auth("") && !x.ready());
+    Lobby y;
+    y.host();
+    y.on_connected(0);
+    y.on_hello(Hello{kProtocol, kBuildId, 1});
+    y.on_accept();
+    CHECK(!y.ready());
+}
+
+static void test_auth_accept_roundtrip() {
+    std::string pin = "x";
+    const std::vector<uint8_t> a = encode_auth("123456");
+    CHECK(message_type(a.data(), a.size()) == (uint8_t)Msg::Auth);
+    CHECK(decode_auth(a.data(), a.size(), &pin) && pin == "123456");
+    const std::vector<uint8_t> e = encode_auth("");
+    CHECK(decode_auth(e.data(), e.size(), &pin) && pin.empty());
+    const std::vector<uint8_t> bad = encode_auth("12a456");
+    CHECK(!decode_auth(bad.data(), bad.size(), &pin));
+    const std::vector<uint8_t> shortpin = encode_auth("123");
+    CHECK(!decode_auth(shortpin.data(), shortpin.size(), &pin));
+    const std::vector<uint8_t> ok = encode_accept();
+    CHECK(message_type(ok.data(), ok.size()) == (uint8_t)Msg::Accept && decode_accept(ok.data(), ok.size()));
+    const std::vector<uint8_t> bye = encode_bye(ByeReason::WrongPassword, 0);
+    ByeReason r = ByeReason::Finished;
+    uint32_t f = 1;
+    CHECK(decode_bye(bye.data(), bye.size(), &r, &f) && r == ByeReason::WrongPassword);
+}
+
+static void test_name_editor() {
+    NameEditor n;
+    CHECK(NameEditor::clean("  luke's  game!! ") == "LUKES GAME");
+    CHECK(NameEditor::clean("ABCDEFGHIJKLMNOPQRSTUVWXYZ") == "ABCDEFGHIJKLMNOP");
+    CHECK(n.label("LUK") == "SERVER NAME LUK");
+    n.editing = true;
+    n.begin_typing();
+    n.type_text("rogue 1!");
+    n.type_backspace();
+    CHECK(n.label() == std::string("SERVER NAME ROGUE ") + kCaret);
+    n.type_text("2");
+    CHECK(n.end_typing() && n.name == "ROGUE 2" && !n.editing);
+    // Pad: up steps blank -> A, down wraps blank -> 9; right moves on to append.
+    NameEditor p;
+    p.editing = true;
+    CHECK(p.input(kPadUp, 0) && p.name == "A");
+    p.input(kPadRight, 0);
+    p.input(kPadDown, 0);
+    CHECK(p.name == "A9" && p.label() == "SERVER NAME A<9>");
+    p.input(kPadA, 0);
+    CHECK(!p.editing && p.name == "A9");
 }
 
 static void test_lobby_join_times_out() {
@@ -199,7 +293,23 @@ static void test_lobby_join_times_out() {
     l.join();
     l.tick(0);
     l.tick(15001);
-    CHECK(l.state() == LobbyState::Failed && l.status() == "NO ANSWER");
+    CHECK(l.state() == LobbyState::Failed && l.status() == "COULD NOT CONNECT TO HOST");
+    // A transport's own failure ends the join at once, with its reason; not once connected, never on a host.
+    Lobby f;
+    f.join();
+    f.on_join_failed("COULD NOT CONNECT TO SERVER");
+    CHECK(f.state() == LobbyState::Failed && f.status() == "COULD NOT CONNECT TO SERVER");
+    f.join();
+    f.on_join_failed("");
+    CHECK(f.status() == "COULD NOT CONNECT TO HOST");
+    f.join();
+    f.on_connected(0);
+    f.on_join_failed("X");
+    CHECK(f.state() == LobbyState::Joining);
+    Lobby h;
+    h.host();
+    h.on_join_failed("X");
+    CHECK(h.state() == LobbyState::Hosting);
 }
 
 static void test_lobby_no_hello_after_connect() {
@@ -242,12 +352,15 @@ static void test_lobby_lost_after_connect() {
     c.join();
     c.on_connected(0);
     c.on_hello(Hello{kProtocol, kBuildId, 0});
+    c.on_accept();
     c.on_lost();
     CHECK(c.state() == LobbyState::Failed && c.status() == "CONNECTION LOST");
     Lobby h;
     h.host();
     h.on_connected(0);
     h.on_hello(Hello{kProtocol, kBuildId, 1});
+    h.on_auth("");
+    CHECK(h.ready());
     h.on_lost();
     CHECK(h.state() == LobbyState::Hosting && h.status() == "PLAYER LEFT");
     h.tick(1000);
@@ -283,7 +396,7 @@ static void test_lobby_join_timeout_setting() {
     l.tick(20000);
     CHECK(l.state() == LobbyState::Joining);
     l.tick(300001);
-    CHECK(l.status() == "NO ANSWER");
+    CHECK(l.status() == "COULD NOT CONNECT TO HOST");
 }
 
 static void test_address_editor_saved_hostname() {
@@ -391,11 +504,13 @@ static void test_discovery_messages() {
 }
 
 static void test_skip_message() {
-    const std::vector<uint8_t> b = encode_skip();
+    const std::vector<uint8_t> b = encode_skip(0x0102);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Skip);
-    CHECK(decode_skip(b.data(), b.size()));
+    uint16_t scene = 0;
+    CHECK(decode_skip(b.data(), b.size(), &scene) && scene == 0x0102);
+    CHECK(!decode_skip(b.data(), b.size() - 1, &scene));
     const std::vector<uint8_t> h = encode_hello(Hello{});
-    CHECK(!decode_skip(h.data(), h.size()));
+    CHECK(!decode_skip(h.data(), h.size(), &scene));
 }
 
 static void test_shot_message() {
@@ -428,7 +543,7 @@ static void test_trigger_message() {
     CHECK(!decode_trigger(bad_flag.data(), bad_flag.size(), &e, &ev, &enter));
     const std::vector<uint8_t> wide = encode_trigger(9, 0x1000, true);
     CHECK(!decode_trigger(wide.data(), wide.size(), &e, &ev, &enter));
-    const std::vector<uint8_t> k = encode_skip();
+    const std::vector<uint8_t> k = encode_skip(0x0102);
     CHECK(!decode_trigger(k.data(), k.size(), &e, &ev, &enter));
 }
 
@@ -455,7 +570,7 @@ static void test_upgrades_message() {
     CHECK(!decode_upgrades(unlock.data(), unlock.size(), &e, &bits));
     const std::vector<uint8_t> none = encode_upgrades(7, 0);
     CHECK(!decode_upgrades(none.data(), none.size(), &e, &bits));
-    const std::vector<uint8_t> k = encode_skip();
+    const std::vector<uint8_t> k = encode_skip(0x0102);
     CHECK(!decode_upgrades(k.data(), k.size(), &e, &bits));
     const std::vector<uint8_t> p = encode_pickup(9, 0x1234);
     CHECK(message_type(p.data(), p.size()) == (uint8_t)Msg::Pickup);
@@ -469,8 +584,9 @@ static void test_briefing_done_message() {
     const std::vector<uint8_t> b = encode_briefing_done();
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::BriefingDone);
     CHECK(decode_briefing_done(b.data(), b.size()));
-    const std::vector<uint8_t> k = encode_skip();
-    CHECK(!decode_briefing_done(k.data(), k.size()) && !decode_skip(b.data(), b.size()));
+    const std::vector<uint8_t> k = encode_skip(0x0102);
+    uint16_t scene = 0;
+    CHECK(!decode_briefing_done(k.data(), k.size()) && !decode_skip(b.data(), b.size(), &scene));
 }
 
 static void test_address_editor_typing() {
@@ -531,7 +647,7 @@ static void test_status_dots() {
     CHECK(status_dots("CONNECTING", 2 * kDotPeriodMs) == "CONNECTING.." + pad);
     CHECK(status_dots("CONNECTING", 3 * kDotPeriodMs) == "CONNECTING...");
     CHECK(status_dots("CONNECTING", 4 * kDotPeriodMs) == "CONNECTING" + pad + pad + pad);
-    CHECK(waiting_status("SEARCHING") && waiting_status("CONNECTING") && waiting_status("PLAYER JOINING") && waiting_status("WAITING FOR PLAYER") && waiting_status("OPENING INTERNET PORT"));
+    CHECK(waiting_status("SEARCHING") && waiting_status("CONNECTING") && waiting_status("PLAYER JOINING") && waiting_status("WAITING FOR PLAYER"));
     CHECK(!waiting_status("CONNECTED") && !waiting_status("HOST OR JOIN A GAME") && !waiting_status("VERSION MISMATCH"));
 }
 
@@ -543,15 +659,6 @@ static void test_public_ipv4() {
     // Carrier-grade NAT (100.64/10) and link-local are not reachable from the internet either.
     CHECK(!public_ipv4(0x64400001u) && !public_ipv4(0x647FFFFFu) && public_ipv4(0x64800000u));
     CHECK(!public_ipv4(0xA9FE0101u) && !public_ipv4(0x7F000001u) && !public_ipv4(0u));
-}
-
-static void test_online_label() {
-    CHECK(online_label(PortMapState::Idle).empty());
-    CHECK(online_label(PortMapState::Working) == "OPENING INTERNET PORT");
-    CHECK(online_label(PortMapState::Open).empty());
-    CHECK(online_label(PortMapState::NoRouter) == "UPNP IS OFF ON YOUR ROUTER");
-    CHECK(online_label(PortMapState::Refused) == "YOUR ROUTER REFUSED THE PORT");
-    CHECK(online_label(PortMapState::SharedAddress) == "YOUR ISP SHARES YOUR ADDRESS");
 }
 
 static void test_address_editor_port() {
@@ -652,6 +759,16 @@ static void test_damage_batch() {
     CHECK(encode_damage(1, many).size() <= kMaxPacket);
 }
 
+static void test_list_status() {
+    CHECK(list_pages(-1) == 1 && list_pages(0) == 1 && list_pages(4) == 1 && list_pages(5) == 2 && list_pages(9) == 3);
+    CHECK(list_status(-1, 0) == "SEARCHING" && waiting_status(list_status(-1, 0)));
+    CHECK(list_status(0, 0) == "NO GAMES FOUND");
+    CHECK(list_status(1, 0) == "1 GAME FOUND");
+    CHECK(list_status(4, 0) == "4 GAMES FOUND");
+    CHECK(list_status(5, 0) == "5 GAMES FOUND  PAGE 1 OF 2");
+    CHECK(list_status(12, 1) == "12 GAMES FOUND  PAGE 2 OF 3");
+}
+
 static void test_link_poll_edges() {
     // first connect
     LinkEdges e = link_poll_edges(true, false, 1, 0);
@@ -715,7 +832,6 @@ int main() {
     test_lobby_idle_status();
     test_status_dots();
     test_public_ipv4();
-    test_online_label();
     test_host_address_label();
     test_address_editor_port();
     test_choose_host_address();
@@ -724,6 +840,10 @@ int main() {
     test_address_editor_saved_hostname();
     test_pick_and_ready();
     test_browse();
+    test_list_status();
+    test_lobby_password();
+    test_auth_accept_roundtrip();
+    test_name_editor();
     printf("net_core_test OK\n");
     return 0;
 }

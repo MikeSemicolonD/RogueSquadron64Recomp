@@ -1,9 +1,11 @@
 #include "host_api/host_api.h"
+#include "game/terrain_edit.h"
 #include <cstdio>
 #include <iterator>
 #include <map>
 #include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace rs64::host {
@@ -29,7 +31,11 @@ struct Action { rs64_action_fn fn; void* user; };
 struct Condition { rs64_condition_fn fn; void* user; };
 struct Key { rs64_key_fn fn; void* user; };
 struct Quit { rs64_event_fn fn; void* user; };
+struct RuleAction { rs64_rule_action_fn fn; void* user; };
 std::map<std::string, Action> g_actions;
+std::map<std::string, RuleAction> g_rule_actions;
+std::vector<std::pair<std::string, std::string>> g_rule_events;
+std::mutex g_rule_events_mu;
 std::map<std::string, Condition> g_conditions;
 std::vector<Key> g_keys;
 std::vector<Quit> g_quits;
@@ -355,6 +361,66 @@ int add_moved_range(uint32_t lo, uint32_t hi, uint32_t delta) {
 
 const std::vector<rs64::ls::MovedRange>& moved_ranges() { return g_moved; }
 
+int add_rule_action(const char* name, rs64_rule_action_fn fn, void* user) {
+
+    if (!name || !fn || refuse_sealed("add_rule_action")) {
+        return -1;
+    }
+
+    if (!g_rule_actions.emplace(name, RuleAction{fn, user}).second)
+    {
+        log_line((std::string("[host] rule action registered twice, keeping the first: ") + name).c_str());
+
+        return -1;
+    }
+
+    return 0;
+}
+
+bool run_rule_action(const char* name, uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count) {
+
+    auto it = g_rule_actions.find(name ? name : "");
+
+    if (it == g_rule_actions.end())
+    {
+        return false;
+    }
+
+    it->second.fn(rdram, ctx, keys, values, count, it->second.user);
+
+    return true;
+}
+
+int fire_rule_event(const char* name, const char* object) {
+
+    if (!name)
+    {
+        return -1;
+    }
+
+    std::lock_guard<std::mutex> lk(g_rule_events_mu);
+    g_rule_events.emplace_back(name, object ? object : "");
+
+    return 0;
+}
+
+int terrain_get_cell(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex) {
+
+    return (rdram && heights) ? rs64::terrain::get_cell(rdram, col, row, heights, tex) : rs64::terrain::NoMap;
+}
+
+int terrain_set_cell(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex) {
+
+    return (rdram && heights) ? rs64::terrain::set_cell(rdram, col, row, heights, tex) : rs64::terrain::NoMap;
+}
+
+std::vector<std::pair<std::string, std::string>> take_rule_events() {
+
+    std::lock_guard<std::mutex> lk(g_rule_events_mu);
+
+    return std::exchange(g_rule_events, {});
+}
+
 bool ram_ok(uint32_t addr) {
 
     if (addr >= 0x80000000u && addr < 0x80800000u)
@@ -399,6 +465,8 @@ void reset_for_tests() {
     g_text.clear();
     g_filters.clear();
     g_actions.clear();
+    g_rule_actions.clear();
+    take_rule_events();
     g_conditions.clear();
     g_keys.clear();
     g_quits.clear();
@@ -425,7 +493,7 @@ const char* hook_name(uint32_t hook)
         "RS64_HOOK_MISSION_SELECT_FONTS", "RS64_HOOK_MISSION_SELECT_TICK", "RS64_HOOK_CRAFT_SELECT_INIT", "RS64_HOOK_CRAFT_SELECT_TICK",
         "RS64_HOOK_CRAFT_ASSETS", "RS64_HOOK_HUD_FONTS", "RS64_HOOK_HUD_DRAW", "RS64_HOOK_RADAR",
         "RS64_HOOK_MENU_PAD", "RS64_HOOK_MAIN_MENU", "RS64_HOOK_POWERUP_TOUCH", "RS64_HOOK_POWERUP_COLLECT",
-        "RS64_HOOK_TRIGGER_EFFECT", "RS64_HOOK_WALKER_TRIPPED",
+        "RS64_HOOK_TRIGGER_EFFECT", "RS64_HOOK_WALKER_TRIPPED", "RS64_HOOK_ATST_TICK",
     };
 
     static_assert(sizeof(names) / sizeof(names[0]) == RS64_HOOK_COUNT, "hook_name table must list every hook id");
@@ -447,6 +515,7 @@ Mark mark() {
 
     for (const auto& t : g_text) m.text.insert(t.first);
     for (const auto& a : g_actions) m.actions.insert(a.first);
+    for (const auto& a : g_rule_actions) m.rule_actions.insert(a.first);
     for (const auto& c : g_conditions) m.conditions.insert(c.first);
 
     m.keys = g_keys.size();
@@ -475,6 +544,11 @@ void rollback(const Mark& m)
     for (auto it = g_actions.begin(); it != g_actions.end();)
     {
         it = m.actions.count(it->first) ? std::next(it) : g_actions.erase(it);
+    }
+
+    for (auto it = g_rule_actions.begin(); it != g_rule_actions.end();)
+    {
+        it = m.rule_actions.count(it->first) ? std::next(it) : g_rule_actions.erase(it);
     }
 
     for (auto it = g_conditions.begin(); it != g_conditions.end();)
@@ -514,6 +588,8 @@ const rs64_host_api* api() {
         add_service, get_service,
         add_hash_part, add_valid_ram,
         add_moved_range,
+        add_rule_action, fire_rule_event,
+        terrain_get_cell, terrain_set_cell,
     };
 
     return &table;

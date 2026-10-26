@@ -4,6 +4,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <chrono>
+#include <mutex>
+#include <vector>
 #include "os_compat.h"
 #include "imgui/imgui.h"
 #include "rhi/rt64_render_hooks.h"
@@ -32,13 +35,6 @@ static void draw_controls_ui()
 
     static int capture_target = -1;                 // Target awaiting a new bind
     static bool capture_append = false;             // Add (keep existing binds) vs Rebind (replace)
-    static bool capture_snap = false;               // joystick baseline not taken yet
-    static uint8_t prev_keys[SDL_NUM_SCANCODES] = {0};
-    static uint32_t prev_pad = 0, prev_mouse = 0;
-
-    // Joystick state when the rebind started; a button/hat press or an axis moved >50% from here is captured.
-    struct JoySnap { SDL_JoystickID id; std::vector<float> axes; std::vector<uint8_t> buttons, hats; };
-    static std::vector<JoySnap> joy_snap;
 
     ImGui::SetNextWindowSize(ImVec2(560, 560), ImGuiCond_FirstUseEver);
     bool open = true;
@@ -223,116 +219,21 @@ static void draw_controls_ui()
 
         ImGui::Separator();
 
-        // Edge-detect a captured input while a rebind is pending.
-        if (capture_target >= 0 && capture_snap) {
-            std::lock_guard<std::mutex> lk(g_bindings_mtx);
-            joy_snap.clear();
+        if (capture_target >= 0)
+        {
+            ri::Source got;
+            const int r = capture_poll(&got);
 
-            for (const OpenJoy& oj : g_open_joys)
-            {
-                JoySnap s{ oj.id, {}, {}, {} };
-
-                for (int a = 0; a < SDL_JoystickNumAxes(oj.joy); ++a) s.axes.push_back(SDL_JoystickGetAxis(oj.joy, a) / 32767.0f);
-                for (int b = 0; b < SDL_JoystickNumButtons(oj.joy); ++b) s.buttons.push_back(SDL_JoystickGetButton(oj.joy, b));
-                for (int h = 0; h < SDL_JoystickNumHats(oj.joy); ++h) s.hats.push_back(SDL_JoystickGetHat(oj.joy, h));
-
-                joy_snap.push_back(std::move(s));
-            }
-
-            capture_snap = false;
-        } else if (capture_target >= 0) {
-            int nk = 0;
-            const uint8_t* ks = SDL_GetKeyboardState(&nk);
-
-            if (ks[SDL_SCANCODE_ESCAPE])
-            {
-                capture_target = -1;
-            } else {
-                ri::Source got;
-                bool have = false;
-
-                for (int sc = 0; sc < nk && !have; ++sc)
-                    if (sc != SDL_SCANCODE_ESCAPE && ks[sc] && !prev_keys[sc]) { got = { ri::SourceKind::Key, sc, 0 }; have = true; }
-
-                if (!have && controller)
-                    for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX && !have; ++b)
-                    {
-                        bool now = SDL_GameControllerGetButton(controller, (SDL_GameControllerButton)b);
-
-                        if (now && !((prev_pad >> b) & 1)) { got = { ri::SourceKind::PadButton, b, 0 }; have = true; }
-                    }
-
-                if (!have)
-                {
-                    uint32_t mb = SDL_GetMouseState(nullptr, nullptr);
-
-                    for (int b = 1; b <= 5 && !have; ++b)
-                        if ((mb & SDL_BUTTON(b)) && !(prev_mouse & SDL_BUTTON(b))) { got = { ri::SourceKind::MouseButton, b, 0 }; have = true; }
-                }
-
+            if (r == 1) {
                 std::lock_guard<std::mutex> lk(g_bindings_mtx);
 
-                for (const OpenJoy& oj : g_open_joys) {
-                    if (have) break;
+                if (!capture_append) g_bindings.targets[capture_target].clear();
 
-                    const int dev = joy_dev_locked(oj);
-                    const JoySnap* s = nullptr;
-
-                    for (const JoySnap& js : joy_snap) {
-                        if (js.id == oj.id) s = &js;
-                    }
-
-                    if (dev < 0 || !s) continue;
-
-                    for (int b = 0; b < (int)s->buttons.size() && !have; ++b)
-                    {
-                        if (SDL_JoystickGetButton(oj.joy, b) && !s->buttons[b]) { got = { ri::SourceKind::JoyButton, b, 0, (int8_t)dev }; have = true; }
-                    }
-
-                    for (int h = 0; h < (int)s->hats.size() && !have; ++h)
-                    {
-                        const uint8_t now_bits = SDL_JoystickGetHat(oj.joy, h) & (uint8_t)~s->hats[h];
-
-                        for (int bit = 0; bit < 4 && !have; ++bit)
-                        {
-                            if (now_bits & (1u << bit)) { got = { ri::SourceKind::JoyHat, h, (int8_t)(1 << bit), (int8_t)dev }; have = true; }
-                        }
-                    }
-
-                    for (int a = 0; a < (int)s->axes.size() && !have; ++a)
-                    {
-                        const float delta = SDL_JoystickGetAxis(oj.joy, a) / 32767.0f - s->axes[a];
-
-                        if (std::fabs(delta) < 0.5f) continue;
-
-                        int dir = delta > 0.0f ? 1 : -1;
-
-                        if (a < 32 && ((g_bindings.joy_devices[dev].invert_axes >> a) & 1u)) dir = -dir;
-
-                        got = { ri::SourceKind::JoyAxis, a, (int8_t)dir, (int8_t)dev };
-                        have = true;
-                    }
-                }
-
-                if (have) {
-                    if (!capture_append) g_bindings.targets[capture_target].clear();
-
-                    g_bindings.targets[capture_target].push_back(got);
-                    capture_target = -1;
-                }
+                g_bindings.targets[capture_target].push_back(got);
             }
+
+            if (r != 0) capture_target = -1;
         }
-
-        int nk = 0;
-        const uint8_t* ks = SDL_GetKeyboardState(&nk);
-        int n = nk < (int)SDL_NUM_SCANCODES ? nk : (int)SDL_NUM_SCANCODES;
-        memcpy(prev_keys, ks, n);
-        prev_pad = 0;
-
-        if (controller) for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
-            if (SDL_GameControllerGetButton(controller, (SDL_GameControllerButton)b)) prev_pad |= (1u << b);
-
-        prev_mouse = SDL_GetMouseState(nullptr, nullptr);
 
         ImGui::BeginChild("binds", ImVec2(0, 0), true);
         std::unique_lock<std::mutex> binds_lock(g_bindings_mtx);
@@ -358,7 +259,9 @@ static void draw_controls_ui()
             if (ImGui::SmallButton("Rebind")) {
                 capture_target = t;
                 capture_append = false;
-                capture_snap = true;
+                binds_lock.unlock();
+                capture_begin({});
+                binds_lock.lock();
             }
 
             ImGui::SameLine();
@@ -366,7 +269,9 @@ static void draw_controls_ui()
             if (ImGui::SmallButton("Add")) {
                 capture_target = t;
                 capture_append = true;
-                capture_snap = true;
+                binds_lock.unlock();
+                capture_begin({});
+                binds_lock.lock();
             }
 
             ImGui::SameLine();
@@ -712,6 +617,9 @@ static void draw_touch_overlay()
     }
 }
 
+// Height of the compile indicator this frame, so notices stack above it.
+static float s_compile_height = 0.0f;
+
 // Bottom-right "Compiling shaders" panel while draws wait for their shader (D3D11/D3D10 have no ubershader to draw them meanwhile).
 static void draw_shader_compile_indicator()
 {
@@ -725,6 +633,7 @@ static void draw_shader_compile_indicator()
 
     if (!draws_wait || (pending == 0)) {
         s_active = false;
+        s_compile_height = 0.0f;
 
         return;
     }
@@ -747,12 +656,80 @@ static void draw_shader_compile_indicator()
     {
         ImGui::Text("Compiling shaders  %u / %u", done, total);
         ImGui::ProgressBar(float(done) / float(total), ImVec2(220.0f, 0.0f), "");
+        s_compile_height = ImGui::GetWindowHeight() + 6.0f;
     }
 
     ImGui::End();
 }
 
-// The single ImGui render hook draws the touch overlay, both dev panels and the shader compile indicator.
+struct Notice {
+    std::string key;
+    std::string text;
+    double until = 0.0;
+};
+
+static std::mutex s_notice_mutex;
+static std::vector<Notice> s_notices;
+
+static double notice_clock() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void notify(const char* key, const std::string& text, float seconds)
+{
+
+    std::lock_guard<std::mutex> lock(s_notice_mutex);
+
+    std::erase_if(s_notices, [key](const Notice& n) { return n.key == key; });
+    s_notices.push_back({ key, text, notice_clock() + seconds });
+}
+
+static std::vector<std::string> live_notices()
+{
+
+    const double now = notice_clock();
+    std::lock_guard<std::mutex> lock(s_notice_mutex);
+
+    std::erase_if(s_notices, [now](const Notice& n) { return n.until <= now; });
+
+    std::vector<std::string> out;
+
+    for (const Notice& n : s_notices) {
+        out.push_back(n.text);
+    }
+
+    return out;
+}
+
+// Bottom-right notices (captures, dumps), above the compile indicator.
+static void draw_notices()
+{
+
+    const std::vector<std::string> lines = live_notices();
+
+    if (lines.empty())
+    {
+        return;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    const float margin = 12.0f;
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin, io.DisplaySize.y - margin - s_compile_height), ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.7f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove;
+
+    if (ImGui::Begin("##notices", nullptr, flags))
+    {
+        for (const std::string& line : lines) {
+            ImGui::TextUnformatted(line.c_str());
+        }
+    }
+
+    ImGui::End();
+}
+
+// The single ImGui render hook draws the touch overlay, both dev panels, the shader compile indicator and the notices.
 void draw_dev_ui()
 {
 
@@ -760,6 +737,7 @@ void draw_dev_ui()
     draw_controls_ui();
     draw_mods_ui();
     draw_shader_compile_indicator();
+    draw_notices();
 
     // Text input is off by default (see create_gfx); an ImGui text box needs it while focused.
     static bool s_imgui_text = false;

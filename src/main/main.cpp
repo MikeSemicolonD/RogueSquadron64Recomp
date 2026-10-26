@@ -279,6 +279,10 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 #endif
 
+    if (const char* lang = recomp::dbg::env_str("ROGUESQ_LANGUAGE")) {
+        rs64::video::pin_language(lang);
+    }
+
     int window_w = 640, window_h = 480;
 
     if (const char* ws = recomp::dbg::env_str("ROGUESQ_WINDOW_SIZE")) {
@@ -444,7 +448,7 @@ static void rs64_vi_callback()
 
     if (s_on < 0) s_on = env_on("ROGUESQ_VI_BARRIER_SIGNAL", true);
 
-    // Tick for rs64_attrib_wait_vi (attribution loop paces to the real VI).
+    // Tick for rs64_attrib_wait_vi_yield (attribution and credits loops pace to the real VI).
     g_vi_tick = g_vi_tick + 1;
 
     if (!s_on)
@@ -579,6 +583,48 @@ static int rom_dialog(Uint32 flags, const char* title, const std::string& text, 
     return choice;
 }
 
+#ifdef __APPLE__
+
+// A .app starts with / as its working directory, so it runs from Application Support and refreshes its bundled mods there.
+static void enter_app_bundle_data_dir()
+{
+
+    char* base = SDL_GetBasePath();
+
+    if (!base)
+    {
+        return;
+    }
+
+    const std::string resources = base;
+    SDL_free(base);
+
+    if (resources.find(".app/Contents/Resources/") == std::string::npos)
+    {
+        return;
+    }
+
+    char* pref = SDL_GetPrefPath("", "RogueSquadron64Recomp");
+
+    if (!pref)
+    {
+        return;
+    }
+
+    const std::filesystem::path data = pref;
+    SDL_free(pref);
+    std::filesystem::current_path(data);
+
+    // shortcut: a mod a newer bundle drops stays in Application Support; port Android's mods/.bundled record if that bites.
+    std::error_code ec;
+    const auto options = std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing;
+    std::filesystem::copy(std::filesystem::path(resources) / "mods", data / "mods", options, ec);
+
+    fprintf(stderr, "[main] app bundle: data in %s%s\n", data.string().c_str(), ec ? " (bundled mods not copied)" : "");
+}
+
+#endif
+
 int main(int argc, char* argv[])
 {
 
@@ -590,6 +636,10 @@ int main(int argc, char* argv[])
     std::filesystem::current_path(rs64::android::data_dir());
     rs64::android::install_bundled_mods();
 
+#endif
+
+#ifdef __APPLE__
+    enter_app_bundle_data_dir();
 #endif
 
     if (int rc = rs64::cli::apply_args(argc, argv); rc >= 0)

@@ -334,7 +334,7 @@ int main() {
         while (m.state() == PortMapState::Working && clock::now() - tu < std::chrono::seconds(15)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-        printf("upnp: %s %s\n", online_label(m.state()).c_str(), m.external().c_str());
+        printf("upnp: state %d %s\n", (int)m.state(), m.external().c_str());
         CHECK(m.state() != PortMapState::Working);
         m.stop();
         CHECK(m.state() == PortMapState::Idle);

@@ -482,46 +482,50 @@ static void test_skip_share_sends_local_skips_but_not_its_own_echo() {
     CHECK(!k.on_local(false, 0.0));
     CHECK(k.on_local(true, 0.0));
     // A skip this side made by pressing START for the other player is not sent back.
-    k.on_remote(1.0);
-    CHECK(k.press(1.0, true));
+    k.on_remote(0x0101);
+    CHECK(k.press(1.0, true, 0x0101));
     CHECK(!k.on_local(true, 1.2));
-    CHECK(!k.press(1.3, false));
+    CHECK(!k.press(1.3, false, 0x0101));
     CHECK(k.on_local(true, 1.0 + SkipShare::kEchoS + 0.5));
 }
 
 static void test_skip_share_presses_start_until_the_cinematic_ends() {
     SkipShare k;
-    CHECK(!k.press(0.0, true));
-    k.on_remote(1.0);
+    CHECK(!k.press(0.0, true, 0x0101));
+    k.on_remote(0x0101);
     // Not in a cutscene yet (still loading): no press, but the skip waits.
-    CHECK(!k.press(1.5, false));
+    CHECK(!k.press(1.5, false, 0x0100));
     // The cutscene starts: START pulses (pressed, then released, then pressed again) so the game sees fresh presses.
-    CHECK(k.press(2.0, true));
-    CHECK(!k.press(2.0 + SkipShare::kPulseS * 1.5, true));
-    CHECK(k.press(2.0 + SkipShare::kPulseS * 2.5, true));
+    CHECK(k.press(2.0, true, 0x0101));
+    CHECK(!k.press(2.0 + SkipShare::kPulseS * 1.5, true, 0x0101));
+    CHECK(k.press(2.0 + SkipShare::kPulseS * 2.5, true, 0x0101));
     // The cutscene ended: the skip is used up and a later cutscene plays.
-    CHECK(!k.press(3.0, false));
-    CHECK(!k.press(4.0, true));
+    CHECK(!k.press(3.0, false, 0x0101));
+    CHECK(!k.press(4.0, true, 0x0102));
 }
 
-static void test_skip_share_ends_with_its_scene() {
-    // A skip that pressed through one scene (the hangar launch) does not carry into the next (the crawl).
+static void test_skip_share_lands_on_its_own_scene() {
+    // A skip for a later scene waits however long this side takes to reach it, and skips nothing before it.
     SkipShare k;
-    k.on_remote(0.0);
-    CHECK(k.press(0.5, true));
-    k.end_scene();
-    CHECK(!k.press(0.6, true));
-    // A skip still waiting for its scene (not pressed yet) survives a scene change.
-    SkipShare w;
-    w.on_remote(0.0);
-    w.end_scene();
-    CHECK(w.press(0.5, true));
-}
-
-static void test_skip_share_expires() {
-    SkipShare k;
-    k.on_remote(0.0);
-    CHECK(!k.press(SkipShare::kWaitS + 0.1, true));
+    k.on_remote(0x0203);
+    CHECK(!k.press(0.0, true, 0x0201));
+    CHECK(!k.press(60.0, true, 0x0202));
+    CHECK(k.press(61.0, true, 0x0203));
+    // A skip for a scene this side already finished is dropped, not carried into the next one.
+    SkipShare late;
+    late.on_remote(0x0201);
+    CHECK(!late.press(0.0, true, 0x0202));
+    CHECK(!late.press(1.0, true, 0x0201));
+    // A skip for this scene that arrives after it ended waits, then drops when the next scene starts.
+    SkipShare ended;
+    ended.on_remote(0x0105);
+    CHECK(!ended.press(0.0, false, 0x0105));
+    CHECK(!ended.press(1.0, true, 0x0106));
+    // A new phase (mission init) passes every scene of the last one; the phase byte wraps.
+    SkipShare wrap;
+    wrap.on_remote(0x0001);
+    CHECK(!wrap.press(0.0, true, 0xFF05));
+    CHECK(wrap.press(1.0, true, 0x0001));
 }
 
 static void test_puppet_axes_stay_orthonormal_through_a_reversal() {
@@ -719,8 +723,7 @@ int main() {
     test_puppet_turns_smoothly_for_small_heading_changes();
     test_skip_share_sends_local_skips_but_not_its_own_echo();
     test_skip_share_presses_start_until_the_cinematic_ends();
-    test_skip_share_ends_with_its_scene();
-    test_skip_share_expires();
+    test_skip_share_lands_on_its_own_scene();
     test_mesh_loaded_walks_the_name_hash();
     test_puppet_snap_jumps_to_target();
     test_pad2_bytes_masks_start_and_marks_connected();

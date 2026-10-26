@@ -6,6 +6,8 @@
 #include <cstring>
 #include <string>
 
+extern "C" unsigned rs64_pause_array_for(uint8_t* rdram, unsigned id, unsigned native);
+
 namespace rs64::touch {
     namespace {
         constexpr uint32_t kGcmd = 0x800CE730u - 0x80000000u;
@@ -15,6 +17,9 @@ namespace rs64::touch {
         constexpr uint8_t kMenuSoundSettings = 6;
         constexpr uint8_t kMenuAccount = 1;
         constexpr uint8_t kMenuMediaHub = 10;
+        constexpr uint8_t kFirstModPage = 13;
+        constexpr uint32_t kFontTable = 0x8009FC10u - 0x80000000u;
+        constexpr uint32_t kMenuFont = 5;
 
         // Mod page text line (menu_config.cpp SUBTYPE_LABEL): drawn and marked active, but the cursor skips it.
         constexpr uint8_t kSubtypeLabel = 13;
@@ -24,6 +29,12 @@ namespace rs64::touch {
 
         // PauseMenuStuff arrays by current_menu: root, game settings, audio settings, abort confirm.
         constexpr uint32_t kPauseArrays[4] = { 0x80109DD4u, 0x80109E24u, 0x80109E68u, 0x80109EECu };
+
+        // The array the game reads for a pause menu: the port's rebuilt one for the root and GAME SETTINGS (menu_config.cpp).
+        uint32_t pause_records(const uint8_t* r, int menu)
+        {
+            return rs64_pause_array_for(const_cast<uint8_t*>(r), (unsigned)menu, kPauseArrays[menu]) - 0x80000000u;
+        }
 
         // The mission's presented image is narrower than the front end's (measured 1290x923 vs 1335x923 on the S24+).
         constexpr float kMissionBoxAspect = 1.3976f;
@@ -66,6 +77,55 @@ namespace rs64::touch {
             return in_ram(p) || (p >= kModHeap && p < 0x80000000u + kLabelMemSize);
         }
 
+        // Any kseg0 address: RDRAM, the host RAM above it (the fonts move there with a language mod) and the mod heap.
+        bool in_kseg0(uint32_t p) {
+            return p >= 0x80000000u && p < 0x80000000u + kLabelMemSize;
+        }
+
+        // Menu entry i's drawn text in game x units: its text element (font group 5 slot i, from the table at 0x8009FC10) puts each glyph at
+        // element x + scale * glyph x, so it spans the first glyph to the last plus one advance. False when the element can't be read.
+        bool entry_extent(const uint8_t* r, int i, float* x0, float* x1)
+        {
+
+            const uint32_t rec = rw(r, kFontTable + kMenuFont * 4);
+
+            if (!in_kseg0(rec))
+            {
+                return false;
+            }
+
+            const uint32_t elem = rw(r, rec - 0x80000000u + 0x34 + 4 * i);
+
+            if (!in_kseg0(elem))
+            {
+                return false;
+            }
+
+            const uint32_t e = elem - 0x80000000u;
+            const int n = rh(r, e + 8);
+            const uint32_t xy = rw(r, e + 0x10);
+            float ex, scale;
+            uint32_t bits = rw(r, e + 0x18);
+
+            std::memcpy(&ex, &bits, 4);
+            bits = rw(r, e + 0x24);
+            std::memcpy(&scale, &bits, 4);
+
+            if (n < 1 || n > 255 || !in_kseg0(xy) || !(scale > 0.1f && scale < 4.0f) || !std::isfinite(ex))
+            {
+                return false;
+            }
+
+            const float first = (float)(int16_t)rh(r, xy - 0x80000000u);
+            const float last = (float)(int16_t)rh(r, xy - 0x80000000u + 4 * (n - 1));
+            const float advance = n > 1 ? (last - first) / (float)(n - 1) : g_menu_layout.glyph_w / g_menu_layout.x_scale;
+
+            *x0 = ex + first * scale;
+            *x1 = ex + (last + advance) * scale;
+
+            return *x1 > *x0;
+        }
+
         bool str_len(const uint8_t* r, uint32_t p, int* len) {
 
             if (!in_label_mem(p))
@@ -102,9 +162,14 @@ namespace rs64::touch {
             *ny = ((h - box_h) / 2.0f + py / 240.0f * box_h) / h;
         }
 
-        // The media hub (menu id 10) and its pages show the image filled to the window width; the menu tree fits it.
-        bool fill_screen(const uint8_t* r) {
-            return rb(r, kGcmd + 0x04) >= kMenuMediaHub;
+        // The media hub (menu id 10) and its pages show the image filled to the window width; the menu tree fits it, and so do mod pages
+        // (ids from 13, FIRST_PAGE_ID in menu_config.cpp).
+        bool fill_screen(const uint8_t* r)
+        {
+
+            const uint8_t id = rb(r, kGcmd + 0x04);
+
+            return id >= kMenuMediaHub && id < kFirstModPage;
         }
 
         void to_window(float px, float py, float w, float h, float* nx, float* ny, bool fill = false)
@@ -218,9 +283,18 @@ namespace rs64::touch {
             const float game_y = (float)(int16_t)(list_base + 36 * i - 18 * count) + yo;
             const float cx = L.center_x + xo * L.x_scale;
             const float ty = L.y_origin + game_y * L.y_scale;
+            float left = cx - half_w, right = cx + half_w, ex0, ex1;
+
+            // The text as drawn when its element is readable (tab stops, scale, slide-in); the label's length otherwise.
+            if (entry_extent(r, i, &ex0, &ex1))
+            {
+                left = L.center_x + ex0 * L.x_scale;
+                right = L.center_x + ex1 * L.x_scale;
+            }
+
             Box b{ i, 0, 0, 0, 0 };
-            to_window(cx - half_w, ty - pad, w, h, &b.x0, &b.y0, fill);
-            to_window(cx + half_w, ty + th + pad, w, h, &b.x1, &b.y1, fill);
+            to_window(left, ty - pad, w, h, &b.x0, &b.y0, fill);
+            to_window(right, ty + th + pad, w, h, &b.x1, &b.y1, fill);
             boxes->push_back(b);
         }
 
@@ -472,7 +546,7 @@ namespace rs64::touch {
 
         // Records: every non-terminator record takes the next element except spacers (0x1000). The root menu can hide
         // objective lines (0x0010) without taking an element, so skip that many objective records first.
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
         int non_spacer = 0;
 
         for (int i = 0; i < 64; ++i) {
@@ -704,7 +778,7 @@ namespace rs64::touch {
             return -1;
         }
 
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
         int k = 0;
 
         for (int i = 0; i < 64; ++i) {
@@ -734,7 +808,7 @@ namespace rs64::touch {
             return -1;
         }
 
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
 
         for (int i = 0; i < 64; ++i) {
             const uint16_t f = rh(r, recs + 6u * i);
@@ -761,7 +835,7 @@ namespace rs64::touch {
             return s;
         }
 
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
         char buf[48];
 
         for (int i = 0; i < 64; ++i)

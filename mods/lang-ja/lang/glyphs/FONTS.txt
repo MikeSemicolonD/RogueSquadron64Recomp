@@ -1,0 +1,8 @@
+Glyphs in these packs are rasterized from these fonts (each font's license is in this folder):
+
+italic35.bin                       M PLUS 1p Bold        SIL Open Font License 1.1      LICENSE-MPLUS1p-OFL.txt
+normal10.bin hatten13.bin
+subtitle12.bin subtitle20.bin      PixelMplus10          M+ FONT LICENSE                LICENSE-PixelMplus.txt
+normal11.bin subtitle8.bin         Misaki Gothic 2nd     Misaki font license (free)     LICENSE-Misaki.txt
+
+M PLUS 1p: Copyright 2016 The M+ Project Authors. PixelMplus: Copyright (C) 2002-2013 M+ FONTS PROJECT, itouhiro. Misaki: Copyright (C) 2002-2021 Num Kadoma.

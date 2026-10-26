@@ -1,5 +1,5 @@
 # Release build on self-hosted runners that hold the ROM-derived inputs (decomp ELF + RSP ucode sources).
-# Nothing ROM-derived is in the repo or the runner images; see docs/release-ci.md.
+# Nothing ROM-derived is in the repo or the runner images; see docs/engine/release-ci.md.
 # Only tags and manual dispatch trigger this: never add pull_request, a fork PR would run on the self-hosted machines.
 name: Release
 
@@ -65,7 +65,7 @@ jobs:
       - name: Package
         run: |
           ver="${GITHUB_REF_NAME//\//-}"
-          bash tools/package-linux.sh "$PWD/RogueSquadron64Recomp-linux-x64-$ver.tar.xz" "$PWD/build"
+          bash tools/release/package-linux.sh "$PWD/RogueSquadron64Recomp-linux-x64-$ver.tar.xz" "$PWD/build"
           echo "PKG=RogueSquadron64Recomp-linux-x64-$ver.tar.xz" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v4
@@ -153,6 +153,7 @@ jobs:
           $ver = $env:GITHUB_REF_NAME -replace '/', '-'
           $pkg = "RogueSquadron64Recomp-windows-x64-$ver.zip"
           Copy-Item ci/release-readme.txt build/dist/README.txt
+          Copy-Item LICENSE build/dist/LICENSE.txt
           Compress-Archive -Path build/dist/* -DestinationPath $pkg -Force
           Add-Content -Path $env:GITHUB_ENV -Value "PKG=$pkg" -Encoding ascii
 
@@ -160,6 +161,47 @@ jobs:
         with:
           name: windows-x64
           path: ${{ env.PKG }}
+          retention-days: 3
+          if-no-files-found: error
+
+      # Cross-built in the runner account's default WSL distro (osxcross in ~/osxcross, Metal Developer Tools for Windows installed), reusing this checkout's generated and fixed-up files.
+      - name: Build and package macOS (universal arm64 + x86_64 .app)
+        run: |
+          $ws = (wsl -e wslpath -a $env:GITHUB_WORKSPACE).Trim()
+          $ver = $env:GITHUB_REF_NAME -replace '/', '-'
+          $pkg = "RogueSquadron64Recomp-macos-$ver.zip"
+          wsl -e bash -lc "set -e; cd '$ws'; cmake -S lib/N64ModernRuntime/N64Recomp -B ~/rs64-ci-tools -G Ninja -DCMAKE_BUILD_TYPE=Release; cmake --build ~/rs64-ci-tools --target N64RecompCLI RecompModTool; export N64RECOMP_EXE=~/rs64-ci-tools/N64Recomp RECOMP_MOD_TOOL=~/rs64-ci-tools/RecompModTool; BUILD_DIR=~/rs64-ci-macos-arm64 bash tools/release/macos/cross-build.sh arm64 Release; BUILD_DIR=~/rs64-ci-macos-x86_64 bash tools/release/macos/cross-build.sh x86_64 Release; bash tools/release/macos/package.sh '$pkg' ~/rs64-ci-macos-arm64 ~/rs64-ci-macos-x86_64"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_MAC=$pkg" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ env.PKG_MAC }}
+          retention-days: 3
+          if-no-files-found: error
+
+      # Reuses this checkout's generated files and the Release host tools; needs the runner account's ANDROID_HOME (SDK + NDK) and its debug keystore, which signs local release APKs too.
+      - name: Build Android (arm64)
+        run: |
+          $ver = $env:GITHUB_REF_NAME -replace '/', '-'
+          $pkg = "RogueSquadron64Recomp-android-arm64-$ver.apk"
+          Push-Location android
+          .\gradlew.bat assembleRelease --console=plain --no-daemon `
+            "-Prs64FileToC=$env:GITHUB_WORKSPACE/build/Release/file_to_c.exe" `
+            "-Prs64N64Recomp=$env:GITHUB_WORKSPACE/build-tools/Release/N64Recomp.exe" `
+            "-Prs64RecompModTool=$env:GITHUB_WORKSPACE/build-tools/Release/RecompModTool.exe" `
+            "-Prs64MipsDir=$env:MIPS_DIR"
+          $rc = $LASTEXITCODE
+          Pop-Location
+          if ($rc -ne 0) { exit 1 }
+          Copy-Item (Get-ChildItem android/app/build/outputs/apk/release/*.apk | Select-Object -First 1).FullName $pkg
+          Add-Content -Path $env:GITHUB_ENV -Value "PKG_ANDROID=$pkg" -Encoding ascii
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-arm64
+          path: ${{ env.PKG_ANDROID }}
           retention-days: 3
           if-no-files-found: error
 
@@ -184,6 +226,7 @@ jobs:
           $ver = $env:GITHUB_REF_NAME -replace '/', '-'
           $pkg = "RogueSquadron64Recomp-windows-x86-$ver.zip"
           Copy-Item ci/release-readme.txt build-x86/dist/README.txt
+          Copy-Item LICENSE build-x86/dist/LICENSE.txt
           Copy-Item -Recurse build/dist/d3d11_shader_cache build-x86/dist/
           Compress-Archive -Path build-x86/dist/* -DestinationPath $pkg -Force
           Add-Content -Path $env:GITHUB_ENV -Value "PKG_X86=$pkg" -Encoding ascii
@@ -205,11 +248,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
 
       - uses: softprops/action-gh-release@v2
         with:

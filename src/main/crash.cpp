@@ -76,9 +76,15 @@ void print_stack_with_symbols(void** frames, USHORT count) {
 namespace rs64::crash {
 #ifdef _WIN32
 
+static char s_last_dump[MAX_PATH] = {};
+
+const char* last_minidump_path() {
+    return s_last_dump;
+}
+
 // Full-memory minidump so we can inspect rdram contents post-mortem.
 // ep may be null (SIGABRT path) — we still capture process+thread state.
-void write_minidump_safe(EXCEPTION_POINTERS* ep)
+bool write_minidump_safe(EXCEPTION_POINTERS* ep)
 {
 
     char path[MAX_PATH];
@@ -96,7 +102,7 @@ void write_minidump_safe(EXCEPTION_POINTERS* ep)
         fprintf(stderr, "[CRASH] CreateFile(%s) failed err=%lu\n",
             path, GetLastError());
 
-        return;
+        return false;
     }
 
     MINIDUMP_EXCEPTION_INFORMATION mei{};
@@ -129,6 +135,7 @@ void write_minidump_safe(EXCEPTION_POINTERS* ep)
 
     if (ok)
     {
+        snprintf(s_last_dump, sizeof(s_last_dump), "%s", path);
         fprintf(stderr, "[CRASH] Minidump written: %s%s\n",
             path, s_full_dump ? " (full memory)" : " (lite)");
     } else {
@@ -136,6 +143,8 @@ void write_minidump_safe(EXCEPTION_POINTERS* ep)
     }
 
     fflush(stderr);
+
+    return ok != FALSE;
 }
 
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep)
@@ -323,7 +332,8 @@ void install_handlers()
 #else
 
 // No DbgHelp/minidump support off-Windows; the F12 hotkey path is a no-op.
-void write_minidump_safe(void*) {}
+bool write_minidump_safe(void*) { return false; }
+const char* last_minidump_path() { return ""; }
 void install_exception_filter() {}
 void install_handlers() {}
 

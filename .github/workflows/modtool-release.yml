@@ -1,0 +1,91 @@
+# RecompModTool from our N64Recomp fork (it writes instruction_patches.json, upstream's does not), for mod authors.
+# Nothing ROM-derived is built here, so it runs on GitHub-hosted runners.
+name: RecompModTool release
+
+on:
+  push:
+    tags: ['modtool-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.repository_owner == 'MikeSemicolonD'
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          # Oldest hosted image, so the binary runs on older glibc.
+          - os: ubuntu-22.04
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch N64ModernRuntime
+        run: git submodule update --init --recursive lib/N64ModernRuntime
+
+      - name: Build
+        run: |
+          cmake -S lib/N64ModernRuntime/N64Recomp -B build-modtool -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-modtool --config Release --target RecompModTool
+
+      - name: Package
+        run: |
+          ver="${GITHUB_REF_NAME//\//-}"
+          mkdir stage
+          cp lib/N64ModernRuntime/N64Recomp/LICENSE stage/
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp build-modtool/Release/RecompModTool.exe stage/
+            pkg="RecompModTool-${{ matrix.name }}-$ver.zip"
+            (cd stage && 7z a "../$pkg" *)
+          else
+            cp build-modtool/RecompModTool stage/
+            pkg="RecompModTool-${{ matrix.name }}-$ver.tar.gz"
+            tar -czf "$pkg" -C stage .
+          fi
+          echo "PKG=$pkg" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ env.PKG }}
+          retention-days: 3
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/modtool-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          tag_name: ${{ github.ref_name }}
+          name: RecompModTool ${{ github.ref_name }}
+          # Keeps the game release as the repo's "Latest".
+          make_latest: false
+          files: dist/*

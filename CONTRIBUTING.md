@@ -33,7 +33,7 @@ These are issues that are external to the base game relating to how the mod itse
 
 > [!TIP]
 > **There will be some issues that overlap between these categories.** In such cases the solution is usually a combination of solutions.
-> For example, 'Draw Distance' would be considered a "**Game Issue**" which'll in turn warrants a "**Recomp. Feature**" to allow users to adjust the draw distance from a defined base value. You'd then provide an option in the video settings file while also providing a 'modding hook'.
+> For example, 'Draw Distance' would be considered a "**Game Issue**" which in turn warrants a "**Recomp. Feature**" to allow users to adjust the draw distance from a defined base value. You'd then provide an option in the video settings file while also providing a 'modding hook'.
 > A mod hook allows an external UI Mod to provide front-end functionality to the user, like a Draw Distance Slider in the Options menu.
 
 ## AI Usage

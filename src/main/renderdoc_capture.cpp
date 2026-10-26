@@ -1,8 +1,11 @@
 #include "main/renderdoc_capture.h"
 
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 #include "util/debug_logs.h"
+#include "main/ui_panels.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -15,23 +18,30 @@ void rs64_renderdoc_init()
 {
 
     const char* path = recomp::dbg::env_str("ROGUESQ_RENDERDOC");
+    const bool requested = (path != nullptr) && (*path != '\0');
 
-    if ((path == nullptr) || (*path == '\0') || (g_rdoc != nullptr)) {
+    if (g_rdoc != nullptr)
+    {
         return;
     }
 
-    // Already injected (launched from qrenderdoc / renderdoccmd) wins over loading a second copy.
+    // Already injected (launched from qrenderdoc / renderdoccmd) wins over loading a second copy; injected without ROGUESQ_RENDERDOC, only its captures are reported.
     HMODULE mod = GetModuleHandleA("renderdoc.dll");
 
-    if (mod == nullptr) {
+    if ((mod == nullptr) && requested) {
         mod = LoadLibraryA(path);
     }
 
-    pRENDERDOC_GetAPI getApi = (mod != nullptr) ? (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI") : nullptr;
+    if (mod == nullptr)
+    {
+        return;
+    }
+
+    pRENDERDOC_GetAPI getApi = (pRENDERDOC_GetAPI)GetProcAddress(mod, "RENDERDOC_GetAPI");
 
     if ((getApi == nullptr) || (getApi(eRENDERDOC_API_Version_1_4_1, (void**)&g_rdoc) != 1))
     {
-        fprintf(stderr, "[renderdoc] could not load the in-app API from %s\n", path);
+        fprintf(stderr, "[renderdoc] could not load the in-app API from %s\n", requested ? path : "the injected renderdoc.dll");
         g_rdoc = nullptr;
 
         return;
@@ -43,7 +53,10 @@ void rs64_renderdoc_init()
         g_rdoc->SetCaptureFilePathTemplate(out);
     }
 
-    g_rdoc->MaskOverlayBits(eRENDERDOC_Overlay_None, eRENDERDOC_Overlay_None);
+    if (requested) {
+        g_rdoc->MaskOverlayBits(eRENDERDOC_Overlay_None, eRENDERDOC_Overlay_None);
+    }
+
     int major = 0, minor = 0, patch = 0;
     g_rdoc->GetAPIVersion(&major, &minor, &patch);
 
@@ -62,8 +75,51 @@ void rs64_renderdoc_trigger(uint32_t frames) {
     }
 
     g_rdoc->TriggerMultiFrameCapture(frames);
+    rs64::app::notify("renderdoc", "RenderDoc: capturing " + std::to_string(frames) + " frames. The game freezes while it saves.", 60.0f);
 
     fprintf(stderr, "[renderdoc] capturing %u presents\n", frames);
+}
+
+void rs64_renderdoc_poll()
+{
+
+    static uint32_t s_seen = UINT32_MAX;
+    static bool s_capturing = false;
+
+    if (g_rdoc == nullptr)
+    {
+        return;
+    }
+
+    const uint32_t count = g_rdoc->GetNumCaptures();
+    const bool capturing = g_rdoc->IsFrameCapturing() != 0;
+
+    if (s_seen == UINT32_MAX) {
+        s_seen = count;
+    }
+
+    if (capturing && !s_capturing) {
+        rs64::app::notify("renderdoc", "RenderDoc: capturing a frame. The game freezes while it saves.", 60.0f);
+    }
+
+    s_capturing = capturing;
+
+    if (count <= s_seen)
+    {
+        return;
+    }
+
+    s_seen = count;
+    uint32_t length = 0;
+    g_rdoc->GetCapture(count - 1, nullptr, &length, nullptr);
+    std::string file(length, '\0');
+
+    if (length > 0) {
+        g_rdoc->GetCapture(count - 1, file.data(), &length, nullptr);
+        file.resize(std::strlen(file.c_str()));
+    }
+
+    rs64::app::notify("renderdoc", "RenderDoc capture saved: " + file, 8.0f);
 }
 
 #else
@@ -71,5 +127,6 @@ void rs64_renderdoc_trigger(uint32_t frames) {
 void rs64_renderdoc_init() {}
 bool rs64_renderdoc_active() { return false; }
 void rs64_renderdoc_trigger(uint32_t) {}
+void rs64_renderdoc_poll() {}
 
 #endif

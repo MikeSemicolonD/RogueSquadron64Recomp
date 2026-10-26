@@ -461,7 +461,7 @@ extern "C" void rs64_data_bp_drain(int vi)
 
 // ROGUESQ_LOG_MESG_TRACE=1: thread/message order for cinematic frames ROGUESQ_MESG_TRACE_FRAMES=lo-hi
 // (default 60-70) -> logs/mesg_trace_recomp.csv, same first six columns as the PJ64 hook in
-// tools/validate/pj64_rs64_dump.js, plus effective flags, host thread id, host caller.
+// tools/debug/validate/pj64_rs64_dump.js, plus effective flags, host thread id, host caller.
 static void rs64_mesg_trace(uint8_t* rdram, const char* ev, uint32_t q, int flags, uint32_t ra, int eff_flags = -1)
 {
 
@@ -531,10 +531,8 @@ extern "C" void osYieldThread_recomp(uint8_t* rdram, recomp_context* ctx)
     ultramodern::run_next_thread_and_wait(rdram);
 }
 
-// Attribution-loop pacing: wait for the next host VI tick by yielding through the N64 scheduler
-// (~1 ms per step, cap ~40), so pending VI/DP events are delivered and the higher-priority VI
-// handler preempts the loop as on hardware. A host Sleep here holds the run slot and let the
-// frame-buffer arbiter deadlock (producer waiting SP-done, VI handler blocked on its ack).
+// Attribution and credits loop pacing: yield through the N64 scheduler until the next host VI tick (~1 ms a step, cap ~40), so the VI handler preempts the loop as on hardware.
+// A host Sleep here holds the run slot and deadlocked the frame-buffer arbiter.
 extern "C" volatile unsigned g_vi_tick;
 extern "C" void rs64_attrib_wait_vi_yield(uint8_t* rdram, recomp_context* ctx)
 {

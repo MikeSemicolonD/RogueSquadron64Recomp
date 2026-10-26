@@ -219,8 +219,8 @@ target_include_directories(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,
 # Graphics are HLE through RT64; only the audio RSP ucodes (shared boot + MusyX synth, from rsp/*.toml) are recompiled.
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
 set(MUSYX_AUDIO_C   ${CMAKE_SOURCE_DIR}/build/factor5_ucode/musyx_audio_recompiled.c)
-# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android reuses the host-fixed files.
-if (ANDROID)
+# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android and the macOS cross-build reuse the host-fixed files.
+if (ANDROID OR (APPLE AND CMAKE_CROSSCOMPILING))
     foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
         file(READ ${ucode_c} ucode_text)
         string(FIND "${ucode_text}" "/* fixup:" ucode_fixed)
@@ -247,21 +247,7 @@ set_source_files_properties(${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C} PROPERTIES
     LANGUAGE CXX
     COMPILE_OPTIONS "${RSP_UCODE_ARCH_FLAGS};-Wno-unused-variable;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-braces>;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-shift-op-parentheses>;$<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-bitwise-op-parentheses>")
 
-# Generate the game-state table header from the canonical descriptor (state_model.toml).
-set(STATE_TABLE_INL ${CMAKE_SOURCE_DIR}/src/game/state_table.inl)
-if (ANDROID)
-    add_custom_target(gen_state_table)
-else()
-    add_executable(gen_state_table_tool ${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.cpp)
-    set_target_properties(gen_state_table_tool PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-    target_link_libraries(gen_state_table_tool PRIVATE tomlplusplus::tomlplusplus)
-    add_custom_command(
-        OUTPUT ${STATE_TABLE_INL}
-        COMMAND gen_state_table_tool ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml ${STATE_TABLE_INL}
-        DEPENDS gen_state_table_tool ${CMAKE_SOURCE_DIR}/tools/state/state_model.toml
-        COMMENT "Generating state_table.inl from state_model.toml")
-    add_custom_target(gen_state_table DEPENDS ${STATE_TABLE_INL})
-endif()
+include(${CMAKE_SOURCE_DIR}/tools/state/gen_state_table.cmake)
 
 set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/main.cpp
@@ -280,6 +266,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
     ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
     ${CMAKE_SOURCE_DIR}/src/game/menu_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
@@ -311,7 +298,7 @@ else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
-if (NOT ANDROID)
+if (TARGET ucode_fixup)
     add_dependencies(RogueSquadron64Recomp ucode_fixup)
 endif()
 if (MSVC)
@@ -402,99 +389,8 @@ if(WIN32)
     target_compile_definitions(video_config_test PRIVATE PLUME_D3D11_ENABLED)
 endif()
 
-# Standalone unit test for the nav-sequencer target parser.
-add_executable(nav_target_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/nav_target_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/nav_sequencer.cpp
-    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/game_state.cpp
-    ${CMAKE_SOURCE_DIR}/src/input/touch_menu.cpp
-    ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
-)
-set_target_properties(nav_target_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(nav_target_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include)
-add_dependencies(nav_target_test gen_state_table)
-
-# Standalone unit test for the lockstep record/replay core.
-add_executable(lockstep_core_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/lockstep_core_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
-)
-set_target_properties(lockstep_core_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(lockstep_core_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-
-
-
-# Standalone unit test for the mod host API registry.
-add_executable(host_api_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/host_api_test.cpp
-    ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
-)
-set_target_properties(host_api_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(host_api_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include)
-target_compile_definitions(host_api_test PRIVATE RS64_TOML_PATH="${CMAKE_SOURCE_DIR}/rogue_squadron.toml" RS64_TOML_HOOKS_PATH="${CMAKE_SOURCE_DIR}/src/game/toml_hooks.c")
-
-# Standalone unit test for the tow cable head interpolation alias.
-add_executable(cable_alias_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/cable_alias_test.cpp
-)
-set_target_properties(cable_alias_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-
-# Standalone unit test for the mid-mission camera shot links.
-add_executable(camera_shots_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/camera_shots_test.cpp
-)
-set_target_properties(camera_shots_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(camera_shots_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-add_executable(mod_levels_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/mod_levels_test.cpp
-)
-set_target_properties(mod_levels_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(mod_levels_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
-
-# Standalone unit test for the crosshair texrect matcher.
-add_executable(crosshair_match_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/crosshair_match_test.cpp
-)
-set_target_properties(crosshair_match_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-
-# Standalone unit test for the dynamic point-light helpers.
-add_executable(rs64_lights_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/rs64_lights_test.cpp
-)
-set_target_properties(rs64_lights_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-
-# AGENTS.md style rules for src/, against tools/style/baseline.txt.
-add_executable(style_check EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/style_check.cpp
-)
-set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-
-# One command for the unit tests: cmake --build build --config Release --target rs64_unit_tests
-add_custom_target(rs64_unit_tests
-    COMMAND $<TARGET_FILE:lockstep_core_test>
-    COMMAND $<TARGET_FILE:mp_core_test>
-    COMMAND $<TARGET_FILE:net_core_test>
-    COMMAND $<TARGET_FILE:net_link_test>
-    COMMAND $<TARGET_FILE:nav_target_test>
-    COMMAND $<TARGET_FILE:host_api_test>
-    COMMAND $<TARGET_FILE:cable_alias_test>
-    COMMAND $<TARGET_FILE:camera_shots_test>
-    COMMAND $<TARGET_FILE:mod_levels_test>
-    COMMAND $<TARGET_FILE:crosshair_match_test>
-    COMMAND $<TARGET_FILE:rs64_lights_test>
-    COMMAND $<TARGET_FILE:style_check> ${CMAKE_SOURCE_DIR}
-    DEPENDS lockstep_core_test mp_core_test net_core_test net_link_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test style_check
-    COMMENT "Running the unit tests")
-
-# Standalone unit test for the mode-change blanking gate.
-add_executable(transition_gate_test EXCLUDE_FROM_ALL
-    ${CMAKE_SOURCE_DIR}/tests/transition_gate_test.cpp
-)
-set_target_properties(transition_gate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-
 if (MSVC)
-    foreach(t touch_input_test video_config_test nav_target_test lockstep_core_test host_api_test transition_gate_test cable_alias_test camera_shots_test mod_levels_test crosshair_match_test rs64_lights_test style_check)
+    foreach(t touch_input_test video_config_test)
         target_compile_definitions(${t} PRIVATE _CRT_SECURE_NO_WARNINGS)
     endforeach()
 endif()
@@ -575,6 +471,10 @@ endif()
 set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
 add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
 add_dependencies(RogueSquadron64Recomp multiplayer_native)
+# The co-op relay server (rs64_relay, built on request); after multiplayer-native so it reuses ENet6.
+add_subdirectory(${CMAKE_SOURCE_DIR}/relay-server ${CMAKE_BINARY_DIR}/relay-server)
+# After multiplayer-native, so the tests reuse its ENet6 and miniupnpc targets.
+add_subdirectory(${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
 # The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.
 set(STEAMWORKS_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/steamworks/sdk" CACHE PATH "Steamworks SDK folder (holds public/steam/steam_api_flat.h)")
 if (NOT ANDROID AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")

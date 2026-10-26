@@ -93,26 +93,20 @@ void spectate_pad(uint8_t pad[6], uint16_t survivor_held, uint16_t fire_mask);
 int browse_report(int state, uint32_t result);
 // The in-mission co-op message line: SPECTATING while this player is out, then WINGMATE LEFT, WINGMATE OUT (down with no lives left) or WINGMATE DOWN (respawning); "" for none.
 const char* hud_message(bool out, bool peer_left, bool peer_down, int lives);
-// Shared cutscene skip: a local skip is sent to the other player, and their skip pulses START here once a cutscene plays (they may be ahead, still loading), for up to kWaitS. A skip within kEchoS of our own pulses is theirs, not sent back.
+// Shared cutscene skip: a local skip is sent to the other player, and their skip pulses START here once this side plays that scene (they may be ahead, still loading). A skip within kEchoS of our own pulses is theirs, not sent back.
+// A scene is phase << 8 | skippable scenes entered in that phase; both sides start a phase at the same points (craft select, mission init), so a skip lands on the scene it was made in.
 class SkipShare {
 public:
-    static constexpr double kWaitS = 10.0;
     static constexpr double kPulseS = 0.1;
     static constexpr double kEchoS = 1.0;
     // True = send SKIP.
     bool on_local(bool skipped, double now_s) const { return skipped && (last_press_s_ < 0.0 || now_s - last_press_s_ > kEchoS); }
-    void on_remote(double now_s);
-    // Whether this poll should hold START.
-    bool press(double now_s, bool cinematic);
-    // One skippable scene gave way to another: a skip already pressing is used up, one still waiting stays.
-    void end_scene() {
-        if (pressing_since_s_ >= 0.0) {
-            got_s_ = -1.0;
-            pressing_since_s_ = -1.0;
-        }
-    }
+    void on_remote(uint16_t scene);
+    // Whether this poll should hold START; scene = this side's current one, cinematic = it is playing. A skip for a later scene waits, one for an earlier scene is dropped.
+    bool press(double now_s, bool cinematic, uint16_t scene);
 private:
-    double got_s_ = -1.0;
+    bool have_ = false;
+    uint16_t scene_ = 0;
     double pressing_since_s_ = -1.0;
     double last_press_s_ = -1.0;
 };

@@ -9,6 +9,7 @@
 #include <vector>
 #include <filesystem>
 #include <fstream>
+#include "main/renderdoc_capture.h"
 #include "SDL.h"
 #ifdef __ANDROID__
 #include "SDL_syswm.h"
@@ -176,6 +177,16 @@ extern "C" float rs64_cull_widen(void)
     const float w = (y > 0.0f) ? float(rs.x) / y : 1.0f;
 
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
+}
+
+// Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
+// this frame's shadow (moving craft never enter the shadow history). Gameplay view tests are untouched. ROGUESQ_RT_SHADOWS_CULL_MARGIN overrides.
+extern "C" float rs64_shadow_cull_margin(void)
+{
+
+    static const float s_margin = std::clamp(rs64lights::envFloat("ROGUESQ_RT_SHADOWS_CULL_MARGIN", 1.6f), 1.0f, 4.0f);
+
+    return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_margin : 1.0f;
 }
 
 // Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
@@ -573,6 +584,7 @@ public:
         else {
             // setup() snapshots enhancementConfig before the edits above; push them through.
             app->updateEnhancementConfig();
+            rs64::video::set_ray_query_supported(app->device && app->device->getCapabilities().rayQuery);
 
             fprintf(stderr, "[RT64] enhancementConfig: presentMode=%d forceBranch=%d textureLOD.scale=%d\n",
                     (int)app->enhancementConfig.presentation.mode,
@@ -682,6 +694,8 @@ public:
 
         ++vi_count_;
 
+        rs64_renderdoc_poll();
+
         if (ultramodern::renderer::ViRegs* vi0 = ultramodern::renderer::get_vi_regs())
         {
             game_vi_origin_ = vi0->VI_ORIGIN_REG & 0x00FFFFFFu;
@@ -715,6 +729,13 @@ public:
                     vi_count_, g_f5_heur[0], g_f5_heur[2], g_f5_heur[3]);
 
         log_vi_state();
+
+        // Menu display settings: MSAA recreates the render targets first, as the F1 inspector does.
+        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig);
+
+        if (menu_cfg.msaa) app->updateMultisampling();
+        if (menu_cfg.changed) app->updateUserConfig(menu_cfg.discard_fbs);
+
         maybe_persist_video_cfg();
         const auto pres0 = std::chrono::high_resolution_clock::now();
         app->updateScreen();
@@ -1560,7 +1581,7 @@ private:
         }
     }
 
-    // ROGUESQ_LOG_GAMESTATE=1: log engine globals (docs/game-architecture.md) on change and
+    // ROGUESQ_LOG_GAMESTATE=1: log engine globals (docs/reference/game-architecture.md) on change and
     // every 512 presents. gateCtr vs cuts44 shows whether the cinematic timeline is advancing.
     void poll_gamestate()
     {
@@ -1643,7 +1664,7 @@ private:
     }
 
     // One-shot RDRAM dump (un-swizzled to MIPS byte order, same layout as a PJ64 dump) for
-    // tools/validate/rdram_golden_diff.py. Triggers, first match wins:
+    // tools/debug/validate/rdram_golden_diff.py. Triggers, first match wins:
     //   ROGUESQ_DUMP_RDRAM_AT_VI=<n>              present number
     //   ROGUESQ_DUMP_RDRAM_ON_CINE_ITER=<n>       cinematic loop iteration (rs64_cine_iter_get)
     //   ROGUESQ_DUMP_RDRAM_ON_CINE_STALL=<ms>     cinematic frame counter (0x8013889C) unchanged that long
@@ -1654,7 +1675,7 @@ private:
     {
         // ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]: multi-milestone dump keyed to the game-state
         // classifier -- dumps dumps/rdram_state_<id>.bin the first present each listed state becomes
-        // current, ALL in one run (unlike the one-shot triggers below). Feeds tools/validate/state_diff.ps1.
+        // current, ALL in one run (unlike the one-shot triggers below). Feeds tools/debug/validate/state_diff.ps1.
         static const char* s_on_state = env_str("ROGUESQ_DUMP_RDRAM_ON_STATE");
 
         if (s_on_state && app->core.RDRAM)

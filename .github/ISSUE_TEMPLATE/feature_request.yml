@@ -1,0 +1,29 @@
+name: Feature request
+description: A new option, enhancement, mod hook or tool.
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      description: Fixes to the base game's own behaviour are usually better as a mod; see [CONTRIBUTING.md](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/CONTRIBUTING.md#fixing-bugsissues).
+      options:
+        - Recomp. Feature (built into the port)
+        - Mod hook / host API addition
+        - Mod idea
+        - Browser tool (explorer, save editor)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want
+      description: What it should do, and why it's worth having.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
