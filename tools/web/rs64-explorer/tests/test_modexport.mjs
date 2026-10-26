@@ -1487,8 +1487,11 @@ await check('pause game settings puts unplaced buttons above BACK', () => {
 });
 await check('defaults merge by id', () => {
   const doc = RS64.menuWithDefaults({ buttons: [{ id: 'quit', menu: 'main_menu', label: 'LEAVE' }, { id: 'x', menu: 'options' }] });
-  assert.deepEqual(doc.buttons.map((b) => b.id), ['language', 'quit', 'pause_quit', 'x']);
-  assert.equal(doc.buttons[1].label, 'LEAVE');
+  assert.deepEqual(doc.buttons.map((b) => b.id), ['language', 'mods', 'quit', 'pause_quit', 'x']);
+  assert.equal(doc.buttons[2].label, 'LEAVE');
+  assert.equal(RS64.MENU_DEFAULT_BUTTONS.find((b) => b.id === 'mods')?.page, 'mods');
+  const main = RS64.menuLayout(RS64.menuWithDefaults({ buttons: [] }), 'main_menu', RS64.NATIVE_MENUS.main_menu.entries, () => true, 8).rows.map((r) => r.alias ?? r.id);
+  assert.deepEqual(main, ['start', 'options', 'mods', 'quit']);
   const plain = RS64.menuLayout(RS64.menuWithDefaults({ buttons: [] }), 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8).rows.map((r) => r.alias ?? r.id);
   assert.deepEqual(plain, ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'language', 'back']);
   const full = RS64.menuLayout(doc, 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8);

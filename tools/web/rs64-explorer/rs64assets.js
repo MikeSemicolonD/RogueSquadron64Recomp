@@ -366,7 +366,9 @@ const NATIVE_MENUS = {
 // The buttons the game adds before any mod (default_config in menu_config.cpp); a mod's button with the same id replaces one in place.
 const MENU_DEFAULT_BUTTONS = [
   { id: 'language', menu: 'options', type: 'action', transition: 'language', label: { en: 'LANGUAGE', de: 'SPRACHE', fr: 'LANGUE' }, index: -2 },
-  { id: 'quit', menu: 'main_menu', type: 'action', action: 'quit', label: 'QUIT', x: -165, requires: 'desktop' },
+  // MODS opens the game's own mod list (mods_install), not a page built from buttons.
+  { id: 'mods', menu: 'main_menu', type: 'submenu', page: 'mods', label: 'MODS', x: -163 },
+  { id: 'quit', menu: 'main_menu', type: 'action', action: 'quit', label: 'QUIT', x: -170, requires: 'desktop' },
   { id: 'pause_quit', menu: 'pause', type: 'action', action: 'quit', label: 'QUIT TO DESKTOP', requires: 'desktop' },
 ];
 function menuWithDefaults(doc) {

@@ -10,6 +10,11 @@
 
 using namespace rs64::touch;
 
+// menu_config.cpp's pause array lookup: with no mod pause pages the game reads its own arrays.
+extern "C" unsigned rs64_pause_array_for(uint8_t*, unsigned, unsigned native) {
+    return native;
+}
+
 static int g_fail = 0;
 #define CHECK(cond) do { if (!(cond)) { ++g_fail; std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); } } while (0)
 #define NEAR(a, b) (std::fabs((a) - (b)) < 1e-3f)
@@ -1176,6 +1181,49 @@ static void test_fill_width_screen() {
     CHECK(std::fabs(fill_w / fit_w - 2.1667f / 1.446f) < 0.02f);
 }
 
+// Mod pages (menu ids 13+, menu_config.cpp FIRST_PAGE_ID) are drawn in the menu tree, so their boxes fit the image like OPTIONS (id 2).
+static void test_mod_page_fits() {
+    setup_menu(3, 0, 0x07);
+    wb(0x800CE730 + 0x04, 2);
+    MenuSnapshot s{};
+    std::vector<Box> fit;
+    CHECK(read_menu(g_ram.data(), &s, &fit, 1920, 1080));
+    std::vector<Box> page;
+    wb(0x800CE730 + 0x04, 14);
+    CHECK(read_menu(g_ram.data(), &s, &page, 1920, 1080));
+    CHECK(!fit.empty() && !page.empty() && NEAR(fit[0].y0, page[0].y0) && NEAR(fit[0].x0, page[0].x0));
+}
+
+// With the entry's laid-out text element readable (font group 5 slot i: table 0x8009FC10), the box spans its drawn glyphs: element x plus the
+// first glyph's x to the last glyph's x plus one advance, times the element's scale, whatever the label's length or tab stops.
+static void test_box_from_text_element() {
+    setup_menu(3, 0, 0x07);
+    const uint32_t rec = 0x80400000, elem = 0x80400100, xy = 0x80400200;
+    ww(0x8009FC10 + 5 * 4, rec);
+    ww(rec + 0x34 + 4 * 1, elem);
+    wh(elem + 8, 3);
+    ww(elem + 0x10, xy);
+    float f = -200.0f;
+    uint32_t bits;
+    std::memcpy(&bits, &f, 4);
+    ww(elem + 0x18, bits);
+    f = 0.5f;
+    std::memcpy(&bits, &f, 4);
+    ww(elem + 0x24, bits);
+    wh(xy + 0, 100);
+    wh(xy + 4, 120);
+    wh(xy + 8, 140);
+    MenuSnapshot s{};
+    std::vector<Box> bx;
+    CHECK(read_menu(g_ram.data(), &s, &bx, 1920, 1080));
+    float x0 = 0.0f, x1 = 0.0f, unused = 0.0f;
+    const float L = 160.0f + (-200.0f + 100.0f * 0.5f) * g_menu_layout.x_scale, R = 160.0f + (-200.0f + 160.0f * 0.5f) * g_menu_layout.x_scale;
+    n64_to_window(L, 100.0f, 1920, 1080, &x0, &unused);
+    n64_to_window(R, 100.0f, 1920, 1080, &x1, &unused);
+    CHECK(bx.size() == 3 && NEAR(bx[1].x0, x0) && NEAR(bx[1].x1, x1));
+    ww(0x8009FC10 + 5 * 4, 0);
+}
+
 // The screen var goes stale outside the pilot flow: after an attract demo the main menu reads 4 and OPTIONS reads 0.
 // Menu ids decide instead: fill only for the media hub (id 10+), account screens only under the account menu (id 1).
 static void test_stale_screen_var() {
@@ -1262,6 +1310,8 @@ int main() {
     test_hitbox_widescreen();
     test_classify();
     test_fill_width_screen();
+    test_mod_page_fits();
+    test_box_from_text_element();
     test_stale_screen_var();
     test_heap_label_entry();
     test_main_menu_calibration();

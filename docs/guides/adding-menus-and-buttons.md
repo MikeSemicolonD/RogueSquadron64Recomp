@@ -33,7 +33,7 @@ That is a complete menu mod. The RS64 Explorer's *Menus* tab edits these files o
 
 Menu files are layered in this order. A button with the same `id` as an earlier one replaces it in place, so a mod overrides a default (or an earlier mod) by reusing its id.
 
-1. Built-in defaults: the main-menu `QUIT` and the pause `QUIT TO DESKTOP` (desktop only).
+1. Built-in defaults: the main-menu `QUIT` and the pause `QUIT TO DESKTOP` (desktop only), and the main-menu `MODS` (id `mods`), which opens the game's own mod list: every installed mod in load order, ON/OFF on the right (left / right, or a click or tap on it), A (controller, keyboard) or a drag on the name (mouse, touch) to carry a mod to a new place, and OPEN MODS FOLDER on desktop. Changes save to `mods.json`; ones that apply at the next start show RESTART REQUIRED. Like `quit`, a mod can hide or move it by its id.
 2. A `roguesq_menu.json` next to the exe, if present.
 3. Each enabled mod's `roguesq_menu.json`, in mod order. A folder mod keeps it in its folder; a `.nrm` code mod packs it with `additional_files = [ "roguesq_menu.json" ]` under `[inputs]` in its `mod.toml`.
 

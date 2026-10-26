@@ -778,6 +778,101 @@ void window_size(float* w, float* h) {
     *h = (float)ih;
 }
 
+extern "C" int rs64_mods_page_row(int entry);
+extern "C" float rs64_mods_toggle_from(void);
+extern "C" void rs64_mods_drag(int op, int entry);
+
+// MODS page: pressing a mod's name and dragging carries the mod (the game thread applies each step); a press that never moved stays a tap.
+struct ModsDrag {
+    int64_t finger = -1;
+    int slot = -1;
+    float y = 0.0f;
+    bool carrying = false;
+};
+
+static ModsDrag g_mods_drag;
+
+static bool mods_drag_event(rs64::touch::FingerEvent ev, int64_t finger, float x, float y)
+{
+
+    using rs64::touch::FingerEvent;
+    ModsDrag& d = g_mods_drag;
+    uint8_t* r = touch_rdram();
+    float w, h;
+    window_size(&w, &h);
+    rs64::touch::MenuSnapshot snap{};
+    std::vector<rs64::touch::Box> boxes;
+
+    if (!r || !rs64::touch::read_menu(r, &snap, &boxes, w, h))
+    {
+        d = ModsDrag{};
+
+        return false;
+    }
+
+    if (ev == FingerEvent::Down)
+    {
+        d = ModsDrag{};
+
+        for (const rs64::touch::Box& b : boxes)
+        {
+            const bool on_name = b.x1 > b.x0 && (x - b.x0) / (b.x1 - b.x0) < rs64_mods_toggle_from();
+
+            if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 && on_name && rs64_mods_page_row(b.entry) >= 0) {
+                d.finger = finger;
+                d.slot = b.entry;
+                d.y = y;
+            }
+        }
+
+        return false;
+    }
+
+    if (d.finger != finger)
+    {
+        return false;
+    }
+
+    if (ev == FingerEvent::Up)
+    {
+        const bool carried = d.carrying;
+
+        d = ModsDrag{};
+
+        if (carried) rs64_mods_drag(2, -1);
+
+        return carried;
+    }
+
+    if (!d.carrying)
+    {
+        if (std::fabs(y - d.y) < 0.02f) return false;
+
+        d.carrying = true;
+        rs64_mods_drag(0, d.slot);
+    }
+
+    // The row under the point, or above the first row (-1) / below the last (99), which scroll the list.
+    int to = -2;
+    float top = 2.0f, bottom = -1.0f;
+
+    for (const rs64::touch::Box& b : boxes)
+    {
+        if (rs64_mods_page_row(b.entry) < 0) continue;
+
+        top = std::min(top, b.y0);
+        bottom = std::max(bottom, b.y1);
+
+        if (y >= b.y0 && y <= b.y1) to = b.entry;
+    }
+
+    if (to == -2) to = y < top ? -1 : y > bottom ? 99 : -2;
+
+    if (to != -2) rs64_mods_drag(1, to);
+
+    return true;
+}
+
 // Returns true if the finger event was on the open volume bar. The game steps 1 per held frame in its slider edit
 // mode and applies the mixer itself, so write one step short of the target and inject one frame toward it.
 static bool touch_slider_event(rs64::touch::FingerEvent ev, int64_t finger, float x, float y)
@@ -1133,7 +1228,7 @@ static void menu_mouse_event(const SDL_Event& e)
         constexpr int64_t kMouseFinger = -2;
         const FingerEvent ev = (e.type == SDL_MOUSEBUTTONDOWN) ? FingerEvent::Down : (e.type == SDL_MOUSEBUTTONUP) ? FingerEvent::Up : FingerEvent::Move;
 
-        if (touch_slider_event(ev, kMouseFinger, fx, fy) || touch_pause_slider_event(ev, kMouseFinger, fx, fy))
+        if (touch_slider_event(ev, kMouseFinger, fx, fy) || touch_pause_slider_event(ev, kMouseFinger, fx, fy) || mods_drag_event(ev, kMouseFinger, fx, fy))
         {
             return;
         }
@@ -1211,6 +1306,11 @@ static void touch_event(const SDL_Event& e)
     }
 
     if (touch_pause_slider_event(ev, (int64_t)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y))
+    {
+        return;
+    }
+
+    if (mods_drag_event(ev, (int64_t)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y))
     {
         return;
     }
