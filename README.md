@@ -70,7 +70,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
-- **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings. See [Controls](#controls).
+- **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Control Settings Mod](#mods). See [Controls](#controls).
 - **Touch controls on Android:** tap menu and in-game buttons and fly with an on-screen stick. You can move and resize the buttons, and turn on 'gyro steering' to help fine tune your aim.
 
 #### Languages
@@ -97,7 +97,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
   - See [docs/modding.md for modding info](docs/modding.md).
 - **Included mods:**
-  - **Display Settings:** Adds a 'Display Settings' in the main menu under 'Options' -> 'Game Settings' and in the pause menu. Also contains the Ray Tracing and Fullscreen toggle settings menus replacing their standalone UI mods.
+  - **Display Settings:** 'Display Settings' UI in the main menu under 'Options' -> 'Game Settings' and in the pause menu. Also contains the Ray Tracing and Fullscreen toggle.
+  - **Control Settings:** new Controls UI allowing the adjustment of sensitivity, acceleration, deadzone, rumble and Input Bindings. *All while using in-game UI.*
   - **Multiplayer:** online co-op (see above).
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
