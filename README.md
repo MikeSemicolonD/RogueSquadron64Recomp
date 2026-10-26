@@ -1,6 +1,6 @@
 <div align="center">
 
-  ![Rogue Squadron 64 Recompiled icon](./favicon.ico)
+  [![Rogue Squadron 64 Recompiled icon](./favicon.ico)](https://mikesemicolond.github.io/RogueSquadron64Recomp/)
 
 # Star Wars: Rogue Squadron 64 Recompiled
 
