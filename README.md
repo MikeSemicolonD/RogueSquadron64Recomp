@@ -1,8 +1,6 @@
 <div align="center">
 
-  ![favicon made by thedoctor45](./favicon.ico)
-
-  Icon by [thedoctor45 on DeviantArt](https://www.deviantart.com/thedoctor45/art/Star-Wars-Rogue-Squadron-3D-Custom-Icon-535469296)
+  ![Rogue Squadron 64 Recompiled icon](./favicon.ico)
 
 # Star Wars: Rogue Squadron 64 Recompiled
 
@@ -506,10 +504,6 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 ## Browser based tools
 
-### Save editor
-
-A save editor also exists in *`tools/web/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
-
 ### RS64 Explorer
 
 *`tools/web/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
@@ -521,6 +515,11 @@ A **MASSIVE** extension to the foundational work originally done by [Dávid Peth
 - View all Visual Effects from complex explosions to simple animated sprites.
 - Sound Effects and Voicelines including subtitles.
 - MIDI Music Playback with timeline scrubbing allowing you to view the layers of instrument samples [Chris Huelsbeck](https://en.wikipedia.org/wiki/Chris_Huelsbeck) used to masterfully assemble and recreate the Star Wars score.
+- [WebMCP Support](https://developer.chrome.com/docs/ai/webmcp) for agentic usage.
+
+### Save editor
+
+A save editor also exists in *`tools/web/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 
 ## 'Proper' AI Agent Usage
 
@@ -560,6 +559,6 @@ Here's a list of MCPs that could be useful for this project:
 
 The code in this repository (the host runtime, patches, hooks, mods, tools and docs) is licensed under [GPL-3.0](LICENSE).
 
-The license covers only that code. **The game itself is not part of this project and is not covered by it:** this repository and its releases contain no ROM data, no game code and no game assets. The recompiled code is generated locally from your own ROM and is never committed or distributed. You need a legally obtained copy of the game.
+The license covers only that code. **The game itself is not part of this project and is not covered by it:** this repository contains no ROM data, no game code and no game assets. The recompiled code is generated from the ROM at build time and is never committed. Release builds include that compiled code but no ROM data or game assets. You need a legally obtained copy of the game.
 
 Star Wars and Rogue Squadron are trademarks of Lucasfilm Ltd. This is an unofficial hobby project with **no** association with, sponsorship by or endorsement from Nintendo, Disney, Lucasfilm (including Lucasfilm Games, formerly LucasArts), "Factor 5, Inc."/"Factor5 GmbH" or "Eggebrecht, Engel, Schmidt GbR".

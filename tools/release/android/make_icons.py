@@ -1,4 +1,4 @@
-"""Generate Android launcher icons from favicon.ico (adaptive starfield background + art foreground, legacy square/round PNGs)."""
+"""Generate Android launcher icons from icon_art.png (adaptive starfield background + art foreground, legacy square/round PNGs)."""
 import random
 from pathlib import Path
 
@@ -9,13 +9,14 @@ RES = ROOT / "android" / "app" / "src" / "main" / "res"
 DENSITIES = {"mdpi": 1.0, "hdpi": 1.5, "xhdpi": 2.0, "xxhdpi": 3.0, "xxxhdpi": 4.0}
 # Starfield drawn once at 108dp @ 4x and scaled down, so every density shows the same stars.
 FIELD_PX = 432
+# The stripe's slanted left tip pulls the art's bounding box left of the lettering's visual centre.
+NUDGE_X = 0.025
 
 
+# The favicon's lettering without its dark tile, so the starfield shows around it.
 def load_art() -> Image.Image:
-    ico = Image.open(ROOT / "favicon.ico")
-    ico.size = max(ico.ico.sizes())
-    ico.load()
-    return ico.convert("RGBA")
+    art = Image.open(Path(__file__).with_name("icon_art.png")).convert("RGBA")
+    return art.crop(art.getbbox())
 
 
 def fit(art: Image.Image, box: int) -> Image.Image:
@@ -62,13 +63,13 @@ def main() -> None:
         field.resize((size, size), Image.Resampling.LANCZOS).save(out / "ic_launcher_background.png")
         fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         a = fit(art, round(66 * scale))
-        fg.alpha_composite(a, ((size - a.width) // 2, (size - a.height) // 2))
+        fg.alpha_composite(a, ((size - a.width) // 2 + round(a.width * NUDGE_X), (size - a.height) // 2))
         fg.save(out / "ic_launcher_foreground.png")
         # Legacy 48dp icons for launchers without adaptive icon support: the same starfield, square and round.
         legacy = round(48 * scale)
         sq = field.resize((legacy, legacy), Image.Resampling.LANCZOS)
-        a = fit(art, round(legacy * 0.86))
-        sq.alpha_composite(a, ((legacy - a.width) // 2, (legacy - a.height) // 2))
+        a = fit(art, round(legacy * 0.66))
+        sq.alpha_composite(a, ((legacy - a.width) // 2 + round(a.width * NUDGE_X), (legacy - a.height) // 2))
         sq.save(out / "ic_launcher.png")
         mask = Image.new("L", (legacy, legacy), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, legacy - 1, legacy - 1), fill=255)
