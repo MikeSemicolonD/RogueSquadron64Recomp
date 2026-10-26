@@ -51,13 +51,11 @@ void pin_fullscreen(bool on);
 // Reads only the "fullscreen" key, so the window can be created fullscreen before the full config loads.
 bool peek_fullscreen(const std::string& path);
 
-// Game text language ("language" in roguesq_video.json: "en", "de" or "fr"; absent = unset, the game's own choice), -1 when unset. OPTIONS > LANGUAGE saves it.
-int language();
-void set_language(int lang);
+// Game text language code ("language" in roguesq_video.json: a built-in "en" / "de" / "fr" or a language mod's code; "" = unset, the game's own choice). OPTIONS > LANGUAGE saves it.
+std::string language();
+void set_language(const std::string& code);
 // ROGUESQ_LANGUAGE: overrides the live language without touching the saved setting; the next set_language clears it.
-void pin_language(int lang);
-// "en" / "de" / "fr" -> 0 / 1 / 2 (the game's language byte); anything else -> -1.
-int parse_language(const char* code);
+void pin_language(const std::string& code);
 
 // Ray-tracing switches ("rayTracing" in roguesq_video.json: lights, shadows, softShadows, fogShafts; default off, soft on). The stored setting is the
 // player's; setting it also flips the live RT64 switch unless a ROGUESQ_RT_* env var pins that switch.

@@ -23,7 +23,7 @@ int add_quit_handler(rs64_event_fn fn, void* user);
 void run_quit_handlers();
 // Hooks with a rogue_squadron.toml site (one each); the others are dispatched by host code.
 constexpr bool hook_has_toml_site(uint32_t id) {
-    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_WALKER_TRIPPED);
+    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_ATST_TICK);
 }
 void set_flag(const char* name, int value);
 int flag(const char* name);
@@ -34,7 +34,7 @@ struct Mark {
     std::vector<size_t> hooks;
     size_t filters = 0;
     std::set<std::string> text;
-    std::set<std::string> actions, conditions;
+    std::set<std::string> actions, conditions, rule_actions;
     size_t keys = 0, quits = 0;
     std::set<std::string> services;
     size_t hash_parts = 0, valid_ram = 0, moved = 0;
@@ -46,6 +46,11 @@ int add_hash_part(const char* name, const char* gate_flag, rs64_hash_fn fn, void
 std::vector<rs64::ls::HashPart> hash_parts();
 int add_valid_ram(uint32_t addr, uint32_t size);
 int add_moved_range(uint32_t lo, uint32_t hi, uint32_t delta);
+int add_rule_action(const char* name, rs64_rule_action_fn fn, void* user);
+bool run_rule_action(const char* name, uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count);
+int fire_rule_event(const char* name, const char* object);
+// The (name, object) events fired since the last call, in order.
+std::vector<std::pair<std::string, std::string>> take_rule_events();
 const std::vector<rs64::ls::MovedRange>& moved_ranges();
 // The game's 8 MB or a range a mod registered with add_valid_ram.
 bool ram_ok(uint32_t addr);

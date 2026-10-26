@@ -57,8 +57,6 @@ uint16_t target_mask(Target t) {
     }
 }
 
-constexpr float PAD_DEADZONE = 0.15f;
-
 // Targets that end up on the N64 stick, so gamepad/joystick axes on them get the stick-range scale.
 bool is_stick_target(int t)
 {
@@ -99,9 +97,11 @@ float source_value(const Source& s, const RawState& st, const Bindings& b) {
             float v = SDL_GameControllerGetAxis(st.pad, (SDL_GameControllerAxis)s.code) / 32767.0f;
             v *= (float)s.dir;                 // select requested half
 
-            if (v <= PAD_DEADZONE) return 0.0f;
+            const float dz = std::clamp(b.pad_deadzone, 0.0f, 0.95f);
 
-            return std::min(1.0f, (v - PAD_DEADZONE) / (1.0f - PAD_DEADZONE));
+            if (v <= dz) return 0.0f;
+
+            return std::min(1.0f, (v - dz) / (1.0f - dz));
         }
         case SourceKind::MouseButton:
             return (st.mouse_buttons & SDL_BUTTON((uint32_t)s.code)) ? 1.0f : 0.0f;
@@ -682,6 +682,275 @@ std::string source_label(const Source& s) {
     }
 }
 
+Device device_of(const Source& s)
+{
+
+    switch (s.kind)
+    {
+        case SourceKind::PadButton:
+        case SourceKind::PadAxis:   return Device::Gamepad;
+        case SourceKind::JoyButton:
+        case SourceKind::JoyAxis:
+        case SourceKind::JoyHat:    return Device::Joystick;
+        default:                    return Device::Keyboard;
+    }
+}
+
+std::vector<ControlRow> control_rows(Device d)
+{
+
+    std::vector<ControlRow> r = {
+        { Target::A,          "THRUST" },
+        { Target::B,          "FIRE BLASTERS" },
+        { Target::Z,          "BRAKE" },
+        { Target::RTrig,      "ROLL" },
+        { Target::LTrig,      "SWITCH VIEW" },
+        { Target::CUp,        "LOOK AROUND" },
+        { Target::CDown,      "FIRE MODE" },
+        { Target::CLeft,      "SECONDARY" },
+        { Target::CRight,     "SPECIAL" },
+        { Target::DpadUp,     "COCKPIT VIEW" },
+        { Target::DpadRight,  "CLOSE VIEW" },
+        { Target::DpadDown,   "STANDARD VIEW" },
+        { Target::DpadLeft,   "DROP CAMERA" },
+        { Target::StickUp,    "PITCH DOWN" },
+        { Target::StickDown,  "PITCH UP" },
+        { Target::StickLeft,  "TURN LEFT" },
+        { Target::StickRight, "TURN RIGHT" },
+        { Target::LookUp,     "LOOK UP" },
+        { Target::LookDown,   "LOOK DOWN" },
+        { Target::LookLeft,   "LOOK LEFT" },
+        { Target::LookRight,  "LOOK RIGHT" },
+    };
+
+    if (d == Device::Joystick) {
+        r.push_back({ Target::Throttle,  "THROTTLE" });
+        r.push_back({ Target::RollLeft,  "ROLL LEFT" });
+        r.push_back({ Target::RollRight, "ROLL RIGHT" });
+    }
+
+    return r;
+}
+
+int shown_source(const Bindings& b, Target t, Device d)
+{
+
+    const std::vector<Source>& v = b.targets[(int)t];
+
+    for (size_t k = 0; k < v.size(); ++k) {
+        if (device_of(v[k]) == d) return (int)k;
+    }
+
+    return -1;
+}
+
+Target rebind(Bindings& b, Target t, Device d, const Source& got)
+{
+
+    auto same = [](const Source& p, const Source& q) {
+        return p.kind == q.kind && p.code == q.code && p.dir == q.dir && p.dev == q.dev;
+    };
+
+    std::vector<Source>& mine = b.targets[(int)t];
+    const int shown = shown_source(b, t, d);
+
+    if (shown >= 0 && same(mine[shown], got)) return Target::Count;
+
+    Target giver = Target::Count;
+
+    for (int u = 0; u < (int)Target::Count && giver == Target::Count; ++u)
+    {
+        std::vector<Source>& v = b.targets[u];
+
+        for (size_t k = 0; k < v.size(); ++k)
+        {
+            if (!same(v[k], got)) continue;
+
+            if (u == (int)t) {
+                v.erase(v.begin() + k);
+                break;
+            }
+
+            // Only a binding the other row shows is swapped; a hidden one (B's mouse button behind Space) is just taken.
+            if (shown >= 0 && (int)k == shown_source(b, (Target)u, d)) {
+                v[k] = mine[shown];
+                giver = (Target)u;
+            } else {
+                v.erase(v.begin() + k);
+            }
+
+            break;
+        }
+    }
+
+    const int at = shown_source(b, t, d);
+
+    if (at >= 0 && shown >= 0) mine[at] = got;
+    else mine.push_back(got);
+
+    return giver;
+}
+
+namespace {
+
+// Upper case; drops anything the menu font can't draw (its ';' '_' '&' '"' '/' slots are redrawn as other glyphs by menu_config).
+std::string font_text(const std::string& s)
+{
+
+    std::string out;
+
+    for (char c : s)
+    {
+        const char u = (char)std::toupper((unsigned char)c);
+
+        if (std::isupper((unsigned char)u) || std::isdigit((unsigned char)u) || std::strchr(" :',!?-<>{}.", u)) out += u;
+    }
+
+    return out;
+}
+
+const char* pad_button_menu_name(int code) {
+
+    switch (code)
+    {
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  return "LB";
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return "RB";
+        case SDL_CONTROLLER_BUTTON_LEFTSTICK:     return "LS";
+        case SDL_CONTROLLER_BUTTON_RIGHTSTICK:    return "RS";
+        case SDL_CONTROLLER_BUTTON_DPAD_UP:       return "UP";
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN:     return "DOWN";
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     return "LEFT";
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    return "RIGHT";
+        default:                                  return nullptr;
+    }
+}
+
+const char* pad_axis_menu_name(int code) {
+
+    switch (code)
+    {
+        case SDL_CONTROLLER_AXIS_LEFTX:        return "LS X";
+        case SDL_CONTROLLER_AXIS_LEFTY:        return "LS Y";
+        case SDL_CONTROLLER_AXIS_RIGHTX:       return "RS X";
+        case SDL_CONTROLLER_AXIS_RIGHTY:       return "RS Y";
+        case SDL_CONTROLLER_AXIS_TRIGGERLEFT:  return "LT";
+        case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: return "RT";
+        default:                               return "PAD AXIS";
+    }
+}
+
+} // namespace
+
+std::string menu_source_name(const Source& s)
+{
+
+    const std::string arrow = s.dir >= 0 ? " >" : " <";
+    const std::string joy = "J" + std::to_string(s.dev + 1) + " ";
+
+    switch (s.kind)
+    {
+        case SourceKind::Key: {
+            static const std::pair<SDL_Scancode, const char*> kPunct[] = {
+                { SDL_SCANCODE_SEMICOLON, "SEMICOLON" }, { SDL_SCANCODE_SLASH, "SLASH" }, { SDL_SCANCODE_BACKSLASH, "BACKSLASH" },
+                { SDL_SCANCODE_LEFTBRACKET, "L BRACKET" }, { SDL_SCANCODE_RIGHTBRACKET, "R BRACKET" },
+                { SDL_SCANCODE_EQUALS, "EQUALS" }, { SDL_SCANCODE_GRAVE, "GRAVE" }, { SDL_SCANCODE_APOSTROPHE, "APOSTROPHE" },
+            };
+
+            for (const auto& [sc, name] : kPunct) {
+                if (s.code == sc) return name;
+            }
+
+            std::string n = font_text(SDL_GetScancodeName((SDL_Scancode)s.code));
+
+            // Short like the pad names so the binding column stays narrow: "LEFT SHIFT" -> "L SHIFT".
+            for (const auto& [from, to] : { std::pair{ "LEFT ", "L " }, std::pair{ "RIGHT ", "R " }, std::pair{ "KEYPAD ", "NUM " } }) {
+                if (n.rfind(from, 0) == 0) n = to + n.substr(std::strlen(from));
+            }
+
+            return n.empty() ? "KEY " + std::to_string(s.code) : n;
+        }
+        case SourceKind::PadButton: {
+            const char* m = pad_button_menu_name(s.code);
+            const char* n = SDL_GameControllerGetStringForButton((SDL_GameControllerButton)s.code);
+
+            return "PAD " + (m ? std::string(m) : font_text(n ? n : "?"));
+        }
+        case SourceKind::PadAxis: {
+            const bool trigger = s.code == SDL_CONTROLLER_AXIS_TRIGGERLEFT || s.code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
+
+            return pad_axis_menu_name(s.code) + (trigger ? std::string() : arrow);
+        }
+        case SourceKind::MouseButton: return "MOUSE " + std::to_string(s.code);
+        case SourceKind::MouseAxis:   return std::string("MOUSE ") + (s.code == 0 ? "X" : "Y") + arrow;
+        case SourceKind::JoyButton:   return joy + "BTN " + std::to_string(s.code);
+        case SourceKind::JoyAxis:     return joy + "AX " + std::to_string(s.code) + arrow;
+        case SourceKind::JoyHat:      return joy + "HAT " + font_text(hat_dir_name(s.dir));
+        default:                      return "--";
+    }
+}
+
+uint16_t menu_fixed_mask(const RawState& s)
+{
+
+    static const std::pair<int, uint16_t> keys[] = {
+        { SDL_SCANCODE_RETURN, A }, { SDL_SCANCODE_KP_ENTER, A }, { SDL_SCANCODE_BACKSPACE, B }, { SDL_SCANCODE_ESCAPE, START },
+        { SDL_SCANCODE_UP, JU }, { SDL_SCANCODE_DOWN, JD }, { SDL_SCANCODE_LEFT, JL }, { SDL_SCANCODE_RIGHT, JR },
+    };
+    static const std::pair<SDL_GameControllerButton, uint16_t> pad[] = {
+        { SDL_CONTROLLER_BUTTON_A, A }, { SDL_CONTROLLER_BUTTON_B, B }, { SDL_CONTROLLER_BUTTON_START, START },
+        { SDL_CONTROLLER_BUTTON_DPAD_UP, JU }, { SDL_CONTROLLER_BUTTON_DPAD_DOWN, JD },
+        { SDL_CONTROLLER_BUTTON_DPAD_LEFT, JL }, { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, JR },
+    };
+
+    uint16_t m = 0;
+
+    for (const auto& [sc, bit] : keys) {
+        if (s.keys && sc < s.keys_len && s.keys[sc]) m |= bit;
+    }
+
+    for (const auto& [b, bit] : pad) {
+        if (s.pad && SDL_GameControllerGetButton(s.pad, b)) m |= bit;
+    }
+
+    return m;
+}
+
+uint16_t menu_buttons(uint16_t bound, uint16_t fixed)
+{
+
+    constexpr uint16_t kMenuBits = A | B | START | JU | JD | JL | JR;
+
+    return fixed ? (uint16_t)((bound & ~kMenuBits) | fixed) : bound;
+}
+
+bool capture_accepts(const CaptureFilter& f, const Source& s)
+{
+
+    if (s.kind == SourceKind::None || s.kind == SourceKind::MouseAxis) return false;
+
+    return f.any || device_of(s) == f.device;
+}
+
+Bindings default_device_bindings(const Bindings& cur, Device d)
+{
+
+    const Bindings def = default_bindings();
+    Bindings out = cur;
+
+    for (int t = 0; t < (int)Target::Count; ++t)
+    {
+        std::vector<Source>& v = out.targets[t];
+
+        v.erase(std::remove_if(v.begin(), v.end(), [d](const Source& s) { return device_of(s) == d; }), v.end());
+
+        for (const Source& s : def.targets[t]) {
+            if (device_of(s) == d) v.push_back(s);
+        }
+    }
+
+    return out;
+}
+
 // In the working directory with saves and mods: the exe's folder can be read-only (AppImage, Flatpak).
 std::string default_config_path() {
     return "roguesq_input.json";
@@ -708,6 +977,7 @@ bool load_bindings(Bindings& b, const std::string& path) {
     b.keyboard_enabled = j.value("keyboard_enabled", b.keyboard_enabled);
     b.joystick_enabled = j.value("joystick_enabled", b.joystick_enabled);
     b.stick_range      = j.value("stick_range", b.stick_range);
+    b.pad_deadzone     = j.value("pad_deadzone", b.pad_deadzone);
     b.throttle_cruise  = j.value("throttle_cruise", b.throttle_cruise);
 
     if (j.contains("rumble") && j["rumble"].is_object())
@@ -797,6 +1067,7 @@ bool save_bindings(const Bindings& b, const std::string& path)
     j["keyboard_enabled"] = b.keyboard_enabled;
     j["joystick_enabled"] = b.joystick_enabled;
     j["stick_range"] = b.stick_range;
+    j["pad_deadzone"] = b.pad_deadzone;
     j["throttle_cruise"] = b.throttle_cruise;
     const RumbleConfig& c = b.rumble;
     j["rumble"] = { {"enabled", c.enabled}, {"strength", c.strength},

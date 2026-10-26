@@ -6,6 +6,7 @@
 // menu_config.cpp is not linked here; the menu: target only reads its press count at run time.
 extern "C" uint32_t rs64_menu_confirms() { return 0; }
 extern "C" void rs64_menu_request_quit() {}
+extern "C" void rs64_lang_original(const char* shown, char* out, size_t cap) { snprintf(out, cap, "%s", shown); }
 
 int main() {
     RsNavTarget t;
@@ -25,6 +26,8 @@ int main() {
     t = rs64_nav_parse("demo");       CHECK(t.kind == NAV_DEMO && t.a == 0);
     t = rs64_nav_parse("abort:0");    CHECK(t.kind == NAV_ABORT && t.a == 0 && t.b == -1);
     t = rs64_nav_parse("abort:2,1");  CHECK(t.kind == NAV_ABORT && t.a == 2 && t.b == 1);
+    t = rs64_nav_parse("pause:0");    CHECK(t.kind == NAV_ABORT && t.a == 0 && t.c == 10);
+    t = rs64_nav_parse("pause:3,1");  CHECK(t.kind == NAV_ABORT && t.a == 3 && t.b == -1 && t.c == 11);
     t = rs64_nav_parse("lobby:host,0");  CHECK(t.kind == NAV_LOBBY && t.b == 0 && t.a == 0);
     t = rs64_nav_parse("lobby:join,3");  CHECK(t.kind == NAV_LOBBY && t.b == 1 && t.a == 3);
     t = rs64_nav_parse("lobby:page");    CHECK(t.kind == NAV_LOBBY && t.b == 2);

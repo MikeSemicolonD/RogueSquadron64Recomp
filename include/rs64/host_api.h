@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 5
+#define RS64_HOST_API_VERSION 6
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -54,6 +54,7 @@ typedef enum rs64_hook_id {
     RS64_HOOK_POWERUP_COLLECT = 35,      // npcPowerUpUpdate 0x800EBD34: s1 = the power-up being collected, a1 = its pickup sound's position, may be replaced
     RS64_HOOK_TRIGGER_EFFECT = 36,       // applyDatObjectiveTriggerEffect 0x80065980: a0 = DAT trigger event, a1 = 1 enter / 0 exit, s0 = the caller's trigger-list entry (player 1's list is 0x80137DF0); RETURN drops the effect
     RS64_HOOK_WALKER_TRIPPED = 37,       // npcAtAtUpdate 0x800CED7C: an AT-AT accepts a tow-cable trip (action 9, kind 0xE); s1 = its ext (+0x34 DAT item), s0 = the message. Never RETURN (mid-function)
+    RS64_HOOK_ATST_TICK = 38,            // updatePlayerAtStBehavior entry: the player's AT-ST is about to read the pads (0x80130B88) and stick (0x8010BDD8); a0 = the walker, a1 = dt (float bits); RETURN skips its walk/turn/head/fire step
     RS64_HOOK_COUNT
 } rs64_hook_id;
 
@@ -71,6 +72,8 @@ typedef int (*rs64_condition_fn)(void* user);
 typedef int (*rs64_key_fn)(const char* utf8, int key, void* user);
 typedef void (*rs64_event_fn)(void* user);
 typedef uint64_t (*rs64_hash_fn)(const uint8_t* rdram, void* user);
+// A level rules action: the rule's parameters as count key/value strings (numbers as their JSON text), on the game thread.
+typedef void (*rs64_rule_action_fn)(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user);
 
 typedef struct rs64_host_api {
     uint32_t version;
@@ -114,6 +117,9 @@ typedef struct rs64_host_api {
     int (*add_valid_ram)(uint32_t addr, uint32_t size);
     // v5: game data [lo, hi) the mod moved to lo + delta (its instruction_patches.json repoints the game's code), so host code that reads it (lockstep hashes, rs64_relocated for .nrm mods) follows; only before the registry seals, no overlaps.
     int (*add_moved_range)(uint32_t lo, uint32_t hi, uint32_t delta);
+    // v6: a level rules action named in rules.json ("do": name), only before the registry seals; fire_rule_event raises a rule "custom" when (name, object) any time.
+    int (*add_rule_action)(const char* name, rs64_rule_action_fn fn, void* user);
+    int (*fire_rule_event)(const char* name, const char* object);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

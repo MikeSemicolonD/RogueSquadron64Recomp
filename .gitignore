@@ -166,3 +166,4 @@ patches/patches.bin
 tests/mods/replay_probe.nrm
 tests/mods/replay-probe/build/
 /.playwright-mcp
+*.blend1

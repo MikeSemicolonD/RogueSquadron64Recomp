@@ -37,6 +37,8 @@ A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, th
 | 17 | The Death Star Trench Run (bonus) | | none yet |
 | 18 | The Battle of Hoth (bonus) | | none yet |
 
+Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, `construction_yards_bonus` and both `assault_on_kile_ii` recordings were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
+
 ### 00 Ambush at Mos Eisley
 
 | File | Kind | Contents |
@@ -83,7 +85,7 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
   .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\06-imperial-construction-yards\construction_yards_bonus.rec -Frames 2995,3025 -Tag pickup -Env "ROGUESQ_RT_LIGHTS=1"
   ```
 
-  `-Cutscene <level>,<kind>` (kind 0 intro, 1 extro, 2 special) instead of `-Recording` boots into that cutscene and captures its own frames, the frame numbers the RS64 Explorer timeline shows (`ROGUESQ_CINE_PAUSE_AT`), for comparing the game against the explorer frame for frame. It leaves other running game instances alone.
+  `-Cutscene <level>,<kind>` (kind 0 intro, 1 extro, 2 special) instead of `-Recording` boots into that cutscene and captures its own frames, the frame numbers the RS64 Explorer timeline shows (`ROGUESQ_PAUSE_AT=cutscene:<f>`), for comparing the game against the explorer frame for frame. It leaves other running game instances alone.
 
   ```powershell
   .\tools\debug\recordings\capture-frames.ps1 -Cutscene 5,0 -Frames 60,200,400 -Tag lv5intro -Speed 1

@@ -262,6 +262,20 @@ static void test_dump_regions() {
 
 
 
+static void test_pause_targets() {
+    // ROGUESQ_PAUSE_AT: clock[:frame], comma separated; no frame means 0.
+    const auto t = parse_pause_targets("menu.options, crawl:2595,cutscene:120,,mission:3");
+    CHECK(t.size() == 4);
+    CHECK(t[0].clock == "menu.options" && t[0].frame == 0);
+    CHECK(t[1].clock == "crawl" && t[1].frame == 2595);
+    CHECK(t[2].clock == "cutscene" && t[2].frame == 120 && t[3].clock == "mission" && t[3].frame == 3);
+    CHECK(parse_pause_targets("").empty());
+
+    // A clock matches its own name and, at a dot, its sub-states.
+    CHECK(pause_clock_matches("menu", "menu.options") && pause_clock_matches("menu.options", "menu.options"));
+    CHECK(!pause_clock_matches("menu.opt", "menu.options") && !pause_clock_matches("menu.options", "menu") && !pause_clock_matches("crawl", "cutscene"));
+}
+
 static void test_follow_step() {
     // Mirroring the host live: (cursor, state, host cursor, host state, host picked). States: 2 browse, 3 briefing.
     // Browse: move toward the host's cursor; open the briefing once the host has it open (or picked).
@@ -352,6 +366,7 @@ int main() {
     test_hash_extra_part_appended();
     test_cutscene_skip_detection();
     test_follow_step();
+    test_pause_targets();
     printf("lockstep_core_test OK\n");
     return 0;
 }

@@ -51,6 +51,19 @@ namespace rs64::app {
     int joy_dev_locked(const OpenJoy& oj);
     void rebind_open_joysticks_locked();
 
+    // Rebind capture shared by the F6 window and the in-game Controls screen. capture_poll: 1 = *out captured,
+    // 0 = waiting, -1 = cancelled (Esc, or pad Start for a one-device capture). Call without holding g_bindings_mtx.
+    void capture_begin(const rs64::input::CaptureFilter& f);
+    int capture_poll(rs64::input::Source* out);
+    void capture_end();
+    rs64::input::Device last_device();
+
+    // Whether device d has anything open to capture from (a touch-only phone has no gamepad to answer "press a button").
+    bool capture_device_present(rs64::input::Device d);
+
+    // Device d's sources back to their defaults (joysticks: each open stick's own), saved.
+    void reset_device_bindings(rs64::input::Device d);
+
     uint8_t* touch_rdram();
     rs64::touch::Context touch_context();
     rs64::touch::AccountScreen touch_account_screen();

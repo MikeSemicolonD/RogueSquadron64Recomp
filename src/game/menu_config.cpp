@@ -13,6 +13,7 @@
 #include <fstream>
 #include <functional>
 #include <iterator>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -26,6 +27,7 @@
 #include "json/json.hpp"
 #include "librecomp/mods.hpp"
 #include "recomp.h"   // recomp_context, recomp_func_t (for mod-provided @exports)
+#include "game/lang.h"
 #include "game/menu_layout.h"
 #include "video/video_config.h"
 
@@ -34,6 +36,7 @@
 
 namespace recomp { void* alloc(uint8_t* rdram, size_t size); }
 #include "main/main.h"   // rs64_menu_request_quit, rs64_toggle_fullscreen, rs64_get_fullscreen
+#include "input/input_host.h"
 #include "input/touch_config.h"
 #include "util/mips_call.h"
 #include "host_api/host_api.h"
@@ -69,9 +72,15 @@ enum FrontMenu : uint8_t {
 constexpr uint8_t SUBTYPE_SUBMENU = 1;
 constexpr uint8_t SUBTYPE_HOST    = 4;
 
+// The LANGUAGE page's pick: menuControllerInput frees the text, stores the entry's param to gGameSettings+6 and reloads front_TXT (0x800B57F8).
+constexpr uint8_t SUBTYPE_LANGUAGE = 24;
+
 // The game's text languages, by gGameSettings+6; a button label can map these codes to text.
 constexpr const char* kTextLanguages[] = { "en", "de", "fr", "it", "es" };
 constexpr int kTextLanguageCount = (int)(sizeof(kTextLanguages) / sizeof(kTextLanguages[0]));
+
+// Config index for the active language mod's labels (after the built-in text languages).
+constexpr int kModLanguage = kTextLanguageCount;
 
 // Language of the text files last loaded (loadTxtFile hook); picks the menu config's label set.
 std::atomic<int> s_text_language{0};
@@ -172,7 +181,9 @@ MenuConfig default_config(int lang);
 
 using rs64::menu::to_latin1;
 
-// A label field is a string or a map of language code -> string ({"en": "BACK", "de": "ZURÜCK"}); a missing language falls back to "en", then to the first entry.
+rs64::lang::MenuText s_menu_text;
+
+// A label field is a string or a map of language code -> string ({"en": "BACK", "de": "ZURÜCK"}, optionally "key" for other mods' translations); a missing language falls back to "en", then to the first entry.
 std::string text_field(const nlohmann::json& e, const char* key, int lang)
 {
 
@@ -183,10 +194,42 @@ std::string text_field(const nlohmann::json& e, const char* key, int lang)
     if (v.is_string()) return to_latin1(v.get<std::string>());
     if (!v.is_object() || v.empty()) return {};
 
-    for (const char* code : { kTextLanguages[lang], "en" })
-        if (v.contains(code) && v[code].is_string()) return to_latin1(v[code].get<std::string>());
+    // shortcut: a mod-language label is encoded once, so its code page slots can be reused by other text after 127 newer characters; re-encode per draw if that shows up.
+    const rs64::lang::Language* mod = lang == kModLanguage ? rs64::lang::active() : nullptr;
+    const std::string code = mod ? mod->code : lang < kTextLanguageCount ? kTextLanguages[lang] : "en";
+    const std::string text_key = v.contains("key") && v["key"].is_string() ? v["key"].get<std::string>() : std::string{};
+    const std::string* keyed = nullptr;
 
-    return v.begin()->is_string() ? to_latin1(v.begin()->get<std::string>()) : std::string{};
+    // A text key: the active language mod's lang/menu.json, then mods' menu_text.json, before the map's own entries.
+    if (!text_key.empty() && mod)
+    {
+        const auto own = mod->menu.find(text_key);
+
+        if (own != mod->menu.end()) keyed = &own->second;
+    }
+
+    if (!text_key.empty() && !keyed) keyed = rs64::lang::menu_text_for(s_menu_text, code, text_key);
+
+    const std::string* mod_text = keyed ? keyed : mod && v.contains(mod->code) && v[mod->code].is_string() ? v[mod->code].get_ptr<const std::string*>() : nullptr;
+
+    if (mod && mod_text)
+    {
+        const std::string shown = rs64::lang::encode_text(*mod_text);
+
+        rs64::lang::note_original(shown, text_field(e, key, 0));
+
+        return shown;
+    }
+
+    if (keyed) return to_latin1(*keyed);
+
+    for (const char* c : { code.c_str(), "en" })
+        if (v.contains(c) && v[c].is_string()) return to_latin1(v[c].get<std::string>());
+
+    for (const auto& [k, t] : v.items())
+        if (k != "key" && t.is_string()) return to_latin1(t.get<std::string>());
+
+    return {};
 }
 
 void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vector<Button>& out, int lang)
@@ -303,9 +346,42 @@ MenuConfig default_config(int lang) {
     language.menu = "options";
     language.type = BType::Action;
     language.transition = "language";
-    language.label = kLanguageLabel[lang];
+    language.label = lang < kTextLanguageCount ? kLanguageLabel[lang] : "LANGUAGE";
     language.has_index = true;
     language.index = -2;
+
+    // With language mods installed it opens a host page listing every language; each entry is the game's own pick (transition "language:<index>", mods after en/de/fr).
+    if (rs64::lang::installed())
+    {
+        static const char* const kBuiltinNames[] = { "ENGLISH", "DEUTSCH", "FRANCAIS" };
+        constexpr size_t kMaxEntries = 7;
+        const std::vector<std::string> codes = rs64::lang::codes();
+
+        language.type = BType::Submenu;
+        language.transition.clear();
+        language.page = "languages";
+        language.title = language.label;
+
+        for (size_t i = 0; i < codes.size() && i < kMaxEntries; ++i)
+        {
+            const rs64::lang::Language* mod = rs64::lang::find(codes[i]);
+            std::string name = mod ? to_latin1(mod->name) : kBuiltinNames[i];
+
+            if (lang == kModLanguage && mod && mod == rs64::lang::active()) name = rs64::lang::encode_text(mod->name);
+            else if (name.find('?') != std::string::npos) name = codes[i];
+
+            Button e;
+            e.id = "language_" + codes[i];
+            e.menu = "languages";
+            e.type = BType::Action;
+            e.transition = "language:" + std::to_string(i);
+            e.label = name;
+            m.buttons.push_back(std::move(e));
+        }
+
+        if (codes.size() > kMaxEntries) fprintf(stderr, "[lang] %zu languages; the LANGUAGE page lists the first %zu\n", codes.size(), kMaxEntries);
+    }
+
     m.buttons.push_back(std::move(language));
 
     // No quitting to desktop on Android; the system handles app exit.
@@ -333,6 +409,33 @@ MenuConfig default_config(int lang) {
     return m;
 }
 
+// Every enabled mod's menu_text.json ({ "<code>": { "<key>": "text" } }), in mod order.
+void load_menu_text()
+{
+
+    s_menu_text = {};
+
+    for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
+    {
+        if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+
+        bool exists = false;
+        const std::vector<char> text = recomp::mods::read_mod_file(d.mod_id, "menu_text.json", exists);
+
+        if (!exists) continue;
+
+        const nlohmann::json j = nlohmann::json::parse(text.begin(), text.end(), nullptr, false);
+
+        if (!j.is_object())
+        {
+            fprintf(stderr, "[menu] %s: menu_text.json is not a JSON object\n", d.mod_id.c_str());
+            continue;
+        }
+
+        for (const auto& [code, table] : j.items()) rs64::lang::add_menu_text(s_menu_text, code, table);
+    }
+}
+
 // Menu files as { text, owning mod id }: roguesq_menu.json next to the exe, then each enabled mod's.
 std::vector<std::pair<std::string, std::string>> menu_files()
 {
@@ -358,6 +461,8 @@ std::vector<std::pair<std::string, std::string>> menu_files()
 
         if (exists) files.emplace_back(std::string(text.begin(), text.end()), d.mod_id);
     }
+
+    load_menu_text();
 
     return files;
 }
@@ -391,19 +496,35 @@ MenuConfig build_config(const std::vector<std::pair<std::string, std::string>>& 
     return m;
 }
 
-// Built ONCE per text language, lazily (never rebuilt on the game thread — mod-mutex + I/O); the set for the loaded text's language is current.
+// The menu files are read once, lazily (no mod-mutex I/O again on the game thread); one set per built-in text language, and the active mod language's set.
 const MenuConfig& config()
 {
 
+    static const auto files = menu_files();
+
     static const std::vector<MenuConfig> cached = [] {
 
-        const auto files = menu_files();
         std::vector<MenuConfig> v;
 
         for (int lang = 0; lang < kTextLanguageCount; ++lang) v.push_back(build_config(files, lang));
 
         return v;
     }();
+
+    // A mod language's set is rebuilt when the active mod language changes (the files are already read; this only parses).
+    if (const rs64::lang::Language* mod = rs64::lang::active())
+    {
+        static std::string s_code;
+        static MenuConfig s_mod;
+
+        if (s_code != mod->code)
+        {
+            s_mod = build_config(files, kModLanguage);
+            s_code = mod->code;
+        }
+
+        return s_mod;
+    }
 
     return cached[std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1)];
 }
@@ -413,10 +534,13 @@ const MenuConfig& config()
 struct ToggleImpl { std::function<bool()> get; std::function<void()> toggle; };
 struct SliderImpl { std::function<int()> get; std::function<void(int)> set; };
 
+void reset_controls();
+
 std::unordered_map<std::string, std::function<void()>>& actions() {
 
     static std::unordered_map<std::string, std::function<void()>> r = {
         { "quit", [] { rs64_menu_request_quit(); } },
+        { "reset_controls", [] { reset_controls(); } },
         { "touch_layout", [] { rs64_touch_layout_request(); } },
         { "none", [] {} },
     };
@@ -452,6 +576,25 @@ ToggleImpl rt_toggle(rs64lights::Feature f) {
                  }
              } };
 }
+
+// Input settings shown in menus: read and changed under the bindings lock, saved to roguesq_input.json like the F6 window does.
+int input_get(const std::function<int(const rs64::input::Bindings&)>& get)
+{
+
+    std::lock_guard<std::mutex> lk(rs64::app::g_bindings_mtx);
+
+    return get(rs64::app::g_bindings);
+}
+
+void input_set(const std::function<void(rs64::input::Bindings&)>& set)
+{
+
+    std::lock_guard<std::mutex> lk(rs64::app::g_bindings_mtx);
+
+    set(rs64::app::g_bindings);
+    rs64::input::save_bindings(rs64::app::g_bindings, rs64::input::default_config_path());
+}
+
 std::unordered_map<std::string, ToggleImpl>& toggles() {
 
     static std::unordered_map<std::string, ToggleImpl> r = {
@@ -473,6 +616,14 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
         { "rt_ao", rt_toggle(rs64lights::Feature::AmbientOcclusion) },
         { "rt_gi", rt_toggle(rs64lights::Feature::GlobalIllumination) },
         { "rt_reflections", rt_toggle(rs64lights::Feature::Reflections) },
+
+        // Rumble turned on mid-session also reports the Rumble Pak, so effects start from the next mission (as in the F6 window).
+        { "rumble", { [] { return input_get([](const rs64::input::Bindings& b) { return b.rumble.enabled ? 1 : 0; }) != 0; },
+                      [] {
+                          input_set([](rs64::input::Bindings& b) { b.rumble.enabled = !b.rumble.enabled; });
+
+                          if (input_get([](const rs64::input::Bindings& b) { return b.rumble.enabled ? 1 : 0; })) rs64::app::g_report_rumble_pak.store(true);
+                      } } },
     };
 
     return r;
@@ -484,6 +635,20 @@ std::unordered_map<std::string, SliderImpl>& sliders() {
     static std::unordered_map<std::string, SliderImpl> r = {
         { "draw_distance", { [] { return (int)std::lround(rs64::video::draw_distance() * 100.0f); },
                              [](int v) { rs64::video::set_draw_distance((float)v / 100.0f); } } },
+
+        // Mouse sensitivity in thousandths, smoothing and dead zone in percent; the dead zone is the gamepad's and every joystick's.
+        { "mouse_sensitivity", { [] { return input_get([](const rs64::input::Bindings& b) { return (int)std::lround(b.mouse_sensitivity * 1000.0f); }); },
+                                 [](int v) { input_set([v](rs64::input::Bindings& b) { b.mouse_sensitivity = (float)v / 1000.0f; }); } } },
+        { "mouse_smoothing", { [] { return input_get([](const rs64::input::Bindings& b) { return (int)std::lround(b.mouse_smoothing * 100.0f); }); },
+                               [](int v) { input_set([v](rs64::input::Bindings& b) { b.mouse_smoothing = (float)v / 100.0f; }); } } },
+        { "deadzone", { [] { return input_get([](const rs64::input::Bindings& b) { return (int)std::lround(b.pad_deadzone * 100.0f); }); },
+                        [](int v) {
+                            input_set([v](rs64::input::Bindings& b) {
+                                b.pad_deadzone = (float)v / 100.0f;
+
+                                for (auto& d : b.joy_devices) d.deadzone = (float)v / 100.0f;
+                            });
+                        } } },
     };
 
     return r;
@@ -791,7 +956,8 @@ void write_slot(uint8_t* r, int i, const Slot& s) {
 bool label_is_empty(uint8_t* r, uint32_t label_vaddr)
 {
 
-    if (label_vaddr < 0x80000000u || label_vaddr >= 0x80800000u) return true;
+    // Labels can live in host RAM above the game's 8 MB (language mod text, mod button labels), anywhere in the 512 MB RDRAM.
+    if (label_vaddr < 0x80000000u || label_vaddr >= 0xA0000000u) return true;
 
     return rd_b(r, label_vaddr - 0x80000000u) == 0;
 }
@@ -820,32 +986,14 @@ const char* frontend_menu_name(uint8_t id) {
     }
 }
 
-// A native entry alias: match a built slot by sub-type (+ optionally unk74).
-struct NativeAlias { uint8_t sub; int32_t param; bool match_param; };
+using rs64::menu::NativeAlias;
 
-const std::unordered_map<std::string, NativeAlias>* native_aliases(uint8_t menu_id)
+const NativeAlias* native_alias_of(uint8_t menu_id, const std::string& name)
 {
 
-    static const std::unordered_map<std::string, NativeAlias> main_menu = {
-        { "start",   { 1, 1, true } },
-        { "options", { 1, 2, true } },
-    };
+    const char* menu = frontend_menu_name(menu_id);
 
-    static const std::unordered_map<std::string, NativeAlias> game_settings = {
-        { "auto_roll",        { 5, 0, true } },
-        { "auto_level",       { 5, 1, true } },
-        { "free_camera",      { 5, 2, true } },
-        { "crosshairs",       { 5, 3, true } },
-        { "high_resolution",  { 5, 4, true } },
-        { "restore_defaults", { 14, 0, false } },
-        { "back",             { 25, 0, false } },
-    };
-
-    switch (menu_id) {
-        case MENU_MAIN:          return &main_menu;
-        case MENU_GAME_SETTINGS: return &game_settings;
-        default:                 return nullptr;
-    }
+    return menu ? rs64::menu::native_alias(menu, name) : nullptr;
 }
 
 // ---- Per-slot binding, read by the confirm intercept ----
@@ -926,8 +1074,9 @@ const std::vector<std::string>& page_names()
 
         std::vector<std::string> v;
 
+        // A submenu whose page names a front-end menu (controller_settings) opens that menu, not a page.
         for (const auto& b : config().buttons)
-            if (!b.page.empty() && std::find(v.begin(), v.end(), b.page) == v.end()) v.push_back(b.page);
+            if (!b.page.empty() && frontend_menu_id(b.page) == MENU_NONE && std::find(v.begin(), v.end(), b.page) == v.end()) v.push_back(b.page);
 
         return v;
     }();
@@ -1221,6 +1370,7 @@ struct Item {
     SlotBinding binding;
     int index_seq = -1;
     int index = 0;
+    std::string id;
 };
 
 // Move each indexed mod item (index_seq = its config order) to its `index` among the visible items.
@@ -1248,19 +1398,13 @@ bool anchor_order(const std::vector<Item>& items, uint8_t menu_id,
                   const std::string& name, double& out)
 {
 
-    const auto* aliases = native_aliases(menu_id);
-    const NativeAlias* na = nullptr;
+    const NativeAlias* na = native_alias_of(menu_id, name);
 
-    if (aliases) {
-        auto it = aliases->find(name);
-
-        if (it != aliases->end()) na = &it->second;
-    }
-
+    // A mod button anchors by its id; its behavior key is still accepted for older menu files.
     for (const auto& it : items)
     {
-        if (it.is_native && na && alias_matches(it.slot, *na)) { out = it.order; return true; }
-        if (!it.is_native && it.binding.key == name)           { out = it.order; return true; }
+        if (it.is_native && na && alias_matches(it.slot, *na))                 { out = it.order; return true; }
+        if (!it.is_native && (it.id == name || it.binding.key == name))        { out = it.order; return true; }
     }
 
     return false;
@@ -1293,18 +1437,17 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
     }
 
     // hides for this menu
-    const auto* aliases = native_aliases(menu_id);
     auto hide_it = config().hides.find(mname);
 
-    if (hide_it != config().hides.end() && aliases) {
+    if (hide_it != config().hides.end()) {
         for (const auto& alias : hide_it->second) {
-            auto ai = aliases->find(alias);
+            const NativeAlias* na = native_alias_of(menu_id, alias);
 
-            if (ai == aliases->end()) continue;
+            if (!na) continue;
 
             for (auto vi = items.begin(); vi != items.end(); )
             {
-                if (vi->is_native && alias_matches(vi->slot, ai->second)) vi = items.erase(vi);
+                if (vi->is_native && alias_matches(vi->slot, *na)) vi = items.erase(vi);
                 else ++vi;
             }
         }
@@ -1325,12 +1468,12 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         double ord;
         bool have_ord = false;
 
-        if (!b.replace.empty() && aliases) {
-            auto ai = aliases->find(b.replace);
+        if (!b.replace.empty()) {
+            const NativeAlias* na = native_alias_of(menu_id, b.replace);
 
-            if (ai != aliases->end()) {
+            if (na) {
                 for (auto vi = items.begin(); vi != items.end(); ) {
-                    if (vi->is_native && alias_matches(vi->slot, ai->second)) {
+                    if (vi->is_native && alias_matches(vi->slot, *na)) {
                         ord = vi->order;
                         have_ord = true;
                         vi = items.erase(vi);
@@ -1358,6 +1501,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
             it.slot = Slot{ (int32_t)lbl, SUBTYPE_SUBMENU, (int32_t)page_id(b.page),
                             (int16_t)b.x, (int16_t)b.y, ref_scaler };
             it.binding = { true, BType::Submenu, b.page };
+            it.id = b.id;
             it.binding.open_action = b.behavior;
             it.index_seq = b.has_index ? index_seq++ : -1;
             it.index = b.index;
@@ -1412,6 +1556,12 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
                 sub = SUBTYPE_SUBMENU;
                 param = MENU_LANGUAGE;
             }
+
+            if (b.type == BType::Action && b.confirm.empty() && b.transition.rfind("language:", 0) == 0)
+            {
+                sub = SUBTYPE_LANGUAGE;
+                param = std::atoi(b.transition.c_str() + 9);
+            }
         }
 
         Slot s{ (int32_t)lbl, sub, param, (int16_t)b.x, (int16_t)b.y, ref_scaler };
@@ -1423,6 +1573,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         it.binding = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                        b.smin, b.smax, b.sstep, b.label_on, b.label_off };
         set_bar_layout(&it.binding, b);
+        it.id = b.id;
         it.index_seq = b.has_index ? index_seq++ : -1;
         it.index = b.index;
 
@@ -1490,15 +1641,23 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
 constexpr uint32_t VOL_BYTES = 0x80130B60u - 0x80000000u;  // channel volume bytes (0..N)
 constexpr int      VOL_MAX   = 0x80;                       // native slider range
 constexpr uint8_t  SND_SLIDER_SUB = 21;                    // music-volume sub-type
-constexpr int      SND_CH_FIRST = 3, SND_CH_LAST = 7;      // unused channel bytes
+
+// Free settings bytes past the three volumes: +0x23 is the Expansion Pak / time-limit flag and +0x24 the high-score sort's, so mod sliders start at +0x25.
+constexpr int      SND_CH_FIRST = 5, SND_CH_LAST = 7;
 
 struct SndSlider {
-    int slot = -1, channel = 0, smin = 0, smax = 100;
+    int slot = -1, channel = 0, smin = 0, smax = 100, last_byte = -1;
     std::string off_label, on_label, key;
     recomp_func_t* get_fn = nullptr, * set_fn = nullptr;
 };
 
+// The native sliders of the menu last built (Sound Settings or a mod page); the slider edit state works on any menu's highlighted row.
 std::vector<SndSlider> s_snd_sliders;
+uint8_t s_snd_menu = MENU_NONE;
+
+bool snd_sliders_here(uint8_t* rdram) {
+    return !s_snd_sliders.empty() && rd_b(rdram, GCMD_OFF + 0x04) == s_snd_menu;
+}
 
 // Resolve a Sound Settings native entry name to its current slot index.
 int snd_alias_slot(uint8_t* rdram, const std::string& name) {
@@ -1526,52 +1685,64 @@ int snd_alias_slot(uint8_t* rdram, const std::string& name) {
     return -1;
 }
 
-int byte_from_value(int v, int lo, int hi) {
+// `top` is the slider's full scale: 0x80 in the front end, 0x7F in the pause menu.
+int byte_from_value(int v, int lo, int hi, int top = VOL_MAX) {
 
     if (hi <= lo) return 0;
 
-    long b = (long)(v - lo) * VOL_MAX / (hi - lo);
+    long b = (long)(v - lo) * top / (hi - lo);
 
-    return b < 0 ? 0 : (b > VOL_MAX ? VOL_MAX : (int)b);
+    return b < 0 ? 0 : (b > top ? top : (int)b);
 }
-int value_from_byte(int b, int lo, int hi) {
-    return hi <= lo ? lo : lo + (int)((long)b * (hi - lo) / VOL_MAX);
+int value_from_byte(int b, int lo, int hi, int top = VOL_MAX) {
+    return hi <= lo ? lo : lo + (int)((long)std::min(b, top) * (hi - lo) / top);
+}
+
+// A mod slider at `slot` as a native volume slider on the next free channel byte, seeded from its value; false when the channels are used up.
+bool add_snd_slider(uint8_t* rdram, const Button& b, int slot)
+{
+
+    const int ch = SND_CH_FIRST + (int)s_snd_sliders.size();
+
+    if (ch > SND_CH_LAST) return false;
+
+    const BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
+    SndSlider ss;
+
+    ss.slot = slot;
+    ss.channel = ch;
+    ss.smin = b.smin;
+    ss.smax = b.smax;
+    ss.off_label = b.label_off.empty() ? "OFF" : b.label_off;
+    ss.on_label  = b.label_on.empty()  ? "MAX" : b.label_on;
+    ss.key = b.behavior;
+    ss.get_fn = fns.toggle_get;
+    ss.set_fn = fns.toggle_set;
+    wr_b(rdram, VOL_BYTES + ch, (uint8_t)byte_from_value(slider_value(rdram, b.behavior, fns.toggle_get), b.smin, b.smax));
+    s_snd_sliders.push_back(std::move(ss));
+
+    return true;
 }
 
 // Install mod sliders into Sound Settings (called from the setupMenuData tail).
 void sound_settings_install(uint8_t* rdram) {
 
     s_snd_sliders.clear();
-    int next_ch = SND_CH_FIRST;
+    s_snd_menu = MENU_SOUND_SETTINGS;
 
     for (const auto& b : config().buttons)
     {
         if (b.type != BType::Slider || frontend_menu_id(b.menu) != MENU_SOUND_SETTINGS) continue;
 
-        int slot = b.replace.empty() ? -1 : snd_alias_slot(rdram, b.replace);
+        // Needs a replace anchor.
+        const int slot = b.replace.empty() ? -1 : snd_alias_slot(rdram, b.replace);
 
-        // Needs a replace anchor + free channel.
-        if (slot < 0 || next_ch > SND_CH_LAST) continue;
+        if (slot < 0 || !add_snd_slider(rdram, b, slot)) continue;
 
-        int ch = next_ch++;
-        BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         Slot s = read_slot(rdram, slot);
         s.label = (int32_t)alloc_str(rdram, b.label);
         s.sub = SND_SLIDER_SUB;
         write_slot(rdram, slot, s);
-        SndSlider ss;
-        ss.slot = slot;
-        ss.channel = ch;
-        ss.smin = b.smin;
-        ss.smax = b.smax;
-        ss.off_label = b.label_off.empty() ? "OFF" : b.label_off;
-        ss.on_label  = b.label_on.empty()  ? "MAX" : b.label_on;
-        ss.key = b.behavior;
-        ss.get_fn = fns.toggle_get;
-        ss.set_fn = fns.toggle_set;
-        wr_b(rdram, VOL_BYTES + ch,
-             (uint8_t)byte_from_value(slider_value(rdram, ss.key, ss.get_fn), ss.smin, ss.smax));
-        s_snd_sliders.push_back(std::move(ss));
     }
 }
 
@@ -1589,6 +1760,9 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
     const uint8_t self_id = page_id(page);
 
     for (int i = 0; i < MAX_ENTRIES; ++i) s_slot[i] = {};
+
+    s_snd_sliders.clear();
+    s_snd_menu = self_id;
 
     const int32_t sc = 0x3F800000;
 
@@ -1635,6 +1809,13 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
 
     int gap = 0;
     int line = -1, line_gap = 0;
+
+    // The game centres a list on its entry count; gaps would push it down, so every line moves up by half of them.
+    int lift = 0;
+
+    for (const Button* b : lines) lift += b->gap_after;
+
+    lift /= 2;
     s_page_rows = false;
 
     for (int i = 0; i < MAX_ENTRIES; ++i) s_slot_line[i] = -1;
@@ -1657,9 +1838,12 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
         BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
         std::string text;
 
+        // A slider is the game's own volume slider while a channel byte is free (three per menu), else a text bar.
+        const bool native_slider = b.type == BType::Slider && b.confirm.empty() && add_snd_slider(rdram, b, j);
+
         if (b.type == BType::Toggle)
             text = toggle_text(rdram, b.behavior, fns.toggle_get, b.label, b.label_on, b.label_off);
-        else if (b.type == BType::Slider)
+        else if (b.type == BType::Slider && !native_slider)
             text = slider_bar_text(b.label, slider_value(rdram, b.behavior, fns.toggle_get),
                                    b.smin, b.smax, b.bar_width, b.bar_filled, b.bar_empty);
         else
@@ -1668,7 +1852,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
         uint32_t live = 0;
 
         // A toggle, cycle or slider relabels in place each frame (rs64_menu_frame) unless its key is also a `requires` condition, whose change adds or removes lines and needs a rebuild.
-        const bool value_entry = (b.type == BType::Toggle || b.type == BType::Slider) && b.confirm.empty();
+        const bool value_entry = (b.type == BType::Toggle || (b.type == BType::Slider && !native_slider)) && b.confirm.empty();
         const bool in_place = value_entry && !used_as_condition(b.behavior);
 
         if (!b.label_src.empty())
@@ -1690,18 +1874,24 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
         // Other value entries reload by re-targeting the page itself; a submenu entry opens its own page.
         const bool opener = b.type == BType::Submenu;
         const bool selfsub = (value_entry && !in_place) || !b.confirm.empty();
-        const uint8_t sub = b.type == BType::Label ? SUBTYPE_LABEL : (selfsub || opener) ? SUBTYPE_SUBMENU : SUBTYPE_HOST;
-        const int32_t param = opener ? (int32_t)page_id(b.page) : (b.type != BType::Label && selfsub) ? (int32_t)self_id : 0;
+        const bool language_pick = b.type == BType::Action && b.transition.rfind("language:", 0) == 0;
+        const uint8_t sub = native_slider ? SND_SLIDER_SUB : language_pick ? SUBTYPE_LANGUAGE : b.type == BType::Label ? SUBTYPE_LABEL : (selfsub || opener) ? SUBTYPE_SUBMENU : SUBTYPE_HOST;
+        const uint8_t native = frontend_menu_id(b.page);
+        const int32_t target = native != MENU_NONE ? (int32_t)native : (int32_t)page_id(b.page);
+        const int32_t param = language_pick ? std::atoi(b.transition.c_str() + 9) : opener ? target : (b.type != BType::Label && selfsub) ? (int32_t)self_id : 0;
         int32_t scale_bits = sc;
 
         if (b.scale != 1.0f) std::memcpy(&scale_bits, &b.scale, 4);
 
-        const int y = 36 * (line - j) + line_gap + b.y;
+        const int y = 36 * (line - j) + line_gap + b.y - lift;
         write_slot(rdram, j, Slot{ (int32_t)lbl, sub, param, (int16_t)b.x, (int16_t)y, scale_bits });
         gap += b.gap_after;
         s_slot[j] = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                       b.smin, b.smax, b.sstep, b.label_on, b.label_off };
         set_bar_layout(&s_slot[j], b);
+
+        // The game edits a native slider itself; the confirm intercept must not step it.
+        if (native_slider) s_slot[j] = {};
 
         if (opener) {
             s_slot[j].key = b.page;
@@ -1716,7 +1906,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
     }
 
     s_slot_line[back_slot] = line + 1;
-    const int back_y = 36 * (line + 1 - back_slot) + gap;
+    const int back_y = 36 * (line + 1 - back_slot) + gap - lift;
     // The game's BACK (text 0xA4) per text language.
     static const char* const kBack[] = { "BACK", "ZUR\xDC" "CK", "RETOUR", "BACK", "BACK" };
     const char* back = kBack[std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1)];
@@ -1729,6 +1919,450 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
 
     return (int)lines.size() + 1;
 }
+
+// ---- Controls menu (mod controls-menu): CONTROLLER SETTINGS becomes a scrolling list of rebindable actions ----
+
+namespace ri = rs64::input;
+
+constexpr const char* kControlsMod = "controls-menu";
+constexpr const char* kControlsPage = "controls";
+
+// Visible list rows, then RESET TO DEFAULTS and BACK in the last two slots.
+constexpr int kCtlRows = MAX_ENTRIES - 2;
+constexpr int kCtlResetSlot = kCtlRows, kCtlBackSlot = kCtlRows + 1;
+constexpr uint32_t PAD_PRESSED = 0x0013A960u;
+constexpr uint32_t kNavUp = 0x00200800u, kNavDown = 0x00100400u, kNavLeft = 0x00800200u, kNavRight = 0x00400100u;
+constexpr float kCtlScale = 1.0f;
+constexpr int kCtlTopY = -158, kCtlPitch = 36, kCtlBackGap = 10, kCtlX = 15;
+constexpr uint16_t kCtlTabStop = 200, kCtlEndStop = 350;
+constexpr uint32_t kCtlFlashMs = 2000, kCtlQuietMs = 250;
+constexpr const char* kCtlReset = "RESET TO DEFAULTS";
+
+// Rows are centred on their last glyph: ending each at the end stop with the font's blank glyph ('`', ensure_menu_period) gives them one width, so the binding column lines up.
+constexpr const char* kCtlRowEnd = "\t`";
+
+struct ControlsScreen {
+    bool shown = false;
+    bool tabs = false;
+    ri::Device dev = ri::Device::Keyboard;
+    std::vector<ri::ControlRow> rows;
+    rs64::menu::ScrollPos pos{ 0, 0 };
+    uint32_t bufs[kCtlRows] = {};
+    uint32_t dirty = 0;
+    int capturing = -1;
+    int back_from = 0;
+    uint32_t quiet_until = 0;
+    int flash_row = -1;
+    std::string flash;
+    uint32_t flash_until = 0;
+};
+
+ControlsScreen s_ctl;
+
+// Mouse wheel notches from the SDL thread (up positive), taken by the next menu pass as up/down steps.
+std::atomic<int> s_ctl_wheel{0};
+
+bool controls_enabled() {
+    return recomp::mods::is_mod_enabled(kControlsMod);
+}
+
+// List rows (the actions); pos.sel == ctl_total() is RESET TO DEFAULTS and ctl_total() + 1 is BACK, below the list.
+int ctl_total() {
+    return (int)s_ctl.rows.size();
+}
+
+int ctl_slot_of(int sel) {
+    return sel < ctl_total() ? sel - s_ctl.pos.top : sel == ctl_total() ? kCtlResetSlot : kCtlBackSlot;
+}
+
+std::string ctl_action_name(ri::Target t)
+{
+
+    for (const auto& r : s_ctl.rows) {
+        if (r.target == t) return r.action;
+    }
+
+    return ri::target_label(t);
+}
+
+std::string ctl_row_text(int r)
+{
+
+    if (r >= (int)s_ctl.rows.size()) return kCtlReset;
+
+    const ri::ControlRow& row = s_ctl.rows[r];
+
+    if (r == s_ctl.flash_row && SDL_GetTicks() < s_ctl.flash_until) return s_ctl.flash;
+
+    // A whole-row prompt, so the binding column only has to fit binding names.
+    if (r == s_ctl.capturing) return std::string(row.action) + ": " + (s_ctl.dev == ri::Device::Keyboard ? "PRESS A KEY" : "PRESS A BUTTON");
+
+    std::lock_guard<std::mutex> lk(rs64::app::g_bindings_mtx);
+    const int k = ri::shown_source(rs64::app::g_bindings, row.target, s_ctl.dev);
+    const ri::Source none{};
+
+    return std::string(row.action) + "\t" + ri::menu_source_name(k >= 0 ? rs64::app::g_bindings.targets[(int)row.target][k] : none) + kCtlRowEnd;
+}
+
+// The controller model's mesh (loadControllerModel); the controls mod's keyboard and gamepad models load beside it, swapped in on entry.
+constexpr uint32_t kControllerMesh = 0x000CF0ECu;
+uint32_t s_ctl_mesh_orig = 0;
+uint32_t s_ctl_mesh[3] = {};
+
+void controls_show_model(uint8_t* rdram, bool on)
+{
+
+    if (!s_ctl_mesh_orig) return;
+
+    const uint32_t m = on ? s_ctl_mesh[(int)s_ctl.dev] : 0;
+
+    wr_w(rdram, kControllerMesh, (int32_t)(m ? m : s_ctl_mesh_orig));
+}
+
+// Visible slot i: the top row's end blank becomes '^' with rows above it, the bottom row's '#' with rows below (the scroll arrows ensure_menu_period draws).
+std::string ctl_slot_text(int i)
+{
+
+    std::string t = ctl_row_text(s_ctl.pos.top + i);
+    const bool more_above = i == 0 && s_ctl.pos.top > 0;
+    const bool more_below = i == kCtlRows - 1 && s_ctl.pos.top + kCtlRows < ctl_total();
+
+    if (!t.empty() && t.back() == '`' && (more_above || more_below)) t.back() = more_above ? '^' : '#';
+
+    return t;
+}
+
+// Entry offset for a row drawn at absolute y: the game places entry i at list_base + 36*i - 18*count + offset.
+int16_t ctl_offset_y(int16_t base, int i, int y) {
+    return (int16_t)(y - base - 36 * i + 18 * MAX_ENTRIES);
+}
+
+// setupMenuData tail on CONTROLLER SETTINGS (natively just BACK): the list rows (live buffers the frame hook relabels), RESET TO DEFAULTS and BACK.
+int controls_install(uint8_t* rdram)
+{
+
+    Slot back = read_slot(rdram, 0);
+    const int16_t base = rd_h(rdram, GCMD_OFF + 0x96);
+    int32_t scale_bits = 0;
+
+    std::memcpy(&scale_bits, &kCtlScale, 4);
+
+    s_ctl = ControlsScreen{};
+    s_ctl.shown = true;
+    s_ctl.dev = rs64::app::last_device();
+    s_ctl.rows = ri::control_rows(s_ctl.dev);
+
+    for (int i = 0; i < kCtlRows; ++i)
+    {
+        s_ctl.bufs[i] = live_buffer(rdram, "controls#" + std::to_string(i));
+
+        if (!s_ctl.bufs[i]) return -1;
+
+        write_live(rdram, s_ctl.bufs[i], ctl_slot_text(i));
+        write_slot(rdram, i, Slot{ (int32_t)s_ctl.bufs[i], SUBTYPE_HOST, 0, (int16_t)kCtlX, ctl_offset_y(base, i, kCtlTopY + kCtlPitch * i), scale_bits });
+        s_slot[i] = {};
+    }
+
+    const int reset_y = kCtlTopY + kCtlPitch * kCtlRows + kCtlBackGap;
+
+    write_slot(rdram, kCtlResetSlot, Slot{ (int32_t)alloc_str(rdram, kCtlReset), SUBTYPE_HOST, 0, 0, ctl_offset_y(base, kCtlResetSlot, reset_y), scale_bits });
+    s_slot[kCtlResetSlot] = {};
+    back.y = ctl_offset_y(base, kCtlBackSlot, reset_y + kCtlPitch + kCtlBackGap);
+    write_slot(rdram, kCtlBackSlot, back);
+    s_slot[kCtlBackSlot] = {};
+    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)MAX_ENTRIES);
+    wr_b(rdram, GCMD_OFF + 0x94, 0);
+    controls_show_model(rdram, true);
+
+    // Opened from the mod's CONTROLS page (BINDINGS), so BACK and B return there rather than to OPTIONS.
+    if (const uint8_t page = page_id(kControlsPage); page != 0xFF) wr_b(rdram, GCMD_OFF + 0x05, page);
+
+    fprintf(stderr, "[controls] list for device %d, %d rows\n", (int)s_ctl.dev, ctl_total());
+
+    return MAX_ENTRIES;
+}
+
+bool controls_on_screen(uint8_t* rdram) {
+    return s_ctl.shown && rd_b(rdram, GCMD_OFF + 0x04) == MENU_CONTROLLER_SETTINGS;
+}
+
+// A on a list row: start a capture for the screen's device, or reset that device's bindings.
+bool controls_confirm(uint8_t* rdram, int e)
+{
+
+    if (!controls_on_screen(rdram) || e > kCtlResetSlot || s_ctl.capturing >= 0) return false;
+
+    const int r = s_ctl.pos.top + e;
+
+    if (e == kCtlResetSlot)
+    {
+        rs64::app::reset_device_bindings(s_ctl.dev);
+        s_ctl.dirty = (1u << kCtlRows) - 1;
+
+        return true;
+    }
+
+    if (!rs64::app::capture_device_present(s_ctl.dev)) return true;
+
+    s_ctl.capturing = r;
+    s_ctl.flash_row = -1;
+    rs64::app::capture_begin({ false, s_ctl.dev });
+    s_ctl.dirty |= 1u << e;
+
+    return true;
+}
+
+// The capture: the menu sees no presses until it ends; a taken input swaps with the action that held it.
+void controls_poll_capture(uint8_t* rdram)
+{
+
+    wr_w(rdram, PAD_PRESSED, 0);
+
+    ri::Source got;
+    const int c = rs64::app::capture_poll(&got);
+
+    if (c == 0) return;
+
+    // The input just bound is still held, and the game would read it as a fresh press of its new N64 button (A = confirm restarts the capture).
+    const int r = s_ctl.capturing;
+    s_ctl.capturing = -1;
+    s_ctl.quiet_until = SDL_GetTicks() + kCtlQuietMs;
+    s_ctl.dirty = (1u << kCtlRows) - 1;
+
+    if (c < 0) return;
+
+    std::unique_lock<std::mutex> lk(rs64::app::g_bindings_mtx);
+    const ri::Target gave = ri::rebind(rs64::app::g_bindings, s_ctl.rows[r].target, s_ctl.dev, got);
+
+    ri::save_bindings(rs64::app::g_bindings, ri::default_config_path());
+    lk.unlock();
+
+    if (gave == ri::Target::Count) return;
+
+    s_ctl.flash_row = r;
+    s_ctl.flash = "SWAPPED WITH " + ctl_action_name(gave);
+    s_ctl.flash_until = SDL_GetTicks() + kCtlFlashMs;
+}
+
+// Each front-end pass before the menu reads the pad: tab stops on entry/exit, the capture, and up/down scrolling the window (left/right would cycle presets).
+void controls_pass(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!controls_on_screen(rdram))
+    {
+        if (s_ctl.tabs) rs64::mips::mips_call(rdram, ctx, 0x80063EC0u, {5u});
+
+        if (s_ctl.capturing >= 0) rs64::app::capture_end();
+
+        if (s_ctl.shown) controls_show_model(rdram, false);
+
+        s_ctl_wheel.store(0);
+
+        s_ctl.shown = false;
+        s_ctl.tabs = false;
+        s_ctl.capturing = -1;
+
+        return;
+    }
+
+    if (!s_ctl.tabs)
+    {
+        static uint32_t s_stops = 0;
+
+        if (!s_stops) {
+            void* p = recomp::alloc(rdram, 4);
+
+            if (!p) return;
+
+            s_stops = (uint32_t)((uint8_t*)p - rdram) + 0x80000000u;
+        }
+
+        wr_h(rdram, s_stops - 0x80000000u, (int16_t)kCtlTabStop);
+        wr_h(rdram, s_stops - 0x80000000u + 2, (int16_t)kCtlEndStop);
+        rs64::mips::mips_call(rdram, ctx, 0x80063E98u, {5u, s_stops, 2u});
+        s_ctl.tabs = true;
+        s_ctl.dirty = (1u << kCtlRows) - 1;
+    }
+
+    if (s_ctl.flash_row >= 0 && SDL_GetTicks() >= s_ctl.flash_until)
+    {
+        s_ctl.flash_row = -1;
+        s_ctl.dirty = (1u << kCtlRows) - 1;
+    }
+
+    // Wheel notches while waiting for an input are dropped.
+    if (s_ctl.capturing >= 0)
+    {
+        s_ctl_wheel.store(0);
+        controls_poll_capture(rdram);
+
+        return;
+    }
+
+    if (SDL_GetTicks() < s_ctl.quiet_until)
+    {
+        wr_w(rdram, PAD_PRESSED, 0);
+
+        return;
+    }
+
+    uint32_t p = (uint32_t)rd_w(rdram, PAD_PRESSED);
+    const int wheel = s_ctl_wheel.exchange(0);
+
+    if (wheel) p |= wheel > 0 ? kNavUp : kNavDown;
+
+    if (!(p & (kNavUp | kNavDown | kNavLeft | kNavRight))) return;
+
+    wr_w(rdram, PAD_PRESSED, (int32_t)(p & ~(kNavUp | kNavDown | kNavLeft | kNavRight)));
+
+    // A mouse or touch hover may have moved the highlight since the last step.
+    const int slot = rd_b(rdram, GCMD_OFF + 0x94);
+    const int n = ctl_total(), reset = n, back = n + 1;
+    int& sel = s_ctl.pos.sel;
+
+    sel = slot == kCtlResetSlot ? reset : slot >= kCtlBackSlot ? back : std::min(s_ctl.pos.top + slot, n - 1);
+
+    const int top = s_ctl.pos.top;
+
+    // Left/right leave the list for RESET TO DEFAULTS and return to the row left from (the window keeps its place).
+    if (!(p & (kNavUp | kNavDown))) {
+        if (sel < n) {
+            s_ctl.back_from = sel;
+            sel = reset;
+        } else {
+            sel = std::clamp(s_ctl.back_from, s_ctl.pos.top, s_ctl.pos.top + kCtlRows - 1);
+        }
+    } else if (p & kNavDown) {
+        if (sel == back) s_ctl.pos = { 0, 0 };
+        else if (sel >= n - 1) ++sel;
+        else s_ctl.pos = rs64::menu::scroll_step(s_ctl.pos, 1, n, kCtlRows);
+    } else {
+        if (sel == 0) sel = back;
+        else if (sel == back) sel = reset;
+        else if (sel == reset) s_ctl.pos = { n - 1, std::max(0, n - kCtlRows) };
+        else s_ctl.pos = rs64::menu::scroll_step(s_ctl.pos, -1, n, kCtlRows);
+    }
+
+    if (s_ctl.pos.top != top) s_ctl.dirty = (1u << kCtlRows) - 1;
+
+    wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)ctl_slot_of(s_ctl.pos.sel));
+    rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, {0x17u, 0x7Fu, 0x40u});
+}
+
+// The front-end photo behind every menu (element *0x800CF15C, its draw object at +0xC): with flag 2 in +0x14 its prim colour +0x2C tints the
+// texture (drawSubtitleText 0x80016010), so the list's page sets half grey each frame and gives the shared object back on leaving.
+constexpr uint32_t kBgElem = 0x000CF15Cu;
+constexpr int32_t kBgDim = 0x808080FF;
+uint32_t s_bg_obj = 0;
+int32_t s_bg_flags = 0, s_bg_rgba = 0;
+
+void controls_dim_background(uint8_t* rdram, bool on)
+{
+
+    const uint32_t elem = (uint32_t)rd_w(rdram, kBgElem);
+    const uint32_t obj = elem >= 0x80000000u && elem < 0x80800000u ? (uint32_t)rd_w(rdram, elem - 0x80000000u + 0x0C) : 0;
+    const bool valid = obj >= 0x80000000u && obj < 0x80800000u;
+
+    if (!on || !valid)
+    {
+        if (s_bg_obj && s_bg_obj == obj) {
+            wr_w(rdram, obj - 0x80000000u + 0x14, s_bg_flags);
+            wr_w(rdram, obj - 0x80000000u + 0x2C, s_bg_rgba);
+        }
+
+        s_bg_obj = 0;
+
+        return;
+    }
+
+    const uint32_t o = obj - 0x80000000u;
+
+    if (s_bg_obj != obj) {
+        s_bg_obj = obj;
+        s_bg_flags = rd_w(rdram, o + 0x14);
+        s_bg_rgba = rd_w(rdram, o + 0x2C);
+    }
+
+    wr_w(rdram, o + 0x14, s_bg_flags | 2);
+    wr_w(rdram, o + 0x2C, kBgDim);
+}
+
+// Each front-end frame: dim the photo behind the list, rewrite changed rows and relay them out in place.
+void controls_frame(uint8_t* rdram, recomp_context* ctx)
+{
+
+    controls_dim_background(rdram, controls_on_screen(rdram));
+
+    if (!controls_on_screen(rdram) || !s_ctl.dirty) return;
+
+    for (int i = 0; i < kCtlRows; ++i)
+    {
+        if (s_ctl.dirty & (1u << i)) write_live(rdram, s_ctl.bufs[i], ctl_slot_text(i));
+    }
+
+    rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, s_ctl.dirty, 0u});
+    s_ctl.dirty = 0;
+}
+}
+
+// Mission start (initAllPlayersHudTracking copies D_80109AD0[preset] per player): with the controls mod on, every preset slot points at Luke's
+// table, so gameplay matches the list while the saved preset byte stays the player's. Replays keep their recorded preset.
+extern "C" int rs64_ls_replaying(void);
+
+// loadControllerModel, after the N64 controller is set up (0x800C4BD8): the keyboard and gamepad models load the same way
+// (load_hmt_and_hob, walkMeshdef0List by object name, 0x8005955C), from the mod's frontend/controller/<name> assets.
+extern "C" void rs64_controls_load_models(uint8_t* rdram, recomp_context* ctx)
+{
+
+    s_ctl_mesh_orig = (uint32_t)rd_w(rdram, kControllerMesh);
+    std::fill(std::begin(s_ctl_mesh), std::end(s_ctl_mesh), 0u);
+
+    if (!controls_enabled()) return;
+
+    for (const auto& [dev, name] : { std::pair{ ri::Device::Keyboard, "keyboard" }, std::pair{ ri::Device::Gamepad, "gamepad" }, std::pair{ ri::Device::Joystick, "joystick" } })
+    {
+        rs64::mips::mips_call(rdram, ctx, 0x8005645Cu, {alloc_str(rdram, std::string("frontend/controller/") + name), 0u, 0u, 0u});
+
+        const uint32_t mesh = rs64::mips::mips_call(rdram, ctx, 0x80056EB0u, {alloc_str(rdram, name)}).v0;
+
+        if (!mesh) {
+            fprintf(stderr, "[controls] %s model not found\n", name);
+            continue;
+        }
+
+        rs64::mips::mips_call(rdram, ctx, 0x8005955Cu, {mesh, 0u, 0x01060000u, 0u});
+        s_ctl_mesh[(int)dev] = mesh;
+    }
+
+    fprintf(stderr, "[controls] models: controller %08X keyboard %08X gamepad %08X joystick %08X\n", s_ctl_mesh_orig, s_ctl_mesh[0], s_ctl_mesh[1], s_ctl_mesh[2]);
+}
+
+extern "C" void rs64_controls_wheel(int steps) {
+    s_ctl_wheel.fetch_add(steps);
+}
+
+extern "C" int rs64_controls_menu_active(void) {
+    return controls_enabled() ? 1 : 0;
+}
+
+extern "C" void rs64_controls_force_luke(uint8_t* rdram)
+{
+
+    constexpr uint32_t kMissionPresets = 0x00109AD0u, kLuke = 0x8009DE18u;
+
+    if (!controls_enabled() || rs64_ls_replaying()) return;
+
+    static bool s_logged = false;
+
+    if (!s_logged)
+    {
+        s_logged = true;
+
+        fprintf(stderr, "[controls] mission presets %08X %08X %08X %08X -> Luke %08X\n", (uint32_t)rd_w(rdram, kMissionPresets), (uint32_t)rd_w(rdram, kMissionPresets + 4),
+                (uint32_t)rd_w(rdram, kMissionPresets + 8), (uint32_t)rd_w(rdram, kMissionPresets + 12), kLuke);
+    }
+
+    for (uint32_t k = 0; k < 4; ++k) wr_w(rdram, kMissionPresets + 4 * k, (int32_t)kLuke);
 }
 
 // ---- Front-end hook entry points ----
@@ -1789,6 +2423,7 @@ extern "C" int rs64_menu_install_main(uint8_t* rdram)
     s_shown_page = page_name(menu) ? menu : 0xFF;
 
     if (const std::string* page = page_name(menu)) return build_mod_page(rdram, *page, page_parent(menu));
+    if (menu == MENU_CONTROLLER_SETTINGS && controls_enabled()) return controls_install(rdram);
     if (frontend_menu_name(menu)) rebuild_frontend_menu(rdram, menu);
     if (menu == MENU_SOUND_SETTINGS) sound_settings_install(rdram);
 
@@ -1821,6 +2456,8 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram)
 
         return;
     }
+
+    if (controls_confirm(rdram, e)) return;
 
     if (e < MAX_ENTRIES && s_slot[e].set) s_confirms.fetch_add(1, std::memory_order_relaxed);
     if (e >= MAX_ENTRIES || !s_slot[e].set) return;
@@ -2008,6 +2645,9 @@ extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx)
     rs64::host::dispatch(RS64_HOOK_MENU_PAD, rdram, ctx);
 
     if (page_shown) page_row_nav(rdram);
+
+    controls_pass(rdram, ctx);
+
     if (s_pilot_page.empty() || menu != page_id(s_pilot_page)) return;
 
     // A carousel slot still loading ramps its fade back up: keep it down while the page is shown.
@@ -2048,10 +2688,140 @@ static bool take_hover_sound(int kind) {
     return s_hover_sound.compare_exchange_strong(want, 0);
 }
 
+// Keyboard typing on the letter wheels (ENTER NAME, PASSCODES): text queued on the SDL thread, entered by the wheel hooks through the game's own A/B path.
+static std::mutex s_typed_mtx;
+static std::string s_typed;
+static std::atomic<bool> s_typing{false};
+static bool s_wheel_seen = false;
+
+extern "C" int rs64_menu_typing(void) {
+    return s_typing.load() ? 1 : 0;
+}
+
+extern "C" int rs64_menu_type(const char* utf8, int key)
+{
+
+    if (!s_typing.load() || (!utf8 && key != '\b'))
+    {
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lk(s_typed_mtx);
+
+    if (!utf8) {
+        s_typed.push_back('\b');
+        return 1;
+    }
+
+    for (const char* p = utf8; *p && s_typed.size() < 16; ++p) {
+        s_typed.push_back((char)std::toupper((unsigned char)*p));
+    }
+
+    return 1;
+}
+
+static bool typed_pending() {
+
+    std::lock_guard<std::mutex> lk(s_typed_mtx);
+
+    return !s_typed.empty();
+}
+
+// Next typed key: its index in the wheel's alphabet (0x800CCBF0 -> "ABC...Z!?&"), -2 for Backspace, -1 for none; other characters are dropped.
+static int pop_typed(uint8_t* rdram)
+{
+
+    const uint32_t abc = (uint32_t)rd_w(rdram, 0x800CCBF0u - 0x80000000u) - 0x80000000u;
+    std::lock_guard<std::mutex> lk(s_typed_mtx);
+
+    while (!s_typed.empty()) {
+        const char c = s_typed.front();
+
+        s_typed.erase(0, 1);
+
+        if (c == '\b')
+        {
+            return -2;
+        }
+
+        for (int i = 0; abc < 0x800000u && i < 32 && rd_b(rdram, abc + i); ++i) {
+            if (rd_b(rdram, abc + i) == (uint8_t)c)
+            {
+                return i;
+            }
+        }
+    }
+
+    return -1;
+}
+
+// Right after the wheel call ($v0 = highlighted letter, $fp = port): a typed letter replaces $v0 and presses A; Backspace presses B.
+extern "C" void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx)
+{
+
+    s_wheel_seen = true;
+
+    const uint32_t wheel = (uint32_t)rd_w(rdram, 0x800CF258u - 0x80000000u) - 0x80000000u;
+    const int32_t spin = rd_w(rdram, wheel + 0x14EC);
+
+    // The game enters a letter only with the wheel at rest (spin speed 0.0f); the key waits.
+    if (wheel >= 0x800000u || (spin & 0x7FFFFFFF) != 0) return;
+
+    const int c = pop_typed(rdram);
+
+    if (c == -1)
+    {
+        return;
+    }
+
+    const uint32_t pressed = 0x8013A960u - 0x80000000u + (uint32_t)(ctx->r30 & 0xFF) * 4;
+
+    if (c >= 0) {
+        ctx->r2 = c;
+    }
+
+    wr_w(rdram, pressed, rd_w(rdram, pressed) | (c >= 0 ? 0x8000 : 0x4000));
+}
+
+// PASSCODES row check ($s4 = menu, +0x94 = cursor, the wheel is row 0): a typed key moves the cursor to the wheel, as an up/down move would.
+extern "C" void rs64_passcode_row(uint8_t* rdram, recomp_context* ctx)
+{
+
+    s_wheel_seen = true;
+
+    const uint32_t menu = (uint32_t)ctx->r20 - 0x80000000u;
+
+    if (!typed_pending() || rd_b(rdram, menu + 0x94) == 0) return;
+
+    wr_b(rdram, menu + 0x94, 0);
+    rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, { 0x17, 0x7F, 0x40 });
+    wr_w(rdram, menu + 0x9C, 0);
+    wr_w(rdram, menu + 0xA0, rd_w(rdram, 0x800A66F0u - 0x80000000u));
+}
+
 extern "C" void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx)
 {
 
-    s_slider_editing.store(ctx->r22 == 0x11 && rd_b(rdram, GCMD_OFF + 0x04) == MENU_SOUND_SETTINGS);
+    s_slider_editing.store(ctx->r22 == 0x11 && (rd_b(rdram, GCMD_OFF + 0x04) == MENU_SOUND_SETTINGS || snd_sliders_here(rdram)));
+    // A wheel hook ran on the previous pass: typing stays on (on a phone this raises the keyboard).
+    const bool typing = s_wheel_seen;
+
+    s_wheel_seen = false;
+
+    if (typing != s_typing.load()) {
+        s_typing.store(typing);
+
+        if (typing) {
+            SDL_StartTextInput();
+        } else {
+            SDL_StopTextInput();
+        }
+
+        if (!typing) {
+            std::lock_guard<std::mutex> lk(s_typed_mtx);
+            s_typed.clear();
+        }
+    }
 
     // As menuControllerInput does on a move (0x800B5108): sfx 0x17, then restart the highlight pulse.
     if (take_hover_sound(1)) {
@@ -2076,7 +2846,7 @@ extern "C" int rs64_menu_slider_editing(void) {
 extern "C" void rs64_slider_redirect(uint8_t* rdram, uint32_t sp)
 {
 
-    if (rd_b(rdram, GCMD_OFF + 0x04) != MENU_SOUND_SETTINGS || sp < 0x80000000u) return;
+    if (!snd_sliders_here(rdram) || sp < 0x80000000u) return;
 
     const SndSlider* ss = snd_slider_for_slot(rd_b(rdram, GCMD_OFF + 0x94));
 
@@ -2114,7 +2884,7 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId)
         }
     }
 
-    if (rd_b(rdram, GCMD_OFF + 0x04) != MENU_SOUND_SETTINGS) return 0;
+    if (!snd_sliders_here(rdram)) return 0;
 
     const SndSlider* ss = snd_slider_for_slot(rd_b(rdram, GCMD_OFF + 0x94));
 
@@ -2126,29 +2896,33 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId)
 }
 
 // The italic menu font ("italic35") lacks '.', a period-wide blank ('`', status_dots padding) and a caret ('|'): the '&', '"' and '/' slots (no language's text uses them; German needs the umlauts) become them, cut from the font's own
-// ':' (lower dot; blank) and '!' (its stem). Glyphs are D_80128F08 entries (0x24: W @8, size @0xC, data @0x10, name @0x14 = "F" char "A"); charset 0x8003B450 and widths 0x8009EDA8 share the index.
+// ':' (lower dot; blank) and '!' (its stem). Glyphs are D_80128F08 entries (0x24: W @8, size @0xC, data @0x10, name @0x14 = "F" char "A"); the font's charset and widths share the index.
 static void ensure_menu_period(uint8_t* rdram)
 {
 
-    constexpr uint32_t kCharset = 0x3B450u, kWidths = 0x9EDA8u;
-    enum Rows { kLastRun, kNone, kAllButLastRun };
+    enum Rows { kLastRun, kNone, kAllButLastRun, kUpArrow, kDownArrow };
     struct Glyph { int slot; uint8_t from; uint8_t to; uint8_t src; int src_slot; Rows rows; };
-    static const Glyph kGlyphs[] = {{40, '&', '.', ':', 36, kLastRun}, {41, '"', '`', ':', 36, kNone}, {39, '/', '|', '!', 44, kAllButLastRun}};
+
+    // ';' and '_' (not in the letter wheels' alphabet) become the Controls list's scroll arrows '^' and '#', blank-wide so a row keeps its width.
+    static const Glyph kGlyphs[] = {{40, '&', '.', ':', 36, kLastRun}, {41, '"', '`', ':', 36, kNone}, {39, '/', '|', '!', 44, kAllButLastRun},
+                                    {35, ';', '^', ':', 36, kUpArrow}, {37, '_', '#', ':', 36, kDownArrow}};
     constexpr int kCount = (int)(sizeof(kGlyphs) / sizeof(kGlyphs[0]));
 
-    for (const Glyph& g : kGlyphs) {
-        if (rd_b(rdram, kCharset + g.slot) == g.from) {
-            wr_b(rdram, kCharset + g.slot, g.to);
-            wr_b(rdram, kWidths + g.slot, rd_b(rdram, kWidths + g.src_slot));
-        }
-    }
-
-    // The loaded font instance (static data; charset pointer, then +0x14 a 256-byte char -> glyph index map built from the charset at load) is what text layout reads.
-    for (uint32_t a = 0x9E000u; a < 0xA0000u; a += 4)
+    // italic35 is font ids 0 and 5 (table 0x8009FC10); its object holds the charset (+0x0C), widths (+0x18) and the char -> glyph map built at load (+0x20), which language mods may move to host copies.
+    for (const uint32_t id : { 0u, 5u })
     {
-        if ((uint32_t)rd_w(rdram, a) != (0x80000000u | kCharset)) continue;
+        const uint32_t obj = (uint32_t)rd_w(rdram, 0x9FC10u + id * 4) - 0x80000000u;
+        const uint32_t charset = (uint32_t)rd_w(rdram, obj + 0x0C) - 0x80000000u;
+        const uint32_t widths = (uint32_t)rd_w(rdram, obj + 0x18) - 0x80000000u;
 
-        const uint32_t map = (uint32_t)rd_w(rdram, a + 0x14);
+        for (const Glyph& g : kGlyphs) {
+            if (rd_b(rdram, charset + g.slot) == g.from) {
+                wr_b(rdram, charset + g.slot, g.to);
+                wr_b(rdram, widths + g.slot, rd_b(rdram, widths + g.src_slot));
+            }
+        }
+
+        const uint32_t map = (uint32_t)rd_w(rdram, obj + 0x20);
 
         if (map < 0x80000000u || map >= 0x80800000u || rd_b(rdram, (map & 0x7FFFFFu) + ':') != 36) continue;
 
@@ -2158,16 +2932,16 @@ static void ensure_menu_period(uint8_t* rdram)
 
     const uint32_t table = (uint32_t)rd_w(rdram, 0x128F08u);
 
-    if (table < 0x80000000u || table >= 0x80800000u) return;
+    if (table < 0x80000000u || table >= 0x81000000u) return;
 
     // A reloaded font gets fresh records; converted ones are renamed to their new character.
     static uint32_t s_done = 0;
 
-    if (s_done && rd_b(rdram, (s_done & 0x7FFFFFu) + 0x15) == '.') return;
+    if (s_done && rd_b(rdram, (s_done - 0x80000000u) + 0x15) == '.') return;
 
     uint32_t rec[kCount] = {}, src_rec[kCount] = {};
 
-    for (uint32_t e = table & 0x7FFFFFu, n = 0; n < 4096 && e + 0x24 <= 0x800000u; e += 0x24, ++n)
+    for (uint32_t e = table - 0x80000000u, n = 0; n < 4096 && e + 0x24 <= 0x1000000u; e += 0x24, ++n)
     {
         if (rd_b(rdram, e + 0x14) != 'F' || rd_b(rdram, e + 0x16) != 'A' || rd_b(rdram, e + 0x17) != 0) continue;
 
@@ -2188,7 +2962,7 @@ static void ensure_menu_period(uint8_t* rdram)
 
     for (int k = 0; k < kCount; ++k)
     {
-        const uint32_t src = (uint32_t)rd_w(rdram, src_rec[k] + 0x10) & 0x7FFFFFu;
+        const uint32_t src = (uint32_t)rd_w(rdram, src_rec[k] + 0x10) - 0x80000000u;
         const uint16_t size = (uint16_t)rd_h(rdram, src_rec[k] + 0x0C);
         const uint32_t stride = size / kRows;
 
@@ -2210,9 +2984,30 @@ static void ensure_menu_period(uint8_t* rdram)
         while (first > 0 && row_lit(first - 1)) --first;
         if (stride == 0 || last < 0) return;
 
-        const uint32_t dst = (uint32_t)rd_w(rdram, rec[k] + 0x10) & 0x7FFFFFu;
+        const uint32_t dst = (uint32_t)rd_w(rdram, rec[k] + 0x10) - 0x80000000u;
+        const Rows mode = kGlyphs[k].rows;
 
-        for (uint32_t i = 0; i < size; ++i)
+        // A filled triangle in the source's box, apex on the colon's dot rows' span: I4 nibbles, high = left pixel; odd rows have their two words swapped.
+        if (mode == kUpArrow || mode == kDownArrow)
+        {
+            const int w = rd_h(rdram, src_rec[k] + 0x08);
+            const int h = last - first + 8, top = last - h + 1, cx2 = w - 1;
+            auto lit = [&](int x, int y) {
+
+                const int r = mode == kUpArrow ? y - top : top + h - 1 - y;
+
+                return r >= 0 && r < h && std::abs(2 * x - cx2) <= r * cx2 / (h - 1);
+            };
+
+            for (uint32_t i = 0; i < size; ++i)
+            {
+                const int y = (int)(i / stride), j = (int)(i % stride);
+                const uint8_t v = (uint8_t)((lit(2 * j, y) ? 0xF0 : 0) | (lit(2 * j + 1, y) ? 0x0F : 0));
+                wr_b(rdram, dst + y * stride + ((y & 1) && stride >= 8 ? (j ^ 4) : j), v);
+            }
+        }
+
+        for (uint32_t i = 0; i < size && mode != kUpArrow && mode != kDownArrow; ++i)
         {
             const int y = (int)(i / stride);
             const bool keep = kGlyphs[k].rows == kLastRun ? (y >= first && y <= last) : kGlyphs[k].rows == kAllButLastRun ? (y < first) : false;
@@ -2234,6 +3029,8 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
 {
 
     ensure_menu_period(rdram);
+    rs64::lang::flush(rdram);
+    controls_frame(rdram, ctx);
 
     // A changed live label is rewritten in its buffer and relaid out in place (0x800C4C8C(menu, entry mask, 0), as the name entry does).
     if (page_name(rd_b(rdram, GCMD_OFF + 0x04)))
@@ -2265,12 +3062,18 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
         if (mask) rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, mask, 0u});
     }
 
-    if (rd_b(rdram, GCMD_OFF + 0x04) != MENU_SOUND_SETTINGS) return;
+    if (!snd_sliders_here(rdram)) return;
 
-    for (const auto& ss : s_snd_sliders)
+    // Only a moved slider is applied: setters save their settings file.
+    for (auto& ss : s_snd_sliders)
     {
-        int byte = rd_b(rdram, VOL_BYTES + ss.channel);
-        slider_apply(rdram, ss.key, ss.set_fn, value_from_byte(byte, ss.smin, ss.smax));
+        const int byte = rd_b(rdram, VOL_BYTES + ss.channel);
+
+        if (byte == ss.last_byte) continue;
+
+        if (ss.last_byte >= 0) slider_apply(rdram, ss.key, ss.set_fn, value_from_byte(byte, ss.smin, ss.smax));
+
+        ss.last_byte = byte;
     }
 }
 
@@ -2303,6 +3106,27 @@ struct PauseBinding {
 };
 
 std::unordered_map<uint16_t, PauseBinding> s_pause_marks;
+
+// Native pause sliders (the AUDIO page's widget, pauseMenuAudioSettings 0x80109E68): title and endpoint rows carry nextMenu PAUSE_SLIDER_MARK + k,
+// the two bar rows textId PAUSE_BAR_TID + k (valid text ids past the game's 0-2 channels), so the load/store/draw hooks find slider k and its channel byte.
+constexpr uint16_t PAUSE_SLIDER_MARK = 0xF800;
+constexpr uint16_t PAUSE_BAR_TID     = 3;
+constexpr int      PAUSE_SLIDER_TOP  = 0x7F;
+constexpr uint32_t SPEECH_BYTE       = 0x130B62;
+
+struct PauseSlider {
+    int channel = 0, smin = 0, smax = 100;
+    std::string key, off_label, on_label;
+    recomp_func_t* get_fn = nullptr, * set_fn = nullptr;
+};
+
+std::vector<PauseSlider> s_pause_sliders;
+bool s_pause_seeded = false;
+int s_pause_speech = -1;
+
+const PauseSlider* pause_slider(uint16_t key, uint16_t base) {
+    return key >= base && key - base < (int)s_pause_sliders.size() ? &s_pause_sliders[key - base] : nullptr;
+}
 std::unordered_map<uint32_t, std::string> s_pause_text;
 std::unordered_map<uint8_t, uint8_t> s_pause_parent_of;
 bool s_pause_built = false;
@@ -2336,15 +3160,20 @@ struct PauseWriter {
     int lines = 0;
     int glyphs = 0;
 
-    // Entries kept free for the ones that must follow (a page's spacer and BACK).
+    // Entries kept free for the ones that must follow (a page's spacer and BACK); reserve_lines counts only the drawn ones (-1: all of them).
     int reserve = 0;
+    int reserve_lines = -1;
+
+    int line_reserve() const {
+        return reserve_lines >= 0 ? reserve_lines : reserve;
+    }
 
     bool add(uint16_t flags, uint16_t tid, uint16_t next, const std::string& text)
     {
 
         const bool drawn = (flags & 0x1000) == 0;
 
-        if ((drawn && lines + 1 + reserve > PAUSE_MAX_LINES) || glyphs + (int)text.size() > PAUSE_MAX_GLYPHS) return false;
+        if ((drawn && lines + 1 + line_reserve() > PAUSE_MAX_LINES) || glyphs + (int)text.size() > PAUSE_MAX_GLYPHS) return false;
         if (off + 6u * (1u + (uint32_t)reserve) + 2u > limit) return false;
 
         wr_h(rdram, off + 0, (int16_t)flags);
@@ -2400,6 +3229,26 @@ void add_pause_button(PauseWriter& w, const Button& b, uint8_t self)
 
     const uint16_t mark = (uint16_t)(PAUSE_MARK_BASE + (&b - config().buttons.data()));
     BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
+
+    // A slider is the native four-row widget (title, endpoints, two bar halves) while a channel byte is free and the rows fit, else a text bar.
+    const int k = (int)s_pause_sliders.size();
+    const bool fits = w.lines + 4 + w.line_reserve() <= PAUSE_MAX_LINES && w.off + 6u * (4u + (uint32_t)w.reserve) + 2u <= w.limit;
+
+    if (b.type == BType::Slider && b.confirm.empty() && SND_CH_FIRST + k <= SND_CH_LAST && fits)
+    {
+        PauseSlider ps{ SND_CH_FIRST + k, b.smin, b.smax, b.behavior, b.label_off.empty() ? "OFF" : b.label_off,
+                        b.label_on.empty() ? "MAX" : b.label_on, fns.toggle_get, fns.toggle_set };
+
+        if (!s_pause_seeded) wr_b(w.rdram, VOL_BYTES + ps.channel, (uint8_t)byte_from_value(slider_value(w.rdram, b.behavior, fns.toggle_get), b.smin, b.smax, PAUSE_SLIDER_TOP));
+
+        s_pause_sliders.push_back(std::move(ps));
+        w.add(0x4201, PAUSE_TEXTID, (uint16_t)(PAUSE_SLIDER_MARK + k), b.label);
+        w.add(0x4400, PAUSE_TEXTID, (uint16_t)(PAUSE_SLIDER_MARK + k), std::string{});
+        w.add(0x4800, (uint16_t)(PAUSE_BAR_TID + k), 0, std::string{});
+        w.add(0x4800, (uint16_t)(PAUSE_BAR_TID + k), 1, std::string{});
+
+        return;
+    }
 
     if (!w.add((uint16_t)b.flags, PAUSE_TEXTID, mark, std::string{})) return;
 
@@ -2497,15 +3346,44 @@ void build_pause_page(uint8_t* rdram, const std::string& page, uint8_t id)
     w.add(0x2000, PAUSE_TEXTID, 0, title);
     w.add(0x1000, 0x0002, 0, std::string{});
 
+    // The spacer before BACK is not drawn, so only BACK takes a line.
     w.reserve = 2;
+    w.reserve_lines = 1;
 
     for (const Button* b : pause_lines(rdram, page)) add_pause_button(w, *b, id);
 
     w.reserve = 0;
+    w.reserve_lines = -1;
 
     w.add(0x1000, 0x0001, 0, std::string{});
     w.add(0x4021, PAUSE_BACK_TID, parent, std::string{});
     w.end();
+}
+
+// RESET TO DEFAULTS on the CONTROLS page: the page's input settings back to their defaults, and every native slider bar showing them re-seeded.
+void reset_controls()
+{
+
+    const rs64::input::Bindings d;
+
+    input_set([&d](rs64::input::Bindings& b) {
+        b.mouse_sensitivity = d.mouse_sensitivity;
+        b.mouse_smoothing = d.mouse_smoothing;
+        b.pad_deadzone = d.pad_deadzone;
+        b.rumble.enabled = d.rumble.enabled;
+
+        for (auto& j : b.joy_devices) j.deadzone = rs64::input::JoyDevice{}.deadzone;
+    });
+
+    s_pause_seeded = false;
+
+    if (!s_rdram) return;
+
+    for (auto& ss : s_snd_sliders)
+    {
+        ss.last_byte = byte_from_value(slider_value(s_rdram, ss.key, ss.get_fn), ss.smin, ss.smax);
+        wr_b(s_rdram, VOL_BYTES + ss.channel, (uint8_t)ss.last_byte);
+    }
 }
 } // namespace
 
@@ -2524,6 +3402,7 @@ extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
     {
         s_pause_built = false;
         s_in_pause = false;
+        s_pause_seeded = false;
 
         return;
     }
@@ -2542,6 +3421,7 @@ extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
 
     s_pause_marks.clear();
     s_pause_text.clear();
+    s_pause_sliders.clear();
 
     // Root: the terminator slot takes one button.
     for (const auto& b : config().buttons)
@@ -2562,22 +3442,95 @@ extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
         break;
     }
 
-    // GAME SETTINGS: the native entries, with the mod's pause_game_settings buttons in place of the spacer.
+    // GAME SETTINGS: its title and natives with the mod's pause_game_settings buttons merged in as on the front end (hide, replace, before / after,
+    // order, index); a button without placement goes where the native spacer was, above BACK.
     PauseWriter gs{ rdram, PAUSE_HOST, PAUSE_HOST + PAUSE_STRIDE };
 
-    for (uint32_t e = PAUSE_GS; (uint16_t)rd_h(rdram, e) != 0xFFFF; e += 6)
+    struct GsRow { double order; uint32_t e; const Button* b; };
+
+    std::vector<GsRow> rows;
+    double spacer_order = 0;
+    int k = 0;
+
+    // The title and the gap under it stay on top.
+    for (uint32_t e = PAUSE_GS; (uint16_t)rd_h(rdram, e) != 0xFFFF; e += 6, ++k)
     {
-        if (e != PAUSE_GS_SPACER)
+        const uint16_t flags = (uint16_t)rd_h(rdram, e);
+
+        if (e == PAUSE_GS_SPACER) spacer_order = k * 10.0;
+        else if (rows.empty() && !(flags & 1)) gs.add(flags, (uint16_t)rd_h(rdram, e + 2), (uint16_t)rd_h(rdram, e + 4), std::string{});
+        else rows.push_back({ k * 10.0, e, nullptr });
+    }
+
+    auto native_row = [&](const std::string& name) {
+
+        const int tid = rs64::menu::pause_native_alias(name);
+
+        return std::find_if(rows.begin(), rows.end(), [&](const GsRow& r) { return tid >= 0 && !r.b && (uint16_t)rd_h(rdram, r.e + 2) == tid; });
+    };
+
+    if (auto h = config().hides.find("pause_game_settings"); h != config().hides.end())
+    {
+        for (const auto& name : h->second)
+            if (auto r = native_row(name); r != rows.end()) rows.erase(r);
+    }
+
+    double tail = spacer_order;
+
+    for (const auto& b : config().buttons)
+    {
+        if (b.menu != "pause_game_settings" || !button_visible(rdram, b, true)) continue;
+
+        auto anchor = [&](const std::string& name, double& out) {
+
+            if (auto r = native_row(name); r != rows.end()) return out = r->order, true;
+
+            for (const GsRow& r : rows)
+                if (r.b && r.b->id == name) return out = r.order, true;
+
+            return false;
+        };
+
+        double ord = 0;
+        bool have = false;
+
+        if (auto r = b.replace.empty() ? rows.end() : native_row(b.replace); r != rows.end())
         {
-            gs.add((uint16_t)rd_h(rdram, e), (uint16_t)rd_h(rdram, e + 2), (uint16_t)rd_h(rdram, e + 4), std::string{});
+            ord = r->order;
+            have = true;
+            rows.erase(r);
+        }
+
+        if (!have && !b.after.empty() && anchor(b.after, ord)) { ord += 5; have = true; }
+        if (!have && !b.before.empty() && anchor(b.before, ord)) { ord -= 5; have = true; }
+        if (!have && b.has_order) { ord = b.order; have = true; }
+        if (!have) ord = (tail += 0.01);
+
+        rows.push_back({ ord, 0, &b });
+    }
+
+    std::stable_sort(rows.begin(), rows.end(), [](const GsRow& a, const GsRow& b) { return a.order < b.order; });
+
+    for (const auto& b : config().buttons)
+    {
+        if (b.menu != "pause_game_settings" || !b.has_index) continue;
+
+        const auto it = std::find_if(rows.begin(), rows.end(), [&](const GsRow& r) { return r.b == &b; });
+
+        if (it != rows.end()) rs64::menu::move_to_index(rows, (size_t)(it - rows.begin()), b.index);
+    }
+
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        if (!rows[i].b)
+        {
+            gs.add((uint16_t)rd_h(rdram, rows[i].e), (uint16_t)rd_h(rdram, rows[i].e + 2), (uint16_t)rd_h(rdram, rows[i].e + 4), std::string{});
             continue;
         }
 
-        // The native BACK follows the spacer.
-        gs.reserve = 1;
-
-        for (const Button* b : pause_lines(rdram, "pause_game_settings")) add_pause_button(gs, *b, PAUSE_GS_ID);
-
+        // Room is kept for the natives still to come (BACK at least).
+        gs.reserve = (int)std::count_if(rows.begin() + (long)i + 1, rows.end(), [](const GsRow& r) { return !r.b; });
+        add_pause_button(gs, *rows[i].b, PAUSE_GS_ID);
         gs.reserve = 0;
     }
 
@@ -2604,6 +3557,7 @@ extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
 
     s_pause_built = true;
     s_in_pause = true;
+    s_pause_seeded = true;
 
     if (cur_id != 0 && pause_entry_at(rdram, pause_array_off(cur), cur_sel) != cur_id)
     {
@@ -2709,4 +3663,53 @@ extern "C" void rs64_pause_confirm(uint8_t* rdram, unsigned marker) {
     } else {
         if (b.action_fn) call_export(rdram, b.action_fn); else fire_action(b.key);
     }
+}
+
+// Pause slider edit, initOrUpdatePauseScreenDim: the value byte is loaded at 0x800C2660 ($s2 = the title row, $v0 = the byte its nextMenu picked: a mod
+// row falls into the speech branch) and stored to speech (+0x22) before 0x800C27CC. A mod slider loads and keeps its own byte; speech is put back.
+extern "C" void rs64_pause_slider_load(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const PauseSlider* ps = pause_slider((uint16_t)rd_h(rdram, (uint32_t)ctx->r18 - 0x80000000u + 4), PAUSE_SLIDER_MARK);
+
+    if (!ps) return;
+
+    s_pause_speech = (int)ctx->r2 & 0xFF;
+    ctx->r2 = rd_b(rdram, VOL_BYTES + ps->channel);
+}
+
+extern "C" void rs64_pause_slider_store(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const PauseSlider* ps = pause_slider((uint16_t)rd_h(rdram, (uint32_t)ctx->r18 - 0x80000000u + 4), PAUSE_SLIDER_MARK);
+
+    if (!ps || s_pause_speech < 0) return;
+
+    const int byte = rd_b(rdram, SPEECH_BYTE);
+
+    wr_b(rdram, VOL_BYTES + ps->channel, (uint8_t)byte);
+    wr_b(rdram, SPEECH_BYTE, (uint8_t)s_pause_speech);
+    s_pause_speech = -1;
+    slider_apply(rdram, ps->key, ps->set_fn, value_from_byte(byte, ps->smin, ps->smax, PAUSE_SLIDER_TOP));
+}
+
+// Pause slider draw, runPauseMenuStateMachine ($s4 = the row's textId field): a mod bar row shows its own byte (0x800C3418, $s2),
+// and a mod endpoint row its own end labels in place of OFF/MAX (0x800C3314: $s0 and $v0 hold the two strings).
+extern "C" void rs64_pause_slider_bar(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const PauseSlider* ps = pause_slider((uint16_t)rd_h(rdram, (uint32_t)ctx->r20 - 0x80000000u), PAUSE_BAR_TID);
+
+    if (ps) ctx->r18 = rd_b(rdram, VOL_BYTES + ps->channel);
+}
+
+extern "C" void rs64_pause_slider_ends(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const PauseSlider* ps = pause_slider((uint16_t)rd_h(rdram, (uint32_t)ctx->r20 - 0x80000000u + 2), PAUSE_SLIDER_MARK);
+
+    if (!ps) return;
+
+    ctx->r16 = alloc_str(rdram, ps->off_label);
+    ctx->r2 = alloc_str(rdram, ps->on_label);
 }

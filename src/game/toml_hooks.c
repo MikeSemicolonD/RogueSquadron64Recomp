@@ -805,6 +805,64 @@ int rs64_th_updateMenuPerFrame_entry(uint8_t* rdram, recomp_context* ctx) {
     return 0;
 }
 
+// initAllPlayersHudTracking entry
+void rs64_th_initAllPlayersHudTracking_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_controls_force_luke(uint8_t* rdram);
+    rs64_controls_force_luke(rdram);
+}
+
+// controllerSettingsScreen entry
+int rs64_th_controllerSettingsScreen_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_controls_menu_active(void);
+
+    return rs64_controls_menu_active();
+}
+
+// loadControllerModel 0x800C4BD8
+void rs64_th_loadControllerModel_800C4BD8(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_controls_load_models(uint8_t* rdram, recomp_context* ctx);
+    rs64_controls_load_models(rdram, ctx);
+}
+
+// initOrUpdatePauseScreenDim 0x800C2660
+void rs64_th_initOrUpdatePauseScreenDim_800C2660(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_pause_slider_load(uint8_t* rdram, recomp_context* ctx);
+    rs64_pause_slider_load(rdram, ctx);
+}
+
+// initOrUpdatePauseScreenDim 0x800C27CC
+void rs64_th_initOrUpdatePauseScreenDim_800C27CC(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_pause_slider_store(uint8_t* rdram, recomp_context* ctx);
+    rs64_pause_slider_store(rdram, ctx);
+}
+
+// runPauseMenuStateMachine 0x800C3418
+void rs64_th_runPauseMenuStateMachine_800C3418(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_pause_slider_bar(uint8_t* rdram, recomp_context* ctx);
+    rs64_pause_slider_bar(rdram, ctx);
+}
+
+// runPauseMenuStateMachine 0x800C3314
+void rs64_th_runPauseMenuStateMachine_800C3314(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_pause_slider_ends(uint8_t* rdram, recomp_context* ctx);
+    rs64_pause_slider_ends(rdram, ctx);
+}
+
+// easeT16AnimationKeyframe entry
+int rs64_th_easeT16AnimationKeyframe_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_controls_menu_active(void);
+
+    return rs64_controls_menu_active();
+}
+
 // menuControllerInput 0x800B5920
 void rs64_th_menuControllerInput_800B5920(uint8_t* rdram, recomp_context* ctx) {
 
@@ -818,6 +876,30 @@ void rs64_th_menuControllerInput_800B4E64(uint8_t* rdram, recomp_context* ctx)
 
     extern void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx);
     rs64_menu_input_state(rdram, ctx);
+}
+
+// menuControllerInput 0x800B6700
+void rs64_th_menuControllerInput_800B6700(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx);
+    rs64_wheel_typed(rdram, ctx);
+}
+
+// menuControllerInput 0x800B6DE8
+void rs64_th_menuControllerInput_800B6DE8(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx);
+    rs64_wheel_typed(rdram, ctx);
+}
+
+// menuControllerInput 0x800B6DA4
+void rs64_th_menuControllerInput_800B6DA4(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_passcode_row(uint8_t* rdram, recomp_context* ctx);
+    rs64_passcode_row(rdram, ctx);
 }
 
 // menuControllerInput 0x800B5830
@@ -834,8 +916,6 @@ void rs64_th_menuControllerInput_800B5830(uint8_t* rdram, recomp_context* ctx)
 void rs64_th_loadTxtFile_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
-    (void)ctx;
-
     extern int rs64_language(void);
     extern void rs64_menu_text_language(int lang);
     const int lang = rs64_language();
@@ -843,6 +923,95 @@ void rs64_th_loadTxtFile_entry(uint8_t* rdram, recomp_context* ctx)
     if (lang >= 0) MEM_B(0x6, (gpr)(int32_t)0x80130B40u) = (int8_t)lang;
 
     rs64_menu_text_language((int)MEM_BU(0x6, (gpr)(int32_t)0x80130B40u));
+
+    extern void rs64_lang_txt_file(uint8_t* rdram, uint32_t name, int kind);
+    rs64_lang_txt_file(rdram, (uint32_t)ctx->r4, (int)ctx->r5);
+}
+
+// buildAndRegisterDefaultMaterial 0x80017D04
+void rs64_th_buildAndRegisterDefaultMaterial_80017D04(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_texture_pool(uint8_t* rdram);
+    rs64_lang_texture_pool(rdram);
+}
+
+// initTextureLUTAndAllocBuffers 0x8001E304
+void rs64_th_initTextureLUTAndAllocBuffers_8001E304(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_record_tables(uint8_t* rdram);
+    rs64_lang_record_tables(rdram);
+}
+
+// initTextureMaterialPools entry
+void rs64_th_initTextureMaterialPools_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_record_tables_release(uint8_t* rdram);
+    rs64_lang_record_tables_release(rdram);
+}
+
+// initTextureMaterialPools 0x80022920
+void rs64_th_initTextureMaterialPools_80022920(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_record_tables(uint8_t* rdram);
+    rs64_lang_record_tables(rdram);
+}
+
+// destroyTextureLUTs entry
+void rs64_th_destroyTextureLUTs_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_record_tables_release(uint8_t* rdram);
+    rs64_lang_record_tables_release(rdram);
+}
+
+// buildAndRegisterDefaultMaterial 0x80017D94
+void rs64_th_buildAndRegisterDefaultMaterial_80017D94(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_slot_tables(uint8_t* rdram);
+    rs64_lang_slot_tables(rdram);
+}
+
+// freeRenderSubsystemResources entry
+void rs64_th_freeRenderSubsystemResources_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)ctx;
+
+    extern void rs64_lang_slot_tables_release(uint8_t* rdram);
+    rs64_lang_slot_tables_release(rdram);
+}
+
+// loadCharTextureSet entry
+void rs64_th_loadCharTextureSet_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_lang_font_load(uint8_t* rdram, unsigned font_id);
+    rs64_lang_font_load(rdram, (unsigned)ctx->r5);
+}
+
+// loadCharTextureSet 0x80061A54
+void rs64_th_loadCharTextureSet_80061A54(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_lang_font_loaded(uint8_t* rdram, unsigned map_font, unsigned glyph_font);
+    rs64_lang_font_loaded(rdram, (unsigned)ctx->r16, (unsigned)ctx->r20);
 }
 
 // integrateTieInterceptorPhysics entry
@@ -930,7 +1099,17 @@ void rs64_th_playerTieInterceptorMainUpdate_800BCE00(uint8_t* rdram, recomp_cont
 // getGameOrFrontText 0x800558C4
 void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx)
 {
-    extern unsigned rs64_gof_override(uint8_t* rdram, unsigned textId); unsigned s = rs64_gof_override(rdram, (unsigned)ctx->r4); if (s) { ctx->r3 = 0; ctx->r2 = (gpr)(int32_t)s; }
+    extern unsigned rs64_gof_override(uint8_t* rdram, unsigned textId);
+    extern uint32_t rs64_lang_text(uint8_t* rdram, uint32_t id, uint32_t game_str);
+    unsigned s = rs64_gof_override(rdram, (unsigned)ctx->r4);
+
+    if (!s) s = rs64_lang_text(rdram, (uint32_t)ctx->r4, (uint32_t)(ctx->r3 + ctx->r2));
+
+    if (s)
+    {
+        ctx->r3 = 0;
+        ctx->r2 = (gpr)(int32_t)s;
+    }
 }
 
 // initOrUpdatePauseScreenDim entry
@@ -1034,6 +1213,8 @@ int rs64_th_initMission_800FA28C(uint8_t* rdram, recomp_context* ctx) {
 
     extern void rs64_camera_shots_mission_start(uint8_t*);
     rs64_camera_shots_mission_start(rdram);
+    extern void rs64_rules_mission_start(uint8_t*);
+    rs64_rules_mission_start(rdram);
     extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
 
     if (rs64_hook(4u, rdram, ctx)) return 1;
@@ -1046,6 +1227,8 @@ int rs64_th_runInMissionFrame_800FA7D0(uint8_t* rdram, recomp_context* ctx) {
 
     extern void rs64_camera_shots_frame(uint8_t*, recomp_context*);
     rs64_camera_shots_frame(rdram, ctx);
+    extern void rs64_rules_frame(uint8_t*, recomp_context*);
+    rs64_rules_frame(rdram, ctx);
     extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
 
     if (rs64_hook(5u, rdram, ctx)) return 1;
@@ -1059,6 +1242,8 @@ void rs64_th_applyDatObjectiveTriggerEffect_80065A0C(uint8_t* rdram, recomp_cont
 
     extern void rs64_camera_shots_trigger(uint8_t*, uint32_t, uint32_t);
     rs64_camera_shots_trigger(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
+    extern void rs64_rules_area(uint8_t*, uint32_t, uint32_t);
+    rs64_rules_area(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
 }
 
 // runInMissionFrame 0x800FA7D8
@@ -1416,8 +1601,8 @@ void rs64_th_setupCraftAnimationFlagSet_800B9334(uint8_t* rdram, recomp_context*
 // getLevelIntroCrawlId entry / buildModelViewerTextPage 0x800CA77C: a mod level's opening crawl.
 int rs64_th_getLevelIntroCrawlId_entry(uint8_t* rdram, recomp_context* ctx) {
 
-    extern int rs64_mod_levels_crawl_id(void);
-    int c = rs64_mod_levels_crawl_id();
+    extern int rs64_mod_levels_crawl_id(int);
+    int c = rs64_mod_levels_crawl_id((int)(ctx->r4 & 0xFF));
 
     if (c == -2) return 0;
 
@@ -1431,6 +1616,22 @@ void rs64_th_buildModelViewerTextPage_800CA77C(uint8_t* rdram, recomp_context* c
     uint32_t s = rs64_mod_levels_crawl_text(rdram);
 
     if (s) ctx->r2 = (gpr)(int32_t)s;
+}
+
+// setModelViewerObjectTransform entry: a crawl file's keyed camera (v0 = the camera matrix).
+int rs64_th_setModelViewerObjectTransform_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_crawl_camera(uint8_t*, recomp_context*);
+
+    return rs64_crawl_camera(rdram, ctx);
+}
+
+// runModelViewerLoop 0x800CA080: the pan's camera drop f26 follows a crawl file's keyed camera.
+void rs64_th_runModelViewerLoop_800CA080(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_crawl_drop(uint8_t*, recomp_context*);
+
+    rs64_crawl_drop(rdram, ctx);
 }
 
 // find_manifest_entry entry: a1 = the asset path looked up in manifest slot a0.
@@ -1576,6 +1777,30 @@ void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx) {
     rs64_hook(37u, rdram, ctx);
 }
 
+// updatePlayerAtStBehavior entry
+int rs64_th_updatePlayerAtStBehavior_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+
+    if (rs64_hook(38u, rdram, ctx)) return 1;
+
+    return 0;
+}
+
+// updatePlayerAtStBehavior 0x800D1AE0 ($s1 = the walker)
+void rs64_th_updatePlayerAtStBehavior_800D1AE0(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_atst_head(float*, float*);
+    union { float f; uint32_t u; } yaw, pitch;
+
+    if (!rs64_atst_head(&yaw.f, &pitch.f)) return;
+
+    MEM_W(0x68, ctx->r17) = yaw.u;
+    MEM_W(0x48, ctx->r17) = yaw.u;
+    MEM_W(0x6C, ctx->r17) = pitch.u;
+    MEM_W(0x4C, ctx->r17) = pitch.u;
+}
+
 // mainGameLoop 0x8003E10C
 void rs64_th_mainGameLoop_8003E10C(uint8_t* rdram, recomp_context* ctx) {
 
@@ -1657,4 +1882,44 @@ void rs64_th_initMission_entry(uint8_t* rdram, recomp_context* ctx)
 
     extern void rs64_mod_levels_music(uint8_t*);
     rs64_mod_levels_music(rdram);
+}
+
+// updateDestructionDebrisNpc 0x8006D6F0 / npcPowerGeneratorUpdate 0x80078CC8: a unit's death effect (v1 = its DAT record).
+void rs64_th_updateDestructionDebrisNpc_8006D6F0(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_rules_destroyed(uint8_t*, recomp_context*);
+    rs64_rules_destroyed(rdram, ctx);
+}
+void rs64_th_npcPowerGeneratorUpdate_80078CC8(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_rules_destroyed(uint8_t*, recomp_context*);
+    rs64_rules_destroyed(rdram, ctx);
+}
+
+// getVoiceText entry (a0 = text id) / 0x80055A10 (the text decrypted): a level-rule message replaces a blank line's text.
+void rs64_th_getVoiceText_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_rules_voice_text_id(recomp_context*);
+    extern void rs64_lang_voice_id(uint32_t id);
+    rs64_rules_voice_text_id(ctx);
+    rs64_lang_voice_id((uint32_t)ctx->r4);
+}
+void rs64_th_getVoiceText_80055A10(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_lang_voice_text(uint8_t*);
+    extern void rs64_rules_voice_text(uint8_t*);
+    rs64_lang_voice_text(rdram);
+    rs64_rules_voice_text(rdram);
+}
+
+// updateNpcEffectIntensity entry (a1 = the path event an NPC reached).
+void rs64_th_updateNpcEffectIntensity_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_rules_path(uint8_t*, uint32_t);
+    rs64_rules_path(rdram, (uint32_t)ctx->r5);
 }

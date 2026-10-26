@@ -3,9 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
-#include <cstring>
 #include <fstream>
-#include <iterator>
+#include <mutex>
 #include <mutex>
 #include <utility>
 
@@ -151,9 +150,9 @@ void step_in(UC& uc, Display d)
 // -1 = follow the setting; 0/1 = ROGUESQ_FULLSCREEN pins the live state until the player toggles, and the file keeps the setting.
 std::atomic<int> g_fullscreen_pin{-1};
 
-std::atomic<int> g_language{-1};
-std::atomic<int> g_language_pin{-1};
-const char* const kLanguageCodes[] = { "en", "de", "fr" };
+std::mutex g_language_mutex;
+std::string g_language;
+std::string g_language_pin;
 
 // "rayTracing" in roguesq_video.json. The file keeps the player's setting; a set ROGUESQ_RT_* env var only pins the live switch, so test runs never rewrite it.
 const std::pair<const char*, rs64lights::Feature> kRtKeys[] = {
@@ -402,32 +401,29 @@ void pin_fullscreen(bool on) {
     g_fullscreen_pin.store(on ? 1 : 0, std::memory_order_relaxed);
 }
 
-int language()
+std::string language()
 {
 
-    const int pin = g_language_pin.load(std::memory_order_relaxed);
+    std::lock_guard lock(g_language_mutex);
 
-    return pin >= 0 ? pin : g_language.load(std::memory_order_relaxed);
+    return g_language_pin.empty() ? g_language : g_language_pin;
 }
 
-void set_language(int lang)
+void set_language(const std::string& code)
 {
 
-    g_language_pin.store(-1, std::memory_order_relaxed);
-    g_language.store(lang, std::memory_order_relaxed);
+    std::lock_guard lock(g_language_mutex);
+
+    g_language_pin.clear();
+    g_language = code;
 }
 
-void pin_language(int lang) {
-    g_language_pin.store(lang, std::memory_order_relaxed);
-}
-
-int parse_language(const char* code)
+void pin_language(const std::string& code)
 {
 
-    for (int i = 0; code && i < (int)std::size(kLanguageCodes); ++i)
-        if (strcmp(code, kLanguageCodes[i]) == 0) return i;
+    std::lock_guard lock(g_language_mutex);
 
-    return -1;
+    g_language_pin = code;
 }
 
 bool peek_fullscreen(const std::string& path)
@@ -470,8 +466,11 @@ void apply_friendly(UC& uc, const json& j)
         g_fullscreen.store(j["fullscreen"].get<bool>(), std::memory_order_relaxed);
     }
 
-    if (has("language") && j["language"].is_string()) {
-        g_language.store(parse_language(j["language"].get<std::string>().c_str()), std::memory_order_relaxed);
+    if (has("language") && j["language"].is_string())
+    {
+        std::lock_guard lock(g_language_mutex);
+
+        g_language = j["language"].get<std::string>();
     }
 
     if (has("rayTracing") && j["rayTracing"].is_object()) {
@@ -604,9 +603,13 @@ json to_friendly(const UC& uc)
     j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
 
-    if (const int lang = g_language.load(std::memory_order_relaxed); lang >= 0) {
-        j["language"] = kLanguageCodes[lang];
+    std::unique_lock lock(g_language_mutex);
+
+    if (!g_language.empty()) {
+        j["language"] = g_language;
     }
+
+    lock.unlock();
 
     json rt = json::object();
 

@@ -15,6 +15,7 @@
 #include "input/touch_config.h"
 #include "game/game_state.h"
 #include "util/debug_logs.h"
+#include "util/rdram_words.h"
 #include "host_api/host_api.h"
 #include "main/main.h"
 #include "game/upstream_compat.h"
@@ -75,6 +76,13 @@ static void publish_refresh_rates()
 
 namespace rs64::app {
 SDL_GameController* controller = nullptr;
+
+// The class of the last physical input; a touch-only player counts as a gamepad.
+static std::atomic<rs64::input::Device> s_last_device{rs64::input::Device::Keyboard};
+
+rs64::input::Device last_device() {
+    return s_last_device.load();
+}
 
 // Every open gamepad; `controller` is whichever one last produced input (Steam Input / DS4Windows can expose an idle virtual pad alongside the real one).
 std::vector<SDL_GameController*> g_pads;
@@ -230,6 +238,12 @@ std::atomic<bool>     g_mouse_capture{false};
 static float                 g_mouse_ax = 0.0f;   // accumulated relative motion this frame
 static float                 g_mouse_ay = 0.0f;
 static uint32_t              g_mouse_btn = 0;
+
+// AT-ST head aim from the mouse, as a held stick position (-1..1); about 200 px across the full range at the default sensitivity.
+constexpr float kAtStHeadPerPixel = 0.1f;
+static float g_atst_head_x = 0.0f;
+static float g_atst_head_y = 0.0f;
+static bool g_atst_head_on = false;
 
 std::vector<OpenJoy>       g_open_joys;
 std::vector<SDL_Joystick*> g_joy_by_dev;
@@ -667,6 +681,9 @@ extern "C" int rs64_menu_slider_channel(int slot);
 extern "C" void rs64_menu_slider_click(int key, float f);
 extern "C" int rs64_menu_slider_editing(void);
 extern "C" void rs64_menu_hover_sound(int pause);
+extern "C" int rs64_menu_typing(void);
+extern "C" int rs64_menu_type(const char* utf8, int key);
+extern "C" void rs64_controls_wheel(int steps);
 
 static bool touch_state_is(const char* want);
 
@@ -1372,12 +1389,19 @@ void poll_input()
         case SDL_FINGERDOWN:
         case SDL_FINGERMOTION:
         case SDL_FINGERUP:
+            if (e.type == SDL_FINGERDOWN) s_last_device.store(rs64::input::Device::Gamepad);
+
             touch_event(e);
             break;
         case SDL_MOUSEMOTION:
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            if (e.type == SDL_MOUSEBUTTONDOWN) s_last_device.store(rs64::input::Device::Keyboard);
+
             menu_mouse_event(e);
+            break;
+        case SDL_MOUSEWHEEL:
+            rs64_controls_wheel(e.wheel.y);
             break;
         case SDL_SENSORUPDATE:
             if (g_gyro_sensor && e.sensor.which == SDL_SensorGetInstanceID(g_gyro_sensor))
@@ -1389,16 +1413,18 @@ void poll_input()
             }
             break;
 
-        // Text entry (the lobby address): typed text and Backspace/Enter go to a key handler that takes them, not the game.
+        // Text entry (the lobby address, the ENTER NAME / PASSCODES letter wheels): typed text and Backspace/Enter go to a handler that takes them, not the game.
         case SDL_TEXTINPUT:
-            rs64::host::run_key_handlers(e.text.text, 0);
+            if (!rs64::host::run_key_handlers(e.text.text, 0)) rs64_menu_type(e.text.text, 0);
             break;
         case SDL_KEYDOWN: {
             const SDL_Keycode sym = e.key.keysym.sym;
 
-            if ((sym == SDLK_BACKSPACE || sym == SDLK_RETURN || sym == SDLK_KP_ENTER) && rs64::host::run_key_handlers(nullptr, sym == SDLK_BACKSPACE ? '\b' : '\r'))
+            if (sym == SDLK_BACKSPACE || sym == SDLK_RETURN || sym == SDLK_KP_ENTER)
             {
-                break;
+                const int key = sym == SDLK_BACKSPACE ? '\b' : '\r';
+
+                if (rs64::host::run_key_handlers(nullptr, key) || rs64_menu_type(nullptr, key)) break;
             }
 
             // Android's system back gesture/button arrives as AC_BACK and means B.
@@ -1410,6 +1436,7 @@ void poll_input()
             }
 
             note_physical_input();
+            s_last_device.store(rs64::input::Device::Keyboard);
 
             // F6 toggles the controls/rebind window. Mouse-steering capture is automatic (focus-driven, in update_gfx).
             if (e.key.repeat == 0)
@@ -1455,10 +1482,20 @@ void poll_input()
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_JOYBUTTONDOWN:
             note_physical_input();
+
+            // SDL sends joystick events for gamepads too.
+            if (e.type == SDL_CONTROLLERBUTTONDOWN) s_last_device.store(rs64::input::Device::Gamepad);
+            else if (!SDL_GameControllerFromInstanceID(e.jbutton.which)) s_last_device.store(rs64::input::Device::Joystick);
+
+            break;
+        case SDL_JOYHATMOTION:
+            if (e.jhat.value && !SDL_GameControllerFromInstanceID(e.jhat.which)) s_last_device.store(rs64::input::Device::Joystick);
+
             break;
         case SDL_CONTROLLERAXISMOTION:
             if (std::abs(e.caxis.value) > 16000) {
                 note_physical_input();
+                s_last_device.store(rs64::input::Device::Gamepad);
             }
             break;
         case SDL_QUIT:
@@ -1620,6 +1657,21 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     // Resolve keyboard + gamepad + mouse through the bindings profile.
     rs64::input::RawState st;
     st.keys = SDL_GetKeyboardState(&st.keys_len);
+
+    // While a letter wheel takes typing, keys that type (letters, digits, Space, punctuation, Backspace) drive no binding; arrows, Enter and Esc still do.
+    static uint8_t s_typing_keys[SDL_NUM_SCANCODES];
+
+    if (st.keys && rs64_menu_typing()) {
+        const int n = std::min(st.keys_len, (int)SDL_NUM_SCANCODES);
+
+        std::memcpy(s_typing_keys, st.keys, n);
+        std::memset(s_typing_keys + SDL_SCANCODE_A, 0, SDL_SCANCODE_0 - SDL_SCANCODE_A + 1);
+        std::memset(s_typing_keys + SDL_SCANCODE_SPACE, 0, SDL_SCANCODE_SLASH - SDL_SCANCODE_SPACE + 1);
+        s_typing_keys[SDL_SCANCODE_BACKSPACE] = 0;
+        st.keys = s_typing_keys;
+        st.keys_len = n;
+    }
+
     st.pad = controller;
     st.mouse_active = g_mouse_capture.load();
 
@@ -1632,6 +1684,24 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     uint16_t btn = 0;
     bool active;
     std::unique_lock<std::mutex> bind_lk(g_bindings_mtx);
+
+    // AT-ST (CHICKEN): the walker reads stick position, which a rate-style mouse can't hold, so the mouse aims the head instead (rs64_atst_head).
+    const bool atst = st.mouse_active && rs64::host::flag("atst_active");
+
+    if (atst) {
+        const float k = g_bindings.mouse_sensitivity * kAtStHeadPerPixel;
+        const float dx = g_bindings.mouse_invert_x ? -raw_dx : raw_dx;
+        const float dy = g_bindings.mouse_invert_y ? -raw_dy : raw_dy;
+
+        g_atst_head_x = std::clamp(g_atst_head_x + dx * k, -1.0f, 1.0f);
+        g_atst_head_y = std::clamp(g_atst_head_y - dy * k, -1.0f, 1.0f);
+        raw_dx = raw_dy = 0.0f;
+    } else {
+        g_atst_head_x = 0.0f;
+        g_atst_head_y = 0.0f;
+    }
+
+    g_atst_head_on = atst;
 
     // Frame-rate-aware exponential low-pass on the mouse velocity so fast
     // flicks ramp in and stop-motion eases back to center, instead of the raw
@@ -1652,6 +1722,25 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     active = rs64::input::resolve(g_bindings, st, &btn, x, y);
     g_throttle.store(rs64::input::throttle_position(g_bindings, st));
     bind_lk.unlock();
+
+    // Rebinding flight actions never takes away menu confirm/back/navigation.
+    if (mouse_menu_context(touch_context())) btn = rs64::input::menu_buttons(btn, rs64::input::menu_fixed_mask(st));
+
+    // The layout's THRUST (+0x18) and BRAKES1 (+0x12) masks (D_8010BE18) walk forward / back; BRAKES1 is dropped since the walker would stop to aim the head with the stick.
+    if (atst && g_recomp_rdram_for_wp_raw)
+    {
+        const uint8_t* rd = (const uint8_t*)g_recomp_rdram_for_wp_raw;
+        const uint16_t thrust = rs64::mips::rh(rd, 0x8010BE30u);
+        const uint16_t brake = rs64::mips::rh(rd, 0x8010BE2Au);
+
+        if (btn & thrust) *y = 1.0f;
+
+        if (btn & brake)
+        {
+            *y = -1.0f;
+            btn &= (uint16_t)~brake;
+        }
+    }
 
     if (!active)
     {
@@ -1703,6 +1792,18 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     *buttons = btn;
 
     return true;
+}
+
+// Head angles for updatePlayerAtStBehavior 0x800D1AE0 in the game's own scale (yaw = x * 80, pitch = y * -30); 0 while the mouse isn't aiming.
+extern "C" int rs64_atst_head(float* yaw, float* pitch)
+{
+
+    if (!g_atst_head_on) return 0;
+
+    *yaw = g_atst_head_x * 80.0f;
+    *pitch = g_atst_head_y * -30.0f;
+
+    return 1;
 }
 
 // ROGUESQ_INPUT_RECORD=<file> records controller 0 from the first input poll after launch (menus included); ROGUESQ_INPUT_REPLAY=<file> plays it back from the same point.
@@ -1904,5 +2005,225 @@ void rebind_open_joysticks_locked() {
     }
 
     rebuild_joy_map_locked();
+}
+
+namespace {
+
+// One rebind capture at a time (the F6 window or the in-game Controls screen): inputs pressed or moved since capture_begin.
+struct CaptureState {
+    rs64::input::CaptureFilter filter;
+    bool active = false;
+    uint8_t keys[SDL_NUM_SCANCODES] = {0};
+    uint32_t pad = 0, mouse = 0;
+    float pad_axes[SDL_CONTROLLER_AXIS_MAX] = {0};
+    struct JoySnap { SDL_JoystickID id; std::vector<float> axes; std::vector<uint8_t> buttons, hats; };
+    std::vector<JoySnap> joys;
+};
+
+CaptureState s_cap;
+
+// The F6 window (graphics thread) and the Controls screen (game thread) share the capture; taken before g_bindings_mtx.
+std::mutex s_cap_mtx;
+
+uint32_t pad_buttons_now()
+{
+
+    uint32_t m = 0;
+
+    if (!controller) return 0;
+
+    for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b) {
+        if (SDL_GameControllerGetButton(controller, (SDL_GameControllerButton)b)) m |= 1u << b;
+    }
+
+    return m;
+}
+
+} // namespace
+
+void capture_begin(const rs64::input::CaptureFilter& f)
+{
+
+    std::lock_guard<std::mutex> cap_lk(s_cap_mtx);
+    int nk = 0;
+    const uint8_t* ks = SDL_GetKeyboardState(&nk);
+
+    s_cap = CaptureState{};
+    s_cap.filter = f;
+    s_cap.active = true;
+    memcpy(s_cap.keys, ks, std::min(nk, (int)SDL_NUM_SCANCODES));
+    s_cap.pad = pad_buttons_now();
+    s_cap.mouse = SDL_GetMouseState(nullptr, nullptr);
+
+    for (int a = 0; controller && a < SDL_CONTROLLER_AXIS_MAX; ++a) s_cap.pad_axes[a] = SDL_GameControllerGetAxis(controller, (SDL_GameControllerAxis)a) / 32767.0f;
+
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+
+    for (const OpenJoy& oj : g_open_joys)
+    {
+        CaptureState::JoySnap s{ oj.id, {}, {}, {} };
+
+        for (int a = 0; a < SDL_JoystickNumAxes(oj.joy); ++a) s.axes.push_back(SDL_JoystickGetAxis(oj.joy, a) / 32767.0f);
+        for (int b = 0; b < SDL_JoystickNumButtons(oj.joy); ++b) s.buttons.push_back(SDL_JoystickGetButton(oj.joy, b));
+        for (int h = 0; h < SDL_JoystickNumHats(oj.joy); ++h) s.hats.push_back(SDL_JoystickGetHat(oj.joy, h));
+
+        s_cap.joys.push_back(std::move(s));
+    }
+}
+
+int capture_poll(rs64::input::Source* out)
+{
+
+    namespace ri = rs64::input;
+
+    std::lock_guard<std::mutex> cap_lk(s_cap_mtx);
+
+    if (!s_cap.active) return -1;
+
+    int nk = 0;
+    const uint8_t* ks = SDL_GetKeyboardState(&nk);
+    const uint32_t pad = pad_buttons_now();
+    const bool start_cancels = !s_cap.filter.any && (pad & ~s_cap.pad & (1u << SDL_CONTROLLER_BUTTON_START));
+
+    if (ks[SDL_SCANCODE_ESCAPE] || start_cancels)
+    {
+        s_cap.active = false;
+
+        return -1;
+    }
+
+    ri::Source got;
+    bool have = false;
+    auto offer = [&](const ri::Source& s) {
+
+        if (!have && ri::capture_accepts(s_cap.filter, s)) {
+            got = s;
+            have = true;
+        }
+    };
+
+    for (int sc = 0; sc < nk && sc < SDL_NUM_SCANCODES; ++sc)
+    {
+        if (ks[sc] && !s_cap.keys[sc]) offer({ ri::SourceKind::Key, sc, 0 });
+
+        s_cap.keys[sc] = ks[sc];
+    }
+
+    for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; ++b)
+    {
+        if ((pad >> b & 1) && !(s_cap.pad >> b & 1)) offer({ ri::SourceKind::PadButton, b, 0 });
+    }
+
+    s_cap.pad = pad;
+
+    // A trigger or stick half moved past half travel from where it rested when the capture began.
+    for (int a = 0; controller && a < SDL_CONTROLLER_AXIS_MAX; ++a)
+    {
+        const float delta = SDL_GameControllerGetAxis(controller, (SDL_GameControllerAxis)a) / 32767.0f - s_cap.pad_axes[a];
+
+        if (std::fabs(delta) >= 0.5f) offer({ ri::SourceKind::PadAxis, a, (int8_t)(delta > 0.0f ? 1 : -1) });
+    }
+
+    const uint32_t mb = SDL_GetMouseState(nullptr, nullptr);
+
+    for (int b = 1; b <= 5; ++b)
+    {
+        if ((mb & SDL_BUTTON(b)) && !(s_cap.mouse & SDL_BUTTON(b))) offer({ ri::SourceKind::MouseButton, b, 0 });
+    }
+
+    s_cap.mouse = mb;
+
+    std::unique_lock<std::mutex> lk(g_bindings_mtx);
+
+    for (const OpenJoy& oj : g_open_joys)
+    {
+        const int dev = joy_dev_locked(oj);
+        const CaptureState::JoySnap* s = nullptr;
+
+        for (const auto& js : s_cap.joys) {
+            if (js.id == oj.id) s = &js;
+        }
+
+        if (dev < 0 || !s) continue;
+
+        for (int b = 0; b < (int)s->buttons.size(); ++b)
+        {
+            if (SDL_JoystickGetButton(oj.joy, b) && !s->buttons[b]) offer({ ri::SourceKind::JoyButton, b, 0, (int8_t)dev });
+        }
+
+        for (int h = 0; h < (int)s->hats.size(); ++h)
+        {
+            const uint8_t now_bits = SDL_JoystickGetHat(oj.joy, h) & (uint8_t)~s->hats[h];
+
+            for (int bit = 0; bit < 4; ++bit)
+            {
+                if (now_bits & (1u << bit)) offer({ ri::SourceKind::JoyHat, h, (int8_t)(1 << bit), (int8_t)dev });
+            }
+        }
+
+        for (int a = 0; a < (int)s->axes.size(); ++a)
+        {
+            const float delta = SDL_JoystickGetAxis(oj.joy, a) / 32767.0f - s->axes[a];
+
+            if (std::fabs(delta) < 0.5f) continue;
+
+            int dir = delta > 0.0f ? 1 : -1;
+
+            if (a < 32 && ((g_bindings.joy_devices[dev].invert_axes >> a) & 1u)) dir = -dir;
+
+            offer({ ri::SourceKind::JoyAxis, a, (int8_t)dir, (int8_t)dev });
+        }
+    }
+
+    lk.unlock();
+
+    if (!have) return 0;
+
+    *out = got;
+    s_cap.active = false;
+
+    return 1;
+}
+
+void capture_end()
+{
+
+    std::lock_guard<std::mutex> cap_lk(s_cap_mtx);
+
+    s_cap.active = false;
+}
+
+bool capture_device_present(rs64::input::Device d)
+{
+
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+
+    switch (d)
+    {
+        case rs64::input::Device::Gamepad:  return controller != nullptr;
+        case rs64::input::Device::Joystick: return !g_open_joys.empty();
+        default:                            return true;
+    }
+}
+
+void reset_device_bindings(rs64::input::Device d)
+{
+
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+
+    g_bindings = rs64::input::default_device_bindings(g_bindings, d);
+
+    // Joystick defaults are per device (default_bindings has none), so each open stick gets its own again.
+    if (d == rs64::input::Device::Joystick)
+    {
+        for (const OpenJoy& oj : g_open_joys)
+        {
+            const int dev = joy_dev_locked(oj);
+
+            if (dev >= 0) rs64::input::add_joystick_defaults(g_bindings, dev, SDL_JoystickNumAxes(oj.joy), SDL_JoystickNumButtons(oj.joy), SDL_JoystickNumHats(oj.joy));
+        }
+    }
+
+    rs64::input::save_bindings(g_bindings, rs64::input::default_config_path());
 }
 }

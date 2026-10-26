@@ -1,4 +1,5 @@
 #include "lockstep/lockstep_core.h"
+#include "game/game_state.h"
 #include "util/debug_logs.h"
 #include "host_api/host_api.h"
 #include "main/main.h"
@@ -238,6 +239,9 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     s.frame = 0;
     const uint32_t seed = ls_seed();
 
+    // The menu's last pad read (previous/new pressed words, 4 ports) stays latched through the mission and depends on load timing, so every session starts it cleared.
+    for (uint32_t a = 0x8013A950u; a < 0x8013A970u; a += 4) ww(rdram, a, 0);
+
     if (s.mode == Mode::Record)
     {
         const char* path = recomp::dbg::env_str("ROGUESQ_LS_RECORD");
@@ -444,19 +448,57 @@ static void ls_pause_point(const State& s)
     hold_for_capture(s.hash_path, s.frame, "ls");
 }
 
-// ROGUESQ_CINE_PAUSE_AT=<f>[,<f>...] with ROGUESQ_CINE_PAUSE_FILE=<base>: a playing cutscene holds once its frame counter (gateCtr 0x800B0B28, the
-// file's own frames) reaches each f, by the same .paused / .resume handshake as the replay pause (capture-frames.ps1 -Cutscene).
-extern "C" void rs64_cine_pause_point(uint8_t* rdram)
+// ROGUESQ_PAUSE_AT=<clock>[:<f>][,...] with ROGUESQ_PAUSE_FILE=<base>: hold the game thread once a clock reaches frame f, by the replay pause's handshake.
+// Clocks: a game state id (frames since it was entered; menu covers menu.*), cutscene (the file's frames) or crawl (its clock at 30 a second).
+static std::vector<PauseTarget>& pause_targets()
 {
 
-    static const std::vector<uint32_t> frames = env_frame_list("ROGUESQ_CINE_PAUSE_AT");
-    static const char* base = recomp::dbg::env_str("ROGUESQ_CINE_PAUSE_FILE");
-    static size_t next = 0;
+    static const char* spec = recomp::dbg::env_str("ROGUESQ_PAUSE_AT");
+    static std::vector<PauseTarget> v = parse_pause_targets(spec ? spec : "");
 
-    if (next >= frames.size() || !base || !*base)
+    return v;
+}
+
+extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
+{
+
+    static const char* base = recomp::dbg::env_str("ROGUESQ_PAUSE_FILE");
+
+    if (!base || !*base || pause_targets().empty())
     {
         return;
     }
+
+    const std::string c = clock;
+
+    for (PauseTarget& t : pause_targets())
+    {
+        if (t.done || !pause_clock_matches(t.clock, c) || frame < t.frame) continue;
+
+        t.done = true;
+
+        if (frame != t.frame) fprintf(stderr, "[pause] %s frame %u reached at %u\n", t.clock.c_str(), t.frame, frame);
+
+        hold_for_capture(base, t.frame, c.c_str());
+    }
+}
+
+// The game state's clock: frames since the classifier last changed state, from the per-frame menu and mission hooks.
+extern "C" void rs64_pause_state_point()
+{
+
+    static std::string last;
+    static uint32_t frames = 0;
+    const std::string id = rs64_state_current_id();
+
+    frames = id == last ? frames + 1 : 0;
+    last = id;
+    rs64_pause_point(id.c_str(), frames);
+}
+
+// The cutscene clock: gateCtr 0x800B0B28, the file's own frames as the RS64 Explorer timeline counts them, while a cutscene is loaded.
+extern "C" void rs64_cine_pause_point(uint8_t* rdram)
+{
 
     auto rd = [rdram](uint32_t a) { return ((uint32_t)rdram[(a - 0x80000000u) ^ 3] << 24) | ((uint32_t)rdram[(a + 1 - 0x80000000u) ^ 3] << 16) | ((uint32_t)rdram[(a + 2 - 0x80000000u) ^ 3] << 8) | (uint32_t)rdram[(a + 3 - 0x80000000u) ^ 3]; };
     const uint32_t cut = rd(0x800B1904u);
@@ -466,16 +508,7 @@ extern "C" void rs64_cine_pause_point(uint8_t* rdram)
         return;
     }
 
-    const uint32_t gate = rd(0x800B0B28u);
-
-    while (next < frames.size() && gate >= frames[next]) {
-        if (gate != frames[next])
-        {
-            fprintf(stderr, "[cine] frame %u reached at %u\n", frames[next], gate);
-        }
-
-        hold_for_capture(base, frames[next++], "cine");
-    }
+    rs64_pause_point("cutscene", rd(0x800B0B28u));
 }
 
 extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
@@ -577,6 +610,10 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
     if (s.mode == Mode::Replay && s.frame >= s.frames.size()) {
         end_session("replay finished");
     }
+}
+
+extern "C" int rs64_ls_replaying(void) {
+    return st().mode == Mode::Replay ? 1 : 0;
 }
 
 extern "C" float rs64_ls_throttle(float live) {

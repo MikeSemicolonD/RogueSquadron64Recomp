@@ -1,10 +1,12 @@
 #pragma once
 // Mod levels: a mod's levels.json lists new levels that play as a stock "template" level with their own folder, cutscenes and text.
+#include "game/level_rules.h"
 #include "json/json.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -55,6 +57,8 @@ struct ModLevel {
     // Opening crawl: kCrawlTemplate (the template's, if it has one), kCrawlNone, or its own text then planet pan-down 0-3.
     int crawl = -2;
     std::string crawlChapter, crawlTitle, crawlBody;
+    // A crawl file (assets/crawl/<name>/crawl.json) named by "crawl": "<name>"; crawl stays kCrawlTemplate until one is found.
+    std::string crawlName;
     std::vector<Objective> objectives;
     // Starting song: a song id from the music cue table (0x8010B1C0), or kMusicTemplate for the template's.
     int music = kMusicTemplate;
@@ -98,10 +102,128 @@ inline std::string crawlText(const std::string& s) {
     return out;
 }
 // One crawl string as the game's (buildModelViewerTextPage): "*}" centred small line, "*{" centred title, then the wrapped body.
-inline std::string crawlString(const ModLevel& l) {
+inline std::string crawlString(const std::string& chapter, const std::string& title, const std::string& body) {
     std::string s;
-    if (!l.crawlChapter.empty()) s += "*}" + crawlText(l.crawlChapter) + "\n\n";
-    return s + "*{" + crawlText(l.crawlTitle) + "\n\n" + crawlText(l.crawlBody);
+    if (!chapter.empty()) s += "*}" + crawlText(chapter) + "\n\n";
+    return s + "*{" + crawlText(title) + "\n\n" + crawlText(body);
+}
+inline std::string crawlString(const ModLevel& l) {
+    return crawlString(l.crawlChapter, l.crawlTitle, l.crawlBody);
+}
+
+// A camera key: seconds from the crawl's start, position, and rotation in degrees (applied as a DAT rotation: x, then y, then z).
+struct CrawlKey {
+    float at = 0;
+    float pos[3] = {};
+    float rot[3] = {};
+};
+
+// A crawl file, assets/crawl/<name>/crawl.json. planet: the stock backdrop 0-3 (with ownPlanet, the one a missing own backdrop
+// falls back to); replaces: -1, or the stock chapter 0-3 this crawl plays instead of; camera: its keys (empty = the game's camera).
+struct Crawl {
+    std::string name, folder, chapter, title, body;
+    int planet = 0;
+    bool ownPlanet = false;
+    int replaces = -1;
+    std::vector<CrawlKey> camera;
+};
+
+// The keyed camera at second s: quadratic ease in/out between keys (as the stock pan, quadraticEaseInOut 0x800662E0), held outside them.
+inline bool crawlCameraAt(const std::vector<CrawlKey>& keys, float s, float pos[3], float rot[3]) {
+    if (keys.empty()) return false;
+    size_t j = 0;
+    while (j + 1 < keys.size() && s >= keys[j + 1].at) j++;
+    const CrawlKey& a = keys[j];
+    const CrawlKey& b = keys[j + 1 < keys.size() ? j + 1 : j];
+    const float span = b.at - a.at, k = span > 0 ? std::clamp((s - a.at) / span, 0.0f, 1.0f) : 0.0f;
+    const float e = k <= 0.5f ? 2 * k * k : 1 - 2 * (1 - k) * (1 - k);
+    for (int i = 0; i < 3; i++) {
+        pos[i] = a.pos[i] + (b.pos[i] - a.pos[i]) * e;
+        rot[i] = a.rot[i] + (b.rot[i] - a.rot[i]) * e;
+    }
+    return true;
+}
+
+inline std::string crawlString(const Crawl& c) {
+    return crawlString(c.chapter, c.title, c.body);
+}
+
+// The crawl file that plays for level (the level being played; a mod level plays as its template), or nullptr for the game's own
+// or a mod level's inline crawl. Later crawls (later-loaded mods) win.
+inline const Crawl* pickCrawl(int level, const ModLevel* modLevel, const std::vector<Crawl>& crawls) {
+    if (modLevel && !modLevel->crawlName.empty()) {
+        for (auto it = crawls.rbegin(); it != crawls.rend(); ++it) {
+            if (it->name == modLevel->crawlName) return &*it;
+        }
+        return nullptr;
+    }
+    if (modLevel && modLevel->crawl != kCrawlTemplate) return nullptr;
+    const int chapter = level == 0 ? 0 : level == 5 ? 1 : level == 10 ? 2 : level == 15 ? 3 : -1;
+    for (auto it = crawls.rbegin(); chapter >= 0 && it != crawls.rend(); ++it) {
+        if (it->replaces == chapter) return &*it;
+    }
+    return nullptr;
+}
+
+inline std::optional<Crawl> parseCrawl(const std::string& name, const std::string& text, std::vector<std::string>& errors) {
+    const auto doc = nlohmann::json::parse(text, nullptr, false);
+    const std::string where = "crawl " + name;
+    if (doc.is_discarded() || !doc.is_object()) {
+        errors.push_back(where + ": crawl.json is not a JSON object");
+        return std::nullopt;
+    }
+    Crawl c;
+    c.name = name;
+    c.chapter = rs64rules::field(doc, "chapter", std::string(), where, errors);
+    c.title = rs64rules::field(doc, "title", std::string(), where, errors);
+    c.body = rs64rules::field(doc, "body", std::string(), where, errors);
+    c.ownPlanet = doc.contains("planet") && doc["planet"].is_string() && doc["planet"].get<std::string>() == "own";
+    const int planet = c.ownPlanet ? rs64rules::field(doc, "base", 0, where, errors) : rs64rules::field(doc, "planet", 0, where, errors);
+    const int replaces = rs64rules::field(doc, "replaces", -1, where, errors);
+    c.planet = planet >= 0 && planet <= 3 ? planet : 0;
+    if (planet != c.planet) errors.push_back(where + ": the planet is 0-3; 0 used");
+    c.replaces = replaces >= -1 && replaces <= 3 ? replaces : -1;
+    if (replaces != c.replaces) errors.push_back(where + ": \"replaces\" is a chapter 0-3; ignored");
+    if (name.size() > 15) errors.push_back(where + ": the name is longer than 15 characters, so its own files are not found");
+    const auto vec3 = [](const nlohmann::json& v, float out[3]) {
+        if (!v.is_array() || v.size() != 3) return false;
+        for (int i = 0; i < 3; i++) {
+            if (!v[i].is_number()) return false;
+            out[i] = v[i].get<float>();
+        }
+        return true;
+    };
+    const auto& cam = doc.contains("camera") ? doc["camera"] : nlohmann::json();
+    for (size_t i = 0; cam.is_array() && i < cam.size(); i++) {
+        CrawlKey k;
+        const auto& e = cam[i];
+        const bool ok = e.is_object() && e.contains("at") && e["at"].is_number() && e.contains("pos") && vec3(e["pos"], k.pos) && (!e.contains("rot") || vec3(e["rot"], k.rot));
+        if (!ok) {
+            errors.push_back(where + ": camera key " + std::to_string(i + 1) + " needs \"at\" seconds and \"pos\" [x, y, z] (and \"rot\" [x, y, z]); skipped");
+            continue;
+        }
+        k.at = e["at"].get<float>();
+        c.camera.push_back(k);
+    }
+    std::stable_sort(c.camera.begin(), c.camera.end(), [](const CrawlKey& a, const CrawlKey& b) { return a.at < b.at; });
+    return c;
+}
+
+// The manifest name a crawl's own file is served under, inside the crawl scene's directories (a manifest takes added files only
+// under its own top directories): crawl/<name>/backdrop -> backdrop/<name>, crawl/<name>/dat -> frontend/starwars/<name>.
+inline std::string crawlServedPath(const std::string& key) {
+    const size_t slash = key.find('/', 6);
+    if (key.rfind("crawl/", 0) != 0 || slash == std::string::npos) return std::string();
+    const std::string name = key.substr(6, slash - 6), file = key.substr(slash + 1);
+    return file == "backdrop" ? "backdrop/" + name : file == "dat" ? "frontend/starwars/" + name : std::string();
+}
+
+// The name a lookup uses while crawl c plays: its own backdrop (with planet "own") and its own scene DAT when it ships them (have).
+inline std::optional<std::string> crawlAsset(const Crawl& c, const std::string& lookedUp, const std::set<std::string>& have) {
+    const bool backdrop = c.ownPlanet && lookedUp.rfind("backdrop/planet_", 0) == 0;
+    const std::string file = backdrop ? c.folder + "/backdrop" : lookedUp == "frontend/starwars/dat" ? c.folder + "/dat" : std::string();
+    if (file.empty() || !have.count(file)) return std::nullopt;
+    return crawlServedPath(file);
 }
 
 constexpr int kTemplateCraft = -1;
@@ -184,6 +306,7 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
             l.voice = e["voice"].get<int>();
         }
         if (e.contains("crawl") && e["crawl"].is_boolean() && !e["crawl"].get<bool>()) l.crawl = kCrawlNone;
+        if (e.contains("crawl") && e["crawl"].is_string()) l.crawlName = e["crawl"].get<std::string>();
         if (e.contains("crawl") && e["crawl"].is_object()) {
             const auto& c = e["crawl"];
             l.crawlChapter = c.value("chapter", std::string());

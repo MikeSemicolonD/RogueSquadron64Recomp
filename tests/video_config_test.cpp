@@ -222,6 +222,25 @@ static void test_fullscreen_roundtrip_and_peek() {
     CHECK(rs64::video::fullscreen() == false);
 }
 
+static void test_language_code_roundtrip() {
+    UC uc; uc.validate();
+    rs64::video::set_language("");
+    CHECK(!rs64::video::to_friendly(uc).contains("language"));
+    std::string p = write_tmp("tmp_language_video.json", R"({"schema":2,"drawDistance":1.0,"language":"ja"})");
+    rs64::video::load(uc, p);
+    std::remove(p.c_str());
+    CHECK(rs64::video::language() == "ja");
+    CHECK(rs64::video::to_friendly(uc).value("language", std::string{}) == "ja");
+
+    // The env pin wins live and is never saved; a menu pick clears it.
+    rs64::video::pin_language("de");
+    CHECK(rs64::video::language() == "de");
+    CHECK(rs64::video::to_friendly(uc).value("language", std::string{}) == "ja");
+    rs64::video::set_language("fr");
+    CHECK(rs64::video::language() == "fr");
+    rs64::video::set_language("");
+}
+
 static void test_effective_draw_distance() {
     using rs64::video::effective_draw_distance;
     CHECK(effective_draw_distance(2.0f, false, 15) == 2.0f);
@@ -323,6 +342,7 @@ int main() {
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
     test_fullscreen_roundtrip_and_peek();
+    test_language_code_roundtrip();
     test_effective_draw_distance();
     test_to_friendly_basic();
     test_to_friendly_mapping();

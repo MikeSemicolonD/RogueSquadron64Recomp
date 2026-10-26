@@ -4,7 +4,7 @@
 # Level and craft come from the .rec header; the hash log and PNGs go to dumps\capture\<Tag>\ (never next to the recording).
 # -RenderDoc also writes GPU captures (.rdc) of each listed frame to dumps\capture\<Tag>\rdc\ (open them with the renderdoc MCP or qrenderdoc).
 # -Cutscene <level>,<kind> instead of -Recording boots straight into that cutscene (kind 0 intro, 1 extro, 2 special) and captures its own frames
-# (the RS64 Explorer timeline's frame numbers, ROGUESQ_CINE_PAUSE_AT); other running game instances are left alone in this mode.
+# (the RS64 Explorer timeline's frame numbers, ROGUESQ_PAUSE_AT=cutscene:<f>); other running game instances are left alone in this mode.
 param(
     [string]$Recording = "",
     [int[]]$Cutscene = @(),
@@ -43,7 +43,7 @@ $sorted = @($Frames | Sort-Object -Unique)
 
 $vars = @{ ROGUESQ_FAKE_CONTROLLER = "1"; ROGUESQ_AUDIO_GAIN = "0"; ROGUESQ_UNFOCUSED = "1"; ROGUESQ_SPEED = "$Speed" }
 if ($Cutscene) {
-    $vars += @{ ROGUESQ_BOOT_TARGET = "cutscene:$($Cutscene -join ',')"; ROGUESQ_CINE_PAUSE_AT = ($sorted -join ','); ROGUESQ_CINE_PAUSE_FILE = $hashOut }
+    $vars += @{ ROGUESQ_BOOT_TARGET = "cutscene:$($Cutscene -join ',')"; ROGUESQ_PAUSE_AT = (($sorted | ForEach-Object { "cutscene:$_" }) -join ','); ROGUESQ_PAUSE_FILE = $hashOut }
 }
 else {
     $vars += @{

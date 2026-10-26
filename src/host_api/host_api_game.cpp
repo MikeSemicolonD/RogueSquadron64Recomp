@@ -270,6 +270,7 @@ bool hook_site_is_entry(uint32_t hook) {
     case RS64_HOOK_RESULT_FAIL:
     case RS64_HOOK_RESULT_SUCCESS:
     case RS64_HOOK_TRIGGER_EFFECT:
+    case RS64_HOOK_ATST_TICK:
         return true;
     default:
         return false;

@@ -137,6 +137,15 @@ The primary correctness workflow — diff a live run against a Project64 golden 
 - `compare_mesg_trace.py` / `symbolize_mesg_trace.py` — message-order trace comparison (pair with `ROGUESQ_LOG_MESG_TRACE`).
 - `checkpoint.ps1` — orchestrates a capture + diff checkpoint.
 
+### Frame-exact screenshots
+
+The game runs on the user's machine and every tool call adds unknown latency, so never time a screenshot by wall clock (sleeping "about 90 s" lands seconds off). Hold the game on an exact frame instead, then capture it:
+
+1. Launch with a pause list and a handshake base: `ROGUESQ_LS_PAUSE_AT=<frames>` for input replays (`capture-frames.ps1` does all of this), or `ROGUESQ_PAUSE_AT=<clock>[:<frame>],...` with `ROGUESQ_PAUSE_FILE=<base>` for anything else. A clock is a game state (`menu.options`, `mission`; frames since it was entered), `cutscene` (the cutscene's own frames) or `crawl` (the crawl clock at 30 a second, as the RS64 Explorer timelines count them).
+2. Wait until `<base>.paused` exists (it holds the frame number); the game thread is held there, up to 30 s.
+3. Capture the window by PID (`capture_window_by_pid`), never by title: other sessions may be running their own (often Debug) exe.
+4. Write the frame number to `<base>.resume` to release it, then wait for the next `.paused`.
+
 ### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
 
 - `tools/re/rename/` — the symbol-renaming pipeline (`build_redefs.py`, `find_callers.py`, ...). After a rename batch, regen and build: a name that drifted between the ELF and `rogue_squadron.toml` hooks fails there.
@@ -164,7 +173,7 @@ librecomp's section table covers all three `.ovl.*` overlays (mission / menu / c
 
 ### Terrain grid is 128x128 in host RAM
 
-The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/game/hook_helpers.cpp)); the camera name for a mod-linked mid-mission shot sits at 0x80C40000-0x80C400FF, a mod level's redirected asset name at 0x80C40100-0x80C401FF, its medal_info records at 0x80C40200-0x80C40223, SELECT GAME's mod medal text at 0x80C40300-0x80C40367, its opening crawl text at 0x80C41000-0x80C41FFF and its pause-list objective text at 0x80C42000-0x80C420FF and the pause menu's GAME SETTINGS and mod-page arrays at 0x80C43000-0x80C43FFF and its objective camera names at 0x80C42100-0x80C4217F. Keep other host tables clear of them. `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch; keep host-side tables clear of it), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/game/hook_helpers.cpp)); the camera name for a mod-linked mid-mission shot sits at 0x80C40000-0x80C400FF, a mod level's redirected asset name at 0x80C40100-0x80C401FF, its medal_info records at 0x80C40200-0x80C40223, SELECT GAME's mod medal text at 0x80C40300-0x80C40367, its opening crawl text at 0x80C41000-0x80C41FFF and its pause-list objective text at 0x80C42000-0x80C420FF and the pause menu's GAME SETTINGS and mod-page arrays at 0x80C43000-0x80C43FFF and its objective camera names at 0x80C42100-0x80C4217F; level rules use 0x80C42200-0x80C4223F for object names. With a language mod installed, 0x80C44000-0x80CE3FFF holds the extended fonts, the enlarged texture record and material slot tables and encoded text, and scene texture pools move to 0x80CE4000-0x80FFFFFF and 0x80810000-0x809FFFFF ([src/game/lang.cpp](src/game/lang.cpp)). Keep other host tables clear of them, and of 0x80800000-0x8080FFFF (librecomp's cart PI handle and the patches ELF's data at 0x80801000). `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
 
 ### Per-player data relocation (co-op)
 
@@ -181,7 +190,7 @@ Online co-op (`ROGUESQ_MP=host|join`, or the MULTIPLAYER lobby page from the `mu
 - Incoming damage waits for the mission to settle (30 frames, no cutscene), or the objective trigger faults.
 - The menu font has no period; `ensure_menu_period` builds it at runtime, so use the existing dot and blank glyph helpers, not hardcoded glyphs.
 - Android needs the `INTERNET` permission and a Wi-Fi multicast lock (`MainActivity`) for LAN discovery.
-- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test`, `rs64_lights_test`, the multiplayer mod's `mp_core_test`, `net_core_test` and `net_link_test` (in `mods/multiplayer-native/tests`), plus `style_check`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
+- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test`, `rs64_lights_test`, the multiplayer mod's `mp_core_test`, `net_core_test` and `net_link_test` (in `mods/multiplayer-native/tests`), plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/CMakeLists.txt`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests && cmake --build build-tests --config Release --target rs64_unit_tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
 
 ### Game-state model + BOOT_TARGET nav engine
 

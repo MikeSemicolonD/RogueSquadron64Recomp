@@ -353,8 +353,9 @@ const std::vector<std::vector<Span>>& region_spans() {
         {{0x8010C9E0u, 0x50}},
         {{0x801388A0u, 0x80}},
         {{relocated(0x80138060u), 0x200}},
-        // Skips gPlayers[0]+0x215 (text pending flag) and the text-element block +0x240..+0x24F (ids from counter 0x800CC850), set on the format-message worker's timing.
-        {{0x80137DB8u, 0x215}, {0x80137FCEu, 0x2A}, {0x80138008u, 0x50}},
+        // Skips gPlayers[0]+0x4 and +0xC0 (heap pointers, moved by mods that load bigger files), +0x215 (text pending flag) and the text-element block +0x240..+0x24F
+        // (ids from counter 0x800CC850, set on the format-message worker's timing).
+        {{0x80137DB8u, 0x4}, {0x80137DC0u, 0xB8}, {0x80137E7Cu, 0x151}, {0x80137FCEu, 0x2A}, {0x80138008u, 0x50}},
         {{0x8013A950u, 0x20}},
     };
 
