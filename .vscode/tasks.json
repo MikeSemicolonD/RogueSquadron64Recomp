@@ -34,7 +34,7 @@
             },
             "group": "build",
             "problemMatcher": "$msCompile",
-            "detail": "Release exe (unvalidated config). POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
+            "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
             "label": "Configure (Windows x86)",
