@@ -1,8 +1,8 @@
-# Rogue Squadron save editor
+# RS64 Save Editor
 
-`rs64_save_editor.html` — a self-contained, offline HTML tool for reading and editing
-*Star Wars: Rogue Squadron* (N64) EEPROM save data. No build step, no dependencies:
-open the file in any browser.
+`rs64_save_editor.html` (with `style.css` and `save_editor.js` beside it) — an offline HTML tool
+for reading and editing *Star Wars: Rogue Squadron* (N64) EEPROM save data. No build step, no
+dependencies: open the page in any browser, from disk or a server.
 
 ## What it edits
 
@@ -18,23 +18,32 @@ preserves the loaded filename, so an edited `<game-id>.bin` is a drop-in replace
 - **Pilots** — 3 account slots: name, current level, per-level medals
   (none/bronze/silver/gold, 19 levels), pre-selected profile, active flag, and per-pilot
   weapon upgrades (the `account +0x0C` unlock word, mask `0x7FFE00`).
-- **Elite Rogues** — the 10-entry high-score board with derived score and rank.
-- **Settings** — music/SFX/speech volume, controller and language bytes, active-slot mask.
+- **Elite Rogues** — the 10-entry high-score board with derived score and rank, kept in score
+  order as the game's `highScoreBubbleSort` keeps it. Each row's pilot ID (one byte, entry `+6`)
+  ties it to the pilot with that `accountNumber`.
+- **Settings** — music/SFX/speech volume (0-127, the pause-menu slider's range), controller
+  layout (0-3) and language (0 English, 1 German, 2 French); copied from `gGameSettings`
+  `+0x20..0x22`, `+0x05` and `+0x06` by `serializeSettingsToSaveAndPersist`.
 - **Unlocks** — the cheat-code flags (`cheatCodeFlags`, body `+0x08`): ships (Millennium
   Falcon, TIE, Naboo, AT-ST), bonus levels (Tatooine/Trench/Hoth), "all weapon & shield
   powerups", unlimited lives, all-missions, altitude radar, menu unlocks, and a mutually
   exclusive Luke-skin selector. Bit map confirmed in the sister decomp's
   `docs/cheat_codes/cheat_codes.md` (runtime word `0x80130B58` = `D_80130B40.cheatCodeFlags[0]`).
-- **Raw / Hex** — annotated hex dump (header / body copy 0 / body copy 1 / padding),
-  arbitrary byte poke, manual checksum recompute, and copy-0 → copy-1 mirror.
+  CREDITS, BLAMEUS and CHICKEN act only when typed on the passcode screen and are listed disabled. The Naboo
+  Starfighter has no flag: typing `!YNGWIE!` after `HALIFAX?` saves the key that decrypts the ship
+  (body `+0xAC` = `0x050FE09C`, the code's CRC) and clears the HALIFAX? bit, and the checkbox does the same.
+- **Controller layouts** — the four layouts differ only in a few buttons (blasters, thrust, brakes,
+  switch view, fire mode); the dropdown names each by what sets it apart, with the full mapping in
+  its title. Read from the menu overlay's tables at `0x800CC9D8` (per-layout button masks),
+  `0x800CC9E8` (action order), `0x800CCA0C` (action labels) and `0x800CCA30` (button slots).
 
-Structured edits mirror both body copies and recompute all checksums automatically, so the
-exported file passes the game's `initSaveData` sanity check. The editor only exports edits of
-a loaded save; the example data it opens with can't be exported.
+Edits mirror both body copies and recompute all checksums automatically, so the
+exported file passes the game's `initSaveData` sanity check. The editor only edits real saves:
+it opens empty, and a file is accepted only if it is at least 512 bytes and its header and
+checksums already match the game's. It never builds a save from nothing.
 
-The confirmed weapon-upgrade bits are the seeker toggles (`0x800`/`0x2000`/`0x4000`, per
-`func_800C6728`); the remaining "advanced" toggles are inferred (shown dashed) and not yet
-verified in-game.
+All seven weapon-upgrade toggles work in game; the seeker bits (`0x800`/`0x2000`/`0x4000`) are
+also confirmed in `func_800C6728`.
 
 ## Format (verified against the game code)
 
@@ -57,4 +66,4 @@ bytes are identical regardless — only the name changes.
 Opened locally, export downloads the raw image directly. In the claude.ai Artifact sandbox,
 raw binary isn't an allowed download type, so it delivers a `.zip` containing the `.eep` via
 the `downloads` capability (unzip to get the save); if that's unavailable it falls back to a
-base64 blob you can copy out of the Raw tab.
+base64 blob shown under the tabs, to copy out.

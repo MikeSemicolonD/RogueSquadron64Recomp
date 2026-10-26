@@ -1024,6 +1024,8 @@ await check('a path copied from another level keeps its shape and safe events, u
   // Continuation blocks no longer name Madine_Attack_2.
   for (let k = 0; k < 8; k++) assert.equal(dv.getUint8(copy.offset + dv.getUint32(copy.offset + 0x60 + k * 16)), 0);
   assert.equal(RS64.uniqueName(bytes, 'Madine_Attack'), 'Madine_Attack_2');
+  // Names other files use (rules naming a deleted object) are skipped too.
+  assert.equal(RS64.uniqueName(bytes, 'Madine_Attack', new Set(['Madine_Attack_2', 'Madine_Attack_3'])), 'Madine_Attack_4');
   lookupAll(bytes);
   // A path with events: kept ones point at copied items of the same kind, the others are dropped and counted.
   let found = false;
@@ -1126,6 +1128,67 @@ await check('music cues: 49 songs, cue 2 = c1l1_theme, the level starting songs 
   const songs = new Set(m.cues.map((c) => c.song));
   assert.ok(m.levelSongs.every((s) => songs.has(s)));
 });
+await check('naming an unnamed path event: the game finds it by name and its fields stay', async () => {
+  const dv = await rom.read('data/level/lv_1/dat'), orig = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+  const ev = RS64.parseDAT(dv).items.find((it) => it.pathEvent && !it.name);
+  const out = RS64.datNameItem(orig, ev, 'rule_point_1'), back = RS64.parseDAT(new DataView(out.buffer)).items.find((it) => it.type === 7 && it.index === ev.index);
+  assert.equal(back.name, 'rule_point_1');
+  assert.deepEqual(back.pathEvent, ev.pathEvent);
+  assert.equal(RS64.datLookup(out, 'rule_point_1').index, ev.index);
+});
+await check('rules round-trip and list their references', () => {
+  const doc = RS64.rulesParse(JSON.stringify({ version: 1, rules: [
+    { when: 'enter', object: 'bridge', who: 'player', actions: [{ do: 'spawn', kind: 'TIE fighter', count: 3, path: 'tie_path' }, { do: 'camera', camera: 'cam1' }] },
+    { when: 'start', actions: [{ do: 'destroy', unit: 'shuttle' }] }] }));
+  assert.equal(doc.rules.length, 2);
+  assert.deepEqual(RS64.rulesParse(RS64.rulesWrite(doc)), doc);
+  assert.deepEqual(RS64.ruleRefs(doc.rules[0]).map((r) => r.name), ['bridge', 'player', 'tie_path', 'cam1'].filter((n) => n !== 'player'));
+  assert.deepEqual(RS64.ruleRefs(doc.rules[1]).map((r) => r.name), ['shuttle']);
+  assert.deepEqual(RS64.rulesParse('not json'), { version: 1, rules: [] });
+});
+await check('renaming an object rewrites every rule that names it', () => {
+  const doc = RS64.rulesParse(JSON.stringify({ version: 1, rules: [
+    { when: 'enter', object: 'bridge', actions: [] }, { when: 'leave', object: 'bridge', actions: [] },
+    { when: 'start', actions: [{ do: 'destroy', unit: 'bridge' }] }, { when: 'start', actions: [{ do: 'destroy', unit: 'other' }] }] }));
+  assert.equal(RS64.rulesRename(doc, 'bridge', 'bridge_2'), 3);
+  assert.ok(!JSON.stringify(doc).includes('"bridge"'));
+  assert.equal(doc.rules[3].actions[0].unit, 'other');
+});
+await check('a rule whose object is gone is reported broken', async () => {
+  const items = RS64.parseDAT(await rom.read('data/level/lv_1/dat')).items;
+  const doc = RS64.rulesParse(JSON.stringify({ version: 1, rules: [
+    { when: 'enter', object: 'event_win_the_level', actions: [] }, { when: 'destroyed', object: 'no_such_unit', actions: [] }] }));
+  assert.deepEqual(RS64.rulesBroken(doc, items), [{ rule: 1, field: 'object', name: 'no_such_unit' }]);
+});
+await check('RULE_WHENS offer only kinds that fit', () => {
+  const on = (kind) => RS64.RULE_WHENS.filter((w) => w.on === kind).map((w) => w.when);
+  assert.deepEqual(on('area'), ['enter', 'leave']);
+  assert.deepEqual(on('unit'), ['destroyed', 'healthBelow']);
+  assert.deepEqual(on('path'), ['pathPoint']);
+  assert.ok(on('level').includes('start') && on('level').includes('after'));
+  assert.equal(RS64.RULES_PATH('ice'), 'mod/assets/level/ice/rules.json');
+  assert.ok(RS64.RULE_ACTIONS.find((a) => a.do === 'spawn').params.some((p) => p.key === 'path' && p.picker === 'path'));
+});
+await check('rulesExtParse reads a mod\'s actions and events, skipping nameless ones', () => {
+  const ext = RS64.rulesExtParse(JSON.stringify({
+    actions: [{ do: 'shake', label: 'Shake the camera', params: [{ key: 'seconds', picker: 'seconds' }, { key: 'how', picker: 'teleporter' }] }, { label: 'no name' }],
+    events: [{ custom: 'mod.tripped', label: 'The tripwire is crossed' }, { custom: '' }],
+  }), 'shaker');
+  assert.deepEqual(ext, [
+    { kind: 'action', name: 'shake', label: 'Shake the camera', mod: 'shaker', params: [{ key: 'seconds', picker: 'seconds' }, { key: 'how', picker: 'text' }] },
+    { kind: 'event', name: 'mod.tripped', label: 'The tripwire is crossed', mod: 'shaker', params: [] },
+  ]);
+  assert.deepEqual(RS64.rulesExtParse('not json', 'x'), []);
+});
+await check('a mod action\'s object parameters are references too', () => {
+  const ext = RS64.rulesExtParse(JSON.stringify({ actions: [{ do: 'tow', params: [{ key: 'target', picker: 'unit' }, { key: 'force', picker: 'number' }] }] }), 'tower');
+  const doc = { version: 1, rules: [{ when: 'start', actions: [{ do: 'tow', target: 'walker', force: 3 }] }] };
+  assert.deepEqual(RS64.ruleRefs(doc.rules[0], ext), [{ field: 'actions.0.target', name: 'walker' }]);
+  assert.deepEqual(RS64.ruleRefs(doc.rules[0]), []);
+  assert.deepEqual(RS64.rulesBroken(doc, [{ name: 'other' }], ext), [{ rule: 0, field: 'actions.0.target', name: 'walker' }]);
+  assert.equal(RS64.rulesRename(doc, 'walker', 'walker_2', ext), 1);
+  assert.equal(doc.rules[0].actions[0].target, 'walker_2');
+});
 await check('a blank level keeps only the player start, on flat ground', async () => {
   const dv = await rom.read('data/level/lv_1/dat'), blank = RS64.datBlank(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice());
   const items = RS64.parseDAT(new DataView(blank.buffer, blank.byteOffset, blank.byteLength)).items;
@@ -1166,6 +1229,236 @@ await check('a project carries mod/camera_shots.txt with an empty original', asy
   const bytes = RS64.projectWrite({ romCrc: crc, originals: new Map([[p, new Uint8Array(0)]]), current: new Map([[p, now]]), history });
   const back = await RS64.projectRead(bytes, crc, async () => new Uint8Array(0));
   assert.deepEqual([...back.current.get(p)], [...now]);
+});
+
+await check('stock crawls read from the ROM', async () => {
+  const crawls = RS64.stockCrawls(RS64.parseFrontText(await rom.read('data/front_TXT')));
+  assert.equal(crawls.length, 4);
+  assert.deepEqual(crawls.map((c) => c.planet), [0, 1, 2, 3]);
+  assert.equal(crawls[0].chapter, 'Chapter I');
+  assert.equal(crawls[0].title, 'THE REBEL OPPOSITION');
+  assert.ok(crawls[0].body.startsWith('Six months have passed') && !crawls[0].body.includes('*'));
+  assert.equal(crawls[3].title, 'DARK EMPIRE');
+  assert.equal(RS64.CRAWL_PLANETS.length, 4);
+  assert.equal(RS64.CRAWL_PATH('shadows'), 'mod/assets/crawl/shadows/crawl.json');
+});
+await check('crawl json round trip', () => {
+  const camera = [{ at: 0, pos: [0, 0, 0], rot: [0, 0, 0] }, { at: 88.5, pos: [0, 5, 1], rot: [20, 0, 0] }];
+  const c = { chapter: 'Chapter V', title: 'SHADOWS', body: 'Text\n\nMore', planet: 'own', base: 2, replaces: 1, camera };
+  assert.deepEqual(RS64.crawlParse(RS64.crawlWrite(c)), c);
+  const s = { chapter: '', title: 'T', body: '', planet: 3, replaces: -1, camera: [] };
+  assert.deepEqual(RS64.crawlParse(RS64.crawlWrite(s)), { ...s, base: 0 });
+  const plain = JSON.parse(RS64.crawlWrite(s));
+  assert.ok(!('base' in plain) && !('replaces' in plain) && !('camera' in plain));
+  const none = { chapter: '', title: '', body: '', planet: 0, base: 0, replaces: -1, camera: [] };
+  assert.deepEqual(RS64.crawlParse('not json'), none);
+  assert.deepEqual(RS64.crawlParse('{"planet":9,"replaces":"x","title":5}'), none);
+  // Camera keys: sorted by time, rotation optional, malformed ones dropped (as the host's parseCrawl).
+  const keyed = RS64.crawlParse('{"camera":[{"at":5,"pos":[1,2,3]},{"at":1,"pos":[0,0,0],"rot":[1,2,3]},{"at":"x","pos":[1]}]}');
+  assert.deepEqual(keyed.camera, [{ at: 1, pos: [0, 0, 0], rot: [1, 2, 3] }, { at: 5, pos: [1, 2, 3], rot: [0, 0, 0] }]);
+});
+await check('crawl camera eases between keys like the stock pan', () => {
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-6, `${a} != ${b}`);
+  const stock = RS64.CRAWL_STOCK_CAMERA;
+  near(RS64.crawlCameraAt(stock, 50).pos[1], 0);
+  near(RS64.crawlCameraAt(stock, 85.5).pos[1], 0.625);
+  near(RS64.crawlCameraAt(stock, 86.5).pos[1], 2.5);
+  near(RS64.crawlCameraAt(stock, 200).pos[1], 5);
+  near(RS64.crawlCameraAt([{ at: 0, pos: [0, 0, 0], rot: [0, 0, 0] }, { at: 2, pos: [0, 0, 0], rot: [40, 0, 0] }], 1).rot[0], 20);
+});
+await check('crawl font gaps', () => {
+  assert.deepEqual(RS64.crawlFontGaps('Rebels & "spies"#'), ['&', '"', '#']);
+  assert.deepEqual(RS64.crawlFontGaps("It's (5/6): fine!\n"), []);
+});
+await check('levels.json crawl by name', () => {
+  assert.equal(RS64.modLevelsParse(RS64.modLevelsWrite([{ id: 'a', crawl: 'shadows' }]))[0].crawl, 'shadows');
+});
+await check('crawl lines in the starwars50 font', async () => {
+  const font = RS64.crawlFont(new Uint8Array(buf.buffer, buf.byteOffset, buf.length), await rom.read('data/fonts/starwars50'));
+  assert.equal(font.cell, 64);
+  assert.equal(font.pixels.length, (64 * 64 * 101) / 2);
+  assert.equal(font.glyphs.get('A').width, 26);
+  assert.equal(font.glyphs.get('A').index, 0);
+  assert.ok(!font.glyphs.has('&'));
+});
+await check('crawl layout as buildModelViewerTextPage', async () => {
+  const font = RS64.crawlFont(new Uint8Array(buf.buffer, buf.byteOffset, buf.length), await rom.read('data/fonts/starwars50'));
+  // W advances 36/64 = 0.5625, a space 0.28. The fourth word passes 7.7 and leaves the line 0.19 a space too wide, so it is re-broken
+  // before it and the three words are justified to 8.7; the paragraph's last line stays left. Centred lines: x += (8.7 - W) / 2.
+  const { glyphs, height } = RS64.crawlLayout(font, '*}A\n\n*{T\n\nWWWW WWWW WWWW WWWW WWWW');
+  const near = (a, b) => assert.ok(Math.abs(a - b) < 1e-4, `${a} != ${b}`);
+  near(height, 7.2);
+  const [chapter, title] = glyphs, body = glyphs.slice(2);
+  assert.deepEqual([chapter.ch, chapter.xs, chapter.ys, chapter.y], ['A', 0.869565, 0.769231, 0]);
+  near(chapter.x, -0.0652174 / 2);
+  assert.deepEqual([title.ch, title.xs, title.ys, title.y], ['T', 1.2, 1.8, 2.4]);
+  near(title.x, 0.05);
+  assert.deepEqual(body.map((g) => g.y), [...Array(12).fill(4.8), ...Array(8).fill(6)]);
+  const gap = (8.7 - (2 * 2.53 + 3 * 0.5625)) / 2;
+  near(body[0].x, -4.35);
+  near(body[4].x, 2.53 + gap - 4.35);
+  near(body[8].x, 2 * (2.53 + gap) - 4.35);
+  near(body[12].x, -4.35);
+  near(body[16].x, 2.53 - 4.35);
+  assert.equal(body[0].glyph, font.glyphs.get('W').index);
+});
+
+await check('crawl backdrop JPEG has the stock layout', async () => {
+  // The game's JFIF decoder takes what the stock backdrops use: baseline, Y 2x1 (4:2:2), one DQT and one DHT segment.
+  const layout = (b) => {
+    const out = [];
+    for (let i = 2; i < b.length - 1;) {
+      const m = b[i + 1], len = (b[i + 2] << 8) | b[i + 3];
+      out.push(m >= 0xC0 && m <= 0xC2 ? `sof${m - 0xC0}:${b[i + 9]}:${b[i + 11].toString(16)},${b[i + 14].toString(16)},${b[i + 17].toString(16)}:${(b[i + 5] << 8) | b[i + 6]}x${(b[i + 7] << 8) | b[i + 8]}` : m.toString(16));
+      if (m === 0xDA) break;
+      i += 2 + len;
+    }
+    return out.join(' ');
+  };
+  const stock = new Uint8Array((await rom.read('data/backdrop/planet_0')).buffer.slice(0));
+  const rgba = new Uint8Array(640 * 128 * 4).map((_, i) => (i % 4 === 3 ? 255 : (i * 7) & 255));
+  const jpeg = RS64.encodeJpeg(rgba, 640, 128);
+  assert.equal(layout(jpeg), layout(stock));
+  assert.deepEqual([jpeg[0], jpeg[1], jpeg.at(-2), jpeg.at(-1)], [0xFF, 0xD8, 0xFF, 0xD9]);
+});
+
+await check('glyph pack round trip (RSG1, as lang_core.h parse_glyph_pack)', () => {
+  // The fixture from docs/modding-languages.md: U+30A2 width 3, space width 2, 4 x 2 cells.
+  const bytes = new Uint8Array([0x52, 0x53, 0x47, 0x31, 0, 4, 0, 2, 0, 0, 0, 2, 0, 0, 0x30, 0xA2, 3, 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0x20, 2, 0, 0, 0, 0]);
+  const pack = RS64.glyphPackParse(bytes);
+  assert.equal(pack.cellW, 4);
+  assert.equal(pack.cellH, 2);
+  assert.deepEqual(pack.glyphs.map((g) => [g.cp, g.advance]), [[0x30A2, 3], [0x20, 2]]);
+  assert.deepEqual([...pack.glyphs[0].pixels], [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.deepEqual([...RS64.glyphPackWrite(pack)], [...bytes]);
+  // The host skips these: wrong magic, odd width, a length that does not match the count.
+  assert.equal(RS64.glyphPackParse(new Uint8Array([0x52, 0x53, 0x47, 0x32, 0, 4, 0, 2, 0, 0, 0, 0])), null);
+  assert.equal(RS64.glyphPackParse(new Uint8Array([0x52, 0x53, 0x47, 0x31, 0, 3, 0, 2, 0, 0, 0, 0])), null);
+  assert.equal(RS64.glyphPackParse(bytes.subarray(0, bytes.length - 1)), null);
+});
+await check('game fonts from the font table 0x8009FC10', () => {
+  const fonts = RS64.gameFonts(new Uint8Array(buf.buffer, buf.byteOffset, buf.length));
+  const by = Object.fromEntries(fonts.map((f) => [f.name, f]));
+  assert.deepEqual(fonts.map((f) => f.name).sort(), ['credits', 'hatten13', 'italic35', 'normal10', 'normal11', 'starwars50', 'subtitle12', 'subtitle20', 'subtitle8']);
+  assert.deepEqual([by.italic35.cellW, by.italic35.cellH, by.italic35.drawn, by.italic35.count], [22, 35, 33, 54]);
+  assert.deepEqual([by.subtitle8.cellW, by.subtitle8.cellH, by.subtitle8.drawn], [6, 12, 10]);
+  assert.ok(by.italic35.extended && !by.starwars50.extended && !by.credits.extended);
+  assert.equal(by.starwars50.charset[0], 'A');
+});
+await check('font file coverage from its cmap (formats 4 and 12)', () => {
+  // A minimal sfnt with one cmap table: a format 4 subtable for A-C, and a format 12 one for U+30A2-U+30A3.
+  const be = (n, v) => (n === 2 ? [v >> 8, v & 255] : [v >>> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255]);
+  const f4 = [...be(2, 4), ...be(2, 32), ...be(2, 0), ...be(2, 4), 0, 0, 0, 0, 0, 0, ...be(2, 0x43), ...be(2, 0xFFFF), 0, 0, ...be(2, 0x41), ...be(2, 0xFFFF), ...be(2, 1 - 0x41 + 65536), ...be(2, 1), ...be(2, 0), ...be(2, 0)];
+  const f12 = [...be(2, 12), 0, 0, ...be(4, 28), ...be(4, 0), ...be(4, 1), ...be(4, 0x30A2), ...be(4, 0x30A3), ...be(4, 5)];
+  const cmap = [...be(2, 0), ...be(2, 2), ...be(2, 3), ...be(2, 1), ...be(4, 20), ...be(2, 3), ...be(2, 10), ...be(4, 20 + f4.length), ...f4, ...f12];
+  const sfnt = new Uint8Array([...be(4, 0x10000), ...be(2, 1), 0, 0, 0, 0, 0, 0, ...[0x63, 0x6D, 0x61, 0x70], ...be(4, 0), ...be(4, 28), ...be(4, cmap.length), ...cmap]);
+  const has = RS64.fontCovers(sfnt);
+  assert.deepEqual([0x40, 0x41, 0x43, 0x44, 0x30A2, 0x30A3, 0x30A4].map(has), [false, true, true, false, true, true, false]);
+  assert.equal(RS64.fontCovers(new Uint8Array([0x77, 0x4F, 0x46, 0x32])), null);
+});
+await check('language text characters', () => {
+  const front = JSON.stringify({ 162: '★ START ★', 163: 'Ok' }), game = JSON.stringify({ 0: 'モス・アイズリー', 1: 'é' });
+  assert.deepEqual(RS64.langChars([front, game, 'not json']), [0xE9, 0x2605, 0x30A2, 0x30A4, 0x30B9, 0x30BA, 0x30EA, 0x30E2, 0x30FB, 0x30FC].sort((a, b) => a - b));
+});
+await check('change kinds by path', () => {
+  const k = RS64.modChangeKind;
+  for (const p of ['data/level/lv_3/dat', 'data/cuts/intro_Barkhesh_3', 'data/backdrop/planet_0', 'data/medal_info', 'mod/levels.json', 'mod/camera_shots.txt', 'mod/assets/level/x/rules.json', 'mod/assets/crawl/x/crawl.json']) assert.equal(k(p), 'levels', p);
+  for (const p of ['data/pl_crafts/xwing_HOB', 'data/weapons_HOB', 'data/part_spr', 'data/explo2_IMGS', 'data/smkexp_PAL', 'data/gnrc_stuff/wtrspray_HOB', 'data/imp_stuff/wrld_dvfx']) assert.equal(k(p), 'models', p);
+  for (const p of ['data/sound/sdir_SND', 'data/speech', 'data/voice_TXT']) assert.equal(k(p), 'audio', p);
+  assert.equal(k('mod/roguesq_menu.json'), 'ui');
+  for (const p of ['mod/lang/front.json', 'mod/lang/glyphs/italic35.bin', 'mod/lang/glyphs/FONTS.txt']) assert.equal(k(p), 'fonts', p);
+  for (const p of ['data/reb_stuff/atpt_walk', 'data/blueprints/xwing']) assert.equal(k(p), 'models', p);
+  for (const p of ['data/ov/radar', 'data/frontend/hangar/dat']) assert.equal(k(p), 'ui', p);
+  assert.equal(k('data/frontend/starwars/dat'), 'levels');
+  assert.equal(k('data/fonts/italic35'), 'fonts');
+  assert.equal(k('data/front_TXT'), 'other');
+});
+await check('sidecars are no kind', () => {
+  assert.equal(RS64.modChangeKind('explorer/glyph-fonts.json'), null);
+  assert.equal(RS64.modChangeKind('explorer/menu-groups.json'), null);
+});
+await check('items go to their kind or their group', () => {
+  const plan = RS64.exportPlan(['data/level/lv_3/dat', 'data/sound/sdir_SND', 'menu:ds_open', 'menu:gyro'],
+    { groups: [{ name: 'Gyro toggle' }], assign: { 'menu:gyro': 'Gyro toggle' } }, [], { levels: 'P - Levels', audio: 'P - Audio', ui: 'P - UI' });
+  assert.deepEqual(plan.map((e) => [e.name, e.keys]), [['P - Levels', ['data/level/lv_3/dat']], ['P - Audio', ['data/sound/sdir_SND']], ['P - UI', ['menu:ds_open']], ['Gyro toggle', ['menu:gyro']]]);
+});
+await check('linked items export together', () => {
+  const plan = RS64.exportPlan(['data/cuts/intro_X', 'data/pl_crafts/xwing_HOB'], { groups: [], assign: {} }, [['data/cuts/intro_X', 'data/pl_crafts/xwing_HOB']], { levels: 'L', models: 'M' });
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].name, 'L');
+  assert.deepEqual(plan[0].keys, ['data/cuts/intro_X', 'data/pl_crafts/xwing_HOB']);
+  assert.deepEqual(plan[0].merged, ['M']);
+});
+await check('anchor across groups is a link', () => {
+  const menu = { buttons: [{ id: 'a', menu: 'options' }, { id: 'b', menu: 'options', after: 'a' }, { id: 'p', type: 'submenu', page: 'pg', menu: 'options' }, { id: 'c', menu: 'pg' }] };
+  assert.deepEqual(RS64.menuLinks(menu).sort(), [['menu:b', 'menu:a'], ['page:pg', 'menu:p']].sort());
+});
+await check('deleted group returns changes to their kind', () => {
+  const plan = RS64.exportPlan(['menu:gyro'], { groups: [], assign: { 'menu:gyro': 'Gone' } }, [], { ui: 'U' });
+  assert.deepEqual(plan.map((e) => e.name), ['U']);
+});
+await check('menu file round trip keeps unknown fields', () => {
+  for (const mod of ['display-settings', 'multiplayer-native', 'quit-prompt', 'native-demo']) {
+    const text = readFileSync(new URL(`../../../../mods/${mod}/roguesq_menu.json`, import.meta.url), 'utf8');
+    const { doc, error } = RS64.menuParse(text);
+    assert.equal(error, null, mod);
+    assert.deepEqual(RS64.menuParse(RS64.menuWrite(doc)).doc, JSON.parse(text), mod);
+  }
+  assert.deepEqual(RS64.menuParse('').doc, { buttons: [] });
+  assert.ok(RS64.menuParse('{ "buttons": 3 }').error);
+  assert.ok(RS64.menuParse('{ nope').error);
+});
+await check('layout replaces and anchors like the game', () => {
+  const gs = ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'high_resolution', 'restore_defaults', 'back'].map((alias) => ({ alias, label: { en: alias } }));
+  const doc = { buttons: [{ id: 'ds', menu: 'game_settings', replace: 'high_resolution' }, { id: 'x', menu: 'game_settings', after: 'auto_roll' }] };
+  const { rows } = RS64.menuLayout(doc, 'game_settings', gs, () => true, 8);
+  assert.deepEqual(rows.map((r) => r.alias ?? r.id), ['auto_roll', 'x', 'auto_level', 'free_camera', 'crosshairs', 'ds', 'restore_defaults', 'back']);
+});
+await check('layout drops spacers then cuts at 8', () => {
+  const nat = [...Array(7)].map((_, i) => ({ alias: 'n' + i, label: { en: 'N' + i } }));
+  nat.splice(3, 0, { alias: null, label: { en: '' }, spacer: true });
+  const doc = { buttons: [{ id: 'a', menu: 'options' }, { id: 'b', menu: 'options' }] };
+  const { rows, dropped } = RS64.menuLayout(doc, 'options', nat, () => true, 8);
+  assert.equal(rows.length, 8);
+  assert.ok(!rows.some((r) => r.native && !r.alias));
+  assert.deepEqual(dropped.map((r) => r.id), ['b']);
+});
+await check('layout hides, requires, index and button anchors', () => {
+  const nat = [{ alias: 'start', label: { en: 'START' } }, { alias: 'options', label: { en: 'OPTIONS' } }];
+  const doc = { hide: { main_menu: ['options'] }, buttons: [{ id: 'q', menu: 'main_menu', requires: 'desktop' }] };
+  assert.deepEqual(RS64.menuLayout(doc, 'main_menu', nat, (c) => c !== 'desktop', 8).rows.map((r) => r.alias ?? r.id), ['start']);
+  const doc2 = { buttons: [{ id: 'a', menu: 'main_menu' }, { id: 'b', menu: 'main_menu', before: 'a' }, { id: 'c', menu: 'main_menu', index: 0 }, { id: 'd', menu: 'main_menu', requires: ['desktop', 'x'] }] };
+  assert.deepEqual(RS64.menuLayout(doc2, 'main_menu', nat, (c) => c === 'desktop', 8).rows.map((r) => r.alias ?? r.id), ['c', 'start', 'options', 'b', 'a']);
+});
+await check('subset keeps only its buttons and their hides', () => {
+  const doc = { '//': 'c', hide: { options: ['x'], pause: ['y'] }, buttons: [{ id: 'a', menu: 'options' }, { id: 'b', menu: 'pg' }] };
+  assert.deepEqual(RS64.menuWriteSubset(doc, new Set(['a'])), { '//': 'c', hide: { options: ['x'] }, buttons: [{ id: 'a', menu: 'options' }] });
+});
+await check('menu font gaps', () => {
+  assert.deepEqual(RS64.menuFontGaps('DISPLAY: ON'), []);
+  assert.deepEqual(RS64.menuFontGaps('Draw (x)'), ['r', 'a', 'w', '(', 'x', ')']);
+  assert.deepEqual(RS64.menuFontGaps('AUFLÖSUNG <>'), []);
+});
+await check('native menus match the game', () => {
+  // kNativeAliases / pause_native_alias in src/game/menu_layout.h
+  const cpp = {
+    main_menu: ['start', 'options'], options: ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'back'],
+    game_settings: ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'high_resolution', 'restore_defaults', 'back'],
+    pause_game_settings: ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'displays', 'cockpit', 'back'],
+  };
+  for (const [menu, names] of Object.entries(cpp)) assert.deepEqual(RS64.NATIVE_MENUS[menu].entries.map((e) => e.alias).filter(Boolean), names, menu);
+  assert.deepEqual(RS64.NATIVE_MENUS.game_settings.entries.map((e) => e.label.en), ['AUTO ROLL: ON', 'AUTO LEVEL: ON', 'FREE CAMERA: ON', 'CROSSHAIRS: ON', 'HIGH RESOLUTION', '', 'RESTORE DEFAULT SETTINGS', 'BACK']);
+  assert.equal(RS64.NATIVE_MENUS.options.entries[3].spacer, true);
+  assert.equal(RS64.NATIVE_MENUS.options.max, 8);
+  assert.equal(RS64.NATIVE_MENUS.pause_game_settings.max, 16);
+  assert.ok(RS64.NATIVE_MENUS.pause.locked && RS64.NATIVE_MENUS.controller_settings.locked);
+});
+await check('defaults merge by id', () => {
+  const doc = RS64.menuWithDefaults({ buttons: [{ id: 'quit', menu: 'main_menu', label: 'LEAVE' }, { id: 'x', menu: 'options' }] });
+  assert.deepEqual(doc.buttons.map((b) => b.id), ['language', 'quit', 'pause_quit', 'x']);
+  assert.equal(doc.buttons[1].label, 'LEAVE');
+  const opts = RS64.menuLayout(doc, 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8).rows.map((r) => r.alias ?? r.id);
+  assert.deepEqual(opts, ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'language', 'x']);
 });
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }

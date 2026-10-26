@@ -16,6 +16,10 @@ const name16 = (dv, off) => {
   return s;
 };
 
+// A view over a byte array, and a DataView's bytes, both without a copy.
+const viewOf = (b) => new DataView(b.buffer, b.byteOffset, b.byteLength);
+const bytesOf = (dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+
 const cstr = (dv, off, max = 64) => {
   let s = '';
   for (let i = 0; i < max && off + i < dv.byteLength; i++) {
@@ -87,12 +91,12 @@ function openRom(buf) {
       }
       if (raw[0] === 0x78) raw = await inflate(raw);
     }
-    const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+    const view = viewOf(raw);
     cache.set(path, view);
     return view;
   };
   // Replaces an asset's contents for later reads (an edit that changes its size).
-  const write = (path, bytes) => cache.set(path, new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength));
+  const write = (path, bytes) => cache.set(path, viewOf(bytes));
   // A new path that reads as an existing asset (a mod level's copies of its template's files); edits to it stay its own.
   const aliases = new Map();
   const alias = (path, from) => {
@@ -110,6 +114,224 @@ function openRom(buf) {
   return { assets, read, write, alias, unalias, aliases };
 }
 
+// ---- Level rules: a mod's assets/level/<folder>/rules.json (see src/game/level_rules.h) ----
+// on: what the "when" attaches to (area = area trigger, path = path event, unit = destroyable unit, level = Level settings).
+const RULE_WHENS = [
+  { when: 'enter', on: 'area', label: 'Something enters this area' },
+  { when: 'leave', on: 'area', label: 'Something leaves this area' },
+  { when: 'pathPoint', on: 'path', label: 'An NPC passes this point' },
+  { when: 'destroyed', on: 'unit', label: 'This unit is destroyed' },
+  { when: 'healthBelow', on: 'unit', label: 'Health drops below', params: [{ key: 'value', picker: 'number', label: '%' }] },
+  { when: 'start', on: 'level', label: 'The mission starts' },
+  { when: 'after', on: 'level', label: 'Seconds after the start', params: [{ key: 'seconds', picker: 'seconds' }] },
+  { when: 'objectiveDone', on: 'level', label: 'An objective is completed', objectives: true, params: [{ key: 'value', picker: 'objective' }] },
+  { when: 'objectiveFailed', on: 'level', label: 'An objective fails', objectives: true, params: [{ key: 'value', picker: 'objective' }] },
+  { when: 'flagIs', on: 'level', label: 'Flag is set (advanced)', params: [{ key: 'value', picker: 'flag' }] },
+  { when: 'counterAtLeast', on: 'level', label: 'Counter reaches (advanced)', params: [{ key: 'value', picker: 'flag' }, { key: 'count', picker: 'number' }] },
+];
+// Object pickers name level objects; the rest are values. objectives: only on mod levels with their own objectives.
+const RULE_ACTIONS = [
+  { do: 'voice', label: 'Play voice line', params: [{ key: 'id', picker: 'voice' }] },
+  { do: 'recording', label: 'Play recording', params: [{ key: 'file', picker: 'recording' }] },
+  { do: 'message', label: 'Show message', params: [{ key: 'text', picker: 'text' }, { key: 'seconds', picker: 'seconds' }] },
+  { do: 'spawn', label: 'Spawn', params: [{ key: 'kind', picker: 'enemyKind' }, { key: 'count', picker: 'number' }, { key: 'path', picker: 'path' }] },
+  { do: 'music', label: 'Play music', params: [{ key: 'song', picker: 'song' }] },
+  { do: 'camera', label: 'Cut to camera', params: [{ key: 'camera', picker: 'camera' }] },
+  { do: 'destroy', label: 'Destroy unit', params: [{ key: 'unit', picker: 'unit' }] },
+  { do: 'objectiveDone', label: 'Complete objective', objectives: true, params: [{ key: 'objective', picker: 'objective' }] },
+  { do: 'objectiveFail', label: 'Fail objective', objectives: true, params: [{ key: 'objective', picker: 'objective' }] },
+  { do: 'win', label: 'Win the mission' },
+  { do: 'fail', label: 'Fail the mission' },
+  { do: 'wait', label: 'Wait', params: [{ key: 'seconds', picker: 'seconds' }] },
+  { do: 'flag', label: 'Set flag (advanced)', params: [{ key: 'flag', picker: 'flag' }, { key: 'value', picker: 'number' }] },
+  { do: 'counter', label: 'Add to counter (advanced)', params: [{ key: 'counter', picker: 'flag' }, { key: 'add', picker: 'number' }] },
+];
+const RULE_OBJECT_PICKERS = new Set(['area', 'path', 'unit', 'camera']);
+const RULE_PICKERS = new Set([...RULE_OBJECT_PICKERS, 'pathPoint', 'song', 'enemyKind', 'objective', 'voice', 'recording', 'text', 'number', 'seconds', 'flag']);
+// A native mod's mods/<id>/rules_ext.json: the actions it registers with add_rule_action and the custom whens it fires; unknown pickers become text.
+function rulesExtParse(text, mod) {
+  let doc;
+  try {
+    doc = JSON.parse(text || '{}');
+  } catch {
+    return [];
+  }
+  const params = (ps) => (Array.isArray(ps) ? ps : []).filter((p) => p?.key).map((p) => ({ key: String(p.key), picker: RULE_PICKERS.has(p.picker) ? p.picker : 'text' }));
+  const entry = (kind, name, e) => ({ kind, name: String(name), label: String(e.label || name), mod, params: params(e.params) });
+  return [
+    ...(Array.isArray(doc.actions) ? doc.actions : []).filter((e) => e?.do).map((e) => entry('action', e.do, e)),
+    ...(Array.isArray(doc.events) ? doc.events : []).filter((e) => e?.custom).map((e) => entry('event', e.custom, e)),
+  ];
+}
+const RULES_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.json';
+function rulesParse(text) {
+  try {
+    const doc = JSON.parse(text || '{}');
+    return { version: 1, rules: Array.isArray(doc.rules) ? doc.rules : [] };
+  } catch {
+    return { version: 1, rules: [] };
+  }
+}
+const rulesWrite = (doc) => JSON.stringify({ version: 1, rules: doc.rules }, null, 1) + '\n';
+// The level objects a rule names: its object (the when's), a named activator, and object-picker action params.
+// ext: rulesExtParse entries, so a mod action's object parameters count too.
+function ruleRefs(rule, ext = []) {
+  const out = [];
+  const w = RULE_WHENS.find((x) => x.when === rule.when);
+  if (w && w.on !== 'level' && rule.object) out.push({ field: 'object', name: rule.object });
+  if (rule.who && rule.who !== 'player') out.push({ field: 'who', name: rule.who });
+  (rule.actions ?? []).forEach((a, k) => {
+    const params = RULE_ACTIONS.find((x) => x.do === a.do)?.params ?? ext.find((e) => e.kind === 'action' && e.name === a.do)?.params ?? [];
+    for (const p of params) if (RULE_OBJECT_PICKERS.has(p.picker) && a[p.key]) out.push({ field: `actions.${k}.${p.key}`, name: a[p.key] });
+  });
+  return out;
+}
+function rulesRename(doc, from, to, ext) {
+  let n = 0;
+  for (const r of doc.rules) {
+    for (const ref of ruleRefs(r, ext)) {
+      if (ref.name !== from) continue;
+      const [head, k, key] = ref.field.split('.');
+      if (head === 'actions') r.actions[+k][key] = to;
+      else r[head] = to;
+      n++;
+    }
+  }
+  return n;
+}
+function rulesBroken(doc, items, ext) {
+  const names = new Set(items.map((it) => it.name).filter(Boolean)), out = [];
+  doc.rules.forEach((r, i) => ruleRefs(r, ext).forEach((ref) => names.has(ref.name) || out.push({ rule: i, field: ref.field, name: ref.name })));
+  return out;
+}
+// ---- Split export: what kind of change a project path is (the export dialog's starting groups); null for explorer/ sidecars ----
+const MOD_KINDS = ['levels', 'models', 'audio', 'ui', 'fonts', 'other'];
+const MOD_KIND_RULES = [
+  [/^explorer\//, null],
+  [/^mod\/lang\//, 'fonts'],
+  [/^mod\/roguesq_menu\.json$/, 'ui'],
+  [/^mod\/(levels\.json|camera_shots\.txt|assets\/(level|crawl)\/)/, 'levels'],
+  [/^data\/fonts\//, 'fonts'],
+  [/^data\/(level|cuts|backdrop|frontend\/starwars)\/|^data\/medal_info$/, 'levels'],
+  [/^data\/(ov|frontend)\//, 'ui'],
+  [/^data\/(reb_stuff|blueprints)\//, 'models'],
+  [/^data\/(sound\/|speech|voice_TXT)/, 'audio'],
+  [/^data\/(pl_crafts\/|weapons|weapon_spr\/|part_|gnrc_stuff\/|imp_stuff\/|lights_PAL)|_(IMGS|PAL|HOB|HMT|TM|ANM)$/, 'models'],
+];
+function modChangeKind(path) {
+  if (/^(menu|page):/.test(path)) return 'ui';
+  const rule = MOD_KIND_RULES.find(([re]) => re.test(path));
+  return rule ? rule[1] : 'other';
+}
+// Menu entries split by button: a front-end or pause button is menu:<id>; every entry of a custom page together is page:<name>.
+const menuPages = (doc) => new Set((doc.buttons ?? []).filter((b) => b.type === 'submenu' && b.page).map((b) => b.page));
+function menuItemKey(doc, b, pages = menuPages(doc)) {
+  return pages.has(b.menu) ? 'page:' + b.menu : 'menu:' + b.id;
+}
+function menuItemKeys(doc) {
+  const pages = menuPages(doc);
+  return [...new Set((doc.buttons ?? []).map((b) => menuItemKey(doc, b, pages)))];
+}
+// (user, used) pairs: a button anchored to or replacing another mod button, and a page to the button that opens it.
+function menuLinks(doc) {
+  const pages = menuPages(doc), byId = new Map((doc.buttons ?? []).map((b) => [b.id, b])), out = [];
+  const add = (a, b) => a !== b && !out.some(([x, y]) => x === a && y === b) && out.push([a, b]);
+  for (const b of doc.buttons ?? []) {
+    for (const t of [b.before, b.after, b.replace]) if (byId.has(t)) add(menuItemKey(doc, b, pages), menuItemKey(doc, byId.get(t), pages));
+    if (b.type === 'submenu' && pages.has(b.page) && doc.buttons.some((x) => x.menu === b.page)) add('page:' + b.page, menuItemKey(doc, b, pages));
+  }
+  return out;
+}
+// ---- Menu mods: roguesq_menu.json (docs/adding-menus-and-buttons.md); layout mirrors rebuild_frontend_menu in src/game/menu_config.cpp ----
+function menuParse(text) {
+  if (!text.trim()) return { doc: { buttons: [] }, error: null };
+  try {
+    const doc = JSON.parse(text);
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc) || (doc.buttons !== undefined && !Array.isArray(doc.buttons))) return { doc: null, error: 'not a menu file: "buttons" must be a list' };
+    return { doc: { ...doc, buttons: doc.buttons ?? [] }, error: null };
+  } catch (e) {
+    return { doc: null, error: e.message };
+  }
+}
+// Top-level comment first, one button per line, as the hand-written files are.
+function menuWrite(doc) {
+  const fmt = (v) => (Array.isArray(v) ? (v.length ? '[ ' + v.map(fmt).join(', ') + ' ]' : '[]') : v && typeof v === 'object' ? line(v) : JSON.stringify(v));
+  const line = (o) => (Object.keys(o).length ? '{ ' + Object.entries(o).map(([k, v]) => `${JSON.stringify(k)}: ${fmt(v)}`).join(', ') + ' }' : '{}');
+  const top = Object.entries(doc).filter(([k]) => k !== 'buttons').sort(([a], [b]) => (b === '//') - (a === '//'));
+  const parts = top.map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)}`);
+  parts.push('  "buttons": [' + (doc.buttons.length ? '\n' + doc.buttons.map((b) => '    ' + line(b)).join(',\n') + '\n  ]' : ']'));
+  return '{\n' + parts.join(',\n') + '\n}\n';
+}
+function menuWriteSubset(doc, ids) {
+  const buttons = doc.buttons.filter((b) => ids.has(b.id)), menus = new Set(buttons.map((b) => b.menu)), out = {};
+  if (doc['//'] !== undefined) out['//'] = doc['//'];
+  const hide = Object.fromEntries(Object.entries(doc.hide ?? {}).filter(([m]) => menus.has(m)));
+  if (Object.keys(hide).length) out.hide = hide;
+  for (const [k, v] of Object.entries(doc)) if (!['//', 'hide', 'buttons'].includes(k)) out[k] = v;
+  out.buttons = buttons;
+  return out;
+}
+// The rows a menu shows: natives (index x 10) minus hides, the buttons placed by replace / after / before / order / append, sorted, then
+// index moves; over max, spacers drop first and the tail is cut (dropped). natives: [{ alias, label, spacer? }]; has(cond) for requires.
+function menuLayout(doc, menu, natives, has, max) {
+  const items = natives.map((n, i) => ({ row: { native: true, alias: n.alias ?? undefined, entry: n }, order: i * 10, spacer: !!n.spacer }));
+  const hidden = new Set(doc.hide?.[menu] ?? []);
+  let list = items.filter((it) => !(it.row.alias && hidden.has(it.row.alias)));
+  const anchor = (name) => list.find((it) => (it.row.native ? it.row.alias === name : it.row.id === name))?.order;
+  const indexed = [];
+  for (const b of doc.buttons ?? []) {
+    if (b.menu !== menu || ![b.requires ?? []].flat().every(has)) continue;
+    let ord;
+    const rep = b.replace ? list.findIndex((it) => it.row.native && it.row.alias === b.replace) : -1;
+    if (rep >= 0) {
+      ord = list[rep].order;
+      list.splice(rep, 1);
+    }
+    if (ord === undefined && b.after && anchor(b.after) !== undefined) ord = anchor(b.after) + 5;
+    if (ord === undefined && b.before && anchor(b.before) !== undefined) ord = anchor(b.before) - 5;
+    if (ord === undefined && Number.isFinite(b.order)) ord = b.order;
+    if (ord === undefined) ord = Math.max(0, ...list.map((it) => it.order)) + 10;
+    const it = { row: { native: false, id: b.id, button: b }, order: ord, spacer: false };
+    list.push(it);
+    if (Number.isInteger(b.index)) indexed.push(it);
+  }
+  list = list.map((it, i) => [it, i]).sort((a, b) => a[0].order - b[0].order || a[1] - b[1]).map(([it]) => it);
+  while (list.length > max && list.some((it) => it.spacer)) list.splice(list.findIndex((it) => it.spacer), 1);
+  for (const it of indexed) {
+    const from = list.indexOf(it), n = list.length, at = Math.min(Math.max(it.row.button.index < 0 ? n + it.row.button.index : it.row.button.index, 0), n - 1);
+    list.splice(from, 1);
+    list.splice(at, 0, it);
+  }
+  return { rows: list.slice(0, max).map((it) => it.row), dropped: list.slice(max).map((it) => it.row) };
+}
+// Characters the front-end menu font can't draw (they show blank in the game); see "Text the menu font can draw".
+const MENU_FONT_CHARS = new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ;:_\'/&",!?-.<>{}ÄÖÜ']);
+const menuFontGaps = (label) => [...String(label)].filter((c) => !MENU_FONT_CHARS.has(c));
+// The mods one export makes. Each item goes to its assigned group while that group exists, else to its kind's group (kindNames[kind]);
+// linked items join the group of the item that uses the other, and merged names the groups folded in. Sidecars (kind null) never export.
+function exportPlan(items, doc, links, kindNames) {
+  const groups = new Set((doc.groups ?? []).map((g) => g.name)), groupOf = new Map();
+  for (const it of items) {
+    const kind = modChangeKind(it), assigned = doc.assign?.[it];
+    if (kind) groupOf.set(it, groups.has(assigned) ? assigned : kindNames[kind] ?? kind);
+  }
+  const into = new Map(), merged = new Map();
+  const root = (g) => (into.has(g) ? root(into.get(g)) : g);
+  for (const [user, used] of links) {
+    if (!groupOf.has(user) || !groupOf.has(used)) continue;
+    const a = root(groupOf.get(user)), b = root(groupOf.get(used));
+    if (a === b) continue;
+    into.set(b, a);
+    merged.set(a, [...(merged.get(a) ?? []), b, ...(merged.get(b) ?? [])]);
+  }
+  const out = new Map();
+  for (const [it, g] of groupOf) {
+    const r = root(g);
+    if (!out.has(r)) out.set(r, { name: r, keys: [], merged: merged.get(r) ?? [] });
+    out.get(r).keys.push(it);
+  }
+  return [...out.values()];
+}
 // ---- Mod levels: a mod's levels.json (new levels that play as a stock template level, see src/game/mod_levels.h) ----
 function modLevelsParse(text) {
   try {
@@ -522,7 +744,7 @@ function datSections(dv) {
   };
 }
 function datRebuild(orig, type, entries, region, extra) {
-  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const dv = viewOf(orig), s = datSections(dv)(type);
   const listBytes = entries.length * 4;
   const section = new Uint8Array(listBytes + region.length + extra.length);
   const sdv = new DataView(section.buffer);
@@ -548,7 +770,7 @@ const datNameHash = (name) => {
   return h & 0xff;
 };
 function datLookup(bytes, name) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), map = dv.getUint32(0x44), rel = dv.getUint32(map + datNameHash(name) * 4);
+  const dv = viewOf(bytes), map = dv.getUint32(0x44), rel = dv.getUint32(map + datNameHash(name) * 4);
   if (!rel) return null;
   const items = parseDAT(dv).items;
   for (let e = map + rel; dv.getInt32(e) !== -1; e += 8) {
@@ -559,7 +781,7 @@ function datLookup(bytes, name) {
 }
 // Rewrites the name map from the items, so added, removed or moved items are found by name.
 function datRebuildNameMap(bytes) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), map = dv.getUint32(0x44);
+  const dv = viewOf(bytes), map = dv.getUint32(0x44);
   const buckets = Array.from({ length: 256 }, () => []);
   for (const it of parseDAT(dv).items.filter((x) => x.name).sort((a, b) => a.type - b.type || a.index - b.index)) buckets[datNameHash(it.name)].push(it);
   const size = 0x400 + buckets.reduce((n, b) => n + (b.length ? (b.length + 1) * 8 : 0), 0);
@@ -583,7 +805,7 @@ function datRebuildNameMap(bytes) {
 }
 // Appends a record (a copy of an existing item, whose offsets are all record-relative) to a type's list; it becomes the last index.
 function datAddItem(orig, type, record) {
-  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const dv = viewOf(orig), s = datSections(dv)(type);
   const region = orig.subarray(s.list + s.count * 4, s.end), pad = (4 - (region.length % 4)) % 4;
   const entries = [];
   for (let i = 0; i < s.count; i++) entries.push(dv.getUint32(s.list + i * 4) + 4);
@@ -594,7 +816,7 @@ function datAddItem(orig, type, record) {
 }
 // Points a type's list entry at a new record appended to the section, so the item keeps its index; the old bytes stay, unreferenced.
 function datReplaceItem(orig, type, index, record) {
-  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const dv = viewOf(orig), s = datSections(dv)(type);
   const region = orig.subarray(s.list + s.count * 4, s.end), pad = (4 - (region.length % 4)) % 4;
   const entries = [];
   for (let i = 0; i < s.count; i++) entries.push(dv.getUint32(s.list + i * 4));
@@ -678,9 +900,9 @@ function splineRecord(dv, item, { name, nodes, refs, clearLinks }) {
   r.setUint32(0xD8, refsAt - 0xD4);
   return rec;
 }
-const uniqueName = (bytes, base) => {
+const uniqueName = (bytes, base, taken) => {
   let name = base;
-  for (let k = 2; datLookup(bytes, name); k++) name = `${base}_${k}`;
+  for (let k = 2; datLookup(bytes, name) || taken?.has(name); k++) name = `${base}_${k}`;
   return name;
 };
 // Events a copied path keeps: craft action, speed, weave, landing pitch, and fly-to the player. Others name their old level's items or
@@ -694,7 +916,7 @@ const isEndAttack = (n, refs, t7) => n.at >= 0.9 && refs[n.k]?.type === 7 && t7.
 // Copies a path into another DAT under name, moved so its first interior point (where an NPC starts) is at `at`. Its continuation
 // links are cleared, so unless it keeps a fly-to-the-player event it gets one from `attack` (a stock 0x4E "+" record).
 function splineCopy(fromBytes, spline, toBytes, { name, at, attack }) {
-  const fdv = new DataView(fromBytes.buffer, fromBytes.byteOffset, fromBytes.byteLength), t7 = parseDAT(fdv).items.filter((x) => x.type === 7);
+  const fdv = viewOf(fromBytes), t7 = parseDAT(fdv).items.filter((x) => x.type === 7);
   const { nodes, refs } = splineEvents(fdv, spline), keepNodes = [], keepRefs = [];
   let out = toBytes, dropped = 0;
   for (const n of nodes) {
@@ -703,12 +925,12 @@ function splineCopy(fromBytes, spline, toBytes, { name, at, attack }) {
       dropped++;
       continue;
     }
-    keepRefs.push({ type: 7, index: new DataView(out.buffer, out.byteOffset, out.byteLength).getUint32(7 * 8) });
+    keepRefs.push({ type: 7, index: viewOf(out).getUint32(7 * 8) });
     out = datAddItem(out, 7, fromBytes.slice(t.offset, t.offset + fdv.getUint32(t.offset + 8)));
     keepNodes.push({ at: n.at, k: keepRefs.length - 1 });
   }
   if (attack && !nodes.some((n) => isEndAttack(n, refs, t7))) {
-    keepRefs.push({ type: 7, index: new DataView(out.buffer, out.byteOffset, out.byteLength).getUint32(7 * 8) });
+    keepRefs.push({ type: 7, index: viewOf(out).getUint32(7 * 8) });
     out = datAddItem(out, 7, attack);
     keepNodes.push({ at: PATH_ATTACK_AT, k: keepRefs.length - 1 });
   }
@@ -719,13 +941,13 @@ function splineCopy(fromBytes, spline, toBytes, { name, at, attack }) {
 }
 // True when the path ends by sending its NPC at the player (a fly-to event with no target at the end).
 function splineAttackEnd(bytes, item) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), t7 = parseDAT(dv).items.filter((x) => x.type === 7), { nodes, refs } = splineEvents(dv, item);
+  const dv = viewOf(bytes), t7 = parseDAT(dv).items.filter((x) => x.type === 7), { nodes, refs } = splineEvents(dv, item);
   return nodes.some((n) => isEndAttack(n, refs, t7));
 }
 // Adds (copying template, a stock fly-to-player record) or removes the end attack; the path keeps its index.
 function splineSetAttackEnd(bytes, item, on, template) {
   let out = bytes;
-  const dv0 = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), t7 = parseDAT(dv0).items.filter((x) => x.type === 7);
+  const dv0 = viewOf(bytes), t7 = parseDAT(dv0).items.filter((x) => x.type === 7);
   let { nodes, refs } = splineEvents(dv0, item);
   if (on) {
     refs = [...refs, { type: 7, index: dv0.getUint32(7 * 8) }];
@@ -734,7 +956,7 @@ function splineSetAttackEnd(bytes, item, on, template) {
   } else {
     nodes = nodes.filter((n) => !isEndAttack(n, refs, t7));
   }
-  const dv = new DataView(out.buffer, out.byteOffset, out.byteLength), now = parseDAT(dv).items.find((x) => x.type === 3 && x.index === item.index);
+  const dv = viewOf(out), now = parseDAT(dv).items.find((x) => x.type === 3 && x.index === item.index);
   return datReplaceItem(out, 3, item.index, splineRecord(dv, now, { nodes, refs }));
 }
 // Mission flags (1-based bytes at 0x801388A0; stock levels use up to 128) the level's DAT reads or writes: wave gates, trigger
@@ -826,7 +1048,7 @@ function datBlank(orig) {
   let bytes = orig;
   for (const type of Object.keys(DAT_TYPES).map(Number)) {
     for (;;) {
-      const left = parseDAT(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)).items.filter((it) => it.type === type && !(type === 0 && it.sub === 0x01));
+      const left = parseDAT(viewOf(bytes)).items.filter((it) => it.type === type && !(type === 0 && it.sub === 0x01));
       if (!left.length) break;
       bytes = datRemoveItem(bytes, type, left[left.length - 1].index);
     }
@@ -835,14 +1057,14 @@ function datBlank(orig) {
 }
 // Flat ground at the terrain's median height (cells keep their textures, so the ground still looks like the level's).
 function hmpFlat(orig) {
-  const hmp = parseHMP(new DataView(orig.buffer, orig.byteOffset, orig.byteLength)), g = hmpGrid(hmp);
+  const hmp = parseHMP(viewOf(orig)), g = hmpGrid(hmp);
   const h = [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
   g.hts.fill(h);
   return writeHMP(orig, g);
 }
 // A record copied from another level starts inert: an area trigger's condition and enter/exit effects are cleared, a wingman's path dropped.
 function recordInert(rec, it) {
-  const dv = new DataView(rec.buffer, rec.byteOffset, rec.byteLength);
+  const dv = viewOf(rec);
   // A wingman spawn names its path right after its own name; without one it stays put (like lv_3's Han_Solo_Stationary).
   if (it.type === 0 && it.sub === 0x27 && it.name) rec.fill(0, dv.getUint32(0x0C) + it.name.length + 1, dv.getUint32(0x0C) + it.name.length + 2);
   if (it.type === 7 && it.onEnter) {
@@ -905,10 +1127,10 @@ function npcSetPath(bytes, item, path) {
 // u16 type + u16 index, at item + [+0xD8] + 0xD4; count +0xD4) and zones' link lists (count +0xA4, u16s at item + [+0xA8] + 0xA6).
 // A trigger a path fires cannot go (throws with the path's name); links to a removed zone are dropped.
 function datRemoveIndexed(orig, type, index) {
-  const before = parseDAT(new DataView(orig.buffer, orig.byteOffset, orig.byteLength)).items;
+  const before = parseDAT(viewOf(orig)).items;
   const user = before.find((it) => it.type === 3 && it.events?.some((e) => e.trigger === index) && type === 7);
   if (user) throw new Error(`The path "${user.name}" fires it`);
-  const out = datRemoveItem(orig, type, index), dv = new DataView(out.buffer, out.byteOffset, out.byteLength);
+  const out = datRemoveItem(orig, type, index), dv = viewOf(out);
   for (const it of parseDAT(dv).items) {
     const o = it.offset, size = dv.getUint32(o + 8);
     if (type === 7 && it.type === 3 && size > 0xDC) {
@@ -931,7 +1153,7 @@ function datRemoveIndexed(orig, type, index) {
 }
 // Drops one entry from a type's list; later items of that type move down one index. The record's bytes stay, unreferenced.
 function datRemoveItem(orig, type, index) {
-  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength), s = datSections(dv)(type);
+  const dv = viewOf(orig), s = datSections(dv)(type);
   const entries = [];
   for (let i = 0; i < s.count; i++) if (i !== index) entries.push(dv.getUint32(s.list + i * 4) - 4);
   return datRebuild(orig, type, entries, orig.subarray(s.list + s.count * 4, s.end), new Uint8Array(0));
@@ -955,7 +1177,7 @@ function hmpGrid(hmp) {
 // when its heights and texture match) and new tiles are appended, so a BPS patch carries only the changed cells and new tiles.
 // Tile record (0x1E): texmap u16, flags u8 (0 in every level), s8 min and max of its heights, 25 s8 heights.
 function writeHMP(orig, grid) {
-  const dv = new DataView(orig.buffer, orig.byteOffset, orig.byteLength);
+  const dv = viewOf(orig);
   const tileOff = dv.getUint32(0x1C), count = dv.getUint16(0x18);
   if (dv.getUint16(0x24) !== grid.w || dv.getUint16(0x26) !== grid.h) throw new Error('Terrain map size changed');
   const keys = new Map(), added = [], map = new Uint16Array(grid.w * grid.h);
@@ -1179,6 +1401,319 @@ function parseFrontText(txt) {
     for (let k = o - start; k < plain.length && plain[k]; k++) s += String.fromCharCode(plain[k]);
     return s;
   });
+}
+
+// ---- Opening crawls: front_TXT 0x3E-0x41 are chapters I-IV ("*}chapter\n\n*{title\n\nbody"), each ending on backdrop/planet_<n> ----
+const CRAWL_PLANETS = ['Tatooine', 'the Jade Moon', 'Taloraan', 'Mon Calamari'];
+const CRAWL_PATH = (name) => 'mod/assets/crawl/' + name + '/crawl.json';
+// The characters the host keeps in crawl text (crawlText in src/game/mod_levels.h).
+const CRAWL_SAFE = /[A-Za-z0-9 \n!?,.:;'/\\\-_()]/;
+const crawlFontGaps = (text) => [...new Set([...text].filter((c) => !CRAWL_SAFE.test(c)))];
+function splitCrawl(s) {
+  const m = /^(?:\*\}([^\n]*)\n\n)?\*\{([^\n]*)\n\n?([\s\S]*)$/.exec(s) || [];
+  return { chapter: m[1] ?? '', title: m[2] ?? '', body: m[3] ?? s };
+}
+const stockCrawls = (frontText) => [0, 1, 2, 3].map((i) => ({ ...splitCrawl(frontText[0x3E + i] ?? ''), planet: i }));
+// Camera keys (the host's CrawlKey): { at seconds, pos [x, y, z], rot [x, y, z] degrees as a DAT rotation }, sorted by time.
+const vec3Of = (v) => (Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number') ? [...v] : null);
+const crawlKeys = (v) => (Array.isArray(v) ? v : []).flatMap((k) => {
+  const pos = vec3Of(k?.pos), rot = k?.rot === undefined ? [0, 0, 0] : vec3Of(k.rot);
+  return typeof k?.at === 'number' && pos && rot ? [{ at: k.at, pos, rot }] : [];
+}).sort((a, b) => a.at - b.at);
+// The game's own camera as keys: still until the pan at 84.5 s, then 5 units down by 88.5 s (setModelViewerObjectTransform's drop).
+const CRAWL_STOCK_CAMERA = [{ at: 0, pos: [0, 0, 0], rot: [0, 0, 0] }, { at: 84.5, pos: [0, 0, 0], rot: [0, 0, 0] }, { at: 88.5, pos: [0, 5, 0], rot: [0, 0, 0] }];
+// As the host's crawlCameraAt: quadratic ease in/out between keys, held outside them.
+function crawlCameraAt(keys, s) {
+  let j = 0;
+  while (j + 1 < keys.length && s >= keys[j + 1].at) j++;
+  const a = keys[j], b = keys[Math.min(j + 1, keys.length - 1)], span = b.at - a.at, k = span > 0 ? Math.min(1, Math.max(0, (s - a.at) / span)) : 0;
+  const e = k <= 0.5 ? 2 * k * k : 1 - 2 * (1 - k) ** 2, mix = (p, q) => p.map((v, i) => v + (q[i] - v) * e);
+  return { pos: mix(a.pos, b.pos), rot: mix(a.rot, b.rot) };
+}
+function crawlParse(text) {
+  let d = {};
+  try {
+    d = JSON.parse(text);
+  } catch {}
+  if (!d || typeof d !== 'object') d = {};
+  const str = (v) => (typeof v === 'string' ? v : '');
+  const chapterNo = (v, none) => (Number.isInteger(v) && v >= 0 && v <= 3 ? v : none);
+  return { chapter: str(d.chapter), title: str(d.title), body: str(d.body), planet: d.planet === 'own' ? 'own' : chapterNo(d.planet, 0), base: chapterNo(d.base, 0), replaces: chapterNo(d.replaces, -1), camera: crawlKeys(d.camera) };
+}
+function crawlWrite(c) {
+  const out = { chapter: c.chapter, title: c.title, body: c.body, planet: c.planet };
+  if (c.planet === 'own') out.base = c.base;
+  if (c.replaces >= 0) out.replaces = c.replaces;
+  if (c.camera?.length) out.camera = c.camera;
+  return JSON.stringify(out, null, 1) + '\n';
+}
+// starwars50 (font id 3 in the font table 0x8009FC10): charset (+0xC) and one advance byte per glyph (+0x18); the strip asset is an
+// 8-byte header (u16 4, u16 0, u16 cell width, u16 height) and I4 glyphs in charset order.
+// data/fonts/<name>: a 12-byte header (u16 width at +4, u16 height at +6), then the I4 strip.
+const FONT_STRIP_HEADER = 12;
+function crawlFont(romBytes, strip) {
+  const w32 = (v) => { const o = v - 0x80000400 + 0x1000; return ((romBytes[o] << 24) | (romBytes[o + 1] << 16) | (romBytes[o + 2] << 8) | romBytes[o + 3]) >>> 0; };
+  const at = (v) => v - 0x80000400 + 0x1000;
+  const obj = w32(0x8009FC10 + 3 * 4), count = (romBytes[at(obj)] << 8) | romBytes[at(obj) + 1];
+  const charset = at(w32(obj + 0xC)), widths = at(w32(obj + 0x18)), glyphs = new Map();
+  for (let i = 0; i < count; i++) glyphs.set(String.fromCharCode(romBytes[charset + i]), { index: i, width: romBytes[widths + i] });
+  const cell = strip.getUint16(4);
+  return { cell, glyphs, pixels: new Uint8Array(strip.buffer, strip.byteOffset + FONT_STRIP_HEADER, strip.byteLength - FONT_STRIP_HEADER) };
+}
+// ---- Fonts and language glyph packs (src/game/lang_core.h, docs/modding-languages.md) ----
+// The game's fonts by font id (table 0x8009FC10; docs/adding-menus-and-buttons.md "Fonts"), each once: object +0 glyph count, +2 cell
+// width, +4 cell height, +6 drawn height, +0xC charset, +0x10 name, +0x18 one advance byte per glyph. A language mod extends every
+// font but credits and starwars50 (lang_core.h extends_font).
+function gameFonts(romBytes) {
+  const at = (v) => v - 0x80000400 + 0x1000, w32 = (v) => ((romBytes[at(v)] << 24) | (romBytes[at(v) + 1] << 16) | (romBytes[at(v) + 2] << 8) | romBytes[at(v) + 3]) >>> 0;
+  const h16 = (v) => (romBytes[at(v)] << 8) | romBytes[at(v) + 1], out = new Map();
+  for (let id = 0; id < 12; id++) {
+    const obj = w32(0x8009FC10 + id * 4);
+    let name = '';
+    for (let o = at(w32(obj + 0x10)); romBytes[o] && name.length < 16; o++) name += String.fromCharCode(romBytes[o]);
+    if (out.has(name)) continue;
+    const count = h16(obj), charset = at(w32(obj + 0xC)), widths = at(w32(obj + 0x18));
+    out.set(name, { id, name, count, cellW: h16(obj + 2), cellH: h16(obj + 4), drawn: h16(obj + 6), extended: name !== 'credits' && name !== 'starwars50',
+      charset: String.fromCharCode(...romBytes.subarray(charset, charset + count)), widths: [...romBytes.subarray(widths, widths + count)] });
+  }
+  return [...out.values()];
+}
+// A glyph pack (lang/glyphs/<font>.bin): "RSG1", u16 cell width (even), u16 cell height, u32 count, then per glyph u32 code point, u8
+// advance and cell_w x cell_h I4 pixels, high nibble first; all big-endian, exactly 12 + count x (5 + cell_w x cell_h / 2) bytes.
+// pixels holds one 0-15 level per pixel. null for what the host would skip.
+function glyphPackParse(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 12 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'RSG1') return null;
+  const cellW = dv.getUint16(4), cellH = dv.getUint16(6), count = dv.getUint32(8), size = (cellW * cellH) / 2;
+  if (!cellW || !cellH || cellW & 1 || bytes.length !== 12 + count * (5 + size)) return null;
+  const glyphs = [];
+  for (let i = 0, o = 12; i < count; i++, o += 5 + size) {
+    const pixels = new Uint8Array(cellW * cellH);
+    for (let k = 0; k < size; k++) {
+      pixels[k * 2] = bytes[o + 5 + k] >> 4;
+      pixels[k * 2 + 1] = bytes[o + 5 + k] & 15;
+    }
+    glyphs.push({ cp: dv.getUint32(o), advance: bytes[o + 4], pixels });
+  }
+  return { cellW, cellH, glyphs };
+}
+function glyphPackWrite({ cellW, cellH, glyphs }) {
+  const size = (cellW * cellH) / 2, out = new Uint8Array(12 + glyphs.length * (5 + size)), dv = new DataView(out.buffer);
+  out.set([0x52, 0x53, 0x47, 0x31]);
+  dv.setUint16(4, cellW);
+  dv.setUint16(6, cellH);
+  dv.setUint32(8, glyphs.length);
+  glyphs.forEach((g, i) => {
+    const o = 12 + i * (5 + size);
+    dv.setUint32(o, g.cp);
+    out[o + 4] = g.advance;
+    for (let k = 0; k < size; k++) out[o + 5 + k] = ((g.pixels[k * 2] & 15) << 4) | (g.pixels[k * 2 + 1] & 15);
+  });
+  return out;
+}
+// Which characters a .ttf / .otf file has glyphs for, from its cmap table (subtables of format 4 and 12, all taken together): a test
+// (cp) => bool, or null for a file it cannot read (a TrueType collection, a compressed WOFF).
+function fontCovers(bytes) {
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), u16 = (o) => dv.getUint16(o), u32 = (o) => dv.getUint32(o);
+  if (bytes.length < 12 || ![0x10000, 0x4F54544F, 0x74727565].includes(u32(0))) return null;
+  let cmap = -1;
+  for (let i = 0, n = u16(4); i < n; i++) if (u32(12 + i * 16) === 0x636D6170) cmap = u32(12 + i * 16 + 8);
+  if (cmap < 0) return null;
+  const tests = [];
+  for (let i = 0, n = u16(cmap + 2); i < n; i++) {
+    const at = cmap + u32(cmap + 4 + i * 8 + 4), format = u16(at);
+    if (format === 4) {
+      const seg = u16(at + 6) / 2, end = at + 14, start = end + seg * 2 + 2, delta = start + seg * 2, range = delta + seg * 2;
+      tests.push((c) => {
+        for (let k = 0; k < seg; k++) {
+          if (c > u16(end + k * 2) || c < u16(start + k * 2)) continue;
+          const ro = u16(range + k * 2);
+          const g = ro ? u16(range + k * 2 + ro + (c - u16(start + k * 2)) * 2) : c;
+          return g !== 0 && ((g + u16(delta + k * 2)) & 0xFFFF) !== 0;
+        }
+        return false;
+      });
+    } else if (format === 12) {
+      const groups = u32(at + 12);
+      tests.push((c) => {
+        for (let k = 0; k < groups; k++) {
+          const o = at + 16 + k * 12;
+          if (c >= u32(o) && c <= u32(o + 4)) return u32(o + 8) + (c - u32(o)) !== 0;
+        }
+        return false;
+      });
+    }
+  }
+  return tests.length ? (c) => tests.some((t) => t(c)) : null;
+}
+// The characters a language's text files (lang/front.json, game.json, voice.json: { id: text }) need beyond ASCII, sorted.
+function langChars(texts) {
+  const cps = new Set();
+  for (const t of texts) {
+    let doc = null;
+    try {
+      doc = JSON.parse(t);
+    } catch {}
+    for (const v of doc && typeof doc === 'object' ? Object.values(doc) : []) for (const ch of String(v)) if (ch.codePointAt(0) > 0x7E) cps.add(ch.codePointAt(0));
+  }
+  return [...cps].sort((a, b) => a - b);
+}
+// The crawl page as buildModelViewerTextPage 0x800CA714 lays it out, in units of a 64 px glyph cell: { glyphs: [{ ch, glyph, x, y, xs,
+// ys }] (quad centred on x, y), height = lines x 1.2 }. Each "\n" line is 1.2 lower (blank ones too). "*}" lines are the chapter (scale
+// 0.869565 x 0.769231 from -0.0652174), "*{" the title (1.2 x 1.8 from 0.1), both centred; body lines wrap at the first space past 7.7, a
+// line whose spaces would close by more than 0.1 each is broken a word earlier, and wrapped lines are justified to 8.7. A glyph advances
+// its width byte / 64 x xs, a space 0.28. The line width is the last glyph's position; everything is then shifted left by 4.35.
+function crawlLayout(font, text) {
+  const glyphs = [];
+  let line = 0;
+  for (const src of text.split('\n')) {
+    const kind = src.startsWith('*}') ? 'chapter' : src.startsWith('*{') ? 'title' : 'body';
+    const [xs, ys, x0] = kind === 'chapter' ? [0.869565, 0.769231, -0.0652174] : kind === 'title' ? [1.2, 1.8, 0.1] : [1, 1, 0];
+    let chars = [...(kind === 'body' ? src : src.slice(2))].filter((c) => c === ' ' || font.glyphs.has(c));
+    do {
+      const lay = (n) => {
+        const out = [];
+        let x = x0, spaces = 0;
+        for (let i = 0; i < n; i++) {
+          if (chars[i] === ' ') {
+            x += 0.28;
+            if (out.length) spaces++;
+            continue;
+          }
+          out.push({ ch: chars[i], glyph: font.glyphs.get(chars[i]).index, x, spaces, xs, ys });
+          x += (font.glyphs.get(chars[i]).width / 64) * xs;
+        }
+        return out;
+      };
+      let end = chars.length, wrapped = false;
+      for (let i = 0, x = x0; kind === 'body' && i < chars.length; i++) {
+        if (chars[i] === ' ' && x > 7.7) {
+          [end, wrapped] = [i, true];
+          break;
+        }
+        x += chars[i] === ' ' ? 0.28 : (font.glyphs.get(chars[i]).width / 64) * xs;
+      }
+      let placed = lay(end);
+      const gapOf = (p) => (8.7 - (p.at(-1)?.x ?? 0)) / (p.at(-1)?.spaces || 1);
+      if (kind === 'body' && placed.at(-1)?.spaces && gapOf(placed) < -0.1) {
+        const prev = chars.lastIndexOf(' ', end - 1);
+        if (prev > 0) {
+          [end, wrapped] = [prev, true];
+          placed = lay(end);
+        }
+      }
+      const W = placed.at(-1)?.x ?? 0, gap = kind === 'body' && wrapped && placed.at(-1)?.spaces ? gapOf(placed) : 0;
+      for (const g of placed) {
+        g.x += (kind === 'body' ? g.spaces * gap : (8.7 - W) / 2) - 4.35;
+        g.y = line * 1.2;
+        delete g.spaces;
+        glyphs.push(g);
+      }
+      chars = chars.slice(end + (wrapped ? 1 : 0));
+      line++;
+    } while (chars.length);
+  }
+  return { glyphs, height: line * 1.2 };
+}
+// A baseline JPEG laid out like the game's backdrops (the game's JFIF decoder fails on what browsers write): JFIF APP0, one DQT, SOF0
+// with Y sampled 2x1 (4:2:2), one DHT with the four standard tables, one scan. rgba is w x h; w a multiple of 16 and h of 8.
+function encodeJpeg(rgba, w, h, quality = 90) {
+  const ZZ = [0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59, 52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63];
+  const QL = [16, 11, 10, 16, 24, 40, 51, 61, 12, 12, 14, 19, 26, 58, 60, 55, 14, 13, 16, 24, 40, 57, 69, 56, 14, 17, 22, 29, 51, 87, 80, 62, 18, 22, 37, 56, 68, 109, 103, 77, 24, 35, 55, 64, 81, 104, 113, 92, 49, 64, 78, 87, 103, 121, 120, 101, 72, 92, 95, 98, 112, 100, 103, 99];
+  const QC = [17, 18, 24, 47, 99, 99, 99, 99, 18, 21, 26, 66, 99, 99, 99, 99, 24, 26, 56, 99, 99, 99, 99, 99, 47, 66, 99, 99, 99, 99, 99, 99, ...Array(32).fill(99)];
+  const scale = quality < 50 ? 5000 / quality : 200 - quality * 2;
+  const q = (t) => t.map((v) => Math.min(255, Math.max(1, Math.floor((v * scale + 50) / 100))));
+  const ql = q(QL), qc = q(QC);
+  // Annex K tables: code counts per length 1-16, then the symbols.
+  const HT = [
+    [0x00, [0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
+    [0x10, [0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d], [0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08, 0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa]],
+    [0x01, [0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
+    [0x11, [0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77], [0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21, 0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71, 0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91, 0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33, 0x52, 0xf0, 0x15, 0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34, 0xe1, 0x25, 0xf1, 0x17, 0x18, 0x19, 0x1a, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa]],
+  ];
+  // Canonical codes: symbol -> [code, length].
+  const codes = HT.map(([, counts, syms]) => {
+    const m = new Map();
+    let code = 0, k = 0;
+    counts.forEach((n, len) => {
+      for (let i = 0; i < n; i++) m.set(syms[k++], [code++, len + 1]);
+      code <<= 1;
+    });
+    return m;
+  });
+  const out = [];
+  const seg = (marker, body) => out.push(0xFF, marker, (body.length + 2) >> 8, (body.length + 2) & 255, ...body);
+  out.push(0xFF, 0xD8);
+  seg(0xE0, [0x4A, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
+  seg(0xDB, [0, ...ZZ.map((i) => ql[i]), 1, ...ZZ.map((i) => qc[i])]);
+  seg(0xC0, [8, h >> 8, h & 255, w >> 8, w & 255, 3, 1, 0x21, 0, 2, 0x11, 1, 3, 0x11, 1]);
+  seg(0xC4, HT.flatMap(([id, counts, syms]) => [id, ...counts, ...syms]));
+  seg(0xDA, [3, 1, 0x00, 2, 0x11, 3, 0x11, 0, 63, 0]);
+  let acc = 0, nbits = 0;
+  const put = (code, len) => {
+    for (let b = len - 1; b >= 0; b--) {
+      acc = (acc << 1) | ((code >> b) & 1);
+      if (++nbits === 8) {
+        out.push(acc);
+        if (acc === 0xFF) out.push(0);
+        acc = nbits = 0;
+      }
+    }
+  };
+  const cosT = Array.from({ length: 64 }, (_, i) => Math.cos(((2 * (i & 7) + 1) * (i >> 3) * Math.PI) / 16));
+  const pred = [0, 0, 0];
+  const block = (px, qt, c) => {
+    const coef = new Array(64);
+    for (let v = 0; v < 8; v++) {
+      for (let u = 0; u < 8; u++) {
+        let s = 0;
+        for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) s += px[y * 8 + x] * cosT[u * 8 + x] * cosT[v * 8 + y];
+        coef[v * 8 + u] = (s * (u ? 1 : Math.SQRT1_2) * (v ? 1 : Math.SQRT1_2)) / 4;
+      }
+    }
+    const z = ZZ.map((i) => Math.round(coef[i] / qt[i]));
+    const mag = (n) => (n ? 32 - Math.clz32(Math.abs(n)) : 0), bits = (n, s) => (n < 0 ? n + (1 << s) - 1 : n);
+    const dc = codes[c ? 2 : 0], ac = codes[c ? 3 : 1], d = z[0] - pred[c ? c : 0], s = mag(d);
+    pred[c] = z[0];
+    put(...dc.get(s));
+    if (s) put(bits(d, s), s);
+    let run = 0;
+    for (let k = 1; k < 64; k++) {
+      if (!z[k]) {
+        run++;
+        continue;
+      }
+      for (; run > 15; run -= 16) put(...ac.get(0xF0));
+      const m = mag(z[k]);
+      put(...ac.get((run << 4) | m));
+      put(bits(z[k], m), m);
+      run = 0;
+    }
+    if (run) put(...ac.get(0));
+  };
+  const at = (x, y) => (Math.min(y, h - 1) * w + Math.min(x, w - 1)) * 4;
+  for (let my = 0; my < h; my += 8) {
+    for (let mx = 0; mx < w; mx += 16) {
+      const Y = [[], []], cb = [], cr = [];
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 16; x++) {
+          const i = at(mx + x, my + y), [r, g, b] = [rgba[i], rgba[i + 1], rgba[i + 2]];
+          Y[x >> 3][y * 8 + (x & 7)] = 0.299 * r + 0.587 * g + 0.114 * b - 128;
+          if (x & 1) continue;
+          const j = at(mx + x + 1, my + y), [r2, g2, b2] = [(r + rgba[j]) / 2, (g + rgba[j + 1]) / 2, (b + rgba[j + 2]) / 2];
+          cb[y * 8 + (x >> 1)] = -0.168736 * r2 - 0.331264 * g2 + 0.5 * b2;
+          cr[y * 8 + (x >> 1)] = 0.5 * r2 - 0.418688 * g2 - 0.081312 * b2;
+        }
+      }
+      block(Y[0], ql, 0);
+      block(Y[1], ql, 0);
+      block(cb, qc, 1);
+      block(cr, qc, 2);
+    }
+  }
+  if (nbits) put(0x7F, 8 - nbits);
+  out.push(0xFF, 0xD9);
+  return new Uint8Array(out);
 }
 
 function parseVoiceLines(romBytes, txt) {
@@ -1803,7 +2338,7 @@ function parseSdir(dv) {
 // Each sample: 8x2x8 s16 coefficient book (256 bytes), then 0x28-byte frames of two self-contained 32-sample halves.
 function decodeMusyxAdpcm(samp, off, num) {
   const s16 = (v) => (v << 16) >> 16, clamp = (v) => (v < -32768 ? -32768 : v > 32767 ? 32767 : v);
-  const dv = new DataView(samp.buffer, samp.byteOffset, samp.byteLength);
+  const dv = viewOf(samp);
   const out = new Int16Array(num);
   if (!num) return out;
   const book = [];
@@ -1838,7 +2373,7 @@ function decodeMusyxAdpcm(samp, off, num) {
 
 // pool_SND: 4 sections (offsets in the first 4 words) of [u32 size, u16 id, pad, data]; 0 macros, 1 ADSR, 2 keymaps, 3 layers.
 function parsePool(dv) {
-  const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  const bytes = bytesOf(dv);
   return [0, 1, 2, 3].map((s) => {
     const m = new Map();
     for (let o = dv.getUint32(s * 4); o + 8 <= dv.byteLength;) {
@@ -1888,6 +2423,19 @@ function parseMusicCues(rom) {
     cues.push({ cue: cues.length + 2, group: be16(o), song, name: names.get(song) ?? `song ${song}` });
   }
   return { cues, levelSongs: [...rom.subarray(mission(0x8010B2EC), mission(0x8010B2EC) + 21)] };
+}
+// Gives an item a name (path events have none) so the game can find it by name: the name goes after the record (+0x0C = its offset,
+// +8 = the new size); the record keeps its place and index, and the name map is rebuilt.
+function datNameItem(orig, item, name) {
+  const dv = viewOf(orig), size = dv.getUint32(item.offset + 8);
+  // Past every path-event body field (they run to +0x5C), so a short record's tail stays zero where the game reads it.
+  const at = Math.max(size, 0x60), text = new TextEncoder().encode(name), rec = new Uint8Array((at + text.length + 1 + 3) & ~3);
+  rec.set(orig.subarray(item.offset, item.offset + size));
+  rec.set(text, at);
+  const r = new DataView(rec.buffer);
+  r.setUint32(0x0C, at);
+  r.setUint32(8, rec.length);
+  return datReplaceItem(orig, item.type, item.index, rec);
 }
 // A music region (DAT type 6 sub 0x10) playing cue on entry: flag 0x80 at +0x34 (also what preloads its songs), cue in slot 0
 // (+0x3C, played on entry) and slots 1-2 (+0x40/+0x44, what it switches to later), so a copy never falls back to another level's song.
@@ -2016,7 +2564,7 @@ function resolveNote(pool, target, note, vel, pan, prio) {
 // Mixer tables read from the ROM (main code): volume curve, mix constants, pan law, semitone and 1/64-semitone rate ratios
 // (12.20), quarter-wave sine.
 function parseMixTables(rom) {
-  const dv = new DataView(rom.buffer, rom.byteOffset, rom.byteLength), R = (v) => v - 0x80000400 + 0x1000;
+  const dv = viewOf(rom), R = (v) => v - 0x80000400 + 0x1000;
   const f32 = (v, n) => Float32Array.from({ length: n }, (_, i) => dv.getFloat32(R(v) + i * 4));
   const u32 = (v, n) => Float64Array.from({ length: n }, (_, i) => dv.getUint32(R(v) + i * 4) / 0x100000);
   return { vol: f32(0x800A4BD8, 128), k: f32(0x800A4DD8, 4), pan: f32(0x800A4DE8, 3), semiUp: u32(0x800A2FD0, 128), semiDown: u32(0x800A31D0, 128),
@@ -2534,13 +3082,13 @@ function parseCutscene(dv) {
     name: cstr(dv, 0, 64), frames: u32(0x44), length: f(0x50), fps: f(0x54), events,
     camera: cameras.find(Boolean) ?? null, cameras,
     actors: actors.map((a) => ({ ...a, ch: a.animated ? a.w.map(channel) : null, value: a.animated ? null : a.w })),
-    raw: new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice(), keyStarts,
+    raw: bytesOf(dv).slice(), keyStarts,
   };
 }
 // The inverse of parseCutscene, byte-exact when nothing changed. Any channel change rebuilds the key block gap-free (a channel runs to
 // the next start, so a stale run would join the channel before it): unchanged channels in original order, shared runs kept, then the rest.
 function writeCutscene(data) {
-  const raw = data.raw, oldKeys = new DataView(raw.buffer, raw.byteOffset, raw.byteLength).getUint32(0x25a8);
+  const raw = data.raw, oldKeys = viewOf(raw).getUint32(0x25a8);
   const chans = [...data.cameras.flatMap((c) => c ?? []), ...data.actors.flatMap((a) => (a.animated ? a.ch : []))];
   const kept = (keys) => {
     const was = data.keyStarts?.get(keys);
@@ -2592,7 +3140,7 @@ function writeCutscene(data) {
   data.actors.forEach((a, i) => {
     const o = 0x13d8 + i * 0x4c;
     // The name block keeps its original tail bytes unless the name changed (or the actor is new).
-    if (i >= oldActors || cstr(new DataView(raw.buffer, raw.byteOffset, raw.byteLength), o, 28) !== a.name) {
+    if (i >= oldActors || cstr(viewOf(raw), o, 28) !== a.name) {
       out.fill(0, o, o + 0x1f);
       for (let k = 0; k < Math.min(27, a.name.length); k++) out[o + k] = a.name.charCodeAt(k);
     }
@@ -3257,7 +3805,7 @@ const nearest = (pal, r, g, b, from = 0) => {
 function encodeTexture(bytes, t, rgba, textures = []) {
   const { w, h, type, depth, pix, pal, flags, trans } = t;
   // The decoder rounds the height up to even; only the stored rows are written, or the last row would overwrite the next texture.
-  const n = w * Math.min(h, t.rows ?? h), dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const n = w * Math.min(h, t.rows ?? h), dv = viewOf(bytes);
   const key = [(trans >>> 24) & 255, (trans >>> 16) & 255, (trans >>> 8) & 255];
   const at = (i) => [rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2], rgba[i * 4 + 3]];
   let keyed = false;
@@ -3413,7 +3961,7 @@ function zipStore(files) {
 
 // Reads a stored (uncompressed) zip such as zipStore writes, by its central directory.
 function zipRead(bytes) {
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), dec = new TextDecoder(), out = new Map();
+  const dv = viewOf(bytes), dec = new TextDecoder(), out = new Map();
   let end = bytes.length - 22;
   while (end >= 0 && dv.getUint32(end, true) !== 0x06054b50) end--;
   if (end < 0) throw new Error('Not a zip file');
@@ -3514,7 +4062,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuLayout, menuFontGaps, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();
