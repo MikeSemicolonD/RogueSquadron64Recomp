@@ -1,0 +1,8 @@
+{
+  "frontend/controller/gamepad_HOB": "frontend/controller/controller_HOB",
+  "frontend/controller/gamepad_HMT": "frontend/controller/controller_HMT",
+  "frontend/controller/keyboard_HOB": "frontend/controller/controller_HOB",
+  "frontend/controller/keyboard_HMT": "frontend/controller/controller_HMT",
+  "frontend/controller/joystick_HOB": "frontend/controller/controller_HOB",
+  "frontend/controller/joystick_HMT": "frontend/controller/controller_HMT"
+}

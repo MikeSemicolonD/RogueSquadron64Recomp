@@ -1,0 +1,10 @@
+{
+  "game_id": "rs64",
+  "id": "controls-menu",
+  "display_name": "Controls Menu",
+  "description": "Replaces the Controller Settings preset screen with a list of actions you can rebind for the keyboard, gamepad or joystick you open it with. Uses the Luke preset.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0",
+  "enabled_by_default": true
+}
