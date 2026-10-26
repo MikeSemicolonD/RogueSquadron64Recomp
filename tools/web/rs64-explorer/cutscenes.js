@@ -653,10 +653,10 @@ async function loadCutAudio(path) {
   const c = cut, name = path.split('/').pop();
   c.musicGain = audioCtx.createGain();
   c.voiceGain = audioCtx.createGain();
-  c.musicGain.connect(audioCtx.destination);
-  c.voiceGain.connect(audioCtx.destination);
+  c.musicGain.connect(audioOut());
+  c.voiceGain.connect(audioOut());
   c.sfxGain = audioCtx.createGain();
-  c.sfxGain.connect(audioCtx.destination);
+  c.sfxGain.connect(audioOut());
   loadCutSfx(c);
   syncCutGains();
   // The voice mix is read straight from the file, so a ceremony with no medal (its voice events rewritten to hides) gets none.
@@ -1715,6 +1715,12 @@ function buildClipLanes(tracks) {
     const r = tracks.audio.getBoundingClientRect();
     cutAudioMenu(e.clientX, e.clientY, Math.round(THREE.MathUtils.clamp((e.clientX - r.left) / r.width, 0, 1) * F));
   };
+  // An Audio list row dragged here (by its grip) adds its event at the drop point.
+  if (!cut.seq) listDropTarget(tracks.audio, () => listDrag?.audio && cutEditing, (e) => {
+    const r = tracks.audio.getBoundingClientRect(), ev = cutAudioEventFor(listDrag.audio);
+    if (!ev) return void ($('cutStatus').textContent = `${listDrag.label}: cutscenes have no slot for this sound`);
+    cutAddAudioEvent(ev[0], ev[1], Math.round(THREE.MathUtils.clamp((e.clientX - r.left) / r.width, 0, 1) * F));
+  });
   // A clip too narrow to show a readable piece of its label shows none (the hover title still has it).
   for (const el of $('cutTimeline').querySelectorAll('.tlClip')) if (el.firstChild?.nodeType === 3 && el.offsetWidth < 40) el.firstChild.remove();
   if ($('cutAddKind').options.length < 2) for (const [t, name] of Object.entries(TL_KIND)) $('cutAddKind').append(new Option(name, t));
@@ -2615,9 +2621,19 @@ async function cutStockScale(name) {
   }
   return cutStockScales.get(cutBase(name)) ?? (name.startsWith('pl_crafts/') ? 0.0562 : 0.24);
 }
-$('cutAddActor').onchange = async () => {
+$('cutAddActor').onchange = () => {
   const name = $('cutAddActor').value;
   $('cutAddActor').value = '';
+  cutAddActorNamed(name);
+};
+// The actor name a model list row (asset id without _HOB, and object index for a package) adds as: the asset table's or a stock craft's
+// name, else the asset path; null when cutscenes can't load it.
+async function cutActorNameFor(id) {
+  await cutScanPathModels();
+  const names = cutModelNames(), rel = id.replace(/^data\//, '');
+  return names.find((n) => n === rel) ?? names.find((n) => n === rel.split('/').pop()) ?? null;
+}
+async function cutAddActorNamed(name) {
   if (!name || !cut?.file) return;
   const scale = await cutStockScale(name);
   // Starts where the first actor is at the playhead (its keys are in its parent's space; a root actor's are the scene's).
@@ -2637,7 +2653,7 @@ $('cutAddActor').onchange = async () => {
     at.forEach((v, k) => [0, 1].forEach((tt) => cutSetKey(f, { actor: i, ch: k }, tt, v)));
   });
   if (ok) setCutTrack({ actor: i });
-};
+}
 $('cutModel').onchange = async () => {
   const i = cutTrack?.actor, name = $('cutModel').value;
   if (i == null || !name) return;
@@ -2801,6 +2817,21 @@ function cutSfxLabel(n) {
   const id = (romBytes[CUT_SFX + n * 2] << 8) | romBytes[CUT_SFX + n * 2 + 1];
   return `${n} ${audioBank?.sfx.find((r) => r.index === id)?.label ?? 'sfx ' + hex(id)}`;
 }
+// One audio event at a frame, with the other parameters of the nearest event of its kind.
+async function cutAddAudioEvent(type, p0, frame) {
+  const like = cut.file.events.filter((e) => e.type === type).sort((a, b) => Math.abs(a.frame - frame) - Math.abs(b.frame - frame))[0];
+  let at = -1;
+  if (await editCutFile('Add ' + TL_KIND[type], (f) => (at = cutAddEvent(f, { type, frame, p: [p0, ...(like ? like.p.slice(1) : [0, 0, 0])] })))) selectCutEvent(at);
+}
+// The event an Audio list row adds as, [type, p0]: a song cue, a voice line or a cutscene sound; null when cutscenes have no slot for it
+// (a sound outside the 102-entry table, a sample).
+function cutAudioEventFor(r) {
+  const find = (n, ok) => [...Array(n).keys()].find(ok);
+  const k = r.kind === 'music' ? find(64, (n) => cutSong({ p: [n] }) === r.index)
+    : r.kind === 'sfx' ? find(CUT_SFX_COUNT, (n) => ((romBytes[CUT_SFX + n * 2] << 8) | romBytes[CUT_SFX + n * 2 + 1]) === r.index)
+    : r.kind === 'voice' || r.kind === 'group' ? r.voiceIds?.[0] : undefined;
+  return k == null ? null : [{ music: 1, sfx: 3, voice: 0, group: 0 }[r.kind], k];
+}
 let cutAudioTab = 'music';
 function cutAudioMenu(x, y, frame) {
   document.getElementById('cutAudioMenu')?.remove();
@@ -2817,11 +2848,9 @@ function cutAudioMenu(x, y, frame) {
     for (const b of tabs.children) b.classList.toggle('on', b.dataset.tab === cutAudioTab);
     list.replaceChildren(...choices[cutAudioTab].filter(([, , l]) => !q || l.toLowerCase().includes(q)).map(([type, p0, label]) => {
       const b = elem('button', { textContent: label, title: `Add at ${(frame / cut.file.fps).toFixed(2)} s` });
-      b.onclick = async () => {
+      b.onclick = () => {
         close();
-        const like = cut.file.events.filter((e) => e.type === type).sort((a, b2) => Math.abs(a.frame - frame) - Math.abs(b2.frame - frame))[0];
-        let at = -1;
-        if (await editCutFile('Add ' + TL_KIND[type], (f) => (at = cutAddEvent(f, { type, frame, p: [p0, ...(like ? like.p.slice(1) : [0, 0, 0])] })))) selectCutEvent(at);
+        cutAddAudioEvent(type, p0, frame);
       };
       return b;
     }));

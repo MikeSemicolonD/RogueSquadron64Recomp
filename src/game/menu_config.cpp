@@ -170,11 +170,21 @@ struct Button {
     std::string label_other;
 };
 
+// A menu's title override (top-level "titles": menu name -> { label, x, y }); gCurrentMenuData +0x00 text, +0x50 / +0x52 offsets.
+struct MenuTitle {
+    std::string text;
+    int x = 0, y = 0;
+    bool has_x = false, has_y = false;
+};
+
 struct MenuConfig {
     std::vector<Button> buttons;
 
     // menu name -> native aliases to hide
     std::unordered_map<std::string, std::vector<std::string>> hides;
+
+    // menu name -> title override; a later mod's replaces an earlier one's
+    std::unordered_map<std::string, MenuTitle> titles;
 };
 
 MenuConfig default_config(int lang);
@@ -536,11 +546,29 @@ struct SliderImpl { std::function<int()> get; std::function<void(int)> set; };
 
 void reset_controls();
 
+static void open_mods_folder()
+{
+
+#ifndef __ANDROID__
+
+    std::string url = "file://";
+    const std::string dir = recomp::mods::get_mods_directory().generic_string();
+
+    if (dir.empty() || dir[0] != '/') url += '/';
+
+    for (char c : dir) url += c == ' ' ? std::string("%20") : std::string(1, c);
+
+    if (SDL_OpenURL(url.c_str()) != 0) fprintf(stderr, "[menu] open_mods_folder: %s\n", SDL_GetError());
+
+#endif
+}
+
 std::unordered_map<std::string, std::function<void()>>& actions() {
 
     static std::unordered_map<std::string, std::function<void()>> r = {
         { "quit", [] { rs64_menu_request_quit(); } },
         { "reset_controls", [] { reset_controls(); } },
+        { "open_mods_folder", [] { open_mods_folder(); } },
         { "touch_layout", [] { rs64_touch_layout_request(); } },
         { "none", [] {} },
     };
@@ -1324,9 +1352,25 @@ int confirmed_slider_value(int key, int value, int vmin, int vmax, int step, con
     return v >= 0 ? v : slider_next(value, vmin, vmax, step);
 }
 
-// One `requires` condition: built-in names first, then the host API's registered conditions. front_end is false while the pause menu is built.
+// One `requires` condition: built-in names first, then a mod config option (set = not its first choice, or non-zero), then the host API's registered conditions.
+// front_end is false while the pause menu is built.
 bool condition_holds(uint8_t* rdram, const std::string& c, bool pause)
 {
+
+    if (!c.empty() && c[0] == '!') return !condition_holds(rdram, c.substr(1), pause);
+
+    std::string mod, opt;
+
+    if (config_key(c, mod, opt))
+    {
+        const recomp::mods::ConfigValueVariant v = recomp::mods::get_mod_config_value(mod, opt);
+
+        if (const uint32_t* u = std::get_if<uint32_t>(&v)) return *u != 0;
+        if (const double* d = std::get_if<double>(&v)) return *d != 0.0;
+        if (const std::string* s = std::get_if<std::string>(&v)) return !s->empty();
+
+        return false;
+    }
 
 #ifdef __ANDROID__
     if (c == "desktop") return false;
@@ -1347,7 +1391,8 @@ bool used_as_condition(const std::string& key)
 {
 
     for (const auto& b : config().buttons)
-        if (std::find(b.requires_conds.begin(), b.requires_conds.end(), key) != b.requires_conds.end()) return true;
+        for (const auto& c : b.requires_conds)
+            if (c == key || (c.size() == key.size() + 1 && c[0] == '!' && c.compare(1, std::string::npos, key) == 0)) return true;
 
     return false;
 }
@@ -1408,6 +1453,19 @@ bool anchor_order(const std::vector<Item>& items, uint8_t menu_id,
     }
 
     return false;
+}
+
+// A title override for this menu or page, written after the game (or the page builder) set its own.
+void apply_title(uint8_t* rdram, const std::string& menu)
+{
+
+    const auto it = config().titles.find(menu);
+
+    if (it == config().titles.end()) return;
+
+    if (!it->second.text.empty()) wr_w(rdram, GCMD_OFF + 0x00, (int32_t)alloc_str(rdram, it->second.text));
+    if (it->second.has_x) wr_h(rdram, GCMD_OFF + 0x50, (int16_t)it->second.x);
+    if (it->second.has_y) wr_h(rdram, GCMD_OFF + 0x52, (int16_t)it->second.y);
 }
 
 // Rebuild the current front-end menu's entry list: native entries merged with the mod buttons by order/anchors, dropping hidden/replaced natives and spacers to fit MAX_ENTRIES.
@@ -1633,6 +1691,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
     }
 
     wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)j);
+    apply_title(rdram, mname);
 }
 
 // Sound Settings native slider: a mod slider on `sound_settings` with a `replace` anchor becomes a volume-slider entry (sub-type 21) whose channel index is redirected to an unused settings byte,
@@ -1777,6 +1836,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
         }
 
     wr_w(rdram, GCMD_OFF + 0x00, (int32_t)alloc_str(rdram, title));
+    apply_title(rdram, page);
 
     std::vector<const Button*> lines;
 
@@ -3147,9 +3207,22 @@ const std::string* pause_page_name(uint8_t id)
     return id >= PAUSE_FIRST_PAGE ? page_name((uint8_t)(FIRST_PAGE_ID + (id - PAUSE_FIRST_PAGE))) : nullptr;
 }
 
+// The root's rebuilt array takes the last slot; GAME SETTINGS the first, mod pages the ones between.
+constexpr uint8_t  PAUSE_ROOT_ID   = 0;
+constexpr uint32_t PAUSE_ROOT_HOST = PAUSE_HOST_END - PAUSE_STRIDE;
+
 uint32_t pause_array_off(uint8_t id)
 {
+
+    if (id == PAUSE_ROOT_ID) return PAUSE_ROOT_HOST;
+
     return id == PAUSE_GS_ID ? PAUSE_HOST : PAUSE_HOST + PAUSE_STRIDE * (1u + (id - PAUSE_FIRST_PAGE));
+}
+
+// The pause menus the port rebuilds into host RAM: the root, GAME SETTINGS and mod pages (not the game's audio settings or abort confirm).
+bool pause_rebuilt(uint8_t id)
+{
+    return id == PAUSE_ROOT_ID || id == PAUSE_GS_ID || pause_page_name(id);
 }
 
 // One PauseMenuStuff array under construction, capped at the menu's 16 lines and 0x12C glyphs.
@@ -3219,7 +3292,7 @@ void add_pause_button(PauseWriter& w, const Button& b, uint8_t self)
     {
         const uint8_t id = pause_page_id(b.page);
 
-        if (id == 0xFF || pause_array_off(id) + PAUSE_STRIDE > PAUSE_HOST_END) return;
+        if (id == 0xFF || pause_array_off(id) + PAUSE_STRIDE > PAUSE_ROOT_HOST) return;
 
         s_pause_parent_of[id] = self;
         w.add(0x4021, PAUSE_TEXTID, id, b.label);
@@ -3318,7 +3391,7 @@ int pause_index_of(uint8_t* rdram, uint32_t arr, uint64_t id)
 uint32_t pause_array_for(uint8_t id)
 {
 
-    if (s_pause_built && (id == PAUSE_GS_ID || pause_page_name(id))) return pause_array_off(id);
+    if (s_pause_built && pause_rebuilt(id)) return pause_array_off(id);
 
     switch (id) {
         case 0:  return PAUSE_ROOT;
@@ -3385,6 +3458,106 @@ void reset_controls()
         wr_b(s_rdram, VOL_BYTES + ss.channel, (uint8_t)ss.last_byte);
     }
 }
+
+// A pause menu's natives (the game's array at src) with the mod's buttons for `menu` merged in as on the front end (hide, replace, before / after, order, index),
+// written to its host array. A button without placement goes where the native spacer was (above BACK), or at the end when there is none.
+void merge_pause_menu(uint8_t* rdram, uint32_t src, uint32_t spacer, const std::string& menu, uint8_t self)
+{
+
+    PauseWriter w{ rdram, pause_array_off(self), pause_array_off(self) + PAUSE_STRIDE };
+
+    struct Row { double order; uint32_t e; const Button* b; };
+
+    std::vector<Row> rows;
+    double spacer_order = -1;
+    int k = 0;
+
+    // The entries above the first selectable one (title, gap, the root's objectives) stay on top.
+    for (uint32_t e = src; (uint16_t)rd_h(rdram, e) != 0xFFFF; e += 6, ++k)
+    {
+        const uint16_t flags = (uint16_t)rd_h(rdram, e);
+
+        if (e == spacer) spacer_order = k * 10.0;
+        else if (rows.empty() && !(flags & 1)) w.add(flags, (uint16_t)rd_h(rdram, e + 2), (uint16_t)rd_h(rdram, e + 4), std::string{});
+        else rows.push_back({ k * 10.0, e, nullptr });
+    }
+
+    if (spacer_order < 0) spacer_order = k * 10.0;
+
+    auto native_row = [&](const std::string& name) {
+
+        const int tid = rs64::menu::pause_native_alias(name);
+
+        return std::find_if(rows.begin(), rows.end(), [&](const Row& r) { return tid >= 0 && !r.b && (uint16_t)rd_h(rdram, r.e + 2) == tid; });
+    };
+
+    if (auto h = config().hides.find(menu); h != config().hides.end())
+    {
+        for (const auto& name : h->second)
+            if (auto r = native_row(name); r != rows.end()) rows.erase(r);
+    }
+
+    double tail = spacer_order;
+
+    for (const auto& b : config().buttons)
+    {
+        if (b.menu != menu || !button_visible(rdram, b, true)) continue;
+
+        auto anchor = [&](const std::string& name, double& out) {
+
+            if (auto r = native_row(name); r != rows.end()) return out = r->order, true;
+
+            for (const Row& r : rows)
+                if (r.b && r.b->id == name) return out = r.order, true;
+
+            return false;
+        };
+
+        double ord = 0;
+        bool have = false;
+
+        if (auto r = b.replace.empty() ? rows.end() : native_row(b.replace); r != rows.end())
+        {
+            ord = r->order;
+            have = true;
+            rows.erase(r);
+        }
+
+        if (!have && !b.after.empty() && anchor(b.after, ord)) { ord += 5; have = true; }
+        if (!have && !b.before.empty() && anchor(b.before, ord)) { ord -= 5; have = true; }
+        if (!have && b.has_order) { ord = b.order; have = true; }
+        if (!have) ord = (tail += 0.01);
+
+        rows.push_back({ ord, 0, &b });
+    }
+
+    std::stable_sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.order < b.order; });
+
+    for (const auto& b : config().buttons)
+    {
+        if (b.menu != menu || !b.has_index) continue;
+
+        const auto it = std::find_if(rows.begin(), rows.end(), [&](const Row& r) { return r.b == &b; });
+
+        if (it != rows.end()) rs64::menu::move_to_index(rows, (size_t)(it - rows.begin()), b.index);
+    }
+
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        if (!rows[i].b)
+        {
+            w.add((uint16_t)rd_h(rdram, rows[i].e), (uint16_t)rd_h(rdram, rows[i].e + 2), (uint16_t)rd_h(rdram, rows[i].e + 4), std::string{});
+            continue;
+        }
+
+        // Room is kept for the natives still to come (BACK at least).
+        w.reserve = (int)std::count_if(rows.begin() + (long)i + 1, rows.end(), [](const Row& r) { return !r.b; });
+        add_pause_button(w, *rows[i].b, self);
+        w.reserve = 0;
+    }
+
+    w.end();
+}
 } // namespace
 
 extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
@@ -3416,125 +3589,16 @@ extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
     // The entry under the cursor, to keep it there when a list changes (a requires condition flipped).
     const uint8_t cur = rd_b(rdram, h + 0xD6A);
     const int cur_sel = rd_h(rdram, h + 0xD68);
-    const bool ours = s_pause_built && (cur == PAUSE_GS_ID || pause_page_name(cur));
+    const bool ours = s_pause_built && pause_rebuilt(cur);
     const uint64_t cur_id = ours ? pause_entry_at(rdram, pause_array_off(cur), cur_sel) : 0;
 
     s_pause_marks.clear();
     s_pause_text.clear();
     s_pause_sliders.clear();
 
-    // Root: the terminator slot takes one button.
-    for (const auto& b : config().buttons)
-    {
-        if (b.menu != "pause" || !button_visible(rdram, b, true)) continue;
-
-        const uint32_t slot = 0x109E1C;
-        const uint16_t mark = (uint16_t)(PAUSE_MARK_BASE + (&b - config().buttons.data()));
-        BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
-
-        wr_h(rdram, slot + 0x0, (int16_t)b.flags);
-        wr_h(rdram, slot + 0x2, (int16_t)PAUSE_TEXTID);
-        wr_h(rdram, slot + 0x4, (int16_t)mark);
-        wr_h(rdram, slot + 0x6, (int16_t)0xFFFF);
-        s_pause_marks[mark] = { b.type, b.behavior, b.label, b.label_on, b.label_off,
-                                fns.action, fns.toggle_get, fns.toggle_set,
-                                b.smin, b.smax, b.sstep, b.bar_width, b.bar_filled, b.bar_empty };
-        break;
-    }
-
-    // GAME SETTINGS: its title and natives with the mod's pause_game_settings buttons merged in as on the front end (hide, replace, before / after,
-    // order, index); a button without placement goes where the native spacer was, above BACK.
-    PauseWriter gs{ rdram, PAUSE_HOST, PAUSE_HOST + PAUSE_STRIDE };
-
-    struct GsRow { double order; uint32_t e; const Button* b; };
-
-    std::vector<GsRow> rows;
-    double spacer_order = 0;
-    int k = 0;
-
-    // The title and the gap under it stay on top.
-    for (uint32_t e = PAUSE_GS; (uint16_t)rd_h(rdram, e) != 0xFFFF; e += 6, ++k)
-    {
-        const uint16_t flags = (uint16_t)rd_h(rdram, e);
-
-        if (e == PAUSE_GS_SPACER) spacer_order = k * 10.0;
-        else if (rows.empty() && !(flags & 1)) gs.add(flags, (uint16_t)rd_h(rdram, e + 2), (uint16_t)rd_h(rdram, e + 4), std::string{});
-        else rows.push_back({ k * 10.0, e, nullptr });
-    }
-
-    auto native_row = [&](const std::string& name) {
-
-        const int tid = rs64::menu::pause_native_alias(name);
-
-        return std::find_if(rows.begin(), rows.end(), [&](const GsRow& r) { return tid >= 0 && !r.b && (uint16_t)rd_h(rdram, r.e + 2) == tid; });
-    };
-
-    if (auto h = config().hides.find("pause_game_settings"); h != config().hides.end())
-    {
-        for (const auto& name : h->second)
-            if (auto r = native_row(name); r != rows.end()) rows.erase(r);
-    }
-
-    double tail = spacer_order;
-
-    for (const auto& b : config().buttons)
-    {
-        if (b.menu != "pause_game_settings" || !button_visible(rdram, b, true)) continue;
-
-        auto anchor = [&](const std::string& name, double& out) {
-
-            if (auto r = native_row(name); r != rows.end()) return out = r->order, true;
-
-            for (const GsRow& r : rows)
-                if (r.b && r.b->id == name) return out = r.order, true;
-
-            return false;
-        };
-
-        double ord = 0;
-        bool have = false;
-
-        if (auto r = b.replace.empty() ? rows.end() : native_row(b.replace); r != rows.end())
-        {
-            ord = r->order;
-            have = true;
-            rows.erase(r);
-        }
-
-        if (!have && !b.after.empty() && anchor(b.after, ord)) { ord += 5; have = true; }
-        if (!have && !b.before.empty() && anchor(b.before, ord)) { ord -= 5; have = true; }
-        if (!have && b.has_order) { ord = b.order; have = true; }
-        if (!have) ord = (tail += 0.01);
-
-        rows.push_back({ ord, 0, &b });
-    }
-
-    std::stable_sort(rows.begin(), rows.end(), [](const GsRow& a, const GsRow& b) { return a.order < b.order; });
-
-    for (const auto& b : config().buttons)
-    {
-        if (b.menu != "pause_game_settings" || !b.has_index) continue;
-
-        const auto it = std::find_if(rows.begin(), rows.end(), [&](const GsRow& r) { return r.b == &b; });
-
-        if (it != rows.end()) rs64::menu::move_to_index(rows, (size_t)(it - rows.begin()), b.index);
-    }
-
-    for (size_t i = 0; i < rows.size(); ++i)
-    {
-        if (!rows[i].b)
-        {
-            gs.add((uint16_t)rd_h(rdram, rows[i].e), (uint16_t)rd_h(rdram, rows[i].e + 2), (uint16_t)rd_h(rdram, rows[i].e + 4), std::string{});
-            continue;
-        }
-
-        // Room is kept for the natives still to come (BACK at least).
-        gs.reserve = (int)std::count_if(rows.begin() + (long)i + 1, rows.end(), [](const GsRow& r) { return !r.b; });
-        add_pause_button(gs, *rows[i].b, PAUSE_GS_ID);
-        gs.reserve = 0;
-    }
-
-    gs.end();
+    // The root (objectives, CONTINUE ...) and GAME SETTINGS, each with the mod's buttons merged in.
+    merge_pause_menu(rdram, PAUSE_ROOT, 0, "pause", PAUSE_ROOT_ID);
+    merge_pause_menu(rdram, PAUSE_GS, PAUSE_GS_SPACER, "pause_game_settings", PAUSE_GS_ID);
 
     // Pages, built after their openers so each knows its parent; a page opened only from another page is built after it.
     std::vector<uint8_t> built;
@@ -3570,11 +3634,11 @@ extern "C" void rs64_pause_install(uint8_t* rdram, recomp_context* ctx)
     }
 }
 
-// The four places the game picks the array for a pause menu id (HUD+0xD6A, or a link's nextMenu): ours for GAME SETTINGS and mod pages.
+// The four places the game picks the array for a pause menu id (HUD+0xD6A, or a link's nextMenu): ours for the root, GAME SETTINGS and mod pages.
 extern "C" unsigned rs64_pause_array_for(uint8_t* rdram, unsigned id, unsigned native)
 {
 
-    if (!s_pause_built || (id != PAUSE_GS_ID && !pause_page_name((uint8_t)id))) return native;
+    if (!s_pause_built || id > 0xFF || !pause_rebuilt((uint8_t)id)) return native;
 
     return 0x80000000u | pause_array_for((uint8_t)id);
 }

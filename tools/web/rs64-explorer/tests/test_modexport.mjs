@@ -1366,6 +1366,7 @@ await check('change kinds by path', () => {
   for (const p of ['data/pl_crafts/xwing_HOB', 'data/weapons_HOB', 'data/part_spr', 'data/explo2_IMGS', 'data/smkexp_PAL', 'data/gnrc_stuff/wtrspray_HOB', 'data/imp_stuff/wrld_dvfx']) assert.equal(k(p), 'models', p);
   for (const p of ['data/sound/sdir_SND', 'data/speech', 'data/voice_TXT']) assert.equal(k(p), 'audio', p);
   assert.equal(k('mod/roguesq_menu.json'), 'ui');
+  assert.equal(k('mod/menu_text.json'), 'ui');
   for (const p of ['mod/lang/front.json', 'mod/lang/glyphs/italic35.bin', 'mod/lang/glyphs/FONTS.txt']) assert.equal(k(p), 'fonts', p);
   for (const p of ['data/reb_stuff/atpt_walk', 'data/blueprints/xwing']) assert.equal(k(p), 'models', p);
   for (const p of ['data/ov/radar', 'data/frontend/hangar/dat']) assert.equal(k(p), 'ui', p);
@@ -1434,6 +1435,23 @@ await check('subset keeps only its buttons and their hides', () => {
   const doc = { '//': 'c', hide: { options: ['x'], pause: ['y'] }, buttons: [{ id: 'a', menu: 'options' }, { id: 'b', menu: 'pg' }] };
   assert.deepEqual(RS64.menuWriteSubset(doc, new Set(['a'])), { '//': 'c', hide: { options: ['x'] }, buttons: [{ id: 'a', menu: 'options' }] });
 });
+await check('buttons without an id still export', () => {
+  const doc = { buttons: [{ menu: 'options', label: 'A' }, { id: 'b', menu: 'options' }, { menu: 'options', label: 'C' }] };
+  const keys = RS64.menuItemKeys(doc);
+  assert.equal(new Set(keys).size, 3);
+  assert.deepEqual(RS64.menuWriteSubset(doc, (b) => RS64.menuItemKey(doc, b) === keys[2]).buttons, [{ menu: 'options', label: 'C' }]);
+  assert.deepEqual(RS64.menuWriteSubset(doc, new Set(['b'])).buttons, [{ id: 'b', menu: 'options' }]);
+});
+await check('menu files merge like the game layers mods', () => {
+  const a = { '//': 'a', hide: { options: ['passcodes'] }, titles: { options: { label: 'A' } }, buttons: [{ id: 'x', label: 'X1' }, { id: 'y', label: 'Y' }, { label: 'anon' }] };
+  const b = { hide: { options: ['biographies'], main_menu: ['options'] }, titles: { options: { label: 'B' }, game_settings: { y: 0 } }, buttons: [{ id: 'x', label: 'X2' }, { id: 'z' }] };
+  const m = RS64.menuMerge([a, b]);
+  assert.deepEqual(m.buttons, [{ id: 'x', label: 'X2' }, { id: 'y', label: 'Y' }, { label: 'anon' }, { id: 'z' }]);
+  assert.deepEqual(m.hide, { options: ['passcodes', 'biographies'], main_menu: ['options'] });
+  assert.deepEqual(m.titles, { options: { label: 'B' }, game_settings: { y: 0 } });
+  assert.equal(m['//'], 'a');
+  assert.deepEqual(RS64.menuMerge([a]), a);
+});
 await check('menu font gaps', () => {
   assert.deepEqual(RS64.menuFontGaps('DISPLAY: ON'), []);
   assert.deepEqual(RS64.menuFontGaps('Draw (x)'), ['r', 'a', 'w', '(', 'x', ')']);
@@ -1444,21 +1462,41 @@ await check('native menus match the game', () => {
   const cpp = {
     main_menu: ['start', 'options'], options: ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'back'],
     game_settings: ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'high_resolution', 'restore_defaults', 'back'],
-    pause_game_settings: ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'displays', 'cockpit', 'back'],
+    pause_game_settings: ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'displays', 'cockpit', 'back'], controller_settings: ['back'],
   };
   for (const [menu, names] of Object.entries(cpp)) assert.deepEqual(RS64.NATIVE_MENUS[menu].entries.map((e) => e.alias).filter(Boolean), names, menu);
   assert.deepEqual(RS64.NATIVE_MENUS.game_settings.entries.map((e) => e.label.en), ['AUTO ROLL: ON', 'AUTO LEVEL: ON', 'FREE CAMERA: ON', 'CROSSHAIRS: ON', 'HIGH RESOLUTION', '', 'RESTORE DEFAULT SETTINGS', 'BACK']);
   assert.equal(RS64.NATIVE_MENUS.options.entries[3].spacer, true);
   assert.equal(RS64.NATIVE_MENUS.options.max, 8);
   assert.equal(RS64.NATIVE_MENUS.pause_game_settings.max, 16);
-  assert.ok(RS64.NATIVE_MENUS.pause.locked && RS64.NATIVE_MENUS.controller_settings.locked);
+  assert.equal(RS64.NATIVE_MENUS.controller_settings.locked, undefined);
+  assert.equal(RS64.NATIVE_MENUS.controller_settings.entries[0].y, 283);
+  assert.equal(RS64.NATIVE_MENUS.pause.limit, undefined);
+  assert.deepEqual(RS64.NATIVE_MENUS.pause.entries.map((e) => e.alias).filter(Boolean), ['continue', 'abort_level', 'game_settings', 'sound_settings']);
+  assert.equal(RS64.NATIVE_MENUS.sound_settings.limit, 'slider');
+});
+await check('pause root takes buttons anywhere below the objectives', () => {
+  const doc = { hide: { pause: ['abort_level'] }, buttons: [{ id: 'a', menu: 'pause' }, { id: 'b', menu: 'pause', before: 'continue' }] };
+  const rows = RS64.menuLayout(doc, 'pause', RS64.NATIVE_MENUS.pause.entries, () => true, 16).rows;
+  assert.deepEqual(rows.slice(6).map((r) => r.alias ?? r.id), ['b', 'continue', 'game_settings', 'sound_settings', 'a']);
+});
+await check('pause game settings puts unplaced buttons above BACK', () => {
+  const doc = { buttons: [{ id: 'a', menu: 'pause_game_settings' }, { id: 'b', menu: 'pause_game_settings' }, { id: 'c', menu: 'pause_game_settings', replace: 'cockpit' }] };
+  const rows = RS64.menuLayout(doc, 'pause_game_settings', RS64.NATIVE_MENUS.pause_game_settings.entries, () => true, 16).rows;
+  assert.deepEqual(rows.map((r) => r.alias ?? r.id ?? '-'), ['-', 'auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'displays', 'c', 'a', 'b', 'back']);
 });
 await check('defaults merge by id', () => {
   const doc = RS64.menuWithDefaults({ buttons: [{ id: 'quit', menu: 'main_menu', label: 'LEAVE' }, { id: 'x', menu: 'options' }] });
   assert.deepEqual(doc.buttons.map((b) => b.id), ['language', 'quit', 'pause_quit', 'x']);
   assert.equal(doc.buttons[1].label, 'LEAVE');
-  const opts = RS64.menuLayout(doc, 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8).rows.map((r) => r.alias ?? r.id);
-  assert.deepEqual(opts, ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'language', 'x']);
+  const plain = RS64.menuLayout(RS64.menuWithDefaults({ buttons: [] }), 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8).rows.map((r) => r.alias ?? r.id);
+  assert.deepEqual(plain, ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'language', 'back']);
+  const full = RS64.menuLayout(doc, 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8);
+  assert.deepEqual(full.rows.map((r) => r.alias ?? r.id), ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'back', 'language']);
+  assert.deepEqual(full.dropped.map((r) => r.id), ['x']);
+  // A dropped spacer gives the natives below it back the 10 px the game pulled them up (rebuild_frontend_menu's lift).
+  assert.deepEqual(full.rows.filter((r) => r.native).map((r) => r.y ?? 0), [0, 0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(RS64.menuLayout({ buttons: [] }, 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8).rows.map((r) => r.y ?? 0), [0, 0, 0, 0, -10, -10, -10, -10]);
 });
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }

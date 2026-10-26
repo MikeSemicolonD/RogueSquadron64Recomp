@@ -81,6 +81,7 @@ inline constexpr NativeAliasRow kNativeAliases[] = {
     { "game_settings", "high_resolution", { 5, 4, true } },
     { "game_settings", "restore_defaults", { 14, 0, false } },
     { "game_settings", "back", { 25, 0, false } },
+    { "controller_settings", "back", { 25, 0, false } },
 };
 
 inline const NativeAlias* native_alias(std::string_view menu, std::string_view name)
@@ -92,12 +93,13 @@ inline const NativeAlias* native_alias(std::string_view menu, std::string_view n
     return nullptr;
 }
 
-// Pause GAME SETTINGS natives (pauseMenuGameSettings 0x80109E24) by alias: their text id, or -1.
+// Pause natives by alias: their text id, or -1. GAME SETTINGS (pauseMenuGameSettings 0x80109E24) and the root (pauseMenuMissionObjectives 0x80109DD4).
 inline int pause_native_alias(std::string_view name)
 {
 
     constexpr std::pair<const char*, int> kRows[] = { { "auto_roll", 0x25 }, { "auto_level", 0x26 }, { "free_camera", 0x28 }, { "crosshairs", 0x27 },
-                                                      { "displays", 0x2B }, { "cockpit", 0x2A }, { "back", 0x39 } };
+                                                      { "displays", 0x2B }, { "cockpit", 0x2A }, { "back", 0x39 }, { "continue", 0x21 },
+                                                      { "abort_level", 0x22 }, { "game_settings", 0x2E }, { "sound_settings", 0x2F } };
 
     for (const auto& [n, tid] : kRows)
         if (name == n) return tid;
@@ -123,6 +125,17 @@ inline ScrollPos scroll_step(ScrollPos p, int dir, int total, int visible)
     if (p.sel >= p.top + visible) p.top = p.sel - visible + 1;
 
     return p;
+}
+
+// A `requires` condition as stored: "config:<option>" names the button's own mod's option (config:<mod>:<option> another mod's); a leading '!' negates.
+inline std::string condition_key(const std::string& c, const std::string& mod_id)
+{
+
+    const size_t at = (!c.empty() && c[0] == '!') ? 1 : 0;
+
+    if (mod_id.empty() || c.compare(at, 7, "config:") != 0 || c.find(':', at + 7) != std::string::npos) return c;
+
+    return c.substr(0, at + 7) + mod_id + ":" + c.substr(at + 7);
 }
 
 } // namespace rs64::menu

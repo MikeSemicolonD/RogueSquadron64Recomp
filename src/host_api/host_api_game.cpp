@@ -26,6 +26,7 @@ extern "C" void rs64_menu_request_quit(void);
 extern "C" float rs64_draw_dist(void);
 extern "C" float rs64_terrain_dist(void);
 extern "C" uint32_t rs64_tgrid_base(uint32_t original);
+extern "C" void rs64_snapshot_add_range(uint32_t lo, uint32_t hi);
 
 namespace {
 void svc_yield(uint8_t* rdram, void* c) {
@@ -167,6 +168,12 @@ void init_once(uint8_t* rdram) {
     rs64_camera_shots_register_service();
     init_mods(rdram);
     rs64::ls::set_moved_ranges(rs64::host::moved_ranges());
+
+    // The renderer parses an RDRAM snapshot that holds only the game's 8 MB unless told otherwise; moved data must be in it too.
+    for (const rs64::ls::MovedRange& r : rs64::host::moved_ranges()) {
+        rs64_snapshot_add_range(r.lo + r.delta - 0x80000000u, r.hi + r.delta - 0x80000000u);
+    }
+
     rs64_register_builtin_late_hooks();
     rs64::host::seal();
 }

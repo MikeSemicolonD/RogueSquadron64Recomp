@@ -6,6 +6,8 @@
 #include <cstring>
 #include <string>
 
+extern "C" unsigned rs64_pause_array_for(uint8_t* rdram, unsigned id, unsigned native);
+
 namespace rs64::touch {
     namespace {
         constexpr uint32_t kGcmd = 0x800CE730u - 0x80000000u;
@@ -24,6 +26,12 @@ namespace rs64::touch {
 
         // PauseMenuStuff arrays by current_menu: root, game settings, audio settings, abort confirm.
         constexpr uint32_t kPauseArrays[4] = { 0x80109DD4u, 0x80109E24u, 0x80109E68u, 0x80109EECu };
+
+        // The array the game reads for a pause menu: the port's rebuilt one for the root and GAME SETTINGS (menu_config.cpp).
+        uint32_t pause_records(const uint8_t* r, int menu)
+        {
+            return rs64_pause_array_for(const_cast<uint8_t*>(r), (unsigned)menu, kPauseArrays[menu]) - 0x80000000u;
+        }
 
         // The mission's presented image is narrower than the front end's (measured 1290x923 vs 1335x923 on the S24+).
         constexpr float kMissionBoxAspect = 1.3976f;
@@ -472,7 +480,7 @@ namespace rs64::touch {
 
         // Records: every non-terminator record takes the next element except spacers (0x1000). The root menu can hide
         // objective lines (0x0010) without taking an element, so skip that many objective records first.
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
         int non_spacer = 0;
 
         for (int i = 0; i < 64; ++i) {
@@ -704,7 +712,7 @@ namespace rs64::touch {
             return -1;
         }
 
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
         int k = 0;
 
         for (int i = 0; i < 64; ++i) {
@@ -734,7 +742,7 @@ namespace rs64::touch {
             return -1;
         }
 
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
 
         for (int i = 0; i < 64; ++i) {
             const uint16_t f = rh(r, recs + 6u * i);
@@ -761,7 +769,7 @@ namespace rs64::touch {
             return s;
         }
 
-        const uint32_t recs = kPauseArrays[menu] - 0x80000000u;
+        const uint32_t recs = pause_records(r, menu);
         char buf[48];
 
         for (int i = 0; i < 64; ++i)

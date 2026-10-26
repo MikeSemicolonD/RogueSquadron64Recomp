@@ -565,6 +565,132 @@
   });
   try{var th=localStorage.getItem("rs64save.theme"); if(th)document.documentElement.setAttribute("data-theme",th);}catch(e){}
 
+  // ---- WebMCP: tools an AI agent in the browser can call (registerTool, where the browser has it). Each answers JSON text and edits
+  // through the same helpers as the page, so both copies and the checksums stay right; nothing is downloaded (export stays a click). ----
+  function needSave(){ if(noSave) throw new Error("No save loaded: load one in the page, or pass its bytes to rs64save_load"); }
+  function upgradeNames(w){ return UPGRADE_BITS.filter(function(u){ return (w&u.bit)>>>0!==0; }).map(function(u){ return u.name; }); }
+  function cheatItems(){ return CHEAT_GROUPS.reduce(function(a,g){ return a.concat(g.items.map(function(it){ return {group:g.title,exclusive:!!g.exclusive,item:it}; })); },[]); }
+  function readPilot(i){
+    var active=!!acctActive(i);
+    return {slot:i,active:active,preselected:u8(bodyO(REC[0],0x51))===i,pilotId:active?u8(acctO(REC[0],i,0x10)):null,name:readName(acctO(REC[0],i,0x00),4),
+      level:u8(acctO(REC[0],i,0x05)),levelName:LEVEL_NAMES[u8(acctO(REC[0],i,0x05))]||null,
+      medals:LEVEL_NAMES.map(function(n,l){ return {level:l,name:n,medal:MEDAL_WORDS[getMedal(i,l)]}; }),upgrades:upgradeNames(u32(acctO(REC[0],i,0x0C)))};
+  }
+  function readElite(i){
+    var mb=u16(eliteO(REC[0],i,0x04)), sc=eliteScore(i);
+    return {row:i,name:readName(eliteO(REC[0],i,0x00),3),level:u8(eliteO(REC[0],i,0x03)),bronze:mb&0x1F,silver:(mb>>5)&0x1F,gold:(mb>>10)&0x1F,pilotId:u8(eliteO(REC[0],i,0x06)),score:sc,rank:RANKS[Math.min(sc>>2,15)]};
+  }
+  function readUnlocks(){
+    var w=u32(bodyO(REC[0],0x08))>>>0, out={};
+    cheatItems().forEach(function(c){ if(!c.exclusive) out[c.item.name]=c.item.naboo?u32(bodyO(REC[0],0xAC))===NABOO_KEY:(w&c.item.bit)>>>0!==0; });
+    var skin=cheatItems().filter(function(c){ return c.exclusive&&(w&c.item.bit)>>>0!==0; })[0];
+    out["Luke skin"]=skin?skin.item.name:"None";
+    return out;
+  }
+  function readAll(){
+    var p=[]; for(var i=0;i<N_ACCTS;i++) p.push(readPilot(i));
+    var e=[]; for(var r=0;r<N_ELITE;r++) e.push(readElite(r));
+    return {file:currentName||null,checksumsOk:checksumsValid(),pilots:p,eliteRogues:e,
+      settings:{music:u8(bodyO(REC[0],0x10)),sfx:u8(bodyO(REC[0],0x11)),speech:u8(bodyO(REC[0],0x12)),controllerLayout:u8(bodyO(REC[0],0x13)),language:u8(bodyO(REC[0],0xA8))},unlocks:readUnlocks()};
+  }
+  function slotOf(s){ if(!(s>=0&&s<N_ACCTS)) throw new Error("slot is 0, 1 or 2"); return s; }
+  function initials(s){ s=String(s).toUpperCase(); if(!/^[A-Z]{0,3}$/.test(s)) throw new Error("Initials are up to 3 letters A-Z, as the ENTER NAME screen offers"); return s; }
+  function edited(r){ recomputeAll(); renderAll(); return r; }
+  var MCP_TOOLS=[
+    {name:"rs64save_status",description:"Whether a save is loaded in the RS64 Save Editor, its file name and whether its checksums pass.",inputSchema:{type:"object",properties:{}},
+      run:function(){ return {loaded:!noSave,file:noSave?null:(currentName||null),checksumsOk:noSave?null:checksumsValid()}; }},
+    {name:"rs64save_load",edit:true,description:"Loads a save from its bytes (base64; 512 bytes, the recomp's saves/<game-id>.bin or a cart EEPROM dump). Anything that is not a real Rogue Squadron save (wrong size, header or checksums) is refused and the open save kept.",
+      inputSchema:{type:"object",properties:{base64:{type:"string"},name:{type:"string"}},required:["base64"]},
+      run:function(a){
+        var s=atob(a.base64), b=new Uint8Array(s.length); for(var i=0;i<s.length;i++) b[i]=s.charCodeAt(i);
+        var was=buf; loadBytes(b,a.name||"agent.bin");
+        if(buf===was) throw new Error("Not a Rogue Squadron save: its size, header or checksums do not match the game's");
+        return readAll();
+      }},
+    {name:"rs64save_read",description:"Everything in the loaded save, decoded: the three pilots (name, current level, a medal per level, weapon upgrades, pilot ID, pre-selected), the Elite Rogues board (name, level, medal counts, pilot ID, score, rank), settings (volumes 0-127, controller layout 0-3, language 0 English 1 Deutsch 2 Francais) and the cheat unlocks.",
+      inputSchema:{type:"object",properties:{}},run:function(){ needSave(); return readAll(); }},
+    {name:"rs64save_bytes",description:"The edited save's bytes as base64 (checksums recomputed), to hand to someone or check offline. Saving it as a file stays the page's Export button.",
+      inputSchema:{type:"object",properties:{}},run:function(){ needSave(); recomputeAll(); renderStatus(); var s=""; for(var i=0;i<buf.length;i++) s+=String.fromCharCode(buf[i]); return {name:currentName||null,base64:btoa(s)}; }},
+    {name:"rs64save_set_pilot",edit:true,description:"Changes a pilot (slot 0-2, which must hold one: add it with rs64save_pilot_slot). name: initials; level: the current level 0-16 (SELECT LEVEL lists every campaign level up to it); medals: { level number 0-18: \"none\" | \"bronze\" | \"silver\" | \"gold\" }; upgrades: { upgrade name: true | false } (names as rs64save_read lists them, or every name with all: true / false); preselect: true makes it the profile SELECT GAME highlights.",
+      inputSchema:{type:"object",properties:{slot:{type:"integer"},name:{type:"string"},level:{type:"integer",minimum:0,maximum:16},medals:{type:"object"},upgrades:{type:"object"},all:{type:"boolean"},preselect:{type:"boolean"}},required:["slot"]},
+      run:function(a){
+        needSave(); var i=slotOf(a.slot);
+        if(!acctActive(i)) throw new Error("Slot "+i+" is empty: add a pilot there first");
+        if(a.name!==undefined){ var n=initials(a.name); writeName(function(j,c){ setAcct8(i,j,c); },n,4); }
+        if(a.level!==undefined) setAcct8(i,0x05,clamp(a.level,0,16));
+        Object.keys(a.medals||{}).forEach(function(l){ var m=MEDAL_WORDS.indexOf(a.medals[l]); if(m<0) m=MEDAL_NAMES.indexOf(a.medals[l]);
+          if(m<0||!(+l>=0&&+l<N_LEVELS_MEDAL)) throw new Error("medals: level 0-18 to none, bronze, silver or gold"); setMedal(i,+l,m); });
+        var uw=u32(acctO(REC[0],i,0x0C))>>>0;
+        if(a.all!==undefined) UPGRADE_BITS.forEach(function(u){ uw=a.all?(uw|u.bit)>>>0:(uw&~u.bit)>>>0; });
+        Object.keys(a.upgrades||{}).forEach(function(k){ var u=UPGRADE_BITS.filter(function(x){ return x.name===k; })[0]; if(!u) throw new Error("Unknown upgrade "+k+": "+UPGRADE_BITS.map(function(x){ return x.name; }).join(", "));
+          uw=a.upgrades[k]?(uw|u.bit)>>>0:(uw&~u.bit)>>>0; });
+        setAcct32(i,0x0C,uw);
+        if(a.preselect) setBody8(0x51,i);
+        return edited(readPilot(i));
+      }},
+    {name:"rs64save_pilot_slot",edit:true,description:"Adds a pilot in an empty slot (a fresh profile with the next free pilot ID, as the game makes one), deletes one (its name, medals and upgrades cleared; the pre-selection moves to a pilot left), or moves one to another slot (the slots between shift over).",
+      inputSchema:{type:"object",properties:{action:{type:"string",enum:["add","delete","move"]},slot:{type:"integer"},to:{type:"integer"}},required:["action","slot"]},
+      run:function(a){
+        needSave(); var i=slotOf(a.slot);
+        if(a.action==="add"){ if(acctActive(i)) throw new Error("Slot "+i+" already holds a pilot"); addPilot(i); }
+        else if(a.action==="delete"){ if(!acctActive(i)) throw new Error("Slot "+i+" is empty"); deletePilot(i); }
+        else { var to=slotOf(a.to); if(to!==i) movePilot(i,to); }
+        edited();
+        var p=[]; for(var k=0;k<N_ACCTS;k++) p.push(readPilot(k));
+        return {pilots:p.map(function(x){ return {slot:x.slot,active:x.active,name:x.name,pilotId:x.pilotId,preselected:x.preselected}; })};
+      }},
+    {name:"rs64save_set_elite",edit:true,description:"Changes a row (0-9) of the Elite Rogues board: name (initials), level (0-18), bronze / silver / gold (0-31 each; the score is gold x 4 + silver x 2 + bronze), pilotId (0-255; 0 = one of the game's default entries). The board re-sorts by score as the game keeps it.",
+      inputSchema:{type:"object",properties:{row:{type:"integer",minimum:0,maximum:9},name:{type:"string"},level:{type:"integer"},bronze:{type:"integer"},silver:{type:"integer"},gold:{type:"integer"},pilotId:{type:"integer"}},required:["row"]},
+      run:function(a){
+        needSave(); var i=a.row; if(!(i>=0&&i<N_ELITE)) throw new Error("row is 0-9");
+        if(a.name!==undefined){ var n=initials(a.name); writeName(function(j,c){ setElite8(i,j,c); },n,3); }
+        if(a.level!==undefined) setElite8(i,0x03,clamp(a.level,0,18));
+        if(a.pilotId!==undefined) setElite8(i,0x06,clamp(a.pilotId,0,255));
+        var e=readElite(i), br=a.bronze!==undefined?clamp(a.bronze,0,31):e.bronze, sv=a.silver!==undefined?clamp(a.silver,0,31):e.silver, gd=a.gold!==undefined?clamp(a.gold,0,31):e.gold;
+        setElite16(i,0x04,br|(sv<<5)|(gd<<10));
+        sortElite(); edited();
+        var rows=[]; for(var r=0;r<N_ELITE;r++) rows.push(readElite(r));
+        return {eliteRogues:rows};
+      }},
+    {name:"rs64save_set_settings",edit:true,description:"Changes the save's options: music, sfx, speech volume (0-127), controllerLayout (0-3, the four layouts of the CONTROLLER SETTINGS screen), language (0 English, 1 Deutsch, 2 Francais).",
+      inputSchema:{type:"object",properties:{music:{type:"integer"},sfx:{type:"integer"},speech:{type:"integer"},controllerLayout:{type:"integer",minimum:0,maximum:3},language:{type:"integer",minimum:0,maximum:2}}},
+      run:function(a){
+        needSave();
+        [["music",0x10,127],["sfx",0x11,127],["speech",0x12,127],["controllerLayout",0x13,3],["language",0xA8,2]].forEach(function(f){ if(a[f[0]]!==undefined) setBody8(f[1],clamp(a[f[0]],0,f[2])); });
+        return edited(readAll().settings);
+      }},
+    {name:"rs64save_set_unlocks",edit:true,description:"Sets the cheat unlocks shared by every pilot, as typing their codes on the passcode screen would: set maps an unlock name or its code (as rs64save_read lists them, e.g. \"Millennium Falcon\" or \"FARMBOY\") to true / false; skin picks the Luke skin by name or code (or \"None\"). Codes that only work when typed (AT-ST, credits, dev photo) are refused.",
+      inputSchema:{type:"object",properties:{set:{type:"object"},skin:{type:"string"}}},
+      run:function(a){
+        needSave(); var w=u32(bodyO(REC[0],0x08))>>>0, items=cheatItems();
+        Object.keys(a.set||{}).forEach(function(k){
+          var c=items.filter(function(x){ return !x.exclusive&&(x.item.name===k||x.item.code===k); })[0];
+          if(!c) throw new Error("Unknown unlock "+k);
+          if(c.item.disabled) throw new Error(c.item.name+": "+c.item.note);
+          if(c.item.naboo){ setBody32(0xAC,a.set[k]?NABOO_KEY:0); w=(w&~0x10)>>>0; }
+          else w=a.set[k]?(w|c.item.bit)>>>0:(w&~c.item.bit)>>>0;
+        });
+        if(a.skin!==undefined){
+          var skins=items.filter(function(x){ return x.exclusive; }), mask=skins.reduce(function(m,x){ return m|x.item.bit; },0)>>>0;
+          var pick=a.skin==="None"?null:skins.filter(function(x){ return x.item.name===a.skin||x.item.code===a.skin; })[0];
+          if(a.skin!=="None"&&!pick) throw new Error("Unknown skin "+a.skin+": "+skins.map(function(x){ return x.item.name; }).join(", "));
+          w=(((w&~mask)>>>0)|(pick?pick.item.bit:0))>>>0;
+        }
+        setBody32(0x08,w);
+        return edited(readUnlocks());
+      }}
+  ];
+  var mcp=document.modelContext||navigator.modelContext;
+  if(mcp&&mcp.registerTool) MCP_TOOLS.forEach(function(t){
+    var tool={name:t.name,description:t.description,inputSchema:t.inputSchema,annotations:{readOnlyHint:!t.edit},
+      // A thrown error reaches the agent only as "the invocation failed", so its message is returned instead.
+      execute:async function(input){
+        try{ return {content:[{type:"text",text:JSON.stringify(await t.run(input||{}))}]}; }
+        catch(e){ return {content:[{type:"text",text:"Error: "+e.message}],isError:true}; }
+      }};
+    Promise.resolve().then(function(){ return mcp.registerTool(tool); }).catch(function(e){ console.warn("WebMCP: "+t.name+" not registered:",e); });
+  });
+
   // ---- boot: nothing to edit until a real save is loaded (the editor never builds one itself) ----
   renderStatus();
 })();

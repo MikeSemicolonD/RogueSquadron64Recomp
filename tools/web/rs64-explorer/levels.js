@@ -22,7 +22,12 @@ for (const g of [gizmoParts?.translate, gizmoParts?.scale]) for (const h of [...
 }
 // Edit panel buttons are icons; each keeps its label as the title (and accessible name).
 const EDIT_ICONS = {
+  add: { stroke: 'M8 3v10M3 8h10' },
+  up: { stroke: 'M8 13V3M4 7l4-4 4 4' },
+  down: { stroke: 'M8 3v10M4 9l4 4 4-4' },
+  globe: { stroke: 'M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM1.5 8h13M8 1.5c2 1.8 2.8 4 2.8 6.5S10 12.7 8 14.5M8 1.5C6 3.3 5.2 5.5 5.2 8S6 12.7 8 14.5' },
   edit: 'M11.3 1.3l3.4 3.4-9.2 9.2H2.1v-3.4zM10 4.4l-6.4 6.4v1.6h1.6L11.6 6z',
+  grip: 'M5 2.5h2v2H5zm4 0h2v2H9zM5 7h2v2H5zm4 0h2v2H9zM5 11.5h2v2H5zm4 0h2v2H9z',
   terrain: 'M1 14l4.5-8 3 4.5 2-3L15 14z',
   objects: 'M8 1l6 3.5v7L8 15l-6-3.5v-7zm0 1.7L3.6 5.2 8 7.7l4.4-2.5zM3 6.1v4.8l4.5 2.6V8.6zm10 0L8.5 8.6v4.9l4.5-2.6z',
   events: 'M3 1h1.5v14H3zM5.5 2h8l-2 3 2 3h-8z',
@@ -431,12 +436,12 @@ const CRAFT = [['xwing', 'X-wing'], ['ywing', 'Y-wing'], ['awing', 'A-wing'], ['
 // What a template brings that the new level cannot change (yet).
 const TEMPLATE_NOTES = { 0: 'opening crawl (chapter 1)', 5: 'opening crawl (chapter 2)', 10: 'opening crawl (chapter 3); no Y-wing or speeder', 15: 'opening crawl (chapter 4)', 16: 'no craft select (T-16), friendlies-saved medal', 3: 'speeder only', 6: 'speeder only', 11: 'speeder only', 18: 'speeder only', 8: 'X-wing and Y-wing only', 17: 'X-wing only' };
 // blank: only a player start on flat ground, with this level's look (sky, textures, music); give it objectives in Level settings.
-async function newModLevel(fromDir, blank = false) {
+async function newModLevel(fromDir, blank = false, named = null) {
   const tmpl = parseInt(fromDir.split('/lv_')[1], 36), from = lvName(fromDir.split('/').pop());
   const ask = blank
     ? `New blank level with the look of ${from}: only a player start on flat ground. Give it objectives in Level settings.\n\nTitle:`
     : `New level from ${from}${TEMPLATE_NOTES[tmpl] ? ` (it keeps: ${TEMPLATE_NOTES[tmpl]})` : ''}.\nIt plays this level's mission script, so keep the objects it uses.\n\nTitle:`;
-  const title = prompt(ask, 'New level')?.trim();
+  const title = (named ?? prompt(ask, 'New level'))?.trim();
   if (!title) return;
   let made;
   // A copy starts from the template's medal thresholds, a blank level from simple ones.
@@ -460,6 +465,7 @@ async function newModLevel(fromDir, blank = false) {
   });
   renderList();
   await showLevel('data/level/' + made.folder);
+  return made;
 }
 // A voice-line picker: None, the level briefings, then every other line with audio (lines without a subtitle get the Audio tab's
 // description, by speech index).
@@ -532,7 +538,7 @@ function recordingControls(path, what, onChange) {
     b.getChannelData(0).set(Float32Array.from(pcm, (v) => v / 32768));
     const s = audioCtx.createBufferSource();
     s.buffer = b;
-    s.connect(audioCtx.destination);
+    s.connect(audioOut());
     s.start();
   };
   remove.onclick = async (e) => {
@@ -921,12 +927,12 @@ async function getPathCatalog() {
   return pathCatalog;
 }
 // Copies a stock path next to the enemy (its first interior point, where the NPC starts, at the enemy) and puts the enemy on it.
-async function copyPathFor(it, src) {
+async function copyPathFor(it, src, quiet = false) {
+  let dropped = 0;
   await historyGroup(`Copy path ${src.name}: ${it.name}`, async () => {
     const fdv = await rom.read(src.dir + '/dat'), from = u8(fdv).slice();
     const attack = await getAttackTemplate();
     const s = parseDAT(new DataView(from.buffer)).items.find((x) => x.type === 3 && x.index === src.index);
-    let dropped = 0;
     await editAsset(selected + '/dat', (bytes) => {
       const r = splineCopy(from, s, bytes, { name: uniqueName(bytes, src.name), at: it.pos, attack });
       dropped = r.dropped;
@@ -934,9 +940,10 @@ async function copyPathFor(it, src) {
       const enemy = parseDAT(new DataView(r.bytes.buffer)).items.find((x) => x.type === 0 && x.index === it.index);
       return npcSetPath(r.bytes, enemy, copy.name);
     });
-    if (dropped) alert(`${dropped} of ${src.name}'s path events named things in its own level (attack targets, holds) and were left out.`);
+    if (dropped && !quiet) alert(`${dropped} of ${src.name}'s path events named things in its own level (attack targets, holds) and were left out.`);
   });
   await reselect(it.type, it.index);
+  return dropped;
 }
 // Enemy side: waits for a wave (WAVE_FIELDS gate, spawned when its flag is raised) and flies a path once it appears.
 function waveEnemyRow(it) {
@@ -1615,6 +1622,54 @@ async function addItem(src, pos, zone) {
   const last = editObjects().filter(([, x]) => x.type === it.type).reduce((a, b) => (a && a[1].index >= b[1].index ? a : b), null);
   if (last) select(last[0]);
 }
+// Dragging a list row by its grip (a click on the row still opens it): a model into a cutscene being edited (a new actor) or a level in object
+// editing (a copy of an object of that model, at the drop point), an Audio row onto a cutscene's Audio lane. Esc or a drop elsewhere does nothing.
+let listDrag = null;
+function dragGrip(r) {
+  const g = elem('span', { className: 'grip', draggable: true, title: mode === 'models' ? 'Drag into a cutscene or level you are editing' : 'Drag onto the Audio lane of a cutscene you are editing' });
+  setEditIcon(g, 'grip');
+  g.onclick = (e) => e.stopPropagation();
+  g.ondragstart = (e) => {
+    listDrag = mode === 'models' ? { model: r.id, obj: r.obj ?? null, label: r.label } : { audio: r.row, label: r.label };
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', r.label);
+  };
+  g.ondragend = () => {
+    listDrag = null;
+    document.querySelectorAll('.dropOk').forEach((x) => x.classList.remove('dropOk'));
+  };
+  return g;
+}
+// el takes a dragged row while ok() holds, highlighted under it.
+function listDropTarget(el, ok, onDrop) {
+  el.ondragover = (e) => {
+    if (!ok()) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    el.classList.add('dropOk');
+  };
+  el.ondragleave = () => el.classList.remove('dropOk');
+  el.ondrop = (e) => {
+    el.classList.remove('dropOk');
+    if (!ok()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    onDrop(e);
+  };
+}
+const viewDropKind = () => (!listDrag?.model ? null : cut?.file && cutEditing && !cut.seq && !cut.crawl ? 'actor' : !cut && editMode === 'objects' && selected ? 'object' : null);
+listDropTarget(canvas, viewDropKind, async (e) => {
+  const d = listDrag;
+  if (viewDropKind() === 'actor') {
+    const name = await cutActorNameFor(d.model);
+    return name ? cutAddActorNamed(name) : void ($('cutStatus').textContent = `${d.label}: cutscenes can't load this model`);
+  }
+  // A level places only models it loads: the drop copies an object that uses it.
+  const h = (root?.children ?? []).find((o) => o.userData.placedItem && o.userData.source?.id === d.model && (d.obj == null || o.userData.source.objIndex === d.obj));
+  if (!h) return void ($('selInfo').textContent = `${d.label}: no object in this level uses this model, so it isn't loaded here`);
+  const at = cursorGround(e), it = h.userData.placedItem;
+  addItem(it, at ? at.toArray() : [it.pos[0] + 4, it.pos[1], it.pos[2]]);
+});
 $('btnDup').onclick = () => sel && !sel.fixed && !sel.it.pathEvent && addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
 $('btnDel').onclick = () => sel && canDelete(sel.it) && deleteItem(sel.it);
 // Event kinds any level can add, copied from another level when this one has none (a blank level starts with only its player start):
@@ -1827,8 +1882,8 @@ async function modFiles(id, name, keys = null) {
     files.push({ name: `assets/${path.replace(/^data\//, '')}.bps`, data: encodeBPS(edits.get(path), u8(now)) });
   }
   if (menuKeys.size) {
-    const doc = menuParse(await virtualText(MENU_FILE)).doc, ids = new Set(doc.buttons.filter((b) => menuKeys.has(menuItemKey(doc, b))).map((b) => b.id));
-    files.push({ name: MENU_FILE.slice(4), data: new TextEncoder().encode(menuWrite(menuWriteSubset(doc, ids))) });
+    const doc = menuParse(await virtualText(MENU_FILE)).doc;
+    files.push({ name: MENU_FILE.slice(4), data: new TextEncoder().encode(menuWrite(menuWriteSubset(doc, (b) => menuKeys.has(menuItemKey(doc, b))))) });
   }
   // A mod level's files: copies of its template's (.from), patched by the .bps above when edited.
   if (!firstLevels || keys.includes(firstLevels)) for (const [path, from] of rom.aliases) files.push({ name: `assets/${path.replace(/^data\//, '')}.from`, data: new TextEncoder().encode(from.replace(/^data\//, '') + '\n') });
@@ -1927,7 +1982,7 @@ async function exportDialog(items, doc, base) {
       }));
       const more = elem('details', null, elem('summary', { textContent: `${e.keys.length} change${e.keys.length > 1 ? 's' : ''}` }), list);
       const note = e.merged.length ? elem('small', { className: 'shotNote', textContent: `${e.name} uses changes from ${e.merged.join(', ')}: they export as one mod.` }) : '';
-      const del = doc.groups.some((g) => g.name === e.name) && elem('button', { title: 'Remove this group (its changes go back to their kind)' });
+      const del = doc.groups.some((g) => g.name === e.name) && elem('button', { title: 'Remove this mod (its changes go back to the mod for their kind)' });
       if (del) {
         setEditIcon(del, 'delete');
         del.onclick = () => {
@@ -1937,9 +1992,9 @@ async function exportDialog(items, doc, base) {
       }
       return elem('div', { className: 'exportRow' }, elem('div', { className: 'exportHead' }, tick, name, del || ''), note, more);
     });
-    const addGroup = elem('button', { textContent: '+ Group', title: 'Add a mod to move changes into' });
+    const addGroup = elem('button', { textContent: '+ Mod', title: 'Add another mod to export, then move changes into it' });
     addGroup.onclick = () => {
-      const n = prompt('Group name');
+      const n = prompt('Name of the new mod');
       if (!n || groupNames.includes(n)) return;
       doc.groups.push({ name: n });
       render();

@@ -25,8 +25,8 @@ focus = ["cineStatePtr", "gCurrentCutsceneFile", "gateCtr"]
 id = "menu"
 name = "Front-end menu"
 parent = ""
-# A menu is resident: gCurrentMenuData's first field (0x800CE730) is a valid KSEG0 pointer.
-classify = [ { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF } ]
+# A menu is resident: gCurrentMenuData's first field (0x800CE730, the title) points into RDRAM; host-built titles (pages, title overrides) live above 8 MB.
+classify = [ { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF } ]
 reachable_from = ["cinematic", "menu"]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -40,7 +40,7 @@ id = "menu.main"
 name = "Main menu"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x00000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -50,7 +50,7 @@ id = "menu.account"
 name = "Select game / account"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
@@ -64,7 +64,7 @@ id = "menu.account.enter_name"
 name = "Enter name"
 parent = "menu.account"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
   { addr = 0x800CE626, mask = 0xFF000000, op = "eq", value = 0x00000000 },
 ]
@@ -75,7 +75,7 @@ id = "menu.account.level_select"
 name = "Select level"
 parent = "menu.account"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
   { addr = 0x800CE626, mask = 0xFF000000, op = "eq", value = 0x01000000 },
 ]
@@ -86,7 +86,7 @@ id = "menu.account.craft_select"
 name = "Available craft"
 parent = "menu.account"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
   { addr = 0x800CE626, mask = 0xFF000000, op = "eq", value = 0x02000000 },
 ]
@@ -97,7 +97,7 @@ id = "menu.options"
 name = "Options"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x02000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -107,7 +107,7 @@ id = "menu.game_settings"
 name = "Game settings"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x03000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
@@ -117,7 +117,7 @@ id = "menu.elite_rogues"
 name = "Elite Rogues"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x04000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -127,7 +127,7 @@ id = "menu.controller_settings"
 name = "Controller settings"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x05000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -137,7 +137,7 @@ id = "menu.sound_settings"
 name = "Sound settings"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x06000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -147,7 +147,7 @@ id = "menu.passcodes"
 name = "Passcodes"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x07000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -157,7 +157,7 @@ id = "menu.biographies"
 name = "Biographies"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x08000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -170,7 +170,7 @@ id = "menu.media"
 name = "Media hub (Showroom/Concert Hall/Movies)"
 parent = "menu"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x0A000000 },
 ]
 focus = ["gCurrentMenuData"]
@@ -180,7 +180,7 @@ id = "menu.media.showroom"
 name = "Showroom (model viewer)"
 parent = "menu.media"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x807FFFFF },
+  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x0B000000 },
 ]
 focus = ["gCurrentMenuData"]

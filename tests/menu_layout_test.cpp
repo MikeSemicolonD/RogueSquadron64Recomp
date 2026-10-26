@@ -70,6 +70,7 @@ int main() {
         CHECK(is(native_alias("options", "controller_settings"), 1, 5, true));
         CHECK(is(native_alias("options", "back"), 25, 0, false));
         CHECK(is(native_alias("game_settings", "high_resolution"), 5, 4, true));
+        CHECK(is(native_alias("controller_settings", "back"), 25, 0, false));
         CHECK(native_alias("options", "nope") == nullptr && native_alias("pause", "back") == nullptr);
     }
 
@@ -80,6 +81,19 @@ int main() {
         CHECK(pause_native_alias("auto_roll") == 0x25 && pause_native_alias("auto_level") == 0x26 && pause_native_alias("free_camera") == 0x28);
         CHECK(pause_native_alias("crosshairs") == 0x27 && pause_native_alias("displays") == 0x2B && pause_native_alias("cockpit") == 0x2A);
         CHECK(pause_native_alias("back") == 0x39 && pause_native_alias("nope") == -1);
+        CHECK(pause_native_alias("continue") == 0x21 && pause_native_alias("abort_level") == 0x22);
+        CHECK(pause_native_alias("game_settings") == 0x2E && pause_native_alias("sound_settings") == 0x2F);
+    }
+
+    // conditions_name_the_buttons_own_mod_and_negate
+    {
+        using rs64::menu::condition_key;
+
+        CHECK(condition_key("config:fast", "mymod") == "config:mymod:fast");
+        CHECK(condition_key("!config:fast", "mymod") == "!config:mymod:fast");
+        CHECK(condition_key("config:other:opt", "mymod") == "config:other:opt");
+        CHECK(condition_key("!desktop", "mymod") == "!desktop" && condition_key("desktop", "") == "desktop");
+        CHECK(condition_key("config:fast", "") == "config:fast");
     }
 
     std::printf("menu_layout_test: ok\n");

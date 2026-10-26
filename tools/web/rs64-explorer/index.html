@@ -23,12 +23,12 @@
 <body class="no-rom">
 <aside>
   <header>
-    <div class="titleRow"><h1>RS64 EXPLORER</h1><button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button></div>
+    <div class="titleRow"><h1>RS64 EXPLORER</h1><span class="titleBtns"><button id="audioBtn" hidden title="Mute the sound" aria-label="Mute the sound"></button><button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button></span></div>
     <a class="toolLink" id="saveEditorLink" href="save-editor/" target="_blank" rel="noopener" title="The save editor, a separate tool (opens in a new tab)">&larr; Save editor</a>
     <button id="btnBack" hidden style="width:100%;margin-bottom:8px"></button>
     <input type="file" id="romfile" accept=".z64,.v64,.n64">
   </header>
-  <div class="tabs needs-rom"><button id="tabModels" class="on">Models</button><button id="tabLevels">Levels</button><button id="tabEffects">Effects</button><button id="tabAudio">Audio</button><button id="tabFonts">Fonts</button></div>
+  <div class="tabs needs-rom"><button id="tabModels" class="on">Models</button><button id="tabLevels">Levels</button><button id="tabEffects">Effects</button><button id="tabAudio">Audio</button><button id="tabFonts">Fonts</button><button id="tabMenus">Menus</button></div>
   <div class="needs-rom filterbox"><input id="filter" placeholder="Filter"><button id="filterClear" title="Clear filter" hidden>&times;</button></div>
   <div id="list" class="needs-rom"></div>
   <div id="opts" class="needs-rom">
@@ -98,6 +98,7 @@
   <div id="rulesPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Level events</b><button id="rulesClose" data-icon="close" title="Close"></button></div><div id="rulesBody"></div></div>
   <div id="audioPanel" class="panel needs-rom" hidden></div>
   <div id="fontPanel" class="panel needs-rom" hidden></div>
+  <div id="menuPanel" class="panel needs-rom" hidden></div>
   <div id="musicPanel" class="panel needs-rom" hidden>
     <div id="musicHead"></div>
     <div class="btns" id="musicBtns"></div>
@@ -214,7 +215,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 window.RS64_THREE = { THREE, OrbitControls, TransformControls, GLTFExporter };
-for (const src of ['core.js', 'audio.js', 'effects.js', 'ui.js', 'cutscenes.js', 'levels.js', 'fonts.js']) await new Promise((ok, fail) => document.body.append(Object.assign(document.createElement('script'), { src: `${src}?v=${Date.now()}`, onload: ok, onerror: fail })));
+for (const src of ['core.js', 'audio.js', 'effects.js', 'ui.js', 'cutscenes.js', 'levels.js', 'fonts.js', 'menus.js', 'webmcp.js']) await new Promise((ok, fail) => document.body.append(Object.assign(document.createElement('script'), { src: `${src}?v=${Date.now()}`, onload: ok, onerror: fail })));
 </script>
 </body>
 </html>

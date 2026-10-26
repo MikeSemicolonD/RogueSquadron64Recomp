@@ -32,16 +32,20 @@ $('filterClear').onclick = () => {
 };
 const setMode = (m) => {
   mode = m;
-  for (const [id, k] of [['tabModels', 'models'], ['tabLevels', 'levels'], ['tabEffects', 'effects'], ['tabAudio', 'audio'], ['tabFonts', 'fonts']]) $(id).classList.toggle('on', k === m);
-  document.body.classList.toggle('audio', m === 'audio');
-  document.body.classList.toggle('fonts', m === 'fonts');
-  $('audioPanel').hidden = m !== 'audio' || !audioSel || !!musicSel;
-  $('musicPanel').hidden = m !== 'audio' || !musicSel;
+  for (const [id, k] of [['tabModels', 'models'], ['tabLevels', 'levels'], ['tabEffects', 'effects'], ['tabAudio', 'audio'], ['tabFonts', 'fonts'], ['tabMenus', 'menus']]) $(id).classList.toggle('on', k === m);
+  // Over a cutscene being edited the Audio list leaves it on screen, so a row can be dragged onto its Audio lane; picking a row opens the player.
+  const overCut = m === 'audio' && cutEditing && !!cut?.file;
+  document.body.classList.toggle('audio', m === 'audio' && !overCut);
+  document.body.classList.toggle('fonts', m === 'fonts' || m === 'menus');
+  $('audioPanel').hidden = m !== 'audio' || overCut || !audioSel || !!musicSel;
+  $('musicPanel').hidden = m !== 'audio' || overCut || !musicSel;
   $('fontPanel').hidden = m !== 'fonts' || !fontSel;
+  $('menuPanel').hidden = m !== 'menus' || !menuSel;
   if (m !== 'audio') stopAudio();
   renderList();
 };
 $('tabFonts').onclick = () => setMode('fonts');
+$('tabMenus').onclick = () => menuRefreshPages().then(() => setMode('menus'));
 $('tabAudio').onclick = () => setMode('audio');
 $('audCat').onchange = $('audLevel').onchange = renderList;
 $('tabModels').onclick = () => setMode('models');
@@ -306,6 +310,7 @@ async function applyHistory(changes) {
   rulesChanged();
   crawlsChanged();
   if (mode === 'fonts' && fontSel) showFont(fontSel);
+  if (mode === 'menus' && menuSel) showMenu(menuSel);
   await refreshView();
 }
 async function refreshView() {

@@ -6,6 +6,7 @@
 // menu_config.cpp is not linked here; the menu: target only reads its press count at run time.
 extern "C" uint32_t rs64_menu_confirms() { return 0; }
 extern "C" void rs64_menu_request_quit() {}
+extern "C" unsigned rs64_pause_array_for(uint8_t*, unsigned, unsigned native) { return native; }
 extern "C" void rs64_lang_original(const char* shown, char* out, size_t cap) { snprintf(out, cap, "%s", shown); }
 
 int main() {

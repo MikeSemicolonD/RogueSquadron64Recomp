@@ -21,7 +21,7 @@ The first half of this page is the guide for mod authors. The second half, [Inte
 
 3. Launch the game and enable the mod in the Mods window (**F6**).
 
-That is a complete menu mod. The RS64 Explorer's *Menus* tab edits these files on a preview of the game's menus: pick a menu, right-click one of the game's entries to hide or replace it, add and drag buttons, and set every field below; *Import* opens an existing menu mod. Working examples:
+That is a complete menu mod. The RS64 Explorer's *Menus* tab edits these files on a preview of the game's menus: pick a menu, click an entry to hide or replace it or add buttons beside it, drag buttons and titles to move them, and set every field below; *Import* opens an existing menu mod. Working examples:
 
 - [mods/quit-prompt/](../../mods/quit-prompt/): adds a YES/NO confirm to the built-in QUIT by reusing its id.
 - [mods/menu-example/](../../mods/menu-example/): a custom page whose entries call the mod's own native library.
@@ -66,7 +66,7 @@ Menu files are layered in this order. A button with the same `id` as an earlier 
 | `id` | Stable identifier. A later button with the same id overrides this one; other buttons can anchor to it. |
 | `menu` | Where the button goes. Front end: `main_menu`, `options`, `game_settings`, `sound_settings`, `controller_settings` (not while the `controls-menu` mod is enabled: its rebind list owns that screen). Pause: `pause`, `pause_game_settings`. Any other name is a custom page (see [Custom pages](#custom-pages)). |
 | `type` | `action`, `toggle`, `cycle`, `slider`, `submenu`, or `label` (a line the cursor skips, such as a status line). |
-| `requires` | A condition the button needs to show, or a list of them that must all hold, checked each time the menu is built: `desktop` (not Android), `front_end` (not in the pause menu, for settings the game only reads at a level load), `ray_query` (the GPU supports ray queries), `expansion_pak`, `frame_interpolation` (it is on), or any condition a native mod registers. |
+| `requires` | A condition the button needs to show, or a list of them that must all hold, checked each time the menu is built: `desktop` (not Android), `front_end` (not in the pause menu, for settings the game only reads at a level load), `ray_query` (the GPU supports ray queries), `expansion_pak`, `frame_interpolation` (it is on), `config:<mod id>:<option id>` (that mod config option is set: not its first choice, or non-zero; `config:<option id>` names the button's own mod's), or any condition a native mod registers. A leading `!` asks for the opposite (`"!config:my_mod:hard_mode"`). |
 | `x` / `y` | Position offsets for front-end entries. |
 | `flags` | Pause entry flag word (default `16385` = `0x4001`, drawn and selectable). |
 
@@ -122,6 +122,7 @@ By default a button is appended after the existing entries. To place it:
 | `replace` | Take a native entry's position and remove it. |
 | `index` | Final position among the visible entries, 0-based; negative counts from the end (`-1` = last). Applied after the fields above, and wins over `order` / `before` / `after`. Out of range lands at the nearest end. |
 | top-level `hide` | `{ "<menu>": ["alias", ...] }` removes native entries. |
+| top-level `titles` | `{ "<menu>": { "label": ..., "x": 0, "y": 0 } }` replaces a front-end menu's title (a page's too). `label` is a string or a language map like any label; `x` moves it 1.25 px per unit from the centre and `y` is its top offset (the game's own titles use 10); an offset left out keeps the game's. Pause menu titles can't be changed. |
 
 ### Native aliases
 
@@ -132,6 +133,8 @@ Anchors and `hide` name native entries by alias:
 - `game_settings`: `auto_roll`, `auto_level`, `free_camera`, `crosshairs`, `high_resolution`, `restore_defaults`, `back`.
 - `sound_settings` (slider `replace` targets): `music`, `sound_fx`, `speech`, `subtitles`, `stereo`, `restore_defaults`, `back`. The menu has a hard limit of 8 slots, so a slider must replace an entry you can spare (the demo replaces `stereo`).
 - `pause_game_settings`: `auto_roll`, `auto_level`, `free_camera`, `crosshairs`, `displays`, `cockpit`, `back`. A button without placement goes above BACK, where the game leaves a gap.
+- `controller_settings`: `back`. The game draws a controller diagram over this screen, so give new buttons a `y` that keeps them clear of its labels (BACK itself carries `y` 283). The controls-menu mod replaces the screen while it is enabled, and buttons for it don't show then.
+- `pause`: `continue`, `abort_level`, `game_settings`, `sound_settings`. The title and objectives above CONTINUE stay where they are; a button without placement goes at the end.
 
 The tables are `kNativeAliases` and `pause_native_alias()` in [src/game/menu_layout.h](../../src/game/menu_layout.h) and `snd_alias_slot()` in [src/game/menu_config.cpp](../../src/game/menu_config.cpp); extend them to expose more entries.
 
@@ -141,9 +144,9 @@ The value of `action`, `toggle`, `cycle` or `slider` names what the button does.
 
 Built in:
 
-- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave`.
-- **Toggles:** `fullscreen`, `gyro` (Android gyro aiming), `widescreen`, `frame_interpolation`, `cutscene_draw_distance` (cutscenes keep the game's own view distance and fog), `framebuffer_writeback` (copy rendered frames back to the emulated RAM; off is faster on slow GPUs), and the ray-tracing switches `rt_lights`, `rt_shadows`, `rt_soft_shadows`, `rt_fog_shafts`, and `rumble` (saved to `roguesq_input.json`). Settings toggles are saved to `roguesq_video.json` and apply live. A set `ROGUESQ_RT_*` env var pins a ray-tracing switch without changing the file.
-- **Cycles:** `draw_distance` (1X to 2.5X in quarter steps, the same setting as the slider), `resolution` (AUTO, 1X-4X), `antialiasing` (OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X), `target_fps` (DISPLAY, then each refresh rate the window's monitor supports; used while frame interpolation is on), `texture_filter` (BILINEAR, 3-POINT), `upscale_filter` (NEAREST, LINEAR, AA PIXEL). They apply at the next frame and are saved to `roguesq_video.json`; an MSAA change rebuilds the render targets, a pause of a second or so.
+- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults), `open_mods_folder` (opens the mods folder in the file browser; desktop only, so give the button `"requires": "desktop"`) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave`.
+- **Toggles:** `fullscreen`, `gyro` (Android gyro aiming), `widescreen`, `frame_interpolation`, `cutscene_draw_distance` (cutscenes keep the game's own view distance and fog), `legacy_terrain` (the game's own terrain instead of the whole-map pass; caps the draw distance at 1.3X), `framebuffer_writeback` (copy rendered frames back to the emulated RAM; off is faster on slow GPUs), and the ray-tracing switches `rt_lights`, `rt_shadows`, `rt_soft_shadows`, `rt_fog_shafts`, and `rumble` (saved to `roguesq_input.json`). Settings toggles are saved to `roguesq_video.json` and apply live. A set `ROGUESQ_RT_*` env var pins a ray-tracing switch without changing the file.
+- **Cycles:** `draw_distance` (1X, 1.25X, 1.5X, 2X, 2.5X, 3X, 4X, 6X, 8X, the same setting as the slider; legacy terrain caps it at 1.3X), `resolution` (AUTO, 1X-4X), `antialiasing` (OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X), `target_fps` (DISPLAY, then each refresh rate the window's monitor supports; used while frame interpolation is on), `texture_filter` (BILINEAR, 3-POINT), `upscale_filter` (NEAREST, LINEAR, AA PIXEL). They apply at the next frame and are saved to `roguesq_video.json`; an MSAA change rebuilds the render targets, a pause of a second or so.
 - **Sliders:** `draw_distance`, the draw-distance multiplier as a percent (use `"min": 100, "max": 250`). The base game has no draw-distance UI; a menu mod adds one with this key. `mouse_sensitivity` (thousandths, 5-300), `mouse_smoothing` and `deadzone` (percent; the gamepad's and every joystick's) are saved to `roguesq_input.json`, as the F6 window does.
 
 From your own mod:
@@ -194,7 +197,7 @@ Labels use the front-end font: upper-case `A`-`Z`, `0`-`9`, spaces and `;:_'/&",
 
 - A folder mod needs a `mod.json`, or its menu file is never read.
 - The front-end menus hold at most 8 entries, and Options and Game Settings are already full. A new entry there must `replace` or `hide` a native one, or the host drops spacer lines to make room. The main menu fits three entries under the logo; past three the list moves up one line per extra entry.
-- The pause menus show at most 16 lines and about 300 characters per menu. The root `pause` menu takes one button; `pause_game_settings` and pages take as many as fit.
+- The pause menus show at most 16 lines and about 300 characters per menu. The root `pause` menu, `pause_game_settings` and pages take as many buttons as fit.
 - A page opens from the pause menu too: a `submenu` button on `pause_game_settings` (or on a page) opens the same page in a mission, with the same entries. B goes back one level.
 - Mods that ship with the game are listed in [mods/platforms.json](../../mods/platforms.json); see [modding.md](modding.md#shipping-a-mod-with-the-game).
 
@@ -391,11 +394,11 @@ Abort Level does not tear down the mission directly. It sets `D_80130B14` (`0x80
 
 `rs64_pause_install` (`menu_config.cpp`), hooked at `initOrUpdatePauseScreenDim`, builds pause buttons only while the menu is open (`D_8010CA20 == 5`), so it never touches the arrays during level load or briefing (which starves the audio scheduler). It runs every paused frame:
 
-- `menu: "pause"`: one button in the root objectives terminator slot @ `0x80109E1C`.
-- GAME SETTINGS (id 1) is copied to host RAM at `0x80C43000` with the `pause_game_settings` buttons merged in by the same placement rules as the front end (natives by text id); unplaced buttons take the spacer's place (`0x80109E54`).
+- The root (id 0, `pauseMenuMissionObjectives` `0x80109DD4`) is copied to host RAM at `0x80C43F80` with the `pause` buttons merged in by the same placement rules as the front end (natives by text id); the entries above CONTINUE stay on top and unplaced buttons go at the end.
+- GAME SETTINGS (id 1) is copied to `0x80C43000` the same way with the `pause_game_settings` buttons; unplaced buttons take the spacer's place (`0x80109E54`).
 - Each mod page gets an array at `0x80C43080 + 0x80 * (id - 4)`, ids 4 and up (page order as in the front end): a title line (flags `0x2000`), the entries, and a BACK link (`0x4021`, textId `0x39`) whose `nextMenu` is the parent. A `submenu` button is a link entry (`0x4021`) whose `nextMenu` is the page id.
 
-The game picks an array by an inline if-chain (0 root, 1 GAME SETTINGS, 2 audio, anything else ABORT) at four places; a `before_vram` hook at each join replaces the result for id 1 and pages: `initOrUpdatePauseScreenDim` `0x800C214C` (`$s2`, by HUD+0xD6A) and `0x800C24A8` (`$s0`, by the confirmed link's `nextMenu`), `runPauseMenuStateMachine` `0x800C2A74` and `0x800C3794` (`$s7`). After a link the game places the cursor on the target's first selectable link whose `nextMenu` is the menu it came from (so a page opens on BACK, as native GAME SETTINGS does). B (`0x800C23D4`) always resets HUD+0xD6A to the root at `0x800C2400`; hooks at `0x800C23EC` and `0x800C240C` record the page and then set the parent and its cursor instead.
+The game picks an array by an inline if-chain (0 root, 1 GAME SETTINGS, 2 audio, anything else ABORT) at four places; a `before_vram` hook at each join replaces the result for the root, id 1 and pages: `initOrUpdatePauseScreenDim` `0x800C214C` (`$s2`, by HUD+0xD6A) and `0x800C24A8` (`$s0`, by the confirmed link's `nextMenu`), `runPauseMenuStateMachine` `0x800C2A74` and `0x800C3794` (`$s7`). After a link the game places the cursor on the target's first selectable link whose `nextMenu` is the menu it came from (so a page opens on BACK, as native GAME SETTINGS does). B (`0x800C23D4`) always resets HUD+0xD6A to the root at `0x800C2400`; hooks at `0x800C23EC` and `0x800C240C` record the page and then set the parent and its cursor instead.
 
 Each installed button keeps a valid `textId` (an out-of-range one makes `getGameOrFrontText` return NULL and the layout `sprintf("%s", NULL)` fault) and is tagged with a sentinel in the unused `nextMenu` field, assigned from `0xF010` up. Two hooks dispatch through the sentinel map:
 

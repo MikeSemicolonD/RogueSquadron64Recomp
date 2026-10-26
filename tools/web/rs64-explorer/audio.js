@@ -15,6 +15,47 @@ const ICON = { loop: svgIcon('M4 5h7V3l3 3-3 3V7H4a1 1 0 0 0-1 1v1H1V8a3 3 0 0 1
   speaker: svgIcon('M2 6h3l4-3.5v11L5 10H2zM11 5.2a4 4 0 0 1 0 5.6l-.9-.9a2.7 2.7 0 0 0 0-3.8zM12.8 3.4a6.5 6.5 0 0 1 0 9.2l-.9-.9a5.2 5.2 0 0 0 0-7.4z'),
   muted: svgIcon('M2 6h3l4-3.5v11L5 10H2zM10.6 5.5l.9-.9 1.7 1.7 1.7-1.7.9.9-1.7 1.7 1.7 1.7-.9.9-1.7-1.7-1.7 1.7-.9-.9 1.7-1.7z'),
   solo: svgIcon('M8 2a6 6 0 0 0-6 6v4.5A1.5 1.5 0 0 0 3.5 14H5V9H3.3V8a4.7 4.7 0 0 1 9.4 0v1H11v5h1.5a1.5 1.5 0 0 0 1.5-1.5V8a6 6 0 0 0-6-6z') };
+// Every sound goes out through one gain, so the speaker by the theme button mutes all of it. The speaker shows while a sound plays or is paused
+// (a source still alive, a cutscene's suspended ones included, or the Audio tab's paused player) and goes once everything has stopped.
+let audioMaster = null, audioMuted = false;
+const liveSources = new Set();
+function audioOut() {
+  if (audioMaster?.context !== audioCtx) {
+    audioMaster = audioCtx.createGain();
+    audioMaster.gain.value = audioMuted ? 0 : 1;
+    audioMaster.connect(audioCtx.destination);
+  }
+  return audioMaster;
+}
+function syncAudioBtn() {
+  const b = $('audioBtn');
+  b.hidden = !liveSources.size && !(player && !player.src);
+  b.classList.toggle('muted', audioMuted);
+  b.title = audioMuted ? 'Sound is muted: click to unmute' : 'Mute the sound';
+  b.setAttribute('aria-label', b.title);
+  b.innerHTML = audioMuted ? ICON.muted : ICON.speaker;
+}
+$('audioBtn').onclick = () => {
+  audioMuted = !audioMuted;
+  if (audioMaster) audioMaster.gain.value = audioMuted ? 0 : 1;
+  syncAudioBtn();
+};
+// Sources start in many places (players, stems, cutscene cues, recordings); counting them here covers every one. Buffer sources have a start
+// of their own, so both prototypes are wrapped.
+for (const proto of [AudioScheduledSourceNode.prototype, AudioBufferSourceNode.prototype]) {
+  const start = proto.start;
+  proto.start = function (...args) {
+    if (this.context === audioCtx && !liveSources.has(this)) {
+      liveSources.add(this);
+      this.addEventListener('ended', () => {
+        liveSources.delete(this);
+        syncAudioBtn();
+      });
+      syncAudioBtn();
+    }
+    return start.apply(this, args);
+  };
+}
 // The sidebar is a drawer; whether it is open is remembered per browser.
 function syncNav() {
   const open = !document.body.classList.contains('nav-closed'), t = open ? 'Hide the sidebar' : 'Show the sidebar', b = $('navToggle');
@@ -150,6 +191,7 @@ function rowPcm(r) {
 // through a gain per track (gains), so mute / solo only change gains.
 let player = null;
 const syncPlayButton = () => {
+  syncAudioBtn();
   const b = $('audPlay');
   if (!b) return;
   const playing = !!(player?.src && player.key === b.dataset.key);
@@ -162,7 +204,7 @@ function startPlayer() {
   if (!p.stems) {
     src.buffer = p.buf;
     if (p.loop) [src.loop, src.loopStart, src.loopEnd] = [true, ...p.loop];
-    src.connect(audioCtx.destination);
+    src.connect(audioOut());
   }
   src.onended = () => {
     if (player === p && p.src === src) player = null;
@@ -187,7 +229,7 @@ function stemSources(p) {
   const last = srcs.reduce((a, s) => (!a || s.end > a.end ? s : a), null);
   // A song with no sounding track left still needs an end event: a silent one-frame source.
   const tail = last ?? Object.assign(audioCtx.createBufferSource(), { buffer: audioCtx.createBuffer(1, 1, audioCtx.sampleRate) });
-  if (!last) { tail.connect(audioCtx.destination); tail.start(); }
+  if (!last) { tail.connect(audioOut()); tail.start(); }
   return { stop: () => (last ? srcs : [tail]).forEach((s) => s.stop()), set onended(fn) { tail.onended = fn; } };
 }
 const trackGain = (r, t) => (t === 'reverb' ? 1 : r.solo != null ? +(r.solo === t) : +!r.skip.has(t));
@@ -224,7 +266,7 @@ async function playRow(r, loop = false, offset = 0) {
   if (r.kind === 'music') {
     // Songs play each track's stem through its own gain; the output clips at full scale like the game's 16-bit mixer.
     const gains = new Map(r.stems.map((st) => [st.track, audioCtx.createGain()]));
-    for (const [t, g] of gains) { g.gain.value = trackGain(r, t); g.connect(audioCtx.destination); }
+    for (const [t, g] of gains) { g.gain.value = trackGain(r, t); g.connect(audioOut()); }
     player = { key: r.key, buf: { duration: r.render.length }, loop: null, offset: Math.min(offset, r.render.length), src: null, stems: r.stems, gains };
     return startPlayer();
   } else {
@@ -627,6 +669,7 @@ function drawMusic(r) {
 }
 
 function showAudio(r) {
+  document.body.classList.add('audio');
   if (r.kind === 'music') return showMusic(r);
   musicSel = null;
   $('musicPanel').hidden = true;
@@ -737,6 +780,18 @@ function renderList() {
       if (!groups.has(dir)) groups.set(dir, []);
       groups.get(dir).push({ id: f.name, label: `${f.name}  ${f.cellW} x ${f.cellH}`, tip: `${f.count} glyphs, ${f.drawn} of ${f.cellH} rows drawn` });
     }
+  } else if (mode === 'menus') {
+    for (const [name, m] of Object.entries(NATIVE_MENUS)) {
+      const dir = name.startsWith('pause') ? 'pause menus' : 'front-end menus';
+      if (q && !name.includes(q)) continue;
+      if (!groups.has(dir)) groups.set(dir, []);
+      groups.get(dir).push({ id: name, label: name.replace(/_/g, ' '), tip: m.locked ?? `${m.entries.length} of the game's entries` });
+    }
+    for (const p of menuPageCache) {
+      if (q && !p.page.includes(q)) continue;
+      if (!groups.has('pages')) groups.set('pages', []);
+      groups.get('pages').push({ id: p.page, label: `${'  '.repeat(p.depth)}${p.page}`, tip: `Opened from ${p.from}` });
+    }
   } else if (mode === 'audio') {
     if (!audioBank) {
       list.textContent = 'No audio in this ROM';
@@ -772,10 +827,11 @@ function renderList() {
     list.append(h);
     for (const r of rows) {
       const d = elem('div');
-      d.className = 'row' + ((mode === 'audio' ? r.id === audioSel : mode === 'fonts' ? r.id === fontSel : r.id === selected && (r.obj == null || r.obj === selectedObj)) ? ' sel' : '');
+      d.className = 'row' + ((mode === 'audio' ? r.id === audioSel : mode === 'fonts' ? r.id === fontSel : mode === 'menus' ? r.id === menuSel : r.id === selected && (r.obj == null || r.obj === selectedObj)) ? ' sel' : '');
       d.textContent = r.label;
       d.title = r.tip ?? (r.obj == null ? r.id : `${r.id} / ${r.label}`);
-      d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : mode === 'effects' ? showEffect(r.id) : mode === 'audio' ? showAudio(r.row) : mode === 'fonts' ? showFont(r.id) : r.id.startsWith('cut:') ? showCutscene(r.id.slice(4)) : showLevel(r.id));
+      if (mode === 'models' || (mode === 'audio' && ['music', 'sfx', 'voice', 'group'].includes(r.row.kind))) d.prepend(dragGrip(r));
+      d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : mode === 'effects' ? showEffect(r.id) : mode === 'audio' ? showAudio(r.row) : mode === 'fonts' ? showFont(r.id) : mode === 'menus' ? showMenu(r.id) : r.id.startsWith('cut:') ? showCutscene(r.id.slice(4)) : showLevel(r.id));
       list.append(d);
     }
   }

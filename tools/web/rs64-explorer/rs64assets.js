@@ -209,7 +209,7 @@ const MOD_KINDS = ['levels', 'models', 'audio', 'ui', 'fonts', 'other'];
 const MOD_KIND_RULES = [
   [/^explorer\//, null],
   [/^mod\/lang\//, 'fonts'],
-  [/^mod\/roguesq_menu\.json$/, 'ui'],
+  [/^mod\/(roguesq_menu|menu_text)\.json$/, 'ui'],
   [/^mod\/(levels\.json|camera_shots\.txt|assets\/(level|crawl)\/)/, 'levels'],
   [/^data\/fonts\//, 'fonts'],
   [/^data\/(level|cuts|backdrop|frontend\/starwars)\/|^data\/medal_info$/, 'levels'],
@@ -225,8 +225,9 @@ function modChangeKind(path) {
 }
 // Menu entries split by button: a front-end or pause button is menu:<id>; every entry of a custom page together is page:<name>.
 const menuPages = (doc) => new Set((doc.buttons ?? []).filter((b) => b.type === 'submenu' && b.page).map((b) => b.page));
+// A button without an id (allowed by the game) is keyed by its place in the file.
 function menuItemKey(doc, b, pages = menuPages(doc)) {
-  return pages.has(b.menu) ? 'page:' + b.menu : 'menu:' + b.id;
+  return pages.has(b.menu) ? 'page:' + b.menu : 'menu:' + (b.id ?? '#' + doc.buttons.indexOf(b));
 }
 function menuItemKeys(doc) {
   const pages = menuPages(doc);
@@ -242,7 +243,7 @@ function menuLinks(doc) {
   }
   return out;
 }
-// ---- Menu mods: roguesq_menu.json (docs/adding-menus-and-buttons.md); layout mirrors rebuild_frontend_menu in src/game/menu_config.cpp ----
+// ---- Menu mods: roguesq_menu.json (docs/guides/adding-menus-and-buttons.md); layout mirrors rebuild_frontend_menu in src/game/menu_config.cpp ----
 function menuParse(text) {
   if (!text.trim()) return { doc: { buttons: [] }, error: null };
   try {
@@ -262,8 +263,30 @@ function menuWrite(doc) {
   parts.push('  "buttons": [' + (doc.buttons.length ? '\n' + doc.buttons.map((b) => '    ' + line(b)).join(',\n') + '\n  ]' : ']'));
   return '{\n' + parts.join(',\n') + '\n}\n';
 }
+// ids: a Set of button ids, or a function picking buttons.
+// Several menu files as one, as the game layers them (build_config): a later button with the same id replaces the earlier one in place,
+// id-less buttons are all kept, hides add up and a later title replaces an earlier one; other top-level fields come from the first that has them.
+function menuMerge(docs) {
+  const out = {}, buttons = [], at = new Map(), hide = {}, titles = {};
+  for (const d of docs) {
+    for (const [k, v] of Object.entries(d)) if (!['buttons', 'hide', 'titles'].includes(k) && !(k in out)) out[k] = v;
+    for (const b of d.buttons ?? []) {
+      if (b.id != null && at.has(b.id)) buttons[at.get(b.id)] = b;
+      else {
+        if (b.id != null) at.set(b.id, buttons.length);
+        buttons.push(b);
+      }
+    }
+    for (const [m, list] of Object.entries(d.hide ?? {})) hide[m] = [...new Set([...(hide[m] ?? []), ...list])];
+    Object.assign(titles, d.titles ?? {});
+  }
+  if (Object.keys(hide).length) out.hide = hide;
+  if (Object.keys(titles).length) out.titles = titles;
+  out.buttons = buttons;
+  return out;
+}
 function menuWriteSubset(doc, ids) {
-  const buttons = doc.buttons.filter((b) => ids.has(b.id)), menus = new Set(buttons.map((b) => b.menu)), out = {};
+  const buttons = doc.buttons.filter(typeof ids === 'function' ? ids : (b) => ids.has(b.id)), menus = new Set(buttons.map((b) => b.menu)), out = {};
   if (doc['//'] !== undefined) out['//'] = doc['//'];
   const hide = Object.fromEntries(Object.entries(doc.hide ?? {}).filter(([m]) => menus.has(m)));
   if (Object.keys(hide).length) out.hide = hide;
@@ -274,9 +297,12 @@ function menuWriteSubset(doc, ids) {
 // The rows a menu shows: natives (index x 10) minus hides, the buttons placed by replace / after / before / order / append, sorted, then
 // index moves; over max, spacers drop first and the tail is cut (dropped). natives: [{ alias, label, spacer? }]; has(cond) for requires.
 function menuLayout(doc, menu, natives, has, max) {
-  const items = natives.map((n, i) => ({ row: { native: true, alias: n.alias ?? undefined, entry: n }, order: i * 10, spacer: !!n.spacer }));
+  const items = natives.map((n, i) => ({ row: { native: true, alias: n.alias ?? undefined, entry: n, ...(n.y ? { y: n.y } : {}) }, order: i * 10, spacer: !!n.spacer && !n.fixed }));
   const hidden = new Set(doc.hide?.[menu] ?? []);
-  let list = items.filter((it) => !(it.row.alias && hidden.has(it.row.alias)));
+  // An insert marker (pause GAME SETTINGS' spacer) is where buttons without placement go; it is not a line.
+  const insert = items.find((it) => it.row.entry.insert);
+  let list = items.filter((it) => !it.row.entry.insert && !(it.row.alias && hidden.has(it.row.alias)));
+  let tail = insert?.order;
   const anchor = (name) => list.find((it) => (it.row.native ? it.row.alias === name : it.row.id === name))?.order;
   const indexed = [];
   for (const b of doc.buttons ?? []) {
@@ -290,13 +316,20 @@ function menuLayout(doc, menu, natives, has, max) {
     if (ord === undefined && b.after && anchor(b.after) !== undefined) ord = anchor(b.after) + 5;
     if (ord === undefined && b.before && anchor(b.before) !== undefined) ord = anchor(b.before) - 5;
     if (ord === undefined && Number.isFinite(b.order)) ord = b.order;
-    if (ord === undefined) ord = Math.max(0, ...list.map((it) => it.order)) + 10;
+    if (ord === undefined) ord = tail !== undefined ? (tail += 0.01) : Math.max(0, ...list.map((it) => it.order)) + 10;
     const it = { row: { native: false, id: b.id, button: b }, order: ord, spacer: false };
     list.push(it);
     if (Number.isInteger(b.index)) indexed.push(it);
   }
   list = list.map((it, i) => [it, i]).sort((a, b) => a[0].order - b[0].order || a[1] - b[1]).map(([it]) => it);
-  while (list.length > max && list.some((it) => it.spacer)) list.splice(list.findIndex((it) => it.spacer), 1);
+  // A dropped spacer: the natives below it get back the gap the game pulled them up by (y below - y above).
+  while (list.length > max && list.some((it) => it.spacer)) {
+    const at = list.findIndex((it) => it.spacer), y = (it) => it?.row.y ?? 0;
+    const above = list.slice(0, at).reverse().find((it) => it.row.native), below = list.slice(at + 1).find((it) => it.row.native);
+    const lift = above && below ? y(below) - y(above) : 0;
+    list.splice(at, 1);
+    for (const it of list.slice(at)) if (it.row.native && lift) it.row = { ...it.row, y: y(it) - lift || undefined };
+  }
   for (const it of indexed) {
     const from = list.indexOf(it), n = list.length, at = Math.min(Math.max(it.row.button.index < 0 ? n + it.row.button.index : it.row.button.index, 0), n - 1);
     list.splice(from, 1);
@@ -307,6 +340,40 @@ function menuLayout(doc, menu, natives, has, max) {
 // Characters the front-end menu font can't draw (they show blank in the game); see "Text the menu font can draw".
 const MENU_FONT_CHARS = new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ;:_\'/&",!?-.<>{}ÄÖÜ']);
 const menuFontGaps = (label) => [...String(label)].filter((c) => !MENU_FONT_CHARS.has(c));
+// The game's own entries per menu, in order, as the built menus hold them (captured in the game; aliases = kNativeAliases /
+// pause_native_alias in src/game/menu_layout.h). An entry without an alias can't be hidden, replaced or anchored to. locked: why
+// mods can't change that menu here. Text is English (the front end builds these labels in code, not from the text banks).
+const nativeRows = (rows) => rows.map(([alias, en, y, x]) => ({ ...(alias === '' ? { alias: null, label: { en: '' }, spacer: true } : { alias, label: { en } }), ...(y ? { y } : {}), ...(x ? { x } : {}) }));
+const NATIVE_MENUS = {
+  main_menu: { title: { en: '' }, max: 8, align: 'left', entries: nativeRows([['start', 'START', 0, -165], ['options', 'OPTIONS', 0, -165]]) },
+  options: { title: { en: 'OPTIONS' }, max: 8, entries: nativeRows([['biographies', 'BIOGRAPHIES'], ['elite_rogues', 'ELITE ROGUES'], ['passcodes', 'PASSCODES'], ['', ''],
+    ['game_settings', 'GAME SETTINGS', -10], ['sound_settings', 'SOUND SETTINGS', -10], ['controller_settings', 'CONTROLLER SETTINGS', -10], ['back', 'BACK', -10]]) },
+  game_settings: { title: { en: 'GAME SETTINGS' }, max: 8, entries: nativeRows([['auto_roll', 'AUTO ROLL: ON'], ['auto_level', 'AUTO LEVEL: ON'], ['free_camera', 'FREE CAMERA: ON'],
+    ['crosshairs', 'CROSSHAIRS: ON'], ['high_resolution', 'HIGH RESOLUTION'], ['', ''], ['restore_defaults', 'RESTORE DEFAULT SETTINGS'], ['back', 'BACK']]) },
+  sound_settings: { title: { en: 'SOUND SETTINGS' }, max: 8, limit: 'slider', note: 'Only sliders can go here, each in place of one of the game\'s entries (the menu is full): click an entry and use Replace with a slider.',
+    entries: nativeRows([['music', 'MUSIC'], ['sound_fx', 'SOUND FX'], ['speech', 'SPEECH'], ['subtitles', 'SUBTITLES'], ['stereo', 'STEREO'], ['restore_defaults', 'RESTORE DEFAULT SETTINGS'], ['back', 'BACK']]) },
+  // The game's screen is a controller diagram (title = the preset) with only BACK, which carries y 283 to sit under it (no extra BACK gap); list base -90.
+  controller_settings: { title: { en: 'LUKE\'S SETTINGS' }, max: 8, backGap: 0, note: 'The game draws a controller diagram over this screen, so new buttons need a Y offset to sit clear of its labels. The controls-menu mod replaces this screen while it is enabled.',
+    entries: nativeRows([['back', 'BACK', 283]]) },
+  // The gaps and objectives above CONTINUE stay where they are (the game keeps the entries above the first selectable one on top).
+  pause: { title: { en: 'MISSION GOALS' }, max: 16,
+    entries: nativeRows([['', ''], ...[1, 2, 3, 4].map((n) => [`objective_${n}`, `MISSION OBJECTIVE ${n}`]), ['', ''], ['continue', 'CONTINUE'], ['abort_level', 'ABORT LEVEL'],
+      ['game_settings', 'GAME SETTINGS'], ['sound_settings', 'SOUND SETTINGS']]).map((e, i) => (i < 6 ? { ...e, alias: null, fixed: true, ...(e.label.en ? { placeholder: true } : {}) } : e)) },
+  pause_game_settings: { title: { en: 'GAME SETTINGS' }, max: 16, entries: [{ alias: null, label: { en: '' }, spacer: true, fixed: true },
+    ...nativeRows([['auto_roll', 'AUTO ROLL'], ['auto_level', 'AUTO LEVEL'], ['free_camera', 'FREE CAMERA'], ['crosshairs', 'CROSSHAIRS'], ['displays', 'DISPLAYS'], ['cockpit', 'COCKPIT']]).map((e) => ({ ...e, value: 'ON' })),
+    { alias: null, label: { en: '' }, insert: true }, ...nativeRows([['back', 'BACK']])] },
+};
+// The buttons the game adds before any mod (default_config in menu_config.cpp); a mod's button with the same id replaces one in place.
+const MENU_DEFAULT_BUTTONS = [
+  { id: 'language', menu: 'options', type: 'action', transition: 'language', label: { en: 'LANGUAGE', de: 'SPRACHE', fr: 'LANGUE' }, index: -2 },
+  { id: 'quit', menu: 'main_menu', type: 'action', action: 'quit', label: 'QUIT', x: -165, requires: 'desktop' },
+  { id: 'pause_quit', menu: 'pause', type: 'action', action: 'quit', label: 'QUIT TO DESKTOP', requires: 'desktop' },
+];
+function menuWithDefaults(doc) {
+  const own = new Map(doc.buttons.filter((b) => b.id).map((b) => [b.id, b]));
+  const buttons = MENU_DEFAULT_BUTTONS.map((b) => own.get(b.id) ?? b);
+  return { ...doc, buttons: [...buttons, ...doc.buttons.filter((b) => !MENU_DEFAULT_BUTTONS.some((d) => d.id === b.id))] };
+}
 // The mods one export makes. Each item goes to its assigned group while that group exists, else to its kind's group (kindNames[kind]);
 // linked items join the group of the item that uses the other, and merged names the groups folded in. Sidecars (kind null) never export.
 function exportPlan(items, doc, links, kindNames) {
@@ -1460,8 +1527,8 @@ function crawlFont(romBytes, strip) {
   const cell = strip.getUint16(4);
   return { cell, glyphs, pixels: new Uint8Array(strip.buffer, strip.byteOffset + FONT_STRIP_HEADER, strip.byteLength - FONT_STRIP_HEADER) };
 }
-// ---- Fonts and language glyph packs (src/game/lang_core.h, docs/modding-languages.md) ----
-// The game's fonts by font id (table 0x8009FC10; docs/adding-menus-and-buttons.md "Fonts"), each once: object +0 glyph count, +2 cell
+// ---- Fonts and language glyph packs (src/game/lang_core.h, docs/guides/modding-languages.md) ----
+// The game's fonts by font id (table 0x8009FC10; docs/guides/adding-menus-and-buttons.md "Fonts"), each once: object +0 glyph count, +2 cell
 // width, +4 cell height, +6 drawn height, +0xC charset, +0x10 name, +0x18 one advance byte per glyph. A language mod extends every
 // font but credits and starwars50 (lang_core.h extends_font).
 function gameFonts(romBytes) {
@@ -2559,7 +2626,7 @@ function resolveNote(pool, target, note, vel, pan, prio) {
   return (t & 0xC000) === 0x8000 ? layer(t, n2, vel, p2, pr2) : [];
 }
 
-// ---- MusyX voice engine (docs/musyx-voice-mixing.md): one macro voice simulated per audio tick, shared by SFX and songs ----
+// ---- MusyX voice engine (docs/reference/musyx-voice-mixing.md): one macro voice simulated per audio tick, shared by SFX and songs ----
 
 // Mixer tables read from the ROM (main code): volume curve, mix constants, pan law, semitone and 1/64-semitone rate ratios
 // (12.20), quarter-wave sine.
@@ -2600,7 +2667,7 @@ function renderVoice(ctx, o, out, at = 0) {
   ctx.pcm ??= ((cache) => (sd) => cache.get(sd) ?? cache.set(sd, decodeMusyxAdpcm(ctx.samp, sd.off, sd.num)).get(sd))(new Map());
   const T = ctx.tables, pool = ctx.pool, unresolved = new Set(), pitchLog = [];
   const s8 = (v) => (v << 24) >> 24, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  // Channel state (offsets in docs/musyx-voice-mixing.md).
+  // Channel state (offsets in docs/reference/musyx-voice-mixing.md).
   let vol = o.vel << 16, vol2 = vol, pan = (o.pan & 0x80 ? 0x80 : o.pan) << 16, note = o.note, detune = 0, keyedOff = false;
   let ramp = null, panSweep = null, vib = null, bendRange = [2, 2];
   const lfo = [{ period: 0, phase: 0 }, { period: 0, phase: 0 }];
@@ -4062,7 +4129,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuLayout, menuFontGaps, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();

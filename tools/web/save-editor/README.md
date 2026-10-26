@@ -45,6 +45,13 @@ checksums already match the game's. It never builds a save from nothing.
 All seven weapon-upgrade toggles work in game; the seeker bits (`0x800`/`0x2000`/`0x4000`) are
 also confirmed in `func_800C6728`.
 
+## Tools for AI agents (WebMCP)
+
+In a browser with WebMCP (Chrome, behind its flag) the page offers agents the editor's controls as tools: `rs64save_status`,
+`rs64save_read` (everything decoded), `rs64save_bytes` (the edited save as base64), `rs64save_load` (a save from base64, checked like
+a loaded file), and edits through the same code as the page: `rs64save_set_pilot`, `rs64save_pilot_slot` (add, delete, move),
+`rs64save_set_elite`, `rs64save_set_settings` and `rs64save_set_unlocks`. Saving the file stays the Export button.
+
 ## Format (verified against the game code)
 
 512-byte image: `0x00` header (`0x20`) + two `save_data_body` copies (`0xC8`) at `0x20`
