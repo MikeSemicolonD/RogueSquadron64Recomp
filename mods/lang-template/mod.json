@@ -1,0 +1,9 @@
+{
+  "game_id": "rs64",
+  "id": "lang-template",
+  "display_name": "Language Template",
+  "description": "A starting point for a language mod: a language entry, a few menu strings and a glyph pack. See docs/modding-languages.md.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0"
+}
