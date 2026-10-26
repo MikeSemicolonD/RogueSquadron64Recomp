@@ -29,6 +29,10 @@ Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/rel
 
 [.github/workflows/modtool-release.yml](../../.github/workflows/modtool-release.yml) builds RecompModTool from the N64Recomp fork for Windows x64 and Linux x64 on GitHub-hosted runners (it needs nothing ROM-derived) and runs on a `modtool-v*` tag (`git tag modtool-v1 && git push origin modtool-v1`) or by manual dispatch. It makes a draft release with `SHA256SUMS.txt` and attestations and never marks it Latest. The VS Code task **Package: RecompModTool (Windows + Linux)** (`tools/release/package-modtool.ps1`) builds the same packages locally, Linux through WSL.
 
+## Relay server release
+
+[.github/workflows/relay-release.yml](../../.github/workflows/relay-release.yml) builds `rs64_relay` ([relay-server/](../../relay-server/), guide: [relay-server.md](../guides/relay-server.md)) for Windows x64 and Linux x64 on GitHub-hosted runners (it needs only the `enet6` submodule), runs `relay_core_test`, and packages the exe with the guide as `README.md` and the licenses. Windows links the C runtime statically; Linux links libstdc++ and libgcc statically and builds on Ubuntu 22.04, so only glibc 2.35+ comes from the system. It runs on a `relay-v*` tag (`git tag relay-v1 && git push origin relay-v1`) or by manual dispatch, and makes a draft release with `SHA256SUMS.txt` and attestations that is never marked Latest.
+
 ## Why self-hosted runners
 
 The build needs files derived from the ROM that are never committed and never uploaded to GitHub. They stay on the runner machine:

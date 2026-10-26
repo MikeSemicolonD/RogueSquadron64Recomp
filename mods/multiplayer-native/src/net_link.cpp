@@ -470,6 +470,7 @@ bool Link::start(const LinkConfig& cfg) {
     rng_.seed(cfg.role == Role::Host ? 1234u : 5678u);
     quit_ = false;
     lost_ = false;
+    close_data_ = 0;
     thread_ = std::thread([this]() { run(); });
     return true;
 }
@@ -595,6 +596,7 @@ void Link::run() {
                 break;
             case ENET_EVENT_TYPE_DISCONNECT:
             case ENET_EVENT_TYPE_DISCONNECT_TIMEOUT:
+                close_data_ = ev.type == ENET_EVENT_TYPE_DISCONNECT ? ev.data : 0;
                 if (connected_) {
                     lost_ = true;
                 }

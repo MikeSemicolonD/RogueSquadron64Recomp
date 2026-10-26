@@ -3323,7 +3323,10 @@ extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx)
 
     controls_pass(rdram, ctx);
 
-    if (s_pilot_page.empty() || menu != page_id(s_pilot_page)) return;
+    // The pilot-first page or a page opened from it (multiplayer's FIND GAME list): the exit condition takes either on to mission select.
+    const std::vector<uint8_t> chain = page_chain(menu);
+
+    if (s_pilot_page.empty() || std::find(chain.begin(), chain.end(), page_id(s_pilot_page)) == chain.end()) return;
 
     // A carousel slot still loading ramps its fade back up: keep it down while the page is shown.
     hide_pilot_carousel(rdram, ctx, false);

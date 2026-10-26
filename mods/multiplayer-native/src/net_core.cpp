@@ -1,55 +1,11 @@
 #include "net_core.h"
+#include "wire.h"
 #include <algorithm>
 #include <cstring>
 
 namespace rs64::net {
 
 namespace {
-
-// Little-endian wire writer.
-struct Writer {
-    std::vector<uint8_t> b;
-    void u8(uint8_t v) { b.push_back(v); }
-    void u16(uint16_t v) { u8((uint8_t)v); u8((uint8_t)(v >> 8)); }
-    void u32(uint32_t v) { for (int i = 0; i < 4; ++i) u8((uint8_t)(v >> (8 * i))); }
-    void u64(uint64_t v) { for (int i = 0; i < 8; ++i) u8((uint8_t)(v >> (8 * i))); }
-};
-
-// Every read is bounds-checked; a short read clears ok and returns 0.
-struct Reader {
-    const uint8_t* p;
-    size_t n;
-    size_t at = 0;
-    bool ok = true;
-    bool need(size_t k) {
-        if (!ok || n - at < k) {
-            ok = false;
-        }
-        return ok;
-    }
-    uint8_t u8() { return need(1) ? p[at++] : 0; }
-    uint16_t u16() {
-        if (!need(2)) return 0;
-        const uint16_t v = (uint16_t)(p[at] | (p[at + 1] << 8));
-        at += 2;
-        return v;
-    }
-    uint32_t u32() {
-        if (!need(4)) return 0;
-        uint32_t v = 0;
-        for (int i = 3; i >= 0; --i) v = (v << 8) | p[at + i];
-        at += 4;
-        return v;
-    }
-    uint64_t u64() {
-        if (!need(8)) return 0;
-        uint64_t v = 0;
-        for (int i = 7; i >= 0; --i) v = (v << 8) | p[at + i];
-        at += 8;
-        return v;
-    }
-    bool done() const { return ok && at == n; }
-};
 
 bool header(Reader& r, Msg type) {
     if (!r.p || r.n > kMaxPacket) {
@@ -109,7 +65,7 @@ uint8_t message_type(const uint8_t* data, size_t n) {
     if (data[1] == (uint8_t)Msg::Hello) {
         return data[1];
     }
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Shot) {
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Accept) {
         return 0;
     }
     return data[1];
@@ -152,12 +108,30 @@ bool decode_hello(const uint8_t* data, size_t n, Hello* out) {
 }
 
 bool waiting_status(const std::string& status) {
-    return status == "SEARCHING" || status == "CONNECTING" || status == "PLAYER JOINING" || status == "WAITING FOR PLAYER" || status == "OPENING INTERNET PORT";
+    return status == "SEARCHING" || status == "CONNECTING" || status == "PLAYER JOINING" || status == "WAITING FOR PLAYER";
 }
 
 std::string status_dots(const std::string& status, uint32_t now_ms) {
     const uint32_t n = (now_ms / kDotPeriodMs) % 4;
     return status + std::string(n, '.') + std::string(3 - n, kDotPad);
+}
+
+int list_pages(int count) {
+    return count > kListRows ? (count + kListRows - 1) / kListRows : 1;
+}
+
+std::string list_status(int count, int page) {
+    if (count < 0) {
+        return "SEARCHING";
+    }
+    if (count == 0) {
+        return "NO GAMES FOUND";
+    }
+    std::string s = std::to_string(count) + (count == 1 ? " GAME FOUND" : " GAMES FOUND");
+    if (list_pages(count) > 1) {
+        s += "  PAGE " + std::to_string(page + 1) + " OF " + std::to_string(list_pages(count));
+    }
+    return s;
 }
 
 bool public_ipv4(uint32_t ip) {
@@ -166,23 +140,6 @@ bool public_ipv4(uint32_t ip) {
     return !(a == 0u || a == 10u || a == 127u || (a == 172u && (b & 0xF0u) == 16u) || (a == 192u && b == 168u) || (a == 100u && (b & 0xC0u) == 64u) || (a == 169u && b == 254u));
 }
 
-std::string online_label(PortMapState state) {
-    switch (state) {
-    case PortMapState::Idle:
-        return "";
-    case PortMapState::Working:
-        return "OPENING INTERNET PORT";
-    case PortMapState::Open:
-        return "";
-    case PortMapState::NoRouter:
-        return "UPNP IS OFF ON YOUR ROUTER";
-    case PortMapState::Refused:
-        return "YOUR ROUTER REFUSED THE PORT";
-    case PortMapState::SharedAddress:
-        return "YOUR ISP SHARES YOUR ADDRESS";
-    }
-    return "";
-}
 
 std::string host_address_label(PortMapState state, const std::string& lan_ip, const std::string& ext_ip, uint16_t port) {
     const std::string suffix = port ? ":" + std::to_string(port) : "";
@@ -493,7 +450,7 @@ std::string CodeEditor::label() const {
     if (typing) {
         return typed + kCaret;
     }
-    std::string s = "JOIN CODE ";
+    std::string s = prefix;
     for (int i = 0; i < kDigits; ++i) {
         const bool mark = editing && i == cursor;
         s += mark ? std::string("<") + digit[i] + ">" : std::string(1, digit[i]);
@@ -503,6 +460,119 @@ std::string CodeEditor::label() const {
 
 bool CodeEditor::valid(const std::string& s) {
     return s.size() == (size_t)kDigits && std::all_of(s.begin(), s.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+namespace {
+
+constexpr const char* kNameChars = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+}
+
+std::string NameEditor::clean(const std::string& s) {
+    std::string out;
+    for (char c : s) {
+        if (out.size() >= (size_t)kMax) {
+            break;
+        }
+        if (c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        }
+        if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || (c == ' ' && !out.empty() && out.back() != ' ')) {
+            out += c;
+        }
+    }
+    while (!out.empty() && out.back() == ' ') {
+        out.pop_back();
+    }
+    return out;
+}
+
+bool NameEditor::input(uint32_t pressed, uint32_t held) {
+    (void)held;
+    if (!editing) {
+        return false;
+    }
+    if (pressed & (kPadA | kPadB)) {
+        if (typing) {
+            end_typing();
+        }
+        editing = false;
+        name = clean(name);
+        cursor = 0;
+        return true;
+    }
+    if (typing) {
+        return true;
+    }
+    const int last = std::min((int)name.size(), kMax - 1);
+    if (pressed & kPadLeft) {
+        cursor = std::max(0, cursor - 1);
+    }
+    if (pressed & kPadRight) {
+        cursor = std::min(last, cursor + 1);
+    }
+    const int dir = (pressed & kPadUp) ? 1 : (pressed & kPadDown) ? -1 : 0;
+    if (dir) {
+        if (cursor >= (int)name.size()) {
+            name.resize(cursor + 1, ' ');
+        }
+        const int n = (int)strlen(kNameChars);
+        const char* at = strchr(kNameChars, name[cursor]);
+        const int i = at ? (int)(at - kNameChars) : 0;
+        name[cursor] = kNameChars[(i + dir + n) % n];
+    }
+    return true;
+}
+
+void NameEditor::begin_typing() {
+    typing = true;
+    typed = name;
+}
+
+void NameEditor::type_text(const char* s) {
+    for (; s && *s; ++s) {
+        const char c = (*s >= 'a' && *s <= 'z') ? (char)(*s - 'a' + 'A') : *s;
+        if (((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ') && typed.size() < (size_t)kMax) {
+            typed += c;
+        }
+    }
+}
+
+void NameEditor::type_backspace() {
+    if (!typed.empty()) {
+        typed.pop_back();
+    }
+}
+
+bool NameEditor::end_typing() {
+    name = clean(typed);
+    typing = false;
+    editing = false;
+    typed.clear();
+    cursor = 0;
+    return true;
+}
+
+void NameEditor::cancel_typing() {
+    typing = false;
+    editing = false;
+    typed.clear();
+}
+
+std::string NameEditor::label(const std::string& fallback) const {
+    if (typing) {
+        return "SERVER NAME " + typed + kCaret;
+    }
+    if (!editing) {
+        return "SERVER NAME " + (name.empty() ? fallback : name);
+    }
+    std::string s = "SERVER NAME ";
+    // The cursor past the end is the slot a step appends to.
+    for (int i = 0; i < std::max((int)name.size(), cursor + 1); ++i) {
+        const char c = i < (int)name.size() ? name[i] : ' ';
+        s += i == cursor ? std::string("<") + c + ">" : std::string(1, c);
+    }
+    return s;
 }
 
 std::string AddressEditor::text() const {
@@ -590,7 +660,7 @@ bool decode_bye(const uint8_t* data, size_t n, ByeReason* reason, uint32_t* fram
     }
     const uint8_t v = r.u8();
     const uint32_t f = r.u32();
-    if (!r.done() || v > (uint8_t)ByeReason::Mismatch) {
+    if (!r.done() || v > (uint8_t)ByeReason::WrongPassword) {
         return false;
     }
     *reason = (ByeReason)v;
@@ -724,12 +794,18 @@ static bool decode_bare(const uint8_t* data, size_t n, Msg type) {
     return r.u8() == (uint8_t)type && r.done();
 }
 
-std::vector<uint8_t> encode_skip() {
-    return encode_bare(Msg::Skip);
+std::vector<uint8_t> encode_skip(uint16_t scene) {
+    return encode_pair(Msg::Skip, (uint8_t)(scene >> 8), (uint8_t)scene);
 }
 
-bool decode_skip(const uint8_t* data, size_t n) {
-    return decode_bare(data, n, Msg::Skip);
+bool decode_skip(const uint8_t* data, size_t n, uint16_t* scene) {
+    uint8_t phase = 0;
+    uint8_t count = 0;
+    if (!decode_pair(data, n, Msg::Skip, 0xFF, &phase, &count)) {
+        return false;
+    }
+    *scene = (uint16_t)((phase << 8) | count);
+    return true;
 }
 
 std::vector<uint8_t> encode_briefing_done() {
@@ -738,6 +814,43 @@ std::vector<uint8_t> encode_briefing_done() {
 
 bool decode_briefing_done(const uint8_t* data, size_t n) {
     return decode_bare(data, n, Msg::BriefingDone);
+}
+
+std::vector<uint8_t> encode_auth(const std::string& pin) {
+    Writer w;
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Auth);
+    w.u8((uint8_t)pin.size());
+    for (char c : pin) {
+        w.u8((uint8_t)c);
+    }
+    return w.b;
+}
+
+bool decode_auth(const uint8_t* data, size_t n, std::string* pin) {
+    Reader r{data, n};
+    if (!header(r, Msg::Auth)) {
+        return false;
+    }
+    const uint8_t len = r.u8();
+    if (!r.ok || (len != 0 && len != CodeEditor::kDigits) || !r.need(len)) {
+        return false;
+    }
+    std::string p((const char*)data + r.at, len);
+    r.at += len;
+    if (!r.done() || (len && !CodeEditor::valid(p))) {
+        return false;
+    }
+    *pin = p;
+    return true;
+}
+
+std::vector<uint8_t> encode_accept() {
+    return encode_bare(Msg::Accept);
+}
+
+bool decode_accept(const uint8_t* data, size_t n) {
+    return decode_bare(data, n, Msg::Accept);
 }
 
 std::vector<uint8_t> encode_ready(uint8_t craft) {
@@ -963,6 +1076,9 @@ void Lobby::reset(LobbyState s, bool host) {
     state_ = s;
     host_ = host;
     peer_ = false;
+    hello_ = false;
+    auth_ = false;
+    pw_fail_ = false;
     started_ms_ = -1;
     connected_ms_ = -1;
     left_ = false;
@@ -1005,7 +1121,52 @@ void Lobby::on_hello(const Hello& h) {
         fail_ = "VERSION MISMATCH";
         return;
     }
-    state_ = LobbyState::Connected;
+    hello_ = true;
+    connect_if_done();
+}
+
+void Lobby::connect_if_done() {
+    if (hello_ && auth_) {
+        state_ = LobbyState::Connected;
+    }
+}
+
+bool Lobby::on_auth(const std::string& pin) {
+    if (!host_ || !peer_ || state_ != LobbyState::Hosting) {
+        return true;
+    }
+    if (!password_.empty() && pin != password_) {
+        reset(LobbyState::Hosting, true);
+        return false;
+    }
+    auth_ = true;
+    connect_if_done();
+    return true;
+}
+
+void Lobby::on_accept() {
+    if (host_ || !peer_ || state_ != LobbyState::Joining) {
+        return;
+    }
+    auth_ = true;
+    connect_if_done();
+}
+
+void Lobby::on_join_failed(const std::string& why) {
+    if (host_ || state_ != LobbyState::Joining || peer_) {
+        return;
+    }
+    state_ = LobbyState::Failed;
+    fail_ = why.empty() ? "COULD NOT CONNECT TO HOST" : why;
+}
+
+void Lobby::on_refused(bool sent) {
+    if (host_ || state_ != LobbyState::Joining) {
+        return;
+    }
+    state_ = LobbyState::Failed;
+    pw_fail_ = true;
+    fail_ = sent ? "WRONG PASSWORD" : "PASSWORD NEEDED";
 }
 
 void Lobby::on_lost() {
@@ -1036,7 +1197,7 @@ void Lobby::tick(uint32_t now_ms) {
     }
     if (state_ == LobbyState::Joining && !peer_ && (int64_t)now_ms - started_ms_ > join_timeout_) {
         state_ = LobbyState::Failed;
-        fail_ = "NO ANSWER";
+        fail_ = "COULD NOT CONNECT TO HOST";
     }
     if ((state_ == LobbyState::Joining || state_ == LobbyState::Hosting) && peer_ && (int64_t)now_ms - connected_ms_ > kHelloTimeoutMs) {
         state_ = LobbyState::Failed;

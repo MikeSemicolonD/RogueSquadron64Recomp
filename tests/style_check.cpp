@@ -1,4 +1,4 @@
-// Style checks for src/ and mods/multiplayer-native/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line.
+// Style checks for src/, mods/multiplayer-native/src and relay-server/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line.
 // Usage: style_check <repo root> [--update-baseline]. Exits 1 on findings not in tools/style/baseline.txt.
 #include <algorithm>
 #include <cctype>
@@ -44,10 +44,10 @@ static std::vector<std::string> findings(const fs::path& root) {
     static const std::regex two(R"(;\s+(if|while)\s*\()");
     static const std::regex include_re(R"re(^\s*#\s*include\s+"([^"]+)")re");
     // Base-game headers the multiplayer mod may include; anything else it needs goes through the host API (mods/multiplayer-native/CMakeLists.txt lists the same files).
-    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/camera_shots.h", "json/json.hpp"};
+    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/camera_shots.h", "json/json.hpp", "relay_protocol.h"};
     const std::string mp_dir = "mods/multiplayer-native/src";
     std::vector<std::pair<std::string, fs::path>> files;
-    for (const std::string dir : {std::string("src"), mp_dir}) {
+    for (const std::string dir : {std::string("src"), mp_dir, std::string("relay-server/src")}) {
         for (auto& e : fs::recursive_directory_iterator(root / dir)) {
             auto ext = e.path().extension();
             if (e.is_regular_file() && (ext == ".cpp" || ext == ".h")) files.push_back({dir, e.path()});

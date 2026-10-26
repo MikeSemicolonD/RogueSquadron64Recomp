@@ -89,7 +89,7 @@ A service is a versioned C table one mod hands another through the host, so a mo
 
 | Name | Header | Provider | Consumer |
 |---|---|---|---|
-| `mp.transport` | [include/rs64/mp_transport.h](../../include/rs64/mp_transport.h) | [mods/steam-relay](../../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; see [multiplayer.md](../guides/multiplayer.md#steam-relay-mod) |
+| `mp.transport` | [include/rs64/mp_transport.h](../../include/rs64/mp_transport.h) | [mods/steam-relay](../../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; a version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`) also feeds the FIND GAME list; see [multiplayer.md](../guides/multiplayer.md#steam-relay-mod) |
 
 ## Hooks
 

@@ -441,28 +441,30 @@ void spectate_pad(uint8_t pad[6], uint16_t survivor_held, uint16_t fire_mask) {
     pad[3] = 0;
 }
 
-void SkipShare::on_remote(double now_s) {
-    got_s_ = now_s;
+void SkipShare::on_remote(uint16_t scene) {
+    have_ = true;
+    scene_ = scene;
     pressing_since_s_ = -1.0;
 }
 
-bool SkipShare::press(double now_s, bool cinematic) {
-    if (got_s_ < 0.0) {
+bool SkipShare::press(double now_s, bool cinematic, uint16_t scene) {
+    if (!have_) {
         return false;
     }
-    if (pressing_since_s_ >= 0.0 && !cinematic) {
-        got_s_ = -1.0;
+
+    // Wrapping compare: the phase byte wraps after 256 missions.
+    const int16_t ahead = (int16_t)(uint16_t)(scene_ - scene);
+
+    if (ahead < 0 || (ahead == 0 && pressing_since_s_ >= 0.0 && !cinematic)) {
+        have_ = false;
         pressing_since_s_ = -1.0;
         return false;
     }
-    if (now_s - got_s_ > kWaitS) {
-        got_s_ = -1.0;
-        pressing_since_s_ = -1.0;
+
+    if (ahead > 0 || !cinematic) {
         return false;
     }
-    if (!cinematic) {
-        return false;
-    }
+
     if (pressing_since_s_ < 0.0) {
         pressing_since_s_ = now_s;
     }

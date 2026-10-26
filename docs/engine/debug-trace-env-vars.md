@@ -460,7 +460,8 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_NET_CONFIG` | `roguesq_net.json` next to the exe | Lobby config `{ "last_address": "a.b.c.d", "port": 27064 }` (JOIN address saved on each JOIN; the port both roles use unless `MP_PORT` is set). |
 | `ROGUESQ_MP_ADDR` / `ROGUESQ_MP_PORT` | 127.0.0.1 / 27064 | Host address for `join`, and the UDP port. |
 | `ROGUESQ_MP_UPNP` | 1 | `0`: hosting does not request a UPnP port mapping. |
-| `ROGUESQ_MP_TRANSPORT` | unset | `enet`: ignore a relay transport (the steam-relay mod) and host / join over ENet. |
+| `ROGUESQ_MP_TRANSPORT` | unset | `enet`: ignore the relay transports (the steam-relay mod and a relay server) and host / join over ENet. |
+| `ROGUESQ_MP_RELAY` | unset | `host[:port]` of an `rs64_relay` to use instead of `roguesq_net.json`'s `relay_server` (scripted runs; never saved). |
 | `ROGUESQ_MP_CODE` | unset | Join code JOIN GAME uses over a relay transport (scripted runs). |
 | `ROGUESQ_STEAM_APPID` | 480 | Steam app id the steam-relay mod initializes as. |
 | `ROGUESQ_MP_PAD` | unset | `<path.rec>`: this instance's port-0 input comes from a recording. |

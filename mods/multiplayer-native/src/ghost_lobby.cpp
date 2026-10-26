@@ -2,6 +2,7 @@
 #include "ghost_internal.h"
 #include "util/debug_logs.h"
 #include "mp_host.h"
+#include "relay_client.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -43,7 +44,7 @@ const rs64_mp_transport* relay() {
             return (const rs64_mp_transport*)nullptr;
         }
         const auto* t = (const rs64_mp_transport*)rs64::mp::service(RS64_MP_TRANSPORT_SERVICE);
-        if (t && (t->version < 1 || t->size < sizeof(rs64_mp_transport))) {
+        if (t && (t->version < 1 || t->size < RS64_MP_TRANSPORT_V1_SIZE)) {
             fprintf(stderr, "[lobby] ignoring the %s transport: built for another interface version\n", t->name ? t->name : "?");
             t = nullptr;
         }
@@ -55,30 +56,71 @@ const rs64_mp_transport* relay() {
     return s_relay;
 }
 
+const rs64_mp_transport* server_relay() {
+    static rs64::net::RelayClient s_client;
+    static const char* force = recomp::dbg::env_str("ROGUESQ_MP_TRANSPORT");
+    if (force && strcmp(force, "enet") == 0) {
+        return nullptr;
+    }
+    load_net_config();
+    // ROGUESQ_MP_RELAY: the server for scripted runs (never saved).
+    const char* env = recomp::dbg::env_str("ROGUESQ_MP_RELAY");
+    s_client.set_server(env ? env : g().relay_server);
+    return s_client.configured() ? s_client.table() : nullptr;
+}
+
 const rs64_mp_transport* relay_ready() {
-    const rs64_mp_transport* t = relay();
-    return t && t->available(t->user) ? t : nullptr;
+    for (const rs64_mp_transport* t : {relay(), server_relay()}) {
+        if (t && t->available(t->user)) {
+            return t;
+        }
+    }
+    return nullptr;
 }
 
 void relay_shutdown() {
-    if (const rs64_mp_transport* t = relay()) {
-        t->shutdown(t->user);
+    for (const rs64_mp_transport* t : {relay(), server_relay()}) {
+        if (t) {
+            t->shutdown(t->user);
+        }
     }
     g().relay_session = false;
+    g().relay_t = nullptr;
 }
 
+}
+
+// The chosen pilot's name (gGameSettings+7, 3 letters).
+static std::string pilot_name() {
+    std::string n;
+    for (int i = 0; g().rdram && i < 3; ++i) {
+        n += (char)rb(g().rdram, 0x80130B47u + (uint32_t)i);
+    }
+    return n;
+}
+
+// What a listed game is called: HOST SETTINGS' name, else the pilot's.
+static std::string host_name() {
+    return g().host_name.name.empty() ? pilot_name() : g().host_name.name;
 }
 
 // Host or join over the relay transport: no LAN discovery, no router mapping, the code row instead of the address.
 static void relay_start(const rs64_mp_transport* t, rs64::net::Role role, const std::string& peer) {
     Ghost& s = g();
+    // A listed host shows under its HOST SETTINGS name (else its pilot's), locked when it has a password.
+    if (role == rs64::net::Role::Host && RS64_MP_TRANSPORT_HAS_LIST(t)) {
+        t->set_info(t->user, host_name().c_str(), s.host_pin_set ? 1 : 0);
+    }
     rs64::net::LinkConfig cfg = link_config();
     cfg.role = role;
     cfg.external = t;
     cfg.peer = peer;
     cfg.build = s.lobby.local_build();
     s.code.cancel_typing();
+    s.join_pin.cancel_typing();
+    s.pin_mode = false;
     s.relay_session = true;
+    s.relay_t = t;
     set_from_menu(true);
     lobby_start(cfg);
     fprintf(stderr, "[lobby] %s over %s%s%s%s\n", role == rs64::net::Role::Host ? "hosting" : "joining", t->name, peer.empty() ? "" : " ", peer.c_str(), s.started ? "" : " (start failed)");
@@ -137,6 +179,8 @@ static void restore_join_row() {
 
 extern "C" void rs64_lobby_host(void) {
     Ghost& s = g();
+    s.pin_mode = false;
+    s.join_pin.cancel_typing();
     load_net_config();
     if (const rs64_mp_transport* t = relay_ready()) {
         relay_start(t, rs64::net::Role::Host, "");
@@ -187,6 +231,12 @@ static void join_typed(rs64::net::LinkConfig cfg) {
 
 extern "C" void rs64_lobby_join(void) {
     Ghost& s = g();
+    // A password typed into the row is kept for this join; the row goes back to the address or code.
+    if (s.join_pin.typing) {
+        s.join_pin.end_typing();
+    }
+    s.join_pin.editing = false;
+    s.pin_mode = false;
     load_net_config();
     save_net_config();
     s.lobby.set_join_timeout(rs64::net::Lobby::kJoinTimeoutMs);
@@ -278,10 +328,17 @@ static void skip_filter(uint16_t* buttons) {
     const bool launching = !timeline && s.in_hangar && s.craft.released() && hangar_result != 0u && hangar_result != 0xFFFFFEu;
     rs64::mp::set_flag("hangar_launch", launching ? 1 : 0);
     const int scene = timeline ? 2 : launching ? 1 : 0;
+    // A skip seen this poll ended the scene of the last poll (a skipped launch can give way to the crawl at once).
+    const uint16_t prev_tag = s.skip_tag;
+
     if (scene != s.skip_scene) {
-        s.skip.end_scene();
+        if (scene != 0) {
+            s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) | ((s.skip_tag + 1u) & 0xFFu));
+        }
+
         s.skip_scene = scene;
     }
+
     const bool cine = scene != 0;
     const bool launch_skipped = launching && (*buttons & kStart) && !(s.skip_prev_buttons & kStart);
     s.skip_prev_buttons = *buttons;
@@ -290,16 +347,46 @@ static void skip_filter(uint16_t* buttons) {
         drain();
     }
     if (s.skip.on_local(skipped || launch_skipped, now_s())) {
-        s.link.send(rs64::net::encode_skip(), true);
+        s.link.send(rs64::net::encode_skip(launch_skipped ? s.skip_tag : prev_tag), true);
         fprintf(stderr, "[ghost] cutscene skipped here; telling the other player\n");
     } else if (skipped) {
         fprintf(stderr, "[ghost] cutscene skipped by the other player's skip\n");
     }
     // Test: ROGUESQ_MP_TEST_NO_SKIP_SHARE=1 ignores the other player's skips (a late joiner).
     static const bool s_no_share = recomp::dbg::env_on("ROGUESQ_MP_TEST_NO_SKIP_SHARE");
-    if (s.skip.press(now_s(), cine) && !s_no_share) {
+    if (s.skip.press(now_s(), cine, s.skip_tag) && !s_no_share) {
         *buttons |= kStart;
     }
+}
+
+// Every text row the lobby edits: the address, a relay's join code, HOST SETTINGS' name and password, and the password sent when joining. f(editor) on each until it returns true.
+template <class F>
+static bool each_editor(F f) {
+    Ghost& s = g();
+    return f(s.code) || f(s.join_pin) || f(s.host_pin) || f(s.host_name) || f(s.editor);
+}
+
+static void cancel_editors() {
+    each_editor([](auto& e) {
+        e.cancel_typing();
+        return false;
+    });
+}
+
+// A row's A: open its editor (keyboard first; the pad can still finish it) or close it.
+template <class Editor>
+static void toggle_edit(Editor& e) {
+    e.editing = !e.editing;
+    if (e.editing) {
+        e.begin_typing();
+    } else if (e.typing) {
+        e.end_typing();
+    }
+}
+
+// A password row: its digits once one is set or while editing, else the prefix and none_text.
+static std::string pin_label(const rs64::net::CodeEditor& e, bool set, const char* none_text) {
+    return (set || e.editing || e.typing) ? e.label() : std::string(e.prefix) + none_text;
 }
 
 extern "C" uint32_t rs64_lobby_ready(void) {
@@ -309,8 +396,8 @@ extern "C" uint32_t rs64_lobby_ready(void) {
 // Leaving a lobby page: drop the connection unless it is ready for a mission.
 extern "C" void rs64_lobby_leave(void) {
     Ghost& s = g();
-    s.editor.cancel_typing();
-    s.code.cancel_typing();
+    cancel_editors();
+    s.pin_mode = false;
     if (s.lobby.ready()) {
         return;
     }
@@ -342,8 +429,7 @@ static void lobby_stop(bool release_relay) {
     rs64::mp::set_flag("mp_lobby_state", (int)s.lobby.state());
     s.lobby_session = false;
     set_from_menu(false);
-    s.editor.cancel_typing();
-    s.code.cancel_typing();
+    cancel_editors();
     restore_join_row();
     fprintf(stderr, "[lobby] stopped\n");
 }
@@ -352,9 +438,199 @@ extern "C" void rs64_lobby_cancel(void) {
     lobby_stop(true);
 }
 
+// FIND GAME: the relays' game lists, kListRows rows a page. s_list_joined: the last join came from this page (its failure shows here); s_list_note: shown while the password row is open after a locked pick.
+// The page shows a snapshot of the last finished search (s_listed) and searches again every kListRefreshMs while it is up, which also checks the relay server; rows never blank or shift mid-search.
+constexpr uint32_t kListRefreshMs = 5000;
+static int s_list_page = 0;
+static bool s_list_joined = false;
+static std::string s_list_note;
+
+struct Listed {
+    const rs64_mp_transport* t;
+    std::string label;
+    std::string peer;
+    bool locked;
+};
+
+static std::vector<Listed> s_listed;
+static bool s_have_list = false;
+static bool s_list_pending = false;
+static uint32_t s_list_at_ms = 0;
+
+// The relays with a game list that can work now, Steam's first.
+static std::vector<const rs64_mp_transport*> list_relays() {
+    std::vector<const rs64_mp_transport*> out;
+    for (const rs64_mp_transport* t : {relay(), server_relay()}) {
+        if (t && RS64_MP_TRANSPORT_HAS_LIST(t) && t->available(t->user)) {
+            out.push_back(t);
+        }
+    }
+    return out;
+}
+
+// The games on the page: -1 until the first search finishes.
+static int list_count() {
+    return s_have_list ? (int)s_listed.size() : -1;
+}
+
+static void list_search() {
+    for (const rs64_mp_transport* t : list_relays()) {
+        t->refresh(t->user, g().lobby.local_build());
+    }
+    s_list_pending = true;
+    s_list_at_ms = now_ms32();
+}
+
+// Each FIND GAME frame: a finished search becomes the snapshot (every list's games, Steam's first), and the next search starts kListRefreshMs after the last.
+static void list_update() {
+    const std::vector<const rs64_mp_transport*> relays = list_relays();
+    const bool done = std::all_of(relays.begin(), relays.end(), [](const rs64_mp_transport* t) { return t->game_count(t->user) >= 0; });
+
+    if (s_list_pending && done) {
+        s_listed.clear();
+        for (const rs64_mp_transport* t : relays) {
+            for (int i = 0; i < t->game_count(t->user); ++i) {
+                s_listed.push_back(Listed{t, t->game_label(t->user, i), t->game_peer(t->user, i), t->game_locked(t->user, i) != 0});
+            }
+        }
+        s_have_list = true;
+        s_list_pending = false;
+        s_list_page = std::min(s_list_page, rs64::net::list_pages(list_count()) - 1);
+    }
+
+    if (!s_list_pending && now_ms32() - s_list_at_ms >= kListRefreshMs) {
+        list_search();
+    }
+}
+
+// Opening the page: a fresh list from its first page (SEARCHING until it arrives).
+static void list_open() {
+    s_list_page = 0;
+    s_list_joined = false;
+    s_listed.clear();
+    s_have_list = false;
+    list_search();
+}
+
+// NEXT PAGE while there are more, else REFRESH (the rows keep the current list until the new one arrives).
+static void list_more() {
+    if (s_list_page + 1 < rs64::net::list_pages(list_count())) {
+        ++s_list_page;
+    } else {
+        list_search();
+    }
+}
+
+// Joins the game on that row: a join in progress gives way, a host stays hosting. A locked game with no password typed opens the PASSWORD row first.
+static void list_pick(int row) {
+    Ghost& s = g();
+    const int i = s_list_page * rs64::net::kListRows + row;
+    if (i >= list_count() || rs64_lobby_hosting()) {
+        return;
+    }
+    const Listed game = s_listed[i];
+    if (game.locked && !s.join_pin_set) {
+        cancel_editors();
+        s.join_pin_set = true;
+        toggle_edit(s.join_pin);
+        s_list_note = "ENTER THE PASSWORD";
+        return;
+    }
+    s_list_joined = true;
+    if (g().started) {
+        lobby_stop(false);
+    }
+    g().lobby.set_join_timeout(rs64::net::Lobby::kJoinTimeoutMs);
+    fprintf(stderr, "[lobby] joining listed game %s over %s\n", game.label.c_str(), game.t->name);
+    relay_start(game.t, rs64::net::Role::Client, game.peer);
+}
+
+static std::string list_row(int row) {
+    const int i = s_list_page * rs64::net::kListRows + row;
+    if (i >= list_count()) {
+        return " ";
+    }
+    return s_listed[i].label + (s_listed[i].locked ? "  LOCKED" : "");
+}
+
+// The page's status line; read every frame while FIND GAME is up, so it also runs the refresh.
+static std::string list_status_line() {
+    list_update();
+    if (!g().join_pin.editing) {
+        s_list_note.clear();
+    }
+    if (!s_list_note.empty()) {
+        return s_list_note;
+    }
+    if (g().started || (s_list_joined && g().lobby.state() == rs64::net::LobbyState::Failed)) {
+        return rs64_lobby_status();
+    }
+    // A configured relay server that does not answer is said once its search is over (Steam's games still list).
+    const rs64_mp_transport* server = server_relay();
+    if (server && !server->available(server->user) && list_count() >= 0) {
+        return "COULD NOT CONNECT TO SERVER";
+    }
+    // No list can work (Steam closed, no relay server): say why Steam is not in use.
+    if (list_relays().empty()) {
+        const rs64_mp_transport* t = relay();
+        const char* st = t ? t->status(t->user) : nullptr;
+        return st && *st ? st : " ";
+    }
+    const std::string s = rs64::net::list_status(list_count(), s_list_page);
+    return rs64::net::waiting_status(s) ? rs64::net::status_dots(s, now_ms32()) : s;
+}
+
+// HOST SETTINGS changes: saved to roguesq_net.json, and while hosting applied at once (the password to the lobby, the name and lock to a listing relay).
+static void sync_host_settings() {
+    Ghost& s = g();
+
+    // Read before the first compare, so the file is never rewritten from defaults.
+    load_net_config();
+
+    const std::string pin = s.host_pin_set ? s.host_pin.code() : std::string{};
+    const std::string saved = s.host_name.name + "|" + pin;
+    static std::string s_saved;
+    static std::string s_sent;
+
+    // The editors are open: apply what they hold once they close.
+    if (s.host_name.editing || s.host_pin.editing) {
+        return;
+    }
+
+    if (s_saved.empty()) {
+        s_saved = saved;
+    } else if (saved != s_saved) {
+        s_saved = saved;
+        save_net_config();
+    }
+
+    if (!rs64_lobby_hosting()) {
+        s_sent.clear();
+        return;
+    }
+
+    s.lobby.set_password(pin);
+
+    const rs64_mp_transport* t = s.relay_t;
+    const std::string info = host_name() + "|" + (pin.empty() ? "0" : "1");
+
+    if (s.relay_session && t && RS64_MP_TRANSPORT_HAS_LIST(t) && info != s_sent) {
+        s_sent = info;
+        t->set_info(t->user, host_name().c_str(), pin.empty() ? 0 : 1);
+    }
+}
+
 // Each front-end frame: link events and messages in (the receive queue never piles up in the menus).
 extern "C" void rs64_lobby_tick(void) {
+    Ghost& s = g();
     rs64_lobby_status();
+    sync_host_settings();
+    // HOST GAME over a relay server that stopped answering before anyone joined: host directly (LAN, or the internet through the router) instead.
+    if (rs64_lobby_hosting() && s.relay_session && s.relay_t && !s.lobby.ready() && s.relay_t->lost(s.relay_t->user) && !s.relay_t->available(s.relay_t->user)) {
+        fprintf(stderr, "[lobby] the %s relay does not answer; hosting directly\n", s.relay_t->name);
+        lobby_stop(false);
+        rs64_lobby_host();
+    }
     // A Steam friends-list join (or accepted invite) while no lobby runs here joins that game.
     if (const rs64_mp_transport* t = relay(); t && !g().started) {
         if (const char* peer = t->pending_join(t->user)) {
@@ -375,15 +651,6 @@ extern "C" const char* rs64_lobby_status(void) {
         s.status_text = rs64::net::status_dots(s.status_text, now_ms32());
     }
     return s.status_text.c_str();
-}
-
-extern "C" const char* rs64_lobby_online_label(void) {
-    Ghost& s = g();
-    s.online_text = rs64::net::online_label(s.mapper.state());
-    if (rs64::net::waiting_status(s.online_text)) {
-        s.online_text = rs64::net::status_dots(s.online_text, now_ms32());
-    }
-    return s.online_text.c_str();
 }
 
 extern "C" const char* rs64_lobby_host_address(void) {
@@ -407,52 +674,49 @@ extern "C" uint32_t rs64_lobby_hosting(void) {
 
 // Off the page the editor is closed, typing included: rs64_lobby_input then hides the keyboard and clears text_entry (the Android picture shift).
 extern "C" void rs64_lobby_edit_off(void) {
-    g().editor.cancel_typing();
-    g().code.cancel_typing();
+    cancel_editors();
 }
 
 // Keyboard entry from the SDL event loop (same game thread as rs64_lobby_input).
 extern "C" int rs64_lobby_typing(void) {
-    return (g().editor.typing || g().code.typing) ? 1 : 0;
+    return each_editor([](auto& e) { return e.typing; }) ? 1 : 0;
 }
 
 extern "C" void rs64_lobby_type_text(const char* utf8) {
-    if (g().code.typing) {
-        g().code.type_text(utf8);
-    } else {
-        g().editor.type_text(utf8);
-    }
+    each_editor([&](auto& e) {
+        if (e.typing) {
+            e.type_text(utf8);
+        }
+        return e.typing;
+    });
 }
 
-// key: '\b' deletes the last character, '\r' finishes (applies a valid address and hides the keyboard, never confirms).
+// key: '\b' deletes the last character, '\r' finishes (applies valid text and hides the keyboard, never confirms).
 extern "C" void rs64_lobby_type_key(int key) {
-    Ghost& s = g();
-    if (s.code.typing) {
-        if (key == '\b') {
-            s.code.type_backspace();
-        } else if (key == '\r') {
-            const bool ok = s.code.end_typing();
-            fprintf(stderr, "[lobby] code typed: %s%s\n", s.code.code().c_str(), ok ? "" : " (kept; typed text was not a full code)");
+    each_editor([&](auto& e) {
+        if (!e.typing) {
+            return false;
         }
-        return;
-    }
-    if (key == '\b') {
-        s.editor.type_backspace();
-    } else if (key == '\r') {
-        const bool ok = s.editor.end_typing();
-        fprintf(stderr, "[lobby] address typed: %s%s\n", s.editor.text().c_str(), ok ? "" : " (kept; typed text was not an address)");
-    }
+        if (key == '\b') {
+            e.type_backspace();
+        } else if (key == '\r') {
+            const bool ok = e.end_typing();
+            fprintf(stderr, "[lobby] typed: %s%s\n", e.label().c_str(), ok ? "" : " (kept; the typed text was not valid)");
+        }
+        return true;
+    });
 }
 
 extern "C" void rs64_lobby_edit_toggle(void) {
     Ghost& s = g();
+    // A host asked for a password: the row is the password until the next JOIN.
+    if (s.pin_mode) {
+        s.join_pin_set = true;
+        toggle_edit(s.join_pin);
+        return;
+    }
     if (relay_ready()) {
-        s.code.editing = !s.code.editing;
-        if (s.code.editing) {
-            s.code.begin_typing();
-        } else if (s.code.typing) {
-            s.code.end_typing();
-        }
+        toggle_edit(s.code);
         fprintf(stderr, "[lobby] code edit %s: %s\n", s.code.editing ? "on" : "off", s.code.code().c_str());
         return;
     }
@@ -667,6 +931,7 @@ extern "C" void rs64_lobby_craft_select_init(recomp_context* ctx) {
         return;
     }
     ctx->r6 = 4;
+    s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) + 0x100u);
     s.craft.back();
     s.release_cool = 0;
     s.in_hangar = true;
@@ -710,7 +975,10 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
     if (!s.craft.released()) {
         ww(rdram, 0x800CD714u, 0);
     }
-    if (s.craft.local < 0 && (p & 0x9000u)) {
+    // updateHangarBayScene takes A/Start only with the bay at rest (0x800CD6CC) and the craft's bit in the allowed mask 0x800CD6D8 (bay table 0x800CC40C [0x800CD6E8]); a denied press passes through to its deny sound.
+    const bool pickable = rb(rdram, 0x800CD6CCu) == 0 && ((rw(rdram, 0x800CD6D8u) >> (rb(rdram, 0x800CC40Cu + rb(rdram, 0x800CD6E8u)) & 31u)) & 1u) != 0;
+
+    if (s.craft.local < 0 && (p & 0x9000u) && pickable) {
         const int c = rb(rdram, 0x800CC3F8u + rb(rdram, 0x800CD6E4u));
         s.craft.pick(c);
         s.link.send(rs64::net::encode_ready((uint8_t)c), true);
@@ -768,11 +1036,16 @@ static void edit_input(uint8_t* rdram, Editor& editor);
 
 extern "C" void rs64_lobby_input(uint8_t* rdram) {
     g().rdram = rdram;
-    Ghost& s = g();
-    if (s.code.editing || s.code.typing) {
-        edit_input(rdram, s.code);
-    } else {
-        edit_input(rdram, s.editor);
+    // The row being edited takes the pad; with none, the address editor's frame still runs (it turns the keyboard off).
+    const bool any = each_editor([&](auto& e) {
+        if (e.editing || e.typing) {
+            edit_input(rdram, e);
+            return true;
+        }
+        return false;
+    });
+    if (!any) {
+        edit_input(rdram, g().editor);
     }
 }
 
@@ -862,12 +1135,18 @@ extern "C" void rs64_ghost_register_host(void) {
     add_text_source("mp_address", [](void*) -> const char* {
         static std::string b;
         Ghost& s = g();
-        const bool code_row = relay_ready() != nullptr;
-        // The row's mode can change mid-edit (Steam starts or closes): close the editor it no longer shows, so input never goes to a hidden one.
-        if (code_row && (s.editor.editing || s.editor.typing)) {
+        const bool relay_up = relay_ready() != nullptr;
+        const bool code_row = relay_up && !s.pin_mode;
+        const bool address_row = !relay_up && !s.pin_mode;
+        // The row's mode can change mid-edit (Steam starts or closes, a host asks for a password): close the editors it no longer shows, so input never goes to a hidden one.
+        if (!address_row && (s.editor.editing || s.editor.typing)) {
             s.editor.cancel_typing();
-        } else if (!code_row && (s.code.editing || s.code.typing)) {
+        }
+        if (!code_row && (s.code.editing || s.code.typing)) {
             s.code.cancel_typing();
+        }
+        if (s.pin_mode) {
+            return mp_text(b, pin_label(s.join_pin, s.join_pin_set, "------"));
         }
         return mp_text(b, code_row ? s.code.label() : std::string(rs64_lobby_address_label()));
     }, nullptr);
@@ -875,29 +1154,81 @@ extern "C" void rs64_ghost_register_host(void) {
         static std::string b;
         return mp_text(b, rs64_lobby_status());
     }, nullptr);
-    // Host-only lines stay blank (a space: an empty source falls back to the JSON label) until HOST GAME.
-    add_text_source("mp_host_address", [](void*) -> const char* {
-        static std::string b;
-        const rs64_mp_transport* t = relay();
-        if (rs64_lobby_hosting() && g().relay_session && t) {
-            const char* h = t->host_label(t->user);
-            return mp_text(b, h && *h ? std::string(h) : std::string(" "));
-        }
-        return mp_text(b, rs64_lobby_hosting() ? std::string(rs64_lobby_host_address()) : std::string(" "));
-    }, nullptr);
-    // The relay's status shows while idle too (STEAM API DLL MISSING); a lobby over ENet shows the router status instead.
+    // The line under the status: while hosting what the other player needs (the join code, or this PC's address); otherwise the relay's status, idle too (STEAM API DLL MISSING). A space keeps it blank (an empty source falls back to the JSON label).
     add_text_source("mp_online", [](void*) -> const char* {
         static std::string b;
-        const rs64_mp_transport* r = relay();
+        // The session's relay; idle, the one HOST would use, else Steam (its status says why it is not in use).
+        const rs64_mp_transport* r = g().relay_session ? g().relay_t : relay_ready();
+        if (!r && !g().started) {
+            r = relay();
+        }
         std::string t;
-        if (r && (g().relay_session || !g().started)) {
+        if (rs64_lobby_hosting() && g().relay_session && r) {
+            const char* h = r->host_label(r->user);
+            t = h ? h : "";
+        } else if (rs64_lobby_hosting()) {
+            t = rs64_lobby_host_address();
+        }
+        if (t.empty() && r && (g().relay_session || !g().started)) {
             const char* st = r->status(r->user);
             t = st ? st : "";
-        } else if (rs64_lobby_hosting()) {
-            t = rs64_lobby_online_label();
         }
         return mp_text(b, t.empty() ? std::string(" ") : t);
     }, nullptr);
+    // HOST SETTINGS page: the advertised name, the password a joiner must send (A on each to edit), REMOVE PASSWORD.
+    g().host_pin.prefix = "PASSWORD ";
+    g().join_pin.prefix = "PASSWORD ";
+    add_text_source("mp_name_label", [](void*) -> const char* {
+        static std::string b;
+        return mp_text(b, g().host_name.label(pilot_name()));
+    }, nullptr);
+    add_text_source("mp_pin_label", [](void*) -> const char* {
+        static std::string b;
+        return mp_text(b, pin_label(g().host_pin, g().host_pin_set, "NONE"));
+    }, nullptr);
+    rs64::mp::add_action("mp_name_edit", [](void*) {
+        toggle_edit(g().host_name);
+    });
+    rs64::mp::add_action("mp_pin_edit", [](void*) {
+        g().host_pin_set = true;
+        toggle_edit(g().host_pin);
+    });
+    rs64::mp::add_action("mp_pin_clear", [](void*) {
+        g().host_pin.cancel_typing();
+        g().host_pin_set = false;
+    });
+    // FIND GAME's PASSWORD row: what this player sends when joining a locked game.
+    add_text_source("mp_join_pin_label", [](void*) -> const char* {
+        static std::string b;
+        return mp_text(b, pin_label(g().join_pin, g().join_pin_set, "------"));
+    }, nullptr);
+    rs64::mp::add_action("mp_join_pin_edit", [](void*) {
+        g().join_pin_set = true;
+        toggle_edit(g().join_pin);
+    });
+    // FIND GAME page: a status line, kListRows game rows (mp_game_0..), NEXT PAGE / REFRESH; FIND GAME shows only when a transport has a list (mp_list).
+    add_text_source("mp_list_status", [](void*) -> const char* {
+        static std::string b;
+        return mp_text(b, list_status_line());
+    }, nullptr);
+    static const char* const kRowSources[rs64::net::kListRows] = {"mp_game_0", "mp_game_1", "mp_game_2", "mp_game_3"};
+    static const char* const kRowActions[rs64::net::kListRows] = {"mp_pick_0", "mp_pick_1", "mp_pick_2", "mp_pick_3"};
+    static std::string s_rows[rs64::net::kListRows];
+    for (int i = 0; i < rs64::net::kListRows; ++i) {
+        add_text_source(kRowSources[i], [](void* u) -> const char* {
+            const int row = (int)(intptr_t)u;
+            return mp_text(s_rows[row], list_row(row));
+        }, (void*)(intptr_t)i);
+        rs64::mp::add_action(kRowActions[i], [](void* u) { list_pick((int)(intptr_t)u); }, (void*)(intptr_t)i);
+    }
+    add_text_source("mp_list_more", [](void*) -> const char* {
+        static std::string b;
+        return mp_text(b, s_list_page + 1 < rs64::net::list_pages(list_count()) ? "NEXT PAGE" : "REFRESH");
+    }, nullptr);
+    rs64::mp::add_action("mp_list_refresh", [](void*) { list_open(); });
+    rs64::mp::add_action("mp_list_more", [](void*) { list_more(); });
+    // A configured relay server keeps FIND GAME up while it is down, so its page can say so.
+    rs64::mp::add_condition("mp_list", [](void*) -> int { return (!list_relays().empty() || server_relay()) ? 1 : 0; });
     rs64::mp::add_input_filter([](int port, uint16_t* buttons, float*, float*, void*) {
         if (port == 0) skip_filter(buttons);
     }, nullptr);

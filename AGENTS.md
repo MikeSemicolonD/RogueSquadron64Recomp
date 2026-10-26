@@ -17,10 +17,11 @@ src/                                    Host code; the include root, so includes
 mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
 patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
 mods/multiplayer-native/                Online co-op as a native mod, always built by the game's CMake (the exe has no multiplayer code)
-  ├── src/                              ghost*.cpp (session, lobby, HUD), net_*.cpp (ENet6), coop_imposter.cpp, mp_core.cpp (imposter flight model, puppet, lobby rules), mp_register.cpp + mp_host.h (host-API registrations, its only route to the game)
+  ├── src/                              ghost*.cpp (session, lobby, HUD), net_*.cpp (ENet6), relay_client.cpp (rs64_relay transport), coop_imposter.cpp, mp_core.cpp (imposter flight model, puppet, lobby rules), mp_register.cpp + mp_host.h (host-API registrations, its only route to the game)
   ├── tests/                            mp_core_test, net_core_test, net_link_test (run by rs64_unit_tests)
   ├── mod.toml, tools/                  Manifest plus the per-player data relocation as [[patches.instruction]] (RecompModTool writes mod.json / instruction_patches.json at build time) and its generator
   └── lib/enet6/, lib/miniupnp/         Submodules for the transport, built only for this mod
+relay-server/                           rs64_relay, the standalone co-op relay server (lists and pairs games, forwards packets); builds alone with only enet6, released by relay-release.yml
 tests/                                  Host unit tests (rs64_unit_tests)
 rogue_squadron.toml, patches.toml       N64Recomp configs (game ELF / patches ELF)
 rsp/                                    RSPRecomp configs (MusyX synth, shared boot ucode)
@@ -190,7 +191,7 @@ Online co-op (`ROGUESQ_MP=host|join`, or the MULTIPLAYER lobby page from the `mu
 - Incoming damage waits for the mission to settle (30 frames, no cutscene), or the objective trigger faults.
 - The menu font has no period; `ensure_menu_period` builds it at runtime, so use the existing dot and blank glyph helpers, not hardcoded glyphs.
 - Android needs the `INTERNET` permission and a Wi-Fi multicast lock (`MainActivity`) for LAN discovery.
-- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test`, `rs64_lights_test`, the multiplayer mod's `mp_core_test`, `net_core_test` and `net_link_test` (in `mods/multiplayer-native/tests`), plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/CMakeLists.txt`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests && cmake --build build-tests --config Release --target rs64_unit_tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
+- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test`, `rs64_lights_test`, the multiplayer mod's `mp_core_test`, `net_core_test`, `net_link_test` and `relay_client_test` (loopback against an in-process relay server; in `mods/multiplayer-native/tests`), the relay server's `relay_core_test` (`relay-server/tests`), plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/CMakeLists.txt`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests && cmake --build build-tests --config Release --target rs64_unit_tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
 
 ### Game-state model + BOOT_TARGET nav engine
 
@@ -296,7 +297,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 ## Style conventions
 
-`style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists); the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
+`style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/`, `relay-server/src` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists); the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
 
 - **No emojis** in code, comments, or docs unless explicitly requested.
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.

@@ -471,6 +471,8 @@ endif()
 set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
 add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
 add_dependencies(RogueSquadron64Recomp multiplayer_native)
+# The co-op relay server (rs64_relay, built on request); after multiplayer-native so it reuses ENet6.
+add_subdirectory(${CMAKE_SOURCE_DIR}/relay-server ${CMAKE_BINARY_DIR}/relay-server)
 # After multiplayer-native, so the tests reuse its ENet6 and miniupnpc targets.
 add_subdirectory(${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
 # The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.

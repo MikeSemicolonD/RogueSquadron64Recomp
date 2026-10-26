@@ -115,6 +115,8 @@ public:
     bool connected() const;
     bool lost() const;
     uint32_t connect_count() const;
+    // The data the other end gave when it last closed the connection (the relay server's reason); 0 before any close.
+    uint32_t close_data() const { return close_data_.load(); }
     void send(std::vector<uint8_t> bytes, bool reliable);
     // Waits up to timeout_ms for everything queued so far to reach ENet's socket; false on timeout.
     bool flush(int timeout_ms);
@@ -133,6 +135,7 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<bool> lost_{false};
     std::atomic<uint32_t> connects_{0};
+    std::atomic<uint32_t> close_data_{0};
     std::atomic<uint64_t> queued_{0};
     std::atomic<uint64_t> handled_{0};
     std::atomic<int64_t> last_rx_ms_{-1};

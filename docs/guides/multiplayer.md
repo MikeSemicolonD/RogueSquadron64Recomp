@@ -4,6 +4,8 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 
 ## What players see
 
+- With Steam running (the steam-relay mod) or a relay server set up ([relay-server.md](relay-server.md)), FIND GAME lists open games of the same version; picking one joins it, no code needed.
+- HOST SETTINGS names your game in that list and can give it a password; joining a game with one asks for it.
 - The host drives mission select and picks the mission; the client's screen follows. Each player then picks their own craft, and nobody launches until both have picked.
 - Each player keeps the upgrades of the pilot profile they chose before entering MULTIPLAYER.
 - An upgrade collected in a level is given to both players, and saved to both pilots if the mission succeeds (lost on failure, as in single player). The pickup disappears for the other player too, with its pickup sound.
@@ -21,6 +23,7 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 |---|---|
 | [mods/multiplayer-native/src/net_core.h](../../mods/multiplayer-native/src/net_core.h), [net_core.cpp](../../mods/multiplayer-native/src/net_core.cpp) | Message encoding, `Lobby` handshake state, `AddressEditor`, discovery packets, UPnP status text. No sockets. |
 | [mods/multiplayer-native/src/net_link.h](../../mods/multiplayer-native/src/net_link.h), [net_link.cpp](../../mods/multiplayer-native/src/net_link.cpp) | ENet6 transport (`mods/multiplayer-native/lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
+| [mods/multiplayer-native/src/relay_client.h](../../mods/multiplayer-native/src/relay_client.h), [relay_client.cpp](../../mods/multiplayer-native/src/relay_client.cpp) | `RelayClient`: the relay server transport (an `mp.transport` table over two `Link`s to an `rs64_relay`; protocol in [relay-server/src/relay_protocol.h](../../relay-server/src/relay_protocol.h)). |
 | [mods/multiplayer-native/src/ghost.cpp](../../mods/multiplayer-native/src/ghost.cpp) | Session core: link events, message dispatch, per-frame hooks, shared objectives, deaths and lives, mission result, quit. |
 | [mods/multiplayer-native/src/ghost_lobby.cpp](../../mods/multiplayer-native/src/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
 | [mods/multiplayer-native/src/ghost_hud.cpp](../../mods/multiplayer-native/src/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
@@ -79,7 +82,7 @@ A new base-side need is a flag or a table entry, never a direct call.
 
 The game has no multiplayer code on any platform: online and local co-op come only from the `multiplayer-native` mod, which the game's CMake builds as a dependency of the exe and stages (see [release-ci.md](../engine/release-ci.md#the-multiplayer-mod)). On Android, Gradle packs it as `libmultiplayer_native.so` with the game's libraries, `bundleMods` ships the mod's `mod.json` and menu, and librecomp loads the library by that name when the mod folder has none. Local co-op (`ROGUESQ_COOP_LOCAL`) needs the mod enabled.
 
-Unit tests (`cmake --build build --config Release --target rs64_unit_tests` builds and runs all): the mod's `mp_core_test`, `net_core_test` and `net_link_test` (`mods/multiplayer-native/tests`) next to the base tests (the style checker runs too). `net_link_test` talks to the real router through UPnP.
+Unit tests (`cmake --build build --config Release --target rs64_unit_tests` builds and runs all): the mod's `mp_core_test`, `net_core_test`, `net_link_test` and `relay_client_test` (`mods/multiplayer-native/tests`) next to the base tests (the style checker runs too). `net_link_test` talks to the real router through UPnP; `relay_client_test` runs an `rs64_relay` in-process on UDP 27181 and plays host, joiner and lister against it.
 
 ## Modes and scripted runs
 
@@ -87,7 +90,7 @@ Unit tests (`cmake --build build --config Release --target rs64_unit_tests` buil
 
 ## Lobby flow
 
-The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s, a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
+The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s (COULD NOT CONNECT TO HOST; at once, with the transport's reason, when the link or relay reports it cannot connect), a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
 
 Link events reach the lobby through `link_poll_edges(up, was_up, connects, seen_connects)`. `Link::connect_count()` counts connects, so a connect that dropped before the poll is neither edge, and a reconnect inside one poll reports lost plus connected.
 
@@ -104,7 +107,7 @@ The hooks live in the menu overlay (`drawRadarIcon`, `tickCraftSelectScreen`, th
 Mod menu pages are defined in `roguesq_menu.json` (format: [adding-menus-and-buttons.md](adding-menus-and-buttons.md)). Two fields exist for the multiplayer page:
 
 - `title_y`: the page title's y offset (written at `gCurrentMenuData+0x52`).
-- `row`: entries sharing a `row` string sit on one line (HOST GAME and JOIN GAME). `page_row_nav` in [menu_config.cpp](../../src/game/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
+- `row`: entries sharing a `row` string sit on one line (JOIN GAME and HOST GAME). `page_row_nav` in [menu_config.cpp](../../src/game/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
 
 ## LAN discovery
 
@@ -120,19 +123,35 @@ The host answers searches while it waits. Discovery is plain UDP on the game por
 - A Steam friends-list join or accepted invite while the game runs arrives as `GameLobbyJoinRequested_t` and is joined through `pending_join()`. With the game closed, Steam launches Spacewar instead.
 - The online line shows the mod's status: while idle it says why Steam is not in use (`STEAM API DLL MISSING`, `STEAM API DLL WRONG VERSION`, `STEAM API DLL BLOCKED`, `STEAM IS NOT RUNNING`, `STEAM FLATPAK NOT SUPPORTED`), and HOST / JOIN then use ENet.
 
-## Internet hosting (UPnP) and status lines
+## FIND GAME (game list)
 
-While hosting, `PortMapper` asks the router (UPnP) to map the game port. `ROGUESQ_MP_UPNP=0` leaves the router alone (test runs). `PortMapper::stop()` is non-blocking: it flags the worker and returns, and the worker removes the mapping in the background, before the next `start()`'s worker begins (`settled()` is true once it finished).
+A transport with the version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`; the Steam mod has it) adds FIND GAME to the MULTIPLAYER page (`requires: mp_list`, true while that transport is available). Opening it searches every listing relay (`refresh(build)`), and the page searches again every 5 s while it is up (`list_update`, run by its status line), which doubles as the relay server's heartbeat. The rows show a snapshot of the last finished search (`s_listed`: name, code, lock, transport), swapped in only when every search is done, so they never blank or shift mid-search and a pick joins exactly the row shown; only the first search after opening shows SEARCHING. The page shows a status line (`list_status`: SEARCHING, NO GAMES FOUND, `<n> GAMES FOUND  PAGE x OF y`), four game rows (`LOCKED` after a game with a password), the PASSWORD row this player sends when joining, and NEXT PAGE (more pages) or REFRESH (searches now; the page stays on the current list until the new one arrives). Picking a row joins that game (`game_peer`, passed to `start()` like a join code); a join already in progress gives way, a host does nothing. Picking a locked game with no password typed opens the PASSWORD row instead (ENTER THE PASSWORD); pick it again once typed. A failed list join's reason stays on the status line until the page is opened again. Once connected, the MULTIPLAYER page's `exit_when` takes this page (or HOST SETTINGS) on to mission select too (`menu_config.cpp` checks the pilot page's whole page chain).
 
-Status text comes from `net_core.cpp`:
+- Steam: `RequestLobbyList` with the build key (`rs64r`), at least one free slot, worldwide, at most 50; our own lobby is skipped. A host publishes `name` and `locked` (`1` with a password) as lobby data through `set_info`; names are cut to menu-font text (A-Z, 0-9, space, 16 characters), with STEAM GAME for none.
+- A game in the list stays joinable by its code too.
 
-| `online_label(state)` | Meaning |
-|---|---|
-| (empty) | Idle, or the port is open |
-| OPENING INTERNET PORT | Mapping in progress |
-| UPNP IS OFF ON YOUR ROUTER | No router answered |
-| YOUR ROUTER REFUSED THE PORT | The router refused the mapping |
-| YOUR ISP SHARES YOUR ADDRESS | The external address is not public (`public_ipv4`: private, carrier-grade NAT, loopback and link-local are not) |
+## Relay server transport
+
+With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; `ROGUESQ_MP_RELAY` overrides it), `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
+
+- Precedence: HOST GAME and a typed join code use Steam when it is available, else the relay server (`relay_ready()`). FIND GAME lists Steam's games first, then the server's, and a picked game joins over the transport it came from (`relay_t`). `pending_join` (friends-list joins) is Steam's only.
+- A game's id on the server is a random 6-digit number and is its join code: the host's line shows `JOIN CODE <id>`, and a code join sends `JOIN(id, build)`.
+- The client keeps one `Link` to the server for the session (REGISTER or JOIN once connected; Data packets carry the game's messages) and a second one only while fetching the list (LIST, reply, hang up; 5 s timeout). The server's refusals and close reasons (`Link::close_data`, the ENet disconnect data) become the status line: GAME FULL, NO GAME WITH THAT CODE, VERSION MISMATCH, RELAY SERVER FULL, RELAY SERVER CLOSED, RELAY SERVER LOST.
+- A server that does not answer: `available()` is false once a background check (started by the first `available()` call, which the MULTIPLAYER page makes) or a connection gets no answer in 5 s, and the server is checked again every 5 s (on FIND GAME, its 5 s refresh does the same). Joining fails at once with COULD NOT CONNECT TO SERVER (`Lobby::on_join_failed`, from the transport's `lost()` and status), and the code row falls back to the address row. HOST GAME falls back to hosting directly (`rs64_lobby_tick`: a relay host that is lost and unavailable before anyone joined restarts as a direct host), with no message. FIND GAME stays on the MULTIPLAYER page while a server is configured and says COULD NOT CONNECT TO SERVER over whatever Steam lists.
+
+## HOST SETTINGS and passwords
+
+HOST SETTINGS (a page off MULTIPLAYER) holds SERVER NAME (`NameEditor`: typed, or the pad's up/down per character; empty = the pilot's name), PASSWORD (`CodeEditor`, 6 digits; NONE until set) and REMOVE PASSWORD. Both are saved to `roguesq_net.json` (`host_name`, `host_password`) and, while hosting, apply at once: the password to `Lobby::set_password`, the name and lock to the relay (`sync_host_settings` in `ghost_lobby.cpp`).
+
+The host checks the password; relays and servers only know a game is locked:
+
+- On connect the client sends HELLO, then AUTH with its password (empty when none was typed). The host's `Lobby` is Connected after the client's matching HELLO and an AUTH with its password (any, without one), and then sends ACCEPT; the client is Connected on the host's HELLO plus ACCEPT.
+- A wrong or missing password: the host sends BYE `WrongPassword` and goes back to waiting; the client fails with WRONG PASSWORD or PASSWORD NEEDED and sets `pin_mode`, so the MULTIPLAYER page's address row becomes the password (A to type it) until the next JOIN GAME, which sends it. FIND GAME's PASSWORD row is the same password.
+- A refused client is trusted to disconnect on that BYE; one that does not keeps the host's single slot until it leaves.
+
+## Internet hosting (UPnP)
+
+While hosting, `PortMapper` asks the router (UPnP) to map the game port. Players are never shown how that went: if the router allows it, it just works and the address line turns into the NET address; if not, the LAN address stays. `ROGUESQ_MP_UPNP=0` leaves the router alone (test runs). `PortMapper::stop()` is non-blocking: it flags the worker and returns, and the worker removes the mapping in the background, before the next `start()`'s worker begins (`settled()` is true once it finished).
 
 `host_address_label` is the address line: `YOUR NET ADDRESS <ip>` once the router opened the port, else `YOUR LAN ADDRESS <ip>`, or `NO NETWORK ADDRESS`, with `:<port>` when the port is not 27064. Addresses are dotted; the menu font's period is added at runtime (see the last section).
 
@@ -163,11 +182,12 @@ While typing on a phone, the picture slides up so the highlighted entry clears t
 
 ## Session protocol
 
-All messages ride the ENet link; `Msg` in net_core.h lists them. A session starts only once both sides said a matching HELLO. Per frame (`rs64_ghost_frame`, after the pad poll): remote messages in, the host's result applied, local state out, the remote pad written to port 1 for the imposter.
+All messages ride the ENet link; `Msg` in net_core.h lists them. A session starts only once both sides said a matching HELLO and the host accepted the client's AUTH (see [HOST SETTINGS and passwords](#host-settings-and-passwords)). Per frame (`rs64_ghost_frame`, after the pad poll): remote messages in, the host's result applied, local state out, the remote pad written to port 1 for the imposter.
 
 | Message | Direction / use |
 |---|---|
 | HELLO | Both: build id, pilot name (label over the ship). |
+| AUTH, ACCEPT | Client to host right after HELLO: the password typed (empty: none). Host to client: accepted. |
 | MISSION, LAUNCH | Host picks the mission id first, then LAUNCH puts both on the same level and craft. `DAMAGE`, `OBJ` and `LIFE` carry the mission id. |
 | PRESENCE | Entering or leaving a mission. A departed player's puppet is removed (`destroyNpcSlotByIndex`); a peer entering triggers a full health resync. |
 | STATE | Unreliable, every frame: pose, velocity, pad buttons, down flag, S-foils (0 closed .. 250 open). |
@@ -182,7 +202,7 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | RESULT | Host's mission result. |
 | PICK, READY, BROWSE, BRIEFING_DONE | Lobby screens. |
 | SKIP | Cutscene skip. |
-| BYE | Quit or mismatch. |
+| BYE | Quit, mismatch, or the host refusing a password (`WrongPassword`). |
 
 `rs64_ghost_quit` (called from the quit path in `input_host.cpp` before `_Exit`) sends BYE (`Quit`) and flushes for up to 200 ms, so the other player is told at once instead of waiting for the connection timeout. The 200 ms wait is acceptable only on that exit path. `ROGUESQ_MP_TEST_QUIT` ends the host abruptly; with `ROGUESQ_MP_TEST_QUIT_CLEAN=1` it takes the menu quit path and sends BYE.
 
@@ -214,7 +234,7 @@ The NPC slot table (0x80130BB0) has `kNpcSlots` = 0x800 entries of 8 bytes. `all
 
 ## Cutscene skip sharing
 
-A local skip is sent as SKIP. The other side pulses START once a cutscene plays (they may be ahead, still loading), for up to 10 s (`SkipShare::kWaitS`); a skip within 1 s of its own pulse is treated as an echo. Skippable scenes are a cutscene timeline (the crawl, in-mission cutscenes) and the hangar launch after both picked. `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` ignores the other player's skips and `ROGUESQ_NAV_WATCH_CUTSCENES=1` makes the nav sequencer sit through every cutscene; together (`run-mp.ps1 -ClientLate`) they model a late joiner.
+A local skip is sent as SKIP, tagged with the scene it was made in: a phase (both sides start one at craft select and at mission init) and the number of skippable scenes entered in that phase. The other side pulses START when it plays that scene (it may be behind, still loading), and drops a skip for a scene it already finished; a skip within 1 s of its own pulse is treated as an echo. Skippable scenes are a cutscene timeline (the crawl, in-mission cutscenes) and the hangar launch after both picked. `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` ignores the other player's skips and `ROGUESQ_NAV_WATCH_CUTSCENES=1` makes the nav sequencer sit through every cutscene; together (`run-mp.ps1 -ClientLate`) they model a late joiner.
 
 ## Menu font period
 

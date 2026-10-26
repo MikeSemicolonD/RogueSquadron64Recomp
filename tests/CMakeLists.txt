@@ -18,6 +18,10 @@ endif()
 
 add_subdirectory(${RS64_ROOT}/mods/multiplayer-native/tests ${CMAKE_BINARY_DIR}/multiplayer-native-tests)
 
+if (NOT TARGET relay_core_test)
+    add_subdirectory(${RS64_ROOT}/relay-server ${CMAKE_BINARY_DIR}/relay-server)
+endif()
+
 # Same rounding as the game: no fused multiply-add in the lockstep math.
 if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_source_files_properties(${RS64_ROOT}/src/lockstep/lockstep_core.cpp PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
@@ -128,7 +132,7 @@ add_executable(style_check EXCLUDE_FROM_ALL
 set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 set(RS64_BASE_TESTS lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test crosshair_match_test rs64_lights_test menu_layout_test mods_page_test lang_test)
-set(RS64_TESTS ${RS64_BASE_TESTS} mp_core_test net_core_test net_link_test)
+set(RS64_TESTS ${RS64_BASE_TESTS} mp_core_test net_core_test net_link_test relay_core_test relay_client_test)
 
 if (MSVC)
     foreach(t ${RS64_BASE_TESTS} transition_gate_test style_check)

@@ -13,8 +13,8 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23 };
-enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25 };
+enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3, WrongPassword = 4 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
 bool decode_launch(const uint8_t* data, size_t n, std::string* header_text);
@@ -80,9 +80,9 @@ bool decode_pick(const uint8_t* data, size_t n, uint8_t* level);
 // The host browsing mission select: its cursor (level) and screen state (2 browse, 3 briefing, 4 exiting), sent on change so the client mirrors it live.
 std::vector<uint8_t> encode_browse(uint8_t level, uint8_t state);
 bool decode_browse(const uint8_t* data, size_t n, uint8_t* level, uint8_t* state);
-// A player skipped a cutscene; the other side skips its own.
-std::vector<uint8_t> encode_skip();
-bool decode_skip(const uint8_t* data, size_t n);
+// A player skipped a cutscene; the other side skips its own. scene = skip phase << 8 | skippable scenes entered in that phase (SkipShare).
+std::vector<uint8_t> encode_skip(uint16_t scene);
+bool decode_skip(const uint8_t* data, size_t n, uint16_t* scene);
 // The client ended the mission briefing; the host confirms its own (the client then follows the host out).
 std::vector<uint8_t> encode_briefing_done();
 bool decode_briefing_done(const uint8_t* data, size_t n);
@@ -109,7 +109,7 @@ bool decode_shot(const uint8_t* data, size_t n, uint8_t* epoch, std::string* cam
 std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item);
 bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item);
 // Network compatibility of this build: bump it whenever two builds can no longer play together. The lobby's HELLO carries it.
-constexpr uint32_t kBuildId = 0x52530008u;
+constexpr uint32_t kBuildId = 0x5253000Au;
 // Lobby handshake, sent once by each side on connect. It decodes whatever the sender's protocol byte, so a mismatch can be reported.
 struct Hello {
     uint16_t protocol = kProtocol;
@@ -121,6 +121,11 @@ struct Hello {
 };
 std::vector<uint8_t> encode_hello(const Hello& h);
 bool decode_hello(const uint8_t* data, size_t n, Hello* out);
+// Client to host, right after HELLO: the password typed for this game (empty, or kDigits digits). The host answers ACCEPT, or BYE WrongPassword.
+std::vector<uint8_t> encode_auth(const std::string& pin);
+bool decode_auth(const uint8_t* data, size_t n, std::string* pin);
+std::vector<uint8_t> encode_accept();
+bool decode_accept(const uint8_t* data, size_t n);
 
 // The lobby's IPv4 entry: four octets, shown without dots (menu font 5 has no '.'); while editing, the octet under the cursor is bracketed.
 // Menu input as direction/button bits, independent of the pad layout.
@@ -146,11 +151,15 @@ constexpr char kCaret = '|';
 bool waiting_status(const std::string& status);
 std::string status_dots(const std::string& status, uint32_t now_ms);
 
-// Internet hosting through UPnP: whether the router opened the game port, and the host page line for it (menu font: uppercase, digits, spaces, periods).
+// FIND GAME: a relay's game list, kListRows games a page. count -1 = the search still runs.
+constexpr int kListRows = 4;
+int list_pages(int count);
+std::string list_status(int count, int page);
+
+// Internet hosting through UPnP: whether the router opened the game port. Players are never shown it; an open port only turns the address line into the NET address.
 enum class PortMapState { Idle, Working, Open, NoRouter, Refused, SharedAddress };
 // An address the internet can reach: not private, carrier-grade NAT (100.64/10), loopback or link-local. Host byte order.
 bool public_ipv4(uint32_t ip);
-std::string online_label(PortMapState state);
 // The host's address line: the internet address once the router opened the port, else the LAN one (lan_ip empty: no network). Addresses are dotted (the menu font's period is added at runtime, ensure_menu_period).
 std::string host_address_label(PortMapState state, const std::string& lan_ip, const std::string& ext_ip, uint16_t port = 0);
 
@@ -203,6 +212,8 @@ struct AddressEditor {
 struct CodeEditor {
     static constexpr int kDigits = 6;
     char digit[kDigits] = {'0', '0', '0', '0', '0', '0'};
+    // What the row shows before the digits (the same editor holds game passwords).
+    const char* prefix = "JOIN CODE ";
     int cursor = 0;
     bool editing = false;
     bool typing = false;
@@ -220,7 +231,28 @@ struct CodeEditor {
     static bool valid(const std::string& s);
 };
 
+// HOST SETTINGS' server name: menu-font text (A-Z, 0-9, single spaces), at most kMax. Keyboard types it (lower case goes upper); the pad's up/down step the character under the cursor (blank, A-Z, 0-9), left/right move, A or B end.
+struct NameEditor {
+    static constexpr int kMax = 16;
+    std::string name;
+    int cursor = 0;
+    bool editing = false;
+    bool typing = false;
+    std::string typed;
+    bool input(uint32_t pressed, uint32_t held);
+    void begin_typing();
+    void type_text(const char* s);
+    void type_backspace();
+    // Ends typing and editing; the typed text (cleaned) replaces the name. Always true.
+    bool end_typing();
+    void cancel_typing();
+    // fallback: shown when the name is empty (the pilot's name, which a host with no name advertises).
+    std::string label(const std::string& fallback = "") const;
+    static std::string clean(const std::string& s);
+};
+
 // Lobby progress for one side: join gives up after kJoinTimeoutMs, a connected peer must say HELLO within kHelloTimeoutMs, and a HELLO from another build fails both sides. A host whose player leaves goes back to waiting.
+// A client is Connected once it has the host's HELLO and ACCEPT; the host accepts after the client's HELLO and an AUTH with its password (any, when it has none).
 enum class LobbyState { Idle, Hosting, Joining, Connected, Failed };
 class Lobby {
 public:
@@ -234,6 +266,16 @@ public:
     void on_start_failed();
     void on_connected(uint32_t now_ms);
     void on_hello(const Hello& h);
+    // Host: the password a joining player must send (empty: none).
+    void set_password(const std::string& pin) { password_ = pin; }
+    // Host: the client's AUTH. False = a wrong password: the caller says BYE WrongPassword and this side waits for the next player.
+    bool on_auth(const std::string& pin);
+    // Client: the host accepted this player, or refused its password (sent: whether one was typed).
+    void on_accept();
+    void on_refused(bool sent);
+    // Client: the host or relay server could not be reached (why: the transport's reason; empty: COULD NOT CONNECT TO HOST). Fails the join at once instead of at kJoinTimeoutMs.
+    void on_join_failed(const std::string& why);
+    bool password_failed() const { return state_ == LobbyState::Failed && pw_fail_; }
     void on_lost();
     void tick(uint32_t now_ms);
     LobbyState state() const { return state_; }
@@ -248,9 +290,15 @@ public:
     uint32_t local_build() const { return build_; }
 private:
     void reset(LobbyState s, bool host);
+    void connect_if_done();
     LobbyState state_ = LobbyState::Idle;
     bool host_ = false;
     bool peer_ = false;
+    // The peer's HELLO matched; the password step passed (host: AUTH checked, client: ACCEPT came).
+    bool hello_ = false;
+    bool auth_ = false;
+    bool pw_fail_ = false;
+    std::string password_;
     int64_t started_ms_ = -1;
     int64_t connected_ms_ = -1;
     bool left_ = false;

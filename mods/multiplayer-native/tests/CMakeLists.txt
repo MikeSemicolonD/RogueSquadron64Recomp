@@ -19,8 +19,11 @@ add_executable(net_core_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/net_core_test.cpp 
 # Loopback test for the network link (ENet, simulated latency and loss); also talks to the real router through UPnP.
 add_executable(net_link_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/net_link_test.cpp ${MP_DIR}/src/net_core.cpp ${MP_DIR}/src/net_link.cpp)
 target_link_libraries(net_link_test PRIVATE enet6 libminiupnpc-static)
+# Loopback test for the relay server transport against an in-process rs64_relay (relay-server's rs64_relay_core).
+add_executable(relay_client_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/relay_client_test.cpp ${MP_DIR}/src/relay_client.cpp ${MP_DIR}/src/net_core.cpp ${MP_DIR}/src/net_link.cpp)
+target_link_libraries(relay_client_test PRIVATE rs64_relay_core enet6 libminiupnpc-static)
 
-foreach(t mp_core_test net_core_test net_link_test)
+foreach(t mp_core_test net_core_test net_link_test relay_client_test)
     set_target_properties(${t} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     target_include_directories(${t} PRIVATE ${MP_DIR}/src ${RS64_ROOT}/src ${RS64_ROOT}/include ${RS64_ROOT}/tests)
 

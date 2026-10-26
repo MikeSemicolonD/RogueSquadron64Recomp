@@ -11,7 +11,9 @@ set(MP_BASE_FILES
     ${CMAKE_SOURCE_DIR}/src/util/debug_logs.h
     ${CMAKE_SOURCE_DIR}/include/os_compat.h
     ${CMAKE_SOURCE_DIR}/src/util/rdram_words.h)
-add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES})
+# The relay server's protocol (relay-server/src), shared with rs64_relay.
+set(MP_RELAY_FILES ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.cpp ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.h)
+add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES} ${MP_RELAY_FILES})
 # Same rounding as the game's copy of lockstep_core: no fused multiply-add in the flight model.
 set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp)
 if (MSVC)
@@ -36,6 +38,7 @@ if (ANDROID)
 endif()
 target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/relay-server/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
