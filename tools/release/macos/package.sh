@@ -83,6 +83,8 @@ EOF
 
 cp "$REPO/ci/release-readme.txt" "$work/$top/README.txt"
 cp "$REPO/LICENSE" "$work/$top/LICENSE.txt"
+cp "$REPO/NOTICES.txt" "$work/$top/NOTICES.txt"
+cp -r "$REPO/licenses" "$work/$top/licenses"
 
 rm -f "$OUT"
 (cd "$work" && zip -qry "$OUT" "$top")

@@ -98,6 +98,8 @@ sed -i "s/@ARCH@/$arch/g" "$stage/install-desktop.sh"
 chmod +x "$stage/install-desktop.sh"
 cp "$repo/ci/release-readme.txt" "$stage/README.txt"
 cp "$repo/LICENSE" "$stage/LICENSE.txt"
+cp "$repo/NOTICES.txt" "$stage/NOTICES.txt"
+cp -r "$repo/licenses" "$stage/licenses"
 if [ -d "$BUILD_DIR/mods" ]; then
   cp -r "$BUILD_DIR/mods" "$stage/mods"
   find "$stage/mods" -name '*.so' -exec "$STRIP" --strip-unneeded {} +

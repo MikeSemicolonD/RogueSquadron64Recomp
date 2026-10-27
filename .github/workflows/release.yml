@@ -154,6 +154,8 @@ jobs:
           $pkg = "RogueSquadron64Recomp-windows-x64-$ver.zip"
           Copy-Item ci/release-readme.txt build/dist/README.txt
           Copy-Item LICENSE build/dist/LICENSE.txt
+          Copy-Item NOTICES.txt build/dist/NOTICES.txt
+          Copy-Item -Recurse licenses build/dist/
           Compress-Archive -Path build/dist/* -DestinationPath $pkg -Force
           Add-Content -Path $env:GITHUB_ENV -Value "PKG=$pkg" -Encoding ascii
 
@@ -227,6 +229,8 @@ jobs:
           $pkg = "RogueSquadron64Recomp-windows-x86-$ver.zip"
           Copy-Item ci/release-readme.txt build-x86/dist/README.txt
           Copy-Item LICENSE build-x86/dist/LICENSE.txt
+          Copy-Item NOTICES.txt build-x86/dist/NOTICES.txt
+          Copy-Item -Recurse licenses build-x86/dist/
           Copy-Item -Recurse build/dist/d3d11_shader_cache build-x86/dist/
           Compress-Archive -Path build-x86/dist/* -DestinationPath $pkg -Force
           Add-Content -Path $env:GITHUB_ENV -Value "PKG_X86=$pkg" -Encoding ascii
