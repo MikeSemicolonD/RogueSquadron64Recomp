@@ -318,6 +318,31 @@ const WEBMCP_TOOLS = [
     },
   },
   {
+    name: 'rs64_lights',
+    description: 'The project\'s ray-traced light presets (mod/roguesq_lights.json, as the game reads it): every preset, the game folder\'s presets this mod does not override (game: name and source file, when the game folder is granted), and the names of those on what is open (a model\'s mesh presets, or the open level\'s). A preset with mesh rides on matching model parts in their model units; one without lights its level (level -1 outside missions, -2 every level) in map space, 512 per terrain cell, Y down.',
+    inputSchema: { type: 'object', properties: {} },
+    run: async () => {
+      mcpNeedRom();
+      await readLights();
+      return { presets: lightsDoc.presets, game: lightsBase.map((p) => ({ name: p.name, from: lightsBaseInfo.get(p).src })), here: lightsHere.map((p) => p.name) };
+    },
+  },
+  {
+    name: 'rs64_lights_set_preset',
+    edit: true,
+    description: 'Adds or replaces one light preset by name in the project\'s roguesq_lights.json (preset: { name, enabled, mesh?, cameraUnits?, level?, lights: [{ name, enabled, description: { position, diffuseColor, attenuationRadius, attenuationExponent, shadowOffset } }] }), or removes it with preset null. One undo step.',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' }, preset: { type: ['object', 'null'] } }, required: ['name', 'preset'] },
+    run: async ({ name, preset }) => {
+      mcpNeedRom();
+      await readLights();
+      const rest = lightsDoc.presets.filter((p) => p.name !== name);
+      if (preset && !Array.isArray(preset.lights)) throw new Error('preset.lights must be an array');
+      lightsDoc.presets = preset ? [...rest, { ...preset, name }] : rest;
+      await writeLights(preset ? `Light preset ${name}` : `Delete light preset ${name}`);
+      return { preset: lightPreset(name) ?? null };
+    },
+  },
+  {
     name: 'rs64_history',
     edit: true,
     description: 'Undoes or redoes the last edit (any edit in the page, the agent\'s or the user\'s), as the Undo / Redo buttons do.',

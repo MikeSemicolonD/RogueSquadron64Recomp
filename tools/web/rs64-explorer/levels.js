@@ -23,6 +23,9 @@ for (const g of [gizmoParts?.translate, gizmoParts?.scale]) for (const h of [...
 // Edit panel buttons are icons; each keeps its label as the title (and accessible name).
 const EDIT_ICONS = {
   add: { stroke: 'M8 3v10M3 8h10' },
+  // The view toggle: a camera body with its view volume out of the lens, widening (perspective) or straight (orthographic).
+  camPersp: { stroke: 'M9 7L15 2.5v11L9 9', fill: 'M0.5 4.5h8v7h-8zM2 2.5h3v1.5H2z' },
+  camOrtho: { stroke: 'M9 5.5H15v5H9', fill: 'M0.5 4.5h8v7h-8zM2 2.5h3v1.5H2z' },
   up: { stroke: 'M8 13V3M4 7l4-4 4 4' },
   down: { stroke: 'M8 3v10M4 9l4 4 4-4' },
   globe: { stroke: 'M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM1.5 8h13M8 1.5c2 1.8 2.8 4 2.8 6.5S10 12.7 8 14.5M8 1.5C6 3.3 5.2 5.5 5.2 8S6 12.7 8 14.5' },
@@ -52,6 +55,12 @@ const EDIT_ICONS = {
   blank: { stroke: 'M3 1.5h6.5l3.5 3.5v9.5H3zM9.5 1.5V5H13' },
   eye: { stroke: 'M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z' },
   close: { stroke: 'M3.5 3.5l9 9M12.5 3.5l-9 9' },
+  // A bulb with a plus badge (add a light).
+  lightAdd: { stroke: 'M6.5 1.5a4 4 0 0 0-2.3 7.3V11h4.6V8.8A4 4 0 0 0 6.5 1.5zM4.6 13.5h3.8', fill: 'M12 8h1.6v2.4H16V12h-2.4v2.4H12V12H9.6v-1.6H12z' },
+  // The game's lights: the mod box with a bulb.
+  gameLights: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M12.5 7.5a2.6 2.6 0 0 0-1.6 4.7V13.5h3.2v-1.3a2.6 2.6 0 0 0-1.6-4.7zM11 14.3h3v1.2h-3z' },
+  // Lights from hardpoints: a target crosshair (the hardpoint) with a spark.
+  hardpoints: { stroke: 'M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM7 0.5v3M7 10.5v3M0.5 7h3M10.5 7h3', fill: 'M7 5.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM13 10.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z' },
 };
 // An icon is a filled path, or { stroke } for line drawings (rotate, scale).
 function setEditIcon(b, name) {
@@ -60,7 +69,7 @@ function setEditIcon(b, name) {
   b.setAttribute('aria-label', b.title);
 }
 for (const b of $('editPanel').querySelectorAll('[data-icon]')) setEditIcon(b, b.dataset.icon);
-for (const b of document.querySelectorAll('.histRow [data-icon], #cutEdit, #cutInspector [data-icon]')) setEditIcon(b, b.dataset.icon);
+for (const b of document.querySelectorAll('.histRow [data-icon], #cutEdit, #cutInspector [data-icon], #viewNav [data-icon]')) setEditIcon(b, b.dataset.icon);
 // The published site serves the save editor at save-editor/; in the repo it sits beside this folder.
 if (/\/rs64-explorer\/(index\.html)?$/.test(location.pathname)) $('saveEditorLink').href = '../save-editor/rs64_save_editor.html';
 $('btnMod').append(elem('span', { id: 'btnModLabel', textContent: 'Export mod' }));

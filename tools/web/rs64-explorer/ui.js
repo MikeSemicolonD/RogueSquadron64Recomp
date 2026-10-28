@@ -42,12 +42,15 @@ const setMode = (m) => {
   $('fontPanel').hidden = m !== 'fonts' || !fontSel;
   $('menuPanel').hidden = m !== 'menus' || !menuSel;
   if (m !== 'audio') stopAudio();
+  // lights.js loads after this script.
+  if (typeof lightsPanel === 'function') lightsPanel();
   renderList();
 };
 $('tabFonts').onclick = () => setMode('fonts');
 $('tabMenus').onclick = () => menuRefreshPages().then(() => setMode('menus'));
 $('tabAudio').onclick = () => setMode('audio');
 $('audCat').onchange = $('audLevel').onchange = renderList;
+$('viewOrtho').onclick = () => root && !cut && setOrtho(!orthoView);
 $('tabModels').onclick = () => setMode('models');
 $('tabLevels').onclick = () => setMode('levels');
 $('tabEffects').onclick = () => setMode('effects');

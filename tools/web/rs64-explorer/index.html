@@ -62,6 +62,8 @@
   <div id="cutFade" hidden></div>
   <div id="cutBars" hidden></div>
   <button id="navToggle" class="needs-rom" title="Hide the sidebar" aria-label="Hide the sidebar" aria-expanded="true"></button>
+  <div id="lightPanel" class="panel needs-rom" hidden></div>
+  <div id="viewNav" class="panel needs-rom" hidden><svg id="viewAxes" viewBox="-36 -36 72 72" width="72" height="72" role="group" aria-label="View axes"></svg><button id="viewOrtho" data-icon="camPersp" title="Perspective view: click for orthographic, which flattens the view for precise placement (numpad 5)"></button></div>
   <div id="topLeft">
     <div id="editPanel" class="panel needs-rom" hidden>
       <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><button id="editSpace" data-modes="objects events" title="Global axes"></button></div>
@@ -215,7 +217,7 @@ import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 window.RS64_THREE = { THREE, OrbitControls, TransformControls, GLTFExporter };
-for (const src of ['core.js', 'audio.js', 'effects.js', 'ui.js', 'cutscenes.js', 'levels.js', 'fonts.js', 'menus.js', 'webmcp.js']) await new Promise((ok, fail) => document.body.append(Object.assign(document.createElement('script'), { src: `${src}?v=${Date.now()}`, onload: ok, onerror: fail })));
+for (const src of ['core.js', 'audio.js', 'effects.js', 'ui.js', 'cutscenes.js', 'levels.js', 'fonts.js', 'menus.js', 'lights.js', 'webmcp.js']) await new Promise((ok, fail) => document.body.append(Object.assign(document.createElement('script'), { src: `${src}?v=${Date.now()}`, onload: ok, onerror: fail })));
 </script>
 </body>
 </html>

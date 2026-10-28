@@ -16,6 +16,10 @@ namespace recomp {
 // input layer, which releases mouse-steering capture when the inspector is up.
 extern "C" int rs64_rt64_inspector_open(void);
 
+// Hands RT64's light preset library each enabled mod's roguesq_lights.json (model-lights first, the rest in mod order), then the one next to the exe;
+// later files override same-named presets. Call once mods are known (after recomp::start_game).
+void rs64_queue_light_presets();
+
 // Android lifecycle: stop presenting before the OS destroys the window, and move RT64's swap chain to the new window on
 // return. resume returns false (and stays suspended) until SDL has a live native window with a size.
 extern "C" void rs64_render_suspend_surface(void);

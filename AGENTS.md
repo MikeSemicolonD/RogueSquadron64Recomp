@@ -6,7 +6,7 @@ Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a
 
 ```
 src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
-  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture
+  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp)
   ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
   ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
   ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
@@ -146,6 +146,20 @@ The game runs on the user's machine and every tool call adds unknown latency, so
 2. Wait until `<base>.paused` exists (it holds the frame number); the game thread is held there, up to 30 s.
 3. Capture the window by PID (`capture_window_by_pid`), never by title: other sessions may be running their own (often Debug) exe.
 4. Write the frame number to `<base>.resume` to release it, then wait for the next `.paused`.
+
+The RT64 MCP server below does the same hold interactively, with no 30 s cap, and can inspect the held frame.
+
+### Live frame inspection (RT64 MCP, `tools/debug/mcp/`)
+
+`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (registered as `rs64` in the local `.mcp.json`) that launches the game itself (cwd `build/<config>`, RenderDoc injected, muted, `--mcp-port`) and gives an agent what the F1 inspector shows. Use it instead of asking the user for F1 screenshots:
+
+- `pause_at` / `step` / `resume`: freeze the game and the picture on exactly frame N of a clock (the `ROGUESQ_PAUSE_AT` clocks plus `dl`, display lists since boot). RT64's own F4 pause does not stop the game; this holds the game thread first.
+- On the frozen frame: `frame_summary`, `list_draws`, `get_draw` (the Debugger tab's per-call data), `dump_texture` (TMEM + decoded PNG), `view_framebuffer` / `view_draw`, `free_cam`, `screenshot` (by PID), `renderdoc_capture`.
+- `lights_*` edit RT64's light presets (shown after the next `step`, rendered only with `ROGUESQ_RT_LIGHTS=1`); `frame_times` reads the Frametimes plot; `rdram_read` / `rdram_write` / `rdram_dump` (golden-diff format).
+- `pause_when` freezes on an RDRAM condition (once a frame); `wait_log` waits for a log regex (crashes, SEH); `pick` / `highlight` answer "what drew this pixel"; `read_symbol` reads by `syms/` name; `walk_dl` runs `f5_dl_walk.py` on a fresh dump; `hang_dump` takes a full dump and runs `reconstruct-freeze.py` + `host-stacks.py`; `launch(record=...)` saves the session's input as a replayable `.rec`.
+- `press` holds controller buttons or the stick for N frames, so `press` + `step` plays exact frames of input; `frame_warnings`, `rsp_state`, `vi_info`, `sprite_commands`; `get_config` / `set_config`, `rt_features`, `render_toggles` change RT64 settings live. Trace categories (`ROGUESQ_LOG_*`) stay launch-time: pass them in `launch`'s `env`.
+
+`python tools/debug/mcp/rs64_mcp.py --self-test` checks it end to end. The game only opens its loopback port when launched with `--mcp-port`. Details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
 
 ### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
 
@@ -300,6 +314,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 `style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/`, `relay-server/src` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists); the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
 
 - **No emojis** in code, comments, or docs unless explicitly requested.
+- **Minimal UI controls.** When placing buttons and toggles (RS64 Explorer, ImGui panels), keep them few and compact, and use an icon with a tooltip instead of a text label wherever the action is simple enough to read from an icon; an on/off box sits left of its section heading's text (the heading is its label), and a destructive icon (delete) stays apart from it at the far right.
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.
 - Default to **no comments**. Add one only when the WHY is non-obvious (a workaround for a specific bug, a hidden invariant, a non-visible constraint).
 - **Comments are terse and matter-of-fact.** State the fact, not the reasoning journey. No multi-paragraph narration, no dated blow-by-blow history, no "we tried X then Y" storytelling in a comment — one or two plain lines. This applies to config comments (e.g. `rogue_squadron.toml`) too.

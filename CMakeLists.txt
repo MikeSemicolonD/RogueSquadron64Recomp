@@ -275,6 +275,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp
     ${CMAKE_SOURCE_DIR}/src/main/renderdoc_capture.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/mcp_bridge.cpp
     ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
     ${CMAKE_SOURCE_DIR}/src/host_api/host_api_game.cpp
     ${CMAKE_SOURCE_DIR}/src/game/builtin_hooks.cpp
@@ -427,7 +428,7 @@ if (WIN32)
         LINK_FLAGS_RELEASE        "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
         LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:WINDOWS /ENTRY:mainCRTStartup"
     )
-    target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2 Winmm.lib)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE SDL2 Winmm.lib ws2_32)
     # SDL_MAIN_HANDLED with our own main(); SDL2main would demand an SDL_main we don't define.
     target_link_options(RogueSquadron64Recomp PRIVATE /NODEFAULTLIB:SDL2main.lib)
 elseif (ANDROID)

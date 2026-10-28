@@ -431,7 +431,6 @@ static void testSpriteShadowStart() {
     CHECK(c.shadowStart == 120.0f);
     CHECK(c.radius == 360.0f);
     Candidate l;
-    CHECK(laserLight("red_laser#s0.p0.0", 250.0f, l));
     CHECK(l.shadowStart == 0.0f);
 }
 
@@ -571,69 +570,56 @@ static void testMenuHoloLight() {
     CHECK(near(c.falloff, 1.0f, 1e-6f));
     // Other lights keep the squared falloff.
     Candidate d;
-    CHECK(laserLight("red_laser#s0.p0.0", 250.0f, d) && near(d.falloff, 2.0f, 1e-6f));
+    CHECK(near(d.falloff, 2.0f, 1e-6f));
     Resolved r;
     CHECK(near(r.falloff, 2.0f, 1e-6f));
     CHECK(near(c.local[1], 22.0f, 1e-5f) && near(c.local[2], 11068.0f, 1e-5f));
 }
 
-static void testMenuRingLights() {
-    const float center[3] = { 0.0f, 1080.0f, 11216.0f };
-    const float axisX[3] = { 1.0f, 0.0f, 0.0f };
-    const float axisD[3] = { 0.0f, -0.139f, 0.990f };
-    const float up[3] = { 0.0f, -0.990f, -0.139f };
-    Candidate out[8];
-    const uint32_t n = menuRingLights(center, axisX, axisD, up, 2900.0f, 150.0f, 6, 2500.0f, 1.5f, out, 8);
-    CHECK(n == 6);
-    for (uint32_t i = 0; i < n; ++i) {
-        CHECK(out[i].kind == KindMesh && out[i].transformIndex == CameraSpace);
-        CHECK(out[i].color[0] > out[i].color[2] && near(out[i].radius, 2500.0f, 1e-5f) && near(out[i].intensity, 1.5f, 1e-5f));
-        // In-plane distance from the centre is the ring radius; the lift is along up.
-        float d[3];
-        for (int k = 0; k < 3; ++k) {
-            d[k] = out[i].local[k] - center[k] - 150.0f * up[k];
-        }
-        CHECK(near(std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]), 2900.0f, 2e-2f));
+static void testFlickerGain() {
+    // No flicker is steady; flicker dims within [1 - flicker, 1], differs per seed, and moves smoothly (no jump within a step).
+    CHECK(flickerGain(0.0f, 7, 1.234) == 1.0f);
+    bool differs = false;
+    for (int k = 0; k < 200; ++k) {
+        const double t = k * 0.013;
+        const float a = flickerGain(0.6f, 7, t), b = flickerGain(0.6f, 8, t);
+        CHECK(a >= 0.4f - 1e-6f && a <= 1.0f + 1e-6f);
+        CHECK(std::fabs(flickerGain(0.6f, 7, t + 0.001) - a) < 0.05f);
+        differs = differs || (std::fabs(a - b) > 1e-3f);
     }
-    CHECK(near(out[0].local[0], 2900.0f, 1e-3f));
-    CHECK(menuRingLights(center, axisX, axisD, up, 2900.0f, 150.0f, 6, 2500.0f, 1.5f, out, 4) == 4);
-    CHECK(menuRingLights(center, axisX, axisD, up, 2900.0f, 150.0f, 6, 2500.0f, 0.0f, out, 8) == 0);
+    CHECK(differs);
+    CHECK(flickerGain(2.0f, 7, 0.5) >= -1e-6f);
 }
 
-static void testTorpedoLight() {
-    Candidate c;
-    CHECK(torpedoLight("ph_torp#s0.p0.0", 750.0f, c));
-    CHECK(c.kind == KindLaser && near(c.radius, 750.0f, 1e-5f) && c.intensity > 0.0f);
-    CHECK(c.color[0] > c.color[1] && c.color[1] > c.color[2]);
-    // The torpedo is a physical body: it glows but still casts.
-    CHECK(!c.emissive);
-    CHECK(!torpedoLight("ph_torpedo_bay#s0.p0.0", 750.0f, c));
-    CHECK(!torpedoLight("red_laser#s0.p0.0", 750.0f, c));
-    CHECK(!torpedoLight(nullptr, 750.0f, c));
+static void testLampMatch() {
+    // A lamp light keeps when a mark's reach (an ellipse, per-axis) covers it, and takes the nearest such mark; none covering drops it.
+    const float marks[3][2] = { { 0.0f, 0.0f }, { 0.5f, 0.5f }, { 0.52f, 0.5f } };
+    const float reach[6] = { 0.1f, 0.2f, 0.1f, 0.1f, 0.1f, 0.1f };
+    size_t best = 99;
+    const float onA[2] = { 0.05f, 0.15f };
+    CHECK(lampMatch(onA, marks, reach, 3, best) && best == 0);
+    const float wideX[2] = { 0.15f, 0.0f };
+    CHECK(!lampMatch(wideX, marks, reach, 3, best));
+    const float nearC[2] = { 0.53f, 0.5f };
+    CHECK(lampMatch(nearC, marks, reach, 3, best) && best == 2);
+    CHECK(!lampMatch(onA, marks, reach, 0, best));
 }
 
-static void testPickupLight() {
-    Candidate c;
-    CHECK(pickupLight("r_pow#s0.p0.0", 600.0f, 3.0f, c));
-    // The mission-select ring's warm yellow from the core; the frame around it is solid and casts the core's light into strut shadows.
-    CHECK(c.color[0] == 1.0f && c.color[1] == 0.8f && c.color[2] == 0.35f);
-    CHECK(near(c.radius, 600.0f, 1e-5f) && c.intensity == 3.0f && c.kind == KindLaser && !c.emissive);
-    CHECK(!pickupLight("r_pow_x#s0.p0.0", 600.0f, 3.0f, c));
-    CHECK(!pickupLight("ph_torp#s0.p0.0", 600.0f, 3.0f, c));
-    CHECK(!pickupLight(nullptr, 600.0f, 3.0f, c));
-    CHECK(!pickupLight("r_pow#s0.p0.0", 600.0f, 0.0f, c));
+static void testMeshKeyName() {
+    // pl_crafts/rmobil's 7-node "vwing" keys as rmobil; the 3-node V-wing and every other object keep their names.
+    CHECK(std::strcmp(meshKeyName("vwing", 7), "rmobil") == 0);
+    CHECK(std::strcmp(meshKeyName("vwing", 3), "vwing") == 0);
+    CHECK(std::strcmp(meshKeyName("xwing", 7), "xwing") == 0);
 }
 
-static void testLaserLight() {
-    Candidate c;
-    CHECK(laserLight("red_laser#s2.p0.0", 400.0f, c));
-    CHECK(c.kind == KindLaser && c.color[0] > c.color[1] && near(c.radius, 400.0f, 1e-5f));
-    CHECK(c.emissive);
-    CHECK(laserLight("green_laser#s0.p0.0", 400.0f, c));
-    CHECK(c.color[1] > c.color[0]);
-    CHECK(!laserLight("red_laser_dst#s0.p0.0", 400.0f, c));
-    CHECK(!laserLight("xwing#s0.p0.0", 400.0f, c));
-    CHECK(!laserLight(nullptr, 400.0f, c));
+static void testLaserBolt() {
+    CHECK(laserBolt("red_laser#s2.p0.0"));
+    CHECK(laserBolt("green_laser#s0.p0.0"));
+    CHECK(laserBolt("ion_laser#s0.p0.0"));
+    CHECK(!laserBolt("red_laser_dst#s0.p0.0"));
+    CHECK(!laserBolt("ph_torp#s0.p0.0"));
+    CHECK(!laserBolt("xwing#s0.p0.0"));
+    CHECK(!laserBolt(nullptr));
 }
 
 static void testSelectLights() {
@@ -1266,47 +1252,6 @@ static void testTmemAverage() {
     CHECK(!tmemAverage(tmem.data(), 0, 3, 0, 1, 4, 1, 0, rgb, cov));
 }
 
-static void testExhaustLights() {
-    Candidate out[4];
-    CHECK(exhaustLights("xwing#s0.p1.2", 2000.0f, 0.8f, out, 4) == 2);
-    CHECK((out[0].local[0] == -1093.0f) && (out[0].local[1] == -622.0f) && (out[0].local[2] < -4828.0f));
-    CHECK((out[1].local[0] == 1093.0f) && (out[1].local[1] == 622.0f));
-    CHECK((out[0].radius == 2000.0f) && (out[0].intensity == 0.8f) && (out[0].kind == KindMesh) && !out[0].emissive);
-    CHECK(exhaustLights("xwing#s0.p2.2", 2000.0f, 0.8f, out, 4) == 2);
-    CHECK(exhaustLights("ywing#s0.p0.3", 2000.0f, 0.8f, out, 4) == 2);
-    CHECK((out[0].local[0] == -2393.0f) && (out[1].local[0] == 2393.0f));
-    // A-wing: one nozzle ring per engine part.
-    CHECK(exhaustLights("awing#s0.p4.0", 2000.0f, 0.8f, out, 4) == 1);
-    CHECK((out[0].local[0] == 883.0f) && (out[0].local[1] == 107.0f));
-    CHECK(exhaustLights("awing#s0.p6.0", 2000.0f, 0.8f, out, 4) == 1);
-    CHECK(out[0].local[0] == -883.0f);
-    CHECK(exhaustLights("awing#s0.p0.2", 2000.0f, 0.8f, out, 4) == 0);
-    // Falcon: five lights along the rear exhaust strip (an arc of the hull).
-    Candidate strip[8];
-    CHECK(exhaustLights("falcon#s0.p0.0", 2000.0f, 0.8f, strip, 8) == 5);
-    CHECK((strip[0].local[0] == 0.0f) && (strip[0].local[2] < -7740.0f));
-    CHECK(exhaustLights("vwing#s0.p0.3", 2000.0f, 0.8f, strip, 8) == 2);
-    // Engine lights sit inside the nozzle: never shadowed by it.
-    CHECK(out[0].shadowStart >= out[0].radius);
-    // Other parts of the same craft and prefixes of the names carry no exhaust.
-    CHECK(exhaustLights("xwing#s0.p1.0", 2000.0f, 0.8f, out, 4) == 0);
-    CHECK(exhaustLights("xwing#s0.p1.20", 2000.0f, 0.8f, out, 4) == 0);
-    CHECK(exhaustLights(nullptr, 2000.0f, 0.8f, out, 4) == 0);
-    // Output capacity is respected.
-    CHECK(exhaustLights("xwing#s0.p1.2", 2000.0f, 0.8f, out, 1) == 1);
-}
-
-static void testExhaustKeyForPart() {
-    // Inline draws are identified by the part's node mesh (index 0); its exhaust entry is the glow card in the same part.
-    CHECK(std::strcmp(exhaustKeyForPart("xwing#s0.p1.0"), "xwing#s0.p1.2") == 0);
-    CHECK(std::strcmp(exhaustKeyForPart("xwing#s0.p2.0"), "xwing#s0.p2.2") == 0);
-    CHECK(std::strcmp(exhaustKeyForPart("ywing#s0.p0.0"), "ywing#s0.p0.3") == 0);
-    CHECK(std::strcmp(exhaustKeyForPart("awing#s0.p4.0"), "awing#s0.p4.0") == 0);
-    CHECK(exhaustKeyForPart("xwing#s0.p0.0") == nullptr);
-    CHECK(exhaustKeyForPart("xwing#s0.p10.0") == nullptr);
-    CHECK(exhaustKeyForPart(nullptr) == nullptr);
-}
-
 static void testTransformScale() {
     Mat4 m = identity();
     CHECK(near(transformScale(m), 1.0f, 1e-6f));
@@ -1319,10 +1264,6 @@ static void testTransformScale() {
     m.m[1][1] = 0.0125f;
     m.m[3][0] = 500.0f;
     CHECK(near(transformScale(m), 0.0125f, 1e-6f));
-    // Exhaust candidates carry model-unit radii.
-    Candidate out[2];
-    CHECK(exhaustLights("ywing#s0.p0.3", 4000.0f, 0.8f, out, 2) == 2);
-    CHECK(out[0].modelUnits);
 }
 
 static void testCosineHemisphereDir() {
@@ -1495,9 +1436,10 @@ int main() {
     testConsensusCameraDelta();
     testDedupeLights();
     testMenuHoloLight();
-    testMenuRingLights();
-    testLaserLight();
-    testTorpedoLight();
+    testFlickerGain();
+    testLampMatch();
+    testLaserBolt();
+    testMeshKeyName();
     testSelectLights();
     testFogFactor();
     testFogSteps();
@@ -1511,7 +1453,6 @@ int main() {
     testCutoutMipGradient();
     testCasterAfterDeny();
     testFogShaftsVisible();
-    testPickupLight();
     testFogSkyDepth();
     testInterleavedNoise();
     testLitInScatter();
@@ -1535,9 +1476,7 @@ int main() {
     testFrustumExitT();
     testRaySphereSpan();
     testTmemAverage();
-    testExhaustLights();
     testTransformScale();
-    testExhaustKeyForPart();
     testCosineHemisphereDir();
     testAoWeightAndSchlick();
     testRoughReflectDir();

@@ -455,6 +455,8 @@ extern "C" void rs64_lang_record_tables(uint8_t* rdram)
 
     for (uint32_t a = kRecordTable; a < kRecordsEnd; ++a) wb(rdram, a, 0);
 
+    // RT64 names effect sprites from the records (texel address +0x10, name +0x14).
+    rs64_snapshot_add_range(kRecordTable - 0x80000000u, kRecordTable - 0x80000000u + kRecords * 0x24);
     ww(rdram, kTable, kRecordTable);
     ww(rdram, kWords2, kRecordWords2);
     ww(rdram, kWords3, kRecordWords3);

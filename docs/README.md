@@ -10,7 +10,8 @@ Pick the section that matches what you want to do.
 - [modding-languages.md](guides/modding-languages.md): adding a language (text, subtitles and glyphs for any script) as a mod.
 - [multiplayer.md](guides/multiplayer.md): online co-op, from what players see to the session protocol.
 - [relay-server.md](guides/relay-server.md): running the co-op relay server (`rs64_relay`): download, settings, config file and console commands.
-- Browser tools, opened from disk or the project's site: the RS64 Explorer ([tools/web/rs64-explorer](../tools/web/rs64-explorer/index.html)) views models, levels, effects, audio and fonts and makes asset mods, new levels, level rules, opening crawls, menu mods and language glyph packs, and in a browser with WebMCP offers AI agents tools that read, search, move and capture the view, play cutscenes, and edit levels (terrain, objects, links, waves, names, mod level settings, rules and opening crawls), cutscenes (actors, cameras, animation keys and level objects made into actors) and menu mods through the page's undo history (with a read-only export plan) ([webmcp.js](../tools/web/rs64-explorer/webmcp.js)) (see [modding.md](guides/modding.md), [adding-menus-and-buttons.md](guides/adding-menus-and-buttons.md) and [modding-languages.md](guides/modding-languages.md)); the [save editor](../tools/web/save-editor/README.md) edits pilots, high scores, settings and unlocks in a save, also through WebMCP tools.
+- [RS64 Explorer](../tools/web/rs64-explorer/index.html): a browser tool (open from disk or the project's site) that views models, levels, effects, audio and fonts and makes asset mods, new levels, level rules, opening crawls, menu mods and language glyph packs. In a browser with WebMCP it also gives AI agents tools to read and capture the view, play cutscenes, and edit levels, cutscenes and menu mods ([webmcp.js](../tools/web/rs64-explorer/webmcp.js)).
+- [Save editor](../tools/web/save-editor/README.md): a browser tool that edits pilots, high scores, settings and unlocks in a save, also through WebMCP tools.
 
 ## I want to work on the engine
 
@@ -19,6 +20,7 @@ How-to:
 - [debugging-with-visual-studio.md](engine/debugging-with-visual-studio.md): stepping through the recompiled code.
 - [debug-trace-env-vars.md](engine/debug-trace-env-vars.md): every `ROGUESQ_*` trace, dump and A/B switch.
 - [modding-host-api.md](engine/modding-host-api.md): the host API for native mods.
+- [rt64-mcp.md](engine/rt64-mcp.md): an MCP server that lets an agent launch the game, freeze an exact frame and read RT64's inspector data.
 - [release-ci.md](engine/release-ci.md): the release pipeline and its runners.
 - [../patches/README.md](../patches/README.md): base-game C patches.
 

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <thread>
+#include <tuple>
 #include "os_compat.h"
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
@@ -110,6 +111,40 @@ static bool fake_controller_enabled() {
 // Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright
 //        up down left right (analog stick)  wait (neutral hold).
 // Used for headless front-end navigation + state calibration. Default OFF.
+// The MCP press tool's held input (src/lockstep/lockstep.cpp); false when none is active.
+extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y);
+
+// A controller input name (ROGUESQ_INPUT_SEQ and the MCP press tool): ORs its button into mask or sets the stick; false when unknown.
+extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, float* sy)
+{
+
+    static const std::pair<const char*, uint16_t> kButtons[] = {
+        { "start", N64_START_BUTTON }, { "a", N64_A_BUTTON }, { "b", N64_B_BUTTON }, { "z", N64_Z_TRIG }, { "l", N64_L_TRIG }, { "r", N64_R_TRIG },
+        { "dup", N64_U_JPAD }, { "ddown", N64_D_JPAD }, { "dleft", N64_L_JPAD }, { "dright", N64_R_JPAD },
+        { "cup", N64_U_CBUTTONS }, { "cdown", N64_D_CBUTTONS }, { "cleft", N64_L_CBUTTONS }, { "cright", N64_R_CBUTTONS },
+    };
+    static const std::tuple<const char*, float, float> kStick[] = { { "up", 0.f, 1.f }, { "down", 0.f, -1.f }, { "left", -1.f, 0.f }, { "right", 1.f, 0.f } };
+
+    for (const auto& b : kButtons) {
+        if (std::strcmp(name, b.first) == 0) {
+            *mask |= b.second;
+
+            return true;
+        }
+    }
+
+    for (const auto& st : kStick) {
+        if (std::strcmp(name, std::get<0>(st)) == 0) {
+            *sx = std::get<1>(st);
+            *sy = std::get<2>(st);
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
 struct InputStep { uint16_t mask; float sx, sy; uint32_t hold, after; };
 
 static bool scripted_input(uint16_t* buttons, float* x, float* y)
@@ -149,24 +184,7 @@ static bool scripted_input(uint16_t* buttons, float* x, float* y)
                 if (!hold.empty()) s.hold = (uint32_t)std::atoi(hold.c_str());
                 if (!after.empty()) s.after = (uint32_t)std::atoi(after.c_str());
 
-                if      (name == "start") s.mask = N64_START_BUTTON;
-                else if (name == "a")     s.mask = N64_A_BUTTON;
-                else if (name == "b")     s.mask = N64_B_BUTTON;
-                else if (name == "z")     s.mask = N64_Z_TRIG;
-                else if (name == "l")     s.mask = N64_L_TRIG;
-                else if (name == "r")     s.mask = N64_R_TRIG;
-                else if (name == "dup")   s.mask = N64_U_JPAD;
-                else if (name == "ddown") s.mask = N64_D_JPAD;
-                else if (name == "dleft") s.mask = N64_L_JPAD;
-                else if (name == "dright")s.mask = N64_R_JPAD;
-                else if (name == "cup")   s.mask = N64_U_CBUTTONS;
-                else if (name == "cdown") s.mask = N64_D_CBUTTONS;
-                else if (name == "cleft") s.mask = N64_L_CBUTTONS;
-                else if (name == "cright")s.mask = N64_R_CBUTTONS;
-                else if (name == "up")    s.sy = 1.0f;
-                else if (name == "down")  s.sy = -1.0f;
-                else if (name == "left")  s.sx = -1.0f;
-                else if (name == "right") s.sx = 1.0f;
+                rs64_input_name(name.c_str(), &s.mask, &s.sx, &s.sy);
 
                 // "wait" / unknown -> neutral hold
                 return s;
@@ -1758,6 +1776,14 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
         return true;
     }
 
+    if (rs64_mcp_consume_input(&nav_buttons, &nav_x, &nav_y)) {
+        *buttons = nav_buttons;
+        *x = nav_x;
+        *y = nav_y;
+
+        return true;
+    }
+
     if (fake_controller_enabled()) {
         uint16_t sb = 0;
         float sx = 0.f, sy = 0.f;
@@ -1787,6 +1813,14 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
         s_typing_keys[SDL_SCANCODE_BACKSPACE] = 0;
         st.keys = s_typing_keys;
         st.keys_len = n;
+    }
+
+    // While the F1 inspector is open (as for the mouse in menu_mouse_event) or an ImGui window takes the keyboard, keys drive no binding.
+    static const uint8_t s_no_keys[SDL_NUM_SCANCODES] = {};
+
+    if (rs64_rt64_inspector_open() || rs64::app::imgui_wants_keyboard()) {
+        st.keys = s_no_keys;
+        st.keys_len = SDL_NUM_SCANCODES;
     }
 
     st.pad = controller;

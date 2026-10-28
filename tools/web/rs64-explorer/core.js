@@ -1,7 +1,7 @@
 'use strict';
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
-const { parseShadowTextures, parseMusicCues, musicZoneSet, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim,
+const { parseShadowTextures, parseMusicCues, musicZoneSet, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, splineSetPoints, splinePoints, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 function elem(tag, props, ...children) {
@@ -216,6 +216,93 @@ addEventListener('keydown', (e) => {
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
+
+// Orthographic view: a 1-degree lens from far back (parallax well under 1%), so picking, both gizmos and orbiting keep working on the one
+// camera; toggling keeps the height seen at the target, and near/far follow the distance each frame (orthoClip).
+const ORTHO_FOV = 1, PERSP_FOV = 50;
+let orthoView = false;
+function setOrtho(on) {
+  if (on === orthoView) return;
+  const half = (fov) => Math.tan(THREE.MathUtils.degToRad(fov) / 2);
+  const dist = camera.position.distanceTo(controls.target), height = 2 * dist * half(camera.fov);
+  const fov = on ? ORTHO_FOV : PERSP_FOV;
+  camera.position.sub(controls.target).setLength(height / (2 * half(fov))).add(controls.target);
+  camera.fov = fov;
+  orthoView = on;
+  // Back to perspective: frameBox's clip span around the (much nearer) target.
+  if (!on) {
+    const d = camera.position.distanceTo(controls.target);
+    camera.near = d / 500;
+    camera.far = d * 50;
+  }
+  orthoClip();
+  camera.updateProjectionMatrix();
+  $('viewOrtho').classList.toggle('on', on);
+  $('viewOrtho').title = on ? 'Orthographic view: click for perspective (numpad 5)' : 'Perspective view: click for orthographic, which flattens the view for precise placement (numpad 5)';
+  setEditIcon($('viewOrtho'), on ? 'camOrtho' : 'camPersp');
+}
+function orthoClip() {
+  if (!orthoView) return;
+  const d = camera.position.distanceTo(controls.target);
+  camera.near = d * 0.5;
+  camera.far = d * 2;
+  camera.updateProjectionMatrix();
+}
+// Looks along an axis of what is shown (view space, +Y up; models face -Z after their Y-down flip), keeping the distance to the target.
+// Straight up / down is offset a hair so the orbit keeps its up axis.
+const VIEW_DIRS = { front: [0, 0, -1], back: [0, 0, 1], right: [1, 0, 0], left: [-1, 0, 0], top: [0, 1, 1e-4], bottom: [0, -1, 1e-4] };
+function snapView(name) {
+  const d = camera.position.distanceTo(controls.target);
+  camera.position.copy(controls.target).addScaledVector(new THREE.Vector3(...VIEW_DIRS[name]).normalize(), d);
+  controls.update();
+}
+// The view gizmo (left edge): the six axis ends as seen from the camera, nearer ones on top; clicking one looks from that side. Positive ends
+// are the labelled X / Y / Z bubbles, negative ones plain rings.
+const NAV_AXES = [['right', [1, 0, 0], 'X', '#e5534b'], ['top', [0, 1, 0], 'Y', '#57ab5a'], ['back', [0, 0, 1], 'Z', '#539bf5'],
+  ['left', [-1, 0, 0], '', '#e5534b'], ['bottom', [0, -1, 0], '', '#57ab5a'], ['front', [0, 0, -1], '', '#539bf5']];
+const NAV_RADIUS = 24, _navQ = new THREE.Quaternion(), _navV = new THREE.Vector3();
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const navEnds = NAV_AXES.map(([name, , label, colour]) => {
+  const g = document.createElementNS(SVG_NS, 'g');
+  g.innerHTML = (label ? `<line x1="0" y1="0" stroke="${colour}" stroke-width="2"/>` : '')
+    + `<circle r="${label ? 8 : 6}" fill="${label ? colour : 'var(--panel)'}" stroke="${colour}" stroke-width="2"/>`
+    + (label ? `<text text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="700" fill="#fff">${label}</text>` : '');
+  g.style.cursor = 'pointer';
+  g.append(Object.assign(document.createElementNS(SVG_NS, 'title'), { textContent: `View from ${name} (${{ front: 'numpad 1', back: 'Ctrl+numpad 1', right: 'numpad 3', left: 'Ctrl+numpad 3', top: 'numpad 7', bottom: 'Ctrl+numpad 7' }[name]})` }));
+  g.addEventListener('click', () => root && !cut && snapView(name));
+  return g;
+});
+$('viewAxes').append(...navEnds);
+function updateViewNav() {
+  const nav = $('viewNav');
+  nav.hidden = !root || !!cut || mode === 'audio' || mode === 'fonts' || mode === 'menus';
+  if (nav.hidden) return;
+  _navQ.copy(camera.quaternion).invert();
+  const placed = NAV_AXES.map(([, dir], i) => {
+    _navV.fromArray(dir).applyQuaternion(_navQ);
+    return { i, x: _navV.x * NAV_RADIUS, y: -_navV.y * NAV_RADIUS, z: _navV.z };
+  });
+  for (const p of placed) {
+    const g = navEnds[p.i];
+    g.setAttribute('transform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`);
+    const line = g.querySelector('line');
+    if (line) {
+      line.setAttribute('x2', (-p.x).toFixed(1));
+      line.setAttribute('y2', (-p.y).toFixed(1));
+    }
+  }
+  // Farther ends (more negative view z) first.
+  placed.sort((a, b) => a.z - b.z).forEach((p) => $('viewAxes').append(navEnds[p.i]));
+}
+// Blender's numpad: 1 front, 3 right, 7 top (Ctrl: the opposite side), 5 toggles orthographic.
+addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || !root || cut) return;
+  const views = { Numpad1: ['front', 'back'], Numpad3: ['right', 'left'], Numpad7: ['top', 'bottom'] };
+  if (views[e.code]) snapView(views[e.code][e.ctrlKey ? 1 : 0]);
+  else if (e.code === 'Numpad5') setOrtho(!orthoView);
+  else return;
+  e.preventDefault();
+});
 const fwd = new THREE.Vector3(), right = new THREE.Vector3(), move = new THREE.Vector3();
 // Unity-style boost: Shift starts at 3x and keeps accelerating while you keep moving (up to 40x); releasing Shift or stopping resets it.
 let boost = 1;
@@ -299,6 +386,8 @@ ready.then(() => renderer.setAnimationLoop(() => {
   applyAnim(dt);
   applyExhaust(dt);
   applyEffect(dt);
+  lightsFxTick();
+  lightsPreviewTick();
   // About 0.1 rad/s per slider step, roughly OrbitControls' old autoRotate pace.
   if (spin && !selectedLevel && root?.name === 'spin') root.rotation.y += spin * 0.1 * dt;
   controls.update();
@@ -309,6 +398,10 @@ ready.then(() => renderer.setAnimationLoop(() => {
   updateFog();
   // The dome rim sits 38 units above its origin (x2 scale); drop it so the rim meets the horizon.
   if (sky && sky.parent) sky.position.copy(sky.parent.worldToLocal(skyPos.copy(camera.position))).y += 76;
+  // Cutscenes drive the lens themselves.
+  if (orthoView && cut) setOrtho(false);
+  orthoClip();
+  updateViewNav();
   renderer.render(scene, camera);
 }));
 
@@ -392,6 +485,7 @@ function threeMaterial(info, textured, wire) {
     // Glass stores ~60% alpha but the game draws it nearly see-through; 25% is tuned by eye, not taken from the game's blend setup.
     if (env) mat.opacity = 0.25;
     else if (info.valpha) mat.opacityNode = new THREE.AttributeNode('valpha', 'float');
+    if (!env && !blend) rtLit(mat);
     matPool.set(k, mat);
   }
   return matPool.get(k);
@@ -483,18 +577,20 @@ function buildObject(obj, model, key, counts) {
   const group = new THREE.Group();
   group.name = obj.name;
   group.userData.hobObject = true;
-  const lod = obj.lods[Math.min(lodLevel(), obj.lods.length - 1)] || [];
+  const lodIndex = Math.min(lodLevel(), obj.lods.length - 1), lod = obj.lods[lodIndex] || [];
+  group.userData.lodSlot = obj.lodSlots?.[lodIndex] ?? 0;
   counts.lods = Math.max(counts.lods || 0, obj.lods.length);
   const nodes = obj.nodes.map((n, i) => {
     const g = new THREE.Group();
     g.matrixAutoUpdate = false;
     poseNode(g, n);
-    for (const p of lod[i] || []) {
+    (lod[i] || []).forEach((p, j) => {
       const part = partGeometry(p, model, key);
       const mesh = new THREE.Mesh(part.geometry, part.infos.map((info) => threeMaterial(info, $('optTex').checked, $('optWire').checked)));
       mesh.userData.infos = part.infos;
       mesh.userData.shared = true;
-      mesh.userData.hob = { part: p, vidx: part.vidx };
+      // node and j (its place in the node's part list) name it in the game's mesh registry (hobMeshKey), for light presets.
+      mesh.userData.hob = { part: p, vidx: part.vidx, node: i, j };
       mesh.name = p.name;
       const envK = MEDAL_ENV[key]?.[i];
       if (envK && p.normals) {
@@ -510,7 +606,7 @@ function buildObject(obj, model, key, counts) {
       counts.verts += part.verts;
       counts.parts++;
       g.add(mesh);
-    }
+    });
     return g;
   });
   obj.nodes.forEach((n, i) => (n.parent >= 0 ? nodes[n.parent] : group).add(nodes[i]));
@@ -1090,7 +1186,8 @@ function inspect(hit) {
     const tx = Math.floor(p.x / 2), ty = Math.floor(p.z / 2);
     const ti = hmp.map[ty * hmp.w + tx], tile = hmp.tiles[ti];
     if (!tile) return null;
-    return { title: `Terrain tile ${tx}, ${ty}`, rows: [['Tile record', ti], ['Texmap id', tile.tex], ['Bank texture', texIds[tile.tex] ?? '-'],
+    const light = lightsLevel && [['Add light here', 'A ray-traced light just above this spot, for this level (a light preset in the mod\'s roguesq_lights.json)', () => lightsAddLevel(hit)]];
+    return { title: `Terrain tile ${tx}, ${ty}`, actions: light || [], rows: [['Tile record', ti], ['Texmap id', tile.tex], ['Bank texture', texIds[tile.tex] ?? '-'],
       ['Flags', hex(tile.flags)], ['Height range', `${Math.min(...tile.hts)} .. ${Math.max(...tile.hts)} (x${+hmp.heightScale.toFixed(3)})`]] };
   }
   const info = o.userData.infos?.[hit.face?.materialIndex ?? 0];
@@ -1101,7 +1198,8 @@ function inspect(hit) {
   while (placed && !placed.userData.source) placed = placed.parent;
   const t = info.tex;
   const editId = placed?.userData.source?.id ?? (selectedLevel ? null : selected);
-  return { title: `${obj.name || 'model'} / ${o.name || 'part'}`, open: placed?.userData.source, edit: t && editId && { id: editId, tex: t.name }, rows: [['Material', `#${info.index} ${esc(info.matName)}`],
+  const light = !selectedLevel && o.userData.hob && [['Add light here', 'A ray-traced light at this point that rides on this part in game (a light preset for the part, in the mod\'s roguesq_lights.json)', () => lightsAdd(hit)]];
+  return { title: `${obj.name || 'model'} / ${o.name || 'part'}`, open: placed?.userData.source, edit: t && editId && { id: editId, tex: t.name }, actions: light || [], rows: [['Material', `#${info.index} ${esc(info.matName)}`],
     ['Texture', t ? `${esc(t.name)} ${t.w}x${t.h}` : 'none (vertex colour only)'], t && ['Format', `${TEX_TYPES[t.type] ?? 'type ' + t.type}, flags ${hex(t.flags)}`],
     t && ['Wrap', info.map?.wrapS === THREE.ClampToEdgeWrapping ? 'clamp (UVs stay in 0..1)' : 'repeat'],
     info.emissive && info.valpha && !info.blend && t && ['Shading', 'sphere-mapped reflection (glass)'],
@@ -1185,7 +1283,7 @@ const downAt = {};
 canvas.addEventListener('pointerdown', (e) => (downAt[e.button] = [e.clientX, e.clientY]));
 const wasClick = (e, button) => downAt[button] && Math.hypot(e.clientX - downAt[button][0], e.clientY - downAt[button][1]) <= 4;
 canvas.addEventListener('pointerup', (e) => {
-  if (e.button !== 0 || !wasClick(e, 0) || sculptActive() || editClick(e) || cutPickActor(e)) return;
+  if (e.button !== 0 || !wasClick(e, 0) || sculptActive() || lightsClick(e) || editClick(e) || cutPickActor(e)) return;
   const hit = pick(e, visibleMarkers());
   const r = canvas.getBoundingClientRect();
   showInfo(hit && inspect(hit), e.clientX - r.left + 12, e.clientY - r.top + 12);

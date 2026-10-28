@@ -80,6 +80,28 @@ void rs64_renderdoc_trigger(uint32_t frames) {
     fprintf(stderr, "[renderdoc] capturing %u presents\n", frames);
 }
 
+std::string rs64_renderdoc_last_capture()
+{
+
+    const uint32_t count = (g_rdoc != nullptr) ? g_rdoc->GetNumCaptures() : 0;
+    uint32_t length = 0;
+
+    if (count == 0)
+    {
+        return {};
+    }
+
+    g_rdoc->GetCapture(count - 1, nullptr, &length, nullptr);
+    std::string file(length, '\0');
+
+    if (length > 0) {
+        g_rdoc->GetCapture(count - 1, file.data(), &length, nullptr);
+        file.resize(std::strlen(file.c_str()));
+    }
+
+    return file;
+}
+
 void rs64_renderdoc_poll()
 {
 
@@ -110,16 +132,7 @@ void rs64_renderdoc_poll()
     }
 
     s_seen = count;
-    uint32_t length = 0;
-    g_rdoc->GetCapture(count - 1, nullptr, &length, nullptr);
-    std::string file(length, '\0');
-
-    if (length > 0) {
-        g_rdoc->GetCapture(count - 1, file.data(), &length, nullptr);
-        file.resize(std::strlen(file.c_str()));
-    }
-
-    rs64::app::notify("renderdoc", "RenderDoc capture saved: " + file, 8.0f);
+    rs64::app::notify("renderdoc", "RenderDoc capture saved: " + rs64_renderdoc_last_capture(), 8.0f);
 }
 
 #else
@@ -128,5 +141,6 @@ void rs64_renderdoc_init() {}
 bool rs64_renderdoc_active() { return false; }
 void rs64_renderdoc_trigger(uint32_t) {}
 void rs64_renderdoc_poll() {}
+std::string rs64_renderdoc_last_capture() { return {}; }
 
 #endif
