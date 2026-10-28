@@ -39,7 +39,7 @@ tools/
   ├── re/                               Reverse-engineering helpers: rz/, rename/, render/, MORT decoders, one-off disasm/decode probes
   ├── release/                          Versioning, release bundling, packaging and cross-builds (linux/, macos/, android/)
   ├── mods/, state/, style/, d3d11/     Build inputs read by CMake/CI (mod build scripts, state model, style baseline, D3D11 shader combos)
-  └── web/                              Browser tools (rs64-explorer/, its data generator, save-editor/), served by GitHub Pages straight from main (the landing page is the root index.html; .nojekyll turns off Jekyll)
+  └── web/                              Browser tools (rs64-explorer/, its data generator, save-editor/), deployed to GitHub Pages by .github/workflows/pages.yml on pushes to main that touch the site (the landing page is the root index.html)
 build/                                  CMake out-of-source build dir
 ```
 

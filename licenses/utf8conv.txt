@@ -1,0 +1,3 @@
+utf8conv.h -- Copyright (C) by Giovanni Dicanio
+
+The source ships with no license text beyond this copyright line.

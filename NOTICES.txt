@@ -1,0 +1,131 @@
+Rogue Squadron 64 Recompiled - Third-Party Notices
+===================================================
+
+Rogue Squadron 64 Recompiled is licensed under the GNU General Public License v3 (LICENSE.txt).
+It includes the third-party software listed below. Each component remains under its own license;
+its full license text is in the licenses/ folder under the file named after it.
+
+This project contains no game code or assets. Star Wars: Rogue Squadron is (c) Lucasfilm Ltd.
+and Factor 5; the game ROM must be supplied by the user.
+
+
+Recompiler runtime
+------------------
+
+N64ModernRuntime (librecomp, ultramodern)   GNU GPL v3 (LICENSE.txt)
+  https://github.com/N64Recomp/N64ModernRuntime
+N64Recomp                                    MIT                     licenses/N64Recomp.txt
+  https://github.com/N64Recomp/N64Recomp     Copyright (c) 2024 Wiseguy
+ELFIO                                        MIT                     licenses/ELFIO.txt
+  https://github.com/serge1/ELFIO            Copyright (C) 2001-present Serge Lamikhov-Center
+{fmt}                                        MIT                     licenses/fmt.txt
+  https://github.com/fmtlib/fmt              Copyright (c) 2012-present Victor Zverovich and {fmt} contributors
+rabbitizer                                   MIT                     licenses/rabbitizer.txt
+  https://github.com/Decompollaborate/rabbitizer  Copyright (c) 2022 Decompollaborate
+SLJIT                                        BSD 2-Clause            licenses/sljit.txt
+  https://github.com/zherczeg/sljit          Copyright Zoltan Herczeg
+toml++                                       MIT                     licenses/tomlplusplus.txt
+  https://github.com/marzer/tomlplusplus     Copyright (c) Mark Gillard
+miniz                                        MIT                     licenses/miniz.txt
+  https://github.com/richgel999/miniz        Copyright 2013-2014 RAD Game Tools and Valve Software; 2010-2014 Rich Geldreich and Tenacious Software LLC
+o1heap                                       MIT                     licenses/o1heap.txt
+  https://github.com/pavel-kirienko/o1heap   Copyright (c) 2020 Pavel Kirienko
+xxHash                                       BSD 2-Clause            licenses/xxHash.txt
+  https://github.com/Cyan4973/xxHash         Copyright (c) 2012-2021 Yann Collet
+moodycamel::ConcurrentQueue                  Simplified BSD; zlib    licenses/concurrentqueue.txt
+  https://github.com/cameron314/concurrentqueue  Copyright (c) 2013-2020 Cameron Desrochers; (c) 2015 Jeff Preshing
+JSON for Modern C++                          MIT                     licenses/nlohmann-json.txt
+  https://github.com/nlohmann/json           Copyright (c) 2013-2025 Niels Lohmann
+sse2neon                                     MIT                     licenses/sse2neon.txt
+  https://github.com/DLTcollab/sse2neon      Copyright (c) 2015-2024 SSE2NEON Contributors
+
+
+Renderer
+--------
+
+RT64                                         MIT                     licenses/RT64.txt
+  https://github.com/rt64/rt64               Copyright (c) 2024 RT64 Contributors
+plume                                        MIT                     licenses/plume.txt
+  https://github.com/renderbag/plume         Copyright (c) 2024 renderbag and contributors
+re-spirv                                     MIT                     licenses/re-spirv.txt
+  https://github.com/rt64/re-spirv           Copyright (c) 2024 renderbag and contributors
+SPIRV-Headers                                MIT (Khronos)           licenses/SPIRV-Headers.txt
+  https://github.com/KhronosGroup/SPIRV-Headers  Copyright (c) 2015-2024 The Khronos Group Inc.
+SPIRV-Cross                                  Apache 2.0              licenses/SPIRV-Cross.txt
+  https://github.com/KhronosGroup/SPIRV-Cross    Copyright The Khronos Group Inc. and contributors
+Vulkan-Headers                               Apache 2.0 / MIT        licenses/Vulkan-Headers.txt
+  https://github.com/KhronosGroup/Vulkan-Headers Copyright 2015-2023 The Khronos Group Inc.
+volk                                         MIT                     licenses/volk.txt
+  https://github.com/zeux/volk               Copyright (c) 2018-2025 Arseny Kapoulkine
+Vulkan Memory Allocator                      MIT                     licenses/VulkanMemoryAllocator.txt
+  https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator  Copyright (c) 2017-2025 Advanced Micro Devices, Inc.
+D3D12 Memory Allocator                       MIT                     licenses/D3D12MemoryAllocator.txt
+  https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator   Copyright (c) 2019-2025 Advanced Micro Devices, Inc.
+metal-cpp (macOS)                            Apache 2.0              licenses/metal-cpp.txt
+  https://developer.apple.com/metal/cpp/     Copyright Apple Inc.
+DirectX Shader Compiler (dxcompiler.dll, dxil.dll; Windows)
+  https://github.com/microsoft/DirectXShaderCompiler  Copyright Microsoft Corporation
+                                             LLVM/NCSA, MIT, Microsoft licenses/DirectXShaderCompiler-LLVM.txt, -MIT.txt, -MS.txt
+Dear ImGui                                   MIT                     licenses/imgui.txt
+  https://github.com/ocornut/imgui           Copyright (c) 2014-2024 Omar Cornut
+ImPlot                                       MIT                     licenses/implot.txt
+  https://github.com/epezent/implot          Copyright (c) 2020 Evan Pezent
+Im3d                                         MIT                     licenses/im3d.txt
+  https://github.com/john-chapman/im3d       Copyright (c) 2016-2022 John Chapman
+HLSL++                                       MIT                     licenses/hlslpp.txt
+  https://github.com/redorav/hlslpp          Copyright (c) 2017-2024 Emilio Lopez
+ddspp                                        MIT                     licenses/ddspp.txt
+  https://github.com/redorav/ddspp           Copyright (c) 2018-2023 Emilio Lopez
+stb                                          MIT or Public Domain    licenses/stb.txt
+  https://github.com/nothings/stb            Copyright (c) 2017 Sean Barrett
+Native File Dialog Extended                  zlib                    licenses/nativefiledialog-extended.txt
+  https://github.com/btzy/nativefiledialog-extended
+Zstandard                                    BSD 3-Clause            licenses/zstd.txt
+  https://github.com/facebook/zstd           Copyright (c) Meta Platforms, Inc. and affiliates
+plainargs                                    Public Domain           licenses/plainargs.txt
+utf8conv                                     (copyright notice only) licenses/utf8conv.txt
+                                             Copyright (C) Giovanni Dicanio
+mupen64plus-core (plugin API headers)        GNU GPL v2              licenses/mupen64plus-core.txt
+  https://github.com/mupen64plus/mupen64plus-core
+
+
+Platform libraries
+------------------
+
+SDL2                                         zlib                    licenses/SDL2.txt
+  https://www.libsdl.org/                    Copyright (C) 1997-2025 Sam Lantinga
+RenderDoc in-application API header          MIT                     licenses/renderdoc.txt
+  https://github.com/baldurk/renderdoc       Copyright (c) 2015-2026 Baldur Karlsson
+
+
+Online co-op mod and relay server
+---------------------------------
+
+ENet6                                        MIT                     licenses/enet6.txt
+  https://github.com/SirLynix/enet6          Copyright (c) 2002-2024 Lee Salzman
+MiniUPnP (miniupnpc)                         BSD 3-Clause            licenses/miniupnp.txt
+  https://github.com/miniupnp/miniupnp       Copyright (c) 2005-2025 Thomas Bernard
+Steamworks SDK (steam-relay mod)             Steamworks SDK Access Agreement
+  https://partner.steamgames.com/            Copyright Valve Corporation
+
+
+Fonts (Japanese language mod; license texts in mods/lang-ja/lang/glyphs/)
+-------------------------------------------------------------------------
+
+M PLUS 1p                                    SIL Open Font License 1.1
+                                             Copyright 2016 The M+ Project Authors
+PixelMplus                                   M+ FONT LICENSE
+                                             Copyright (C) 2002-2013 M+ FONTS PROJECT, itouhiro
+Misaki Gothic 2nd                            Misaki font license (free software)
+                                             Copyright (C) 2002-2021 Num Kadoma
+
+
+Web tools (tools/web; not part of the game packages)
+----------------------------------------------------
+
+three.js (loaded from jsDelivr)              MIT
+  https://github.com/mrdoob/three.js         Copyright (c) 2010-2024 three.js authors
+Inter                                        SIL Open Font License 1.1   tools/web/fonts/OFL-Inter.txt
+  https://github.com/rsms/inter              Copyright 2020 The Inter Project Authors
+Rajdhani                                     SIL Open Font License 1.1   tools/web/fonts/OFL-Rajdhani.txt
+                                             Copyright (c) 2014 Indian Type Foundry

@@ -53,6 +53,8 @@ function Build-Windows([string]$arch, [string]$buildDir, [string]$cmakeArch) {
     Copy-Item -Path $shaderCache -Destination "$stage\d3d11_shader_cache" -Recurse
     Copy-Item ci\release-readme.txt "$stage\README.txt"
     Copy-Item LICENSE "$stage\LICENSE.txt"
+    Copy-Item NOTICES.txt "$stage\NOTICES.txt"
+    Copy-Item -Recurse licenses "$stage\licenses"
     $zip = Join-Path $out "RogueSquadron64Recomp-windows-$arch-$Version.zip"
     Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
     Remove-Item -Recurse -Force $stage
