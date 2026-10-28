@@ -1,0 +1,58 @@
+{
+    "folders": [
+        { "name": "RogueSquadron64Recomp", "path": "." },
+        { "name": "rogue_squadron64 (decomp)", "path": "../rogue_squadron64" }
+    ],
+    "settings": {
+        "java.import.gradle.enabled": false,
+        "java.import.maven.enabled": false,
+        "java.gradle.buildServer.enabled": "off",
+        "java.import.exclusions": [
+            "**/.cxx/**",
+            "**/build/**",
+            "**/_deps/**",
+            "**/node_modules/**"
+        ],
+        "gradle.nestedProjects": ["android"],
+        "C_Cpp.intelliSenseEngine": "disabled",
+        "clangd.detectExtensionConflicts": false,
+        "dotnet.defaultSolution": "disable",
+        "dotnet.automaticallyCreateSolutionInWorkspace": false,
+        "dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "none",
+        "dotnet.backgroundAnalysis.compilerDiagnosticsScope": "none",
+        "omnisharp.autoStart": false,
+        "cmake.configureOnOpen": false
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Game (Debug)",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": "${workspaceFolder:RogueSquadron64Recomp}/build/Debug/RogueSquadron64Recomp.exe",
+                "cwd": "${workspaceFolder:RogueSquadron64Recomp}/build/Debug",
+                "args": [],
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Game (Debug, muted)",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": "${workspaceFolder:RogueSquadron64Recomp}/build/Debug/RogueSquadron64Recomp.exe",
+                "cwd": "${workspaceFolder:RogueSquadron64Recomp}/build/Debug",
+                "args": ["--mute"],
+                "console": "integratedTerminal"
+            },
+            {
+                "name": "Game (Release)",
+                "type": "cppvsdbg",
+                "request": "launch",
+                "program": "${workspaceFolder:RogueSquadron64Recomp}/build/Release/RogueSquadron64Recomp.exe",
+                "cwd": "${workspaceFolder:RogueSquadron64Recomp}/build/Release",
+                "args": [],
+                "console": "integratedTerminal"
+            }
+        ]
+    }
+}

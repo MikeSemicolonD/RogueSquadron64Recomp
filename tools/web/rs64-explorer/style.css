@@ -33,6 +33,27 @@ aside > * { min-width: 279px; }
 /* Edit panel and stats share the top-left corner; the stats sit right of the panel whatever its width. */
 #topLeft { position: absolute; top: 10px; left: 24px; display: flex; gap: 10px; align-items: flex-start; max-height: calc(100% - 20px); pointer-events: none; }
 #topLeft > .panel { position: static; }
+/* Top right in the model view; in the level view left of the marker legend (as #rulesPanel). */
+/* View gizmo + orthographic toggle, a vertical strip at the view's left edge. */
+#viewNav { left: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px; z-index: 4; }
+#viewNav[hidden] { display: none; }
+#viewNav svg { display: block; overflow: visible; }
+#viewNav button[data-icon] { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 28px; padding: 0; }
+#lightPanel { top: 10px; right: 10px; width: 270px; max-height: calc(100% - 20px); overflow: hidden auto; z-index: 5; display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; align-content: start; }
+#lightPanel input { min-width: 0; }
+#lightPanel .lightRow small { overflow-wrap: anywhere; }
+#lightPanel.inLevel { right: 270px; }
+#lightPanel[hidden] { display: none; }
+#lightPanel .editHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+#lightPanel label { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+#lightPanel input[type=number], #lightPanel input:not([type]) { width: 120px; }
+#lightPanel .lightRow { display: grid; margin-top: 4px; }
+#lightPanel .lightHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+#lightPanel .lightHead label { justify-content: flex-start; min-width: 0; }
+#lightPanel .lightHead b { overflow-wrap: anywhere; }
+#lightPanel .lightTools { display: flex; gap: 4px; }
+#lightPanel .lightRow small { color: var(--dim); }
+#lightPanel button.on { outline: 1px solid var(--accent); }
 #editPanel { width: 260px; max-height: calc(100vh - 20px); overflow: auto; display: grid; gap: 6px; pointer-events: auto; }
 #editPanel:not(.open) { width: auto; }
 #editPanel .editHead { display: flex; justify-content: space-between; gap: 6px; }
@@ -168,6 +189,9 @@ input[type=range]:focus-visible { outline: none; }
 input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
 input[type=range]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); }
 button.on, button.on:hover { border-color: var(--accent); color: var(--accent); }
+/* A file input's own button (the ROM picker) matches the explorer's buttons instead of the browser's grey default. */
+input[type=file]::file-selector-button { font: inherit; color: var(--text); background: var(--control); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; margin-right: 8px; cursor: pointer; transition: border-color .15s, background-color .15s; }
+input[type=file]::file-selector-button:hover { border-color: var(--control-hover-line); background-color: var(--control-hover); }
 .filterbox { position: relative; padding: 0 12px; }
 #filter { width: 100%; margin: 8px 0 0; padding-right: 26px; }
 #filterClear { position: absolute; right: 16px; top: 50%; transform: translateY(-50%); margin-top: 4px; border: 0; background: none; color: var(--dim); font-size: 16px; line-height: 1; padding: 2px 4px; cursor: pointer; }

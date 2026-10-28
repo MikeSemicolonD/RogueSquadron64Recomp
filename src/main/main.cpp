@@ -45,7 +45,10 @@
 #include "video/rt64_render_context.h"  // recomp::create_render_context
 #include "video/video_config.h"
 #include "main/renderdoc_capture.h"
+#include "main/mcp_bridge.h"
 #include <mutex>
+
+extern "C" void rs64_mcp_register_pause_methods();
 
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
@@ -672,6 +675,13 @@ int main(int argc, char* argv[])
 
     rs64_renderdoc_init();
 
+    const int mcp_port = recomp::dbg::env_int("ROGUESQ_MCP_PORT", 0);
+
+    if (mcp_port > 0 && mcp_port < 65536) {
+        rs64_mcp_bridge_start((uint16_t)mcp_port);
+        rs64_mcp_register_pause_methods();
+    }
+
     // Input bindings: load roguesq_input.json next to the exe, or write the
     // defaults as an editable template if it's absent. ROGUESQ_INPUT_RESET=1
     // overwrites it with defaults.
@@ -949,6 +959,7 @@ int main(int argc, char* argv[])
 
                 if (recomp::is_rom_valid(game_id)) {
                     recomp::start_game(game_id);
+                    rs64_queue_light_presets();
                 }
             },
         },

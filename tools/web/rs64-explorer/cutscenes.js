@@ -186,6 +186,7 @@ async function buildCutFx(data, world, nodes, impacts = []) {
   group.rotation.x = Math.PI;
   world.add(group);
   const kit = await fxKit(group, (x, z) => -levelHeight(x, -z));
+  await lightsCutFx([kit.spr, kit.fire, kit.ion2, kit.smoke, kit.wtrAnm, kit.ionx, kit.fireHi].flat().map((f) => f.key), group);
   const actorAt = (i, t) => {
     poseCutscene(t / data.length);
     world.updateMatrixWorld(true);

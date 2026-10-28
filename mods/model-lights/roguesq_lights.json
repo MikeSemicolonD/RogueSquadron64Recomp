@@ -1,0 +1,4810 @@
+{
+    "presets": [
+        {
+            "name": "laser_red",
+            "enabled": true,
+            "mesh": "red_laser",
+            "cameraUnits": true,
+            "lights": [
+                {
+                    "name": "bolt",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "diffuseColor": [
+                            1,
+                            0.15,
+                            0.1
+                        ],
+                        "attenuationRadius": 250,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "laser_green",
+            "enabled": true,
+            "mesh": "green_laser",
+            "cameraUnits": true,
+            "lights": [
+                {
+                    "name": "bolt",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.2,
+                            1,
+                            0.25
+                        ],
+                        "attenuationRadius": 250,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "laser_ion",
+            "enabled": true,
+            "mesh": "ion_laser",
+            "cameraUnits": true,
+            "lights": [
+                {
+                    "name": "bolt",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.35,
+                            0.55,
+                            1
+                        ],
+                        "attenuationRadius": 250,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "proton_torpedo",
+            "enabled": true,
+            "mesh": "ph_torp",
+            "cameraUnits": true,
+            "lights": [
+                {
+                    "name": "glow",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "diffuseColor": [
+                            1,
+                            0.4,
+                            0.2
+                        ],
+                        "attenuationRadius": 750,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "upgrade_pickup",
+            "enabled": true,
+            "mesh": "r_pow",
+            "cameraUnits": true,
+            "lights": [
+                {
+                    "name": "core",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            0,
+                            0
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 1500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fx_fire",
+            "enabled": true,
+            "sprite": "spr:explo_tex0|spr:explo_tex1|spr:explo_tex2|spr:explo_tex3|spr:explo_tex4|spr:explo_tex5|spr:explo_tex6|spr:explo_tex7|spr:explo_tex8|spr:explo_tex9|spr:explo_tex10|spr:explo_tex11|spr:explo_tex12|spr:explo_tex13|spr:explo_tex14|spr:explo_tex15|spr:explo_tex16|spr:explo_tex17|spr:explo_tex18|spr:explo_tex19|spr:explh_tex0|spr:explh_tex1|spr:explh_tex2|spr:explh_tex3|spr:explh_tex4|spr:explh_tex5|spr:explh_tex6|spr:explh_tex7|spr:explh_tex8|spr:explh_tex9|spr:explh_tex10|spr:explh_tex11|spr:explh_tex12|spr:explh_tex13|spr:explh_tex14|spr:explh_tex15|spr:explh_tex16|spr:explh_tex17|spr:explh_tex18",
+            "lights": [
+                {
+                    "name": "light",
+                    "enabled": true,
+                    "description": {
+                        "diffuseColor": [
+                            1,
+                            0.55,
+                            0.22
+                        ],
+                        "attenuationRadius": 3,
+                        "attenuationExponent": 2,
+                        "flickerIntensity": 0.25
+                    }
+                }
+            ]
+        },
+        {
+            "name": "fx_ion",
+            "enabled": true,
+            "sprite": "spr:iexplo_tx0|spr:iexplo_tx1|spr:iexplo_tx2|spr:iexplo_tx3|spr:iexplo_tx4|spr:iexplo_tx5|spr:iexpl2_tx0|spr:iexpl2_tx1|spr:iexpl2_tx2|spr:iexpl2_tx3|spr:iexpl2_tx4|spr:iexpl2_tx5|spr:iexpl2_tx6|spr:iexpl2_tx7",
+            "lights": [
+                {
+                    "name": "light",
+                    "enabled": true,
+                    "description": {
+                        "diffuseColor": [
+                            0.45,
+                            0.65,
+                            1
+                        ],
+                        "attenuationRadius": 3,
+                        "attenuationExponent": 2,
+                        "flickerIntensity": 0.15
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_xwing_foil_1",
+            "enabled": true,
+            "mesh": "xwing#s0.p1|wmxwng#s0.p1|wmxwng#s0.p2|wmxwng#s0.p3",
+            "lights": [
+                {
+                    "name": "nozzle_a",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1093,
+                            -622,
+                            -5028
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "nozzle_b",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1093,
+                            622,
+                            -5028
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_xwing_foil_2",
+            "enabled": true,
+            "mesh": "xwing#s0.p2|wmxwng#s0.p4|wmxwng#s0.p5|wmxwng#s0.p6",
+            "lights": [
+                {
+                    "name": "nozzle_a",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1093,
+                            622,
+                            -5028
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "nozzle_b",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1093,
+                            -622,
+                            -5028
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_ywing",
+            "enabled": true,
+            "mesh": "ywing#s0.p0|wmywng#s0.p0|wmywng#s0.p2",
+            "lights": [
+                {
+                    "name": "nozzle_a",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2393,
+                            62,
+                            -3297
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "nozzle_b",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2393,
+                            62,
+                            -3297
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_vwing",
+            "enabled": true,
+            "mesh": "vwing#s0.p0|wmvwng#s0.p0|wmvwng#s0.p1|wmvwng#s0.p4",
+            "lights": [
+                {
+                    "name": "nozzle_a",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -808,
+                            -46,
+                            -2162
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "nozzle_b",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            808,
+                            -46,
+                            -2162
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_awing_right",
+            "enabled": true,
+            "mesh": "awing#s0.p4|wmawng#s0.p3",
+            "lights": [
+                {
+                    "name": "nozzle",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            883,
+                            107,
+                            -3070
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.48,
+                            0.28
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_awing_left",
+            "enabled": true,
+            "mesh": "awing#s0.p6|wmawng#s0.p5",
+            "lights": [
+                {
+                    "name": "nozzle",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -883,
+                            107,
+                            -3070
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.48,
+                            0.28
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "exhaust_falcon",
+            "enabled": true,
+            "mesh": "falcon#s0.p0|wmfalc#s0.p0|wmfalc#s0.p1|wmfalc#s0.p6",
+            "lights": [
+                {
+                    "name": "strip_center",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            12,
+                            -7940
+                        ],
+                        "diffuseColor": [
+                            0.48,
+                            0.6,
+                            0.8
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "strip_left_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1500,
+                            12,
+                            -7793
+                        ],
+                        "diffuseColor": [
+                            0.48,
+                            0.6,
+                            0.8
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "strip_right_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1500,
+                            12,
+                            -7793
+                        ],
+                        "diffuseColor": [
+                            0.48,
+                            0.6,
+                            0.8
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "strip_left_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3000,
+                            12,
+                            -7335
+                        ],
+                        "diffuseColor": [
+                            0.48,
+                            0.6,
+                            0.8
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                },
+                {
+                    "name": "strip_right_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3000,
+                            12,
+                            -7335
+                        ],
+                        "diffuseColor": [
+                            0.48,
+                            0.6,
+                            0.8
+                        ],
+                        "attenuationRadius": 4000,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 4000
+                    }
+                }
+            ]
+        },
+        {
+            "name": "briefing_hologram",
+            "enabled": true,
+            "level": -3,
+            "lights": [
+                {
+                    "name": "beam",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            22,
+                            11068
+                        ],
+                        "diffuseColor": [
+                            0.35,
+                            0.6,
+                            1
+                        ],
+                        "attenuationRadius": 20000,
+                        "attenuationExponent": 1,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "briefing_table_ring",
+            "enabled": true,
+            "level": -3,
+            "lights": [
+                {
+                    "name": "ring_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2900,
+                            931.5,
+                            11195.1
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 2500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                },
+                {
+                    "name": "ring_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1450,
+                            582.4,
+                            13681.5
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 2500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                },
+                {
+                    "name": "ring_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1450,
+                            582.4,
+                            13681.5
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 2500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                },
+                {
+                    "name": "ring_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2900,
+                            931.5,
+                            11195.1
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 2500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                },
+                {
+                    "name": "ring_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1450,
+                            1280.6,
+                            8708.8
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 2500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                },
+                {
+                    "name": "ring_5",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1450,
+                            1280.6,
+                            8708.8
+                        ],
+                        "diffuseColor": [
+                            3,
+                            2.4,
+                            1.05
+                        ],
+                        "attenuationRadius": 2500,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 0
+                    }
+                }
+            ]
+        },
+        {
+            "name": "glow_t16",
+            "enabled": true,
+            "mesh": "t16#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -5,
+                            -1049,
+                            -1722
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_koelsch",
+            "enabled": true,
+            "mesh": "koelsch#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2554,
+                            3,
+                            255
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2554,
+                            3,
+                            255
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_rmobil",
+            "enabled": true,
+            "mesh": "rmobil#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -700,
+                            -33,
+                            -3691
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            700,
+                            -33,
+                            -3691
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_reb_transport",
+            "enabled": true,
+            "mesh": "reb_transport#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -2927,
+                            -1249
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_imp_shuttle_p0",
+            "enabled": true,
+            "mesh": "imp_shuttle#s0.p0",
+            "lights": [
+                {
+                    "name": "glwc_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            242,
+                            558,
+                            492
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwc_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -242,
+                            558,
+                            492
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwc_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -2622,
+                            277
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_imp_shuttle_p1",
+            "enabled": true,
+            "mesh": "imp_shuttle#s0.p1",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1667,
+                            -2578,
+                            178
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_imp_shuttle_p2",
+            "enabled": true,
+            "mesh": "imp_shuttle#s0.p2",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1669,
+                            -2578,
+                            178
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_v_hls_hi_p0",
+            "enabled": true,
+            "mesh": "v_hls_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwc_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            242,
+                            682,
+                            492
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwc_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -242,
+                            682,
+                            492
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwc_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -2332,
+                            -233
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_v_hls_hi_p1",
+            "enabled": true,
+            "mesh": "v_hls_hi#s0.p1",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            927,
+                            -2130,
+                            -702
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_v_hls_hi_p2",
+            "enabled": true,
+            "mesh": "v_hls_hi#s0.p2",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -925,
+                            -2130,
+                            -702
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_mshuttle_p0",
+            "enabled": true,
+            "mesh": "mshuttle#s0.p0",
+            "lights": [
+                {
+                    "name": "glwc_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            242,
+                            682,
+                            492
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwc_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -242,
+                            682,
+                            492
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwc_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -2332,
+                            -233
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_mshuttle_p1",
+            "enabled": true,
+            "mesh": "mshuttle#s0.p1",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            927,
+                            -2130,
+                            -702
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_mshuttle_p2",
+            "enabled": true,
+            "mesh": "mshuttle#s0.p2",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -925,
+                            -2130,
+                            -702
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_raptor",
+            "enabled": true,
+            "mesh": "raptor#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -171,
+                            -1276,
+                            3127
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            171,
+                            -1276,
+                            3127
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            310,
+                            -2462
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -164,
+                            -2462
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -627,
+                            -2462
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_cargo_v01",
+            "enabled": true,
+            "mesh": "cargo_v01#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -2927,
+                            -1249
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_r_tr_pillar",
+            "enabled": true,
+            "mesh": "r_tr_pillar#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            764,
+                            -4638,
+                            -1
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -767,
+                            -4638,
+                            -1
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_i_lnd_hi",
+            "enabled": true,
+            "mesh": "i_lnd_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3486,
+                            -4554,
+                            -3487
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -7091,
+                            -4554,
+                            -1474
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            7090,
+                            -4554,
+                            1473
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            7090,
+                            -4554,
+                            -1474
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3486,
+                            -4554,
+                            3479
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_5",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3486,
+                            -4554,
+                            3479
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_6",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3486,
+                            -4554,
+                            -3487
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_7",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -7091,
+                            -4554,
+                            1472
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -7223,
+                            -5684,
+                            3591
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            7223,
+                            -5685,
+                            3591
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -7222,
+                            -5685,
+                            -3591
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            7225,
+                            -5684,
+                            -3591
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_wrld_dvstr",
+            "enabled": true,
+            "mesh": "wrld_dvstr#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -4123,
+                            -8165,
+                            8479
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3399,
+                            -8165,
+                            -8356
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3399,
+                            -8165,
+                            -2056
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3398,
+                            -8165,
+                            -2053
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            7,
+                            -11913,
+                            6480
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_5",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -4123,
+                            -8165,
+                            3195
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_6",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            4122,
+                            -8165,
+                            3195
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_7",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3398,
+                            -8165,
+                            -8356
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_8",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            4122,
+                            -8165,
+                            8482
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2732,
+                            16,
+                            -7
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2732,
+                            16,
+                            -4
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -870,
+                            -711,
+                            8543
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            870,
+                            -711,
+                            8543
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_waveskimmer",
+            "enabled": true,
+            "mesh": "waveskimmer#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            10624,
+                            -7140,
+                            -157
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -10611,
+                            -7140,
+                            -157
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_probe_droid",
+            "enabled": true,
+            "mesh": "probe_droid#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1157,
+                            -1472,
+                            786
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1226,
+                            -1472,
+                            748
+                        ],
+                        "diffuseColor": [
+                            0.45,
+                            0.6,
+                            0.85
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_pwrtran_hi_p1",
+            "enabled": true,
+            "mesh": "b_pwrtran_hi#s0.p1",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -784,
+                            -2273
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -784,
+                            2249
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2249,
+                            -784,
+                            -1
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2273,
+                            -784,
+                            -1
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_pwrtran_hi_p4",
+            "enabled": true,
+            "mesh": "b_pwrtran_hi#s0.p4",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            17,
+                            -4377,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_lrsp",
+            "enabled": true,
+            "mesh": "b_lrsp#s0.p3",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -6165,
+                            -3881
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_i_ltsrc_hi",
+            "enabled": true,
+            "mesh": "i_ltsrc_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -12770,
+                            -916
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_me5_hi",
+            "enabled": true,
+            "mesh": "b_me5_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -3539,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_med_hi",
+            "enabled": true,
+            "mesh": "b_med_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1843,
+                            -1249,
+                            1408
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1843,
+                            -1249,
+                            -1613
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1179,
+                            -1249,
+                            1408
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_v_crs_hi",
+            "enabled": true,
+            "mesh": "v_crs_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -273,
+                            777
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -660,
+                            207,
+                            -2302
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -432,
+                            207,
+                            -2302
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            674,
+                            207,
+                            -2302
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            447,
+                            207,
+                            -2302
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_20sb_hi",
+            "enabled": true,
+            "mesh": "b_20sb_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1901,
+                            -8321,
+                            -2021
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1901,
+                            -8321,
+                            1850
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1901,
+                            -8321,
+                            1850
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1901,
+                            -8321,
+                            -2021
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            4169,
+                            -6875,
+                            -1584
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -4169,
+                            -6875,
+                            1574
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            4169,
+                            -6875,
+                            1574
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -4169,
+                            -6875,
+                            -1584
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_cr2_hi",
+            "enabled": true,
+            "mesh": "b_cr2_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -379,
+                            -6672,
+                            205
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            380,
+                            -6672,
+                            205
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -379,
+                            -6672,
+                            -198
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            380,
+                            -6672,
+                            -198
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_cr4_hi",
+            "enabled": true,
+            "mesh": "b_cr4_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1792,
+                            -5053,
+                            453
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1794,
+                            -5053,
+                            453
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1792,
+                            -5053,
+                            -437
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1794,
+                            -5053,
+                            -437
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_cr5_hi",
+            "enabled": true,
+            "mesh": "b_cr5_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -527,
+                            -2048,
+                            -488
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            529,
+                            -2048,
+                            488
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -527,
+                            -2048,
+                            488
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            529,
+                            -2048,
+                            -488
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_cr6_hi",
+            "enabled": true,
+            "mesh": "b_cr6_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2617,
+                            -1397,
+                            -290
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2617,
+                            -1397,
+                            290
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            2617,
+                            -1397,
+                            -290
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -2617,
+                            -1397,
+                            290
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_cr7_hi",
+            "enabled": true,
+            "mesh": "b_cr7_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            761,
+                            -3340,
+                            -2004
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            761,
+                            -3340,
+                            1999
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -761,
+                            -3340,
+                            1999
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -761,
+                            -3340,
+                            -2004
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_cr8_hi",
+            "enabled": true,
+            "mesh": "b_cr8_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            525,
+                            -3936,
+                            -257
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            525,
+                            -3936,
+                            256
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -525,
+                            -3936,
+                            256
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -525,
+                            -3936,
+                            -257
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_tec_hi",
+            "enabled": true,
+            "mesh": "b_tec_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1316,
+                            -3154,
+                            -911
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1316,
+                            -3154,
+                            909
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1316,
+                            -3154,
+                            909
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1316,
+                            -3154,
+                            -911
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1509,
+                            -2407,
+                            -1492
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1509,
+                            -2407,
+                            1489
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1509,
+                            -2407,
+                            1489
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1509,
+                            -2407,
+                            -1492
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km1_hi",
+            "enabled": true,
+            "mesh": "b_km1_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            707,
+                            -1035,
+                            -1631
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -707,
+                            -1035,
+                            -1631
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            707,
+                            -1035,
+                            1633
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -707,
+                            -1035,
+                            1633
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km2_hi",
+            "enabled": true,
+            "mesh": "b_km2_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1253,
+                            -1343,
+                            619
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1257,
+                            -1343,
+                            -624
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1253,
+                            -1343,
+                            -624
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1257,
+                            -1343,
+                            619
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km3_hi",
+            "enabled": true,
+            "mesh": "b_km3_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            724,
+                            -2048,
+                            2191
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -726,
+                            -2048,
+                            -2208
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            724,
+                            -2048,
+                            -2208
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -726,
+                            -2048,
+                            2191
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km4_hi",
+            "enabled": true,
+            "mesh": "b_km4_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1400,
+                            -4670,
+                            -2349
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1400,
+                            -4670,
+                            -2349
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1400,
+                            -4670,
+                            2351
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1400,
+                            -4670,
+                            2351
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km5new_hi",
+            "enabled": true,
+            "mesh": "b_km5new_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            25,
+                            -5117,
+                            -729
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            408,
+                            -5117,
+                            604
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -449,
+                            -5108,
+                            574
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km6_hi",
+            "enabled": true,
+            "mesh": "b_km6_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -5895,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km7_hi",
+            "enabled": true,
+            "mesh": "b_km7_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1589,
+                            -5608,
+                            554
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1589,
+                            -5608,
+                            554
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1589,
+                            -5608,
+                            -556
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1589,
+                            -5608,
+                            -556
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_km9_hi",
+            "enabled": true,
+            "mesh": "b_km9_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1524,
+                            -3671,
+                            2466
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1528,
+                            -3671,
+                            -2485
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1524,
+                            -3671,
+                            -2485
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1528,
+                            -3671,
+                            2466
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_gs1_hi",
+            "enabled": true,
+            "mesh": "b_gs1_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3780,
+                            -2637,
+                            -3063
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3780,
+                            -2637,
+                            -3063
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3780,
+                            -2637,
+                            3063
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3780,
+                            -2637,
+                            3063
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_gs2_hi",
+            "enabled": true,
+            "mesh": "b_gs2_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3028,
+                            -1223,
+                            -3184
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3028,
+                            -1223,
+                            -3185
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -3028,
+                            -1223,
+                            3185
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            3028,
+                            -1223,
+                            3185
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_i_trd2_hi",
+            "enabled": true,
+            "mesh": "i_trd2_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1635,
+                            -7049,
+                            7919
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1637,
+                            -7049,
+                            -7907
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1635,
+                            -7049,
+                            -7907
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1637,
+                            -7049,
+                            7919
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_r_blk_hi",
+            "enabled": true,
+            "mesh": "r_blk_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1230,
+                            -819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -414,
+                            -819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -1230,
+                            819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            402,
+                            0,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -414,
+                            0,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_5",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -414,
+                            819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_6",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            401,
+                            819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_7",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1217,
+                            -819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_8",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1217,
+                            819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_9",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            401,
+                            -819,
+                            -11347
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_trp_hi",
+            "enabled": true,
+            "mesh": "b_trp_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            5662,
+                            201,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -5662,
+                            201,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            201,
+                            -5662
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            201,
+                            5662
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            7447,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -8896,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_tsp_hi",
+            "enabled": true,
+            "mesh": "b_tsp_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -6828,
+                            -530,
+                            6824
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            6828,
+                            -530,
+                            -6824
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -6824,
+                            -530,
+                            -6828
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            30,
+                            30161,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -533,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_5",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            6824,
+                            -530,
+                            6828
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -12319,
+                            5029,
+                            12312
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -12312,
+                            5029,
+                            -12319
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            12319,
+                            5029,
+                            -12312
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -5,
+                            5029,
+                            17913
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            5,
+                            5029,
+                            -17913
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_5",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -17913,
+                            5029,
+                            -5
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_6",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            17913,
+                            5029,
+                            5
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwb_7",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            12312,
+                            5029,
+                            12319
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_v_ya2_hi",
+            "enabled": true,
+            "mesh": "v_ya2_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            185,
+                            136,
+                            -1522
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -185,
+                            136,
+                            -1522
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_v_ya4_hi",
+            "enabled": true,
+            "mesh": "v_ya4_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -65,
+                            -1312
+                        ],
+                        "diffuseColor": [
+                            0.8,
+                            0.36,
+                            0.32
+                        ],
+                        "attenuationRadius": 60,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 60
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_i_rfc_hi",
+            "enabled": true,
+            "mesh": "i_rfc_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1506,
+                            -1706,
+                            -6135
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            0,
+                            -4298,
+                            -4372
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1129,
+                            -3949,
+                            94
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            1506,
+                            -1706,
+                            6090
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        },
+        {
+            "name": "glow_b_thcap_hi",
+            "enabled": true,
+            "mesh": "b_thcap_hi#s0.p0",
+            "lights": [
+                {
+                    "name": "glwa_0",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            116,
+                            -987,
+                            359
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_1",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            117,
+                            -987,
+                            -357
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_2",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -305,
+                            -987,
+                            221
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_3",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            377,
+                            -987,
+                            0
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                },
+                {
+                    "name": "glwa_4",
+                    "enabled": true,
+                    "description": {
+                        "position": [
+                            -305,
+                            -987,
+                            -222
+                        ],
+                        "diffuseColor": [
+                            0.9,
+                            0.72,
+                            0.45
+                        ],
+                        "attenuationRadius": 150,
+                        "attenuationExponent": 2,
+                        "shadowOffset": 15
+                    }
+                }
+            ],
+            "cameraUnits": true
+        }
+    ]
+}

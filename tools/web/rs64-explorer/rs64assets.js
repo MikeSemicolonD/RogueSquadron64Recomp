@@ -208,6 +208,7 @@ function rulesBroken(doc, items, ext) {
 const MOD_KINDS = ['levels', 'models', 'audio', 'ui', 'fonts', 'other'];
 const MOD_KIND_RULES = [
   [/^explorer\//, null],
+  [/^mod\/roguesq_lights\.json$/, 'models'],
   [/^mod\/lang\//, 'fonts'],
   [/^mod\/(roguesq_menu|menu_text)\.json$/, 'ui'],
   [/^mod\/(levels\.json|camera_shots\.txt|assets\/(level|crawl)\/)/, 'levels'],
@@ -218,6 +219,24 @@ const MOD_KIND_RULES = [
   [/^data\/(sound\/|speech|voice_TXT)/, 'audio'],
   [/^data\/(pl_crafts\/|weapons|weapon_spr\/|part_|gnrc_stuff\/|imp_stuff\/|lights_PAL)|_(IMGS|PAL|HOB|HMT|TM|ANM)$/, 'models'],
 ];
+// ---- Light presets (roguesq_lights.json): RT64's light preset library as the game reads it (docs/engine/debug-trace-env-vars.md) ----
+// A preset with a mesh lights every drawn part whose mesh-registry key matches, in that part's model space; one without is level lights in
+// HMP map space for its level (-1 outside missions, -2 or absent everywhere). Unknown fields round-trip.
+const LIGHTS_ANY_LEVEL = -2;
+const lightsParse = (text) => {
+  const doc = text?.trim() ? JSON.parse(text) : {};
+  doc.presets ??= [];
+  for (const p of doc.presets) p.lights ??= [];
+  return doc;
+};
+const lightsWrite = (doc) => JSON.stringify(doc, null, 4) + '\n';
+const hobMeshKey = (name, slot, node, j) => `${name}#s${slot}.p${node}.${j}`;
+// The object name in those keys, as rs64lights::meshKeyName: pl_crafts/rmobil's 7-node "vwing" is "rmobil" (the V-wing has 3 nodes).
+const meshKeyName = (name, nodes) => (name === 'vwing' && nodes === 7 ? 'rmobil' : name);
+// Same rule as PresetLights::meshMatches (rt64_preset_light.h): mesh is '|'-separated keys; one matches exactly, or the key extends it at a '#' or '.'.
+const lightsMeshMatches = (mesh, key) => !!mesh && mesh.split('|').some((m) => !!m && key.startsWith(m) && (key.length === m.length || key[m.length] === '#' || key[m.length] === '.'));
+// A new light's description; RT64 fills the rest (direction, spot cosines, specular) with its own defaults.
+const lightNew = (position, radius) => ({ position, diffuseColor: [1, 0.8, 0.5], attenuationRadius: radius, attenuationExponent: 2, shadowOffset: 0 });
 function modChangeKind(path) {
   if (/^(menu|page):/.test(path)) return 'ui';
   const rule = MOD_KIND_RULES.find(([re]) => re.test(path));
@@ -655,10 +674,13 @@ function parseHOB(dv) {
       if (!parts.has(p)) parts.set(p, Object.assign(parseMeshdef1(dv, p), { name: obj.partNames.get(p) || '' }));
       return parts.get(p);
     };
+    // lodSlots[i] = the meshdef1 slot (0-3) of lods[i]: the game's mesh-registry key counts empty slots ("<name>#s<slot>.p<node>.<j>").
     obj.lods = [];
+    obj.lodSlots = [];
     for (let k = 0; k < 4; k++) {
       const pre = dv.getUint32(ob + 0x18 + k * 4);
       if (!pre) continue;
+      obj.lodSlots.push(k);
       const total = dv.getUint16(pre + 2);
       const lists = offs.map(() => []);
       let p = pre + 4, node = 0, found = 0;
@@ -2392,6 +2414,11 @@ function parseSpriteAnim(dv, trans) {
   }
   return frames.length ? frames : null;
 }
+
+// Effect sprite light keys (a light preset's "sprite"): the name the game registers each frame's texture under. loadExplosionTextures
+// (0x8006108C) registers the explosion sheets' frames as prefix + file index; every other sheet keeps its frames' own names.
+const SPRITE_TEX_PREFIX = { 'data/explo2_IMGS': 'explo_tex', 'data/explo2hi_IMGS': 'explh_tex', 'data/ionexp_IMGS': 'iexplo_tx', 'data/ionex2_IMGS': 'iexpl2_tx', 'data/smkexp_IMGS': 'sexplo_tx' };
+const spriteKeys = (path, frames) => frames.map((f, i) => 'spr:' + (SPRITE_TEX_PREFIX[path] ? SPRITE_TEX_PREFIX[path] + i : f.name));
 
 // ---- Audio: MusyX samples (sdir_SND + samp_SND): N64 MusyX ADPCM ----
 
@@ -4131,7 +4158,7 @@ async function projectRead(bytes, romCrc, readOriginal) {
   return { current, history };
 }
 
-globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
   parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 rs64Lib();

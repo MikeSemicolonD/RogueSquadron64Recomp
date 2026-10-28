@@ -168,6 +168,8 @@ In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
 - **F3** toggles ViewRDRAM mode.
 - **F4** toggles texture replacement.
 
+**F9** / **Shift+F9** step forward / back through the ray tracing debug views (the current view is named in a notice at the bottom right).
+
 **F12** writes a crash dump to `dumps/crash-dumps/` in Debug and Release builds (Windows only). Set `ROGUESQ_FULL_DUMP=1` for a full-memory dump.
 
 #### Rebinding controls
@@ -500,7 +502,7 @@ Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
 
 ## Browser based tools
 
-### RS64 Explorer
+### [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/rs64-explorer/)
 
 *`tools/web/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
 
@@ -513,7 +515,7 @@ A **MASSIVE** extension to the foundational work originally done by [Dávid Peth
 - MIDI Music Playback with timeline scrubbing allowing you to view the layers of instrument samples [Chris Huelsbeck](https://en.wikipedia.org/wiki/Chris_Huelsbeck) used to masterfully assemble and recreate the Star Wars score.
 - [WebMCP Support](https://developer.chrome.com/docs/ai/webmcp) for agentic usage.
 
-### Save editor
+### [Save editor](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/save-editor/rs64_save_editor.html)
 
 A save editor also exists in *`tools/web/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 

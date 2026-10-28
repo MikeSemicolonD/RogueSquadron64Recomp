@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <vector>
@@ -729,6 +730,13 @@ static void draw_notices()
     ImGui::End();
 }
 
+static std::atomic<bool> s_imgui_keyboard{false};
+
+bool imgui_wants_keyboard()
+{
+    return s_imgui_keyboard.load();
+}
+
 // The single ImGui render hook draws the touch overlay, both dev panels, the shader compile indicator and the notices.
 void draw_dev_ui()
 {
@@ -738,6 +746,8 @@ void draw_dev_ui()
     draw_mods_ui();
     draw_shader_compile_indicator();
     draw_notices();
+
+    s_imgui_keyboard.store(ImGui::GetIO().WantCaptureKeyboard);
 
     // Text input is off by default (see create_gfx); an ImGui text box needs it while focused.
     static bool s_imgui_text = false;

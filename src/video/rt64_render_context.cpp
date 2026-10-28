@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <atomic>
 #include <chrono>
@@ -6,6 +7,7 @@
 #include <cstring>
 #include <string_view>
 #include <thread>
+#include <mutex>
 #include <vector>
 #include <filesystem>
 #include <fstream>
@@ -22,7 +24,9 @@ extern SDL_Window* g_sdl_window;
 #define HLSL_CPU
 #endif
 #include "hle/rt64_application.h"
+#include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
+#include "librecomp/mods.hpp"
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
@@ -43,6 +47,7 @@ using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
 
 extern "C" volatile unsigned g_f5_heur[4];
+extern "C" void rs64_mcp_note_dl();
 
 #ifdef _WIN32
 
@@ -84,6 +89,104 @@ extern "C" volatile long long g_rs64_snap_us;
 
 // Set on construction, cleared on shutdown; the LLE DPC bridge submits through it.
 static std::atomic<RT64::Application*> g_rt64_app{nullptr};
+
+static constexpr const char* kLightsFile = "roguesq_lights.json";
+
+// Modification times and sizes of every roguesq_lights.json the reader below can see (next to the exe and in mod folders), as one string.
+static std::string light_files_stamp()
+{
+
+    std::error_code ec;
+    std::string stamp;
+
+    const auto add = [&](const std::filesystem::path& p) {
+
+        const auto t = std::filesystem::last_write_time(p, ec);
+
+        if (!ec) stamp += p.string() + '|' + std::to_string(t.time_since_epoch().count()) + '|' + std::to_string(std::filesystem::file_size(p, ec)) + '\n';
+    };
+
+    char* base = SDL_GetBasePath();
+
+    add(std::filesystem::path(base ? base : "") / kLightsFile);
+    SDL_free(base);
+
+    for (const auto& dir : std::filesystem::directory_iterator(recomp::mods::get_mods_directory(), ec))
+    {
+        if (dir.is_directory(ec)) add(dir.path() / kLightsFile);
+    }
+
+    return stamp;
+}
+
+void rs64_queue_light_presets()
+{
+
+    static constexpr const char* kDefaultsMod = "model-lights";
+
+    // The F1 Lights tab's Reload light files runs this again.
+    rs64lights::presetReloader() = rs64_queue_light_presets;
+
+    // The shipped defaults go first wherever the MODS list puts them (librecomp lists a newly installed mod above the known ones), so any
+    // other mod's same-named preset replaces them; the others follow the MODS list, lower wins.
+    std::vector<recomp::mods::ModDetails> mods = recomp::mods::get_all_mod_details("rs64");
+    std::vector<std::string> texts;
+
+    std::stable_partition(mods.begin(), mods.end(), [](const recomp::mods::ModDetails& d) { return d.mod_id == kDefaultsMod; });
+
+    for (const auto& d : mods)
+    {
+        if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+
+        bool exists = false;
+        const std::vector<char> text = recomp::mods::read_mod_file(d.mod_id, kLightsFile, exists);
+
+        if (exists)
+        {
+            texts.emplace_back(text.begin(), text.end());
+
+            fprintf(stderr, "[RT64] light presets queued from mod '%s'\n", d.mod_id.c_str());
+        }
+    }
+
+    char* base = SDL_GetBasePath();
+    std::ifstream f(std::string(base ? base : "") + kLightsFile, std::ios::binary);
+
+    SDL_free(base);
+
+    if (f.is_open())
+    {
+        texts.emplace_back(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+
+        fprintf(stderr, "[RT64] light presets queued from %s next to the exe\n", kLightsFile);
+    }
+
+    rs64lights::queuePresetReload(std::move(texts));
+
+    // Light files are re-read once a second after one changes, so an edit (an explorer export, F1's Save library) shows without a restart.
+    static std::once_flag s_watch;
+
+    std::call_once(s_watch, [] {
+        std::thread([] {
+
+            std::string last = light_files_stamp();
+
+            for (;;)
+            {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+
+                std::string now = light_files_stamp();
+
+                if (now == last) continue;
+
+                last = std::move(now);
+
+                fprintf(stderr, "[RT64] a light file changed: reloading light presets\n");
+                rs64_queue_light_presets();
+            }
+        }).detach();
+    });
+}
 
 // True while RT64's F1 developer inspector (ImGui) is up. The inspector is
 // created/destroyed on the window thread inside RT64's SDL event filter, which
@@ -660,6 +763,8 @@ public:
 
     void send_dl(const OSTask* task) override
     {
+
+        rs64_mcp_note_dl();
 
         if (!app) return;
 

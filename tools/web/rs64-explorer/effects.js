@@ -65,10 +65,17 @@ function modelTex(f) {
   t.needsUpdate = true;
   return t;
 }
+// A sheet's frames, each with its light key (f.key) taken before any filtering, since the game numbers frames by file position.
+function keyedAnim(path, dv) {
+  const frames = parseSpriteAnim(dv);
+  spriteKeys(path, frames).forEach((k, i) => (frames[i].key = k));
+  return frames;
+}
 function uprightTex(f) {
   const row = f.w * 4, data = new Uint8Array(f.rgba.length);
   for (let y = 0; y < f.h; y++) data.set(f.rgba.subarray(y * row, (y + 1) * row), (f.h - 1 - y) * row);
   const t = new THREE.DataTexture(data, f.w, f.h, THREE.RGBAFormat);
+  t.userData.sprKey = f.key;
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
   setFilter(t);
   t.needsUpdate = true;
@@ -106,7 +113,7 @@ async function showEffect(id, keepView = false) {
   // Smoke is the only explosion sheet that defaults to particle playback; the rest play as flipbooks until the user switches.
   if (!keepView) $('optFxMode').value = EFFECTS.explosions.includes(id) && id !== 'data/smkexp_IMGS' ? 'flipbook' : 'particle';
   const [path, part] = id.split('#');
-  const frames = parseSpriteAnim(await rom.read(path)).filter((f) => f.rgba && (!part || f.name.replace(/[_\d]+$/, '') === part));
+  const frames = keyedAnim(path, await rom.read(path)).filter((f) => f.rgba && (!part || f.name.replace(/[_\d]+$/, '') === part));
   // Craft shadows narrower than tall are left halves cut at the right edge (the square Falcon/destr2 are whole), so mirror them out.
   if (path.endsWith('shadows_TM')) frames.forEach((f, i) => {
     if (f.w >= f.h) return;
@@ -120,6 +127,7 @@ async function showEffect(id, keepView = false) {
   const add = $('optFxAdd').checked;
   const texOf = (f) => {
     const t = new THREE.DataTexture(f.rgba, f.w, f.h, THREE.RGBAFormat);
+    t.userData.sprKey = f.key;
     t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     setFilter(t);
     t.needsUpdate = true;
@@ -138,6 +146,7 @@ async function showEffect(id, keepView = false) {
   // The playing frame, 1 unit per texel, with every frame laid out in a strip below it.
   const maxW = Math.max(...frames.map((f) => f.w)), maxH = Math.max(...frames.map((f) => f.h));
   const main = new THREE.Mesh(plane(frames[0].w, frames[0].h), matOf(maps[0]));
+  main.userData.fxMain = true;
   group.add(main);
   // Texture sets and single frames have nothing to play: shown as stills with no playback controls.
   const still = EFFECTS.textures.includes(id) || frames.length === 1;
@@ -174,7 +183,7 @@ async function showEffect(id, keepView = false) {
   $('fxBurstRow').hidden = !particle;
   if (particle) {
     // The hi-detail fire plays the 20 lo frames with hi frames swapped in for the second half of each step, so it needs both sets.
-    const lo = def.hi ? parseSpriteAnim(await rom.read('data/explo2_IMGS')).filter((f) => f.rgba) : frames;
+    const lo = def.hi ? keyedAnim('data/explo2_IMGS', await rom.read('data/explo2_IMGS')).filter((f) => f.rgba) : frames;
     // Sprite copies with upright textures (the strip planes keep theirs).
     const up = (list) => list.map((f) => ({ ...f, map: uprightTex(f) }));
     const P = { def, frames: up(lo), hiFrames: def.hi ? up(frames) : null, group: new THREE.Group(), live: [] };
@@ -200,6 +209,11 @@ async function showEffect(id, keepView = false) {
   if (!keepView) frame(group, new THREE.Vector3(0, 0, 1));
   $('fxPanel').hidden = still;
   if (!still) timelineStart(fx);
+  // Texture sets are not drawn as effect sprites, so they take no sprite lights.
+  if (still) {
+    lightsFx = null;
+    lightsPanel();
+  } else await lightsShowFx(frames.map((f) => f.key), id);
 }
 // Particle handlers from the game code (asm/main/5FA70.s, constants 3BF00.rodata.s); r = (rand & 0xFF) / 255, dt in seconds:
 // fire 0x80060690: scale (r + 2.5) * s * 0.25, timer += dt * 20, frame = trunc(timer), gone at 20 (hi set: hi frame when frac > 0.5).
@@ -296,7 +310,7 @@ async function fxKit(group, ground = () => 0) {
   // Nearest default would turn them into blocks.
   const smooth = (t) => Object.assign(t, { magFilter: THREE.LinearFilter, minFilter: THREE.LinearFilter, generateMipmaps: false, needsUpdate: true });
   const art = (path) => {
-    if (!artCache.has(path)) artCache.set(path, rom.read(path).then((dv) => parseSpriteAnim(dv).filter((f) => f.rgba).map((f) => ({ ...f, map: smooth(uprightTex(f)) }))));
+    if (!artCache.has(path)) artCache.set(path, rom.read(path).then((dv) => keyedAnim(path, dv).filter((f) => f.rgba).map((f) => ({ ...f, map: smooth(uprightTex(f)) }))));
     return artCache.get(path);
   };
   // fireHi: the Expansion Pak's in-between fire frames (explo2hi, explo004, explo012, ...), shown for the second half of each lo frame
@@ -549,6 +563,7 @@ async function showSim(id, keepView) {
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ colorWrite: false }));
   ground.position.y = -0.002;
   ground.renderOrder = -1;
+  ground.name = 'fxGround';
   group.add(ground);
   setRoot(group);
   scene.background = fxBg;
@@ -563,9 +578,11 @@ async function showSim(id, keepView) {
     hud();
     if (!keepView) frameBox(new THREE.Box3(new THREE.Vector3(-2, 0, -2), new THREE.Vector3(2, 2.5, 2)), new THREE.Vector3(0.6, 0.3, 0.8));
     timelineStart({ sim: true, reset() { t = 0; poseFireworks(fw, 0); }, step(dt) { t += dt; poseFireworks(fw, t); }, done: () => t > em.life + 4.4 });
+    await lightsShowFx([], null);
     return;
   }
   const kit = await fxKit(group);
+  await lightsShowFx([kit.spr, kit.fire, kit.ion2, kit.smoke, kit.wtrAnm, kit.ionx, kit.fireHi].flat().map((f) => f.key), null);
   const { items, sprite, particle, debris, splash, SHOCK_MESH, shockwave, chunk, emitter, landing, plume, d, embers, explosion, spr, fire, ion2, smoke, sfx, wtr, wtrAnm, ionx, smokeTint, waterTint } = kit;
   const at = new THREE.Vector3(0, 0, 0), above = new THREE.Vector3(0, 0.3, 0);
   // npcWingmanUpdate's shot-down state calls func_800D8988: three emitters on the craft node at (0, 0.05, -0.2) (game space), all 20/s,
@@ -707,6 +724,9 @@ function timelineStart(fx) {
   Object.assign(TL, { time: 0, dur, playing: true });
   fx.reset();
   syncTimeline();
+  // Held at 0 until the first take's materials are compiled, or the compile stall would eat its opening frames.
+  const warm = (TL.warm = renderer.compileAsync?.(scene, camera).catch(() => {}));
+  if (warm) warm.then(() => TL.warm === warm && (TL.warm = null));
 }
 function seekTimeline(t) {
   effect.reset();
@@ -720,9 +740,12 @@ function syncTimeline() {
   $('fxTimeVal').textContent = `${TL.time.toFixed(2)} / ${TL.dur.toFixed(2)} s`;
   $('fxPlay').textContent = TL.playing ? 'Pause' : 'Play';
 }
+// A frame over EFFECT_STALL seconds is a stall (a shader compiling for a newly spawned piece), not elapsed time: the effect steps 1/60 s so
+// a hitch pauses it instead of skipping its frames. Normal frame rates down to 20 fps play at their real pace.
+const EFFECT_STALL = 0.05;
 function applyEffect(dt) {
-  dt *= +$('optFxSpeed').value;
-  if (!effect?.step || !TL.playing) return;
+  dt = (dt > EFFECT_STALL ? 1 / 60 : dt) * +$('optFxSpeed').value;
+  if (!effect?.step || !TL.playing || TL.warm) return;
   effect.step(dt);
   TL.time += dt;
   // A short take still plays out the full timeline, so every loop has the same length.
@@ -837,6 +860,7 @@ async function showModel(id, objIndex = -1, keepView = false) {
   await setupAnimations(id, group.children[0]);
   setupFoils(id, group.children[0]);
   setupExhaust(group.children[0]);
+  await lightsShow(group);
   // The slider only appears when this model has more than one LOD, and stops at its last one.
   $('lodRow').hidden = counts.lods < 2;
   $('optLod').max = Math.max(0, counts.lods - 1);
@@ -916,7 +940,7 @@ function terrainMesh(hmp, texIds, bank, key) {
   const { g, map, tris } = terrainCache.get(key);
   texCache.set('terrain', { map });
   const params = { map: $('optTex').checked ? map : null, side: THREE.DoubleSide, wireframe: $('optWire').checked };
-  const m = new THREE.Mesh(g, gameLighting() ? new THREE.MeshBasicMaterial({ ...params, vertexColors: true }) : new THREE.MeshLambertMaterial(params));
+  const m = new THREE.Mesh(g, rtLit(gameLighting() ? new THREE.MeshBasicNodeMaterial({ ...params, vertexColors: true }) : new THREE.MeshLambertNodeMaterial(params)));
   m.name = 'terrain';
   m.userData.shared = true;
   m.userData.terrain = map;
@@ -1226,6 +1250,7 @@ async function showLevel(dir, keepView = false, skyOverride = null) {
     applyFog();
   }
   syncFogControls();
+  await lightsShowLevel(world, hmp, stockDir(dir).includes('/level/lv_') ? lvIndex : -1);
   stats = { level: dir.split('/').pop(), items: dat.items.length, placed, markers: markers.children.length, triangles: counts.tris, vertices: counts.verts };
   hud();
   renderLegend(markers);
