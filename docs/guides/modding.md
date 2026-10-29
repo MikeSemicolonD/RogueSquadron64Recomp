@@ -106,17 +106,17 @@ A `levels.json` at the mod root lists them:
 - `voice`: a stock voice line played as the SELECT LEVEL briefing (none if left out). A recording of your own goes in `assets/level/<folder>/brief` and plays instead: a MORT stream (the game's 8 kHz GSM 06.10 voice codec). The explorer's *Import recording…* makes it from a .wav or .mp3.
 - `craft`: approved craft, any of `xwing`, `ywing`, `awing`, `vwing`, `speeder`, `falcon`, `tie`, `t16`, `naboo` (the template's if left out).
 - `crawl`: the opening crawl played before the level, by name (one of the mod's [opening crawls](#opening-crawls)). Left out, the template's plays (if it has one); `false` plays none; a name no enabled mod has plays the template's and logs one line. An object with `chapter`, `title`, `body` and `planet` 0-3 (the older form) still plays as written.
-- `music`: the starting song, a song id from the in-mission music cue table (the template's if left out). Music regions placed in the level (zone 0x10) change it as the player flies into them; the explorer picks both by song name.
+- `music`: the starting song, a song id from the in-mission music cue table (the template's if left out). Music regions placed in the level change it as the player flies into them; the explorer picks both by song name.
 - `medals`: a medal needs all of time (minutes) at most and kills, accuracy (%) and friendlies saved at least; all three tiers or none (the template's). The bonus threshold (secret pickups) is always the template's. Medals earned on mod levels show on SELECT GAME as a second set of counts (blue digits) beside the game's, per save slot.
-- `objectives`: the level's own goals (1-4, shown on the pause screen). With them, none of the template's mission script runs and the level is won when every `destroy`, `reach` and `survive` goal is done:
-  - `{ "text": "Destroy the walkers", "goal": "destroy", "counter": 120, "count": 6 }`: objective counter 120 reaches 6. Units add to a counter when destroyed (DAT record +0x80/+0x84).
-  - `{ "goal": "reach", "flag": 121 }`: objective flag 121 is set, by an area trigger's on-enter block.
-  - `{ "goal": "protect", "flag": 122 }`: the mission fails when flag 122 is set, by the unit's death (DAT record +0x78/+0x7C).
+- `objectives`: the level's own goals (1-4, shown on the pause screen). With them, none of the template's mission script runs and the level is won when every `destroy`, `reach` and `survive` goal is done. The explorer's *Level settings* writes all of this: pick the units or area for each objective and it does the bookkeeping. By hand, the goals are:
+  - `{ "text": "Destroy the walkers", "goal": "destroy", "counter": 120, "count": 6 }`: 6 of the units that count toward counter 120 are destroyed.
+  - `{ "goal": "reach", "flag": 121 }`: an area trigger that raises flag 121 is entered.
+  - `{ "goal": "protect", "flag": 122 }`: the mission fails when a unit that raises flag 122 is destroyed.
   - `{ "goal": "survive", "seconds": 120 }` / `{ "goal": "timelimit", "seconds": 600 }`: time passes / the mission fails when it runs out.
 
-  Any objective can also carry `"voice"` (a stock voice id, played with its subtitle when it completes, or fails for `protect` and `timelimit`), `"recording"` (a file in `assets/level/<folder>/` played instead), `"camera"` (a camera position the game cuts to then), and `"pauseVoice"` / `"pauseRecording"` (what the pause screen reads aloud for the line; silent without one).
+  Counters and flags are numbers the level's units and triggers share; which unit or trigger feeds which one is set on the object in the level file ([DAT-file runtime records](../reference/data-structures.md#dat-file-runtime-records)). Both run from 1 to 128.
 
-  The explorer's *Level settings* writes all of this: pick the units or area for each objective and it chooses free counters and flags.
+  Any objective can also carry `"voice"` (a stock voice id, played with its subtitle when it completes, or fails for `protect` and `timelimit`), `"recording"` (a file in `assets/level/<folder>/` played instead), `"camera"` (a camera position the game cuts to then), and `"pauseVoice"` / `"pauseRecording"` (what the pause screen reads aloud for the line; silent without one).
 
 The RS64 Explorer makes all of this: open a stock level and click *New level from this one…* (a copy to change) or *New blank level…* (only a player start on flat ground, blank 3-second intro and outro, and that level's sky, textures and music; give it objectives), edit it like any level, set *Level settings…* (title, description, briefing voice or recording, craft, objectives, medals, opening crawl), then *Export mod*. Camera-shot links (`camera_shots.txt`) for a new level use its folder name in place of `lv_<n>`.
 

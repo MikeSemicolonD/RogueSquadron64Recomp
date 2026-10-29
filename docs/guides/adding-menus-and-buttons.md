@@ -68,7 +68,7 @@ Menu files are layered in this order. A button with the same `id` as an earlier 
 | `type` | `action`, `toggle`, `cycle`, `slider`, `submenu`, or `label` (a line the cursor skips, such as a status line). |
 | `requires` | A condition the button needs to show, or a list of them that must all hold, checked each time the menu is built: `desktop` (not Android), `front_end` (not in the pause menu, for settings the game only reads at a level load), `ray_query` (the GPU supports ray queries), `expansion_pak`, `frame_interpolation` (it is on), `config:<mod id>:<option id>` (that mod config option is set: not its first choice, or non-zero; `config:<option id>` names the button's own mod's), or any condition a native mod registers. A leading `!` asks for the opposite (`"!config:my_mod:hard_mode"`). |
 | `x` / `y` | Position offsets for front-end entries. |
-| `flags` | Pause entry flag word (default `16385` = `0x4001`, drawn and selectable). |
+| `flags` | Pause menu entries only, rarely needed: the game's entry flags (default `16385`, drawn and selectable; the bits are under [Pause menu](#pause-menu)). |
 
 Page entries also take:
 
