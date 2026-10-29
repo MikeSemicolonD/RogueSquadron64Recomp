@@ -1,6 +1,6 @@
 # Online co-op (ghost model)
 
-Online co-op runs one game per player. Each instance flies its own player 1 in its own world and streams that state to the other, which poses a wingman NPC (the "imposter", see [AGENTS.md](../../AGENTS.md#co-op-player-2-is-an-imposter-npc)) from it. The two worlds are independent: only a few things are shared on purpose (objectives, deaths and lives, picked-up upgrades, the mission result, cutscene skips). Env vars are in [debug-trace-env-vars.md](../engine/debug-trace-env-vars.md).
+Online co-op runs one game per player. Each instance flies its own player 1 in its own world and streams that state to the other, which poses a wingman NPC (the "imposter", see [AGENTS.md](#the-imposter)) from it. The two worlds are independent: only a few things are shared on purpose (objectives, deaths and lives, picked-up upgrades, the mission result, cutscene skips). Env vars are in [debug-trace-env-vars.md](../engine/debug-trace-env-vars.md).
 
 ## What players see
 
@@ -239,3 +239,22 @@ A local skip is sent as SKIP, tagged with the scene it was made in: a phase (bot
 ## Menu font period
 
 The italic menu font ("italic35") has no `.`, no period-wide blank and no caret. `ensure_menu_period` in menu_config.cpp builds them at runtime from the font's own `:` and `!` glyphs into the `&`, `"` and `/` slots (no language's menu text uses them; German needs the umlauts), so address and status lines use them.
+
+## The imposter
+
+`ROGUESQ_COOP_LOCAL=1` (or ghost mode) spawns player 2 as a level-wingman NPC (`npcWingmanUpdate` 0x800D93C0) from a fake DAT record at 0x80B40000 with no flight path, so the wingman AI idles and [coop_imposter.cpp](../../mods/multiplayer-native/src/coop_imposter.cpp) flies it from port 1 (hook at the handler's post-state join 0x800D9A00, action 3 only). The spawn must be followed by one `slotDispatcherIter(slot, 3, &dt)` tick or the NPC never enters its tick chains. There is no gPlayers[1], view[1] or second camera, and local split-screen is out of scope.
+
+- Hooks call recompiled functions only through `mips_call` (saves the context, runs the callee below the hook's stack frame).
+- The flight model in `mp_core.cpp` is a port of the player X-wing's handling (`updateXwingFlightControls` 0x800B4588) and uses polynomial sin/cos with FP contraction off so every platform rounds the same.
+- The NPC health patch (`patches/src/npc_health.c`) accepts the record's health slot in host RAM because the mod registers it with the host API's `add_valid_ram`; its lockstep hash column is an `add_hash_part`.
+- The wingman dereferences its mesh during the spawn, so the record's model index (+0x8C) is the first wingman model the level loaded (`wingman_model`, a side-effect-free copy of `walkMeshdef0List`'s name lookup); with none, the imposter is skipped.
+
+## Per-player data relocation
+
+While the mod is enabled, four ranges of per-player arrays live in host RAM so index 1 fits (`kMovedRanges` in `mp_core.h`): R1 0x80138058-0x80138267 (`gObjectiveCounts` 0x80138060 at 0x80B38060), R2 0x80138268-0x80138837 (camera node[0]) and R3 0x80138E5C-0x8013901F (`txtFileHeader` .. `voiceTxtString`) at +0x00A00000, and R4 0x80138930-0x80138D0F (a per-view 4 x 0xF8 block) at +0x00A20000.
+
+- Only `lui` immediates change (`0x8013`/`0x8014` -> `0x80B3`..`0x80B6`), 200 sites in 107 functions, as `[[patches.instruction]]` entries at the end of the mod's `mod.toml`. At build time RecompModTool turns them and the manifest into the mod folder's `instruction_patches.json` and `mod.json` (mod id `multiplayer_native`).
+- librecomp reads that file from any enabled mod (folder or `.nrm`), checks each site's original word (`expect`), refuses conflicts and replacements of patched functions, and regenerates those functions with LiveRecomp (logs `Mod instruction patches: N in M functions`).
+- Regenerate the entries with `python mods/multiplayer-native/tools/gen_relocation.py` (reads an unpatched `RecompiledFuncs`, rewrites `mod.toml` below its marker line) after anything that changes the recompiled code of those functions; ambiguous sites are settled in `tools/relocation_resolve.txt`.
+- The mod registers the ranges with the host API's `add_moved_range`, so host code goes through `rs64::ls::relocated()` (identity while the mod is off). `ROGUESQ_RELOC_GUARD=1` reports writes to the old addresses.
+- RDRAM diffs against PJ64 goldens see these fields as zero at their old addresses while the mod is on. `.nrm` mods link against the plain `syms/rogue_squadron.datasyms.toml`; one that reads these fields while multiplayer may be on translates the address with the `rs64_relocated` export.

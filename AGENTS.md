@@ -2,50 +2,25 @@
 
 Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. What's left is the issues listed under Status in the README, plus symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
 
-## Project layout
+Rules come first; reference sections (Environment variables onward) follow. Some tools cut instruction files at 24 KB, so if yours stops before Architectural quirks, read the rest of this file directly.
 
-```
-src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
-  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp)
-  ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
-  ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
-  ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
-  ├── game/                             Code that hooks the recompiled game: hook_helpers (entry points for rogue_squadron.toml hooks), toml_hooks.c, upstream_compat (libultra shims, scheduler overrides, rs64_load_overlay), register_overlays / register_patches, game_state + nav_sequencer (state classifier, BOOT_TARGET driver), menu_config, builtin_hooks, camera_shots.h, mod_levels.h
-  ├── host_api/                         Mod host API (public header include/rs64/host_api.h)
-  ├── lockstep/                         Input record/replay and frame hashing
-  └── util/                             debug_logs.h (env_* helpers), mips_call.h, rdram_words.h
-mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
-patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
-mods/multiplayer-native/                Online co-op as a native mod, always built by the game's CMake (the exe has no multiplayer code)
-  ├── src/                              ghost*.cpp (session, lobby, HUD), net_*.cpp (ENet6), relay_client.cpp (rs64_relay transport), coop_imposter.cpp, mp_core.cpp (imposter flight model, puppet, lobby rules), mp_register.cpp + mp_host.h (host-API registrations, its only route to the game)
-  ├── tests/                            mp_core_test, net_core_test, net_link_test (run by rs64_unit_tests)
-  ├── mod.toml, tools/                  Manifest plus the per-player data relocation as [[patches.instruction]] (RecompModTool writes mod.json / instruction_patches.json at build time) and its generator
-  └── lib/enet6/, lib/miniupnp/         Submodules for the transport, built only for this mod
-relay-server/                           rs64_relay, the standalone co-op relay server (lists and pairs games, forwards packets); builds alone with only enet6, released by relay-release.yml
-tests/                                  Host unit tests (rs64_unit_tests)
-rogue_squadron.toml, patches.toml       N64Recomp configs (game ELF / patches ELF)
-rsp/                                    RSPRecomp configs (MusyX synth, shared boot ucode)
-tools/state/state_model.toml            Game-state descriptor (state_table.inl codegen + Python tools)
-lib/N64ModernRuntime/                   Submodule — fork at MikeSemicolonD/N64ModernRuntime
-  ├── librecomp/                        Recompiler runtime (overlay loading, get_function, SEH)
-  └── ultramodern/                      libultra emulation (threads, mesgqueue, events)
-lib/rt64/                               Submodule — fork at MikeSemicolonD/rt64
-  └── src/gbi/rt64_gbi_f3dfactor5.cpp   Native Factor 5 GBI profile (the render core)
-syms/                                   Submodule (RogueSquadron64RecompSyms): function + data symbols and the mods data variant. dump_syms rewrites them; commit inside syms/, then bump the pointer
-android/, ci/                           Android Gradle project; release CI runner scripts
-docs/                                   guides/ (build, mods, co-op), engine/ (debugging, env vars, host API, CI), reference/ (RE notes; its README is the on-ramp)
-tools/
-  ├── debug/                            Crash/hang triage, stability + leak harnesses, menu driving, validate/, lockstep/, recordings/
-  ├── re/                               Reverse-engineering helpers: rz/, rename/, render/, MORT decoders, one-off disasm/decode probes
-  ├── release/                          Versioning, release bundling, packaging and cross-builds (linux/, macos/, android/)
-  ├── mods/, state/, style/, d3d11/     Build inputs read by CMake/CI (mod build scripts, state model, style baseline, D3D11 shader combos)
-  └── web/                              Browser tools (rs64-explorer/, its data generator, save-editor/), deployed to GitHub Pages by .github/workflows/pages.yml on pushes to main that touch the site (the landing page is the root index.html)
-build/                                  CMake out-of-source build dir
-```
+## Replies and commits
 
-The recompiled MIPS code lives in-repo at `RecompiledFuncs/` — `funcs_*.c` plus `funcs.h`, `lookup.cpp`, and `recomp_overlays.inl`. It is **gitignored** (a derivative of the copyrighted ROM; generated locally, never committed) and regenerated from `rogue_squadron.toml` with `cmake --build build --config Debug --target regen_funcs`; the next build re-globs automatically (`CONFIGURE_DEPENDS`). Regen reads the decomp ELF at `../rogue_squadron64/build/roguesquadron.elf`, and rebuilds `N64RecompCLI` first. N64Recomp fails the regen if any patch (including the co-op relocation in `patch_files`) names a missing function or vram. These are auto-generated; hand-instrumenting them with diagnostic `fprintf` probes is routine, but load-bearing logic belongs in `rogue_squadron.toml` hooks (see below), not here — regeneration silently discards inline edits.
+- **No trailing summary blocks** in chat responses — one-line wrap-up max.
+- Commit messages match the existing history: a short Title Case subject with no trailing period; when a body is needed, `-` bullets in a plain, first-person voice saying what changed and why. **No `Co-Authored-By` or other AI attribution trailers.** No semicolons tacking a one-off aside onto a bullet - make it its own bullet or cut it.
 
-The forked submodules under `lib/` carry intentional `if(false) fprintf(...)` debug-toggle cruft and game-specific defensive guards. **Do not propose stripping these** as cleanup; they are intentional. (The inline KSEG0 pointer guards in `rogue_squadron.toml` have already been retired.)
+## Skills
+
+Task guides live in `.claude/skills/<name>/SKILL.md`. Agents without skill support should read the matching file before working in that area:
+
+- `roguesquadron-debug` — crash/hang triage, toml hooks, perception-free validation
+- `roguesquadron-menu-drive` — scripted menu input to reach a specific screen
+- `roguesquadron-frame-interpolation` — 60+ Hz jitter, matrix and sprite ids
+- `roguesquadron-raytracing` — RT lights, presets, the explorer Lights panel
+- `f5-dl-validate` — Factor 5 display-list walks and diffs
+- `renderdoc-mcp` — GPU frame captures
+
+The rest are general toolchain references (cmake, msvc-cl, lldb, ...).
 
 ## Build & run
 
@@ -64,198 +39,25 @@ Receive-Job $job -Keep | Out-File -Encoding utf8 ..\probe_run.txt
 Remove-Job $job
 ```
 
-Ignore the `lld-link : warning : found both wmain and main; using latter` — benign (SDL2main provides wmain, our main wins).
-
 ROM lives at `build/Debug/rogue_squadron.z64` (USA v1.0, xxHash3-64 = `0x6B66A44153594DEA`).
 
 For a headless run that drives past the title without a controller, pass `--fake-controller --auto-start <ms>` (or the env vars `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>`).
 
-## Environment variables
-
-All trace categories are off by default. The full catalog is in
-[docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md) — **read it before
-adding a new `fprintf` or asking the user to enable logs.** The common
-user-facing switches below also have `--flags` (run the exe with `--help`); the
-env-var name is kept here since that is what the code reads and what you grep
-for. Any variable can be set on the command line with `--set NAME=VALUE`.
-
-| Env var | Effect |
-|---|---|
-| `ROGUESQ_GFX_API=vulkan\|d3d12\|d3d11\|d3d10` | Force the graphics API (default auto) |
-| `ROGUESQ_HLE_DEV_MODE=0\|1` | RT64 ImGui inspector on F1 (default on in Debug, off in Release) |
-| `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-paced frame loop instead of the hardware VI protocol (default on). The VI-driven loop matches hardware message order and is the current stability baseline |
-| `ROGUESQ_F5_NATIVE=0` | Parse F5 display lists without emitting geometry |
-| `ROGUESQ_F5_CHUNK_BOUND=0` | Disable the F5 DL chunk-bounded fetch rule (default on) |
-| `ROGUESQ_F5_TERRAIN_SUB` / `ROGUESQ_F5_TERRAIN_SUB_FAR` | Terrain subdivision for near (`shift==0`) and far (`shift>=1`) tiles (default 2 / same as near). A lower far value leaves T-junction cracks at the LOD boundary; terrain emission is cheap (~0.3 ms/walk) |
-| `ROGUESQ_F5_CULL_DIST=<units>` | **Default off.** RT64-side per-object distance cull (camera-space): drops a model's draws when its `0x01` modelview origin exceeds the threshold. Trades far-object pop-in for fewer draws. Benefit scales with aggressiveness (~3000 = ~30% fewer hitches but visible pop-in; ~10000 = visually clean but marginal). Terrain/effects unaffected. `ROGUESQ_F5_CULL_LOG=1` logs per-object distances |
-| `ROGUESQ_FB_GUARDS=<mask>` | Host framebuffer guards, bitmask (default 6: 4 = RT64 fb-registry sanitizer, 1 = CIMG neutralizer, opt-in). `0` disables all for A/B against goldens |
-| `ROGUESQ_NO_AUDIO_UCODE=1` | Silent audio stub instead of the MusyX synth |
-| `ROGUESQ_DUMP_PCM=<path>\|1` | Write the synth output to a 22050 Hz stereo WAV (`1` = `dumps/wav/capture.wav`) |
-| `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>` | Headless runs: fake a controller, pulse START |
-| `ROGUESQ_LOG_GBI=1` / `ROGUESQ_LOG_GFX_TASK=1` | Per-handler GBI logs (high volume) / one line per graphics task |
-| `ROGUESQ_LOG_MESG_TRACE=1` (+ `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Thread/message-order trace for `tools/debug/validate/compare_mesg_trace.py` |
-| `ROGUESQ_DUMP_FRAME_DL=N` / `ROGUESQ_DUMP_TEXTURES=1` | Debug builds only: log gfx tasks N..N+15 to stderr (full detail for N, N+1); textures of those tasks go to `dumps/tex/` |
-
-There is no catch-all log switch; enable each category by name.
-
-With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mode, F4 toggles texture replacement, and F12 writes a crash dump. F9 / Shift+F9 step through the ray-tracing debug views live (named in a bottom-right notice).
-
-## Diagnostic artifacts
-
-Files written to `logs/` and `dumps/crash-dumps/` during a run:
-
-- `logs/stability/<tag>/run_N.log` — per-run stderr captured by `tools/debug/run-stability.ps1`. Companion `summary.csv` classifies outcomes.
-- `logs/stability/<tag>/memory.csv` — per-second WS / private / VM samples from `tools/debug/measure-leak.ps1`.
-- `mqdiag_NNN.txt` — no longer written (the periodic watchdog was removed). For a hang, take a full dump with `tools/debug/dump-game.ps1` and run `tools/debug/reconstruct-freeze.py` (game threads and queues from RDRAM) plus `tools/debug/host-stacks.py` (symbolized host stacks; Debug build only).
-- `dumps/crash-dumps/crash_YYYYMMDD_HHMMSS.dmp` — full-memory minidump from the SEH handler, the SIGABRT handler, the F12 hotkey, or external `tools/debug/dump-game.ps1`.
-
-## Tooling (under `tools/`)
-
-### Crash / hang triage
-
-1. **Crash**: a `crash_*.dmp` is written automatically by the handlers in `src/main/crash.cpp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
-2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` captures the running process even when the window is "Not Responding". Don't use F12 if the message pump is starved — it won't fire.
-3. **Triage threads**: `python tools/debug/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
-
-Note: the Windows debugger CLI (`cdb.exe`) is currently broken on this machine (`STATUS_DLL_INIT_FAILED`). Don't try to drive it from PowerShell — use VS interactively or the `minidump` Python package via `inspect-dump.py`.
-
-### Stability / leak harness
-
-- `tools/debug/run-stability.ps1 -Runs N -Timeout S -Tag <label>` — N timed launches, per-run stderr, outcome classification by marker grep. `-EnvVars "A=1;B=1"` forwards debug vars. `-Runs 1` for data capture, `-Runs 3` for stability-rate.
-- `tools/debug/measure-leak.ps1 -Timeout S -Tag <label>` — single run, per-second WS/Private/VM to `memory.csv`.
-- `tools/debug/recordings/` — per-mission input recordings (folder prefix = level id) plus `run-replays.ps1`, which replays every mission recording against its `.hash` baseline. See [tools/debug/recordings/README.md](tools/debug/recordings/README.md).
-
-### Validation harness (`tools/debug/validate/`)
-
-The primary correctness workflow — diff a live run against a Project64 golden rather than eyeballing screenshots:
-
-- `capture_pj64_golden.ps1` / `capture_menu_rdram.ps1` — scripted PJ64 goldens.
-- `f5_dl_walk.py` — walks a Factor 5 display list offline; `--json` for machine diff, `--tex` for texture/UV inspection. `f5_dl_ndc.py` adds NDC projection.
-- `dl_diff.py` — layer-by-layer DL diff vs golden.
-- `rdram_golden_diff.py` — RDRAM diff vs PJ64 (`--focus ADDR:SIZE` for field-level compare).
-- `state_diff.ps1` — **state-matched** decomp-vs-PJ64 memory diff: captures the recomp's RDRAM at several game states in one run (`ROGUESQ_DUMP_RDRAM_ON_STATE=a,b,c`, keyed to the game-state classifier) and diffs each vs a matching PJ64 golden (`dumps/pj64/rdram_state_<id>.bin`), focused via `focus_of.py` (state `focus` structs → `rdram_golden_diff --focus`). The two emulations compare by *logical state*, not wall-clock. PJ64 side needs state-tagged goldens (extend `pj64_rs64_dump.js`).
-- `audio_cmd_walk.py` / `audio_diff.py` — MusyX voice-command walk and diff (perception-free audio validation).
-- `compare_mesg_trace.py` / `symbolize_mesg_trace.py` — message-order trace comparison (pair with `ROGUESQ_LOG_MESG_TRACE`).
-- `checkpoint.ps1` — orchestrates a capture + diff checkpoint.
-
-### Frame-exact screenshots
-
-The game runs on the user's machine and every tool call adds unknown latency, so never time a screenshot by wall clock (sleeping "about 90 s" lands seconds off). Hold the game on an exact frame instead, then capture it:
-
-1. Launch with a pause list and a handshake base: `ROGUESQ_LS_PAUSE_AT=<frames>` for input replays (`capture-frames.ps1` does all of this), or `ROGUESQ_PAUSE_AT=<clock>[:<frame>],...` with `ROGUESQ_PAUSE_FILE=<base>` for anything else. A clock is a game state (`menu.options`, `mission`; frames since it was entered), `cutscene` (the cutscene's own frames) or `crawl` (the crawl clock at 30 a second, as the RS64 Explorer timelines count them).
-2. Wait until `<base>.paused` exists (it holds the frame number); the game thread is held there, up to 30 s.
-3. Capture the window by PID (`capture_window_by_pid`), never by title: other sessions may be running their own (often Debug) exe.
-4. Write the frame number to `<base>.resume` to release it, then wait for the next `.paused`.
-
-The RT64 MCP server below does the same hold interactively, with no 30 s cap, and can inspect the held frame.
-
-### Live frame inspection (RT64 MCP, `tools/debug/mcp/`)
-
-`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (registered as `rs64` in the local `.mcp.json`) that launches the game itself (cwd `build/<config>`, RenderDoc injected, muted, `--mcp-port`) and gives an agent what the F1 inspector shows. Use it instead of asking the user for F1 screenshots:
-
-- `pause_at` / `step` / `resume`: freeze the game and the picture on exactly frame N of a clock (the `ROGUESQ_PAUSE_AT` clocks plus `dl`, display lists since boot). RT64's own F4 pause does not stop the game; this holds the game thread first.
-- On the frozen frame: `frame_summary`, `list_draws`, `get_draw` (the Debugger tab's per-call data), `dump_texture` (TMEM + decoded PNG), `view_framebuffer` / `view_draw`, `free_cam`, `screenshot` (by PID), `renderdoc_capture`.
-- `lights_*` edit RT64's light presets (shown after the next `step`, rendered only with `ROGUESQ_RT_LIGHTS=1`); `frame_times` reads the Frametimes plot; `rdram_read` / `rdram_write` / `rdram_dump` (golden-diff format).
-- `pause_when` freezes on an RDRAM condition (once a frame); `wait_log` waits for a log regex (crashes, SEH); `pick` / `highlight` answer "what drew this pixel"; `read_symbol` reads by `syms/` name; `walk_dl` runs `f5_dl_walk.py` on a fresh dump; `hang_dump` takes a full dump and runs `reconstruct-freeze.py` + `host-stacks.py`; `launch(record=...)` saves the session's input as a replayable `.rec`.
-- `press` holds controller buttons or the stick for N frames, so `press` + `step` plays exact frames of input; `frame_warnings`, `rsp_state`, `vi_info`, `sprite_commands`; `get_config` / `set_config`, `rt_features`, `render_toggles` change RT64 settings live. Trace categories (`ROGUESQ_LOG_*`) stay launch-time: pass them in `launch`'s `env`.
-
-`python tools/debug/mcp/rs64_mcp.py --self-test` checks it end to end. The game only opens its loopback port when launched with `--mcp-port`. Details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
-
-### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
-
-- `tools/re/rename/` — the symbol-renaming pipeline (`build_redefs.py`, `find_callers.py`, ...). After a rename batch, regen and build: a name that drifted between the ELF and `rogue_squadron.toml` hooks fails there.
-- `tools/re/rz/rzq.py <cmd> <sym|0xADDR>` — rizin queries against the symbolized `rogue_squadron64` ELF: `xrefs`, `callees`, `disasm`, `strrefs`, `funcs`, `raw`. `--overlay mission|menu|cinematic` selects which overlay sits at 0x800A5130; `--project <file>` caches the ~25s analysis. See [tools/re/rz/README.md](tools/re/rz/README.md). Use it for tracing (who reads a global, a function's callers) before grepping `RecompiledFuncs/`; it needs rizin plus `pip install rzpipe`.
+Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs the host, multiplayer-mod and relay-server tests plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/`, the relay's in `relay-server/tests/`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
 
 ## Overriding recompiled functions
 
-**Do not hand-edit `RecompiledFuncs/funcs_*.c` for defensive guards or game-logic overrides.** Those edits are regeneration-hostile and made the codebase brittle for months. Base-game fixes are `[[patches.hook]]` (C inserted at the function's entry or `before_vram`) and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with any non-trivial host logic in [src/game/hook_helpers.cpp](src/game/hook_helpers.cpp) as an `extern "C"` function the hook declares and calls. Re-run `regen_funcs` after editing the toml. Whole-function C goes in the patches ELF instead ([patches/README.md](patches/README.md)); it rebuilds with the game.
+Base-game fixes are `[[patches.hook]]` (C inserted at the function's entry or `before_vram`) and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with any non-trivial host logic in [src/game/hook_helpers.cpp](src/game/hook_helpers.cpp) as an `extern "C"` function the hook declares and calls. Re-run `regen_funcs` after editing the toml. Whole-function C goes in the patches ELF instead ([patches/README.md](patches/README.md)); it rebuilds with the game.
 
 - A hook is compiled into the recompiled body, so it runs for direct and `LOOKUP_FUNC` (indirect, `func_map`) calls alike. No link-order tricks.
 - A hook's text is one call, `{ if (rs64_th_<func>_<vram|entry>(rdram, ctx)) return; }` or `{ rs64_th_<func>_<vram|entry>(rdram, ctx); }`; the style check rejects anything else. The body lives in [src/game/toml_hooks.c](src/game/toml_hooks.c) (declared in `include/rs64_toml_hooks.h`), compiled with the recompiled code, so it sees `rdram`, `ctx`, the `MEM_*` macros and `funcs.h`. `return 1` exits the whole game function (the first form only); set `ctx->r2` (or `ctx->f0`) first to return a value.
 - Call recompiled game functions from a hook only through `mips_call`.
 
-N64Recomp is `build/Debug/N64Recomp.exe` (override `N64RECOMP_EXE`), built from `lib/N64ModernRuntime/N64Recomp` (a directory in the N64ModernRuntime fork) via `N64RecompCLI`; `regen_funcs` depends on it. It supports `--dump-context`, `func_reference_syms_file` and `patch_files`. If a regen truncates `funcs.h` to ~7 lines, the exe is stale; see dead ends.
+N64Recomp is `build/Debug/N64Recomp.exe` (override `N64RECOMP_EXE`), built from `lib/N64ModernRuntime/N64Recomp` (a directory in the N64ModernRuntime fork) via `N64RecompCLI`; `regen_funcs` depends on it. It supports `--dump-context`, `func_reference_syms_file` and `patch_files`.
 
-Base-game fixes go in the toml. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and [docs/guides/modding.md](docs/guides/modding.md). Native-library mods that hook game code through the host API: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
+Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and [docs/guides/modding.md](docs/guides/modding.md). Native-library mods that hook game code through the host API: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
 
 `mods/platforms.json` decides which mods ship per platform: a mod not listed there ships nowhere. `desktop` entries (data-only folders and `.nrm` files) are staged next to the exe by `tools/mods/stage_mods.cmake`; `android` entries are packed into the APK. Release CI builds every `.nrm` listed under `desktop` via `tools/mods/build_code_mods.cmake`, matching each entry to the `mods/*/mod.toml` whose `mod_filename` equals the `.nrm` name, so a new code mod must be added to that list to ship ([docs/engine/release-ci.md](docs/engine/release-ci.md#code-mods)).
-
-## Architectural quirks worth knowing
-
-### Overlays: registered at boot, switched by a hook
-
-librecomp's section table covers all three `.ovl.*` overlays (mission / menu / cinematic), which share `ram_addr 0x800A5130`. They are all registered at boot in [src/game/register_overlays.cpp](src/game/register_overlays.cpp) via `recomp::overlays::register_overlays` (the Zelda64Recomp pattern). Which one the `func_map` resolves to is switched at runtime by a `[[patches.hook]]` on `loadOverlay` (0x80000B3C, `s0` = id 0 mission / 1 menu / 2 cinematic) calling `rs64_load_overlay` in [upstream_compat.cpp](src/game/upstream_compat.cpp), which unloads and loads the overlay through librecomp's API. Keep overlay logic there; don't modify librecomp's DMA path.
-
-### Terrain grid is 128x128 in host RAM
-
-The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to 0x80B00000-0x80B1FFFF, host RDRAM above the game's 8 MB (0x80A00000-0x80A01FFF is the F5 renderer's vertex scratch, and the runtime terrain edit API (host API v7, `src/game/terrain_edit.h`) moves a map's tile table to 0x80A10000-0x80A4BFFF; keep host-side tables clear of both), and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`. Manifests grown with mod-added asset files are copied to 0x80C00000-0x80C3FFFF (64 KB per `gManifestTable` slot, [hook_helpers.cpp](src/game/hook_helpers.cpp)); the camera name for a mod-linked mid-mission shot sits at 0x80C40000-0x80C400FF, a mod level's redirected asset name at 0x80C40100-0x80C401FF, its medal_info records at 0x80C40200-0x80C40223, SELECT GAME's mod medal text at 0x80C40300-0x80C40367, its opening crawl text at 0x80C41000-0x80C41FFF and its pause-list objective text at 0x80C42000-0x80C420FF and the pause menu's GAME SETTINGS, mod-page and root arrays at 0x80C43000-0x80C43FFF and its objective camera names at 0x80C42100-0x80C4217F; level rules use 0x80C42200-0x80C4223F for object names. With a language mod installed, 0x80C44000-0x80CE3FFF holds the extended fonts, the enlarged texture record and material slot tables and encoded text, and scene texture pools move to 0x80CE4000-0x80FFFFFF and 0x80810000-0x809FFFFF ([src/game/lang.cpp](src/game/lang.cpp)). Keep other host tables clear of them, and of 0x80800000-0x8080FFFF (librecomp's cart PI handle and the patches ELF's data at 0x80801000). `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
-
-### Per-player data relocation (co-op)
-
-The `multiplayer-native` mod owns this; the base build has the original data layout. While the mod is enabled, four ranges of per-player arrays live in host RAM so index 1 fits: R1 0x80138058-0x80138267 (`gObjectiveCounts` 0x80138060 at 0x80B38060), R2 0x80138268-0x80138837 (camera node[0]), R3 0x80138E5C-0x8013901F (`txtFileHeader` .. `voiceTxtString`) at +0x00A00000, and R4 0x80138930-0x80138D0F (a per-view 4 x 0xF8 block) at +0x00A20000 (`kMovedRanges` in `mp_core.h`). Only `lui` immediates change (`0x8013`/`0x8014` -> `0x80B3`..`0x80B6`), 200 sites in 107 functions, generated as `[[patches.instruction]]` entries at the end of the mod's `mod.toml`; at build time RecompModTool turns them (and the manifest) into the mod folder's `instruction_patches.json` and `mod.json` (mod id `multiplayer_native`). librecomp reads that file from any enabled mod (folder or `.nrm`), checks each site's original word (`expect`), refuses conflicts and replacements of patched functions, and regenerates those functions with LiveRecomp with the patches applied (the hook-replay path; logs `Mod instruction patches: N in M functions`). Regenerate the entries with `python mods/multiplayer-native/tools/gen_relocation.py` (reads an unpatched `RecompiledFuncs`; rewrites `mod.toml` below its marker line) after anything that changes the recompiled code of those functions; ambiguous sites are settled in `mods/multiplayer-native/tools/relocation_resolve.txt`. The mod registers the ranges with the host API's `add_moved_range`, so host code must go through `rs64::ls::relocated()` (identity while the mod is off). `ROGUESQ_RELOC_GUARD=1` reports writes to the old addresses. Tools that diff the 8 MB RDRAM against PJ64 goldens will see these fields as zero at their old addresses when the mod is on. `.nrm` mods link against the plain `syms/rogue_squadron.datasyms.toml`; one that reads these fields while multiplayer may be on translates the address with the `rs64_relocated` export.
-
-### Co-op player 2 is an imposter NPC
-
-`ROGUESQ_COOP_LOCAL=1` spawns player 2 as a level-wingman NPC (`npcWingmanUpdate` 0x800D93C0) from a fake DAT record at 0x80B40000 with no flight path, so the wingman AI idles and [mods/multiplayer-native/src/coop_imposter.cpp](mods/multiplayer-native/src/coop_imposter.cpp) flies it from port 1 (hook at the handler's post-state join 0x800D9A00, action 3 only). The spawn must be followed by one `slotDispatcherIter(slot, 3, &dt)` tick or the NPC never enters its tick chains. There is no gPlayers[1], view[1] or second camera, and local split-screen is out of scope. Hooks call recompiled functions only through `mips_call` (saves the context, runs the callee below the hook's stack frame). The flight model in `mp_core.cpp` is a port of the player X-wing's handling (`updateXwingFlightControls` 0x800B4588) and uses polynomial sin/cos with FP contraction off so every platform rounds the same. The NPC health patch (patches/src/npc_health.c) accepts the record's health slot in host RAM because the multiplayer code registers it with the host API's `add_valid_ram`; its lockstep hash column is an `add_hash_part`. The wingman dereferences its mesh during the spawn, so the record's model index (+0x8C) is the first wingman model the level loaded (`wingman_model`, a side-effect-free copy of `walkMeshdef0List`'s name lookup); with none, the imposter is skipped. It needs the `multiplayer-native` mod enabled.
-
-Online co-op (`ROGUESQ_MP=host|join`, or the MULTIPLAYER lobby page from the `multiplayer-native` mod) is the ghost model: each instance flies its own player 1 and poses the other player's imposter from the state it streams over ENet6, and the two worlds are independent. Code: `ghost.cpp` (session), `ghost_lobby.cpp`, `ghost_hud.cpp`, `net_core.cpp`, `net_link.cpp`; details, protocol and lobby flow are in [docs/guides/multiplayer.md](docs/guides/multiplayer.md). Every build ships online co-op only as the `multiplayer-native` mod, which the game's CMake builds. The multiplayer sources reach the game only through `mp_host.h` and base code sees them only through hooks, actions and flags, so a new base-side need is a flag or table entry, never a direct call. Gotchas:
-
-- Hooks call game functions only through `mips_call`.
-- There are `0x800` NPC slots and spawns are pool-checked (`npc_pool_room`); an unchecked spawn on a full pool corrupts the slot table.
-- Incoming damage waits for the mission to settle (30 frames, no cutscene), or the objective trigger faults.
-- The menu font has no period; `ensure_menu_period` builds it at runtime, so use the existing dot and blank glyph helpers, not hardcoded glyphs.
-- Android needs the `INTERNET` permission and a Wi-Fi multicast lock (`MainActivity`) for LAN discovery.
-- Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs `lockstep_core_test`, `nav_target_test`, `host_api_test`, `cable_alias_test`, `crosshair_match_test`, `rs64_lights_test`, the multiplayer mod's `mp_core_test`, `net_core_test`, `net_link_test` and `relay_client_test` (loopback against an in-process relay server; in `mods/multiplayer-native/tests`), the relay server's `relay_core_test` (`relay-server/tests`), plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/CMakeLists.txt`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests && cmake --build build-tests --config Release --target rs64_unit_tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
-
-### Game-state model + BOOT_TARGET nav engine
-
-A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/game/state_table.inl`, host classifier in [src/game/game_state.cpp](src/game/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-step 0x800CE626). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
-
-`ROGUESQ_BOOT_TARGET=level:<id>[,craft]` is a state-gated **nav sequencer** ([src/game/nav_sequencer.cpp](src/game/nav_sequencer.cpp)) that drives the real menus to a mission (replacing the old field-poke that jumped the state machine and bailed to attract). Never call a recompiled function from the host to force state — inject input + write fields the game's own confirm path reads (e.g. `gCurrentLevel` 0x130B70 is a **u32**, not a byte — a byte write = out-of-range id = crash). `demo:<n>` auto-disables the custom menu (it displaced the attract idle path) so the chosen attract demo plays; firing it *instantly* is unsolved (idle trigger is `(clock − lastInputFrame) > threshold`, `lastInputFrame` not locatable statically). See project memory `project_boot_target_nav_engine_2026_09_22` and `project_game_state_model_2026_09_22`.
-
-### Factor 5 GBI — custom opcodes
-
-This game uses a Factor 5-customized F3DEX-derived ucode. The RT64 profile `GBI_F3DFACTOR5` lives in [lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp](lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp) and inherits from `GBI_F3DEX`. The canonical opcode map (with observed w0/w1 patterns and disproven interpretations) is in [docs/reference/factor5-gbi.md](docs/reference/factor5-gbi.md); the DL grammar itself is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md). Confirmed Factor 5-specific behaviors:
-
-| Opcode | Standard meaning | Factor 5 behavior | Handler |
-|-------:|------------------|-------------------|---------|
-| `0xB5` | F3DEX `G_QUAD` | **Next chunk**: continue in the chunk named by the current chunk header's first word (w1 ignored); `0xB8` is the pop/return | `op_b5_next_chunk` |
-| `0xE4` | F3DEX `G_TEXRECT` | **LLE format (16 bytes)**, not HLE 24-byte | `texrectLLE_guarded` |
-| `0xE5` | F3DEX `G_TEXRECTFLIP` | LLE format | `texrectFlipLLE_guarded` |
-| `0xFF` | `G_SETCIMG` | Frequently emitted with bogus payloads (w1=0, fmt>4, out-of-FB addresses); rejected by `setColorImage_filtered` | `setColorImage_filtered` |
-| `0x80` | unused | Chunk header (next-chunk pointer in 24-bit w0); never executed by the ucode, used by the HLE to record the chunk base | `op_80_header` |
-| `0x02` | F3D `G_RDPHALF_2` | Per-vertex RGBA colors: DMA `(w0&0xFFFF)+1` bytes from w1 into DMEM 0xB70 | `op_02_colors` |
-
-Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content linearly from +8; at +0x108, or on `0xB5`, it continues in the chunk named by the header's first word. `0x06` pushes and calls, `0x07` branches, and `0xB8` pops (or ends the task at depth 0). Models render as CI4 textures at palette bank 15. Per-face UVs are raw values scaled by the per-material `03 82` texcoord scale (16.16, DMEM 0x140); applying it fixed the old "zoomed/stretched model texture" bug (`ROGUESQ_F5_TC_SCALE=0` reverts for A/B). Judge any remaining UV defect after that scale. Use `f5_dl_walk.py --tex` to compare.
-
-### Audio — MusyX synth and MORT voice
-
-Rogue Squadron drives audio through Factor 5's **MusyX** engine, and **SFX and music work**: the CPU-side MusyX sequencer submits `M_AUDTASK`s, which run the **RSPRecomp'd MusyX synth ucode** (`musyx_audio_runner`, from `rsp/musyx_rsp.toml`) on the host audio-task thread; the synthesized PCM flows through `queue_samples` → SDL ([audio.cpp](src/audio/audio.cpp)). This is the default (`get_rsp_microcode` returns `musyx_audio_runner` for `M_AUDTASK`); `ROGUESQ_NO_AUDIO_UCODE=1` falls back to the silent `musyx_stub`. Stock `aspMain` is **not** on the audio path; MusyX has no shared format with the stock ucode. `ROGUESQ_DUMP_PCM` drives offline capture. See [docs/reference/game-architecture.md](docs/reference/game-architecture.md#audio-pipeline).
-
-Subtitled **dialogue uses a separate codec, MORT** (per the [rerogue](https://github.com/dpethes/rerogue) PC-version RE). Contrary to earlier notes, MORT is **fully recompiled and works** — `tools/re/mort_decode.py` / `tools/re/MORTDecoder.cpp` are the offline reference. Voice-decode freezes were an **N64Recomp codegen bug** in the conditional branch-and-link (`bgezal`/`bltzal`) `$ra`-as-data-pointer idiom: the MusyX/voice filters do `bltzal $zero, T` then read `$ra` (= PC+8) as the base of an embedded coefficient table (`addiu $t7, $ra, 0xD4; lb …`). The recompiler emitted the branch but **never materialized the link *value***, so `$ra` stayed 0 (indirect-call entry), the table pointer computed to `~0x800000DB`, and the read AV'd — SEH-swallowed, killing the thread and deadlocking the frame pipeline (`filterVoiceSampleBlock`, on `viRetraceHandlerThread`, was the SELECT-LEVEL→load voiceline freeze; `applyVoiceDelayFilter` was the earlier demo/FrontEnd one). **Fixed (2026-09-20)**: `recompilation.cpp` now emits `ctx->r31 = PC+8` for the conditional branch-and-link ops before the branch condition (`Generator::emit_link_address`, implemented in `CGenerator`); `jal`/`jalr` still do not write `r31`. Diagnose these from a full-memory `dump-game.ps1` dump with `tools/debug/reconstruct-freeze.py` (frozen-machine state from RDRAM) + `tools/debug/host-stacks.py` (symbolized host stacks; refuses on a stale-exe/PDB mismatch). See project memory `craftselect-voiceline-freeze-2026-09-16` (root cause + the fix) and `demo-voiceline-freeze-2026-09-13`. The old `ROGUESQ_VOICE_UNSTICK` host watchdog has been removed. `tools/re/extract_speech_table.py` extracts the voiceId→text table.
-
-The **structure-destruction attract-demo freeze** (jade moon and any demo that blows up a structure) is **FIXED**: during an explosion an NPC has `npc+0x190 == NULL`, so `getNpcCurrentHealth` derefs a wild address and AVs; the SEH-swallowed AV leaves the gfx-frame barrier inconsistent → deadlock. [patches/src/npc_health.c](patches/src/npc_health.c) replaces `getNpcCurrentHealth` and the other four health accessors in the patches ELF and guards the slot read/write. getNpcCurrentHealth is reached only through the `func_map`/`LOOKUP_FUNC` indirect path; the patch covers it because `PatchesLib` is an OBJECT library, so the func_map's address-of binds to the patch (a STATIC patches library once bound it to the unguarded body). When a recompiled function hangs on data that decodes fine offline, suspect a codegen mistranslation of a rare instruction (especially the `*al` link-branches) before deep subsystem RE.
-
-### Cooperative-scheduler queue plumbing
-
-DP (`OS_EVENT_DP`) events arrive on a non-game thread → `enqueue_external_message_src` → drained on the next game-thread `osSendMesg`/`osRecvMesg`/`osJamMesg` via `dequeue_external_messages`. Queue 0x8011A408 (gate-thread DP queue, count=1) and 0x8011A7E8 (consumer) are the DP-pacing pair. Default `MessageQueueControl{}` has `requeue_dp = true`. The `mqdiag` instrumentation in [ultramodern/src/mesgqueue.cpp](lib/N64ModernRuntime/ultramodern/src/mesgqueue.cpp) tracks per-queue send/recv/external/delivered/blocked/lost/requeued counts; dump via `mqdiag_dump(path)`.
-
-### Frame pacing: 30 fps is the game's own cap
-
-The game is double-buffered (`0x80128EAD` = 2) with a minimum of 2 VIs per frame (`0x80128EAF` = 2, written once by `initVideoSubsystem` 0x8001A19C), so it presents at exactly 30 fps on any host. `viRetraceHandlerThread` bumps `0x80128EAE` every VI, zeroes it on a swap, and holds the next buffer until the counter reaches the minimum (0x80019AC8); buffer states are bytes at `0x80128EAA`. Every RDRAM golden (menu, cinematic, demos, missions) shows 2/2. On hardware heavy scenes dropped below 30; on PC the host never does, so the game thread idles on the swap and the F5 walk's `0xE9` wait is pacing, not render cost (render thread ~2-3 ms, GPU ~0.15 ms).
-
-Game time is variable-timestep, not frame-counted: `timeSnapshotFiller` (0x8000BC00) measures the interval from `osGetTime` plus the VIs still owed before the swap, and `runInMissionFrame` rounds it to whole VI periods (`getViModePeriod` 0x80002710: 16.667 ms NTSC / 20 ms PAL; `floatModulo` 0x8001E20C), uses 1/30 s if it is <= 0, clamps to 0.1 s, and passes it as `$f12` to the per-frame ticks (`slotDispatcherIter`, `updateGridLayerScroll`, audio listeners). Native 60 fps is therefore a one-byte change (`0x80128EAF` = 1) plus an audit for logic that counts frames instead of using dt. Untested. Fixed 1/30 s steps already exist in the lockstep/replay path (`rs64_ls_frame_dt`, `mp_register.cpp`, `ghost.cpp`), so recordings and co-op would need their own 60 Hz mode. Frame interpolation is the alternative: it keeps 30 Hz logic and smooths the display.
-
-### Exception handling pipeline
-
-- **C++ exceptions** (SEH `0xE06D7363`): the `__except` filter in [librecomp/src/recomp.cpp](lib/N64ModernRuntime/librecomp/src/recomp.cpp) **must** let these propagate (`EXCEPTION_CONTINUE_SEARCH`). Catching them with `std::exit(1)` kills the game on any throw; the outer `try/catch` in [ultramodern/src/threads.cpp](lib/N64ModernRuntime/ultramodern/src/threads.cpp) recovers.
-- **Hardware SEH** (AVs, illegal instructions): caught, the thread terminates, the process continues.
-- **STL bounds checks** ("vector subscript out of range"): the `_CrtSetReportHook` in [crash.cpp](src/main/crash.cpp) returns 1 to suppress the abort. Trade-off: occasional visual glitch over a hard crash.
-- **`get_function` on an unmapped address** (NULL or stray fn-ptr call): stubbed to a no-op in [librecomp/src/overlays.cpp](lib/N64ModernRuntime/librecomp/src/overlays.cpp) so the recompiled MIPS continues; logs `[null-call] addr=...` with the calling MIPS function (MSVC builds) or `Failed to find function at 0x...` (other compilers).
-
-### RT64 interpreter safety
-
-There is no global iteration cap in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter.cpp). F5 walks are bounded by the chunk-fetch rules in `rt64_gbi_f3dfactor5.cpp`: a per-task limit of 4096 chunk hops, exact chunk-revisit detection, and a back-link check. A runaway walk means one of those rules failed. `hleGBI` NULL checks exist around the reset path; the main HLE loop only `assert`s it.
 
 ## When investigating a new crash
 
@@ -271,7 +73,7 @@ There is no global iteration cap in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64
 3. **Rerun with the gfx traces**: `ROGUESQ_LOG_GFX_TASK=1` (one line per graphics task), `ROGUESQ_LOG_DL_HEALTH=1` (garbage color-image rejects, a desync signal) and `ROGUESQ_DESYNC_TRACE=1` (recent F5 commands ring) show which DL was in flight.
 4. **Use `tools/debug/reconstruct-freeze.py` on a full dump** to validate queue-level theories before instrumenting: it lists every blocked game thread and its wait queue. `tools/debug/host-stacks.py` gives the symbolized host stacks.
 
-For a hang specifically: if it's a cutscene/demo, suspect a recompiler codegen mistranslation of a rare instruction on the hung path (the demo-freeze root cause — see the Audio quirk) before deep subsystem RE.
+For a hang, or a recompiled function that faults on data that decodes fine offline, suspect a codegen mistranslation of a rare instruction on that path (the voice-freeze cause was the `*al` link-branches, see Audio) before deep subsystem RE.
 
 For a bug that shows up only in Release (or only when the host is fast), suspect a game assumption that some producer is slower than a frame before suspecting the compiler. Example: `tickFormatMessageWorker` sent every reply as a pointer to one stack buffer; at -O2 it answered several requests before the menu polled once, the queued replies aliased, and SELECT GAME lost its medals/preview (fixed by the reply-ring hook in `rogue_squadron.toml`). `ROGUESQ_WATCH_ADDRS` and `ROGUESQ_DATA_BP` find the diverging write; the CMake `RS64_OD_TARGETS` / `RS64_OD_SOURCES` settings bisect by optimization level.
 
@@ -284,19 +86,10 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **Moving more work from the CPU to the GPU to raise the frame rate** — the game caps itself at 30 fps (see Frame pacing), and RT64 already transforms vertices in GPU compute. Draw coalescing cut recording 4-8x with no change in frame rate.
 - **A `cv.wait` rewrite of RT64's present-queue busy-wait** (`advanceToNextPresent` in `rt64_present_queue.cpp`) — regressed natural-exit rate. Reverted.
 
-### libultra / scheduler
-
-- **13-way contention on `0x8011A7E8`** — only one thread calls `submitGfxFrame` (0x8000C07C).
-- **`0x80128EAE/F` as the cause of a frame-sync deadlock** — they are the VI-since-swap counter and the min-VIs-per-frame cap (see Frame pacing), not a sync token.
-- **10× `dp_complete` to fix DP throughput** — producer side is fine.
-- **Cooperative scheduler losing DP messages** — `mqdiag` shows 0 lost/requeued for the DP queue.
-- **"iter 3 hangs" in `submitGfxFrame`** — counter misread; the loop runs 30+ iters normally.
-- **"iter ~810 cinematic freeze"** — was a symptom of the old LLE pipeline. The current VI-driven HLE path runs steady; not observable. Don't chase it.
-
 ### Boot flow / state machine
 
-- **Force-menu bypass via `ROGUESQ_FORCE_MENU_AT_SEC`** — skipping cinematic init crashes downstream. Don't jump the state machine.
-- **Re-investigating a "missing state-1 writer" in the 5-slot table at `D_80154620`** — that's the speech/streamed-voice playback slots, not cinematic stages. This is where the streamed-voice active byte lives; the demo-freeze it seemed to gate was actually the `bgezal`/`bltzal` codegen bug (now fixed), not a missing scheduler writer.
+- **Force-menu bypass (poking fields to jump the state machine)** — skipping cinematic init crashes downstream or bails to attract. Use the nav sequencer.
+- **Re-investigating a "missing state-1 writer" in the 5-slot table at `D_80154620`** — that's the speech/streamed-voice playback slots, not cinematic stages. The demo freeze it seemed to gate was the `bltzal` codegen bug.
 
 ### Build / regeneration
 
@@ -306,7 +99,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 ### Miscellaneous
 
-- **The `wmain/main` link warning** — benign.
+- **The `lld-link : warning : found both wmain and main`** — benign (SDL2main provides wmain, ours wins).
 - **Shadowing `osPiStartDma_recomp` in `upstream_compat.cpp` with only the ROM-read branch** — boot needs the SRAM-read path too. Replicate `do_dma` in full or it regresses.
 
 ## Style conventions
@@ -315,7 +108,6 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 - **No emojis** in code, comments, or docs unless explicitly requested.
 - **Minimal UI controls.** When placing buttons and toggles (RS64 Explorer, ImGui panels), keep them few and compact, and use an icon with a tooltip instead of a text label wherever the action is simple enough to read from an icon; an on/off box sits left of its section heading's text (the heading is its label), and a destructive icon (delete) stays apart from it at the far right.
-- **No trailing summary blocks** in chat responses — one-line wrap-up max.
 - Default to **no comments**. Add one only when the WHY is non-obvious (a workaround for a specific bug, a hidden invariant, a non-visible constraint).
 - **Comments are terse and matter-of-fact.** State the fact, not the reasoning journey. No multi-paragraph narration, no dated blow-by-blow history, no "we tried X then Y" storytelling in a comment — one or two plain lines. This applies to config comments (e.g. `rogue_squadron.toml`) too.
 - **At most 1-2 lines per comment block, and don't hard-wrap at ~90 columns** — let a line run long rather than splitting one sentence across several. No trailing side comments after code (`x = 1;  // note`) and no extra notes tacked on after a semicolon; if it matters, it goes in the one comment above the code.
@@ -328,7 +120,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
   ```c
   { static int n=0; ++n; if (n<=10 || (n%50)==0) { fprintf(stderr, "..."); fflush(stderr); } }
   ```
-- **Diagnostic accumulators must be bounded.** Any `static` set/map/vector that a debug probe grows keyed by an ever-changing value (address, hash, DL/frame id) leaks to runaway memory over a long logging session if it is never evicted — a distinct-hash set is the classic offender. Cap them keep-recent instead: in `lib/rt64` use `rt64diag::BoundedSet` / `BoundedMap` ([lib/rt64/src/common/rt64_diag_bounds.h](lib/rt64/src/common/rt64_diag_bounds.h), FIFO eviction, default 5000, override `ROGUESQ_DIAG_CAP`); once saturated a set reports a recent-window count (`<= cap`), not an all-time total. Address/config-keyed trackers are naturally small and need no cap; hash/id-keyed ones do. (Note: normal runs are memory-flat in both Debug and Release — the fixed ~4.9GB Private / ~11GB Virtual at boot is RT64's GPU commit, not a leak; runaway shows up only under diag flags.)
+- **Diagnostic accumulators must be bounded.** Any `static` set/map/vector that a debug probe grows keyed by an ever-changing value (address, hash, DL/frame id) leaks to runaway memory over a long logging session if it is never evicted — a distinct-hash set is the classic offender. Cap them keep-recent instead: in `lib/rt64` use `rt64diag::BoundedSet` / `BoundedMap` ([lib/rt64/src/common/rt64_diag_bounds.h](lib/rt64/src/common/rt64_diag_bounds.h), FIFO eviction, default 5000, override `ROGUESQ_DIAG_CAP`); once saturated a set reports a recent-window count (`<= cap`), not an all-time total. Address/config-keyed trackers are naturally small and need no cap. The fixed ~4.9 GB Private / ~11 GB Virtual at boot is RT64's GPU commit, not a leak.
 - When renaming symbols, avoid address-encoded names (`clearByteAt801128CC`) — they add nothing over `func_HHHHHHHH`. If you can't see the semantics, leave it as `func_*`.
 - **One statement per line.** Every statement gets its own line — don't trail one after another on the same physical line separated by `;` (`extern T* g; g = x;` is two lines). Split a trailing guard onto the next line:
   ```c
@@ -393,10 +185,208 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **Read env vars through the shared `recomp::dbg::env_*` helpers** (`src/util/debug_logs.h`: `env_on`/`env_int`/`env_str`/`env_u32`), not open-coded `getenv` parsing.
 - **Remove a debug env var once the fix or feature it served is done** — the gate, the code behind it, its row in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md), and any comment naming it. Keep one only if it can test, validate or probe for other bugs (a trace category, a dump, an address watch, an A/B toggle for a still-heuristic path). A probe for one frame, one address or one already-verified fix does not qualify.
 
-## Open work
+## Environment variables
 
-Priorities (user-visible issues are listed under [Status](README.md#status-playable) in the README):
+All trace categories are off by default and there is no catch-all log switch. The full catalog is in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md) — **read it before adding a new `fprintf` or asking the user to enable logs.** The common switches below also have `--flags` (`--help`); any variable can be set with `--set NAME=VALUE`.
 
-1. **Symbol renaming** — e.g. the "debris cell" functions in `funcs_36.c` (`buildDebrisMeshFromCells`, `emitDebrisCellFaces`, …) are the JFIF/JPEG decoder used by `tickFormatMessageWorker`. Regen and build after each batch.
+| Env var | Effect |
+|---|---|
+| `ROGUESQ_GFX_API=vulkan\|d3d12\|d3d11\|d3d10` | Force the graphics API (default auto) |
+| `ROGUESQ_HLE_DEV_MODE=0\|1` | RT64 ImGui inspector on F1 (default on in Debug, off in Release) |
+| `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-paced frame loop instead of the hardware VI protocol (the stability baseline, default on) |
+| `ROGUESQ_F5_NATIVE=0` | Parse F5 display lists without emitting geometry |
+| `ROGUESQ_NO_AUDIO_UCODE=1` | Silent audio stub instead of the MusyX synth |
+| `ROGUESQ_DUMP_PCM=<path>\|1` | Write the synth output to a 22050 Hz stereo WAV (`1` = `dumps/wav/capture.wav`) |
+| `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>` | Headless runs: fake a controller, pulse START |
+| `ROGUESQ_LOG_GBI=1` / `ROGUESQ_LOG_GFX_TASK=1` | Per-handler GBI logs (high volume) / one line per graphics task |
+| `ROGUESQ_LOG_MESG_TRACE=1` (+ `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Thread/message-order trace for `tools/debug/validate/compare_mesg_trace.py` |
+| `ROGUESQ_DUMP_FRAME_DL=N` / `ROGUESQ_DUMP_TEXTURES=1` | Debug builds only: log gfx tasks N..N+15 to stderr (full detail for N, N+1); textures of those tasks go to `dumps/tex/` |
 
-The render path is HLE through the `GBI_F3DFACTOR5` profile.
+With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mode, F4 toggles texture replacement, and F12 writes a crash dump. F9 / Shift+F9 step through the ray-tracing debug views live (named in a bottom-right notice).
+
+## Project layout
+
+```
+src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
+  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp)
+  ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
+  ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
+  ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
+  ├── game/                             Code that hooks the recompiled game: hook_helpers (entry points for rogue_squadron.toml hooks), toml_hooks.c, upstream_compat (libultra shims, scheduler overrides, rs64_load_overlay), register_overlays / register_patches, game_state + nav_sequencer (state classifier, BOOT_TARGET driver), menu_config, builtin_hooks, camera_shots.h, mod_levels.h
+  ├── host_api/                         Mod host API (public header include/rs64/host_api.h)
+  ├── lockstep/                         Input record/replay and frame hashing
+  └── util/                             debug_logs.h (env_* helpers), mips_call.h, rdram_words.h
+mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
+patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
+mods/multiplayer-native/                Online co-op as a native mod, always built by the game's CMake (the exe has no multiplayer code)
+  ├── src/                              ghost*.cpp (session, lobby, HUD), net_*.cpp (ENet6), relay_client.cpp (rs64_relay transport), coop_imposter.cpp, mp_core.cpp (imposter flight model, puppet, lobby rules), mp_register.cpp + mp_host.h (host-API registrations, its only route to the game)
+  ├── tests/                            mp_core_test, net_core_test, net_link_test (run by rs64_unit_tests)
+  ├── mod.toml, tools/                  Manifest plus the per-player data relocation as [[patches.instruction]] (RecompModTool writes mod.json / instruction_patches.json at build time) and its generator
+  └── lib/enet6/, lib/miniupnp/         Submodules for the transport, built only for this mod
+relay-server/                           rs64_relay, the standalone co-op relay server (lists and pairs games, forwards packets); builds alone with only enet6, released by relay-release.yml
+tests/                                  Host unit tests (rs64_unit_tests)
+rogue_squadron.toml, patches.toml       N64Recomp configs (game ELF / patches ELF)
+rsp/                                    RSPRecomp configs (MusyX synth, shared boot ucode)
+tools/state/state_model.toml            Game-state descriptor (state_table.inl codegen + Python tools)
+lib/N64ModernRuntime/                   Submodule — fork at MikeSemicolonD/N64ModernRuntime
+  ├── librecomp/                        Recompiler runtime (overlay loading, get_function, SEH)
+  └── ultramodern/                      libultra emulation (threads, mesgqueue, events)
+lib/rt64/                               Submodule — fork at MikeSemicolonD/rt64
+  └── src/gbi/rt64_gbi_f3dfactor5.cpp   Native Factor 5 GBI profile (the render core)
+syms/                                   Submodule (RogueSquadron64RecompSyms): function + data symbols and the mods data variant. dump_syms rewrites them; commit inside syms/, then bump the pointer
+android/, ci/                           Android Gradle project; release CI runner scripts
+docs/                                   guides/ (build, mods, co-op), engine/ (debugging, env vars, host API, CI), reference/ (RE notes; its README is the on-ramp)
+tools/
+  ├── debug/                            Crash/hang triage, stability + leak harnesses, menu driving, validate/, lockstep/, recordings/
+  ├── re/                               Reverse-engineering helpers: rz/, rename/, render/, MORT decoders, one-off disasm/decode probes
+  ├── release/                          Versioning, release bundling, packaging and cross-builds (linux/, macos/, android/)
+  ├── mods/, state/, style/, d3d11/     Build inputs read by CMake/CI (mod build scripts, state model, style baseline, D3D11 shader combos)
+  └── web/                              Browser tools (rs64-explorer/, its data generator, save-editor/), deployed to GitHub Pages by .github/workflows/pages.yml on pushes to main that touch the site (the landing page is the root index.html)
+build/                                  CMake out-of-source build dir
+```
+
+The recompiled MIPS code lives in-repo at `RecompiledFuncs/` — `funcs_*.c` plus `funcs.h`, `lookup.cpp`, and `recomp_overlays.inl`. It is **gitignored** (a derivative of the copyrighted ROM; generated locally, never committed) and regenerated from `rogue_squadron.toml` with `cmake --build build --config Debug --target regen_funcs`; the next build re-globs automatically (`CONFIGURE_DEPENDS`). Regen reads the decomp ELF at `../rogue_squadron64/build/roguesquadron.elf`, and rebuilds `N64RecompCLI` first. N64Recomp fails the regen if any patch (including the co-op relocation in `patch_files`) names a missing function or vram. These are auto-generated; hand-instrumenting them with diagnostic `fprintf` probes is routine, but load-bearing logic belongs in `rogue_squadron.toml` hooks (see Overriding recompiled functions), not here — regeneration silently discards inline edits.
+
+The forked submodules under `lib/` carry intentional `if(false) fprintf(...)` debug-toggle cruft and game-specific defensive guards. **Do not propose stripping these** as cleanup; they are intentional.
+
+## Tooling (under `tools/`)
+
+### Crash / hang triage
+
+1. **Crash**: the handlers in `src/main/crash.cpp` (SEH, SIGABRT, F12) write a full-memory `dumps/crash-dumps/crash_*.dmp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
+2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` captures the running process even when the window is "Not Responding" (F12 won't fire if the message pump is starved). Run `tools/debug/reconstruct-freeze.py` on it (blocked game threads and their queues, from RDRAM) and `tools/debug/host-stacks.py` (symbolized host stacks; Debug build, refuses on a stale exe/PDB).
+3. **Triage threads**: `python tools/debug/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
+
+To read a dump from the shell, use WinDbg's console debugger (`winget install Microsoft.WinDbg`): `cdbX64.exe -z <dmp> -y build\Debug -c "~*k;q"` prints every thread's stack. The Windows SDK's own `cdb.exe` may not start (its `dbghelp.dll` was replaced by a newer, incompatible one).
+
+### Stability / leak harness
+
+- `tools/debug/run-stability.ps1 -Runs N -Timeout S -Tag <label>` — N timed launches, per-run stderr in `logs/stability/<tag>/`, outcomes classified in its `summary.csv`. `-EnvVars "A=1;B=1"` forwards debug vars. `-Runs 1` for data capture, `-Runs 3` for stability-rate.
+- `tools/debug/measure-leak.ps1 -Timeout S -Tag <label>` — single run, per-second WS/Private/VM to `memory.csv`.
+- `tools/debug/recordings/` — per-mission input recordings (folder prefix = level id) plus `run-replays.ps1`, which replays every mission recording against its `.hash` baseline. See [tools/debug/recordings/README.md](tools/debug/recordings/README.md).
+
+### Validation harness (`tools/debug/validate/`)
+
+The primary correctness workflow — diff a live run against a Project64 golden rather than eyeballing screenshots:
+
+- `capture_pj64_golden.ps1` / `capture_menu_rdram.ps1` — scripted PJ64 goldens.
+- `f5_dl_walk.py` — walks a Factor 5 display list offline; `--json` for machine diff, `--tex` for texture/UV inspection. `f5_dl_ndc.py` adds NDC projection.
+- `dl_diff.py` — layer-by-layer DL diff vs golden.
+- `rdram_golden_diff.py` — RDRAM diff vs PJ64 (`--focus ADDR:SIZE` for field-level compare).
+- `state_diff.ps1` — **state-matched** decomp-vs-PJ64 memory diff: captures the recomp's RDRAM at several game states in one run (`ROGUESQ_DUMP_RDRAM_ON_STATE=a,b,c`, keyed to the game-state classifier) and diffs each vs a matching PJ64 golden (`dumps/pj64/rdram_state_<id>.bin`), focused via `focus_of.py` (state `focus` structs → `rdram_golden_diff --focus`). The two emulations compare by *logical state*, not wall-clock. PJ64 side needs state-tagged goldens (extend `pj64_rs64_dump.js`).
+- `audio_cmd_walk.py` / `audio_diff.py` — MusyX voice-command walk and diff (perception-free audio validation).
+- `compare_mesg_trace.py` / `symbolize_mesg_trace.py` — message-order trace comparison (pair with `ROGUESQ_LOG_MESG_TRACE`).
+- `checkpoint.ps1` — orchestrates a capture + diff checkpoint.
+
+### Frame-exact screenshots
+
+The game runs on the user's machine and every tool call adds unknown latency, so never time a screenshot by wall clock (sleeping "about 90 s" lands seconds off). Hold the game on an exact frame instead, then capture it:
+
+1. Launch with a pause list and a handshake base: `ROGUESQ_LS_PAUSE_AT=<frames>` for input replays (`tools/debug/recordings/capture-frames.ps1` does all of this), or `ROGUESQ_PAUSE_AT=<clock>[:<frame>],...` with `ROGUESQ_PAUSE_FILE=<base>` for anything else. A clock is a game state (`menu.options`, `mission`; frames since it was entered), `cutscene` (the cutscene's own frames) or `crawl` (the crawl clock at 30 a second, as the RS64 Explorer timelines count them).
+2. Wait until `<base>.paused` exists (it holds the frame number); the game thread is held there, up to 30 s.
+3. Capture the window by PID (`capture_window_by_pid`), never by title: other sessions may be running their own (often Debug) exe.
+4. Write the frame number to `<base>.resume` to release it, then wait for the next `.paused`.
+
+The RT64 MCP server below does the same hold interactively, with no 30 s cap, and can inspect the held frame.
+
+### Live frame inspection (RT64 MCP, `tools/debug/mcp/`)
+
+`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (`rs64` in the local `.mcp.json`) that launches the game itself and gives an agent what the F1 inspector shows; use it instead of asking the user for F1 screenshots. `pause_at` / `step` hold the game thread on exactly frame N of a clock (RT64's own F4 pause does not stop the game), then draws, textures, framebuffers, RDRAM and screenshots can be read from the held frame. Trace categories (`ROGUESQ_LOG_*`) go in `launch`'s `env`. Tool list and details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
+
+### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
+
+- `tools/re/rename/` — the symbol-renaming pipeline (`build_redefs.py`, `find_callers.py`, ...). After a rename batch, regen and build: a name that drifted between the ELF and `rogue_squadron.toml` hooks fails there.
+- `tools/re/rz/rzq.py <cmd> <sym|0xADDR>` — rizin queries against the symbolized `rogue_squadron64` ELF: `xrefs`, `callees`, `disasm`, `strrefs`, `funcs`, `raw`. `--overlay mission|menu|cinematic` selects which overlay sits at 0x800A5130; `--project <file>` caches the ~25s analysis. See [tools/re/rz/README.md](tools/re/rz/README.md). Use it for tracing (who reads a global, a function's callers) before grepping `RecompiledFuncs/`; it needs rizin plus `pip install rzpipe`.
+
+## Architectural quirks worth knowing
+
+### Overlays: registered at boot, switched by a hook
+
+librecomp's section table covers all three `.ovl.*` overlays (mission / menu / cinematic), which share `ram_addr 0x800A5130`. They are all registered at boot in [src/game/register_overlays.cpp](src/game/register_overlays.cpp) via `recomp::overlays::register_overlays` (the Zelda64Recomp pattern). Which one the `func_map` resolves to is switched at runtime by a `[[patches.hook]]` on `loadOverlay` (0x80000B3C, `s0` = id 0 mission / 1 menu / 2 cinematic) calling `rs64_load_overlay` in [upstream_compat.cpp](src/game/upstream_compat.cpp), which unloads and loads the overlay through librecomp's API. Keep overlay logic there; don't modify librecomp's DMA path.
+
+### Terrain grid is 128x128 in host RAM
+
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to host RDRAM above the game's 8 MB, and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`.
+
+Host-side tables above 8 MB (keep any new one clear of all of these):
+
+| Range | Contents |
+|---|---|
+| 0x80800000-0x8080FFFF | librecomp's cart PI handle; patches ELF data at 0x80801000 |
+| 0x80810000-0x809FFFFF | Scene texture pool (language mod only) |
+| 0x80A00000-0x80A01FFF | F5 renderer vertex scratch |
+| 0x80A10000-0x80A4BFFF | Terrain edit API tile table (host API v7, `src/game/terrain_edit.h`) |
+| 0x80B00000-0x80B1FFFF | 128x128 terrain grid tables |
+| 0x80B38058-0x80B3901F, 0x80B58930-0x80B58D0F | Co-op relocated per-player ranges (mod only, `kMovedRanges` in `mp_core.h`) |
+| 0x80B40000-0x80B4015F | Co-op imposter DAT record and message scratch (mod only) |
+| 0x80C00000-0x80C3FFFF | Manifests grown with mod assets, 64 KB per `gManifestTable` slot ([hook_helpers.cpp](src/game/hook_helpers.cpp)) |
+| 0x80C40000-0x80C400FF | Camera name for a mod-linked mid-mission shot |
+| 0x80C40100-0x80C401FF | Mod level's redirected asset name |
+| 0x80C40200-0x80C40223 | Mod level medal_info records |
+| 0x80C40300-0x80C40367 | SELECT GAME mod medal text |
+| 0x80C41000-0x80C41FFF | Mod level opening crawl text |
+| 0x80C42000-0x80C420FF | Pause-list objective text |
+| 0x80C42100-0x80C4217F | Objective camera names |
+| 0x80C42200-0x80C4223F | Level rules object names |
+| 0x80C43000-0x80C43FFF | Pause menu GAME SETTINGS, mod-page and root arrays |
+| 0x80C44000-0x80CE3FFF | Language mod: extended fonts, enlarged texture/material tables, encoded text ([src/game/lang.cpp](src/game/lang.cpp)) |
+| 0x80CE4000-0x80FFFFFF | Scene texture pool (language mod only) |
+
+`ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
+
+### Co-op lives in the `multiplayer-native` mod
+
+Online co-op is a native mod; the exe has no multiplayer code and the base build has the original data layout. The mod reaches the game only through `mp_host.h`, and base code sees it only through hooks, actions and flags, so a new base-side need is a flag or table entry, never a direct call. Player 2 is an imposter wingman NPC, and while the mod is on four ranges of per-player arrays are relocated to host RAM, so host code reads them through `rs64::ls::relocated()` and RDRAM goldens show them as zero at their old addresses. Imposter, relocation, protocol and gotchas: [docs/guides/multiplayer.md](docs/guides/multiplayer.md).
+
+### Game-state model + BOOT_TARGET nav engine
+
+A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/game/state_table.inl`, host classifier in [src/game/game_state.cpp](src/game/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-step 0x800CE626). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
+
+`ROGUESQ_BOOT_TARGET=level:<id>[,craft]` is a state-gated **nav sequencer** ([src/game/nav_sequencer.cpp](src/game/nav_sequencer.cpp)) that drives the real menus to a mission. Never call a recompiled function from the host to force state — inject input + write fields the game's own confirm path reads (e.g. `gCurrentLevel` 0x130B70 is a **u32**, not a byte — a byte write = out-of-range id = crash). `demo:<n>` auto-disables the custom menu (it displaced the attract idle path) so the chosen attract demo plays; firing it *instantly* is unsolved (idle trigger is `(clock − lastInputFrame) > threshold`, `lastInputFrame` not locatable statically).
+
+### Factor 5 GBI — custom opcodes
+
+This game uses a Factor 5-customized F3DEX-derived ucode. The RT64 profile `GBI_F3DFACTOR5` lives in [lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp](lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp) and inherits from `GBI_F3DEX`. The canonical opcode map (with observed w0/w1 patterns and disproven interpretations) is in [docs/reference/factor5-gbi.md](docs/reference/factor5-gbi.md); the DL grammar itself is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md). Confirmed Factor 5-specific behaviors:
+
+| Opcode | Standard meaning | Factor 5 behavior | Handler |
+|-------:|------------------|-------------------|---------|
+| `0xB5` | F3DEX `G_QUAD` | **Next chunk**: continue in the chunk named by the current chunk header's first word (w1 ignored); `0xB8` is the pop/return | `op_b5_next_chunk` |
+| `0xE4` | F3DEX `G_TEXRECT` | **LLE format (16 bytes)**, not HLE 24-byte | `texrectLLE_guarded` |
+| `0xE5` | F3DEX `G_TEXRECTFLIP` | LLE format | `texrectFlipLLE_guarded` |
+| `0xFF` | `G_SETCIMG` | Frequently emitted with bogus payloads (w1=0, fmt>4, out-of-FB addresses); rejected by `setColorImage_filtered` | `setColorImage_filtered` |
+| `0x80` | unused | Chunk header (next-chunk pointer in 24-bit w0); never executed by the ucode, used by the HLE to record the chunk base | `op_80_header` |
+| `0x02` | F3D `G_RDPHALF_2` | Per-vertex RGBA colors: DMA `(w0&0xFFFF)+1` bytes from w1 into DMEM 0xB70 | `op_02_colors` |
+
+Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content linearly from +8; at +0x108, or on `0xB5`, it continues in the chunk named by the header's first word. `0x06` pushes and calls, `0x07` branches, and `0xB8` pops (or ends the task at depth 0). Models render as CI4 textures at palette bank 15. Per-face UVs are raw values scaled by the per-material `03 82` texcoord scale (16.16, DMEM 0x140; `ROGUESQ_F5_TC_SCALE=0` disables it for A/B). Use `f5_dl_walk.py --tex` to compare.
+
+### Audio — MusyX synth and MORT voice
+
+Rogue Squadron drives audio through Factor 5's **MusyX** engine, and **SFX and music work**: the CPU-side MusyX sequencer submits `M_AUDTASK`s, which run the **RSPRecomp'd MusyX synth ucode** (`musyx_audio_runner`, from `rsp/musyx_rsp.toml`) on the host audio-task thread; the synthesized PCM flows through `queue_samples` → SDL ([audio.cpp](src/audio/audio.cpp)). This is the default (`get_rsp_microcode` returns `musyx_audio_runner` for `M_AUDTASK`); `ROGUESQ_NO_AUDIO_UCODE=1` falls back to the silent `musyx_stub`. Stock `aspMain` is **not** on the audio path; MusyX has no shared format with the stock ucode. `ROGUESQ_DUMP_PCM` drives offline capture. See [docs/reference/game-architecture.md](docs/reference/game-architecture.md#audio-pipeline).
+
+Subtitled **dialogue uses a separate codec, MORT** (per the [rerogue](https://github.com/dpethes/rerogue) PC-version RE), fully recompiled; `tools/re/mort_decode.py` / `tools/re/MORTDecoder.cpp` are the offline reference and `tools/re/extract_speech_table.py` extracts the voiceId→text table. The voice filters read `$ra` after `bltzal $zero` as the base of an embedded coefficient table, so N64Recomp must write `ctx->r31 = PC+8` for the conditional branch-and-link ops (`Generator::emit_link_address`); `jal`/`jalr` still do not write `r31`.
+
+[patches/src/npc_health.c](patches/src/npc_health.c) replaces `getNpcCurrentHealth` and the other four health accessors and guards the slot read, which is NULL (`npc+0x190`) while a structure explodes. `getNpcCurrentHealth` is reached only through `LOOKUP_FUNC`; the patch covers it because `PatchesLib` is an OBJECT library (a STATIC one bound the func_map to the unguarded body).
+
+### Scheduler queue plumbing
+
+Disproven, don't chase: contention on `0x8011A7E8` (only `submitGfxFrame` 0x8000C07C uses it), lost DP messages (`mqdiag` shows 0 lost/requeued), DP throughput (the producer side is fine; 10x `dp_complete` changed nothing), and `0x80128EAE/F` as a sync token (they are the frame-pacing counters).
+
+DP (`OS_EVENT_DP`) events arrive on a non-game thread → `enqueue_external_message_src` → drained on the next game-thread `osSendMesg`/`osRecvMesg`/`osJamMesg` via `dequeue_external_messages`. Queue 0x8011A408 (gate-thread DP queue, count=1) and 0x8011A7E8 (consumer) are the DP-pacing pair. Default `MessageQueueControl{}` has `requeue_dp = true`. The `mqdiag` instrumentation in [ultramodern/src/mesgqueue.cpp](lib/N64ModernRuntime/ultramodern/src/mesgqueue.cpp) tracks per-queue send/recv/external/delivered/blocked/lost/requeued counts; dump via `mqdiag_dump(path)`.
+
+### Frame pacing: 30 fps is the game's own cap
+
+The game is double-buffered (`0x80128EAD` = 2) with a minimum of 2 VIs per frame (`0x80128EAF` = 2, written once by `initVideoSubsystem` 0x8001A19C), so it presents at exactly 30 fps on any host. `viRetraceHandlerThread` bumps `0x80128EAE` every VI, zeroes it on a swap, and holds the next buffer until the counter reaches the minimum (0x80019AC8); buffer states are bytes at `0x80128EAA`. Every RDRAM golden (menu, cinematic, demos, missions) shows 2/2. On hardware heavy scenes dropped below 30; on PC the host never does, so the game thread idles on the swap and the F5 walk's `0xE9` wait is pacing, not render cost (render thread ~2-3 ms, GPU ~0.15 ms).
+
+Game time is variable-timestep, not frame-counted: `timeSnapshotFiller` (0x8000BC00) measures the interval from `osGetTime` plus the VIs still owed before the swap, and `runInMissionFrame` rounds it to whole VI periods (`getViModePeriod` 0x80002710: 16.667 ms NTSC / 20 ms PAL; `floatModulo` 0x8001E20C), uses 1/30 s if it is <= 0, clamps to 0.1 s, and passes it as `$f12` to the per-frame ticks (`slotDispatcherIter`, `updateGridLayerScroll`, audio listeners). The lockstep/replay path uses fixed 1/30 s steps instead (`rs64_ls_frame_dt`).
+
+### Exception handling pipeline
+
+- **C++ exceptions** (SEH `0xE06D7363`): the `__except` filter in [librecomp/src/recomp.cpp](lib/N64ModernRuntime/librecomp/src/recomp.cpp) **must** let these propagate (`EXCEPTION_CONTINUE_SEARCH`). Catching them with `std::exit(1)` kills the game on any throw; the outer `try/catch` in [ultramodern/src/threads.cpp](lib/N64ModernRuntime/ultramodern/src/threads.cpp) recovers.
+- **Hardware SEH** (AVs, illegal instructions): caught, the thread terminates, the process continues.
+- **STL bounds checks** ("vector subscript out of range"): the `_CrtSetReportHook` in [crash.cpp](src/main/crash.cpp) returns 1 to suppress the abort. Trade-off: occasional visual glitch over a hard crash.
+- **`get_function` on an unmapped address** (NULL or stray fn-ptr call): stubbed to a no-op in [librecomp/src/overlays.cpp](lib/N64ModernRuntime/librecomp/src/overlays.cpp) so the recompiled MIPS continues; logs `[null-call] addr=...` with the calling MIPS function (MSVC builds) or `Failed to find function at 0x...` (other compilers).
+
+### RT64 interpreter safety
+
+There is no global iteration cap in [rt64_interpreter.cpp](lib/rt64/src/hle/rt64_interpreter.cpp). F5 walks are bounded by the chunk-fetch rules in `rt64_gbi_f3dfactor5.cpp`: a per-task limit of 4096 chunk hops, exact chunk-revisit detection, and a back-link check. A runaway walk means one of those rules failed. `hleGBI` NULL checks exist around the reset path; the main HLE loop only `assert`s it.
+
