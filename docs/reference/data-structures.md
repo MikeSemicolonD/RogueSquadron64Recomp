@@ -448,7 +448,8 @@ Common header: +0x00 sub_type, +0x06/+0x34 runtime fields (init 0xFFFF), +0x08 s
 
 - **Type 0 (spawn/props)** confirmed extras: +0x4C flags (bit0x2), +0x54 runtime ptr (init
   0x80000000), +0x5C offset→ptr, +0x8A variant/craft id (funcs_10.c:3633-3675, funcs_15.c:3152).
-- **Type 6 (LOD/MUSICRNG)**: sub_type 0x04/0x05/0x10 select; +0x8A variant (funcs_15.c:3041).
+- **Type 0 death effect** (`datItemSetObjectiveBooleanCount`, record-relative, all 1-based, 0 = none; only units the game can destroy run it): objective counter +0x70 += +0x74, objective flag +0x78 = +0x7C, second counter +0x80 += +0x84. Mod-level `destroy` and `protect` objectives read these (explorer `UNIT_DEATH` in rs64assets.js).
+- **Type 6 (LOD/MUSICRNG)**: sub_type 0x04/0x05/0x10 select; +0x8A variant (funcs_15.c:3041). A music region is sub_type 0x10: flag 0x80 at +0x34 (also what preloads its songs), music cue in slot 0 at +0x3C (played on entry) and slots 1-2 at +0x40/+0x44 (what it switches to later); cue 0 = stop, 1 = restore, n >= 2 = entry n-2 of the cue table 0x8010B1C0 (explorer `musicZoneSet`).
 - **Type 7 (event triggers)**: +0x04 flags (bit0x4000 set on match), +0x34/+0x44 counts,
   +0x58/+0x68 offset→child, +0x80 offset→name (funcs_28.c:2545-2682).
 

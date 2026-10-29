@@ -76,8 +76,8 @@ the PDB. Do this for EVERY distinct `av_rva` in the run (`grep -oE "av_rva=0x[0-
 ### Hang dumps (game "Not Responding")
 - `pwsh tools/debug/dump-game.ps1` captures the running process (works when the window is starved and F12
   can't fire). `python tools/debug/inspect-dump.py` lists threads and tags the 2-4 `in_exe` ones worth opening
-  in Visual Studio (File > Open > .dmp > Debug Native). `cdb.exe` is broken on this machine — use VS
-  interactively or the `minidump` python package via inspect-dump.py; do not try to drive cdb.
+  in Visual Studio (File > Open > .dmp > Debug Native). For a scripted look use
+  `cdbX64.exe -z <dmp> -y build\Debug -c "~*k;q"` (WinDbg's cdb; the SDK's old `cdb.exe` does not start).
 - Crash dumps land in `dumps/crash-dumps/crash_*.dmp` (SEH handler / SIGABRT / F12 / dump-game.ps1).
 
 ### Crash-class cheatsheet
