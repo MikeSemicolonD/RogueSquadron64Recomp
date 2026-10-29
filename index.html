@@ -546,9 +546,11 @@ footer a { color: var(--gold); }
   <div class="shots">
     <button type="button"><img src="screenshots/Capture1.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture2.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture3.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture4.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture5.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture6.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
+    <button type="button"><img src="screenshots/Capture7.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
     <button type="button"><img src="screenshots/Capture8.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
   </div>
   </section>
@@ -585,7 +587,7 @@ for (const t of tabs) seen.observe(document.querySelector(t.hash));
 // Header background cycles from the one it opens on through the grid's screenshots. Each swap
 // happens --show after the previous one; the next image preloads meanwhile so the swap is never late.
 const layers = document.querySelectorAll('.bgs .bg');
-const urls = ['screenshots/Capture7.png', ...[...document.querySelectorAll('.shots img')].map(img => img.getAttribute('src'))];
+const urls = [...[...document.querySelectorAll('.shots img')].map(img => img.getAttribute('src'))];
 const showMs = parseFloat(getComputedStyle(document.querySelector('.bgs')).getPropertyValue('--show')) * 1000;
 let bgAt = 0;
 let front = 0;
