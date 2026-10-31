@@ -327,7 +327,7 @@ Builds and can run on **Ubuntu 24.04** and under **WSL2** (GCC 13 / Ninja); nati
 Install the dependencies, do steps 1-3 above, then configure and build the game target:
 
 ```sh
-sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libvulkan-dev libgtk-3-dev gcc-mips-linux-gnu binutils-mips-linux-gnu
+sudo apt install build-essential cmake ninja-build python3 zip libsdl2-dev libvulkan-dev libgtk-3-dev gcc-mips-linux-gnu binutils-mips-linux-gnu
 cmake -B build -G "Ninja Multi-Config" -DN64RECOMP_EXE=build-tools/N64Recomp
 cmake --build build --config Debug --target RogueSquadron64Recomp
 ```
