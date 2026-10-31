@@ -11,7 +11,7 @@ body:
         - Recomp. Feature (built into the port)
         - Mod hook / host API addition
         - Mod idea
-        - Browser tool (explorer, save editor)
+        - RS64 Explorer (or the save editor)
     validations:
       required: true
 
