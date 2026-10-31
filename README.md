@@ -2,7 +2,7 @@
 
   [![Rogue Squadron 64 Recompiled icon](./favicon.ico)](https://mikesemicolond.github.io/RogueSquadron64Recomp/)
 
-# Star Wars: Rogue Squadron 64 Recompiled
+# Rogue Squadron 64 Recompiled
 
 </div>
 
@@ -233,6 +233,13 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 </div>
 
 *Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
+
+After cloning (step 1), a setup script can do steps 2-4 for you. It asks for your ROM, checks for missing tools (and installs the Linux packages with apt), and builds Release. Re-run it after a `git pull`:
+
+```sh
+bash tools/setup/setup.sh                                                  # Linux
+powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1             # Windows
+```
 
 ### 1. Clone with submodules
 

@@ -72,6 +72,21 @@
             "detail": "Native Linux tree in build/ with the Windows layout (build/Debug, build/Release), so the shared Build, Run and Test tasks work. Needs the README's Linux packages and steps 1-3."
         },
         {
+            "label": "Setup: Build from a fresh clone",
+            "type": "shell",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/tools/setup/setup.ps1"],
+            "linux": {
+                "command": "bash",
+                "args": ["${workspaceFolder}/tools/setup/setup.sh"]
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Runs tools/setup/setup.ps1 (Linux: setup.sh): checks the tools, fetches the submodules and the decomp, asks for the ROM in the terminal if none is imported yet, regenerates the recompiled code and builds Release."
+        },
+        {
             "label": "Build: RogueSquadron64Recomp (x86 Debug)",
             "type": "shell",
             "command": "cmake",

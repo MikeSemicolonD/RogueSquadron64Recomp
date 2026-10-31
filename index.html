@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rogue Squadron 64 Recompiled</title>
-<meta name="description" content="A native PC port of Star Wars: Rogue Squadron (N64), built with N64Recomp and RT64. Bring your own 1.0 US ROM.">
-<meta property="og:title" content="Star Wars: Rogue Squadron 64 Recompiled">
+<meta name="description" content="A native PC port of Rogue Squadron (N64), built with N64Recomp and RT64. Bring your own 1.0 US ROM.">
+<meta property="og:title" content="Rogue Squadron 64 Recompiled">
 <meta property="og:description" content="Native port built with N64Recomp + RT64. Bring your own 1.0 US ROM.">
 <meta property="og:image" content="https://mikesemicolond.github.io/RogueSquadron64Recomp/docs/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -72,8 +72,6 @@ section, .hero { scroll-margin-top: 52px; }
   .tabs { justify-content: flex-start; padding: 6px 8px; }
   .tabs a { padding: 6px 10px; font-size: 14px; letter-spacing: .08em; }
   .hero { min-height: 80svh; }
-  .kicker, .sub { letter-spacing: .3em; margin-right: -.3em; }
-  .subrow { gap: 12px; }
   main { padding-top: 32px; }
   .download { font-size: 26px; padding: 16px 36px; }
 }
@@ -171,7 +169,6 @@ body::after {
 @media (min-width: 900px) {
   .hero { align-items: flex-start; padding-left: 8vw; }
   .hero > * { width: 640px; }
-  .subrow { justify-content: center; }
   .actions { justify-content: center; }
 
   .hero > .download {
@@ -183,45 +180,15 @@ body::after {
   }
 }
 
-.kicker, .sub {
-  font-family: Rajdhani, sans-serif;
-  font-weight: 700;
-  letter-spacing: .45em;
-  margin: 0;
-}
+h1 { margin: 12px 0 28px; }
 
-.kicker { font-size: clamp(18px, 3vw, 28px); margin-right: -.45em; }
-
-h1 {
-  margin: 4px 0;
-  font: 700 clamp(56px, 12vw, 120px)/.9 Rajdhani, sans-serif;
-  text-transform: uppercase;
-  background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 45%, var(--gold-lo) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+h1 img {
+  display: block;
+  width: min(280px, 60vw);
+  height: auto;
+  margin: 0 auto;
   filter: drop-shadow(0 4px 0 #3a1a02) drop-shadow(0 0 24px rgba(245, 160, 40, .45));
 }
-
-.subrow {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin: 8px 0 28px;
-}
-
-.subrow::before, .subrow::after {
-  content: "";
-  width: clamp(40px, 10vw, 100px);
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--gold));
-}
-
-.subrow::after { transform: scaleX(-1); }
-
-.sub { font-size: clamp(20px, 3.4vw, 32px); margin-right: -.45em; }
-
-.sub b { color: var(--gold); }
 
 .tag { margin: 0; font-weight: 600; font-size: 18px; }
 
@@ -484,9 +451,7 @@ footer a { color: var(--gold); }
     <div class="bg on" style="background-image: url('screenshots/Capture7.png')"></div>
     <div class="bg"></div>
   </div>
-  <p class="kicker">STAR WARS</p>
-  <h1>Rogue<br>Squadron</h1>
-  <div class="subrow"><p class="sub"><b>64</b> RECOMP</p></div>
+  <h1><img src="tools/web/logo.png" width="772" height="657" alt="Rogue Squadron 64 Recomp"></h1>
   <p class="tag">Native port &middot; N64Recomp + RT64</p>
   <p class="rom">Bring your own 1.0 US ROM</p>
   <nav class="actions">

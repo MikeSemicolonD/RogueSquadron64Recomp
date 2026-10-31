@@ -4,12 +4,13 @@
 Function bounds and names come from syms/rogue_squadron.syms.toml (the names the config and mods use); data symbols and any remaining func_ names from the decomp where the vram matches.
 Needs rogue_squadron.z64 in the decomp's root: python tools/re/make_elf_from_syms.py
 """
-import os, sys, tomllib, importlib.util
+import os, sys, tomllib, hashlib, importlib.util
 from pathlib import Path
 
 RECOMP = Path(__file__).resolve().parents[2]
 DECOMP = RECOMP.parent / "rogue_squadron64"
 DECOMP_ELF = "build/roguesquadron.decomp.elf"
+ROM_SHA1 = "ed42eed1ee2db646ff7ef94ba8c5421d164a4f0d"
 
 spec = importlib.util.spec_from_file_location("mk", DECOMP / "tools/make_elf.py")
 mk = importlib.util.module_from_spec(spec); spec.loader.exec_module(mk)
@@ -28,6 +29,10 @@ def read_elf_syms(path):
     return out
 
 def main():
+    # Other versions are separate code builds; with these symbols N64Recomp fails with "Unhandled branch in recomp_entrypoint".
+    rom = DECOMP / "rogue_squadron.z64"
+    if not rom.is_file() or hashlib.sha1(rom.read_bytes()).hexdigest() != ROM_SHA1:
+        sys.exit(f"{rom} must be the USA 1.0 ROM as .z64 (SHA-1 {ROM_SHA1}). USA Rev 1, European and Japanese ROMs are not supported; tools/setup/import_rom.py converts a .v64 or .n64.")
     syms = tomllib.load(open(RECOMP / "syms/rogue_squadron.syms.toml", "rb"))
     secidx = {s[3]: i + 1 for i, s in enumerate(mk.SECTIONS)}
     # syms.toml already contains the config's manual_funcs; N64Recomp rejects them as duplicates.
