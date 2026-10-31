@@ -2,7 +2,7 @@
 
   [![Rogue Squadron 64 Recompiled icon](./favicon.ico)](https://mikesemicolond.github.io/RogueSquadron64Recomp/)
 
-# Star Wars: Rogue Squadron 64 Recompiled
+# Rogue Squadron 64 Recompiled
 
 </div>
 
@@ -234,6 +234,13 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 *Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
 
+After cloning (step 1), a setup script can do steps 2-4 for you. It asks for your ROM, checks for missing tools (and installs the Linux packages with apt), and builds Release. Re-run it after a `git pull`:
+
+```sh
+bash tools/setup/setup.sh                                                  # Linux
+powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1             # Windows
+```
+
 ### 1. Clone with submodules
 
 ```sh
@@ -317,15 +324,17 @@ Debug builds compile in the D3D12 debug layer; turn it on at runtime with `ROGUE
 
 Builds and can run on **Ubuntu 24.04** and under **WSL2** (GCC 13 / Ninja); native Linux should behave the same with a real Vulkan driver.
 
-Install the dependencies, generate the recompiled C (step 3), then configure with Ninja and build the game target:
+Install the dependencies, do steps 1-3 above, then configure and build the game target:
 
 ```sh
-sudo apt install build-essential cmake ninja-build libsdl2-dev libvulkan-dev libgtk-3-dev
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DN64RECOMP_EXE=build-tools/N64Recomp
-cmake --build build --target RogueSquadron64Recomp
+sudo apt install build-essential cmake ninja-build python3 libsdl2-dev libvulkan-dev libgtk-3-dev gcc-mips-linux-gnu binutils-mips-linux-gnu
+cmake -B build -G "Ninja Multi-Config" -DN64RECOMP_EXE=build-tools/N64Recomp
+cmake --build build --config Debug --target RogueSquadron64Recomp
 ```
 
-`gcc-mips-linux-gnu binutils-mips-linux-gnu` are only needed to build `.nrm` code mods on Linux.
+`Ninja Multi-Config` puts the game in `build/Debug/` and `build/Release/` as on Windows, so the VS Code build, run and test tasks work on Linux too (`Configure (Linux)` runs the configure line). Copy the ROM next to the executable.
+
+The MIPS GCC builds the patches ELF and `.nrm` code mods; CMake finds `mips-linux-gnu-gcc` on its own.
 
 - **Wayland:** if the window stays black and the log shows `fault caught ... lib=.../libdecor-gtk.so`, SDL's GTK decoration plugin crashed. Run through XWayland with `SDL_VIDEODRIVER=x11`.
 

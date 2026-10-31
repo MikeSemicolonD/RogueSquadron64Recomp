@@ -1,0 +1,31 @@
+name: Label issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            // Issue forms render each dropdown as "### <label>\n\n<choice>"; a choice that starts with a repo label's name gets that label.
+            const m = (context.payload.issue.body || '').match(/^### (?:Issue type|Kind)\s+(.+)$/m);
+            const choice = m ? m[1].trim().toLowerCase() : '';
+            const labels = await github.paginate(github.rest.issues.listLabelsForRepo, context.repo);
+            const hit = labels
+              .filter(l => choice.startsWith(l.name.toLowerCase()))
+              .sort((a, b) => b.name.length - a.name.length)[0];
+
+            if (hit) {
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: context.issue.number,
+                labels: [hit.name],
+              });
+            }

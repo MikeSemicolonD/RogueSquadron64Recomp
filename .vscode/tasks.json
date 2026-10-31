@@ -18,6 +18,9 @@
                 "isDefault": true
             },
             "problemMatcher": "$msCompile",
+            "linux": {
+                "problemMatcher": "$gcc"
+            },
             "detail": "Full relink of the game exe (tested config)."
         },
         {
@@ -34,6 +37,9 @@
             },
             "group": "build",
             "problemMatcher": "$msCompile",
+            "linux": {
+                "problemMatcher": "$gcc"
+            },
             "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
@@ -50,6 +56,35 @@
             },
             "problemMatcher": [],
             "detail": "32-bit Windows tree in build-x86. Reuses the x64 build's N64Recomp.exe, so build the x64 Debug target first."
+        },
+        {
+            "label": "Configure (Linux)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "-B", "build",
+                "-G", "Ninja Multi-Config"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Native Linux tree in build/ with the Windows layout (build/Debug, build/Release), so the shared Build, Run and Test tasks work. Needs the README's Linux packages and steps 1-3."
+        },
+        {
+            "label": "Setup: Build from a fresh clone",
+            "type": "shell",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/tools/setup/setup.ps1"],
+            "linux": {
+                "command": "bash",
+                "args": ["${workspaceFolder}/tools/setup/setup.sh"]
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Runs tools/setup/setup.ps1 (Linux: setup.sh): checks the tools, fetches the submodules and the decomp, asks for the ROM in the terminal if none is imported yet, regenerates the recompiled code and builds Release."
         },
         {
             "label": "Build: RogueSquadron64Recomp (x86 Debug)",
@@ -136,6 +171,16 @@
                     "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
                 }
             },
+            "linux": {
+                "command": "set --; [ -n '${input:rsLevel}' ] && set -- \"$@\" --force-level '${input:rsLevel}'; [ -n '${input:rsCraft}' ] && set -- \"$@\" --force-craft '${input:rsCraft}'; echo \"RogueSquadron64Recomp $*\"; ./RogueSquadron64Recomp \"$@\"",
+                "options": {
+                    "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
+                }
+            },
             "problemMatcher": [],
             "detail": "Launch the game with an optional forced level and/or craft (--force-level / --force-craft). You drive the menus; whatever mission you launch uses the forced values."
         },
@@ -153,6 +198,9 @@
             },
             "group": "build",
             "problemMatcher": "$msCompile",
+            "linux": {
+                "problemMatcher": "$gcc"
+            },
             "detail": "Builds rs64_relay (the co-op relay server, relay-server/) into build/<config>."
         },
         {
@@ -167,6 +215,17 @@
                 }
             },
             "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "cmake --build ${workspaceFolder}/build --config ${input:rsConfig} --target rs64_relay && ./rs64_relay",
+                "options": {
+                    "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
+                },
+                "problemMatcher": "$gcc"
+            },
             "detail": "Builds rs64_relay, then opens it in its own console window on UDP 27070, run from build/<config> (its rs64_relay.cfg is saved there). Type help in that window for commands; quit or Ctrl+C stops it. Point the game at it with \"relay_server\": \"127.0.0.1\" in roguesq_net.json (docs/guides/relay-server.md)."
         },
         {
@@ -198,7 +257,7 @@
             "detail": "Online co-op pair on localhost: the host (left) replays the level's solo recording (newest <mission>_<timestamp>.rec unless overridden), you fly the client (right) and your input is saved as <mission>_coop_client_<timestamp>.rec. Close the client window to stop. Craft None = the host recording's craft."
         },
         {
-            "label": "IDE: Refresh clangd compile database (Windows)",
+            "label": "IDE: Refresh clangd compile database",
             "type": "shell",
             "command": "$vs = 'C:/Program Files/Microsoft Visual Studio/2022/Community'; Import-Module \"$vs/Common7/Tools/Microsoft.VisualStudio.DevShell.dll\"; Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null; cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "options": {
@@ -206,6 +265,16 @@
                 "shell": {
                     "executable": "powershell.exe",
                     "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "linux": {
+                "command": "cmake -S . -B build-ide -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+                "options": {
+                    "cwd": "${workspaceFolder}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
                 }
             },
             "problemMatcher": [],
@@ -291,6 +360,9 @@
                 "isDefault": true
             },
             "problemMatcher": "$msCompile",
+            "linux": {
+                "problemMatcher": "$gcc"
+            },
             "detail": "Builds and runs rs64_unit_tests: lockstep_core, mp_core, net_core, net_link, nav_target, host_api, cable_alias, crosshair_match, rs64_lights, then the style checker."
         },
         {
@@ -306,6 +378,17 @@
             },
             "group": "test",
             "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "cmake -S tests -B build-tests -G 'Ninja Multi-Config' && cmake --build build-tests --config ${input:rsConfig} --target rs64_unit_tests",
+                "options": {
+                    "cwd": "${workspaceFolder}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
+                },
+                "problemMatcher": "$gcc"
+            },
             "detail": "Runs rs64_unit_tests from its own tree in build-tests: needs only the submodules, no ROM, recompiled code or MIPS toolchain."
         },
         {
@@ -321,6 +404,17 @@
             },
             "group": "test",
             "problemMatcher": "$msCompile",
+            "linux": {
+                "command": "cmake --build build --config ${input:rsConfig} --target ${input:wslTest} && \"build/${input:rsConfig}/${input:wslTest}\"",
+                "options": {
+                    "cwd": "${workspaceFolder}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
+                },
+                "problemMatcher": "$gcc"
+            },
             "detail": "Builds and runs one of the EXCLUDE_FROM_ALL tests that rs64_unit_tests does not cover."
         },
         {
