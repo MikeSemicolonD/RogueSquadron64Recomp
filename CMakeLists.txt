@@ -170,7 +170,7 @@ endif()
 # Base-game C in patches/src: compiled to MIPS with the code-mod toolchain, recompiled by N64Recomp (patches.toml) and registered with librecomp at boot (register_patches.cpp), as in Zelda64Recomp.
 include(${CMAKE_SOURCE_DIR}/tools/mods/code_mod.cmake)
 if (NOT EXISTS "${MIPS_GCC}" OR NOT EXISTS "${MIPS_LD}")
-    message(FATAL_ERROR "The patches build needs MIPS GCC and ld: set MIPS_TOOLCHAIN_DIR (now ${MIPS_TOOLCHAIN_DIR}) or MIPS_GCC and MIPS_LD.")
+    message(FATAL_ERROR "The patches build needs MIPS GCC and ld: set MIPS_TOOLCHAIN_DIR (now ${MIPS_TOOLCHAIN_DIR}) or MIPS_GCC and MIPS_LD, or on Ubuntu install gcc-mips-linux-gnu binutils-mips-linux-gnu.")
 endif()
 set(PATCHES_DIR ${CMAKE_SOURCE_DIR}/patches)
 set(PATCHES_OUT ${CMAKE_SOURCE_DIR}/RecompiledPatches)
