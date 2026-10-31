@@ -7,7 +7,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DECOMP="$(dirname "$REPO")/rogue_squadron64"
-PACKAGES=(build-essential cmake ninja-build git python3 libsdl2-dev libvulkan-dev libgtk-3-dev gcc-mips-linux-gnu binutils-mips-linux-gnu)
+PACKAGES=(build-essential cmake ninja-build git python3 zip libsdl2-dev libvulkan-dev libgtk-3-dev gcc-mips-linux-gnu binutils-mips-linux-gnu)
 ROM_SHA1=ed42eed1ee2db646ff7ef94ba8c5421d164a4f0d
 
 step() { printf '\n== %s\n' "$*"; }
