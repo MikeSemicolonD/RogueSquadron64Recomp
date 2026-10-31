@@ -159,7 +159,9 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
+>
 > Twist grip or rudder pedals can do one of two depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction add together.
+>
 > Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis. Hold the 'Roll' button then twist to roll.
 
 In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
@@ -234,13 +236,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 *Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
 
-After cloning (step 1), a setup script can do steps 2-4 for you. It asks for your ROM, checks for missing tools (and installs the Linux packages with apt), and builds Release. Re-run it after a `git pull`:
-
-```sh
-bash tools/setup/setup.sh                                                  # Linux
-powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1             # Windows
-```
-
 ### 1. Clone with submodules
 
 ```sh
@@ -251,6 +246,21 @@ cd RogueSquadron64Recomp
 `lib/` holds forks of [N64ModernRuntime](https://github.com/MikeSemicolonD/N64ModernRuntime) and [rt64](https://github.com/MikeSemicolonD/rt64), forked because the upstream libraries don't support Factor 5's custom microcode. N64ModernRuntime also contains a forked/modified version of `N64Recomp`.
 
 [enet6](https://github.com/SirLynix/enet6) and [miniupnp](https://github.com/miniupnp/miniupnp) are used exclusively for the multiplayer co-op mod.
+
+> [!NOTE]
+> **A *setup script* can do steps 2 - 4 for you.**
+>
+> It'll ask for the ROM, check for missing tools, then create a Release build.
+>
+> Re-run it after a `git pull`:
+>
+> ```sh
+> powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1             # Windows
+> ```
+>
+> ```sh
+> bash tools/setup/setup.sh                                                  # Linux
+> ```
 
 ### 2. Produce the decomp ELF
 
@@ -342,7 +352,8 @@ The MIPS GCC builds the patches ELF and `.nrm` code mods; CMake finds `mips-linu
 
 > [!NOTE]
 > This section on WSL2 can be ignored **unless** you're looking to try to debug/run a Linux build on Windows.
-> Do not use this method to profile and judge performance since a virtualized Linux machine will not run anywhere near as well as running Linux on bare metal.
+>
+> Do not use this method to profile and judge performance since a virtualized Linux machine will not run anywhere near as well as running on bare metal.
 
 - Keep the build directory on the Linux filesystem (e.g. `~/rs64-build`), **not** under `/mnt/…` — CMake's compiler checks can fail with `Operation not permitted` on the Windows drive mount. Source can stay on `/mnt`.
 - WSLg supplies the display, PulseAudio (sound), and keyboard/mouse, so the game runs directly. A physical gamepad needs `usbipd-win` to route the USB device to wsl; the keyboard works out of the box.
@@ -374,7 +385,10 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 ### macOS notes
 
 > [!IMPORTANT]
-> **Untested on a Mac.** The release has a universal `RogueSquadron64Recomp.app` (Apple Silicon and Intel, macOS 11+) cross-built from Windows with compiled Metal shaders, but nobody has run it on a Mac yet.
+> ***Untested* on a Mac.**
+>
+> The release has a universal `RogueSquadron64Recomp.app` (Apple Silicon and Intel, macOS 11+) cross-built from Windows with compiled Metal shaders.
+>
 > It isn't notarized: run `xattr -dr com.apple.quarantine RogueSquadron64Recomp.app` once before opening it.
 
 On a Mac, the Linux / macOS commands above should apply (Xcode Command Line Tools + `brew install cmake ninja sdl2`)
@@ -542,7 +556,11 @@ Here's a list of MCPs that could be useful for this project:
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
-> `windows-screenshot-mcp-server` usage can be finicky because while Claude (as of September 2026) can view screenshots, it can miss things that are visually obvious to a human like visual glitches/artifacts. (Good enough to be useful, not good enough to trust blindly)
+> `windows-screenshot-mcp-server` usage can be finicky.
+>
+> While Claude (*as of **September 2026***) can view pixels in the screenshots, it can miss things that are visually obvious to a human like visual glitches or rapidly flickering artifacts.
+>
+> (Good enough to be useful, not good enough to trust blindly)
 
 ## Tooling
 
