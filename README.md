@@ -207,8 +207,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - F5 profiler scales itself with screen size and widescreen with it changing when in cutscene vs gameplay which isn't ideal.
 
-- Frame drops can severely affect how sensitive the mouse is
-
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
 ### Game specific Issues

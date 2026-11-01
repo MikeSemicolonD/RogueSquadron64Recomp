@@ -1869,6 +1869,13 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     uint32_t smooth_now = SDL_GetTicks();
     float smooth_dt = s_last_ms ? (float)(smooth_now - s_last_ms) : 16.0f;
     s_last_ms = smooth_now;
+
+    // Pixels since the last poll grow with the frame time and the game scales turning by it too, so convert to pixels per 30 fps frame; the floor guards a double poll.
+    const float per_frame = (1000.0f / 30.0f) / std::max(smooth_dt, 1000.0f / 60.0f);
+
+    raw_dx *= per_frame;
+    raw_dy *= per_frame;
+
     float tau = g_bindings.mouse_smoothing * 100.0f;  // smoothing amount -> ms time constant
     float alpha = tau > 0.0f ? smooth_dt / (smooth_dt + tau) : 1.0f;
     s_sm_dx += (raw_dx - s_sm_dx) * alpha;
