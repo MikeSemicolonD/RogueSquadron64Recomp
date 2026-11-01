@@ -140,6 +140,15 @@ Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around
 - `python tools/debug/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
 - `python tools/debug/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).
 
+Other helpers under [tools/debug/](../../tools/debug/):
+
+- `dump_stackscan.py` symbolizes thread stacks from a minidump.
+- `run-stability.ps1` launches N timed runs and classifies each by stderr markers.
+- `recordings/` holds per-mission input recordings; `run-replays.ps1` replays them against their state-hash baselines ([README](../../tools/debug/recordings/README.md)).
+- `validate/` captures Project64 goldens, diffs RDRAM, compares message-order traces, and walks display lists offline.
+
+`cmake --build build --config Release --target rs64_unit_tests` builds and runs the unit tests and the style check.
+
 [AGENTS.md](../../AGENTS.md#when-investigating-a-new-crash) lists the common crash signatures and what they usually mean.
 
 ## Files worth knowing
@@ -163,3 +172,21 @@ The debugger is best for catching one failure once you know roughly where it is.
 - comparing threads when stepping would change the timing.
 
 Logging categories are off by default and enabled with `ROGUESQ_LOG_*` environment variables; [debug-trace-env-vars.md](debug-trace-env-vars.md) lists them all. Rate-limit new probes (`static int n=0; if (++n<=10 || (n%50)==0) { ... }`) and send stderr to a file, not the console: Windows console output is synchronous and slow enough at high rates to make the game look hung.
+
+## In-game profiler
+
+**F5** toggles Factor 5's own built-in frame-profiler HUD (a dormant retail feature, gated by one RDRAM byte).
+
+![Factor5's built-in profiler](../ProfilerBars.PNG)
+
+- **Yellow Bar**  = CPU; it grows toward full width as a scene exceeds 'frame budget'.
+- **Blue bar**    = render/geometry cost (RSP + display-list processing)
+- **Red bar**     = rasterization/fill cost (total RDP)
+- **Magenta Bar** = RDP* cmd-buffer busy (DPC_BUFBUSY) -> draw-call count (per State::flush)
+- **White Bar**   = RDP* pipe busy (DPC_PIPEBUSY)      -> drawCall.triangleCount
+- **Green Bar**   = RDP* TMEM busy (DPC_TMEM)          -> drawCall.loadCount
+- **Cyan Bar**    = Not used
+
+*The recomp re-uses the bars by basing them on the draw calls from rt64 while also scaling them with `ROGUESQ_DRAW_SCALE` / `ROGUESQ_TRIS_SCALE` / `ROGUESQ_TEX_SCALE`. `ROGUESQ_PROFILER_DUMP=1` can log the raw slot values for debugging purposes.
+
+**(It's an approximation and is not representative of how DPC performs on *actual hardware*)**

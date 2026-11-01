@@ -14,7 +14,10 @@ Patch sources include `rs64_api.h` ([syms/include/](../syms/include/rs64_api.h))
 Base-game fixes live in [rogue_squadron.toml](../rogue_squadron.toml):
 
 - `[[patches.hook]]` inserts a call at a function's entry (or at `before_vram`). It is compiled into the recompiled function, so it runs for direct and indirect (`LOOKUP_FUNC`) calls alike. The text is only `{ if (rs64_th_<func>_<vram|entry>(rdram, ctx)) return; }` or `{ rs64_th_<func>_<vram|entry>(rdram, ctx); }`; the body is that function in [src/game/toml_hooks.c](../src/game/toml_hooks.c), declared in `include/rs64_toml_hooks.h`. `return 1` exits the game function; set `ctx->r2` (or `ctx->f0`) first to return a value.
-- `[[patches.instruction]]` replaces a single instruction word.
+- `[[patches.instruction]]` overwrites one instruction at a `vram` with a raw `value` (e.g. NOP a `cache` op or a busy-wait branch).
+- `stubs = [...]` replaces a function body with an empty no-op (RSP blobs, cache-instruction leaves, splat fragments).
+
+The toml is also the N64Recomp config itself: it names the input ROM/ELF, and `regen_funcs` applies these directives to the generated output, so `RecompiledFuncs/` is never hand-edited. Hooks call game functions through `mips_call`.
 
 Larger host logic goes in an `extern "C"` helper in [src/game/hook_helpers.cpp](../src/game/hook_helpers.cpp) that the hook body calls.
 
