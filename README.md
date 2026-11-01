@@ -197,16 +197,15 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Recomp. specific Issues
 
 - Ray Tracing is implemented but has various issues:
-  - Shadows and emissives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
   - There are situations where light 'sticks' to the player like for example, collecting the Upgrade during Raid on Sullust
-  - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
-  - With ray-traced shadows on, objects off screen are drawn so they keep casting, and the game counts them as visible: gameplay can differ slightly, and input replays recorded with shadows off diverge
-  - F5 profiler scales itself with screen size and widescreen with it changing when in cutscene vs gameplay which isn't ideal.
-  - Exhaust light tend to flicker
 
 - Frame interpolation issues:
   - The bomb drop crosshair, good example y-wing during Raid on Sullust
-  - Lava explosion particles flicker in place indicating they aren't being ID'd, good example Raid on Sullust
+  - Lava explosion particles flicker in place when banking indicating they aren't being ID'd, good example Raid on Sullust
+
+- Shooting at the lava in raid on sullust produces fire balls that look dim/muted compared to the other lava explosion effects
+
+- F5 profiler scales itself with screen size and widescreen with it changing when in cutscene vs gameplay which isn't ideal.
 
 - Frame drops can severely affect how sensitive the mouse is
 
@@ -224,7 +223,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- RS64 Explorer Fixs & Improvements
+- RS64 Explorer Fixes & Improvements
 
 ## Building
 
