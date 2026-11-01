@@ -323,6 +323,12 @@ file(READ "${RS64_SHADER_COMBOS_FILE}" RS64_SHADER_COMBOS)
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/generated/rs64_shader_combos.inl" CONTENT "R\"RS64(@RS64_SHADER_COMBOS@)RS64\"\n" @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RS64_SHADER_COMBOS_FILE}")
 target_include_directories(RogueSquadron64Recomp PRIVATE "${CMAKE_BINARY_DIR}/generated")
+# The built-in RT light presets (engine exhausts, lasers, pickups, the briefing room) are compiled into the exe; mods and the exe-dir copy override them by name.
+add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE_BINARY_DIR}/generated/default_lights.h
+    COMMAND file_to_c ${CMAKE_SOURCE_DIR}/src/video/default_lights.json rs64_default_lights ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE_BINARY_DIR}/generated/default_lights.h
+    DEPENDS ${CMAKE_SOURCE_DIR}/src/video/default_lights.json file_to_c
+    VERBATIM)
+target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/generated/default_lights.c)
 if (ANDROID)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE SSE2NEON_SUPPRESS_WARNINGS)
     target_compile_options(RogueSquadron64Recomp PRIVATE -Wno-deprecated-literal-operator)

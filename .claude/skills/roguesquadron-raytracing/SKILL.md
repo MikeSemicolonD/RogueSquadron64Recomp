@@ -1,6 +1,6 @@
 ---
 name: roguesquadron-raytracing
-description: Ray-traced lighting in RogueSquadron64Recomp (RT64's RS64 light pass on top of the game's prelit N64 image). Use for ANY work on RT lights, light presets (roguesq_lights.json, mods/model-lights, the F1 Lights tab), mesh / sprite / level / lamp presets, explosion and effect-sprite lights, engine exhausts, blinking lamps, the RS64 Explorer's Lights panel and shaded preview, RT shadows, or when a light "does not show", "is in the wrong place", "does not blink", "is too big", or the GPU hangs after a lighting change. Covers the pipeline (F5 parse -> Candidate -> Resolved -> 32 nearest -> RS64LightsPS), every coordinate space and unit, how presets key onto meshes / sprites / levels, the game data behind effects and lamps, the explorer side, and a debugging method that avoids build-run-guess loops. Triggers on: ROGUESQ_RT_LIGHTS, ROGUESQ_LOG_RT_LIGHTS, fillRS64Lights, rs64lights::, RS64LightsPS, PresetLights, spr:, meshKeyName, cameraUnits, lamp preset, glw hardpoint, LAS texture, lights.js, rtLit, lightsPreviewTick. Complements roguesquadron-debug (crash/hang triage), rt64-integration (renderer internals) and renderdoc-mcp (GPU captures).
+description: Ray-traced lighting in RogueSquadron64Recomp (RT64's RS64 light pass on top of the game's prelit N64 image). Use for ANY work on RT lights, light presets (roguesq_lights.json, src/video/default_lights.json, the F1 Lights tab), mesh / sprite / level / lamp presets, explosion and effect-sprite lights, engine exhausts, blinking lamps, the RS64 Explorer's Lights panel and shaded preview, RT shadows, or when a light "does not show", "is in the wrong place", "does not blink", "is too big", or the GPU hangs after a lighting change. Covers the pipeline (F5 parse -> Candidate -> Resolved -> 32 nearest -> RS64LightsPS), every coordinate space and unit, how presets key onto meshes / sprites / levels, the game data behind effects and lamps, the explorer side, and a debugging method that avoids build-run-guess loops. Triggers on: ROGUESQ_RT_LIGHTS, ROGUESQ_LOG_RT_LIGHTS, fillRS64Lights, rs64lights::, RS64LightsPS, PresetLights, spr:, meshKeyName, cameraUnits, lamp preset, glw hardpoint, LAS texture, lights.js, rtLit, lightsPreviewTick. Complements roguesquadron-debug (crash/hang triage), rt64-integration (renderer internals) and renderdoc-mcp (GPU captures).
 ---
 
 # RogueSquadron64Recomp — Ray-Traced Lighting
@@ -85,11 +85,11 @@ in the explorer; in the model view it is estimated at a flying craft's scale 0.0
 
 - Schema: RT64 `PresetLights` + RS64 fields `level`, `mesh`, `cameraUnits`, `sprite`, `lamp`
   (`preset/rt64_preset_light.h/.cpp`; JSON read/write there; F1 UI there).
-- Load order (later wins by name): `mods/model-lights` first, other enabled mods in MODS-list order, the exe-dir copy
+- Load order (later wins by name): the built-in presets first, other enabled mods in MODS-list order, the exe-dir copy
   last (`rs64_queue_light_presets` in `src/video/rt64_render_context.cpp`). A watcher thread re-reads all of them
   within 1 s of any change (mtime of exe-dir file and `mods/*/roguesq_lights.json`) and **replaces** the library
   (`queuePresetReload`); F1's "Reload light files" does the same; unsaved F1 edits are dropped.
-- Shipped defaults: `mods/model-lights/roguesq_lights.json` (lasers, torpedo, pickup, exhausts with wingman variant
+- Built-in defaults: `src/video/default_lights.json`, compiled into the exe (lasers, torpedo, pickup, exhausts with wingman variant
   keys, briefing hologram/ring, `fx_fire` / `fx_ion` sprite presets, 53 `glow_*` presets on `glw` hardpoints).
   Edit it through the explorer's `lightsParse/lightsWrite` (node script) to keep formatting; NEVER Python `open('w')`.
 
@@ -174,5 +174,5 @@ frames are converted into the texture pool; manifest +8 is not a load address).
 `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` (mesh registry, sprite path, `f5_sprite_key`, `f5_lamp_light`),
 `lib/rt64/src/gbi/rt64_gbi_f5_rdpstate.cpp` (texrect handler), `lib/rt64/src/hle/rt64_rdp.cpp` (load addresses),
 `lib/rt64/src/preset/rt64_preset_light.*`, `lib/rt64/src/hle/rt64_state.cpp` (Lights tab, preset merge),
-`src/video/rt64_render_context.cpp` (file reader + watcher), `mods/model-lights/`, `tests/rs64_lights_test.cpp`,
+`src/video/rt64_render_context.cpp` (file reader + watcher), `src/video/default_lights.json`, `tests/rs64_lights_test.cpp`,
 `tools/web/rs64-explorer/{lights.js,effects.js,rs64assets.js}` + `tests/test_lights.mjs`.

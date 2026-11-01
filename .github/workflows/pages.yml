@@ -9,6 +9,7 @@ on:
       - favicon.ico
       - screenshots/Capture*.png
       - tools/web/**
+      - src/video/default_lights.json
       - .github/workflows/pages.yml
 
 permissions:

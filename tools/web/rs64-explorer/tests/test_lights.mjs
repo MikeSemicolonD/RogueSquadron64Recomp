@@ -9,8 +9,8 @@ assert.equal(meshKeyName('vwing', 7), 'rmobil');
 assert.equal(meshKeyName('vwing', 3), 'vwing');
 assert.equal(meshKeyName('xwing', 7), 'xwing');
 
-// The shipped model lights round-trip unchanged in content.
-const shipped = readFileSync(new URL('../../../../mods/model-lights/roguesq_lights.json', import.meta.url), 'utf8');
+// The built-in lights round-trip unchanged in content.
+const shipped = readFileSync(new URL('../../../../src/video/default_lights.json', import.meta.url), 'utf8');
 const doc = lightsParse(shipped);
 assert.deepEqual(lightsParse(lightsWrite(doc)), doc);
 assert.ok(doc.presets.find((p) => p.mesh === 'red_laser' && p.cameraUnits));

@@ -37,6 +37,7 @@ extern SDL_Window* g_sdl_window;
 #include "game/nav_sequencer.h"        // rs64_nav_set_target, rs64_nav_tick
 #include "main/main.h"                // rs64_reloc_guard_tick
 #include "video/rt64_render_context.h"
+#include "default_lights.h"
 #ifdef __ANDROID__
 #include "main/android_host.h"
 #endif
@@ -125,21 +126,19 @@ static std::string light_files_stamp()
 void rs64_queue_light_presets()
 {
 
-    static constexpr const char* kDefaultsMod = "model-lights";
+    // The defaults used to ship as this mod; an older install's leftover copy would override the built-in presets with stale ones.
+    static constexpr const char* kRetiredDefaultsMod = "model-lights";
 
     // The F1 Lights tab's Reload light files runs this again.
     rs64lights::presetReloader() = rs64_queue_light_presets;
 
-    // The shipped defaults go first wherever the MODS list puts them (librecomp lists a newly installed mod above the known ones), so any
-    // other mod's same-named preset replaces them; the others follow the MODS list, lower wins.
-    std::vector<recomp::mods::ModDetails> mods = recomp::mods::get_all_mod_details("rs64");
-    std::vector<std::string> texts;
+    // The built-in presets (src/video/default_lights.json) go first, so any mod's same-named preset replaces them; mods follow the MODS
+    // list, lower wins, and the copy next to the exe comes last.
+    std::vector<std::string> texts{ std::string(rs64_default_lights, rs64_default_lights_size) };
 
-    std::stable_partition(mods.begin(), mods.end(), [](const recomp::mods::ModDetails& d) { return d.mod_id == kDefaultsMod; });
-
-    for (const auto& d : mods)
+    for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
     {
-        if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+        if (!recomp::mods::is_mod_enabled(d.mod_id) || (d.mod_id == kRetiredDefaultsMod)) continue;
 
         bool exists = false;
         const std::vector<char> text = recomp::mods::read_mod_file(d.mod_id, kLightsFile, exists);
