@@ -19,6 +19,7 @@ Task guides live in `.claude/skills/<name>/SKILL.md`. Agents without skill suppo
 - `roguesquadron-raytracing` — RT lights, presets, the explorer Lights panel
 - `f5-dl-validate` — Factor 5 display-list walks and diffs
 - `renderdoc-mcp` — GPU frame captures
+- `rs64-mcp-usage` — drive the live game: exact-frame pauses, flying the craft, screenshots, frame inspection
 
 The rest are general toolchain references (cmake, msvc-cl, lldb, ...).
 
