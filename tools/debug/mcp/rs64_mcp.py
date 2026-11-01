@@ -196,7 +196,10 @@ class Game:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             if not self.alive():
-                raise GameError(f"game exited (code {self.proc.returncode}) during launch:\n{self.log_tail()}")
+                tail = self.log_tail()
+                if "unknown option '--mcp-port'" in tail:
+                    raise GameError(f"the {config} build has no MCP bridge; configure with -DRS64_MCP=ON (or use Debug) and rebuild")
+                raise GameError(f"game exited (code {self.proc.returncode}) during launch:\n{tail}")
             try:
                 self.sock = socket.create_connection(("127.0.0.1", self.port), timeout=1)
                 break

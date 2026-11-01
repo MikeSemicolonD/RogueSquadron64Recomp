@@ -51,7 +51,11 @@ static const CliFlag kCliFlags[] = {
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
     {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},
+
+#ifdef RS64_MCP
     {"mcp-port",         "ROGUESQ_MCP_PORT",         CliFlag::Value, "",  "",  "dev: serve the RT64 MCP bridge on 127.0.0.1:<port> (tools/debug/mcp)"},
+#endif
+
     {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
 };
 

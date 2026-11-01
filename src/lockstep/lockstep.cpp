@@ -4,8 +4,6 @@
 #include "host_api/host_api.h"
 #include "main/main.h"
 #include "main/renderdoc_capture.h"
-#include "main/mcp_bridge.h"
-#include "hle/rt64_rs64_mcp.h"
 #include "recomp.h"
 #include <cstdio>
 #include <cstring>
@@ -23,6 +21,11 @@
 #include <vector>
 #include <utility>
 #include <vector>
+
+#ifdef RS64_MCP
+#include "main/mcp_bridge.h"
+#include "hle/rt64_rs64_mcp.h"
+#endif
 
 namespace {
 
@@ -473,6 +476,8 @@ static std::vector<PauseTarget>& pause_targets()
 
     return v;
 }
+
+#ifdef RS64_MCP
 
 // MCP pause state: the latest frame of each clock (pause points, game thread) and the gfx-task sequence (send_dl, gfx thread).
 static std::mutex s_mcp_lock;
@@ -970,13 +975,19 @@ extern "C" void rs64_mcp_register_pause_methods()
     rs64_mcp_register("frame_info", [](const nlohmann::json&) { return mcp_frame_info(); });
 }
 
+#endif
+
 extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
 {
 
     static const char* base = recomp::dbg::env_str("ROGUESQ_PAUSE_FILE");
 
+#ifdef RS64_MCP
+
     mcp_note_clock(clock, frame);
     mcp_pause_point(clock);
+
+#endif
 
     if (!base || !*base || pause_targets().empty())
     {

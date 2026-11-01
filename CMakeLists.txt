@@ -26,6 +26,17 @@ if(WIN32 AND ROGUESQ_NO_ITER_DEBUG)
     message(STATUS "MSVC debug iterators DISABLED (vector bounds checks off)")
 endif()
 
+set(RS64_MCP "AUTO" CACHE STRING "Build the RT64 MCP bridge (tools/debug/mcp): AUTO = Debug builds only, ON = every config, OFF = none")
+set_property(CACHE RS64_MCP PROPERTY STRINGS AUTO ON OFF)
+
+if (RS64_MCP STREQUAL "AUTO")
+    set(RS64_MCP_GENEX "$<CONFIG:Debug>")
+elseif (RS64_MCP)
+    set(RS64_MCP_GENEX "1")
+else()
+    set(RS64_MCP_GENEX "0")
+endif()
+
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
@@ -275,7 +286,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp
     ${CMAKE_SOURCE_DIR}/src/main/renderdoc_capture.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/mcp_bridge.cpp
+    $<${RS64_MCP_GENEX}:${CMAKE_SOURCE_DIR}/src/main/mcp_bridge.cpp>
     ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
     ${CMAKE_SOURCE_DIR}/src/host_api/host_api_game.cpp
     ${CMAKE_SOURCE_DIR}/src/game/builtin_hooks.cpp
@@ -305,7 +316,7 @@ endif()
 if (MSVC)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
-target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}")
+target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}" $<${RS64_MCP_GENEX}:RS64_MCP>)
 # The shader combos warmed at startup without an ubershader are compiled into the exe.
 set(RS64_SHADER_COMBOS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/tools/d3d11/shader_combos.txt")
 file(READ "${RS64_SHADER_COMBOS_FILE}" RS64_SHADER_COMBOS)

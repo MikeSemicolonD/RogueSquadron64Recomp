@@ -47,7 +47,10 @@ using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
 
 extern "C" volatile unsigned g_f5_heur[4];
+
+#ifdef RS64_MCP
 extern "C" void rs64_mcp_note_dl();
+#endif
 
 #ifdef _WIN32
 
@@ -764,7 +767,9 @@ public:
     void send_dl(const OSTask* task) override
     {
 
+#ifdef RS64_MCP
         rs64_mcp_note_dl();
+#endif
 
         if (!app) return;
 

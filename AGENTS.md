@@ -208,7 +208,7 @@ With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mod
 
 ```
 src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
-  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp)
+  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp, built into Debug only unless `-DRS64_MCP=ON`)
   ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
   ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
   ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
@@ -291,7 +291,7 @@ The RT64 MCP server below does the same hold interactively, with no 30 s cap, an
 
 ### Live frame inspection (RT64 MCP, `tools/debug/mcp/`)
 
-`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (`rs64` in the local `.mcp.json`) that launches the game itself and gives an agent what the F1 inspector shows; use it instead of asking the user for F1 screenshots. `pause_at` / `step` hold the game thread on exactly frame N of a clock (RT64's own F4 pause does not stop the game), then draws, textures, framebuffers, RDRAM and screenshots can be read from the held frame. Trace categories (`ROGUESQ_LOG_*`) go in `launch`'s `env`. Tool list and details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
+`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (`rs64` in the local `.mcp.json`) that launches the game itself and gives an agent what the F1 inspector shows; use it instead of asking the user for F1 screenshots. `pause_at` / `step` hold the game thread on exactly frame N of a clock (RT64's own F4 pause does not stop the game), then draws, textures, framebuffers, RDRAM and screenshots can be read from the held frame. Trace categories (`ROGUESQ_LOG_*`) go in `launch`'s `env`. The bridge is in Debug builds only unless configured with `-DRS64_MCP=ON`. Tool list and details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
 
 ### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
 

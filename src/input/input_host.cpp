@@ -111,8 +111,11 @@ static bool fake_controller_enabled() {
 // Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright
 //        up down left right (analog stick)  wait (neutral hold).
 // Used for headless front-end navigation + state calibration. Default OFF.
+
+#ifdef RS64_MCP
 // The MCP press tool's held input (src/lockstep/lockstep.cpp); false when none is active.
 extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y);
+#endif
 
 // A controller input name (ROGUESQ_INPUT_SEQ and the MCP press tool): ORs its button into mask or sets the stick; false when unknown.
 extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, float* sy)
@@ -1776,6 +1779,8 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
         return true;
     }
 
+#ifdef RS64_MCP
+
     if (rs64_mcp_consume_input(&nav_buttons, &nav_x, &nav_y)) {
         *buttons = nav_buttons;
         *x = nav_x;
@@ -1783,6 +1788,8 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
 
         return true;
     }
+
+#endif
 
     if (fake_controller_enabled()) {
         uint16_t sb = 0;

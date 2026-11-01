@@ -2,7 +2,7 @@
 
 Lets an MCP client (Claude Code) launch the game, freeze it on an exact frame and read RT64's inspector data. How it works: [docs/engine/rt64-mcp.md](../../../docs/engine/rt64-mcp.md).
 
-Needs Python 3 with the `mcp` package (`pip install mcp`) and a built game in `build/<config>/`.
+Needs Python 3 with the `mcp` package (`pip install mcp`) and a built game in `build/<config>/` that has the bridge: Debug does by default, Release only with `-DRS64_MCP=ON` ([rt64-mcp.md](../../../docs/engine/rt64-mcp.md)).
 
 Register it in the repo's `.mcp.json` (gitignored, per machine):
 

@@ -4,6 +4,7 @@ An MCP server ([tools/debug/mcp/rs64_mcp.py](../../tools/debug/mcp/rs64_mcp.py))
 
 ## How it fits together
 
+- The bridge is compiled in by the CMake option `RS64_MCP`: `AUTO` (default) builds it into Debug only, `ON` into every config (the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)"), `OFF` into none. Release builds, and so every shipped build, have none of it.
 - The server starts the exe with `--mcp-port <n>`. Only then does the game open a loopback socket (127.0.0.1, one client, newline-delimited JSON: `{"id", "method", "params"}` in, `{"id", "ok", "result" | "error"}` out). Without the flag no port opens, in Debug or Release.
 - Host methods (pause, step, RDRAM, RenderDoc) are served by [src/main/mcp_bridge.cpp](../../src/main/mcp_bridge.cpp) and [src/lockstep/lockstep.cpp](../../src/lockstep/lockstep.cpp).
 - RT64 methods are queued to [lib/rt64/src/hle/rt64_rs64_mcp.cpp](../../lib/rt64/src/hle/rt64_rs64_mcp.cpp) and run on the gfx thread at the top of `State::updateScreen`, which runs every VI, paused or not, with F1 open or closed.

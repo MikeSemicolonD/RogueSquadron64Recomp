@@ -41,7 +41,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 |---|---|---|---|
 | `ROGUESQ_GFX_API` | `--gfx-api` | auto | `vulkan`, `d3d12`, `d3d11` or `d3d10` forces the backend (`d3d10` = D3D11 capped at feature level 10). |
 | `ROGUESQ_HLE_DEV_MODE` | `--[no-]hle-dev-mode` | on in Debug, off in Release | RT64 ImGui inspector on F1 (F6 = Controls window). |
-| `ROGUESQ_MCP_PORT` | `--mcp-port` | unset | Dev: serve the RT64 MCP bridge on `127.0.0.1:<port>` for [tools/debug/mcp](../../tools/debug/mcp/README.md) ([rt64-mcp.md](rt64-mcp.md)). No port opens without it. |
+| `ROGUESQ_MCP_PORT` | `--mcp-port` | unset | Dev: serve the RT64 MCP bridge on `127.0.0.1:<port>` for [tools/debug/mcp](../../tools/debug/mcp/README.md) ([rt64-mcp.md](rt64-mcp.md)). No port opens without it. Debug builds only, unless configured with `-DRS64_MCP=ON`. |
 | `ROGUESQ_VI_DRIVEN_LOOP` | `--[no-]vi-driven-loop` | on | Hardware VI/SP/DP frame protocol. `0` restores the host-paced loop (A/B only). |
 | `ROGUESQ_F5_NATIVE` | `--[no-]f5-native` | on | Emit Factor 5 geometry. `0` parses display lists without drawing. |
 | `ROGUESQ_NO_AUDIO_UCODE` | `--no-audio-ucode` | off | `1` replaces the MusyX synth with the silent stub. |
