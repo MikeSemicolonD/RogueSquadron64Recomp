@@ -7,7 +7,7 @@ Rules come first; reference sections (Environment variables onward) follow. Some
 ## Replies and commits
 
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.
-- Commit messages match the existing history: a short Title Case subject with no trailing period; when a body is needed, `-` bullets in a plain, first-person voice saying what changed and why. **No `Co-Authored-By` or other AI attribution trailers.** No semicolons tacking a one-off aside onto a bullet - make it its own bullet or cut it.
+- Commit messages match the existing history: a short Title Case subject with no trailing period, under about 60 characters (GitHub cuts subjects at 72 and wraps the rest into the body; name the main change and leave the rest to the bullets); when a body is needed, `-` bullets in a plain, first-person voice saying what changed and why. **No `Co-Authored-By` or other AI attribution trailers.** No semicolons tacking a one-off aside onto a bullet - make it its own bullet or cut it.
 
 ## Skills
 
