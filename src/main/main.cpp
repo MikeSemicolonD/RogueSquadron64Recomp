@@ -680,7 +680,14 @@ int main(int argc, char* argv[])
 
 #ifdef RS64_MCP
 
-    const int mcp_port = recomp::dbg::env_int("ROGUESQ_MCP_PORT", 0);
+#ifdef NDEBUG
+    constexpr int kDefaultMcpPort = 0;
+#else
+    // Debug builds serve the bridge by default so the MCP server can attach to a game the user started; ROGUESQ_MCP_PORT=0 turns it off.
+    constexpr int kDefaultMcpPort = 47064;
+#endif
+
+    const int mcp_port = recomp::dbg::env_int("ROGUESQ_MCP_PORT", kDefaultMcpPort);
 
     if (mcp_port > 0 && mcp_port < 65536) {
         rs64_mcp_bridge_start((uint16_t)mcp_port);

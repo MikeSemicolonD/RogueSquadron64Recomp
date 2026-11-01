@@ -200,10 +200,15 @@ Bindings are saved to `roguesq_input.json` next to the executable.
   - Shadows and emissives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
   - There are situations where light 'sticks' to the player like for example, collecting the Upgrade during Raid on Sullust
   - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
+  - With ray-traced shadows on, objects off screen are drawn so they keep casting, and the game counts them as visible: gameplay can differ slightly, and input replays recorded with shadows off diverge
+  - F5 profiler scales itself with screen size and widescreen with it changing when in cutscene vs gameplay which isn't ideal.
+  - Exhaust light tend to flicker
 
 - Frame interpolation issues:
   - The bomb drop crosshair, good example y-wing during Raid on Sullust
   - Lava explosion particles flicker in place indicating they aren't being ID'd, good example Raid on Sullust
+
+- Frame drops can severely affect how sensitive the mouse is
 
 - A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
@@ -551,6 +556,8 @@ This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers ar
 Once your agent is setup, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
 
 Here's a list of MCPs that could be useful for this project:
+
+- **rs64** (in this repo, `tools/debug/mcp/rs64_mcp.py`, set up in the local `.mcp.json`) lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and screenshots. The game side is built into Debug by default. For Release, configure with `-DRS64_MCP=ON` (or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)"). Details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md)
 
 - [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
