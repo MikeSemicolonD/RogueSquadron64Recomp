@@ -295,6 +295,16 @@ extern "C" float rs64_shadow_cull_margin(void)
     return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_margin : 1.0f;
 }
 
+// Objects this close to the camera (game units, past their radius) pass the render-side view tests in any direction while RT sun shadows are on,
+// so things behind or beside the player keep casting. 0 while shadows are off. ROGUESQ_RT_SHADOWS_KEEP_DIST overrides (0 = off).
+extern "C" float rs64_shadow_keep_dist(void)
+{
+
+    static const float s_dist = std::max(rs64lights::envFloat("ROGUESQ_RT_SHADOWS_KEEP_DIST", 4096.0f), 0.0f);
+
+    return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_dist : 0.0f;
+}
+
 // Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
 extern "C" float rs64_res_scale(void)
 {
@@ -1735,7 +1745,7 @@ private:
         s.screen = rd8(0x130B14);
         s.menuId = rd8(0x0CE734);
         s.menuPtr = rd32(0x0CE730);
-        s.sub = rd8(0x0CE626);
+        s.sub = rd8(0x0CDAC4);
         const uint8_t b04 = rd8(0x130B44), b1f = rd8(0x130B5F), b25 = rd8(0x130B65);
         const uint32_t gateCtr = rd32(0x0B0B28);
         const bool cut_ok = s.cutscene >= 0x80000000u && s.cutscene < 0x80800000u;

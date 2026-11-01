@@ -9,6 +9,7 @@ extern "C" {
 void rs64_th_cinematicLoopBody_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_load_asset_with_malloc_flags_80064884(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_viRetraceHandlerThread_800198E8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_submitGfxFrame_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runMenuModelViewerScreen_800C29F8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_tickFormatMessageWorker_800B380C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_initVideoSubsystem_8001A2EC(uint8_t* rdram, recomp_context* ctx);
@@ -26,14 +27,15 @@ void rs64_th_addNpcToVisibilityBucket_80057E08(uint8_t* rdram, recomp_context* c
 void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_transformVec3ToNpcLocalWithScale_8001DD70(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E078(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057C90(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_addNpcToVisibilityBucket_80057EAC(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_selectMeshLodAndSubmitForRender_8005813C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_addNpcToVisibilityBucket_80057EAC(uint8_t* rdram, recomp_context* ctx);void rs64_th_selectMeshLodAndSubmitForRender_8005813C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_buildVisibleTerrainGridAroundCamera_8004392C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_scanConvertTriangleToSpanTable_800425D8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_scanConvertTriangleToSpanTable_800425E0(uint8_t* rdram, recomp_context* ctx);

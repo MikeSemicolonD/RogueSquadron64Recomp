@@ -19,6 +19,8 @@ import tmem_decode  # noqa: E402
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 RENDERDOC_DLL = r"E:\Projects\renderdoc\x64\Release\renderdoc.dll"
 WAIT_LOG_FAIL = r"SEH caught|null-call|Assertion failed|Failed to find function"
+# Debug builds serve the bridge here unless ROGUESQ_MCP_PORT says otherwise (src/main/main.cpp).
+DEFAULT_BRIDGE_PORT = 47064
 WAIT_LOG_MAX_S = 120
 
 
@@ -131,8 +133,45 @@ def capture_window(pid):
     return bytes(rgba), w, h
 
 
+class ExternalProcess:
+    """A game started by someone else, found by its bridge port: just enough of Popen (pid, poll, returncode, wait) for Game."""
+
+    def __init__(self, pid):
+        self.pid = pid
+        self.returncode = None
+
+    def poll(self):
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, self.pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            self.returncode = self.returncode if self.returncode is not None else 0
+            return self.returncode
+        code = ctypes.c_ulong(0)
+        kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel32.CloseHandle(handle)
+        if code.value == 259:  # STILL_ACTIVE
+            return None
+        self.returncode = code.value
+        return self.returncode
+
+    def wait(self, timeout=None):
+        return self.poll()
+
+
+def listening_pid(port):
+    """PID of the process listening on 127.0.0.1:port, or 0."""
+    out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) >= 5 and parts[1] == f"127.0.0.1:{port}" and parts[3] == "LISTENING":
+            return int(parts[4])
+    return 0
+
+
 class Game:
     def __init__(self):
+        self.attached = False
         self.proc = None
         self.sock = None
         self.port = 0
@@ -209,6 +248,29 @@ class Game:
             self.close()
             raise GameError(f"bridge did not answer within {timeout_s}s:\n{self.log_tail()}")
 
+        self.sock.settimeout(None)
+        threading.Thread(target=self._reader, args=(self.sock,), daemon=True).start()
+        self.call("ping", {}, timeout_s=10)
+        return self.status()
+
+    def attach(self, port=DEFAULT_BRIDGE_PORT):
+        """Connect to a game the user started (Debug builds serve the bridge on DEFAULT_BRIDGE_PORT). close() only hangs up; the game keeps running."""
+        if self.alive():
+            raise GameError(f"already connected to a game (pid {self.proc.pid}); close it first")
+
+        pid = listening_pid(port)
+        if pid == 0:
+            raise GameError(f"no game is serving the bridge on 127.0.0.1:{port} (a Debug build started without ROGUESQ_MCP_PORT=0, or one passed --mcp-port {port})")
+
+        self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(self.session_dir, exist_ok=True)
+        # The game's console is not captured: wait_log and log_tail see nothing.
+        self.log_path = os.path.join(self.session_dir, "game.log")
+        open(self.log_path, "wb").close()
+        self.port = port
+        self.proc = ExternalProcess(pid)
+        self.attached = True
+        self.sock = socket.create_connection(("127.0.0.1", port), timeout=5)
         self.sock.settimeout(None)
         threading.Thread(target=self._reader, args=(self.sock,), daemon=True).start()
         self.call("ping", {}, timeout_s=10)
@@ -363,6 +425,12 @@ class Game:
 
     def close(self):
         self.disconnect()
+        if self.attached:
+            status = self.status()
+            self.proc = None
+            self.attached = False
+            return status
+
         if self.alive():
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)], capture_output=True)
             try:
@@ -659,8 +727,13 @@ def serve():
         return game.launch(config, env, args, timeout_s, record)
 
     @mcp.tool()
+    def attach(port: int = DEFAULT_BRIDGE_PORT) -> dict:
+        """Connect to a game the user started themselves: Debug builds serve the bridge on this port by default. Every tool then works on that game; wait_log does not (its console is not captured). close only disconnects."""
+        return game.attach(port)
+
+    @mcp.tool()
     def close() -> dict:
-        """Kill the launched game and return its final status."""
+        """Kill the launched game and return its final status (an attached game is only disconnected)."""
         return game.close()
 
     @mcp.tool()
@@ -685,6 +758,11 @@ def serve():
         if value is not None:
             params["value"] = value
         return game.call("pause_when", params, timeout_s + 15)
+
+    @mcp.tool()
+    def pause_when_drawn(key: str, timeout_s: float = 600) -> dict:
+        """Freeze as soon as a model part or effect sprite is on screen: key is '|'-separated prefixes of the light-preset keys (a HOB object name such as "r_pow", a part "xwing#s0.p4", a sprite frame "spr:explo_tex"); a part counts when one of its vertices is inside the view. Lands one or two frames after it first shows. The picture's watch.drawn is the matched key. Plays on while waiting, so the user can fly there."""
+        return game.call("pause_when_drawn", {"key": key, "timeout_s": timeout_s}, timeout_s + 15)
 
     @mcp.tool()
     def wait_log(pattern: str, timeout_s: float = 30, from_start: bool = False, fail_pattern: str = WAIT_LOG_FAIL) -> dict:
@@ -896,6 +974,11 @@ def serve():
     def lights_list() -> dict:
         """RT light presets (the F1 Lights tab) and the current level. Lights render only with ROGUESQ_RT_LIGHTS=1."""
         return game.call("lights_list")
+
+    @mcp.tool()
+    def lights_active() -> dict:
+        """The lights shining in the last drawn frame (camera space, after the 32-slot selection: kind, priority, position, radius, colour) out of `candidates`, and the sun the shadow pass traced (camera-space dir, hangar floor_up, strength)."""
+        return game.call("lights_active")
 
     @mcp.tool()
     def lights_set(name: str, preset: dict) -> dict:

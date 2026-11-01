@@ -99,6 +99,14 @@ static std::optional<std::pair<int64_t, int64_t>> interval(const Pred& p) {
 }
 
 static bool key_disjoint(const std::vector<Pred>& a, const std::vector<Pred>& b) {
+    // eq v on one side and ne v on the other can't both hold.
+    auto excludes = [](const std::vector<Pred>& eqs, const std::vector<Pred>& nes) {
+        for (const Pred& e : eqs)
+            for (const Pred& n : nes)
+                if (e.op == "eq" && n.op == "ne" && (e.value & e.mask) == (n.value & n.mask)) return true;
+        return false;
+    };
+    if (excludes(a, b) || excludes(b, a)) return true;
     auto bounds = [](const std::vector<Pred>& ps, int64_t& lo, int64_t& hi) {
         bool any = false;
         lo = INT64_MIN;

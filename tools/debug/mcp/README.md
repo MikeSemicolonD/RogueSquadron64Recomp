@@ -19,12 +19,14 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | Tool | What it does |
 |---|---|
 | `launch` | Start the game (cwd `build/<config>`, RenderDoc injected, muted, dev mode) and connect. `env` adds `ROGUESQ_*` variables. Refuses while its game is still running. |
-| `close` | Kill the game. |
+| `attach` | Connect to a game the user started (a Debug build serves the bridge on port 47064). Everything but `wait_log` works; `close` only disconnects. |
+| `close` | Kill the game (an attached one is only disconnected). |
 | `status` | `running`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
 | `call` | Send any bridge method directly. |
 | `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). |
 | `step` / `resume` | From a freeze, run `frames` more and re-freeze / let it run. |
 | `pause_when` | Freeze when an RDRAM value changes or meets eq/ne/gt/lt (checked once a frame). A state change is `pause_at(<state>, 0)`. |
+| `pause_when_drawn` | Freeze once a model part or effect sprite is on screen, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`; `\|` separates several). One or two frames after it first shows. |
 | `wait_log` | Wait for a regex in the game's log (e.g. `SEH caught\|null-call\|Assertion`). |
 | `pick` / `highlight` | The draw calls under a framebuffer pixel (F1's right-click picker); tint one on screen or clear tints. |
 | `read_symbol` | Read memory at a `syms/` symbol name. |
@@ -42,6 +44,7 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `renderdoc_capture` | Capture presents with RenderDoc; returns the `.rdc` path for the renderdoc MCP. |
 | `free_cam` / `get_camera` | RT64's free camera on the frozen frame: place, move (`[right, up, forward]`), rotate. |
 | `lights_list` / `lights_set` / `lights_remove` / `lights_save` | RT light presets (shown after the next `step`; needs `ROGUESQ_RT_LIGHTS=1` to render). |
+| `lights_active` | The lights shining in the last drawn frame (after the 32-slot selection: kind, priority, camera-space position, radius, colour) and the sun the shadow pass traced. |
 | `frame_times` | RT64's Frametimes plot series (min/avg/max/p99, raw samples on request). |
 | `frame_warnings` / `sprite_commands` / `rsp_state` / `vi_info` | The rest of the F1 Debugger: command warnings, S2D sprites, RSP fog/lights/LookAt/modifies, VI registers. `get_draw` also returns RDP colors and, with `shaders`, writes the call's HLSL. |
 | `get_config` / `set_config` | RT64's Configuration tab live (not saved unless `save`). |
