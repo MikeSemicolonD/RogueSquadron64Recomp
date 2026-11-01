@@ -332,7 +332,7 @@ Debug builds compile in the D3D12 debug layer; turn it on at runtime with `ROGUE
 
 ### Linux
 
-Builds and can run on **Ubuntu 24.04** and under **WSL2** (GCC 13 / Ninja); native Linux should behave the same with a real Vulkan driver.
+Builds and can run on **Ubuntu 24.04**, **Linux Mint 22.3 Cinnamon** and under **WSL2** (GCC 13 / Ninja); native Linux should behave the same with a real Vulkan driver.
 
 Install the dependencies, do steps 1-3 above, then configure and build the game target:
 
