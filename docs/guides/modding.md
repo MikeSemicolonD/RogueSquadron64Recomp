@@ -191,6 +191,19 @@ A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the 
 - A preset without one lights a level: `level` is the level number (`-1` outside missions, `-2` or absent every level, `-3` the mission-select briefing room, `-4` the craft-select hangar) and positions are in the level's map space (512 per terrain cell, Y down; camera space in the front end).
 - A preset with a `sprite` (`|`-separated `spr:<texture name>` keys, one per effect frame, such as `spr:explo_tex0`) replaces the automatic light of those fire, smoke and explosion sprites: its lights sit on each sprite showing one of those frames, the radius is a multiple of the sprite's size and the brightness follows its fade. In the RS64 Explorer's Effects tab, the bulb-plus button lights every frame of the open effect and previews the lights on the playing sprites; in game, the F1 Lights tab lists the keys drawn while the effect is on screen.
 - Any light can flicker (`flickerIntensity`, 0-1) or be a spotlight (`direction`, `spotMaxCosine` / `spotFalloffCosine`, RT64's negative cosines; the RS64 Explorer shows them as cone angles).
+- Only 32 lights shine at once. A preset's `priority` decides which are kept when there are more (see the table below).
+
+**Light priorities.** When more than 32 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over.
+
+| Priority | Lights | Share |
+|---|---|---|
+| 7 | Engine exhausts (built-in `exhaust_*`) | 12 |
+| 6 | Pickups (built-in `upgrade_pickup`) | 4 |
+| 5 | Effect sprites: explosions, fire (default for `sprite` presets) | 10 |
+| 3 | Model parts: building glows, lamps (default for `mesh` presets) | 6 |
+| 2 | Level lights (always; `priority` is not read for them) | 4 |
+| 1 | Torpedoes (built-in `proton_torpedo`) | 2 |
+| 0 | Laser bolts (any `red_laser`, `green_laser`, `ion_laser` light; never more than 8, `ROGUESQ_RT_LIGHTS_PROJECTILE_MAX`) | 4 |
 
 The built-in lights include the briefing room's hologram and table ring and, generated from the models' own glow markers, the engines of every other craft and the lamps on level buildings and platforms.
 
