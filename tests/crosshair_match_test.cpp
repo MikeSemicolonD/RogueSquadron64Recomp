@@ -51,6 +51,10 @@ int main() {
     const Element hidden[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -3.12f, 21.17f, 0 } };
     CHECK(ringOf(hidden, Rect{ 252.75f, 245.0f, 284.75f, 282.25f }, bombTex, 0x280, 0x224, clip) == -1);
 
+    // Results-screen iris: a 64x64 tile whose corner sits on a stale bomb-sight element at the screen centre.
+    const Element stale[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -0.5f, -0.5f, 3 } };
+    CHECK(ringOf(stale, Rect{ 255.5f, 223.5f, 295.5f, 273.5f }, TexSize{ 64, 64 }, 1638, 1311, clip) == -1);
+
     std::printf("crosshair_match_test: OK\n");
     return 0;
 }
