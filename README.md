@@ -204,12 +204,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 - Ray Tracing is implemented but has various issues:
   - There are situations where light 'sticks' to the player and begins to flicker
 
-- Frame interpolation issues:
-  - The bomb drop crosshair, good example Y-wing during Raid on Sullust
-  - Lava explosion particles flicker in place when banking indicating they aren't being ID'd, good example Raid on Sullust
-
-- Shooting at the lava in Raid on Sullust produces fire balls that look dim/muted compared to the other lava explosion effects
-
 - A very high draw distance causes the 'legacy' terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
 ### Game specific Issues
@@ -217,6 +211,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep.
 
 - Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
+
+- Shooting at the lava in Raid on Sullust produces fire balls that look dim/muted compared to the other lava explosion effects
 
 - Very slight cut off at the top of text rects **BUT** this also existed in the original game.
 
