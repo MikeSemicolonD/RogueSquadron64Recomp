@@ -3648,11 +3648,7 @@ static void ensure_menu_period(uint8_t* rdram)
 
     if (table < 0x80000000u || table >= 0x81000000u) return;
 
-    // A reloaded font gets fresh records; converted ones are renamed to their new character.
-    static uint32_t s_done = 0;
-
-    if (s_done && rd_b(rdram, (s_done - 0x80000000u) + 0x15) == '.') return;
-
+    // A reloaded font gets fresh records while the old converted ones stay in the table, so scan every frame; converted records are renamed and never match again.
     uint32_t rec[kCount] = {}, src_rec[kCount] = {};
 
     for (uint32_t e = table - 0x80000000u, n = 0; n < 4096 && e + 0x24 <= 0x1000000u; e += 0x24, ++n)
@@ -3732,8 +3728,6 @@ static void ensure_menu_period(uint8_t* rdram)
         wr_h(rdram, rec[k] + 0x0C, (int16_t)size);
         wr_b(rdram, rec[k] + 0x15, kGlyphs[k].to);
     }
-
-    s_done = rec[0] | 0x80000000u;
 
     fprintf(stderr, "[menu] italic font: period, period-wide blank and caret made\n");
 }
