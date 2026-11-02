@@ -384,6 +384,23 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
     // Window messages only dispatch on the thread that owns the window, so events (and RT64's F1-F4 filter) must be pumped here.
     SDL_PumpEvents();
 
+    // The game thread reads the close request in poll_input; while it is held (an MCP or capture pause) or hung, a close left unread for 1 s exits here.
+    static Uint32 s_quit_since = 0;
+
+    if (SDL_PeepEvents(nullptr, 0, SDL_PEEKEVENT, SDL_QUIT, SDL_QUIT) <= 0) {
+        s_quit_since = 0;
+    }
+    else if (s_quit_since == 0) {
+        s_quit_since = SDL_GetTicks();
+    }
+    else if (SDL_GetTicks() - s_quit_since > 1000)
+    {
+        fprintf(stderr, "[main] close requested while the game thread is held: exiting\n");
+        fflush(stderr);
+        rs64::host::run_quit_handlers();
+        _Exit(EXIT_SUCCESS);
+    }
+
 #ifdef __ANDROID__
 
     // Back in the foreground: move RT64 onto the new window once SDL has one (until then SDL may still report the old one).
