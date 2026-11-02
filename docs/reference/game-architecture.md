@@ -653,7 +653,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 | Attribution text | Renders (glyph rect count matches the hardware walk) |
 | Intro cinematic | Ships, trench, exploding logo, Factor 5 letters + fire, heightfield and flat terrain, billboards, grey sky |
 | Main menu | Renders (bg + title) |
-| In-mission gameplay | Playable from the first level through the credits; see [Status](../../README.md#status-playable) |
+| In-mission gameplay | Playable from the first level through the credits; see [Status](../../README.md#status) |
 | Audio (music + SFX) | Recompiled MusyX synth, cartridge-streamed samples, synth tick and voice pool registered as on hardware |
 | Input | Keyboard, mouse and SDL2 gamepad through `input_bindings.cpp`; `ROGUESQ_FAKE_CONTROLLER=1` for headless runs |
 | Save (EEPROM 4K) | Works; Memory Pak stubbed |

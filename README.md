@@ -39,13 +39,13 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
 | **[Linux arm64 / armhf](docs/guides/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
 | **[Linux x86 (32-bit)](docs/guides/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
-| **[Android 9+ arm64](#android-notes)** | Vulkan 1.1 |
-| **[macOS 11+ arm64 (Apple Silicon)](#macos-notes)*** | Metal |
-| **[macOS 11+ x86_64 (Intel)](#macos-notes)*** | Metal |
+| **[Android 9+ arm64](#android)** | Vulkan 1.1 |
+| **[macOS 11+ arm64 (Apple Silicon)](#macos)*** | Metal |
+| **[macOS 11+ x86_64 (Intel)](#macos)*** | Metal |
 
 </div>
 
-*macOS builds but hasn't been run on a Mac yet (see [macOS notes](#macos-notes))
+*macOS builds but hasn't been run on a Mac yet (see [macOS](#macos))
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
 
@@ -365,7 +365,7 @@ The MIPS GCC builds the patches ELF and `.nrm` code mods; CMake finds `mips-linu
 - WSL's default Vulkan is **llvmpipe (software)** — it runs but hitches. For GPU acceleration, build [Mesa's](https://gitlab.freedesktop.org/mesa/mesa) **[Dozen (`dzn`)](https://gitlab.freedesktop.org/mesa/mesa/-/tree/main/src/microsoft/vulkan?ref_type=heads)** driver (Vulkan → D3D12 → the real GPU via `/dev/dxg`). If the game doesn't detect `dzn` it'll default to software (CPU) rendering.
 - The `tools/release/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
 
-### Android notes
+### Android
 
 Builds as an arm64 APK and runs on a **Snapdragon 8 Gen 3 (Adreno 750, Android 16)** phone; other arm64 phones with Vulkan 1.1 should work, but driver quality varies. The Gradle project in `android/` builds the same `CMakeLists.txt` with the NDK.
 
@@ -387,7 +387,7 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 - **Mods:** the APK will build and include the mods listed under `android` in [mods/platforms.json](mods/platforms.json) installing them into the app's `mods/` folder.
 - **Debugging:** logs go to logcat under the tag `RS64` (the `Logcat (Android)` task filters it). Environment variables go one `NAME=VALUE` per line in `roguesq_env.txt` in the app's files folder.
 
-### macOS notes
+### macOS
 
 > [!IMPORTANT]
 > ***Untested* on a Mac.**

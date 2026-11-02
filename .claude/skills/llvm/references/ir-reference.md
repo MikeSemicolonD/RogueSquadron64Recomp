@@ -7,7 +7,7 @@ Source: <https://llvm.org/docs/LangRef.html>
 1. [Types](#types)
 2. [Instructions](#instructions)
 3. [Attributes and metadata](#attributes-and-metadata)
-4. [Opt pass names](#opt-pass-names)
+4. [Opt pass names](#opt-pass-names-llvm-14-new-pass-manager)
 
 ---
 
