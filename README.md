@@ -78,7 +78,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Multiplayer (experimental)
 
-- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. 
+- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu.
   - Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
   - Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
   - The **Multiplayer** is shipped as a `multiplayer-native` mod.
@@ -154,7 +154,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
   - The throttle sets your speed by position: *full back* is the craft's slowest, *full forward* is fastest, and *middle* is normal speed.
   - Other axes can be bound from the Controls window (**F6**)
   
-- **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game. 
+- **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game.
   - Colors configurable from the `lightbar` section in `roguesq_input.json`
 
 > [!TIP]
@@ -421,48 +421,7 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 ## Architecture
 
-Recompiled game code compiles into one static library, linked against forked builds of N64ModernRuntime (the libultra/runtime host) and RT64 (the renderer).
-
-```text
-src/
-├── main/
-│   └── main.cpp                Entry point, game registration, SDL2 window
-├── audio/
-│   └── audio.cpp               RSP task dispatch and SDL2 audio output
-├── input/
-│   └── input_host.cpp          Gamepads, joysticks, keyboard/mouse and touch input
-├── video/
-│   └── rt64_render_context.cpp RT64 integration: send_dl, VI registers, framebuffer sanitizer
-├── game/
-│   ├── register_overlays.cpp   Boot-time overlay function-table registration
-│   ├── upstream_compat.cpp     libultra shims, overlay loader, HMT-load capture
-│   ├── hook_helpers.cpp        Host logic called from rogue_squadron.toml hooks
-│   └── builtin_hooks.cpp       Built-in hooks registered through the host API
-├── host_api/                   Host API for native mods
-└── lockstep/                   Mission input record/replay with per-frame state hashes
-include/rs64/host_api.h         Public header for native mods
-lib/
-├── N64ModernRuntime/           libultra/runtime host (fork)
-└── rt64/                       Renderer (fork)
-    └── src/gbi/rt64_gbi_f3dfactor5.cpp   The Factor 5 GBI module (the render core)
-rsp/*_rsp.toml                  RSPRecomp configs for the boot and MusyX audio ucodes
-mods/multiplayer-native/        Online co-op (sources in src/, tests in tests/)
-rogue_squadron.toml             N64Recomp config and override layer
-```
-
-Native mods: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
-
-Online co-op: [docs/guides/multiplayer.md](docs/guides/multiplayer.md).
-
-Debugging: [docs/engine/debugging-with-visual-studio.md](docs/engine/debugging-with-visual-studio.md) (crash and hang tools, the F5 profiler HUD) and [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md) (every command-line option and `ROGUESQ_*` variable).
-
-**Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md) and validated against Project64 dumps.
-
-**Frame pacing.** By default the game's own VI / SP / DP message protocol runs as on hardware, with SP-done delivered after RT64 parses the list. `--no-vi-driven-loop` (`ROGUESQ_VI_DRIVEN_LOOP=0`) restores the older host-paced loop.
-
-**Audio.** MusyX drives SFX and music; samples stream from the cartridge via PI DMA as on hardware.
-
-**Patching.** Overrides live as `[[patches.hook]]` and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with host logic in `src/game/hook_helpers.cpp`. A hook is compiled into the recompiled function itself, reachable via indirect (`LOOKUP_FUNC`) calls. The toml directives are in [patches/README.md](patches/README.md#where-most-base-game-fixes-live-today).
+How the port is put together (recompiled code, the forked RT64 and N64ModernRuntime, frame pacing, audio and the override layer) is in [docs/reference/game-architecture.md](docs/reference/game-architecture.md). [docs/README.md](docs/README.md) indexes the rest of the engine docs, including debugging, native mods and co-op.
 
 ## Browser based tools
 
