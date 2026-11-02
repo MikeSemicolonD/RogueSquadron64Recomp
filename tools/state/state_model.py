@@ -141,6 +141,10 @@ def _interval(p):
 
 def _key_disjoint(a_preds, b_preds):
     """True if, on this shared (addr,mask) key, a and b can never both hold."""
+    def excludes(eqs, nes):
+        return any(e.op == "eq" and n.op == "ne" and (e.value & e.mask) == (n.value & n.mask) for e in eqs for n in nes)
+    if excludes(a_preds, b_preds) or excludes(b_preds, a_preds):
+        return True
     a_int = [i for i in (_interval(p) for p in a_preds) if i is not None]
     b_int = [i for i in (_interval(p) for p in b_preds) if i is not None]
     if not a_int or not b_int:

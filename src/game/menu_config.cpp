@@ -77,6 +77,18 @@ constexpr uint8_t SUBTYPE_HOST    = 4;
 // The LANGUAGE page's pick: menuControllerInput frees the text, stores the entry's param to gGameSettings+6 and reloads front_TXT (0x800B57F8).
 constexpr uint8_t SUBTYPE_LANGUAGE = 24;
 
+constexpr uint8_t SUBTYPE_TOGGLE = 5;
+constexpr uint8_t SUBTYPE_BACK   = 25;
+
+// A menu SFX for 0x80087EE8 (id, volume); id -1 keeps the game's sound, -2 plays none.
+struct MenuSfx {
+    int id = -1;
+    int vol = 0x64;
+};
+
+// The sounds menuControllerInput plays, at its volumes.
+constexpr MenuSfx kSfxBack{ 0x6D, 0x64 };
+
 // The game's text languages, by gGameSettings+6; a button label can map these codes to text.
 constexpr const char* kTextLanguages[] = { "en", "de", "fr", "it", "es" };
 constexpr int kTextLanguageCount = (int)(sizeof(kTextLanguages) / sizeof(kTextLanguages[0]));
@@ -170,6 +182,8 @@ struct Button {
     // Cycle: per-choice label overrides (strings or language maps) and the text for a value matching no choice.
     std::vector<std::string> value_labels;
     std::string label_other;
+
+    MenuSfx sound;
 };
 
 // A menu's title override (top-level "titles": menu name -> { label, x, y }); gCurrentMenuData +0x00 text, +0x50 / +0x52 offsets.
@@ -240,6 +254,32 @@ std::string text_field(const nlohmann::json& e, const char* key, int lang)
 
     for (const auto& [k, t] : v.items())
         if (k != "key" && t.is_string()) return to_latin1(t.get<std::string>());
+
+    return {};
+}
+
+// "sound": a name below or a raw SFX id (0-127); absent keeps the game's sound.
+MenuSfx parse_sound(const nlohmann::json& e, const std::string& id)
+{
+
+    static const std::pair<const char*, MenuSfx> kNames[] = {
+        { "move", { 0x17, 0x7F } }, { "confirm", { 0x18, 0x6E } }, { "back", kSfxBack }, { "reject", { 0x19, 0x64 } },
+        { "toggle", { 0x6A, 0x64 } }, { "type", { 0x31, 0x50 } }, { "delete", { 0x7C, 0x7F } }, { "none", { -2, 0 } },
+    };
+
+    if (!e.contains("sound")) return {};
+
+    const nlohmann::json& v = e["sound"];
+
+    if (v.is_number_integer() && v.get<int>() >= 0 && v.get<int>() < 0x80) return { v.get<int>(), 0x64 };
+
+    if (v.is_string())
+    {
+        for (const auto& [name, sfx] : kNames)
+            if (v.get<std::string>() == name) return sfx;
+    }
+
+    fprintf(stderr, "[menu] %s: unknown sound %s\n", id.c_str(), v.dump().c_str());
 
     return {};
 }
@@ -319,6 +359,7 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     b.row = e.value("row", std::string{});
     b.scale = e.value("scale", 1.0f);
     b.flags = e.value("flags", 0x4001);
+    b.sound = parse_sound(e, b.id);
     out.push_back(std::move(b));
 }
 
@@ -1097,6 +1138,8 @@ struct SlotBinding {
     // Text slider bar layout, for click-to-position.
     std::string bar_label, bar_filled, bar_empty;
     int bar_width = 10;
+
+    MenuSfx sound;
 };
 
 SlotBinding s_slot[MAX_ENTRIES];
@@ -1609,6 +1652,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
             it.binding = { true, BType::Submenu, b.page };
             it.id = b.id;
             it.binding.open_action = b.behavior;
+            it.binding.sound = b.sound;
             it.index_seq = b.has_index ? index_seq++ : -1;
             it.index = b.index;
             items.push_back(it);
@@ -1679,6 +1723,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         it.binding = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                        b.smin, b.smax, b.sstep, b.label_on, b.label_off };
         set_bar_layout(&it.binding, b);
+        it.binding.sound = b.sound;
         it.id = b.id;
         it.index_seq = b.has_index ? index_seq++ : -1;
         it.index = b.index;
@@ -1997,6 +2042,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
         s_slot[j] = { true, b.type, b.behavior, b.confirm, fns.action, fns.toggle_get, fns.toggle_set,
                       b.smin, b.smax, b.sstep, b.label_on, b.label_off };
         set_bar_layout(&s_slot[j], b);
+        s_slot[j].sound = b.sound;
 
         // The game edits a native slider itself; the confirm intercept must not step it.
         if (native_slider) s_slot[j] = {};
@@ -2020,6 +2066,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
     const char* back = kBack[std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1)];
 
     write_slot(rdram, back_slot, Slot{ (int32_t)alloc_str(rdram, back), SUBTYPE_SUBMENU, parent, 0, (int16_t)back_y, sc });
+    s_slot[back_slot].sound = kSfxBack;
     wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)(lines.size() + 1));
 
     // The B button returns to gCurrentMenuData+0x05; a page goes back where BACK does.
@@ -2716,6 +2763,7 @@ int mods_install(uint8_t* rdram, uint8_t parent)
 
     write_live(rdram, s_mods.back_buf, mods_back_text());
     write_slot(rdram, s_mods.back_slot, Slot{ (int32_t)s_mods.back_buf, SUBTYPE_SUBMENU, parent, 0, offset(s_mods.back_slot, y), sc });
+    s_slot[s_mods.back_slot].sound = kSfxBack;
     wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)count);
     wr_b(rdram, GCMD_OFF + 0x94, 0);
     wr_b(rdram, GCMD_OFF + 0x05, parent);
@@ -3106,6 +3154,7 @@ extern "C" int rs64_menu_install_main(uint8_t* rdram)
         Slot no { (int32_t)alloc_str(rdram, "NO"),  SUBTYPE_SUBMENU, 0, YESNO_X, 0, rd_w(rdram, GCMD_OFF + 0x54 + 4) };
         write_slot(rdram, 0, yes);
         write_slot(rdram, 1, no);
+        s_slot[1].sound = kSfxBack;
         wr_b(rdram, GCMD_OFF + 0x95, 2);
 
         return -1;
@@ -3142,6 +3191,51 @@ extern "C" int rs64_menu_install_main(uint8_t* rdram)
 // Presses the game delivered to a mod entry; the nav sequencer's menu: target waits on this (some presses are dropped).
 static std::atomic<uint32_t> s_confirms{0};
 extern "C" uint32_t rs64_menu_confirms() { return s_confirms.load(std::memory_order_relaxed); }
+
+// A confirmed entry's sound, for the game's next 0x80087EE8 call; game thread only.
+MenuSfx s_sfx_swap;
+bool s_sfx_swap_on = false;
+
+// On A over a mod entry with a sound: sub-types 1, 5, 24 and 25 play theirs first thing in their confirm arm, so that call is swapped; the others play none, so it plays here.
+extern "C" void rs64_menu_confirm_sound(uint8_t* rdram, recomp_context* ctx)
+{
+
+    static const bool off = menu_buttons_off();
+
+    if (off) return;
+
+    const uint8_t e = rd_b(rdram, GCMD_OFF + 0x94);
+
+    if (e >= MAX_ENTRIES || s_slot[e].sound.id == -1) return;
+
+    const MenuSfx s = s_slot[e].sound;
+    const uint8_t sub = rd_b(rdram, GCMD_OFF + 0x28 + e);
+
+    if (sub == SUBTYPE_SUBMENU || sub == SUBTYPE_TOGGLE || sub == SUBTYPE_LANGUAGE || sub == SUBTYPE_BACK)
+    {
+        s_sfx_swap = s;
+        s_sfx_swap_on = true;
+        return;
+    }
+
+    if (s.id >= 0) rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, { (uint32_t)s.id, (uint32_t)s.vol, 0x40u });
+}
+
+// Entry of 0x80087EE8 (id $a0, volume $a1, pan $a2); 1 skips the call.
+extern "C" int rs64_menu_sfx_swap(recomp_context* ctx)
+{
+
+    if (!s_sfx_swap_on) return 0;
+
+    s_sfx_swap_on = false;
+
+    if (s_sfx_swap.id < 0) return 1;
+
+    ctx->r4 = (uint32_t)s_sfx_swap.id;
+    ctx->r5 = (uint32_t)s_sfx_swap.vol;
+
+    return 0;
+}
 
 extern "C" void rs64_menu_confirm_main(uint8_t* rdram)
 {
@@ -3648,11 +3742,7 @@ static void ensure_menu_period(uint8_t* rdram)
 
     if (table < 0x80000000u || table >= 0x81000000u) return;
 
-    // A reloaded font gets fresh records; converted ones are renamed to their new character.
-    static uint32_t s_done = 0;
-
-    if (s_done && rd_b(rdram, (s_done - 0x80000000u) + 0x15) == '.') return;
-
+    // A reloaded font gets fresh records while the old converted ones stay in the table, so scan every frame; converted records are renamed and never match again.
     uint32_t rec[kCount] = {}, src_rec[kCount] = {};
 
     for (uint32_t e = table - 0x80000000u, n = 0; n < 4096 && e + 0x24 <= 0x1000000u; e += 0x24, ++n)
@@ -3732,8 +3822,6 @@ static void ensure_menu_period(uint8_t* rdram)
         wr_h(rdram, rec[k] + 0x0C, (int16_t)size);
         wr_b(rdram, rec[k] + 0x15, kGlyphs[k].to);
     }
-
-    s_done = rec[0] | 0x80000000u;
 
     fprintf(stderr, "[menu] italic font: period, period-wide blank and caret made\n");
 }

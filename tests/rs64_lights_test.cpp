@@ -86,6 +86,41 @@ static void testSpriteLightRadiusCap() {
     CHECK(near(c.radius, 1200.0f, 1e-5f));
 }
 
+// White RGBA16 8x8 frame with a half-size I8 mask covering its left half: half the frame shows.
+static void testSpriteEmission() {
+
+    std::vector<uint8_t> tmem(4096, 0);
+    const TmemTile color{ 0, 2, 0, 2, 0, 8, 8 };
+    const TmemTile mask{ 4, 1, 0x100, 1, 0, 4, 4, 1, 1 };
+
+    for (int i = 0; i < 8 * 8 * 2; ++i) {
+        tmem[i] = 0xFF;
+    }
+
+    for (int y = 0; y < 4; ++y) {
+        tmem[0x800 + y * 8 + 0] = 0xFF;
+        tmem[0x800 + y * 8 + 1] = 0xFF;
+    }
+
+    CHECK(near(spriteEmission(tmem.data(), color, &mask), 0.5f, 1e-3f));
+    CHECK(near(spriteEmission(tmem.data(), color, nullptr), 1.0f, 1e-3f));
+    CHECK(near(spriteEmitWeight(0.5f, 0.12f), 1.0f, 1e-5f));
+    CHECK(near(spriteEmitWeight(0.03f, 0.12f), 0.25f, 1e-5f));
+    CHECK(near(spriteEmitWeight(0.03f, 0.0f), 1.0f, 1e-5f));
+
+    for (int y = 0; y < 4; ++y) {
+        tmem[0x800 + y * 8 + 0] = 0;
+        tmem[0x800 + y * 8 + 1] = 0;
+    }
+
+    CHECK(near(spriteEmission(tmem.data(), color, &mask), 0.0f, 1e-5f));
+
+    const TmemTile rgba32{ 0, 3, 0, 4, 0, 8, 8 };
+
+    CHECK(spriteEmission(tmem.data(), rgba32, nullptr) < 0.0f);
+    CHECK(near(spriteEmitWeight(-1.0f, 0.12f), 1.0f, 1e-5f));
+}
+
 static void testSameMatrix() {
     const Mat4 a = perspective(1.0f, 4.0f / 3.0f, 10.0f, 20000.0f);
     Mat4 b = a;
@@ -504,6 +539,22 @@ static void testConsensusUp() {
     CHECK(!consensusUp(ups, weights, 0, 0.9994f, up));
 }
 
+static void testDropFarLights() {
+
+    // A 50-unit exhaust 11000 units away goes; the same light at 140 units and a 1200-unit explosion at 20000 stay.
+    Resolved l[3];
+
+    l[0].radius = 50.0f;
+    l[0].pos[2] = 11000.0f;
+    l[1].radius = 50.0f;
+    l[1].pos[2] = 140.0f;
+    l[2].radius = 1200.0f;
+    l[2].pos[0] = 20000.0f;
+    CHECK(dropFarLights(l, 3, 0.01f) == 2);
+    CHECK(near(l[0].pos[2], 140.0f, 1e-6f) && near(l[1].radius, 1200.0f, 1e-6f));
+    CHECK(dropFarLights(l, 2, 0.0f) == 2);
+}
+
 static void testDedupeLights() {
     Resolved l[4];
     for (Resolved& r : l) {
@@ -638,6 +689,54 @@ static void testSelectLights() {
     for (size_t i = 1; i < n; ++i) {
         CHECK(out[i].pos[2] >= out[i - 1].pos[2]);
     }
+
+    // 34 lights for 32 slots: lights well inside the cut keep full strength; one just inside it fades toward 0 so it can drop out unseen.
+    CHECK(near(out[0].intensity, 1.0f, 1e-5f));
+    in.assign(34, Resolved{});
+
+    for (size_t i = 0; i < in.size(); ++i) {
+        in[i].pos[2] = 100.0f * (float)(i + 1);
+        in[i].radius = 1000.0f;
+        in[i].intensity = 1.0f;
+    }
+
+    in[32].pos[2] = 3250.0f;
+    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(near(out[0].intensity, 1.0f, 1e-5f));
+    CHECK(near(out[31].intensity, 0.2f, 1e-4f));
+
+    // 30 regular lights far away and 10 laser lights right at the camera, same priority: lasers keep their share of 4 (priorityShare), the
+    // regular ones take the other 28.
+    in.assign(40, Resolved{});
+
+    for (size_t i = 0; i < in.size(); ++i) {
+        in[i].radius = 100.0f;
+        in[i].intensity = 1.0f;
+        in[i].projectile = (i >= 30);
+        in[i].pos[2] = in[i].projectile ? 50.0f + (float)i : 5000.0f + (float)i;
+    }
+
+    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(!out[27].projectile && out[28].projectile && out[31].projectile);
+
+    // With 10 regular lights and 10 lasers, the lasers stop at their own cap.
+    in.erase(in.begin() + 10, in.begin() + 30);
+    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights, true, 3) == 13);
+
+    // A far higher-priority light (an engine exhaust) is kept over 40 nearer lower-priority ones, and listed first.
+    in.assign(41, Resolved{});
+
+    for (size_t i = 0; i < in.size(); ++i) {
+        in[i].radius = 100.0f;
+        in[i].intensity = 1.0f;
+        in[i].pos[2] = 100.0f + 10.0f * (float)i;
+        in[i].priority = PriorityLevel;
+    }
+
+    in[40].pos[2] = 90000.0f;
+    in[40].priority = 7;
+    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK((out[0].priority == 7) && near(out[0].intensity, 1.0f, 1e-5f));
 }
 
 static void testFogFactor() {
@@ -1410,6 +1509,7 @@ int main() {
     testScreenRoundTrip();
     testSpriteLight();
     testSpriteLightRadiusCap();
+    testSpriteEmission();
     testSameMatrix();
     testSunCameraDir();
     testModelSunDir();
@@ -1435,6 +1535,7 @@ int main() {
     testConsensusUp();
     testConsensusCameraDelta();
     testDedupeLights();
+    testDropFarLights();
     testMenuHoloLight();
     testFlickerGain();
     testLampMatch();

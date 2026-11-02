@@ -48,6 +48,12 @@ The host glue lives in `src/`:
 | `src/video/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer, RDRAM dump triggers |
 | `src/game/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
 | `src/game/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
+| `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks |
+| `src/game/builtin_hooks.cpp` | Built-in hooks registered through the host API |
+| `src/host_api/`, `include/rs64/host_api.h` | Host API for native mods and its public header ([modding-host-api.md](../engine/modding-host-api.md)) |
+| `src/lockstep/` | Mission input record/replay with per-frame state hashes |
+| `mods/multiplayer-native/` | Online co-op as a native mod ([multiplayer.md](../guides/multiplayer.md)) |
+| `rogue_squadron.toml` | N64Recomp config and override layer: `[[patches.hook]]` entries are compiled into the recompiled function itself, so they also run for indirect (`LOOKUP_FUNC`) calls ([patches/README.md](../../patches/README.md#where-most-base-game-fixes-live-today)) |
 | `patches/` | Hand-written C cross-compiled to MIPS, run back through N64Recomp, linked *ahead* of `RecompiledFuncs/` so its symbols win — the regen-safe place for guards/overrides |
 
 `lib/rt64` and `lib/N64ModernRuntime` are MikeSemicolonD forks carrying the
@@ -647,7 +653,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 | Attribution text | Renders (glyph rect count matches the hardware walk) |
 | Intro cinematic | Ships, trench, exploding logo, Factor 5 letters + fire, heightfield and flat terrain, billboards, grey sky |
 | Main menu | Renders (bg + title) |
-| In-mission gameplay | Playable from the first level through the credits; see [Status](../../README.md#status-playable) |
+| In-mission gameplay | Playable from the first level through the credits; see [Status](../../README.md#status) |
 | Audio (music + SFX) | Recompiled MusyX synth, cartridge-streamed samples, synth tick and voice pool registered as on hardware |
 | Input | Keyboard, mouse and SDL2 gamepad through `input_bindings.cpp`; `ROGUESQ_FAKE_CONTROLLER=1` for headless runs |
 | Save (EEPROM 4K) | Works; Memory Pak stubbed |

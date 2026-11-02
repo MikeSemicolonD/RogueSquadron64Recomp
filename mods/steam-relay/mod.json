@@ -6,6 +6,6 @@
   "version": "1.0.0",
   "authors": ["RogueSquadron64Recomp"],
   "minimum_recomp_version": "0.0.0",
-  "enabled_by_default": true,
+  "enabled_by_default": false,
   "native_libraries": { "steam_relay": ["rs64_mod_init"] }
 }

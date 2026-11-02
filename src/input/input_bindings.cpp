@@ -889,11 +889,11 @@ std::string menu_source_name(const Source& s)
     }
 }
 
-uint16_t menu_fixed_mask(const RawState& s)
+uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
 {
 
     static const std::pair<int, uint16_t> keys[] = {
-        { SDL_SCANCODE_RETURN, A }, { SDL_SCANCODE_KP_ENTER, A }, { SDL_SCANCODE_BACKSPACE, B }, { SDL_SCANCODE_ESCAPE, START },
+        { SDL_SCANCODE_RETURN, A }, { SDL_SCANCODE_KP_ENTER, A }, { SDL_SCANCODE_BACKSPACE, B },
         { SDL_SCANCODE_UP, JU }, { SDL_SCANCODE_DOWN, JD }, { SDL_SCANCODE_LEFT, JL }, { SDL_SCANCODE_RIGHT, JR },
     };
     static const std::pair<SDL_GameControllerButton, uint16_t> pad[] = {
@@ -907,6 +907,8 @@ uint16_t menu_fixed_mask(const RawState& s)
     for (const auto& [sc, bit] : keys) {
         if (s.keys && sc < s.keys_len && s.keys[sc]) m |= bit;
     }
+
+    if (s.keys && SDL_SCANCODE_ESCAPE < s.keys_len && s.keys[SDL_SCANCODE_ESCAPE]) m |= esc_is_start ? START : B;
 
     for (const auto& [b, bit] : pad) {
         if (s.pad && SDL_GameControllerGetButton(s.pad, b)) m |= bit;

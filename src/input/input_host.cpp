@@ -111,8 +111,11 @@ static bool fake_controller_enabled() {
 // Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright
 //        up down left right (analog stick)  wait (neutral hold).
 // Used for headless front-end navigation + state calibration. Default OFF.
+
+#ifdef RS64_MCP
 // The MCP press tool's held input (src/lockstep/lockstep.cpp); false when none is active.
 extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y);
+#endif
 
 // A controller input name (ROGUESQ_INPUT_SEQ and the MCP press tool): ORs its button into mask or sets the stick; false when unknown.
 extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, float* sy)
@@ -1776,6 +1779,8 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
         return true;
     }
 
+#ifdef RS64_MCP
+
     if (rs64_mcp_consume_input(&nav_buttons, &nav_x, &nav_y)) {
         *buttons = nav_buttons;
         *x = nav_x;
@@ -1783,6 +1788,8 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
 
         return true;
     }
+
+#endif
 
     if (fake_controller_enabled()) {
         uint16_t sb = 0;
@@ -1862,6 +1869,13 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     uint32_t smooth_now = SDL_GetTicks();
     float smooth_dt = s_last_ms ? (float)(smooth_now - s_last_ms) : 16.0f;
     s_last_ms = smooth_now;
+
+    // Pixels since the last poll grow with the frame time and the game scales turning by it too, so convert to pixels per 30 fps frame; the floor guards a double poll.
+    const float per_frame = (1000.0f / 30.0f) / std::max(smooth_dt, 1000.0f / 60.0f);
+
+    raw_dx *= per_frame;
+    raw_dy *= per_frame;
+
     float tau = g_bindings.mouse_smoothing * 100.0f;  // smoothing amount -> ms time constant
     float alpha = tau > 0.0f ? smooth_dt / (smooth_dt + tau) : 1.0f;
     s_sm_dx += (raw_dx - s_sm_dx) * alpha;
@@ -1875,7 +1889,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     bind_lk.unlock();
 
     // Rebinding flight actions never takes away menu confirm/back/navigation.
-    if (mouse_menu_context(touch_context())) btn = rs64::input::menu_buttons(btn, rs64::input::menu_fixed_mask(st));
+    const rs64::touch::Context menu_ctx = touch_context();
+
+    if (mouse_menu_context(menu_ctx)) btn = rs64::input::menu_buttons(btn, rs64::input::menu_fixed_mask(st, menu_ctx == rs64::touch::Context::PauseMenu));
 
     // The layout's THRUST (+0x18) and BRAKES1 (+0x12) masks (D_8010BE18) walk forward / back; BRAKES1 is dropped since the walker would stop to aim the head with the stick.
     if (atst && g_recomp_rdram_for_wp_raw)

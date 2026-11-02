@@ -37,6 +37,7 @@ extern SDL_Window* g_sdl_window;
 #include "game/nav_sequencer.h"        // rs64_nav_set_target, rs64_nav_tick
 #include "main/main.h"                // rs64_reloc_guard_tick
 #include "video/rt64_render_context.h"
+#include "default_lights.h"
 #ifdef __ANDROID__
 #include "main/android_host.h"
 #endif
@@ -47,7 +48,10 @@ using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
 
 extern "C" volatile unsigned g_f5_heur[4];
+
+#ifdef RS64_MCP
 extern "C" void rs64_mcp_note_dl();
+#endif
 
 #ifdef _WIN32
 
@@ -122,21 +126,19 @@ static std::string light_files_stamp()
 void rs64_queue_light_presets()
 {
 
-    static constexpr const char* kDefaultsMod = "model-lights";
+    // The defaults used to ship as this mod; an older install's leftover copy would override the built-in presets with stale ones.
+    static constexpr const char* kRetiredDefaultsMod = "model-lights";
 
     // The F1 Lights tab's Reload light files runs this again.
     rs64lights::presetReloader() = rs64_queue_light_presets;
 
-    // The shipped defaults go first wherever the MODS list puts them (librecomp lists a newly installed mod above the known ones), so any
-    // other mod's same-named preset replaces them; the others follow the MODS list, lower wins.
-    std::vector<recomp::mods::ModDetails> mods = recomp::mods::get_all_mod_details("rs64");
-    std::vector<std::string> texts;
+    // The built-in presets (src/video/default_lights.json) go first, so any mod's same-named preset replaces them; mods follow the MODS
+    // list, lower wins, and the copy next to the exe comes last.
+    std::vector<std::string> texts{ std::string(rs64_default_lights, rs64_default_lights_size) };
 
-    std::stable_partition(mods.begin(), mods.end(), [](const recomp::mods::ModDetails& d) { return d.mod_id == kDefaultsMod; });
-
-    for (const auto& d : mods)
+    for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
     {
-        if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+        if (!recomp::mods::is_mod_enabled(d.mod_id) || (d.mod_id == kRetiredDefaultsMod)) continue;
 
         bool exists = false;
         const std::vector<char> text = recomp::mods::read_mod_file(d.mod_id, kLightsFile, exists);
@@ -290,6 +292,16 @@ extern "C" float rs64_shadow_cull_margin(void)
     static const float s_margin = std::clamp(rs64lights::envFloat("ROGUESQ_RT_SHADOWS_CULL_MARGIN", 1.6f), 1.0f, 4.0f);
 
     return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_margin : 1.0f;
+}
+
+// Objects this close to the camera (game units, past their radius) pass the render-side view tests in any direction while RT sun shadows are on,
+// so things behind or beside the player keep casting. 0 while shadows are off. ROGUESQ_RT_SHADOWS_KEEP_DIST overrides (0 = off).
+extern "C" float rs64_shadow_keep_dist(void)
+{
+
+    static const float s_dist = std::max(rs64lights::envFloat("ROGUESQ_RT_SHADOWS_KEEP_DIST", 4096.0f), 0.0f);
+
+    return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_dist : 0.0f;
 }
 
 // Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
@@ -764,7 +776,9 @@ public:
     void send_dl(const OSTask* task) override
     {
 
+#ifdef RS64_MCP
         rs64_mcp_note_dl();
+#endif
 
         if (!app) return;
 
@@ -1730,7 +1744,7 @@ private:
         s.screen = rd8(0x130B14);
         s.menuId = rd8(0x0CE734);
         s.menuPtr = rd32(0x0CE730);
-        s.sub = rd8(0x0CE626);
+        s.sub = rd8(0x0CDAC4);
         const uint8_t b04 = rd8(0x130B44), b1f = rd8(0x130B5F), b25 = rd8(0x130B65);
         const uint32_t gateCtr = rd32(0x0B0B28);
         const bool cut_ok = s.cutscene >= 0x80000000u && s.cutscene < 0x80800000u;

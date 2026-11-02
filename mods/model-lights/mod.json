@@ -1,9 +1,0 @@
-{
-  "game_id": "rs64",
-  "id": "model-lights",
-  "display_name": "Model Lights",
-  "description": "Ray-traced lights carried by models (engine exhausts, laser bolts, proton torpedoes, upgrade pickups) and the briefing room's hologram and table lights. Edit them in the F1 Lights tab.",
-  "version": "1.0.0",
-  "authors": ["RogueSquadron64Recomp"],
-  "minimum_recomp_version": "0.0.0"
-}

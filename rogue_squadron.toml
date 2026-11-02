@@ -353,6 +353,11 @@ func = "viRetraceHandlerThread"
 before_vram = 0x800198E8   # L_800198E8 — top of per-frame loop
 text = '{ rs64_th_viRetraceHandlerThread_800198E8(rdram, ctx); }'
 
+# Game-state pause clock (ROGUESQ_PAUSE_AT, MCP pause_at/step) on screens without a menu or mission frame hook, such as the craft-select hangar.
+[[patches.hook]]
+func = "submitGfxFrame"
+text = '{ rs64_th_submitGfxFrame_entry(rdram, ctx); }'
+
 # Post-swap ack send NOBLOCK (`li $a2,1` -> `move $a2,$zero`): bufferArbiterAllocSlot leaves the ack flag 0x80037808 set, so a stale ack in the 1-slot queue blocked this send before musyxSynthFrame while the main thread spun on it (boot stall).
 [[patches.instruction]]
 func = "viRetraceHandlerThread"
@@ -507,6 +512,17 @@ text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_entry(rdram, ctx); }'
+
+# Those render-path tests also pass objects within rs64_shadow_keep_dist of the camera in any direction (sphere and point test, before the behind-the-camera check).
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001DD70
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DD70(rdram, ctx); }'
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001E064
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E064(rdram, ctx); }'
 
 # Widescreen: widen the game's 4:3 culls by rs64_cull_widen. transformVec3ToNpcLocalWithScale (misnamed) is the object view test; $f2 is its aspect factor.
 [[patches.hook]]
@@ -983,6 +999,11 @@ func = "menuControllerInput"
 before_vram = 0x800B51B8   # `lbu $v0,0x28($v0)` — selected entry's sub-type
 text = '{ rs64_th_menuControllerInput_800B51B8(rdram, ctx); }'
 
+# The menu SFX player (sfx id, volume, pan): a mod entry's "sound" replaces the one the game plays for its confirm (menu_config.cpp).
+[[patches.hook]]
+func = "bsearchFactor5TableByU16Key"
+text = '{ if (rs64_th_bsearchFactor5TableByU16Key_entry(rdram, ctx)) return; }'
+
 # Each front-end loop pass, right after the pad poll (0x80079CE0): the multiplayer address editor takes the pad while it is editing, and a pilot-first page leaves for mission select once done.
 # hook: RS64_HOOK_MENU_INPUT
 [[patches.hook]]
@@ -1240,6 +1261,12 @@ text = '{ rs64_th_renderLitMeshFaceGroup_800138A4(rdram, ctx); }'
 func = "renderLitMeshFaceGroup"
 before_vram = 0x800146F0   # s1 = DL cursor, s2 = face
 text = '{ rs64_th_renderLitMeshFaceGroup_800146F0(rdram, ctx); }'
+
+# Camera-facing quads (explosion and lava fire, glints): record which face each 0xB4 came from, the same way.
+[[patches.hook]]
+func = "buildOrientedFaceGeometry"
+before_vram = 0x80012F14   # sw of the 0xB4 word: s2 = DL cursor, s3 = face
+text = '{ rs64_th_buildOrientedFaceGeometry_80012F14(rdram, ctx); }'
 
 # Lockstep determinism harness; inert unless a ROGUESQ_LS_* mode is set.
 # Mission start: seed and recorded session settings, before initMission reads difficulty.

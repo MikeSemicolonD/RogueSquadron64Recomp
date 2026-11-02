@@ -175,6 +175,14 @@ static bool run_pulse() {
 
 static void nav_advance() { s_step++; s_watchdog = 0; s_since_press = 9999; }
 
+// Frames of the craft-select hangar (runHangarSelectionFrame) seen; the menu classifier can't tell it from SELECT GAME.
+static int s_hangar_frames = 0;
+
+extern "C" void rs64_nav_hangar_frame()
+{
+    ++s_hangar_frames;
+}
+
 static void nav_write_u8(uint8_t* rdram, uint32_t phys, uint8_t val) { rdram[phys ^ 3] = val; }
 
 // Craft byte gGameSettings+1 plus the secondary weapon gGameSettings+3 that menuOverlayInit derives from it; the craft byte alone keeps the old craft's secondary.
@@ -225,6 +233,11 @@ static const int ABORT_FIRST_STEP = 10;
 
 // Mission reached: the level target stops here; the abort target goes on to its pause-menu steps.
 static void nav_mission_reached() {
+
+    // A hangar target that lands in a mission (a new pilot auto-launches one) gets back to the hangar by aborting it.
+    if (g_target.kind == NAV_LEVEL && g_target.c == 1) {
+        g_target.kind = NAV_ABORT;
+    }
 
     if (g_target.kind == NAV_ABORT) {
         s_step = ABORT_FIRST_STEP - 1;
@@ -305,7 +318,7 @@ static void nav_level(uint8_t* rdram, const char* st)
             if (is(st, "menu.account.enter_name")) { nav_advance(); return; }
             if (is(st, "menu.main") || is(st, "menu.account") || is(st, "menu")) nav_repress(N64_A_BUTTON);
             break;
-        case 1:  // ENTER NAME: pick a letter (A) then finish (START); alternate so misses retry
+        case 1:  // SELECT GAME / ENTER NAME: A picks a saved pilot (-> SELECT LEVEL) or a letter, START finishes a name; alternate so misses retry
             if (!is(st, "menu.account.enter_name")) { nav_advance(); return; }
 
             if (s_since_press >= REPRESS_INTERVAL) {
@@ -329,8 +342,12 @@ static void nav_level(uint8_t* rdram, const char* st)
                 nav_advance();
             }
             break;
-        case 4:  // AVAILABLE CRAFT: turn the hangar to the target craft, confirm, until mission
-            if (is(st, "menu.account.craft_select") && nav_step_craft(rdram, g_target.b, "level"))
+        case 4:  // AVAILABLE CRAFT (the bridge hologram): A opens the craft-select hangar
+            if (s_hangar_frames > 0) { nav_advance(); return; }
+            if (is(st, "menu.account.craft_select")) nav_repress(N64_A_BUTTON);
+            break;
+        case 5:  // the hangar: turn the bays to the target craft, confirm, until mission
+            if (nav_step_craft(rdram, g_target.b, "level"))
             {
                 // hangar target: stop here with the craft showing.
                 if (g_target.c == 1)
@@ -349,7 +366,7 @@ static void nav_level(uint8_t* rdram, const char* st)
                 nav_advance();
             }
             break;
-        case 5:  // reached the mission
+        case 6:  // reached the mission
             fprintf(stderr, "[nav] level %d reached (state=%s)\n", g_target.a, st);
             fflush(stderr);
             nav_mission_reached();

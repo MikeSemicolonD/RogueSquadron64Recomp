@@ -129,6 +129,15 @@ void rs64_th_viRetraceHandlerThread_800198E8(uint8_t* rdram, recomp_context* ctx
     }
 }
 
+// submitGfxFrame 0x8000C07C
+void rs64_th_submitGfxFrame_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_pause_frame_point(void);
+
+    rs64_pause_frame_point();
+}
+
 // runMenuModelViewerScreen 0x800C29F8
 void rs64_th_runMenuModelViewerScreen_800C29F8(uint8_t* rdram, recomp_context* ctx)
 {
@@ -276,6 +285,62 @@ void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_conte
     s_render_view_test_next = 0;
 }
 
+// Render-path view test, RT shadows on: true when the object (camera space at sp+0x10, radius r) is within the shadow keep distance in any direction.
+static int shadow_keep(uint8_t* rdram, recomp_context* ctx, float r)
+{
+
+    extern float rs64_shadow_keep_dist(void);
+    const float d = s_render_view_test ? rs64_shadow_keep_dist() : 0.0f;
+    union { uint32_t u; float f; } x, y, z;
+
+    if (!(d > 0.0f))
+    {
+        return 0;
+    }
+
+    x.u = (uint32_t)MEM_W(0x10, ctx->r29);
+    y.u = (uint32_t)MEM_W(0x14, ctx->r29);
+    z.u = (uint32_t)MEM_W(0x18, ctx->r29);
+
+    return (x.f * x.f + y.f * y.f + z.f * z.f) < (d + r) * (d + r);
+}
+
+// Moves a kept object to the screen centre at the near plane (sp+0x10/0x14/0x18), so the rest of the test passes; the caller's depth out was already written.
+static void shadow_keep_centre(uint8_t* rdram, recomp_context* ctx)
+{
+
+    MEM_W(0x10, ctx->r29) = 0;
+    MEM_W(0x14, ctx->r29) = 0;
+    MEM_W(0x18, ctx->r29) = MEM_W(0x24, ctx->r17);
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001DD70: the sphere test's behind-the-camera check ($f0 = z + r); the near clamp that follows stores near when $f4 < near.
+void rs64_th_transformVec3ToNpcLocalWithScale_8001DD70(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!shadow_keep(rdram, ctx, ctx->f22.fl))
+    {
+        return;
+    }
+
+    shadow_keep_centre(rdram, ctx);
+    ctx->f0.fl = 1.0f;
+    ctx->f4.fl = 0.0f;
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001E064: the point test's behind-the-camera check ($f2 = z, reused as the projection depth).
+void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!shadow_keep(rdram, ctx, 0.0f))
+    {
+        return;
+    }
+
+    shadow_keep_centre(rdram, ctx);
+    ctx->f2.u32l = (uint32_t)MEM_W(0x24, ctx->r17);
+}
+
 // transformVec3ToNpcLocalWithScale 0x8001DEA0: the sphere test's projected x, y and radius ($f10, $f12, $f22); shrinking them widens its field of view.
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx) {
 
@@ -347,18 +412,28 @@ void rs64_th_addNpcToVisibilityBucket_80057C90(uint8_t* rdram, recomp_context* c
     rs64_f5_cable_submit((uint32_t)MEM_W(0, (gpr)(int32_t)0x8010B6E0), (uint32_t)ctx->r5, (uint32_t)MEM_W(0, (gpr)(int32_t)0x8010B6E8));
 }
 
+// LOD depth ($f2): divided by the draw distance; an object kept behind the camera for shadows (negative depth) uses its distance, not the closest LOD.
+static void lod_depth(recomp_context* ctx)
+{
+
+    extern float rs64_draw_dist(void);
+    extern float rs64_shadow_keep_dist(void);
+
+    if ((ctx->f2.fl < 0.0f) && (rs64_shadow_keep_dist() > 0.0f)) ctx->f2.fl = -ctx->f2.fl;
+
+    ctx->f2.fl /= rs64_draw_dist();
+}
+
 // addNpcToVisibilityBucket 0x80057EAC
 void rs64_th_addNpcToVisibilityBucket_80057EAC(uint8_t* rdram, recomp_context* ctx) {
 
-    extern float rs64_draw_dist(void);
-    ctx->f2.fl /= rs64_draw_dist();
+    lod_depth(ctx);
 }
 
 // selectMeshLodAndSubmitForRender 0x8005813C
 void rs64_th_selectMeshLodAndSubmitForRender_8005813C(uint8_t* rdram, recomp_context* ctx) {
 
-    extern float rs64_draw_dist(void);
-    ctx->f2.fl /= rs64_draw_dist();
+    lod_depth(ctx);
 }
 
 // buildVisibleTerrainGridAroundCamera 0x8004392C
@@ -823,8 +898,20 @@ void rs64_th_applyLevelScreenAndCameraSettings_entry(uint8_t* rdram, recomp_cont
 // menuControllerInput 0x800B51B8
 void rs64_th_menuControllerInput_800B51B8(uint8_t* rdram, recomp_context* ctx) {
 
+    extern void rs64_menu_confirm_sound(uint8_t* rdram, recomp_context* ctx);
     extern void rs64_menu_confirm_main(uint8_t* rdram);
+
+    rs64_menu_confirm_sound(rdram, ctx);
     rs64_menu_confirm_main(rdram);
+}
+
+// bsearchFactor5TableByU16Key entry
+int rs64_th_bsearchFactor5TableByU16Key_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern int rs64_menu_sfx_swap(recomp_context* ctx);
+
+    return rs64_menu_sfx_swap(ctx);
 }
 
 // menuControllerInput 0x800B4CA8
@@ -1258,6 +1345,13 @@ void rs64_th_renderLitMeshFaceGroup_800146F0(uint8_t* rdram, recomp_context* ctx
 
     extern void rs64_f5_map_sprite(unsigned, unsigned);
     rs64_f5_map_sprite((unsigned)ctx->r17, (unsigned)ctx->r18);
+}
+
+// buildOrientedFaceGeometry 0x80012F14
+void rs64_th_buildOrientedFaceGeometry_80012F14(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_f5_map_sprite(unsigned, unsigned);
+    rs64_f5_map_sprite((unsigned)ctx->r18, (unsigned)ctx->r19);
 }
 
 // initMission 0x800FA28C

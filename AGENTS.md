@@ -1,13 +1,13 @@
 # AGENTS.md
 
-Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. What's left is the issues listed under Status in the README, plus symbol renaming. See [Status](README.md#status-playable) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
+Guidance for AI agents working on the Rogue Squadron 64 Recompiled project — a native port of *Star Wars: Rogue Squadron* (N64, USA v1.0) built with N64Recomp + RT64. The game is playable from the first level through the credits. What's left is the issues listed under Status in the README, plus symbol renaming. See [Status](README.md#status) in the README for the authoritative what-works snapshot before starting anything — this file assumes it.
 
 Rules come first; reference sections (Environment variables onward) follow. Some tools cut instruction files at 24 KB, so if yours stops before Architectural quirks, read the rest of this file directly.
 
 ## Replies and commits
 
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.
-- Commit messages match the existing history: a short Title Case subject with no trailing period; when a body is needed, `-` bullets in a plain, first-person voice saying what changed and why. **No `Co-Authored-By` or other AI attribution trailers.** No semicolons tacking a one-off aside onto a bullet - make it its own bullet or cut it.
+- Commit messages match the existing history: a short Title Case subject with no trailing period, under about 60 characters (GitHub cuts subjects at 72 and wraps the rest into the body; name the main change and leave the rest to the bullets); when a body is needed, `-` bullets in a plain, first-person voice saying what changed and why. **No `Co-Authored-By` or other AI attribution trailers.** No semicolons tacking a one-off aside onto a bullet - make it its own bullet or cut it.
 
 ## Skills
 
@@ -19,6 +19,7 @@ Task guides live in `.claude/skills/<name>/SKILL.md`. Agents without skill suppo
 - `roguesquadron-raytracing` — RT lights, presets, the explorer Lights panel
 - `f5-dl-validate` — Factor 5 display-list walks and diffs
 - `renderdoc-mcp` — GPU frame captures
+- `rs64-mcp-usage` — drive the live game: exact-frame pauses, flying the craft, screenshots, frame inspection
 
 The rest are general toolchain references (cmake, msvc-cl, lldb, ...).
 
@@ -42,6 +43,8 @@ Remove-Job $job
 ROM lives at `build/Debug/rogue_squadron.z64` (USA v1.0, xxHash3-64 = `0x6B66A44153594DEA`).
 
 For a headless run that drives past the title without a controller, pass `--fake-controller --auto-start <ms>` (or the env vars `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>`).
+
+**Test against a mission recording in Release at `ROGUESQ_SPEED=16`, reading the log, whenever the check is a log or counter** (pairing rates, light/terrain traces, hashes): the 3126-frame `construction_yards_bonus.rec` runs from launch to exit in under a minute (`ROGUESQ_BOOT_TARGET=level:<id>,<craft>` from the `.rec` header, `ROGUESQ_NAV_STEP_BUDGET=19200`, `ROGUESQ_LS_REPLAY`, `ROGUESQ_FAKE_CONTROLLER=1`, the trace vars, stderr redirected to a file under `dumps/`; the game exits when the replay ends). Debug is about 10x slower per frame. Use the Debug MCP session only when a frozen frame has to be inspected. Session recordings (`rs64-input`) diverge; use mission (`rs64-ls`) recordings.
 
 Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs the host, multiplayer-mod and relay-server tests plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/`, the relay's in `relay-server/tests/`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
 
@@ -208,7 +211,7 @@ With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mod
 
 ```
 src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
-  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp)
+  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp, built into Debug only unless `-DRS64_MCP=ON`)
   ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
   ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
   ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
@@ -291,7 +294,7 @@ The RT64 MCP server below does the same hold interactively, with no 30 s cap, an
 
 ### Live frame inspection (RT64 MCP, `tools/debug/mcp/`)
 
-`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (`rs64` in the local `.mcp.json`) that launches the game itself and gives an agent what the F1 inspector shows; use it instead of asking the user for F1 screenshots. `pause_at` / `step` hold the game thread on exactly frame N of a clock (RT64's own F4 pause does not stop the game), then draws, textures, framebuffers, RDRAM and screenshots can be read from the held frame. Trace categories (`ROGUESQ_LOG_*`) go in `launch`'s `env`. Tool list and details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
+`tools/debug/mcp/rs64_mcp.py` is a stdio MCP server (`rs64` in the local `.mcp.json`) that launches the game itself and gives an agent what the F1 inspector shows; use it instead of asking the user for F1 screenshots. `pause_at` / `step` hold the game thread on exactly frame N of a clock (RT64's own F4 pause does not stop the game), then draws, textures, framebuffers, RDRAM and screenshots can be read from the held frame. Trace categories (`ROGUESQ_LOG_*`) go in `launch`'s `env`. The bridge is in Debug builds only unless configured with `-DRS64_MCP=ON`. Tool list and details: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md).
 
 ### Renaming (`tools/re/rename/`) and cross-refs (`tools/re/rz/`)
 
@@ -340,7 +343,7 @@ Online co-op is a native mod; the exe has no multiplayer code and the base build
 
 ### Game-state model + BOOT_TARGET nav engine
 
-A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/game/state_table.inl`, host classifier in [src/game/game_state.cpp](src/game/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-step 0x800CE626). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
+A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/game/state_table.inl`, host classifier in [src/game/game_state.cpp](src/game/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-screen `bridgeMenuState` 0x800CDAC4). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
 
 `ROGUESQ_BOOT_TARGET=level:<id>[,craft]` is a state-gated **nav sequencer** ([src/game/nav_sequencer.cpp](src/game/nav_sequencer.cpp)) that drives the real menus to a mission. Never call a recompiled function from the host to force state — inject input + write fields the game's own confirm path reads (e.g. `gCurrentLevel` 0x130B70 is a **u32**, not a byte — a byte write = out-of-range id = crash). `demo:<n>` auto-disables the custom menu (it displaced the attract idle path) so the chosen attract demo plays; firing it *instantly* is unsolved (idle trigger is `(clock − lastInputFrame) > threshold`, `lastInputFrame` not locatable statically).
 

@@ -30,10 +30,15 @@ namespace rs64::touch {
         // PauseMenuStuff arrays by current_menu: root, game settings, audio settings, abort confirm.
         constexpr uint32_t kPauseArrays[4] = { 0x80109DD4u, 0x80109E24u, 0x80109E68u, 0x80109EECu };
 
-        // The array the game reads for a pause menu: the port's rebuilt one for the root and GAME SETTINGS (menu_config.cpp).
+        // The array the game reads for a pause page: the port's rebuilt one for the root, GAME SETTINGS and the pages mods add (4+, Display Settings among
+        // them; menu_config.cpp), else the game's own for pages 0-3; 0 when there is none.
         uint32_t pause_records(const uint8_t* r, int menu)
         {
-            return rs64_pause_array_for(const_cast<uint8_t*>(r), (unsigned)menu, kPauseArrays[menu]) - 0x80000000u;
+
+            const uint32_t native = (menu >= 0 && menu < 4) ? kPauseArrays[menu] : 0u;
+            const uint32_t a = (menu >= 0 && menu <= 0xFF) ? rs64_pause_array_for(const_cast<uint8_t*>(r), (unsigned)menu, native) : 0u;
+
+            return (a >= 0x80000000u) ? a - 0x80000000u : 0u;
         }
 
         // The mission's presented image is narrower than the front end's (measured 1290x923 vs 1335x923 on the S24+).
@@ -528,8 +533,9 @@ namespace rs64::touch {
 
         const uint32_t hh = hud - 0x80000000u;
         const uint8_t menu = rb(r, hh + 0xD6A);
+        const uint32_t recs = pause_records(r, menu);
 
-        if (rb(r, hh + 0x258) != 3 || menu > 3)
+        if (rb(r, hh + 0x258) != 3 || recs == 0)
         {
             return false;
         }
@@ -546,7 +552,6 @@ namespace rs64::touch {
 
         // Records: every non-terminator record takes the next element except spacers (0x1000). The root menu can hide
         // objective lines (0x0010) without taking an element, so skip that many objective records first.
-        const uint32_t recs = pause_records(r, menu);
         int non_spacer = 0;
 
         for (int i = 0; i < 64; ++i) {
@@ -761,7 +766,7 @@ namespace rs64::touch {
         const uint32_t hh = hud - 0x80000000u;
         const uint8_t menu = rb(r, hh + 0xD6A);
 
-        return (rb(r, hh + 0x258) == 3 && menu <= 3) ? menu : -1;
+        return (rb(r, hh + 0x258) == 3 && pause_records(r, menu) != 0) ? menu : -1;
     }
 
     int pause_entry(const uint8_t* r) {
@@ -773,7 +778,7 @@ namespace rs64::touch {
 
     int pause_find_entry(const uint8_t* r, int menu, uint16_t next) {
 
-        if (menu < 0 || menu > 3)
+        if (pause_records(r, menu) == 0)
         {
             return -1;
         }
@@ -803,7 +808,7 @@ namespace rs64::touch {
 
     int pause_entry_next(const uint8_t* r, int menu, int k) {
 
-        if (menu < 0 || menu > 3)
+        if (pause_records(r, menu) == 0)
         {
             return -1;
         }
@@ -830,7 +835,7 @@ namespace rs64::touch {
 
         std::string s;
 
-        if (menu < 0 || menu > 3)
+        if (pause_records(r, menu) == 0)
         {
             return s;
         }

@@ -383,11 +383,11 @@ static json rdram_write(const json& p)
     return { { "written", size } };
 }
 
-// The game's 8 MB in big-endian byte order, the ROGUESQ_DUMP_RDRAM_AT_VI format that rdram_golden_diff.py and state_diff read.
+// Big-endian RAM image: the game's 8 MB (the ROGUESQ_DUMP_RDRAM_AT_VI format), or with full the 16 MB including the host tables above it; rdram_golden_diff.py reads both.
 static json rdram_dump(const json& p)
 {
 
-    static constexpr uint32_t kSize = 0x800000;
+    const uint32_t kSize = p.value("full", false) ? 0x1000000u : 0x800000u;
     volatile uint8_t* rdram = g_recomp_rdram_for_wp_raw;
 
     if (!p.contains("path") || !p["path"].is_string())
@@ -419,6 +419,53 @@ static json rdram_dump(const json& p)
     fclose(f);
 
     return { { "path", path }, { "bytes", written } };
+}
+
+// Addresses of a big-endian byte pattern in the 16 MB, at a multiple of align, up to limit hits.
+static json rdram_find(const json& p)
+{
+
+    static constexpr uint32_t kSize = 0x1000000;
+    volatile uint8_t* rdram = g_recomp_rdram_for_wp_raw;
+    const std::string hex = p.value("hex", std::string());
+    const uint32_t align = std::max(1u, p.value("align", 1u));
+    const uint32_t limit = p.value("limit", 64u);
+
+    if (hex.empty() || hex.size() % 2 != 0 || hex.find_first_not_of("0123456789abcdefABCDEF") != std::string::npos)
+    {
+        throw std::runtime_error("hex must be a non-empty even-length hex string");
+    }
+
+    if (!rdram)
+    {
+        throw std::runtime_error("RDRAM not available yet");
+    }
+
+    std::vector<uint8_t> pat(hex.size() / 2);
+
+    for (size_t i = 0; i < pat.size(); i++) pat[i] = (uint8_t)std::stoul(hex.substr(i * 2, 2), nullptr, 16);
+
+    json hits = json::array();
+    bool more = false;
+
+    for (uint32_t at = 0; at + pat.size() <= kSize; at += align)
+    {
+        size_t i = 0;
+
+        while (i < pat.size() && rdram[(at + i) ^ 3] == pat[i]) ++i;
+
+        if (i < pat.size()) continue;
+
+        if (hits.size() >= limit)
+        {
+            more = true;
+            break;
+        }
+
+        hits.push_back(0x80000000u + at);
+    }
+
+    return { { "hits", hits }, { "more", more } };
 }
 
 // Captures the next `frames` presents and returns the saved .rdc once RenderDoc has written it.
@@ -457,6 +504,7 @@ void rs64_mcp_bridge_start(uint16_t port)
     rs64_mcp_register("rdram_write", rdram_write);
     rs64_mcp_register("renderdoc_capture", renderdoc_capture);
     rs64_mcp_register("rdram_dump", rdram_dump);
+    rs64_mcp_register("rdram_find", rdram_find);
 
     std::thread(bridge_thread, port).detach();
 }

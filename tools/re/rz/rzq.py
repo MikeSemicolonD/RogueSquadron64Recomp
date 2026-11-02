@@ -31,6 +31,9 @@ def open_rz(elf, overlay, project):
         rz.cmd(f"omp {OVERLAY_MAP[overlay]}")
     if project and os.path.exists(project):
         rz.cmd(f"Po {project}")
+        # Po restores the saved map order, so the overlay has to be raised again.
+        if overlay != "cinematic":
+            rz.cmd(f"omp {OVERLAY_MAP[overlay]}")
     else:
         rz.cmd("aaa")
         if project:

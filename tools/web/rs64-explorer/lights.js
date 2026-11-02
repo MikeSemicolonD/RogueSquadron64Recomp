@@ -18,12 +18,14 @@ let lightsDoc = { presets: [] }, lightSel = null, lightsHere = [], lightsLevel =
 // The game's own light files ([{ src, text }] in the game's override order, read from the game folder) and their presets under this mod's:
 // lightsBase holds those this mod does not override (a same-named preset in a later file wins, as in game), each with its source and text.
 let gameLightTexts = [], lightsBase = [], lightsBaseInfo = new Map();
+// The presets compiled into the game (src/video/default_lights.json), served with the site; they come before every file in the game folder.
+const BUILTIN_LIGHTS = fetch('../../../src/video/default_lights.json').then((r) => (r.ok ? r.text() : '')).catch(() => '');
 const lightsAll = () => [...lightsBase, ...lightsDoc.presets];
 const isGameLight = (p) => lightsBaseInfo.has(p);
 async function readLights() {
   lightsDoc = lightsParse(await virtualText(LIGHTS_FILE));
   const mine = new Set(lightsDoc.presets.map((p) => p.name)), byName = new Map();
-  for (const { src, text } of gameLightTexts) {
+  for (const { src, text } of [{ src: 'built into the game', text: await BUILTIN_LIGHTS }, ...gameLightTexts]) {
     try {
       for (const p of lightsParse(text).presets) byName.set(p.name, { p, src });
     } catch {}
@@ -45,8 +47,8 @@ async function writeLights(label) {
   await editText(LIGHTS_FILE, lightsWrite(lightsDoc), label);
   await lightsRefresh();
 }
-// Reads every roguesq_lights.json in the game folder (mods/*, then next to the exe; model-lights first, the rest by folder name since the
-// MODS list order is not in the folder; the explorer's own preview mod is this mod, so it is skipped). ask: pick the folder if none is granted.
+// Reads every roguesq_lights.json in the game folder (mods/* by folder name since the MODS list order is not in the folder, then next to the exe;
+// the explorer's own preview mod is this mod, and a leftover model-lights folder is ignored as in game). ask: pick the folder if none is granted.
 async function loadGameLights(ask) {
   let dir = ask ? await gameFolder().catch(() => null) : await idbKv('readonly', (s) => s.get('gameDir')).catch(() => null);
   if (!ask && dir && (await dir.queryPermission({ mode: 'readwrite' })) !== 'granted') dir = null;
@@ -54,8 +56,8 @@ async function loadGameLights(ask) {
   const texts = [];
   const read = (h, src) => h.getFileHandle(GAME_LIGHTS_FILE).then((f) => f.getFile()).then((f) => f.text()).then((text) => texts.push({ src, text }), () => {});
   const mods = await dir.getDirectoryHandle('mods').catch(() => null), folders = [];
-  if (mods) for await (const [id, h] of mods.entries()) if (h.kind === 'directory' && id !== PREVIEW_MOD) folders.push([id, h]);
-  folders.sort(([a], [b]) => (b === 'model-lights') - (a === 'model-lights') || a.localeCompare(b));
+  if (mods) for await (const [id, h] of mods.entries()) if (h.kind === 'directory' && id !== PREVIEW_MOD && id !== 'model-lights') folders.push([id, h]);
+  folders.sort(([a], [b]) => a.localeCompare(b));
   for (const [id, h] of folders) await read(h, `mods/${id}`);
   await read(dir, 'next to the exe');
   gameLightTexts = texts;
@@ -460,7 +462,7 @@ function lightsAddLevel(hit) {
   return lightAddTo((q) => !q.mesh && q.level === level, () => ({ name: freeName(`level_${level}`, lightsAll().map((q) => q.name)), enabled: true, level, lights: [] }),
     { ...lightNew(worldToMap(w, hs), LIGHT_LEVEL_RADIUS), shadowOffset: 5 });
 }
-// Merges another roguesq_lights.json (the game's editing copy next to the exe, mods/model-lights) into the mod's: a same-named preset is replaced.
+// Merges another roguesq_lights.json (the game's editing copy next to the exe, or another mod's) into the mod's: a same-named preset is replaced.
 function lightsImport() {
   const input = elem('input', { type: 'file', accept: '.json,application/json' });
   input.onchange = async () => {
@@ -508,7 +510,7 @@ function lightsPanel() {
     return;
   }
   const count = lightsHere.reduce((n, p) => n + p.lights.length, 0);
-  const tools = [iconButton('open', 'Open lights file: merges a roguesq_lights.json (the game\'s copy next to the exe, or mods/model-lights) into this mod; a preset with the same name is replaced', lightsImport)];
+  const tools = [iconButton('open', 'Open lights file: merges a roguesq_lights.json (the game\'s copy next to the exe, or another mod\'s) into this mod; a preset with the same name is replaced', lightsImport)];
   if (mode === 'models' && lightsHasHp) tools.unshift(iconButton('hardpoints', 'Lights from hardpoints: a light behind each of the model\'s glow hardpoints (engine nozzles, lamps)', lightsFromHardpoints));
   if (window.showDirectoryPicker) tools.push(iconButton('gameLights', `Game's lights: reads every roguesq_lights.json in the game folder (mods and next to the exe) and shows them under this mod's; editing one overrides it in this mod. Asks for the folder the first time. ${gameLightTexts.length} file(s) loaded`, async () => (await loadGameLights(true)) && lightsRefresh()));
   if (lightsFx?.sheet) tools.unshift(iconButton('lightAdd', 'Light this effect: a light on every sprite of this effect while it shows one of its frames, fading with the sprite', lightsAddFx));

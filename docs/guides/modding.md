@@ -10,7 +10,7 @@ This page is the starting point for making a mod. It covers the kinds of mod the
 | Kind | What it can do | What you write | Example |
 |---|---|---|---|
 | Menu mod | Add, hide, reorder or replace menu entries | `roguesq_menu.json` | [mods/quit-prompt/](../../mods/quit-prompt/) |
-| Light mod | Ray-traced lights on models (engines, lasers) and in levels | `roguesq_lights.json` | [mods/model-lights/](../../mods/model-lights/) |
+| Light mod | Ray-traced lights on models (engines, lasers) and in levels | `roguesq_lights.json` | The game's built-in lights, [src/video/default_lights.json](../../src/video/default_lights.json) |
 | Asset mod | Replace models, textures, levels and other game files | Files under `assets/` | Exported from the RS64 Explorer |
 | Code mod (`.nrm`) | Replace or hook game functions, patch single instructions | MIPS C (or assembly) built with RecompModTool | [mods/infinite-secondary/](../../mods/infinite-secondary/) |
 | Native mod | Use the host API: hooks, menu text, pad filters, shared flags | A C/C++ shared library | [mods/native-demo/](../../mods/native-demo/) |
@@ -185,12 +185,25 @@ The [exhaust-color](../../mods/exhaust-color/) mod is a different approach: it r
 
 ## Light mods
 
-A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the RAY TRACING page's lights setting). A preset replaces an earlier one with the same name, read in this order: the built-in [model-lights](../../mods/model-lights/) mod (the engine, laser, torpedo and pickup lights) always first, then every other enabled mod in MODS-list order (lower in the list wins; a newly installed mod starts at the top), then the copy next to the exe, which the F1 Lights tab saves and which wins over all of them.
+A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the RAY TRACING page's lights setting). A preset replaces an earlier one with the same name, read in this order: the game's built-in lights ([src/video/default_lights.json](../../src/video/default_lights.json), compiled into the game: the engine, laser, torpedo and pickup lights) always first, then every other enabled mod in MODS-list order (lower in the list wins; a newly installed mod starts at the top), then the copy next to the exe, which the F1 Lights tab saves and which wins over all of them.
 
 - A preset with a `mesh` rides on a model part: `red_laser` lights every red bolt, `xwing#s0.p1` one X-wing part. Positions, radius and shadow offset are in the part's model units, or the radius in camera units with `"cameraUnits": true` (laser bolts are drawn at varying sizes).
 - A preset without one lights a level: `level` is the level number (`-1` outside missions, `-2` or absent every level, `-3` the mission-select briefing room, `-4` the craft-select hangar) and positions are in the level's map space (512 per terrain cell, Y down; camera space in the front end).
 - A preset with a `sprite` (`|`-separated `spr:<texture name>` keys, one per effect frame, such as `spr:explo_tex0`) replaces the automatic light of those fire, smoke and explosion sprites: its lights sit on each sprite showing one of those frames, the radius is a multiple of the sprite's size and the brightness follows its fade. In the RS64 Explorer's Effects tab, the bulb-plus button lights every frame of the open effect and previews the lights on the playing sprites; in game, the F1 Lights tab lists the keys drawn while the effect is on screen.
 - Any light can flicker (`flickerIntensity`, 0-1) or be a spotlight (`direction`, `spotMaxCosine` / `spotFalloffCosine`, RT64's negative cosines; the RS64 Explorer shows them as cone angles).
+- Only 32 lights shine at once. A preset's `priority` decides which are kept when there are more (see the table below).
+
+**Light priorities.** When more than 32 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over.
+
+| Priority | Lights | Share |
+|---|---|---|
+| 7 | Engine exhausts (built-in `exhaust_*`) | 12 |
+| 6 | Pickups (built-in `upgrade_pickup`) | 4 |
+| 5 | Effect sprites: explosions, fire (default for `sprite` presets) | 10 |
+| 3 | Model parts: building glows, lamps (default for `mesh` presets) | 6 |
+| 2 | Level lights (always; `priority` is not read for them) | 4 |
+| 1 | Torpedoes (built-in `proton_torpedo`) | 2 |
+| 0 | Laser bolts (any `red_laser`, `green_laser`, `ion_laser` light; never more than 8, `ROGUESQ_RT_LIGHTS_PROJECTILE_MAX`) | 4 |
 
 The built-in lights include the briefing room's hologram and table ring and, generated from the models' own glow markers, the engines of every other craft and the lamps on level buildings and platforms.
 

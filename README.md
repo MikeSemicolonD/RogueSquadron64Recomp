@@ -39,13 +39,13 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Linux x64](#linux)** (glibc 2.38+) | Vulkan |
 | **[Linux arm64 / armhf](docs/guides/building-all-platforms.md#what-players-need)** (glibc 2.38+) | Vulkan |
 | **[Linux x86 (32-bit)](docs/guides/building-all-platforms.md)**** (glibc 2.38+) | Vulkan |
-| **[Android 9+ arm64](#android-notes)** | Vulkan 1.1 |
-| **[macOS 11+ arm64 (Apple Silicon)](#macos-notes)*** | Metal |
-| **[macOS 11+ x86_64 (Intel)](#macos-notes)*** | Metal |
+| **[Android 9+ arm64](#android)** | Vulkan 1.1 |
+| **[macOS 11+ arm64 (Apple Silicon)](#macos)*** | Metal |
+| **[macOS 11+ x86_64 (Intel)](#macos)*** | Metal |
 
 </div>
 
-*macOS builds but hasn't been run on a Mac yet (see [macOS notes](#macos-notes))
+*macOS builds but hasn't been run on a Mac yet (see [macOS](#macos))
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
 
@@ -78,7 +78,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Multiplayer (experimental)
 
-- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. 
+- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu.
   - Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
   - Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
   - The **Multiplayer** is shipped as a `multiplayer-native` mod.
@@ -129,7 +129,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick |
 | Special | <kbd>F</kbd> | — | C-Right | Guide | Button 5 |
 | Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad | — |
-| Standard | <kbd>V</kbd> | — | D-Pad  Down | D-Pad | — |
+| Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad | — |
 | Close view | <kbd>B</kbd> | — | D-Pad Right | D-Pad | — |
 | Switch view | <kbd>N</kbd> | — | L | Left shoulder | Button 8 |
 | In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — |
@@ -142,50 +142,57 @@ Actions are for the game's default **Luke** controller setting. The other contro
 </div>
 
 - **Mouse flight steering:** mouse cursor is automatically captured when the game window is focused.
-  - Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon. 
+  - Mouse motion steers the craft, left click fires blasters, right click fires the secondary weapon.
   - The cursor displays when the window loses focus, the (**F6**) Controls window is open, or when RT64's (**F1**) inspector is up.
 
-- **Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks supporting rumble or force feedback. 
-  - Hits get stronger with the damage taken, and the rumble keeps going through the death spiral. 
+- **Rumble:** the game's own Rumble Pak effects (hits, collisions, terrain scrapes, weapons, the death spiral, and crashing) play on gamepads and on joysticks supporting rumble or force feedback.
+  - Hits get stronger with the damage taken, and the rumble keeps going through the death spiral.
   - Rumble and its individual effects can be tuned in the (**F6**) Controls window, or in the `rumble` section of `roguesq_input.json`.
 
-- **Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bound as a joystick. 
-  - A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**. 
-  - The throttle sets your speed by position: *full back* is craft's slowest, *full forward* is fastest, and *middle* is normal speed.
+- **Flight sticks and H.O.T.A.S.:** any devices named "joystick" will be bound as a joystick.
+  - A stick with exactly three axes, or a device named "throttle", gets its lever bound to **Throttle**.
+  - The throttle sets your speed by position: *full back* is the craft's slowest, *full forward* is fastest, and *middle* is normal speed.
   - Other axes can be bound from the Controls window (**F6**)
   
-- **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game. 
+- **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game.
   - Colors configurable from the `lightbar` section in `roguesq_input.json`
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
-> Twist grip or rudder pedals can do one of two depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction add together.
+>
+> Twist grip or rudder pedals can do one of two things depending on how you bind them. Bind them to **StickLeft/StickRight** and they'll add to `stick X` since inputs on the same stick direction add together.
+>
 > Bind them to **RollLeft/RollRight** and they'll give a dedicated roll axis. Hold the 'Roll' button then twist to roll.
 
-In Debug builds **F1/F3/F4** also toggle RT64 developer tools.
+#### Function Hotkeys
 
-- **F1** toggles RT64's ImGui overlay (configuration, texture dumping, per-call debugger, render-target view).
-- **F3** toggles ViewRDRAM mode.
-- **F4** toggles texture replacement.
+| Key | Action | Builds |
+| --- | --- | --- |
+| <kbd>F1</kbd> | RT64's ImGui overlay (configuration, texture dumping, per-call debugger, render-target view) | Debug |
+| <kbd>F2</kbd> | Toggle ray tracing | All |
+| <kbd>F3</kbd> | ViewRDRAM mode | All |
+| <kbd>F4</kbd> | Texture replacement | All |
+| <kbd>F5</kbd> | In-game profiler HUD | All |
+| <kbd>F6</kbd> | Controls window (rebinding, joysticks, rumble, mouse) | All |
+| <kbd>F9</kbd> / <kbd>Shift</kbd>+<kbd>F9</kbd> | Step forward / back through the ray tracing debug views | All |
+| <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
+| <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |
 
-**F9** / **Shift+F9** step forward / back through the ray tracing debug views (the current view is named in a notice at the bottom right).
-
-**F12** writes a crash dump to `dumps/crash-dumps/` in Debug and Release builds (Windows only). Set `ROGUESQ_FULL_DUMP=1` for a full-memory dump.
+- The current ray tracing debug view is named in a notice at the bottom right.
+- Set `ROGUESQ_FULL_DUMP=1` for a full-memory crash dump.
+- With RenderDoc loaded, **F12** also takes a capture alongside the crash dump. Launching from RenderDoc works too, without `ROGUESQ_RENDERDOC`.
+- **F1** needs RT64 developer mode, on by default in Debug (`ROGUESQ_HLE_DEV_MODE=1` turns it on in Release).
+- In Debug builds the RT64 inspector owns the ImGui overlay, so press **F1** before **F6**.
 
 #### Rebinding controls
 
-Press **F6** to open the **Controls** window.
+Rebind in-game under **Options > Controller Settings** (the **Controls Menu** mod, on by default), which lists the actions for the keyboard, gamepad or joystick you open it with. Or press **F6** for the **Controls** window:
 
-- Click **Rebind** or **Add** on any action, then press any key, button, or move an axis to assign it.
-- **Clear** removes the selected binding.
-- The **Joysticks / H.O.T.A.S.** section shows each connected joystick's axes live, with invert and deadzone settings.
-- The **Rumble** section holds the rumble settings. With options to adjust mouse sensitivity and invert the axis there too.
+- Click **Rebind** or **Add** on an action, then press a key or button or move an axis. **Clear** removes the selected binding.
+- **Joysticks / H.O.T.A.S.** shows each joystick's axes live, with invert and deadzone settings.
+- **Rumble** holds the rumble settings, plus mouse sensitivity and axis invert.
 
 Bindings are saved to `roguesq_input.json` next to the executable.
-
-> [!TIP]
-> In Debug builds the RT64 inspector owns the ImGui overlay, so press **F1** *first* before **F6**.
-> Release builds open the Controls window with **F6** directly.
 
 ## Status
 
@@ -195,29 +202,29 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Recomp. specific Issues
 
 - Ray Tracing is implemented but has various issues:
-  - Shadows and emissives dropping out entirely or flicker depending on how it's projected and/or how close/far the camera is to objects
-  - There are situations where light 'sticks' to the player like for example, collecting the Upgrade during Raid on Sullust
-  - Ray tracing settings still need to be tuned for best visual look but only after the issues above have been resolved.
+  - There are situations where light 'sticks' to the player and begins to flicker
 
 - Frame interpolation issues:
-  - The bomb drop crosshair, good example y-wing during Raid on Sullust
-  - Lava explosion particles flicker in place indicating they aren't being ID'd, good example Raid on Sullust
+  - The bomb drop crosshair, good example Y-wing during Raid on Sullust
+  - Lava explosion particles flicker in place when banking indicating they aren't being ID'd, good example Raid on Sullust
 
-- A very high draw distance causes the terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
+- Shooting at the lava in Raid on Sullust produces fire balls that look dim/muted compared to the other lava explosion effects
+
+- A very high draw distance causes the 'legacy' terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
 
 ### Game specific Issues
 
-- Some CPU performance hitching and slow down (~20fps) in spots. (although not as bad as the real n64 game) This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep.
+- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep.
 
-- Cutscenes having screen sizes of varying widths which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
+- Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
 
 - Very slight cut off at the top of text rects **BUT** this also existed in the original game.
 
-- Terrain tile textures don't align perfectly and seem to have a slight cut off which is probably a game issue than a recomp. issue.
+- Terrain tile textures don't align perfectly and seem to have a slight cut off which is more likely a game issue than a recomp. issue.
 
 ### Roadmap
 
-- RS64 Explorer Fixs & Improvements
+- RS64 Explorer Fixes & Improvements
 
 ## Building
 
@@ -234,13 +241,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 *Uses `mips64-elf-gcc.exe` and `mips64-elf-ld.exe` to compile the patches ELF (`patches/`).
 
-After cloning (step 1), a setup script can do steps 2-4 for you. It asks for your ROM, checks for missing tools (and installs the Linux packages with apt), and builds Release. Re-run it after a `git pull`:
-
-```sh
-bash tools/setup/setup.sh                                                  # Linux
-powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1             # Windows
-```
-
 ### 1. Clone with submodules
 
 ```sh
@@ -251,6 +251,21 @@ cd RogueSquadron64Recomp
 `lib/` holds forks of [N64ModernRuntime](https://github.com/MikeSemicolonD/N64ModernRuntime) and [rt64](https://github.com/MikeSemicolonD/rt64), forked because the upstream libraries don't support Factor 5's custom microcode. N64ModernRuntime also contains a forked/modified version of `N64Recomp`.
 
 [enet6](https://github.com/SirLynix/enet6) and [miniupnp](https://github.com/miniupnp/miniupnp) are used exclusively for the multiplayer co-op mod.
+
+> [!NOTE]
+> **A *setup script* can do steps 2 - 4 for you.**
+>
+> It'll ask for the ROM, check for missing tools, then create a Release build.
+>
+> Re-run it after a `git pull`:
+>
+> ```sh
+> powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1             # Windows
+> ```
+>
+> ```sh
+> bash tools/setup/setup.sh                                                  # Linux
+> ```
 
 ### 2. Produce the decomp ELF
 
@@ -274,7 +289,7 @@ Function ... is stubbed out in the config file but does not exist!
 
 ### 3. Generate the recompiled C
 
-The recomp's CMake needs `RecompiledFuncs/`, and the recompiled boot and audio microcode so build `N64Recomp` and `RSPRecomp` first. Why is this needed? Because the game contains custom boot/audio microcode, requiring its own recompilation process.
+The recomp's CMake needs `RecompiledFuncs/`, and the recompiled boot and audio microcode, so build `N64Recomp` and `RSPRecomp` first. Why is this needed? Because the game contains custom boot/audio microcode, requiring its own recompilation process.
 
 ```sh
 cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -DCMAKE_BUILD_TYPE=Release # Configure the tools
@@ -322,7 +337,7 @@ Debug builds compile in the D3D12 debug layer; turn it on at runtime with `ROGUE
 
 ### Linux
 
-Builds and can run on **Ubuntu 24.04** and under **WSL2** (GCC 13 / Ninja); native Linux should behave the same with a real Vulkan driver.
+Builds and can run on **Ubuntu 24.04**, **Linux Mint 22.3 Cinnamon** and under **WSL2** (GCC 13 / Ninja); native Linux should behave the same with a real Vulkan driver.
 
 Install the dependencies, do steps 1-3 above, then configure and build the game target:
 
@@ -342,16 +357,17 @@ The MIPS GCC builds the patches ELF and `.nrm` code mods; CMake finds `mips-linu
 
 > [!NOTE]
 > This section on WSL2 can be ignored **unless** you're looking to try to debug/run a Linux build on Windows.
-> Do not use this method to profile and judge performance since a virtualized Linux machine will not run anywhere near as well as running Linux on bare metal.
+>
+> Do not use this method to profile and judge performance since a virtualized Linux machine will not run anywhere near as well as running on bare metal.
 
 - Keep the build directory on the Linux filesystem (e.g. `~/rs64-build`), **not** under `/mnt/…` — CMake's compiler checks can fail with `Operation not permitted` on the Windows drive mount. Source can stay on `/mnt`.
-- WSLg supplies the display, PulseAudio (sound), and keyboard/mouse, so the game runs directly. A physical gamepad needs `usbipd-win` to route the USB device to wsl; the keyboard works out of the box.
+- WSLg supplies the display, PulseAudio (sound), and keyboard/mouse, so the game runs directly. A physical gamepad needs `usbipd-win` to route the USB device to WSL; the keyboard works out of the box.
 - WSL's default Vulkan is **llvmpipe (software)** — it runs but hitches. For GPU acceleration, build [Mesa's](https://gitlab.freedesktop.org/mesa/mesa) **[Dozen (`dzn`)](https://gitlab.freedesktop.org/mesa/mesa/-/tree/main/src/microsoft/vulkan?ref_type=heads)** driver (Vulkan → D3D12 → the real GPU via `/dev/dxg`). If the game doesn't detect `dzn` it'll default to software (CPU) rendering.
 - The `tools/release/run-wsl-gpu.sh` helper and the `Configure` / `Build` / `Run (Linux/WSL, GPU via dzn)` VS Code tasks wrap this. (`dzn` has no ray-tracing extensions — irrelevant to the current raster path.)
 
-### Android notes
+### Android
 
-Builds as an arm64 APK and runs on a **(Snapdragon 8 Gen 3 / Adreno 750, Android 16)**; other arm64 phones with Vulkan 1.1 should work, but driver quality varies. The Gradle project in `android/` builds the same `CMakeLists.txt` with the NDK.
+Builds as an arm64 APK and runs on a **Snapdragon 8 Gen 3 (Adreno 750, Android 16)** phone; other arm64 phones with Vulkan 1.1 should work, but driver quality varies. The Gradle project in `android/` builds the same `CMakeLists.txt` with the NDK.
 
 Needs **Android Studio** (for its SDK, bundled JDK and `adb`) with **NDK 29.0.14206865**; Gradle fetches SDL 2.32.10 and installs its CMake itself. Run the Windows Debug build first: the Android build reuses the generated `RecompiledFuncs/`, `src/game/state_table.inl` and `build/factor5_ucode/*.c`.
 
@@ -371,10 +387,13 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 - **Mods:** the APK will build and include the mods listed under `android` in [mods/platforms.json](mods/platforms.json) installing them into the app's `mods/` folder.
 - **Debugging:** logs go to logcat under the tag `RS64` (the `Logcat (Android)` task filters it). Environment variables go one `NAME=VALUE` per line in `roguesq_env.txt` in the app's files folder.
 
-### macOS notes
+### macOS
 
 > [!IMPORTANT]
-> **Untested on a Mac.** The release has a universal `RogueSquadron64Recomp.app` (Apple Silicon and Intel, macOS 11+) cross-built from Windows with compiled Metal shaders, but nobody has run it on a Mac yet.
+> ***Untested* on a Mac.**
+>
+> The release has a universal `RogueSquadron64Recomp.app` (Apple Silicon and Intel, macOS 11+) cross-built from Windows with compiled Metal shaders.
+>
 > It isn't notarized: run `xattr -dr com.apple.quarantine RogueSquadron64Recomp.app` once before opening it.
 
 On a Mac, the Linux / macOS commands above should apply (Xcode Command Line Tools + `brew install cmake ninja sdl2`)
@@ -402,147 +421,47 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 ## Architecture
 
-Recompiled game code compiles into one static library, linked against forked builds of N64ModernRuntime (the libultra/runtime host) and RT64 (the renderer).
-
-```text
-src/
-├── main/
-│   └── main.cpp                Entry point, game registration, SDL2 window
-├── audio/
-│   └── audio.cpp               RSP task dispatch and SDL2 audio output
-├── input/
-│   └── input_host.cpp          Gamepads, joysticks, keyboard/mouse and touch input
-├── video/
-│   └── rt64_render_context.cpp RT64 integration: send_dl, VI registers, framebuffer sanitizer
-├── game/
-│   ├── register_overlays.cpp   Boot-time overlay function-table registration
-│   ├── upstream_compat.cpp     libultra shims, overlay loader, HMT-load capture
-│   ├── hook_helpers.cpp        Host logic called from rogue_squadron.toml hooks
-│   └── builtin_hooks.cpp       Built-in hooks registered through the host API
-├── host_api/                   Host API for native mods
-└── lockstep/                   Mission input record/replay with per-frame state hashes
-include/rs64/host_api.h         Public header for native mods
-lib/
-├── N64ModernRuntime/           libultra/runtime host (fork)
-└── rt64/                       Renderer (fork)
-    └── src/gbi/rt64_gbi_f3dfactor5.cpp   The Factor 5 GBI module (the render core)
-rsp/*_rsp.toml                  RSPRecomp configs for the boot and MusyX audio ucodes
-mods/multiplayer-native/        Online co-op (sources in src/, tests in tests/)
-rogue_squadron.toml             N64Recomp config and override layer
-```
-
-Native mods: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
-
-Online co-op: [docs/guides/multiplayer.md](docs/guides/multiplayer.md).
-
-**Graphics.** Rogue Squadron uses Factor 5's own display-list format, which stock RT64 cannot parse; the forked RT64 carries a GBI module for it. `M_GFXTASK` goes straight to RT64's HLE processor, which emits native RT64 geometry. The grammar is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md) and validated against Project64 dumps.
-
-**Frame pacing.** By default the game's own VI / SP / DP message protocol runs as on hardware, with SP-done delivered after RT64 parses the list. `--no-vi-driven-loop` (`ROGUESQ_VI_DRIVEN_LOOP=0`) restores the older host-paced loop.
-
-**Audio.** MusyX drives SFX and music; samples stream from the cartridge via PI DMA as on hardware.
-
-**Patching.** Overrides live as `[[patches.hook]]` and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with host logic in `src/game/hook_helpers.cpp`. A hook is compiled into the recompiled function itself, reachable via indirect (`LOOKUP_FUNC`) calls.
-
-#### The recompiler config (`rogue_squadron.toml`)
-
-`rogue_squadron.toml` is the N64Recomp config: it names the input ROM/ELF and defines the override layer applied during `regen_funcs`. Three directives shape the generated output without hand-editing it:
-
-| Directive | Effect |
-| --- | --- |
-| `stubs = [...]` | Replace a function body with an empty no-op (RSP blobs, cache-instruction leaves, splat fragments) |
-| `[[patches.instruction]]` | Overwrite one instruction at a `vram` with a raw `value` (e.g. NOP a `cache` op or a busy-wait branch) |
-| `[[patches.hook]]` | Inject C at a function's entry or before a `vram` — guards, pacing, logging. Host helpers live in `src/game/hook_helpers.cpp` |
-
-Edit the toml, then re-run `regen_funcs` to apply. For larger game-logic overrides, put the logic in a host function in `src/game/hook_helpers.cpp` and call it from the hook. A hook's text is a single `rs64_th_*` call into `src/game/toml_hooks.c`, and hooks call game functions through `mips_call`.
-
-## Debugging
-
-[docs/engine/debugging-with-visual-studio.md](docs/engine/debugging-with-visual-studio.md) covers attaching Visual Studio to the recompiled output and telling a recompile bug from a game-logic bug.
-
-AI written helpers under [tools/debug/](tools/debug/):
-
-- `dump-game.ps1` writes a full-memory minidump of a running instance, even when the window is unresponsive.
-- `inspect-dump.py` and `dump_stackscan.py` list and symbolize threads from a minidump.
-- `reconstruct-freeze.py` rebuilds blocked game threads and queues from a hang dump; `host-stacks.py` symbolizes host stacks (Debug build).
-- `run-stability.ps1` launches N timed runs and classifies each by stderr markers.
-- `recordings/` holds per-mission input recordings; `run-replays.ps1` replays them against their state-hash baselines ([README](tools/debug/recordings/README.md)).
-- `validate/` captures Project64 goldens, diffs RDRAM, compares message-order traces, and walks display lists offline.
-
-`cmake --build build --config Release --target rs64_unit_tests` builds and runs the unit tests and the style check.
-
-The full debug/trace/experiment catalog, logging categories, DL/texture dumps, message-order traces, and rendering A/B toggles lives in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md).
-
-### Command-line options
-
-Run `RogueSquadron64Recomp.exe --help` for the full list. The common options:
-
-| Option | Effect |
-| --- | --- |
-| `--fullscreen` | (`ROGUESQ_FULLSCREEN=1`) starts in borderless fullscreen; Alt+Enter toggles it. |
-| `--gfx-api <vulkan\|d3d12\|d3d11\|d3d10>` | Force the graphics API (default auto) |
-| `--[no-]hle-dev-mode` | RT64 ImGui inspector on `F1` *(default **on in Debug**, **off in Release)*** |
-| `--no-vi-driven-loop` | Old host-paced frame loop instead of the hardware protocol (default is VI-driven) |
-| `--no-f5-native` | Parse F5 display lists without emitting geometry |
-| `--no-audio-ucode` | Silent audio stub instead of the MusyX synth |
-| `-m` / `--mute`, `--audio-gain <f>` | Silence output, or scale master gain |
-| `--audio-latency-ms <n>` | Audio buffer latency in milliseconds |
-| `--dump-pcm <path>` | Write the synth output to a 22050 Hz stereo WAV (`1` = `dumps/wav/capture.wav`) |
-| `--fake-controller`, `--auto-start <ms>` | Headless runs: fake a controller, pulse START every few milliseconds |
-| `--boot-target <target>` | Skip the intro to `menu`, `demo:N`, `level:N[,craft]`, `abort:N`, `cutscene:N` or `lobby:host\|join[,level]` |
-| `--set NAME=VALUE` | Set any `ROGUESQ_*` variable directly |
-
-### In-Game Profiling
-
-**F5** toggles Factor 5's own built-in frame-profiler HUD (a dormant retail feature, gated by one RDRAM byte).
-
-![Factor5's built-in profiler](./docs/ProfilerBars.PNG)
-
-- **Yellow Bar**  = CPU; it grows toward full width as a scene exceeds 'frame budget'.
-- **Blue bar**    = render/geometry cost (RSP + display-list processing)
-- **Red bar**     = rasterization/fill cost (total RDP)
-- **Magenta Bar** = RDP* cmd-buffer busy (DPC_BUFBUSY) -> draw-call count (per State::flush)
-- **White Bar**   = RDP* pipe busy (DPC_PIPEBUSY)      -> drawCall.triangleCount
-- **Green Bar**   = RDP* TMEM busy (DPC_TMEM)          -> drawCall.loadCount
-- **Cyan Bar**    = Not used
-
-*The recomp re-uses the bars by basing them on the draw calls from rt64 while also scaling them with `ROGUESQ_DRAW_SCALE` / `ROGUESQ_TRIS_SCALE` / `ROGUESQ_TEX_SCALE`. `ROGUESQ_PROFILER_DUMP=1` can log the raw slot values for debugging purposes.
-
-**(It's an approximation and is not representative of how DPC performs on *actual hardware*)**
+How the port is put together (recompiled code, the forked RT64 and N64ModernRuntime, frame pacing, audio and the override layer) is in [docs/reference/game-architecture.md](docs/reference/game-architecture.md). [docs/README.md](docs/README.md) indexes the rest of the engine docs, including debugging, native mods and co-op.
 
 ## Browser based tools
 
 ### [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/rs64-explorer/)
 
-*`tools/web/rs64-explorer`*: Using the original ROM users and developers alike can view the game at a level never seen before.
+*`tools/web/rs64-explorer`*: Using the original ROM, users and developers alike can view the game at a level never seen before.
 
 A **MASSIVE** extension to the foundational work originally done by [Dávid Pethes](https://github.com/dpethes/rerogue) and [jrra](https://github.com/jrra/rerogue).
 
 - View fully textured Models and sprites along with their animations.
 - Fully view the makeup of whole Levels down to the individual triggers, paths and scripted events that make this game come to life.
 - View all Visual Effects from complex explosions to simple animated sprites.
-- Sound Effects and Voicelines including subtitles.
+- Sound Effects and Voice lines including subtitles.
 - MIDI Music Playback with timeline scrubbing allowing you to view the layers of instrument samples [Chris Huelsbeck](https://en.wikipedia.org/wiki/Chris_Huelsbeck) used to masterfully assemble and recreate the Star Wars score.
 - [WebMCP Support](https://developer.chrome.com/docs/ai/webmcp) for agentic usage.
 
 ### [Save editor](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/save-editor/rs64_save_editor.html)
 
-A save editor also exists in *`tools/web/save-editor`* as an HTML page. Allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
+A save editor also exists in *`tools/web/save-editor`* as an HTML page, allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 
 ## 'Proper' AI Agent Usage
 
 Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.MD** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.MD)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
 
-This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and setup by the user themselves and is something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to particular menu to chase a bug.
+This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and set up by the user themselves and is something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
 
-Once your agent is setup, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
+Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
 
 Here's a list of MCPs that could be useful for this project:
 
+- [rs64-mcp](docs/engine/rt64-mcp.md) (in this repo, `tools/debug/mcp/rs64_mcp.py`, set up in the local `.mcp.json`) lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and screenshots. The game side is built into Debug by default. For Release, configure with `-DRS64_MCP=ON` (or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)")
 - [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
 - [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
-> `windows-screenshot-mcp-server` usage can be finicky because while Claude (as of September 2026) can view screenshots, it can miss things that are visually obvious to a human like visual glitches/artifacts. (Good enough to be useful, not good enough to trust blindly)
+> `windows-screenshot-mcp-server` usage can be finicky.
+>
+> While Claude (*as of **September 2026***) can view pixels in the screenshots, it can miss things that are visually obvious to a human like visual glitches or rapidly flickering artifacts.
+>
+> (Good enough to be useful, not good enough to trust blindly)
 
 ## Tooling
 

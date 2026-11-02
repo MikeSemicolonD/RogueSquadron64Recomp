@@ -43,6 +43,36 @@
             "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
+            "label": "Configure: MCP bridge in every config",
+            "type": "shell",
+            "command": "cmake",
+            "args": ["-B", "build", "-DRS64_MCP=ON"],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "type": "shell",
+            "command": "cmake",
+            "args": [
+                "--build", "build",
+                "--config", "Release",
+                "--target", "RogueSquadron64Recomp"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Configure: MCP bridge in every config",
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "linux": {
+                "problemMatcher": "$gcc"
+            },
+            "detail": "Release exe with the RT64 MCP bridge (tools/debug/mcp), for agent tests in Release. Debug builds have it by default. The setting sticks; cmake -B build -DRS64_MCP=AUTO puts it back to Debug only."
+        },
+        {
             "label": "Configure (Windows x86)",
             "type": "shell",
             "command": "cmake",

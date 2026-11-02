@@ -186,7 +186,8 @@ static void controls_menu_checks()
     keys[SDL_SCANCODE_BACKSPACE] = 0;
     keys[SDL_SCANCODE_ESCAPE] = 1;
     keys[SDL_SCANCODE_UP] = 1;
-    assert(menu_fixed_mask(st) == (0x1000 | 0x0800));
+    assert(menu_fixed_mask(st) == (0x4000 | 0x0800));
+    assert(menu_fixed_mask(st, true) == (0x1000 | 0x0800));
 }
 
 // menu_fixed_mask_pad: pad A/B/Start and the D-pad.

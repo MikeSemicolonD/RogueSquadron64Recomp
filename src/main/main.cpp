@@ -45,10 +45,13 @@
 #include "video/rt64_render_context.h"  // recomp::create_render_context
 #include "video/video_config.h"
 #include "main/renderdoc_capture.h"
-#include "main/mcp_bridge.h"
 #include <mutex>
 
+#ifdef RS64_MCP
+#include "main/mcp_bridge.h"
+
 extern "C" void rs64_mcp_register_pause_methods();
+#endif
 
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
@@ -675,12 +678,23 @@ int main(int argc, char* argv[])
 
     rs64_renderdoc_init();
 
-    const int mcp_port = recomp::dbg::env_int("ROGUESQ_MCP_PORT", 0);
+#ifdef RS64_MCP
+
+#ifdef NDEBUG
+    constexpr int kDefaultMcpPort = 0;
+#else
+    // Debug builds serve the bridge by default so the MCP server can attach to a game the user started; ROGUESQ_MCP_PORT=0 turns it off.
+    constexpr int kDefaultMcpPort = 47064;
+#endif
+
+    const int mcp_port = recomp::dbg::env_int("ROGUESQ_MCP_PORT", kDefaultMcpPort);
 
     if (mcp_port > 0 && mcp_port < 65536) {
         rs64_mcp_bridge_start((uint16_t)mcp_port);
         rs64_mcp_register_pause_methods();
     }
+
+#endif
 
     // Input bindings: load roguesq_input.json next to the exe, or write the
     // defaults as an editable template if it's absent. ROGUESQ_INPUT_RESET=1

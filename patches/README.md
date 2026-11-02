@@ -6,7 +6,7 @@ Patch sources include `rs64_api.h` ([syms/include/](../syms/include/rs64_api.h))
 
 - `RECOMP_EXPORT` makes a function a base export that mods import with `RECOMP_IMPORT("*", ...)`. [src/sanity.c](src/sanity.c) exports `rs64_patches_sanity` as a pipeline check.
 - `RECOMP_DECLARE_EVENT` declares a base event; mods subscribe with `RECOMP_CALLBACK("*", ...)`.
-- `RECOMP_PATCH` replaces a game function by name: [src/npc_health.c](src/npc_health.c) (the five NPC health accessors, guarding the per-difficulty slot) and [src/factor5_mutex.c](src/factor5_mutex.c) (`initFactor5Mutex` runs once). A patched name that doesn't exist fails the build (`strict_patch_mode`). Mods can `RECOMP_HOOK` these functions: the hook is rebuilt from the patch, so the fix stays.
+- `RECOMP_PATCH` replaces a game function by name: [src/npc_health.c](src/npc_health.c) (the five NPC health accessors, guarding the per-difficulty slot) [src/factor5_mutex.c](src/factor5_mutex.c) (`initFactor5Mutex` runs once) and [src/profiler_hud.c](src/profiler_hud.c) (the F5 profiler HUD's bars keep one size across framebuffer resolutions). A patched name that doesn't exist fails the build (`strict_patch_mode`). Mods can `RECOMP_HOOK` these functions: the hook is rebuilt from the patch, so the fix stays.
 - Game functions and data are reached by name (`syms/`) or absolute address. Calls to libultra functions go to ultramodern's `_recomp` versions, as in the game's own code. Patch RAM runs from 0x80801000 to 0x80A00000 (`patches.ld`), below the host-only tables.
 
 ## Where most base-game fixes live today
@@ -14,7 +14,10 @@ Patch sources include `rs64_api.h` ([syms/include/](../syms/include/rs64_api.h))
 Base-game fixes live in [rogue_squadron.toml](../rogue_squadron.toml):
 
 - `[[patches.hook]]` inserts a call at a function's entry (or at `before_vram`). It is compiled into the recompiled function, so it runs for direct and indirect (`LOOKUP_FUNC`) calls alike. The text is only `{ if (rs64_th_<func>_<vram|entry>(rdram, ctx)) return; }` or `{ rs64_th_<func>_<vram|entry>(rdram, ctx); }`; the body is that function in [src/game/toml_hooks.c](../src/game/toml_hooks.c), declared in `include/rs64_toml_hooks.h`. `return 1` exits the game function; set `ctx->r2` (or `ctx->f0`) first to return a value.
-- `[[patches.instruction]]` replaces a single instruction word.
+- `[[patches.instruction]]` overwrites one instruction at a `vram` with a raw `value` (e.g. NOP a `cache` op or a busy-wait branch).
+- `stubs = [...]` replaces a function body with an empty no-op (RSP blobs, cache-instruction leaves, splat fragments).
+
+The toml is also the N64Recomp config itself: it names the input ROM/ELF, and `regen_funcs` applies these directives to the generated output, so `RecompiledFuncs/` is never hand-edited. Hooks call game functions through `mips_call`.
 
 Larger host logic goes in an `extern "C"` helper in [src/game/hook_helpers.cpp](../src/game/hook_helpers.cpp) that the hook body calls.
 

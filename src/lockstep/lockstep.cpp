@@ -4,8 +4,6 @@
 #include "host_api/host_api.h"
 #include "main/main.h"
 #include "main/renderdoc_capture.h"
-#include "main/mcp_bridge.h"
-#include "hle/rt64_rs64_mcp.h"
 #include "recomp.h"
 #include <cstdio>
 #include <cstring>
@@ -23,6 +21,11 @@
 #include <vector>
 #include <utility>
 #include <vector>
+
+#ifdef RS64_MCP
+#include "main/mcp_bridge.h"
+#include "hle/rt64_rs64_mcp.h"
+#endif
 
 namespace {
 
@@ -474,6 +477,8 @@ static std::vector<PauseTarget>& pause_targets()
     return v;
 }
 
+#ifdef RS64_MCP
+
 // MCP pause state: the latest frame of each clock (pause points, game thread) and the gfx-task sequence (send_dl, gfx thread).
 static std::mutex s_mcp_lock;
 static std::map<std::string, uint32_t> s_mcp_clocks;
@@ -565,9 +570,17 @@ static void mcp_unpause_rt64()
     hold_until([d0]() { return RT64::rs64mcp::drainCount() > d0 && !RT64::rs64mcp::paused(); }, until);
 }
 
-// An RDRAM condition checked once per pause point (once a frame): changes (from the value when set), eq, ne, gt, lt.
-struct McpWatch { uint32_t addr; uint32_t size; std::string op; uint64_t value; };
+// An RDRAM condition checked once per pause point (once a frame): changes (from the value when set), eq, ne, gt, lt; or op "drawn":
+// RT64 saw a mesh / sprite key from `key` on screen (rs64mcp draw watch; one or two frames after it first shows).
+struct McpWatch { uint32_t addr; uint32_t size; std::string op; uint64_t value; std::string key; };
 static std::optional<McpWatch> s_mcp_watch;
+
+static void mcp_clear_watch()
+{
+
+    s_mcp_watch.reset();
+    RT64::rs64mcp::disarmDrawWatch();
+}
 
 extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw;
 
@@ -638,10 +651,19 @@ static void mcp_pause_point(const std::string& clock)
     if (!hit && s_mcp_watch)
     {
         uint64_t value = 0;
+        std::string drawn;
 
-        hit = mcp_watch_hit(*s_mcp_watch, value);
+        if (s_mcp_watch->op == "drawn") {
+            hit = RT64::rs64mcp::drawWatchHit(drawn);
+        }
+        else {
+            hit = mcp_watch_hit(*s_mcp_watch, value);
+        }
 
-        if (hit) {
+        if (hit && !drawn.empty()) {
+            picture["watch"] = { { "drawn", drawn } };
+        }
+        else if (hit) {
             picture["watch"] = { { "addr", s_mcp_watch->addr }, { "value", value }, { "was", s_mcp_watch->value } };
         }
     }
@@ -653,7 +675,7 @@ static void mcp_pause_point(const std::string& clock)
 
     s_mcp_picture = picture;
     s_mcp_target.reset();
-    s_mcp_watch.reset();
+    mcp_clear_watch();
     s_mcp_held = true;
     s_mcp_release = false;
     s_mcp_hold_gen++;
@@ -685,7 +707,7 @@ extern "C" void rs64_mcp_on_disconnect()
     std::lock_guard<std::mutex> g(s_mcp_lock);
 
     s_mcp_target.reset();
-    s_mcp_watch.reset();
+    mcp_clear_watch();
     s_mcp_input.reset();
     s_mcp_release = true;
     s_mcp_epoch++;
@@ -715,7 +737,7 @@ static McpWait mcp_set_target(std::optional<PauseTarget> target, bool release = 
     std::lock_guard<std::mutex> g(s_mcp_lock);
 
     if (!target) {
-        s_mcp_watch.reset();
+        mcp_clear_watch();
     }
 
     s_mcp_target = std::move(target);
@@ -878,6 +900,28 @@ static nlohmann::json mcp_pause_when(const nlohmann::json& p)
     return mcp_wait_frozen(wait, p.value("timeout_s", 120.0));
 }
 
+// Freeze once a model part or sprite whose key starts with one of `key`'s '|'-separated prefixes is drawn on screen.
+static nlohmann::json mcp_pause_when_drawn(const nlohmann::json& p)
+{
+
+    if (!p.contains("key") || !p["key"].is_string() || p["key"].get<std::string>().empty())
+    {
+        throw std::runtime_error("key (mesh or sprite key prefix) required");
+    }
+
+    if (mcp_frame_info()["held"].get<bool>())
+    {
+        throw std::runtime_error("already paused; resume first");
+    }
+
+    const McpWait wait = mcp_set_target(std::nullopt);
+
+    RT64::rs64mcp::armDrawWatch(p["key"].get<std::string>());
+    mcp_set_watch({ 0, 0, "drawn", 0, p["key"].get<std::string>() });
+
+    return mcp_wait_frozen(wait, p.value("timeout_s", 120.0));
+}
+
 static nlohmann::json mcp_step(const nlohmann::json& p)
 {
 
@@ -961,6 +1005,7 @@ extern "C" void rs64_mcp_register_pause_methods()
 {
 
     rs64_mcp_register("pause_when", mcp_pause_when);
+    rs64_mcp_register("pause_when_drawn", mcp_pause_when_drawn);
     rs64_mcp_register("press", mcp_press);
     rs64_mcp_register("release", mcp_release);
 
@@ -970,13 +1015,19 @@ extern "C" void rs64_mcp_register_pause_methods()
     rs64_mcp_register("frame_info", [](const nlohmann::json&) { return mcp_frame_info(); });
 }
 
+#endif
+
 extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
 {
 
     static const char* base = recomp::dbg::env_str("ROGUESQ_PAUSE_FILE");
 
+#ifdef RS64_MCP
+
     mcp_note_clock(clock, frame);
     mcp_pause_point(clock);
+
+#endif
 
     if (!base || !*base || pause_targets().empty())
     {
@@ -1000,8 +1051,10 @@ extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
     }
 }
 
-// The game state's clock: frames since the classifier last changed state, from the per-frame menu and mission hooks.
-extern "C" void rs64_pause_state_point()
+// Set by the menu and mission hooks' tick, cleared by the next frame submit.
+static bool s_state_hooked = false;
+
+static void state_tick()
 {
 
     static std::string last;
@@ -1011,6 +1064,27 @@ extern "C" void rs64_pause_state_point()
     frames = id == last ? frames + 1 : 0;
     last = id;
     rs64_pause_point(id.c_str(), frames);
+}
+
+// The game state's clock: frames since the classifier last changed state, from the per-frame menu and mission hooks.
+extern "C" void rs64_pause_state_point()
+{
+
+    s_state_hooked = true;
+    state_tick();
+}
+
+// Every screen's frame submit (submitGfxFrame): ticks the state clock on screens no menu or mission hook ticked since the last submit, such as the craft-select hangar.
+extern "C" void rs64_pause_frame_point()
+{
+
+    if (s_state_hooked)
+    {
+        s_state_hooked = false;
+        return;
+    }
+
+    state_tick();
 }
 
 // The cutscene clock: gateCtr 0x800B0B28, the file's own frames as the RS64 Explorer timeline counts them, while a cutscene is loaded.

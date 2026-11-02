@@ -55,18 +55,18 @@ classify = [
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
-# Account/select-game sub-steps: all share menuId=1 and the same menu ptr; the sub-step
-# index is a distinct global at 0x800CE626 (0=enter name, 1=select level, 2=available craft).
-# Guarded by the account id so they only match inside the pilot flow.
+# Account sub-screens share menuId=1 and the menu ptr; bridgeMenuState (u8 0x800CDAC4) tells them apart: 4 SELECT GAME, 2 SELECT LEVEL, 3 AVAILABLE CRAFT.
+# enter_name covers SELECT GAME and ENTER NAME (0x800CE626 looked like a sub-step but is a frame counter's high byte).
 
 [[state]]
 id = "menu.account.enter_name"
-name = "Enter name"
+name = "Select game / enter name"
 parent = "menu.account"
 classify = [
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
-  { addr = 0x800CE626, mask = 0xFF000000, op = "eq", value = 0x00000000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x02000000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x03000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -77,7 +77,7 @@ parent = "menu.account"
 classify = [
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
-  { addr = 0x800CE626, mask = 0xFF000000, op = "eq", value = 0x01000000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x02000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -88,7 +88,7 @@ parent = "menu.account"
 classify = [
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
-  { addr = 0x800CE626, mask = 0xFF000000, op = "eq", value = 0x02000000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x03000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -209,6 +209,6 @@ force = { slot = "demo", params = { demo = 0 } }
 reachable_from = ["menu"]
 focus = ["gMissionState", "gGameSettings"]
 
-# NOTE: front-menu tree via menu id 0x800CE734; pilot flow sub-steps via 0x800CE626
+# NOTE: front-menu tree via menu id 0x800CE734; pilot flow sub-steps via bridgeMenuState 0x800CDAC4
 # (0=name,1=level,2=craft), all verified against live captures. Still unmapped: the "show
 # room" and "music hall" screens (fall through to bare "menu"; need a capture there).

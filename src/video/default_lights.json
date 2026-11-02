@@ -106,7 +106,8 @@
                         "shadowOffset": 0
                     }
                 }
-            ]
+            ],
+            "priority": 1
         },
         {
             "name": "upgrade_pickup",
@@ -133,7 +134,8 @@
                         "shadowOffset": 0
                     }
                 }
-            ]
+            ],
+            "priority": 6
         },
         {
             "name": "fx_fire",
@@ -220,7 +222,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "exhaust_xwing_foil_2",
@@ -265,7 +268,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "exhaust_ywing",
@@ -310,7 +314,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "exhaust_vwing",
@@ -355,7 +360,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "exhaust_awing_right",
@@ -381,7 +387,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "exhaust_awing_left",
@@ -407,7 +414,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "exhaust_falcon",
@@ -509,7 +517,8 @@
                         "shadowOffset": 4000
                     }
                 }
-            ]
+            ],
+            "priority": 7
         },
         {
             "name": "briefing_hologram",
