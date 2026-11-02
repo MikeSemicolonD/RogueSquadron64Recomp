@@ -1889,7 +1889,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     bind_lk.unlock();
 
     // Rebinding flight actions never takes away menu confirm/back/navigation.
-    if (mouse_menu_context(touch_context())) btn = rs64::input::menu_buttons(btn, rs64::input::menu_fixed_mask(st));
+    const rs64::touch::Context menu_ctx = touch_context();
+
+    if (mouse_menu_context(menu_ctx)) btn = rs64::input::menu_buttons(btn, rs64::input::menu_fixed_mask(st, menu_ctx == rs64::touch::Context::PauseMenu));
 
     // The layout's THRUST (+0x18) and BRAKES1 (+0x12) masks (D_8010BE18) walk forward / back; BRAKES1 is dropped since the walker would stop to aim the head with the stick.
     if (atst && g_recomp_rdram_for_wp_raw)
