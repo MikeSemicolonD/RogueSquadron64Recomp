@@ -674,6 +674,9 @@ static void testLaserBolt() {
 }
 
 static void testSelectLights() {
+    // The scenarios below size their inputs around a 32-slot budget, independent of MaxLights.
+    constexpr size_t kSlots = 32;
+
     CHECK(selectLights(nullptr, 0, nullptr, MaxLights) == 0);
     std::vector<Resolved> in(40);
     for (size_t i = 0; i < in.size(); ++i) {
@@ -683,8 +686,8 @@ static void testSelectLights() {
     }
     in[39].intensity = 0.0f;
     std::vector<Resolved> out(MaxLights);
-    const size_t n = selectLights(in.data(), in.size(), out.data(), MaxLights);
-    CHECK(n == MaxLights);
+    const size_t n = selectLights(in.data(), in.size(), out.data(), kSlots);
+    CHECK(n == kSlots);
     CHECK(near(out[0].pos[2], 200.0f, 1e-5f));
     for (size_t i = 1; i < n; ++i) {
         CHECK(out[i].pos[2] >= out[i - 1].pos[2]);
@@ -701,7 +704,7 @@ static void testSelectLights() {
     }
 
     in[32].pos[2] = 3250.0f;
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots) == kSlots);
     CHECK(near(out[0].intensity, 1.0f, 1e-5f));
     CHECK(near(out[31].intensity, 0.2f, 1e-4f));
 
@@ -716,12 +719,12 @@ static void testSelectLights() {
         in[i].pos[2] = in[i].projectile ? 50.0f + (float)i : 5000.0f + (float)i;
     }
 
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots) == kSlots);
     CHECK(!out[27].projectile && out[28].projectile && out[31].projectile);
 
     // With 10 regular lights and 10 lasers, the lasers stop at their own cap.
     in.erase(in.begin() + 10, in.begin() + 30);
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights, true, 3) == 13);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots, true, 3) == 13);
 
     // A far higher-priority light (an engine exhaust) is kept over 40 nearer lower-priority ones, and listed first.
     in.assign(41, Resolved{});
@@ -735,7 +738,7 @@ static void testSelectLights() {
 
     in[40].pos[2] = 90000.0f;
     in[40].priority = 7;
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots) == kSlots);
     CHECK((out[0].priority == 7) && near(out[0].intensity, 1.0f, 1e-5f));
 }
 

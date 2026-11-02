@@ -116,7 +116,7 @@ function lightIcon(rgb) {
 }
 // ---- Shaded preview: the game's light pass (RS64LightsPS.hlsl, gain 1, wrap 0.3) added on top of the explorer's surfaces ----
 // Each light adds colour x (1 - distance / radius)^falloff x wrapped N.L x its spot cone to the prelit image, as in game; no shadows.
-const LIGHT_MAX = 32, LIGHT_WRAP = 0.3;
+const LIGHT_MAX = 64, LIGHT_WRAP = 0.3;
 const lightUniforms = () => THREE.uniformArray(Array.from({ length: LIGHT_MAX }, () => new THREE.Vector4()));
 // The count is a float uniform turned into the loop bound in the shader, capped at LIGHT_MAX: three r170 uploads an 'int' uniform's value
 // as float bits, so 1 read back as ~10^9 loop passes and hung the GPU.
