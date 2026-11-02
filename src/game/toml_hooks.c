@@ -1335,6 +1335,13 @@ void rs64_th_renderLitMeshFaceGroup_800146F0(uint8_t* rdram, recomp_context* ctx
     rs64_f5_map_sprite((unsigned)ctx->r17, (unsigned)ctx->r18);
 }
 
+// buildOrientedFaceGeometry 0x80012F14
+void rs64_th_buildOrientedFaceGeometry_80012F14(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_f5_map_sprite(unsigned, unsigned);
+    rs64_f5_map_sprite((unsigned)ctx->r18, (unsigned)ctx->r19);
+}
+
 // initMission 0x800FA28C
 int rs64_th_initMission_800FA28C(uint8_t* rdram, recomp_context* ctx) {
 

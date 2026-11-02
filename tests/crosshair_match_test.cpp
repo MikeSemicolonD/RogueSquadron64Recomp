@@ -33,13 +33,23 @@ int main() {
     CHECK(!matches(outer, Rect{ 30.0f, 90.0f, 60.0f, 120.0f }, ow, oh, clip));
 
     // ringOf picks the element whose size and position fit.
-    const Element els[2] = { outer, Element{ -197.9f, -144.2f, 3 } };
+    const Element els[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ 0.0f, 0.0f, 0 } };
     const TexSize outerTex{ 32, 32 }, innerTex{ 16, 16 };
     CHECK(ringOf(els, Rect{ 22.0f, 79.75f, 73.0f, 139.25f }, outerTex, 0x280, 0x224, clip) == 0);
     CHECK(ringOf(els, Rect{ 58.0f, 79.75f, 83.5f, 109.5f }, innerTex, 0x280, 0x224, clip) == 1);
     CHECK(ringOf(els, Rect{ 22.0f, 79.75f, 73.0f, 139.25f }, innerTex, 0x280, 0x224, clip) == -1);
     CHECK(ringOf(els, Rect{ 58.0f, 79.75f, 83.5f, 109.5f }, outerTex, 0x280, 0x224, clip) == -1);
     CHECK(ringOf(els, Rect{ 22.0f, 79.75f, 73.0f, 139.25f }, outerTex, 0, 0x224, clip) == -1);
+
+    // Y-wing bomb sight (level 13): a 32x20 tile drawn 32 x 37.25 px, and clamped at the bottom edge.
+    const Element all[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -3.12f, 21.17f, 3 } };
+    const TexSize bombTex{ 32, 20 };
+    CHECK(ringOf(all, Rect{ 252.75f, 245.0f, 284.75f, 282.25f }, bombTex, 0x280, 0x224, clip) == 2);
+    const Element clamped[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -34.17f, 206.84f, 3 } };
+    CHECK(ringOf(clamped, Rect{ 221.75f, 430.75f, 253.75f, 448.0f }, bombTex, 0x280, 0x224, Rect{ 0.0f, 0.0f, 640.0f, 448.0f }) == 2);
+    // Hidden bomb sight: no match.
+    const Element hidden[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -3.12f, 21.17f, 0 } };
+    CHECK(ringOf(hidden, Rect{ 252.75f, 245.0f, 284.75f, 282.25f }, bombTex, 0x280, 0x224, clip) == -1);
 
     std::printf("crosshair_match_test: OK\n");
     return 0;

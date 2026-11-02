@@ -137,6 +137,7 @@ void rs64_th_renderLitMeshFaceGroup_800137D4(uint8_t* rdram, recomp_context* ctx
 void rs64_th_renderLitMeshFaceGroup_80014620(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_renderLitMeshFaceGroup_800138A4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_renderLitMeshFaceGroup_800146F0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_buildOrientedFaceGeometry_80012F14(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_initMission_800FA28C(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_runInMissionFrame_800FA7D0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_applyDatObjectiveTriggerEffect_80065A0C(uint8_t* rdram, recomp_context* ctx);

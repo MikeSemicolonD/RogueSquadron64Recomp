@@ -1257,6 +1257,12 @@ func = "renderLitMeshFaceGroup"
 before_vram = 0x800146F0   # s1 = DL cursor, s2 = face
 text = '{ rs64_th_renderLitMeshFaceGroup_800146F0(rdram, ctx); }'
 
+# Camera-facing quads (explosion and lava fire, glints): record which face each 0xB4 came from, the same way.
+[[patches.hook]]
+func = "buildOrientedFaceGeometry"
+before_vram = 0x80012F14   # sw of the 0xB4 word: s2 = DL cursor, s3 = face
+text = '{ rs64_th_buildOrientedFaceGeometry_80012F14(rdram, ctx); }'
+
 # Lockstep determinism harness; inert unless a ROGUESQ_LS_* mode is set.
 # Mission start: seed and recorded session settings, before initMission reads difficulty.
 # hook: RS64_HOOK_MISSION_INIT
