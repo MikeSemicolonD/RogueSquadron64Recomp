@@ -32,7 +32,7 @@ Inspection tools (`frame_summary`, `list_draws`, `get_draw`, `dump_texture`, `vi
 
 - `press` holds controller-1 buttons or the stick for N display lists (or until `release`), injected where the BOOT_TARGET driver injects, ahead of keyboard and gamepad. From a freeze, `press` then `step N` plays exactly N frames of that input. Menus and levels are still reached with `launch`'s `ROGUESQ_BOOT_TARGET`: the nav sequencer only runs from boot.
 - `set_config` applies Configuration-tab settings as the F1 tab does; `rt_features` flips the RS64 RT passes (a feature pinned by its env var stays put); `render_toggles` sets texture replacement (F4) and ViewRDRAM (F3); `rt_debug_view` cycles the ray-tracing debug views as F9 / Shift+F9 do (`step` +1 / -1) or picks one by `name` ("shadow mask", "light reach", "light visibility", "off", ...), shown after the next `step`.
-- `rdram_dump` writes the same file as `ROGUESQ_DUMP_RDRAM_AT_VI`. Trace categories are read once at startup by design, so they are set through `launch`'s `env`, not toggled live.
+- `rdram_dump` snapshots all 16 MB by default (the host tables above 8 MB included); `full=false` writes the 8 MB `ROGUESQ_DUMP_RDRAM_AT_VI` / PJ64 golden format. `tools/debug/validate/rdram_golden_diff.py` diffs two snapshots of either size. `rdram_find` searches the 16 MB for a byte pattern (a glyph name, a pointer) instead of paging through `rdram_read`. Trace categories are read once at startup by design, so they are set through `launch`'s `env`, not toggled live.
 
 ## Notes
 

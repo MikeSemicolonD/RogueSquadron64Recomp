@@ -902,10 +902,15 @@ def serve():
         return game.call("render_toggles", params)
 
     @mcp.tool()
-    def rdram_dump(path: str | None = None) -> dict:
-        """Write the game's 8 MB RDRAM (big-endian, the ROGUESQ_DUMP_RDRAM_AT_VI format for rdram_golden_diff.py / state_diff) to path, default under the session dir. Best while paused."""
-        target = path or os.path.join(game.session_dir, f"rdram_dl{game.call('frame_info')['clocks']['dl']}.bin")
-        return game.call("rdram_dump", {"path": target}, 60)
+    def rdram_dump(path: str | None = None, full: bool = True) -> dict:
+        """Write a big-endian RAM snapshot to path (default under the session dir, named by dl frame): full=true is all 16 MB including the host tables above 8 MB (fonts, terrain grid, manifests), full=false the game's 8 MB (the ROGUESQ_DUMP_RDRAM_AT_VI / PJ64 golden format). rdram_golden_diff.py diffs either. Best while paused."""
+        target = path or os.path.join(game.session_dir, f"rdram_dl{game.call('frame_info')['clocks']['dl']}{'' if full else '_8mb'}.bin")
+        return game.call("rdram_dump", {"path": target, "full": full}, 60)
+
+    @mcp.tool()
+    def rdram_find(hex: str, align: int = 1, limit: int = 64) -> dict:
+        """Search all 16 MB of RAM for a big-endian byte pattern (hex, e.g. "462e4100" for a glyph name or "80c54000" for a pointer); returns up to limit KSEG0 addresses at multiples of align, and more=true if there were others."""
+        return game.call("rdram_find", {"hex": hex, "align": align, "limit": limit}, 60)
 
     @mcp.tool()
     def frame_summary() -> dict:

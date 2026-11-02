@@ -4,6 +4,7 @@
 Both inputs are raw 8 MB images in MIPS big-endian byte order:
   golden    = Project64 memory dump (e.g. dumps/MainMenu/output.bin)
   candidate = ROGUESQ_DUMP_RDRAM_ON_SCREEN=menu output (dumps/rdram_screen_N.bin)
+16 MB images (the MCP's rdram_dump full=true) also work; when both are 16 MB the host tables above 8 MB are compared too.
 
 Reports (1) known engine globals field-by-field, (2) differing 4 KB pages grouped
 by region with the decomp symbols that fall inside them, (3) .text/.rodata
@@ -52,6 +53,7 @@ REGIONS = [
     ("main bss",       0x10B6D0, 0x160000),
     ("heap",           0x160000, 0x400000),
     ("framebuffers",   0x400000, 0x800000),
+    ("host tables",    0x800000, 0x1000000),
 ]
 CODE_REGIONS = ('main text', 'main rodata')
 
@@ -98,8 +100,8 @@ def sym_at(syms, addr):
 
 def read_image(path):
     d = open(path, 'rb').read()
-    if len(d) != RDRAM:
-        sys.exit(f"{path}: expected {RDRAM} bytes, got {len(d)}")
+    if len(d) not in (RDRAM, 2 * RDRAM):
+        sys.exit(f"{path}: expected {RDRAM} or {2 * RDRAM} bytes, got {len(d)}")
     # A BE image contains readable game strings; a word-swapped one does not.
     if d.find(b'LucasArts') < 0 and d.find(b'ROGUE') < 0:
         print(f"warning: {path}: no readable game strings; byte order may be wrong", file=sys.stderr)
@@ -191,7 +193,8 @@ def main():
     zero = bytes(a.page)
     # per region: [pages, bytes, golden-zero/cand-nonzero, golden-nonzero/cand-zero, both-nonzero]
     reg_tot = {r[0]: [0, 0, 0, 0, 0] for r in REGIONS}
-    for off in range(0, RDRAM, a.page):
+    size = min(len(g), len(c))
+    for off in range(0, size, a.page):
         gp, cp = g[off:off + a.page], c[off:off + a.page]
         if gp == cp:
             continue
@@ -208,6 +211,8 @@ def main():
             r[4] += 1
     print("  region          pages differ      bytes   g=0/c!=0  g!=0/c=0  both!=0")
     for name, lo, hi in REGIONS:
+        if lo >= size:
+            continue
         n, b, gz, cz, nz = reg_tot[name]
         tot = (hi - lo) // a.page
         print(f"  {name:14s} {n:5d}/{tot:5d}  {b:9d}   {gz:7d}   {cz:7d}   {nz:7d}")
