@@ -246,8 +246,23 @@ jobs:
         if: always()
         run: python ci/stage_inputs.py --clean
 
+  # Their own release jobs skip on v* tags but still need these grants to pass validation.
+  relay:
+    uses: ./.github/workflows/relay-release.yml
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+  modtool:
+    uses: ./.github/workflows/modtool-release.yml
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
   release:
-    needs: [linux, windows]
+    needs: [linux, windows, relay, modtool]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -273,4 +288,14 @@ jobs:
           draft: true
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
+          body: |
+            ## Checking a download
+
+            Each file's SHA-256 is listed in `SHA256SUMS.txt` and next to the file under Assets. Compare it with the hash of your copy:
+
+            - Windows (PowerShell): `Get-FileHash <file> -Algorithm SHA256`
+            - Linux: `sha256sum -c SHA256SUMS.txt --ignore-missing` in the download folder
+            - macOS: `shasum -a 256 -c SHA256SUMS.txt --ignore-missing` in the download folder
+
+            To confirm a file was built by this repository's release workflow: `gh attestation verify <file> --repo ${{ github.repository }}`
           files: dist/*

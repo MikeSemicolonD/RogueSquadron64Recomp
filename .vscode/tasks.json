@@ -174,7 +174,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
+            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android, plus RecompModTool and the relay server for Windows x64 and Linux x64) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
         },
         {
             "label": "Package: RecompModTool (Windows + Linux)",
@@ -992,8 +992,8 @@
         {
             "id": "releaseTargets",
             "type": "promptString",
-            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, macos, android",
-            "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386"
+            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, macos, android, modtool, relay",
+            "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386,modtool,relay"
         },
         {
             "id": "modtoolTargets",

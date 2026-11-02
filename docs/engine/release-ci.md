@@ -23,7 +23,7 @@ Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/rel
   git push origin v0.1.0
   ```
 
-  The packages are attached to a draft release with generated notes, plus a `SHA256SUMS.txt` covering every package. Each package also gets a build provenance attestation; anyone can check a download with `gh attestation verify <file> --repo MikeSemicolonD/RogueSquadron64Recomp`. Review it, then publish it by hand.
+  The packages are attached to a draft release with generated notes, along with the Windows x64 and Linux x64 RecompModTool and relay server packages from the two workflows below (called as reusable workflows), plus a `SHA256SUMS.txt` covering every package. Each package also gets a build provenance attestation; anyone can check a download with `gh attestation verify <file> --repo MikeSemicolonD/RogueSquadron64Recomp`. Review it, then publish it by hand.
 
 ## RecompModTool release
 

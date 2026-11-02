@@ -6,6 +6,7 @@ on:
   push:
     tags: ['modtool-v*']
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -54,7 +55,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.name }}
+          name: modtool-${{ matrix.name }}
           path: ${{ env.PKG }}
           retention-days: 3
           if-no-files-found: error
