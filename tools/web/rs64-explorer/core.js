@@ -359,7 +359,10 @@ function frameLevel(world, markers) {
   for (const o of world.children) {
     if (o === markers || o === sky) continue;
     if (o.name === 'terrain') {
-      const b = new THREE.Box3().setFromObject(o);
+      // The map itself, not the edge tiles repeated around it.
+      o.geometry.computeBoundingBox();
+      const { hmp } = o.userData.tiles, g = o.geometry.boundingBox;
+      const b = new THREE.Box3(new THREE.Vector3(0, g.min.y, 0), new THREE.Vector3(hmp.w * 2, g.max.y, hmp.h * 2)).applyMatrix4(o.matrixWorld);
       pts.push(b.min.clone(), b.max.clone(), b.getCenter(new THREE.Vector3()));
     } else {
       pts.push(o.getWorldPosition(v).clone());
@@ -1183,7 +1186,7 @@ function inspect(hit) {
   if (o.userData.tiles) {
     const { hmp, texIds } = o.userData.tiles;
     const p = o.worldToLocal(hit.point.clone());
-    const tx = Math.floor(p.x / 2), ty = Math.floor(p.z / 2);
+    const tx = Math.min(hmp.w - 1, Math.max(0, Math.floor(p.x / 2))), ty = Math.min(hmp.h - 1, Math.max(0, Math.floor(p.z / 2)));
     const ti = hmp.map[ty * hmp.w + tx], tile = hmp.tiles[ti];
     if (!tile) return null;
     const light = lightsLevel && [['Add light here', 'A ray-traced light just above this spot, for this level (a light preset in the mod\'s roguesq_lights.json)', () => lightsAddLevel(hit)]];
