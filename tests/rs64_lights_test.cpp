@@ -269,7 +269,7 @@ static void testBuildTerrainMesh() {
     buildTerrainMesh(m, 1, pos, idx);
     CHECK(pos.size() == 25 * 3 && pos[0] == 512.0f);
 
-    // A shore cell adds a flat quad TerrainWaterDip units under the water level (heights grow downward), facing up like the ground (same winding).
+    // A shore cell adds a flat quad just under the drawn water (heights grow downward), facing up like the ground (same winding).
     m.present = { 1, 1 };
     m.waterKind = { 0, 2 };
     m.waterLevel = 10;
@@ -284,8 +284,9 @@ static void testBuildTerrainMesh() {
 
     CHECK(pos.size() == (2 * 25 + 4 * (span - 1)) * 3);
     CHECK(pos[50 * 3] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512) && pos[50 * 3 + 2] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512));
+    CHECK(pos[50 * 3 + 1] == 160.0f - TerrainWaterLift + TerrainWaterTraceGap);
     CHECK(pos[53 * 3] == float((1 - TerrainWaterMargin) * 512));
-    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == float((10 + TerrainWaterDip) * 16) && pos[shore * 3 + 2] == 0.0f);
+    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == pos[50 * 3 + 1] && pos[shore * 3 + 2] == 0.0f);
     CHECK(pos[(shore + 3) * 3] == 1024.0f && pos[(shore + 3) * 3 + 2] == 512.0f);
     CHECK(idx[shoreIdx] == shore && idx[shoreIdx + 1] == shore + 3 && idx[shoreIdx + 2] == shore + 2);
 }
@@ -553,6 +554,21 @@ static void testDropFarLights() {
     CHECK(dropFarLights(l, 3, 0.01f) == 2);
     CHECK(near(l[0].pos[2], 140.0f, 1e-6f) && near(l[1].radius, 1200.0f, 1e-6f));
     CHECK(dropFarLights(l, 2, 0.0f) == 2);
+}
+
+static void testSkyBands() {
+
+    // Dark grey near the horizon, blue overhead, a middle triangle that joins neither band; no dome = no sky.
+    const SkySample s[3] = { { { 0.1f, 0.1f, 0.1f }, 0.1f }, { { 0.2f, 0.3f, 0.9f }, 0.9f }, { { 1.0f, 1.0f, 1.0f }, 0.5f } };
+    float h[3], z[3];
+
+    CHECK(skyBands(s, 3, h, z));
+    CHECK(near(h[0], 0.1f, 1e-6f) && near(z[2], 0.9f, 1e-6f));
+
+    // A dome with no triangle near the horizon takes the whole dome's average there.
+    CHECK(skyBands(s + 1, 2, h, z));
+    CHECK(near(h[0], 0.6f, 1e-6f) && near(z[0], 0.2f, 1e-6f));
+    CHECK(!skyBands(s, 0, h, z));
 }
 
 static void testDedupeLights() {
@@ -1539,6 +1555,7 @@ int main() {
     testConsensusCameraDelta();
     testDedupeLights();
     testDropFarLights();
+    testSkyBands();
     testMenuHoloLight();
     testFlickerGain();
     testLampMatch();
