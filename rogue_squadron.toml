@@ -999,6 +999,11 @@ func = "menuControllerInput"
 before_vram = 0x800B51B8   # `lbu $v0,0x28($v0)` — selected entry's sub-type
 text = '{ rs64_th_menuControllerInput_800B51B8(rdram, ctx); }'
 
+# The menu SFX player (sfx id, volume, pan): a mod entry's "sound" replaces the one the game plays for its confirm (menu_config.cpp).
+[[patches.hook]]
+func = "bsearchFactor5TableByU16Key"
+text = '{ if (rs64_th_bsearchFactor5TableByU16Key_entry(rdram, ctx)) return; }'
+
 # Each front-end loop pass, right after the pad poll (0x80079CE0): the multiplayer address editor takes the pad while it is editing, and a pilot-first page leaves for mission select once done.
 # hook: RS64_HOOK_MENU_INPUT
 [[patches.hook]]

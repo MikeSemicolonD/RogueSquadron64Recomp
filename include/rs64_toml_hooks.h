@@ -93,6 +93,7 @@ void rs64_th_emitFrameRdpInitDl_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupMenuData_800BAF70(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_applyLevelScreenAndCameraSettings_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B51B8(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_bsearchFactor5TableByU16Key_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_menuControllerInput_800B4CA8(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_menuControllerInput_800B5428(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_updateMenuPerFrame_entry(uint8_t* rdram, recomp_context* ctx);

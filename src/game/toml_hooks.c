@@ -898,8 +898,20 @@ void rs64_th_applyLevelScreenAndCameraSettings_entry(uint8_t* rdram, recomp_cont
 // menuControllerInput 0x800B51B8
 void rs64_th_menuControllerInput_800B51B8(uint8_t* rdram, recomp_context* ctx) {
 
+    extern void rs64_menu_confirm_sound(uint8_t* rdram, recomp_context* ctx);
     extern void rs64_menu_confirm_main(uint8_t* rdram);
+
+    rs64_menu_confirm_sound(rdram, ctx);
     rs64_menu_confirm_main(rdram);
+}
+
+// bsearchFactor5TableByU16Key entry
+int rs64_th_bsearchFactor5TableByU16Key_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern int rs64_menu_sfx_swap(recomp_context* ctx);
+
+    return rs64_menu_sfx_swap(ctx);
 }
 
 // menuControllerInput 0x800B4CA8
