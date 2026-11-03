@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "common/rt64_user_configuration.h"
+#include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_lights.h"
 #include "json/json.hpp"
 
@@ -36,6 +37,10 @@ constexpr float kLegacyTerrainDrawDistanceMax = 1.3f;
 bool legacy_terrain();
 void set_legacy_terrain(bool on);
 float draw_distance_max();
+
+// Where widescreen puts the edge HUD ("hudPlacement" in roguesq_video.json): 0 = the original 4:3 spots, 1 = the screen edges. Applies live.
+float hud_placement();
+void set_hud_placement(float placement);
 
 // Cutscenes keep the view distance the game sets per shot ("keepCutsceneDrawDistance", default on); ROGUESQ_CINE_DRAW_DIST overrides.
 bool keep_cutscene_draw_distance();

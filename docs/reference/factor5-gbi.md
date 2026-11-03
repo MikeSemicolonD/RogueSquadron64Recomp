@@ -31,6 +31,7 @@ grammar itself (chunk fetch, per-opcode semantics from the IMEM listing) is in
 | `0x06` | G_DL | Push and call | `op_06_strict_dl` |
 | `0x07` | — | Branch | `op_07_branch` |
 | `0xBB` / `0x0C` | G_TEXTURE | Texture state | `texture_f5` |
+| `0x60` | — | Not the game's: the host's widescreen HUD marker, written by a `drawSubtitleText` hook as each 2D element's first command (w0 low byte = side: 0 centre, 1 left, 2 right). The element's texrects get that side as their RT64 extended origin (`rs64hud`, `rt64_rs64_hud.h`) | `op_60_hud_side` |
 
 Other standard F3D/F3DEX opcodes (0xB8, 0xB9, 0xBA, 0xBC, 0xE6-0xED, 0xF6-0xFF) dispatch through the inherited map, several via logging/guarded wrappers.
 

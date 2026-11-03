@@ -6,6 +6,9 @@
 using nlohmann::json;
 using UC = RT64::UserConfiguration;
 
+// Defined by RT64's workload queue in the game.
+std::atomic<float> g_rs64_hud_placement{ 0.0f };
+
 static int g_fail = 0;
 #define CHECK(cond) do { if (!(cond)) { ++g_fail; \
     std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); } } while (0)
@@ -150,7 +153,7 @@ static void test_load_missing() {
 static void test_load_friendly() {
     UC uc; uc.validate();
     std::string p = write_tmp("tmp_friendly_video.json",
-        R"({"schema":2,"drawDistance":1.0,"widescreen":true,"resolutionScale":"auto"})");
+        R"({"schema":2,"drawDistance":1.0,"hudPlacement":0.0,"widescreen":true,"resolutionScale":"auto"})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
@@ -224,13 +227,29 @@ static void test_legacy_terrain_caps_draw_distance() {
 static void test_keep_cutscene_absent_key_not_migrated() {
     rs64::video::set_keep_cutscene_draw_distance(true);
     UC uc; uc.validate();
-    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3})");
+    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3,"hudPlacement":0.0})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
     CHECK(rs64::video::keep_cutscene_draw_distance() == true);
     std::remove(p.c_str());
     rs64::video::set_draw_distance(1.0f);
+}
+
+// hudPlacement is clamped to 0..1, round-trips, and a file without it is rewritten so the key shows up.
+static void test_hud_placement() {
+    UC uc; uc.validate();
+    CHECK(rs64::video::to_friendly(uc).value("hudPlacement", -1.0f) == 0.0f);
+    rs64::video::apply_friendly(uc, json{ {"schema", 2}, {"hudPlacement", 0.5} });
+    CHECK(rs64::video::hud_placement() == 0.5f);
+    CHECK(rs64::video::to_friendly(uc).value("hudPlacement", -1.0f) == 0.5f);
+    rs64::video::set_hud_placement(3.0f);
+    CHECK(rs64::video::hud_placement() == 1.0f);
+    rs64::video::set_hud_placement(-1.0f);
+    CHECK(rs64::video::hud_placement() == 0.0f);
+    std::string p = write_tmp("tmp_nohud_video.json", R"({"schema":2,"drawDistance":1.0})");
+    CHECK(rs64::video::load(uc, p).migrated == true);
+    std::remove(p.c_str());
 }
 
 static void test_fullscreen_roundtrip_and_peek() {
@@ -381,6 +400,7 @@ int main() {
     test_legacy_terrain_default_and_roundtrip();
     test_legacy_terrain_caps_draw_distance();
     test_fullscreen_roundtrip_and_peek();
+    test_hud_placement();
     test_language_code_roundtrip();
     test_effective_draw_distance();
     test_to_friendly_basic();

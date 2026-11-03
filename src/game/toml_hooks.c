@@ -349,6 +349,20 @@ void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx) {
     ctx->f0.fl *= rs64_draw_dist();
 }
 
+// drawSubtitleText 0x80015EF8
+void rs64_th_drawSubtitleText_80015EF8(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_hud_mark_element(uint8_t*, recomp_context*);
+    rs64_hud_mark_element(rdram, ctx);
+}
+
+// refreshEffectObjectCamerasAndState 0x80053148
+void rs64_th_refreshEffectObjectCamerasAndState_80053148(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_hud_shift_radar(uint8_t*, recomp_context*);
+    rs64_hud_shift_radar(rdram, ctx);
+}
+
 // transformVec3ToNpcLocalWithScale 0x8001DDA0
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx)
 {

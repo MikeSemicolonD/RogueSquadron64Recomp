@@ -267,21 +267,29 @@ extern "C" bool rs64_render_resume_surface(void)
 #endif
 }
 
-// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
-// ROGUESQ_CULL_WIDEN=0 disables.
-extern "C" float rs64_cull_widen(void)
+// RT64's widescreen widening of the 4:3 view (resolution scale x over y): 1 in 4:3.
+extern "C" float rs64_aspect_scale(void)
 {
 
-    static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
     RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
 
-    if (!s_on || !app || !app->presentQueue) return 1.0f;
+    if (!app || !app->presentQueue) return 1.0f;
 
     const hlslpp::float2 rs = app->presentQueue->ext.sharedResources->resolutionScale;
     const float y = float(rs.y);
     const float w = (y > 0.0f) ? float(rs.x) / y : 1.0f;
 
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
+}
+
+// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
+// ROGUESQ_CULL_WIDEN=0 disables.
+extern "C" float rs64_cull_widen(void)
+{
+
+    static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
+
+    return s_on ? rs64_aspect_scale() : 1.0f;
 }
 
 // Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast

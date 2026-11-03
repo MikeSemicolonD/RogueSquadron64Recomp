@@ -32,6 +32,8 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_co
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_drawSubtitleText_80015EF8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_refreshEffectObjectCamerasAndState_80053148(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E078(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057C90(uint8_t* rdram, recomp_context* ctx);

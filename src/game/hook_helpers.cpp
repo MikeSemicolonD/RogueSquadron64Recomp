@@ -46,6 +46,8 @@
 #include "host_api/host_api.h"
 #include <deque>
 #include "util/mips_call.h"
+#include "util/rdram_words.h"
+#include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_transition.h"
 
 using recomp::dbg::env_str;
@@ -290,6 +292,79 @@ extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram)
         wf(p, x);
         wf(p + 8, z);
     }
+}
+
+// ---- Widescreen HUD placement ----
+
+extern "C" float rs64_aspect_scale(void);
+
+// Native pixels the edge HUD moves outward this frame in a view `width` wide: 0 outside missions (numMissionObjectives 0x80130B17), in 4:3 or at placement 0.
+static float hud_shift(const uint8_t* rdram, float width)
+{
+
+    if (rdram[(0x80130B17u - 0x80000000u) ^ 3] == 0) return 0.0f;
+
+    return rs64hud::shiftNative(width, rs64::video::hud_placement(), rs64_aspect_scale());
+}
+
+// drawSubtitleText 0x80015EF8, before the element's first command goes to the display-list pointer it is already called at (0x8011DC58; s3 = element, s1 = view):
+// the RT64 HUD marker naming its side goes first. Every element gets one, so a centred element clears the last side.
+extern "C" void rs64_hud_mark_element(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using namespace rs64::mips;
+
+    const float width = (float)(int32_t)rw(rdram, (uint32_t)ctx->r17 + 0x10u);
+
+    if (hud_shift(rdram, width) <= 0.0f) return;
+
+    const uint32_t item = (uint32_t)ctx->r19;
+    const rs64hud::Side side = rs64hud::classify(item, rf(rdram, item + 0x18u), rw(rdram, item + 0x14u), width);
+    const uint32_t p = rw(rdram, 0x8011DC58u);
+
+    ww(rdram, p, rs64hud::markerW0(side));
+    ww(rdram, p + 4u, 0);
+    ww(rdram, 0x8011DC58u, p + 8u);
+}
+
+// refreshEffectObjectCamerasAndState 0x80053148: the HUD pass (s1 + 8 = its view, scene root = the radar node) with its camera just reset to identity (3x4 row-major at
+// s1 + 0x34, x translation at +0x24; the pass restores the camera afterwards). Moving that camera moves the radar by the distance RT64 gives its 2D pieces.
+extern "C" void rs64_hud_shift_radar(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using namespace rs64::mips;
+
+    const uint32_t view = (uint32_t)ctx->r17 + 8u;
+    const float width = (float)(int32_t)rw(rdram, view + 0x10u);
+    const float height = (float)(int32_t)rw(rdram, view + 0x14u);
+    const float shift = hud_shift(rdram, width);
+    const uint32_t root = rw(rdram, view);
+    const uint32_t div = rw(rdram, 0x8011A838u);
+
+    if (shift <= 0.0f || height <= 0.0f || div == 0 || root < 0x80000000u || root >= 0x80800000u) return;
+
+    // setupCameraMatrices' perspective: fovy at view + 0x20, aspect = W/H * [0x8011A844] / [0x8011A838] * [0x8011A840].
+    const float aspect = width / height * (float)rw(rdram, 0x8011A844u) / (float)div * rf(rdram, 0x8011A840u);
+    const float p00 = 1.0f / (std::tan(rf(rdram, view + 0x20u) * 3.14159265f / 360.0f) * aspect);
+
+    // The radar node's translation in its 3x4 transform at +0x1C.
+    const float x = rf(rdram, root + 0x40u);
+    const float z = rf(rdram, root + 0x48u);
+
+    if (!(p00 > 0.0f) || !(z > 0.0f)) return;
+
+    const float halfWidth = width * 0.5f;
+    const rs64hud::Side side = rs64hud::classify(root, p00 * x / z * halfWidth, 0, width);
+
+    if (side == rs64hud::None) return;
+
+    const float dx = shift * z / (p00 * halfWidth);
+    const uint32_t tx = (uint32_t)ctx->r17 + 0x34u + 0x24u;
+    const float moved = rf(rdram, tx) + ((side == rs64hud::Right) ? dx : -dx);
+    uint32_t bits;
+
+    std::memcpy(&bits, &moved, 4);
+    ww(rdram, tx, bits);
 }
 
 // ---- Boot target ----

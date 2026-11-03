@@ -805,9 +805,32 @@ std::string draw_step_text(int i)
     return buf;
 }
 
+// hud_placement in quarters from the 4:3 spots (OFF) to the screen edges (FULL); the menu font has no '%'. -1 = a saved value between steps (CUSTOM).
+constexpr int kHudSteps = 5;
+
+int hud_step()
+{
+
+    const float p = rs64::video::hud_placement() * (kHudSteps - 1);
+    const int i = (int)std::lround(p);
+
+    return std::fabs(p - (float)i) < 0.01f ? i : -1;
+}
+
+std::string hud_step_text(int i)
+{
+
+    static const char* const kText[kHudSteps] = { "OFF", "1/4", "1/2", "3/4", "FULL" };
+
+    return (i >= 0 && i < kHudSteps) ? kText[i] : "CUSTOM";
+}
+
 std::unordered_map<std::string, CycleImpl>& cycles() {
 
     static std::unordered_map<std::string, CycleImpl> r = {
+        { "hud_placement", { [] { return hud_step(); },
+                             [] { rs64::video::set_hud_placement((float)((hud_step() + 1) % kHudSteps) / (kHudSteps - 1)); },
+                             [](int i) { return hud_step_text(i); } } },
         { "draw_distance", { [] { return draw_step(); },
                              [] { rs64::video::set_draw_distance(next_draw_step(rs64::video::draw_distance(), rs64::video::draw_distance_max())); },
                              [](int i) { return draw_step_text(i); } } },

@@ -543,6 +543,18 @@ func = "setupCameraMatrices"
 before_vram = 0x80016D50
 text = '{ rs64_th_setupCameraMatrices_80016D50(rdram, ctx); }'
 
+# Widescreen HUD placement: a marker opening each 2D element's display-list chunk names the screen side RT64 anchors its texrects to.
+[[patches.hook]]
+func = "drawSubtitleText"
+before_vram = 0x80015EF8
+text = '{ rs64_th_drawSubtitleText_80015EF8(rdram, ctx); }'
+
+# Widescreen HUD placement: the HUD pass camera shifts the radar model by the same distance.
+[[patches.hook]]
+func = "refreshEffectObjectCamerasAndState"
+before_vram = 0x80053148
+text = '{ rs64_th_refreshEffectObjectCamerasAndState_80053148(rdram, ctx); }'
+
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001DDA0
