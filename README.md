@@ -82,9 +82,10 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
   - Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
   - The **Multiplayer** is shipped as a `multiplayer-native` mod.
-- **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME will show a 6-digit join code. A client can replace the IP address field with the code to join the game. Steam sees the game as Spacewar (app id 480).
+- **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
+- **Co-op using a self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 
 > [!NOTE]

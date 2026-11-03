@@ -4,7 +4,7 @@
 
 ## Pointing the game at a server
 
-Each player adds the server to `roguesq_net.json` next to the game (create it if missing), with the port if it is not 27070:
+Each player types the server's address (a name or an IP, with `:port` if it is not 27070) into the address row on the MULTIPLAYER page, as they would a friend's address. When the server answers, the game remembers it as `relay_server` in `roguesq_net.json` next to the game; it can also be set there by hand:
 
 ```json
 { "relay_server": "relay.example.com:27070" }

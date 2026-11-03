@@ -239,14 +239,15 @@ struct AddressEditor {
     bool touched = false;
     void load(const std::string& s);
 
-    // Keyboard entry (the phone's on-screen keyboard, or a desktop keyboard): digits, '.' and ':', at most 21 (an address and port), shown with a caret (kCaret); the pad only ends it (A or B).
+    // Keyboard entry (the phone's on-screen keyboard, or a desktop keyboard): an address or host name with an optional port, at most kMaxTyped, shown with a caret (kCaret); the pad only ends it (A or B).
+    static constexpr size_t kMaxTyped = 64;
     bool typing = false;
     std::string typed;
     void begin_typing();
     void type_text(const char* s);
     void type_backspace();
 
-    // Ends typing and editing; a typed address that parses replaces the octets (true), anything else leaves them.
+    // Ends typing and editing; a typed address that parses replaces the octets and a typed host name becomes the saved address (true), anything else leaves them.
     bool end_typing();
 
     // Ends typing and editing without applying the typed text (the page closed mid-entry).

@@ -434,7 +434,6 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_MP_UPNP` | 1 | `0`: hosting does not request a UPnP port mapping. |
 | `ROGUESQ_MP_TRANSPORT` | unset | `enet`: ignore the relay transports (the steam-relay mod and a relay server) and host / join over ENet. |
 | `ROGUESQ_MP_RELAY` | unset | `host[:port]` of an `rs64_relay` to use instead of `roguesq_net.json`'s `relay_server` (scripted runs; never saved). |
-| `ROGUESQ_MP_CODE` | unset | Join code JOIN GAME uses over a relay transport (scripted runs). |
 | `ROGUESQ_MP_PAD` | unset | `<path.rec>`: this instance's port-0 input comes from a recording. |
 | `ROGUESQ_MP_SIM_LATENCY_MS` / `ROGUESQ_MP_SIM_LOSS_PCT` / `ROGUESQ_MP_SIM_JITTER_MS` | 0 / 0 / 0 | Simulated one-way latency, unreliable-send loss, and 0..N ms jitter (order kept). |
 | `ROGUESQ_RELOC_GUARD` | unset | `1`: at the first present, fill the old addresses of the relocated per-player ranges (R1-R4, see AGENTS.md "Per-player data relocation") with 0xA5, then log `[reloc] write to old address X` on any write there. Pair with `ROGUESQ_DATA_BP=X` to catch the writer. |

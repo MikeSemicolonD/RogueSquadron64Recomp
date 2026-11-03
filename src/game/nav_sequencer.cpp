@@ -733,7 +733,7 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
 
             if (title == "MULTIPLAYER" && nav_pick(rdram, entry)) nav_repress(N64_A_BUTTON);
 
-            // JOIN GAME opened the game list (a relay is set up): pick its first row, six above the pager (REFRESH, or < REFRESH > with more pages), until the search shows a game there.
+            // JOIN GAME opened its page: pick the first list row, six above the pager (REFRESH, or < REFRESH > with more pages), until a game shows there or the typed address is joined directly.
             const int refresh = nav_find_entry(rdram, "REFRESH");
             const int more = refresh >= 0 ? refresh : nav_find_entry(rdram, "< REFRESH >");
 

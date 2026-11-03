@@ -409,10 +409,18 @@ static void test_lobby_join_timeout_setting() {
 static void test_address_editor_saved_hostname() {
     AddressEditor a;
     a.load("friend.ddns.net");
-    CHECK(a.target() == "friend.ddns.net" && a.label() == "SAVED ADDRESS");
+    CHECK(a.target() == "friend.ddns.net" && a.label() == "FRIEND.DDNS.NET");
     a.editing = true;
     a.input(kPadUp, kPadUp);
-    CHECK(a.target() == a.text() && a.label() != "SAVED ADDRESS");
+    CHECK(a.target() == a.text() && a.label() != "FRIEND.DDNS.NET");
+    // A host name typed on the keyboard (any case) is kept with its port.
+    AddressEditor h;
+    h.editing = true;
+    h.begin_typing();
+    for (int i = 0; i < 20; ++i) h.type_backspace();
+    h.type_text("Relay.Example-1.net:27070");
+    CHECK(h.label() == std::string("RELAY.EXAMPLE-1.NET:27070") + kCaret);
+    CHECK(h.end_typing() && h.target() == "relay.example-1.net" && h.port == 27070 && h.label() == "RELAY.EXAMPLE-1.NET:27070");
     AddressEditor b;
     b.load("10.0.0.5");
     CHECK(b.target() == "10.0.0.5" && b.label() == "10.0.0.5");
@@ -638,7 +646,7 @@ static void test_address_editor_typing() {
     a.type_backspace();
     a.type_backspace();
     CHECK(a.label() == "192.168.1" + caret);
-    a.type_text("0.1x89");
+    a.type_text("0.1#89");
     CHECK(a.label() == "192.168.10.189" + caret);
     // Enter: a valid address replaces the octets; editing ends.
     CHECK(a.end_typing() && !a.typing && !a.editing);
@@ -648,16 +656,17 @@ static void test_address_editor_typing() {
     a.begin_typing();
     a.type_text("9");
     CHECK(!a.end_typing() && a.text() == "192.168.10.189");
-    // At most 21 characters (255.255.255.255:65535).
+    // At most kMaxTyped characters (a host name and port).
     a.editing = true;
     a.begin_typing();
     for (int i = 0; i < 20; ++i) a.type_backspace();
     CHECK(a.label() == caret);
-    a.type_text("1234567890123456789012345");
-    CHECK(a.label() == "123456789012345678901" + caret);
+    const std::string max_digits(AddressEditor::kMaxTyped, '1');
+    a.type_text((max_digits + "222").c_str());
+    CHECK(a.label() == max_digits + caret);
     // While typing the pad's up/down and left/right do nothing, but A or B still end editing.
     a.input(kPadUp, kPadUp);
-    CHECK(a.typing && a.label() == "123456789012345678901" + caret);
+    CHECK(a.typing && a.label() == max_digits + caret);
     a.input(kPadB, kPadB);
     CHECK(!a.typing && !a.editing);
     // Leaving the page mid-typing drops the typed text and keeps the address.

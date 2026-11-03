@@ -210,6 +210,7 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
     s.stop_at_ms = -1;
     s.was_ready = false;
     s.peer_left = false;
+    s.partner_left_ms = -1;
     static const long test_build = recomp::dbg::env_int("ROGUESQ_MP_TEST_VERSION", -1);
 
     if (test_build >= 0) {
@@ -315,6 +316,14 @@ void lobby_poll()
 
     const bool had_ready = s.was_ready;
     s.was_ready = ready;
+
+    // The partner left (this side did not stop) while both were in the menus: mission and craft select say so and back out to the main menu.
+    if (had_ready && !ready && s.started && s.from_menu && !s.in_session) {
+        s.partner_left_ms = now;
+        s.partner_left_text = s.player == 1 ? "HOST LEFT" : "PLAYER LEFT";
+
+        fprintf(stderr, "[lobby] %s in the menus\n", s.partner_left_text.c_str());
+    }
 
     if (s.lobby.state() == rs64::net::LobbyState::Failed && s.stop_at_ms < 0)
     {

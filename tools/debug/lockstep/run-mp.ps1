@@ -1,5 +1,5 @@
 # Two-instance ghost co-op run on localhost: the host flies $HostPad, the client $ClientPad.
-# Usage: .\tools\debug\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientPage] [-HostPassword 123456] [-Split] [-ClientRecord <rec>] [-KeepOpen] [-NavBudget n] [-Relay port [-RelayArgs flags]] [-ClientInput seq [-ClientInputDelay ms]] [-HostContinue n] [-ClientContinue n] [-HostSkipCrawl] [-HostDie f,f] [-ClientDie f,f]
+# Usage: .\tools\debug\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientPage] [-HostPage] [-Sound] [-HostPassword 123456] [-Split] [-ClientRecord <rec>] [-KeepOpen] [-NavBudget n] [-Relay port [-RelayArgs flags]] [-ClientInput seq [-ClientInputDelay ms]] [-HostContinue n] [-ClientContinue n] [-HostSkipCrawl] [-HostDie f,f] [-ClientDie f,f]
 # Both windows come up windowed with ray tracing off; a boot stall (log silent 15 s before the lobby) is dumped (dump-game.ps1) into the run folder and stops the pair.
 # Each instance gets its own working dir (ROM, configs and saves live in the working dir), so the pair never shares a save.
 param(
@@ -48,6 +48,10 @@ param(
     [switch]$ClientLive,
     # Lobby runs: the client stops on the MULTIPLAYER page and is driven live from there (implies -ClientLive).
     [switch]$ClientPage,
+    # Lobby runs: the host also stops on the MULTIPLAYER page and is driven live (implies -ClientLive).
+    [switch]$HostPage,
+    # Play the host's audio (every window is muted otherwise).
+    [switch]$Sound,
     # Lobby runs: the host's game password (6 digits), so it lists as locked.
     [string]$HostPassword = "",
     # Split-screen test pair: both sides flown live in borderless widescreen halves (host top, client bottom); each player's device is the first one they press.
@@ -79,9 +83,9 @@ $root = (Resolve-Path "$PSScriptRoot\..\..\..").Path
 $exe = (Resolve-Path (Join-Path $root $Binary)).Path
 $exeDir = Split-Path $exe
 $out = Join-Path $root "logs\mp\$Tag"
-if ($Split -or $ClientPage) { $ClientLive = $true }
+if ($Split -or $ClientPage -or $HostPage) { $ClientLive = $true }
 $claim = Join-Path $out "claim"
-$vars = "ROGUESQ_WIDESCREEN", "ROGUESQ_INPUT_CLAIM", "ROGUESQ_MP","ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST","ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP", "ROGUESQ_FULLSCREEN", "ROGUESQ_RT_LIGHTS", "ROGUESQ_RT_SHADOWS", "ROGUESQ_RT_FOG_SHAFTS", "ROGUESQ_MP_RELAY", "ROGUESQ_MP_CODE", "ROGUESQ_INPUT_SEQ", "ROGUESQ_INPUT_DELAY", "ROGUESQ_MP_TEST_SKIP_CRAWL", "ROGUESQ_MP_TEST_CONTINUE"
+$vars = "ROGUESQ_WIDESCREEN", "ROGUESQ_INPUT_CLAIM", "ROGUESQ_MP","ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST","ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP", "ROGUESQ_FULLSCREEN", "ROGUESQ_RT_LIGHTS", "ROGUESQ_RT_SHADOWS", "ROGUESQ_RT_FOG_SHAFTS", "ROGUESQ_MP_RELAY", "ROGUESQ_INPUT_SEQ", "ROGUESQ_INPUT_DELAY", "ROGUESQ_MP_TEST_SKIP_CRAWL", "ROGUESQ_MP_TEST_CONTINUE"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v, "Process") }
 $procs = @{}
@@ -101,7 +105,7 @@ try {
         $env:ROGUESQ_MP_RELAY = "127.0.0.1:$Relay"
     }
     foreach ($role in "host", "client") {
-        # The client joins the host's game by the id the relay gave it.
+        # The client starts once the relay lists the host's game.
         if ($Relay -gt 0 -and $role -eq "client") {
             $code = $null
             while (-not $code -and (Get-Date) -lt $start.AddSeconds($Timeout)) {
@@ -109,7 +113,6 @@ try {
                 $m = Select-String -Path $relayLog -Pattern "game (\d+) .* opened" -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($m) { $code = $m.Matches[0].Groups[1].Value }
             }
-            $env:ROGUESQ_MP_CODE = $code
             "relay game $code"
         }
         $dir = Join-Path $out $role
@@ -163,7 +166,7 @@ try {
         $env:ROGUESQ_MP_ADDR = if ($Discover) { $null } else { "127.0.0.1" }
         $env:ROGUESQ_MP_UPNP = "0"
         $env:ROGUESQ_MP_PORT = "$Port"
-        $live = $Split -or ($ClientLive -and $role -eq "client")
+        $live = $Split -or ($ClientLive -and $role -eq "client") -or ($HostPage -and $role -eq "host")
         $env:ROGUESQ_MP_PAD = if ($live) { $null } else { (Resolve-Path (Join-Path $root $pad)).Path }
         $env:ROGUESQ_LS_RECORD = if ($role -eq "client" -and $ClientRecord) { [IO.Path]::GetFullPath((Join-Path $root $ClientRecord)) } else { $null }
         $env:ROGUESQ_MP_SIM_LATENCY_MS = "$Latency"
@@ -180,13 +183,13 @@ try {
         if ($live -and $roleCraft -ge 0) { $recCraft = "$roleCraft" }
         # Split runs boot -Level with each side's craft (the level's own when -1), not the recording's.
         $target = if ($Split) { "level:$Level$(if ($roleCraft -ge 0) { ",$roleCraft" })" } else { "level:$recLevel,$recCraft" }
-        $env:ROGUESQ_BOOT_TARGET = if (-not $Lobby) { $target } elseif ($role -eq "host") { "lobby:host,$Level,$HostCraft" } elseif ($ClientPage) { "lobby:page" } else { "lobby:join,$Level,$ClientCraft" }
+        $env:ROGUESQ_BOOT_TARGET = if (-not $Lobby) { $target } elseif ($role -eq "host") { if ($HostPage) { "lobby:page" } else { "lobby:host,$Level,$HostCraft" } } elseif ($ClientPage) { "lobby:page" } else { "lobby:join,$Level,$ClientCraft" }
         $env:ROGUESQ_NET_CONFIG = if ($Lobby) { Join-Path $dir "roguesq_net.json" } else { $null }
         $pinField = if ($HostPassword -and $role -eq "host") { ", `"host_password`": `"$HostPassword`"" } else { "" }
         if ($Lobby) { Set-Content -Encoding ascii -Path $env:ROGUESQ_NET_CONFIG -Value "{ `"last_address`": `"127.0.0.1`", `"port`": $Port$pinField }" }
         $env:ROGUESQ_FAKE_CONTROLLER = if ($live) { $null } else { "1" }
-        # A split pair plays the host's audio only.
-        $env:ROGUESQ_AUDIO_GAIN = if ($live -and -not ($Split -and $role -eq "client")) { $null } else { "0" }
+        # Muted unless -Sound, which plays the host's audio only.
+        $env:ROGUESQ_AUDIO_GAIN = if ($Sound -and $role -eq "host") { $null } else { "0" }
         $env:ROGUESQ_SPEED = "$speedNow"
         # The menu driver's watchdog counts presents, which run Speed times faster.
         $env:ROGUESQ_NAV_STEP_BUDGET = if ($NavBudget -gt 0) { "$NavBudget" } else { "$(1200 * [Math]::Max(1, $speedNow))" }

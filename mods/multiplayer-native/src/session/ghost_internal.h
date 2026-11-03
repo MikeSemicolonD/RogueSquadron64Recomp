@@ -294,6 +294,10 @@ struct Ghost {
     uint32_t obj_last_seq = 0;
     uint32_t obj_applied = 0;
 
+    // The partner left while both were in the menus (ms, -1 none): mission and craft select show partner_left_text, then back out to the main menu.
+    int64_t partner_left_ms = -1;
+    std::string partner_left_text;
+
     // Client: its dropped objective writes until a host snapshot shows them, applied once the host is gone (obj_settled).
     rs64::ls::ObjectiveLedger obj_ledger;
     bool obj_settled = false;
