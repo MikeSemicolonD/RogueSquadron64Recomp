@@ -1,4 +1,4 @@
-#include "mp_core.h"
+#include "core/mp_core.h"
 #include <algorithm>
 #include "check.h"
 #include <cstdio>
@@ -477,16 +477,29 @@ static void test_puppet_blends_small_errors_and_snaps_big_ones() {
     CHECK(p.step(1.0 + 1.0 / 30, 1.0f / 30).pos.x == 100.0f);
 }
 
-static void test_skip_share_sends_local_skips_but_not_its_own_echo() {
+static void test_play_clock_steps_evenly_through_uneven_frames() {
+    PlayClock c;
+    // The first frame starts on wall time.
+    CHECK(c.advance(10.0, 1.0 / 30) == 10.0);
+    // Frames arriving 10 ms early or late still step about one game frame, only easing toward wall time.
+    const double a = c.advance(10.0 + 1.0 / 30 + 0.010, 1.0 / 30);
+    CHECK(a > 10.0 + 1.0 / 30 && a < 10.0 + 1.0 / 30 + 0.002);
+    const double b = c.advance(10.0 + 2.0 / 30 - 0.010, 1.0 / 30);
+    CHECK(b > a + 1.0 / 30 - 0.003 && b < a + 1.0 / 30 + 0.001);
+    // A long gap (a pause) jumps to wall time.
+    CHECK(c.advance(20.0, 1.0 / 30) == 20.0);
+}
+
+static void test_skip_share_stops_once_the_skip_took() {
+    // One full pulse, then landed (the crawl and launch count no skip): nothing carries into the loading or the next scene.
     SkipShare k;
-    CHECK(!k.on_local(false, 0.0));
-    CHECK(k.on_local(true, 0.0));
-    // A skip this side made by pressing START for the other player is not sent back.
     k.on_remote(0x0101);
     CHECK(k.press(1.0, true, 0x0101));
-    CHECK(!k.on_local(true, 1.2));
-    CHECK(!k.press(1.3, false, 0x0101));
-    CHECK(k.on_local(true, 1.0 + SkipShare::kEchoS + 0.5));
+    CHECK(!k.pulsed(1.0 + SkipShare::kPulseS * 0.5));
+    CHECK(k.pulsed(1.0 + SkipShare::kPulseS * 1.5));
+    k.landed();
+    CHECK(!k.press(1.0 + SkipShare::kPulseS * 2.5, true, 0x0101));
+    CHECK(!k.pulsed(2.0));
 }
 
 static void test_skip_share_presses_start_until_the_cinematic_ends() {
@@ -721,7 +734,8 @@ int main() {
     test_puppet_blends_small_errors_and_snaps_big_ones();
     test_puppet_axes_stay_orthonormal_through_a_reversal();
     test_puppet_turns_smoothly_for_small_heading_changes();
-    test_skip_share_sends_local_skips_but_not_its_own_echo();
+    test_skip_share_stops_once_the_skip_took();
+    test_play_clock_steps_evenly_through_uneven_frames();
     test_skip_share_presses_start_until_the_cinematic_ends();
     test_skip_share_lands_on_its_own_scene();
     test_mesh_loaded_walks_the_name_hash();

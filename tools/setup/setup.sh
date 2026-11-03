@@ -10,6 +10,11 @@ DECOMP="$(dirname "$REPO")/rogue_squadron64"
 PACKAGES=(build-essential cmake ninja-build git python3 zip libsdl2-dev libvulkan-dev libgtk-3-dev gcc-mips-linux-gnu binutils-mips-linux-gnu)
 ROM_SHA1=ed42eed1ee2db646ff7ef94ba8c5421d164a4f0d
 
+# One compile job per 1.5 GB of RAM: the larger recompiled files need about 1 GB each, and a 2 GB Raspberry Pi freezes at nproc jobs.
+JOBS=$(( $(awk '/MemTotal/ {print $2}' /proc/meminfo 2> /dev/null || echo 0) / 1500000 ))
+[ "$JOBS" -ge 1 ] || JOBS=1
+[ "$JOBS" -le "$(nproc)" ] || JOBS="$(nproc)"
+
 step() { printf '\n== %s\n' "$*"; }
 fail() { printf '\nSetup stopped: %s\n' "$*" >&2; exit 1; }
 
@@ -17,8 +22,17 @@ cd "$REPO"
 
 step "Checking packages"
 
+MIPS_ARGS=()
+
 if command -v dpkg-query > /dev/null; then
     missing=()
+
+    # Ubuntu packages MIPS GCC only for x86-64 hosts; elsewhere (arm64) Clang compiles MIPS, named so it picks the target itself.
+    if ! apt-cache show gcc-mips-linux-gnu > /dev/null 2>&1; then
+        PACKAGES=("${PACKAGES[@]/gcc-mips-linux-gnu/clang}")
+        MIPS_ARGS=(-DMIPS_GCC="$REPO/build-tools/mips-linux-gnu-clang" -DMIPS_LD=/usr/bin/mips-linux-gnu-ld)
+    fi
+
     arch="$(dpkg --print-architecture)"
 
     # Multiarch systems list one line per installed architecture.
@@ -67,7 +81,11 @@ python3 tools/re/make_elf_from_syms.py || fail "make_elf_from_syms.py failed"
 
 step "Building N64Recomp, RSPRecomp and RecompModTool"
 cmake -S lib/N64ModernRuntime/N64Recomp -B build-tools -DCMAKE_BUILD_TYPE=Release || fail "configuring the tools failed"
-cmake --build build-tools --target N64RecompCLI RSPRecomp RecompModTool -j"$(nproc)" || fail "building the tools failed"
+cmake --build build-tools --target N64RecompCLI RSPRecomp RecompModTool -j"$JOBS" || fail "building the tools failed"
+
+if [ ${#MIPS_ARGS[@]} -gt 0 ]; then
+    ln -sf "$(command -v clang)" build-tools/mips-linux-gnu-clang
+fi
 
 step "Recompiling the game code"
 build-tools/N64Recomp rogue_squadron.toml || fail "N64Recomp failed"
@@ -79,7 +97,7 @@ if [ ! -f build/factor5_ucode/musyx_audio_recompiled.c ]; then
 fi
 
 step "Building the code mods"
-cmake -DPLATFORM=desktop -DRECOMP_MOD_TOOL="$REPO/build-tools/RecompModTool" -P tools/mods/build_code_mods.cmake || fail "building the code mods failed"
+cmake -DPLATFORM=desktop -DRECOMP_MOD_TOOL="$REPO/build-tools/RecompModTool" "${MIPS_ARGS[@]}" -P tools/mods/build_code_mods.cmake || fail "building the code mods failed"
 
 step "Building the game (Release)"
 
@@ -88,8 +106,8 @@ if [ -f build/CMakeCache.txt ] && ! grep -qx 'CMAKE_GENERATOR:INTERNAL=Ninja Mul
     rm -rf build/CMakeCache.txt build/CMakeFiles
 fi
 
-cmake -B build -G "Ninja Multi-Config" -DN64RECOMP_EXE="$REPO/build-tools/N64Recomp" || fail "configuring the game failed"
-cmake --build build --config Release --target RogueSquadron64Recomp || fail "building the game failed"
+cmake -B build -G "Ninja Multi-Config" -DN64RECOMP_EXE="$REPO/build-tools/N64Recomp" "${MIPS_ARGS[@]}" || fail "configuring the game failed"
+cmake --build build --config Release --target RogueSquadron64Recomp -j"$JOBS" || fail "building the game failed"
 cp rogue_squadron.z64 build/Release/
 
 step "Done"

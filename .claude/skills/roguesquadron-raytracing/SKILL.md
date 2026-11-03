@@ -1,6 +1,6 @@
 ---
 name: roguesquadron-raytracing
-description: Ray-traced lighting in RogueSquadron64Recomp (RT64's RS64 light pass on top of the game's prelit N64 image). Use for ANY work on RT lights, light presets (roguesq_lights.json, src/video/default_lights.json, the F1 Lights tab), mesh / sprite / level / lamp presets, explosion and effect-sprite lights, engine exhausts, blinking lamps, the RS64 Explorer's Lights panel and shaded preview, RT shadows, or when a light "does not show", "is in the wrong place", "does not blink", "is too big", or the GPU hangs after a lighting change. Covers the pipeline (F5 parse -> Candidate -> Resolved -> 32 nearest -> RS64LightsPS), every coordinate space and unit, how presets key onto meshes / sprites / levels, the game data behind effects and lamps, the explorer side, and a debugging method that avoids build-run-guess loops. Triggers on: ROGUESQ_RT_LIGHTS, ROGUESQ_LOG_RT_LIGHTS, fillRS64Lights, rs64lights::, RS64LightsPS, PresetLights, spr:, meshKeyName, cameraUnits, lamp preset, glw hardpoint, LAS texture, lights.js, rtLit, lightsPreviewTick. Complements roguesquadron-debug (crash/hang triage), rt64-integration (renderer internals) and renderdoc-mcp (GPU captures).
+description: Ray-traced lighting in RogueSquadron64Recomp (RT64's RS64 light pass on top of the game's prelit N64 image). Use for ANY work on RT lights, light presets (roguesq_lights.json, src/video/default_lights.json, the F1 Lights tab), mesh / sprite / level / lamp presets, explosion and effect-sprite lights, engine exhausts, blinking lamps, the RS64 Explorer's Lights panel and shaded preview, RT shadows, or when a light "does not show", "is in the wrong place", "does not blink", "is too big", or the GPU hangs after a lighting change. Covers the pipeline (F5 parse -> Candidate -> Resolved -> 64 nearest -> RS64LightsPS), every coordinate space and unit, how presets key onto meshes / sprites / levels, the game data behind effects and lamps, the explorer side, and a debugging method that avoids build-run-guess loops. Triggers on: ROGUESQ_RT_LIGHTS, ROGUESQ_LOG_RT_LIGHTS, fillRS64Lights, rs64lights::, RS64LightsPS, PresetLights, spr:, meshKeyName, cameraUnits, lamp preset, glw hardpoint, LAS texture, lights.js, rtLit, lightsPreviewTick. Complements roguesquadron-debug (crash/hang triage), rt64-integration (renderer internals) and renderdoc-mcp (GPU captures).
 ---
 
 # RogueSquadron64Recomp — Ray-Traced Lighting
@@ -51,7 +51,7 @@ F5 GBI parse (gbi/rt64_gbi_f3dfactor5.cpp, rt64_gbi_f5_rdpstate.cpp)
 render thread: FramebufferRenderer::fillRS64Lights (render/rt64_framebuffer_renderer.cpp)
   -> resolve each Candidate to camera space (world[transformIndex], or CameraSpace)
   -> level presets (map space -> camera via the terrain frame), mesh/sprite presets already candidates
-  -> lamp gating (lamp presets vs lamp marks), dedupe (same colour within 1 unit), keep the 32 nearest
+  -> lamp gating (lamp presets vs lamp marks), dedupe (same colour within 1 unit), keep the 64 nearest
   -> RS64LightsCB (shared/rt64_rs64_lights_cb.h) -> shaders/RS64LightsPS.hlsl (additive over the prelit frame)
 ```
 
@@ -161,7 +161,7 @@ frames are converted into the texture pool; manifest +8 is not a load address).
 
 - Lights are authored data, not code: presets keyed to content (meshes, sprite frames, levels) so artists/modders
   tune without rebuilding; hot reload makes tuning a seconds-long loop.
-- Budget: cap the light list (32 nearest), dedupe coincident lights, cap per-light reach (sprite max radius) so a
+- Budget: cap the light list (64 nearest), dedupe coincident lights, cap per-light reach (sprite max radius) so a
   close explosion cannot light the whole screen.
 - Tie emissive visuals to their lights (sprite lights fade with PRIM alpha; lamp lights follow the lamp draw) instead
   of steady approximations, or the lighting lies about what the player sees.

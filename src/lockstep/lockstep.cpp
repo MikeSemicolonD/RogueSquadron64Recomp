@@ -31,7 +31,7 @@ namespace {
 
 using namespace rs64::ls;
 
-enum class Mode { Off, Record, Replay, Delay };
+enum class Mode { Off, Record, Replay };
 
 struct State {
     Mode mode = Mode::Off;
@@ -43,7 +43,6 @@ struct State {
     std::string hash_path;
     FILE* dump = nullptr;
     std::vector<FrameInput> frames;
-    std::unique_ptr<DelayLine> delay;
     uint8_t throttle_q = 0xFF;
     float cruise = 0.0f;
 
@@ -115,17 +114,8 @@ Mode mode() {
 
         // RECORD together with REPLAY is the re-record mode, not a conflict.
         const bool record = recomp::dbg::env_str("ROGUESQ_LS_RECORD") != nullptr && !replay;
-        const bool delay = recomp::dbg::env_int("ROGUESQ_LS_INPUT_DELAY", 0) > 0;
-        const Mode won = replay ? Mode::Replay : record ? Mode::Record : delay ? Mode::Delay : Mode::Off;
 
-        if (int(replay) + int(record) + int(delay) > 1)
-        {
-            static const char* const names[] = {"off", "record", "replay", "delay"};
-
-            fprintf(stderr, "[ls] several lockstep modes set; using %s\n", names[(int)won]);
-        }
-
-        return won;
+        return replay ? Mode::Replay : record ? Mode::Record : Mode::Off;
     }();
 
     return m;
@@ -236,7 +226,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
     s.missions++;
 
-    if (s.missions > 1 && s.mode != Mode::Delay) {
+    if (s.missions > 1) {
         if (s.active)
         {
             end_session("second initMission (one recording = one mission attempt)");
@@ -320,12 +310,6 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         s.hash = open_hash(s.hash_path);
 
         fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u%s\n", s.frames.size(), h.level, h.craft, h.seed, rerec ? " (re-recording)" : "");
-    } else {
-        const int delay = clamp_delay(recomp::dbg::env_int("ROGUESQ_LS_INPUT_DELAY", 0));
-        s.delay = std::make_unique<DelayLine>(delay);
-        ww(rdram, 0x80003470u, seed);
-
-        fprintf(stderr, "[ls] input delay %d frames, fixed dt\n", delay);
     }
 
     s.active = true;
@@ -1155,18 +1139,6 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         if (s.rerecord && s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
             fflush(s.rec);
-        }
-    } else {
-        uint8_t pad[6];
-
-        for (int i = 0; i < 6; ++i) {
-            pad[i] = rb(rdram, 0x80130B88u + i);
-        }
-
-        s.delay->push_pop(pad);
-
-        for (int i = 0; i < 6; ++i) {
-            wb(rdram, 0x80130B88u + i, pad[i]);
         }
     }
 }

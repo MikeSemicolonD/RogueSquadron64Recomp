@@ -174,7 +174,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
+            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android, plus RecompModTool and the relay server for Windows x64 and Linux x64) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
         },
         {
             "label": "Package: RecompModTool (Windows + Linux)",
@@ -259,6 +259,20 @@
             "detail": "Builds rs64_relay, then opens it in its own console window on UDP 27070, run from build/<config> (its rs64_relay.cfg is saved there). Type help in that window for commands; quit or Ctrl+C stops it. Point the game at it with \"relay_server\": \"127.0.0.1\" in roguesq_net.json (docs/guides/relay-server.md)."
         },
         {
+            "label": "Debug: Full dump of running game(s)",
+            "type": "shell",
+            "command": "& .\\tools\\debug\\dump-game.ps1",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Full-memory dump (RDRAM included) of every running RogueSquadron64Recomp.exe, even a frozen one, into dumps/crash-dumps/crash_<time>_pid<pid>_external.dmp. F12 writes a small dump without RDRAM; this one lets tools/debug/reconstruct-freeze.py rebuild the game threads and queues."
+        },
+        {
             "label": "Record: Input recording (pick level / craft)",
             "type": "shell",
             "command": "& .\\tools\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
@@ -285,6 +299,20 @@
             },
             "problemMatcher": [],
             "detail": "Online co-op pair on localhost: the host (left) replays the level's solo recording (newest <mission>_<timestamp>.rec unless overridden), you fly the client (right) and your input is saved as <mission>_coop_client_<timestamp>.rec. Close the client window to stop. Craft None = the host recording's craft."
+        },
+        {
+            "label": "Co-op: Split-screen pair (two players, one PC)",
+            "type": "shell",
+            "command": "$c = '${input:rsCraft}'; if ($c -eq '') { $c = -1 }; & .\\tools\\debug\\lockstep\\run-mp.ps1 -Tag split -Split -Level ${input:rsRecLevel} -HostCraft $c -ClientCraft $c",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Online co-op pair on localhost in borderless widescreen halves: host on top, client below. The terminal asks player 1, then player 2, to press their controller (or a key); each window then reads only that device. Close the bottom window to stop. Craft None = the level's own."
         },
         {
             "label": "IDE: Refresh clangd compile database",
@@ -992,8 +1020,8 @@
         {
             "id": "releaseTargets",
             "type": "promptString",
-            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, macos, android",
-            "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386"
+            "description": "Targets, comma-separated: windows-x64, windows-x86, linux-x64, linux-arm64, linux-armhf, linux-i386, macos, android, modtool, relay",
+            "default": "windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386,modtool,relay"
         },
         {
             "id": "modtoolTargets",

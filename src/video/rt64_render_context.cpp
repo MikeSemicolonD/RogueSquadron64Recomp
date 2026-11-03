@@ -31,7 +31,7 @@ extern SDL_Window* g_sdl_window;
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
 #include "util/debug_logs.h"
-#include "game/upstream_compat.h"      // rs64_vi_driven, rs64_fb_guards_mask, g_active_overlay, g_last_swap_fb
+#include "game/upstream_compat.h"      // rs64_fb_guards_mask, g_active_overlay, g_last_swap_fb
 #include "game/hook_helpers.h"         // g_boot_pulse_start, g_current_scene, rs64_cine_iter_get, rs64_neutralize_matpool_cimg
 #include "game/game_state.h"           // rs64_state_poll, rs64_state_current_id
 #include "game/nav_sequencer.h"        // rs64_nav_set_target, rs64_nav_tick
@@ -267,21 +267,29 @@ extern "C" bool rs64_render_resume_surface(void)
 #endif
 }
 
-// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
-// ROGUESQ_CULL_WIDEN=0 disables.
-extern "C" float rs64_cull_widen(void)
+// RT64's widescreen widening of the 4:3 view (resolution scale x over y): 1 in 4:3.
+extern "C" float rs64_aspect_scale(void)
 {
 
-    static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
     RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
 
-    if (!s_on || !app || !app->presentQueue) return 1.0f;
+    if (!app || !app->presentQueue) return 1.0f;
 
     const hlslpp::float2 rs = app->presentQueue->ext.sharedResources->resolutionScale;
     const float y = float(rs.y);
     const float w = (y > 0.0f) ? float(rs.x) / y : 1.0f;
 
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
+}
+
+// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
+// ROGUESQ_CULL_WIDEN=0 disables.
+extern "C" float rs64_cull_widen(void)
+{
+
+    static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
+
+    return s_on ? rs64_aspect_scale() : 1.0f;
 }
 
 // Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
@@ -786,11 +794,6 @@ public:
 
         if (!app) return;
 
-        static const int s_task_delay_ms = env_int("ROGUESQ_GFX_TASK_DELAY_MS", 0);
-
-        if (s_task_delay_ms > 0)
-            std::this_thread::sleep_for(std::chrono::milliseconds(s_task_delay_ms));
-
         dump_ucode_once(task);
         log_task(task);
 
@@ -823,7 +826,6 @@ public:
 
         apply_vi_overrides();
         log_transition_lum();
-        drive_buffer_arbiter();
         drive_boot_target();
         poll_gamestate();
 
@@ -1543,76 +1545,13 @@ private:
         if (s_vfix && vi->VI_Y_SCALE_REG == 0x400) vi->VI_Y_SCALE_REG = 0x800;
     }
 
-    // Host-side buffer-arbiter consumer for the legacy host-paced loop: advances the slot that
-    // just went on screen 4 PRESENTED -> 5 DISPLAYED and frees the previous one (5 -> 0, posting
-    // the free token on 0x80128CF0). Never touches producer-owned states 2/3. Off when VI-driven;
-    // ROGUESQ_FORCE_BUFFER_PROGRESS=0 disables. ROGUESQ_DUMP_ARBITER=1 logs.
-    void drive_buffer_arbiter()
-    {
-
-        static const bool s_on = env_on("ROGUESQ_FORCE_BUFFER_PROGRESS", true) && !rs64_vi_driven();
-
-        if (!s_on || !app->core.RDRAM) return;
-
-        static const bool s_dump = env_on("ROGUESQ_DUMP_ARBITER");
-        constexpr uint32_t STATE_BASE = 0x128EAA, COUNT_ADDR = 0x128EAD, FBPTR_BASE = 0x128E98;
-        const uint8_t total = rd8(COUNT_ADDR);
-
-        if (total == 0 || total > 8 || !g_last_swap_fb) return;
-
-        const uint32_t want = g_last_swap_fb & 0x03FFF000u;
-        int matched = -1;
-
-        for (uint8_t i = 0; i < total; i++)
-        {
-            if ((rd32(FBPTR_BASE + 4u * i) & 0x03FFF000u) == want) { matched = (int)i; break; }
-        }
-
-        static int s_prev = -1;
-        static unsigned s_tick = 0;
-        const bool log = s_dump && (++s_tick & 63) == 1;
-
-        if (matched < 0)
-        {
-            if (log) { fprintf(stderr, "[arbiter-host] no slot matches swap fb 0x%08X (miss #%u)\n", (unsigned)g_last_swap_fb, s_tick); fflush(stderr); }
-
-            return;
-        }
-
-        const uint8_t mst = rd8(STATE_BASE + (uint32_t)matched);
-        uint8_t pst = 0xFF;
-        bool did45 = false, did50 = false;
-
-        if (mst == 4) { wr8(STATE_BASE + (uint32_t)matched, 5); did45 = true; }
-
-        if (s_prev >= 0 && s_prev != matched) {
-            pst = rd8(STATE_BASE + (uint32_t)s_prev);
-
-            if (pst == 5)
-            {
-                wr8(STATE_BASE + (uint32_t)s_prev, 0);
-                did50 = true;
-                ultramodern::enqueue_external_message((PTR(OSMesgQueue))0x80128CF0u, (OSMesg)0, false, false);
-            }
-        }
-
-        if (log)
-        {
-            fprintf(stderr, "[arbiter-host] match slot=%d st=%u prev=%d pst=%u total=%u 45=%d 50=%d\n",
-                    matched, mst, s_prev, pst, total, did45, did50);
-            fflush(stderr);
-        }
-
-        s_prev = matched;
-    }
-
     // ROGUESQ_BOOT_TARGET=menu | demo:N | level:<id>[,craft]. menu/demo fast-forward the intro
     // and press START (the game's own title skip) once the cinematic overlay is up, stopping when
     // the menu overlay is resident. level:<id> launches from the game thread (rs64_boot_target_level
     // in upstream_compat.cpp), so it gets the fast-forward only.
     // ROGUESQ_CINE_FASTFWD=N adds N per present to the submitted-frame counter the cinematic times from (0x8011A890) until
     // the cutscene's end frame, so the timeline completes through the game's own logic.
-    // ROGUESQ_SKIP_DEMO=<n> (alias ROGUESQ_SKIP_TO_JADEMOON=1 for n=1) pins the attract demoId
+    // ROGUESQ_SKIP_DEMO=<n> pins the attract demoId
     // (0x80130B54) and its cycle byte so that demo loops. 0=Tatooine 1=JadeMoon 2=KileII
     // 3=Taloraan 4=Fest 5=TrenchRun.
     void drive_boot_target()
@@ -1646,7 +1585,6 @@ private:
         static const int s_skip_demo = [](){
 
             if (env_str("ROGUESQ_SKIP_DEMO")) return env_int("ROGUESQ_SKIP_DEMO");
-            if (env_on("ROGUESQ_SKIP_TO_JADEMOON")) return 1;
 
             return (s_mode == BOOT_DEMO) ? s_demo_arg : -1;
         }();

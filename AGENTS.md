@@ -196,7 +196,6 @@ All trace categories are off by default and there is no catch-all log switch. Th
 |---|---|
 | `ROGUESQ_GFX_API=vulkan\|d3d12\|d3d11\|d3d10` | Force the graphics API (default auto) |
 | `ROGUESQ_HLE_DEV_MODE=0\|1` | RT64 ImGui inspector on F1 (default on in Debug, off in Release) |
-| `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-paced frame loop instead of the hardware VI protocol (the stability baseline, default on) |
 | `ROGUESQ_F5_NATIVE=0` | Parse F5 display lists without emitting geometry |
 | `ROGUESQ_NO_AUDIO_UCODE=1` | Silent audio stub instead of the MusyX synth |
 | `ROGUESQ_DUMP_PCM=<path>\|1` | Write the synth output to a 22050 Hz stereo WAV (`1` = `dumps/wav/capture.wav`) |
@@ -211,7 +210,7 @@ With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mod
 
 ```
 src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
-  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), debug_pollers (ROGUESQ_LOG_STATE/PHASE threads), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp, built into Debug only unless `-DRS64_MCP=ON`)
+  ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp, built into Debug only unless `-DRS64_MCP=ON`)
   ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
   ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
   ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
@@ -222,7 +221,10 @@ src/                                    Host code; the include root, so includes
 mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
 patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
 mods/multiplayer-native/                Online co-op as a native mod, always built by the game's CMake (the exe has no multiplayer code)
-  ├── src/                              ghost*.cpp (session, lobby, HUD), net_*.cpp (ENet6), relay_client.cpp (rs64_relay transport), coop_imposter.cpp, mp_core.cpp (imposter flight model, puppet, lobby rules), mp_register.cpp + mp_host.h (host-API registrations, its only route to the game)
+  ├── src/                              mp_register.cpp + mp_host.h (host-API registrations, its only route to the game), mp_mod.cpp (rs64_mod_init)
+  │   ├── session/                      ghost*.cpp (session, lobby, HUD), world_sync.cpp (objectives, damage, power-ups, triggers), tow_cable.cpp, coop_imposter.cpp
+  │   ├── net/                          messages.cpp (wire format), lobby.cpp (handshake, status lines, discovery), editors.cpp (text rows), net_link.cpp (ENet6), relay_client.cpp (rs64_relay transport)
+  │   └── core/                         mp_core.cpp (pure logic with unit tests: imposter flight model, puppet, lobby rules)
   ├── tests/                            mp_core_test, net_core_test, net_link_test (run by rs64_unit_tests)
   ├── mod.toml, tools/                  Manifest plus the per-player data relocation as [[patches.instruction]] (RecompModTool writes mod.json / instruction_patches.json at build time) and its generator
   └── lib/enet6/, lib/miniupnp/         Submodules for the transport, built only for this mod
@@ -257,7 +259,7 @@ The forked submodules under `lib/` carry intentional `if(false) fprintf(...)` de
 ### Crash / hang triage
 
 1. **Crash**: the handlers in `src/main/crash.cpp` (SEH, SIGABRT, F12) write a full-memory `dumps/crash-dumps/crash_*.dmp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
-2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` captures the running process even when the window is "Not Responding" (F12 won't fire if the message pump is starved). Run `tools/debug/reconstruct-freeze.py` on it (blocked game threads and their queues, from RDRAM) and `tools/debug/host-stacks.py` (symbolized host stacks; Debug build, refuses on a stale exe/PDB).
+2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` (VS Code task "Debug: Full dump of running game(s)") captures every running instance with RAM, even when the window is "Not Responding" (F12 writes no RAM, and won't fire if the message pump is starved); `-Id <pid>` picks one. Run `tools/debug/reconstruct-freeze.py` on it (blocked game threads and their queues, from RDRAM) and `tools/debug/host-stacks.py` (symbolized host stacks; Debug build, refuses on a stale exe/PDB).
 3. **Triage threads**: `python tools/debug/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
 
 To read a dump from the shell, use WinDbg's console debugger (`winget install Microsoft.WinDbg`): `cdbX64.exe -z <dmp> -y build\Debug -c "~*k;q"` prints every thread's stack. The Windows SDK's own `cdb.exe` may not start (its `dbghelp.dll` was replaced by a newer, incompatible one).
@@ -360,7 +362,7 @@ This game uses a Factor 5-customized F3DEX-derived ucode. The RT64 profile `GBI_
 | `0x80` | unused | Chunk header (next-chunk pointer in 24-bit w0); never executed by the ucode, used by the HLE to record the chunk base | `op_80_header` |
 | `0x02` | F3D `G_RDPHALF_2` | Per-vertex RGBA colors: DMA `(w0&0xFFFF)+1` bytes from w1 into DMEM 0xB70 | `op_02_colors` |
 
-Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content linearly from +8; at +0x108, or on `0xB5`, it continues in the chunk named by the header's first word. `0x06` pushes and calls, `0x07` branches, and `0xB8` pops (or ends the task at depth 0). Models render as CI4 textures at palette bank 15. Per-face UVs are raw values scaled by the per-material `03 82` texcoord scale (16.16, DMEM 0x140; `ROGUESQ_F5_TC_SCALE=0` disables it for A/B). Use `f5_dl_walk.py --tex` to compare.
+Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content linearly from +8; at +0x108, or on `0xB5`, it continues in the chunk named by the header's first word. `0x06` pushes and calls, `0x07` branches, and `0xB8` pops (or ends the task at depth 0). Models render as CI4 textures at palette bank 15. Per-face UVs are raw values scaled by the per-material `03 82` texcoord scale (16.16, DMEM 0x140). Use `f5_dl_walk.py --tex` to compare.
 
 ### Audio — MusyX synth and MORT voice
 

@@ -1,5 +1,3 @@
-src/audio/audio.cpp: comment after code: dump(0x3B0);  // ROM = 40850800 03E00008 40871000 400A3000 (
-src/audio/audio.cpp: comment after code: dump(0x3E8);  // ROM = 00000000 4B271094 C9231800 4B070850 (
 src/audio/audio.cpp: comment after code: for (uint32_t k = 0; k < 0x100; k++) if (rdram[(vpp + k) ^ 3
 src/audio/audio.cpp: comment after code: size_t frames = SDL_GetQueuedAudioSize(audio_device) / 4;  /
 src/audio/audio.cpp: comment after code: static volatile uint32_t g_audtask_n = 0;  // M_AUDTASK subm
@@ -7,11 +5,9 @@ src/audio/audio.cpp: comment after code: uint32_t vp2 = vpp + 0x100;
 src/audio/audio.cpp: comment block over 2 lines: // ---------------------------------------------------------
 src/audio/audio.cpp: comment block over 2 lines: // Capture the MusyX audio ucode's OSTask fields once — thes
 src/audio/audio.cpp: comment block over 2 lines: // Catch-all stub for unrecognised task types. Returning Bro
-src/audio/audio.cpp: comment block over 2 lines: // Compare the LIVE synth ucode (RAM at OSTask.ucode) vs wha
 src/audio/audio.cpp: comment block over 2 lines: // Deepen the game's audio target. ultramodern feeds this to
 src/audio/audio.cpp: comment block over 2 lines: // Did the synth produce ANY internal signal? Scan its DMEM 
 src/audio/audio.cpp: comment block over 2 lines: // Don't churn the device when the rate hasn't changed — eac
-src/audio/audio.cpp: comment block over 2 lines: // EXPERIMENT (ROGUESQ_BRIDGE_WORD2): the CPU pipeline write
 src/audio/audio.cpp: comment block over 2 lines: // MusyX gets its work from the command list at data_ptr (NO
 src/audio/audio.cpp: comment block over 2 lines: // Probe the synth's OWN output buffer right after synthesis
 src/audio/audio.cpp: comment block over 2 lines: // Production-rate gauge: frames/sec actually produced vs th
@@ -33,18 +29,15 @@ src/game/game_state.h: comment after code: uint32_t addr;      // KSEG0 (0x80xxx
 src/game/game_state.h: comment after code: uint32_t rs64_state_cutscene_skips(void);    // cutscenes th
 src/game/game_state.h: comment after code: void rs64_state_poll(const uint8_t* rdram);   // reclassify;
 src/game/hook_helpers.cpp: comment after code: if (op == 0xE4 || op == 0xE5) {   // TEXRECT, 24 bytes
-src/game/hook_helpers.cpp: comment after code: if (v) timeBeginPeriod(1);   // so Sleep(33) is not quantize
 src/game/hook_helpers.cpp: comment after code: uint32_t img = (w1 & 0xFFFFFFu) | 0x80000000u;   // RDP addr
 src/game/hook_helpers.cpp: comment block over 2 lines: // FB-guards bit 1 (default off): rewrite any G_SETCIMG whos
 src/game/hook_helpers.cpp: comment block over 2 lines: // Level terrain cell budget scale, evaluated at each level 
 src/game/hook_helpers.cpp: comment block over 2 lines: // ROGUESQ_DUMP_FRAME_DL=N: dump the opcode stream of gfx ta
-src/game/hook_helpers.cpp: comment block over 2 lines: // ROGUESQ_MEDAL_PROBE=1: on EVERY gfx task, scan the DL for
 src/game/hook_helpers.cpp: comment block over 2 lines: // tickFormatMessageWorker sends every reply as a pointer to
 src/game/hook_helpers.cpp: two statements on one line: if (comma && comma[1]) { int cc = std::atoi(comma + 1); if (
 src/game/hook_helpers.cpp: two statements on one line: if (lrx/4 > tr_maxx) tr_maxx = lrx/4; if (lry/4 > tr_maxy) t
 src/game/hook_helpers.cpp: two statements on one line: if (ulx/4 < tr_minx) tr_minx = ulx/4; if (uly/4 < tr_miny) t
 src/game/hook_helpers.h: comment block over 2 lines: // hook_helpers.h — public C-linkage surface of hook_helpers
-src/game/menu_config.cpp: comment after code: constexpr int      SND_CH_FIRST = 3, SND_CH_LAST = 7;      /
 src/game/menu_config.cpp: comment after code: constexpr int      VOL_MAX   = 0x80;                       /
 src/game/menu_config.cpp: comment after code: constexpr int MAX_ENTRIES = 8;                      // menu_
 src/game/menu_config.cpp: comment after code: constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte 
@@ -64,10 +57,8 @@ src/game/menu_config.cpp: comment after code: std::string leave_action; // Subme
 src/game/menu_config.cpp: comment after code: std::string menu;        // named location (main_menu, game_
 src/game/menu_config.cpp: comment after code: std::string mod_id;      // owning mod (for @export resoluti
 src/game/menu_config.cpp: comment after code: std::string page;        // Submenu: the page it opens; page
-src/game/menu_config.cpp: comment after code: std::string s_active_page;              // page currently sh
 src/game/menu_config.cpp: comment after code: std::string title;       // Submenu: the opened page's title
 src/game/menu_config.cpp: comment after code: std::string transition;  // Front-end action: also run the n
-src/game/menu_config.cpp: comment after code: uint8_t     s_page_parent = MENU_MAIN;  // menu to return to
 src/game/menu_config.h: comment block over 2 lines: // Host entry points for the custom front-end menu entries, 
 src/game/nav_sequencer.h: comment after code: bool rs64_nav_consume(uint16_t* buttons, float* x, float* y)
 src/game/nav_sequencer.h: comment after code: struct RsNavTarget { RsNavKind kind; int a; int b; int c = -
@@ -84,13 +75,11 @@ src/game/upstream_compat.cpp: comment after code: case 1: load_overlays(0x0010C2
 src/game/upstream_compat.cpp: comment after code: case 2: load_overlays(0x00137580, 0x800A5130, 0x0000B810); b
 src/game/upstream_compat.cpp: comment after code: extern void print_stack_with_symbols(void** frames, unsigned
 src/game/upstream_compat.cpp: comment after code: gpr buf_ptr = ctx->r4;   // full gpr so the sign-extended ad
-src/game/upstream_compat.cpp: comment after code: if (s_nb && !rs64_vi_driven() && (q == 0x8011A7E8u || q == 0
 src/game/upstream_compat.cpp: comment after code: int tid = (self >= 0x80000000u && self < 0x80800000u) ? (int
 src/game/upstream_compat.cpp: comment after code: static bool s_bp_white_only = false;     // ROGUESQ_DATA_BP_
 src/game/upstream_compat.cpp: comment after code: unload_overlays(0x800A5130, 0x000665A0);   // largest overla
 src/game/upstream_compat.cpp: comment after code: void dequeue_external_messages(uint8_t* rdram);         // u
 src/game/upstream_compat.cpp: comment block over 2 lines: // A graphics task is in flight from the game's REQUEST (typ
-src/game/upstream_compat.cpp: comment block over 2 lines: // Attribution-loop pacing: wait for the next host VI tick b
 src/game/upstream_compat.cpp: comment block over 2 lines: // Called from the loadOverlay (0x80000B20) hook with the ov
 src/game/upstream_compat.cpp: comment block over 2 lines: // Frame start (video queue 0x80128CF0): the game is about t
 src/game/upstream_compat.cpp: comment block over 2 lines: // No real RDP on the PC path, so feed the F5 profiler HUD's
@@ -233,20 +222,7 @@ src/main/crash.cpp: comment block over 2 lines: // Default to a lighter dump typ
 src/main/crash.cpp: comment block over 2 lines: // MSVC debug iterators call _invalid_parameter on bounds-ch
 src/main/crash.cpp: comment block over 2 lines: // Pinpoints uncaught C++ throws (notably ultramodern::threa
 src/main/crash.cpp: comment block over 2 lines: // Return 1 to SUPPRESS the abort. STL bounds-check assertio
-src/main/debug_pollers.cpp: comment after code: const uint32_t cbarr_off  = 0x11A8A4;  // D_8011A8A4..B4  (4
-src/main/debug_pollers.cpp: comment after code: const uint32_t state_off  = 0x130B10;  // D_80130B10..B40 (s
-src/main/debug_pollers.cpp: comment after code: for (int i = 0; i < 1200; ++i) {  // ~60s @ 50ms
-src/main/debug_pollers.cpp: comment after code: uint32_t cbs[4];    // 4 callback fn ptrs
-src/main/debug_pollers.cpp: comment after code: uint32_t cur_ovl   = rdram_be32_at(0x375B0);  // gCurrentLoa
-src/main/debug_pollers.cpp: comment block over 2 lines: // 12 words covers B10..B3F. asm/main/3EBA0.s reads bytes at
-src/main/debug_pollers.cpp: comment block over 2 lines: // Drain-loop diagnostic — boot thread is stuck waiting for 
-src/main/debug_pollers.cpp: comment block over 2 lines: // Periodic poll of cinematic phase state so we can see stag
-src/main/debug_pollers.cpp: comment block over 2 lines: // Periodic poll of the scene-state struct at D_80130B10 + t
-src/main/debug_pollers.cpp: comment block over 2 lines: // Periodic slot-pool snapshot every ~1 second so we can see
-src/main/debug_pollers.cpp: comment block over 2 lines: // Sound-asset data dumps — boot deadlocks in func_80097518 
-src/main/debug_pollers.cpp: comment block over 2 lines: // When slotTbl becomes valid, dump non-empty slot entries
 src/main/main.cpp: comment after code: RT64::GlobalLogFile = stderr;  // last-resort fallback
-src/main/main.cpp: comment after code: if (rs64_vi_driven()) return;   // hardware protocol: no hos
 src/main/main.cpp: comment block over 2 lines: // (Periodic mqdiag watchdog removed — mqdiag_dump lived in 
 src/main/main.cpp: comment block over 2 lines: // ---------------------------------------------------------
 src/main/main.cpp: comment block over 2 lines: // Input bindings: load roguesq_input.json next to the exe, 
@@ -254,11 +230,7 @@ src/main/main.cpp: comment block over 2 lines: // Log PE base so we can resolve 
 src/main/main.cpp: comment block over 2 lines: // On non-Windows RT64 renders through Vulkan and needs the 
 src/main/main.cpp: comment block over 2 lines: // RT64's RT64_LOG_PRINTF macro (debug builds) writes to Glo
 src/main/main.cpp: comment block over 2 lines: // SDL_syswm.h is only needed for the Win32 HWND path in cre
-src/main/main.cpp: comment block over 2 lines: // [FRAME-PACING] Host-signal the frame-sync barrier queue (
-src/main/main.cpp: comment block over 2 lines: // [FRAME-PACING] Host-signal the video-buffer drain queue (
-src/main/main.cpp: comment block over 2 lines: // [FRAME-PACING] Host-signal viRetraceHandlerThread's VI qu
 src/main/ui_panels.cpp: comment after code: static bool capture_append = false;             // Add (keep
-src/main/ui_panels.cpp: comment after code: static bool capture_snap = false;               // joystick 
 src/main/ui_panels.cpp: comment after code: static int capture_target = -1;                 // Target aw
 src/util/debug_logs.h: comment block over 2 lines: // Centralized debug-log gates for the Rogue Squadron recomp
 src/video/rt64_render_context.cpp: comment after code: app->userConfig.threePointFiltering = false;             // 
@@ -271,7 +243,6 @@ src/video/rt64_render_context.cpp: comment after code: uint32_t game_vi_origin_ 
 src/video/rt64_render_context.cpp: comment after code: video_cfg_path_ = cfgPath;                           // enab
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Erases framebuffers RT64 registered outside [0x400000, 0x
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Frame interpolation OFF by default: it smooths rigid obje
-src/video/rt64_render_context.cpp: comment block over 2 lines: // Host-side buffer-arbiter consumer for the legacy host-pac
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Menu present fix: the menu composes into a 512-wide color
 src/video/rt64_render_context.cpp: comment block over 2 lines: // One-shot RDRAM dump (un-swizzled to MIPS byte order, same
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Only redirect to a buffer that is still being drawn. The 

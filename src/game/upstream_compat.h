@@ -5,8 +5,6 @@
 #define RS64_UPSTREAM_COMPAT_H
 
 extern "C" {
-    // ROGUESQ_VI_DRIVEN_LOOP: 1 = hardware VI protocol (default), 0 = host tokens.
-    int rs64_vi_driven(void);
     // ROGUESQ_FB_GUARDS bitmask (0 = off).
     int rs64_fb_guards_mask(void);
 

@@ -26,6 +26,10 @@ set(RS64_GAME_ROM "${CMAKE_CURRENT_LIST_DIR}/../../build/Debug/rogue_squadron.z6
 set(RS64_MIPS_CFLAGS
     -mips2 -mabi=32 -O2 -G0 -mno-abicalls -fomit-frame-pointer -fno-builtin -fno-optimize-sibling-calls -fno-stack-protector
     -nostdinc -I "${RS64_MOD_SDK_DIR}" -Wall -Wextra -Wno-unused-parameter)
+# Clang (named mips-linux-gnu-clang, used where no MIPS GCC is packaged such as arm64 Ubuntu) defaults to PIC and odd single-float registers.
+if (MIPS_GCC MATCHES "clang")
+    list(APPEND RS64_MIPS_CFLAGS -fno-pic -mno-odd-spreg)
+endif()
 
 function(add_code_mod NRM_NAME)
     set(MOD_DIR "${CMAKE_CURRENT_SOURCE_DIR}")

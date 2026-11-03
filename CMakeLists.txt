@@ -92,6 +92,10 @@ if (WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     add_compile_definitions(ImTextureID=unsigned\ long\ long)
 endif()
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/rt64 ${CMAKE_BINARY_DIR}/rt64)
+# plume only borrows SDL's include path, so without this it can compile before SDL has copied its headers there.
+if (TARGET sdl_headers_copy)
+    add_dependencies(plume sdl_headers_copy)
+endif()
 
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N64ModernRuntime)
@@ -265,7 +269,6 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/audio/audio.cpp
     ${CMAKE_SOURCE_DIR}/src/main/cli.cpp
     ${CMAKE_SOURCE_DIR}/src/main/crash.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/debug_pollers.cpp
     ${CMAKE_SOURCE_DIR}/src/input/input_host.cpp
     ${CMAKE_SOURCE_DIR}/src/main/ui_panels.cpp
     ${CMAKE_SOURCE_DIR}/src/game/game_state.cpp

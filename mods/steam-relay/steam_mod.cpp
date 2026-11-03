@@ -372,10 +372,8 @@ bool Steam::available() {
         }
     }
 #endif
-    const char* appid = getenv("ROGUESQ_STEAM_APPID");
-    const std::string id = appid && *appid ? appid : "480";
-    set_env("SteamAppId", id.c_str());
-    set_env("SteamGameId", id.c_str());
+    set_env("SteamAppId", "480");
+    set_env("SteamGameId", "480");
     SteamErrMsg err = {};
 #ifdef _WIN32
     // steam_api sets up its own crash reporting: keep the game's handler (it writes dumps/crash-dumps).
@@ -408,7 +406,7 @@ bool Steam::available() {
     f_.InitRelay(utils);
     inited_ = true;
     status_ = "STEAM READY";
-    log("initialized as app " + id);
+    log("initialized as app 480");
     return true;
 }
 

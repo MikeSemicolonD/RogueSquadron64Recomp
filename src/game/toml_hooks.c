@@ -17,25 +17,12 @@ void rs64_th_cinematicLoopBody_entry(uint8_t* rdram, recomp_context* ctx)
     g_current_scene = -1;
 
     // Periodic yield to break the cinematic thread-starvation stall.
-    // ROGUESQ_DISABLE_CINE_YIELD=1 disables.
     extern void rs64_cine_yield(void);
-    static int s_disable = -1;
+    extern int rs64_dbg_hooks_on(void);
 
-    if (s_disable < 0) {
-        const char* e = getenv("ROGUESQ_DISABLE_CINE_YIELD");
-        s_disable = (e && *e && *e != '0') ? 1 : 0;
-    }
+    rs64_cine_yield();
 
-    if (!s_disable) rs64_cine_yield();
-
-    static int s_log = -1;
-
-    if (s_log < 0) {
-        const char* e = getenv("ROGUESQ_LOG_HOOKS");
-        s_log = (e && *e && *e != '0') ? 1 : 0;
-    }
-
-    if (s_log) {
+    if (rs64_dbg_hooks_on()) {
         static int s_count = 0;
         ++s_count;
 
@@ -50,22 +37,13 @@ void rs64_th_cinematicLoopBody_entry(uint8_t* rdram, recomp_context* ctx)
 // load_asset_with_malloc_flags 0x80064884
 void rs64_th_load_asset_with_malloc_flags_80064884(uint8_t* rdram, recomp_context* ctx) {
 
-    static int s_force = -1;
+    uint32_t buf_ptr = (uint32_t)ctx->r2;
 
-    if (s_force < 0) {
-        const char* e = getenv("ROGUESQ_DISABLE_EMPTY_POOL_SENTINEL");
-        s_force = (e && *e && *e != '0') ? 0 : 1;
-    }
+    if (buf_ptr >= 0x80000000u && buf_ptr < 0x80800000u) {
+        int32_t* word_ptr = (int32_t*)(rdram + (buf_ptr - 0x80000000u));
 
-    if (s_force) {
-        uint32_t buf_ptr = (uint32_t)ctx->r2;
-
-        if (buf_ptr >= 0x80000000u && buf_ptr < 0x80800000u) {
-            int32_t* word_ptr = (int32_t*)(rdram + (buf_ptr - 0x80000000u));
-
-            if (*word_ptr == 0) {
-                *word_ptr = -1;
-            }
+        if (*word_ptr == 0) {
+            *word_ptr = -1;
         }
     }
 }
@@ -86,46 +64,36 @@ void rs64_th_viRetraceHandlerThread_800198E8(uint8_t* rdram, recomp_context* ctx
     // All-displayed deadlock rescue: buffers all in state 5 with none in 1-4 is
     // an illegal steady state (5->0 demotion can't fire, producer can't alloc) =
     // the cinematic freeze. After it persists 32 consumer passes, demote the 5s
-    // to 0. r22 = buffer-state base (0x80128EAC). ROGUESQ_BUFSTUCK_RESCUE=0 disables.
-    extern char* getenv(const char*);
-    static int s_resc = -1;
+    // to 0. r22 = buffer-state base (0x80128EAC).
     static int s_persist = 0;
     static unsigned s_rescued = 0;
+    unsigned cnt = (unsigned)MEM_BU(ctx->r22, -0X1);
 
-    if (s_resc < 0) {
-        const char* e = getenv("ROGUESQ_BUFSTUCK_RESCUE");
-        s_resc = (e && e[0] == '0') ? 0 : 1;
+    if (cnt > 3) cnt = 3;
+
+    int fives = 0, inflight = 0;
+    unsigned k;
+
+    for (k = 0; k < cnt; ++k) {
+        unsigned st = (unsigned)MEM_BU(ctx->r22, -0X4 + (int)k);
+
+        if (st == 5) ++fives; else if (st >= 1 && st <= 4) ++inflight;
     }
 
-    if (s_resc) {
-        unsigned cnt = (unsigned)MEM_BU(ctx->r22, -0X1);
-
-        if (cnt > 3) cnt = 3;
-
-        int fives = 0, inflight = 0;
-        unsigned k;
-
-        for (k = 0; k < cnt; ++k) {
-            unsigned st = (unsigned)MEM_BU(ctx->r22, -0X4 + (int)k);
-
-            if (st == 5) ++fives; else if (st >= 1 && st <= 4) ++inflight;
-        }
-
-        if (cnt >= 2 && fives >= 2 && inflight == 0) {
-            if (++s_persist >= 32)
-            {
-                s_persist = 0;
-                ++s_rescued;
-
-                for (k = 0; k < cnt; ++k)
-                    if ((unsigned)MEM_BU(ctx->r22, -0X4 + (int)k) == 5) MEM_B(-0X4 + (int)k, ctx->r22) = 0;
-
-                extern void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned c, unsigned d);
-                rs64_dbg_log4("bufstuck_rescue", s_rescued, 0, 0, 0);
-            }
-        } else {
+    if (cnt >= 2 && fives >= 2 && inflight == 0) {
+        if (++s_persist >= 32)
+        {
             s_persist = 0;
+            ++s_rescued;
+
+            for (k = 0; k < cnt; ++k)
+                if ((unsigned)MEM_BU(ctx->r22, -0X4 + (int)k) == 5) MEM_B(-0X4 + (int)k, ctx->r22) = 0;
+
+            extern void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned c, unsigned d);
+            rs64_dbg_log4("bufstuck_rescue", s_rescued, 0, 0, 0);
         }
+    } else {
+        s_persist = 0;
     }
 }
 
@@ -142,21 +110,16 @@ void rs64_th_submitGfxFrame_entry(uint8_t* rdram, recomp_context* ctx)
 void rs64_th_runMenuModelViewerScreen_800C29F8(uint8_t* rdram, recomp_context* ctx)
 {
 
-    static int s_ms = -1;
+    extern int rs64_dbg_hooks_on(void);
+    extern void rs64_dbg_log4(const char*, unsigned, unsigned, unsigned, unsigned);
+    extern void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*);
+    static int n = 0;
 
-    if (s_ms < 0) { const char* e = getenv("ROGUESQ_ATTRIB_HOLD_MS"); s_ms = (e && *e) ? atoi(e) : 50; if (s_ms < 0) s_ms = 0; if (s_ms > 2000) s_ms = 2000; }
+    if (rs64_dbg_hooks_on() && ++n <= 40) {
+        rs64_dbg_log4("attrib_iter n f22x1k f24x1k", (unsigned)n, (unsigned)(ctx->f22.fl * 1000.0f), (unsigned)(ctx->f24.fl * 1000.0f), 0);
+    }
 
-    static int s_log = -1;
-
-    if (s_log < 0) { const char* e = getenv("ROGUESQ_LOG_HOOKS"); s_log = (e && *e && *e != '0') ? 1 : 0; }
-    if (s_log) { static int n = 0; ++n; if (n <= 40) { extern void rs64_dbg_log4(const char*, unsigned, unsigned, unsigned, unsigned); rs64_dbg_log4("attrib_iter n f22x1k f24x1k", (unsigned)n, (unsigned)(ctx->f22.fl*1000.0f), (unsigned)(ctx->f24.fl*1000.0f), 0); } }
-
-    static int s_force_sleep = -1;
-
-    if (s_force_sleep < 0) { const char* e = getenv("ROGUESQ_ATTRIB_HOLD_MS"); s_force_sleep = (e && *e) ? 1 : 0; }
-
-    if (s_force_sleep) { if (s_ms > 0) { extern void rs64_sleep_ms(unsigned); rs64_sleep_ms((unsigned)s_ms); } }
-    else { extern void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*); rs64_attrib_wait_vi_yield(rdram, ctx); }
+    rs64_attrib_wait_vi_yield(rdram, ctx);
 }
 
 // tickFormatMessageWorker 0x800B380C
@@ -384,6 +347,20 @@ void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx) {
 
     extern float rs64_draw_dist(void);
     ctx->f0.fl *= rs64_draw_dist();
+}
+
+// drawSubtitleText 0x80015EF8
+void rs64_th_drawSubtitleText_80015EF8(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_hud_mark_element(uint8_t*, recomp_context*);
+    rs64_hud_mark_element(rdram, ctx);
+}
+
+// refreshEffectObjectCamerasAndState 0x80053148
+void rs64_th_refreshEffectObjectCamerasAndState_80053148(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_hud_shift_radar(uint8_t*, recomp_context*);
+    rs64_hud_shift_radar(rdram, ctx);
 }
 
 // transformVec3ToNpcLocalWithScale 0x8001DDA0
@@ -700,10 +677,9 @@ void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx)
 {
 
-    static int s_off = -1;
+    extern void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*);
 
-    if (s_off < 0) { const char* e = getenv("ROGUESQ_CREDITS_NOPACE"); s_off = (e && *e && *e != '0') ? 1 : 0; }
-    if (!s_off) { extern void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*); rs64_attrib_wait_vi_yield(rdram, ctx); }
+    rs64_attrib_wait_vi_yield(rdram, ctx);
 }
 
 // menuOverlayInit entry
@@ -722,9 +698,7 @@ void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx)
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
-    if (getenv("ROGUESQ_STUB_VOICESTART")) { return 1; } if (MEM_HU(ctx->r4, 0X60) == 0) { return 1; }
-
-    return 0;
+    return MEM_HU(ctx->r4, 0X60) == 0 ? 1 : 0;
 }
 
 // musyxSynthFrame 0x80091798
@@ -736,13 +710,6 @@ void rs64_th_musyxSynthFrame_80091798(uint8_t* rdram, recomp_context* ctx) {
         ctx->r4 = ctx->r16;   // delay slot: a0 = s0
         LOOKUP_FUNC(ctx->r2)(rdram, ctx);
     }
-}
-
-// runIdleFramesAndLoadSaveData 0x8006D980
-void rs64_th_runIdleFramesAndLoadSaveData_8006D980(uint8_t* rdram, recomp_context* ctx) {
-
-    extern void rs64_idle_pace(void);
-    rs64_idle_pace();
 }
 
 // loadOverlay 0x80000B3C
@@ -769,17 +736,7 @@ void rs64_th_rs_malloc_80001C74(uint8_t* rdram, recomp_context* ctx)
 
 // saveServiceWorker 0x8006F2CC
 int rs64_th_saveServiceWorker_8006F2CC(uint8_t* rdram, recomp_context* ctx) {
-
-    static int s_enable = -1;
-
-    if (s_enable < 0) {
-        const char* e = getenv("ROGUESQ_ENABLE_F8006F2CC");
-        s_enable = (e && *e && *e != '0') ? 1 : 0;
-    }
-
-    if (!s_enable) return 1;
-
-    return 0;
+    return 1;
 }
 
 // cinematicLoopBody 0x800A6024
@@ -790,22 +747,13 @@ void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx)
     static unsigned s_watchdog_count = 0;
     rs64_cine_iter_tick(++s_watchdog_count);
 
-    // Pace this internal loop to a target FPS. ROGUESQ_CINE_TARGET_FPS=0 disables.
-    extern void rs64_cine_pace(void);
-    rs64_cine_pace();
-
     extern void rs64_cine_pause_point(uint8_t* rdram);
     rs64_cine_pause_point(rdram);
 
     // Diagnostic: iterations + gate/cineState. ROGUESQ_LOG_HOOKS=1.
-    static int s_log = -1;
+    extern int rs64_dbg_hooks_on(void);
 
-    if (s_log < 0) {
-        const char* e = getenv("ROGUESQ_LOG_HOOKS");
-        s_log = (e && *e && *e != '0') ? 1 : 0;
-    }
-
-    if (s_log) {
+    if (rs64_dbg_hooks_on()) {
         static int s_count = 0;
         int n = ++s_count;
 
@@ -1715,6 +1663,27 @@ void rs64_th_runMenuRandomBackdropScreen_800BF9E4(uint8_t* rdram, recomp_context
 
     extern void rs64_mod_levels_debrief_end(uint8_t*);
     rs64_mod_levels_debrief_end(rdram);
+}
+
+// npcWingmanUpdate 0x800D9A90: a wingman's model went into the render list
+void rs64_th_npcWingmanUpdate_800D9A90(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+    rs64_hook(41u, rdram, ctx);
+}
+
+// mainGameLoop 0x8003E138: the front end is about to start
+void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+    rs64_hook(40u, rdram, ctx);
+}
+
+// runMenuRandomBackdropScreen 0x800BFC4C: the debrief's continue check
+void rs64_th_runMenuRandomBackdropScreen_800BFC4C(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+    rs64_hook(39u, rdram, ctx);
 }
 void rs64_th_mainGameLoop_8003E424(uint8_t* rdram, recomp_context* ctx) {
 

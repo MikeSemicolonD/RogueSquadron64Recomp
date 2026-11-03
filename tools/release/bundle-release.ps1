@@ -1,10 +1,10 @@
-# Builds every release package locally into <OutDir>/<version>/ (default build/packages): Windows x64 and x86 zips, Linux x64, arm64, armhf and i386 tarballs plus AppImages and Flatpaks (WSL), the universal macOS .app zip (WSL) and the Android APK, then a SHA256SUMS.txt over the folder.
-# Usage: .\tools\release\bundle-release.ps1 [-Version v1.2] [-OutDir %USERPROFILE%\Desktop\rs64-release] [-Only windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386,macos,android] [-WslDistro Ubuntu-24.04]
+# Builds every release package locally into <OutDir>/<version>/ (default build/packages): Windows x64 and x86 zips, Linux x64, arm64, armhf and i386 tarballs plus AppImages and Flatpaks (WSL), the universal macOS .app zip (WSL), the Android APK, and RecompModTool and the relay server for Windows x64 and Linux x64, then a SHA256SUMS.txt over the folder.
+# Usage: .\tools\release\bundle-release.ps1 [-Version v1.2] [-OutDir %USERPROFILE%\Desktop\rs64-release] [-Only windows-x64,windows-x86,linux-x64,linux-arm64,linux-armhf,linux-i386,macos,android,modtool,relay] [-WslDistro Ubuntu-24.04]
 # Windows zips are staged fresh (exe, DLLs, mods from mods/platforms.json), so ROMs, saves and stale mods in build*/dist never ship.
 param(
     [string]$Version = "",
     [string]$OutDir = "",
-    [string[]]$Only = @("windows-x64", "windows-x86", "linux-x64", "linux-arm64", "linux-armhf", "linux-i386", "macos", "android"),
+    [string[]]$Only = @("windows-x64", "windows-x86", "linux-x64", "linux-arm64", "linux-armhf", "linux-i386", "macos", "android", "modtool", "relay"),
     [string]$WslDistro = "Ubuntu-24.04"
 )
 $ErrorActionPreference = "Stop"
@@ -99,6 +99,33 @@ foreach ($target in $Only) {
                 $apk = Get-ChildItem android\app\build\outputs\apk\release\*.apk | Select-Object -First 1
                 $file = Join-Path $out "RogueSquadron64Recomp-android-arm64-$Version.apk"
                 Copy-Item $apk.FullName $file
+            }
+            "modtool" {
+                & "$PSScriptRoot\package-modtool.ps1" -Version $Version -OutDir (Split-Path $out -Parent) -WslDistro $WslDistro | Out-Host
+                Set-Location $repo
+                $file = Join-Path $out "RecompModTool-windows-x64-$Version.zip"
+            }
+            "relay" {
+                Invoke-Checked "configure relay" { cmake -S relay-server -B build-relay -G "Visual Studio 17 2022" -A x64 }
+                Invoke-Checked "build relay" { cmake --build build-relay --config Release --target rs64_relay }
+                $stage = Join-Path $env:TEMP "rs64-bundle-relay"
+                if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+                New-Item -ItemType Directory -Path $stage | Out-Null
+                Copy-Item build-relay\Release\rs64_relay.exe $stage
+                Copy-Item docs\guides\relay-server.md "$stage\README.md"
+                Copy-Item LICENSE "$stage\LICENSE.txt"
+                Copy-Item mods\multiplayer-native\lib\enet6\LICENSE "$stage\LICENSE-enet6.txt"
+                $file = Join-Path $out "rs64_relay-windows-x64-$Version.zip"
+                Compress-Archive -Path "$stage\*" -DestinationPath $file -Force
+                Remove-Item -Recurse -Force $stage
+                $wslOut = (wsl.exe -d $WslDistro -e wslpath -a ($out -replace '\\', '/')).Trim()
+                $script = 'set -e; cd "$(wslpath -a ''' + ($repo -replace '\\', '/') + ''')"; ' +
+                    'cmake -S relay-server -B "$HOME/rs64-build-relay" -DCMAKE_BUILD_TYPE=Release; ' +
+                    'cmake --build "$HOME/rs64-build-relay" --target rs64_relay -j"$(nproc)"; ' +
+                    'stage="$(mktemp -d)"; cp "$HOME/rs64-build-relay/rs64_relay" "$stage/"; cp docs/guides/relay-server.md "$stage/README.md"; ' +
+                    'cp LICENSE "$stage/LICENSE.txt"; cp mods/multiplayer-native/lib/enet6/LICENSE "$stage/LICENSE-enet6.txt"; ' +
+                    "tar -czf '$wslOut/rs64_relay-linux-x64-$Version.tar.gz' -C `"`$stage`" .; rm -rf `"`$stage`""
+                Invoke-Checked "relay linux-x64" { Invoke-Wsl $script }
             }
             default { throw "unknown target '$target'" }
         }

@@ -871,16 +871,19 @@ async function showModel(id, objIndex = -1, keepView = false) {
   if (!keepView) frame(root, new THREE.Vector3(-0.6, 0.5, -0.8));
 }
 
+// Tiles drawn past each map edge, enough to reach the fog. Outside the map the game draws the clamped edge cell's mesh
+// (clampGridCellLookup 0x80048948), so border tiles repeat outward and corner tiles fill the corners.
+const TERRAIN_PAD = 20;
 // One 64x64 texture per tile, packed into an atlas; tiles get their own vertices so UVs don't share across tile edges.
 function buildTerrain(hmp, texIds, bank) {
-  const W = hmp.w * 4 + 1, H = hmp.h * 4 + 1;
+  const P = TERRAIN_PAD, W = (hmp.w + 2 * P) * 4 + 1, H = (hmp.h + 2 * P) * 4 + 1;
   const ht = new Float32Array(W * H);
-  const tileAt = (tx, ty) => hmp.tiles[hmp.map[ty * hmp.w + tx]];
-  for (let ty = 0; ty < hmp.h; ty++) for (let tx = 0; tx < hmp.w; tx++) {
+  const tileAt = (tx, ty) => hmp.tiles[hmp.map[Math.min(hmp.h - 1, Math.max(0, ty)) * hmp.w + Math.min(hmp.w - 1, Math.max(0, tx))]];
+  for (let ty = -P; ty < hmp.h + P; ty++) for (let tx = -P; tx < hmp.w + P; tx++) {
     const tile = tileAt(tx, ty);
-    for (let py = 0; py < 5; py++) for (let px = 0; px < 5; px++) ht[(ty * 4 + py) * W + tx * 4 + px] = tile ? tile.hts[py * 5 + px] * hmp.heightScale : 0;
+    for (let py = 0; py < 5; py++) for (let px = 0; px < 5; px++) ht[((ty + P) * 4 + py) * W + (tx + P) * 4 + px] = tile ? tile.hts[py * 5 + px] * hmp.heightScale : 0;
   }
-  const hAt = (x, y) => ht[Math.min(H - 1, Math.max(0, y)) * W + Math.min(W - 1, Math.max(0, x))];
+  const hAt = (x, y) => ht[Math.min(H - 1, Math.max(0, y + P * 4)) * W + Math.min(W - 1, Math.max(0, x + P * 4))];
 
   const slots = new Map();
   for (const t of hmp.tiles) if (texIds[t.tex] !== undefined && !slots.has(texIds[t.tex])) slots.set(texIds[t.tex], slots.size);
@@ -904,7 +907,7 @@ function buildTerrain(hmp, texIds, bank) {
   const lit = world.map((w) => w / 255);
   const dark = shadow.map((s) => s / 255);
   const L = [-sunDir[0], -Math.abs(sunDir[1]), -sunDir[2]], Ll = Math.hypot(...L) || 1;
-  for (let ty = 0; ty < hmp.h; ty++) for (let tx = 0; tx < hmp.w; tx++) {
+  for (let ty = -P; ty < hmp.h + P; ty++) for (let tx = -P; tx < hmp.w + P; tx++) {
     const slot = slots.get(texIds[tileAt(tx, ty)?.tex]) ?? 0;
     const u0 = (slot % cols) * 64 + 0.5, v0 = ((slot / cols) | 0) * 64 + 0.5;
     const base = pos.length / 3;

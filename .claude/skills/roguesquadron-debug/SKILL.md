@@ -157,7 +157,7 @@ CI4 rows of SRC vs the loaded TMEM. Use it to answer, with hard state:
   `stride = line<<3`; decode params are built in `rt64_texture_cache.cpp:~1199` (`decodeCB.stride =
   loadTile.line << 3`, siz, palette). If the swap logic + params are correct, the texture renders
   correctly and the visible "streak/blocky" is elsewhere (very often the **absent N64 VI post-filter**,
-  not a mapping fault — see the model-texture memory). The blanket `ROGUESQ_CI4_DESWIZZLE` is a REFUTED
+  not a mapping fault — see the model-texture memory). A blanket CI4 de-swizzle is a REFUTED
   dead end: it double-swaps already-correct paths and breaks terrain.
 
 ### 5. PJ64 golden diffs (the strongest oracle)

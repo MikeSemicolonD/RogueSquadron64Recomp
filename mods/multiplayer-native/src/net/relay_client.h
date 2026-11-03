@@ -3,7 +3,7 @@
 #include <deque>
 #include <string>
 #include <vector>
-#include "net_link.h"
+#include "net/net_link.h"
 #include "relay_protocol.h"
 #include "rs64/mp_transport.h"
 
@@ -35,6 +35,7 @@ public:
     // The game's join code: what start() takes as its peer.
     const char* game_peer(int i) const { return game(i) ? codes_[i].c_str() : ""; }
     void set_info(const std::string& name, bool locked);
+
     // The mp.transport table over this client (name "server").
     const rs64_mp_transport* table();
 
@@ -69,6 +70,7 @@ private:
 
     Link list_link_;
     bool listing_ = false;
+
     // The list link only checks that the server answers (no LIST).
     bool probe_ = false;
     bool list_said_ = false;
@@ -81,5 +83,4 @@ private:
 
 // Menu text for a relay server's refusal or close reason.
 std::string relay_reason_text(relay::Reason r);
-
 }

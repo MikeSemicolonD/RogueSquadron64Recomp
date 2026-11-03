@@ -33,6 +33,10 @@ struct LimitDef {
 
 const std::vector<LimitDef>& limits();
 
+// Text helpers the settings and the console share: a whole-string integer, and a line split on spaces.
+bool parse_int(const std::string& s, int* out);
+std::vector<std::string> words(const std::string& line);
+
 // Sets one config key (port, name or a limit) from text; false with *error set when the key or value is bad.
 bool set_value(Settings* s, const std::string& key, const std::string& value, std::string* error);
 // Applies a config file's text over *s; returns one warning per skipped line.

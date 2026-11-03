@@ -269,7 +269,7 @@ static void testBuildTerrainMesh() {
     buildTerrainMesh(m, 1, pos, idx);
     CHECK(pos.size() == 25 * 3 && pos[0] == 512.0f);
 
-    // A shore cell adds a flat quad TerrainWaterDip units under the water level (heights grow downward), facing up like the ground (same winding).
+    // A shore cell adds a flat quad just under the drawn water (heights grow downward), facing up like the ground (same winding).
     m.present = { 1, 1 };
     m.waterKind = { 0, 2 };
     m.waterLevel = 10;
@@ -284,8 +284,9 @@ static void testBuildTerrainMesh() {
 
     CHECK(pos.size() == (2 * 25 + 4 * (span - 1)) * 3);
     CHECK(pos[50 * 3] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512) && pos[50 * 3 + 2] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512));
+    CHECK(pos[50 * 3 + 1] == 160.0f - TerrainWaterLift + TerrainWaterTraceGap);
     CHECK(pos[53 * 3] == float((1 - TerrainWaterMargin) * 512));
-    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == float((10 + TerrainWaterDip) * 16) && pos[shore * 3 + 2] == 0.0f);
+    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == pos[50 * 3 + 1] && pos[shore * 3 + 2] == 0.0f);
     CHECK(pos[(shore + 3) * 3] == 1024.0f && pos[(shore + 3) * 3 + 2] == 512.0f);
     CHECK(idx[shoreIdx] == shore && idx[shoreIdx + 1] == shore + 3 && idx[shoreIdx + 2] == shore + 2);
 }
@@ -555,6 +556,21 @@ static void testDropFarLights() {
     CHECK(dropFarLights(l, 2, 0.0f) == 2);
 }
 
+static void testSkyBands() {
+
+    // Dark grey near the horizon, blue overhead, a middle triangle that joins neither band; no dome = no sky.
+    const SkySample s[3] = { { { 0.1f, 0.1f, 0.1f }, 0.1f }, { { 0.2f, 0.3f, 0.9f }, 0.9f }, { { 1.0f, 1.0f, 1.0f }, 0.5f } };
+    float h[3], z[3];
+
+    CHECK(skyBands(s, 3, h, z));
+    CHECK(near(h[0], 0.1f, 1e-6f) && near(z[2], 0.9f, 1e-6f));
+
+    // A dome with no triangle near the horizon takes the whole dome's average there.
+    CHECK(skyBands(s + 1, 2, h, z));
+    CHECK(near(h[0], 0.6f, 1e-6f) && near(z[0], 0.2f, 1e-6f));
+    CHECK(!skyBands(s, 0, h, z));
+}
+
 static void testDedupeLights() {
     Resolved l[4];
     for (Resolved& r : l) {
@@ -674,6 +690,9 @@ static void testLaserBolt() {
 }
 
 static void testSelectLights() {
+    // The scenarios below size their inputs around a 32-slot budget, independent of MaxLights.
+    constexpr size_t kSlots = 32;
+
     CHECK(selectLights(nullptr, 0, nullptr, MaxLights) == 0);
     std::vector<Resolved> in(40);
     for (size_t i = 0; i < in.size(); ++i) {
@@ -683,8 +702,8 @@ static void testSelectLights() {
     }
     in[39].intensity = 0.0f;
     std::vector<Resolved> out(MaxLights);
-    const size_t n = selectLights(in.data(), in.size(), out.data(), MaxLights);
-    CHECK(n == MaxLights);
+    const size_t n = selectLights(in.data(), in.size(), out.data(), kSlots);
+    CHECK(n == kSlots);
     CHECK(near(out[0].pos[2], 200.0f, 1e-5f));
     for (size_t i = 1; i < n; ++i) {
         CHECK(out[i].pos[2] >= out[i - 1].pos[2]);
@@ -701,7 +720,7 @@ static void testSelectLights() {
     }
 
     in[32].pos[2] = 3250.0f;
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots) == kSlots);
     CHECK(near(out[0].intensity, 1.0f, 1e-5f));
     CHECK(near(out[31].intensity, 0.2f, 1e-4f));
 
@@ -716,12 +735,12 @@ static void testSelectLights() {
         in[i].pos[2] = in[i].projectile ? 50.0f + (float)i : 5000.0f + (float)i;
     }
 
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots) == kSlots);
     CHECK(!out[27].projectile && out[28].projectile && out[31].projectile);
 
     // With 10 regular lights and 10 lasers, the lasers stop at their own cap.
     in.erase(in.begin() + 10, in.begin() + 30);
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights, true, 3) == 13);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots, true, 3) == 13);
 
     // A far higher-priority light (an engine exhaust) is kept over 40 nearer lower-priority ones, and listed first.
     in.assign(41, Resolved{});
@@ -735,7 +754,7 @@ static void testSelectLights() {
 
     in[40].pos[2] = 90000.0f;
     in[40].priority = 7;
-    CHECK(selectLights(in.data(), in.size(), out.data(), MaxLights) == MaxLights);
+    CHECK(selectLights(in.data(), in.size(), out.data(), kSlots) == kSlots);
     CHECK((out[0].priority == 7) && near(out[0].intensity, 1.0f, 1e-5f));
 }
 
@@ -1536,6 +1555,7 @@ int main() {
     testConsensusCameraDelta();
     testDedupeLights();
     testDropFarLights();
+    testSkyBands();
     testMenuHoloLight();
     testFlickerGain();
     testLampMatch();

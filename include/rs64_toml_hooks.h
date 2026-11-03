@@ -32,6 +32,8 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_co
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_drawSubtitleText_80015EF8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_refreshEffectObjectCamerasAndState_80053148(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E078(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057C90(uint8_t* rdram, recomp_context* ctx);
@@ -77,7 +79,6 @@ void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ct
 void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_musyxSynthFrame_80091798(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_runIdleFramesAndLoadSaveData_8006D980(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_loadOverlay_80000B3C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_rs_malloc_80001C74(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_saveServiceWorker_8006F2CC(uint8_t* rdram, recomp_context* ctx);
@@ -184,6 +185,9 @@ int rs64_th_unlockLevelsAndCraftsBasedOnMedalsEarned_entry(uint8_t* rdram, recom
 int rs64_th_loadAccountDataIntoStruct_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_generateUnlockString_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runMenuRandomBackdropScreen_800BF9E4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runMenuRandomBackdropScreen_800BFC4C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_npcWingmanUpdate_800D9A90(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E424(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E444(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(uint8_t* rdram, recomp_context* ctx);

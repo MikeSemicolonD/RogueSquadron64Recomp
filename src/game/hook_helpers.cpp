@@ -1,6 +1,7 @@
 // Host entry points for the [[patches.hook]] entries in rogue_squadron.toml. Hook code is
 // generated MIPS C with no host headers, so anything it needs from the host is extern "C" here.
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -34,7 +35,7 @@
 #include "video/video_config.h"
 #include "util/debug_logs.h"
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
-#include "game/upstream_compat.h"   // rs64_vi_driven, rs64_fb_guards_mask
+#include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
 #include "game/camera_shots.h"
 #include "game/mod_levels.h"
@@ -45,6 +46,8 @@
 #include "host_api/host_api.h"
 #include <deque>
 #include "util/mips_call.h"
+#include "util/rdram_words.h"
+#include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_transition.h"
 
 using recomp::dbg::env_str;
@@ -291,6 +294,79 @@ extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram)
     }
 }
 
+// ---- Widescreen HUD placement ----
+
+extern "C" float rs64_aspect_scale(void);
+
+// Native pixels the edge HUD moves outward this frame in a view `width` wide: 0 outside missions (numMissionObjectives 0x80130B17), in 4:3 or at placement 0.
+static float hud_shift(const uint8_t* rdram, float width)
+{
+
+    if (rdram[(0x80130B17u - 0x80000000u) ^ 3] == 0) return 0.0f;
+
+    return rs64hud::shiftNative(width, rs64::video::hud_placement(), rs64_aspect_scale());
+}
+
+// drawSubtitleText 0x80015EF8, before the element's first command goes to the display-list pointer it is already called at (0x8011DC58; s3 = element, s1 = view):
+// the RT64 HUD marker naming its side goes first. Every element gets one, so a centred element clears the last side.
+extern "C" void rs64_hud_mark_element(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using namespace rs64::mips;
+
+    const float width = (float)(int32_t)rw(rdram, (uint32_t)ctx->r17 + 0x10u);
+
+    if (hud_shift(rdram, width) <= 0.0f) return;
+
+    const uint32_t item = (uint32_t)ctx->r19;
+    const rs64hud::Side side = rs64hud::classify(item, rf(rdram, item + 0x18u), rw(rdram, item + 0x14u), width);
+    const uint32_t p = rw(rdram, 0x8011DC58u);
+
+    ww(rdram, p, rs64hud::markerW0(side));
+    ww(rdram, p + 4u, 0);
+    ww(rdram, 0x8011DC58u, p + 8u);
+}
+
+// refreshEffectObjectCamerasAndState 0x80053148: the HUD pass (s1 + 8 = its view, scene root = the radar node) with its camera just reset to identity (3x4 row-major at
+// s1 + 0x34, x translation at +0x24; the pass restores the camera afterwards). Moving that camera moves the radar by the distance RT64 gives its 2D pieces.
+extern "C" void rs64_hud_shift_radar(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using namespace rs64::mips;
+
+    const uint32_t view = (uint32_t)ctx->r17 + 8u;
+    const float width = (float)(int32_t)rw(rdram, view + 0x10u);
+    const float height = (float)(int32_t)rw(rdram, view + 0x14u);
+    const float shift = hud_shift(rdram, width);
+    const uint32_t root = rw(rdram, view);
+    const uint32_t div = rw(rdram, 0x8011A838u);
+
+    if (shift <= 0.0f || height <= 0.0f || div == 0 || root < 0x80000000u || root >= 0x80800000u) return;
+
+    // setupCameraMatrices' perspective: fovy at view + 0x20, aspect = W/H * [0x8011A844] / [0x8011A838] * [0x8011A840].
+    const float aspect = width / height * (float)rw(rdram, 0x8011A844u) / (float)div * rf(rdram, 0x8011A840u);
+    const float p00 = 1.0f / (std::tan(rf(rdram, view + 0x20u) * 3.14159265f / 360.0f) * aspect);
+
+    // The radar node's translation in its 3x4 transform at +0x1C.
+    const float x = rf(rdram, root + 0x40u);
+    const float z = rf(rdram, root + 0x48u);
+
+    if (!(p00 > 0.0f) || !(z > 0.0f)) return;
+
+    const float halfWidth = width * 0.5f;
+    const rs64hud::Side side = rs64hud::classify(root, p00 * x / z * halfWidth, 0, width);
+
+    if (side == rs64hud::None) return;
+
+    const float dx = shift * z / (p00 * halfWidth);
+    const uint32_t tx = (uint32_t)ctx->r17 + 0x34u + 0x24u;
+    const float moved = rf(rdram, tx) + ((side == rs64hud::Right) ? dx : -dx);
+    uint32_t bits;
+
+    std::memcpy(&bits, &moved, 4);
+    ww(rdram, tx, bits);
+}
+
 // ---- Boot target ----
 
 // Set by the present hook while the attract title is up; get_n64_input injects START while set.
@@ -330,6 +406,14 @@ extern "C" int rs64_boot_target_level(int* craft_out) {
 extern "C" { volatile int g_current_scene = -1; }
 extern "C" { volatile unsigned g_op_bf_count = 0; }
 
+// ROGUESQ_LOG_HOOKS=1 in a Debug build: hook code that gathers extra state for rs64_dbg_log4 checks this first.
+extern "C" int rs64_dbg_hooks_on(void)
+{
+
+    static const bool on = RS64_DIAG && env_on("ROGUESQ_LOG_HOOKS");
+    return on ? 1 : 0;
+}
+
 // ROGUESQ_LOG_HOOKS=1: stderr for hook code.
 extern "C" void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned c, unsigned d)
 {
@@ -366,7 +450,7 @@ extern "C" void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned 
 // ---- Cinematic loop landmark counter ----
 
 // Ticked by the cinematicLoopBody hook; read by the f5-dl-validate landmark, the
-// render-context RDRAM-on-iter snapshot, and the ROGUESQ_CINE_HOLD_ITER pacer.
+// render-context RDRAM-on-iter snapshot.
 static std::atomic<uint64_t> g_cine_iter{0};
 
 extern "C" unsigned long long rs64_cine_iter_get(void) { return g_cine_iter.load(std::memory_order_relaxed); }
@@ -388,78 +472,6 @@ extern "C" void rs64_cine_yield(void) {
 
         std::fflush(stderr);
     }
-}
-
-// ROGUESQ_ATTRIBUTION_SLEEP_MS=N per attribution iteration (default 0: VI-paced).
-extern "C" void rs64_idle_pace(void)
-{
-
-#ifdef _WIN32
-
-    static const int s_ms = [](){ int v = env_int("ROGUESQ_ATTRIBUTION_SLEEP_MS"); return v < 0 ? 0 : v > 5000 ? 5000 : v; }();
-
-    if (s_ms) ::Sleep((DWORD)s_ms);
-
-#endif
-}
-
-// ROGUESQ_CINE_TARGET_FPS=N paces cinematicLoopBody (default 0 when VI-driven, else 30).
-// ROGUESQ_CINE_HOLD_ITER=N [+ ROGUESQ_CINE_HOLD_MS, default 15000]: park once at iteration N.
-extern "C" void rs64_cine_pace(void)
-{
-
-#ifdef _WIN32
-
-    static const long long s_hold_iter = env_str("ROGUESQ_CINE_HOLD_ITER") ? std::atoll(env_str("ROGUESQ_CINE_HOLD_ITER")) : -1;
-    static const uint32_t s_hold_ms = (uint32_t)env_int("ROGUESQ_CINE_HOLD_MS", 15000);
-    static bool s_held = false;
-
-    if (s_hold_iter >= 0 && !s_held && (long long)rs64_cine_iter_get() >= s_hold_iter)
-    {
-        s_held = true;
-
-        fprintf(stderr, "[cine-hold] freezing at iter %llu for %u ms\n", rs64_cine_iter_get(), s_hold_ms);
-        fflush(stderr);
-        uint64_t end = GetTickCount64() + s_hold_ms;
-
-        while (GetTickCount64() < end) ::Sleep(100);
-
-        fprintf(stderr, "[cine-hold] released\n");
-        fflush(stderr);
-    }
-
-    static const int s_target_fps = [](){
-
-        int v = env_int("ROGUESQ_CINE_TARGET_FPS", rs64_vi_driven() ? 0 : 30);
-        v = v < 0 ? 0 : v > 240 ? 240 : v;
-
-        if (v) timeBeginPeriod(1);   // so Sleep(33) is not quantized to 15.6 ms
-
-        return v;
-    }();
-
-    if (s_target_fps == 0) return;
-
-    const uint32_t interval_ms = 1000u / (uint32_t)s_target_fps;
-    static uint64_t s_last_ms = 0;
-    uint64_t now = GetTickCount64();
-
-    if (s_last_ms == 0) { s_last_ms = now; return; }
-
-    uint64_t elapsed = now - s_last_ms;
-
-    if (elapsed < interval_ms) ::Sleep((DWORD)(interval_ms - elapsed));
-
-    s_last_ms = GetTickCount64();
-
-#endif
-}
-
-extern "C" void rs64_sleep_ms(unsigned ms) {
-
-#ifdef _WIN32
-    ::Sleep((DWORD)ms);
-#endif
 }
 
 // Bumped once per host VI retrace (main.cpp).
@@ -524,78 +536,6 @@ extern "C" void rs64_dump_frame_dl(uint8_t* rdram, uint32_t dl_phys)
     static const bool s_dump_tex = env_on("ROGUESQ_DUMP_TEXTURES");
     static int s_call = 0;
     const int call = ++s_call;
-
-    // ROGUESQ_MEDAL_PROBE=1: on EVERY gfx task, scan the DL for the menu medal/insignia
-    // layer (fmt4 textures 0x62xxxx) and log the color image active at that draw. Catches
-    // the intermittent overlay-refresh pass a fixed dump window misses, and resolves whether
-    // the medal draws are emitted-to-a-bad-target vs never emitted (walk desync).
-    static const int s_medal = env_on("ROGUESQ_MEDAL_PROBE") ? 1 : 0;
-
-    if (s_medal && dl_phys != 0) {
-        static uint8_t s_pv[0x800000 >> 3];
-        memset(s_pv, 0, sizeof(s_pv));
-        uint32_t pa = (dl_phys & 0x3FFFFFFu) | 0x80000000u;
-        uint32_t p_cimg = 0, p_cimg_w0 = 0, p_cimg_at = 0;
-        uint32_t pstack[16];
-        int psp = 0;
-        int pjmp = 256;
-
-        for (int i = 0; i < 16384; ++i)
-        {
-            if ((pa & 0x3FFFFFFu) + 8u > 0x800000u) break;
-
-            uint32_t vi = (pa & 0x3FFFFFFu) >> 3;
-
-            if (s_pv[vi]) break;
-
-            s_pv[vi] = 1;
-            uint32_t w0 = (uint32_t)MEM_W(0, (gpr)(int32_t)pa);
-            uint32_t w1 = (uint32_t)MEM_W(4, (gpr)(int32_t)pa);
-            uint8_t op = (uint8_t)(w0 >> 24);
-
-            if (op == 0xB4 || op == 0xBE) { pa += 16u; continue; }
-            if (op == 0xB5 && (w1 & 0x00FFFFFFu) != 0u) { pa = (w1 & 0x00FFFFF8u) | 0x80000000u; continue; }
-            if (op == 0xFF) { p_cimg = w1; p_cimg_w0 = w0; p_cimg_at = pa; }
-
-            if (op == 0xFD) {
-                uint32_t timg = w1 & 0x00FFFFFFu;
-
-                if (timg >= 0x620000u && timg < 0x628000u) {
-                    static int s_n = 0;
-
-                    if (++s_n <= 60)
-                    {
-                        uint32_t ca = p_cimg & 0x00FFFFFFu;
-                        bool bad = (p_cimg == 0) || ca < 0x100000u || ca >= 0x800000u;
-
-                        fprintf(stderr, "[medal-probe] task=%d tex=0x%06X activeCIMG=0x%08X (w0=0x%08X @0x%08X) %s texcmd@0x%08X\n",
-                                call, timg, p_cimg, p_cimg_w0, p_cimg_at, bad ? "GARBAGE" : "ok", pa);
-                        fflush(stderr);
-                    }
-                    break;
-                }
-            }
-
-            if (op == 0xE4 || op == 0xE5) { pa += 24u; continue; }
-            if (op == 0x03) { pa += 24u; continue; }
-            if (op == 0xB8u || op == 0xDFu) { if (psp > 0) { pa = pstack[--psp]; continue; } break; }
-
-            bool is_dl = ((op == 0x06u) && ((w0 & 0x00FEFFFFu) == 0u)) || (op == 0xDEu);
-
-            if (is_dl && pjmp > 0) {
-                uint8_t br = (uint8_t)(w0 >> 16);
-                uint32_t tgt = (w1 & 0x00FFFFF8u) | 0x80000000u;
-
-                if (br == 0 && psp < 16) pstack[psp++] = pa + 8u;
-
-                pa = tgt;
-                pjmp--;
-                continue;
-            }
-
-            pa += 8u;
-        }
-    }
 
     if (s_target < 0 || call < s_target || call >= s_target + 16 || dl_phys == 0) return;
 

@@ -198,6 +198,14 @@ bool keep_cutscene_draw_distance() {
     return g_keep_cutscene.load(std::memory_order_relaxed);
 }
 
+float hud_placement() {
+    return g_rs64_hud_placement.load(std::memory_order_relaxed);
+}
+
+void set_hud_placement(float placement) {
+    g_rs64_hud_placement.store(std::clamp(placement, 0.0f, 1.0f), std::memory_order_relaxed);
+}
+
 bool legacy_terrain() {
     return g_legacy_terrain.load(std::memory_order_relaxed);
 }
@@ -468,6 +476,10 @@ void apply_friendly(UC& uc, const json& j)
         set_draw_distance(j["drawDistance"].get<float>());
     }
 
+    if (has("hudPlacement") && j["hudPlacement"].is_number()) {
+        set_hud_placement(j["hudPlacement"].get<float>());
+    }
+
     if (has("keepCutsceneDrawDistance") && j["keepCutsceneDrawDistance"].is_boolean())
     {
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
@@ -619,6 +631,7 @@ json to_friendly(const UC& uc)
     json j;
     j["schema"] = 2;
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
+    j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["legacyTerrain"] = legacy_terrain();
     j["framebufferWriteback"] = framebuffer_writeback();
@@ -741,7 +754,7 @@ LoadResult load(UC& uc, const std::string& path)
         apply_friendly(uc, j);
 
         // Rewrite files that predate a friendly key so it shows up for editing.
-        r.migrated = !j.contains("drawDistance");
+        r.migrated = !j.contains("drawDistance") || !j.contains("hudPlacement");
     } else {
         // Legacy raw UserConfiguration: merge onto the current baseline, same as
         // the pre-migration loader, then flag for rewrite in friendly form.

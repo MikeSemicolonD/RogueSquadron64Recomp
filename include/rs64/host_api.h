@@ -55,6 +55,9 @@ typedef enum rs64_hook_id {
     RS64_HOOK_TRIGGER_EFFECT = 36,       // applyDatObjectiveTriggerEffect 0x80065980: a0 = DAT trigger event, a1 = 1 enter / 0 exit, s0 = the caller's trigger-list entry (player 1's list is 0x80137DF0); RETURN drops the effect
     RS64_HOOK_WALKER_TRIPPED = 37,       // npcAtAtUpdate 0x800CED7C: an AT-AT accepts a tow-cable trip (action 9, kind 0xE); s1 = its ext (+0x34 DAT item), s0 = the message. Never RETURN (mid-function)
     RS64_HOOK_ATST_TICK = 38,            // updatePlayerAtStBehavior entry: the player's AT-ST is about to read the pads (0x80130B88) and stick (0x8010BDD8); a0 = the walker, a1 = dt (float bits); RETURN skips its walk/turn/head/fire step
+    RS64_HOOK_DEBRIEF_PAD = 39,          // runMenuRandomBackdropScreen 0x800BFC4C (menu overlay debrief): v0 = the pressed buttons its continue check reads (A/START 0x9000 leave the screen); may be edited. Never RETURN (mid-function)
+    RS64_HOOK_FRONT_END = 40,            // mainGameLoop 0x8003E138: the front end is about to start, a1 = menu overlay state (1 mission select, 2 menus), a2 = the menu state 2 opens (4 = ELITE ROGUES after a game over); may be edited. Never RETURN (mid-function)
+    RS64_HOOK_WINGMAN_DRAW = 41,         // npcWingmanUpdate 0x800D9A90: a wingman just added its model to the render list; s3 = the NPC, s1 = the render info (what the tow-cable renderer 0x800ADD5C takes as a0). Never RETURN (mid-function)
     RS64_HOOK_COUNT
 } rs64_hook_id;
 

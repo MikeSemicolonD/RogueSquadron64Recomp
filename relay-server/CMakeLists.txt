@@ -22,6 +22,7 @@ endif()
 add_library(rs64_relay_core STATIC EXCLUDE_FROM_ALL
     ${CMAKE_CURRENT_SOURCE_DIR}/src/relay_protocol.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/relay_core.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/relay_settings.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/relay_host.cpp)
 target_include_directories(rs64_relay_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${RS64_ROOT}/mods/multiplayer-native/src)
 target_link_libraries(rs64_relay_core PUBLIC enet6)

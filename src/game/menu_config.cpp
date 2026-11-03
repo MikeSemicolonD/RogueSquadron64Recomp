@@ -125,9 +125,6 @@ bool menu_buttons_off() {
     return off;
 }
 
-// A game_settings toggle that `replace`s a known native toggle slot flips in place via that slot's native sub-type-5 re-render (no reload); ROGUESQ_NO_TOGGLE_INPLACE forces the reload path.
-bool toggle_inplace() { static bool v = !env_disabled("ROGUESQ_NO_TOGGLE_INPLACE"); return v; }
-
 // ---- Config model ----
 
 // Label: a page line the cursor skips (sub-type 13), e.g. a live status line.
@@ -808,9 +805,32 @@ std::string draw_step_text(int i)
     return buf;
 }
 
+// hud_placement in quarters from the 4:3 spots (OFF) to the screen edges (FULL); the menu font has no '%'. -1 = a saved value between steps (CUSTOM).
+constexpr int kHudSteps = 5;
+
+int hud_step()
+{
+
+    const float p = rs64::video::hud_placement() * (kHudSteps - 1);
+    const int i = (int)std::lround(p);
+
+    return std::fabs(p - (float)i) < 0.01f ? i : -1;
+}
+
+std::string hud_step_text(int i)
+{
+
+    static const char* const kText[kHudSteps] = { "OFF", "1/4", "1/2", "3/4", "FULL" };
+
+    return (i >= 0 && i < kHudSteps) ? kText[i] : "CUSTOM";
+}
+
 std::unordered_map<std::string, CycleImpl>& cycles() {
 
     static std::unordered_map<std::string, CycleImpl> r = {
+        { "hud_placement", { [] { return hud_step(); },
+                             [] { rs64::video::set_hud_placement((float)((hud_step() + 1) % kHudSteps) / (kHudSteps - 1)); },
+                             [](int i) { return hud_step_text(i); } } },
         { "draw_distance", { [] { return draw_step(); },
                              [] { rs64::video::set_draw_distance(next_draw_step(rs64::video::draw_distance(), rs64::video::draw_distance_max())); },
                              [](int i) { return draw_step_text(i); } } },
@@ -1473,6 +1493,7 @@ bool condition_holds(uint8_t* rdram, const std::string& c, bool pause)
     if (c == "ray_query") return rs64::video::ray_query_supported();
     if (c == "expansion_pak") return rd_b(rdram, 0x130B63) != 0;
     if (c == "frame_interpolation") return rs64::video::frame_interpolation_on();
+    if (c == "widescreen") return rs64::video::display_value(rs64::video::Display::Widescreen) == 1;
 
     return rs64::host::condition(c.c_str()) > 0;
 }
@@ -1682,7 +1703,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         int ip_param;
         unsigned ip_off, ip_on;
 
-        if (b.type == BType::Toggle && toggle_inplace() && menu_id == MENU_GAME_SETTINGS
+        if (b.type == BType::Toggle && menu_id == MENU_GAME_SETTINGS
             && !b.replace.empty() && inplace_slot(b.replace, ip_param, ip_off, ip_on))
         {
             // Native in-place re-render on the replaced slot.

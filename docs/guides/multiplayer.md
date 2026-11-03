@@ -6,30 +6,37 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 
 - With Steam running (the steam-relay mod) or a relay server set up ([relay-server.md](relay-server.md)), FIND GAME lists open games of the same version; picking one joins it, no code needed.
 - HOST SETTINGS names your game in that list and can give it a password; joining a game with one asks for it.
-- The host drives mission select and picks the mission; the client's screen follows. Each player then picks their own craft, and nobody launches until both have picked.
+- The host drives mission select and picks the mission; the client's screen follows. Each player then picks their own craft, and nobody launches until both have picked. A craft the hangar refuses (locked, or not allowed on the level) does not count as picked.
+- Both start the mission together: the host waits at mission start, up to 10 s, for the client to finish loading.
 - Each player keeps the upgrades of the pilot profile they chose before entering MULTIPLAYER.
 - An upgrade collected in a level is given to both players, and saved to both pilots if the mission succeeds (lost on failure, as in single player). The pickup disappears for the other player too, with its pickup sound.
-- A cutscene skipped by one player is skipped for both.
+- The host decides cutscene skips: a scene the host skips (the opening crawl, the hangar launch, a cutscene) is skipped for both, and the client cannot skip on its own.
 - A trigger area either player flies into advances the mission for both (the host runs it once, however many of you are inside).
-- An AT-AT tripped by either player's tow cable falls in both worlds and counts once.
+- An AT-AT tripped by either player's tow cable falls in both worlds and counts once. Each player sees the other's cable too.
 - The other player's ship carries their pilot name (from the profile they chose), and shows on the radar as a purple dot.
-- Lives are one shared pool. When the other player dies, WINGMATE DOWN appears and your lives counter ticks down; WINGMATE OUT when that took the last life, WINGMATE LEFT if they quit.
-- A player who dies with no lives left spectates: their camera follows the survivor and SPECTATING is shown until the mission ends.
+- Lives are one shared pool. When the other player dies, their ship is shot down where it was, WINGMATE DOWN appears and your lives counter ticks down; WINGMATE OUT when that took the last life, WINGMATE LEFT if they quit.
+- A player who dies with no lives left spectates: their camera follows the survivor, turning with them, and SPECTATING is shown until the mission ends. When the survivor is shot down, the spectator sees it too.
 - The host's mission result (success, failure, abort) ends the mission for both.
+- The debrief waits until both players press continue, then both go on together (a restart, or the next screen). After a game over both go back to SELECT LEVEL instead of the high scores, whose exit to the main menu would end the session.
 
 ## Code layout
 
 | File | Role |
 |---|---|
-| [mods/multiplayer-native/src/net_core.h](../../mods/multiplayer-native/src/net_core.h), [net_core.cpp](../../mods/multiplayer-native/src/net_core.cpp) | Message encoding, `Lobby` handshake state, `AddressEditor`, discovery packets, UPnP status text. No sockets. |
-| [mods/multiplayer-native/src/net_link.h](../../mods/multiplayer-native/src/net_link.h), [net_link.cpp](../../mods/multiplayer-native/src/net_link.cpp) | ENet6 transport (`mods/multiplayer-native/lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
-| [mods/multiplayer-native/src/relay_client.h](../../mods/multiplayer-native/src/relay_client.h), [relay_client.cpp](../../mods/multiplayer-native/src/relay_client.cpp) | `RelayClient`: the relay server transport (an `mp.transport` table over two `Link`s to an `rs64_relay`; protocol in [relay-server/src/relay_protocol.h](../../relay-server/src/relay_protocol.h)). |
-| [mods/multiplayer-native/src/ghost.cpp](../../mods/multiplayer-native/src/ghost.cpp) | Session core: link events, message dispatch, per-frame hooks, shared objectives, deaths and lives, mission result, quit. |
-| [mods/multiplayer-native/src/ghost_lobby.cpp](../../mods/multiplayer-native/src/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
-| [mods/multiplayer-native/src/ghost_hud.cpp](../../mods/multiplayer-native/src/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
-| [mods/multiplayer-native/src/ghost_internal.h](../../mods/multiplayer-native/src/ghost_internal.h) | The `Ghost` state struct and helpers shared by the three files above. |
-| [mods/multiplayer-native/src/mp_core.cpp](../../mods/multiplayer-native/src/mp_core.cpp) | Pure logic with unit tests (`mp_core_test`): `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
-| [mods/multiplayer-native/src/coop_imposter.cpp](../../mods/multiplayer-native/src/coop_imposter.cpp) | Imposter spawn and teardown. |
+| [mods/multiplayer-native/src/net/net_core.h](../../mods/multiplayer-native/src/net/net_core.h) | Declarations for the three files below; no sockets. |
+| [mods/multiplayer-native/src/net/messages.cpp](../../mods/multiplayer-native/src/net/messages.cpp) | Message encoding and decoding: most messages are a few scalars and fixed arrays through `encode_fields` / `decode_fields`. |
+| [mods/multiplayer-native/src/net/lobby.cpp](../../mods/multiplayer-native/src/net/lobby.cpp) | `Lobby` handshake state, the MULTIPLAYER page's status lines, the host address choice, LAN discovery packets. |
+| [mods/multiplayer-native/src/net/editors.cpp](../../mods/multiplayer-native/src/net/editors.cpp) | The page's text rows: `AddressEditor`, `CodeEditor`, `NameEditor`. |
+| [mods/multiplayer-native/src/net/net_link.h](../../mods/multiplayer-native/src/net/net_link.h), [net_link.cpp](../../mods/multiplayer-native/src/net/net_link.cpp) | ENet6 transport (`mods/multiplayer-native/lib/enet6`): `Link`, `DiscoveryResponder` / `DiscoveryFinder`, `PortMapper` (miniupnp). |
+| [mods/multiplayer-native/src/net/relay_client.h](../../mods/multiplayer-native/src/net/relay_client.h), [relay_client.cpp](../../mods/multiplayer-native/src/net/relay_client.cpp) | `RelayClient`: the relay server transport (an `mp.transport` table over two `Link`s to an `rs64_relay`; protocol in [relay-server/src/relay_protocol.h](../../relay-server/src/relay_protocol.h)). |
+| [mods/multiplayer-native/src/session/ghost.cpp](../../mods/multiplayer-native/src/session/ghost.cpp) | Session core: link events, message dispatch, mission init and frame, the start barrier, deaths and lives, spectating, mission result, quit. |
+| [mods/multiplayer-native/src/session/world_sync.cpp](../../mods/multiplayer-native/src/session/world_sync.cpp) | What the two worlds share: the host's objective snapshot, mirrored DAT damage, power-ups, the client's trigger volumes. |
+| [mods/multiplayer-native/src/session/tow_cable.cpp](../../mods/multiplayer-native/src/session/tow_cable.cpp) | Tow cables: the other player's AT-AT trips, and their cable sent each frame and drawn by the game's own tow-cable code on a mirror pool. |
+| [mods/multiplayer-native/src/session/ghost_lobby.cpp](../../mods/multiplayer-native/src/session/ghost_lobby.cpp) | Front-end lobby: host/join, discovery, address editing, mission select and craft select hooks, skip sharing. |
+| [mods/multiplayer-native/src/session/ghost_hud.cpp](../../mods/multiplayer-native/src/session/ghost_hud.cpp) | Co-op message line, name label, radar dot, puppet pose and S-foils. |
+| [mods/multiplayer-native/src/session/ghost_internal.h](../../mods/multiplayer-native/src/session/ghost_internal.h) | The `Ghost` state struct and the helpers the `session/` files share. |
+| [mods/multiplayer-native/src/core/mp_core.cpp](../../mods/multiplayer-native/src/core/mp_core.cpp) | Pure logic with unit tests (`mp_core_test`): `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
+| [mods/multiplayer-native/src/session/coop_imposter.cpp](../../mods/multiplayer-native/src/session/coop_imposter.cpp) | Imposter spawn and teardown. |
 | [mods/multiplayer-native/src/mp_register.cpp](../../mods/multiplayer-native/src/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
 | [mods/multiplayer-native/src/mp_host.h](../../mods/multiplayer-native/src/mp_host.h) | The multiplayer sources' only route to the game: the host API table, wrapped (`rs64::mp::call`, `alloc`, `flag`, `add_hook`, ...). |
 | [mods/multiplayer-native](../../mods/multiplayer-native/) | The mod: `src/` (`mp_mod.cpp` is `rs64_mod_init`) and `tests/`. Its CMakeLists builds `src/` plus the base files it lists (`lockstep_core.cpp` and three headers) into `multiplayer_native.dll` / `.so`; the style check rejects any other base include. |
@@ -47,7 +54,8 @@ Base code sees multiplayer only through hooks, actions and flags.
 | `text_entry` | `ghost_lobby.cpp` (per menu tick) | `input_host.cpp` `update_keyboard_shift` (Android) | The address editor is being typed in |
 | `menu_page_shown` | `rs64_menu_pass` (`menu_config.cpp`) | `mp_register.cpp` `menu_pad` | A mod menu page is up |
 | `hangar_launch` | `skip_filter` (`ghost_lobby.cpp`) | `nav_sequencer.cpp` | The hangar is launching a mission after both players picked |
-| `mp_trigger_for_peer` | `apply_remote_triggers` (`ghost.cpp`) | `hook_helpers.cpp` (mid-mission camera shots) | The host is applying the other player's trigger, so a personal camera shot goes to that player only |
+| `craft_picked` | `rs64_lobby_craft_select_tick` (`ghost_lobby.cpp`) | `nav_sequencer.cpp` | This player picked a craft in a lobby session; the scripted driver stops pressing so the hangar can launch |
+| `mp_trigger_for_peer` | `apply_remote_triggers` (`world_sync.cpp`) | `hook_helpers.cpp` (mid-mission camera shots) | The host is applying the other player's trigger, so a personal camera shot goes to that player only |
 
 ### Hook placement
 
@@ -70,9 +78,9 @@ Hooks the registration takes (sites and contracts in [modding-host-api.md](../en
 
 | Area | Hooks |
 |---|---|
-| Front end | `MENU_FRAME`, `MENU_PAD`, `MAIN_MENU`, `MISSION_SELECT_INIT`, `MISSION_CONFIRMED`, `MISSION_SELECT_FONTS`, `MISSION_SELECT_TICK`, `CRAFT_SELECT_INIT`, `CRAFT_SELECT_TICK` |
+| Front end | `MENU_FRAME`, `MENU_PAD`, `MAIN_MENU`, `MISSION_SELECT_INIT`, `MISSION_CONFIRMED`, `MISSION_SELECT_FONTS`, `MISSION_SELECT_TICK`, `CRAFT_SELECT_INIT`, `CRAFT_SELECT_TICK`, `DEBRIEF_PAD`, `FRONT_END` |
 | Mission frame | `MISSION_INIT`, `MISSION_FRAME_DT`, `MISSION_FRAME_PADS`, `MISSION_FRAME_NPCS`, `MISSION_END`, `CRAFT_ASSETS` |
-| Imposter and streaming | `WINGMAN_TICK`, `NPC_ACTIVATION`, `GRID_STREAM` |
+| Imposter and streaming | `WINGMAN_TICK`, `WINGMAN_DRAW`, `NPC_ACTIVATION`, `GRID_STREAM` |
 | Shared state | `TRANSITION_REQUEST`, `FREEZE_CHECK_A`, `FREEZE_CHECK_B`, `CUTSCENE_FREEZE_CHECK`, `OBJECTIVE_COUNT`, `RESULT_FAIL`, `RESULT_SUCCESS`, `SPEECH_RESPONSE_1`, `SPEECH_RESPONSE_2`, `TRIGGER_EFFECT`, `WALKER_TRIPPED` |
 | HUD | `HUD_FONTS`, `HUD_DRAW`, `RADAR` |
 
@@ -90,7 +98,7 @@ Unit tests (`cmake --build build --config Release --target rs64_unit_tests` buil
 
 ## Lobby flow
 
-The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (net_core) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s (COULD NOT CONNECT TO HOST; at once, with the transport's reason, when the link or relay reports it cannot connect), a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
+The lobby is the MULTIPLAYER entry added to the main menu by [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): MAIN MENU, MULTIPLAYER, pilot select, then a page with HOST GAME and JOIN GAME. The lobby owns the link. `Lobby` (`net/lobby.cpp`) tracks Idle / Hosting / Joining / Connected / Failed: a join gives up after 15 s (COULD NOT CONNECT TO HOST; at once, with the transport's reason, when the link or relay reports it cannot connect), a connected peer must say HELLO within 5 s, and a HELLO with a different `kBuildId` fails both sides (VERSION MISMATCH). A host whose player leaves goes back to waiting. The status line is menu-font-safe text (uppercase, digits, spaces). `rs64_lobby_status` (`ghost_lobby.cpp`, run each front-end frame by `rs64_lobby_tick`) builds the status text and publishes the lobby state as the `mp_lobby_state` flag; the nav sequencer reads that flag, not the text.
 
 Link events reach the lobby through `link_poll_edges(up, was_up, connects, seen_connects)`. `Link::connect_count()` counts connects, so a connect that dropped before the poll is neither edge, and a reconnect inside one poll reports lost plus connected.
 
@@ -132,7 +140,7 @@ A transport with the version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`; the Steam mo
 
 ## Relay server transport
 
-With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; `ROGUESQ_MP_RELAY` overrides it), `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
+With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; `ROGUESQ_MP_RELAY` overrides it), `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/net/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
 
 - Precedence: HOST GAME and a typed join code use Steam when it is available, else the relay server (`relay_ready()`). FIND GAME lists Steam's games first, then the server's, and a picked game joins over the transport it came from (`relay_t`). `pending_join` (friends-list joins) is Steam's only.
 - A game's id on the server is a random 6-digit number and is its join code: the host's line shows `JOIN CODE <id>`, and a code join sends `JOIN(id, build)`.
@@ -198,26 +206,28 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | PICKUP | A power-up a player collected (DAT index); the other side collects its own copy. |
 | TRIGGER | Client to host: the client's craft entered or left a player trigger volume (DAT event index). |
 | TOW_TRIP | A player's tow cable tripped a walker (DAT index); the other side trips its own copy. |
+| TOW_SEG | A player's tow cable for the other side to draw: its state (phase, head, count) and one segment's 16 words; the stretching head every frame unreliably, finished segments and phase changes reliably. |
 | SHOT | Host to client: a mod-linked mid-mission camera shot for the client (camera item and trigger names; a shared one the host also plays, or a personal one the client set off); the client plays it through the `camera.shots` service unless that trigger already fired in its own world. |
 | RESULT | Host's mission result. |
 | PICK, READY, BROWSE, BRIEFING_DONE | Lobby screens. |
-| SKIP | Cutscene skip. |
+| CONTINUE | A player pressed continue on the debrief; both leave it once each side has. |
+| SKIP | Host to client: a cutscene skip, tagged with the scene it was made in (see [Cutscene skip sharing](#cutscene-skip-sharing)). |
 | BYE | Quit, mismatch, or the host refusing a password (`WrongPassword`). |
 
 `rs64_ghost_quit` (called from the quit path in `input_host.cpp` before `_Exit`) sends BYE (`Quit`) and flushes for up to 200 ms, so the other player is told at once instead of waiting for the connection timeout. The 200 ms wait is acceptable only on that exit path. `ROGUESQ_MP_TEST_QUIT` ends the host abruptly; with `ROGUESQ_MP_TEST_QUIT_CLEAN=1` it takes the menu quit path and sends BYE.
 
 ## Puppet interpolation
 
-`Puppet` ([mp_core.cpp](../../mods/multiplayer-native/src/mp_core.cpp)) shows the remote player 50 ms behind the sender's clock by default (entity interpolation, `ROGUESQ_GHOST_INTERP_MS`; 0 selects dead reckoning). Remote states must be finite, inside a sane range and have roughly orthonormal axes before any of it reaches game code. A respawn, teleport or the client's start offset is treated as a jump, not motion. Measured on scripted pair runs at 0-200 ms latency with 5% loss and 40 ms jitter, 50 ms interpolation trails the real ship by latency + ~110 ms (the buffer plus the game's ~30 Hz send cadence) and is 4-6x smoother than dead reckoning whenever there is jitter. The pad goes idle when the peer stops sending (paused, results screen, stalled), so the puppet never keeps firing.
+`Puppet` ([mp_core.cpp](../../mods/multiplayer-native/src/core/mp_core.cpp)) shows the remote player 50 ms behind the sender's clock by default (entity interpolation, `ROGUESQ_GHOST_INTERP_MS`; 0 selects dead reckoning). Remote states must be finite, inside a sane range and have roughly orthonormal axes before any of it reaches game code. A respawn, teleport or the client's start offset is treated as a jump, not motion. Measured on scripted pair runs at 0-200 ms latency with 5% loss and 40 ms jitter, 50 ms interpolation trails the real ship by latency + ~110 ms (the buffer plus the game's ~30 Hz send cadence) and is 4-6x smoother than dead reckoning whenever there is jitter. The pad goes idle when the peer stops sending (paused, results screen, stalled), so the puppet never keeps firing.
 
 ## Mission end and the host's result
 
-The host's result ends the client's mission. On a client in session, `requestMissionTransitionMode` (0x800FB190) refuses the end modes except the host's: arg 3 = success, which leads to mode 3 and result 1; arg 2 = failure, mode 4 and result 2. The `setHudEnableBit8` / `setHudEnableBit4` names are misleading; they are the request bits for those modes. Abort and out-of-lives results are written directly, the way the game's abort does, and not while the pause menu is open. `requestSpeechResponseMode1/2` land the result only when it is the host's. The host announces its result as soon as it enters an end mode.
+The host's result ends the client's mission. On a client in session, `requestMissionTransitionMode` (0x800FB190) refuses the end modes except the host's: arg 3 = success, which leads to mode 3 and result 1; arg 2 = failure, mode 4 and result 2. The `setHudEnableBit8` / `setHudEnableBit4` names are misleading; they are the request bits for those modes. Abort and out-of-lives results are written directly, the way the game's abort does, and not while the pause menu is open. `requestSpeechResponseMode1/2` land the result only when it is the host's. The host announces its result as soon as it enters an end mode, and again when it lands after the end cue (a voiceline); the client holds its own landing until then (300 frames at most), so both fade out together. A game over on a player who is out waits (300 frames at most) for their craft to finish the survivor's death and ends the mission through it, so the explosion plays first.
 
 ## Shared objectives, deaths and lives
 
 - Objectives: the host streams its objective state and the client takes the newest snapshot before its level script runs each frame. On a client in session, `datItemSetObjectiveBooleanCount` drops local writes; the callers are death handlers and every death is mirrored into the host's world, which counts it once.
-- Upgrades: a pickup ORs one bit into the settings word 0x80130B4C (`npcPowerUpUpdate` 0x800EBDB0-0x800EBE4C; `kUpgradeMask` 0x1FE00). `sync_upgrades` (ghost.cpp) takes the word's upgrade bits on the mission's first frame as the baseline (the pilot's own upgrades, never shared), sends bits gained after it as UPGRADES, and ORs the other player's into the word. Bits already shared either way are not sent again; a peer entering the mission gets them all again. The game's own commit then saves them to each pilot on success and reverts them otherwise.
+- Upgrades: a pickup ORs one bit into the settings word 0x80130B4C (`npcPowerUpUpdate` 0x800EBDB0-0x800EBE4C; `kUpgradeMask` 0x1FE00). `sync_upgrades` (world_sync.cpp) takes the word's upgrade bits on the mission's first frame as the baseline (the pilot's own upgrades, never shared), sends bits gained after it as UPGRADES, and ORs the other player's into the word. Bits already shared either way are not sent again; a peer entering the mission gets them all again. The game's own commit then saves them to each pilot on success and reverts them otherwise.
 - Pickups: power-ups are DAT items. `RS64_HOOK_POWERUP_COLLECT` (0x800EBD34) sends this player's collect as PICKUP (DAT index). The receiver adds that record to `pickups_forced`; `RS64_HOOK_POWERUP_TOUCH` (0x800EBD20) zeroes the touch test's squared distance for it, so the game runs its own pickup there (bonus count, upgrade bit, shrink and removal), with the sound (`play3DSoundEvent`, a1) moved to the local ship so it is heard. A pickup not spawned on the receiver (no ship near it) is collected when it spawns. A peer entering the mission late gets every PICKUP again. Pair test: `construction_yards_bonus.rec` (see tools/debug/recordings/README.md).
 - Shared deaths: level objects are DAT items. Each frame, every tracked item whose health dropped is sent as DAMAGE (a resync sends every item). The receiver applies the drop through the game's own damage path (`dealDamagetoDatItem` 0x800C7390: a hit for a spawned item, a stored-health cut for an unspawned one).
 - Trigger volumes: `ply` DAT events live in player 1's trigger list only (0x80137DF0); `applyDatObjectiveTriggerEffect` (0x80065980) writes the objective state directly, not through `datItemSetObjectiveBooleanCount`. `RS64_HOOK_TRIGGER_EFFECT` makes a client send its edges as TRIGGER and drop them; the host applies them through the same function with `TeamTriggers` (mp_core): one effect on the first enter and on the last exit. Test: `run-mp.ps1 -TestTriggerSolo` on the level 3 recording.
@@ -234,7 +244,7 @@ The NPC slot table (0x80130BB0) has `kNpcSlots` = 0x800 entries of 8 bytes. `all
 
 ## Cutscene skip sharing
 
-A local skip is sent as SKIP, tagged with the scene it was made in: a phase (both sides start one at craft select and at mission init) and the number of skippable scenes entered in that phase. The other side pulses START when it plays that scene (it may be behind, still loading), and drops a skip for a scene it already finished; a skip within 1 s of its own pulse is treated as an echo. Skippable scenes are a cutscene timeline (the crawl, in-mission cutscenes) and the hangar launch after both picked. `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` ignores the other player's skips and `ROGUESQ_NAV_WATCH_CUTSCENES=1` makes the nav sequencer sit through every cutscene; together (`run-mp.ps1 -ClientLate`) they model a late joiner.
+The host's skip is sent as SKIP, tagged with the scene it was made in: a phase (both sides start one at craft select and at mission init) and the number of skippable scenes entered in that phase. The client pulses START when it plays that scene (it may be behind, still loading), stops once the skip took (the game counted it, or one pulse for the crawl and launch, which count nothing), and drops a skip for a scene it already finished; its own A/START do nothing in a skippable scene. Skippable scenes are a cutscene timeline (in-mission cutscenes), the opening crawl (the base `crawl` flag; A or START ends it) and the hangar launch after both picked. `ROGUESQ_MP_TEST_SKIP_CRAWL=1` presses START 60 polls into the crawl (`run-mp.ps1 -HostSkipCrawl`). `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` ignores the host's skips and `ROGUESQ_NAV_WATCH_CUTSCENES=1` makes the nav sequencer sit through every cutscene; together (`run-mp.ps1 -ClientLate`) they model a late joiner.
 
 ## Menu font period
 
@@ -242,7 +252,7 @@ The italic menu font ("italic35") has no `.`, no period-wide blank and no caret.
 
 ## The imposter
 
-`ROGUESQ_COOP_LOCAL=1` (or ghost mode) spawns player 2 as a level-wingman NPC (`npcWingmanUpdate` 0x800D93C0) from a fake DAT record at 0x80B40000 with no flight path, so the wingman AI idles and [coop_imposter.cpp](../../mods/multiplayer-native/src/coop_imposter.cpp) flies it from port 1 (hook at the handler's post-state join 0x800D9A00, action 3 only). The spawn must be followed by one `slotDispatcherIter(slot, 3, &dt)` tick or the NPC never enters its tick chains. There is no gPlayers[1], view[1] or second camera, and local split-screen is out of scope.
+`ROGUESQ_COOP_LOCAL=1` (or ghost mode) spawns player 2 as a level-wingman NPC (`npcWingmanUpdate` 0x800D93C0) from a fake DAT record at 0x80B40000 with no flight path, so the wingman AI idles and [coop_imposter.cpp](../../mods/multiplayer-native/src/session/coop_imposter.cpp) flies it from port 1 (hook at the handler's post-state join 0x800D9A00, action 3 only). The spawn must be followed by one `slotDispatcherIter(slot, 3, &dt)` tick or the NPC never enters its tick chains. There is no gPlayers[1], view[1] or second camera, and local split-screen is out of scope.
 
 - Hooks call recompiled functions only through `mips_call` (saves the context, runs the callee below the hook's stack frame).
 - The flight model in `mp_core.cpp` is a port of the player X-wing's handling (`updateXwingFlightControls` 0x800B4588) and uses polynomial sin/cos with FP contraction off so every platform rounds the same.

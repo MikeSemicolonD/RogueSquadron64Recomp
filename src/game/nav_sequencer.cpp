@@ -790,6 +790,13 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
 
                     if (btn) nav_repress(btn);
                 } else if (screen == 0) {
+                    // Picked in a co-op lobby (flag from the multiplayer mod): the pick waits for the partner and the hangar then launches, which presses here hold back.
+                    if (rs64::host::flag("craft_picked"))
+                    {
+                        s_watchdog = 0;
+                        break;
+                    }
+
                     if (nav_step_craft(rdram, g_target.c, "lobby"))
                     {
                         // START confirms the craft and then skips the hangar launch; a watching client confirms with A and skips nothing itself.

@@ -143,21 +143,6 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr)
     static int s_n = 0;
     ++s_n;
 
-    // Compare the LIVE synth ucode (RAM at OSTask.ucode) vs what the recomp decoded (ROM 0x9ABE0).
-    // IMEM 0x3E8 (jal target of the header DMA) is nop+COP2 in ROM; if live RAM shows mtc0/DMA here
-    // the recomp decoded the WRONG source (toml text_offset stale) — that's the synth-silence root.
-    if (recomp::os::getenv("ROGUESQ_LOG_UCODESRC") && s_n <= 2)
-    {
-        uint32_t uc = (uint32_t)g_audio_task.t.ucode & 0x00FFFFFFu;
-        auto dump = [&](uint32_t off){ char b[80]; int o=0;
-            for(int k=0;k<16;k++) o+=snprintf(b+o,sizeof(b)-o,"%s%02X",(k%4==0)?" ":"",rdram[(uc+off+k)^3]);
-
-            fprintf(stderr,"[ucodesrc] live RAM ucode(0x%06X)+0x%X:%s\n", uc, off, b); };
-        dump(0x3E8);  // ROM = 00000000 4B271094 C9231800 4B070850 (nop+vector)
-        dump(0x3B0);  // ROM = 40850800 03E00008 40871000 400A3000 (mtc0 DMA)
-        fflush(stderr);
-    }
-
     // Probe the command list the synth will process — does it actually contain voice commands?
     static int s_log_cmdlist = -1;
 
@@ -266,17 +251,6 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr)
 
         fprintf(stderr, "%s\n", hx);
         fflush(stderr);
-    }
-
-    // EXPERIMENT (ROGUESQ_BRIDGE_WORD2): the CPU pipeline writes the synth voice data to
-    // data_ptr+0x100, but sets word2 (data_ptr+0x8) to the separate, unfilled -0x689C buffer.
-    // Point word2 back at data_ptr so the synth reads the real voice data it wrote.
-    if (recomp::os::getenv("ROGUESQ_BRIDGE_WORD2")) {
-        uint32_t dp = (uint32_t)g_audio_task.t.data_ptr;
-        uint32_t dpp = dp & 0x00FFFFFFu;
-
-        if (dpp && dpp + 0xC <= 0x800000u)
-            rdram_wr32(rdram, dpp + 8, dp);
     }
 
     // Run the shared Factor5 boot ucode first — it's the SAME ucode at 0x800825D0

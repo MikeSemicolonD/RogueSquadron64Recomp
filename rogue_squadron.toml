@@ -340,7 +340,7 @@ text = '{ rs64_th_cinematicLoopBody_entry(rdram, ctx); }'
 # Empty-pool sentinel for load_asset_with_malloc_flags. The audio walker
 # func_80097518 reads an empty pool's first word as -1 = "no entries", but
 # zero-init RAM leaves it 0 -> infinite walker loop. Stamp -1 at return (r2 =
-# buffer). Load-bearing boot-deadlock fix. ROGUESQ_DISABLE_EMPTY_POOL_SENTINEL.
+# buffer). Load-bearing boot-deadlock fix.
 [[patches.hook]]
 func = "load_asset_with_malloc_flags"
 before_vram = 0x80064884   # the `jr $ra` instruction
@@ -364,9 +364,8 @@ func = "viRetraceHandlerThread"
 vram = 0x80019B54
 value = 0x00003021
 
-# RETIRED NOBLOCK experiments. VI-driven mode (default) runs the hardware
-# protocol, where these recvs must BLOCK; the host osRecvMesg override applies
-# NOBLOCK only when ROGUESQ_VI_DRIVEN_LOOP=0. Reverted sites (func @ vram):
+# RETIRED NOBLOCK experiments. The hardware VI protocol needs these recvs to
+# BLOCK. Reverted sites (func @ vram):
 #   submitGfxFrame @0x8000C4AC / @0x8000C2BC / @0x8000C0B8
 #   bufferArbiterProducerScanWait @0x8000BFCC / @0x8000BF98
 #   waitForPostSwapAck @0x8001C278   waitOnVideoQueue @0x8001BEA4
@@ -401,8 +400,7 @@ value = 0x00000000
 # Attribution pacing (0x800C29F8). Default: yield through the N64 scheduler until
 # the next VI, so the producer emits the full glyph set (fixes the white/partial-draw
 # race + gives ~2s duration) without holding the run slot (a host sleep here
-# deadlocked the frame-buffer arbiter). ROGUESQ_ATTRIB_HOLD_MS>0 forces the old fixed sleep instead
-# (default 50ms; e.g. 300 for screenshotting); =0 disables both.
+# deadlocked the frame-buffer arbiter).
 [[patches.hook]]
 func = "runMenuModelViewerScreen"   # was func_800C28F0 (renamed in syms)
 before_vram = 0x800C29F8
@@ -544,6 +542,18 @@ text = '{ rs64_th_setupCameraMatrices_80016CE0(rdram, ctx); }'
 func = "setupCameraMatrices"
 before_vram = 0x80016D50
 text = '{ rs64_th_setupCameraMatrices_80016D50(rdram, ctx); }'
+
+# Widescreen HUD placement: a marker opening each 2D element's display-list chunk names the screen side RT64 anchors its texrects to.
+[[patches.hook]]
+func = "drawSubtitleText"
+before_vram = 0x80015EF8
+text = '{ rs64_th_drawSubtitleText_80015EF8(rdram, ctx); }'
+
+# Widescreen HUD placement: the HUD pass camera shifts the radar model by the same distance.
+[[patches.hook]]
+func = "refreshEffectObjectCamerasAndState"
+before_vram = 0x80053148
+text = '{ rs64_th_refreshEffectObjectCamerasAndState_80053148(rdram, ctx); }'
 
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"
@@ -830,7 +840,6 @@ text = '{ rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(rdram, ctx); }'
 # un-paced fade loop free-runs and starves the VI-driven glyph-layout producer, so
 # each frame emits only a partial glyph set (dropped letters, worse in the fast
 # fade-in than the scroll). Pace to the real VI retrace so the producer keeps up.
-# ROGUESQ_CREDITS_NOPACE=1 disables (A/B against the bug).
 [[patches.hook]]
 func = "runMenuShipSelectScreen"
 before_vram = 0x800c14a8
@@ -843,8 +852,8 @@ func = "menuOverlayInit"
 text = '{ rs64_th_menuOverlayInit_entry(rdram, ctx); }'
 
 # musyxKeyOnVoice (builds per-voice RSP rate/envelope ramps) runs by default.
-# Two entry guards: ROGUESQ_STUB_VOICESTART opt-out, and a period-0 skip (all
-# envelope divisions use the +0x60 period; host C divide would crash on /0).
+# Entry guard: a period-0 voice is skipped (all envelope divisions use the +0x60
+# period; host C divide would crash on /0).
 [[patches.hook]]
 func = "musyxKeyOnVoice"
 text = '{ if (rs64_th_musyxKeyOnVoice_entry(rdram, ctx)) return; }'
@@ -870,13 +879,6 @@ value = 0x00000000
 func = "musyxSynthFrame"
 before_vram = 0x80091798
 text = '{ rs64_th_musyxSynthFrame_80091798(rdram, ctx); }'
-
-# Pace the 32-iter attribution-display loop (L_8006D980); without it all 32
-# frames flash by in ms. ROGUESQ_ATTRIBUTION_SLEEP_MS=0 disables.
-[[patches.hook]]
-func = "runIdleFramesAndLoadSaveData"
-before_vram = 0x8006D980
-text = '{ rs64_th_runIdleFramesAndLoadSaveData_8006D980(rdram, ctx); }'
 
 # Runtime overlay registration: boot-time load_overlays only registers
 # .ovl.mission, so calls into the shared VA range keep hitting mission code.
@@ -910,13 +912,12 @@ value = 0x00000000
 
 # saveServiceWorker walks the registry list at 0x801128D0, which never gets
 # populated -> wild-ptr AV. Early-return until the registration path is fixed.
-# ROGUESQ_ENABLE_F8006F2CC=1 runs the original body.
 [[patches.hook]]
 func = "saveServiceWorker"
 before_vram = 0x8006F2CC
 text = '{ if (rs64_th_saveServiceWorker_8006F2CC(rdram, ctx)) return; }'
 
-# Cinematic inner loop (L_800A6024): freeze watchdog tick and per-iter pacer.
+# Cinematic inner loop (L_800A6024): freeze watchdog tick and pause point.
 [[patches.hook]]
 func = "cinematicLoopBody"
 before_vram = 0x800A6024
@@ -1528,6 +1529,27 @@ text = '{ if (rs64_th_loadAccountDataIntoStruct_entry(rdram, ctx)) return; }'
 [[patches.hook]]
 func = "generateUnlockString"
 text = '{ if (rs64_th_generateUnlockString_entry(rdram, ctx)) return; }'
+
+# Wingman draw (after its model went into the render list; s3 = the NPC, s1 = the render info): co-op draws the other player's tow cable here.
+# hook: RS64_HOOK_WINGMAN_DRAW
+[[patches.hook]]
+func = "npcWingmanUpdate"
+before_vram = 0x800D9A90
+text = '{ rs64_th_npcWingmanUpdate_800D9A90(rdram, ctx); }'
+
+# Front end start (a1 = overlay state, a2 = the menu it opens; 4 = ELITE ROGUES after a game over): co-op goes back to mission select instead.
+# hook: RS64_HOOK_FRONT_END
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E138
+text = '{ rs64_th_mainGameLoop_8003E138(rdram, ctx); }'
+
+# Debrief continue check (v0 = the pressed buttons; A/START leave the screen): co-op holds it until both players pressed.
+# hook: RS64_HOOK_DEBRIEF_PAD
+[[patches.hook]]
+func = "runMenuRandomBackdropScreen"
+before_vram = 0x800BFC4C
+text = '{ rs64_th_runMenuRandomBackdropScreen_800BFC4C(rdram, ctx); }'
 
 # Mod levels: the debrief returned; the template's data comes back.
 [[patches.hook]]

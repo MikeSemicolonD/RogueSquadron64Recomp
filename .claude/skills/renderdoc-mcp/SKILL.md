@@ -49,7 +49,7 @@ never-rasterized -> ruled out present/writeback and pointed at cull.
 - **Broken state accessors.** This pyrenderdoc build throws `AttributeError: 'PipeState' object has no
   attribute GetColorBlend/GetDepthState/GetStencilState/GetRasterizer`. So `get_draw_call_state` cannot
   report blend/depth/cull. Work around with pixel/vertex data (`pixel_history`, `get_post_vs_data`) and,
-  for cull specifically, an A/B env toggle in the game (e.g. `ROGUESQ_SKY_NOCULL`).
+  for cull specifically, the cull test in `RSP::drawIndexedTri` (`rt64_rsp.cpp`).
 - **No per-object tag in the stream.** Draws are not labeled by game object. Identify them by content:
   terrain = tan vertex COLOR (R>G>B ~0.5-1.0), large positive w (near ~4500 -> far ~10000). Sky/effect =
   different color / near-plane or negative w. `find_draws` gives event_ids + index counts only (no color),
@@ -70,8 +70,7 @@ never-rasterized -> ruled out present/writeback and pointed at cull.
 
 ## Recipes for the open render bugs
 - **Skybox / effect-not-appearing:** `pixel_history` the empty region -> only clears => never-rasterized.
-  Then check whether faces reach the CPU clip (`rt64_rsp.cpp` `drawIndexedTri`), and
-  A/B the cull (`ROGUESQ_SKY_NOCULL`, or `ROGUESQ_F5_CULL=0` for the double-sided path).
+  Then check whether faces reach the CPU clip and pass the cull test (`rt64_rsp.cpp` `drawIndexedTri`).
 - **Model texture/UV:** `get_draw_call_state` the model draw for its bound texture, `read_texture_pixels`
   the texture, `get_post_vs_data`/TEXCOORD to compare UVs vs the byte-faithful golden.
 - **Confirm which frame a capture is:** `save_render_target` the present RT (`321`/`322`).

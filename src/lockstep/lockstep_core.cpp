@@ -220,10 +220,6 @@ uint32_t parse_seed(const char* s) {
     return (uint32_t)v;
 }
 
-int clamp_delay(long frames) {
-    return (int)(frames < 1 ? 1 : (frames > 60 ? 60 : frames));
-}
-
 uint8_t quantize_throttle(float p) {
 
     if (!(p >= 0.0f))
@@ -238,17 +234,6 @@ uint8_t quantize_throttle(float p) {
 
 float dequantize_throttle(uint8_t q) {
     return (q == 0xFF) ? -1.0f : (float)q / 254.0f;
-}
-
-DelayLine::DelayLine(int frames) : ring_((size_t)(frames > 0 ? frames : 1) * 6, 0), frames_((size_t)(frames > 0 ? frames : 1)) {}
-
-void DelayLine::push_pop(uint8_t pad[6]) {
-
-    uint8_t out[6];
-    memcpy(out, &ring_[idx_ * 6], 6);
-    memcpy(&ring_[idx_ * 6], pad, 6);
-    idx_ = (idx_ + 1) % frames_;
-    memcpy(pad, out, 6);
 }
 
 uint64_t fnv1a(const uint8_t* data, size_t n, uint64_t h) {
