@@ -1884,6 +1884,9 @@ static inline uint16_t boot_start_pulse() {
     return ((SDL_GetTicks() % 240u) < 120u) ? N64_START_BUTTON : 0;
 }
 
+// The overlay's last polled N64 buttons, read by the rebind capture.
+static std::atomic<uint16_t> g_touch_buttons{0};
+
 static rs64::touch::Pad poll_touch()
 {
 
@@ -1908,7 +1911,11 @@ static rs64::touch::Pad poll_touch()
         rs64::touch::save_config(shared, rs64::touch::config_path());
     }
 
-    return g_touch.poll(ctx, SDL_GetTicks());
+    const rs64::touch::Pad pad = g_touch.poll(ctx, SDL_GetTicks());
+
+    g_touch_buttons.store(pad.buttons);
+
+    return pad;
 }
 
 static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, float* y)
@@ -2353,6 +2360,7 @@ struct CaptureState {
     bool active = false;
     uint8_t keys[SDL_NUM_SCANCODES] = {0};
     uint32_t pad = 0, mouse = 0;
+    uint16_t touch = 0;
     float pad_axes[SDL_CONTROLLER_AXIS_MAX] = {0};
     struct JoySnap { SDL_JoystickID id; std::vector<float> axes; std::vector<uint8_t> buttons, hats; };
     std::vector<JoySnap> joys;
@@ -2392,6 +2400,7 @@ void capture_begin(const rs64::input::CaptureFilter& f)
     memcpy(s_cap.keys, ks, std::min(nk, (int)SDL_NUM_SCANCODES));
     s_cap.pad = pad_buttons_now();
     s_cap.mouse = SDL_GetMouseState(nullptr, nullptr);
+    s_cap.touch = g_touch_buttons.load();
 
     for (int a = 0; controller && a < SDL_CONTROLLER_AXIS_MAX; ++a) s_cap.pad_axes[a] = SDL_GameControllerGetAxis(controller, (SDL_GameControllerAxis)a) / 32767.0f;
 
@@ -2422,8 +2431,12 @@ int capture_poll(rs64::input::Source* out)
     const uint8_t* ks = SDL_GetKeyboardState(&nk);
     const uint32_t pad = pad_buttons_now();
     const bool start_cancels = !s_cap.filter.any && (pad & ~s_cap.pad & (1u << SDL_CONTROLLER_BUTTON_START));
+    const uint16_t touch = g_touch_buttons.load();
+    const bool touch_cancels = touch & ~s_cap.touch & (rs64::touch::B | rs64::touch::START);
 
-    if (ks[SDL_SCANCODE_ESCAPE] || start_cancels)
+    s_cap.touch = touch;
+
+    if (ks[SDL_SCANCODE_ESCAPE] || start_cancels || touch_cancels)
     {
         s_cap.active = false;
 
@@ -2462,7 +2475,8 @@ int capture_poll(rs64::input::Source* out)
         if (std::fabs(delta) >= 0.5f) offer({ ri::SourceKind::PadAxis, a, (int8_t)(delta > 0.0f ? 1 : -1) });
     }
 
-    const uint32_t mb = SDL_GetMouseState(nullptr, nullptr);
+    // With touch on the pointer is a finger (SDL_HINT_MOUSE_TOUCH_EVENTS, compositor mouse emulation), so its buttons never bind, as in poll_input.
+    const uint32_t mb = rs64::touch::shared_config().enabled ? 0 : SDL_GetMouseState(nullptr, nullptr);
 
     for (int b = 1; b <= 5; ++b)
     {
