@@ -243,12 +243,22 @@ void load_all()
             for (const auto& e : errors)
                 fprintf(stderr, "[lang] %s: %s\n", d.mod_id.c_str(), e.c_str());
 
-            if (!lang || find(lang->code)) continue;
+            if (!lang) continue;
 
             load_glyph_packs(d.mod_id, *lang);
 
             fprintf(stderr, "[lang] %s: %s (%zu front, %zu game, %zu voice, %zu glyph packs)\n", d.mod_id.c_str(), lang->code.c_str(), lang->front.size(),
                     lang->game.size(), lang->voice.size(), lang->glyphs.size());
+
+            // A code loaded again (a later mod in the load order) replaces the earlier one in its place.
+            const auto same = std::find_if(s_languages.begin(), s_languages.end(), [&](const Language& l) { return l.code == lang->code; });
+
+            if (same != s_languages.end())
+            {
+                fprintf(stderr, "[lang] %s: replaces the earlier %s\n", d.mod_id.c_str(), lang->code.c_str());
+                *same = std::move(*lang);
+                continue;
+            }
 
             s_languages.push_back(std::move(*lang));
         }

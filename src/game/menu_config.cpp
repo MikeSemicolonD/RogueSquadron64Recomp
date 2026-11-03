@@ -52,6 +52,7 @@ constexpr uint32_t GCMD = 0x800CE730u;
 constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte offset into rdram
 constexpr int MAX_ENTRIES = 8;                      // menu_entries[8]
 constexpr const char* kModsPage = "mods";
+constexpr const char* kLanguagesPage = "languages";
 constexpr int STR_CAP = 63;
 
 // Front-end menu ids (gCurrentMenuData +0x04).
@@ -439,15 +440,14 @@ MenuConfig default_config(int lang) {
     if (rs64::lang::installed())
     {
         static const char* const kBuiltinNames[] = { "ENGLISH", "DEUTSCH", "FRANCAIS" };
-        constexpr size_t kMaxEntries = 7;
         const std::vector<std::string> codes = rs64::lang::codes();
 
         language.type = BType::Submenu;
         language.transition.clear();
-        language.page = "languages";
+        language.page = kLanguagesPage;
         language.title = language.label;
 
-        for (size_t i = 0; i < codes.size() && i < kMaxEntries; ++i)
+        for (size_t i = 0; i < codes.size(); ++i)
         {
             const rs64::lang::Language* mod = rs64::lang::find(codes[i]);
             std::string name = mod ? to_latin1(mod->name) : kBuiltinNames[i];
@@ -457,14 +457,16 @@ MenuConfig default_config(int lang) {
 
             Button e;
             e.id = "language_" + codes[i];
-            e.menu = "languages";
+            e.menu = kLanguagesPage;
             e.type = BType::Action;
             e.transition = "language:" + std::to_string(i);
             e.label = name;
+
+            // Space before BACK, as the DISPLAY SETTINGS pages have, under the last row shown (more languages scroll, languages_install).
+            if (i + 1 == std::min(codes.size(), (size_t)MAX_ENTRIES - 1)) e.gap_after = 16;
+
             m.buttons.push_back(std::move(e));
         }
-
-        if (codes.size() > kMaxEntries) fprintf(stderr, "[lang] %zu languages; the LANGUAGE page lists the first %zu\n", codes.size(), kMaxEntries);
     }
 
     m.buttons.push_back(std::move(language));
@@ -2352,6 +2354,7 @@ void controls_poll_capture(uint8_t* rdram)
 }
 
 bool mods_on_screen(uint8_t* rdram);
+bool langs_on_screen(uint8_t* rdram);
 
 // Each front-end pass before the menu reads the pad: tab stops on entry/exit, the capture, and up/down scrolling the window (left/right would cycle presets).
 void controls_pass(uint8_t* rdram, recomp_context* ctx)
@@ -2365,8 +2368,8 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx)
 
         if (s_ctl.shown) controls_show_model(rdram, false);
 
-        // The MODS page reads the wheel too (mods_pass, after this pass).
-        if (!mods_on_screen(rdram)) s_ctl_wheel.store(0);
+        // The MODS and LANGUAGE pages read the wheel too (their passes run after this one).
+        if (!mods_on_screen(rdram) && !langs_on_screen(rdram)) s_ctl_wheel.store(0);
 
         s_ctl.shown = false;
         s_ctl.tabs = false;
@@ -2512,6 +2515,127 @@ void controls_frame(uint8_t* rdram, recomp_context* ctx)
 
     rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, s_ctl.dirty, 0u});
     s_ctl.dirty = 0;
+}
+
+// ---- LANGUAGE page with more languages than it has rows: the language slots scroll through every language ----
+
+constexpr int kLangRows = MAX_ENTRIES - 1;
+
+struct LangScreen {
+    bool shown = false;
+    bool dirty = false;
+    std::vector<std::pair<std::string, int>> rows;
+    rs64::menu::ScrollPos pos{ 0, 0 };
+    uint32_t bufs[kLangRows] = {};
+};
+
+LangScreen s_lang;
+
+bool langs_on_screen(uint8_t* rdram) {
+    return s_lang.shown && rd_b(rdram, GCMD_OFF + 0x04) == page_id(kLanguagesPage);
+}
+
+// Visible row i ends in a blank, or '^' / '#' on the top / bottom row with languages above / below (ensure_menu_period's arrows).
+std::string lang_slot_text(int i)
+{
+
+    std::string t = s_lang.rows[s_lang.pos.top + i].first + " `";
+    const bool more_above = i == 0 && s_lang.pos.top > 0;
+    const bool more_below = i == kLangRows - 1 && s_lang.pos.top + kLangRows < (int)s_lang.rows.size();
+
+    if (more_above || more_below) t.back() = more_above ? '^' : '#';
+
+    return t;
+}
+
+// The page as build_mod_page lays it out (the first kLangRows languages, then BACK); with more languages its slots get live labels the pass rewrites, each slot's param being its language's index.
+int languages_install(uint8_t* rdram, uint8_t parent)
+{
+
+    const int count = build_mod_page(rdram, kLanguagesPage, parent);
+
+    s_lang = LangScreen{};
+
+    for (const auto& b : config().buttons)
+        if (b.menu == kLanguagesPage && b.transition.rfind("language:", 0) == 0 && button_visible(rdram, b))
+            s_lang.rows.emplace_back(b.label, std::atoi(b.transition.c_str() + 9));
+
+    if ((int)s_lang.rows.size() <= kLangRows) return count;
+
+    // A mod's own entry on the page would sit among the slots: the page then lists the first rows only.
+    for (int i = 0; i < kLangRows; ++i)
+    {
+        s_lang.bufs[i] = live_buffer(rdram, "languages#" + std::to_string(i));
+
+        if (!s_lang.bufs[i] || read_slot(rdram, i).sub != SUBTYPE_LANGUAGE) return count;
+    }
+
+    for (int i = 0; i < kLangRows; ++i)
+    {
+        Slot s = read_slot(rdram, i);
+
+        write_live(rdram, s_lang.bufs[i], lang_slot_text(i));
+        s.label = (int32_t)s_lang.bufs[i];
+        write_slot(rdram, i, s);
+    }
+
+    s_lang.shown = true;
+
+    fprintf(stderr, "[lang] LANGUAGE page: %zu languages in %d rows\n", s_lang.rows.size(), kLangRows);
+
+    return count;
+}
+
+// Each front-end pass before the menu reads the pad: up / down (and the wheel) step the cursor, scrolling the rows at their edges; BACK sits below them.
+void languages_pass(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!langs_on_screen(rdram)) return;
+
+    uint32_t p = (uint32_t)rd_w(rdram, PAD_PRESSED);
+    const int wheel = s_ctl_wheel.exchange(0);
+
+    if (wheel) p |= wheel > 0 ? kNavUp : kNavDown;
+
+    if (!(p & (kNavUp | kNavDown))) return;
+
+    wr_w(rdram, PAD_PRESSED, (int32_t)(p & ~(kNavUp | kNavDown)));
+
+    // A mouse or touch hover may have moved the highlight since the last step.
+    const int n = (int)s_lang.rows.size(), slot = rd_b(rdram, GCMD_OFF + 0x94), top = s_lang.pos.top;
+
+    const int dir = (p & kNavUp) ? -1 : 1;
+
+    s_lang.pos.sel = slot >= kLangRows ? n : top + slot;
+
+    // The list stops at its ends: wrapping from BACK would jump a long list back to the top.
+    if ((dir > 0 && s_lang.pos.sel == n) || (dir < 0 && s_lang.pos.sel == 0)) return;
+
+    s_lang.pos = rs64::menu::scroll_step(s_lang.pos, dir, n, kLangRows);
+
+    if (s_lang.pos.top != top)
+    {
+        for (int i = 0; i < kLangRows; ++i)
+        {
+            write_live(rdram, s_lang.bufs[i], lang_slot_text(i));
+            wr_w(rdram, GCMD_OFF + 0x74 + i * 4, s_lang.rows[s_lang.pos.top + i].second);
+        }
+
+        s_lang.dirty = true;
+    }
+
+    wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)(s_lang.pos.sel == n ? kLangRows : s_lang.pos.sel - s_lang.pos.top));
+    rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, {0x17u, 0x7Fu, 0x40u});
+}
+
+// Each front-end frame: rows the pass rewrote are relaid out in place.
+void languages_frame(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!langs_on_screen(rdram) || !s_lang.dirty) return;
+
+    rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, (1u << kLangRows) - 1, 0u});
+    s_lang.dirty = false;
 }
 
 // ---- MODS page (main menu > MODS): every installed mod in load order, ON/OFF on the right, A carries a mod to a new place ----
@@ -3231,7 +3355,14 @@ extern "C" int rs64_menu_install_main(uint8_t* rdram)
 
     s_shown_page = page_name(menu) ? menu : 0xFF;
 
-    if (const std::string* page = page_name(menu)) return *page == kModsPage ? mods_install(rdram, page_parent(menu)) : build_mod_page(rdram, *page, page_parent(menu));
+    if (const std::string* page = page_name(menu))
+    {
+        if (*page == kModsPage) return mods_install(rdram, page_parent(menu));
+        if (*page == kLanguagesPage) return languages_install(rdram, page_parent(menu));
+
+        return build_mod_page(rdram, *page, page_parent(menu));
+    }
+
     if (menu == MENU_CONTROLLER_SETTINGS && controls_enabled()) return controls_install(rdram);
     if (frontend_menu_name(menu)) rebuild_frontend_menu(rdram, menu);
     if (menu == MENU_SOUND_SETTINGS) sound_settings_install(rdram);
@@ -3530,6 +3661,7 @@ extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx)
 
     controls_pass(rdram, ctx);
     mods_pass(rdram, ctx);
+    languages_pass(rdram, ctx);
 
     // The pilot-first page or a page opened from it (multiplayer's JOIN GAME list): the exit condition takes either on to mission select.
     const std::vector<uint8_t> chain = page_chain(menu);
@@ -3961,6 +4093,7 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
     rs64::lang::flush(rdram);
     controls_frame(rdram, ctx);
     mods_frame(rdram, ctx);
+    languages_frame(rdram, ctx);
     note_frame(rdram, ctx);
 
     // A changed live label is rewritten in its buffer and relaid out in place (0x800C4C8C(menu, entry mask, 0), as the name entry does).
