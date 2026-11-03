@@ -90,7 +90,7 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 A service is a versioned C table one mod hands another through the host, so a mod can extend another mod without either linking the other. The provider calls `add_service` in `rs64_mod_init`; the consumer calls `get_service` on first use (after the seal, so load order does not matter) and checks the table's own `version` / `size` fields before using it. A refused mod's services are rolled back with its other registrations.
 
 | Name | Header | Provider | Consumer |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `mp.transport` | [include/rs64/mp_transport.h](../../include/rs64/mp_transport.h) | [mods/steam-relay](../../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; a version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`) also feeds the JOIN GAME list; see [multiplayer.md](../guides/multiplayer.md#steam-relay-mod) |
 
 ## Hooks

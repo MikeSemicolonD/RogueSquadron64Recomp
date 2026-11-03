@@ -103,7 +103,7 @@ cleanly across batches.
 Functions whose current name is known to be wrong, with the role found by RE. Not applied yet. Names used in `rogue_squadron.toml` hooks (`func =`) and in mods' `RECOMP_HOOK` / `RECOMP_PATCH` must be renamed in the same batch, or regen fails. Verify a proposed name against the disassembly (`tools/re/rz/rzq.py disasm <addr>`) before applying.
 
 | Address | Current name | Proposed | Role | Source |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 0x80017AE0 | `setViewStateBytesAndFadeScale` | `setFog` | (r,g,b,start,density): fog color 0x8011A873, start/end | fog trace 2026-10-01 |
 | 0x80017B48 | `setMissionLevelInitByte` | `setFogEnable` | fog on/off byte read by the RDP state builder | fog trace 2026-10-01 |
 | 0x80044724 | `cutsceneActorNpcHandler` | `terrainFogFrameCallback` | per-frame callback: terrain grid build, far plane, fog (registered by initMission and setupCutsceneLevel). toml hooks use the name | fog trace 2026-10-01 |

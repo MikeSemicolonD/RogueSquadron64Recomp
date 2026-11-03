@@ -376,9 +376,9 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 
 - **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and it stutters a lot. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wrap the commands above.
 - **ROM:** on first launch the system file picker asks for `rogue_squadron.z64` (`.v64` and `.n64` also work); the ROM is checked and imported once. (Pushing it to `/sdcard/Android/data/com.rs64recomp.app/files/` with `adb push` also works.)
-- **Controls:** touch controls are on by default: tap menu buttons directly, swipe carousels, and fly with virtual joystick stick and N64-style buttons.
+- **Touch Controls:** on by default, tap menu buttons directly, swipe carousels, and fly with virtual joystick stick and N64-style buttons. A paired gamepad will hide the touch overlay.
   - Move and resize the touch buttons by using the gear button in the bottom left corner of the screen when navigating menus or by selecting **TOUCH LAYOUT** (Requires [touch-layout](mods/touch-layout) mod) in the pause menu.
-  - **GYRO STEERING** (Requires [gyro-toggle](mods/gyro-toggle) mod) in Game Settings turns on tilt steering to allow for fine mouse-like aiming. A paired gamepad will hide the touch overlay.
+  - **GYRO STEERING** (Requires [gyro-toggle](mods/gyro-toggle) mod) in Game Settings turns on tilt steering to allow for fine mouse-like aiming.
   - Touch settings live in `roguesq_touch.json`.
 - **Mods:** the APK will build and include the mods listed under `android` in [mods/platforms.json](mods/platforms.json) installing them into the app's `mods/` folder.
 - **Debugging:** logs go to logcat under the tag `RS64` (the `Logcat (Android)` task filters it). Environment variables go one `NAME=VALUE` per line in `roguesq_env.txt` in the app's files folder.

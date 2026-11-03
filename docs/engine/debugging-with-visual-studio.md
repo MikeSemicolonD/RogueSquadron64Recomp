@@ -28,7 +28,7 @@ A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_cont
 - **`ctx`** is the MIPS CPU state:
 
   | Field | Contents |
-  |---|---|
+  | --- | --- |
   | `ctx->r0` .. `ctx->r31` | General-purpose registers. They are 64-bit and sign-extended, so compare them as `(uint32_t)ctx->rN`. |
   | `ctx->f0` .. `ctx->f31` | Floating-point registers. `.d` = double, `.f` = float, `.u64` = raw bits, `.u32l` = low word. |
   | `ctx->lo`, `ctx->hi` | Multiply/divide results. |
@@ -38,7 +38,7 @@ A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_cont
 - **`rdram`** is the N64's RAM. A game address `0x80xxxxxx` lives at `rdram + (addr - 0x80000000)`, but RAM is stored as little-endian 32-bit words, so smaller values are swizzled:
 
   | Size | Host location | Macro |
-  |---|---|---|
+  | --- | --- | --- |
   | word (32-bit) | `rdram + (addr - 0x80000000)` | `MEM_W` |
   | halfword | `rdram + ((addr ^ 2) - 0x80000000)` | `MEM_H` |
   | byte | `rdram + ((addr ^ 3) - 0x80000000)` | `MEM_B` |
