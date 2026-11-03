@@ -46,7 +46,7 @@ bool names_in_item(uint16_t sub)
 {
 
     switch (sub) {
-    case 0x14: case 0x33: case 0x36: case 0x44: case 0x4A: case 0x4B: case 0x4F:
+    case 0x14: case 0x33: case 0x36: case 0x44: case 0x46: case 0x4A: case 0x4B: case 0x4F:
         return true;
     default:
         return false;
@@ -54,7 +54,7 @@ bool names_in_item(uint16_t sub)
 }
 
 // Subtypes whose handler picks the model itself (mission overlay strings, the undamaged model): turrets, walkers, droids, radar dish,
-// shield dome, shuttles (npcShuttleUpdate), ground transports (npcGroundTransportUpdate) and TIEs (npcTieVariantUpdate).
+// shield dome, shuttles (npcShuttleUpdate), ground transports (npcGroundTransportUpdate), TIEs (npcTieVariantUpdate), train cars, power-ups.
 uint32_t handler_model_name(uint16_t sub)
 {
 
@@ -83,6 +83,12 @@ uint32_t handler_model_name(uint16_t sub)
     case 0x13: return 0x800A7BD4u;
     case 0x29: return 0x800A7BECu;
     case 0x43: return 0x800A7BF4u;
+    case 0x2F: return 0x800A80C0u;
+    case 0x30: return 0x800A80CCu;
+    case 0x31: return 0x800A80D8u;
+    case 0x34: return 0x800A80E8u;
+    case 0x35: return 0x800A80F4u;
+    case 0x4C: return 0x800A8890u;
     default: return 0;
     }
 }
