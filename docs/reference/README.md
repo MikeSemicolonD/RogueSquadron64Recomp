@@ -14,7 +14,7 @@ These are reverse-engineering notes: addresses, struct offsets and opcode tables
 ## Vocabulary
 
 | Term | Meaning |
-|---|---|
+| --- | --- |
 | RDRAM | The N64's 8 MB of main memory. The game's data structures live here. |
 | RSP / RDP | The N64's vector coprocessor, which runs microcode, and its rasterizer. |
 | ucode | Microcode, the RSP program. This game has custom graphics ucode (F3DFACTOR5) and audio ucode (MusyX). |
@@ -27,7 +27,7 @@ These are reverse-engineering notes: addresses, struct offsets and opcode tables
 ## Which doc answers what
 
 | Question | Doc |
-|---|---|
+| --- | --- |
 | How does the port fit together? Which thread does what? Where is global X? | [game-architecture.md](game-architecture.md) |
 | What are the fields of the player, NPC, HUD, save or cutscene struct? | [data-structures.md](data-structures.md) |
 | What does display-list opcode `0xNN` do, and how does RT64 handle it? | [factor5-gbi.md](factor5-gbi.md) (summary table), then [f5-model-dl-spec.md](f5-model-dl-spec.md) §7 (authoritative) |

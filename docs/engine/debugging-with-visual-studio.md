@@ -28,7 +28,7 @@ A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_cont
 - **`ctx`** is the MIPS CPU state:
 
   | Field | Contents |
-  |---|---|
+  | --- | --- |
   | `ctx->r0` .. `ctx->r31` | General-purpose registers. They are 64-bit and sign-extended, so compare them as `(uint32_t)ctx->rN`. |
   | `ctx->f0` .. `ctx->f31` | Floating-point registers. `.d` = double, `.f` = float, `.u64` = raw bits, `.u32l` = low word. |
   | `ctx->lo`, `ctx->hi` | Multiply/divide results. |
@@ -38,7 +38,7 @@ A recompiled function looks like `void func_80012345(uint8_t* rdram, recomp_cont
 - **`rdram`** is the N64's RAM. A game address `0x80xxxxxx` lives at `rdram + (addr - 0x80000000)`, but RAM is stored as little-endian 32-bit words, so smaller values are swizzled:
 
   | Size | Host location | Macro |
-  |---|---|---|
+  | --- | --- | --- |
   | word (32-bit) | `rdram + (addr - 0x80000000)` | `MEM_W` |
   | halfword | `rdram + ((addr ^ 2) - 0x80000000)` | `MEM_H` |
   | byte | `rdram + ((addr ^ 3) - 0x80000000)` | `MEM_B` |
@@ -54,7 +54,7 @@ The game's function names come from the decomp. To find what calls a function, o
 Game code runs tight loops, so an ordinary breakpoint inside one can stop thousands of times before the interesting case. Make it conditional instead: right-click the breakpoint, pick **Conditions…**, and enter an expression that is true only when things go wrong.
 
 | To stop when... | Condition |
-|---|---|
+| --- | --- |
 | `f2` becomes NaN | `ctx->f2.d != ctx->f2.d` |
 | a pointer leaves the game's 8 MB | `(uint32_t)ctx->r17 >= 0x80800000` |
 | a store hits one address (`sw $x, 0x10($a0)`) | `(uint32_t)(ctx->r4 + 0x10) == 0x80128000` |
@@ -81,7 +81,7 @@ Recompiled code doesn't fold temporaries the way a normal compiler does: every r
 ### Recompiler bug or game logic?
 
 | Symptom | Likely cause |
-|---|---|
+| --- | --- |
 | `f2.u64 == 0x7FF8000000000000` (the standard quiet NaN) | An earlier float op produced NaN: a game-logic divide by zero, square root of a negative, and so on. |
 | A NaN with random-looking low bits | Uninitialized RAM read as a double. |
 | An address that points into the host stack, not RDRAM | `r1` or `r29` clobbered: a recompiler bug. |
@@ -154,7 +154,7 @@ Other helpers under [tools/debug/](../../tools/debug/):
 ## Files worth knowing
 
 | File | What it is |
-|---|---|
+| --- | --- |
 | `RecompiledFuncs\funcs_*.c` | Recompiled game code, thousands of `func_8xxxxxxx` and named functions. Generated locally and gitignored. |
 | `build\factor5_ucode\musyx_audio_recompiled.c` | Recompiled MusyX audio synth microcode. |
 | `build\factor5_ucode\factor5_boot_recompiled.c` | Recompiled boot microcode that loads the audio microcode's data. |

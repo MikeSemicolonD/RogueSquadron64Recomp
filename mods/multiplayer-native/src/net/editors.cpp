@@ -1,6 +1,7 @@
-// The MULTIPLAYER page's text rows: the IPv4 address (AddressEditor), a relay join code or password (CodeEditor), the host's game name (NameEditor).
+// The MULTIPLAYER page's text rows: the address or host name (AddressEditor), a relay join code or password (CodeEditor), the host's game name (NameEditor).
 #include "net/net_core.h"
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 
 namespace rs64::net {
@@ -136,16 +137,19 @@ std::optional<uint32_t> AddressEditor::ipv4() const
 void AddressEditor::begin_typing() {
 
     typing = true;
-    typed = text();
+    typed = entry();
 }
 
+// Digits, letters, '.', '-' and ':': an IPv4 address or a host name (a friend's DDNS name, a relay server), with an optional port.
 void AddressEditor::type_text(const char* s) {
 
     for (; s && *s; ++s)
     {
-        if (((*s >= '0' && *s <= '9') || *s == '.' || *s == ':') && typed.size() < 21)
-        {
-            typed += *s;
+        const char c = *s;
+        const bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '.' || c == '-' || c == ':';
+
+        if (ok && typed.size() < kMaxTyped) {
+            typed += (char)std::tolower((unsigned char)c);
         }
     }
 }
@@ -172,6 +176,13 @@ bool AddressEditor::end_typing() {
     held_frames = 0;
     AddressEditor parsed;
 
+    // A name with a letter in it is a host name, kept as typed (load splits off a port).
+    if (!typed.empty() && !parse(typed, &parsed) && std::any_of(typed.begin(), typed.end(), [](char c) { return c >= 'a' && c <= 'z'; }))
+    {
+        load(typed);
+        return true;
+    }
+
     if (typed.empty() || !parse(typed, &parsed))
     {
         return false;
@@ -187,16 +198,24 @@ bool AddressEditor::end_typing() {
     return true;
 }
 
+// The menu font is capitals only; host names ignore case.
+static std::string upper(std::string s) {
+
+    for (char& c : s) c = (char)std::toupper((unsigned char)c);
+
+    return s;
+}
+
 std::string AddressEditor::label() const {
 
     if (typing)
     {
-        return typed + kCaret;
+        return upper(typed) + kCaret;
     }
 
     if (!touched && !saved.empty())
     {
-        return "SAVED ADDRESS";
+        return upper(entry());
     }
 
     std::string s;
@@ -307,9 +326,10 @@ std::string CodeEditor::code() const {
 
 std::string CodeEditor::label() const {
 
+    // Typing: the digits so far, the caret, then a dash per digit still to type.
     if (typing)
     {
-        return typed + kCaret;
+        return prefix + typed + kCaret + std::string(kDigits - std::min(typed.size(), (size_t)kDigits), '-');
     }
 
     std::string s = prefix;

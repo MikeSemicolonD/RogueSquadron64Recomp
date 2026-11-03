@@ -1,5 +1,7 @@
 #include "core/mp_core.h"
+#include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <cstring>
 
 namespace rs64::ls {
@@ -537,6 +539,86 @@ void TeamTriggers::forget(int player) {
     for (auto& e : inside_) {
         e.second &= (uint8_t)~bit;
     }
+}
+
+void ObjectiveLedger::dropped_count(int index, int32_t add, double now) {
+
+    if (index >= 0 && index < kSlots && add > 0) {
+        owed_[index].push_back(Entry{now, add});
+        match(index);
+    }
+}
+
+void ObjectiveLedger::dropped_bool(int index, uint8_t value, double now) {
+
+    if (index >= 0 && index < kSlots) {
+        bools_[index] = {value, now};
+    }
+}
+
+void ObjectiveLedger::snapshot(const int32_t* counts, const uint8_t* bools, double now)
+{
+
+    // The first snapshot only sets the baseline.
+    for (int i = 0; i < kSlots && !last_.empty(); ++i) {
+        if (counts[i] > last_[i]) {
+            credit_[i].push_back(Entry{now, counts[i] - last_[i]});
+            match(i);
+        }
+    }
+
+    last_.assign(counts, counts + kSlots);
+
+    for (auto it = bools_.begin(); it != bools_.end();) {
+        const bool shown = bools[it->first] == it->second.first;
+        it = (shown || it->second.second < now - kWindowS) ? bools_.erase(it) : std::next(it);
+    }
+
+    for (auto* side : {&owed_, &credit_}) {
+        for (auto& [i, q] : *side) {
+            while (!q.empty() && q.front().t < now - kWindowS) q.pop_front();
+        }
+    }
+}
+
+void ObjectiveLedger::match(int index)
+{
+
+    std::deque<Entry>& o = owed_[index];
+    std::deque<Entry>& c = credit_[index];
+
+    while (!o.empty() && !c.empty()) {
+        const int32_t m = std::min(o.front().amount, c.front().amount);
+
+        o.front().amount -= m;
+        c.front().amount -= m;
+
+        if (o.front().amount == 0) o.pop_front();
+        if (c.front().amount == 0) c.pop_front();
+    }
+}
+
+ObjectiveLedger::Owed ObjectiveLedger::settle()
+{
+
+    Owed out;
+
+    for (const auto& [i, q] : owed_) {
+        for (const Entry& e : q) out.counts[i] += e.amount;
+    }
+
+    for (const auto& [i, b] : bools_) out.bools[i] = b.first;
+
+    reset();
+    return out;
+}
+
+void ObjectiveLedger::reset() {
+
+    owed_.clear();
+    credit_.clear();
+    bools_.clear();
+    last_.clear();
 }
 
 int puppet_model(int craft) {

@@ -1368,6 +1368,12 @@ static void menu_mouse_event(const SDL_Event& e)
         return;
     }
 
+    // SDL still sends motion over an unfocused window.
+    if (e.type == SDL_MOUSEMOTION && !SDL_GetKeyboardFocus())
+    {
+        return;
+    }
+
     const rs64::touch::Context ctx = touch_context();
 
     if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && (ctx == rs64::touch::Context::Cutscene || rs64_state_in_cinematic()))

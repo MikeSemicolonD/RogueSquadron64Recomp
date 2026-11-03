@@ -41,7 +41,7 @@ For op `O`, idx = `(O & ~0x80) << 1` (bit 7 collapsed by andi/negu split).
 ## Table 1 (DMEM 0xD6, opcodes 0x00..0x3F)
 
 | op | idx | raw | PC | notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 00 | 00 | 0x10D8 | 0x0D8 | DPC sync stub / fall-through |
 | 01 | 02 | 0x1504 | 0x504 | vertex pipeline outer-loop tail |
 | 02 | 04 | 0x14F0 | 0x4F0 | vertex pipeline inner-loop tail |
@@ -69,7 +69,7 @@ Entries 0x15..0x3F are mostly 0x0000 (= no-ops, re-enter dispatch).
 ## Observed game opcode frequency (one frame-100 histogram)
 
 | op | count | RDP/F3D meaning (where standard) |
-|---|---|---|
+| --- | --- | --- |
 | 0x00 | 11185 | NOOP |
 | 0xE7 | 7688 | F3D PIPESYNC |
 | 0xBA | 5342 | SETOTHERMODE_H |

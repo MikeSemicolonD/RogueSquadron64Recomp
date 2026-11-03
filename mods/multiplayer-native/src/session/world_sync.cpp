@@ -465,14 +465,29 @@ void apply_remote_triggers(uint8_t* rdram, recomp_context* ctx)
 using namespace rs64::ghost;
 using rs64::mips::rw;
 
-// datItemSetObjectiveBooleanCount: a client in session drops the write. Its callers are death handlers, and every death is mirrored into the host's world (sync_dat), where the host's handler counts it once; the host's snapshot brings the counts back.
+// datItemSetObjectiveBooleanCount(bool index, value, count1 index, add, count2 index, add; indices 1-based, 0 = none): a client in session drops the write. Its callers are death handlers, and every death is mirrored into the host's world (sync_dat), where the host's handler counts it once; the host's snapshot brings the counts back.
+// The ledger keeps each dropped write until a snapshot shows it, for a host that drops out before it does.
 extern "C" uint32_t rs64_ghost_objective_event(uint8_t* rdram, recomp_context* ctx)
 {
 
-    (void)rdram;
-    (void)ctx;
-    const Ghost& s = g();
-    return (s.in_session && s.player == 1 && !s.peer_left) ? 1u : 0u;
+    Ghost& s = g();
+
+    if (!s.in_session || s.player != 1 || s.peer_left)
+    {
+        return 0u;
+    }
+
+    const uint32_t sp = (uint32_t)ctx->r29;
+    const int32_t bool_index = (int32_t)ctx->r4;
+    const int32_t count1 = (int32_t)ctx->r6;
+    const int32_t count2 = (int32_t)rw(rdram, sp + 0x10);
+    const double now = now_s();
+
+    if (bool_index != 0) s.obj_ledger.dropped_bool(bool_index - 1, (uint8_t)ctx->r5, now);
+    if (count1 != 0) s.obj_ledger.dropped_count(count1 - 1, (int32_t)ctx->r7, now);
+    if (count2 != 0) s.obj_ledger.dropped_count(count2 - 1, (int32_t)rw(rdram, sp + 0x14), now);
+
+    return 1u;
 }
 
 // applyDatObjectiveTriggerEffect, for player 1's own trigger volumes (s0 = the list entry): a client sends the edge to the host and drops it, since the host's snapshot brings the result back; the host runs it once per team.

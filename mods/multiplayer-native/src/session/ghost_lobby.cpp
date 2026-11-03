@@ -17,7 +17,6 @@ using namespace rs64::ghost;
 using namespace rs64::ls;
 using rs64::mips::rw;
 using rs64::mips::ww;
-using rs64::mips::rf;
 
 // The menus connected two players: ghost mode is on (rs64_ghost_mode) without ROGUESQ_MP.
 extern "C" uint32_t rs64_lobby_menu_session(void) {
@@ -293,6 +292,7 @@ static void join_typed(rs64::net::LinkConfig cfg)
     lobby_start(cfg);
 }
 
+// Joins the address row's host directly (after a LAN search); JOIN GAME calls it once the address did not answer as a relay server (join_probe_update).
 extern "C" void rs64_lobby_join(void)
 {
 
@@ -308,22 +308,6 @@ extern "C" void rs64_lobby_join(void)
     load_net_config();
     save_net_config();
     s.lobby.set_join_timeout(rs64::net::Lobby::kJoinTimeoutMs);
-
-    if (const rs64_mp_transport* t = relay_ready()) {
-        if (s.code.typing) {
-            s.code.end_typing();
-        }
-
-        s.code.editing = false;
-
-        // ROGUESQ_MP_CODE: the join code for scripted runs.
-        if (const char* c = recomp::dbg::env_str("ROGUESQ_MP_CODE")) {
-            s.code.load(c);
-        }
-
-        relay_start(t, rs64::net::Role::Client, s.code.code());
-        return;
-    }
 
     rs64::net::LinkConfig cfg = link_config();
     cfg.role = rs64::net::Role::Client;
@@ -602,12 +586,13 @@ extern "C" void rs64_lobby_cancel(void) {
     lobby_stop(true);
 }
 
-// FIND GAME: the relays' game lists, kListRows rows a page. s_list_joined: the last join came from this page (its failure shows here); s_list_note: shown while the password row is open after a locked pick.
-// The page shows a snapshot of the last finished search (s_listed) and searches again every kListRefreshMs while it is up, which also checks the relay server; rows never blank or shift mid-search.
+// JOIN GAME's list: the relays' game lists, kListRows rows a page, a snapshot of the last finished search (s_listed) searched again every kListRefreshMs while up (which also checks the relay server); rows never blank or shift mid-search.
+// s_list_joined: the last join came from this page (its failure shows here). A locked pick turns its row into the password prompt (s_pin_row); finishing it joins the game it was opened for (s_pin_peer).
 constexpr uint32_t kListRefreshMs = 5000;
 static int s_list_page = 0;
 static bool s_list_joined = false;
-static std::string s_list_note;
+static int s_pin_row = -1;
+static std::string s_pin_peer;
 
 struct Listed {
     const rs64_mp_transport* t;
@@ -650,7 +635,7 @@ static void list_search() {
     s_list_at_ms = now_ms32();
 }
 
-// Each FIND GAME frame: a finished search becomes the snapshot (every list's games, Steam's first), and the next search starts kListRefreshMs after the last.
+// Each game list frame: a finished search becomes the snapshot (every list's games, Steam's first), and the next search starts kListRefreshMs after the last.
 static void list_update()
 {
 
@@ -683,43 +668,165 @@ static void list_open() {
 
     s_list_page = 0;
     s_list_joined = false;
+    s_pin_row = -1;
     s_listed.clear();
     s_have_list = false;
     list_search();
 }
 
-// NEXT PAGE while there are more, else REFRESH (the rows keep the current list until the new one arrives).
-static void list_more() {
+// The address row is checked as a relay server whenever it changes (typing ends) and on JOIN GAME: a game list back within kProbeMs makes it the saved server, so HOST GAME hosts there and JOIN GAME lists its games.
+// With no answer, a JOIN GAME that asked (s_probe_join) joins the row as a host (rs64_lobby_join).
+constexpr uint32_t kProbeMs = 2500;
+static rs64::net::RelayClient s_probe;
+static std::string s_probe_addr;
+static std::string s_checked_addr;
+static bool s_probing = false;
+static bool s_probe_join = false;
+static uint32_t s_probe_until_ms = 0;
 
-    if (s_list_page + 1 < rs64::net::list_pages(list_count())) {
-        ++s_list_page;
-    } else {
-        list_search();
-    }
+// The relay server in use: ROGUESQ_MP_RELAY for scripted runs, else roguesq_net.json's relay_server.
+static std::string saved_server() {
+
+    const char* env = recomp::dbg::env_str("ROGUESQ_MP_RELAY");
+
+    return env ? env : g().relay_server;
 }
 
-// Joins the game on that row: a join in progress gives way, a host stays hosting. A locked game with no password typed opens the PASSWORD row first.
-static void list_pick(int row)
+static void join_probe_stop() {
+
+    s_probing = false;
+    s_probe_join = false;
+    s_probe.set_server("");
+}
+
+static void join_probe_start(const std::string& addr) {
+
+    s_probe.set_server(addr);
+    s_probe.refresh(g().lobby.local_build());
+    s_probe_addr = addr;
+    s_checked_addr = addr;
+    s_probing = true;
+    s_probe_until_ms = now_ms32() + kProbeMs;
+
+    fprintf(stderr, "[lobby] checking %s for a relay server\n", addr.c_str());
+}
+
+// JOIN GAME: the list page opens, and an address other than the saved server is checked, then joined if it is not a relay server (a host never joins, a connected player keeps its game).
+static void join_open()
 {
 
     Ghost& s = g();
-    const int i = s_list_page * rs64::net::kListRows + row;
 
-    if (i >= list_count() || rs64_lobby_hosting())
+    list_open();
+
+    if (s.editor.typing) {
+        s.editor.end_typing();
+    }
+
+    s.editor.editing = false;
+
+    const std::string addr = s.editor.entry();
+
+    if (rs64_lobby_hosting() || s.lobby.ready() || addr == saved_server())
     {
         return;
     }
 
-    const Listed game = s_listed[i];
+    if (!s_probing || s_probe_addr != addr) {
+        join_probe_start(addr);
+    }
 
-    if (game.locked && !s.join_pin_set) {
-        cancel_editors();
-        s.join_pin_set = true;
-        toggle_edit(s.join_pin);
-        s_list_note = "ENTER THE PASSWORD";
+    s_probe_join = true;
+}
+
+// Each front-end frame: a changed address row is checked once editing ends, and a check in progress finishes.
+static void join_probe_update()
+{
+
+    const Ghost& s = g();
+    static bool s_primed = false;
+
+    // The address loaded at start is the baseline: only a change is checked.
+    if (!s_primed) {
+        s_primed = true;
+        s_checked_addr = s.editor.entry();
+    }
+
+    if (!s_probing && !s.editor.editing && !s.editor.typing && s.editor.entry() != s_checked_addr) {
+        s_checked_addr = s.editor.entry();
+
+        if (s_checked_addr != saved_server() && !s.started) {
+            join_probe_start(s_checked_addr);
+        }
+    }
+
+    if (!s_probing)
+    {
         return;
     }
 
+    const bool replied = s_probe.game_count() >= 0;
+    const bool answered = replied && s_probe.available();
+
+    if (!replied && (int32_t)(now_ms32() - s_probe_until_ms) < 0)
+    {
+        return;
+    }
+
+    const bool join = s_probe_join;
+
+    join_probe_stop();
+
+    if (answered) {
+        g().relay_server = s_probe_addr;
+        save_net_config();
+        list_search();
+
+        fprintf(stderr, "[lobby] %s is a relay server; saved as the server\n", s_probe_addr.c_str());
+        return;
+    }
+
+    if (!join)
+    {
+        return;
+    }
+
+    fprintf(stderr, "[lobby] %s is not a relay server; joining it as a host\n", s_probe_addr.c_str());
+    rs64_lobby_join();
+}
+
+// Leaving the JOIN GAME page: a check or join still in progress stops (a connected player has left for mission select).
+static void join_leave() {
+
+    join_probe_stop();
+
+    if (g().started && !g().lobby.ready() && !rs64_lobby_hosting()) {
+        lobby_stop(false);
+    }
+}
+
+// The pager line (mp_list_more): A searches again, left / right (mp_list_prev / mp_list_next) turn the page, wrapping; none while the password prompt is open. The rows keep the current list until a new one arrives.
+static void list_turn(int step) {
+
+    const int pages = rs64::net::list_pages(list_count());
+
+    if (s_pin_row < 0) {
+        s_list_page = (s_list_page + step + pages) % pages;
+    }
+}
+
+static void list_more() {
+
+    if (s_pin_row < 0) {
+        list_search();
+    }
+}
+
+// Joins a listed game: a join in progress gives way. The password sent is join_pin when set (a locked game's prompt sets it).
+static void list_join(const Listed& game)
+{
+
+    join_probe_stop();
     s_list_joined = true;
 
     if (g().started) {
@@ -732,31 +839,98 @@ static void list_pick(int row)
     relay_start(game.t, rs64::net::Role::Client, game.peer);
 }
 
+// A row's A: an open game joins at once; a locked one turns the row into the password prompt (the last password typed, to change or keep). A host does nothing.
+static void list_pick(int row)
+{
+
+    Ghost& s = g();
+    const int i = s_list_page * rs64::net::kListRows + row;
+
+    if (i >= list_count() || rs64_lobby_hosting() || s_pin_row >= 0)
+    {
+        return;
+    }
+
+    if (!s_listed[i].locked) {
+        s.join_pin_set = false;
+        list_join(s_listed[i]);
+        return;
+    }
+
+    // The prompt starts empty: each game has its own password.
+    cancel_editors();
+    s.join_pin_set = true;
+    toggle_edit(s.join_pin);
+    s.join_pin.typed.clear();
+    s_pin_row = row;
+    s_pin_peer = s_listed[i].peer;
+}
+
+// The prompt closed (A or B on the pad, Enter on the keyboard): with all six digits typed, join its game if the list still has it; otherwise just close.
+static void list_pin_update()
+{
+
+    const rs64::net::CodeEditor& pin = g().join_pin;
+    static std::string s_typed;
+
+    if (s_pin_row < 0)
+    {
+        return;
+    }
+
+    if (pin.editing || pin.typing) {
+        s_typed = pin.typed;
+        return;
+    }
+
+    s_pin_row = -1;
+
+    if (!rs64::net::CodeEditor::valid(s_typed))
+    {
+        return;
+    }
+
+    for (const Listed& game : s_listed) {
+        if (game.peer == s_pin_peer) {
+            list_join(game);
+            return;
+        }
+    }
+}
+
 static std::string list_row(int row) {
 
     const int i = s_list_page * rs64::net::kListRows + row;
+
+    if (row == s_pin_row)
+    {
+        return g().join_pin.label();
+    }
 
     if (i >= list_count())
     {
         return " ";
     }
 
-    return s_listed[i].label + (s_listed[i].locked ? "  LOCKED" : "");
+    // '$' is the menu font's padlock (ensure_menu_period); names are A-Z, 0-9 and spaces, so it never comes from a host.
+    return s_listed[i].label + (s_listed[i].locked ? " $" : "");
 }
 
-// The page's status line; read every frame while FIND GAME is up, so it also runs the refresh.
+// The page's status line; read every frame while the list is up, so it also runs the refresh.
 static std::string list_status_line()
 {
 
     list_update();
+    list_pin_update();
 
-    if (!g().join_pin.editing) {
-        s_list_note.clear();
+    if (s_pin_row >= 0)
+    {
+        return "ENTER THE PASSWORD";
     }
 
-    if (!s_list_note.empty())
+    if (s_probing && s_probe_join)
     {
-        return s_list_note;
+        return rs64::net::status_dots("CONNECTING", now_ms32());
     }
 
     if (g().started || (s_list_joined && g().lobby.state() == rs64::net::LobbyState::Failed))
@@ -791,6 +965,23 @@ static void sync_host_settings()
 
     // Read before the first compare, so the file is never rewritten from defaults.
     load_net_config();
+
+    // The password row once it closes: six digits set the password, an emptied field means none, anything else keeps what was set.
+    static std::string s_pin_typed;
+    static bool s_pin_open = false;
+
+    if (s.host_pin.editing || s.host_pin.typing) {
+        s_pin_open = true;
+        s_pin_typed = s.host_pin.typed;
+    } else if (s_pin_open) {
+        s_pin_open = false;
+
+        if (rs64::net::CodeEditor::valid(s_pin_typed) && s.host_pin.code() == s_pin_typed) {
+            s.host_pin_set = true;
+        } else if (s_pin_typed.empty()) {
+            s.host_pin_set = false;
+        }
+    }
 
     const std::string pin = s.host_pin_set ? s.host_pin.code() : std::string{};
     const std::string saved = s.host_name.name + "|" + pin;
@@ -834,13 +1025,14 @@ extern "C" void rs64_lobby_tick(void)
     Ghost& s = g();
     rs64_lobby_status();
     sync_host_settings();
+    join_probe_update();
 
-    // HOST GAME over a relay server that stopped answering before anyone joined: host directly (LAN, or the internet through the router) instead.
+    // HOST GAME over a relay server that stopped answering before anyone joined: stop hosting and say so (its game is off the list; a direct host could only be reached by address).
     if (rs64_lobby_hosting() && s.relay_session && s.relay_t && !s.lobby.ready() && s.relay_t->lost(s.relay_t->user) && !s.relay_t->available(s.relay_t->user))
     {
-        fprintf(stderr, "[lobby] the %s relay does not answer; hosting directly\n", s.relay_t->name);
+        fprintf(stderr, "[lobby] the %s relay does not answer; stopped hosting\n", s.relay_t->name);
         lobby_stop(false);
-        rs64_lobby_host();
+        s.lobby.fail("COULD NOT CONNECT TO SERVER");
     }
 
     // A Steam friends-list join (or accepted invite) while no lobby runs here joins that game.
@@ -946,20 +1138,6 @@ extern "C" void rs64_lobby_edit_toggle(void)
     if (s.pin_mode) {
         s.join_pin_set = true;
         toggle_edit(s.join_pin);
-        return;
-    }
-
-    // Hosting over a relay, the row shows this game's join code.
-    if (rs64_lobby_hosting() && s.relay_session)
-    {
-        return;
-    }
-
-    if (relay_ready())
-    {
-        toggle_edit(s.code);
-
-        fprintf(stderr, "[lobby] code edit %s: %s\n", s.code.editing ? "on" : "off", s.code.code().c_str());
         return;
     }
 
@@ -1075,6 +1253,41 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
     }
 }
 
+// The partner left while both were on mission or craft select: the screen's status line says so for kLeftNoticeMs, then B every half second backs out to the main menu
+// (mission select's B ends there, the hangar's goes back to mission select first). It stops kLeftExitMs after the partner left.
+constexpr int64_t kLeftNoticeMs = 1500;
+constexpr int64_t kLeftExitMs = 8000;
+
+static bool partner_left_exit(uint8_t* rdram, recomp_context* ctx, uint32_t pressed, uint32_t font, uint32_t slot, int y, std::string* shown)
+{
+
+    Ghost& s = g();
+
+    if (s.partner_left_ms < 0)
+    {
+        return false;
+    }
+
+    const int64_t age = (int64_t)now_ms32() - s.partner_left_ms;
+
+    if (age > kLeftExitMs) {
+        s.partner_left_ms = -1;
+        return false;
+    }
+
+    show_status(rdram, ctx, font, slot, y, s.partner_left_text, shown);
+
+    uint32_t p = 0;
+
+    if (age > kLeftNoticeMs && --s.release_cool <= 0) {
+        p = 0x4000u;
+        s.release_cool = 15;
+    }
+
+    ww(rdram, pressed, p);
+    return true;
+}
+
 // The level select's font 2 gets a third slot for the status line (fontAlloc at 0x800AF0D0, a2 = slot count).
 extern "C" void rs64_lobby_mission_select_fonts(recomp_context* ctx) {
 
@@ -1097,6 +1310,11 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
     // The menu tree's tick does not run on this screen: drain the link here so the host's pick arrives.
     if (s.started) {
         drain();
+    }
+
+    if (partner_left_exit(rdram, ctx, 0x8013A960u + 4u * rb(rdram, 0x800CDAC8u), 2, 2, -0x7C, &shown))
+    {
+        return;
     }
 
     if (!mp_menus()) {
@@ -1271,6 +1489,11 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
 
     if (s.started) {
         drain();
+    }
+
+    if (partner_left_exit(rdram, ctx, 0x8013A960u + 4u * rb(rdram, 0x800CD6D0u), 2, 3, -0x70, &shown))
+    {
+        return;
     }
 
     if (!mp_menus()) {
@@ -1562,36 +1785,18 @@ extern "C" void rs64_ghost_register_host(void)
         static std::string b;
         return mp_text(b, rs64_lobby_hosting() ? "STOP HOSTING" : "HOST GAME");
     }, nullptr);
-    add_text_source("mp_join_label", [](void*) -> const char* {
-        static std::string b;
-        return mp_text(b, !rs64_lobby_hosting() && (rs64_lobby_state() == 2 || rs64_lobby_state() == 3) ? "CANCEL JOIN" : "JOIN GAME");
-    }, nullptr);
 
     // Polling this row is what initializes the relay transport: it is read only while the MULTIPLAYER page is up.
     add_text_source("mp_address", [](void*) -> const char* {
         static std::string b;
         Ghost& s = g();
-        const bool relay_up = relay_ready() != nullptr;
-        const bool code_row = relay_up && !s.pin_mode;
-        const bool address_row = !relay_up && !s.pin_mode;
 
-        // The row's mode can change mid-edit (Steam starts or closes, a host asks for a password): close the editors it no longer shows, so input never goes to a hidden one.
-        if (!address_row && (s.editor.editing || s.editor.typing)) {
+        // Keeps the transports checked while the page is up (relay_ready starts a relay server's background check).
+        relay_ready();
+
+        // A host asked for a password mid-edit: close the address editor, so input never goes to a hidden one.
+        if (s.pin_mode && (s.editor.editing || s.editor.typing)) {
             s.editor.cancel_typing();
-        }
-
-        if (!code_row && (s.code.editing || s.code.typing)) {
-            s.code.cancel_typing();
-        }
-
-        // Hosting over a relay: the join code the other player types goes where they would type it.
-        if (rs64_lobby_hosting() && s.relay_session && s.relay_t) {
-            const char* h = s.relay_t->host_label(s.relay_t->user);
-
-            if (h && *h)
-            {
-                return mp_text(b, h);
-            }
         }
 
         if (s.pin_mode)
@@ -1599,7 +1804,7 @@ extern "C" void rs64_ghost_register_host(void)
             return mp_text(b, pin_label(s.join_pin, s.join_pin_set, "------"));
         }
 
-        return mp_text(b, code_row ? s.code.label() : std::string(rs64_lobby_address_label()));
+        return mp_text(b, std::string(rs64_lobby_address_label()));
     }, nullptr);
     add_text_source("mp_status", [](void*) -> const char* {
         static std::string b;
@@ -1631,7 +1836,7 @@ extern "C" void rs64_ghost_register_host(void)
         return mp_text(b, t.empty() ? std::string(" ") : t);
     }, nullptr);
 
-    // HOST SETTINGS page: the advertised name, the password a joiner must send (A on each to edit), REMOVE PASSWORD.
+    // HOST SETTINGS page: the advertised name and the password a joiner must send (A on each to edit; an emptied password is none, sync_host_settings).
     g().host_pin.prefix = "PASSWORD ";
     g().join_pin.prefix = "PASSWORD ";
     add_text_source("mp_name_label", [](void*) -> const char* {
@@ -1646,31 +1851,21 @@ extern "C" void rs64_ghost_register_host(void)
         toggle_edit(g().host_name);
     });
     rs64::mp::add_action("mp_pin_edit", [](void*) {
-        g().host_pin_set = true;
         toggle_edit(g().host_pin);
-    });
-    rs64::mp::add_action("mp_pin_clear", [](void*) {
-        g().host_pin.cancel_typing();
-        g().host_pin_set = false;
+
+        // With no password the field starts empty; a set one starts as it is.
+        if (!g().host_pin_set) {
+            g().host_pin.typed.clear();
+        }
     });
 
-    // FIND GAME's PASSWORD row: what this player sends when joining a locked game.
-    add_text_source("mp_join_pin_label", [](void*) -> const char* {
-        static std::string b;
-        return mp_text(b, pin_label(g().join_pin, g().join_pin_set, "------"));
-    }, nullptr);
-    rs64::mp::add_action("mp_join_pin_edit", [](void*) {
-        g().join_pin_set = true;
-        toggle_edit(g().join_pin);
-    });
-
-    // FIND GAME page: a status line, kListRows game rows (mp_game_0..), NEXT PAGE / REFRESH; FIND GAME shows only when a transport has a list (mp_list).
+    // Game list page: a status line, kListRows game rows (mp_game_0..), the pager line (REFRESH, < REFRESH > with more pages); JOIN GAME opens it while a transport has a list (mp_list).
     add_text_source("mp_list_status", [](void*) -> const char* {
         static std::string b;
         return mp_text(b, list_status_line());
     }, nullptr);
-    static const char* const kRowSources[rs64::net::kListRows] = {"mp_game_0", "mp_game_1", "mp_game_2", "mp_game_3"};
-    static const char* const kRowActions[rs64::net::kListRows] = {"mp_pick_0", "mp_pick_1", "mp_pick_2", "mp_pick_3"};
+    static const char* const kRowSources[rs64::net::kListRows] = {"mp_game_0", "mp_game_1", "mp_game_2", "mp_game_3", "mp_game_4", "mp_game_5"};
+    static const char* const kRowActions[rs64::net::kListRows] = {"mp_pick_0", "mp_pick_1", "mp_pick_2", "mp_pick_3", "mp_pick_4", "mp_pick_5"};
     static std::string s_rows[rs64::net::kListRows];
 
     for (int i = 0; i < rs64::net::kListRows; ++i)
@@ -1684,35 +1879,29 @@ extern "C" void rs64_ghost_register_host(void)
 
     add_text_source("mp_list_more", [](void*) -> const char* {
         static std::string b;
-        return mp_text(b, s_list_page + 1 < rs64::net::list_pages(list_count()) ? "NEXT PAGE" : "REFRESH");
-    }, nullptr);
-    rs64::mp::add_action("mp_list_refresh", [](void*) { list_open(); });
-    rs64::mp::add_action("mp_list_more", [](void*) { list_more(); });
+        // Blank while the password prompt is open: a refresh or page turn would move the game it is for.
+        if (s_pin_row >= 0)
+        {
+            return mp_text(b, " ");
+        }
 
-    // A configured relay server keeps FIND GAME up while it is down, so its page can say so.
-    rs64::mp::add_condition("mp_list", [](void*) -> int { return (!list_relays().empty() || server_relay()) ? 1 : 0; });
+        return mp_text(b, rs64::net::list_pages(list_count()) > 1 ? "< REFRESH >" : "REFRESH");
+    }, nullptr);
+    rs64::mp::add_action("mp_join_open", [](void*) { join_open(); });
+    rs64::mp::add_action("mp_join_leave", [](void*) { join_leave(); });
+    rs64::mp::add_action("mp_list_more", [](void*) { list_more(); });
+    rs64::mp::add_action("mp_list_prev", [](void*) { list_turn(-1); });
+    rs64::mp::add_action("mp_list_next", [](void*) { list_turn(1); });
     rs64::mp::add_input_filter([](int port, uint16_t* buttons, float*, float*, void*) {
         if (port == 0) skip_filter(buttons);
     }, nullptr);
 
-    // MULTIPLAYER page: HOST GAME / JOIN GAME start or stop (JOIN does nothing while this side hosts), the address row toggles its editor; mp_ready ends the pilot-first page.
+    // MULTIPLAYER page: HOST GAME starts or stops hosting, JOIN GAME opens the JOIN GAME page (mp_join_open), the address row toggles its editor; mp_ready ends the pilot-first page.
     rs64::mp::add_action("mp_host", [](void*) {
         if (rs64_lobby_hosting()) {
             lobby_stop(false);
         } else {
             rs64_lobby_host();
-        }
-    });
-    rs64::mp::add_action("mp_join", [](void*) {
-        if (rs64_lobby_hosting())
-        {
-            return;
-        }
-
-        if (rs64_lobby_state() == 2 || rs64_lobby_state() == 3) {
-            lobby_stop(false);
-        } else {
-            rs64_lobby_join();
         }
     });
     rs64::mp::add_action("mp_edit", [](void*) { rs64_lobby_edit_toggle(); });

@@ -732,6 +732,16 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
             }
 
             if (title == "MULTIPLAYER" && nav_pick(rdram, entry)) nav_repress(N64_A_BUTTON);
+
+            // JOIN GAME opened its page: pick the first list row, six above the pager (REFRESH, or < REFRESH > with more pages), until a game shows there or the typed address is joined directly.
+            const int refresh = nav_find_entry(rdram, "REFRESH");
+            const int more = refresh >= 0 ? refresh : nav_find_entry(rdram, "< REFRESH >");
+
+            if (title == "JOIN GAME" && more >= 6) {
+                nav_write_u8(rdram, 0xCE730u + 0x94, (uint8_t)(more - 6));
+                nav_repress(N64_A_BUTTON);
+            }
+
             break;
         }
 

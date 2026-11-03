@@ -7,7 +7,7 @@ Run outputs (`.replay.hash`, logs) go to `logs/`, not here. Record and replay in
 ## Two kinds of recording
 
 | Kind | Header | Starts at | Env vars | Used for |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | **Mission** (lockstep) | `rs64-ls v2` | Mission frame 0, fixed 1/30 s step, forced RNG seed | `ROGUESQ_LS_RECORD` / `ROGUESQ_LS_REPLAY` | Bit-exact determinism checks against a `.hash` baseline; co-op runs (`ROGUESQ_MP_PAD`, `ROGUESQ_LS_PAD2_REPLAY`) |
 | **Session** | `rs64-input v3`/`v4` | First input poll after launch (boot and menus included) | `ROGUESQ_INPUT_RECORD` / `ROGUESQ_INPUT_REPLAY` | Visual checks (interpolation, rendering) where the run only has to be close |
 
@@ -16,7 +16,7 @@ A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, th
 ## Missions
 
 | Id | Mission | Folder | Recordings |
-|---:|---|---|---|
+| ---: | --- | --- | --- |
 | 0 | Ambush at Mos Eisley | [00-ambush-at-mos-eisley](00-ambush-at-mos-eisley) | see below |
 | 1 | Rendezvous on Barkhesh | | none yet |
 | 2 | The Search for the Nonnah | | none yet |
@@ -42,7 +42,7 @@ Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jad
 ### 00 Ambush at Mos Eisley
 
 | File | Kind | Contents |
-|---|---|---|
+| --- | --- | --- |
 | `mos_eisley.rec` (+ `.hash`) | Mission | The determinism gate: 3766 frames, X-wing. Default pad for both sides of `tools/debug/lockstep/run-mp.ps1`; must replay IDENTICAL after any change that should not affect the simulation |
 | `mos_eisley_coop.rec` (+ `.hash`) | Mission | Gate re-recorded with the co-op imposter on (`ROGUESQ_COOP_LOCAL=1`), so the baseline carries the song answers the imposter changes. Matches only with player 2 flying the solo run: replay it with `ROGUESQ_COOP_LOCAL=1` and `ROGUESQ_LS_PAD2_REPLAY=mos_eisley.rec` (idle player 2 diverges at frame 0). `run-replays.ps1` skips it |
 | `mos_eisley_dive.rec` | Mission, no baseline | Stick held into a dive from frame 300; the co-op player-death test |
@@ -52,14 +52,14 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 ### 06 Imperial Construction Yards
 
 | File | Kind | Contents |
-|---|---|---|
+| --- | --- | --- |
 | `construction_yards_towcable.rec` (+ `.hash`) | Mission | 3209 frames in the snowspeeder (craft 4), firing the tow cable; frame-interpolation checks for the cable (`level:6,4`). Recorded with `larger_object_pool.nrm` staged and no gameplay mods (invincibility, long-tow-cable): replay the same way or player0 diverges from frame 0 |
 | `construction_yards_bonus.rec` (+ `.hash`) | Mission | 3126 frames in the snowspeeder (craft 4): destroys the far silo past the landing platform and collects the Advanced Bombs (power-up DAT item 121). Co-op pickup sharing: `run-mp.ps1 -HostPad` this, `-ClientPad construction_yards_towcable.rec` (which never goes near the silo) |
 
 ### 09 Prisons of Kessel
 
 | File | Kind | Contents |
-|---|---|---|
+| --- | --- | --- |
 | `kessel.rec` | Session (v3) | Boot, menus, then flying past the searchlight towers and fighting (frame-interpolation checks) |
 
 ## Scripts

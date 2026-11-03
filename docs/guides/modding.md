@@ -8,7 +8,7 @@ This page is the starting point for making a mod. It covers the kinds of mod the
 ## Kinds of mod
 
 | Kind | What it can do | What you write | Example |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Menu mod | Add, hide, reorder or replace menu entries | `roguesq_menu.json` | [mods/quit-prompt/](../../mods/quit-prompt/) |
 | Light mod | Ray-traced lights on models (engines, lasers) and in levels | `roguesq_lights.json` | The game's built-in lights, [src/video/default_lights.json](../../src/video/default_lights.json) |
 | Asset mod | Replace models, textures, levels and other game files | Files under `assets/` | Exported from the RS64 Explorer |
@@ -156,7 +156,7 @@ Rules add "when this happens, do that" to a level without code. They live in `as
 A rule fires once unless `"every": true`. Its actions run in order, and `wait` holds the ones after it. Objects are found by name: a rule whose object the level lacks is skipped with a log line, and the others still run.
 
 | `when` | Fires |
-|---|---|
+| --- | --- |
 | `enter` / `leave` | something enters or leaves the trigger area `object` |
 | `pathPoint` | an NPC passes the path event `object` |
 | `destroyed` / `healthBelow` | the unit `object` is destroyed / its health drops below `value` % |
@@ -166,7 +166,7 @@ A rule fires once unless `"every": true`. Its actions run in order, and `wait` h
 | `custom` | a native mod fires event `custom` (for `object`, when given) |
 
 | `do` | Fields |
-|---|---|
+| --- | --- |
 | `voice` / `recording` | `id`, a stock voice line / `file`, a MORT recording in the level's folder |
 | `message` | `text` shown as a subtitle for `seconds` (1-10) |
 | `music` | `song`, a song id from the in-mission cue table |
@@ -196,7 +196,7 @@ A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the 
 **Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over.
 
 | Priority | Lights | Share |
-|---|---|---|
+| --- | --- | --- |
 | 7 | Engine exhausts (built-in `exhaust_*`) | 12 |
 | 6 | Pickups (built-in `upgrade_pickup`) | 4 |
 | 5 | Effect sprites: explosions, fire (default for `sprite` presets) | 10 |
@@ -316,7 +316,7 @@ A native mod is a shared library (`.dll` / `.so`) listed under `native_libraries
 A menu button in your mod's `roguesq_menu.json` can call your own code by writing its export name with a leading `@`:
 
 | Button | Calls |
-|---|---|
+| --- | --- |
 | `"action": "@doThing"` | `doThing` |
 | `"toggle": "@myToggle"` | `myToggle` to flip, `myToggle_get` to read the state |
 | `"slider": "@myVolume"` | `myVolume` to set (value in `min..max`), `myVolume_get` to read |

@@ -4,9 +4,10 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 
 ## What players see
 
-- With Steam running (the steam-relay mod) or a relay server set up ([relay-server.md](relay-server.md)), FIND GAME lists open games of the same version; picking one joins it, no code needed.
+- With Steam running (the steam-relay mod) or a relay server set up ([relay-server.md](relay-server.md)), JOIN GAME lists open games of the same version; picking one joins it, no code needed. The address box on the MULTIPLAYER page takes a friend's address or a relay server's: JOIN GAME shows a server's games, and connects to a friend directly.
 - HOST SETTINGS names your game in that list and can give it a password; joining a game with one asks for it.
 - The host drives mission select and picks the mission; the client's screen follows. Each player then picks their own craft, and nobody launches until both have picked. A craft the hangar refuses (locked, or not allowed on the level) does not count as picked.
+- If the other player leaves during mission select or craft select, HOST LEFT (or PLAYER LEFT) shows there and the game backs out to the main menu.
 - Both start the mission together: the host waits at mission start, up to 10 s, for the client to finish loading.
 - Each player keeps the upgrades of the pilot profile they chose before entering MULTIPLAYER.
 - An upgrade collected in a level is given to both players, and saved to both pilots if the mission succeeds (lost on failure, as in single player). The pickup disappears for the other player too, with its pickup sound.
@@ -22,7 +23,7 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 ## Code layout
 
 | File | Role |
-|---|---|
+| --- | --- |
 | [mods/multiplayer-native/src/net/net_core.h](../../mods/multiplayer-native/src/net/net_core.h) | Declarations for the three files below; no sockets. |
 | [mods/multiplayer-native/src/net/messages.cpp](../../mods/multiplayer-native/src/net/messages.cpp) | Message encoding and decoding: most messages are a few scalars and fixed arrays through `encode_fields` / `decode_fields`. |
 | [mods/multiplayer-native/src/net/lobby.cpp](../../mods/multiplayer-native/src/net/lobby.cpp) | `Lobby` handshake state, the MULTIPLAYER page's status lines, the host address choice, LAN discovery packets. |
@@ -37,7 +38,7 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 | [mods/multiplayer-native/src/session/ghost_internal.h](../../mods/multiplayer-native/src/session/ghost_internal.h) | The `Ghost` state struct and the helpers the `session/` files share. |
 | [mods/multiplayer-native/src/core/mp_core.cpp](../../mods/multiplayer-native/src/core/mp_core.cpp) | Pure logic with unit tests (`mp_core_test`): `Puppet` interpolation, `SkipShare`, `CraftBarrier`, shared-life rules, NPC pool checks, the imposter's flight model. |
 | [mods/multiplayer-native/src/session/coop_imposter.cpp](../../mods/multiplayer-native/src/session/coop_imposter.cpp) | Imposter spawn and teardown. |
-| [mods/multiplayer-native/src/mp_register.cpp](../../mods/multiplayer-native/src/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
+| [mods/multiplayer-native/src/mp_register.cpp](../../mods/multiplayer-native/src/mp_register.cpp) | `rs64_mp_register`: the hooks and the quit handler (`rs64_ghost_quit`), then it calls `rs64_ghost_register_host` (in `ghost_lobby.cpp`), which registers the text sources, the input filter, the `mp_host` / `mp_join_open` / `mp_join_leave` / `mp_edit` / `mp_leave` actions, the `mp_ready` condition and the key handler. The built-ins call it when multiplayer is built in; the mod's `rs64_mod_init` calls it otherwise. |
 | [mods/multiplayer-native/src/mp_host.h](../../mods/multiplayer-native/src/mp_host.h) | The multiplayer sources' only route to the game: the host API table, wrapped (`rs64::mp::call`, `alloc`, `flag`, `add_hook`, ...). |
 | [mods/multiplayer-native](../../mods/multiplayer-native/) | The mod: `src/` (`mp_mod.cpp` is `rs64_mod_init`) and `tests/`. Its CMakeLists builds `src/` plus the base files it lists (`lockstep_core.cpp` and three headers) into `multiplayer_native.dll` / `.so`; the style check rejects any other base include. |
 | [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json) | The MULTIPLAYER menu page definition. |
@@ -47,7 +48,7 @@ Base code sees multiplayer only through hooks, actions and flags.
 ### Flags
 
 | Flag | Writer | Reader | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ghost_mode` | `publish_modes` (`ghost_lobby.cpp`) | `lockstep.cpp` (mission init: record only, no hashes) | Online co-op session active (`ROGUESQ_MP` or a menu-started session) |
 | `coop_imposter` | `publish_modes` | the `imposter` hash part's gate (`add_hash_part`), `mp_register.cpp` (pad2 replay) | Player 2 is the imposter (`ROGUESQ_COOP_LOCAL` or ghost mode) |
 | `mp_lobby_state` | `ghost_lobby.cpp` (on lobby state changes) | `nav_sequencer.cpp` | The `Lobby` handshake state |
@@ -62,7 +63,7 @@ Base code sees multiplayer only through hooks, actions and flags.
 Built-ins register first, then the multiplayer registration, so every multiplayer handler runs after the built-in on the same hook.
 
 | Hook | Built-in part | Multiplayer part |
-|---|---|---|
+| --- | --- | --- |
 | 1 `MENU_INPUT` | `rs64_menu_pass`: sets `menu_page_shown`, dispatches hook 32, page row navigation, pilot-first exit | none (it uses hook 32) |
 | 3 `MENU_FRAME` | `rs64_menu_frame`: menu period glyph, live labels | `menu_tick`: `rs64_lobby_tick` |
 | 4 `MISSION_INIT` | `rs64_ls_on_mission_init`: lockstep mode, pad2 setup | `mission_init`: imposter reset, `rs64_ghost_mission_init` in ghost mode |
@@ -77,7 +78,7 @@ Hooks 2 and 7 have only a built-in part; every other hook not listed above has o
 Hooks the registration takes (sites and contracts in [modding-host-api.md](../engine/modding-host-api.md#hooks)):
 
 | Area | Hooks |
-|---|---|
+| --- | --- |
 | Front end | `MENU_FRAME`, `MENU_PAD`, `MAIN_MENU`, `MISSION_SELECT_INIT`, `MISSION_CONFIRMED`, `MISSION_SELECT_FONTS`, `MISSION_SELECT_TICK`, `CRAFT_SELECT_INIT`, `CRAFT_SELECT_TICK`, `DEBRIEF_PAD`, `FRONT_END` |
 | Mission frame | `MISSION_INIT`, `MISSION_FRAME_DT`, `MISSION_FRAME_PADS`, `MISSION_FRAME_NPCS`, `MISSION_END`, `CRAFT_ASSETS` |
 | Imposter and streaming | `WINGMAN_TICK`, `WINGMAN_DRAW`, `NPC_ACTIVATION`, `GRID_STREAM` |
@@ -126,35 +127,34 @@ The host answers searches while it waits. Discovery is plain UDP on the game por
 [mods/steam-relay](../../mods/steam-relay/) (desktop only, off by default) publishes the `mp.transport` service ([include/rs64/mp_transport.h](../../include/rs64/mp_transport.h), see [modding-host-api.md](../engine/modding-host-api.md#services)). It runs the session over Steam's relay network as app id 480 (Spacewar), so nobody forwards a port or types an IP. The player supplies the Steamworks runtime library next to the mod (`steam_api64.dll`, `libsteam_api.so` or `libsteam_api.dylib`, from the SDK version the mod was built with); the mod loads it at run time and never links it.
 
 - Multiplayer looks the service up on first use (`relay()` in `ghost_lobby.cpp`, after the registry seals) and uses it while `available()` is true; `ROGUESQ_MP_TRANSPORT=enet` ignores it. `Link` forwards to the table (`LinkConfig::external`), so the session code is unchanged; the simulated latency / loss / jitter apply to ENet only.
-- Steam starts when the MULTIPLAYER page first reads the address row (`available()`), and shuts down (`relay_shutdown`) when the page is left without a session, when the main menu ends a session, and on quit after the BYE. STOP HOSTING / CANCEL JOIN keep it up.
-- HOST GAME creates a public 2-player lobby tagged with a random 6-digit `code` and the build (`rs64r`), and listens with `CreateListenSocketP2P`; the address line shows `JOIN CODE <code>`. JOIN GAME searches worldwide for that code and build, joins the lobby, then `ConnectP2P`s to its owner. The address row holds the code (`CodeEditor`: typed digits, or the pad's up/down per digit).
+- Steam starts when the MULTIPLAYER page first reads the address row (`available()`), and shuts down (`relay_shutdown`) when the page is left without a session, when the main menu ends a session, and on quit after the BYE. STOP HOSTING keeps it up.
+- HOST GAME creates a public 2-player lobby tagged with a random 6-digit `code` and the build (`rs64r`), and listens with `CreateListenSocketP2P`. JOIN GAME lists it (see below); picking it passes the code to `start()`, which searches for that code and build, joins the lobby, then `ConnectP2P`s to its owner.
 - A Steam friends-list join or accepted invite while the game runs arrives as `GameLobbyJoinRequested_t` and is joined through `pending_join()`. With the game closed, Steam launches Spacewar instead.
 - The online line shows the mod's status: while idle it says why Steam is not in use (`STEAM API DLL MISSING`, `STEAM API DLL WRONG VERSION`, `STEAM API DLL BLOCKED`, `STEAM IS NOT RUNNING`, `STEAM FLATPAK NOT SUPPORTED`), and HOST / JOIN then use ENet.
 
-## FIND GAME (game list)
+## JOIN GAME list
 
-A transport with the version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`; the Steam mod has it) adds FIND GAME to the MULTIPLAYER page (`requires: mp_list`, true while that transport is available). Opening it searches every listing relay (`refresh(build)`), and the page searches again every 5 s while it is up (`list_update`, run by its status line), which doubles as the relay server's heartbeat. The rows show a snapshot of the last finished search (`s_listed`: name, code, lock, transport), swapped in only when every search is done, so they never blank or shift mid-search and a pick joins exactly the row shown; only the first search after opening shows SEARCHING. The page shows a status line (`list_status`: SEARCHING, NO GAMES FOUND, `<n> GAMES FOUND  PAGE x OF y`), four game rows (`LOCKED` after a game with a password), the PASSWORD row this player sends when joining, and NEXT PAGE (more pages) or REFRESH (searches now; the page stays on the current list until the new one arrives). Picking a row joins that game (`game_peer`, passed to `start()` like a join code); a join already in progress gives way, a host does nothing. Picking a locked game with no password typed opens the PASSWORD row instead (ENTER THE PASSWORD); pick it again once typed. A failed list join's reason stays on the status line until the page is opened again. Once connected, the MULTIPLAYER page's `exit_when` takes this page (or HOST SETTINGS) on to mission select too (`menu_config.cpp` checks the pilot page's whole page chain).
+JOIN GAME always opens the `mp_games` page (`mp_join_open`). It lists the games of every available transport with the version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`; the Steam mod and the relay server have it), and tries the address row: an address other than the saved server is asked for a game list as a relay server (a `RelayClient` probe, `kProbeMs` 2.5 s; it uses relay port 27070 unless one is typed, so it never meets a host on 27064). If it answers it becomes the saved `relay_server` and its games list; if not, the row is joined as a host (`rs64_lobby_join`: LAN search, then the address), with CONNECTING on the page. The same check runs in the background whenever the address row changes, so HOST GAME can host on a server typed there. Leaving the page stops a check or join in progress (`mp_join_leave`). Opening it searches every listing relay (`refresh(build)`), and the page searches again every 5 s while it is up (`list_update`, run by its status line), which doubles as the relay server's heartbeat. The rows show a snapshot of the last finished search (`s_listed`: name, code, lock, transport), swapped in only when every search is done, so they never blank or shift mid-search and a pick joins exactly the row shown; only the first search after opening shows SEARCHING. The page shows a status line as a note (small white text, not an entry; `list_status`: SEARCHING, NO GAMES FOUND, `<n> GAMES FOUND  PAGE x OF y`), six game rows (`LOCKED` after a game with a password), and the pager line: A on REFRESH searches now (the page stays on the current list until the new one arrives), and with more pages it reads `< REFRESH >` and left / right turn the page, wrapping (`left_action` / `right_action`). Picking a row joins that game (`game_peer`, passed to `start()` like a join code); a join already in progress gives way, a host does nothing. Picking a locked game turns its row into an empty password prompt (`s_pin_row`, ENTER THE PASSWORD, `PASSWORD 12|----`); finishing it (A or B, or Enter) with all six digits typed joins that game, and anything shorter just closes it. A failed list join's reason stays on the status line until the page is opened again. Once connected, the MULTIPLAYER page's `exit_when` takes this page (or HOST SETTINGS) on to mission select too (`menu_config.cpp` checks the pilot page's whole page chain).
 
 - Steam: `RequestLobbyList` with the build key (`rs64r`), at least one free slot, worldwide, at most 50; our own lobby is skipped. A host publishes `name` and `locked` (`1` with a password) as lobby data through `set_info`; names are cut to menu-font text (A-Z, 0-9, space, 16 characters), with STEAM GAME for none.
-- A game in the list stays joinable by its code too.
 
 ## Relay server transport
 
-With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; `ROGUESQ_MP_RELAY` overrides it), `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/net/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
+With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; set when a typed address answers as a server, see above; `ROGUESQ_MP_RELAY` overrides it), `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/net/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
 
-- Precedence: HOST GAME and a typed join code use Steam when it is available, else the relay server (`relay_ready()`). FIND GAME lists Steam's games first, then the server's, and a picked game joins over the transport it came from (`relay_t`). `pending_join` (friends-list joins) is Steam's only.
-- A game's id on the server is a random 6-digit number and is its join code: the host's line shows `JOIN CODE <id>`, and a code join sends `JOIN(id, build)`.
+- Precedence: HOST GAME uses Steam when it is available, else the relay server (`relay_ready()`). The JOIN GAME list shows Steam's games first, then the server's, and a picked game joins over the transport it came from (`relay_t`). `pending_join` (friends-list joins) is Steam's only.
+- A game's id on the server is a random 6-digit number; picking it on the list sends `JOIN(id, build)`.
 - The client keeps one `Link` to the server for the session (REGISTER or JOIN once connected; Data packets carry the game's messages) and a second one only while fetching the list (LIST, reply, hang up; 5 s timeout). The server's refusals and close reasons (`Link::close_data`, the ENet disconnect data) become the status line: GAME FULL, NO GAME WITH THAT CODE, VERSION MISMATCH, RELAY SERVER FULL, RELAY SERVER CLOSED, RELAY SERVER LOST.
-- A server that does not answer: `available()` is false once a background check (started by the first `available()` call, which the MULTIPLAYER page makes) or a connection gets no answer in 5 s, and the server is checked again every 5 s (on FIND GAME, its 5 s refresh does the same). Joining fails at once with COULD NOT CONNECT TO SERVER (`Lobby::on_join_failed`, from the transport's `lost()` and status), and the code row falls back to the address row. HOST GAME falls back to hosting directly (`rs64_lobby_tick`: a relay host that is lost and unavailable before anyone joined restarts as a direct host), with no message. FIND GAME stays on the MULTIPLAYER page while a server is configured and says COULD NOT CONNECT TO SERVER over whatever Steam lists.
+- A server that does not answer: `available()` is false once a background check (started by the first `available()` call, which the MULTIPLAYER page makes) or a connection gets no answer in 5 s, and the server is checked again every 5 s (on the JOIN GAME list, its 5 s refresh does the same). Joining fails at once with COULD NOT CONNECT TO SERVER (`Lobby::on_join_failed`, from the transport's `lost()` and status). A host whose server stops answering before anyone joined stops hosting (`rs64_lobby_tick`, `Lobby::fail`) and the status says COULD NOT CONNECT TO SERVER until HOST GAME is pressed again. While a saved server is down, the JOIN GAME page says COULD NOT CONNECT TO SERVER over whatever Steam lists.
 
 ## HOST SETTINGS and passwords
 
-HOST SETTINGS (a page off MULTIPLAYER) holds SERVER NAME (`NameEditor`: typed, or the pad's up/down per character; empty = the pilot's name), PASSWORD (`CodeEditor`, 6 digits; NONE until set) and REMOVE PASSWORD. Both are saved to `roguesq_net.json` (`host_name`, `host_password`) and, while hosting, apply at once: the password to `Lobby::set_password`, the name and lock to the relay (`sync_host_settings` in `ghost_lobby.cpp`).
+HOST SETTINGS (a page off MULTIPLAYER) holds SERVER NAME (`NameEditor`: typed, or the pad's up/down per character; empty = the pilot's name), PASSWORD (`CodeEditor`, 6 digits; NONE until set, and emptying the field when it closes removes it). Both are saved to `roguesq_net.json` (`host_name`, `host_password`) and, while hosting, apply at once: the password to `Lobby::set_password`, the name and lock to the relay (`sync_host_settings` in `ghost_lobby.cpp`).
 
 The host checks the password; relays and servers only know a game is locked:
 
 - On connect the client sends HELLO, then AUTH with its password (empty when none was typed). The host's `Lobby` is Connected after the client's matching HELLO and an AUTH with its password (any, without one), and then sends ACCEPT; the client is Connected on the host's HELLO plus ACCEPT.
-- A wrong or missing password: the host sends BYE `WrongPassword` and goes back to waiting; the client fails with WRONG PASSWORD or PASSWORD NEEDED and sets `pin_mode`, so the MULTIPLAYER page's address row becomes the password (A to type it) until the next JOIN GAME, which sends it. FIND GAME's PASSWORD row is the same password.
+- A wrong or missing password: the host sends BYE `WrongPassword` and goes back to waiting; the client fails with WRONG PASSWORD or PASSWORD NEEDED and sets `pin_mode`, so the MULTIPLAYER page's address row becomes the password (A to type it) until the next JOIN GAME, which sends it. The JOIN GAME list's password prompt is the same password.
 - A refused client is trusted to disconnect on that BYE; one that does not keeps the host's single slot until it leaves.
 
 ## Internet hosting (UPnP)
@@ -193,7 +193,7 @@ While typing on a phone, the picture slides up so the highlighted entry clears t
 All messages ride the ENet link; `Msg` in net_core.h lists them. A session starts only once both sides said a matching HELLO and the host accepted the client's AUTH (see [HOST SETTINGS and passwords](#host-settings-and-passwords)). Per frame (`rs64_ghost_frame`, after the pad poll): remote messages in, the host's result applied, local state out, the remote pad written to port 1 for the imposter.
 
 | Message | Direction / use |
-|---|---|
+| --- | --- |
 | HELLO | Both: build id, pilot name (label over the ship). |
 | AUTH, ACCEPT | Client to host right after HELLO: the password typed (empty: none). Host to client: accepted. |
 | MISSION, LAUNCH | Host picks the mission id first, then LAUNCH puts both on the same level and craft. `DAMAGE`, `OBJ` and `LIFE` carry the mission id. |
@@ -226,7 +226,7 @@ The host's result ends the client's mission. On a client in session, `requestMis
 
 ## Shared objectives, deaths and lives
 
-- Objectives: the host streams its objective state and the client takes the newest snapshot before its level script runs each frame. On a client in session, `datItemSetObjectiveBooleanCount` drops local writes; the callers are death handlers and every death is mirrored into the host's world, which counts it once.
+- Objectives: the host streams its objective state and the client takes the newest snapshot before its level script runs each frame. On a client in session, `datItemSetObjectiveBooleanCount` drops local writes; the callers are death handlers and every death is mirrored into the host's world, which counts it once. The client keeps each dropped write (`ObjectiveLedger`, mp_core) until a host snapshot shows it, and applies whatever is still owed once the host is gone, so a kill in the moments before a dropout still counts.
 - Upgrades: a pickup ORs one bit into the settings word 0x80130B4C (`npcPowerUpUpdate` 0x800EBDB0-0x800EBE4C; `kUpgradeMask` 0x1FE00). `sync_upgrades` (world_sync.cpp) takes the word's upgrade bits on the mission's first frame as the baseline (the pilot's own upgrades, never shared), sends bits gained after it as UPGRADES, and ORs the other player's into the word. Bits already shared either way are not sent again; a peer entering the mission gets them all again. The game's own commit then saves them to each pilot on success and reverts them otherwise.
 - Pickups: power-ups are DAT items. `RS64_HOOK_POWERUP_COLLECT` (0x800EBD34) sends this player's collect as PICKUP (DAT index). The receiver adds that record to `pickups_forced`; `RS64_HOOK_POWERUP_TOUCH` (0x800EBD20) zeroes the touch test's squared distance for it, so the game runs its own pickup there (bonus count, upgrade bit, shrink and removal), with the sound (`play3DSoundEvent`, a1) moved to the local ship so it is heard. A pickup not spawned on the receiver (no ship near it) is collected when it spawns. A peer entering the mission late gets every PICKUP again. Pair test: `construction_yards_bonus.rec` (see tools/debug/recordings/README.md).
 - Shared deaths: level objects are DAT items. Each frame, every tracked item whose health dropped is sent as DAMAGE (a resync sends every item). The receiver applies the drop through the game's own damage path (`dealDamagetoDatItem` 0x800C7390: a hit for a spawned item, a stored-health cut for an unspawned one).

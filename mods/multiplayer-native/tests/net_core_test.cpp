@@ -163,12 +163,13 @@ static void test_code_editor() {
     c.input(kPadA, 0);
     CHECK(!c.editing && !c.input(kPadUp, 0) && c.code() == "920000");
     c.begin_typing();
-    CHECK(c.typing && c.label() == std::string("920000") + kCaret);
+    CHECK(c.typing && c.label() == std::string("JOIN CODE 920000") + kCaret);
     c.type_backspace();
     c.type_backspace();
+    CHECK(c.label() == std::string("JOIN CODE 9200") + kCaret + "--");
     c.type_text("4x8.");
     c.type_text("123");
-    CHECK(c.label() == std::string("920048") + kCaret);
+    CHECK(c.label() == std::string("JOIN CODE 920048") + kCaret);
     CHECK(c.end_typing() && !c.typing && c.code() == "920048");
     c.begin_typing();
     c.type_backspace();
@@ -310,6 +311,12 @@ static void test_lobby_join_times_out() {
     h.host();
     h.on_join_failed("X");
     CHECK(h.state() == LobbyState::Hosting);
+    // A host whose relay server went away stops with the reason; hosting again clears it.
+    h.cancel();
+    h.fail("COULD NOT CONNECT TO SERVER");
+    CHECK(h.state() == LobbyState::Failed && h.status() == "COULD NOT CONNECT TO SERVER");
+    h.host();
+    CHECK(h.state() == LobbyState::Hosting && h.status() == "WAITING FOR PLAYER");
 }
 
 static void test_lobby_no_hello_after_connect() {
@@ -402,10 +409,18 @@ static void test_lobby_join_timeout_setting() {
 static void test_address_editor_saved_hostname() {
     AddressEditor a;
     a.load("friend.ddns.net");
-    CHECK(a.target() == "friend.ddns.net" && a.label() == "SAVED ADDRESS");
+    CHECK(a.target() == "friend.ddns.net" && a.label() == "FRIEND.DDNS.NET");
     a.editing = true;
     a.input(kPadUp, kPadUp);
-    CHECK(a.target() == a.text() && a.label() != "SAVED ADDRESS");
+    CHECK(a.target() == a.text() && a.label() != "FRIEND.DDNS.NET");
+    // A host name typed on the keyboard (any case) is kept with its port.
+    AddressEditor h;
+    h.editing = true;
+    h.begin_typing();
+    for (int i = 0; i < 20; ++i) h.type_backspace();
+    h.type_text("Relay.Example-1.net:27070");
+    CHECK(h.label() == std::string("RELAY.EXAMPLE-1.NET:27070") + kCaret);
+    CHECK(h.end_typing() && h.target() == "relay.example-1.net" && h.port == 27070 && h.label() == "RELAY.EXAMPLE-1.NET:27070");
     AddressEditor b;
     b.load("10.0.0.5");
     CHECK(b.target() == "10.0.0.5" && b.label() == "10.0.0.5");
@@ -631,7 +646,7 @@ static void test_address_editor_typing() {
     a.type_backspace();
     a.type_backspace();
     CHECK(a.label() == "192.168.1" + caret);
-    a.type_text("0.1x89");
+    a.type_text("0.1#89");
     CHECK(a.label() == "192.168.10.189" + caret);
     // Enter: a valid address replaces the octets; editing ends.
     CHECK(a.end_typing() && !a.typing && !a.editing);
@@ -641,16 +656,17 @@ static void test_address_editor_typing() {
     a.begin_typing();
     a.type_text("9");
     CHECK(!a.end_typing() && a.text() == "192.168.10.189");
-    // At most 21 characters (255.255.255.255:65535).
+    // At most kMaxTyped characters (a host name and port).
     a.editing = true;
     a.begin_typing();
     for (int i = 0; i < 20; ++i) a.type_backspace();
     CHECK(a.label() == caret);
-    a.type_text("1234567890123456789012345");
-    CHECK(a.label() == "123456789012345678901" + caret);
+    const std::string max_digits(AddressEditor::kMaxTyped, '1');
+    a.type_text((max_digits + "222").c_str());
+    CHECK(a.label() == max_digits + caret);
     // While typing the pad's up/down and left/right do nothing, but A or B still end editing.
     a.input(kPadUp, kPadUp);
-    CHECK(a.typing && a.label() == "123456789012345678901" + caret);
+    CHECK(a.typing && a.label() == max_digits + caret);
     a.input(kPadB, kPadB);
     CHECK(!a.typing && !a.editing);
     // Leaving the page mid-typing drops the typed text and keeps the address.
@@ -792,13 +808,13 @@ static void test_damage_batch() {
 }
 
 static void test_list_status() {
-    CHECK(list_pages(-1) == 1 && list_pages(0) == 1 && list_pages(4) == 1 && list_pages(5) == 2 && list_pages(9) == 3);
+    CHECK(list_pages(-1) == 1 && list_pages(0) == 1 && list_pages(6) == 1 && list_pages(7) == 2 && list_pages(13) == 3);
     CHECK(list_status(-1, 0) == "SEARCHING" && waiting_status(list_status(-1, 0)));
     CHECK(list_status(0, 0) == "NO GAMES FOUND");
     CHECK(list_status(1, 0) == "1 GAME FOUND");
-    CHECK(list_status(4, 0) == "4 GAMES FOUND");
-    CHECK(list_status(5, 0) == "5 GAMES FOUND  PAGE 1 OF 2");
-    CHECK(list_status(12, 1) == "12 GAMES FOUND  PAGE 2 OF 3");
+    CHECK(list_status(6, 0) == "6 GAMES FOUND");
+    CHECK(list_status(7, 0) == "7 GAMES FOUND  PAGE 1 OF 2");
+    CHECK(list_status(15, 1) == "15 GAMES FOUND  PAGE 2 OF 3");
 }
 
 static void test_link_poll_edges() {

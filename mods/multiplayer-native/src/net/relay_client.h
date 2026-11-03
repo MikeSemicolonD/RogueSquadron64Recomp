@@ -44,6 +44,7 @@ private:
     void pump();
     void pump_list();
     void start_list(bool probe);
+    std::string listed_status() const;
     void mark_down(const char* why);
     LinkConfig link_config() const;
 
@@ -66,6 +67,7 @@ private:
     std::string status_;
     std::string host_label_;
     std::string name_;
+    std::string listed_;
     bool locked_ = false;
 
     Link list_link_;

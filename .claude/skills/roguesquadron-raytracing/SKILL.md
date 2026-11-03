@@ -71,7 +71,7 @@ render thread: FramebufferRenderer::fillRS64Lights (render/rt64_framebuffer_rend
 ## 2. Spaces and units (get this right before anything else)
 
 | Thing | Space | Units |
-|---|---|---|
+| --- | --- | --- |
 | Level preset (no mesh/sprite) | level map space | 512 per terrain cell, **Y down**; explorer world = map/256 (x,z), y x HMP heightScale/16 |
 | Mesh preset | the matched part's node (model) space | model units (HOB vertex units x256); radius scaled by the draw transform |
 | Mesh preset + `cameraUnits` | same position | radius / shadow offset in camera (world) units: for models drawn at varying scale (laser bolts 0.25-0.5 of a probe; craft ~0.0126; vehicles ~0.2; buildings 0.25-1.3) |

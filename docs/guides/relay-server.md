@@ -4,22 +4,22 @@
 
 ## Pointing the game at a server
 
-Each player adds the server to `roguesq_net.json` next to the game (create it if missing), with the port if it is not 27070:
+Each player types the server's address (a name or an IP, with `:port` if it is not 27070) into the address row on the MULTIPLAYER page, as they would a friend's address. When the server answers, the game remembers it as `relay_server` in `roguesq_net.json` next to the game; it can also be set there by hand:
 
 ```json
 { "relay_server": "relay.example.com:27070" }
 ```
 
-The game then lists the server's games under MULTIPLAYER > FIND GAME (after Steam's, when the steam-relay mod is running), and HOST GAME opens games on it when Steam is not in use. A game's join code is its id on the server, as `games` shows it.
+The game then lists the server's games under MULTIPLAYER > JOIN GAME (after Steam's, when the steam-relay mod is running), and HOST GAME opens games on it when Steam is not in use. A game's id on the server, as `games` shows it, is the name it lists under when the host has not set one.
 
-When the server is down or the address is wrong, joining says COULD NOT CONNECT TO SERVER, FIND GAME says the same over any Steam games, and HOST GAME hosts directly (LAN, or the internet when the router allows it) instead.
+When the server is down or the address is wrong, the JOIN GAME list says COULD NOT CONNECT TO SERVER over any Steam games, and a host waiting on it stops hosting with the same message.
 
 ## Download and run
 
 Release packages (draft releases tagged `relay-v*`):
 
 | Package | Contents |
-|---|---|
+| --- | --- |
 | `rs64_relay-windows-x64-<ver>.zip` | `rs64_relay.exe`, this README, licenses. No runtime to install. |
 | `rs64_relay-linux-x64-<ver>.tar.gz` | `rs64_relay`, this README, licenses. Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12 and later). |
 
@@ -36,7 +36,7 @@ Players need to reach UDP port 27070 (`--port` changes it): open it in the machi
 Every setting is a command-line flag, a line in the config file, and (limits only) a console `set`. Defaults load first, then the config file, then the flags.
 
 | Flag | Config key | Default | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `--port` | `port` | 27070 | UDP port (1-65535) |
 | `--name` | `name` | RS64 RELAY | Server name shown in the game's list (A-Z, 0-9, space; at most 16) |
 | `--max-clients` | `max_clients` | 64 | Connections at once: hosts, joiners and players browsing the list (1-4000) |
@@ -61,7 +61,7 @@ A missing file is fine. A bad line is logged and skipped. `save` rewrites the wh
 Type these into the terminal while the server runs:
 
 | Command | Effect |
-|---|---|
+| --- | --- |
 | `help` | List the commands |
 | `games` | Connection and game counts, the limits in use, and each game: id, name, password flag, host address, waiting or playing with whom |
 | `kick <game id>` | End one game (both players are disconnected) |

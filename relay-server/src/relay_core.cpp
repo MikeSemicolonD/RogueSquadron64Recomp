@@ -124,11 +124,11 @@ void Relay::handle(uint32_t peer, Client& c, bool reliable, const uint8_t* data,
 
         while (!id || games_.count(id)) id = 100000u + (uint32_t)(rng_() % 900000u);
 
-        g.name = sanitize_name(name, "GAME " + std::to_string(id));
+        g.name = unique_name(sanitize_name(name, "GAME " + std::to_string(id)), id);
         g.host = peer;
         games_[id] = g;
         c.game = id;
-        send(peer, encode_registered(id));
+        send(peer, encode_registered(id, g.name));
         log("game " + std::to_string(id) + " '" + g.name + "' opened by " + c.ip + (g.locked ? " (password)" : ""));
         return;
     }
@@ -150,7 +150,8 @@ void Relay::handle(uint32_t peer, Client& c, bool reliable, const uint8_t* data,
         }
 
         g->second.locked = locked;
-        g->second.name = sanitize_name(name, g->second.name);
+        g->second.name = unique_name(sanitize_name(name, g->second.name), g->first);
+        send(peer, encode_registered(g->first, g->second.name));
         return;
     }
 
@@ -394,6 +395,28 @@ std::vector<std::string> Relay::take_log()
     std::vector<std::string> out;
 
     out.swap(log_);
+    return out;
+}
+
+// The name with " 2", " 3", ... while another game is listed under it; the base is cut so the suffix fits kNameMax.
+std::string Relay::unique_name(const std::string& name, uint32_t self) const
+{
+
+    const auto taken = [&](const std::string& n) {
+        return std::any_of(games_.begin(), games_.end(), [&](const auto& kv) { return kv.first != self && kv.second.name == n; });
+    };
+
+    std::string out = name;
+
+    for (int i = 2; taken(out); ++i) {
+        const std::string suffix = " " + std::to_string(i);
+        std::string base = name.substr(0, kNameMax - suffix.size());
+
+        while (!base.empty() && base.back() == ' ') base.pop_back();
+
+        out = base + suffix;
+    }
+
     return out;
 }
 

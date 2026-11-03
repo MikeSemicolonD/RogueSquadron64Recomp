@@ -193,7 +193,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 All trace categories are off by default and there is no catch-all log switch. The full catalog is in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md) — **read it before adding a new `fprintf` or asking the user to enable logs.** The common switches below also have `--flags` (`--help`); any variable can be set with `--set NAME=VALUE`.
 
 | Env var | Effect |
-|---|---|
+| --- | --- |
 | `ROGUESQ_GFX_API=vulkan\|d3d12\|d3d11\|d3d10` | Force the graphics API (default auto) |
 | `ROGUESQ_HLE_DEV_MODE=0\|1` | RT64 ImGui inspector on F1 (default on in Debug, off in Release) |
 | `ROGUESQ_F5_NATIVE=0` | Parse F5 display lists without emitting geometry |
@@ -316,7 +316,7 @@ The flight terrain's view grid tables (span tables, two byte tables, the per-cel
 Host-side tables above 8 MB (keep any new one clear of all of these):
 
 | Range | Contents |
-|---|---|
+| --- | --- |
 | 0x80800000-0x8080FFFF | librecomp's cart PI handle; patches ELF data at 0x80801000 |
 | 0x80810000-0x809FFFFF | Scene texture pool (language mod only) |
 | 0x80A00000-0x80A01FFF | F5 renderer vertex scratch |
@@ -354,7 +354,7 @@ A canonical game-state model classifies the current state each present from RDRA
 This game uses a Factor 5-customized F3DEX-derived ucode. The RT64 profile `GBI_F3DFACTOR5` lives in [lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp](lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp) and inherits from `GBI_F3DEX`. The canonical opcode map (with observed w0/w1 patterns and disproven interpretations) is in [docs/reference/factor5-gbi.md](docs/reference/factor5-gbi.md); the DL grammar itself is in [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md). Confirmed Factor 5-specific behaviors:
 
 | Opcode | Standard meaning | Factor 5 behavior | Handler |
-|-------:|------------------|-------------------|---------|
+| -------: | ------------------ | ------------------- | --------- |
 | `0xB5` | F3DEX `G_QUAD` | **Next chunk**: continue in the chunk named by the current chunk header's first word (w1 ignored); `0xB8` is the pop/return | `op_b5_next_chunk` |
 | `0xE4` | F3DEX `G_TEXRECT` | **LLE format (16 bytes)**, not HLE 24-byte | `texrectLLE_guarded` |
 | `0xE5` | F3DEX `G_TEXRECTFLIP` | LLE format | `texrectFlipLLE_guarded` |

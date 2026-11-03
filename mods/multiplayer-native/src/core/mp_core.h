@@ -172,6 +172,35 @@ private:
     std::map<uint16_t, uint8_t> inside_;
 };
 
+// A client's objective writes in session (datItemSetObjectiveBooleanCount, dropped while the host owns the objectives), held until a host snapshot shows them; what is still owed when the host leaves is applied, so a kill just before a dropout still counts.
+// Only a snapshot expires entries (older than kWindowS before it): with the host silent nothing expires, however long the link takes to time out.
+class ObjectiveLedger {
+public:
+    static constexpr double kWindowS = 3.0;
+    static constexpr int kSlots = 128;
+
+    struct Owed {
+        std::map<int, int32_t> counts;
+        std::map<int, uint8_t> bools;
+    };
+
+    // index is the slot (0-based); only positive count adds are kept.
+    void dropped_count(int index, int32_t add, double now);
+    void dropped_bool(int index, uint8_t value, double now);
+
+    // A host snapshot applied: its rises against the previous snapshot pay off owed adds, and matching booleans clear owed ones.
+    void snapshot(const int32_t* counts, const uint8_t* bools, double now);
+    Owed settle();
+    void reset();
+private:
+    struct Entry { double t; int32_t amount; };
+    void match(int index);
+
+    std::map<int, std::deque<Entry>> owed_, credit_;
+    std::map<int, std::pair<uint8_t, double>> bools_;
+    std::vector<int32_t> last_;
+};
+
 // The wingman model (record +0x8C) showing a remote player's craft: its own model for crafts 0-5 and 7, else -1 (TIE interceptor and Naboo have none).
 int puppet_model(int craft);
 

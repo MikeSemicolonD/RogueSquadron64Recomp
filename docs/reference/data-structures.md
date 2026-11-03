@@ -29,7 +29,7 @@ gNpcSlotList (0x80130BB0, ptr) → slot[0x800] (8B each)
 ### NPC slot entry — `*gNpcSlotList + idx*8` (stride 8, 0x800 entries) (confirmed)
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | ptr | NPC context ptr (0 = empty) | funcs_9.c:3795; funcs_8.c:12118 |
 | +0x04 | u16 | next-slot chain link index | funcs_8.c:12152 |
 | +0x06 | u16 | chain key / free sentinel (0xFFFF = freed) | funcs_8.c:12155,12177 |
@@ -44,7 +44,7 @@ Allocated by `allocNpcContextArrays` (0x8003FD54): `rs_malloc(0x2D00)` = 0xC0 ×
 contexts + `rs_malloc(0x300)` = 0xC0 × 4 ptr array (funcs_9.c:3093-3165).
 
 | off | size | field | confidence / evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | ptr | `update_func` — `s32 (*)(self, action_code, msg)` | confirmed funcs_8.c:12148; npc_stuff.md |
 | +0x04 | ptr | per-instance data block (pool record / craft state) | confirmed funcs_8.c:12488; funcs_31.c:15587 |
 | +0x14 | u16 | flags: bit0=transient-pool select, bit2=skip dispatch, bit3=alive/pending-destroy | confirmed funcs_8.c:12130,12248 |
@@ -67,7 +67,7 @@ offsets cross-checked against `playerXwingUpdate` (0x800B5434).
 `player_struct` header:
 
 | off | size | field | confidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x000 | u8 | `unk000` slot-active gate | confirmed (func_800FB6C0.c:71) |
 | +0x002 | u16 | `unk002` | doc (ctx.c) |
 | +0x004 | 0x29C | `inner` (`inner_player_struct`) | doc (ctx.c) |
@@ -76,7 +76,7 @@ offsets cross-checked against `playerXwingUpdate` (0x800B5434).
 `inner_player_struct` (base = `player+0x4` = 0x80137DBC):
 
 | off | size | field | confidence / evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x004 | f32×3 | `posX/posY/posZ` | doc ctx.c; confirmed funcs_31.c:15683 (+0xB8 trunc of pos) |
 | +0x010..+0x030 | f32×9 | orientation/velocity scratch | doc ctx.c |
 | +0x034 | u16[0x40] | anim/blend table | doc ctx.c |
@@ -107,7 +107,7 @@ type1→0x800F410C, type2→0x800F4E74, type3→0x800F538C, type4→0x800F8398
 (funcs_42.c:20553). Type-keyed setters guard on the same byte.
 
 | off | size | field | confidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | f32×3 | XYZ position | note (resolveNpcAttachmentPos) |
 | +0x08 | ptr | base-position ref (NPC-attached) / type-2 XYZ | confirmed funcs_42.c:19697 |
 | +0x104..+0x10C | bytes/u32/f32 | type-1 params (a/b/c byte, word, intensity) | confirmed funcs_42.c:20712 |
@@ -126,7 +126,7 @@ rate +0x34, anchor +0x2C). See [[project_actor_effect_struct]].
 Size proven by `resetGameSettingsAndMissionStats` memset of 0x30 (funcs_17.c:5113).
 
 | off | size | field | confidence / evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | u8 | currentLevel (enum Level) | confirmed funcs_16.c:12037 |
 | +0x01 | u8 | vehicleId (enum PlayerCraft) | confirmed funcs_17.c:5961 |
 | +0x03 | u8 | secondaryWeapon | confirmed funcs_17.c:5955 |
@@ -151,7 +151,7 @@ Size proven by `resetGameSettingsAndMissionStats` memset of 0x30 (funcs_17.c:511
 Size proven by memset of 0x28 (funcs_17.c:5122).
 
 | off | size | field | confidence / evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | u8 | numLives (default 3) | confirmed funcs_17.c:6038 |
 | +0x01 | u8 | playerRank / save-status | confirmed funcs_17.c:3554 |
 | +0x02 | u8 | secondaryWeapon | confirmed funcs_17.c:5959 |
@@ -208,7 +208,7 @@ Scene-lifecycle fields (absolute outer offsets; the `inner_player_struct` craft-
 fields above sit at +0x4):
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | u8 | per-element active marker (=1 for player[0]) | confirmed funcs_12.c:1785 |
 | +0x02 | u16 | per-player state/team/status flags | confirmed (getPlayerField2) |
 | +0x0C | ptr | child HUD/2D-position sub-struct (+0x18 x, +0x1C y) | confirmed read funcs_30.c:23028 (writer not found) |
@@ -232,7 +232,7 @@ local storage.
 ### `hud_sub_struct` (0x30) — repeated HUD element (mixed)
 
 | off | size | field | confidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | ptr | next | confirmed func_800FBE20.c:62 |
 | +0x04 | ptr | prev | confirmed |
 | +0x08 | u16 | texture_count | confirmed |
@@ -276,7 +276,7 @@ unk0E/data (funcs_6.c:16475-16557); size/name doc-only. `getTextureDataByMateria
 ### `gCurrentMenuData` @ 0x800CE730 (0xF8) (confirmed)
 
 | off | field | off | field |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | screen_title (char*) | +0x54 | entry_size_scaler[8] (f32) |
 | +0x04 | current_menu | +0x74 | unk74[8] (target menu) |
 | +0x05 | back_menu | +0x94 | current_menu_entry |
@@ -296,7 +296,7 @@ Walked by `traverseSceneGraphRecursive` (0x80015548) → `processSceneNode` (0x8
 → `submitSceneNodeRender` (0x80010014). Corroborated by main_overlay.txt:1109-1111.
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | ptr | sibling node (0 = end) | funcs_4.c:16652 |
 | +0x08 | ptr | render-object | funcs_4.c:15344 |
 | +0x0C | ptr | child node (recursed) | funcs_4.c:16621 |
@@ -311,7 +311,7 @@ Render-object (node+0x08): +0x0C flags (bit0x4 early-out, bit0x8 full render),
 ### Cutscene file — `cuts_file_constant` @ `*gCurrentCutsceneFile` (0x800B1904 is a ptr) (mixed)
 
 | off | field | confidence |
-|----|----|----|
+| ---- | ---- | ---- |
 | +0x0044 | cutscene length / frame count (int→float divisor) | confirmed funcs_27.c:8062 |
 | +0x004A | active count for cuts_13D8[] | confirmed funcs_27.c:7698 |
 | +0x004E | active count for cuts_0058[] (cap 200) | confirmed funcs_27.c:15993 |
@@ -360,7 +360,7 @@ Size 0xB0 confirmed by memset (funcs_17.c:3164). The rest of the settings header
 (+0xA0..) are copied opaquely (doc names). Confirmed body:
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x08 | u32 | cheat-code flags, rebuilt bit by bit from `gGameSettings+0x18` (0x80130B58) | confirmed `serializeSettingsToSaveAndPersist` 0x8006E1BC |
 | +0x10 / +0x11 / +0x12 | u8 | music / sound FX / speech volume, 0-127 (the pause slider clamps to 127.0 at 0x800A6614), from `gGameSettings+0x20..0x22` | confirmed 0x8006E22C, `initOrUpdatePauseScreenDim` |
 | +0x13 | u8 | controller layout 0-3 (`gGameSettings+0x05`; menu cycles 0-3, table of 4 button layouts at 0x800CC9D8 in the menu overlay) | confirmed 0x8006E238, `controllerSettingsScreen` 0x800BD274 |
@@ -374,7 +374,7 @@ Size 0xB0 confirmed by memset (funcs_17.c:3164). The rest of the settings header
 ### `account_data` (0x14) @ body+0x14 (mixed)
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | char[4] | name (null-term) | confirmed funcs_17.c:6086 |
 | +0x05 | u8 | current_level (clamp ≤0x10): progress, not a cursor. SELECT LEVEL lists campaign levels up to min(this, 15); the all-missions and bonus cheats raise that | confirmed funcs_17.c:6716, SELECT LEVEL setup 0x800C5DAC |
 | +0x06 | u8[5] | level_medals — 2 bits/level, 19 levels (`parseAccountDataBytes`) | confirmed funcs_17.c:6174 |
@@ -392,7 +392,7 @@ accountNumber (the owning pilot's, 0 for the default entries), +0x07 unused. Con
 ### `save_data_body` (0xC8) — EEPROM record (confirmed, with checksum-order correction)
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | u32 | adler32 of the **0xB0 body** (NOT the unk08 block — doc has these swapped) | confirmed funcs_2.c:2884 |
 | +0x04 | u32 | adler32 of the **0x10 unk08 block** | confirmed funcs_2.c:2852 |
 | +0x08 | 0x10 | unk08[4] extra block | confirmed funcs_2.c:2806 |
@@ -409,7 +409,7 @@ Three global tracking arrays + a check-handle table + a per-level vtable. Derive
 `checkObjectiveHandles` (funcs_42.c:21662) and the lv0 implementations.
 
 | global | addr | element | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | `gObjectiveBooleans` | 0x801388A0 | u8[128], 1-based (`[idx-1]`) | confirmed funcs_42.c:21746 |
 | `gObjectiveCounts` | 0x80138060 | u32[128], 1-based | confirmed funcs_42.c:21787 |
 | `gObjectiveTimers` | 0x8010C9F8 | f32[8] | doc + funcs_43.c:14 |
@@ -417,7 +417,7 @@ Three global tracking arrays + a check-handle table + a per-level vtable. Derive
 ### `simpleCheckHandle` — `simpleCheckHandles[0x30]` @ 0x8010C6E0 (stride 0x10) (confirmed)
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x00 | u32 | `handle` (fn ptr; jalr when check passes) | confirmed funcs_42.c:21882 |
 | +0x04 | union | u8 objectiveBooleanIndex / f32 timer | confirmed funcs_42.c:21742,21847 |
 | +0x05 | u8 | objectiveBooleanValue | confirmed funcs_42.c:21754 |
@@ -629,7 +629,7 @@ flags_type & 0xF` (`<6`, jump table): 0=CI4, 1=CI8, 2=RGBA5551(ARGB1555), 3=RGBA
 ### Camera struct (arg to `setupCameraMatrices` 0x80016C44) — size 0x5C (confirmed)
 
 | off | size | field | evidence |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | +0x10 | s32 | viewport width (0x140) | confirmed funcs_4.c:20500 |
 | +0x14 | s32 | viewport height (0xE0) | confirmed funcs_4.c:20506 |
 | +0x18 | s32 | viewport center X (0xA0) | confirmed funcs_4.c:20691 |
@@ -779,7 +779,7 @@ for the 0x100-family, and the alpha cycle picks SHADE/PRIM/TEX0/COMBINED. The re
 recipes (the combiners RT64's native F5 path must honor):
 
 | recipe | combiner | typical use |
-|----|----|----|
+| ---- | ---- | ---- |
 | `fc127e24` | `(TEX0)*SHADE` color, no alpha mod | flat textured + vertex light (modulate) |
 | `fc16fe04 2ffc…` | `(TEX0-TEX1)*LOD_FRAC+TEX0`, cyc1 `*SHADE` | trilinear-mip texture × shade |
 | `fcffffff fffcfe7f` | `+TEX0` (pass texel) | unlit textured |
@@ -802,7 +802,7 @@ The `decodeRdpFormatFlags` jump table @0x80000990 holds **code addresses** (case
 not nibbles; the concrete `G_SETTIMG` opcode per format index is emitted in the case arms:
 
 | image_type | format | G_SETTIMG opcode | fmt/siz |
-|----|----|----|----|
+| ---- | ---- | ---- | ---- |
 | 0 CI4 / 1 CI8 | CI | `0xFD50` | CI, palette load |
 | 2 RGBA5551 | RGBA16 | `0xFD10` | RGBA / 16b |
 | 3 RGBA32 | RGBA32 | `0xFD18` | RGBA / 32b |

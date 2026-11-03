@@ -37,7 +37,7 @@ close()
 ## Flying the craft (X-wing class, measured on Corellia)
 
 | Input | Result |
-|---|---|
+| --- | --- |
 | stick x = -1 for 30 frames | Hard banked turn left: ~30 deg roll, large heading change |
 | stick x = -0.4 for 20 frames | Gentle ~15 deg bank; response is roughly proportional |
 | release after a turn | Wings level again within ~30 frames, new heading kept |

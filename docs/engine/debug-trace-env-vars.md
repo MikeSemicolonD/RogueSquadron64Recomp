@@ -38,7 +38,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 ## User options (CLI-backed)
 
 | Env var | Flag | Default | Effect |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ROGUESQ_GFX_API` | `--gfx-api` | auto | `vulkan`, `d3d12`, `d3d11` or `d3d10` forces the backend (`d3d10` = D3D11 capped at feature level 10). |
 | `ROGUESQ_HLE_DEV_MODE` | `--[no-]hle-dev-mode` | on in Debug, off in Release | RT64 ImGui inspector on F1 (F6 = Controls window). |
 | `ROGUESQ_MCP_PORT` | `--mcp-port` | 47064 in Debug, unset otherwise | Dev: serve the RT64 MCP bridge on `127.0.0.1:<port>` for [tools/debug/mcp](../../tools/debug/mcp/README.md) ([rt64-mcp.md](rt64-mcp.md)). A Debug build serves 47064 so the server's `attach` can reach a game started by hand; `0` turns it off. Other builds open no port without it. Debug builds only, unless configured with `-DRS64_MCP=ON`. |
@@ -64,7 +64,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 Other user options without flags:
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_INPUT_SEQ` / `ROGUESQ_INPUT_DELAY` | unset / 12000 | Scripted virtual controller injected at `get_n64_input` (no window focus needed): `name:holdMs:afterMs,...` with names `start a b z l r dup ddown dleft dright cup cdown cleft cright up down left right wait` (`up`..`right` = analog stick). `INPUT_DELAY` waits that many ms before the first step. |
 | `ROGUESQ_NO_MENU_BUTTONS` | off | Disables the custom front-end menu (also off for a `demo:` boot target). |
 | `ROGUESQ_NO_PAUSE_BUTTONS` | off | Disables the custom pause-menu buttons. |
@@ -83,7 +83,7 @@ Other user options without flags:
 Applied in `create_render_context` (`src/video/rt64_render_context.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_MSAA` | file | `2`/`4`/`8` -> MSAA 2x/4x/8x (rounds down; `<2` = none). |
 | `ROGUESQ_RES_SCALE` | file | Internal resolution multiplier (`resolution=Manual`), e.g. `3.0`; clamped by RT64. |
 | `ROGUESQ_SSAA` | file | SSAA factor (`ssaa` in `roguesq_video.json`); `>=2` renders at that multiple of the window and downsamples. |
@@ -104,7 +104,7 @@ Applied in `create_render_context` (`src/video/rt64_render_context.cpp`) after `
 Driven from `update_screen` (`src/video/rt64_render_context.cpp`) and the nav sequencer (`src/game/nav_sequencer.cpp`); both poke game RDRAM or inject input each present.
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_BOOT_TARGET` | unset | `menu`: fast-forward the intro to the front end. `menu:<label>/<label>/...`: the same, then select each listed entry in turn (exact label, or a prefix ending in `*` for a slider or live label), from the main menu through custom pages; each step waits for the menu to settle, moves the cursor, presses A and repeats a press that was dropped until the menu changes or a mod entry takes it; logs `[nav] menu: selected ...` and `path done` (e.g. `menu:OPTIONS/GAME SETTINGS`, or `menu:MENU PROBE/RUN ACTION` with `tests/mods/menu-probe` staged). `level:<id>[,craft]`: drive the game's own menus (state-gated) into a mission for level `<id>` (0-0x14), optional craft (0-8). `abort:<id>[,craft]`: the same, then pause, ABORT MISSION, YES (cursor written at HUD+0xD68 like touch taps), and A through MISSION FAILED to SELECT LEVEL; logs `[nav] abort ...` per step (`ROGUESQ_NAV_ABORT_YES=<row>` overrides the YES row). `pause:<id>[,<menu>]`: the same mission entry, then pause and stop on pause menu `<menu>` (0 root, 1 GAME SETTINGS, 2 SOUND SETTINGS; logs `[nav] abort pause reached`), for captures. `hangar:<id>[,craft]`: the abort path, then A at SELECT LEVEL into the craft-select hangar, where it stops (`[nav] hangar reached`); a new pilot never passes the hangar otherwise. `demo:<n>`: disables the custom front-end menu and pins demo `<n>`, which then plays on the front-end idle. `lobby:host[,level[,craft]]` / `lobby:join[,level[,craft]]`: MAIN MENU -> MULTIPLAYER -> pilot -> HOST/JOIN (address from `roguesq_net.json`) -> mission select (the client mirrors the host) -> craft select -> the mission, pressing START through its opening cutscene; logs `[nav] lobby ...`. `lobby:page` stops on the multiplayer page and hands the pad back. `cutscene:<level>[,<kind>]`: plays that cutscene (kind 0 intro, 1 outro for levels 0-15; `3,2` epilogue, `19,2` boot intro; table below) in place of the boot intro after the attribution screens, then continues to the front end; logs `[nav] boot cutscene ...`. The Calamari outro is `cutscene:15,1`. Headless needs `ROGUESQ_FAKE_CONTROLLER=1`; the level paths need no existing save (a pilot is auto-created). |
 | `ROGUESQ_BOOT_EXIT` | unset | `1`: quit once a `cutscene:` boot target has played (the boot intro call returns), so scripted cutscene runs end on their own; logs `[nav] boot cutscene finished`. |
 | `ROGUESQ_CINE_FASTFWD` | 400 with any `BOOT_TARGET`, else 0 | Adds N to the submitted-frame counter (`0x8011A890`, +1 per `submitGfxFrame`) each present while the intro cutscene runs and its `gateCtr` (`0x800B0B28`) is below the end threshold (`cutscene[0x44]-0xA`). The intro completes through the game's own logic in seconds. |
@@ -147,7 +147,7 @@ Mid-mission cutscenes are not cutscene files: they play in-engine inside the run
 ## Frame loop and pacing
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_PARSE_SNAPSHOT` | on | Parse each graphics task from a copy of RDRAM taken at task start, so the game recycling DL chunks cannot change what RT64 walks. `0` parses live RDRAM. |
 | `ROGUESQ_VI_WAIT_PARSE` | on only without the snapshot | VI waits for an in-flight parse. `1`/`0` overrides. |
 | `ROGUESQ_SP_COMPLETE_AFTER_PARSE` | on | Deliver SP-done only after the list is parsed, as the RSP would. `0` sends it before the parse. |
@@ -167,7 +167,7 @@ Probes:
 Kill switches and A/B switches (`lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`, `rt64_gbi_f5_rdpstate.cpp`, `lib/rt64/src/hle/rt64_rsp.cpp`):
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_F5_CHUNK_BOUND` | on | Chunk-bounded DL fetch rule. `0` disables when diagnosing a desync. |
 | `ROGUESQ_F5_CHAIN_CAP` | 256 | Max chunks in one next-link chain before the walker ends the list (backstop against a stale call walking the free list). 256 is the window `f5_chunk_revisit` can still detect a cycle in; dense frames chain about 84. |
 | `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | 2048 / 4096 | Per-task chunk-entry and face budgets; a trip ends the task (hardware goldens stay under 400 / 700). |
@@ -197,7 +197,7 @@ Kill switches and A/B switches (`lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`, `rt6
 Draw distance and terrain grid (`src/game/hook_helpers.cpp`):
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_CINE_DRAW_DIST` | `keepCutsceneDrawDistance` | `1`/`0` overrides `keepCutsceneDrawDistance` in `roguesq_video.json` (default on). On: while a cutscene plays, the draw distance, terrain reach, fog and the cutscene level's terrain cell budget use the game's own values (multiplier 1.0), so per-shot view distances stay as authored. Off: cutscenes use the player's setting. Battle Above Taloraan (level 10) always runs at 1.0: it pins its own far plane and fog and has no terrain. |
 | `ROGUESQ_TERRAIN_DIST=<mult>` | draw dist | Legacy terrain: scales the game's terrain grid reach and fog start/end. Accepts 0.25-8, capped at 2.5 (the terrain grid is 128x128 cells). Under the whole-map pass the grid stays at stock reach and fog follows the draw distance. |
 | `ROGUESQ_LOG_FOG=1` | off | One `[fog]` line per change: level, far-range base D (0x8009DEAC) and its bounds, the fog start/end/color the game set, the cutscene flag, our draw/terrain multipliers. |
@@ -207,7 +207,7 @@ Draw distance and terrain grid (`src/game/hook_helpers.cpp`):
 Presentation (`lib/rt64/src/hle/rt64_present_queue.cpp`, `src/video/rt64_render_context.cpp`):
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_VI_FOLLOW_DRAW` | 1 | When VI's buffer is not in the recently-written set (stale), present the most recent other color buffer instead. `0` = VI lookup only. |
 | `ROGUESQ_NO_MENU_PRESENT_FIX` / `ROGUESQ_MENU_FIX_STALE_MS` | off / 250 | The menu present fix scans out the GBI's most-drawn buffer at its own width when it differs from VI's (512-wide menu vs 640/1024 VI), only while that buffer got a texrect within the last N ms. |
 | `ROGUESQ_NO_MENU_VSCALE_FIX` | off | Disable halving the VI Y scale for the 512x448 interlaced menu frame. |
@@ -239,7 +239,7 @@ Probes:
 ## Interpolation
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_INTERP_RATE` | auto | `<hz>` (10-60) pins the game's logical rate; `strict` restores RT64's all-equal factor rule instead of the majority vote. |
 | `ROGUESQ_INTERP_VARIABLE` | on | Time each real frame by its own VI count, so a frame stretched to 3-4 VIs tweens over that long. `0` = fixed-rate scheduler. |
 | `ROGUESQ_F5_NODE_ID` | on | Pair objects by scene-node pointer (hooked in `traverseSceneGraphRecursive`). `0` falls back to RT64's auto matcher. |
@@ -279,7 +279,7 @@ Probes (`lib/rt64/src/gbi/rt64_gbi_f5_rdpstate.cpp` unless noted):
 ## Display lists, walks and desyncs
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_DUMP_FRAME_DL=N` | off | Debug builds only (a no-op in Release). Counts graphics tasks from launch and prints the opcode streams of tasks N..N+15 to stderr: per-command detail for N and N+1, texrect count and bounding box for all. `src/game/hook_helpers.cpp`. |
 | `ROGUESQ_DUMP_TEXTURES` | off | With `DUMP_FRAME_DL`: writes 0x2000 bytes of each SETTIMG source in the detailed tasks to `dumps/tex/<addr>_fmt<f>_siz<s>.bin`. Debug only. |
 | `ROGUESQ_LOG_DL_HEALTH` | off | Every 10 s: `[dl-health] consume=… texrect=N followupOp=N cimgReject hi= low= past= width= window= ops: OP:count…`. Counts texrect follow-up words whose top byte is a nonzero opcode, and garbage color-image rejects (the walk-desync signal). |
@@ -338,7 +338,7 @@ Probes:
 ## Plume / GPU device
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_VK_QUEUE_PRIORITY` | `high` on Android, none elsewhere | Vulkan global queue priority: `low` / `medium` / `high` / `realtime`. |
 | `ROGUESQ_NO_DEVICE_LOST_RECOVERY` | off | `1` disables rebuilding RT64 after a lost device (rebuilds back off 1 s doubling to 16 s). |
 | `ROGUESQ_NO_ACQUIRE_BARRIER_FIX` | off | A/B: drop the swapchain acquire-barrier stage fix in plume Vulkan. |
@@ -357,7 +357,7 @@ Probes (`src/audio/audio.cpp` unless noted):
 ## Input and menus
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_THROTTLE` | unset | Headless tests: force the throttle lever position (`0` back / slowest, `1` forward / fastest) as if a throttle were bound. |
 Keyboard, mouse and gamepad bindings load from `roguesq_input.json` next to the exe (written with defaults on first run); rebind in-game under OPTIONS > CONTROLLER SETTINGS (the `controls-menu` mod) or with F1 then F6. Mouse-steering capture is automatic while the window is focused.
 
@@ -366,7 +366,7 @@ Keyboard, mouse and gamepad bindings load from `roguesq_input.json` next to the 
 One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/validate/rdram_golden_diff.py`, from `src/video/rt64_render_context.cpp`. First match wins.
 
 | Env var | Effect |
-|---|---|
+| --- | --- |
 | `ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]` | Dump `dumps/rdram_state_<id>.bin` the first present each listed game state becomes current, all in one run. Feeds `tools/debug/validate/state_diff.ps1`. |
 | `ROGUESQ_DUMP_RDRAM_STATE_SETTLE` | Presents a state must stay current before its dump fires (default 0). |
 | `ROGUESQ_DUMP_RDRAM_AT_VI=<n>` | At present n. |
@@ -379,7 +379,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 ## Logs
 
 | Env var | Default | Tags | When to enable |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ROGUESQ_LOG_HEARTBEAT` | on in Debug, off in Release | `[vi] update_screen #N ...`, `[hle send_dl #N] ...`, `[musyx-run #N] ...` | Periodic health lines (first few, then every 64th). `tools/debug/run-stability.ps1` sets it, since its outcome classifier reads them. |
 | `ROGUESQ_LOG_VI` | off | `[osViSetMode #N ...]`, `[osViSwapBuffer #N fb=...]`, `[osViSetXScale/YScale]`, `[osViBlack]` | The game's VI mode and swap calls as they reach the libultra shims. |
 | `ROGUESQ_LOG_TRANSITION` | off | `[transition] cpu-clear fb=...`, `[transition] present vi=... chosen=... lastWrite=... branch=... black=... armWid=... drawnWid=...`, `[transition] vi-lum`, `rdp-wrote-white` | White/black flashes on transitions. `vi-lum` is the whiteness of the scanned-out buffer per VI (240 VIs before each mode-change clear and 180 after; more than ~300/768 `white` = a white flash); `rdp-wrote-white` is a mostly-white write-back, throttled per address. Every present for 120 presents after each video-mode change. `lastWrite=2` means a depth buffer was presented. |
@@ -410,7 +410,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 Inert unless set. Record and replay are active only in real missions (never attract demos); one recording covers one mission attempt. Precedence: replay, then record. See [tools/debug/recordings/README.md](../../tools/debug/recordings/README.md).
 
 | Env var | Default | Effect |
-|---|---|---|
+| --- | --- | --- |
 | `ROGUESQ_INPUT_RECORD` / `ROGUESQ_INPUT_REPLAY` | off | Record controller 0 from the first poll after launch (menus included) to a file, or replay one; replay closes the game when the recording ends. Record and replay in Release. |
 | `ROGUESQ_LS_RECORD` | unset | `<path.rec>`: record the next mission from frame 0 (seed forced, fixed 1/30 s dt): session header plus per-frame pad bytes and throttle. Writes the hash baseline to `<path.rec>.hash`. In a ghost co-op session it records only this player's input (no reseed, no `.hash`), replayable as `run-mp.ps1 -ClientPad`. |
 | `ROGUESQ_LS_REPLAY` | unset | `<path.rec>`: replay a recording (enter the same level and craft, e.g. with `ROGUESQ_BOOT_TARGET`); writes `<path.rec>.replay.hash` and quits at the end. |
@@ -434,7 +434,6 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_MP_UPNP` | 1 | `0`: hosting does not request a UPnP port mapping. |
 | `ROGUESQ_MP_TRANSPORT` | unset | `enet`: ignore the relay transports (the steam-relay mod and a relay server) and host / join over ENet. |
 | `ROGUESQ_MP_RELAY` | unset | `host[:port]` of an `rs64_relay` to use instead of `roguesq_net.json`'s `relay_server` (scripted runs; never saved). |
-| `ROGUESQ_MP_CODE` | unset | Join code JOIN GAME uses over a relay transport (scripted runs). |
 | `ROGUESQ_MP_PAD` | unset | `<path.rec>`: this instance's port-0 input comes from a recording. |
 | `ROGUESQ_MP_SIM_LATENCY_MS` / `ROGUESQ_MP_SIM_LOSS_PCT` / `ROGUESQ_MP_SIM_JITTER_MS` | 0 / 0 / 0 | Simulated one-way latency, unreliable-send loss, and 0..N ms jitter (order kept). |
 | `ROGUESQ_RELOC_GUARD` | unset | `1`: at the first present, fill the old addresses of the relocated per-player ranges (R1-R4, see AGENTS.md "Per-player data relocation") with 0xA5, then log `[reloc] write to old address X` on any write there. Pair with `ROGUESQ_DATA_BP=X` to catch the writer. |

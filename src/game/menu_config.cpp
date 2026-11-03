@@ -14,6 +14,7 @@
 #include <functional>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -99,6 +100,15 @@ constexpr int kModLanguage = kTextLanguageCount;
 // Language of the text files last loaded (loadTxtFile hook); picks the menu config's label set.
 std::atomic<int> s_text_language{0};
 
+// The game's BACK (text 0xA4) in the shown text language.
+const char* back_text()
+{
+
+    static const char* const kBack[] = { "BACK", "ZUR\334CK", "RETOUR", "BACK", "BACK" };
+
+    return kBack[std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1)];
+}
+
 // Non-selectable line: the menu navigation skips it.
 constexpr uint8_t SUBTYPE_LABEL   = 13;
 constexpr int16_t YESNO_X = -0x40;
@@ -143,7 +153,13 @@ struct Button {
     std::string title;       // Submenu: the opened page's title (default = label)
     int title_y = 0;         // Submenu: the page title's y offset (gCurrentMenuData+0x52, title slot 9)
     std::string leave_action; // Submenu: action fired when its page is left (its "action" fires on open)
+
+    // Action entry: actions fired by left / right while it is selected (a pager line).
+    std::string left_action, right_action;
     std::string label_src;   // Page entry: live text source; the drawn label follows it every frame
+
+    // Page label: small white text at y (default under the title), not an entry; one a page.
+    bool note = false;
     std::string transition;  // Front-end action: also run the native transition to this menu ("account" = the profile select, like START; "language" = the game's LANGUAGE page)
 
     // With transition "account": once a pilot is chosen, show this page instead of leaving for mission select, and leave when the exit_when condition holds.
@@ -305,7 +321,10 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     b.title = text_field(e, "title", lang);
     b.title_y = e.value("title_y", 0);
     b.leave_action = e.value("leave_action", std::string{});
+    b.left_action = e.value("left_action", std::string{});
+    b.right_action = e.value("right_action", std::string{});
     b.label_src = e.value("label_src", std::string{});
+    b.note = b.type == BType::Label && e.value("note", false);
     b.transition = e.value("transition", std::string{});
     b.exit_when = e.value("exit_when", std::string{});
     b.smin  = e.value("min",  b.smin);
@@ -1148,6 +1167,9 @@ struct SlotBinding {
     // Submenu opener: action fired when the page opens.
     std::string open_action;
 
+    // Left / right actions of an action entry.
+    std::string left_action, right_action;
+
     // Action with transition "account": the page shown after the pilot is chosen, and its exit condition.
     std::string pilot_page, exit_when;
 
@@ -1167,6 +1189,11 @@ SlotBinding s_slot[MAX_ENTRIES];
 // The current page's line per selectable slot (-1: not selectable); set only when the page has a shared row.
 int s_slot_line[MAX_ENTRIES];
 bool s_page_rows = false;
+
+// The last built page's note label (a copy: the config can be rebuilt) and that page's menu id; s_note_text is what is drawn.
+std::optional<Button> s_note;
+uint8_t s_note_menu = 0;
+std::string s_note_text;
 
 // Whether a mod page is on screen, for the touch code on the SDL thread.
 std::atomic<bool> s_page_shown{false};
@@ -1954,8 +1981,14 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
 
     std::vector<const Button*> lines;
 
+    s_note.reset();
+    s_note_menu = self_id;
+
     for (const auto& b : config().buttons)
-        if (b.menu == page && button_visible(rdram, b)) lines.push_back(&b);
+        if (b.menu == page && button_visible(rdram, b)) {
+            if (!b.note) lines.push_back(&b);
+            else if (!s_note) s_note = b;
+        }
 
     for (const auto& b : config().buttons)
         if (b.menu == page && b.has_index && button_visible(rdram, b))
@@ -2064,6 +2097,8 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
                       b.smin, b.smax, b.sstep, b.label_on, b.label_off };
         set_bar_layout(&s_slot[j], b);
         s_slot[j].sound = b.sound;
+        s_slot[j].left_action = b.left_action;
+        s_slot[j].right_action = b.right_action;
 
         // The game edits a native slider itself; the confirm intercept must not step it.
         if (native_slider) s_slot[j] = {};
@@ -2082,11 +2117,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
 
     s_slot_line[back_slot] = line + 1;
     const int back_y = 36 * (line + 1 - back_slot) + gap - lift;
-    // The game's BACK (text 0xA4) per text language.
-    static const char* const kBack[] = { "BACK", "ZUR\xDC" "CK", "RETOUR", "BACK", "BACK" };
-    const char* back = kBack[std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1)];
-
-    write_slot(rdram, back_slot, Slot{ (int32_t)alloc_str(rdram, back), SUBTYPE_SUBMENU, parent, 0, (int16_t)back_y, sc });
+    write_slot(rdram, back_slot, Slot{ (int32_t)alloc_str(rdram, back_text()), SUBTYPE_SUBMENU, parent, 0, (int16_t)back_y, sc });
     s_slot[back_slot].sound = kSfxBack;
     wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)(lines.size() + 1));
 
@@ -2654,9 +2685,9 @@ std::string mods_desc_text(uint8_t* rdram)
 // The laid-out description element while it is shown, else 0 (mods_frame keeps its alpha up while set).
 uint32_t s_mods_desc_elem = 0;
 
-// Lays the description out in its text group slot (setFontTextSlot 0x80063CFC, x -0x100 centres each line) in white; empty text, as on leaving
-// the page, stops it being drawn.
-void mods_draw_desc(uint8_t* rdram, recomp_context* ctx, const std::string& text)
+// Lays the description out in its text group slot (setFontTextSlot 0x80063CFC, x -0x100 centres each line) in white at y; empty text, as on leaving
+// the page, stops it being drawn. A page's note label uses the same slot.
+void mods_draw_desc(uint8_t* rdram, recomp_context* ctx, const std::string& text, int y = kModsTopY)
 {
 
     static uint32_t s_str = 0, s_white = 0;
@@ -2677,7 +2708,7 @@ void mods_draw_desc(uint8_t* rdram, recomp_context* ctx, const std::string& text
 
     for (size_t i = 0; i <= n; ++i) rdram[(s_str - 0x80000000u + (uint32_t)i) ^ 3] = i < n ? (uint8_t)text[i] : 0;
 
-    rs64::mips::mips_call(rdram, ctx, 0x80063CFCu, {kModsDescFont, s_str, kModsDescFontSlot, (uint32_t)-0x100}, {(uint32_t)kModsTopY});
+    rs64::mips::mips_call(rdram, ctx, 0x80063CFCu, {kModsDescFont, s_str, kModsDescFontSlot, (uint32_t)-0x100}, {(uint32_t)y});
 
     rs64::mips::mips_call(rdram, ctx, 0x80063E54u, {kModsDescFont, kModsDescFontSlot, s_white});
     rs64::mips::mips_call(rdram, ctx, 0x80061F34u, {kModsDescFont, kModsDescFontSlot, 0x3F800000u});
@@ -2690,8 +2721,7 @@ void mods_draw_desc(uint8_t* rdram, recomp_context* ctx, const std::string& text
 std::string mods_back_text()
 {
 
-    static const char* const kBack[] = { "BACK", "ZUR\xDC" "CK", "RETOUR", "BACK", "BACK" };
-    std::string t = kBack[std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1)];
+    std::string t = back_text();
 
     if (s_mods.restart_shown) t += " - " + mods_text("restart", "RESTART REQUIRED", "NEUSTART ERFORDERLICH", "REDEMARRAGE REQUIS");
 
@@ -2772,7 +2802,7 @@ int mods_install(uint8_t* rdram, uint8_t parent)
 
     if (kModsFolder)
     {
-        const std::string folder = mods_text("folder", "OPEN MODS FOLDER", "MOD-ORDNER \xC3\x96" "FFNEN", "OUVRIR LE DOSSIER DES MODS");
+        const std::string folder = mods_text("folder", "OPEN MODS FOLDER", "MOD-ORDNER \303\226FFNEN", "OUVRIR LE DOSSIER DES MODS");
 
         write_slot(rdram, s_mods.folder_slot, Slot{ (int32_t)alloc_str(rdram, folder), SUBTYPE_HOST, 0, 0, offset(s_mods.folder_slot, y), sc });
         y += kCtlPitch + 2 * kCtlBackGap;
@@ -3433,6 +3463,30 @@ static void page_row_nav(uint8_t* rdram)
     wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)target);
 }
 
+// Left / right on an entry with left_action / right_action fires that action and takes the press (the multiplayer list's pager).
+static void page_side_actions(uint8_t* rdram)
+{
+
+    constexpr uint32_t kLeft = 0x00800200u, kRight = 0x00400100u;
+    const uint32_t p = (uint32_t)rd_w(rdram, 0x0013A960u);
+    const int sel = rd_b(rdram, GCMD_OFF + 0x94);
+
+    if (!(p & (kLeft | kRight)) || sel >= MAX_ENTRIES || !s_slot[sel].set)
+    {
+        return;
+    }
+
+    const std::string& action = (p & kLeft) ? s_slot[sel].left_action : s_slot[sel].right_action;
+
+    if (action.empty())
+    {
+        return;
+    }
+
+    fire_action(action);
+    wr_w(rdram, 0x0013A960u, (int32_t)(p & ~(kLeft | kRight)));
+}
+
 // applyLevelScreenAndCameraSettings entry: a HIGH RESOLUTION change made in the pause menu takes effect here, before the screen setup reads it.
 extern "C" void rs64_menu_hires_apply(uint8_t* rdram)
 {
@@ -3469,12 +3523,15 @@ extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx)
     rs64::host::set_flag("menu_page_shown", page_shown ? 1 : 0);
     rs64::host::dispatch(RS64_HOOK_MENU_PAD, rdram, ctx);
 
-    if (page_shown) page_row_nav(rdram);
+    if (page_shown) {
+        page_side_actions(rdram);
+        page_row_nav(rdram);
+    }
 
     controls_pass(rdram, ctx);
     mods_pass(rdram, ctx);
 
-    // The pilot-first page or a page opened from it (multiplayer's FIND GAME list): the exit condition takes either on to mission select.
+    // The pilot-first page or a page opened from it (multiplayer's JOIN GAME list): the exit condition takes either on to mission select.
     const std::vector<uint8_t> chain = page_chain(menu);
 
     if (s_pilot_page.empty() || std::find(chain.begin(), chain.end(), page_id(s_pilot_page)) == chain.end()) return;
@@ -3729,12 +3786,12 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId)
 static void ensure_menu_period(uint8_t* rdram)
 {
 
-    enum Rows { kLastRun, kNone, kAllButLastRun, kUpArrow, kDownArrow };
+    enum Rows { kLastRun, kNone, kAllButLastRun, kUpArrow, kDownArrow, kLock };
     struct Glyph { int slot; uint8_t from; uint8_t to; uint8_t src; int src_slot; Rows rows; };
 
-    // ';' and '_' (not in the letter wheels' alphabet) become the Controls list's scroll arrows '^' and '#', blank-wide so a row keeps its width.
+    // ';' and '_' (not in the letter wheels' alphabet) become the Controls list's scroll arrows '^' and '#', blank-wide so a row keeps its width; '}' becomes a padlock '$' in its own box (multiplayer's locked games).
     static const Glyph kGlyphs[] = {{40, '&', '.', ':', 36, kLastRun}, {41, '"', '`', ':', 36, kNone}, {39, '/', '|', '!', 44, kAllButLastRun},
-                                    {35, ';', '^', ':', 36, kUpArrow}, {37, '_', '#', ':', 36, kDownArrow}};
+                                    {35, ';', '^', ':', 36, kUpArrow}, {37, '_', '#', ':', 36, kDownArrow}, {50, '}', '$', '}', 50, kLock}};
     constexpr int kCount = (int)(sizeof(kGlyphs) / sizeof(kGlyphs[0]));
 
     // italic35 is font ids 0 and 5 (table 0x8009FC10); its object holds the charset (+0x0C), widths (+0x18) and the char -> glyph map built at load (+0x20), which language mods may move to host copies.
@@ -3832,7 +3889,34 @@ static void ensure_menu_period(uint8_t* rdram)
             }
         }
 
-        for (uint32_t i = 0; i < size && mode != kUpArrow && mode != kDownArrow; ++i)
+        // A padlock over the brace's lit rows: a shackle (an inverted U of stroke t) on the top 45%, a solid body with a keyhole below.
+        if (mode == kLock)
+        {
+            const int w = rd_h(rdram, src_rec[k] + 0x08);
+            int top = 0;
+
+            while (top < last && !row_lit(top)) ++top;
+
+            const int h = last - top + 1, body = top + h * 9 / 20, t = std::max(2, w / 6), inset = w / 5;
+            const int hole_top = body + (last - body) / 3, hole_bottom = last - (last - body) / 4;
+            auto lit = [&](int x, int y) {
+
+                if (x < 1 || x >= w - 1 || y < top || y > last) return false;
+                if (y >= body) return !(std::abs(2 * x - (w - 1)) <= 2 && y >= hole_top && y <= hole_bottom);
+
+                const bool side = (x >= inset && x < inset + t) || (x > w - 1 - inset - t && x <= w - 1 - inset);
+                return side || (y < top + t && x >= inset && x <= w - 1 - inset);
+            };
+
+            for (uint32_t i = 0; i < size; ++i)
+            {
+                const int y = (int)(i / stride), j = (int)(i % stride);
+                const uint8_t v = (uint8_t)((lit(2 * j, y) ? 0xF0 : 0) | (lit(2 * j + 1, y) ? 0x0F : 0));
+                wr_b(rdram, dst + y * stride + ((y & 1) && stride >= 8 ? (j ^ 4) : j), v);
+            }
+        }
+
+        for (uint32_t i = 0; i < size && mode != kUpArrow && mode != kDownArrow && mode != kLock; ++i)
         {
             const int y = (int)(i / stride);
             const bool keep = kGlyphs[k].rows == kLastRun ? (y >= first && y <= last) : kGlyphs[k].rows == kAllButLastRun ? (y < first) : false;
@@ -3844,10 +3928,32 @@ static void ensure_menu_period(uint8_t* rdram)
         wr_b(rdram, rec[k] + 0x15, kGlyphs[k].to);
     }
 
-    fprintf(stderr, "[menu] italic font: period, period-wide blank and caret made\n");
+    fprintf(stderr, "[menu] italic font: period, period-wide blank, caret, arrows and lock made\n");
 }
 
-// Every front-end frame (hook: updateMenuPerFrame): live page labels, and each mod slider's channel byte synced to its @export value.
+// The note label while its page is up: relaid out when its text changes, cleared on leaving, and its alpha set each frame after the pilot-first page hides the medals in the same slot.
+static void note_frame(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const bool here = s_note.has_value() && rd_b(rdram, GCMD_OFF + 0x04) == s_note_menu;
+    std::string t;
+
+    if (here)
+    {
+        for (const char c : s_note->label_src.empty() ? s_note->label : source_text(s_note->label_src))
+            if (c == ' ' || font_glyph(rdram, kModsDescFont, c) >= 0) t += c;
+    }
+
+    if (t != s_note_text)
+    {
+        s_note_text = t;
+        mods_draw_desc(rdram, ctx, t, here && s_note->y ? s_note->y : kModsTopY);
+    }
+
+    if (!t.empty()) rs64::mips::mips_call(rdram, ctx, 0x80061C74u, {kModsDescFont, kModsDescFontSlot, 0xFEu});
+}
+
+// Every front-end frame (hook: updateMenuPerFrame): live page labels, the page's note, and each mod slider's channel byte synced to its @export value.
 extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
 {
 
@@ -3855,6 +3961,7 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
     rs64::lang::flush(rdram);
     controls_frame(rdram, ctx);
     mods_frame(rdram, ctx);
+    note_frame(rdram, ctx);
 
     // A changed live label is rewritten in its buffer and relaid out in place (0x800C4C8C(menu, entry mask, 0), as the name entry does).
     if (page_name(rd_b(rdram, GCMD_OFF + 0x04)))

@@ -62,7 +62,7 @@ Menu files are layered in this order. A button with the same `id` as an earlier 
 ### Common fields
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `id` | Stable identifier. A later button with the same id overrides this one; other buttons can anchor to it. |
 | `menu` | Where the button goes. Front end: `main_menu`, `options`, `game_settings`, `sound_settings`, `controller_settings` (not while the `controls-menu` mod is enabled: its rebind list owns that screen). Pause: `pause`, `pause_game_settings`. Any other name is a custom page (see [Custom pages](#custom-pages)). |
 | `type` | `action`, `toggle`, `cycle`, `slider`, `submenu`, or `label` (a line the cursor skips, such as a status line). |
@@ -74,11 +74,13 @@ Menu files are layered in this order. A button with the same `id` as an earlier 
 Page entries also take:
 
 | Field | Meaning |
-|---|---|
+| --- | --- |
 | `gap_after` | Extra pixels below the line. |
 | `scale` | Text scale (default 1). |
 | `row` | Entries with the same row name share one line, left to right in JSON order. Place them with `x` and put `gap_after` on the last one. Up/down moves by line; left/right moves within the row. |
 | `label_src` | Name of a live text source; the label follows it every frame (see [Live labels](#live-labels)). |
+| `left_action`, `right_action` | On an `action`: actions fired by left / right while the entry is selected (A still fires `action`), for a pager line such as the multiplayer list's `< REFRESH >`. |
+| `note` | On a `label`: draw it as small white text instead of a line, so it does not use one of the page's 8 entries. One a page; `y` places it (default under the title). Caps, digits and `:;.,?!-'&()/%` only. |
 
 The button that opens a page can set `title_y`, the page title's y offset.
 
@@ -117,7 +119,7 @@ A language mod adds its own code, an ISO 639-1 language code such as `"ja"` (not
 By default a button is appended after the existing entries. To place it:
 
 | Field | Effect |
-|---|---|
+| --- | --- |
 | `order` | Integer sort key. Native entries have implicit orders (index × 10), so `order: 45` lands between natives 4 and 5. |
 | `before` / `after` | Anchor to a [native alias](#native-aliases) or another button's id. |
 | `replace` | Take a native entry's position and remove it. |
@@ -145,7 +147,7 @@ The value of `action`, `toggle`, `cycle` or `slider` names what the button does.
 
 Built in:
 
-- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults), `open_mods_folder` (opens the mods folder in the file browser; desktop only, so give the button `"requires": "desktop"`) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave`, for its FIND GAME page `mp_list_refresh`, `mp_list_more`, `mp_pick_0`-`mp_pick_3` and `mp_join_pin_edit`, and for HOST SETTINGS `mp_name_edit`, `mp_pin_edit` and `mp_pin_clear`.
+- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults), `open_mods_folder` (opens the mods folder in the file browser; desktop only, so give the button `"requires": "desktop"`) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_edit`, `mp_leave`, for its JOIN GAME page `mp_join_open`, `mp_join_leave`, `mp_list_more`, `mp_list_prev`, `mp_list_next`, `mp_pick_0`-`mp_pick_5`, and for HOST SETTINGS `mp_name_edit` and `mp_pin_edit`.
 - **Toggles:** `fullscreen`, `gyro` (Android gyro aiming), `widescreen`, `frame_interpolation`, `cutscene_draw_distance` (cutscenes keep the game's own view distance and fog), `legacy_terrain` (the game's own terrain instead of the whole-map pass; caps the draw distance at 1.3X), `framebuffer_writeback` (copy rendered frames back to the emulated RAM; off is faster on slow GPUs), and the ray-tracing switches `rt_lights`, `rt_shadows`, `rt_soft_shadows`, `rt_fog_shafts`, and `rumble` (saved to `roguesq_input.json`). Settings toggles are saved to `roguesq_video.json` and apply live. A set `ROGUESQ_RT_*` env var pins a ray-tracing switch without changing the file.
 - **Cycles:** `draw_distance` (1X, 1.25X, 1.5X, 2X, 2.5X, 3X, 4X, 6X, 8X, the same setting as the slider; legacy terrain caps it at 1.3X), `resolution` (AUTO, 1X-4X), `antialiasing` (OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X), `target_fps` (DISPLAY, then each refresh rate the window's monitor supports; used while frame interpolation is on), `texture_filter` (BILINEAR, 3-POINT), `upscale_filter` (NEAREST, LINEAR, AA PIXEL). They apply at the next frame and are saved to `roguesq_video.json`; an MSAA change rebuilds the render targets, a pause of a second or so.
 - **Sliders:** `draw_distance`, the draw-distance multiplier as a percent (use `"min": 100, "max": 250`). The base game has no draw-distance UI; a menu mod adds one with this key. `mouse_sensitivity` (thousandths, 5-300), `mouse_smoothing` and `deadzone` (percent; the gamepad's and every joystick's) are saved to `roguesq_input.json`, as the F6 window does.
@@ -179,7 +181,7 @@ A `main_menu` action with `"transition": "account"` goes to the pilot select, li
 
 ### Live labels
 
-A page entry with `label_src` shows text from a named host text source, updated every frame without rebuilding the menu. Sources are registered by native mods with `add_text_source` ([modding-host-api.md](../engine/modding-host-api.md#text-sources)). The only ones today are the multiplayer lobby's: `mp_status`, `mp_address`, `mp_host_label`, `mp_join_label`, `mp_online`, FIND GAME's `mp_list_status`, `mp_game_0`-`mp_game_3`, `mp_join_pin_label`, `mp_list_more`, and HOST SETTINGS' `mp_name_label`, `mp_pin_label`.
+A page entry with `label_src` shows text from a named host text source, updated every frame without rebuilding the menu. Sources are registered by native mods with `add_text_source` ([modding-host-api.md](../engine/modding-host-api.md#text-sources)). The only ones today are the multiplayer lobby's: `mp_status`, `mp_address`, `mp_host_label`, `mp_online`, the game list's `mp_list_status`, `mp_game_0`-`mp_game_5`, `mp_list_more`, and HOST SETTINGS' `mp_name_label`, `mp_pin_label`.
 
 ### Mouse and touch
 
@@ -211,7 +213,7 @@ The rest of this page is for people changing the button system or the game's men
 ### Two separate menu systems
 
 | | Front-end menu | Pause menu |
-|---|---|---|
+| --- | --- | --- |
 | Where | Title/options screens | In-mission (START during gameplay) |
 | Overlay | `.ovl.menu` | `.ovl.mission` |
 | State struct | `gCurrentMenuData` @ `0x800CE730` | HUD-ext struct `func_800C0084_type` |
@@ -224,7 +226,7 @@ They share no state.
 ### Front-end data model: `gCurrentMenuData` @ `0x800CE730` (0xF8 bytes)
 
 | off | field | notes |
-|----|----|----|
+| ---- | ---- | ---- |
 | +0x00 | `char* screen_title` | title string |
 | +0x04 | `u8 current_menu` | `enum Menu` (0 = MAIN_MENU) |
 | +0x05 | `u8 back_menu` | menu the "Back" entry returns to |
@@ -281,7 +283,7 @@ On confirm:
 - `0x800B51DC` jumps through the table at `0x800A66F8`, indexed by `sub-type - 1`.
 
 | sub-type | action on confirm |
-|---|---|
+| --- | --- |
 | 1 | go to sub-menu (target = `unk74[entry]`) |
 | 3 | account name/rank select |
 | 5 | on/off setting toggle |
@@ -319,14 +321,14 @@ The native volume slider is tied to the three audio channels, so a mod slider re
 
 `menu_entries[i]` is a null-terminated `char*` in RDRAM. The vanilla arms fill it from `getGameOrFrontText(textId)` (`0x8005589C`), which returns a pointer into a loaded `.txt` bank (`0xA2` = "START/NEW GAME", `0xA3` = "OPTIONS"). The glyph builder (`buildScaledFormatTextElement`, `0x800B3AFC`) emits one TEXRECT per character.
 
-The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_config.cpp`) turns the `&` glyph (no language's menu text uses it; German needs the umlauts) into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14).
+The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_config.cpp`) turns the `&` glyph (no language's menu text uses it; German needs the umlauts) into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14). It makes `` ` `` (a period-wide blank), `|` (caret), `^` and `#` (scroll arrows) and `$` (a padlock, drawn in the `}` slot) the same way.
 
 ### Fonts
 
 The game has nine fonts. `D_8009FC10` is a 12-entry table of font objects by font id (0x104 bytes each, in `.rodata` after their width tables):
 
 | Id | Font | Glyphs | Cell (px) | Drawn height | Records per glyph | Accented letters |
-|---|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- | --- |
 | 0, 5 | `italic35` (front-end menus) | 54 | 22 x 35 | 33 | `S`+`A` / `A` | Ä Ö Ü |
 | 1, 6 | `normal10` | 56 | 10 x 14 | 14 | `S`+`A` | Ä Ö Ü |
 | 2, 7 | `normal11` | 55 | 8 x 15 | 15 | `S`+`A` | Ä Ö Ü |
@@ -362,7 +364,7 @@ Pause is gated on `D_8010CA20` (`0x8010CA20`): `5` = paused. The pause phase is 
 `struct PauseMenuStuff { u16 flags; u16 textId; u16 nextMenu; }` (6 bytes). Four contiguous rodata arrays, `0xFFFF`-terminated (no count field):
 
 | array | address | role |
-|---|---|---|
+| --- | --- | --- |
 | `pauseMenuMissionObjectives` | `0x80109DD4` | root (objectives + links) |
 | `pauseMenuGameSettings` | `0x80109E24` | game settings |
 | `pauseMenuAudioSettings` | `0x80109E68` | audio settings |
@@ -373,7 +375,7 @@ Pause is gated on `D_8010CA20` (`0x8010CA20`): `5` = paused. The pause phase is 
 Flag bits (selection cascade in `func_800C1D3C` case 3):
 
 | bit | meaning |
-|---|---|
+| --- | --- |
 | 0x0001 | selectable (participates in up/down nav) |
 | 0x0010 | mission-objective line (`textId` indexes objective table) |
 | 0x0020 | submenu link (target array from `nextMenu`) |

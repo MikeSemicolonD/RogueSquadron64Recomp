@@ -41,10 +41,25 @@ uint32_t host_game(Relay& r, uint32_t peer, const std::string& name, bool locked
 
     const std::vector<Action> a = r.take_actions();
     uint32_t id = 0;
+    std::string listed;
 
     CHECK(a.size() == 1 && a[0].peer == peer);
-    CHECK(decode_registered(a[0].bytes.data(), a[0].bytes.size(), &id));
+    CHECK(decode_registered(a[0].bytes.data(), a[0].bytes.size(), &id, &listed));
     return id;
+}
+
+// The name the server lists a new game under.
+std::string host_name_listed(Relay& r, uint32_t peer, const std::string& name)
+{
+
+    recv(r, peer, encode_register(kBuild, false, name));
+
+    const std::vector<Action> a = r.take_actions();
+    uint32_t id = 0;
+    std::string listed;
+
+    CHECK(a.size() == 1 && decode_registered(a[0].bytes.data(), a[0].bytes.size(), &id, &listed));
+    return listed;
 }
 
 ListReply list(Relay& r, uint32_t peer, uint32_t build = kBuild)
@@ -112,6 +127,32 @@ void test_sanitize()
     CHECK(sanitize_name("  mike's  game!! ", "X") == "MIKES GAME");
     CHECK(sanitize_name("@@@", "GAME 1") == "GAME 1");
     CHECK(sanitize_name("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "") == "ABCDEFGHIJKLMNOP");
+}
+
+void test_duplicate_names()
+{
+
+    Relay r(Settings{}, "unused.cfg");
+
+    for (uint32_t p = 1; p <= 4; ++p) r.on_connect(p, "10.0.0.1", 0);
+
+    CHECK(host_name_listed(r, 1, "aaa") == "AAA");
+    CHECK(host_name_listed(r, 2, "AAA") == "AAA 2");
+    CHECK(host_name_listed(r, 3, "aaa") == "AAA 3");
+    CHECK(host_name_listed(r, 4, "ABCDEFGHIJKLMNOP") == "ABCDEFGHIJKLMNOP");
+
+    // A rename onto a listed name is numbered too, and the host is told; keeping its own name is not a clash.
+    recv(r, 4, encode_update(false, "AAA"));
+
+    std::vector<Action> a = r.take_actions();
+    uint32_t id = 0;
+    std::string listed;
+
+    CHECK(a.size() == 1 && decode_registered(a[0].bytes.data(), a[0].bytes.size(), &id, &listed) && listed == "AAA 4");
+
+    recv(r, 4, encode_update(true, "AAA 4"));
+    a = r.take_actions();
+    CHECK(a.size() == 1 && decode_registered(a[0].bytes.data(), a[0].bytes.size(), &id, &listed) && listed == "AAA 4");
 }
 
 void test_register_list_join_forward_leave()
@@ -323,6 +364,7 @@ int main()
 
     test_protocol_roundtrip();
     test_sanitize();
+    test_duplicate_names();
     test_register_list_join_forward_leave();
     test_limits();
     test_console();
