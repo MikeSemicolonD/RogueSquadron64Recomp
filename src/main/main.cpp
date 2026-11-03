@@ -301,6 +301,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     }
 
     // ROGUESQ_WINDOW_POS=x,y, "left" or "right" (just left or right of the primary display's centre, 8 px apart), e.g. for a co-op pair.
+    // "top" / "bottom" make a borderless half of the primary display's usable area (a split-screen test pair).
     int window_x = SDL_WINDOWPOS_CENTERED, window_y = SDL_WINDOWPOS_CENTERED;
 
     if (const char* wp = recomp::dbg::env_str("ROGUESQ_WINDOW_POS"))
@@ -308,9 +309,16 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         SDL_Rect usable{};
         int x = 0, y = 0;
         const bool left = strcmp(wp, "left") == 0;
+        const bool top = strcmp(wp, "top") == 0;
 
-        if ((left || strcmp(wp, "right") == 0) && SDL_GetDisplayUsableBounds(0, &usable) == 0)
+        if ((top || strcmp(wp, "bottom") == 0) && SDL_GetDisplayUsableBounds(0, &usable) == 0)
         {
+            window_w = usable.w;
+            window_h = usable.h / 2;
+            window_x = usable.x;
+            window_y = top ? usable.y : usable.y + usable.h - window_h;
+            window_flags |= SDL_WINDOW_BORDERLESS;
+        } else if ((left || strcmp(wp, "right") == 0) && SDL_GetDisplayUsableBounds(0, &usable) == 0) {
             window_x = left ? usable.x + usable.w / 2 - window_w - 4 : usable.x + usable.w / 2 + 4;
             window_y = usable.y + (usable.h - window_h) / 2;
         } else if (sscanf(wp, "%d,%d", &x, &y) == 2) {

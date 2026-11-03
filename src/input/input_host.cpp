@@ -6,6 +6,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <string>
 #include <thread>
 #include <tuple>
 #include "os_compat.h"
@@ -507,10 +509,170 @@ static bool gamepad_has_input(SDL_GameController* pad)
     return false;
 }
 
+// ROGUESQ_INPUT_CLAIM=<slot>,<file> (split-screen test pair): no input until a device is pressed, then only that device, and its id goes to <file>.<slot>.
+// Slot 2 claims nothing until <file>.1 exists and never claims that device. Pads are read in the background, so only the keyboard player needs focus.
+struct InputClaim { bool on = false; int slot = 0; std::string base, owned, other; };
+
+static InputClaim& input_claim()
+{
+
+    static InputClaim s = [] {
+
+        InputClaim c;
+        const char* v = recomp::dbg::env_str("ROGUESQ_INPUT_CLAIM");
+        const char* comma = v ? strchr(v, ',') : nullptr;
+
+        if (!comma) return c;
+
+        c.on = true;
+        c.slot = atoi(v);
+        c.base = comma + 1;
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+
+        return c;
+    }();
+
+    return s;
+}
+
+static constexpr const char* kClaimKeyboard = "keyboard";
+
+static std::string joy_claim_id(SDL_Joystick* j)
+{
+
+    const char* path = SDL_JoystickPath(j);
+    char guid[64] = {};
+
+    SDL_JoystickGetGUIDString(SDL_JoystickGetGUID(j), guid, sizeof(guid));
+
+    return path && *path ? path : guid;
+}
+
+// Buttons and hats only: a HOTAS throttle rests off-centre and would claim on its own.
+static bool joystick_has_press(SDL_Joystick* j)
+{
+
+    for (int b = 0; b < SDL_JoystickNumButtons(j); ++b)
+        if (SDL_JoystickGetButton(j, b)) return true;
+
+    for (int h = 0; h < SDL_JoystickNumHats(j); ++h)
+        if (SDL_JoystickGetHat(j, h) != SDL_HAT_CENTERED) return true;
+
+    return false;
+}
+
+static std::string pressed_claim_id(const rs64::input::RawState& st, const std::string& skip)
+{
+
+    // A key claims only on its down edge, so one already reading as held never does.
+    static uint8_t s_prev[SDL_NUM_SCANCODES];
+    static bool s_seeded = false;
+    const int nk = st.keys ? std::min(st.keys_len, (int)SDL_NUM_SCANCODES) : 0;
+    int pressed = -1;
+
+    for (int k = 0; s_seeded && k < nk; ++k)
+        if (st.keys[k] && !s_prev[k] && pressed < 0) pressed = k;
+
+    if (nk > 0) std::memcpy(s_prev, st.keys, nk);
+
+    s_seeded = true;
+
+    if (pressed >= 0 && skip != kClaimKeyboard)
+    {
+        fprintf(stderr, "[input] claim key %s\n", SDL_GetScancodeName((SDL_Scancode)pressed));
+
+        return kClaimKeyboard;
+    }
+
+    // Devices claim on a press edge too; a device's first poll only seeds its state, so one already held never claims.
+    static std::map<std::string, bool> s_held;
+    std::string found;
+
+    const auto edge = [&](const std::string& id, bool now) {
+
+        const auto it = s_held.find(id);
+        const bool was = it == s_held.end() ? now : it->second;
+
+        s_held[id] = now;
+
+        if (now && !was && id != skip && found.empty()) found = id;
+    };
+
+    for (SDL_GameController* p : g_pads)
+        edge(joy_claim_id(SDL_GameControllerGetJoystick(p)), gamepad_has_input(p));
+
+    for (const OpenJoy& oj : g_open_joys)
+        edge(joy_claim_id(oj.joy), joystick_has_press(oj.joy));
+
+    return found;
+}
+
+// Leaves only the claimed device in st, claiming the first one pressed. Called with g_bindings_mtx held.
+static void apply_input_claim(rs64::input::RawState& st)
+{
+
+    InputClaim& c = input_claim();
+
+    if (c.owned.empty() && !(c.slot == 2 && c.other.empty()))
+    {
+        c.owned = pressed_claim_id(st, c.other);
+
+        if (!c.owned.empty())
+        {
+            const std::string file = c.base + "." + std::to_string(c.slot);
+
+            if (FILE* f = fopen(file.c_str(), "w"))
+            {
+                fputs(c.owned.c_str(), f);
+                fclose(f);
+            }
+
+            fprintf(stderr, "[input] player %d claimed %s\n", c.slot, c.owned.c_str());
+            fflush(stderr);
+        }
+    } else if (c.owned.empty()) {
+        const std::string file = c.base + ".1";
+
+        if (FILE* f = fopen(file.c_str(), "r"))
+        {
+            char buf[512] = {};
+
+            if (fgets(buf, sizeof(buf), f)) c.other = buf;
+
+            fclose(f);
+        }
+    }
+
+    static const uint8_t s_none[SDL_NUM_SCANCODES] = {};
+    static std::vector<SDL_Joystick*> s_joys;
+
+    if (c.owned != kClaimKeyboard)
+    {
+        st.keys = s_none;
+        st.keys_len = SDL_NUM_SCANCODES;
+        st.mouse_active = false;
+        st.mouse_buttons = 0;
+        st.mouse_dx = st.mouse_dy = 0.0f;
+    }
+
+    controller = nullptr;
+
+    for (SDL_GameController* p : g_pads)
+        if (joy_claim_id(SDL_GameControllerGetJoystick(p)) == c.owned) controller = p;
+
+    st.pad = controller;
+    s_joys.assign(st.joys, st.joys + st.joys_len);
+
+    for (SDL_Joystick*& j : s_joys)
+        if (j && joy_claim_id(j) != c.owned) j = nullptr;
+
+    st.joys = s_joys.data();
+}
+
 static void select_active_gamepad()
 {
 
-    if (g_pads.size() < 2 || (controller && gamepad_has_input(controller))) return;
+    if (input_claim().on || g_pads.size() < 2 || (controller && gamepad_has_input(controller))) return;
 
     for (SDL_GameController* p : g_pads)
     {
@@ -1884,6 +2046,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     st.mouse_dy = s_sm_dy;
     st.joys = g_joy_by_dev.data();
     st.joys_len = (int)g_joy_by_dev.size();
+
+    if (input_claim().on) apply_input_claim(st);
+
     active = rs64::input::resolve(g_bindings, st, &btn, x, y);
     g_throttle.store(rs64::input::throttle_position(g_bindings, st));
     bind_lk.unlock();

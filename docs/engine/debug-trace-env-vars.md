@@ -71,6 +71,7 @@ Other user options without flags:
 | `ROGUESQ_NO_PAUSE_BUTTONS` | off | Disables the custom pause-menu buttons. |
 | `ROGUESQ_NO_TOGGLE_INPLACE` | off | Toggles that replace a native slot reload the menu instead of flipping in place. |
 | `ROGUESQ_INPUT_RESET` | off | `1` overwrites `roguesq_input.json` with the default bindings at startup. |
+| `ROGUESQ_INPUT_CLAIM` | unset | `<slot>,<file>` (split-screen test pair, `run-mp.ps1 -Split`): no input until a device is pressed, then only that device (controllers are read while unfocused), and its id is written to `<file>.<slot>`. Slot 2 waits for `<file>.1` and never takes that device. |
 | `ROGUESQ_TEXTURE_PACK` | unset | Load an RT64 texture-replacement pack (a directory or `.zip` containing `rt64.json` + DDS/PNG) and enable replacements. F5 loads textures through the normal RDP TMEM path, so packs resolve as for a stock-ucode game. CPU-regenerated textures (e.g. the HUD radar buffer at `0x4D1BF0`) get a new hash nearly every frame and cannot be replaced. The whole-map terrain pass hashes its ROM tiles as the game loads them (64x64 CI4, palette 15), so terrain tiles in a pack replace too (not in texture-slot mode: D3D11, small GPUs). |
 | `ROGUESQ_TEXTURE_DUMP_DIR` | unset | Start RT64's texture dumper at boot into `<dir>` (same as the inspector's "Start dumping textures"): one `<hash>.v5.tmem` plus `.tile.json` / `.rice.*` per distinct texture. The hash in the filename is the one a pack's `rt64.json` keys on. |
 | `ROGUESQ_TEX_HASH_ALL_TMEM` | off | `1` restores upstream RT64 texture hashing. By default TMEM words written before the tile's own load hash as zero, so a partially loaded texture (e.g. probe droid lenses) hashes the same every run. Packs must be dumped with the same setting. |
@@ -470,7 +471,7 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_GHOST_OBJ_TRACE` | unset | `1`: every 150 frames, hashes of objective booleans, counts and DAT health plus the alive count, to compare the two worlds. |
 | `ROGUESQ_GHOST_INTERP_MS` | 50 | Show the remote player N ms in the past between buffered states (0 = dead reckoning from the latest state). |
 | `ROGUESQ_GHOST_TRACE` | unset | `<path.csv>`: per frame `ms,local_x,local_y,local_z,puppet_x,puppet_y,puppet_z`; `tools/debug/lockstep/ghost_error.py` compares two traces. |
-| `ROGUESQ_WINDOW_POS` | centered | `x,y`, `left` or `right` (either side of the primary display's centre, 8 px apart). |
+| `ROGUESQ_WINDOW_POS` | centered | `x,y`, `left` or `right` (either side of the primary display's centre, 8 px apart), or `top` / `bottom` (a borderless half of the primary display, for a split-screen test pair). |
 | `ROGUESQ_NET_CONFIG` | `roguesq_net.json` next to the exe | Lobby config `{ "last_address": "a.b.c.d", "port": 27064 }` (JOIN address saved on each JOIN; the port both roles use unless `MP_PORT` is set). |
 | `ROGUESQ_MP_ADDR` / `ROGUESQ_MP_PORT` | 127.0.0.1 / 27064 | Host address for `join`, and the UDP port. |
 | `ROGUESQ_MP_UPNP` | 1 | `0`: hosting does not request a UPnP port mapping. |
