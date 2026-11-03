@@ -307,9 +307,10 @@ std::string CodeEditor::code() const {
 
 std::string CodeEditor::label() const {
 
+    // Typing: the digits so far, the caret, then a dash per digit still to type.
     if (typing)
     {
-        return typed + kCaret;
+        return prefix + typed + kCaret + std::string(kDigits - std::min(typed.size(), (size_t)kDigits), '-');
     }
 
     std::string s = prefix;

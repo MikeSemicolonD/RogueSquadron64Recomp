@@ -163,12 +163,13 @@ static void test_code_editor() {
     c.input(kPadA, 0);
     CHECK(!c.editing && !c.input(kPadUp, 0) && c.code() == "920000");
     c.begin_typing();
-    CHECK(c.typing && c.label() == std::string("920000") + kCaret);
+    CHECK(c.typing && c.label() == std::string("JOIN CODE 920000") + kCaret);
     c.type_backspace();
     c.type_backspace();
+    CHECK(c.label() == std::string("JOIN CODE 9200") + kCaret + "--");
     c.type_text("4x8.");
     c.type_text("123");
-    CHECK(c.label() == std::string("920048") + kCaret);
+    CHECK(c.label() == std::string("JOIN CODE 920048") + kCaret);
     CHECK(c.end_typing() && !c.typing && c.code() == "920048");
     c.begin_typing();
     c.type_backspace();
@@ -310,6 +311,12 @@ static void test_lobby_join_times_out() {
     h.host();
     h.on_join_failed("X");
     CHECK(h.state() == LobbyState::Hosting);
+    // A host whose relay server went away stops with the reason; hosting again clears it.
+    h.cancel();
+    h.fail("COULD NOT CONNECT TO SERVER");
+    CHECK(h.state() == LobbyState::Failed && h.status() == "COULD NOT CONNECT TO SERVER");
+    h.host();
+    CHECK(h.state() == LobbyState::Hosting && h.status() == "WAITING FOR PLAYER");
 }
 
 static void test_lobby_no_hello_after_connect() {
@@ -792,13 +799,13 @@ static void test_damage_batch() {
 }
 
 static void test_list_status() {
-    CHECK(list_pages(-1) == 1 && list_pages(0) == 1 && list_pages(4) == 1 && list_pages(5) == 2 && list_pages(9) == 3);
+    CHECK(list_pages(-1) == 1 && list_pages(0) == 1 && list_pages(6) == 1 && list_pages(7) == 2 && list_pages(13) == 3);
     CHECK(list_status(-1, 0) == "SEARCHING" && waiting_status(list_status(-1, 0)));
     CHECK(list_status(0, 0) == "NO GAMES FOUND");
     CHECK(list_status(1, 0) == "1 GAME FOUND");
-    CHECK(list_status(4, 0) == "4 GAMES FOUND");
-    CHECK(list_status(5, 0) == "5 GAMES FOUND  PAGE 1 OF 2");
-    CHECK(list_status(12, 1) == "12 GAMES FOUND  PAGE 2 OF 3");
+    CHECK(list_status(6, 0) == "6 GAMES FOUND");
+    CHECK(list_status(7, 0) == "7 GAMES FOUND  PAGE 1 OF 2");
+    CHECK(list_status(15, 1) == "15 GAMES FOUND  PAGE 2 OF 3");
 }
 
 static void test_link_poll_edges() {

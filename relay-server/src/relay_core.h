@@ -103,6 +103,7 @@ private:
         uint32_t guest = 0;
     };
 
+    std::string unique_name(const std::string& name, uint32_t self) const;
     void send(uint32_t peer, std::vector<uint8_t> bytes, bool reliable = true);
     void drop(uint32_t peer, Reason reason);
     void leave_game(uint32_t peer);

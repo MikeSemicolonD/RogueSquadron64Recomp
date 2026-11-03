@@ -17,7 +17,6 @@ using namespace rs64::ghost;
 using namespace rs64::ls;
 using rs64::mips::rw;
 using rs64::mips::ww;
-using rs64::mips::rf;
 
 // The menus connected two players: ghost mode is on (rs64_ghost_mode) without ROGUESQ_MP.
 extern "C" uint32_t rs64_lobby_menu_session(void) {
@@ -602,12 +601,13 @@ extern "C" void rs64_lobby_cancel(void) {
     lobby_stop(true);
 }
 
-// FIND GAME: the relays' game lists, kListRows rows a page. s_list_joined: the last join came from this page (its failure shows here); s_list_note: shown while the password row is open after a locked pick.
-// The page shows a snapshot of the last finished search (s_listed) and searches again every kListRefreshMs while it is up, which also checks the relay server; rows never blank or shift mid-search.
+// JOIN GAME's list: the relays' game lists, kListRows rows a page, a snapshot of the last finished search (s_listed) searched again every kListRefreshMs while up (which also checks the relay server); rows never blank or shift mid-search.
+// s_list_joined: the last join came from this page (its failure shows here). A locked pick turns its row into the password prompt (s_pin_row); finishing it joins the game it was opened for (s_pin_peer).
 constexpr uint32_t kListRefreshMs = 5000;
 static int s_list_page = 0;
 static bool s_list_joined = false;
-static std::string s_list_note;
+static int s_pin_row = -1;
+static std::string s_pin_peer;
 
 struct Listed {
     const rs64_mp_transport* t;
@@ -650,7 +650,7 @@ static void list_search() {
     s_list_at_ms = now_ms32();
 }
 
-// Each FIND GAME frame: a finished search becomes the snapshot (every list's games, Steam's first), and the next search starts kListRefreshMs after the last.
+// Each game list frame: a finished search becomes the snapshot (every list's games, Steam's first), and the next search starts kListRefreshMs after the last.
 static void list_update()
 {
 
@@ -683,42 +683,32 @@ static void list_open() {
 
     s_list_page = 0;
     s_list_joined = false;
+    s_pin_row = -1;
     s_listed.clear();
     s_have_list = false;
     list_search();
 }
 
-// NEXT PAGE while there are more, else REFRESH (the rows keep the current list until the new one arrives).
+// The pager line (mp_list_more): A searches again, left / right (mp_list_prev / mp_list_next) turn the page, wrapping; none while the password prompt is open. The rows keep the current list until a new one arrives.
+static void list_turn(int step) {
+
+    const int pages = rs64::net::list_pages(list_count());
+
+    if (s_pin_row < 0) {
+        s_list_page = (s_list_page + step + pages) % pages;
+    }
+}
+
 static void list_more() {
 
-    if (s_list_page + 1 < rs64::net::list_pages(list_count())) {
-        ++s_list_page;
-    } else {
+    if (s_pin_row < 0) {
         list_search();
     }
 }
 
-// Joins the game on that row: a join in progress gives way, a host stays hosting. A locked game with no password typed opens the PASSWORD row first.
-static void list_pick(int row)
+// Joins a listed game: a join in progress gives way. The password sent is join_pin when set (a locked game's prompt sets it).
+static void list_join(const Listed& game)
 {
-
-    Ghost& s = g();
-    const int i = s_list_page * rs64::net::kListRows + row;
-
-    if (i >= list_count() || rs64_lobby_hosting())
-    {
-        return;
-    }
-
-    const Listed game = s_listed[i];
-
-    if (game.locked && !s.join_pin_set) {
-        cancel_editors();
-        s.join_pin_set = true;
-        toggle_edit(s.join_pin);
-        s_list_note = "ENTER THE PASSWORD";
-        return;
-    }
 
     s_list_joined = true;
 
@@ -732,31 +722,93 @@ static void list_pick(int row)
     relay_start(game.t, rs64::net::Role::Client, game.peer);
 }
 
+// A row's A: an open game joins at once; a locked one turns the row into the password prompt (the last password typed, to change or keep). A host does nothing.
+static void list_pick(int row)
+{
+
+    Ghost& s = g();
+    const int i = s_list_page * rs64::net::kListRows + row;
+
+    if (i >= list_count() || rs64_lobby_hosting() || s_pin_row >= 0)
+    {
+        return;
+    }
+
+    if (!s_listed[i].locked) {
+        s.join_pin_set = false;
+        list_join(s_listed[i]);
+        return;
+    }
+
+    // The prompt starts empty: each game has its own password.
+    cancel_editors();
+    s.join_pin_set = true;
+    toggle_edit(s.join_pin);
+    s.join_pin.typed.clear();
+    s_pin_row = row;
+    s_pin_peer = s_listed[i].peer;
+}
+
+// The prompt closed (A or B on the pad, Enter on the keyboard): with all six digits typed, join its game if the list still has it; otherwise just close.
+static void list_pin_update()
+{
+
+    const rs64::net::CodeEditor& pin = g().join_pin;
+    static std::string s_typed;
+
+    if (s_pin_row < 0)
+    {
+        return;
+    }
+
+    if (pin.editing || pin.typing) {
+        s_typed = pin.typed;
+        return;
+    }
+
+    s_pin_row = -1;
+
+    if (!rs64::net::CodeEditor::valid(s_typed))
+    {
+        return;
+    }
+
+    for (const Listed& game : s_listed) {
+        if (game.peer == s_pin_peer) {
+            list_join(game);
+            return;
+        }
+    }
+}
+
 static std::string list_row(int row) {
 
     const int i = s_list_page * rs64::net::kListRows + row;
+
+    if (row == s_pin_row)
+    {
+        return g().join_pin.label();
+    }
 
     if (i >= list_count())
     {
         return " ";
     }
 
-    return s_listed[i].label + (s_listed[i].locked ? "  LOCKED" : "");
+    // '$' is the menu font's padlock (ensure_menu_period); names are A-Z, 0-9 and spaces, so it never comes from a host.
+    return s_listed[i].label + (s_listed[i].locked ? " $" : "");
 }
 
-// The page's status line; read every frame while FIND GAME is up, so it also runs the refresh.
+// The page's status line; read every frame while the list is up, so it also runs the refresh.
 static std::string list_status_line()
 {
 
     list_update();
+    list_pin_update();
 
-    if (!g().join_pin.editing) {
-        s_list_note.clear();
-    }
-
-    if (!s_list_note.empty())
+    if (s_pin_row >= 0)
     {
-        return s_list_note;
+        return "ENTER THE PASSWORD";
     }
 
     if (g().started || (s_list_joined && g().lobby.state() == rs64::net::LobbyState::Failed))
@@ -835,12 +887,12 @@ extern "C" void rs64_lobby_tick(void)
     rs64_lobby_status();
     sync_host_settings();
 
-    // HOST GAME over a relay server that stopped answering before anyone joined: host directly (LAN, or the internet through the router) instead.
+    // HOST GAME over a relay server that stopped answering before anyone joined: stop hosting and say so (its game is off the list; a direct host could only be reached by address).
     if (rs64_lobby_hosting() && s.relay_session && s.relay_t && !s.lobby.ready() && s.relay_t->lost(s.relay_t->user) && !s.relay_t->available(s.relay_t->user))
     {
-        fprintf(stderr, "[lobby] the %s relay does not answer; hosting directly\n", s.relay_t->name);
+        fprintf(stderr, "[lobby] the %s relay does not answer; stopped hosting\n", s.relay_t->name);
         lobby_stop(false);
-        rs64_lobby_host();
+        s.lobby.fail("COULD NOT CONNECT TO SERVER");
     }
 
     // A Steam friends-list join (or accepted invite) while no lobby runs here joins that game.
@@ -1654,23 +1706,13 @@ extern "C" void rs64_ghost_register_host(void)
         g().host_pin_set = false;
     });
 
-    // FIND GAME's PASSWORD row: what this player sends when joining a locked game.
-    add_text_source("mp_join_pin_label", [](void*) -> const char* {
-        static std::string b;
-        return mp_text(b, pin_label(g().join_pin, g().join_pin_set, "------"));
-    }, nullptr);
-    rs64::mp::add_action("mp_join_pin_edit", [](void*) {
-        g().join_pin_set = true;
-        toggle_edit(g().join_pin);
-    });
-
-    // FIND GAME page: a status line, kListRows game rows (mp_game_0..), NEXT PAGE / REFRESH; FIND GAME shows only when a transport has a list (mp_list).
+    // Game list page: a status line, kListRows game rows (mp_game_0..), the pager line (REFRESH, < REFRESH > with more pages); JOIN GAME opens it while a transport has a list (mp_list).
     add_text_source("mp_list_status", [](void*) -> const char* {
         static std::string b;
         return mp_text(b, list_status_line());
     }, nullptr);
-    static const char* const kRowSources[rs64::net::kListRows] = {"mp_game_0", "mp_game_1", "mp_game_2", "mp_game_3"};
-    static const char* const kRowActions[rs64::net::kListRows] = {"mp_pick_0", "mp_pick_1", "mp_pick_2", "mp_pick_3"};
+    static const char* const kRowSources[rs64::net::kListRows] = {"mp_game_0", "mp_game_1", "mp_game_2", "mp_game_3", "mp_game_4", "mp_game_5"};
+    static const char* const kRowActions[rs64::net::kListRows] = {"mp_pick_0", "mp_pick_1", "mp_pick_2", "mp_pick_3", "mp_pick_4", "mp_pick_5"};
     static std::string s_rows[rs64::net::kListRows];
 
     for (int i = 0; i < rs64::net::kListRows; ++i)
@@ -1684,12 +1726,20 @@ extern "C" void rs64_ghost_register_host(void)
 
     add_text_source("mp_list_more", [](void*) -> const char* {
         static std::string b;
-        return mp_text(b, s_list_page + 1 < rs64::net::list_pages(list_count()) ? "NEXT PAGE" : "REFRESH");
+        // Blank while the password prompt is open: a refresh or page turn would move the game it is for.
+        if (s_pin_row >= 0)
+        {
+            return mp_text(b, " ");
+        }
+
+        return mp_text(b, rs64::net::list_pages(list_count()) > 1 ? "< REFRESH >" : "REFRESH");
     }, nullptr);
     rs64::mp::add_action("mp_list_refresh", [](void*) { list_open(); });
     rs64::mp::add_action("mp_list_more", [](void*) { list_more(); });
+    rs64::mp::add_action("mp_list_prev", [](void*) { list_turn(-1); });
+    rs64::mp::add_action("mp_list_next", [](void*) { list_turn(1); });
 
-    // A configured relay server keeps FIND GAME up while it is down, so its page can say so.
+    // A configured relay server keeps JOIN GAME on the list while it is down, so the list can say so.
     rs64::mp::add_condition("mp_list", [](void*) -> int { return (!list_relays().empty() || server_relay()) ? 1 : 0; });
     rs64::mp::add_input_filter([](int port, uint16_t* buttons, float*, float*, void*) {
         if (port == 0) skip_filter(buttons);

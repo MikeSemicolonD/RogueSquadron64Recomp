@@ -10,9 +10,9 @@ Each player adds the server to `roguesq_net.json` next to the game (create it if
 { "relay_server": "relay.example.com:27070" }
 ```
 
-The game then lists the server's games under MULTIPLAYER > FIND GAME (after Steam's, when the steam-relay mod is running), and HOST GAME opens games on it when Steam is not in use. A game's join code is its id on the server, as `games` shows it.
+The game then lists the server's games under MULTIPLAYER > JOIN GAME (after Steam's, when the steam-relay mod is running), and HOST GAME opens games on it when Steam is not in use. A game's id on the server, as `games` shows it, is the name it lists under when the host has not set one.
 
-When the server is down or the address is wrong, joining says COULD NOT CONNECT TO SERVER, FIND GAME says the same over any Steam games, and HOST GAME hosts directly (LAN, or the internet when the router allows it) instead.
+When the server is down or the address is wrong, the JOIN GAME list says COULD NOT CONNECT TO SERVER over any Steam games, and a host waiting on it stops hosting with the same message.
 
 ## Download and run
 

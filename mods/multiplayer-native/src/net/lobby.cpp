@@ -283,6 +283,12 @@ void Lobby::on_join_failed(const std::string& why) {
     fail_ = why.empty() ? "COULD NOT CONNECT TO HOST" : why;
 }
 
+void Lobby::fail(const std::string& why) {
+
+    state_ = LobbyState::Failed;
+    fail_ = why;
+}
+
 void Lobby::on_refused(bool sent) {
 
     if (host_ || state_ != LobbyState::Joining)

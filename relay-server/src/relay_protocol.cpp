@@ -199,8 +199,38 @@ bool decode_data(const uint8_t* data, size_t n, const uint8_t** bytes, size_t* l
     return true;
 }
 
-std::vector<uint8_t> encode_registered(uint32_t id) { return encode_fields(Type::Registered, id); }
-bool decode_registered(const uint8_t* data, size_t n, uint32_t* id) { return decode_fields(data, n, Type::Registered, id); }
+std::vector<uint8_t> encode_registered(uint32_t id, const std::string& name)
+{
+
+    Writer w = start(Type::Registered);
+
+    w.u32(id);
+    put_name(w, name);
+    return w.b;
+}
+
+bool decode_registered(const uint8_t* data, size_t n, uint32_t* id, std::string* name)
+{
+
+    Reader r{data, n};
+
+    if (!header(r, Type::Registered))
+    {
+        return false;
+    }
+
+    const uint32_t v = r.u32();
+    std::string s;
+
+    if (!get_name(r, &s) || !r.done())
+    {
+        return false;
+    }
+
+    *id = v;
+    *name = s;
+    return true;
+}
 
 std::vector<uint8_t> encode_list_reply(const ListReply& r)
 {

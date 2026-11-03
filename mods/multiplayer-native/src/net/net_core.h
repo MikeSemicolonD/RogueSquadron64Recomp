@@ -198,8 +198,8 @@ constexpr char kCaret = '|';
 bool waiting_status(const std::string& status);
 std::string status_dots(const std::string& status, uint32_t now_ms);
 
-// FIND GAME: a relay's game list, kListRows games a page. count -1 = the search still runs.
-constexpr int kListRows = 4;
+// JOIN GAME's list: a relay's game list, kListRows games a page. count -1 = the search still runs.
+constexpr int kListRows = 6;
 int list_pages(int count);
 std::string list_status(int count, int page);
 
@@ -342,6 +342,9 @@ public:
 
     // Client: the host or relay server could not be reached (why: the transport's reason; empty: COULD NOT CONNECT TO HOST). Fails the join at once instead of at kJoinTimeoutMs.
     void on_join_failed(const std::string& why);
+
+    // Either side: the session ended for a reason the status line keeps until the next host or join (a host whose relay server stopped answering).
+    void fail(const std::string& why);
     bool password_failed() const { return state_ == LobbyState::Failed && pw_fail_; }
     void on_lost();
     void tick(uint32_t now_ms);

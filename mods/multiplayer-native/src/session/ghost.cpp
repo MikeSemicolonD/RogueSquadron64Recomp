@@ -1281,6 +1281,8 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.obj_have = false;
     s.obj_last_seq = 0;
     s.obj_applied = 0;
+    s.obj_ledger.reset();
+    s.obj_settled = false;
     s.dat_last.clear();
     s.dat_baseline = false;
     s.dat_apply.clear();
@@ -1386,10 +1388,29 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         game_over(rdram, "the other player left while this one was out");
     }
 
+    // The host is gone: the client's writes it never showed count now, once (a kill just before the dropout would otherwise be lost and could stall an objective).
+    if (s.player == 1 && s.peer_left && !s.obj_settled)
+    {
+        s.obj_settled = true;
+
+        const rs64::ls::ObjectiveLedger::Owed owed = s.obj_ledger.settle();
+        rs64::net::ObjSnapshot now;
+
+        read_objectives(rdram, &now);
+
+        for (const auto& [i, add] : owed.counts) now.counts[i] += add;
+        for (const auto& [i, v] : owed.bools) now.bools[i] = v;
+
+        write_objectives(rdram, now);
+
+        fprintf(stderr, "[ghost] objectives: host gone, %zu owed counts and %zu owed booleans applied\n", owed.counts.size(), owed.bools.size());
+    }
+
     // Objectives: the host streams its state (on change for 5 frames, and every 15); the client takes the newest before its level script runs this frame.
     if (s.player == 1 && s.obj_have)
     {
         write_objectives(rdram, s.obj_pending);
+        s.obj_ledger.snapshot(s.obj_pending.counts, s.obj_pending.bools, now_s());
         s.obj_have = false;
 
         if (s.obj_applied++ == 0) {

@@ -79,6 +79,8 @@ Page entries also take:
 | `scale` | Text scale (default 1). |
 | `row` | Entries with the same row name share one line, left to right in JSON order. Place them with `x` and put `gap_after` on the last one. Up/down moves by line; left/right moves within the row. |
 | `label_src` | Name of a live text source; the label follows it every frame (see [Live labels](#live-labels)). |
+| `left_action`, `right_action` | On an `action`: actions fired by left / right while the entry is selected (A still fires `action`), for a pager line such as the multiplayer list's `< REFRESH >`. |
+| `note` | On a `label`: draw it as small white text instead of a line, so it does not use one of the page's 8 entries. One a page; `y` places it (default under the title). Caps, digits and `:;.,?!-'&()/%` only. |
 
 The button that opens a page can set `title_y`, the page title's y offset.
 
@@ -145,7 +147,7 @@ The value of `action`, `toggle`, `cycle` or `slider` names what the button does.
 
 Built in:
 
-- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults), `open_mods_folder` (opens the mods folder in the file browser; desktop only, so give the button `"requires": "desktop"`) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave`, for its FIND GAME page `mp_list_refresh`, `mp_list_more`, `mp_pick_0`-`mp_pick_3` and `mp_join_pin_edit`, and for HOST SETTINGS `mp_name_edit`, `mp_pin_edit` and `mp_pin_clear`.
+- **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults), `open_mods_folder` (opens the mods folder in the file browser; desktop only, so give the button `"requires": "desktop"`) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_join`, `mp_edit`, `mp_leave`, for its game list page `mp_list_refresh`, `mp_list_more`, `mp_list_prev`, `mp_list_next`, `mp_pick_0`-`mp_pick_5`, and for HOST SETTINGS `mp_name_edit`, `mp_pin_edit` and `mp_pin_clear`.
 - **Toggles:** `fullscreen`, `gyro` (Android gyro aiming), `widescreen`, `frame_interpolation`, `cutscene_draw_distance` (cutscenes keep the game's own view distance and fog), `legacy_terrain` (the game's own terrain instead of the whole-map pass; caps the draw distance at 1.3X), `framebuffer_writeback` (copy rendered frames back to the emulated RAM; off is faster on slow GPUs), and the ray-tracing switches `rt_lights`, `rt_shadows`, `rt_soft_shadows`, `rt_fog_shafts`, and `rumble` (saved to `roguesq_input.json`). Settings toggles are saved to `roguesq_video.json` and apply live. A set `ROGUESQ_RT_*` env var pins a ray-tracing switch without changing the file.
 - **Cycles:** `draw_distance` (1X, 1.25X, 1.5X, 2X, 2.5X, 3X, 4X, 6X, 8X, the same setting as the slider; legacy terrain caps it at 1.3X), `resolution` (AUTO, 1X-4X), `antialiasing` (OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X), `target_fps` (DISPLAY, then each refresh rate the window's monitor supports; used while frame interpolation is on), `texture_filter` (BILINEAR, 3-POINT), `upscale_filter` (NEAREST, LINEAR, AA PIXEL). They apply at the next frame and are saved to `roguesq_video.json`; an MSAA change rebuilds the render targets, a pause of a second or so.
 - **Sliders:** `draw_distance`, the draw-distance multiplier as a percent (use `"min": 100, "max": 250`). The base game has no draw-distance UI; a menu mod adds one with this key. `mouse_sensitivity` (thousandths, 5-300), `mouse_smoothing` and `deadzone` (percent; the gamepad's and every joystick's) are saved to `roguesq_input.json`, as the F6 window does.
@@ -179,7 +181,7 @@ A `main_menu` action with `"transition": "account"` goes to the pilot select, li
 
 ### Live labels
 
-A page entry with `label_src` shows text from a named host text source, updated every frame without rebuilding the menu. Sources are registered by native mods with `add_text_source` ([modding-host-api.md](../engine/modding-host-api.md#text-sources)). The only ones today are the multiplayer lobby's: `mp_status`, `mp_address`, `mp_host_label`, `mp_join_label`, `mp_online`, FIND GAME's `mp_list_status`, `mp_game_0`-`mp_game_3`, `mp_join_pin_label`, `mp_list_more`, and HOST SETTINGS' `mp_name_label`, `mp_pin_label`.
+A page entry with `label_src` shows text from a named host text source, updated every frame without rebuilding the menu. Sources are registered by native mods with `add_text_source` ([modding-host-api.md](../engine/modding-host-api.md#text-sources)). The only ones today are the multiplayer lobby's: `mp_status`, `mp_address`, `mp_host_label`, `mp_join_label`, `mp_online`, the game list's `mp_list_status`, `mp_game_0`-`mp_game_5`, `mp_list_more`, and HOST SETTINGS' `mp_name_label`, `mp_pin_label`.
 
 ### Mouse and touch
 
@@ -319,7 +321,7 @@ The native volume slider is tied to the three audio channels, so a mod slider re
 
 `menu_entries[i]` is a null-terminated `char*` in RDRAM. The vanilla arms fill it from `getGameOrFrontText(textId)` (`0x8005589C`), which returns a pointer into a loaded `.txt` bank (`0xA2` = "START/NEW GAME", `0xA3` = "OPTIONS"). The glyph builder (`buildScaledFormatTextElement`, `0x800B3AFC`) emits one TEXRECT per character.
 
-The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_config.cpp`) turns the `&` glyph (no language's menu text uses it; German needs the umlauts) into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14).
+The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_config.cpp`) turns the `&` glyph (no language's menu text uses it; German needs the umlauts) into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14). It makes `` ` `` (a period-wide blank), `|` (caret), `^` and `#` (scroll arrows) and `$` (a padlock, drawn in the `}` slot) the same way.
 
 ### Fonts
 

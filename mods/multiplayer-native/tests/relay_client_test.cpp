@@ -85,6 +85,7 @@ int main() {
     CHECK(a.start(RS64_MP_ROLE_HOST, "", kBuild));
     CHECK(wait_for([&] { a.connected(); return std::strlen(a.host_label()) > 0; }));
     const std::string code = std::string(a.host_label()).substr(std::strlen("JOIN CODE "));
+    CHECK(std::string(a.status()) == "LOBBY LISTED AS ROGUE ONE");
     CHECK(CodeEditor::valid(code));
 
     // The list shows it, by name, with that code; another build sees nothing.

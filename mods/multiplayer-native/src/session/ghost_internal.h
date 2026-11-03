@@ -294,6 +294,10 @@ struct Ghost {
     uint32_t obj_last_seq = 0;
     uint32_t obj_applied = 0;
 
+    // Client: its dropped objective writes until a host snapshot shows them, applied once the host is gone (obj_settled).
+    rs64::ls::ObjectiveLedger obj_ledger;
+    bool obj_settled = false;
+
     // Shared deaths: last health reported (or applied) per DAT item, and the peer's drops waiting to be applied at frame start.
     std::vector<int32_t> dat_last;
     bool dat_baseline = false;

@@ -156,6 +156,7 @@ void RelayClient::stop()
     connects_ = 0;
     inbox_.clear();
     host_label_.clear();
+    listed_.clear();
 
     // A failure's reason stays on the status line until the next start().
     if (!failed_) {
@@ -219,10 +220,11 @@ void RelayClient::pump()
 
             break;
         case relay::Type::Registered:
-            if (relay::decode_registered(m.data(), m.size(), &id)) {
+            if (relay::decode_registered(m.data(), m.size(), &id, &listed_)) {
                 game_ = id;
                 host_label_ = "JOIN CODE " + code_of(id);
-                status_ = "SHARE THE JOIN CODE";
+
+                if (!connected_) status_ = listed_status();
             }
 
             break;
@@ -236,7 +238,7 @@ void RelayClient::pump()
         case relay::Type::PeerLeft:
             lost_ = connected_ || role_ == RS64_MP_ROLE_CLIENT;
             connected_ = false;
-            status_ = role_ == RS64_MP_ROLE_HOST ? "SHARE THE JOIN CODE" : "THE HOST LEFT";
+            status_ = role_ == RS64_MP_ROLE_HOST ? listed_status() : "THE HOST LEFT";
             failed_ = role_ == RS64_MP_ROLE_CLIENT;
             break;
         case relay::Type::Refused:
@@ -303,6 +305,11 @@ void RelayClient::set_info(const std::string& name, bool locked) {
     if (role_ == RS64_MP_ROLE_HOST && game_) {
         link_.send(relay::encode_update(locked_, name_), true);
     }
+}
+
+// A waiting host's line: joiners pick it from the JOIN GAME list, so it names the game as listed (the server makes names unique).
+std::string RelayClient::listed_status() const {
+    return "LOBBY LISTED AS " + listed_;
 }
 
 void RelayClient::refresh(uint32_t build) {

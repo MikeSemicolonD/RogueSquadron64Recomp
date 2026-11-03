@@ -697,6 +697,32 @@ static void test_hash_reads_relocated_objective_counts() {
     const FrameHash c = hash_frame(ram.data());
     CHECK(b.combined == c.combined);
 }
+static void test_objective_ledger_settles_only_unconfirmed_writes() {
+    ObjectiveLedger l;
+    int32_t counts[ObjectiveLedger::kSlots] = {};
+    uint8_t bools[ObjectiveLedger::kSlots] = {};
+    l.snapshot(counts, bools, 0.0);
+    // A client kill the host then counts: nothing owed.
+    l.dropped_count(3, 1, 1.0);
+    counts[3] = 1;
+    l.snapshot(counts, bools, 1.2);
+    // A host kill whose snapshot came before the mirrored death: the credit pays it.
+    counts[3] = 2;
+    l.snapshot(counts, bools, 2.0);
+    l.dropped_count(3, 1, 2.1);
+    // A write the host never showed within the window is its call, not owed.
+    l.dropped_count(4, 1, 2.5);
+    l.snapshot(counts, bools, 6.0);
+    // The host goes silent right after two kills and a boolean.
+    l.dropped_count(3, 1, 6.1);
+    l.dropped_count(3, 2, 6.2);
+    l.dropped_bool(7, 1, 6.2);
+    l.dropped_count(5, -1, 6.2);
+    const ObjectiveLedger::Owed o = l.settle();
+    CHECK(o.counts.size() == 1 && o.counts.at(3) == 3);
+    CHECK(o.bools.size() == 1 && o.bools.at(7) == 1);
+    CHECK(l.settle().counts.empty());
+}
 int main() {
     // The relocation tests use the mod's table, as rs64_mp_register installs it.
     set_moved_ranges({std::begin(kMovedRanges), std::end(kMovedRanges)});
@@ -705,6 +731,7 @@ int main() {
     test_poison_covers_only_moved_ranges();
     test_first_unpoisoned_reports_lowest_write();
     test_hash_reads_relocated_objective_counts();
+    test_objective_ledger_settles_only_unconfirmed_writes();
 #ifdef _WIN32
     // Report failed checks on stderr instead of the Debug CRT's modal dialog.
     _set_error_mode(_OUT_TO_STDERR);
