@@ -217,6 +217,73 @@ void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_con
 static int s_render_view_test_next;
 static int s_render_view_test;
 
+// Set just before the effect handlers' view tests, which take the draw distance far plane like the render paths. Saved $ra can't tell callers apart: jal doesn't write r31.
+static int s_effect_view_test_next;
+static int s_effect_view_test;
+
+// Set when the last view test failed the game's own far plane; such an object passes only through the draw distance.
+static int s_past_stock_far;
+
+// randomBurstNpcHandlerVariant 0x8004093C
+void rs64_th_randomBurstNpcHandlerVariant_8004093C(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// sprayEffectEmitterNpcHandler 0x8005E1A4
+void rs64_th_sprayEffectEmitterNpcHandler_8005E1A4(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// updateWalkerParticlePositions 0x8005A9B8
+void rs64_th_updateWalkerParticlePositions_8005A9B8(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// randomlyScaledEffectNpcHandler 0x800607D8
+void rs64_th_randomlyScaledEffectNpcHandler_800607D8(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// randomlyScaledColoredEffectNpcHandler 0x80060C40
+void rs64_th_randomlyScaledColoredEffectNpcHandler_80060C40(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// minimalRandomNpcHandler 0x80060FE0
+void rs64_th_minimalRandomNpcHandler_80060FE0(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// explosionEffectNpcHandler 0x80074520
+void rs64_th_explosionEffectNpcHandler_80074520(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// randomParticleWithParentNpcHandler 0x800751AC
+void rs64_th_randomParticleWithParentNpcHandler_800751AC(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// heavyRandomBurstNpcHandler 0x80075AF4
+void rs64_th_heavyRandomBurstNpcHandler_80075AF4(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
+// heavyMechSubEffectNpcHandler 0x80079958
+void rs64_th_heavyMechSubEffectNpcHandler_80079958(uint8_t* rdram, recomp_context* ctx) {
+
+    s_effect_view_test_next = 1;
+}
+
 // addNpcToVisibilityBucket 0x80057D84
 void rs64_th_addNpcToVisibilityBucket_80057D84(uint8_t* rdram, recomp_context* ctx) {
 
@@ -246,6 +313,9 @@ void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_conte
 
     s_render_view_test = s_render_view_test_next;
     s_render_view_test_next = 0;
+    s_effect_view_test = s_effect_view_test_next;
+    s_effect_view_test_next = 0;
+    s_past_stock_far = 0;
 }
 
 // Render-path view test, RT shadows on: true when the object (camera space at sp+0x10, radius r) is within the shadow keep distance in any direction.
@@ -363,22 +433,187 @@ void rs64_th_refreshEffectObjectCamerasAndState_80053148(uint8_t* rdram, recomp_
     rs64_hud_shift_radar(rdram, ctx);
 }
 
-// transformVec3ToNpcLocalWithScale 0x8001DDA0
-void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx)
+// The view test's far check ($f2 = depth < $f0 = far): scaled by the draw distance for the render and effect callers.
+static void far_check(recomp_context* ctx)
 {
 
     extern float rs64_draw_dist(void);
 
-    if (MEM_W(0x3C, ctx->r29) != (int32_t)0x800F27B4) ctx->f0.fl *= rs64_draw_dist();
+    s_past_stock_far |= !(ctx->f2.fl < ctx->f0.fl);
+
+    if (s_render_view_test || s_effect_view_test) ctx->f0.fl *= rs64_draw_dist();
+}
+
+// The view test's camera-space box (+-125 per axis, the reach of convertMat3x4ToN64Mtx's fixed point): widened by the draw distance for the
+// render callers, whose far translations RT64 takes from the far-matrix table. Notes an object outside the stock box (camera space at sp+0x10, radius r).
+static float view_box_scale(uint8_t* rdram, recomp_context* ctx, float r)
+{
+
+    extern float rs64_draw_dist(void);
+    union { uint32_t u; float f; } v;
+
+    for (int i = 0; i < 3; ++i) {
+        v.u = (uint32_t)MEM_W(0x10 + 4 * i, ctx->r29);
+        s_past_stock_far |= (v.f - r < -125.0f) || (v.f + r > 125.0f);
+    }
+
+    return s_render_view_test ? fmaxf(rs64_draw_dist(), 1.0f) : 1.0f;
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001DCEC: the sphere test's low bound ($f2), radius $f22.
+void rs64_th_transformVec3ToNpcLocalWithScale_8001DCEC(uint8_t* rdram, recomp_context* ctx)
+{
+    ctx->f2.fl *= view_box_scale(rdram, ctx, ctx->f22.fl);
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001DD38: the sphere test's high bound ($f2).
+void rs64_th_transformVec3ToNpcLocalWithScale_8001DD38(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern float rs64_draw_dist(void);
+
+    if (s_render_view_test) ctx->f2.fl *= fmaxf(rs64_draw_dist(), 1.0f);
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001DFF4: the point test's low bound ($f0).
+void rs64_th_transformVec3ToNpcLocalWithScale_8001DFF4(uint8_t* rdram, recomp_context* ctx)
+{
+    ctx->f0.fl *= view_box_scale(rdram, ctx, 0.0f);
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001E034: the point test's high bound ($f0).
+void rs64_th_transformVec3ToNpcLocalWithScale_8001E034(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern float rs64_draw_dist(void);
+
+    if (s_render_view_test) ctx->f0.fl *= fmaxf(rs64_draw_dist(), 1.0f);
+}
+
+// Camera-space translations an N64 matrix can't hold (t * 2^24 must fit 32 bits, so |t| < 128), 16 bytes per slot by matrix address:
+// address, x, y, z. RT64's op_01_matrix takes the translation from a slot whose address matches.
+#define RS64_FAR_MTX_TABLE 0x80A4C000u
+#define RS64_FAR_MTX_SLOTS 0x1000u
+
+// convertMat3x4ToN64Mtx 0x80018DEC: translation in $f4/$f6/$f8, destination in $a0. Out of range: saved to the table and clamped for the pack.
+void rs64_th_convertMat3x4ToN64Mtx_80018DEC(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_snapshot_add_range(uint32_t lo, uint32_t hi);
+    static int s_registered;
+    const uint32_t dst = (uint32_t)ctx->r4;
+    const gpr slot = (gpr)(int32_t)(RS64_FAR_MTX_TABLE + ((dst >> 6) & (RS64_FAR_MTX_SLOTS - 1)) * 16);
+    fpr* t[3] = { &ctx->f4, &ctx->f6, &ctx->f8 };
+    int outside = 0;
+
+    for (int i = 0; i < 3; ++i) {
+        outside |= !(fabsf(t[i]->fl) < 127.0f);
+    }
+
+    if (!outside) {
+        if ((uint32_t)MEM_W(0, slot) == dst) MEM_W(0, slot) = 0;
+
+        return;
+    }
+
+    if (!s_registered) {
+        rs64_snapshot_add_range(RS64_FAR_MTX_TABLE - 0x80000000u, RS64_FAR_MTX_TABLE - 0x80000000u + RS64_FAR_MTX_SLOTS * 16);
+        s_registered = 1;
+    }
+
+    MEM_W(0, slot) = (int32_t)dst;
+
+    for (int i = 0; i < 3; ++i) {
+        MEM_W(4 + 4 * i, slot) = (int32_t)t[i]->u32l;
+        t[i]->fl = fminf(fmaxf(t[i]->fl, -127.0f), 127.0f);
+    }
+}
+
+// transformVec3ToNpcLocalWithScale 0x8001DDA0
+void rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(uint8_t* rdram, recomp_context* ctx)
+{
+    far_check(ctx);
 }
 
 // transformVec3ToNpcLocalWithScale 0x8001E078
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E078(uint8_t* rdram, recomp_context* ctx)
 {
+    far_check(ctx);
+}
 
-    extern float rs64_draw_dist(void);
+// selectMeshLodAndSubmitForRender 0x80058264: the model's per-frame flag toggle runs when $v1 == 0x80000; skipped for an object past the game's far plane.
+void rs64_th_selectMeshLodAndSubmitForRender_80058264(uint8_t* rdram, recomp_context* ctx)
+{
 
-    if (MEM_W(0x3C, ctx->r29) != (int32_t)0x800F27B4) ctx->f0.fl *= rs64_draw_dist();
+    if (s_past_stock_far) {
+        ctx->r3 = 0;
+    }
+}
+
+// Objects past the game's far plane drawn with the far-plane scale: their instance matrix (+0x28) rotation rows as the culled path built them,
+// put back once the frame's scene graph has been converted, so gameplay reads the stock matrix.
+#define RS64_INFLATED_MAX 256
+static struct { uint32_t addr; uint32_t rows[9]; } s_inflated[RS64_INFLATED_MAX];
+static int s_inflated_count;
+
+// selectMeshLodAndSubmitForRender 0x80058304: after the instance matrix ($s1+0x28) is built with scale $f22. An object past the game's far plane
+// gets the scale a drawn object has at the far plane ($f22 + $f20) for this frame's draw only.
+void rs64_th_selectMeshLodAndSubmitForRender_80058304(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const gpr m = ctx->r17 + 0x28;
+    union { uint32_t u; float f; } v;
+
+    if (!s_past_stock_far || s_inflated_count >= RS64_INFLATED_MAX || !(ctx->f22.fl != 0.0f))
+    {
+        return;
+    }
+
+    const float k = (ctx->f22.fl + ctx->f20.fl) / ctx->f22.fl;
+
+    s_inflated[s_inflated_count].addr = (uint32_t)m;
+
+    for (int i = 0; i < 9; ++i) {
+        v.u = (uint32_t)MEM_W(4 * i, m);
+        s_inflated[s_inflated_count].rows[i] = v.u;
+        v.f *= k;
+        MEM_W(4 * i, m) = (int32_t)v.u;
+    }
+
+    s_inflated_count++;
+}
+
+// runInMissionFrame 0x800FAC68
+void rs64_th_runInMissionFrame_800FAC68(uint8_t* rdram, recomp_context* ctx) {
+
+    extern void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx);
+    rs64_standins_submit(rdram, ctx);
+}
+
+// setupCameraMatrices 0x800178E4: the scene graph has been converted to the display list, so the radar node and the inflated matrices go back.
+void rs64_th_setupCameraMatrices_800178E4(uint8_t* rdram, recomp_context* ctx)
+{
+
+    extern void rs64_hud_radar_restore(uint8_t* rdram);
+    rs64_hud_radar_restore(rdram);
+
+    for (int n = 0; n < s_inflated_count; ++n) {
+        for (int i = 0; i < 9; ++i) {
+            MEM_W(4 * i, (gpr)(int32_t)s_inflated[n].addr) = (int32_t)s_inflated[n].rows[i];
+        }
+    }
+
+    s_inflated_count = 0;
+}
+
+// selectMeshLodAndSubmitForRender 0x800582F0: a drawn object's instance matrix scale gains a depth term ($f0); collision reads that matrix, so an
+// object past the game's far plane keeps the culled path's scale (the 0x80058304 hook draws it inflated).
+void rs64_th_selectMeshLodAndSubmitForRender_800582F0(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (s_past_stock_far) {
+        ctx->f0.fl = 0.0f;
+    }
 }
 
 // addNpcToVisibilityBucket 0x80057C90
@@ -841,6 +1076,29 @@ void rs64_th_applyLevelScreenAndCameraSettings_entry(uint8_t* rdram, recomp_cont
 
     extern void rs64_menu_hires_apply(uint8_t* rdram);
     rs64_menu_hires_apply(rdram);
+}
+
+// A volume slider end label ($a1) is centred on x ($a3), so one longer than the game's 3-letter OFF/MAX moves out by half its extra width (about 8 units a letter).
+static int slider_label_shift(uint8_t* rdram, recomp_context* ctx)
+{
+
+    int len = 0;
+
+    while (len < 32 && MEM_BU(len, ctx->r5) != 0) len++;
+
+    return len > 3 ? (len - 3) * 4 : 0;
+}
+
+// menuControllerInput 0x800B7620: draws the slider's low-end label.
+void rs64_th_menuControllerInput_800B7620(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->r7 = (gpr)(int32_t)((int32_t)ctx->r7 - slider_label_shift(rdram, ctx));
+}
+
+// menuControllerInput 0x800B7640: draws the slider's high-end label.
+void rs64_th_menuControllerInput_800B7640(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->r7 = (gpr)(int32_t)((int32_t)ctx->r7 + slider_label_shift(rdram, ctx));
 }
 
 // menuControllerInput 0x800B51B8

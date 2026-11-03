@@ -469,6 +469,43 @@ std::string dump_regions(const uint8_t* rdram) {
         out += '\n';
     }
 
+    const uint32_t table = rd32(rdram, 0x80130BB0u);
+
+    if (!in_rdram(table, 0x800 * 8))
+    {
+        return out;
+    }
+
+    // The hashed fields of each live NPC, one line each, so a diff names the NPC that diverged.
+    for (uint32_t i = 0; i < 0x800; ++i) {
+        const uint32_t ctx = rd32(rdram, table + i * 8);
+
+        if (!in_rdram(ctx, 0x3C)) {
+            continue;
+        }
+
+        char line[64];
+
+        snprintf(line, sizeof(line), "npc %u %08X %08X ", i, ctx, rd32(rdram, ctx));
+        out += line;
+
+        for (uint32_t k = 0x14; k < 0x1A; ++k) {
+            snprintf(hex, sizeof(hex), "%02X", rd8(rdram, ctx + k));
+            out += hex;
+        }
+
+        const uint32_t pos = rd32(rdram, ctx + 0x8);
+
+        out += ' ';
+
+        for (uint32_t k = 0; in_rdram(pos, 12) && k < 12; ++k) {
+            snprintf(hex, sizeof(hex), "%02X", rd8(rdram, pos + k));
+            out += hex;
+        }
+
+        out += '\n';
+    }
+
     return out;
 }
 

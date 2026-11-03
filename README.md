@@ -57,7 +57,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 - **High resolutions:** high resolution options, with optional MSAA, SSAA or FXAA anti-aliasing & HDR.
 - **Widescreen:** extends the screen (and camera FOV) beyond the old 4:3 aspect ratio.
-- **Longer draw distance:** see much farther away by up to 2.5x the original. [Has some caveats](#status).
+- **Longer draw distance:** see much farther away by up to 8x the original, set with the DRAW DISTANCE slider in Display Settings. [Has some caveats](#status).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
 - **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status).
@@ -202,18 +202,36 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Recomp. specific Issues
 
-- Ray Tracing is implemented but has various issues:
+- Ray Tracing is implemented but has some issues:
   - There are situations where light 'sticks' to the player and begins to flicker
 
-- A very high draw distance causes the 'legacy' terrain renderer to render more tiles which degrades performance *severely*. `1.3` is a good distance but at `2.0` or more the performance will suffer. At that distance you'll notice structures and NPCs popping into existence at about the `1.5` mark. Increasing the distance for structures and NPCs to pop in will affect how AI behaves and how events trigger.
+- Sliders when opened tends to follow along with the highlighted buttons when ideally it shouldn't highlight other buttons. If a users clicks another button when in this state it should navigate out of the slider
+
+- Black triangles/polygons seem to appear on the top right/left corners of the screen when flying directly up and banking (Very particular angle and tough to reproduce) most likely something related to camera culling, the skybox and with widscreen.
+
+- 'Esc' can confirm on pause screen and indirectly click buttons highlighted by the mouse.
+
+- Horizontal scrolling with the mouse scroll wheel should step through the hangar and level select. (Left going left, right going right)
+
+- Mouse can't set the slider value (but touch can?). Horizontal scroll should also increment/decrement the slider value with max of 10 steps for the whole scroll bar.
+
+- During Level Select there should be a right arrow if there's more levels that can be selected just like how there's a left arrow. (It's clickable and menus are still navigable just can't see it for some reason. Glyph issue?)
+
+- Frame rate seems to drop temporarily when the game initially loads in the Profile Select menu (menu transition coming in looks choppy)
+
+- Draw distance:
+  - Buildings, turrets and units the game hasn't woken yet show at a distance in their starting pose, frozen until you get within the game's own range (about `1.5x`). Then the real one takes over, so aircraft hang still in the air until then. Their spawn range is left alone because it drives AI and mission triggers, and changing it would change how the game plays.
+  - At long range the edge of the level's map shows as a flat band with a hard horizon line.
+  - Flying at high draw distance can feel a little jittery, and the terrain can jitter.
+  - With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x`.
 
 ### Game specific Issues
 
-- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep.
+- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has it's own internal scheduler meaning majority of the time it's actually waiting on a counter or something to 'finish'.
 
 - Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
 
-- Shooting at the lava in Raid on Sullust produces fire balls that look dim/muted compared to the other lava explosion effects
+- Shooting at the lava or colliding against the ground in Raid on Sullust produces fire balls that look dim/muted compared to the other bigger lava explosion effects in the level
 
 - Very slight cut off at the top of text rects **BUT** this also existed in the original game.
 
@@ -222,6 +240,9 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Roadmap
 
 - RS64 Explorer Fixes & Improvements
+  - Terrain texture painting
+  - Path authoring
+  - Level event & objective scripting
 
 ## Building
 

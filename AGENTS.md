@@ -321,6 +321,8 @@ Host-side tables above 8 MB (keep any new one clear of all of these):
 | 0x80810000-0x809FFFFF | Scene texture pool (language mod only) |
 | 0x80A00000-0x80A01FFF | F5 renderer vertex scratch |
 | 0x80A10000-0x80A4BFFF | Terrain edit API tile table (host API v7, `src/game/terrain_edit.h`) |
+| 0x80A4C000-0x80A5BFFF | Far camera-space matrix translations for RT64 (`convertMat3x4ToN64Mtx` hook in [toml_hooks.c](src/game/toml_hooks.c)) |
+| 0x80A5C000-0x80AFFFFF | Draw-only stand-ins for unspawned static objects: prop state blocks and model instances ([static_standins.cpp](src/game/static_standins.cpp)) |
 | 0x80B00000-0x80B1FFFF | 128x128 terrain grid tables |
 | 0x80B38058-0x80B3901F, 0x80B58930-0x80B58D0F | Co-op relocated per-player ranges (mod only, `kMovedRanges` in `mp_core.h`) |
 | 0x80B40000-0x80B4015F | Co-op imposter DAT record and message scratch (mod only) |

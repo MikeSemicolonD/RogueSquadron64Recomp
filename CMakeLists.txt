@@ -286,6 +286,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/game/upstream_compat.cpp
     ${CMAKE_SOURCE_DIR}/src/game/hook_helpers.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/static_standins.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp
     ${CMAKE_SOURCE_DIR}/src/main/renderdoc_capture.cpp

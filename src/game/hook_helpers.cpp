@@ -199,6 +199,7 @@ extern "C" void rs64_fog_probe(uint8_t* rdram)
 }
 
 // Level terrain cell budget scale, evaluated at each level load: ROGUESQ_TGRID_BUDGET_MULT (1-2), default 2 when terrain distance is 2x or more.
+// Stock under the terrain pass, whose grid keeps the stock reach: a bigger budget moves the game's heap allocations and so the game state.
 // 3x exhausts the game heap and the level load stalls; N is also capped at 6553 (u16 vertex-block indices up to 10N-4).
 // Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view.
 static bool s_cutscene_level_load = false;
@@ -211,7 +212,7 @@ extern "C" uint32_t rs64_tgrid_budget(uint32_t original)
 
     static const int s_env = env_int("ROGUESQ_TGRID_BUDGET_MULT", 0);
     const bool cutscene_level = s_cutscene_level_load && game_owns_view_setting();
-    const uint32_t s_mult = cutscene_level ? 1u : (uint32_t)std::clamp(s_env > 0 ? s_env : (terrain_dist_setting() >= 2.0f ? 2 : 1), 1, 2);
+    const uint32_t s_mult = cutscene_level ? 1u : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
     const uint32_t n = original * s_mult;
     static const bool s_log = env_on("ROGUESQ_LOG_TERRAIN_GRID");
 
@@ -327,8 +328,12 @@ extern "C" void rs64_hud_mark_element(uint8_t* rdram, recomp_context* ctx)
     ww(rdram, 0x8011DC58u, p + 8u);
 }
 
-// refreshEffectObjectCamerasAndState 0x80053148: the HUD pass (s1 + 8 = its view, scene root = the radar node) with its camera just reset to identity (3x4 row-major at
-// s1 + 0x34, x translation at +0x24; the pass restores the camera afterwards). Moving that camera moves the radar by the distance RT64 gives its 2D pieces.
+// refreshEffectObjectCamerasAndState 0x80053148: the HUD pass (s1 + 8 = its view, scene root = the radar node) with its camera just reset to identity.
+// Moving the radar node by the distance RT64 gives the 2D pieces keeps the disc inside its ring.
+static uint32_t s_radar_node = 0;
+static uint32_t s_radar_restore = 0;
+static uint32_t s_radar_restore_bits = 0;
+
 extern "C" void rs64_hud_shift_radar(uint8_t* rdram, recomp_context* ctx)
 {
 
@@ -347,24 +352,44 @@ extern "C" void rs64_hud_shift_radar(uint8_t* rdram, recomp_context* ctx)
     const float aspect = width / height * (float)rw(rdram, 0x8011A844u) / (float)div * rf(rdram, 0x8011A840u);
     const float p00 = 1.0f / (std::tan(rf(rdram, view + 0x20u) * 3.14159265f / 360.0f) * aspect);
 
-    // The radar node's translation in its 3x4 transform at +0x1C.
-    const float x = rf(rdram, root + 0x40u);
-    const float z = rf(rdram, root + 0x48u);
+    if (!(p00 > 0.0f)) return;
 
-    if (!(p00 > 0.0f) || !(z > 0.0f)) return;
-
+    // The radar node is the pass's root, except while the pause emblem comes in or goes out: the root is then the emblem's scene, which still
+    // draws the radar, so the last radar node is moved instead. The node, not the camera, moves, so the emblem stays centred.
     const float halfWidth = width * 0.5f;
-    const rs64hud::Side side = rs64hud::classify(root, p00 * x / z * halfWidth, 0, width);
+    auto side_of = [&](uint32_t node) {
+
+        const float z = rf(rdram, node + 0x48u);
+
+        return z > 0.0f ? rs64hud::classify(node, p00 * rf(rdram, node + 0x40u) / z * halfWidth, 0, width) : rs64hud::None;
+    };
+
+    if (side_of(root) != rs64hud::None) s_radar_node = root;
+
+    const rs64hud::Side side = s_radar_node != 0 ? side_of(s_radar_node) : rs64hud::None;
 
     if (side == rs64hud::None) return;
 
-    const float dx = shift * z / (p00 * halfWidth);
-    const uint32_t tx = (uint32_t)ctx->r17 + 0x34u + 0x24u;
+    // The node's translation in its 3x4 transform at +0x1C; put back by rs64_hud_radar_restore once the pass is drawn.
+    const uint32_t tx = s_radar_node + 0x40u;
+    const float dx = shift * rf(rdram, tx + 8u) / (p00 * halfWidth);
     const float moved = rf(rdram, tx) + ((side == rs64hud::Right) ? dx : -dx);
     uint32_t bits;
 
+    s_radar_restore = tx;
+    s_radar_restore_bits = rw(rdram, tx);
     std::memcpy(&bits, &moved, 4);
     ww(rdram, tx, bits);
+}
+
+// setupCameraMatrices after the scene traversal: the radar node's own translation back.
+extern "C" void rs64_hud_radar_restore(uint8_t* rdram)
+{
+
+    if (s_radar_restore == 0) return;
+
+    rs64::mips::ww(rdram, s_radar_restore, s_radar_restore_bits);
+    s_radar_restore = 0;
 }
 
 // ---- Boot target ----
