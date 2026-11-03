@@ -107,7 +107,7 @@ static std::string light_files_stamp()
 
         const auto t = std::filesystem::last_write_time(p, ec);
 
-        if (!ec) stamp += p.string() + '|' + std::to_string(t.time_since_epoch().count()) + '|' + std::to_string(std::filesystem::file_size(p, ec)) + '\n';
+        if (!ec) stamp += p.string() + '|' + std::to_string((long long)t.time_since_epoch().count()) + '|' + std::to_string(std::filesystem::file_size(p, ec)) + '\n';
     };
 
     char* base = SDL_GetBasePath();
