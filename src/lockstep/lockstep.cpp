@@ -51,7 +51,14 @@ struct State {
     std::map<uint32_t, std::vector<uint8_t>> song;
     uint32_t song_frame = 0xFFFFFFFFu;
     size_t song_idx = 0;
+
+    // The god-mode bit of gGameSettingsFlags (0x80130B4C) is set by the invincibility mod after the session hook, inside initMission.
+    uint32_t god = 0;
+    long flags0_at = -1;
 };
+
+constexpr uint32_t kSettingsFlags = 0x80130B4Cu;
+constexpr uint32_t kGodModeBit = 0x00800000u;
 
 State& st() {
 
@@ -256,7 +263,10 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
             return;
         }
 
-        fputs(format_header(h).c_str(), s.rec);
+        const std::string head = format_header(h);
+
+        s.flags0_at = (long)head.find("flags0=0x") + 9;
+        fputs(head.c_str(), s.rec);
         fflush(s.rec);
 
         if (!ghost) {
@@ -286,6 +296,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         }
 
         apply_session(rdram, h);
+        s.god = h.flags0 & kGodModeBit;
         memcpy(&s.cruise, &h.cruise_bits, 4);
         ww(rdram, 0x80003470u, h.seed);
         const char* out = recomp::dbg::env_str("ROGUESQ_LS_HASH_OUT");
@@ -322,6 +333,18 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
     if (!s.active || demo_active(rdram))
     {
         return dt;
+    }
+
+    const uint32_t flags = rw(rdram, kSettingsFlags);
+
+    if (s.mode == Mode::Replay) {
+        ww(rdram, kSettingsFlags, (flags & ~kGodModeBit) | s.god);
+    } else if (s.mode == Mode::Record && s.rec && s.flags0_at > 0) {
+        fflush(s.rec);
+        fseek(s.rec, s.flags0_at, SEEK_SET);
+        fprintf(s.rec, "%08X", flags);
+        fseek(s.rec, 0, SEEK_END);
+        s.flags0_at = -1;
     }
 
     return 1.0f / 30.0f;
