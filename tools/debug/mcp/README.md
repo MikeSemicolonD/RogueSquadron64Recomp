@@ -17,7 +17,7 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 ## Tools
 
 | Tool | What it does |
-|---|---|
+| --- | --- |
 | `launch` | Start the game (cwd `build/<config>`, RenderDoc injected, muted, dev mode) and connect. `env` adds `ROGUESQ_*` variables. Refuses while its game is still running. |
 | `attach` | Connect to a game the user started (a Debug build serves the bridge on port 47064). Everything but `wait_log` works; `close` only disconnects. |
 | `close` | Kill the game (an attached one is only disconnected). |

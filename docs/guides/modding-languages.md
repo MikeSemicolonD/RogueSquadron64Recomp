@@ -41,7 +41,7 @@ ASCII characters (0x20-0x7E) always draw with the game's own glyphs, and a pack 
 A pack holds the glyphs one game font is missing, at that font's cell size. The game draws only the top rows of each cell (the drawn height), so keep ink inside them.
 
 | Font | Used for | Cell (w x h) | Drawn rows |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `italic35` | front-end menus | 22 x 35 | 33 |
 | `normal10` | other text | 10 x 14 | 14 |
 | `normal11` | other text | 8 x 15 | 15 |
@@ -57,7 +57,7 @@ The RS64 Explorer's *Fonts* tab builds them. Import a language mod by picking it
 File format (all numbers big-endian), for writing packs another way:
 
 | Bytes | Field |
-|---|---|
+| --- | --- |
 | 4 | `RSG1` |
 | 2, 2 | cell width (even), cell height: must match the font |
 | 4 | glyph count |

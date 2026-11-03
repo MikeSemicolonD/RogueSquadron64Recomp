@@ -165,7 +165,7 @@ Macro/sequence opcodes 0x40..0x46 (`seqCmdHandler40..46`, L3683-3757, via `sound
 What each default record controls (READ, `tickAllAudioChannels`):
 
 | rec | offset | ctrl | use |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 0 | 0xC0 | 7 | Volume multiplier: `V = (V>>7) * (val>>7)` (8008D5F8-8008D614). |
 | 1 | 0xD2 | 0xA | Pan offset: `pan += ((val>>7)-0x40)<<16`, clamped 0..0x7F0000. |
 | 2 | 0xE4 | 0x83 | Span: `span = val<<9` (14-bit to 23-bit), clamped to 0x7F0000. Rear/surround amount, default 0. |
@@ -222,7 +222,7 @@ UNRESOLVED:
 ## Summary of evidence level per question
 
 | Q | Status |
-|---|---|
+| --- | --- |
 | 1 LFO1/2 | READ, setters CONFIRMED. LFO1/2 are sawtooth pitch ramps (period in ticks); vibrato is a separate sine LFO, and 2 more sine LFOs feed the controller records. Wave table CONFIRMED (peak 4096). |
 | 2 Pan | Pipeline READ (asm). Gain law CONFIRMED (hand asm fully read, table data read). |
 | 3 Volume | READ (`tickAllAudioChannels`). ADSR CONFIRMED (C). `ch+0x28/2C` are priority, not volume. Velocity UNRESOLVED (`startNoteOnVoice` is still asm). |

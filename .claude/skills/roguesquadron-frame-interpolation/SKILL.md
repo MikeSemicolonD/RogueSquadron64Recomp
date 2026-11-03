@@ -17,7 +17,7 @@ RT64 buffers one real game frame and draws in-between frames by pairing each tra
 ## Pipeline (lib/rt64/src)
 
 | Stage | Where | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Rate | `hle/rt64_vi.cpp:193` | Majority vote over the VI factor ring (`ROGUESQ_INTERP_RATE=strict\|<hz>`) |
 | Per-frame timing | `hle/rt64_workload_queue.cpp:997` | `ROGUESQ_INTERP_VARIABLE`: each real frame tweens over its own VI count |
 | ID pairing | `hle/rt64_game_frame.cpp:359` | Sorted-id merge; `ROGUESQ_INTERP_ID_MAXJUMP` jump guard, default off (it rejected steady close flybys) |
@@ -28,7 +28,7 @@ RT64 buffers one real game frame and draws in-between frames by pairing each tra
 ## Identity sources (lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp)
 
 | Geometry | ID | Where |
-|---|---|---|
+| --- | --- | --- |
 | Ships, lasers, rigid objects, menu/overlay models | `0x2xxxxxxx` = scene-node ptr + regrid generation; node recorded by the `traverseSceneGraphRecursive` hook @0x800155E4 -> `rs64_f5_map_node`, for both matrix rings (`0x700000`/`0x710000` flight, `0x770000`/`0x780000` menus/overlays; `f5_ring_buffer`). Id from a node's first frame (`ROGUESQ_F5_NODE_STABLE_ONLY=1` restores waiting a frame) | `f5_map_node_impl` ~381, stamp ~1179 |
 | Tow cable segments | `0x1xxxxxxx` = generation + position from the ship end (submit order), from the `addNpcToVisibilityBucket` entry hook -> `rs64_f5_cable_submit(pool, instance, state word 0x8010B6E8)`; only drawn slots count; new generation on a gap, re-fire (phase 3/4 -> 1/2) or falling count; scene node = segment mesh instance + 0x0C; `rs64cable::CableRoles` in `hle/rt64_rs64_cable.h`. Ids by role, not slot: a head-only alias left the previous head unpaired after every advance. Covers the long-tow-cable mod | `f5_cable_submit_impl`, `f5_lookup_node_alias`, alias applied after the node-id block in op_01 |
 | Terrain | Root node id; re-centers compensated (`ROGUESQ_F5_REGRID_COMP`) or generation-bumped (`REGRID_SNAP`) | `f5_node_regrid_generation` ~143, `f5_regrid_after_load` ~184 |
@@ -53,7 +53,7 @@ The id must be: **the same** for the same logical object across frames; **differ
 ## Diagnosing jitter
 
 | Symptom | Mechanism | Check / fix |
-|---|---|---|
+| --- | --- | --- |
 | Object oscillates back and forth along its motion ("jitter in place") | Flips mapped <-> unmapped between frames. Mapped lags up to 1 frame, unmapped is drawn at cur (ahead). Camera-space velocity makes the gap large | Log per-transform mapped state per frame. Measure with `ROGUESQ_LOG_INTERP_PAIR=1`. Flip triggers: `ID_MAXJUMP` guard if enabled, 0.2 NDC auto gate, sprite generation bumps (gap / >4x size jump; a flipbook restart only counts if it also moved >1.5x size; a halving in size only counts off the predicted path) |
 | Id-less object pops for one frame when it starts moving or reverses | AUTO position: `RigidBody::updateLinear` disables translation lerp on start-from-rest or >90 deg velocity reversal | Give it an id (INTERPOLATE bypasses the heuristic) |
 | Searchlight shafts/glows on structures, explosion and lava fire jitter only while the camera moves | Game bakes their camera-space position into the verts every frame under a static matrix (`0x80037780`, never written in-mission; confirmed with `ROGUESQ_DATA_BP`); vertex interp is SKIP so they step at game rate | `ROGUESQ_F5_BAKED_VTX_INTERP` (default on): per-face id + vertex interpolation for faces under a non-ring, id-less matrix. Find such cases by checking which matrix (`s_mv_last_w1`) an id-less draw sits under. Faces are matched in camera space: the terrain-root world frame jumps and lost every glint on 13% of frames. Faces built by `buildOrientedFaceGeometry` (explosion and lava fire, glints) get `0xAxxxxxxx` ids from their face record instead (`ROGUESQ_F5_ORIENTED_FACE_ID`), so only untagged faces are position-tracked. Measure with the class-3 field of `[pair]` (mapped/total/flips) |

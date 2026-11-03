@@ -161,7 +161,7 @@ list is doubly linked: a valid next chunk's second word points back to the curre
 chunk would otherwise walk the free list).
 
 | op | handler (real) | meaning | length |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `01` | `0x1484` | DMA 64 B matrix from w1: byte1 bit0 = 0 modelview (DMEM `0x5D0`, then MVP = MV x P into `0x610`), 1 = projection (`0x590`) | 8 |
 | `02` | `0x14F0` | DMA `(w0&0xFFFF)+1` bytes from w1 into `0xB70` = per-vertex RGBA colors | 8 |
 | `03` | `0x14D4` | byte1 selects a DMEM slot (table `0x46`); the next 16 B are stored inline. `03 80` = viewport (vscale x,y,z,pad / vtrans x,y,z,pad, 2-bit fixed); `03 82` = texcoord scale (4 hi + 4 lo halfwords, 16.16 s,t,s,t; DMEM 0x140) multiplied into every per-face UV | 24 |

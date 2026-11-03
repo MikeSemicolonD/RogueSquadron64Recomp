@@ -32,7 +32,7 @@ The rest of this page is the reference.
 A mod exports `rs64_mod_init` (`RS64_MOD_INIT_EXPORT`), listed in its `mod.json` export array. It has the recomp signature `void(uint8_t* rdram, void* ctx)`, and registers carry the contract:
 
 | Register | Meaning |
-|---|---|
+| --- | --- |
 | `r4` (in) | `const rs64_host_api*`, the table |
 | `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 7) |
 | `r2` (out) | 0 to accept, non-zero to refuse |
@@ -51,7 +51,7 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 `rs64_host_api` fields, in order:
 
 | Field | Contract |
-|---|---|
+| --- | --- |
 | `uint32_t version` | `RS64_HOST_API_VERSION` |
 | `uint32_t size` | `sizeof(rs64_host_api)` in the host build |
 | `log(const char* line)` | Writes one line to stderr |
@@ -102,7 +102,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 ### Front end
 
 | Id | Site | Contract |
-|---|---|---|
+| --- | --- | --- |
 | `RS64_HOOK_MENU_INPUT` (1) | `menuControllerInput` 0x800B4CA8, after the pad poll | The pressed-buttons word at 0x8013A960 + 4 * port may be edited |
 | `RS64_HOOK_MENU_PILOT_CHOSEN` (2) | `menuControllerInput` 0x800B5428 | A pilot was confirmed on the account screen |
 | `RS64_HOOK_MENU_FRAME` (3) | `updateMenuPerFrame` entry | Once per front-end frame |
@@ -116,7 +116,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 ### Mission
 
 | Id | Site | Contract |
-|---|---|---|
+| --- | --- | --- |
 | `RS64_HOOK_MISSION_INIT` (4) | `initMission` 0x800FA28C | Before the level loads |
 | `RS64_HOOK_MISSION_FRAME_DT` (5) | `runInMissionFrame` 0x800FA7D0 | `ctx->f20` = frame dt in seconds, may be replaced |
 | `RS64_HOOK_MISSION_FRAME_PADS` (6) | `runInMissionFrame` 0x800FA7D8 | After the pad read, before the simulation |
@@ -137,7 +137,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 ### Audio and speech
 
 | Id | Site | Contract |
-|---|---|---|
+| --- | --- | --- |
 | `RS64_HOOK_SONG_ACTIVE` (7) | `tickSongFadeTimer` 0x800EE82C | `ctx->r2` = the `isSongHandleActive` result, may be replaced |
 | `RS64_HOOK_SPEECH_RESPONSE_2` (8) | `requestSpeechResponseMode2` 0x800FBB08 | `ctx->r2` = speech idle (1) / busy (0), may be replaced |
 | `RS64_HOOK_SPEECH_RESPONSE_1` (9) | `requestSpeechResponseMode1` 0x800FBB64 | As `RS64_HOOK_SPEECH_RESPONSE_2` |
@@ -145,7 +145,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 ### HUD
 
 | Id | Site | Contract |
-|---|---|---|
+| --- | --- | --- |
 | `RS64_HOOK_HUD_FONTS` (29) | `initVoiceSubtitleSystem` 0x80055B08 | Subtitle `fontAlloc`: `a2` = slot count, may be raised |
 | `RS64_HOOK_HUD_DRAW` (30) | `runInMissionFrame` 0x800FAC70 | The 2D overlay list is built for this frame |
 | `RS64_HOOK_RADAR` (31) | `renderRadarMinimap` 0x800C6290 | After `placeRadarDots`: `s0` = radar, `s2` = centre |
@@ -163,7 +163,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 These ids have no `rogue_squadron.toml` site: the host runs them from inside the named built-in.
 
 | Id | Where | Contract |
-|---|---|---|
+| --- | --- | --- |
 | `RS64_HOOK_MENU_PAD` (32) | Inside the `RS64_HOOK_MENU_INPUT` built-in, before mod-page row navigation | The pressed word at 0x8013A960 may be edited; the flag `menu_page_shown` is 1 while a mod page is up |
 | `RS64_HOOK_MAIN_MENU` (33) | `rs64_menu_install_main` | The main menu is being built; `ctx` is NULL |
 
@@ -181,7 +181,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 `rs64_api.h` also imports these base exports:
 
 | Export | Returns |
-|---|---|
+| --- | --- |
 | `float rs64_draw_dist(void)` | The draw-distance multiplier in effect (1.0 = the game's own; cutscenes may keep 1.0) |
 | `float rs64_terrain_dist(void)` | The terrain reach and fog multiplier, which follows the draw distance capped at 2.5 |
 | `unsigned rs64_tgrid_base(unsigned original)` | Where a terrain-grid table now lives (host RAM, doubled strides); other addresses pass through |

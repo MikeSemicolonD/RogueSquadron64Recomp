@@ -13,7 +13,7 @@ the record 40 bytes. The loader (0x1268..0x129C) clobbers only $2..$5. **$10 = M
 ## (a) Record layout (40 bytes, offsets from record start)
 
 | off | size | meaning | ucode reader | game writer (0x80011714..0x80011880; t = tile struct) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | +0 | u8 | 0x05 opcode | dispatcher | const |
 | +1 | u8 | **N** = source samples per row (5) | ovl0C@1E14 `lbu -7` | t+0x20 low byte |
 | +2 | u8 | flags: bit1 = flat form; bit0 = depth-sort direction; bits 7..4 = **L** = color LOD shift | ovl0C@1DB0 (&2), @1E1C (>>4); ovl1C@1DB0 (&1) | `(t+0x15 & 0xF)<<4 \| (t+0x2E & 1)` |

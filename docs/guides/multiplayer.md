@@ -22,7 +22,7 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 ## Code layout
 
 | File | Role |
-|---|---|
+| --- | --- |
 | [mods/multiplayer-native/src/net/net_core.h](../../mods/multiplayer-native/src/net/net_core.h) | Declarations for the three files below; no sockets. |
 | [mods/multiplayer-native/src/net/messages.cpp](../../mods/multiplayer-native/src/net/messages.cpp) | Message encoding and decoding: most messages are a few scalars and fixed arrays through `encode_fields` / `decode_fields`. |
 | [mods/multiplayer-native/src/net/lobby.cpp](../../mods/multiplayer-native/src/net/lobby.cpp) | `Lobby` handshake state, the MULTIPLAYER page's status lines, the host address choice, LAN discovery packets. |
@@ -47,7 +47,7 @@ Base code sees multiplayer only through hooks, actions and flags.
 ### Flags
 
 | Flag | Writer | Reader | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `ghost_mode` | `publish_modes` (`ghost_lobby.cpp`) | `lockstep.cpp` (mission init: record only, no hashes) | Online co-op session active (`ROGUESQ_MP` or a menu-started session) |
 | `coop_imposter` | `publish_modes` | the `imposter` hash part's gate (`add_hash_part`), `mp_register.cpp` (pad2 replay) | Player 2 is the imposter (`ROGUESQ_COOP_LOCAL` or ghost mode) |
 | `mp_lobby_state` | `ghost_lobby.cpp` (on lobby state changes) | `nav_sequencer.cpp` | The `Lobby` handshake state |
@@ -62,7 +62,7 @@ Base code sees multiplayer only through hooks, actions and flags.
 Built-ins register first, then the multiplayer registration, so every multiplayer handler runs after the built-in on the same hook.
 
 | Hook | Built-in part | Multiplayer part |
-|---|---|---|
+| --- | --- | --- |
 | 1 `MENU_INPUT` | `rs64_menu_pass`: sets `menu_page_shown`, dispatches hook 32, page row navigation, pilot-first exit | none (it uses hook 32) |
 | 3 `MENU_FRAME` | `rs64_menu_frame`: menu period glyph, live labels | `menu_tick`: `rs64_lobby_tick` |
 | 4 `MISSION_INIT` | `rs64_ls_on_mission_init`: lockstep mode, pad2 setup | `mission_init`: imposter reset, `rs64_ghost_mission_init` in ghost mode |
@@ -77,7 +77,7 @@ Hooks 2 and 7 have only a built-in part; every other hook not listed above has o
 Hooks the registration takes (sites and contracts in [modding-host-api.md](../engine/modding-host-api.md#hooks)):
 
 | Area | Hooks |
-|---|---|
+| --- | --- |
 | Front end | `MENU_FRAME`, `MENU_PAD`, `MAIN_MENU`, `MISSION_SELECT_INIT`, `MISSION_CONFIRMED`, `MISSION_SELECT_FONTS`, `MISSION_SELECT_TICK`, `CRAFT_SELECT_INIT`, `CRAFT_SELECT_TICK`, `DEBRIEF_PAD`, `FRONT_END` |
 | Mission frame | `MISSION_INIT`, `MISSION_FRAME_DT`, `MISSION_FRAME_PADS`, `MISSION_FRAME_NPCS`, `MISSION_END`, `CRAFT_ASSETS` |
 | Imposter and streaming | `WINGMAN_TICK`, `WINGMAN_DRAW`, `NPC_ACTIVATION`, `GRID_STREAM` |
@@ -193,7 +193,7 @@ While typing on a phone, the picture slides up so the highlighted entry clears t
 All messages ride the ENet link; `Msg` in net_core.h lists them. A session starts only once both sides said a matching HELLO and the host accepted the client's AUTH (see [HOST SETTINGS and passwords](#host-settings-and-passwords)). Per frame (`rs64_ghost_frame`, after the pad poll): remote messages in, the host's result applied, local state out, the remote pad written to port 1 for the imposter.
 
 | Message | Direction / use |
-|---|---|
+| --- | --- |
 | HELLO | Both: build id, pilot name (label over the ship). |
 | AUTH, ACCEPT | Client to host right after HELLO: the password typed (empty: none). Host to client: accepted. |
 | MISSION, LAUNCH | Host picks the mission id first, then LAUNCH puts both on the same level and craft. `DAMAGE`, `OBJ` and `LIFE` carry the mission id. |

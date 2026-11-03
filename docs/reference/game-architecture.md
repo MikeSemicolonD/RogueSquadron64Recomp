@@ -39,7 +39,7 @@ audio ucode (configs in `rsp/`). The graphics ucode is not recompiled; graphics 
 The host glue lives in `src/`:
 
 | File | Role |
-|---|---|
+| --- | --- |
 | `src/main/main.cpp` | Entry point; SDL2 window, gfx and VI callbacks |
 | `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, touch, sensors, the SDL event loop |
 | `src/main/ui_panels.cpp` | ImGui panels: controls/rebind, mods, touch overlay |
@@ -66,7 +66,7 @@ Names are the recomp symbols where they exist; `D_<ADDR>` denotes a global the
 recomp accesses via raw address arithmetic with no assigned symbol.
 
 | Addr | Name | Purpose |
-|------|------|---------|
+| ------ | ------ | --------- |
 | 0x80037560 | `gBootConfig` | 0x50-byte boot config struct; +0x04 = game-loop entry ptr |
 | 0x8009FCD0 | `.samp` base ptr | Sample-bank base pointer; 0 on hardware and in the recomp (samples stream from the cartridge) |
 | 0x800AF92C | `gCutsceneAssetPaths` | 32 × 0x5C cutscene asset path entries |
@@ -116,7 +116,7 @@ recomp accesses via raw address arithmetic with no assigned symbol.
 Per-thread message-queue workers, registry `D_801128D0` (linked list).
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `initServiceRegistry` (0x80006C00) | Zeros head/tail/count |
 | `registerServiceWorker` (0x80006C28) | (numMsgSlots, stackSize, prio, entryFn) → uniqueId; creates thread + queue |
 | `startServiceWorker` (0x80006D9C) | Looks up by id, `osStartThread` |
@@ -129,7 +129,7 @@ Per-thread message-queue workers, registry `D_801128D0` (linked list).
 EEPROM 256 bytes, dual-buffer (`save_data[2]`), adler32 checksums. Layout: 32B header + 2 × 0xC8 bodies + 0x140 zeros padding.
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `saveServiceWorker` (0x8006F2CC) | Service-worker thread (key=auto, slots=4) |
 | `registerSaveService` (0x8006EF98) | `registerServiceWorker` for save thread |
 | `triggerSaveMessage` (0x8006F274) | Allocates 20B msg, sends to save worker |
@@ -157,7 +157,7 @@ EEPROM save works (4K via librecomp). The controller Memory Pak path is stubbed 
 Round-robin 8-slot DMA via `osPiStartDma`. Files DMA'd in 0x4000-byte chunks.
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `initDmaSlots` (0x800045E8) | Initializes 8 slots + msg queues + flags |
 | `submitDmaSlot` (0x80003480) | Kicks off a DMA chain (round-robin slot allocator) |
 | `waitDmaSlotComplete` (0x80003638) | Blocking variant: drains entire DMA chain |
@@ -177,7 +177,7 @@ Round-robin 8-slot DMA via `osPiStartDma`. Files DMA'd in 0x4000-byte chunks.
 ### 5. Asset formats
 
 | Format | Purpose | Loader |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | HOB | 3D models (object/meshdef/face/vertex) | `load_hmt_and_hob` (0x8005645C) |
 | HMT | Material/texture collections | `load_hmt_and_hob` |
 | HMP | Level height-maps (terrain) | `load_level_hmp` (0x80043D74) |
@@ -205,7 +205,7 @@ zlib decompressor (embedded v0.99-1.08): `adler32` (0x800269B0), `inflateInit2_`
 ### 6. Display / video
 
 | Function | Role |
-|----------|------|
+| --- | --- |
 | `setDisplayMode` (0x8008EA14) | Validates mode<0x21, stores the mode byte at `D_80141AD0`, calls inner setup chain |
 | `getViModeType` / `setViModeType` / `getViModePeriod` / `isViModeTypePal` | VI mode getters/setters |
 
@@ -238,7 +238,7 @@ thread is the AI stream loop (`runAiAudioStreamPlaybackLoop`, 0x8008ED70,
 priority 122), which refills the output buffer on each AI event.
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `initAudioSubsystem` (0x80091B3C) | Inits mutex + osAiSetFrequency + audio queues/events; called from setDisplayMode |
 | `shutdownMusyXEngine` / `func_8008ED00` | MusyX shutdown, called on every display-mode change: waits for the audio task, unregisters `musyxSynthFrame` from the SI table, frees the mixer. It was a toml stub until 2026-09-07; stubbing it stacked the synth callback three times and starved the voice-pool callback |
 | `initFactor5Mutex` (0x80091FC4) | Creates queue `D_80149990` + posts initial token |
@@ -259,7 +259,7 @@ Three helpers around the swap handshake, used by the frame loop (see
 [Frame loop](#frame-loop-hardware-protocol) for where they sit):
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `setPostSwapPendingFlags` (0x8001C244) | Sets both bytes at `D_8011A8C8` (swap requested) / `D_8011A8C9` (ack pending) to 1 |
 | `waitForPostSwapAck` (0x8001C260) | At the start of a frame: sets the "consumer waiting" flag `D_80037808`, receives the video queue `D_80128CF0` (blocking), yields, and repeats until `D_8011A8C9` clears — two receives per frame on hardware |
 | `clearPostSwapPendingFlags` (0x8001C2F8) | Clears both flag bytes to 0 |
@@ -267,7 +267,7 @@ Three helpers around the swap handshake, used by the frame loop (see
 ### 8. Controllers
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `siServiceThread` (0x80002E10) | Controller polling thread |
 | `initSiQueue` (0x80003308) | Initializes SI message queue + flags |
 | `waitForSerialIdle` (0x80003284) | Spin-yields until SI busy flag `D_80110741` clears |
@@ -285,7 +285,7 @@ Controller settings — 4 named profiles: LUKE / WEDGE / JANSON / HOBBIE, 18 inp
 Main menu state `gCurrentMenuData` (0x800CE730, 0xF8 bytes). 13 menus enumerated (MAIN_MENU through AT_THE_MOVIES).
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `menuOverlayInit` (0x800C58A0) | Menu overlay init (calls registerSaveService) |
 | `menuControllerInput` (0x800B47D0) | Big menu controller input handler |
 | `setupMenuData` (0x800BA0F0) | Sets up `gCurrentMenuData` per current menu |
@@ -305,7 +305,7 @@ model, sub-type dispatch, and a worked "Quit button" example.
 Two double-buffered HUD structs `D_8010CA30[2]` (0x278 bytes each). Material table (`D_8011A444`) → texture table (`D_80128F08`, 0x24B per entry).
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `initHudStruct` (0x800C0084) | Initializes 0xF80-byte HUD struct |
 | `hudDisplayUpdateWorker` (0x800495FC) | Service worker; processes HUD material/texture msgs |
 | `getTextureDataByMaterialId` (0x800232F8) | material_id → D_8011A444 → D_80128F08 texture ptr |
@@ -316,7 +316,7 @@ Two double-buffered HUD structs `D_8010CA30[2]` (0x278 bytes each). Material tab
 0x800-entry slot list `gNpcSlotList`, each entry → 0xC0-entry NPC context array. Update function pointer at NPC context +0x00 runs every frame.
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `slotDispatcherIter` (0x8003E8DC) | Walks gNpcSlotList, calls each NPC update_func |
 | `slotDispatcherInner` (0x8003EA4C) | Per-slot dispatch; mallocs `D_80130BC0`/`D_80130BC4` entries |
 | `slotEffectHandlerDispatch` (0x800A71B8) | Effect handler dispatch from cinematic loop |
@@ -328,7 +328,7 @@ Two double-buffered HUD structs `D_8010CA30[2]` (0x278 bytes each). Material tab
 Multi-stage cutscene playback. State ptr `D_800B0934`, stage counter `D_800B0938`. Active slot indices in `gActiveSlots` (0x80139560). The cinematic is a scene graph, not a flat list: `cinematicLoopBody` → `traverseSceneGraphRecursive` (0x80015548) → `processSceneNode` (0x80014FA0); geometry is RSP T&L over meshdef1→facegroup→face.
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `cinematicLoopBody` (0x800A5D80) | Inner cinematic frame loop |
 | `cinematicInitializer` (0x800AF408) | Sets state ptr `D_800B0934` |
 | `cinematicStageAdvancer` (0x800AF550) | Per-frame stage counter advance |
@@ -344,7 +344,7 @@ Cutscene file structure: `cuts_file_constant` (0x25AC) containing filename, 200 
 5 data types: Type 0 (spawn/building/props), Type 2 (unknown, Sullust LAVAFART##), Type 3 (splines), Type 6 (LOD boxes + MUSICRNG), Type 7 (event triggers).
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `parseDatSpawnPositions` (0x80065790) | Parses DAT Type 0 |
 | `parseDatEventTriggers` (0x800AA870) | Parses DAT Type 7 |
 | `parseDatItemCommon` (0x80046620) | Common helper (Type 0 + Type 7) |
@@ -357,7 +357,7 @@ Enemies fly spline paths — large NPC functions are spline-walkers, not physics
 Stored as CRC32 hashes in `gCheatCodeCrc32Table` (0x800A0ED0). Active flags in `gActiveCheatFlags` (0x80130B58). Seed = 0xFAC5FAC5 ("FAC5" = Factor 5). 30 cheats total.
 
 | Function | Role |
-|----------|------|
+| --- | --- |
 | `rs_crc32` (0x800824F8) / `make_crc32_lut` (0x80082544) | Reflected CRC32 |
 | `decrypt_ns_hmt` (0x8006AFC0) / `load_naboo_starfighter` (0x8006C780) | Naboo Starfighter (cheat-unlock craft) HMT decrypt + load |
 
@@ -366,7 +366,7 @@ Stored as CRC32 hashes in `gCheatCodeCrc32Table` (0x800A0ED0). Active flags in `
 3 categories: Front (menus), Game (in-mission), Voice (subtitles). Header at `txtFileHeader` (0x80138E60). All text XOR-obfuscated with a rolling key seeded at 0xF5.
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `loadTxtFile` (0x800556A0) | Loads/decrypts text file (Front/Game) |
 | `getVoiceText` (0x80055978) | Voice text decrypt (forces uppercase) |
 | `getGameOrFrontText` (0x8005589C) | Get string by ID (Front/Game) |
@@ -378,7 +378,7 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 9 craft types (XWING, YWING, AWING, VWING, SNOWSPEEDER, FALCON, TIEINTER, T16, KOELSCH). Selection at byte `gGameSettings+0x1` (0x80130B41). Per-level default `dDefaultCraftForLevel` (0x8009EC50).
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `choosePlayerCraftAssets` (0x800FB6C0) | DMAs HMT/HOB for chosen craft |
 | `mallocCraftSelectionData` (0x800A9364) | Mallocs `gHangarBayDescriptorArrayPtr` (0x800CDA5C) selection structs (56 entries) |
 | `getAvailableShipsForLevel` (0x800C63C0) | Returns bitmask of available ships per level |
@@ -392,7 +392,7 @@ Subtitles: queue `subtitleSlots` (0x80139BB0), voiceId→textId map `voiceIdtoTe
 ### 18. Image/texture handling
 
 | Function | Role |
-|----------|------|
+| ---------- | ------ |
 | `parseImageFile` (0x8001EB24) | Big switch on `image_type & 0xF` + flags |
 | `loadTextureToMemory` (0x8001F954) | Decodes a texture into `D_80128F08` chain; for CI formats, appends the palette at the end of the decoded data |
 | `registerHmtTextureInTable` (0x80022B90) | HMT per-texture index → global D_80128F08 index (via D_8011A444) |
@@ -430,7 +430,7 @@ Where the ucode keeps an F3D opcode, the game emits it with the stock F3D `gbi.h
 ### What the HLE does with it
 
 | Piece | Implementation |
-|---|---|
+| --- | --- |
 | Chunk flow | Every opcode runs through a trampoline that checks the per-level chunk bound; `06`/`07`/`B5`/chunk-end enter the target at `+8` and record the chunk base per call depth. A next-link must be back-linked, may not revisit its own chain, and a chain is capped at 64 chunks per level (hardware never exceeds 19). Per-task budgets (`ROGUESQ_F5_ENTRY_CAP`=2048 chunk entries, `ROGUESQ_F5_FACE_CAP`=4096 faces) end a task that walks recycled memory |
 | Transform | RT64's own matrix stack: `01 03` → projection load, `01 02` → modelview load. No software T&L |
 | Vertices | `04` converts the 8-byte vertices into RT64 vertices in a scratch area at RDRAM `0xA00000` (above the 8 MB the game can see; the recomp heap uses `0x71E000`) and calls `setVertex` |
@@ -466,7 +466,7 @@ functions, queues and order). Two VIs per frame:
 The flags these threads share are adjacent bytes of one `volatile` struct at `0x8011A89A`:
 
 | Byte | Meaning | Set by | Cleared by |
-|------|---------|--------|------------|
+| ------ | --------- | -------- | ------------ |
 | `0x8011A89A` | Frame being built; `ensureHeapInitialized` leaves the heap alone while it is set | `waitForPrevFrameDone` (after `waitForPostSwapAck`) | `bufferArbiterProducerScanWait` / `avScanWait` at frame end |
 | `0x8011A89B` | Vestigial: only ever written with 0 | none | video init; DP thread, every DP event |
 | `0x8011A89C` | RSP busy (graphics or audio task running) | scheduler on task start | scheduler when both tasks are done |
@@ -482,7 +482,7 @@ The recomp runs exactly this: no host-injected tokens, no forced non-blocking re
 `D_80128E98[]` holds the framebuffer pointers and `D_80128EAA[]` the per-slot state bytes (count at `D_80128EAD`):
 
 | Value | Meaning | Writer |
-|-------|---------|--------|
+| ------- | --------- | -------- |
 | `0` | FREE | `viRetraceHandlerThread` (5→0 once scanned out) |
 | `1` | ALLOC | `bufferArbiterAllocSlot` (0x8001BF20) |
 | `2` | READY | `bufferArbiterMarkSlotReady` (0x8001BEC8) |
@@ -495,7 +495,7 @@ The host never writes these bytes.
 ### Diagnostic env vars (rendering)
 
 | Var | Effect |
-|-----|--------|
+| ----- | -------- |
 | `ROGUESQ_F5_NATIVE=0` | Parse without emitting geometry |
 | `ROGUESQ_F5_TILES=0` | Disable flat terrain tiles |
 | `ROGUESQ_F5_TERRAIN=0` / `ROGUESQ_F5_SPRITES=0` | Disable heightfield terrain / `BD` billboards |
@@ -570,7 +570,7 @@ Zelda64Recomp.
 Priorities read from `__osActiveQueue` in a hardware dump (higher runs first):
 
 | Thread | Priority | Purpose |
-|--------|----------|---------|
+| -------- | ---------- | --------- |
 | libultra VI manager (`viMgrMain`) | 254 | Forwards the retrace interrupt to `D_80114388` (HLE'd by ultramodern's VI thread) |
 | `piDmaWorker` | 150 | PI DMA service worker; 256 × 20B ring `D_801112B0` |
 | `spTaskSchedulerThread` (0x80019BF4) | 122 | RSP task dispatch (`osSpTaskLoad`/`StartGo`/`Yield`), one queue for requests and SP-done |
@@ -629,7 +629,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 ### Host-side integration seams
 
 | Seam | Behavior |
-|------|----------|
+| ------ | ---------- |
 | SP task routing (M_GFXTASK→HLE, M_AUDTASK→synth) | Queue split happens before `run_task` |
 | SP/DP completion | Delivered after the parse; no host tokens (`rs64_vi_callback` only counts VIs) |
 | Barrier receives | Real blocking receives; the generated C keeps the original `OS_MESG_BLOCK` flags when VI-driven |
@@ -646,7 +646,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 ## Current status & known blockers
 
 | System | Status |
-|---|---|
+| --- | --- |
 | Boot → attribution → logo → cinematic → menu | Reaches the main menu on every recent run without host tokens or forced non-blocking receives |
 | Attribution text | Renders (glyph rect count matches the hardware walk) |
 | Intro cinematic | Ships, trench, exploding logo, Factor 5 letters + fire, heightfield and flat terrain, billboards, grey sky |

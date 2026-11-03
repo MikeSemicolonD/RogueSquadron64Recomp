@@ -3,7 +3,7 @@
 This page is for the maintainer who runs the release pipeline. [.github/workflows/release.yml](../../.github/workflows/release.yml) builds the release packages on two self-hosted runners on the maintainer's machine and attaches them to a **draft** GitHub release:
 
 | Package | Built by |
-|---|---|
+| --- | --- |
 | Windows x64 zip | Windows runner |
 | Windows x86 (32-bit) zip | Windows runner, from the same recompiled code |
 | Linux package (needs glibc 2.38+, e.g. Ubuntu 24.04) | Linux runner (Docker) |
@@ -38,7 +38,7 @@ Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/rel
 The build needs files derived from the ROM that are never committed and never uploaded to GitHub. They stay on the runner machine:
 
 | Input | Used for | Where it comes from |
-|---|---|---|
+| --- | --- | --- |
 | `roguesquadron.elf` | Regenerating `RecompiledFuncs/` (N64Recomp reads it via `elf_path` in `rogue_squadron.toml`) | The decomp build, `rogue_squadron64/build/roguesquadron.elf` |
 | `factor5_boot_recompiled.c`, `musyx_audio_recompiled.c` | The main exe | RSPRecomp output in `build/factor5_ucode/` ([README](../../README.md#3-generate-the-recompiled-c) step 3) |
 

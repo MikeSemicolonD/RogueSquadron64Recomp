@@ -15,7 +15,7 @@ grammar itself (chunk fetch, per-opcode semantics from the IMEM listing) is in
 ## Factor 5-specific opcodes
 
 | Opcode | Standard meaning | Factor 5 behavior | Handler |
-|-------:|------------------|-------------------|---------|
+| -------: | ------------------ | ------------------- | --------- |
 | `0x04` | G_VTX | Vertex batch: `(w0>>10)&0x3F` 8-byte vertices (x,y,z int16, pad) DMA'd from w1 | `op_04_vertex` |
 | `0x02` | G_RDPHALF_2 | DMA `(w0&0xFFFF)+1` bytes of per-vertex RGBA into DMEM `0xB70` | `op_02_colors` |
 | `0x03` | — | State: byte1 selects a DMEM slot. `03 80` = viewport; `03 82` = texcoord scale | `op_03_f5` |
