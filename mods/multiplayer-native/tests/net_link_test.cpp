@@ -1,5 +1,5 @@
-#include "net_core.h"
-#include "net_link.h"
+#include "net/net_core.h"
+#include "net/net_link.h"
 #include "check.h"
 #include <chrono>
 #include <cstdio>

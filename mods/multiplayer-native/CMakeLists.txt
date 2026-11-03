@@ -3,7 +3,7 @@
 include(${CMAKE_CURRENT_SOURCE_DIR}/net_libs.cmake)
 
 set(MP_OUT "${RS64_BUILT_MODS_DIR}/$<CONFIG>/multiplayer-native")
-file(GLOB MP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
+file(GLOB_RECURSE MP_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/*.h)
 # The only base-game files the mod may use (tests/style_check.cpp enforces this for src/).
 set(MP_BASE_FILES
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
@@ -15,7 +15,7 @@ set(MP_BASE_FILES
 set(MP_RELAY_FILES ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.cpp ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.h)
 add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES} ${MP_RELAY_FILES})
 # Same rounding as the game's copy of lockstep_core: no fused multiply-add in the flight model.
-set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/mp_core.cpp)
+set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/core/mp_core.cpp)
 if (MSVC)
     set_source_files_properties(${MP_NO_FMA} PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
     target_compile_definitions(multiplayer_native PRIVATE _CRT_SECURE_NO_WARNINGS)

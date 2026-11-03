@@ -7,20 +7,20 @@ if (NOT TARGET enet6)
 endif()
 
 # Same rounding as the mod: no fused multiply-add in the flight model.
-set(MP_NO_FMA ${RS64_ROOT}/src/lockstep/lockstep_core.cpp ${MP_DIR}/src/mp_core.cpp)
+set(MP_NO_FMA ${RS64_ROOT}/src/lockstep/lockstep_core.cpp ${MP_DIR}/src/core/mp_core.cpp)
 if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set_source_files_properties(${MP_NO_FMA} PROPERTIES COMPILE_OPTIONS "/clang:-ffp-contract=off")
 elseif (NOT MSVC)
     set_source_files_properties(${MP_NO_FMA} PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 endif()
 
-add_executable(mp_core_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/mp_core_test.cpp ${MP_DIR}/src/mp_core.cpp ${RS64_ROOT}/src/lockstep/lockstep_core.cpp)
-add_executable(net_core_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/net_core_test.cpp ${MP_DIR}/src/net_core.cpp)
+add_executable(mp_core_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/mp_core_test.cpp ${MP_DIR}/src/core/mp_core.cpp ${RS64_ROOT}/src/lockstep/lockstep_core.cpp)
+add_executable(net_core_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/net_core_test.cpp ${MP_DIR}/src/net/messages.cpp ${MP_DIR}/src/net/lobby.cpp ${MP_DIR}/src/net/editors.cpp)
 # Loopback test for the network link (ENet, simulated latency and loss); also talks to the real router through UPnP.
-add_executable(net_link_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/net_link_test.cpp ${MP_DIR}/src/net_core.cpp ${MP_DIR}/src/net_link.cpp)
+add_executable(net_link_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/net_link_test.cpp ${MP_DIR}/src/net/messages.cpp ${MP_DIR}/src/net/lobby.cpp ${MP_DIR}/src/net/editors.cpp ${MP_DIR}/src/net/net_link.cpp)
 target_link_libraries(net_link_test PRIVATE enet6 libminiupnpc-static)
 # Loopback test for the relay server transport against an in-process rs64_relay (relay-server's rs64_relay_core).
-add_executable(relay_client_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/relay_client_test.cpp ${MP_DIR}/src/relay_client.cpp ${MP_DIR}/src/net_core.cpp ${MP_DIR}/src/net_link.cpp)
+add_executable(relay_client_test EXCLUDE_FROM_ALL ${MP_DIR}/tests/relay_client_test.cpp ${MP_DIR}/src/net/relay_client.cpp ${MP_DIR}/src/net/messages.cpp ${MP_DIR}/src/net/lobby.cpp ${MP_DIR}/src/net/editors.cpp ${MP_DIR}/src/net/net_link.cpp)
 target_link_libraries(relay_client_test PRIVATE rs64_relay_core enet6 libminiupnpc-static)
 
 foreach(t mp_core_test net_core_test net_link_test relay_client_test)

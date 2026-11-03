@@ -1,12 +1,11 @@
 #include "relay_protocol.h"
-#include "wire.h"
+#include "net/wire.h"
 
 namespace rs64::relay {
 
 namespace {
 
-using rs64::net::Reader;
-using rs64::net::Writer;
+using namespace rs64::net;
 
 Writer start(Type t)
 {
@@ -32,59 +31,27 @@ bool header(Reader& r, Type t)
     return r.ok && version == kVersion && type == (uint8_t)t;
 }
 
-void put_name(Writer& w, const std::string& s)
-{
+void put_name(Writer& w, const std::string& s) { put_string<uint8_t>(w, s, kNameMax); }
+bool get_name(Reader& r, std::string* out) { return take_string<uint8_t>(r, out, kNameMax); }
 
-    const size_t n = s.size() < kNameMax ? s.size() : kNameMax;
-
-    w.u8((uint8_t)n);
-
-    for (size_t i = 0; i < n; ++i) w.u8((uint8_t)s[i]);
-}
-
-bool get_name(Reader& r, std::string* out)
-{
-
-    const uint8_t n = r.u8();
-
-    if (!r.ok || n > kNameMax || !r.need(n))
-    {
-        return false;
-    }
-
-    out->assign((const char*)r.p + r.at, n);
-    r.at += n;
-    return true;
-}
-
-std::vector<uint8_t> encode_id(Type t, uint32_t id)
+template <class... F>
+std::vector<uint8_t> encode_fields(Type t, const F&... fields)
 {
 
     Writer w = start(t);
 
-    w.u32(id);
+    put_all(w, fields...);
     return w.b;
 }
 
-bool decode_id(const uint8_t* data, size_t n, Type t, uint32_t* id)
+// The outputs change only when the whole packet decoded.
+template <class... F>
+bool decode_fields(const uint8_t* data, size_t n, Type t, F*... out)
 {
 
     Reader r{data, n};
 
-    if (!header(r, t))
-    {
-        return false;
-    }
-
-    const uint32_t v = r.u32();
-
-    if (!r.done())
-    {
-        return false;
-    }
-
-    *id = v;
-    return true;
+    return header(r, t) && take_all_committed(r, out...);
 }
 
 }
@@ -203,48 +170,10 @@ bool decode_update(const uint8_t* data, size_t n, bool* locked, std::string* nam
     return true;
 }
 
-std::vector<uint8_t> encode_list(uint32_t build)
-{
-    return encode_id(Type::List, build);
-}
-
-bool decode_list(const uint8_t* data, size_t n, uint32_t* build)
-{
-    return decode_id(data, n, Type::List, build);
-}
-
-std::vector<uint8_t> encode_join(uint32_t id, uint32_t build)
-{
-
-    Writer w = start(Type::Join);
-
-    w.u32(id);
-    w.u32(build);
-    return w.b;
-}
-
-bool decode_join(const uint8_t* data, size_t n, uint32_t* id, uint32_t* build)
-{
-
-    Reader r{data, n};
-
-    if (!header(r, Type::Join))
-    {
-        return false;
-    }
-
-    const uint32_t i = r.u32();
-    const uint32_t b = r.u32();
-
-    if (!r.done())
-    {
-        return false;
-    }
-
-    *id = i;
-    *build = b;
-    return true;
-}
+std::vector<uint8_t> encode_list(uint32_t build) { return encode_fields(Type::List, build); }
+bool decode_list(const uint8_t* data, size_t n, uint32_t* build) { return decode_fields(data, n, Type::List, build); }
+std::vector<uint8_t> encode_join(uint32_t id, uint32_t build) { return encode_fields(Type::Join, id, build); }
+bool decode_join(const uint8_t* data, size_t n, uint32_t* id, uint32_t* build) { return decode_fields(data, n, Type::Join, id, build); }
 
 std::vector<uint8_t> encode_data(const uint8_t* bytes, size_t n)
 {
@@ -270,15 +199,8 @@ bool decode_data(const uint8_t* data, size_t n, const uint8_t** bytes, size_t* l
     return true;
 }
 
-std::vector<uint8_t> encode_registered(uint32_t id)
-{
-    return encode_id(Type::Registered, id);
-}
-
-bool decode_registered(const uint8_t* data, size_t n, uint32_t* id)
-{
-    return decode_id(data, n, Type::Registered, id);
-}
+std::vector<uint8_t> encode_registered(uint32_t id) { return encode_fields(Type::Registered, id); }
+bool decode_registered(const uint8_t* data, size_t n, uint32_t* id) { return decode_fields(data, n, Type::Registered, id); }
 
 std::vector<uint8_t> encode_list_reply(const ListReply& r)
 {
@@ -344,50 +266,19 @@ bool decode_list_reply(const uint8_t* data, size_t n, ListReply* out)
     return true;
 }
 
-std::vector<uint8_t> encode_joined(uint32_t id)
-{
-    return encode_id(Type::Joined, id);
-}
-
-bool decode_joined(const uint8_t* data, size_t n, uint32_t* id)
-{
-    return decode_id(data, n, Type::Joined, id);
-}
-
-std::vector<uint8_t> encode_peer_joined()
-{
-    return start(Type::PeerJoined).b;
-}
-
-std::vector<uint8_t> encode_peer_left()
-{
-    return start(Type::PeerLeft).b;
-}
-
-std::vector<uint8_t> encode_refused(Type request, Reason reason)
-{
-
-    Writer w = start(Type::Refused);
-
-    w.u8((uint8_t)request);
-    w.u8((uint8_t)reason);
-    return w.b;
-}
+std::vector<uint8_t> encode_joined(uint32_t id) { return encode_fields(Type::Joined, id); }
+bool decode_joined(const uint8_t* data, size_t n, uint32_t* id) { return decode_fields(data, n, Type::Joined, id); }
+std::vector<uint8_t> encode_peer_joined() { return encode_fields(Type::PeerJoined); }
+std::vector<uint8_t> encode_peer_left() { return encode_fields(Type::PeerLeft); }
+std::vector<uint8_t> encode_refused(Type request, Reason reason) { return encode_fields(Type::Refused, (uint8_t)request, (uint8_t)reason); }
 
 bool decode_refused(const uint8_t* data, size_t n, Type* request, Reason* reason)
 {
 
-    Reader r{data, n};
+    uint8_t q = 0;
+    uint8_t s = 0;
 
-    if (!header(r, Type::Refused))
-    {
-        return false;
-    }
-
-    const uint8_t q = r.u8();
-    const uint8_t s = r.u8();
-
-    if (!r.done())
+    if (!decode_fields(data, n, Type::Refused, &q, &s))
     {
         return false;
     }

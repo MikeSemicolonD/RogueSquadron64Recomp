@@ -8,7 +8,7 @@ import sys
 from dataclasses import dataclass, field
 
 DELTA_HI = 0x00A0
-# (name, lo, hi, lui delta), as kMovedRanges in src/mp_core.h. R4 has its own delta so its index-1 entry clears camera node[1]; patched immediates stay distinct per delta.
+# (name, lo, hi, lui delta), as kMovedRanges in src/core/mp_core.h. R4 has its own delta so its index-1 entry clears camera node[1]; patched immediates stay distinct per delta.
 MOVED = [
     ("R1", 0x80138058, 0x80138268, 0x00A0),
     ("R2", 0x80138268, 0x80138838, 0x00A0),

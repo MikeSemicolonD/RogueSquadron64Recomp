@@ -353,7 +353,7 @@ def test_build_patches_records_original_word():
 
 
 def test_ranges_match_cpp_table():
-    header = (ROOT / "mods" / "multiplayer-native" / "src" / "mp_core.h").read_text()
+    header = (ROOT / "mods" / "multiplayer-native" / "src" / "core" / "mp_core.h").read_text()
     line = next(l for l in header.splitlines() if "kMovedRanges[]" in l)
     triples = [(int(a, 16), int(b, 16), int(d, 16)) for a, b, d in re.findall(r"\{(0x[0-9A-Fa-f]+)u,\s*(0x[0-9A-Fa-f]+)u,\s*(0x[0-9A-Fa-f]+)u\}", line)]
     assert triples == [(lo, hi, delta_hi << 16) for _, lo, hi, delta_hi in MOVED]

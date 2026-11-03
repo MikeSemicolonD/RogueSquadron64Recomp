@@ -222,7 +222,10 @@ src/                                    Host code; the include root, so includes
 mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
 patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
 mods/multiplayer-native/                Online co-op as a native mod, always built by the game's CMake (the exe has no multiplayer code)
-  ├── src/                              ghost*.cpp (session, lobby, HUD), net_*.cpp (ENet6), relay_client.cpp (rs64_relay transport), coop_imposter.cpp, mp_core.cpp (imposter flight model, puppet, lobby rules), mp_register.cpp + mp_host.h (host-API registrations, its only route to the game)
+  ├── src/                              mp_register.cpp + mp_host.h (host-API registrations, its only route to the game), mp_mod.cpp (rs64_mod_init)
+  │   ├── session/                      ghost*.cpp (session, lobby, HUD), world_sync.cpp (objectives, damage, power-ups, triggers), tow_cable.cpp, coop_imposter.cpp
+  │   ├── net/                          messages.cpp (wire format), lobby.cpp (handshake, status lines, discovery), editors.cpp (text rows), net_link.cpp (ENet6), relay_client.cpp (rs64_relay transport)
+  │   └── core/                         mp_core.cpp (pure logic with unit tests: imposter flight model, puppet, lobby rules)
   ├── tests/                            mp_core_test, net_core_test, net_link_test (run by rs64_unit_tests)
   ├── mod.toml, tools/                  Manifest plus the per-player data relocation as [[patches.instruction]] (RecompModTool writes mod.json / instruction_patches.json at build time) and its generator
   └── lib/enet6/, lib/miniupnp/         Submodules for the transport, built only for this mod
@@ -257,7 +260,7 @@ The forked submodules under `lib/` carry intentional `if(false) fprintf(...)` de
 ### Crash / hang triage
 
 1. **Crash**: the handlers in `src/main/crash.cpp` (SEH, SIGABRT, F12) write a full-memory `dumps/crash-dumps/crash_*.dmp`. Open in VS (File → Open → File → .dmp → Debug with Native Only).
-2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` captures the running process even when the window is "Not Responding" (F12 won't fire if the message pump is starved). Run `tools/debug/reconstruct-freeze.py` on it (blocked game threads and their queues, from RDRAM) and `tools/debug/host-stacks.py` (symbolized host stacks; Debug build, refuses on a stale exe/PDB).
+2. **Hang**: from another shell, `pwsh tools/debug/dump-game.ps1` (VS Code task "Debug: Full dump of running game(s)") captures every running instance with RAM, even when the window is "Not Responding" (F12 writes no RAM, and won't fire if the message pump is starved); `-Id <pid>` picks one. Run `tools/debug/reconstruct-freeze.py` on it (blocked game threads and their queues, from RDRAM) and `tools/debug/host-stacks.py` (symbolized host stacks; Debug build, refuses on a stale exe/PDB).
 3. **Triage threads**: `python tools/debug/inspect-dump.py` lists threads in the most recent dump and tags ones running our exe code as `in_exe`. Those 2–4 are the only ones worth opening in VS; the rest are runtime workers parked in ntdll.
 
 To read a dump from the shell, use WinDbg's console debugger (`winget install Microsoft.WinDbg`): `cdbX64.exe -z <dmp> -y build\Debug -c "~*k;q"` prints every thread's stack. The Windows SDK's own `cdb.exe` may not start (its `dbghelp.dll` was replaced by a newer, incompatible one).

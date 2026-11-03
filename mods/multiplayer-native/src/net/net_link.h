@@ -11,7 +11,7 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "net_core.h"
+#include "net/net_core.h"
 #include "rs64/mp_transport.h"
 
 namespace rs64::net {
@@ -20,8 +20,10 @@ enum class Role { None, Host, Client };
 
 // This machine's IPv4 addresses (host byte order) on every adapter that is up.
 std::vector<uint32_t> local_ipv4s();
+
 // Fallback pick from a list: a private LAN address, preferring 192.168/16, then 10/8, then 172.16/12; else the first address that is not loopback or link-local.
 std::optional<uint32_t> pick_lan_ipv4(const std::vector<uint32_t>& addrs);
+
 // The address a joining player should type, dotted ("10.0.0.189"): the source address of the default route (VM host-only adapters also use 192.168), else pick_lan_ipv4; empty with no network.
 std::string lan_address_text();
 std::optional<uint32_t> lan_ipv4();
@@ -69,10 +71,12 @@ public:
     ~PortMapper() { stop(); }
     // iface: the local IPv4 to search for the router from (empty: lan_address_text()).
     void start(uint16_t port, const std::string& iface = "");
+
     // Returns at once; the worker finishes and removes its mapping in the background, before the next start()'s worker begins.
     void stop();
     PortMapState state() const;
     std::string external() const;
+
     // True once the last worker has finished (its mapping removed after a stop()).
     bool settled() const;
 private:
@@ -93,15 +97,19 @@ struct LinkConfig {
     Role role = Role::None;
     std::string addr = "127.0.0.1";
     uint16_t port = 27064;
+
     // Simulated one-way latency added to this side's sends, and the percentage of unreliable sends dropped.
     int latency_ms = 0;
     int loss_pct = 0;
+
     // Simulated jitter: each send waits a further random 0..jitter_ms (sends stay in order).
     int jitter_ms = 0;
+
     // Non-null: run over this mp.transport service instead of ENet (addr, port and the simulated network are unused); peer is the client's target in its terms.
     const rs64_mp_transport* external = nullptr;
     std::string peer;
     uint32_t build = kBuildId;
+
     // Host: listen on this IPv4 only (host byte order); 0 = every address, IPv4 and IPv6.
     uint32_t bind_v4 = 0;
 };
@@ -115,9 +123,11 @@ public:
     bool connected() const;
     bool lost() const;
     uint32_t connect_count() const;
+
     // The data the other end gave when it last closed the connection (the relay server's reason); 0 before any close.
     uint32_t close_data() const { return close_data_.load(); }
     void send(std::vector<uint8_t> bytes, bool reliable);
+
     // Waits up to timeout_ms for everything queued so far to reach ENet's socket; false on timeout.
     bool flush(int timeout_ms);
     std::vector<std::vector<uint8_t>> receive();
@@ -144,5 +154,4 @@ private:
     std::vector<std::vector<uint8_t>> in_;
     std::mt19937 rng_{1234};
 };
-
 }

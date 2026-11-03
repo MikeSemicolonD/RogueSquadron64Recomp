@@ -13,7 +13,7 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27 };
 enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3, WrongPassword = 4 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
@@ -24,12 +24,14 @@ std::vector<uint8_t> encode_bye(ByeReason reason, uint32_t frame);
 struct LinkEdges { bool connected = false; bool lost = false; };
 LinkEdges link_poll_edges(bool up, bool was_up, uint32_t connects, uint32_t seen_connects);
 bool decode_bye(const uint8_t* data, size_t n, ByeReason* reason, uint32_t* frame);
+
 // StatePacket flags: the sender's player is down (respawning); the receiver hides the puppet until it's back.
 constexpr uint8_t kStateDown = 1u << 0;
 
 // Ghost co-op: a player's craft state and pad buttons, sent unreliably every frame; vel is in units per second.
 struct StatePacket {
     uint32_t seq = 0;
+
     // The sender's mission counter: a new mission restarts seq.
     uint8_t epoch = 0;
     float pos[3] = {};
@@ -38,19 +40,23 @@ struct StatePacket {
     float vel[3] = {};
     uint8_t pad[6] = {};
     uint8_t flags = 0;
+
     // The sender's S-foils, 0 closed .. 250 open (its X-wing's foil state), shown on its puppet.
     uint8_t foil = 250;
+
     // The sender's steady clock (ms) when it sent this: the receiver's interpolation rebuilds the sender's timeline from it.
     uint32_t sent_ms = 0;
 };
 
 std::vector<uint8_t> encode_state(const StatePacket& s);
 bool decode_state(const uint8_t* data, size_t n, StatePacket* out);
+
 // Ghost co-op, reliable: the host's mission result (0 abort, 1 success, 2 failed, 3 out of lives) and a player entering (1) or leaving (0) a mission.
 std::vector<uint8_t> encode_result(uint8_t epoch, uint8_t result);
 bool decode_result(const uint8_t* data, size_t n, uint8_t* epoch, uint8_t* result);
 std::vector<uint8_t> encode_presence(uint8_t epoch, uint8_t in_mission);
 bool decode_presence(const uint8_t* data, size_t n, uint8_t* epoch, uint8_t* in_mission);
+
 // Ghost co-op objectives: the host's objective booleans, counts, timers and lives (unreliable, newest seq wins).
 struct ObjSnapshot {
     uint8_t epoch = 0;
@@ -58,78 +64,117 @@ struct ObjSnapshot {
     uint8_t bools[128] = {};
     int32_t counts[128] = {};
     float timers[8] = {};
+
     // The shared lives pool (gMissionState+0).
     uint8_t lives = 0;
 };
 
 std::vector<uint8_t> encode_obj(const ObjSnapshot& s);
 bool decode_obj(const uint8_t* data, size_t n, ObjSnapshot* out);
+
 // Ghost co-op shared deaths: DAT item (index in the level's type-0 list) health drops seen in the sender's world. At most kDamageBatch pairs per packet; encode truncates.
 constexpr size_t kDamageBatch = 190;
 std::vector<uint8_t> encode_damage(uint8_t epoch, const std::vector<std::pair<uint16_t, int32_t>>& items);
 bool decode_damage(const uint8_t* data, size_t n, uint8_t* epoch, std::vector<std::pair<uint16_t, int32_t>>* items);
+
 // Ghost co-op: the host's id for the mission it is starting (sent before LAUNCH); DAMAGE, OBJ and LIFE carry it so traffic from another attempt is dropped.
 std::vector<uint8_t> encode_mission(uint8_t id);
 bool decode_mission(const uint8_t* data, size_t n, uint8_t* id);
+
 // Ghost co-op: the client lost a life; the host takes it from the shared pool.
 std::vector<uint8_t> encode_life_lost(uint8_t epoch);
 bool decode_life_lost(const uint8_t* data, size_t n, uint8_t* epoch);
+
 // Lobby mission flow: the host's confirmed mission (level 0..0x12), and a player's confirmed craft (0..8; 0xFF = backed out of craft select).
 std::vector<uint8_t> encode_pick(uint8_t level);
 bool decode_pick(const uint8_t* data, size_t n, uint8_t* level);
+
 // The host browsing mission select: its cursor (level) and screen state (2 browse, 3 briefing, 4 exiting), sent on change so the client mirrors it live.
 std::vector<uint8_t> encode_browse(uint8_t level, uint8_t state);
 bool decode_browse(const uint8_t* data, size_t n, uint8_t* level, uint8_t* state);
+
 // A player skipped a cutscene; the other side skips its own. scene = skip phase << 8 | skippable scenes entered in that phase (SkipShare).
 std::vector<uint8_t> encode_skip(uint16_t scene);
 bool decode_skip(const uint8_t* data, size_t n, uint16_t* scene);
+
 // The client ended the mission briefing; the host confirms its own (the client then follows the host out).
 std::vector<uint8_t> encode_briefing_done();
 bool decode_briefing_done(const uint8_t* data, size_t n);
 std::vector<uint8_t> encode_ready(uint8_t craft);
 bool decode_ready(const uint8_t* data, size_t n, uint8_t* craft);
+
 // Ghost co-op, host to client: the client's death took the last shared life, so it is out and spectates until the mission ends.
 std::vector<uint8_t> encode_out(uint8_t epoch);
 bool decode_out(const uint8_t* data, size_t n, uint8_t* epoch);
+
 // Power-up bits in the settings word 0x80130B4C that npcPowerUpUpdate ORs in (0x200 adv blasters .. 0x10000 adv shields).
 constexpr uint32_t kUpgradeMask = 0x0001FE00u;
+
 // Ghost co-op, reliable: upgrades a player picked up this mission; the other side ORs them into its own word.
 std::vector<uint8_t> encode_upgrades(uint8_t epoch, uint32_t bits);
 bool decode_upgrades(const uint8_t* data, size_t n, uint8_t* epoch, uint32_t* bits);
+
 // Ghost co-op, reliable: a player collected the power-up with this DAT item index; the other side collects its own copy.
 std::vector<uint8_t> encode_pickup(uint8_t epoch, uint16_t item);
 bool decode_pickup(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item);
+
 // Ghost co-op, reliable, client to host: the client's craft entered (or left) a player trigger volume; event = its index in the level's DAT event table (12 bits).
 std::vector<uint8_t> encode_trigger(uint8_t epoch, uint16_t event, bool enter);
 bool decode_trigger(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* event, bool* enter);
+
 // Host -> client: a mod-linked mid-mission camera shot for the client (camera item and trigger names, 1-255 bytes each).
 std::vector<uint8_t> encode_shot(uint8_t epoch, const std::string& camera, const std::string& trigger);
 bool decode_shot(const uint8_t* data, size_t n, uint8_t* epoch, std::string* camera, std::string* trigger);
+
 // Ghost co-op, reliable: a player's tow cable tripped the walker with this DAT item index; the other side trips its own copy.
 std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item);
 bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item);
+
+// Ghost co-op: a player's tow cable for the other side to draw. Its state (cable state 0x8010B6E8: phase, head index, segment count) and, unless index is kNoSegment, one segment's first 16 words (start, 4x3 transform).
+// The head segment goes every frame unreliably, a finished segment and every phase change reliably.
+struct TowSeg {
+    static constexpr uint8_t kNoSegment = 0xFF;
+    uint8_t epoch = 0;
+    uint8_t phase = 0;
+    uint8_t head = 0;
+    uint8_t count = 0;
+    uint8_t index = kNoSegment;
+    uint32_t words[16] = {};
+};
+std::vector<uint8_t> encode_tow_seg(const TowSeg& t);
+bool decode_tow_seg(const uint8_t* data, size_t n, TowSeg* out);
+
 // Network compatibility of this build: bump it whenever two builds can no longer play together. The lobby's HELLO carries it.
-constexpr uint32_t kBuildId = 0x5253000Au;
+constexpr uint32_t kBuildId = 0x5253000Bu;
+
 // Lobby handshake, sent once by each side on connect. It decodes whatever the sender's protocol byte, so a mismatch can be reported.
 struct Hello {
     uint16_t protocol = kProtocol;
     uint32_t build = kBuildId;
+
     // 0 host, 1 client.
     uint8_t role = 0;
+
     // The pilot name (3 letters, gGameSettings+7), shown over the other player's ship.
     char name[3] = {0, 0, 0};
 };
 std::vector<uint8_t> encode_hello(const Hello& h);
 bool decode_hello(const uint8_t* data, size_t n, Hello* out);
+
 // Client to host, right after HELLO: the password typed for this game (empty, or kDigits digits). The host answers ACCEPT, or BYE WrongPassword.
 std::vector<uint8_t> encode_auth(const std::string& pin);
 bool decode_auth(const uint8_t* data, size_t n, std::string* pin);
 std::vector<uint8_t> encode_accept();
 bool decode_accept(const uint8_t* data, size_t n);
 
+// This player pressed continue on the debrief; both leave it once each side has.
+std::vector<uint8_t> encode_continue();
+bool decode_continue(const uint8_t* data, size_t n);
+
 // The lobby's IPv4 entry: four octets, shown without dots (menu font 5 has no '.'); while editing, the octet under the cursor is bracketed.
 // Menu input as direction/button bits, independent of the pad layout.
 constexpr uint32_t kPadUp = 1, kPadDown = 2, kPadLeft = 4, kPadRight = 8, kPadB = 16, kPadA = 32;
+
 // LAN discovery, plain UDP on the game port + 1 (outside ENet): a joiner broadcasts a query, a host answers with its game port and pilot name.
 constexpr uint16_t kDiscoveryPortOffset = 1;
 struct DiscoveryReply {
@@ -144,8 +189,10 @@ bool decode_discovery_reply(const uint8_t* data, size_t n, DiscoveryReply* out);
 
 // Lobby lines that mean "still trying" get dots appearing one at a time (kDotPeriodMs each, back to none after three), padded to a fixed width so the centred line stays put.
 constexpr uint32_t kDotPeriodMs = 600;
+
 // Pads the missing dots: a blank glyph as wide as the period (the menu font's Ö slot, made at runtime with the period; see ensure_menu_period).
 constexpr char kDotPad = '`';
+
 // The typing caret: a thin italic bar (the menu font's Ä slot, made at runtime from the stem of '!'; see ensure_menu_period).
 constexpr char kCaret = '|';
 bool waiting_status(const std::string& status);
@@ -158,8 +205,10 @@ std::string list_status(int count, int page);
 
 // Internet hosting through UPnP: whether the router opened the game port. Players are never shown it; an open port only turns the address line into the NET address.
 enum class PortMapState { Idle, Working, Open, NoRouter, Refused, SharedAddress };
+
 // An address the internet can reach: not private, carrier-grade NAT (100.64/10), loopback or link-local. Host byte order.
 bool public_ipv4(uint32_t ip);
+
 // The host's address line: the internet address once the router opened the port, else the LAN one (lan_ip empty: no network). Addresses are dotted (the menu font's period is added at runtime, ensure_menu_period).
 std::string host_address_label(PortMapState state, const std::string& lan_ip, const std::string& ext_ip, uint16_t port = 0);
 
@@ -173,37 +222,47 @@ std::string ipv4_text(uint32_t ip);
 
 struct AddressEditor {
     uint8_t octet[4] = {192, 168, 1, 2};
+
     // A typed ":port" (0: none, the configured port applies).
     uint16_t port = 0;
     int cursor = 0;
     bool editing = false;
     void move(int dir);
     void step(int delta);
+
     // One menu frame while editing: up/down step the octet (held: every 3 frames after 12, by 10 from 45), left/right move, A or B end editing. True = the input was taken and the menu must not see it (every frame while editing).
     bool input(uint32_t pressed, uint32_t held);
     int held_frames = 0;
+
     // A saved address the octets cannot show (a hostname, IPv6) is kept and joined as-is until the player edits the octets.
     std::string saved;
     bool touched = false;
     void load(const std::string& s);
+
     // Keyboard entry (the phone's on-screen keyboard, or a desktop keyboard): digits, '.' and ':', at most 21 (an address and port), shown with a caret (kCaret); the pad only ends it (A or B).
     bool typing = false;
     std::string typed;
     void begin_typing();
     void type_text(const char* s);
     void type_backspace();
+
     // Ends typing and editing; a typed address that parses replaces the octets (true), anything else leaves them.
     bool end_typing();
+
     // Ends typing and editing without applying the typed text (the page closed mid-entry).
     void cancel_typing();
+
     // The address JOIN connects to, without the port.
     std::string target() const;
+
     // target() plus ":port" when one was typed (what roguesq_net.json keeps).
     std::string entry() const;
+
     // The row's octets, unless it holds a saved address they cannot show.
     std::optional<uint32_t> ipv4() const;
     std::string label() const;
     std::string text() const;
+
     // "a.b.c.d" or "a.b.c.d:port" (port 1-65535).
     static bool parse(const std::string& s, AddressEditor* out);
 };
@@ -212,6 +271,7 @@ struct AddressEditor {
 struct CodeEditor {
     static constexpr int kDigits = 6;
     char digit[kDigits] = {'0', '0', '0', '0', '0', '0'};
+
     // What the row shows before the digits (the same editor holds game passwords).
     const char* prefix = "JOIN CODE ";
     int cursor = 0;
@@ -222,6 +282,7 @@ struct CodeEditor {
     void begin_typing();
     void type_text(const char* s);
     void type_backspace();
+
     // Ends typing and editing; true when the typed text was a full code and replaced it.
     bool end_typing();
     void cancel_typing();
@@ -243,9 +304,11 @@ struct NameEditor {
     void begin_typing();
     void type_text(const char* s);
     void type_backspace();
+
     // Ends typing and editing; the typed text (cleaned) replaces the name. Always true.
     bool end_typing();
     void cancel_typing();
+
     // fallback: shown when the name is empty (the pilot's name, which a host with no name advertises).
     std::string label(const std::string& fallback = "") const;
     static std::string clean(const std::string& s);
@@ -262,17 +325,21 @@ public:
     void host();
     void join();
     void cancel();
+
     // The link could not start (the host's port is taken, no network).
     void on_start_failed();
     void on_connected(uint32_t now_ms);
     void on_hello(const Hello& h);
+
     // Host: the password a joining player must send (empty: none).
     void set_password(const std::string& pin) { password_ = pin; }
     // Host: the client's AUTH. False = a wrong password: the caller says BYE WrongPassword and this side waits for the next player.
     bool on_auth(const std::string& pin);
+
     // Client: the host accepted this player, or refused its password (sent: whether one was typed).
     void on_accept();
     void on_refused(bool sent);
+
     // Client: the host or relay server could not be reached (why: the transport's reason; empty: COULD NOT CONNECT TO HOST). Fails the join at once instead of at kJoinTimeoutMs.
     void on_join_failed(const std::string& why);
     bool password_failed() const { return state_ == LobbyState::Failed && pw_fail_; }
@@ -294,6 +361,7 @@ private:
     LobbyState state_ = LobbyState::Idle;
     bool host_ = false;
     bool peer_ = false;
+
     // The peer's HELLO matched; the password step passed (host: AUTH checked, client: ACCEPT came).
     bool hello_ = false;
     bool auth_ = false;
@@ -310,5 +378,4 @@ private:
 
 // The Msg of a packet with our protocol byte (any protocol byte for a HELLO), or 0.
 uint8_t message_type(const uint8_t* data, size_t n);
-
 }

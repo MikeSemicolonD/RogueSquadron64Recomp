@@ -1529,6 +1529,27 @@ text = '{ if (rs64_th_loadAccountDataIntoStruct_entry(rdram, ctx)) return; }'
 func = "generateUnlockString"
 text = '{ if (rs64_th_generateUnlockString_entry(rdram, ctx)) return; }'
 
+# Wingman draw (after its model went into the render list; s3 = the NPC, s1 = the render info): co-op draws the other player's tow cable here.
+# hook: RS64_HOOK_WINGMAN_DRAW
+[[patches.hook]]
+func = "npcWingmanUpdate"
+before_vram = 0x800D9A90
+text = '{ rs64_th_npcWingmanUpdate_800D9A90(rdram, ctx); }'
+
+# Front end start (a1 = overlay state, a2 = the menu it opens; 4 = ELITE ROGUES after a game over): co-op goes back to mission select instead.
+# hook: RS64_HOOK_FRONT_END
+[[patches.hook]]
+func = "mainGameLoop"
+before_vram = 0x8003E138
+text = '{ rs64_th_mainGameLoop_8003E138(rdram, ctx); }'
+
+# Debrief continue check (v0 = the pressed buttons; A/START leave the screen): co-op holds it until both players pressed.
+# hook: RS64_HOOK_DEBRIEF_PAD
+[[patches.hook]]
+func = "runMenuRandomBackdropScreen"
+before_vram = 0x800BFC4C
+text = '{ rs64_th_runMenuRandomBackdropScreen_800BFC4C(rdram, ctx); }'
+
 # Mod levels: the debrief returned; the template's data comes back.
 [[patches.hook]]
 func = "runMenuRandomBackdropScreen"

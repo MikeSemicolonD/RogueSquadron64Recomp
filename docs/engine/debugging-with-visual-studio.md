@@ -135,7 +135,7 @@ Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around
 
 **Crash.** The crash handlers in `src\main\crash.cpp` print a stack trace to stderr and write a full minidump to `dumps\crash-dumps\crash_<date>_<time>.dmp`. Open it in Visual Studio (File > Open > File, then **Debug with Native Only**). It needs the matching exe and PDB from `build\Debug\`. `python tools/debug/inspect-dump.py` lists the dump's threads and marks the few running game code (`in_exe`); those are the ones worth opening.
 
-**Hang.** While the game is frozen, run `pwsh tools/debug/dump-game.ps1` from another shell to capture it (F12 also writes a dump, but not if the window has stopped responding). Then:
+**Hang.** While the game is frozen, run `pwsh tools/debug/dump-game.ps1` from another shell, or the VS Code task **Debug: Full dump of running game(s)**, to capture it with the game's RAM (F12 writes a smaller dump without RAM, and not at all if the window has stopped responding). With several instances running (a co-op pair) it dumps each, named by PID; `-Id <pid>` picks one. Then:
 
 - `python tools/debug/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
 - `python tools/debug/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).

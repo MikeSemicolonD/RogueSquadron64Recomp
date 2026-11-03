@@ -43,5 +43,4 @@ inline int add_action(const char* name, rs64_action_fn fn, void* user = nullptr)
 inline int add_condition(const char* name, rs64_condition_fn fn, void* user = nullptr) { return api()->add_condition(name, fn, user); }
 inline int add_key_handler(rs64_key_fn fn, void* user = nullptr) { return api()->add_key_handler(fn, user); }
 inline int add_quit_handler(rs64_event_fn fn, void* user = nullptr) { return api()->add_quit_handler(fn, user); }
-
 }

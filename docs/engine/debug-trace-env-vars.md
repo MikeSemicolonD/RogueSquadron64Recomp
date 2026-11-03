@@ -493,7 +493,10 @@ Test knobs used by `tools/debug/lockstep/run-mp.ps1` (flag in brackets):
 - `ROGUESQ_MP_TEST_UPGRADE=<frame>:<hex>` [-TestUpgrade] — host ORs power-up bits (mask 0x1FE00) into its settings word on that mission frame, as a pickup does.
 - `ROGUESQ_MP_TEST_PICKUP=<frame>` [-TestPickup] — host collects the first power-up that ticks from that mission frame on (needs one spawned near the flown path).
 - `ROGUESQ_MP_TEST_TRIGGER_SOLO=1` [-TestTriggerSolo] — the host drops its own player trigger-volume edges, so only the client's forwarded ones can advance the mission.
-- `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` [-ClientLate] — ignore the other player's cutscene skips.
+- `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` [-ClientLate] — the client ignores the host's cutscene skips (a late joiner).
+- `ROGUESQ_MP_TEST_SKIP_CRAWL=1` [-HostSkipCrawl] — press START 60 polls into the opening crawl (only the host's skip is shared).
+- `ROGUESQ_MP_TEST_DIE=<frame>,<frame>,...` [-HostDie / -ClientDie] — this side's craft takes a lethal hit on those mission frames (with `-TestLives`, reaches spectating and the last life on cue).
+- `ROGUESQ_MP_TEST_CONTINUE=<polls>` [-HostContinue / -ClientContinue] — press continue that many polls into each debrief, to test the both-players hold.
 
 ## How to add a new debug trace
 

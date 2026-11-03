@@ -1,4 +1,4 @@
-#include "net_core.h"
+#include "net/net_core.h"
 #include "check.h"
 #include <cstring>
 #include <cstdio>
@@ -589,6 +589,38 @@ static void test_briefing_done_message() {
     CHECK(!decode_briefing_done(k.data(), k.size()) && !decode_skip(b.data(), b.size(), &scene));
 }
 
+static void test_tow_seg_message() {
+    TowSeg t;
+    t.epoch = 3;
+    t.phase = 2;
+    t.head = 41;
+    t.count = 60;
+    t.index = 40;
+    for (uint32_t k = 0; k < 16; ++k) {
+        t.words[k] = 0x3F800000u + k;
+    }
+    const std::vector<uint8_t> b = encode_tow_seg(t);
+    CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::TowSeg);
+    TowSeg out;
+    CHECK(decode_tow_seg(b.data(), b.size(), &out) && out.epoch == 3 && out.phase == 2 && out.head == 41 && out.count == 60 && out.index == 40 && out.words[15] == 0x3F80000Fu);
+    CHECK(!decode_tow_seg(b.data(), b.size() - 1, &out));
+    // A state-only message (a phase change) carries no segment words.
+    TowSeg st;
+    st.phase = 4;
+    const std::vector<uint8_t> s = encode_tow_seg(st);
+    CHECK(s.size() == 7 && decode_tow_seg(s.data(), s.size(), &out) && out.index == TowSeg::kNoSegment && out.phase == 4);
+    const std::vector<uint8_t> k = encode_tow_trip(3, 94);
+    CHECK(!decode_tow_seg(k.data(), k.size(), &out));
+}
+
+static void test_continue_message() {
+    const std::vector<uint8_t> c = encode_continue();
+    CHECK(message_type(c.data(), c.size()) == (uint8_t)Msg::Continue);
+    CHECK(decode_continue(c.data(), c.size()));
+    const std::vector<uint8_t> b = encode_briefing_done();
+    CHECK(!decode_continue(b.data(), b.size()) && !decode_briefing_done(c.data(), c.size()));
+}
+
 static void test_address_editor_typing() {
     const std::string caret(1, kCaret);
     AddressEditor a;
@@ -824,6 +856,8 @@ int main() {
     test_discovery_messages();
     test_skip_message();
     test_briefing_done_message();
+    test_continue_message();
+    test_tow_seg_message();
     test_upgrades_message();
     test_trigger_message();
     test_shot_message();

@@ -184,6 +184,9 @@ int rs64_th_unlockLevelsAndCraftsBasedOnMedalsEarned_entry(uint8_t* rdram, recom
 int rs64_th_loadAccountDataIntoStruct_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_generateUnlockString_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runMenuRandomBackdropScreen_800BF9E4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_runMenuRandomBackdropScreen_800BFC4C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_npcWingmanUpdate_800D9A90(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E424(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E444(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(uint8_t* rdram, recomp_context* ctx);

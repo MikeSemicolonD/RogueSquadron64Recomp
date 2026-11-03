@@ -1,5 +1,5 @@
 // Loopback test for the relay server transport: an in-process rs64_relay (relay-server's Host + Relay) on a thread, RelayClients on this one.
-#include "relay_client.h"
+#include "net/relay_client.h"
 #include "relay_host.h"
 #include "check.h"
 #include <atomic>

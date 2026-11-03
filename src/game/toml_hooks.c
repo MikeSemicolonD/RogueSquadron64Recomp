@@ -1716,6 +1716,27 @@ void rs64_th_runMenuRandomBackdropScreen_800BF9E4(uint8_t* rdram, recomp_context
     extern void rs64_mod_levels_debrief_end(uint8_t*);
     rs64_mod_levels_debrief_end(rdram);
 }
+
+// npcWingmanUpdate 0x800D9A90: a wingman's model went into the render list
+void rs64_th_npcWingmanUpdate_800D9A90(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+    rs64_hook(41u, rdram, ctx);
+}
+
+// mainGameLoop 0x8003E138: the front end is about to start
+void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+    rs64_hook(40u, rdram, ctx);
+}
+
+// runMenuRandomBackdropScreen 0x800BFC4C: the debrief's continue check
+void rs64_th_runMenuRandomBackdropScreen_800BFC4C(uint8_t* rdram, recomp_context* ctx) {
+
+    extern int rs64_hook(uint32_t, uint8_t*, recomp_context*);
+    rs64_hook(39u, rdram, ctx);
+}
 void rs64_th_mainGameLoop_8003E424(uint8_t* rdram, recomp_context* ctx) {
 
     extern int rs64_mod_levels_playing(void);
