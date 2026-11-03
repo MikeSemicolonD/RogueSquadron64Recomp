@@ -265,7 +265,6 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/audio/audio.cpp
     ${CMAKE_SOURCE_DIR}/src/main/cli.cpp
     ${CMAKE_SOURCE_DIR}/src/main/crash.cpp
-    ${CMAKE_SOURCE_DIR}/src/main/debug_pollers.cpp
     ${CMAKE_SOURCE_DIR}/src/input/input_host.cpp
     ${CMAKE_SOURCE_DIR}/src/main/ui_panels.cpp
     ${CMAKE_SOURCE_DIR}/src/game/game_state.cpp

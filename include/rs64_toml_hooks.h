@@ -77,7 +77,6 @@ void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ct
 void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_musyxSynthFrame_80091798(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_runIdleFramesAndLoadSaveData_8006D980(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_loadOverlay_80000B3C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_rs_malloc_80001C74(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_saveServiceWorker_8006F2CC(uint8_t* rdram, recomp_context* ctx);

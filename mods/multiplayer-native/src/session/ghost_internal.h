@@ -373,6 +373,16 @@ constexpr uint32_t kPlayerHealth = 0x80137E7Cu;
 // Shoots player 1's craft down through the game's own damage path (applyPlayerCraftDamage 0x800B13E0, which runs the death at 0 health), after clearing its spawn shield (+0xC8, 1.0 after a spawn: no damage).
 void kill_player(uint8_t* rdram, recomp_context* ctx);
 
+// ROGUESQ_MP_TEST=<op>@<frame>[:<arg>],...: scripted test steps on mission frames, e.g. die@150,quit@900:1 (run-mp.ps1 builds each instance's list).
+struct TestStep {
+    std::string op;
+    long frame = -1;
+    long arg = 0;
+};
+
+// The step `op` on mission frame `frame` (-1: on any frame), or null.
+const TestStep* test_step(const char* op, long frame);
+
 uint8_t rb(const uint8_t* rdram, uint32_t a);
 void wb(uint8_t* rdram, uint32_t a, uint8_t v);
 void wf(uint8_t* rdram, uint32_t a, float v);

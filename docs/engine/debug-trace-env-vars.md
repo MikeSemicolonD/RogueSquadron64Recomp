@@ -31,7 +31,7 @@ The user-facing options also have `--flags` (run with `--help`); see the first t
 - Most gates are on when the variable is non-empty and does not start with `0` (`recomp::dbg::env_on` in `src/util/debug_logs.h`, and the local `env_on` in `lib/rt64`). `false` and `no` count as on for these.
 - `recomp::dbg::env_flag` (`LOG_VI`, `LOG_THREADS`, `LOG_RUMBLE`, `LOG_THROTTLE`) also treats `false` and `no` as off.
 - Some gates are on only when the value starts with `1` (e.g. `F5_SLOT_ID`, `F5_UNIQUE_ONLY`, `F5_NO_NEAR_CLIP`, `F5_NO_TILE_SPLIT`, `SKY_NOCULL`, `INTERP_HASH_TRIS`). Default-on kill switches mostly turn off only for a leading `0`.
-- A few test only that the variable exists, so even `0` turns them on: `LOG_STATE`, `LOG_PHASE`, `LOG_UCODESRC`, `BRIDGE_WORD2`, `D3D12_DEBUG`, `D3D12_GPUVAL`.
+- A few test only that the variable exists, so even `0` turns them on: `D3D12_DEBUG`, `D3D12_GPUVAL`.
 
 Use `1` to enable and `0` to disable a default-on switch; unset a variable to return to its default.
 
@@ -42,7 +42,6 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_GFX_API` | `--gfx-api` | auto | `vulkan`, `d3d12`, `d3d11` or `d3d10` forces the backend (`d3d10` = D3D11 capped at feature level 10). |
 | `ROGUESQ_HLE_DEV_MODE` | `--[no-]hle-dev-mode` | on in Debug, off in Release | RT64 ImGui inspector on F1 (F6 = Controls window). |
 | `ROGUESQ_MCP_PORT` | `--mcp-port` | 47064 in Debug, unset otherwise | Dev: serve the RT64 MCP bridge on `127.0.0.1:<port>` for [tools/debug/mcp](../../tools/debug/mcp/README.md) ([rt64-mcp.md](rt64-mcp.md)). A Debug build serves 47064 so the server's `attach` can reach a game started by hand; `0` turns it off. Other builds open no port without it. Debug builds only, unless configured with `-DRS64_MCP=ON`. |
-| `ROGUESQ_VI_DRIVEN_LOOP` | `--[no-]vi-driven-loop` | on | Hardware VI/SP/DP frame protocol. `0` restores the host-paced loop (A/B only). |
 | `ROGUESQ_F5_NATIVE` | `--[no-]f5-native` | on | Emit Factor 5 geometry. `0` parses display lists without drawing. |
 | `ROGUESQ_NO_AUDIO_UCODE` | `--no-audio-ucode` | off | `1` replaces the MusyX synth with the silent stub. |
 | `ROGUESQ_AUDIO_GAIN` | `--audio-gain`, `-m`/`--mute` | 0.35 | Master gain, 0.0-1.0 (out of range = 0.35). `--mute` sets 0. |
@@ -69,7 +68,6 @@ Other user options without flags:
 | `ROGUESQ_INPUT_SEQ` / `ROGUESQ_INPUT_DELAY` | unset / 12000 | Scripted virtual controller injected at `get_n64_input` (no window focus needed): `name:holdMs:afterMs,...` with names `start a b z l r dup ddown dleft dright cup cdown cleft cright up down left right wait` (`up`..`right` = analog stick). `INPUT_DELAY` waits that many ms before the first step. |
 | `ROGUESQ_NO_MENU_BUTTONS` | off | Disables the custom front-end menu (also off for a `demo:` boot target). |
 | `ROGUESQ_NO_PAUSE_BUTTONS` | off | Disables the custom pause-menu buttons. |
-| `ROGUESQ_NO_TOGGLE_INPLACE` | off | Toggles that replace a native slot reload the menu instead of flipping in place. |
 | `ROGUESQ_INPUT_RESET` | off | `1` overwrites `roguesq_input.json` with the default bindings at startup. |
 | `ROGUESQ_INPUT_CLAIM` | unset | `<slot>,<file>` (split-screen test pair, `run-mp.ps1 -Split`): no input until a device is pressed, then only that device (controllers are read while unfocused), and its id is written to `<file>.<slot>`. Slot 2 waits for `<file>.1` and never takes that device. |
 | `ROGUESQ_TEXTURE_PACK` | unset | Load an RT64 texture-replacement pack (a directory or `.zip` containing `rt64.json` + DDS/PNG) and enable replacements. F5 loads textures through the normal RDP TMEM path, so packs resolve as for a stock-ucode game. CPU-regenerated textures (e.g. the HUD radar buffer at `0x4D1BF0`) get a new hash nearly every frame and cannot be replaced. The whole-map terrain pass hashes its ROM tiles as the game loads them (64x64 CI4, palette 15), so terrain tiles in a pack replace too (not in texture-slot mode: D3D11, small GPUs). |
@@ -111,7 +109,6 @@ Driven from `update_screen` (`src/video/rt64_render_context.cpp`) and the nav se
 | `ROGUESQ_BOOT_EXIT` | unset | `1`: quit once a `cutscene:` boot target has played (the boot intro call returns), so scripted cutscene runs end on their own; logs `[nav] boot cutscene finished`. |
 | `ROGUESQ_CINE_FASTFWD` | 400 with any `BOOT_TARGET`, else 0 | Adds N to the submitted-frame counter (`0x8011A890`, +1 per `submitGfxFrame`) each present while the intro cutscene runs and its `gateCtr` (`0x800B0B28`) is below the end threshold (`cutscene[0x44]-0xA`). The intro completes through the game's own logic in seconds. |
 | `ROGUESQ_SKIP_DEMO` | unset | Pins `gGameSettings.demoId` (`0x80130B54`) = N (0-5) and its wrap counter (`0x80130B55`) = 0 every present, so attract mode plays and loops that demo. 0 = Mos Eisley, 1 = Jade Moon, 2 = Kile II, 3 = Taloraan, 4 = Fest, 5 = Trench Run (`dLevelByDemoId` `0x800CD404`). Example: `ROGUESQ_SKIP_DEMO=1 ROGUESQ_CINE_FASTFWD=200` reaches Jade Moon in about 2 min. |
-| `ROGUESQ_SKIP_TO_JADEMOON` | off | Alias for `ROGUESQ_SKIP_DEMO=1`. |
 | `ROGUESQ_NAV_STEP_BUDGET` | 1200 | Presents per nav step before the sequencer gives up. Raise for slow builds (e.g. `12000` for Linux Debug under WSL). |
 | `ROGUESQ_NAV_WATCH_CUTSCENES` | off | `1`: the nav sequencer presses nothing while a cutscene or opening crawl plays. |
 | `ROGUESQ_MOD_LEVEL` | unset | `<id>` of an installed mod level (a mod's levels.json): whenever its template plays (a `BOOT_TARGET` run, a replay of the template's recording), it plays as that mod level: its files, cutscenes, craft, medals and debrief. Logs the `[levels]` redirects. |
@@ -153,23 +150,15 @@ Mid-mission cutscenes are not cutscene files: they play in-engine inside the run
 |---|---|---|
 | `ROGUESQ_PARSE_SNAPSHOT` | on | Parse each graphics task from a copy of RDRAM taken at task start, so the game recycling DL chunks cannot change what RT64 walks. `0` parses live RDRAM. |
 | `ROGUESQ_VI_WAIT_PARSE` | on only without the snapshot | VI waits for an in-flight parse. `1`/`0` overrides. |
-| `ROGUESQ_SP_COMPLETE_AFTER_PARSE` | on with the VI-driven loop | Deliver SP-done only after the list is parsed, as the RSP would. |
+| `ROGUESQ_SP_COMPLETE_AFTER_PARSE` | on | Deliver SP-done only after the list is parsed, as the RSP would. `0` sends it before the parse. |
 | `ROGUESQ_HLE_PRESENT_EARLY` | on | RT64 PresentEarly mode (the cinematic stays on one VI address, so a VI-change present would never fire). `0` opts out. |
 | `ROGUESQ_HLE_AUTO_FULLSYNC` | on | Flush uncommitted RT64 work after each task (F5's mid-DL full sync leaves the trailing workload growing). `0` disables. |
 | `ROGUESQ_AI_CONSUMPTION_PACED` | on | Fire the AI event at the consumption cadence of the last queued buffer. `0` restores one per VI. |
 | `ROGUESQ_AI_FIXED_CLOCK` | on | Free-running AI consumption clock (no per-buffer drift). `0` resyncs to now every buffer. |
-| `ROGUESQ_GFX_TASK_DELAY_MS` | 0 | Sleep this long before each graphics task (timing experiments). |
 | `ROGUESQ_SPEED` | 1 | Game clock multiplier (1-16): VI clock and CPU counter run N times faster. For replays under the fixed-timestep harness; 4 replays about 3.5x faster with identical hashes, 8 is too fast for `BOOT_TARGET` navigation. |
-| `ROGUESQ_FB_GUARDS` | 6 | Bitmask: 1 = CIMG neutralizer (rewrites DL payload words, opt-in), 2 = retired, 4 = RT64 framebuffer-registry sanitizer. `0` disables all for A/B against goldens. |
-
-Host-paced loop only (`ROGUESQ_VI_DRIVEN_LOOP=0`), all in `src/main/main.cpp` unless noted: `ROGUESQ_VI_BARRIER_SIGNAL` (on), `ROGUESQ_VI_RETRACE_SIGNAL` (on), `ROGUESQ_VI_FRAMESYNC_SIGNAL` (on), `ROGUESQ_VI_VIDEOQ_SIGNAL` (off) — per-VI tokens to the game's barrier queues; `ROGUESQ_GFX_BARRIER_NOBLOCK` (on, upstream_compat.cpp) — non-blocking gfx-barrier receives; `ROGUESQ_FORCE_BUFFER_PROGRESS` (on, rt64_render_context.cpp) — advance the cinematic buffer arbiter; `ROGUESQ_CINE_TARGET_FPS` (30 host-paced, 0 VI-driven, hook_helpers.cpp) — cinematic loop pacing.
+| `ROGUESQ_FB_GUARDS` | 4 | Bitmask: 1 = CIMG neutralizer (rewrites DL payload words, opt-in), 4 = RT64 framebuffer-registry sanitizer. `0` disables both for A/B against goldens. |
 
 Probes:
-- `ROGUESQ_GFX_SYNC_SUBMIT` (events.cpp) — submit graphics tasks synchronously.
-- `ROGUESQ_ATTRIBUTION_SLEEP_MS` (hook_helpers.cpp) — host sleep per attribution iteration, 0-5000.
-- `ROGUESQ_CINE_HOLD_ITER` / `ROGUESQ_CINE_HOLD_MS` (hook_helpers.cpp) — park once at cinematic iteration N for MS (15000).
-- `ROGUESQ_MEM_SIZE_MB` (upstream_compat.cpp) — reported RDRAM size, default 8; 4 crashes boot.
-- `ROGUESQ_DUMP_ARBITER` (rt64_render_context.cpp) — log the buffer-arbiter progress pokes.
 - `ROGUESQ_TRIS_SCALE` / `ROGUESQ_DRAW_SCALE` / `ROGUESQ_TEX_SCALE` (upstream_compat.cpp) — scale of the RT64 workload proxies shown on the F5 profiler HUD (64 / 256 / 256).
 - `ROGUESQ_PROFILER_DUMP` (input_host.cpp) — sample the F5 profiler HUD's timing slots.
 
@@ -182,11 +171,7 @@ Kill switches and A/B switches (`lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`, `rt6
 | `ROGUESQ_F5_CHUNK_BOUND` | on | Chunk-bounded DL fetch rule. `0` disables when diagnosing a desync. |
 | `ROGUESQ_F5_CHAIN_CAP` | 256 | Max chunks in one next-link chain before the walker ends the list (backstop against a stale call walking the free list). 256 is the window `f5_chunk_revisit` can still detect a cycle in; dense frames chain about 84. |
 | `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | 2048 / 4096 | Per-task chunk-entry and face budgets; a trip ends the task (hardware goldens stay under 400 / 700). |
-| `ROGUESQ_F5_CHUNK_LINK_LOOSE` | off | Follow a forward-valid link even when the back-link is not written yet. |
-| `ROGUESQ_F5_OP05_32` | on | 0x05 runs the 32-byte record handler (terrain tiles, sprite records). |
-| `ROGUESQ_F5_BDBE` / `ROGUESQ_F5_BE16` | on / on | Install the 0xBD sprite and 16-byte 0xBE handlers; `BE16=0` maps both to no-ops. |
 | `ROGUESQ_F5_SPRITES` | on | Emit 0xBD billboard sprites (fire, smoke, explosions). |
-| `ROGUESQ_F5_TC_SCALE` | on | Apply the per-material `03 82` texcoord scale. `0` = legacy raw/8. |
 | `ROGUESQ_F5_MESH_PRIMDEPTH` | on | zSource=PRIM mesh faces take primDepth from their own transformed verts. |
 | `ROGUESQ_F5_TERRAIN` / `ROGUESQ_F5_TILES` | on / on | Draw the heightfield grid / the 0x05 terrain tile quads. |
 | `ROGUESQ_F5_TERRAIN_SUB` / `ROGUESQ_F5_TERRAIN_SUB_FAR` | 2 / same as near | Subdivision for near (`shift==0`) and far (`shift>=1`) tiles. A lower far value leaves T-junction cracks at the LOD boundary. |
@@ -195,26 +180,18 @@ Kill switches and A/B switches (`lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`, `rt6
 | `ROGUESQ_F5_STATIC_TERRAIN_CHECK=1` | off | Counts terrain records the pass (or the per-record mode) replaced and why the rest fell back, and compares the ported colours with the game's own (`[static-terrain]`, every 300 tasks). Also logs origin changes, an anchor that merged into another call, a pass that drew no land, and camera cuts (`[cut]`, a terrain root re-center of 3+ cells, where nothing interpolates that frame). |
 | `ROGUESQ_F5_TERRAIN_SEAMS` | on | Grid-tile LOD seams and geomorph as the ucode does them (overlays 0x14 rows, 0x18 columns, 0x10 interior; fixed point). Per edge (neighbour byte +4 x-min, +5 x-max, +6 z-min, +7 z-max; weights +0x16/+0x18/+0x1A/+0x1C): if the byte differs from the tile's LOD, odd samples become the mean of their neighbours and then blend toward the 4-sample line by the weight; if equal and the weight is nonzero, odd samples blend toward their neighbours' midpoint. The interior weight (+0x14) then blends odd-row/column points toward horizontal/vertical/main-diagonal midpoints. Colors follow the same steps. `0` disables. |
 | `ROGUESQ_F5_TERRAIN_FULL_UV` | on | Terrain tiles span the full texture (dim texels) instead of the ucode's dim-1, removing the one-texel jump at tile edges. |
-| `ROGUESQ_F5_CULL` | on | F5 cull semantics in `RSP::drawIndexedTri`: only geometry-mode bit 0x2000 culls (back faces); 0x1000 is the texcoord-perspective flag; both bits = back-face cull. `0` restores the F3DEX reading. |
-| `ROGUESQ_F5_CULLBOTH_DRAW` | on | Only with `ROGUESQ_F5_CULL=0`: cull=BOTH draws double-sided instead of dropping the triangle. |
 | `ROGUESQ_F5_FAR_CLIP` | on | `0` disables the F5 CPU far-plane clip (z <= w, as the ucode's trivial reject + clipper do). RT64's own depth clip sits at ndc 513/511 with the 1/1024 depth mapping, so without it geometry past the far plane renders. |
 | `ROGUESQ_F5_NO_NEAR_CLIP` | off | `1` disables the CPU near/guard-band clip. |
-| `ROGUESQ_F5_NON` | off | `1` forces `NoN` (GPU near clip off, far-plane manual clamp) for the F5 ucode, which ships `NoN=false`. Applied in `RSP::setGBI`. |
 | `ROGUESQ_F5_DOME_NEAR_DROP` | on | Sky-dome triangles touching the near plane are dropped. `0` near-clips them. |
 | `ROGUESQ_F5_SKY_NO_ZWRITE` | on | Sky depth pin. The game pins every sky draw (zSource=PRIM, Z_UPD, no Z_CMP, primDepth 0x7FBE/0x7FBF, about 0.998); this raises primDepth to 0.99999 so distant geometry and transparent materials past 0.998 are not hidden behind the sky. `0` disables. |
 | `ROGUESQ_F5_CLIPRATIO` | 2 | Clip ratio (guard band) for the F5 path, 1-15. |
-| `ROGUESQ_F5_FLIP_Y` | on | Hand RT64 `-vscale.y` (F5 NDC is y-down). |
-| `ROGUESQ_F5_NOFOG` | off | Leave RT64 fog untouched instead of applying the F5 fog words. F5 fog is two signed 16.16 words, M (moveword 8 / DMEM 0x160) and O (moveword 0x0A / DMEM 0x164); the ucode computes alpha = 255*clamp(depth*M+O, 0, 1), applied as RT64 fog mul = 255*M, offset = 255*O at float precision. |
-| `ROGUESQ_F5_NO_FOG` | off | Zero the applied F5 fog (mul and offset 0). |
+| `ROGUESQ_F5_NO_FOG` | off | Zero the applied F5 fog (mul and offset 0). F5 fog is two signed 16.16 words, M (moveword 8 / DMEM 0x160) and O (moveword 0x0A / DMEM 0x164); the ucode computes alpha = 255*clamp(depth*M+O, 0, 1), applied as RT64 fog mul = 255*M, offset = 255*O at float precision. |
 | `ROGUESQ_F5_CULL_DIST=<units>` | off | Camera-space per-object distance cull: drops a model's draws when its `0x01` modelview origin is past the threshold. Terrain and effects unaffected. ~3000 = about 30% fewer hitches with visible pop-in; ~10000 = clean but marginal. |
-| `ROGUESQ_F5_B4_LEN16` | off | Force the 16-byte 0xB4 path. |
 | `ROGUESQ_F5_NOFILLERGUARD` | off | Disable the 0xB4 chunk-tail filler guard. |
 | `ROGUESQ_F5_NO_TILE_SPLIT` | off | `1` stops splitting the draw call on a TMEM reload (the skybox one-texture bug). |
 | `ROGUESQ_F5_CIMG_STRICT` | on | Reject SETCIMG with width < 16 or a non-64-byte-aligned address. |
 | `ROGUESQ_F5_OVERLAY_WIDEN` | on | Grow untextured 4-vertex quads that exactly cover the frame (the pause-menu dim) 4x in plane so they cover widescreen. |
-| `ROGUESQ_HLE_PATCH_ALPHA` | on | Rewrite the all-7s alpha combiner D to 1 so F5 texrects are not blended to black. |
 | `ROGUESQ_ATTRIB_DEFLICKER` | on | Skip the attribution partial-frame clear so glyphs accumulate. |
-| `ROGUESQ_FBTEX_FIXED_CAP` | on | Fixed-capacity framebuffer-texture descriptor set (the cinematic descriptor-heap crash). `0` = legacy growth. |
 | `ROGUESQ_TGRID_MAP_CLAMP` | off | Also clamp the terrain view box to the map bounds (vanilla repeats edge tiles past the map). |
 
 Draw distance and terrain grid (`src/game/hook_helpers.cpp`):
@@ -231,7 +208,7 @@ Presentation (`lib/rt64/src/hle/rt64_present_queue.cpp`, `src/video/rt64_render_
 
 | Env var | Default | Effect |
 |---|---|---|
-| `ROGUESQ_VI_FOLLOW_DRAW` | 1 | Picks the presented buffer when VI's is stale. `0` = VI lookup only. `1` = override only when VI's buffer is not in the recently-written set. `2` = always the most recent color buffer. `3` = the buffer with the largest `lastWriteRect`. `4` = the buffer the GBI reports as most draw-active (`g_most_drawn_fb`). Modes 1-4 need a non-empty `colorImageAddressVector`. |
+| `ROGUESQ_VI_FOLLOW_DRAW` | 1 | When VI's buffer is not in the recently-written set (stale), present the most recent other color buffer instead. `0` = VI lookup only. |
 | `ROGUESQ_NO_MENU_PRESENT_FIX` / `ROGUESQ_MENU_FIX_STALE_MS` | off / 250 | The menu present fix scans out the GBI's most-drawn buffer at its own width when it differs from VI's (512-wide menu vs 640/1024 VI), only while that buffer got a texrect within the last N ms. |
 | `ROGUESQ_NO_MENU_VSCALE_FIX` | off | Disable halving the VI Y scale for the 512x448 interlaced menu frame. |
 | `ROGUESQ_NO_TRANSITION_BLANK` | off | A/B: disable presenting black while VI shows the buffer `initVideoSubsystem` just zeroed on the CPU. |
@@ -241,10 +218,8 @@ Presentation (`lib/rt64/src/hle/rt64_present_queue.cpp`, `src/video/rt64_render_
 | `ROGUESQ_FOLLOW_DRAW_KEEP_ZCLEAR` | off | A/B: let `VI_FOLLOW_DRAW` pick depth-clear passes (color image == depth image). |
 
 Probes:
-- `ROGUESQ_VI_FORCE_FB=0xADDR` (rt64_present_queue.cpp) — always present that RDRAM framebuffer.
 - `ROGUESQ_FORCE_SWAP_FB` / `ROGUESQ_FORCE_VI_ADDR` / `ROGUESQ_FORCE_VI_WIDTH` (rt64_render_context.cpp) — scan out the last swap target / pin origin / width.
 - `ROGUESQ_NO_FULLSCREEN_FILLRECT` (rt64_framebuffer_renderer.cpp) — skip every FillRect covering the whole target (`1`/`all`; any non-0 value). Partial FillRects always run.
-- `ROGUESQ_PRESENT_EARLY_FORCE` (rt64_state.cpp, rt64_present_queue.cpp) — ignore `viVisible` for the PresentEarly history and force-advance.
 - `ROGUESQ_RT64_WB_STRICT` / `ROGUESQ_RT64_WB_LOG` (rt64_state.cpp) — restrict / log framebuffer write-backs.
 - `ROGUESQ_SKIP_COLOR_READBACK` / `ROGUESQ_SKIP_DEPTH_READBACK` (rt64_state.cpp) — force off RT64's copy of rendered color / depth back to RDRAM (and the GPU wait it needs) whatever `framebufferWriteback` in `roguesq_video.json` says (default on, off on a Raspberry Pi). RDRAM-to-GPU change detection (the game's own depth clears) still runs; turning that off too (RT64's Render to RAM) makes triangles flicker.
 - `ROGUESQ_NO_COALESCE` (rt64_framebuffer_renderer.cpp) — disable merging same-pipeline draws.
@@ -260,11 +235,6 @@ Probes:
 - `ROGUESQ_SCREENSHOT_EVERY=<s>` (rt64_present_queue.cpp) — save the game's color buffer to `screenshots/shot_NNN.png` every N seconds, at most `ROGUESQ_SCREENSHOT_MAX` (default 20) per run. Works where window grabs can't see Vulkan output (remote Linux machines).
 - `ROGUESQ_TEXTURE_SLOTS=1` (rt64_raster_shader.h) — bind each draw's textures to 8 fixed slots instead of the bindless array (no ubershader). Automatic on D3D11 and on Vulkan GPUs with fewer than 8192 sampled images per stage (Raspberry Pi V3D). Ignored on D3D12, whose raster shaders exist only in the bindless form.
 - `PLUME_D3D11_DUMP_HLSL=<dir>` (plume_d3d11.cpp) — write each SPIRV-Cross translation to `<dir>/<hash>.hlsl` before it is compiled.
-- `ROGUESQ_HLE_FORCE_VISIBLE` (f3dfactor5) — magenta fill/combiner to test GPU output.
-- `ROGUESQ_HLE_FORCE_COMB` / `ROGUESQ_HLE_FORCE_PRIM_OUTPUT` / `ROGUESQ_HLE_NO_AA` / `ROGUESQ_HLE_NO_CVGA` / `ROGUESQ_HLE_FORCE_OPAQUE` (rdpstate) — combiner and coverage-bit overrides for texrect visibility.
-- `ROGUESQ_SKY_NOCULL` (rt64_rsp.cpp) — disable all per-triangle back-face culling.
-- `ROGUESQ_F5_SPRITE_NORESTORE` (f3dfactor5) — A/B: don't restore the RDP state a sprite overrides.
-- `ROGUESQ_F5_TERRAIN_HSCALE` (f3dfactor5) — extra heightfield height multiplier (1.0).
 
 ## Interpolation
 
@@ -279,8 +249,6 @@ Probes:
 | `ROGUESQ_F5_SPRITE_SCALE_XFORM` | on | With `SPRITE_XFORM`, build the quad at a reference size and put the size in the transform so growth interpolates. |
 | `ROGUESQ_F5_SPRITE_FACE_ID` | on | Identify each sprite by the mesh face that emitted it plus its node, with a new generation on gap, flipbook restart or jump. |
 | `ROGUESQ_F5_SPRITE_WORLD_MATCH` | on | Track particle sprites across frames in node-local then terrain-root space with velocity prediction. |
-| `ROGUESQ_F5_DENSE_SPRITE_NOID` | on | Only with `SPRITE_XFORM=0`: a node that drew more than 2 sprites last frame gets no id. |
-| `ROGUESQ_F5_SPRITE_INTERP` | off | `1` lets id-less sprites auto-pair (they flicker). |
 | `ROGUESQ_F5_SPRITE_PIXEL_Z` | on | Sprites draw with per-vertex depth so depth follows interpolation. |
 | `ROGUESQ_F5_SPRITE_FOGCOLOR` | on | Each 0xBD sprite sets the fog register to its record's colour (w2, white in practice) with alpha = the centre's fog, as the ucode does; the light glints drawn after it blend by fog alpha and otherwise turn the level's fog colour. `0` disables for A/B. |
 | `ROGUESQ_LOG_TEXRECT_TALL=<px>` | off | Every F5 texrect at least this tall and 16 px wide: screen rect, S/T start and step, cycle type, colour image, scissor, texture source and width, load-tile and render-tile coordinates, prim alpha, blender, filter and combiner. Menu backgrounds are 64x32 tiles (`30` isolates them). |
@@ -291,25 +259,20 @@ Probes:
 | `ROGUESQ_F5_BAKED_VTX_INTERP` | on | Faces under a fixed non-node matrix with no id (searchlights, glows baked in camera space) get an id and vertex interpolation. |
 | `ROGUESQ_F5_ORIENTED_FACE_ID` | on | Camera-facing quads built by the game's `buildOrientedFaceGeometry` (explosion and lava fire, glints) take an interpolation id from the face record they were built from (hook at 0x80012F14), so they pair through camera turns. `=0` leaves them to the position tracker of `ROGUESQ_F5_BAKED_VTX_INTERP`. |
 | `ROGUESQ_F5_REBASE_INTERP` | on | When the terrain root's folded regrid shift drops back to 0 (every 16 cells), its interpolation id is kept and RT64 moves the previous frame's transform by the dropped shift before blending. `0` bumps the id instead (the terrain snapped ahead and back for a frame). A/B only. |
-| `ROGUESQ_F5_BAKED_WORLD` | off | `1` tracks those faces frame to frame in the terrain root's world frame instead of camera space. The root transform jumps, so on 13% of frames every searchlight glint lost its pair and jittered in place (camera space: 0.7%). A/B only. |
 | `ROGUESQ_F5_CABLE_IDS` | on | Tow cable segments get interpolation ids by position from the ship end (prefix `0x1`, new generation on a gap, a re-fire or a falling segment count), so the segment at the ship tweens with it and no segment loses its pair when the cable pays out; fed by a hook at `addNpcToVisibilityBucket` entry, so it also covers the long-tow-cable mod. `=0` disables. |
 | `ROGUESQ_F5_XHAIR_QUAD` | on | The crosshair rings (texrects matched to the HUD struct's ring elements) draw as camera-space quads with interpolation ids `0x80000000`/`0x80000001` (and `0x80000002` for the Y-wing bomb sight), so they move at the display rate instead of the game's 30 fps. `=0` draws the texrects. |
 | `ROGUESQ_INTERP_AUTO_MAX_SCREEN` | 0.2 | Auto-matched transforms further apart than this (NDC) are not paired. `0` disables. |
 | `ROGUESQ_INTERP_ID_MAXJUMP` | 0 (off) | Skip id-matched pairs that moved more than frac x camera distance in one frame. |
-| `ROGUESQ_INTERP_MAX_SCREEN` / `ROGUESQ_INTERP_MAX_POS` | 0.35 / 0.25 | Screen and position limits for the experimental hash-tris matcher. |
 
-Probes and experiments: `ROGUESQ_F5_VTX_INTERP` (f3dfactor5) — interpolate per-vertex positions for id-matched objects; `ROGUESQ_F5_TERRAIN_ID` (f3dfactor5) — id terrain tiles by quantized world cell, with `ROGUESQ_F5_TERRAIN_CELL` (4.0) and `ROGUESQ_F5_TERRAIN_ABS` (on); `ROGUESQ_F5_SLOT_ID` (f3dfactor5) — id by matrix slot; `ROGUESQ_F5_UNIQUE_ONLY` (f3dfactor5) — id only nodes with a unique drawable; `ROGUESQ_INTERP_HASH_TRIS` (rt64_game_frame.cpp) — drop triangle count from the pairing hash; `ROGUESQ_LOG_INTERP_PAIR` — per-frame `[pair]`, `[jumprej]`, `[facesprite]`, `[flatten]` stats.
+Probes: `ROGUESQ_LOG_INTERP_PAIR` — per-frame `[pair]`, `[jumprej]`, `[facesprite]`, `[flatten]` stats.
 
 ## RDP state and textures
 
 Probes (`lib/rt64/src/gbi/rt64_gbi_f5_rdpstate.cpp` unless noted):
 - `ROGUESQ_LOG_CI4_TMEM` + `ROGUESQ_CI4_TMEM_SRC` (default 0x555490) — TMEM-state trace for one CI4 source.
-- `ROGUESQ_CI4_DESWIZZLE` — odd-row de-swizzle of the CI4 fire tiles.
-- `ROGUESQ_DUMP_TEX` — dump CI4 flipbook source bytes and TMEM.
 - `ROGUESQ_LOG_OTHERMODE` — raw otherMode writes and the decoded texture filter.
 - `ROGUESQ_LOG_FILL` — clear color, rect and target.
 - `ROGUESQ_LOG_CIMG` — texrect counts per color image.
-- `ROGUESQ_FX_PROBE` — RGBA32 effect texrects and draws (also in f3dfactor5).
 - `ROGUESQ_LOG_FACE_UV` (f3dfactor5) — per-face texture, UVs and matrix loads.
 - `ROGUESQ_REINT_DIAG` (rt64_state.cpp) — CI reinterpretation cache hits and misses.
 
@@ -369,7 +332,6 @@ Probes:
 - `ROGUESQ_DROP_PROBE` (f3dfactor5) — dropped or no-op'd commands, deduped by opcode.
 - `ROGUESQ_F5_CULL_LOG` (f3dfactor5) — sampled `[f5-cull]` distances for `F5_CULL_DIST`.
 - `ROGUESQ_CHECK_CHUNKLIST` (upstream_compat.cpp) — walk the DL chunk free list at each SP task; dumps RDRAM on the first bad node.
-- `ROGUESQ_MEDAL_PROBE` (hook_helpers.cpp, Debug) — color image active at each medal draw.
 - `ROGUESQ_DUMP_UCODE=<path>` (rt64_render_context.cpp) — one-shot IMEM + DMEM dump.
 - `ROGUESQ_DUMP_PARSE_SNAPSHOT_ON_ITER=<n>` + `ROGUESQ_DUMP_PARSE_SNAPSHOT_COUNT` (1) + `ROGUESQ_DUMP_PARSE_SNAPSHOT_PATH` (ultramodern events.cpp) — dump the exact RDRAM snapshot a parse walked.
 
@@ -390,9 +352,7 @@ Probes (`src/audio/audio.cpp` unless noted):
 - `ROGUESQ_AUDIO_ASYNC` (ultramodern events.cpp) — run the MusyX synth without blocking the frame.
 - `ROGUESQ_LOG_AUDIO_OUT` (also librecomp ai.cpp) — PCM flow, silence vs content, AI buffer addresses.
 - `ROGUESQ_LOG_DMEM` — synth output buffers in DMEM.
-- `ROGUESQ_LOG_UCODESRC` — live synth ucode vs the recompiled source.
 - `ROGUESQ_DUMP_SYNTH_FRAME=<n>` + `ROGUESQ_DUMP_SYNTH_PATH` — RDRAM image and OSTask of the n-th audio task for `tools/musyx_replay`.
-- `ROGUESQ_BRIDGE_WORD2` — point task word2 at data_ptr.
 
 ## Input and menus
 
@@ -426,21 +386,19 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 | `ROGUESQ_LOG_THREADS` | off | `[osDestroyThread] t=... queue=... qok=... chain_ok=...`, `[thr] vi=... start/stop/destroy t=... caller=...` | Thread teardown with the queue-chain check (a failed check always prints), plus one line per start/stop/destroy with the symbolized recompiled caller. |
 | `ROGUESQ_LOG_THREAD_LIFECYCLE` | off | `[Thread] _thread_func ...` | Host thread entry lines at startup (ultramodern threads.cpp). |
 | `ROGUESQ_LOG_INIT` / `ROGUESQ_LOG_SP_TASKS` | off | boot-init breadcrumbs / SP task dispatch | librecomp `recomp.cpp` / `sp.cpp`. |
-| `ROGUESQ_LOG_PIPELINE` | off | `[pipe-1]`, `[pipe-2]`, `[pipe-3]` | Per-stage texrect counters in the RT64 framebuffer renderer (push -> GPU draw). |
+| `ROGUESQ_LOG_HUD_PROBE` | off | `[hud]` | Screen centre and size (N64 pixels) of one HUD draw on a few sampled frames, for placing HUD elements in widescreen. |
+| `ROGUESQ_LOG_PIPELINE` | off | `[skip-null-rt]`, `[pipe-noshader]`, `[pipe-scissor]` | Draws the RT64 framebuffer renderer skips: no color target, no compiled pipeline yet (no ubershader), or an empty scissor. |
 | `ROGUESQ_LOG_GBI` | off | per-handler GBI logs | Every F5 GBI handler as it fires. Very high volume. |
 | `ROGUESQ_LOG_GFX_TASK` | off | one line per graphics task | Low-volume task-submission trace. |
-| `ROGUESQ_LOG_TASKSUBMIT` | off | every gfx task, sampled audio tasks, first DL bytes | `upstream_compat.cpp`. F5 tasks have `data_size=0` by design. |
 | `ROGUESQ_LOG_FRAME_PROFILE` | off | `[frameprof]`, `[frameprof HITCH]` | Real fps and per-hitch phase attribution (walk / snapshot memcpy / present). |
 | `ROGUESQ_LOG_WALK_PROFILE` | off | `[walkprof]` | Per-opcode timing for walks over 20 ms. |
 | `ROGUESQ_LOG_BATCH` | off | batching counters | Pipeline/scissor binds a per-scene sort could save. |
 | `ROGUESQ_LOG_MESG_TRACE` | off | message-order trace | For `tools/debug/validate/compare_mesg_trace.py`. Scope with `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`. |
 | `ROGUESQ_LOG_FRAMEQ` | off | `[frameq]` | Every send/recv on the frame-protocol queues; the last line shows which thread stopped calling the OS. |
-| `ROGUESQ_LOG_PRESENT_EARLY` | off | PresentEarly matcher | Why `viHistory` stays empty or no workload matches. |
 | `ROGUESQ_LOG_MENU_FIX` | off | menu present fix | Decisions of the menu present fix. |
 | `ROGUESQ_LOG_ZPRIM` | off | zSource=PRIM states | Each distinct PRIM-depth draw state once (and at 1000 / 100000 hits): otherMode, Z bits, cull bits, the game's primDepth and the value sent. |
 | `ROGUESQ_LOG_TERRAIN_CRACKS` | off | `[tcrack]` | Terrain tile-edge height mismatches every 5 s; expect 0 (thousands with `F5_TERRAIN_SEAMS=0`). |
 | `ROGUESQ_LOG_GAMESTATE` | off | engine globals | Level, craft, cinematic stage, screen, menu id on change and every 512 presents; `gateCtr` vs `cuts44` shows whether a cinematic is advancing. |
-| `ROGUESQ_LOG_STATE` / `ROGUESQ_LOG_PHASE` | off (presence) | scene state / slot dispatcher | Poller threads in `debug_pollers.cpp`. |
 | `ROGUESQ_LOG_HOOKS` | off | `[hook t=...]` | Debug only: stderr from hook code (`rs64_dbg_log4`). |
 | `ROGUESQ_LOG_THROTTLE` | off | throttle | Positional HOTAS throttle about once a second: lever position, the craft's speed range, game vs. applied target. |
 | `ROGUESQ_LOG_RUMBLE` | off | rumble | Rumble Pak motor calls, effect id (0-12), health drops with hit scale, death-spiral sustain, host output; a state line every 2 s in missions. |
@@ -449,7 +407,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 
 ## Record / replay and co-op
 
-Inert unless set. Record and replay are active only in real missions (never attract demos); one recording covers one mission attempt. Precedence: replay, record, delay. See [tools/debug/recordings/README.md](../../tools/debug/recordings/README.md).
+Inert unless set. Record and replay are active only in real missions (never attract demos); one recording covers one mission attempt. Precedence: replay, then record. See [tools/debug/recordings/README.md](../../tools/debug/recordings/README.md).
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -463,8 +421,7 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_LS_PAUSE_AT` | unset | `<f>[,<f>...]`: a replay holds before each listed frame, writing `<hash log>.paused` (the frame number), until `<hash log>.resume` appears (30 s cap), so a window capture lands on an exact frame at any `ROGUESQ_SPEED`. Used by `tools/debug/recordings/capture-frames.ps1`. Blocks the game thread while held. |
 | `ROGUESQ_PAUSE_AT` / `ROGUESQ_PAUSE_FILE` | unset | `<clock>[:<f>][,...]` and a path base: the game thread holds once each clock reaches frame `f` (0 if left out), with the same `<base>.paused` / `<base>.resume` handshake as `ROGUESQ_LS_PAUSE_AT`; each target holds once, in the order listed (a target waits until the ones before it have held, so `attract.demo:30,cutscene:580` is the boot intro after a demo). A clock is a game-state id from `tools/state/state_model.toml` (frames since that state was entered, ticked by the menu and mission frame hooks; `menu` also matches `menu.options` and the other `menu.*` states), `cutscene` (gateCtr 0x800B0B28, the cutscene file's own frames as the RS64 Explorer timeline counts them) or `crawl` (an opening crawl's clock at 30 frames a second, as the explorer's crawl timeline counts them). Example: `menu.options,cutscene:120`. Used by `tools/debug/recordings/capture-frames.ps1 -Cutscene`. Blocks the game thread while held. |
 | `ROGUESQ_LOG_MCP` | unset | `1`: log each pause point (`[mcp] point <clock> <frame> dl <n>`), display list (`[mcp] dl <n>`) and MCP hold, to diagnose an MCP `pause_at` landing on the wrong frame ([rt64-mcp.md](rt64-mcp.md)). |
-| `ROGUESQ_LS_SEED` | 1 | Seed for record and delay modes. |
-| `ROGUESQ_LS_INPUT_DELAY` | 0 | Feel test: live play with local input delayed N frames, fixed dt. |
+| `ROGUESQ_LS_SEED` | 1 | Seed for record mode. |
 | `ROGUESQ_COOP_LOCAL` | unset | `1`: player 2 is an imposter, an allied X-wing wingman NPC spawned 1.5 units right of player 1 on the first mission frame from a fake DAT record at 0x80B40000. It flies a port of the player X-wing's handling from port 1 through control-map slot 1 (layout 0: B fire, A boost, Z brake, C-up hold rotation, C-right S-foils), is invulnerable and is targeted like any ally. Activation range and grid streaming also follow it outside cutscenes. Off = the original single player, bit-identical. Needs the `multiplayer-native` mod enabled. |
 | `ROGUESQ_LS_PAD2_REPLAY` | unset | `<path.rec>` (needs `COOP_LOCAL=1`): port 1 plays a recorded port-0 run from mission frame 0, START masked. Must match the running level and craft. The hash log gains an `imposter` column (a hash part the multiplayer code registers). Single-player recordings' song answers stop matching once the imposter changes the mission; re-record with co-op on. |
 | `ROGUESQ_MP` | unset | `host` or `join`: online co-op, ghost model. Each instance flies its own player 1 in its own world; the other player is the imposter, posed from the state that player streams at 30 Hz (dead reckoning up to 0.5 s, corrections blended over 0.1 s, snaps past 20 units). Both must enter the same level and craft; the host sends LAUNCH at `initMission` and the client checks it. The host owns the mission result, objectives and the lives pool; DAT health is mirrored both ways (drops sent as DAMAGE batches through the game's own hit). The same session starts from the front end (MAIN MENU -> MULTIPLAYER). A HELLO handshake checks protocol + `kBuildId` (`VERSION MISMATCH` otherwise). Implies `COOP_LOCAL`. Logs `[ghost]`. Pairs: `tools/debug/lockstep/run-mp.ps1`. Details in [multiplayer.md](../guides/multiplayer.md). |
@@ -478,25 +435,25 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_MP_TRANSPORT` | unset | `enet`: ignore the relay transports (the steam-relay mod and a relay server) and host / join over ENet. |
 | `ROGUESQ_MP_RELAY` | unset | `host[:port]` of an `rs64_relay` to use instead of `roguesq_net.json`'s `relay_server` (scripted runs; never saved). |
 | `ROGUESQ_MP_CODE` | unset | Join code JOIN GAME uses over a relay transport (scripted runs). |
-| `ROGUESQ_STEAM_APPID` | 480 | Steam app id the steam-relay mod initializes as. |
 | `ROGUESQ_MP_PAD` | unset | `<path.rec>`: this instance's port-0 input comes from a recording. |
 | `ROGUESQ_MP_SIM_LATENCY_MS` / `ROGUESQ_MP_SIM_LOSS_PCT` / `ROGUESQ_MP_SIM_JITTER_MS` | 0 / 0 / 0 | Simulated one-way latency, unreliable-send loss, and 0..N ms jitter (order kept). |
 | `ROGUESQ_RELOC_GUARD` | unset | `1`: at the first present, fill the old addresses of the relocated per-player ranges (R1-R4, see AGENTS.md "Per-player data relocation") with 0xA5, then log `[reloc] write to old address X` on any write there. Pair with `ROGUESQ_DATA_BP=X` to catch the writer. |
 
 Test knobs used by `tools/debug/lockstep/run-mp.ps1` (flag in brackets):
-- `ROGUESQ_MP_TEST_PAUSE=<frame>` [-TestPause] — press START on that frame; the world and camera keep running.
-- `ROGUESQ_MP_TEST_END=<frame>:<result>` [-TestEnd] — host ends the mission (0 abort, 1 success, 2 failed, 3 out of lives).
+- `ROGUESQ_MP_TEST=<op>@<frame>[:<arg>],...` — scripted steps on this instance's mission frames, e.g. `die@150,die@450,quit@900:1`:
+  - `die` [-HostDie / -ClientDie, comma-separated frames] — this side's craft takes a lethal hit (with `-TestLives`, reaches spectating and the last life on cue).
+  - `end:<result>` [-TestEnd f:r] — end the mission the way the game's abort does (0 abort, 1 success, 2 failed, 3 out of lives).
+  - `quit[:1]` [-TestQuit, -TestQuitClean] — exit abruptly, or with `:1` through QUIT (sends BYE).
+  - `pause` [-TestPause] — press START; the world and camera keep running.
+  - `upgrade:<bits>` [-TestUpgrade f:hex] — OR power-up bits (mask 0x1FE00) into the settings word, as a pickup does (`0x` prefix for hex).
+  - `pickup` [-TestPickup] — collect the first power-up that ticks from that frame on (needs one spawned near the flown path).
 - `ROGUESQ_MP_TEST_VERSION=<n>` [-TestVersion] — send and compare build id n.
 - `ROGUESQ_MP_TEST_UNLOCK=<n>` [-TestUnlock] — host mission select shows levels up to n.
 - `ROGUESQ_MP_TEST_ALLCRAFT=1` [-TestAllCraft] — set the all-crafts unlock bit (gGameSettings+0xC 0x80000).
-- `ROGUESQ_MP_TEST_QUIT=<frame>` [-TestQuit] / `ROGUESQ_MP_TEST_QUIT_CLEAN=1` [-TestQuitClean] — host exits abruptly, or through QUIT (sends BYE).
 - `ROGUESQ_MP_TEST_LIVES=<n>` [-TestLives] — start the shared lives pool at n.
-- `ROGUESQ_MP_TEST_UPGRADE=<frame>:<hex>` [-TestUpgrade] — host ORs power-up bits (mask 0x1FE00) into its settings word on that mission frame, as a pickup does.
-- `ROGUESQ_MP_TEST_PICKUP=<frame>` [-TestPickup] — host collects the first power-up that ticks from that mission frame on (needs one spawned near the flown path).
 - `ROGUESQ_MP_TEST_TRIGGER_SOLO=1` [-TestTriggerSolo] — the host drops its own player trigger-volume edges, so only the client's forwarded ones can advance the mission.
 - `ROGUESQ_MP_TEST_NO_SKIP_SHARE=1` [-ClientLate] — the client ignores the host's cutscene skips (a late joiner).
 - `ROGUESQ_MP_TEST_SKIP_CRAWL=1` [-HostSkipCrawl] — press START 60 polls into the opening crawl (only the host's skip is shared).
-- `ROGUESQ_MP_TEST_DIE=<frame>,<frame>,...` [-HostDie / -ClientDie] — this side's craft takes a lethal hit on those mission frames (with `-TestLives`, reaches spectating and the last life on cue).
 - `ROGUESQ_MP_TEST_CONTINUE=<polls>` [-HostContinue / -ClientContinue] — press continue that many polls into each debrief, to test the both-players hold.
 
 ## How to add a new debug trace

@@ -52,21 +52,8 @@ bool parse_song_event(const char* line, uint32_t* frame, bool* active);
 
 // ROGUESQ_LS_SEED text (decimal or 0x hex) to a seed; 0 for null, junk or zero (the caller keeps its default).
 uint32_t parse_seed(const char* s);
-// ROGUESQ_LS_INPUT_DELAY clamped to 1..60 frames.
-int clamp_delay(long frames);
-
 uint8_t quantize_throttle(float p);
 float dequantize_throttle(uint8_t q);
-
-class DelayLine {
-public:
-    explicit DelayLine(int frames);
-    void push_pop(uint8_t pad[6]);
-private:
-    std::vector<uint8_t> ring_;
-    size_t idx_ = 0;
-    size_t frames_ = 0;
-};
 
 constexpr size_t kRdramSize = 0x800000;
 

@@ -125,9 +125,6 @@ bool menu_buttons_off() {
     return off;
 }
 
-// A game_settings toggle that `replace`s a known native toggle slot flips in place via that slot's native sub-type-5 re-render (no reload); ROGUESQ_NO_TOGGLE_INPLACE forces the reload path.
-bool toggle_inplace() { static bool v = !env_disabled("ROGUESQ_NO_TOGGLE_INPLACE"); return v; }
-
 // ---- Config model ----
 
 // Label: a page line the cursor skips (sub-type 13), e.g. a live status line.
@@ -1473,6 +1470,7 @@ bool condition_holds(uint8_t* rdram, const std::string& c, bool pause)
     if (c == "ray_query") return rs64::video::ray_query_supported();
     if (c == "expansion_pak") return rd_b(rdram, 0x130B63) != 0;
     if (c == "frame_interpolation") return rs64::video::frame_interpolation_on();
+    if (c == "widescreen") return rs64::video::display_value(rs64::video::Display::Widescreen) == 1;
 
     return rs64::host::condition(c.c_str()) > 0;
 }
@@ -1682,7 +1680,7 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         int ip_param;
         unsigned ip_off, ip_on;
 
-        if (b.type == BType::Toggle && toggle_inplace() && menu_id == MENU_GAME_SETTINGS
+        if (b.type == BType::Toggle && menu_id == MENU_GAME_SETTINGS
             && !b.replace.empty() && inplace_slot(b.replace, ip_param, ip_off, ip_on))
         {
             // Native in-place re-render on the replaced slot.

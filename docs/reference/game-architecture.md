@@ -435,7 +435,7 @@ Where the ucode keeps an F3D opcode, the game emits it with the stock F3D `gbi.h
 | Transform | RT64's own matrix stack: `01 03` → projection load, `01 02` → modelview load. No software T&L |
 | Vertices | `04` converts the 8-byte vertices into RT64 vertices in a scratch area at RDRAM `0xA00000` (above the 8 MB the game can see; the recomp heap uses `0x71E000`) and calls `setVertex` |
 | Faces | `BF`/`B4`/`13` copy the referenced vertices into temp slots, apply the color offsets and inline texcoords, and call `drawIndexedTri` |
-| Viewport | From the stream's `03 80` block (synthesized from the scissor only if the stream never sends one); `vscale.y` is negated so RT64's F3D y-flip cancels out (`ROGUESQ_F5_FLIP_Y=0` reverts) |
+| Viewport | From the stream's `03 80` block (synthesized from the scissor only if the stream never sends one); `vscale.y` is negated so RT64's F3D y-flip cancels out |
 | Terrain | Flat `05 05 02` tiles are drawn as two triangles (`ROGUESQ_F5_TILES=0` disables); `05 05 00` heightfield records are tessellated by `f5_tile_grid` (`ROGUESQ_F5_TERRAIN=0` disables) |
 | Sprites | `BD` billboards (fire, smoke, explosions) are emitted by `op_bd_sprite` (`ROGUESQ_F5_SPRITES=0` disables) |
 | RDP state | Combiner, other-mode, tiles, loads and images are taken from the stream as sent. `setColorImage_filtered` rejects garbage images (width ≤ 1, outside `[0x400000, 0x800000)`, non-standard widths) and, with `ROGUESQ_DESYNC_TRACE=1`, dumps the last commands that led there |
@@ -475,7 +475,7 @@ The flags these threads share are adjacent bytes of one `volatile` struct at `0x
 | `0x8011A89F` | Yield state: 0 = graphics ran to completion, 1 = graphics yielded to audio, 2 = audio started on an idle RSP | scheduler | scheduler |
 | `0x8011A8A0` | Audio task running | scheduler on audio start | scheduler on the audio task's SP-done |
 
-The recomp default (`ROGUESQ_VI_DRIVEN_LOOP`, on) runs exactly this: no host-injected tokens, no forced non-blocking receives, and SP-done delivered after RT64 has parsed the list (`ROGUESQ_SP_COMPLETE_AFTER_PARSE`, implied). Setting `ROGUESQ_VI_DRIVEN_LOOP=0` restores the old mode in which `rs64_vi_callback` posted SP-done/DP-done/VI/frame-sync tokens every VI and the barrier receives were forced non-blocking — that mode is the chunk-reuse race by construction. Remaining difference: the recomp spends three VIs per frame where hardware spends two.
+The recomp runs exactly this: no host-injected tokens, no forced non-blocking receives, and SP-done delivered after RT64 has parsed the list (`ROGUESQ_SP_COMPLETE_AFTER_PARSE`, on). Remaining difference: the recomp spends three VIs per frame where hardware spends two.
 
 ### Buffer arbiter
 
@@ -490,21 +490,19 @@ The recomp default (`ROGUESQ_VI_DRIVEN_LOOP`, on) runs exactly this: no host-inj
 | `4` | SWAPPED | `viRetraceHandlerThread`, just before `osViSwapBuffer` |
 | `5` | DISPLAYED | `viRetraceHandlerThread`, next retrace |
 
-The host never writes these bytes in the default mode (the old
-`ROGUESQ_FORCE_BUFFER_PROGRESS` host consumer is gated off when VI-driven).
+The host never writes these bytes.
 
 ### Diagnostic env vars (rendering)
 
 | Var | Effect |
 |-----|--------|
 | `ROGUESQ_F5_NATIVE=0` | Parse without emitting geometry |
-| `ROGUESQ_F5_FLIP_Y=0` / `ROGUESQ_F5_TILES=0` | Revert the y-down viewport / disable flat terrain tiles |
+| `ROGUESQ_F5_TILES=0` | Disable flat terrain tiles |
 | `ROGUESQ_F5_TERRAIN=0` / `ROGUESQ_F5_SPRITES=0` | Disable heightfield terrain / `BD` billboards |
 | `ROGUESQ_F5_CHAIN_CAP` / `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | Walk budgets (64 / 2048 / 4096) |
 | `ROGUESQ_F5_CHUNK_BOUND=0` | Disable the per-level chunk bound (linear fall-through, as the old core did) |
 | `ROGUESQ_DESYNC_TRACE=1` | Ring dump of the commands leading to a rejected color image |
 | `ROGUESQ_LOG_GBI` / `ROGUESQ_LOG_GFX_TASK` / `ROGUESQ_LOG_CIMG` | Per-handler logs / per-task parse timing / color-image counters |
-| `ROGUESQ_VI_DRIVEN_LOOP=0` | Old host-token frame loop (see above) |
 | `ROGUESQ_FB_GUARDS=<mask>` | 1 = display-list neutralizer (off by default: it rewrote payload words), 2 = matpool repair, 4 = framebuffer-registry sanitizer (default 6) |
 | `ROGUESQ_DUMP_RDRAM_ON_SCENE/ON_SCREEN/AT_VI/ON_CINE_ITER/ON_CINE_STALL` | RDRAM dumps for golden diffs (`tools/debug/validate/rdram_golden_diff.py`) |
 | `ROGUESQ_LOG_MESG_TRACE=1` (+`ROGUESQ_MESG_TRACE_FRAMES=lo-hi`) | Message-order trace in the PJ64 script's format for `compare_mesg_trace.py` |
@@ -522,7 +520,7 @@ The host never writes these bytes in the default mode (the old
 
 1. **Sample bank streams from cartridge (hardware truth, 2026-09-07).** The 2.94 MB `samp_SND` bank (ROM `0x2B60B8`, stored raw) is never loaded into RDRAM by the game. Project64 dumps at the start screen, the attribution screen, the cinematic and the main menu all show the bank absent, `.samp` base `0x8009FCD0` = 0, and the asset table holding the bank's cartridge address `0xB02B60B8`. Voice slots carry cartridge sample addresses (`0xB0000000 + ROM offset`); `relocateSndPointer` accepts both `0x80` and `0xB0` pointers; `musyxRenderVoiceSamples` → `fillSampleStreamRange` queues ranges into 0x600-byte stream blocks (`acquireSampleStreamBlock`), and a DMA pump issues 256-byte `osPiStartDma` cart→RDRAM transfers (a PI-register trace on PJ64 logs thousands of them during the cinematic). This path works unchanged in the recomp through librecomp's ROM read, with audio level equal to the old forced load and the heap layout matching hardware (`languageData` at `0x80194300` as on hardware, no allocations spilling above `0x400000`). There is no forced bank load into RDRAM.
 
-2. **Voice key-on.** The synth voice key-on handler (`musyxKeyOnVoice`, 0x80090A3C) runs by default, so music voices transition to ready/counted and the DSP task build runs. A `[[patches.hook]]` in `rogue_squadron.toml` skips voices with a zero period (the envelope math divides by it); `ROGUESQ_STUB_VOICESTART=1` skips every key-on.
+2. **Voice key-on.** The synth voice key-on handler (`musyxKeyOnVoice`, 0x80090A3C) runs by default, so music voices transition to ready/counted and the DSP task build runs. A `[[patches.hook]]` in `rogue_squadron.toml` skips voices with a zero period (the envelope math divides by it).
 
 3. **Synth ucode task-data DMA.** The boot ucode DMAs the main synth text to IMEM 0x80, not IMEM 0, so `text_address` in `rsp/musyx_rsp.toml` is `0x04001080`; otherwise `jal` targets resolve to the wrong offset (the header-DMA call lands on the resampler instead of the DMA routine) and the synth mixes silence. The config:
    ```toml
@@ -633,7 +631,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 | Seam | Behavior |
 |------|----------|
 | SP task routing (M_GFXTASK→HLE, M_AUDTASK→synth) | Queue split happens before `run_task` |
-| SP/DP completion | Delivered after the parse; no host tokens in the default mode (`rs64_vi_callback` only counts VIs unless `ROGUESQ_VI_DRIVEN_LOOP=0`) |
+| SP/DP completion | Delivered after the parse; no host tokens (`rs64_vi_callback` only counts VIs) |
 | Barrier receives | Real blocking receives; the generated C keeps the original `OS_MESG_BLOCK` flags when VI-driven |
 | Buffer arbiter | Host only reads `D_80128E98`/`D_80128EAA` in the default mode; the old host consumer is gated off |
 | `osViBlack` | No-op override (the game never calls `osViBlack(0)`) |
@@ -662,7 +660,7 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 
 1. **Parse-versus-rebuild race (fixed).** The game frees and reuses material/frame chunks at frame start before `submitGfxFrame` waits for SP-done; hardware is safe because the RSP finishes in a few ms, but RT64's 10–100 ms parse read rebuilt chunks (garbage walks, and a bad color-image at 0x760000 that corrupted the heap free list — the LucasArts-reveal crash). Fix: a graphics task is in flight from the request message until the parse completes; the frame-start receive and chunk-release wait for it (`ROGUESQ_VI_WAIT_PARSE=0` disables); the host VI thread holds a retrace during a parse; color images < 16 px wide or not 64-byte aligned are rejected. Post-fix: zero capped tasks, hardware chunk-hop count, 0.9 ms average parse.
 2. **Frame pacing.** Three VIs per frame vs two on hardware; with the race fixed the parse averages under 1 ms, so the remaining VI is on the game side of the frame (to be measured).
-3. **No load-bearing hand edits** in `RecompiledFuncs/funcs_*.c`. The barrier receives block as on hardware (`osRecvMesg_recomp` in `upstream_compat.cpp` forces non-blocking only when `ROGUESQ_VI_DRIVEN_LOOP=0`); the `waitForMusyXAudioTaskDone` yield and the voice key-on guard are `[[patches.hook]]` entries in `rogue_squadron.toml`. The `menuOverlayInit` instruction patch at 0x800C593C nops a callee-save store rather than the branch its comment describes.
+3. **No load-bearing hand edits** in `RecompiledFuncs/funcs_*.c`. The barrier receives block as on hardware; the `waitForMusyXAudioTaskDone` yield and the voice key-on guard are `[[patches.hook]]` entries in `rogue_squadron.toml`. The `menuOverlayInit` instruction patch at 0x800C593C nops a callee-save store rather than the branch its comment describes.
 4. **Factor 5 mutex/queue stubs** in the toml (audio) — hardware takes the mutex every frame; un-stubbing deadlocks at boot (the BSS counter desyncs from the queue token).
 
 The white background during the N64 logo and the grey sky in the trench are

@@ -72,7 +72,7 @@ product with `geometryMode << 18` and rejects when bit 31 is set, so only 0x2000
 (G_CULL_BACK) culls, on positive cross (y-down screen space). 0x1000 never reaches
 the test; the emitter reads it separately to skip the texcoord 1/w premultiply, so
 it is a texcoord-perspective flag, not G_CULL_FRONT. Both bits set = back-face
-cull. Honored when `ROGUESQ_F5_CULL` is on (default).
+cull.
 
 ## Disproven interpretations
 

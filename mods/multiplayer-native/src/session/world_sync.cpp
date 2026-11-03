@@ -363,10 +363,10 @@ extern "C" void rs64_ghost_powerup_touch(uint8_t* rdram, recomp_context* ctx)
 
     Ghost& s = g();
 
-    // ROGUESQ_MP_TEST_PICKUP=<frame>: the host collects the first power-up that ticks from that mission frame on, as if it flew through it.
-    static const long test_pickup = recomp::dbg::env_int("ROGUESQ_MP_TEST_PICKUP", -1);
+    // Test pickup: the first power-up that ticks from that mission frame on is collected, as if flown through.
+    static const TestStep* const pickup = test_step("pickup", -1);
 
-    if (test_pickup >= 0 && s.player == 0 && s.in_session && (long)s.frame >= test_pickup && !s.test_pickup_done)
+    if (pickup && s.in_session && (long)s.frame >= pickup->frame && !s.test_pickup_done)
     {
         s.test_pickup_done = true;
         ctx->f4.fl = 0.0f;

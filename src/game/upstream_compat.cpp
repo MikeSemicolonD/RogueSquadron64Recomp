@@ -31,7 +31,7 @@
 #include "hle/rt64_rs64_lights.h"
 #include "ultramodern/ultramodern.hpp"
 #include "util/debug_logs.h"
-#include "game/upstream_compat.h"   // declares the exports defined below (rs64_vi_driven, g_active_overlay, …)
+#include "game/upstream_compat.h"   // declares the exports defined below (rs64_fb_guards_mask, g_active_overlay, …)
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -45,20 +45,11 @@ extern void print_stack_with_symbols(void** frames, unsigned short count);  // m
 
 // ---- Switches shared with other host files ----
 
-// Default on: the game frame loop runs the hardware way (blocking frame-barrier receives, real
-// post-swap ack wait, no host pacing). ROGUESQ_VI_DRIVEN_LOOP=0 restores host-token pacing for A/B.
-extern "C" int rs64_vi_driven(void) {
-
-    static const int s = env_on("ROGUESQ_VI_DRIVEN_LOOP", true) ? 1 : 0;
-
-    return s;
-}
-
-// ROGUESQ_FB_GUARDS bitmask: 1 = CIMG neutralizer, 2 = (retired), 4 = RT64 fb-registry sanitizer.
-// Default 6; the neutralizer rewrote DL payload words, so it is opt-in.
+// ROGUESQ_FB_GUARDS bitmask: 1 = CIMG neutralizer, 4 = RT64 fb-registry sanitizer.
+// Default 4; the neutralizer rewrote DL payload words, so it is opt-in.
 extern "C" int rs64_fb_guards_mask(void) {
 
-    static const int s = env_int("ROGUESQ_FB_GUARDS", 6);
+    static const int s = env_int("ROGUESQ_FB_GUARDS", 4);
 
     return s;
 }
@@ -147,11 +138,9 @@ extern "C" void osViBlack_recomp(uint8_t* /*rdram*/, recomp_context* ctx) {
     }
 }
 
-// ROGUESQ_MEM_SIZE_MB=4 reports a base N64 (crashes boot; knob only).
+// The game needs the Expansion Pak: a 4 MB report crashes boot.
 extern "C" void osGetMemSize_recomp(uint8_t* /*rdram*/, recomp_context* ctx) {
-
-    static const int s_mb = env_int("ROGUESQ_MEM_SIZE_MB", 8);
-    ctx->r2 = (gpr)(s_mb * 1024 * 1024);
+    ctx->r2 = (gpr)(8 * 1024 * 1024);
 }
 
 // __osInitialize_common is HLE'd and never touches the game's libultra globals. Real libultra
@@ -671,14 +660,8 @@ extern "C" void rs64_wait_gfx_parse_yield(uint8_t* rdram, recomp_context* ctx)
 extern "C" void osRecvMesg_recomp(uint8_t* rdram, recomp_context* ctx)
 {
 
-    s32 flags = (s32)ctx->r6;
+    const s32 flags = (s32)ctx->r6;
     const uint32_t q = (uint32_t)ctx->r4;
-
-    // Host-paced loop only: the per-frame gfx-barrier receives (0x8011A7E8 / 0x8011A818) would
-    // otherwise crawl at the VI-prime token rate. ROGUESQ_GFX_BARRIER_NOBLOCK=0 disables.
-    static const bool s_nb = env_on("ROGUESQ_GFX_BARRIER_NOBLOCK", true);
-
-    if (s_nb && !rs64_vi_driven() && (q == 0x8011A7E8u || q == 0x8011A818u)) flags = 0;   // OS_MESG_NOBLOCK
 
     rs64_mesg_trace(rdram, "recv", q, (int)(s32)ctx->r6, (uint32_t)ctx->r31, (int)flags);
     ctx->r2 = osRecvMesg(rdram, (int32_t)ctx->r4, (int32_t)ctx->r5, flags);
@@ -686,7 +669,7 @@ extern "C" void osRecvMesg_recomp(uint8_t* rdram, recomp_context* ctx)
     // Frame start (video queue 0x80128CF0): the game is about to rebuild the chunks of the buffer
     // slot it just got back. On hardware the RSP finished reading them long ago; RT64's parse may
     // still be running. Hold here until no graphics parse is in flight.
-    if (q == 0x80128CF0u && ctx->r2 == 0 && rs64_vi_driven()) {
+    if (q == 0x80128CF0u && ctx->r2 == 0) {
         static unsigned s_n = 0;
         ++s_n;
         const int before = rs64_gfx_parse_inflight_wait(0);
@@ -805,39 +788,8 @@ static void rs64_check_chunk_freelist(uint8_t* rdram)
     fflush(stderr);
 }
 
-// ROGUESQ_LOG_TASKSUBMIT=1: every GFX task plus a sample of audio tasks, with the first DL bytes.
-// Factor 5 ignores data_size (the DL chains through G_DL), so data_size=0 is normal.
 extern "C" void osSpTaskStartGo_recomp(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_check_chunk_freelist(rdram);
-    static const bool s_log = env_on("ROGUESQ_LOG_TASKSUBMIT");
-
-    if (s_log) {
-        OSTask* task = TO_PTR(OSTask, ctx->r4);
-        static int n = 0;
-        ++n;
-
-        if (n <= 4 || (n & 63) == 0 || task->t.type == 1u)
-        {
-            fprintf(stderr, "[task-submit #%d] type=0x%X flags=0x%X data_ptr=0x%08X data_size=%u ucode=0x%08X ucode_size=%u\n",
-                    n, (unsigned)task->t.type, (unsigned)task->t.flags, (unsigned)task->t.data_ptr,
-                    (unsigned)task->t.data_size, (unsigned)task->t.ucode, (unsigned)task->t.ucode_size);
-            uint32_t dp = (uint32_t)task->t.data_ptr;
-
-            if (task->t.type == M_GFXTASK && dp >= 0x80000000u && dp < 0x80800000u)
-            {
-                uint32_t off = dp - 0x80000000u;
-
-                fprintf(stderr, "  data_ptr[0..32]:");
-
-                for (int i = 0; i < 32; ++i) fprintf(stderr, " %02X", (unsigned)rdram[(off + i) ^ 3]);
-
-                fprintf(stderr, "\n");
-            }
-
-            fflush(stderr);
-        }
-    }
-
     ultramodern::submit_rsp_task(rdram, ctx->r4);
 }

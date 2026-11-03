@@ -62,7 +62,7 @@ param(
     # Each side presses continue that many debrief polls in (ROGUESQ_MP_TEST_CONTINUE; -1 = never).
     [int]$HostContinue = -1,
     [int]$ClientContinue = -1,
-    # Each side's craft takes a lethal hit on these mission frames (ROGUESQ_MP_TEST_DIE, e.g. "300,450").
+    # Each side's craft takes a lethal hit on these mission frames (e.g. "300,450").
     [string]$HostDie = "",
     [string]$ClientDie = "",
     # Lobby runs: the host skips the opening crawl (START 60 polls in); the client follows its skip.
@@ -75,7 +75,7 @@ $exeDir = Split-Path $exe
 $out = Join-Path $root "logs\mp\$Tag"
 if ($Split) { $ClientLive = $true }
 $claim = Join-Path $out "claim"
-$vars = "ROGUESQ_WIDESCREEN", "ROGUESQ_INPUT_CLAIM", "ROGUESQ_MP","ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST_END", "ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_PAUSE", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_QUIT", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_UPGRADE", "ROGUESQ_MP_TEST_PICKUP", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP", "ROGUESQ_FULLSCREEN", "ROGUESQ_RT_LIGHTS", "ROGUESQ_RT_SHADOWS", "ROGUESQ_RT_FOG_SHAFTS", "ROGUESQ_MP_RELAY", "ROGUESQ_MP_CODE", "ROGUESQ_INPUT_SEQ", "ROGUESQ_INPUT_DELAY", "ROGUESQ_MP_TEST_SKIP_CRAWL", "ROGUESQ_MP_TEST_CONTINUE", "ROGUESQ_MP_TEST_DIE"
+$vars = "ROGUESQ_WIDESCREEN", "ROGUESQ_INPUT_CLAIM", "ROGUESQ_MP","ROGUESQ_MP_ADDR", "ROGUESQ_MP_PORT", "ROGUESQ_MP_PAD", "ROGUESQ_MP_SIM_LATENCY_MS", "ROGUESQ_MP_SIM_LOSS_PCT", "ROGUESQ_MP_SIM_JITTER_MS", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET", "ROGUESQ_COOP_LOCAL", "ROGUESQ_LS_PAD2_REPLAY", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_RECORD", "ROGUESQ_GHOST_TRACE", "ROGUESQ_MP_TEST","ROGUESQ_WINDOW_POS", "ROGUESQ_MP_TEST_LIVES", "ROGUESQ_MP_TEST_VERSION", "ROGUESQ_NET_CONFIG", "ROGUESQ_MP_TEST_UNLOCK", "ROGUESQ_MP_TEST_TRIGGER_SOLO", "ROGUESQ_MP_TEST_ALLCRAFT", "ROGUESQ_NAV_WATCH_CUTSCENES", "ROGUESQ_MP_TEST_NO_SKIP_SHARE", "ROGUESQ_MP_UPNP", "ROGUESQ_FULLSCREEN", "ROGUESQ_RT_LIGHTS", "ROGUESQ_RT_SHADOWS", "ROGUESQ_RT_FOG_SHAFTS", "ROGUESQ_MP_RELAY", "ROGUESQ_MP_CODE", "ROGUESQ_INPUT_SEQ", "ROGUESQ_INPUT_DELAY", "ROGUESQ_MP_TEST_SKIP_CRAWL", "ROGUESQ_MP_TEST_CONTINUE"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v, "Process") }
 $procs = @{}
@@ -124,8 +124,18 @@ try {
         $seqIn = if ($role -eq "client") { $ClientInput } else { "" }
         $cont = if ($role -eq "client") { $ClientContinue } else { $HostContinue }
         $env:ROGUESQ_MP_TEST_CONTINUE = if ($cont -ge 0) { "$cont" } else { $null }
+        # Scripted mission-frame steps (ROGUESQ_MP_TEST): deaths on either side, the rest on the host.
+        $steps = @()
         $die = if ($role -eq "client") { $ClientDie } else { $HostDie }
-        $env:ROGUESQ_MP_TEST_DIE = if ($die) { $die } else { $null }
+        if ($die) { $steps += $die -split "," | ForEach-Object { "die@$_" } }
+        if ($role -eq "host") {
+            if ($TestEnd) { $steps += "end@$TestEnd" }
+            if ($TestPause -ge 0) { $steps += "pause@$TestPause" }
+            if ($TestQuit -ge 0) { $steps += "quit@$TestQuit$(if ($TestQuitClean) { ':1' })" }
+            if ($TestUpgrade) { $f, $b = $TestUpgrade -split ":"; $steps += "upgrade@${f}:0x$b" }
+            if ($TestPickup -ge 0) { $steps += "pickup@$TestPickup" }
+        }
+        $env:ROGUESQ_MP_TEST = if ($steps) { $steps -join "," } else { $null }
         $env:ROGUESQ_INPUT_SEQ = if ($seqIn) { $seqIn } else { $null }
         $env:ROGUESQ_INPUT_DELAY = if ($seqIn) { "$ClientInputDelay" } else { $null }
         $env:ROGUESQ_MP_TEST_SKIP_CRAWL = if ($role -eq "host" -and $HostSkipCrawl) { "1" } else { $null }
@@ -133,15 +143,9 @@ try {
         $env:ROGUESQ_RT_LIGHTS = "0"
         $env:ROGUESQ_RT_SHADOWS = "0"
         $env:ROGUESQ_RT_FOG_SHAFTS = "0"
-        $env:ROGUESQ_MP_TEST_END = if ($role -eq "host" -and $TestEnd) { $TestEnd } else { $null }
-        $env:ROGUESQ_MP_TEST_PAUSE = if ($role -eq "host" -and $TestPause -ge 0) { "$TestPause" } else { $null }
         $env:ROGUESQ_MP_TEST_LIVES = if ($role -eq "host" -and $TestLives -ge 0) { "$TestLives" } else { $null }
         $env:ROGUESQ_MP_TEST_VERSION = if ($role -eq "client" -and $TestVersion -ge 0) { "$TestVersion" } else { $null }
-        $env:ROGUESQ_MP_TEST_QUIT = if ($role -eq "host" -and $TestQuit -ge 0) { "$TestQuit" } else { $null }
-        $env:ROGUESQ_MP_TEST_QUIT_CLEAN = if ($TestQuitClean) { "1" } else { $null }
         $env:ROGUESQ_MP_TEST_UNLOCK = if ($role -eq "host" -and $TestUnlock -ge 0) { "$TestUnlock" } else { $null }
-        $env:ROGUESQ_MP_TEST_UPGRADE = if ($role -eq "host" -and $TestUpgrade) { $TestUpgrade } else { $null }
-        $env:ROGUESQ_MP_TEST_PICKUP = if ($role -eq "host" -and $TestPickup -ge 0) { "$TestPickup" } else { $null }
         $env:ROGUESQ_MP_TEST_TRIGGER_SOLO = if ($role -eq "host" -and $TestTriggerSolo) { "1" } else { $null }
         $env:ROGUESQ_MP_TEST_ALLCRAFT = if ($TestAllCraft) { "1" } else { $null }
         $env:ROGUESQ_NAV_WATCH_CUTSCENES = if (($ClientLate -or $ClientWatch) -and $role -eq "client") { "1" } else { $null }

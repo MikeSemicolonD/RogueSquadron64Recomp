@@ -367,6 +367,44 @@ void send_game_over() {
     }
 }
 
+const TestStep* test_step(const char* op, long frame)
+{
+
+    static const std::vector<TestStep> steps = [] {
+
+        std::vector<TestStep> v;
+        const char* p = recomp::dbg::env_str("ROGUESQ_MP_TEST");
+
+        while (p && *p) {
+            const char* at = strchr(p, '@');
+
+            if (!at) {
+                break;
+            }
+
+            TestStep t;
+            char* end = nullptr;
+            t.op.assign(p, at);
+            t.frame = std::strtol(at + 1, &end, 10);
+
+            if (*end == ':') {
+                t.arg = std::strtol(end + 1, &end, 0);
+            }
+
+            v.push_back(t);
+            p = *end == ',' ? end + 1 : nullptr;
+        }
+
+        return v;
+    }();
+
+    for (const TestStep& t : steps) {
+        if (t.op == op && (frame < 0 || t.frame == frame)) return &t;
+    }
+
+    return nullptr;
+}
+
 // Mod camera shots (camera_shots.txt) start from trigger effects, which in session only the host's world applies: the host sends each one it plays.
 void on_local_shot(const char* camera, const char* trigger, void*) {
 
@@ -1434,31 +1472,14 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         apply_pending_result(rdram);
     }
 
-    // ROGUESQ_MP_TEST_END=<frame>:<result>: the host ends its mission on that frame with that result, the way the game's abort does, to test the client following it.
-    static const std::pair<long, int> test_end = []() {
-        long f = -1;
-        int r = 0;
-        const char* e = recomp::dbg::env_str("ROGUESQ_MP_TEST_END");
+    const long frame = (long)s.frame;
 
-        if (!e || sscanf(e, "%ld:%d", &f, &r) != 2 || r < 0 || r > 3) {
-            f = -1;
-        }
-
-        return std::make_pair(f, r);
-    }();
-
-    // ROGUESQ_MP_TEST_QUIT=<frame>: the host process dies on that mission frame (no goodbye), to test the client losing its host mid-mission.
-    static const long test_quit = recomp::dbg::env_int("ROGUESQ_MP_TEST_QUIT", -1);
-
-    if (s.player == 0 && test_quit >= 0 && (long)s.frame == test_quit)
-    {
+    // Test quit: arg 1 takes the menu QUIT path (sends BYE), otherwise the process dies with no goodbye.
+    if (const TestStep* t = test_step("quit", frame)) {
         fprintf(stderr, "[ghost] test quit at frame %u\n", s.frame);
         fflush(stderr);
 
-        // ROGUESQ_MP_TEST_QUIT_CLEAN=1 takes the menu QUIT path (sends BYE) instead of dying silently.
-        static const bool clean = recomp::dbg::env_on("ROGUESQ_MP_TEST_QUIT_CLEAN");
-
-        if (clean) {
+        if (t->arg == 1) {
             rs64::mp::request_quit();
         } else {
             std::_Exit(3);
@@ -1475,59 +1496,26 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         fprintf(stderr, "[ghost] test lives: shared pool set to %ld\n", test_lives);
     }
 
-    // ROGUESQ_MP_TEST_DIE=<frame>,<frame>,...: this side's craft takes a lethal hit on those mission frames, to reach spectating and the last-life rules on cue.
-    static const std::vector<long> test_die = [] {
-
-        std::vector<long> v;
-        const char* e = recomp::dbg::env_str("ROGUESQ_MP_TEST_DIE");
-
-        for (const char* p = e; p && *p; ++p) {
-            char* end = nullptr;
-            const long f = std::strtol(p, &end, 10);
-
-            if (end == p) break;
-
-            v.push_back(f);
-            p = end;
-
-            if (*p != ',') break;
-        }
-
-        return v;
-    }();
-
-    if (std::find(test_die.begin(), test_die.end(), (long)s.frame) != test_die.end())
-    {
-        const float before = rf(rdram, kPlayerHealth);
-        const float invuln = rf(rdram, 0x80137DBCu + 0xC8u);
-        const uint32_t mode = rw(rdram, 0x8010CA20u);
-
+    if (test_step("die", frame)) {
         kill_player(rdram, ctx);
 
-        fprintf(stderr, "[ghost] test die at frame %u: health %.1f -> %.1f, invulnerable %.2f, mode %u\n", s.frame, before, rf(rdram, kPlayerHealth), invuln, mode);
+        fprintf(stderr, "[ghost] test die at frame %u\n", s.frame);
     }
 
-    // ROGUESQ_MP_TEST_UPGRADE=<frame>:<hex bits>: the host ORs power-up bits into its settings word on that frame, the way a pickup does.
-    static const std::pair<long, uint32_t> test_upgrade = []() {
-        long f = -1;
-        unsigned b = 0;
-        const char* e = recomp::dbg::env_str("ROGUESQ_MP_TEST_UPGRADE");
-        return (e && sscanf(e, "%ld:%x", &f, &b) == 2) ? std::make_pair(f, (uint32_t)b & rs64::net::kUpgradeMask) : std::make_pair(-1L, 0u);
-    }();
+    // Test upgrade: OR power-up bits into the settings word, the way a pickup does.
+    if (const TestStep* t = test_step("upgrade", frame)) {
+        const uint32_t bits = (uint32_t)t->arg & rs64::net::kUpgradeMask;
+        ww(rdram, 0x80130B4Cu, rw(rdram, 0x80130B4Cu) | bits);
 
-    if (s.player == 0 && test_upgrade.first >= 0 && (long)s.frame == test_upgrade.first)
-    {
-        ww(rdram, 0x80130B4Cu, rw(rdram, 0x80130B4Cu) | test_upgrade.second);
-
-        fprintf(stderr, "[ghost] test upgrade: %05X at frame %u\n", test_upgrade.second, s.frame);
+        fprintf(stderr, "[ghost] test upgrade: %05X at frame %u\n", bits, s.frame);
     }
 
-    if (s.player == 0 && test_end.first >= 0 && (long)s.frame == test_end.first)
-    {
-        wb(rdram, 0x80130B14u, (uint8_t)test_end.second);
+    // Test end: this result, the way the game's abort ends a mission.
+    if (const TestStep* t = test_step("end", frame)) {
+        wb(rdram, 0x80130B14u, (uint8_t)t->arg);
         ww(rdram, 0x8010C9E0u, rw(rdram, 0x8010C9E0u) | 1u);
 
-        fprintf(stderr, "[ghost] test end: result %d at frame %u\n", test_end.second, s.frame);
+        fprintf(stderr, "[ghost] test end: result %ld at frame %u\n", t->arg, s.frame);
     }
 
     // The other player went down: their puppet takes a lethal hit so the game plays its death, and is removed kPuppetDeathFrames later (or at once when the hit could not land, or they are back up).
@@ -1630,10 +1618,10 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         wb(rdram, 0x80138925u, 0);
     }
 
-    // ROGUESQ_MP_TEST_PAUSE=<frame>: press START on that frame (two frames held), to test that pausing keeps the world running.
-    static const long test_pause = recomp::dbg::env_int("ROGUESQ_MP_TEST_PAUSE", -1);
+    // Test pause: START held for two frames, to test that pausing keeps the world running.
+    const TestStep* pause = test_step("pause", -1);
 
-    if (test_pause >= 0 && ((long)s.frame == test_pause || (long)s.frame == test_pause + 1))
+    if (pause && ((long)s.frame == pause->frame || (long)s.frame == pause->frame + 1))
     {
         wb(rdram, 0x80130B88u, (uint8_t)(rb(rdram, 0x80130B88u) | 0x10u));
     }
@@ -1641,7 +1629,7 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
     const uint32_t m = 0x8013800Cu;
     const Vec3 pos = {rf(rdram, 0x80137DC0u), rf(rdram, 0x80137DC4u), rf(rdram, 0x80137DC8u)};
 
-    if ((rw(rdram, 0x8010CA20u) == 5 || (test_pause >= 0 && (long)s.frame + 150 >= test_pause)) && s.frame % 30 == 0)
+    if ((rw(rdram, 0x8010CA20u) == 5 || (pause && (long)s.frame + 150 >= pause->frame)) && s.frame % 30 == 0)
     {
         // View 0's camera matrix translation (view array 0x80138D18, matrix at +0x34, translation at +0x24).
         fprintf(stderr, "[ghost] %s: frame %u pos %.1f,%.1f,%.1f camera %.1f,%.1f,%.1f\n", rw(rdram, 0x8010CA20u) == 5 ? "paused, world running" : "running", s.frame, pos.x, pos.y, pos.z, rf(rdram, 0x80138D70u), rf(rdram, 0x80138D74u), rf(rdram, 0x80138D78u));

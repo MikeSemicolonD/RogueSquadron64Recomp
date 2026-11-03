@@ -26,7 +26,6 @@
 #include "audio/audio.h"
 #include "main/cli.h"
 #include "main/crash.h"
-#include "main/debug_pollers.h"
 #include "input/input_host.h"
 #include "main/ui_panels.h"
 #include "input/input_bindings.h"
@@ -38,7 +37,6 @@
 #include "util/debug_logs.h"
 #include "host_api/host_api.h"
 #include "main/main.h"                 // this file's own exports (fullscreen/quit hooks)
-#include "game/upstream_compat.h"      // rs64_vi_driven
 #include "game/hook_helpers.h"         // g_vi_tick, g_boot_pulse_start
 #include "game/nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
 
@@ -453,90 +451,10 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
 // ---------------------------------------------------------------------------
 // Per-VI frame-barrier signal (step 1 of the frame-pacing root fix)
 // ---------------------------------------------------------------------------
-// The game's per-frame gfx barrier — submitGfxFrame's osRecvMesg on
-// D_8011A7E8 (0x8011A7E8) and D_8011A818 (0x8011A818) — was BLOCK→NOBLOCK
-// patched to dodge a boot deadlock, which removed the loop's 60Hz pacing (see
-// memory: frame-pacing root cause). This callback fires once per HOST VI
-// retrace (60Hz, from the VI thread) and posts a token to those queues, so the
-// barrier always has a frame token available at the true display cadence.
-//
-// While the recvs are still NOBLOCK this is purely additive and observable only
-// as "no regression": extra tokens fill the size-1 queues then drop
-// (requeue_if_blocked=false), and do_send treats an uninitialized queue as full
-// and no-ops — so it's safe even before the game creates these queues. It
-// primes the barriers so the NOBLOCK instruction patches can later be reverted
-// (step 2) and the game loop will pace to the real VI instead of running free.
-// Disable with ROGUESQ_VI_BARRIER_SIGNAL=0.
+// Once per host VI retrace: the tick rs64_attrib_wait_vi_yield paces the attribution and credits loops to.
 static void rs64_vi_callback()
 {
-
     g_vi_tick = g_vi_tick + 1;
-
-    if (rs64_vi_driven()) return;   // hardware protocol: no host-injected tokens (they double-signal size-1 queues)
-
-    g_vi_tick = g_vi_tick - 1;
-    static int s_on = -1;
-
-    if (s_on < 0) s_on = env_on("ROGUESQ_VI_BARRIER_SIGNAL", true);
-
-    // Tick for rs64_attrib_wait_vi_yield (attribution and credits loops pace to the real VI).
-    g_vi_tick = g_vi_tick + 1;
-
-    if (!s_on)
-    {
-        return;
-    }
-
-    ultramodern::enqueue_external_message((PTR(OSMesgQueue))0x8011A7E8u, (OSMesg)0, false, false);
-    ultramodern::enqueue_external_message((PTR(OSMesgQueue))0x8011A818u, (OSMesg)0, false, false);
-
-    // [FRAME-PACING] Host-signal viRetraceHandlerThread's VI queue (0x80114388) per VI. Its osViSetEvent
-    // registration isn't delivering retrace messages during the cinematic (is_game_started gate / latch),
-    // so the buffer-drain consumer sleeps -> cinematic video buffers never return to free -> the
-    // bufferArbiterProducerScanWait drain-barrier hangs (boot "freeze" at iter ~903). Posting the
-    // registered message (0x8011A4CC) every VI wakes it to drain buffers. ROGUESQ_VI_RETRACE_SIGNAL=0 to disable.
-    static int s_vr = -1;
-
-    if (s_vr < 0) s_vr = env_on("ROGUESQ_VI_RETRACE_SIGNAL", true);
-
-    if (s_vr)
-    {
-        ultramodern::enqueue_external_message((PTR(OSMesgQueue))0x80114388u, (OSMesg)0x8011A4CCu, false, false);
-    }
-
-    // [FRAME-PACING] Host-signal the frame-sync barrier queue (0x80128D10) per VI. The cinematic
-    // producer (bufferArbiterProducerScanWait → awaitFrameSyncMesgBlock) BLOCKs here waiting for a
-    // frame-sync token that signalFrameSyncMesgNonblock would post — but that signaller isn't
-    // firing during the cinematic, so the producer hangs (watchdog: cinematicLoopBody freeze at
-    // iter ~891). Posting a token each VI gives it a 60Hz frame-sync pulse so it proceeds (the
-    // recv discards the message value). ROGUESQ_VI_FRAMESYNC_SIGNAL=0 to disable.
-    static int s_fs = -1;
-
-    if (s_fs < 0) s_fs = env_on("ROGUESQ_VI_FRAMESYNC_SIGNAL", true);
-
-    if (s_fs)
-    {
-        ultramodern::enqueue_external_message((PTR(OSMesgQueue))0x80128D10u, (OSMesg)0, false, false);
-    }
-
-    // [FRAME-PACING] Host-signal the video-buffer drain queue (0x80128CF0) per VI. Near the END of
-    // the cinematic the producer blocks in waitOnVideoQueue (funcs_5.c:5421, osRecvMesg BLOCK on
-    // 0x80128CF0) waiting for a video buffer to return to free; bufferArbiterProducerScanWait
-    // loops there forever (watchdog: cinematicLoopBody freeze at iter ~1118). The retrace consumer
-    // isn't posting the free-token during the cinematic, so pulse it each VI like the sibling
-    // barriers above. ROGUESQ_VI_VIDEOQ_SIGNAL=0 to disable.
-    // Default OFF: unproven and correlated with the mode-2 framebuffer-flood crash in testing
-    // (poking the producer to not wait for buffers seems to let it submit garbage-CIMG DLs).
-    // The op_b5 DL-walk bound (rt64_gbi_f3dfactor5.cpp) is what stabilized the cinematic; this
-    // signal is opt-in for further frame-pacing experiments. ROGUESQ_VI_VIDEOQ_SIGNAL=1 to enable.
-    static int s_vq = -1;
-
-    if (s_vq < 0) s_vq = env_on("ROGUESQ_VI_VIDEOQ_SIGNAL");
-
-    if (s_vq)
-    {
-        ultramodern::enqueue_external_message((PTR(OSMesgQueue))0x80128CF0u, (OSMesg)0, false, false);
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -811,9 +729,6 @@ int main(int argc, char* argv[])
     }
 
 #endif
-
-    rs64::diag::start_state_poller();
-    rs64::diag::start_phase_poller();
 
     rs64::crash::install_handlers();
 

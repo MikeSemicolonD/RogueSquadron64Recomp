@@ -36,7 +36,7 @@ RT64 buffers one real game frame and draws in-between frames by pairing each tra
 | 0xBD sprites | `0x6xxxxxxx` face id (renderLitMeshFaceGroup hooks) -> `0x4xxxxxxx` sparse node+ordinal -> `0x5xxxxxxx` world tracker -> AUTO | `f5_face_sprite_id` ~245, `f5_world_sprite_id` ~274, op_bd ~1437 |
 | Camera-facing quads (explosion and lava fire, glints) | `0xAxxxxxxx` = face record + generation. The `buildOrientedFaceGeometry` hook @0x80012F14 maps each 0xB4's DL address to its face record (`s3`), whose world position at +8 drives the generation: a new one on a gap or a jump past max(160, 4x speed), a reused pool slot. A record drawn twice in a frame falls back to the position tracker | `f5_oriented_face_id`, `f5_take_mapped_face`, called in `f5_emit_face` |
 
-Nodes get an id from their first frame (`ROGUESQ_F5_NODE_STABLE_ONLY=1` waits a frame); an op_01 without an id resets to `TransformGroup()` (AUTO) so it can't inherit the previous object's group. Taken id prefixes: `0x0001` (slot, off), `0x1` tow cable segments, `0x2` nodes, `0x3` baked faces, `0x4`/`0x5`/`0x6` sprites, `0x7` flattened PRIM faces, `0x8` crosshair rings, `0x9` terrain anchor, `0xA` camera-facing quads. The comment near op_01 ~1274 saying "AUTO alone is best" is stale.
+Nodes get an id from their first frame (`ROGUESQ_F5_NODE_STABLE_ONLY=1` waits a frame); an op_01 without an id resets to `TransformGroup()` (AUTO) so it can't inherit the previous object's group. Taken id prefixes: `0x1` tow cable segments, `0x2` nodes, `0x3` baked faces, `0x4`/`0x5`/`0x6` sprites, `0x7` flattened PRIM faces, `0x8` crosshair rings, `0x9` terrain anchor, `0xA` camera-facing quads. The comment near op_01 ~1274 saying "AUTO alone is best" is stale.
 
 ## Giving new geometry an identity
 
@@ -56,11 +56,10 @@ The id must be: **the same** for the same logical object across frames; **differ
 |---|---|---|
 | Object oscillates back and forth along its motion ("jitter in place") | Flips mapped <-> unmapped between frames. Mapped lags up to 1 frame, unmapped is drawn at cur (ahead). Camera-space velocity makes the gap large | Log per-transform mapped state per frame. Measure with `ROGUESQ_LOG_INTERP_PAIR=1`. Flip triggers: `ID_MAXJUMP` guard if enabled, 0.2 NDC auto gate, sprite generation bumps (gap / >4x size jump; a flipbook restart only counts if it also moved >1.5x size; a halving in size only counts off the predicted path) |
 | Id-less object pops for one frame when it starts moving or reverses | AUTO position: `RigidBody::updateLinear` disables translation lerp on start-from-rest or >90 deg velocity reversal | Give it an id (INTERPOLATE bypasses the heuristic) |
-| Searchlight shafts/glows on structures, explosion and lava fire jitter only while the camera moves | Game bakes their camera-space position into the verts every frame under a static matrix (`0x80037780`, never written in-mission; confirmed with `ROGUESQ_DATA_BP`); vertex interp is SKIP so they step at game rate | `ROGUESQ_F5_BAKED_VTX_INTERP` (default on): per-face id + vertex interpolation for faces under a non-ring, id-less matrix. Find such cases by checking which matrix (`s_mv_last_w1`) an id-less draw sits under. Faces are matched in camera space: the terrain-root world frame (`ROGUESQ_F5_BAKED_WORLD=1`) jumps and lost every glint on 13% of frames. Faces built by `buildOrientedFaceGeometry` (explosion and lava fire, glints) get `0xAxxxxxxx` ids from their face record instead (`ROGUESQ_F5_ORIENTED_FACE_ID`), so only untagged faces are position-tracked. Measure with the class-3 field of `[pair]` (mapped/total/flips) |
+| Searchlight shafts/glows on structures, explosion and lava fire jitter only while the camera moves | Game bakes their camera-space position into the verts every frame under a static matrix (`0x80037780`, never written in-mission; confirmed with `ROGUESQ_DATA_BP`); vertex interp is SKIP so they step at game rate | `ROGUESQ_F5_BAKED_VTX_INTERP` (default on): per-face id + vertex interpolation for faces under a non-ring, id-less matrix. Find such cases by checking which matrix (`s_mv_last_w1`) an id-less draw sits under. Faces are matched in camera space: the terrain-root world frame jumps and lost every glint on 13% of frames. Faces built by `buildOrientedFaceGeometry` (explosion and lava fire, glints) get `0xAxxxxxxx` ids from their face record instead (`ROGUESQ_F5_ORIENTED_FACE_ID`), so only untagged faces are position-tracked. Measure with the class-3 field of `[pair]` (mapped/total/flips) |
 | Glow / light shaft on a structure flickers at 30 Hz; fine on real frames | zSource=PRIM draws use one constant depth from the current frame while the surface under them is drawn at its blended depth (`shaders/RasterVS.hlsl:34`) | `ROGUESQ_F5_SPRITE_PIXEL_Z` and `ROGUESQ_F5_PRIM_FLATTEN` (default on) give these faces per-vertex depth that follows interpolation |
 | Growing fire puff pulses while its position is smooth | Sprite size baked into int16 verts, vertex interp SKIP -> size steps at game rate | Build a unit quad and put size in the transform scale (`SPRITE_XFORM` only moves the centre into the transform; size stays in verts) |
 | Smear / warp between unrelated objects | Mispair: id reused across instances or AUTO matched the wrong neighbour | Add a generation; tighten id; never loosen the AUTO hash |
-| Two unrelated things pair | Id namespace collision: `ROGUESQ_F5_TERRAIN_ID` terrain ids (`0x6`+cell, ~1215) share the `0x6` prefix with face-sprite ids | Keep `F5_TERRAIN_ID` off or move one namespace |
 | Sprite ids all reset at once | `f5_face_sprite_id` clears its map at >8192 entries (~250) | Bounded-map eviction instead of clear |
 | Periodic whole-terrain lurch | Grid re-center tweened | Confirm `REGRID_COMP`/`REGRID_SNAP` on (default) |
 | Terrain snaps ahead and back for one frame now and then | The root's id changed: the folded shift L dropping to 0 every 16 cells (now kept, `Workload::rs64Rebase` moves the previous transform; `ROGUESQ_F5_REBASE_INTERP`), or the root losing its learned k when `s_regrid` filled up | Count flips of the root id (`2?392440` on Construction Yards) in `[pair]`: 0 expected |
@@ -73,9 +72,10 @@ The id must be: **the same** for the same logical object across frames; **differ
 
 ## Dead ends (do not retry)
 
-- Submit-order / ring-slot ids (`ROGUESQ_F5_SLOT_ID`), address-derived ids, persistent entity-pointer maps: mispair on spawn/despawn.
-- Dropping triangleCount from the AUTO hash (`ROGUESQ_INTERP_HASH_TRIS`): wider mispairs, smear.
-- Vertex interpolation for terrain (`ROGUESQ_F5_VTX_INTERP`): tile vertex sets change per frame, flicker.
+- Submit-order / ring-slot ids, address-derived ids, persistent entity-pointer maps: mispair on spawn/despawn.
+- Dropping triangleCount from the AUTO hash: wider mispairs, smear.
+- Vertex interpolation for terrain: tile vertex sets change per frame, flicker.
+- Terrain ids by quantized world cell: no better than the regrid handling, and its `0x6` prefix collided with face-sprite ids.
 - Classifying ship vs particle by node fields (owner8, unique drawable): drops formation ships.
 - Hardcoding heap address pool ranges: level-fragile.
 

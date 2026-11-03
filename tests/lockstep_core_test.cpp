@@ -112,19 +112,6 @@ static void test_throttle_quantization() {
     CHECK(quantize_throttle(dequantize_throttle(127)) == 127);
 }
 
-static void test_delay_line() {
-    DelayLine d(2);
-    uint8_t p[6];
-    for (int i = 1; i <= 4; ++i) {
-        memset(p, i, 6);
-        d.push_pop(p);
-        const uint8_t expect = (i <= 2) ? 0 : (uint8_t)(i - 2);
-        for (int k = 0; k < 6; ++k) {
-            CHECK(p[k] == expect);
-        }
-    }
-}
-
 #include <vector>
 
 static void put_be32(std::vector<uint8_t>& ram, uint32_t kseg0, uint32_t v) {
@@ -322,11 +309,6 @@ static void test_env_parsers() {
     CHECK(parse_seed("12abc") == 0u);
     CHECK(parse_seed("") == 0u);
     CHECK(parse_seed(nullptr) == 0u);
-    CHECK(clamp_delay(0) == 1);
-    CHECK(clamp_delay(-5) == 1);
-    CHECK(clamp_delay(61) == 60);
-    CHECK(clamp_delay(3) == 3);
-    CHECK(clamp_delay(60) == 60);
 }
 
 static void test_moved_ranges_default_to_none() {
@@ -353,7 +335,6 @@ int main() {
     test_song_event_roundtrip();
     test_parsers_accept_crlf();
     test_throttle_quantization();
-    test_delay_line();
     test_fnv1a_known_value();
     test_hash_is_stable_and_region_sensitive();
     test_hash_ignores_language_byte();
