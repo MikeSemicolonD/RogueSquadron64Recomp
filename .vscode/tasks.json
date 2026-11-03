@@ -578,6 +578,47 @@
             "detail": "Builds and runs rs64_unit_tests in the selected WSL distro's Linux build tree (unit tests + style checker)."
         },
         {
+            "label": "Test: Replay first level (Windows Release)",
+            "type": "shell",
+            "command": "& .\\tools\\debug\\recordings\\run-replays.ps1 -Tag smoke-windows -Recordings tools\\debug\\recordings\\00-ambush-at-mos-eisley -Binary .\\build\\Release\\RogueSquadron64Recomp.exe -Speed 16 -Timeout 300",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"] }
+            },
+            "group": "test",
+            "problemMatcher": [],
+            "detail": "Replays the Ambush at Mos Eisley mission recordings against the Release exe at ROGUESQ_SPEED=16 and compares each against its .hash baseline. Logs and summary.csv in logs/lockstep/smoke-windows/."
+        },
+        {
+            "label": "Test (WSL): Linux package boot + first-level replay",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "R=\"$(wslpath '${workspaceFolder}')\"; P=\"$HOME/RogueSquadron64Recomp-linux-x64-smoke.tar.xz\"; bash \"$R/tools/release/package-linux.sh\" \"$P\" \"$HOME/rs64-build-release\" || exit 1; bash \"$R/tools/release/linux/test-package.sh\" \"$P\" --boot \"$R/build/Release/rogue_squadron.z64\" --replay \"$R/build/Release/rogue_squadron.z64\" \"$R/build/Release/saves/rs64.n64.us.1.0.bin\" \"$R/tools/debug/recordings/00-ambush-at-mos-eisley/mos_eisley.rec\"; rc=$?; rm -f \"$P\"; exit $rc"
+            ],
+            "group": "test",
+            "problemMatcher": [],
+            "dependsOn": "Build (Linux/WSL, Release): RogueSquadron64Recomp",
+            "dependsOrder": "sequence",
+            "detail": "Builds and packages the WSL Release exe as an x64 tarball, then runs test-package.sh on it: package checks, a headless boot, and the Mos Eisley replay compared against its .hash (ROM and save from build/Release). Deletes the tarball afterwards."
+        },
+        {
+            "label": "Test: Release smoke (Windows + Linux + macOS build)",
+            "dependsOn": [
+                "Build: RogueSquadron64Recomp (Release)",
+                "Test: Unit tests",
+                "Test: Replay first level (Windows Release)",
+                "Test (WSL): Linux package boot + first-level replay",
+                "Test (WSL): Unit tests",
+                "Build (macOS cross, WSL/osxcross): RogueSquadron64Recomp"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": [],
+            "detail": "Pre-release check: Windows Release build, unit tests and first-level replay; Linux package build, boot and replay plus unit tests in WSL; macOS cross-build only (nothing here can run it). Stops at the first failure."
+        },
+        {
             "label": "Test (WSL): Standalone test",
             "type": "process",
             "command": "wsl.exe",
