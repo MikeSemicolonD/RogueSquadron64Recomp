@@ -66,13 +66,12 @@ def write_minidump(pid, path):
         kernel32.CloseHandle(process)
 
 
-def capture_window(pid):
-    """RGBA bytes, width, height of the largest visible top-level window of pid (PrintWindow full content, BitBlt if that is black)."""
+def game_window(pid):
+    """hwnd, client width, height of the largest visible top-level window of pid."""
     import ctypes
     from ctypes import wintypes
 
     user32 = ctypes.windll.user32
-    gdi32 = ctypes.windll.gdi32
     found = []
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -88,7 +87,33 @@ def capture_window(pid):
     user32.EnumWindows(enum, 0)
     if not found or max(found)[0] == 0:
         raise GameError(f"no visible window for pid {pid}")
-    _, hwnd, w, h = max(found)
+    return max(found)[1:]
+
+
+def post_text(pid, text, backspaces=0, delay_ms=350):
+    """Type into the game window without focus: Backspace as WM_KEYDOWN/UP, each character as WM_CHAR (SDL_TEXTINPUT)."""
+    import ctypes
+
+    user32 = ctypes.windll.user32
+    user32.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+    hwnd = game_window(pid)[0]
+    for _ in range(backspaces):
+        user32.PostMessageW(hwnd, 0x100, 0x08, 1 | (0x0E << 16))
+        user32.PostMessageW(hwnd, 0x101, 0x08, 1 | (0x0E << 16) | (3 << 30))
+        time.sleep(delay_ms / 1000)
+    for ch in text:
+        user32.PostMessageW(hwnd, 0x102, ord(ch), 1)
+        time.sleep(delay_ms / 1000)
+
+
+def capture_window(pid):
+    """RGBA bytes, width, height of the largest visible top-level window of pid (PrintWindow full content, BitBlt if that is black)."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    hwnd, w, h = game_window(pid)
 
     class BITMAPINFOHEADER(ctypes.Structure):
         _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG), ("biPlanes", wintypes.WORD),
@@ -109,23 +134,45 @@ def capture_window(pid):
     gdi32.DeleteObject.argtypes = [HGDI]
     gdi32.DeleteDC.argtypes = [HDC]
     gdi32.BitBlt.argtypes = [HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, HDC, ctypes.c_int, ctypes.c_int, wintypes.DWORD]
-    window_dc = user32.GetDC(hwnd)
-    mem_dc = gdi32.CreateCompatibleDC(window_dc)
-    info = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
-    bits = ctypes.c_void_p()
-    bitmap = gdi32.CreateDIBSection(mem_dc, ctypes.byref(info), 0, ctypes.byref(bits), None, 0)
-    old = gdi32.SelectObject(mem_dc, bitmap)
-    try:
-        user32.PrintWindow(hwnd, mem_dc, 3)
-        raw = ctypes.string_at(bits, w * h * 4)
-        if not any(raw[i] or raw[i + 1] or raw[i + 2] for i in range(0, len(raw), 4 * 97)):
-            gdi32.BitBlt(mem_dc, 0, 0, w, h, window_dc, 0, 0, 0x00CC0020)
-            raw = ctypes.string_at(bits, w * h * 4)
-    finally:
-        gdi32.SelectObject(mem_dc, old)
-        gdi32.DeleteObject(bitmap)
-        gdi32.DeleteDC(mem_dc)
-        user32.ReleaseDC(hwnd, window_dc)
+    user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+
+    def grab(mode):
+        """Client area as BGRA: 'print' = PrintWindow, 'window' = BitBlt from the window DC, 'screen' = BitBlt from the screen at the client's position."""
+        src_hwnd = None if mode == "screen" else hwnd
+        src_dc = user32.GetDC(src_hwnd)
+        mem_dc = gdi32.CreateCompatibleDC(src_dc)
+        info = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+        bits = ctypes.c_void_p()
+        bitmap = gdi32.CreateDIBSection(mem_dc, ctypes.byref(info), 0, ctypes.byref(bits), None, 0)
+        old = gdi32.SelectObject(mem_dc, bitmap)
+        try:
+            if mode == "print":
+                user32.PrintWindow(hwnd, mem_dc, 3)
+            else:
+                origin = wintypes.POINT(0, 0)
+                if mode == "screen":
+                    user32.ClientToScreen(hwnd, ctypes.byref(origin))
+                gdi32.BitBlt(mem_dc, 0, 0, w, h, src_dc, origin.x, origin.y, 0x00CC0020)
+            return ctypes.string_at(bits, w * h * 4)
+        finally:
+            gdi32.SelectObject(mem_dc, old)
+            gdi32.DeleteObject(bitmap)
+            gdi32.DeleteDC(mem_dc)
+            user32.ReleaseDC(src_hwnd, src_dc)
+
+    def black(raw):
+        return not any(raw[i] or raw[i + 1] or raw[i + 2] for i in range(0, len(raw), 4 * 97))
+
+    # PrintWindow waits for the window's thread to answer WM_PRINT, with no timeout; while that thread is busy, copy the screen instead.
+    result = {}
+    worker = threading.Thread(target=lambda: result.setdefault("raw", grab("print")), daemon=True)
+    worker.start()
+    worker.join(3.0)
+    raw = result.get("raw")
+    if raw is None:
+        raw = grab("screen")
+    elif black(raw):
+        raw = grab("window")
 
     rgba = bytearray(raw)
     rgba[0::4], rgba[2::4] = raw[2::4], raw[0::4]
@@ -343,7 +390,10 @@ class Game:
             raise GameError("game not running")
         rgba, w, h = capture_window(self.proc.pid)
         if path is None:
-            dl = self.call("frame_info")["clocks"].get("dl", 0)
+            try:
+                dl = self.call("frame_info", timeout_s=2)["clocks"].get("dl", 0)
+            except GameError:
+                dl = "nodl"
             path = os.path.join(self.session_dir, "shots", f"{dl}_{int(time.time() * 1000) % 100000}.png")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmem_decode.write_png(path, rgba, w, h)
@@ -803,6 +853,14 @@ def serve():
         if stick is not None:
             params["stick"] = stick
         return game.call("press", params)
+
+    @mcp.tool()
+    def type_text(text: str, backspaces: int = 0, delay_ms: int = 350) -> dict:
+        """Type on the PASSCODES / ENTER NAME letter wheels as the keyboard does (posted to the window, no focus needed): `backspaces` Backspaces first, then each character. Game must be running, not frozen. Enter adds the wheel letter instead of submitting: to submit, press ddown to ENTER CODE, then a."""
+        if not game.alive():
+            raise GameError("game not running")
+        post_text(game.proc.pid, text, backspaces, delay_ms)
+        return {"typed": text, "backspaces": backspaces}
 
     @mcp.tool()
     def release() -> dict:

@@ -74,7 +74,10 @@ static float terrain_dist_setting() {
     return std::min((s_env > 0.0f) ? s_env : draw_dist_setting(), 2.5f);
 }
 
-// Cutscenes keep the game's own view distance and fog per shot unless the player opts out (keepCutsceneDrawDistance; ROGUESQ_CINE_DRAW_DIST=0/1 overrides).
+extern "C" int rs64_crawl_playing(void);
+
+// Cutscenes and the opening crawl keep the game's own view distance and fog per shot unless the player opts out (keepCutsceneDrawDistance;
+// ROGUESQ_CINE_DRAW_DIST=0/1 overrides).
 static bool game_owns_view_setting()
 {
 
@@ -84,7 +87,7 @@ static bool game_owns_view_setting()
 }
 
 static bool game_owns_view() {
-    return game_owns_view_setting() && rs64_state_in_cinematic();
+    return game_owns_view_setting() && (rs64_state_in_cinematic() || rs64_crawl_playing());
 }
 
 extern "C" float rs64_draw_dist(void)
@@ -92,14 +95,16 @@ extern "C" float rs64_draw_dist(void)
     return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view(), rs64_state_level());
 }
 
-// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own
-// terrain ("legacyTerrain"), 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides the setting.
+// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own terrain ("legacyTerrain", and
+// cutscenes that keep their own view: their sky sits below the map's horizon), 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides.
 extern "C" int rs64_static_terrain_mode(void)
 {
 
     static const int s_env = env_int("ROGUESQ_F5_STATIC_TERRAIN", -1);
 
     if (s_env >= 0) return s_env;
+
+    if (game_owns_view()) return 0;
 
     return rs64::video::legacy_terrain() ? 0 : 1;
 }

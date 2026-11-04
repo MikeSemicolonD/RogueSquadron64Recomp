@@ -37,6 +37,7 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `rdram_read` / `rdram_write` | Game memory as hex at KSEG0 addresses (relocated ranges handled). |
 | `rdram_dump` | The 8 MB RDRAM in the `ROGUESQ_DUMP_RDRAM_AT_VI` format, for `rdram_golden_diff.py` / `state_diff`. |
 | `press` / `release` | Hold controller-1 buttons or the stick for N frames (or until release); with `step`, plays exact frames of input. |
+| `type_text` | Type letters (and Backspaces) on the PASSCODES / ENTER NAME wheels, posted to the game window without focus. |
 | `screenshot` | PNG of the game window, captured by the game's PID. |
 | `frame_summary` / `list_draws` / `get_draw` | The frozen frame's framebuffer pairs and draw calls, everything the F1 Debugger shows. |
 | `dump_texture` / `texture_dumping` | One draw tile's TMEM as `.tmem` + `.json` + `.png` / RT64's whole-run texture dumper. |

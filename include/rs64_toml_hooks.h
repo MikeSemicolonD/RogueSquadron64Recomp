@@ -287,6 +287,7 @@ unsigned rs64_pause_array_for(uint8_t* rdram, unsigned id, unsigned native);
 unsigned rs64_pause_label_for(uint8_t* rdram, unsigned marker, unsigned entry);
 void rs64_asset_overrides_patch(uint8_t*, uint32_t);
 void rs64_attrib_wait_vi_yield(uint8_t*, recomp_context*);
+void rs64_credits_wait_vi_cadence(uint8_t*, recomp_context*);
 void rs64_camera_shots_frame(uint8_t*, recomp_context*);
 void rs64_camera_shots_mission_start(uint8_t*);
 void rs64_camera_shots_trigger(uint8_t*, uint32_t, uint32_t);

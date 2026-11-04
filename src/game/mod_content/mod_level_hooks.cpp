@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -485,6 +486,22 @@ extern "C" int rs64_mod_levels_playing() {
 static std::vector<rs64levels::Crawl> s_crawls;
 static const rs64levels::Crawl* s_playing_crawl = nullptr;
 
+// The "crawl" host flag, readable lock-free on the per-object draw distance path.
+static std::atomic<int> s_crawl_playing{ 0 };
+
+static void set_crawl_playing(int on)
+{
+
+    s_crawl_playing.store(on, std::memory_order_relaxed);
+    rs64::host::set_flag("crawl", on);
+}
+
+// 1 from the opening crawl's start through its planet pan-down, until the mission's first frame.
+extern "C" int rs64_crawl_playing(void)
+{
+    return s_crawl_playing.load(std::memory_order_relaxed);
+}
+
 extern "C" void rs64_crawls_init()
 {
 
@@ -542,7 +559,7 @@ extern "C" int rs64_mod_levels_crawl_id(int level)
 
     // A crawl plays now (the game's own for levels 0, 5, 10 and 15); the nav sequencer watches this flag.
     const bool stock = level == 0 || level == 5 || level == 10 || level == 15;
-    rs64::host::set_flag("crawl", crawl >= 0 || (crawl == rs64levels::kCrawlTemplate && stock));
+    set_crawl_playing(crawl >= 0 || (crawl == rs64levels::kCrawlTemplate && stock));
 
     return crawl;
 }
@@ -1066,7 +1083,7 @@ extern "C" void rs64_rules_mission_start(uint8_t* rdram)
 
     const char* mod = rs64_mod_levels_current_folder();
 
-    rs64::host::set_flag("crawl", 0);
+    set_crawl_playing(0);
     s_playing_crawl = nullptr;
     s_rules_folder = rs64rules::rulesFolder(mod ? mod : "", (int)rw(rdram, 0x80130B70u));
     s_rules_pending = s_rules_by_folder.count(s_rules_folder) != 0;

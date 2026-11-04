@@ -834,7 +834,7 @@ void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx)
 {
 
-    rs64_attrib_wait_vi_yield(rdram, ctx);
+    rs64_credits_wait_vi_cadence(rdram, ctx);
 }
 
 // menuOverlayInit entry
