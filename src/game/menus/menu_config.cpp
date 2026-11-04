@@ -3809,6 +3809,33 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId)
     return 0;
 }
 
+// The padlock takes the brace '}' slot, which is also the level select's right arrow (the string "}" at 0x800A5BCC): the slot shows the padlock only on
+// a page whose live labels hold a '$' (co-op's locked games), the brace everywhere else.
+static struct { uint32_t dst = 0; std::vector<uint8_t> brace, lock; bool shown = true; } s_lock_glyph;
+
+// Image and charset entry of the shared slot (50) for this frame; runs after ensure_menu_period, which renames the slot to '$' every frame.
+static void show_menu_lock(uint8_t* rdram, bool lock)
+{
+
+    if (!s_lock_glyph.dst) return;
+
+    for (const uint32_t id : { 0u, 5u })
+    {
+        const uint32_t obj = (uint32_t)rd_w(rdram, 0x9FC10u + id * 4) - 0x80000000u;
+        const uint32_t charset = (uint32_t)rd_w(rdram, obj + 0x0C) - 0x80000000u;
+
+        wr_b(rdram, charset + 50, lock ? '$' : '}');
+    }
+
+    if (lock == s_lock_glyph.shown) return;
+
+    const std::vector<uint8_t>& img = lock ? s_lock_glyph.lock : s_lock_glyph.brace;
+
+    for (size_t i = 0; i < img.size(); ++i) wr_b(rdram, s_lock_glyph.dst + (uint32_t)i, img[i]);
+
+    s_lock_glyph.shown = lock;
+}
+
 // The italic menu font ("italic35") lacks '.', a period-wide blank ('`', status_dots padding) and a caret ('|'): the '&', '"' and '/' slots (no language's text uses them; German needs the umlauts) become them, cut from the font's own
 // ':' (lower dot; blank) and '!' (its stem). Glyphs are D_80128F08 entries (0x24: W @8, size @0xC, data @0x10, name @0x14 = "F" char "A"); the font's charset and widths share the index.
 static void ensure_menu_period(uint8_t* rdram)
@@ -3927,6 +3954,11 @@ static void ensure_menu_period(uint8_t* rdram)
 
             const int h = last - top + 1, body = top + h * 9 / 20, t = std::max(2, w / 6), inset = w / 5;
             const int hole_top = body + (last - body) / 3, hole_bottom = last - (last - body) / 4;
+
+            s_lock_glyph.brace.resize(size);
+
+            for (uint32_t i = 0; i < size; ++i) s_lock_glyph.brace[i] = rd_b(rdram, dst + i);
+
             auto lit = [&](int x, int y) {
 
                 if (x < 1 || x >= w - 1 || y < top || y > last) return false;
@@ -3942,6 +3974,13 @@ static void ensure_menu_period(uint8_t* rdram)
                 const uint8_t v = (uint8_t)((lit(2 * j, y) ? 0xF0 : 0) | (lit(2 * j + 1, y) ? 0x0F : 0));
                 wr_b(rdram, dst + y * stride + ((y & 1) && stride >= 8 ? (j ^ 4) : j), v);
             }
+
+            s_lock_glyph.lock.resize(size);
+
+            for (uint32_t i = 0; i < size; ++i) s_lock_glyph.lock[i] = rd_b(rdram, dst + i);
+
+            s_lock_glyph.dst = dst;
+            s_lock_glyph.shown = true;
         }
 
         for (uint32_t i = 0; i < size && mode != kUpArrow && mode != kDownArrow && mode != kLock; ++i)
@@ -3992,6 +4031,8 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
     languages_frame(rdram, ctx);
     note_frame(rdram, ctx);
 
+    bool lock_shown = false;
+
     // A changed live label is rewritten in its buffer and relaid out in place (0x800C4C8C(menu, entry mask, 0), as the name entry does).
     if (page_name(rd_b(rdram, GCMD_OFF + 0x04)))
     {
@@ -4012,6 +4053,8 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
             else if (b.type == BType::Slider)
                 t = slider_bar_text(b.bar_label, slider_value(rdram, b.key, b.toggle_get_fn), b.smin, b.smax, b.bar_width, b.bar_filled, b.bar_empty);
 
+            lock_shown = lock_shown || t.find('$') != std::string::npos;
+
             if (t.empty() || t == b.live_text) continue;
 
             write_live(rdram, b.live_buf, t);
@@ -4021,6 +4064,8 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
 
         if (mask) rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, mask, 0u});
     }
+
+    show_menu_lock(rdram, lock_shown);
 
     if (!snd_sliders_here(rdram)) return;
 
