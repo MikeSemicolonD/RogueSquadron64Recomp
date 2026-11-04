@@ -12,7 +12,7 @@ static void test_header_roundtrip() {
     SessionHeader h;
     h.seed = 7; h.level = 5; h.craft = 2; h.difficulty = 1; h.flags0 = 0x00012203u;
     h.controller = 3; h.expansion = 1; h.cheats0 = 0x40u; h.cheats1 = 0; h.naboo = 0xDEADBEEFu; h.build = "test build";
-    h.secondary = 9; h.cruise_bits = 0x3F000000u;
+    h.secondary = 9; h.cruise_bits = 0x3F000000u; h.widescreen = 1; h.draw_pct = 553;
     for (size_t i = 0; i < h.pilot.size(); ++i) {
         h.pilot[i] = (uint8_t)(i * 7 + 1);
     }
@@ -24,6 +24,10 @@ static void test_header_roundtrip() {
     CHECK(g.seed == 7 && g.level == 5 && g.craft == 2 && g.difficulty == 1 && g.flags0 == 0x00012203u);
     CHECK(g.controller == 3 && g.expansion == 1 && g.cheats0 == 0x40u && g.naboo == 0xDEADBEEFu && g.build == "test build");
     CHECK(g.secondary == 9 && g.cruise_bits == 0x3F000000u && g.pilot == h.pilot);
+    CHECK(g.widescreen == 1 && g.draw_pct == 553);
+    SessionHeader old;
+    CHECK(parse_header("rs64-ls v2\nseed=1\n---\n", &old));
+    CHECK(old.draw_pct == 0);
 }
 
 static void test_header_rejects_bad_magic() {

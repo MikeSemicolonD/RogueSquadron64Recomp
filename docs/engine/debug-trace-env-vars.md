@@ -80,7 +80,7 @@ Other user options without flags:
 
 ### RT64 display overrides
 
-Applied in `create_render_context` (`src/video/rt64_render_context.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
+Applied by `apply_env_overrides` (`src/video/video_config.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
 
 | Env var | Default | Effect |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ Kill switches and A/B switches (`lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp`, `rt6
 | --- | --- | --- |
 | `ROGUESQ_F5_CHUNK_BOUND` | on | Chunk-bounded DL fetch rule. `0` disables when diagnosing a desync. |
 | `ROGUESQ_F5_CHAIN_CAP` | 256 | Max chunks in one next-link chain before the walker ends the list (backstop against a stale call walking the free list). 256 is the window `f5_chunk_revisit` can still detect a cycle in; dense frames chain about 84. |
-| `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | 2048 / 4096 | Per-task chunk-entry and face budgets; a trip ends the task (hardware goldens stay under 400 / 700). |
+| `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | 16384 / 65536 | Per-task chunk-entry and face budgets; a trip ends the task, dropping the rest of the frame (hardware goldens stay under 400 / 700; distant stand-ins at long draw distance pass 4096 faces). |
 | `ROGUESQ_F5_SPRITES` | on | Emit 0xBD billboard sprites (fire, smoke, explosions). |
 | `ROGUESQ_F5_MESH_PRIMDEPTH` | on | zSource=PRIM mesh faces take primDepth from their own transformed verts. |
 | `ROGUESQ_F5_TERRAIN` / `ROGUESQ_F5_TILES` | on / on | Draw the heightfield grid / the 0x05 terrain tile quads. |
@@ -198,7 +198,7 @@ Draw distance and terrain grid (`src/game/hook_helpers.cpp`):
 
 | Env var | Default | Effect |
 | --- | --- | --- |
-| `ROGUESQ_CINE_DRAW_DIST` | `keepCutsceneDrawDistance` | `1`/`0` overrides `keepCutsceneDrawDistance` in `roguesq_video.json` (default on). On: while a cutscene plays, the draw distance, terrain reach, fog and the cutscene level's terrain cell budget use the game's own values (multiplier 1.0), so per-shot view distances stay as authored. Off: cutscenes use the player's setting. Battle Above Taloraan (level 10) always runs at 1.0: it pins its own far plane and fog and has no terrain. |
+| `ROGUESQ_CINE_DRAW_DIST` | `keepCutsceneDrawDistance` | `1`/`0` overrides `keepCutsceneDrawDistance` in `roguesq_video.json` (default on). On: while a cutscene or an opening crawl (through its planet pan-down) plays, the draw distance, terrain reach, fog and the cutscene level's terrain cell budget use the game's own values (multiplier 1.0) and the game draws its own terrain in place of the whole-map pass, so per-shot view distances and the sky's horizon stay as authored. Off: cutscenes use the player's setting. Battle Above Taloraan (level 10) always runs at 1.0: it pins its own far plane and fog and has no terrain. |
 | `ROGUESQ_TERRAIN_DIST=<mult>` | draw dist | Legacy terrain: scales the game's terrain grid reach and fog start/end. Accepts 0.25-8, capped at 2.5 (the terrain grid is 128x128 cells). Under the whole-map pass the grid stays at stock reach and fog follows the draw distance. |
 | `ROGUESQ_LOG_FOG=1` | off | One `[fog]` line per change: level, far-range base D (0x8009DEAC) and its bounds, the fog start/end/color the game set, the cutscene flag, our draw/terrain multipliers. |
 | `ROGUESQ_LOG_TERRAIN_GRID` | off | `[tgrid]` terrain view bounding box (cells), level cell budget, running max dimension, peak cells streamed and budget hits, every 60 grid builds. |
@@ -261,6 +261,7 @@ Probes:
 | `ROGUESQ_F5_REBASE_INTERP` | on | When the terrain root's folded regrid shift drops back to 0 (every 16 cells), its interpolation id is kept and RT64 moves the previous frame's transform by the dropped shift before blending. `0` bumps the id instead (the terrain snapped ahead and back for a frame). A/B only. |
 | `ROGUESQ_F5_CABLE_IDS` | on | Tow cable segments get interpolation ids by position from the ship end (prefix `0x1`, new generation on a gap, a re-fire or a falling segment count), so the segment at the ship tweens with it and no segment loses its pair when the cable pays out; fed by a hook at `addNpcToVisibilityBucket` entry, so it also covers the long-tow-cable mod. `=0` disables. |
 | `ROGUESQ_F5_XHAIR_QUAD` | on | The crosshair rings (texrects matched to the HUD struct's ring elements) draw as camera-space quads with interpolation ids `0x80000000`/`0x80000001` (and `0x80000002` for the Y-wing bomb sight), so they move at the display rate instead of the game's 30 fps. `=0` draws the texrects. |
+| `ROGUESQ_F5_CREDITS_QUAD` | on | While the end credits run, their intensity-texture glyph texrects draw as camera-space quads with ids `0x81xxxxxx`, each paired with the previous frame's glyph of the same texture and x, so the scroll interpolates; each glyph is smoothed off the game's half-pixel grid by up to a pixel. `=0` draws the texrects. |
 | `ROGUESQ_INTERP_AUTO_MAX_SCREEN` | 0.2 | Auto-matched transforms further apart than this (NDC) are not paired. `0` disables. |
 | `ROGUESQ_INTERP_ID_MAXJUMP` | 0 (off) | Skip id-matched pairs that moved more than frac x camera distance in one frame. |
 
@@ -332,7 +333,7 @@ Probes:
 - `ROGUESQ_DROP_PROBE` (f3dfactor5) — dropped or no-op'd commands, deduped by opcode.
 - `ROGUESQ_F5_CULL_LOG` (f3dfactor5) — sampled `[f5-cull]` distances for `F5_CULL_DIST`.
 - `ROGUESQ_CHECK_CHUNKLIST` (upstream_compat.cpp) — walk the DL chunk free list at each SP task; dumps RDRAM on the first bad node.
-- `ROGUESQ_DUMP_UCODE=<path>` (rt64_render_context.cpp) — one-shot IMEM + DMEM dump.
+- `ROGUESQ_DUMP_UCODE=<path>` (render_diag.cpp) — one-shot IMEM + DMEM dump.
 - `ROGUESQ_DUMP_PARSE_SNAPSHOT_ON_ITER=<n>` + `ROGUESQ_DUMP_PARSE_SNAPSHOT_COUNT` (1) + `ROGUESQ_DUMP_PARSE_SNAPSHOT_PATH` (ultramodern events.cpp) — dump the exact RDRAM snapshot a parse walked.
 
 ## Plume / GPU device
@@ -363,7 +364,7 @@ Keyboard, mouse and gamepad bindings load from `roguesq_input.json` next to the 
 
 ## RDRAM dump triggers
 
-One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/validate/rdram_golden_diff.py`, from `src/video/rt64_render_context.cpp`. First match wins.
+One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/validate/rdram_golden_diff.py`, from `src/video/render_diag.cpp`. First match wins.
 
 | Env var | Effect |
 | --- | --- |
@@ -417,11 +418,12 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | (both `LS_REPLAY` and `LS_RECORD`) | | Re-record: replays the first file's inputs and writes an upgraded copy to the second path (header, frames, live audio answers such as `S <frame> <0\|1>` song events), plus its hash baseline. Run at 1x. |
 | `ROGUESQ_LS_KEEP_RUNNING` | unset | `1`: a replay keeps running after its last frame, to reach mission-end teardown and the ending cutscene. |
 | `ROGUESQ_LS_HASH_OUT` | unset | Replay hash log path. |
-| `ROGUESQ_LS_DUMP_FRAMES` | unset | `lo-hi` (or one frame): also write the raw bytes of every hashed region for those frames to `<hash log>.dump`. |
+| `ROGUESQ_LS_DUMP_FRAMES` | unset | `lo-hi` (or one frame): also write the raw bytes of every hashed region for those frames to `<hash log>.dump`, plus one `npc` line per live NPC with its hashed fields. |
 | `ROGUESQ_LS_PAUSE_AT` | unset | `<f>[,<f>...]`: a replay holds before each listed frame, writing `<hash log>.paused` (the frame number), until `<hash log>.resume` appears (30 s cap), so a window capture lands on an exact frame at any `ROGUESQ_SPEED`. Used by `tools/debug/recordings/capture-frames.ps1`. Blocks the game thread while held. |
 | `ROGUESQ_PAUSE_AT` / `ROGUESQ_PAUSE_FILE` | unset | `<clock>[:<f>][,...]` and a path base: the game thread holds once each clock reaches frame `f` (0 if left out), with the same `<base>.paused` / `<base>.resume` handshake as `ROGUESQ_LS_PAUSE_AT`; each target holds once, in the order listed (a target waits until the ones before it have held, so `attract.demo:30,cutscene:580` is the boot intro after a demo). A clock is a game-state id from `tools/state/state_model.toml` (frames since that state was entered, ticked by the menu and mission frame hooks; `menu` also matches `menu.options` and the other `menu.*` states), `cutscene` (gateCtr 0x800B0B28, the cutscene file's own frames as the RS64 Explorer timeline counts them) or `crawl` (an opening crawl's clock at 30 frames a second, as the explorer's crawl timeline counts them). Example: `menu.options,cutscene:120`. Used by `tools/debug/recordings/capture-frames.ps1 -Cutscene`. Blocks the game thread while held. |
 | `ROGUESQ_LOG_MCP` | unset | `1`: log each pause point (`[mcp] point <clock> <frame> dl <n>`), display list (`[mcp] dl <n>`) and MCP hold, to diagnose an MCP `pause_at` landing on the wrong frame ([rt64-mcp.md](rt64-mcp.md)). |
 | `ROGUESQ_LS_SEED` | 1 | Seed for record mode. |
+| `ROGUESQ_LS_GOD` | off | Record mode keeps the invincibility mod's god-mode bit; without it a recording clears the bit and plays mortal (`record.ps1 -Invincible`). |
 | `ROGUESQ_COOP_LOCAL` | unset | `1`: player 2 is an imposter, an allied X-wing wingman NPC spawned 1.5 units right of player 1 on the first mission frame from a fake DAT record at 0x80B40000. It flies a port of the player X-wing's handling from port 1 through control-map slot 1 (layout 0: B fire, A boost, Z brake, C-up hold rotation, C-right S-foils), is invulnerable and is targeted like any ally. Activation range and grid streaming also follow it outside cutscenes. Off = the original single player, bit-identical. Needs the `multiplayer-native` mod enabled. |
 | `ROGUESQ_LS_PAD2_REPLAY` | unset | `<path.rec>` (needs `COOP_LOCAL=1`): port 1 plays a recorded port-0 run from mission frame 0, START masked. Must match the running level and craft. The hash log gains an `imposter` column (a hash part the multiplayer code registers). Single-player recordings' song answers stop matching once the imposter changes the mission; re-record with co-op on. |
 | `ROGUESQ_MP` | unset | `host` or `join`: online co-op, ghost model. Each instance flies its own player 1 in its own world; the other player is the imposter, posed from the state that player streams at 30 Hz (dead reckoning up to 0.5 s, corrections blended over 0.1 s, snaps past 20 units). Both must enter the same level and craft; the host sends LAUNCH at `initMission` and the client checks it. The host owns the mission result, objectives and the lives pool; DAT health is mirrored both ways (drops sent as DAMAGE batches through the game's own hit). The same session starts from the front end (MAIN MENU -> MULTIPLAYER). A HELLO handshake checks protocol + `kBuildId` (`VERSION MISMATCH` otherwise). Implies `COOP_LOCAL`. Logs `[ghost]`. Pairs: `tools/debug/lockstep/run-mp.ps1`. Details in [multiplayer.md](../guides/multiplayer.md). |

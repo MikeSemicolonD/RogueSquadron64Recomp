@@ -31,7 +31,7 @@ reachable_from = ["cinematic", "menu"]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 # Front-end menu sub-pages: menu id at gCurrentMenuData+0x04 (0x800CE734, u8), enum from
-# src/game/menu_config.cpp FrontMenu. Each also requires the menu pointer-valid guard so it
+# src/game/menus/menu_config.cpp FrontMenu. Each also requires the menu pointer-valid guard so it
 # can't match at boot (where the field is 0 == MENU_MAIN). Children (depth 1) beat the
 # "menu" parent when matched.
 

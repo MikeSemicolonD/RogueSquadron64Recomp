@@ -5,6 +5,22 @@
 #include <string>
 #include <vector>
 
+// N64 button bitmasks (libultra PR/controller.h).
+#define N64_A_BUTTON     0x8000
+#define N64_B_BUTTON     0x4000
+#define N64_Z_TRIG       0x2000
+#define N64_START_BUTTON 0x1000
+#define N64_U_JPAD       0x0800
+#define N64_D_JPAD       0x0400
+#define N64_L_JPAD       0x0200
+#define N64_R_JPAD       0x0100
+#define N64_L_TRIG       0x0020
+#define N64_R_TRIG       0x0010
+#define N64_U_CBUTTONS   0x0008
+#define N64_D_CBUTTONS   0x0004
+#define N64_L_CBUTTONS   0x0002
+#define N64_R_CBUTTONS   0x0001
+
 struct _SDL_GameController;
 struct _SDL_Joystick;
 

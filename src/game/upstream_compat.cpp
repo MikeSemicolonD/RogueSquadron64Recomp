@@ -25,6 +25,7 @@
 #endif
 
 #include "recomp.h"
+#include "rs64_toml_hooks.h"
 #include "librecomp/helpers.hpp"
 #include "librecomp/overlays.hpp"
 #include "librecomp/addresses.hpp"
@@ -520,7 +521,7 @@ extern "C" void osYieldThread_recomp(uint8_t* rdram, recomp_context* ctx)
     ultramodern::run_next_thread_and_wait(rdram);
 }
 
-// Attribution and credits loop pacing: yield through the N64 scheduler until the next host VI tick (~1 ms a step, cap ~40), so the VI handler preempts the loop as on hardware.
+// Attribution loop pacing: yield through the N64 scheduler until the next host VI tick (~1 ms a step, cap ~40), so the VI handler preempts the loop as on hardware.
 // A host Sleep here holds the run slot and deadlocked the frame-buffer arbiter.
 extern "C" volatile unsigned g_vi_tick;
 extern "C" void rs64_attrib_wait_vi_yield(uint8_t* rdram, recomp_context* ctx)
@@ -529,6 +530,40 @@ extern "C" void rs64_attrib_wait_vi_yield(uint8_t* rdram, recomp_context* ctx)
     const unsigned start = g_vi_tick;
 
     for (int i = 0; i < 40 && g_vi_tick == start; ++i) osYieldThread_recomp(rdram, ctx);
+}
+
+static std::atomic<unsigned> s_credits_vi{ 0 };
+
+// 1 while the credits loop runs (an iteration within the last 8 VIs), for RT64's credits glyph quads.
+extern "C" int rs64_credits_active(void)
+{
+
+    const unsigned last = s_credits_vi.load(std::memory_order_relaxed);
+
+    return (last != 0) && ((g_vi_tick - last) < 8u);
+}
+
+// Credits loop pacing: the credits draw into one framebuffer, so nothing else holds the loop to a frame. Each iteration scrolls a fixed step, and
+// leaving at the next VI let iterations run 1-3 VIs apart (the text stalled and jumped); hold them 2 VIs apart, as on hardware.
+extern "C" void rs64_credits_wait_vi_cadence(uint8_t* rdram, recomp_context* ctx)
+{
+
+    static unsigned s_next = 0;
+
+    s_credits_vi.store(g_vi_tick | 1u, std::memory_order_relaxed);
+
+    if ((int)(g_vi_tick - s_next) > 0 || (int)(s_next - g_vi_tick) > 2) {
+        s_next = g_vi_tick + 1;
+    }
+
+    // A yield returns at once while other N64 threads are runnable, so bound the wait by time, not by yields.
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+
+    while ((int)(s_next - g_vi_tick) > 0 && std::chrono::steady_clock::now() < give_up) {
+        osYieldThread_recomp(rdram, ctx);
+    }
+
+    s_next += 2;
 }
 
 // ROGUESQ_LOG_THREADS=1: one line per thread start/stop/destroy with the target's state and the

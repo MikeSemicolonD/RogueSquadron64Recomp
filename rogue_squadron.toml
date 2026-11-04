@@ -532,7 +532,7 @@ text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(rdram, ctx); }'
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E168
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E168(rdram, ctx); }'
-# Draw distance: scale each read of the camera far plane (cam+0x28, in $f0) by rs64_draw_dist, except for the unseen-spawn trigger (caller 0x800F27B4), and the terrain trapezoid far distance ($f2) by rs64_terrain_dist.
+# Draw distance: scale each read of the camera far plane (cam+0x28, in $f0) by rs64_draw_dist for the render and effect callers only (flagged before their calls; the gameplay callers draw randoms when the test passes), and the terrain trapezoid far distance ($f2) by rs64_terrain_dist.
 [[patches.hook]]
 func = "setupCameraMatrices"
 before_vram = 0x80016CE0
@@ -564,6 +564,111 @@ text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DDA0(rdram, ctx); }'
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E078
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E078(rdram, ctx); }'
+
+# The view test's +-125 camera-space box widens with the draw distance for the render callers; convertMat3x4ToN64Mtx saves translations past
+# its fixed-point reach for RT64 and clamps them.
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001DCEC
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DCEC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001DD38
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DD38(rdram, ctx); }'
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001DFF4
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DFF4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "transformVec3ToNpcLocalWithScale"
+before_vram = 0x8001E034
+text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E034(rdram, ctx); }'
+
+[[patches.hook]]
+func = "convertMat3x4ToN64Mtx"
+before_vram = 0x80018DEC
+text = '{ rs64_th_convertMat3x4ToN64Mtx_80018DEC(rdram, ctx); }'
+
+# Draw-only stand-ins for unspawned objects and ground units (static_standins.cpp), submitted after the render broadcast.
+[[patches.hook]]
+func = "runInMissionFrame"
+before_vram = 0x800FAC68
+text = '{ rs64_th_runInMissionFrame_800FAC68(rdram, ctx); }'
+
+# Objects visible only through the draw distance skip the drawn-object state changes gameplay reads (model flag toggle, matrix depth scale).
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x80058264
+text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058264(rdram, ctx); }'
+
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x800582F0
+text = '{ rs64_th_selectMeshLodAndSubmitForRender_800582F0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x80058304
+text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058304(rdram, ctx); }'
+
+# Puts back the stock instance matrices of objects drawn past the game's far plane.
+[[patches.hook]]
+func = "setupCameraMatrices"
+before_vram = 0x800178E4
+text = '{ rs64_th_setupCameraMatrices_800178E4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "randomBurstNpcHandlerVariant"
+before_vram = 0x8004093C
+text = '{ rs64_th_randomBurstNpcHandlerVariant_8004093C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "sprayEffectEmitterNpcHandler"
+before_vram = 0x8005E1A4
+text = '{ rs64_th_sprayEffectEmitterNpcHandler_8005E1A4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateWalkerParticlePositions"
+before_vram = 0x8005A9B8
+text = '{ rs64_th_updateWalkerParticlePositions_8005A9B8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "randomlyScaledEffectNpcHandler"
+before_vram = 0x800607D8
+text = '{ rs64_th_randomlyScaledEffectNpcHandler_800607D8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "randomlyScaledColoredEffectNpcHandler"
+before_vram = 0x80060C40
+text = '{ rs64_th_randomlyScaledColoredEffectNpcHandler_80060C40(rdram, ctx); }'
+
+[[patches.hook]]
+func = "minimalRandomNpcHandler"
+before_vram = 0x80060FE0
+text = '{ rs64_th_minimalRandomNpcHandler_80060FE0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "explosionEffectNpcHandler"
+before_vram = 0x80074520
+text = '{ rs64_th_explosionEffectNpcHandler_80074520(rdram, ctx); }'
+
+[[patches.hook]]
+func = "randomParticleWithParentNpcHandler"
+before_vram = 0x800751AC
+text = '{ rs64_th_randomParticleWithParentNpcHandler_800751AC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "heavyRandomBurstNpcHandler"
+before_vram = 0x80075AF4
+text = '{ rs64_th_heavyRandomBurstNpcHandler_80075AF4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "heavyMechSubEffectNpcHandler"
+before_vram = 0x80079958
+text = '{ rs64_th_heavyMechSubEffectNpcHandler_80079958(rdram, ctx); }'
 
 # Tow cable segments reach the visibility buckets here, ship end first (vanilla and long-tow-cable renderer alike); frame interpolation ids them by that order. a1 = submitted mesh instance.
 [[patches.hook]]
@@ -823,7 +928,8 @@ func = "cutsceneActorNpcHandler"
 before_vram = 0x80044924
 text = '{ rs64_th_cutsceneActorNpcHandler_80044924(rdram, ctx); }'
 
-# Sky horizon ring draws heading±2 of 8 sectors, only ~45° on some headings; widen to ±3 when widescreen is active ($a3/$a2 = first/last sector).
+# The sky draws heading±2 of its 8 sectors unless pitched steeply (then all 8); a widescreen view tilted up or rolled sees past them as black wedges from the
+# top of the sky, so widescreen draws all 8 ($a3/$a2 = first/last sector).
 [[patches.hook]]
 func = "linkDirectionalTrailSegments"
 before_vram = 0x8005B418
@@ -980,7 +1086,7 @@ text = '{ rs64_th_emitFrameRdpInitDl_entry(rdram, ctx); }'
 
 
 # Custom main-menu entries (e.g. QUIT). Config: roguesq_menu.json. Logic in
-# src/game/menu_config.cpp. This runs in the setupMenuData common tail, after
+# src/game/menus/menu_config.cpp. This runs in the setupMenuData common tail, after
 # num_menu_entries (+0x95) is written and before the active-bitmask strlen loop,
 # so appended entries activate automatically.
 [[patches.hook]]
@@ -999,6 +1105,17 @@ text = '{ rs64_th_applyLevelScreenAndCameraSettings_entry(rdram, ctx); }'
 func = "menuControllerInput"
 before_vram = 0x800B51B8   # `lbu $v0,0x28($v0)` — selected entry's sub-type
 text = '{ rs64_th_menuControllerInput_800B51B8(rdram, ctx); }'
+
+# Volume slider end labels longer than OFF/MAX move outward so they clear the bar.
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B7620
+text = '{ rs64_th_menuControllerInput_800B7620(rdram, ctx); }'
+
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B7640
+text = '{ rs64_th_menuControllerInput_800B7640(rdram, ctx); }'
 
 # The menu SFX player (sfx id, volume, pan): a mod entry's "sound" replaces the one the game plays for its confirm (menu_config.cpp).
 [[patches.hook]]

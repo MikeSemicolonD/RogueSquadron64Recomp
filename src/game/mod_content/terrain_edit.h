@@ -21,18 +21,9 @@ struct Map {
     uint32_t idx = 0, tab = 0, w = 0, h = 0;
 };
 
-inline uint8_t rb(const uint8_t* rdram, uint32_t a) {
-    return rdram[(a - 0x80000000u) ^ 3];
-}
-
-inline void wb(uint8_t* rdram, uint32_t a, uint8_t v) {
-    rdram[(a - 0x80000000u) ^ 3] = v;
-}
-
-inline void wh(uint8_t* rdram, uint32_t a, uint16_t v) {
-    wb(rdram, a, (uint8_t)(v >> 8));
-    wb(rdram, a + 1, (uint8_t)v);
-}
+using rs64::mips::rb;
+using rs64::mips::wb;
+using rs64::mips::wh;
 
 // A KSEG0 range inside the game's 8 MB or the moved table.
 inline bool in_ram(uint32_t a, uint32_t size) {

@@ -1,13 +1,15 @@
 # Record controller input into tools/debug/recordings/<id>-<mission>/, creating the mission folder if needed.
 # Usage: .\tools\debug\recordings\record.ps1 -Level 5 [-Craft 0] [-Name jade_moon_strafe] [-Kind mission|session] [-Config Release]
-# Mission recordings boot straight into the level (ROGUESQ_BOOT_TARGET) and write <name>.rec plus the <name>.rec.hash baseline.
+# Mission recordings boot straight into the level (ROGUESQ_BOOT_TARGET) and write <name>.rec plus the <name>.rec.hash baseline. They play mortal unless -Invincible.
 # Session recordings start at launch; drive the menus yourself and close the window to stop.
 param(
     [Parameter(Mandatory = $true)][ValidateRange(0, 18)][int]$Level,
     [string]$Craft = "",
     [string]$Name = "",
     [ValidateSet("mission", "session")][string]$Kind = "mission",
-    [string]$Config = "Release"
+    [string]$Config = "Release",
+    # Keep the invincibility mod's god mode in a mission recording (off by default).
+    [switch]$Invincible
 )
 
 $missions = @(
@@ -40,7 +42,10 @@ if (Test-Path $rec) {
     exit 1
 }
 
-$exeDir = Join-Path (Split-Path (Split-Path $root)) "build\$Config"
+$repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
+$exeDir = Join-Path $repo "build\$Config"
+# A Release recording runs from build\dist, the staged copy the player runs, so it keeps their display settings and enabled mods.
+if ($Config -eq "Release" -and (Test-Path (Join-Path $repo "build\dist\RogueSquadron64Recomp.exe"))) { $exeDir = Join-Path $repo "build\dist" }
 $exe = Join-Path $exeDir "RogueSquadron64Recomp.exe"
 if (-not (Test-Path $exe)) {
     Write-Error "Binary not found: $exe"
@@ -48,13 +53,14 @@ if (-not (Test-Path $exe)) {
 }
 if ($Config -ne "Release") { Write-Warning "Recording in $Config; README says record and replay in Release (Debug changes frame timing)." }
 
-$vars = "ROGUESQ_LS_RECORD", "ROGUESQ_INPUT_RECORD", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FORCE_LEVEL", "ROGUESQ_FORCE_CRAFT"
+$vars = "ROGUESQ_LS_RECORD", "ROGUESQ_INPUT_RECORD", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FORCE_LEVEL", "ROGUESQ_FORCE_CRAFT", "ROGUESQ_LS_GOD"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v); [Environment]::SetEnvironmentVariable($v, $null) }
 
 try {
     if ($Kind -eq "mission") {
         $env:ROGUESQ_LS_RECORD = $rec
+        if ($Invincible) { $env:ROGUESQ_LS_GOD = "1" }
         $env:ROGUESQ_BOOT_TARGET = if ($Craft -ne "") { "level:$Level,$Craft" } else { "level:$Level" }
         Write-Host "Mission recording -> $rec (boot target $env:ROGUESQ_BOOT_TARGET). Finish or fail the mission, then close the game."
     } else {

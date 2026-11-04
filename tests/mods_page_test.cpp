@@ -1,4 +1,4 @@
-#include "game/mods_page.h"
+#include "game/menus/mods_page.h"
 #include "check.h"
 #include <cstdio>
 #include <string>

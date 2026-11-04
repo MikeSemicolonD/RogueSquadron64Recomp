@@ -19,7 +19,7 @@ my-language/
   lang/glyphs/<font>.bin    one glyph pack per game font
 ```
 
-- `code` names the language: a lower-case ISO 639-1 language code (`ja`, `ko`, `zh`, `ru`, `el`, ...), not an ISO 3166 country code (Japanese is `ja`, not `jp`; Korean `ko`, not `kr`; Chinese `zh`, not `cn`). For a regional variant add the region as a BCP 47 tag (`pt-BR`, `zh-TW`). Menu mods key their label maps on the same code, and `--language` takes it. The loader doesn't check the standard: it accepts any non-empty code, so a wrong one (`jp`) loads but won't match other mods' label maps. `en`, `de` and `fr` are the game's own and can't be reused.
+- `code` names the language: a lower-case ISO 639-1 language code (`ja`, `ko`, `zh`, `ru`, `el`, ...), not an ISO 3166 country code (Japanese is `ja`, not `jp`; Korean `ko`, not `kr`; Chinese `zh`, not `cn`). For a regional variant add the region as a BCP 47 tag (`pt-BR`, `zh-TW`). Menu mods key their label maps on the same code, and `--language` takes it. The loader doesn't check the standard: it accepts any non-empty code, so a wrong one (`jp`) loads but won't match other mods' label maps. `en`, `de` and `fr` are the game's own and can't be reused. If two enabled mods use the same code, the one later in the load order replaces the earlier.
 - `name` is shown on the LANGUAGE page. That page draws in the game's Latin font until the language is active, so a name in another script shows as the code there; a romanized name (`NIHONGO`) always shows.
 - `rtl: true` marks a right-to-left language (see [Right-to-left](#right-to-left)).
 - One mod holds one language.
@@ -74,7 +74,7 @@ Fit each glyph to both the cell width and the drawn height. For the large menu f
 ## Limits
 
 - One screen can show at most 127 different non-ASCII characters at once. Characters borrow 127 slots and the least recently used one is reused, so a language with thousands of characters works as long as each screen stays under the limit. Labels of menu-mod buttons are encoded when the menu is built, so after 127 newer characters (a long briefing, say) a label can show wrong glyphs until the menu is rebuilt.
-- The LANGUAGE page lists up to 7 languages (the game's three plus four mods).
+- The LANGUAGE page shows 7 languages at a time and scrolls when more are installed.
 - The text box sizes are the game's: long translations can run off a button or wrap where English did not.
 
 ## Right-to-left

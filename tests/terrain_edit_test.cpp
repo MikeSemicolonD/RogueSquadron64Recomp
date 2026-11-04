@@ -1,4 +1,4 @@
-#include "game/terrain_edit.h"
+#include "game/mod_content/terrain_edit.h"
 #include "check.h"
 #include <cstdio>
 #include <vector>

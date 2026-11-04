@@ -24,6 +24,9 @@ struct SessionHeader {
     uint32_t naboo = 0;
     uint32_t secondary = 0;
     uint32_t cruise_bits = 0;
+    // Widescreen and DRAW DISTANCE (percent) at record time: both change the object culls. draw_pct 0 = not recorded (older files).
+    uint32_t widescreen = 0;
+    uint32_t draw_pct = 0;
     // gMissionState 0x80130B10..0x80130B3F before initMission: rank and per-level progress carried from the pilot.
     std::array<uint8_t, 0x30> pilot = {};
     std::string build;
@@ -137,5 +140,9 @@ inline bool pause_clock_matches(const std::string& target, const std::string& cl
 
     return clock == target || (clock.size() > target.size() && clock.compare(0, target.size(), target) == 0 && clock[target.size()] == '.');
 }
+
+// Host side (lockstep.cpp): a controller poll through the ROGUESQ_INPUT_RECORD / ROGUESQ_INPUT_REPLAY session recording; `live` polls the real input when not replaying.
+using LiveInput = bool (*)(int controller_num, uint16_t* buttons, float* x, float* y);
+bool session_input(int controller_num, uint16_t* buttons, float* x, float* y, LiveInput live);
 
 }

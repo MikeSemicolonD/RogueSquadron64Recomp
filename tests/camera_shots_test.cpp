@@ -1,4 +1,4 @@
-#include "game/camera_shots.h"
+#include "game/mod_content/camera_shots.h"
 #include "check.h"
 #include <cstdio>
 

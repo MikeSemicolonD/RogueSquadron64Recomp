@@ -114,7 +114,7 @@ function openRom(buf) {
   return { assets, read, write, alias, unalias, aliases };
 }
 
-// ---- Level rules: a mod's assets/level/<folder>/rules.json (see src/game/level_rules.h) ----
+// ---- Level rules: a mod's assets/level/<folder>/rules.json (see src/game/mod_content/level_rules.h) ----
 // on: what the "when" attaches to (area = area trigger, path = path event, unit = destroyable unit, level = Level settings).
 const RULE_WHENS = [
   { when: 'enter', on: 'area', label: 'Something enters this area' },
@@ -262,7 +262,7 @@ function menuLinks(doc) {
   }
   return out;
 }
-// ---- Menu mods: roguesq_menu.json (docs/guides/adding-menus-and-buttons.md); layout mirrors rebuild_frontend_menu in src/game/menu_config.cpp ----
+// ---- Menu mods: roguesq_menu.json (docs/guides/adding-menus-and-buttons.md); layout mirrors rebuild_frontend_menu in src/game/menus/menu_config.cpp ----
 function menuParse(text) {
   if (!text.trim()) return { doc: { buttons: [] }, error: null };
   try {
@@ -360,7 +360,7 @@ function menuLayout(doc, menu, natives, has, max) {
 const MENU_FONT_CHARS = new Set([...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ;:_\'/&",!?-.<>{}ÄÖÜ']);
 const menuFontGaps = (label) => [...String(label)].filter((c) => !MENU_FONT_CHARS.has(c));
 // The game's own entries per menu, in order, as the built menus hold them (captured in the game; aliases = kNativeAliases /
-// pause_native_alias in src/game/menu_layout.h). An entry without an alias can't be hidden, replaced or anchored to. locked: why
+// pause_native_alias in src/game/menus/menu_layout.h). An entry without an alias can't be hidden, replaced or anchored to. locked: why
 // mods can't change that menu here. Text is English (the front end builds these labels in code, not from the text banks).
 const nativeRows = (rows) => rows.map(([alias, en, y, x]) => ({ ...(alias === '' ? { alias: null, label: { en: '' }, spacer: true } : { alias, label: { en } }), ...(y ? { y } : {}), ...(x ? { x } : {}) }));
 const NATIVE_MENUS = {
@@ -420,7 +420,7 @@ function exportPlan(items, doc, links, kindNames) {
   }
   return [...out.values()];
 }
-// ---- Mod levels: a mod's levels.json (new levels that play as a stock template level, see src/game/mod_levels.h) ----
+// ---- Mod levels: a mod's levels.json (new levels that play as a stock template level, see src/game/mod_content/mod_levels.h) ----
 function modLevelsParse(text) {
   try {
     const doc = JSON.parse(text || '{}');
@@ -1108,7 +1108,7 @@ function objectivesApply(orig, prev, objs) {
     for (let i = 128; i >= 1; i--) if (!set.has(i)) return set.add(i), i;
     throw new Error('No free objective counter or flag');
   };
-  // Callouts (src/game/mod_levels.h): a stock voice line, a DAT camera to cut to, a recording file in the level folder; and the voice
+  // Callouts (src/game/mod_content/mod_levels.h): a stock voice line, a DAT camera to cut to, a recording file in the level folder; and the voice
   // (stock id or recording) the pause screen reads the line with.
   const callout = (o) => Object.fromEntries(['voice', 'camera', 'recording', 'pauseVoice', 'pauseRecording'].filter((k) => o[k] != null && o[k] !== '' && o[k] !== -1).map((k) => [k, o[k]]));
   const out = objs.map((o) => {
@@ -1497,7 +1497,7 @@ function parseFrontText(txt) {
 // ---- Opening crawls: front_TXT 0x3E-0x41 are chapters I-IV ("*}chapter\n\n*{title\n\nbody"), each ending on backdrop/planet_<n> ----
 const CRAWL_PLANETS = ['Tatooine', 'the Jade Moon', 'Taloraan', 'Mon Calamari'];
 const CRAWL_PATH = (name) => 'mod/assets/crawl/' + name + '/crawl.json';
-// The characters the host keeps in crawl text (crawlText in src/game/mod_levels.h).
+// The characters the host keeps in crawl text (crawlText in src/game/mod_content/mod_levels.h).
 const CRAWL_SAFE = /[A-Za-z0-9 \n!?,.:;'/\\\-_()]/;
 const crawlFontGaps = (text) => [...new Set([...text].filter((c) => !CRAWL_SAFE.test(c)))];
 function splitCrawl(s) {
@@ -1551,7 +1551,7 @@ function crawlFont(romBytes, strip) {
   const cell = strip.getUint16(4);
   return { cell, glyphs, pixels: new Uint8Array(strip.buffer, strip.byteOffset + FONT_STRIP_HEADER, strip.byteLength - FONT_STRIP_HEADER) };
 }
-// ---- Fonts and language glyph packs (src/game/lang_core.h, docs/guides/modding-languages.md) ----
+// ---- Fonts and language glyph packs (src/game/lang/lang_core.h, docs/guides/modding-languages.md) ----
 // The game's fonts by font id (table 0x8009FC10; docs/guides/adding-menus-and-buttons.md "Fonts"), each once: object +0 glyph count, +2 cell
 // width, +4 cell height, +6 drawn height, +0xC charset, +0x10 name, +0x18 one advance byte per glyph. A language mod extends every
 // font but credits and starwars50 (lang_core.h extends_font).
@@ -3520,7 +3520,7 @@ function quatFromBasis([x, y, z]) {
 // Game space is Y down: up is -Y. One file unit is ~4.5 m, so gravity for the bank angle is ~2.2 units/s^2.
 const CUT_UP = [0, -1, 0], CUT_BANK_G = 2.2;
 // Mid-mission camera shots: a mod's camera_shots.txt, one "<level> <trigger> <camera> [personal]" (a later line wins) or
-// "<level> <trigger> destroy <object>" (they add up) per line, '#' comments, as the game reads it (src/game/camera_shots.h).
+// "<level> <trigger> destroy <object>" (they add up) per line, '#' comments, as the game reads it (src/game/mod_content/camera_shots.h).
 // personal: in co-op only the player who set the trigger off sees it.
 const shotFields = (line) => (line.trim().startsWith('#') ? [] : line.trim().split(/\s+/).filter(Boolean));
 const shotIsCamera = (f, level, trigger) => f.length >= 3 && f[0] === level && f[1] === trigger && f[2] !== 'destroy';

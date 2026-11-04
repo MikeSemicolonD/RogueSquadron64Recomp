@@ -7,8 +7,11 @@
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <thread>
 
 #include "util/debug_logs.h"
+#include "input/input_host.h"
+#include "game/game_state.h"
 
 namespace rs64::rumble {
 namespace {
@@ -276,3 +279,159 @@ Output tick(const rs64::input::RumbleConfig& cfg, const uint8_t* rd, bool in_mis
     return out;
 }
 } // namespace rs64::rumble
+
+extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw;
+
+namespace rs64::app {
+
+struct LightRgb { float r, g, b; };
+
+static LightRgb light_rgb(uint32_t c)
+{
+    return { ((c >> 16) & 0xFF) / 255.0f, ((c >> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f };
+}
+
+static LightRgb light_mix(LightRgb a, LightRgb b, float t)
+{
+    return { a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t };
+}
+
+// DualShock 4 / DualSense lightbar: state colors crossfade; in a mission the color follows health, pulses when critical,
+// flashes on hits, and strobes through the death spiral. Pads without an LED (XInput, Steam/DS4Windows virtual pads) are skipped.
+static void lightbar_tick(const rs64::input::LightbarConfig& cfg, const char* st, float dt)
+{
+
+    static LightRgb s_cur{};
+    static bool     s_have = false;
+    static float    s_last_health = -1.0f, s_flash = 0.0f, s_phase = 0.0f;
+    static uint32_t s_sent = 0xFFFFFFFFu;
+    static auto     s_sent_t = std::chrono::steady_clock::now();
+
+    if (!cfg.enabled) {
+        s_sent = 0xFFFFFFFFu;
+
+        return;
+    }
+
+    s_phase = std::fmod(s_phase + dt, 60.0f);
+    constexpr float TWO_PI = 6.2831853f;
+    const bool in_menu = st && std::strncmp(st, "menu", 4) == 0;
+    const bool in_mission = st && std::strcmp(st, "mission") == 0;
+
+    LightRgb target = light_rgb(in_menu ? cfg.menu : cfg.cinematic);
+    float bright = 1.0f;
+    bool snap = false;
+
+    if (in_mission)
+    {
+        const rs64::rumble::CraftStatus cs = rs64::rumble::craft_status((const uint8_t*)g_recomp_rdram_for_wp_raw);
+        target = light_rgb(cfg.mission);
+
+        if (cs.valid && cs.dead)
+        {
+            target = light_rgb(cfg.dead);
+        } else if (cs.valid && cs.spiral) {
+            target = light_rgb(cfg.death);
+            bright = 0.15f + 0.85f * (0.5f + 0.5f * std::cos(s_phase * TWO_PI * 5.0f));
+            snap = true;
+        } else if (cs.valid && cfg.health) {
+            const float h = cs.health;
+            target = h >= 0.5f ? light_mix(light_rgb(cfg.damaged), light_rgb(cfg.mission), (h - 0.5f) * 2.0f)
+                               : light_mix(light_rgb(cfg.critical), light_rgb(cfg.damaged), h * 2.0f);
+
+            if (h < 0.25f) bright = 0.45f + 0.55f * (0.5f + 0.5f * std::cos(s_phase * TWO_PI * 1.4f));
+        }
+
+        if (cs.valid && cfg.hit_flash && !cs.dead && s_last_health >= 0.0f && cs.health < s_last_health - 0.005f) s_flash = 1.0f;
+
+        s_last_health = cs.valid ? cs.health : -1.0f;
+    } else {
+        s_last_health = -1.0f;
+        s_flash = 0.0f;
+    }
+
+    const float a = (snap || !s_have) ? 1.0f : 1.0f - std::exp(-dt / 0.12f);
+    s_cur = light_mix(s_cur, target, a);
+    s_have = true;
+    LightRgb out = { s_cur.r * bright, s_cur.g * bright, s_cur.b * bright };
+
+    if (s_flash > 0.0f) out = light_mix(out, light_rgb(cfg.hit), s_flash);
+
+    s_flash = std::max(0.0f, s_flash - dt / 0.18f);
+
+    auto q = [](float v) { return (uint32_t)std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f); };
+    const uint32_t packed = (q(out.r) << 16) | (q(out.g) << 8) | q(out.b);
+    const auto now = std::chrono::steady_clock::now();
+    const bool resend = g_lightbar_resend.exchange(false);
+
+    if (!resend && (packed == s_sent || now - s_sent_t < std::chrono::milliseconds(33))) return;
+
+    s_sent = packed;
+    s_sent_t = now;
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+
+    for (SDL_GameController* p : g_pads)
+    {
+        if (SDL_GameControllerHasLED(p)) SDL_GameControllerSetLED(p, (Uint8)(packed >> 16), (Uint8)(packed >> 8), (Uint8)packed);
+    }
+}
+
+// Converts the game's Rumble Pak motor pulses (plus the damage/death-spiral layers) into device rumble at ~60 Hz, and drives the lightbar.
+void rumble_thread_main() {
+
+    bool prev_any = false;
+    float haptic_last = 0.0f;
+    auto haptic_t = std::chrono::steady_clock::now();
+    auto tick_t = haptic_t;
+
+    for (;;)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        rs64::input::RumbleConfig cfg;
+        rs64::input::LightbarConfig light;
+        std::unique_lock<std::mutex> cfg_lk(g_bindings_mtx);
+        cfg = g_bindings.rumble;
+        light = g_bindings.lightbar;
+        cfg_lk.unlock();
+        const char* st = rs64_state_current_id();
+        const auto tick_now = std::chrono::steady_clock::now();
+        lightbar_tick(light, st, std::chrono::duration<float>(tick_now - tick_t).count());
+        tick_t = tick_now;
+        const bool in_mission = st && std::strcmp(st, "mission") == 0;
+        const rs64::rumble::Output out = rs64::rumble::tick(cfg, (const uint8_t*)g_recomp_rdram_for_wp_raw, in_mission);
+        const bool any = out.lo > 0.0f || out.hi > 0.0f;
+
+        if (!any && !prev_any) continue;
+
+        prev_any = any;
+        const Uint16 lo = (Uint16)(out.lo * 65535.0f), hi = (Uint16)(out.hi * 65535.0f);
+        const Uint32 ms = any ? 100 : 0;
+        const float mag = std::max(out.lo, out.hi);
+        const auto now = std::chrono::steady_clock::now();
+        const bool haptic_due = !any || std::fabs(mag - haptic_last) > 0.05f || now - haptic_t > std::chrono::milliseconds(100);
+        std::lock_guard<std::mutex> lk(g_bindings_mtx);
+
+        if (controller) SDL_GameControllerRumble(controller, lo, hi, ms);
+
+        for (const OpenJoy& oj : g_open_joys) {
+            if (!g_bindings.joystick_enabled) break;
+
+            if (!oj.haptic) {
+                SDL_JoystickRumble(oj.joy, lo, hi, ms);
+                continue;
+            }
+
+            if (!haptic_due) continue;
+
+            if (any) SDL_HapticRumblePlay(oj.haptic, mag, 150);
+            else SDL_HapticRumbleStop(oj.haptic);
+        }
+
+        if (haptic_due) {
+            haptic_last = any ? mag : 0.0f;
+            haptic_t = now;
+        }
+    }
+}
+
+}

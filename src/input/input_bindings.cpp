@@ -18,41 +18,25 @@
 
 namespace rs64::input {
 
-// N64 button bitmasks (mirrors main.cpp).
 namespace {
-constexpr uint16_t A      = 0x8000;
-constexpr uint16_t B      = 0x4000;
-constexpr uint16_t Z      = 0x2000;
-constexpr uint16_t START  = 0x1000;
-constexpr uint16_t JU     = 0x0800;
-constexpr uint16_t JD     = 0x0400;
-constexpr uint16_t JL     = 0x0200;
-constexpr uint16_t JR     = 0x0100;
-constexpr uint16_t LT     = 0x0020;
-constexpr uint16_t RT     = 0x0010;
-constexpr uint16_t CU     = 0x0008;
-constexpr uint16_t CD     = 0x0004;
-constexpr uint16_t CL     = 0x0002;
-constexpr uint16_t CR     = 0x0001;
-
 // Button targets -> N64 mask. Stick targets carry no mask (handled as axes).
 uint16_t target_mask(Target t) {
 
     switch (t) {
-        case Target::A:        return A;
-        case Target::B:        return B;
-        case Target::Z:        return Z;
-        case Target::Start:    return START;
-        case Target::DpadUp:   return JU;
-        case Target::DpadDown: return JD;
-        case Target::DpadLeft: return JL;
-        case Target::DpadRight:return JR;
-        case Target::LTrig:    return LT;
-        case Target::RTrig:    return RT;
-        case Target::CUp:      return CU;
-        case Target::CDown:    return CD;
-        case Target::CLeft:    return CL;
-        case Target::CRight:   return CR;
+        case Target::A:        return N64_A_BUTTON;
+        case Target::B:        return N64_B_BUTTON;
+        case Target::Z:        return N64_Z_TRIG;
+        case Target::Start:    return N64_START_BUTTON;
+        case Target::DpadUp:   return N64_U_JPAD;
+        case Target::DpadDown: return N64_D_JPAD;
+        case Target::DpadLeft: return N64_L_JPAD;
+        case Target::DpadRight:return N64_R_JPAD;
+        case Target::LTrig:    return N64_L_TRIG;
+        case Target::RTrig:    return N64_R_TRIG;
+        case Target::CUp:      return N64_U_CBUTTONS;
+        case Target::CDown:    return N64_D_CBUTTONS;
+        case Target::CLeft:    return N64_L_CBUTTONS;
+        case Target::CRight:   return N64_R_CBUTTONS;
         default:               return 0;
     }
 }
@@ -399,7 +383,7 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
     const bool looking = std::fabs(lx) > 0.5f || std::fabs(ly) > 0.5f;
 
     if (looking) {
-        btn |= CU;
+        btn |= N64_U_CBUTTONS;
         sx = lx;
         sy = ly;
     }
@@ -407,7 +391,7 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
     // Roll: while the Roll button (R) is held the game turns stick X into pure roll; a deflected roll axis then takes over stick X.
     const float roll = defl[(int)Target::RollRight] - defl[(int)Target::RollLeft];
 
-    if (!looking && (btn & RT) && std::fabs(roll) > 0.1f) {
+    if (!looking && (btn & N64_R_TRIG) && std::fabs(roll) > 0.1f) {
         sx = roll;
     }
 
@@ -893,13 +877,13 @@ uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
 {
 
     static const std::pair<int, uint16_t> keys[] = {
-        { SDL_SCANCODE_RETURN, A }, { SDL_SCANCODE_KP_ENTER, A }, { SDL_SCANCODE_BACKSPACE, B },
-        { SDL_SCANCODE_UP, JU }, { SDL_SCANCODE_DOWN, JD }, { SDL_SCANCODE_LEFT, JL }, { SDL_SCANCODE_RIGHT, JR },
+        { SDL_SCANCODE_RETURN, N64_A_BUTTON }, { SDL_SCANCODE_KP_ENTER, N64_A_BUTTON }, { SDL_SCANCODE_BACKSPACE, N64_B_BUTTON },
+        { SDL_SCANCODE_UP, N64_U_JPAD }, { SDL_SCANCODE_DOWN, N64_D_JPAD }, { SDL_SCANCODE_LEFT, N64_L_JPAD }, { SDL_SCANCODE_RIGHT, N64_R_JPAD },
     };
     static const std::pair<SDL_GameControllerButton, uint16_t> pad[] = {
-        { SDL_CONTROLLER_BUTTON_A, A }, { SDL_CONTROLLER_BUTTON_B, B }, { SDL_CONTROLLER_BUTTON_START, START },
-        { SDL_CONTROLLER_BUTTON_DPAD_UP, JU }, { SDL_CONTROLLER_BUTTON_DPAD_DOWN, JD },
-        { SDL_CONTROLLER_BUTTON_DPAD_LEFT, JL }, { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, JR },
+        { SDL_CONTROLLER_BUTTON_A, N64_A_BUTTON }, { SDL_CONTROLLER_BUTTON_B, N64_B_BUTTON }, { SDL_CONTROLLER_BUTTON_START, N64_START_BUTTON },
+        { SDL_CONTROLLER_BUTTON_DPAD_UP, N64_U_JPAD }, { SDL_CONTROLLER_BUTTON_DPAD_DOWN, N64_D_JPAD },
+        { SDL_CONTROLLER_BUTTON_DPAD_LEFT, N64_L_JPAD }, { SDL_CONTROLLER_BUTTON_DPAD_RIGHT, N64_R_JPAD },
     };
 
     uint16_t m = 0;
@@ -908,7 +892,7 @@ uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
         if (s.keys && sc < s.keys_len && s.keys[sc]) m |= bit;
     }
 
-    if (s.keys && SDL_SCANCODE_ESCAPE < s.keys_len && s.keys[SDL_SCANCODE_ESCAPE]) m |= esc_is_start ? START : B;
+    if (s.keys && SDL_SCANCODE_ESCAPE < s.keys_len && s.keys[SDL_SCANCODE_ESCAPE]) m |= esc_is_start ? N64_START_BUTTON : N64_B_BUTTON;
 
     for (const auto& [b, bit] : pad) {
         if (s.pad && SDL_GameControllerGetButton(s.pad, b)) m |= bit;
@@ -920,7 +904,7 @@ uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
 uint16_t menu_buttons(uint16_t bound, uint16_t fixed)
 {
 
-    constexpr uint16_t kMenuBits = A | B | START | JU | JD | JL | JR;
+    constexpr uint16_t kMenuBits = N64_A_BUTTON | N64_B_BUTTON | N64_START_BUTTON | N64_U_JPAD | N64_D_JPAD | N64_L_JPAD | N64_R_JPAD;
 
     return fixed ? (uint16_t)((bound & ~kMenuBits) | fixed) : bound;
 }

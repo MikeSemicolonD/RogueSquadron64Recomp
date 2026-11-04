@@ -1,10 +1,11 @@
 #include "host_api/host_api.h"
 #include "recomp.h"
+#include "rs64_toml_hooks.h"
 #include "librecomp/addresses.hpp"
 #include "librecomp/mods.hpp"
 #include "librecomp/overlays.hpp"
 #include "game/game_state.h"
-#include "game/terrain_edit.h"
+#include "game/mod_content/terrain_edit.h"
 #include "lockstep/lockstep_core.h"
 #include "util/mips_call.h"
 #ifdef _WIN32
@@ -24,10 +25,6 @@ extern "C" void rs64_camera_shots_register_service();
 extern "C" void rs64_register_builtin_late_hooks();
 extern "C" void osYieldThread_recomp(uint8_t*, recomp_context*);
 extern "C" void rs64_menu_request_quit(void);
-extern "C" float rs64_draw_dist(void);
-extern "C" float rs64_terrain_dist(void);
-extern "C" uint32_t rs64_tgrid_base(uint32_t original);
-extern "C" void rs64_snapshot_add_range(uint32_t lo, uint32_t hi);
 
 namespace {
 void svc_yield(uint8_t* rdram, void* c) {

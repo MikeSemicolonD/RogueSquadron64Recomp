@@ -57,7 +57,7 @@ namespace rs64::touch {
     enum class AccountScreen { NotAccount, SelectGame, Levels, Craft };
     AccountScreen account_screen(const uint8_t* rdram);
 
-    // SOUND SETTINGS volume bar under a music/sfx/speech entry (sub-types 21/22/23), shown while that slider is being edited.
+    // Volume bar under a music/sfx/speech entry (sub-types 21/22/23; mod sliders use 21 on any page), shown while that slider is being edited.
     struct SliderBar {
         int channel;     // 0 music, 1 sfx, 2 speech (byte at 0x80130B60 + channel)
         float x0, x1;    // window x of value 0 and value 128

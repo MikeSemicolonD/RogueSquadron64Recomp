@@ -25,4 +25,10 @@ void rs64_menu_slider_click(int key, float f);
 int rs64_menu_typing(void);
 // SDL thread: typed UTF-8 text, or key '\b' (Backspace), for the letter wheel; 1 when taken.
 int rs64_menu_type(const char* utf8, int key);
+// SDL thread: mouse wheel steps over the CONTROLS page.
+void rs64_controls_wheel(int steps);
+// The MODS page for drags: a front-end entry's mod row (its slot, else -1), where a row's ON/OFF part starts, and a drag step to queue.
+int rs64_mods_page_row(int entry);
+float rs64_mods_toggle_from(void);
+void rs64_mods_drag(int op, int entry);
 }

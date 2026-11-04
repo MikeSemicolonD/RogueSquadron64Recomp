@@ -26,7 +26,7 @@ That is a complete menu mod. The RS64 Explorer's *Menus* tab edits these files o
 - [mods/quit-prompt/](../../mods/quit-prompt/): adds a YES/NO confirm to the built-in QUIT by reusing its id.
 - [mods/menu-example/](../../mods/menu-example/): a custom page whose entries call the mod's own native library.
 - [mods/native-demo/](../../mods/native-demo/): buttons, toggles and a Sound Settings slider backed by a native library.
-- [mods/display-settings/](../../mods/display-settings/): DISPLAY SETTINGS in place of HIGH RESOLUTION, with nested RAY TRACING and ADVANCED pages shared by the front end and the pause menu, cycles, and `requires` per platform and GPU.
+- [mods/display-settings/](../../mods/display-settings/): DISPLAY SETTINGS in place of HIGH RESOLUTION, with nested RAY TRACING and ADVANCED pages shared by the front end and the pause menu, cycles, a slider, and `requires` per platform and GPU.
 - [mods/multiplayer-native/roguesq_menu.json](../../mods/multiplayer-native/roguesq_menu.json): the co-op lobby, with live status lines.
 
 ## Where menu files are read from
@@ -139,7 +139,7 @@ Anchors and `hide` name native entries by alias:
 - `controller_settings`: `back`. The game draws a controller diagram over this screen, so give new buttons a `y` that keeps them clear of its labels (BACK itself carries `y` 283). The controls-menu mod replaces the screen while it is enabled, and buttons for it don't show then.
 - `pause`: `continue`, `abort_level`, `game_settings`, `sound_settings`. The title and objectives above CONTINUE stay where they are; a button without placement goes at the end.
 
-The tables are `kNativeAliases` and `pause_native_alias()` in [src/game/menu_layout.h](../../src/game/menu_layout.h) and `snd_alias_slot()` in [src/game/menu_config.cpp](../../src/game/menu_config.cpp); extend them to expose more entries.
+The tables are `kNativeAliases` and `pause_native_alias()` in [src/game/menus/menu_layout.h](../../src/game/menus/menu_layout.h) and `snd_alias_slot()` in [src/game/menus/menu_config.cpp](../../src/game/menus/menu_config.cpp); extend them to expose more entries.
 
 ### Behavior keys
 
@@ -150,7 +150,7 @@ Built in:
 - **Actions:** `quit`, `touch_layout` (opens the touch-control layout editor, Android), `reset_controls` (mouse sensitivity, smoothing, dead zone and rumble back to their defaults), `open_mods_folder` (opens the mods folder in the file browser; desktop only, so give the button `"requires": "desktop"`) and `none` (no-op, for info rows). The multiplayer mod adds `mp_host`, `mp_edit`, `mp_leave`, for its JOIN GAME page `mp_join_open`, `mp_join_leave`, `mp_list_more`, `mp_list_prev`, `mp_list_next`, `mp_pick_0`-`mp_pick_5`, and for HOST SETTINGS `mp_name_edit` and `mp_pin_edit`.
 - **Toggles:** `fullscreen`, `gyro` (Android gyro aiming), `widescreen`, `frame_interpolation`, `cutscene_draw_distance` (cutscenes keep the game's own view distance and fog), `legacy_terrain` (the game's own terrain instead of the whole-map pass; caps the draw distance at 1.3X), `framebuffer_writeback` (copy rendered frames back to the emulated RAM; off is faster on slow GPUs), and the ray-tracing switches `rt_lights`, `rt_shadows`, `rt_soft_shadows`, `rt_fog_shafts`, and `rumble` (saved to `roguesq_input.json`). Settings toggles are saved to `roguesq_video.json` and apply live. A set `ROGUESQ_RT_*` env var pins a ray-tracing switch without changing the file.
 - **Cycles:** `draw_distance` (1X, 1.25X, 1.5X, 2X, 2.5X, 3X, 4X, 6X, 8X, the same setting as the slider; legacy terrain caps it at 1.3X), `resolution` (AUTO, 1X-4X), `antialiasing` (OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X), `target_fps` (DISPLAY, then each refresh rate the window's monitor supports; used while frame interpolation is on), `texture_filter` (BILINEAR, 3-POINT), `upscale_filter` (NEAREST, LINEAR, AA PIXEL). They apply at the next frame and are saved to `roguesq_video.json`; an MSAA change rebuilds the render targets, a pause of a second or so.
-- **Sliders:** `draw_distance`, the draw-distance multiplier as a percent (use `"min": 100, "max": 250`). The base game has no draw-distance UI; a menu mod adds one with this key. `mouse_sensitivity` (thousandths, 5-300), `mouse_smoothing` and `deadzone` (percent; the gamepad's and every joystick's) are saved to `roguesq_input.json`, as the F6 window does.
+- **Sliders:** `draw_distance`, the draw-distance multiplier as a percent (use `"min": 100, "max": 800`; legacy terrain caps it at 130). The base game has no draw-distance UI; a menu mod adds one with this key, as `mods/display-settings` does. `mouse_sensitivity` (thousandths, 5-300), `mouse_smoothing` and `deadzone` (percent; the gamepad's and every joystick's) are saved to `roguesq_input.json`, as the F6 window does.
 
 From your own mod:
 
@@ -208,7 +208,7 @@ Labels use the front-end font: upper-case `A`-`Z`, `0`-`9`, spaces and `;:_'/&",
 
 ## Internals
 
-The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/game/menu_config.cpp](../../src/game/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
+The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/game/menus/menu_config.cpp](../../src/game/menus/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
 
 ### Two separate menu systems
 
@@ -395,7 +395,7 @@ Abort Level does not tear down the mission directly. It sets `D_80130B14` (`0x80
 
 #### How pause buttons are wired
 
-`rs64_pause_install` (`menu_config.cpp`), hooked at `initOrUpdatePauseScreenDim`, builds pause buttons only while the menu is open (`D_8010CA20 == 5`), so it never touches the arrays during level load or briefing (which starves the audio scheduler). It runs every paused frame:
+`rs64_pause_install` (`pause_menu.cpp`), hooked at `initOrUpdatePauseScreenDim`, builds pause buttons only while the menu is open (`D_8010CA20 == 5`), so it never touches the arrays during level load or briefing (which starves the audio scheduler). It runs every paused frame:
 
 - The root (id 0, `pauseMenuMissionObjectives` `0x80109DD4`) is copied to host RAM at `0x80C43F80` with the `pause` buttons merged in by the same placement rules as the front end (natives by text id); the entries above CONTINUE stay on top and unplaced buttons go at the end.
 - GAME SETTINGS (id 1) is copied to `0x80C43000` the same way with the `pause_game_settings` buttons; unplaced buttons take the spacer's place (`0x80109E54`).
@@ -410,7 +410,7 @@ Each installed button keeps a valid `textId` (an out-of-range one makes `getGame
 
 ### Changing the system itself
 
-- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/game/toml_hooks.c](../../src/game/toml_hooks.c), which calls the host code in `menu_config.cpp`:
+- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/game/toml_hooks.c](../../src/game/toml_hooks.c), which calls the host code in `menu_config.cpp` (front end) or `pause_menu.cpp` (pause menu):
 
   ```toml
   [[patches.hook]]
@@ -419,7 +419,7 @@ Each installed button keeps a valid `textId` (an out-of-range one makes `getGame
   text = '{ rs64_th_setupMenuData_800BAF70(rdram, ctx); }'
   ```
 
-  Hook text is baked in at recompile time, so after changing a hook run `cmake --build build --config Debug --target regen_funcs` before building the game. Changes to `menu_config.cpp` alone need only a normal build.
+  Hook text is baked in at recompile time, so after changing a hook run `cmake --build build --config Debug --target regen_funcs` before building the game. Changes to the host code alone need only a normal build.
 - **New built-in behaviors.** Add a toggle to `toggles()` or an action to `actions()` in `menu_config.cpp`, then reference it by name from a menu file. Native mods can add actions without touching the base game (`add_action`).
 - **Label storage.** `menu_entries[i]` must be an RDRAM address; the game reads it with no masking, so a host pointer won't work. Reuse a game string with `getGameOrFrontText(textId)`, or allocate with `recomp::alloc(rdram, size)` (the recomp heap at `0x81000000`+, above the game's 8 MB) and convert with `(uint8_t*)p - rdram + 0x80000000`. Don't write to "unused" addresses inside the game's 8 MB; the game believes it owns all of it.
 - **Quit.** A QUIT button pushes `SDL_QUIT` (`rs64_menu_request_quit`); the event loop in [src/input/input_host.cpp](../../src/input/input_host.cpp) runs the quit handlers and then `_Exit`. Don't call `exit`: the game threads and RT64 are still running, so static destructors hang or crash.

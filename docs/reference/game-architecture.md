@@ -41,14 +41,19 @@ The host glue lives in `src/`:
 | File | Role |
 | --- | --- |
 | `src/main/main.cpp` | Entry point; SDL2 window, gfx and VI callbacks |
-| `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, touch, sensors, the SDL event loop |
+| `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, sensors, the SDL event loop |
+| `src/input/touch_host.cpp` | Touch and mouse on the menus (taps, slider and MODS-page drags, hover) |
 | `src/main/ui_panels.cpp` | ImGui panels: controls/rebind, mods, touch overlay |
 | `src/main/crash.cpp` | Crash handlers and minidumps (Windows) |
 | `src/audio/audio.cpp` | `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); SDL2 audio output |
-| `src/video/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer, RDRAM dump triggers |
+| `src/video/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer |
+| `src/video/render_diag.cpp` | The render context's env-gated traces, RDRAM watches and dump triggers |
 | `src/game/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
 | `src/game/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
-| `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks |
+| `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks (draw distance, HUD placement, pacing, DL walkers) |
+| `src/game/menus/` | Front-end menus and mod pages (`menu_config.cpp`) and the pause menu (`pause_menu.cpp`) |
+| `src/game/mod_content/` | Mod asset overrides and mod level content: camera shots, levels, crawls, medals, objectives, level rules |
+| `src/game/lang/` | Language mods |
 | `src/game/builtin_hooks.cpp` | Built-in hooks registered through the host API |
 | `src/host_api/`, `include/rs64/host_api.h` | Host API for native mods and its public header ([modding-host-api.md](../engine/modding-host-api.md)) |
 | `src/lockstep/` | Mission input record/replay with per-frame state hashes |
@@ -431,7 +436,7 @@ Where the ucode keeps an F3D opcode, the game emits it with the stock F3D `gbi.h
 
 | Piece | Implementation |
 | --- | --- |
-| Chunk flow | Every opcode runs through a trampoline that checks the per-level chunk bound; `06`/`07`/`B5`/chunk-end enter the target at `+8` and record the chunk base per call depth. A next-link must be back-linked, may not revisit its own chain, and a chain is capped at 64 chunks per level (hardware never exceeds 19). Per-task budgets (`ROGUESQ_F5_ENTRY_CAP`=2048 chunk entries, `ROGUESQ_F5_FACE_CAP`=4096 faces) end a task that walks recycled memory |
+| Chunk flow | Every opcode runs through a trampoline that checks the per-level chunk bound; `06`/`07`/`B5`/chunk-end enter the target at `+8` and record the chunk base per call depth. A next-link must be back-linked, may not revisit its own chain, and a chain is capped at 256 chunks per level (hardware never exceeds 19). Per-task budgets (`ROGUESQ_F5_ENTRY_CAP`=16384 chunk entries, `ROGUESQ_F5_FACE_CAP`=65536 faces) end a task that walks recycled memory |
 | Transform | RT64's own matrix stack: `01 03` → projection load, `01 02` → modelview load. No software T&L |
 | Vertices | `04` converts the 8-byte vertices into RT64 vertices in a scratch area at RDRAM `0xA00000` (above the 8 MB the game can see; the recomp heap uses `0x71E000`) and calls `setVertex` |
 | Faces | `BF`/`B4`/`13` copy the referenced vertices into temp slots, apply the color offsets and inline texcoords, and call `drawIndexedTri` |
@@ -499,7 +504,7 @@ The host never writes these bytes.
 | `ROGUESQ_F5_NATIVE=0` | Parse without emitting geometry |
 | `ROGUESQ_F5_TILES=0` | Disable flat terrain tiles |
 | `ROGUESQ_F5_TERRAIN=0` / `ROGUESQ_F5_SPRITES=0` | Disable heightfield terrain / `BD` billboards |
-| `ROGUESQ_F5_CHAIN_CAP` / `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | Walk budgets (64 / 2048 / 4096) |
+| `ROGUESQ_F5_CHAIN_CAP` / `ROGUESQ_F5_ENTRY_CAP` / `ROGUESQ_F5_FACE_CAP` | Walk budgets (256 / 16384 / 65536) |
 | `ROGUESQ_F5_CHUNK_BOUND=0` | Disable the per-level chunk bound (linear fall-through, as the old core did) |
 | `ROGUESQ_DESYNC_TRACE=1` | Ring dump of the commands leading to a rejected color image |
 | `ROGUESQ_LOG_GBI` / `ROGUESQ_LOG_GFX_TASK` / `ROGUESQ_LOG_CIMG` | Per-handler logs / per-task parse timing / color-image counters |

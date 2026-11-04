@@ -25,6 +25,9 @@ void apply_friendly(RT64::UserConfiguration& uc, const nlohmann::json& j);
 // so the round-trip is lossless against a matching baseline.
 nlohmann::json to_friendly(const RT64::UserConfiguration& uc);
 
+// The ROGUESQ_* display overrides (MSAA, resolution, filtering, interpolation, graphics API, ...) applied over the loaded config.
+void apply_env_overrides(RT64::UserConfiguration& uc);
+
 // Draw distance multiplier ("drawDistance" in roguesq_video.json), host-side and not part of RT64's config. Read live by the draw-distance hooks.
 constexpr float kDrawDistanceMin = 1.0f;
 constexpr float kDrawDistanceMax = 8.0f;

@@ -1,5 +1,5 @@
 #include "host_api/host_api.h"
-#include "game/terrain_edit.h"
+#include "game/mod_content/terrain_edit.h"
 #include <cstdio>
 #include <iterator>
 #include <map>

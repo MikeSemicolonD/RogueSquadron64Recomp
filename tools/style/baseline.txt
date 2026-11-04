@@ -38,28 +38,11 @@ src/game/hook_helpers.cpp: two statements on one line: if (comma && comma[1]) { 
 src/game/hook_helpers.cpp: two statements on one line: if (lrx/4 > tr_maxx) tr_maxx = lrx/4; if (lry/4 > tr_maxy) t
 src/game/hook_helpers.cpp: two statements on one line: if (ulx/4 < tr_minx) tr_minx = ulx/4; if (uly/4 < tr_miny) t
 src/game/hook_helpers.h: comment block over 2 lines: // hook_helpers.h — public C-linkage surface of hook_helpers
-src/game/menu_config.cpp: comment after code: constexpr int      VOL_MAX   = 0x80;                       /
-src/game/menu_config.cpp: comment after code: constexpr int MAX_ENTRIES = 8;                      // menu_
-src/game/menu_config.cpp: comment after code: constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte 
-src/game/menu_config.cpp: comment after code: constexpr uint32_t VOL_BYTES = 0x80130B60u - 0x80000000u;  /
-src/game/menu_config.cpp: comment after code: constexpr uint8_t  SND_SLIDER_SUB = 21;                    /
-src/game/menu_config.cpp: comment after code: int flags = 0x4001;      // pause entry flag word (0x4000 st
-src/game/menu_config.cpp: comment after code: int smin = 0, smax = 100, sstep = 10;   // slider range
-src/game/menu_config.cpp: comment after code: int title_y = 0;         // Submenu: the page title's y offs
-src/game/menu_config.cpp: comment after code: std::string before, after, replace;   // anchor to a native 
-src/game/menu_config.cpp: comment after code: std::string behavior;    // action or toggle registry key (o
-src/game/menu_config.cpp: comment after code: std::string confirm;     // Action: non-empty => YES/NO prom
-src/game/menu_config.cpp: comment after code: std::string label;       // Action label
-src/game/menu_config.cpp: comment after code: std::string label_on, label_off;        // toggle labels (fo
-src/game/menu_config.cpp: comment after code: std::string label_on;    // Toggle labels
-src/game/menu_config.cpp: comment after code: std::string label_src;   // Page entry: live text source; th
-src/game/menu_config.cpp: comment after code: std::string leave_action; // Submenu: action fired when its 
-src/game/menu_config.cpp: comment after code: std::string menu;        // named location (main_menu, game_
-src/game/menu_config.cpp: comment after code: std::string mod_id;      // owning mod (for @export resoluti
-src/game/menu_config.cpp: comment after code: std::string page;        // Submenu: the page it opens; page
-src/game/menu_config.cpp: comment after code: std::string title;       // Submenu: the opened page's title
-src/game/menu_config.cpp: comment after code: std::string transition;  // Front-end action: also run the n
-src/game/menu_config.h: comment block over 2 lines: // Host entry points for the custom front-end menu entries, 
+src/game/menus/menu_config.cpp: comment after code: constexpr int MAX_ENTRIES = 8;                      // menu_
+src/game/menus/menu_config.cpp: comment after code: constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte 
+src/game/menus/menu_config.cpp: comment after code: int smin = 0, smax = 100, sstep = 10;   // slider range
+src/game/menus/menu_config.cpp: comment after code: std::string label_on, label_off;        // toggle labels (fo
+src/game/menus/menu_config.h: comment block over 2 lines: // Host entry points for the custom front-end menu entries, 
 src/game/nav_sequencer.h: comment after code: bool rs64_nav_consume(uint16_t* buttons, float* x, float* y)
 src/game/nav_sequencer.h: comment after code: struct RsNavTarget { RsNavKind kind; int a; int b; int c = -
 src/game/nav_sequencer.h: comment after code: void rs64_nav_inject(uint16_t buttons, float x, float y);  /
@@ -151,7 +134,6 @@ src/input/input_host.cpp: comment after code: float tau = g_bindings.mouse_smoot
 src/input/input_host.cpp: comment after code: g_mouse_ax = g_mouse_ay = 0.0f;  // consume this frame's acc
 src/input/input_host.cpp: comment after code: static float                 g_mouse_ax = 0.0f;   // accumul
 src/input/input_host.cpp: comment after code: static uint32_t s_t0 = 0;            // wall-clock at first 
-src/input/input_host.cpp: comment after code: uint32_t close_ms = 0;   // a touch off the bar just closed 
 src/input/input_host.cpp: comment block over 2 lines: // Active bindings + mouse-steering runtime state. poll_inpu
 src/input/input_host.cpp: comment block over 2 lines: // BOOT_TARGET: while the FrontEnd attract-title is up, the 
 src/input/input_host.cpp: comment block over 2 lines: // Controls / rebind window. Runs on the RT64 graphics threa
@@ -160,7 +142,6 @@ src/input/input_host.cpp: comment block over 2 lines: // Frame-rate-aware expone
 src/input/input_host.cpp: comment block over 2 lines: // Headless automation overrides resolved input and must run
 src/input/input_host.cpp: comment block over 2 lines: // Per-craft speed hooks in rogue_squadron.toml call this ju
 src/input/input_host.cpp: comment block over 2 lines: // ROGUESQ_FAKE_CONTROLLER=1 — report a connected controller
-src/input/input_host.cpp: comment block over 2 lines: // ROGUESQ_INPUT_RECORD=<file> records controller 0 from the
 src/input/input_host.cpp: comment block over 2 lines: // ROGUESQ_INPUT_SEQ="name:holdMs:afterMs,..." — a scripted 
 src/input/input_host.cpp: comment block over 2 lines: // ROGUESQ_PROFILER_DUMP=1: sample the 7 F5-HUD timing slots
 src/input/input_host.cpp: comment block over 2 lines: // Toggle Factor 5's built-in frame-profiler/debug-text HUD.
@@ -233,9 +214,13 @@ src/main/main.cpp: comment block over 2 lines: // SDL_syswm.h is only needed for
 src/main/ui_panels.cpp: comment after code: static bool capture_append = false;             // Add (keep
 src/main/ui_panels.cpp: comment after code: static int capture_target = -1;                 // Target aw
 src/util/debug_logs.h: comment block over 2 lines: // Centralized debug-log gates for the Rogue Squadron recomp
+src/video/render_diag.cpp: comment block over 2 lines: // One-shot RDRAM dump (un-swizzled to MIPS byte order, same
+src/video/render_diag.cpp: comment block over 2 lines: // Per-hitch attribution: on a long present interval, dump t
+src/video/render_diag.cpp: comment block over 2 lines: // ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]: multi-milesto
+src/video/render_diag.cpp: comment block over 2 lines: // ROGUESQ_LOG_FRAME_PROFILE=1: once/sec, attribute frame ti
+src/video/render_diag.cpp: two statements on one line: if (s_iters.empty()) { for (const char* c = s_on_cine; *c; )
 src/video/rt64_render_context.cpp: comment after code: app->userConfig.threePointFiltering = false;             // 
 src/video/rt64_render_context.cpp: comment after code: if ((vi_count_ % 15) != 0) return;                 // ~4x/se
-src/video/rt64_render_context.cpp: comment after code: rs64_state_poll((const uint8_t*)app->core.RDRAM);   // every
 src/video/rt64_render_context.cpp: comment after code: static inline std::atomic<bool> s_hle_disabled{false};  // t
 src/video/rt64_render_context.cpp: comment after code: std::string video_cfg_path_;      // roguesq_video.json next
 src/video/rt64_render_context.cpp: comment after code: std::string video_cfg_snapshot_;  // last-persisted userConf
@@ -244,17 +229,11 @@ src/video/rt64_render_context.cpp: comment after code: video_cfg_path_ = cfgPath
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Erases framebuffers RT64 registered outside [0x400000, 0x
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Frame interpolation OFF by default: it smooths rigid obje
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Menu present fix: the menu composes into a 512-wide color
-src/video/rt64_render_context.cpp: comment block over 2 lines: // One-shot RDRAM dump (un-swizzled to MIPS byte order, same
 src/video/rt64_render_context.cpp: comment block over 2 lines: // Only redirect to a buffer that is still being drawn. The 
-src/video/rt64_render_context.cpp: comment block over 2 lines: // Per-hitch attribution: on a long present interval, dump t
 src/video/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_BOOT_TARGET=menu | demo:N | level:<id>[,craft]. m
-src/video/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_DUMP_RDRAM_ON_STATE=<id>[,<id>...]: multi-milesto
 src/video/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_INTERP_RATE=<hz> pins the game's logical rate, by
-src/video/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_LOG_FRAME_PROFILE=1: once/sec, attribute frame ti
-src/video/rt64_render_context.cpp: comment block over 2 lines: // ROGUESQ_TEX_FILTER=nearest|linear|aa. This drives BOTH th
 src/video/rt64_render_context.cpp: comment block over 2 lines: // The menu buffer is a 512x448 full frame but VI is still i
 src/video/rt64_render_context.cpp: comment block over 2 lines: // True while RT64's F1 developer inspector (ImGui) is up. T
-src/video/rt64_render_context.cpp: two statements on one line: if (s_iters.empty()) { for (const char* c = s_on_cine; *c; )
 src/video/video_config.cpp: comment after code: json base = uc;            // RT64 to_json
 src/video/video_config.h: comment after code: bool loaded = false;    // a file was present and parsed
 src/video/video_config.h: comment after code: bool migrated = false;  // the file was legacy raw and shoul

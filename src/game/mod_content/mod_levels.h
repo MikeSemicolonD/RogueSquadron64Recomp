@@ -1,6 +1,6 @@
 #pragma once
 // Mod levels: a mod's levels.json lists new levels that play as a stock "template" level with their own folder, cutscenes and text.
-#include "game/level_rules.h"
+#include "game/mod_content/level_rules.h"
 #include "json/json.hpp"
 #include <algorithm>
 #include <cstdint>

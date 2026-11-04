@@ -5,13 +5,19 @@
 #include <cmath>
 #include <fstream>
 #include <mutex>
-#include <mutex>
+#include <cstdio>
+#include <cstdlib>
+#include <string_view>
 #include <utility>
+#include "util/debug_logs.h"
 
 namespace rs64::video {
 
 using nlohmann::json;
 using UC = RT64::UserConfiguration;
+using recomp::dbg::env_int;
+using recomp::dbg::env_on;
+using recomp::dbg::env_str;
 
 namespace {
 template <class T>
@@ -766,5 +772,145 @@ LoadResult load(UC& uc, const std::string& path)
     }
 
     return r;
+}
+
+// ROGUESQ_* overrides of the loaded config (they win over the file); each acts only when its var is explicitly set.
+void apply_env_overrides(UC& uc)
+{
+
+    // ROGUESQ_MSAA=2|4|8: multisample anti-aliasing (default off).
+    if (env_str("ROGUESQ_MSAA"))
+    {
+        int s = env_int("ROGUESQ_MSAA");
+        uc.antialiasing = (s >= 8) ? UC::Antialiasing::MSAA8X
+                                     : (s >= 4) ? UC::Antialiasing::MSAA4X
+                                     : (s >= 2) ? UC::Antialiasing::MSAA2X
+                                                : UC::Antialiasing::None;
+
+        fprintf(stderr, "[RT64] MSAA=%ux\n", UC::msaaSampleCount(uc.antialiasing));
+    }
+
+    // ROGUESQ_RES_SCALE=<mult>: internal render-resolution multiplier (Manual).
+    if (const char* v = env_str("ROGUESQ_RES_SCALE")) {
+        double m = std::atof(v);
+
+        if (m > 0.0) {
+            uc.resolution = UC::Resolution::Manual;
+            uc.resolutionMultiplier = m;
+
+            fprintf(stderr, "[RT64] resolutionMultiplier=%.2f\n", m);
+        }
+    }
+
+    // ROGUESQ_SSAA=<n>: supersample/downsample factor (>=2 sharper, costlier).
+    int ssaa = env_int("ROGUESQ_SSAA");
+
+    if (ssaa >= 1) {
+        uc.downsampleMultiplier = ssaa;
+
+        fprintf(stderr, "[RT64] downsample=%d\n", ssaa);
+    }
+
+    // ROGUESQ_FXAA=0|1: FXAA on the presented image.
+    if (const char* v = env_str("ROGUESQ_FXAA")) {
+        uc.fxaa = (v[0] != '0');
+
+        fprintf(stderr, "[RT64] fxaa=%d\n", uc.fxaa ? 1 : 0);
+    }
+
+    // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1 expands to the window.
+    if (const char* v = env_str("ROGUESQ_ASPECT")) {
+        double a = std::atof(v);
+
+        if (a > 0.0) {
+            uc.aspectRatio = UC::AspectRatio::Manual;
+            uc.aspectTarget = a;
+
+            fprintf(stderr, "[RT64] aspect=Manual %.4f\n", a);
+        }
+    } else if (env_on("ROGUESQ_WIDESCREEN")) {
+        uc.aspectRatio = UC::AspectRatio::Expand;
+
+        fprintf(stderr, "[RT64] aspect=Expand\n");
+    }
+
+    // ROGUESQ_HDR=1: high internal color format.
+    if (env_on("ROGUESQ_HDR")) {
+        uc.internalColorFormat = UC::InternalColorFormat::High;
+
+        fprintf(stderr, "[RT64] HDR internal color format\n");
+    }
+
+    // ROGUESQ_TEX_FILTER=nearest|linear|aa drives both the VI upscale filter (filtering) and the per-texture sampler (threePointFiltering).
+    // threePointFiltering off forces GPU bilinear on every tile, G_TF_POINT sprites included; the upscale filter alone leaves game textures alone.
+    if (const char* v = env_str("ROGUESQ_TEX_FILTER"))
+    {
+        std::string_view s(v);
+
+        if (s == "nearest") { uc.filtering = UC::Filtering::Nearest; uc.threePointFiltering = true; }
+        else if (s == "linear") { uc.filtering = UC::Filtering::Linear; uc.threePointFiltering = false; }
+        else if (s == "aa") uc.filtering = UC::Filtering::AntiAliasedPixelScaling;
+
+        fprintf(stderr, "[RT64] filtering=%s threePoint=%d\n", v, uc.threePointFiltering ? 1 : 0);
+    }
+
+    // ROGUESQ_THREE_POINT=0|1: per-texture sampler independent of the upscale filter.
+    // 0 = GPU bilinear on all textures; 1 = N64 3-point (faithful; point on G_TF_POINT tiles).
+    if (const char* v = env_str("ROGUESQ_THREE_POINT"))
+    {
+        uc.threePointFiltering = (v[0] != '0');
+
+        fprintf(stderr, "[RT64] threePointFiltering=%d\n", uc.threePointFiltering ? 1 : 0);
+    }
+
+    // ROGUESQ_RT_INTERP=0 disables frame interpolation, =<hz> enables it at that target (raster-only, not the logic tick).
+    // Unset keeps the baseline: off unless roguesq_video.json sets frameInterpolation.
+    if (const char* v = env_str("ROGUESQ_RT_INTERP")) {
+        if (v[0] == '0')
+        {
+            uc.refreshRate = UC::RefreshRate::Original;
+
+            fprintf(stderr, "[RT64] frame interpolation OFF\n");
+        } else {
+            int hz = env_int("ROGUESQ_RT_INTERP");
+
+            if (hz < 20) hz = 60;
+
+            uc.refreshRate = UC::RefreshRate::Manual;
+            uc.refreshRateTarget = hz;
+
+            fprintf(stderr, "[RT64] frame interpolation ON (Manual %d Hz)\n", hz);
+        }
+    }
+
+    // ROGUESQ_GFX_API=vulkan|d3d12|d3d11|d3d10 forces the backend (default Automatic).
+    if (const char* api = env_str("ROGUESQ_GFX_API")) {
+        if (std::string_view(api) == "vulkan")
+        {
+            uc.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan;
+
+            fprintf(stderr, "[RT64] graphics API forced to Vulkan via ROGUESQ_GFX_API\n");
+        } else if (std::string_view(api) == "d3d12") {
+            uc.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D12;
+
+            fprintf(stderr, "[RT64] graphics API forced to D3D12 via ROGUESQ_GFX_API\n");
+        } else if ((std::string_view(api) == "d3d11") || (std::string_view(api) == "d3d10"))
+        {
+            uc.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D11;
+            rs64::video::set_d3d10(std::string_view(api) == "d3d10");
+
+            fprintf(stderr, "[RT64] graphics API forced to %s via ROGUESQ_GFX_API\n", rs64::video::d3d10() ? "D3D10" : "D3D11");
+        }
+    }
+
+#ifdef _WIN32
+
+    // D3D10 is the D3D11 backend on a device capped at feature level 10; an explicit PLUME_D3D11_FEATURE_LEVEL wins.
+    if ((uc.graphicsAPI == RT64::UserConfiguration::GraphicsAPI::D3D11) && rs64::video::d3d10() && (env_str("PLUME_D3D11_FEATURE_LEVEL") == nullptr))
+    {
+        _putenv_s("PLUME_D3D11_FEATURE_LEVEL", "10_0");
+    }
+
+#endif
 }
 } // namespace rs64::video

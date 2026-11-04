@@ -1,4 +1,4 @@
-#include "game/level_rules.h"
+#include "game/mod_content/level_rules.h"
 #include "check.h"
 #include <cstdio>
 

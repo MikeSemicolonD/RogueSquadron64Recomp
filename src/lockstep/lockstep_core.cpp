@@ -1,4 +1,5 @@
 #include "lockstep/lockstep_core.h"
+#include "util/rdram_words.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -6,6 +7,11 @@
 #include <sstream>
 
 namespace rs64::ls {
+
+using rs64::mips::rb;
+using rs64::mips::rw;
+using rs64::mips::wb;
+using rs64::mips::ww;
 
 static const char* kMagic = "rs64-ls v2";
 
@@ -21,9 +27,9 @@ std::string format_header(const SessionHeader& h)
     char buf[768];
     snprintf(buf, sizeof(buf),
         "%s\nseed=%u\nlevel=%u\ncraft=%u\ndifficulty=%u\nflags0=0x%08X\ncontroller=%u\nexpansion=%u\n"
-        "cheats0=0x%08X\ncheats1=0x%08X\nnaboo=0x%08X\nsecondary=%u\ncruise=0x%08X\npilot=%s\nbuild=%s\n---\n",
+        "cheats0=0x%08X\ncheats1=0x%08X\nnaboo=0x%08X\nsecondary=%u\ncruise=0x%08X\nwidescreen=%u\ndraw=%u\npilot=%s\nbuild=%s\n---\n",
         kMagic, h.seed, h.level, h.craft, h.difficulty, h.flags0, h.controller, h.expansion,
-        h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, pilot, h.build.c_str());
+        h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, h.widescreen, h.draw_pct, pilot, h.build.c_str());
 
     return buf;
 }
@@ -105,6 +111,8 @@ bool parse_header(const std::string& text, SessionHeader* out) {
         else if (key == "naboo") h.naboo = v;
         else if (key == "secondary") h.secondary = v;
         else if (key == "cruise") h.cruise_bits = v;
+        else if (key == "widescreen") h.widescreen = v;
+        else if (key == "draw") h.draw_pct = v;
         else if (key == "build") h.build = val;
         else if (key == "pilot" && !parse_hex_bytes(val, h.pilot.data(), h.pilot.size())) return false;
     }
@@ -255,24 +263,13 @@ bool in_rdram(uint32_t kseg0, uint32_t size)
     return kseg0 >= 0x80000000u && (uint64_t)(kseg0 - 0x80000000u) + size <= kRdramSize;
 }
 
-uint8_t rd8(const uint8_t* rdram, uint32_t kseg0) {
-    return rdram[(kseg0 - 0x80000000u) ^ 3];
-}
-
-uint32_t rd32(const uint8_t* rdram, uint32_t kseg0)
-{
-
-    return ((uint32_t)rd8(rdram, kseg0) << 24) | ((uint32_t)rd8(rdram, kseg0 + 1) << 16) |
-           ((uint32_t)rd8(rdram, kseg0 + 2) << 8) | (uint32_t)rd8(rdram, kseg0 + 3);
-}
-
 uint64_t hash_spans(const uint8_t* rdram, const std::vector<Span>& spans) {
 
     uint64_t h = 0xcbf29ce484222325ull;
 
     for (const Span& s : spans) {
         for (uint32_t i = 0; i < s.size; ++i) {
-            const uint8_t b = rd8(rdram, s.addr + i);
+            const uint8_t b = rb(rdram, s.addr + i);
             h = fnv1a(&b, 1, h);
         }
     }
@@ -291,7 +288,7 @@ uint64_t mix32(uint64_t h, uint32_t v)
 uint64_t hash_npcs(const uint8_t* rdram) {
 
     uint64_t h = 0xcbf29ce484222325ull;
-    const uint32_t table = rd32(rdram, 0x80130BB0u);
+    const uint32_t table = rw(rdram, 0x80130BB0u);
 
     if (!in_rdram(table, 0x800 * 8))
     {
@@ -299,25 +296,25 @@ uint64_t hash_npcs(const uint8_t* rdram) {
     }
 
     for (uint32_t i = 0; i < 0x800; ++i) {
-        const uint32_t ctx = rd32(rdram, table + i * 8);
+        const uint32_t ctx = rw(rdram, table + i * 8);
 
         if (!in_rdram(ctx, 0x3C)) {
             continue;
         }
 
         h = mix32(h, i);
-        h = mix32(h, rd32(rdram, ctx + 0x0));
+        h = mix32(h, rw(rdram, ctx + 0x0));
 
         for (uint32_t k = 0x14; k < 0x1A; ++k) {
-            const uint8_t b = rd8(rdram, ctx + k);
+            const uint8_t b = rb(rdram, ctx + k);
             h = fnv1a(&b, 1, h);
         }
 
-        const uint32_t pos = rd32(rdram, ctx + 0x8);
+        const uint32_t pos = rw(rdram, ctx + 0x8);
 
         if (in_rdram(pos, 12)) {
             for (uint32_t k = 0; k < 12; ++k) {
-                const uint8_t b = rd8(rdram, pos + k);
+                const uint8_t b = rb(rdram, pos + k);
                 h = fnv1a(&b, 1, h);
             }
         } else {
@@ -348,37 +345,23 @@ const std::vector<std::vector<Span>>& region_spans() {
 }
 }
 
-namespace {
-
-void wr8(uint8_t* rdram, uint32_t kseg0, uint8_t v) {
-    rdram[(kseg0 - 0x80000000u) ^ 3] = v;
-}
-
-void wr32(uint8_t* rdram, uint32_t kseg0, uint32_t v) {
-
-    for (uint32_t i = 0; i < 4; ++i) {
-        wr8(rdram, kseg0 + i, (uint8_t)(v >> (24 - 8 * i)));
-    }
-}
-}
-
 SessionHeader read_session(const uint8_t* rdram, uint32_t seed) {
 
     SessionHeader h;
     h.seed = seed;
-    h.level = rd8(rdram, 0x80130B40u);
-    h.craft = rd8(rdram, 0x80130B41u);
-    h.difficulty = rd8(rdram, 0x80130B42u);
-    h.secondary = rd8(rdram, 0x80130B43u);
-    h.controller = rd8(rdram, 0x80130B45u);
-    h.flags0 = rd32(rdram, 0x80130B4Cu);
-    h.cheats0 = rd32(rdram, 0x80130B58u);
-    h.cheats1 = rd32(rdram, 0x80130B5Cu);
-    h.expansion = rd8(rdram, 0x80130B63u);
-    h.naboo = rd32(rdram, 0x80130B68u);
+    h.level = rb(rdram, 0x80130B40u);
+    h.craft = rb(rdram, 0x80130B41u);
+    h.difficulty = rb(rdram, 0x80130B42u);
+    h.secondary = rb(rdram, 0x80130B43u);
+    h.controller = rb(rdram, 0x80130B45u);
+    h.flags0 = rw(rdram, 0x80130B4Cu);
+    h.cheats0 = rw(rdram, 0x80130B58u);
+    h.cheats1 = rw(rdram, 0x80130B5Cu);
+    h.expansion = rb(rdram, 0x80130B63u);
+    h.naboo = rw(rdram, 0x80130B68u);
 
     for (uint32_t i = 0; i < h.pilot.size(); ++i) {
-        h.pilot[i] = rd8(rdram, 0x80130B10u + i);
+        h.pilot[i] = rb(rdram, 0x80130B10u + i);
     }
 
     return h;
@@ -386,17 +369,17 @@ SessionHeader read_session(const uint8_t* rdram, uint32_t seed) {
 
 void apply_session(uint8_t* rdram, const SessionHeader& h) {
 
-    wr8(rdram, 0x80130B42u, (uint8_t)h.difficulty);
-    wr8(rdram, 0x80130B43u, (uint8_t)h.secondary);
-    wr8(rdram, 0x80130B45u, (uint8_t)h.controller);
-    wr32(rdram, 0x80130B4Cu, h.flags0);
-    wr32(rdram, 0x80130B58u, h.cheats0);
-    wr32(rdram, 0x80130B5Cu, h.cheats1);
-    wr8(rdram, 0x80130B63u, (uint8_t)h.expansion);
-    wr32(rdram, 0x80130B68u, h.naboo);
+    wb(rdram, 0x80130B42u, (uint8_t)h.difficulty);
+    wb(rdram, 0x80130B43u, (uint8_t)h.secondary);
+    wb(rdram, 0x80130B45u, (uint8_t)h.controller);
+    ww(rdram, 0x80130B4Cu, h.flags0);
+    ww(rdram, 0x80130B58u, h.cheats0);
+    ww(rdram, 0x80130B5Cu, h.cheats1);
+    wb(rdram, 0x80130B63u, (uint8_t)h.expansion);
+    ww(rdram, 0x80130B68u, h.naboo);
 
     for (uint32_t i = 0; i < h.pilot.size(); ++i) {
-        wr8(rdram, 0x80130B10u + i, h.pilot[i]);
+        wb(rdram, 0x80130B10u + i, h.pilot[i]);
     }
 }
 
@@ -461,9 +444,46 @@ std::string dump_regions(const uint8_t* rdram) {
 
         for (const Span& s : regions[r]) {
             for (uint32_t i = 0; i < s.size; ++i) {
-                snprintf(hex, sizeof(hex), "%02X", rd8(rdram, s.addr + i));
+                snprintf(hex, sizeof(hex), "%02X", rb(rdram, s.addr + i));
                 out += hex;
             }
+        }
+
+        out += '\n';
+    }
+
+    const uint32_t table = rw(rdram, 0x80130BB0u);
+
+    if (!in_rdram(table, 0x800 * 8))
+    {
+        return out;
+    }
+
+    // The hashed fields of each live NPC, one line each, so a diff names the NPC that diverged.
+    for (uint32_t i = 0; i < 0x800; ++i) {
+        const uint32_t ctx = rw(rdram, table + i * 8);
+
+        if (!in_rdram(ctx, 0x3C)) {
+            continue;
+        }
+
+        char line[64];
+
+        snprintf(line, sizeof(line), "npc %u %08X %08X ", i, ctx, rw(rdram, ctx));
+        out += line;
+
+        for (uint32_t k = 0x14; k < 0x1A; ++k) {
+            snprintf(hex, sizeof(hex), "%02X", rb(rdram, ctx + k));
+            out += hex;
+        }
+
+        const uint32_t pos = rw(rdram, ctx + 0x8);
+
+        out += ' ';
+
+        for (uint32_t k = 0; in_rdram(pos, 12) && k < 12; ++k) {
+            snprintf(hex, sizeof(hex), "%02X", rb(rdram, pos + k));
+            out += hex;
         }
 
         out += '\n';
@@ -612,6 +632,6 @@ bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* fr
 }
 
 bool demo_active(const uint8_t* rdram) {
-    return (rd32(rdram, 0x80130B50u) & 0x60u) != 0;
+    return (rw(rdram, 0x80130B50u) & 0x60u) != 0;
 }
 }

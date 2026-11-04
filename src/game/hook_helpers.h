@@ -18,6 +18,8 @@ extern "C" {
     unsigned long long rs64_cine_iter_get(void);
     // Rewrite a matpool-region SET_COLOR_IMAGE to a safe target (FB guard).
     void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys);
+    // DRAW DISTANCE multiplier the culls use (setting or ROGUESQ_DRAW_DIST, capped for the legacy terrain).
+    float rs64_draw_dist_setting(void);
 }
 
 #endif // RS64_HOOK_HELPERS_H
