@@ -151,7 +151,7 @@
         {
             "label": "Package: Bump version",
             "type": "shell",
-            "command": "& .\\tools\\bump-version.ps1 -Part '${input:versionPart}'",
+            "command": "& .\\tools\\release\\bump-version.ps1 -Part '${input:versionPart}'",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -275,7 +275,7 @@
         {
             "label": "Record: Input recording (pick level / craft)",
             "type": "shell",
-            "command": "& .\\tools\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
+            "command": "& .\\tools\\debug\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -289,7 +289,7 @@
         {
             "label": "Record: Co-op client recording (you fly player 2)",
             "type": "shell",
-            "command": "& .\\tools\\recordings\\record-coop.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -HostPad '${input:rsCoopHostPad}' -Name '${input:rsRecName}'",
+            "command": "& .\\tools\\debug\\recordings\\record-coop.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -HostPad '${input:rsCoopHostPad}' -Name '${input:rsRecName}'",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {

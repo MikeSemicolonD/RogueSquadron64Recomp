@@ -40,7 +40,7 @@ if (Test-Path $rec) {
     exit 1
 }
 
-$exeDir = Join-Path (Split-Path (Split-Path $root)) "build\$Config"
+$exeDir = Join-Path (Resolve-Path "$PSScriptRoot\..\..\..").Path "build\$Config"
 $exe = Join-Path $exeDir "RogueSquadron64Recomp.exe"
 if (-not (Test-Path $exe)) {
     Write-Error "Binary not found: $exe"
