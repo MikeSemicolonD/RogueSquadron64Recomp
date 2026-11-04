@@ -270,6 +270,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/main/cli.cpp
     ${CMAKE_SOURCE_DIR}/src/main/crash.cpp
     ${CMAKE_SOURCE_DIR}/src/input/input_host.cpp
+    ${CMAKE_SOURCE_DIR}/src/input/touch_host.cpp
     ${CMAKE_SOURCE_DIR}/src/main/ui_panels.cpp
     ${CMAKE_SOURCE_DIR}/src/game/game_state.cpp
     ${CMAKE_SOURCE_DIR}/src/game/nav_sequencer.cpp
@@ -280,15 +281,20 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
     ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
     ${CMAKE_SOURCE_DIR}/src/game/menu_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/pause_menu.cpp
     ${CMAKE_SOURCE_DIR}/src/game/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
+    ${CMAKE_SOURCE_DIR}/src/video/render_diag.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/game/upstream_compat.cpp
     ${CMAKE_SOURCE_DIR}/src/game/hook_helpers.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/asset_overrides.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/mod_level_hooks.cpp
     ${CMAKE_SOURCE_DIR}/src/game/static_standins.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp
+    $<${RS64_MCP_GENEX}:${CMAKE_SOURCE_DIR}/src/lockstep/mcp_pause.cpp>
     ${CMAKE_SOURCE_DIR}/src/main/renderdoc_capture.cpp
     $<${RS64_MCP_GENEX}:${CMAKE_SOURCE_DIR}/src/main/mcp_bridge.cpp>
     ${CMAKE_SOURCE_DIR}/src/host_api/host_api.cpp
@@ -402,6 +408,7 @@ add_executable(video_config_test EXCLUDE_FROM_ALL
 )
 set_target_properties(video_config_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(video_config_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/rt64/src
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib

@@ -1,9 +1,11 @@
 #include "game/nav_sequencer.h"
 #include "game/game_state.h"        // rs64_state_current_id
 #include "input/touch_menu.h"
+#include "input/input_bindings.h"
 #include "util/debug_logs.h"
 #include "lockstep/lockstep_core.h"
 #include "host_api/host_api.h"
+#include "rs64_toml_hooks.h"
 #include "game/menu_config.h"
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
@@ -15,15 +17,6 @@
 
 // Multiplayer's lobby state, published as a flag (0 idle, 1 hosting, 2 joining, 3 connected, 4 failed); 0 without multiplayer.
 static int lobby_state() { return rs64::host::flag("mp_lobby_state"); }
-
-// N64 button masks (subset; mirror of main.cpp).
-#define N64_A_BUTTON     0x8000
-#define N64_B_BUTTON     0x4000
-#define N64_START_BUTTON 0x1000
-#define N64_D_JPAD       0x0400
-#define N64_U_JPAD       0x0800
-#define N64_L_JPAD       0x0200
-#define N64_R_JPAD       0x0100
 
 // ---- Level-held input injection (read every poll by get_n64_input) ----
 // While driving, the sequencer owns controller 0: the held button (or neutral) is returned on every poll.

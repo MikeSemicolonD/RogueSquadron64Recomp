@@ -9,6 +9,7 @@
 #include "ultramodern/error_handling.hpp"
 #include "lockstep/lockstep_core.h"
 #include "recomp.h"
+#include "rs64_toml_hooks.h"
 #include "util/rdram_words.h"
 #include "video/video_config.h"
 
@@ -20,6 +21,9 @@ namespace {
 using rs64::mips::rh;
 using rs64::mips::rw;
 using rs64::mips::ww;
+using rs64::mips::rb;
+using rs64::mips::wb;
+using rs64::mips::wh;
 
 std::vector<Language> s_languages;
 std::once_flag s_loaded;
@@ -52,21 +56,6 @@ std::vector<uint8_t> s_pending;
 std::unordered_map<std::string, std::string> s_originals;
 int s_bank = 0;
 uint32_t s_voice_id = 0;
-
-void wb(uint8_t* rdram, uint32_t a, uint8_t v) {
-    rdram[(a - 0x80000000u) ^ 3] = v;
-}
-
-void wh(uint8_t* rdram, uint32_t a, uint16_t v)
-{
-
-    wb(rdram, a, (uint8_t)(v >> 8));
-    wb(rdram, a + 1, (uint8_t)v);
-}
-
-uint8_t rb(const uint8_t* rdram, uint32_t a) {
-    return rdram[(a - 0x80000000u) ^ 3];
-}
 
 // Extended font objects and their tables live in host RAM below 0x81000000 (the game checks some pointers for top byte 0x80), in this reserved 64 KB.
 constexpr uint32_t kTablesStart = 0x80C44000u, kTablesEnd = 0x80C54000u;
@@ -375,7 +364,6 @@ void write_slots(uint8_t* rdram, const std::vector<uint8_t>& slots)
 using namespace rs64::lang;
 
 extern "C" void rs64_f5_set_texture_pool_move(uint32_t orig, uint32_t moved, uint32_t size);
-extern "C" void rs64_snapshot_add_range(uint32_t lo, uint32_t hi);
 
 // A scene's texture pool (bounds at 0x8011A850/54) moves to host RAM below 0x81000000 (the game takes texture pointers as RAM only for top byte 0x80); RT64 maps the move back. The previous
 // pool can still be live while the next loads, so pools alternate between two regions; stock pools are at most 1.28 MB (D_80037560+0x38, D_800CD2B0, D_800B072C), so either region fits.

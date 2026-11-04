@@ -236,14 +236,24 @@ static std::string read_file(const char* path) {
     return ss.str();
 }
 
-// Every `# hook: NAME` hook in rogue_squadron.toml calls an rs64_th_* body in toml_hooks.c whose `rs64_hook(N, ...)` must have hook_name(N) == NAME.
+// The hook id named NAME (RS64_HOOK_NONE if none is).
+static uint32_t hook_id_of(const std::string& name) {
+    for (uint32_t i = 1; i < RS64_HOOK_COUNT; ++i) {
+        if (name == hook_name(i)) return i;
+    }
+    return RS64_HOOK_NONE;
+}
+
+// Every `# hook: NAME` hook in rogue_squadron.toml calls an rs64_th_* body in toml_hooks.c whose `rs64_hook(ID, ...)` must have ID == NAME.
 static void test_toml_hook_ids_match_names() {
     const std::string t = read_file(RS64_TOML_PATH);
     const std::string c = read_file(RS64_TOML_HOOKS_PATH);
     std::map<std::string, uint32_t> body_id;
-    std::regex body(R"((?:int|void) (rs64_th_\w+)\([^)]*\)\s*\{[^}]*?rs64_hook\((\d+)u?,)");
+    std::regex body(R"((?:int|void) (rs64_th_\w+)\([^)]*\)\s*\{[^}]*?rs64_hook\((RS64_HOOK_\w+),)");
     for (auto it = std::sregex_iterator(c.begin(), c.end(), body); it != std::sregex_iterator(); ++it) {
-        body_id[(*it)[1].str()] = (uint32_t)std::stoul((*it)[2]);
+        const uint32_t id = hook_id_of((*it)[2].str());
+        CHECK(id != RS64_HOOK_NONE);
+        body_id[(*it)[1].str()] = id;
     }
     std::regex re(R"(# hook: (RS64_HOOK_\w+)[\s\S]*?(rs64_th_\w+)\()");
     int n = 0;
@@ -269,9 +279,9 @@ static void test_toml_hook_ids_match_names() {
     CHECK(n == (int)expected.size());
     CHECK(seen == expected);
     int sites = 0;
-    std::regex site(R"(rs64_hook\((\d+))");
+    std::regex site(R"(rs64_hook\((\w+))");
     for (auto it = std::sregex_iterator(c.begin(), c.end(), site); it != std::sregex_iterator(); ++it, ++sites) {
-        const uint32_t id = (uint32_t)std::stoul((*it)[1]);
+        const uint32_t id = hook_id_of((*it)[1].str());
         CHECK(hook_has_toml_site(id));
     }
     CHECK(sites == (int)expected.size());

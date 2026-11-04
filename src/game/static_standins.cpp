@@ -3,15 +3,13 @@
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include "recomp.h"
+#include "rs64_toml_hooks.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <vector>
-
-extern "C" float rs64_draw_dist(void);
-extern "C" void rs64_snapshot_add_range(uint32_t lo, uint32_t hi);
 
 namespace {
 
@@ -91,17 +89,6 @@ uint32_t handler_model_name(uint16_t sub)
     case 0x4C: return 0x800A8890u;
     default: return 0;
     }
-}
-
-uint8_t rb(const uint8_t* rdram, uint32_t a) {
-    return rdram[(a - 0x80000000u) ^ 3];
-}
-
-void wh(uint8_t* rdram, uint32_t a, uint16_t v)
-{
-
-    rdram[(a - 0x80000000u) ^ 3] = (uint8_t)(v >> 8);
-    rdram[(a + 1 - 0x80000000u) ^ 3] = (uint8_t)v;
 }
 
 // The loaded model named `name` (walkMeshdef0List 0x80056EB0: byte sum mod 25 indexes u16 chains of 12-byte entries, +4 the model, names compared up to 16 bytes).

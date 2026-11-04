@@ -25,6 +25,7 @@
 #endif
 
 #include "recomp.h"
+#include "rs64_toml_hooks.h"
 #include "librecomp/helpers.hpp"
 #include "librecomp/overlays.hpp"
 #include "librecomp/addresses.hpp"

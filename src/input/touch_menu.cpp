@@ -1,12 +1,11 @@
 #include "input/touch_menu.h"
+#include "rs64_toml_hooks.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <string>
-
-extern "C" unsigned rs64_pause_array_for(uint8_t* rdram, unsigned id, unsigned native);
 
 namespace rs64::touch {
     namespace {

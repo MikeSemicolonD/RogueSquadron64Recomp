@@ -39,7 +39,7 @@ add_executable(nav_target_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/src/host_api/host_api.cpp
 )
 set_target_properties(nav_target_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
-target_include_directories(nav_target_test PRIVATE ${RS64_ROOT}/src ${RS64_ROOT}/include)
+target_include_directories(nav_target_test PRIVATE ${RS64_ROOT}/src ${RS64_ROOT}/include ${RS64_ROOT}/lib/N64ModernRuntime/N64Recomp/include)
 add_dependencies(nav_target_test gen_state_table)
 
 # Standalone unit test for the lockstep record/replay core.

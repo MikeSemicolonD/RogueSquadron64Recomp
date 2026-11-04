@@ -43,6 +43,9 @@ namespace rs64::app {
     extern rs64::touch::Engine g_touch;
     extern std::mutex g_touch_mtx;
 
+    // Set when a pad connects so the next lightbar tick (rumble.cpp) re-sends the current color.
+    extern std::atomic<bool> g_lightbar_resend;
+
     void poll_input();
     bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y);
     void set_rumble(int controller_num, bool on);
@@ -71,4 +74,10 @@ namespace rs64::app {
     rs64::touch::TapAction touch_menu_tap(float x, float y);
     bool mouse_menu_context(rs64::touch::Context ctx);
     void window_size(float* w, float* h);
+
+    // touch_host.cpp, called from poll_input: finger and mouse events on the menus, and the touch state poll_input resets.
+    void touch_event(const SDL_Event& e);
+    void menu_mouse_event(const SDL_Event& e);
+    void touch_slider_cancel();
+    bool take_touch_edit_request();
 }
