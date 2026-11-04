@@ -57,7 +57,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 - **High resolutions:** high resolution options, with optional MSAA, SSAA or FXAA anti-aliasing & HDR.
 - **Widescreen:** extends the screen (and camera FOV) beyond the old 4:3 aspect ratio.
-- **Longer draw distance:** see much farther away by up to 8x the original, set with the DRAW DISTANCE slider in Display Settings. [Has some caveats](#status).
+- **Longer draw distance:** see much farther away by up to 8x the original, set with the DRAW DISTANCE slider in Display Settings. [Has some caveats](#draw-distance-caveats).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
 - **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status).
@@ -204,26 +204,22 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Ray Tracing is implemented but has some issues:
   - There are situations where light 'sticks' to the player and begins to flicker
+  - Odd shadows in places
+  - Incorrect shadow reflections
+  - Some/parts of objects not reflecting in the water at all
+  - Incorrect shadow reflection culling when look at the water from and obleak angle
 
-- Sliders when opened tends to follow along with the highlighted buttons when ideally it shouldn't highlight other buttons. If a users clicks another button when in this state it should navigate out of the slider
+- Cutscenes don't seem to use the water plane or new terrain renderer during cutscenes.
 
-- Black triangles/polygons seem to appear on the top right/left corners of the screen when flying directly up and banking (Very particular angle and tough to reproduce) most likely something related to camera culling, the skybox and with widscreen.
+- When using base setting + no mods homing missiles don't attract to targets like normal (This an caused from the draw distance changes?) In turn would a larger draw distance affect homing missile tracking in general for both the player and the turret/enemy like the turret being able to track the player farther than usual?
 
-- 'Esc' can confirm on pause screen and indirectly click buttons highlighted by the mouse.
+- World devestators show signs of 'flickering in place' especially by the feet (and the feet's top segment) of the devestator when frame interpolation is on.
 
-- Horizontal scrolling with the mouse scroll wheel should step through the hangar and level select. (Left going left, right going right)
+- When Draw distance is at Max I've seen what looks like a red laser streak across the whole screen when playing the calamari mission. (Issue with interpolation + object pooling?) Specifically can be seen after taking out the 2nd devestator and flying towards the city.
 
-- Mouse can't set the slider value (but touch can?). Horizontal scroll should also increment/decrement the slider value with max of 10 steps for the whole scroll bar.
+- A few firework effects (maybe 1 or 2 types?) don't display during the end cutscene. Could be an object pooling issue but not sure.
 
-- During Level Select there should be a right arrow if there's more levels that can be selected just like how there's a left arrow. (It's clickable and menus are still navigable just can't see it for some reason. Glyph issue?)
-
-- Frame rate seems to drop temporarily when the game initially loads in the Profile Select menu (menu transition coming in looks choppy)
-
-- Draw distance:
-  - Buildings, turrets and units the game hasn't woken yet show at a distance in their starting pose, frozen until you get within the game's own range (about `1.5x`). Then the real one takes over, so aircraft hang still in the air until then. Their spawn range is left alone because it drives AI and mission triggers, and changing it would change how the game plays.
-  - At long range the edge of the level's map shows as a flat band with a hard horizon line.
-  - Flying at high draw distance can feel a little jittery, and the terrain can jitter.
-  - With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x`.
+- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition coming in looks choppy) due to things like glpyhs, graphics amd music loading on the fly.
 
 ### Game specific Issues
 
@@ -233,9 +229,16 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Shooting at the lava or colliding against the ground in Raid on Sullust produces fire balls that look dim/muted compared to the other bigger lava explosion effects in the level
 
-- Very slight cut off at the top of text rects **BUT** this also existed in the original game.
+- Terrain tile and normal textures don't align perfectly and seem to have a slight cut off.
 
-- Terrain tile textures don't align perfectly and seem to have a slight cut off which is more likely a game issue than a recomp. issue.
+- The starfield in the background used during the credits sequence **is** really *that* blurry with visible artifacts everywhere.
+
+- Lasers + missiles popping out of existance due to the number of them being generated at once. This is normal game behaviour based on pre-defined budget. There's a larger-object-pool mod that  extends this limit.
+
+#### Draw distance Caveats
+
+- Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
+- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x`.
 
 ### Roadmap
 
