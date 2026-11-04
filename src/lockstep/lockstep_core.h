@@ -24,6 +24,9 @@ struct SessionHeader {
     uint32_t naboo = 0;
     uint32_t secondary = 0;
     uint32_t cruise_bits = 0;
+    // Widescreen and DRAW DISTANCE (percent) at record time: both change the object culls. draw_pct 0 = not recorded (older files).
+    uint32_t widescreen = 0;
+    uint32_t draw_pct = 0;
     // gMissionState 0x80130B10..0x80130B3F before initMission: rank and per-level progress carried from the pilot.
     std::array<uint8_t, 0x30> pilot = {};
     std::string build;

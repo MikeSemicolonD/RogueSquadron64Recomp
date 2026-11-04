@@ -67,6 +67,10 @@ static float draw_dist_setting() {
     return (rs64_static_terrain_mode() == 1) ? d : std::min(d, rs64::video::kLegacyTerrainDrawDistanceMax);
 }
 
+extern "C" float rs64_draw_dist_setting(void) {
+    return draw_dist_setting();
+}
+
 static float terrain_dist_setting() {
 
     static const float s_env = env_mult("ROGUESQ_TERRAIN_DIST", 0.0f);
@@ -281,11 +285,12 @@ extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram)
 
 extern "C" float rs64_aspect_scale(void);
 
-// Native pixels the edge HUD moves outward this frame in a view `width` wide: 0 outside missions (numMissionObjectives 0x80130B17), in 4:3 or at placement 0.
+// Native pixels the edge HUD moves outward this frame in a view `width` wide: 0 outside missions, in 4:3 or at placement 0.
+// The results screen and menus (menu overlay) keep numMissionObjectives 0x80130B17 set after the last mission, so the overlay decides too.
 static float hud_shift(const uint8_t* rdram, float width)
 {
 
-    if (rb(rdram, 0x80130B17u) == 0) return 0.0f;
+    if (g_active_overlay != 0 || rb(rdram, 0x80130B17u) == 0) return 0.0f;
 
     return rs64hud::shiftNative(width, rs64::video::hud_placement(), rs64_aspect_scale());
 }

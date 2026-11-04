@@ -37,6 +37,7 @@ extern SDL_Window* g_sdl_window;
 #include "game/game_state.h"           // rs64_state_poll, rs64_state_current_id
 #include "game/nav_sequencer.h"        // rs64_nav_set_target, rs64_nav_tick
 #include "main/main.h"                // rs64_reloc_guard_tick
+#include "lockstep/lockstep_core.h"    // load_replay: the recording's display settings
 #include "video/rt64_render_context.h"
 #include "video/render_diag.h"
 #include "default_lights.h"
@@ -531,6 +532,7 @@ public:
             }
         }
 
+        apply_replay_display();
         rs64::video::apply_env_overrides(app->userConfig);
 
         // PresentEarly (default on): the cinematic stays on one VI fb address, so RT64's
@@ -812,6 +814,28 @@ private:
 
     rs64::video::RenderDiag diag() const {
         return { app.get(), vi_count_, game_vi_origin_, game_vi_width_ };
+    }
+
+    // A replay plays with the widescreen and DRAW DISTANCE it was recorded with (they change the object culls), set before the save snapshot so the file keeps the player's own.
+    void apply_replay_display()
+    {
+
+        const char* path = env_str("ROGUESQ_LS_REPLAY");
+        rs64::ls::SessionHeader h;
+        std::vector<rs64::ls::FrameInput> frames;
+        std::map<uint32_t, std::vector<uint8_t>> song;
+
+        if (!path || !rs64::ls::load_replay(path, &h, &frames, &song) || h.draw_pct == 0)
+        {
+            return;
+        }
+
+        using UC = RT64::UserConfiguration;
+
+        app->userConfig.aspectRatio = h.widescreen ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
+        rs64::video::set_draw_distance((float)h.draw_pct / 100.0f);
+
+        fprintf(stderr, "[ls] replay display: widescreen=%u draw=%.2f (from the recording)\n", h.widescreen, h.draw_pct / 100.0);
     }
 
     // Persist F1-menu display changes back to roguesq_video.json. The menu edits app->userConfig

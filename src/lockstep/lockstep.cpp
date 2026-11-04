@@ -9,6 +9,8 @@
 #include "main/renderdoc_capture.h"
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
+#include "video/video_config.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -235,6 +237,8 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         const char* path = recomp::dbg::env_str("ROGUESQ_LS_RECORD");
         SessionHeader h = read_session(rdram, ghost ? rw(rdram, 0x80003470u) : seed);
         h.build = __DATE__ " " __TIME__;
+        h.widescreen = (uint32_t)rs64::video::display_value(rs64::video::Display::Widescreen);
+        h.draw_pct = (uint32_t)std::lround(rs64_draw_dist_setting() * 100.0f);
         s.cruise = rs64_throttle_cruise_live();
         memcpy(&h.cruise_bits, &s.cruise, 4);
         s.rec = fopen(path, "wb");
@@ -317,11 +321,22 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
         return dt;
     }
 
-    const uint32_t flags = rw(rdram, kSettingsFlags);
+    uint32_t flags = rw(rdram, kSettingsFlags);
 
     if (s.mode == Mode::Replay) {
         ww(rdram, kSettingsFlags, (flags & ~kGodModeBit) | s.god);
     } else if (s.mode == Mode::Record && s.rec && s.flags0_at > 0) {
+        // A recording plays mortal even with the invincibility mod on, unless ROGUESQ_LS_GOD=1 asks for an invincible one.
+        static const bool s_god = recomp::dbg::env_on("ROGUESQ_LS_GOD");
+
+        if (!s_god && (flags & kGodModeBit))
+        {
+            flags &= ~kGodModeBit;
+            ww(rdram, kSettingsFlags, flags);
+
+            fprintf(stderr, "[ls] invincibility off for this recording (ROGUESQ_LS_GOD=1 keeps it)\n");
+        }
+
         fflush(s.rec);
         fseek(s.rec, s.flags0_at, SEEK_SET);
         fprintf(s.rec, "%08X", flags);
