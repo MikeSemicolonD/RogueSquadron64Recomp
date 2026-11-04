@@ -139,7 +139,7 @@ Anchors and `hide` name native entries by alias:
 - `controller_settings`: `back`. The game draws a controller diagram over this screen, so give new buttons a `y` that keeps them clear of its labels (BACK itself carries `y` 283). The controls-menu mod replaces the screen while it is enabled, and buttons for it don't show then.
 - `pause`: `continue`, `abort_level`, `game_settings`, `sound_settings`. The title and objectives above CONTINUE stay where they are; a button without placement goes at the end.
 
-The tables are `kNativeAliases` and `pause_native_alias()` in [src/game/menu_layout.h](../../src/game/menu_layout.h) and `snd_alias_slot()` in [src/game/menu_config.cpp](../../src/game/menu_config.cpp); extend them to expose more entries.
+The tables are `kNativeAliases` and `pause_native_alias()` in [src/game/menus/menu_layout.h](../../src/game/menus/menu_layout.h) and `snd_alias_slot()` in [src/game/menus/menu_config.cpp](../../src/game/menus/menu_config.cpp); extend them to expose more entries.
 
 ### Behavior keys
 
@@ -208,7 +208,7 @@ Labels use the front-end font: upper-case `A`-`Z`, `0`-`9`, spaces and `;:_'/&",
 
 ## Internals
 
-The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/game/menu_config.cpp](../../src/game/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
+The rest of this page is for people changing the button system or the game's menus directly. It describes the game structures (from the decomp) and how [src/game/menus/menu_config.cpp](../../src/game/menus/menu_config.cpp) drives them through `[[patches.hook]]` entries in `rogue_squadron.toml`. Nothing here requires editing `RecompiledFuncs/funcs_*.c`.
 
 ### Two separate menu systems
 
@@ -395,7 +395,7 @@ Abort Level does not tear down the mission directly. It sets `D_80130B14` (`0x80
 
 #### How pause buttons are wired
 
-`rs64_pause_install` (`menu_config.cpp`), hooked at `initOrUpdatePauseScreenDim`, builds pause buttons only while the menu is open (`D_8010CA20 == 5`), so it never touches the arrays during level load or briefing (which starves the audio scheduler). It runs every paused frame:
+`rs64_pause_install` (`pause_menu.cpp`), hooked at `initOrUpdatePauseScreenDim`, builds pause buttons only while the menu is open (`D_8010CA20 == 5`), so it never touches the arrays during level load or briefing (which starves the audio scheduler). It runs every paused frame:
 
 - The root (id 0, `pauseMenuMissionObjectives` `0x80109DD4`) is copied to host RAM at `0x80C43F80` with the `pause` buttons merged in by the same placement rules as the front end (natives by text id); the entries above CONTINUE stay on top and unplaced buttons go at the end.
 - GAME SETTINGS (id 1) is copied to `0x80C43000` the same way with the `pause_game_settings` buttons; unplaced buttons take the spacer's place (`0x80109E54`).
@@ -410,7 +410,7 @@ Each installed button keeps a valid `textId` (an out-of-range one makes `getGame
 
 ### Changing the system itself
 
-- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/game/toml_hooks.c](../../src/game/toml_hooks.c), which calls the host code in `menu_config.cpp`:
+- **Hooks.** Each hook in `rogue_squadron.toml` is one call into [src/game/toml_hooks.c](../../src/game/toml_hooks.c), which calls the host code in `menu_config.cpp` (front end) or `pause_menu.cpp` (pause menu):
 
   ```toml
   [[patches.hook]]
@@ -419,7 +419,7 @@ Each installed button keeps a valid `textId` (an out-of-range one makes `getGame
   text = '{ rs64_th_setupMenuData_800BAF70(rdram, ctx); }'
   ```
 
-  Hook text is baked in at recompile time, so after changing a hook run `cmake --build build --config Debug --target regen_funcs` before building the game. Changes to `menu_config.cpp` alone need only a normal build.
+  Hook text is baked in at recompile time, so after changing a hook run `cmake --build build --config Debug --target regen_funcs` before building the game. Changes to the host code alone need only a normal build.
 - **New built-in behaviors.** Add a toggle to `toggles()` or an action to `actions()` in `menu_config.cpp`, then reference it by name from a menu file. Native mods can add actions without touching the base game (`add_action`).
 - **Label storage.** `menu_entries[i]` must be an RDRAM address; the game reads it with no masking, so a host pointer won't work. Reuse a game string with `getGameOrFrontText(textId)`, or allocate with `recomp::alloc(rdram, size)` (the recomp heap at `0x81000000`+, above the game's 8 MB) and convert with `(uint8_t*)p - rdram + 0x80000000`. Don't write to "unused" addresses inside the game's 8 MB; the game believes it owns all of it.
 - **Quit.** A QUIT button pushes `SDL_QUIT` (`rs64_menu_request_quit`); the event loop in [src/input/input_host.cpp](../../src/input/input_host.cpp) runs the quit handlers and then `_Exit`. Don't call `exit`: the game threads and RT64 are still running, so static destructors hang or crash.

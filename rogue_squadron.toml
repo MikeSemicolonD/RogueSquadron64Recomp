@@ -1085,7 +1085,7 @@ text = '{ rs64_th_emitFrameRdpInitDl_entry(rdram, ctx); }'
 
 
 # Custom main-menu entries (e.g. QUIT). Config: roguesq_menu.json. Logic in
-# src/game/menu_config.cpp. This runs in the setupMenuData common tail, after
+# src/game/menus/menu_config.cpp. This runs in the setupMenuData common tail, after
 # num_menu_entries (+0x95) is written and before the active-bitmask strlen loop,
 # so appended entries activate automatically.
 [[patches.hook]]

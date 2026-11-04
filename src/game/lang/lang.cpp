@@ -1,4 +1,4 @@
-#include "game/lang.h"
+#include "game/lang/lang.h"
 
 #include <algorithm>
 #include <cstdio>

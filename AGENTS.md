@@ -212,11 +212,14 @@ With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mod
 src/                                    Host code; the include root, so includes are folder-qualified ("input/touch_input.h")
   ├── main/                             main.cpp (game registration, window/gfx/VI callbacks, main()), cli (command-line flags), crash (Windows crash handlers, minidumps), ui_panels (ImGui controls/mods/touch overlay), android_host, renderdoc_capture, mcp_bridge (dev-only loopback socket for tools/debug/mcp, built into Debug only unless `-DRS64_MCP=ON`)
   ├── audio/                            RSP microcode dispatch (MusyX synth runner) + SDL audio output
-  ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, touch, sensors; the SDL event loop and N64 pad polling), input_bindings, rumble, touch_input / touch_menu / touch_config
-  ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), video_config
-  ├── game/                             Code that hooks the recompiled game: hook_helpers (entry points for rogue_squadron.toml hooks), toml_hooks.c, upstream_compat (libultra shims, scheduler overrides, rs64_load_overlay), register_overlays / register_patches, game_state + nav_sequencer (state classifier, BOOT_TARGET driver), menu_config, builtin_hooks, camera_shots.h, mod_levels.h
+  ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, sensors; the SDL event loop and N64 pad polling), touch_host (touch and mouse on the menus), input_bindings, rumble (motor mapping and the rumble/lightbar thread), touch_input / touch_menu / touch_config
+  ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), render_diag (env-gated traces and RDRAM dumps), video_config (settings and the ROGUESQ_* display overrides)
+  ├── game/                             Code that hooks the recompiled game: hook_helpers (entry points for rogue_squadron.toml hooks), toml_hooks.c, upstream_compat (libultra shims, scheduler overrides, rs64_load_overlay), register_overlays / register_patches, game_state + nav_sequencer (state classifier, BOOT_TARGET driver), builtin_hooks, static_standins
+  │   ├── menus/                        menu_config (front-end menus and mod pages), pause_menu, menu_layout.h, mods_page.h
+  │   ├── mod_content/                  asset_overrides (mod files appended past the ROM), mod_level_hooks (camera shots, mod levels, crawls, medals, objectives, level rules), their pure-logic headers, terrain_edit.h
+  │   └── lang/                         Language mods (lang, lang_core.h)
   ├── host_api/                         Mod host API (public header include/rs64/host_api.h)
-  ├── lockstep/                         Input record/replay and frame hashing
+  ├── lockstep/                         Input record/replay, frame hashing and exact-frame pause points; mcp_pause (the MCP pause, step and press methods)
   └── util/                             debug_logs.h (env_* helpers), mips_call.h, rdram_words.h
 mods/                                   Data-only, .nrm and native mods; mods/platforms.json picks what ships
 patches/                                Base-game C patches (patches/src), built into the patches ELF on every build; needs MIPS GCC
@@ -320,13 +323,13 @@ Host-side tables above 8 MB (keep any new one clear of all of these):
 | 0x80800000-0x8080FFFF | librecomp's cart PI handle; patches ELF data at 0x80801000 |
 | 0x80810000-0x809FFFFF | Scene texture pool (language mod only) |
 | 0x80A00000-0x80A01FFF | F5 renderer vertex scratch |
-| 0x80A10000-0x80A4BFFF | Terrain edit API tile table (host API v7, `src/game/terrain_edit.h`) |
+| 0x80A10000-0x80A4BFFF | Terrain edit API tile table (host API v7, `src/game/mod_content/terrain_edit.h`) |
 | 0x80A4C000-0x80A5BFFF | Far camera-space matrix translations for RT64 (`convertMat3x4ToN64Mtx` hook in [toml_hooks.c](src/game/toml_hooks.c)) |
 | 0x80A5C000-0x80AFFFFF | Draw-only stand-ins for unspawned static objects: prop state blocks and model instances ([static_standins.cpp](src/game/static_standins.cpp)) |
 | 0x80B00000-0x80B1FFFF | 128x128 terrain grid tables |
 | 0x80B38058-0x80B3901F, 0x80B58930-0x80B58D0F | Co-op relocated per-player ranges (mod only, `kMovedRanges` in `mp_core.h`) |
 | 0x80B40000-0x80B4015F | Co-op imposter DAT record and message scratch (mod only) |
-| 0x80C00000-0x80C3FFFF | Manifests grown with mod assets, 64 KB per `gManifestTable` slot ([hook_helpers.cpp](src/game/hook_helpers.cpp)) |
+| 0x80C00000-0x80C3FFFF | Manifests grown with mod assets, 64 KB per `gManifestTable` slot ([asset_overrides.cpp](src/game/mod_content/asset_overrides.cpp)) |
 | 0x80C40000-0x80C400FF | Camera name for a mod-linked mid-mission shot |
 | 0x80C40100-0x80C401FF | Mod level's redirected asset name |
 | 0x80C40200-0x80C40223 | Mod level medal_info records |
@@ -336,7 +339,7 @@ Host-side tables above 8 MB (keep any new one clear of all of these):
 | 0x80C42100-0x80C4217F | Objective camera names |
 | 0x80C42200-0x80C4223F | Level rules object names |
 | 0x80C43000-0x80C43FFF | Pause menu GAME SETTINGS, mod-page and root arrays |
-| 0x80C44000-0x80CE3FFF | Language mod: extended fonts, enlarged texture/material tables, encoded text ([src/game/lang.cpp](src/game/lang.cpp)) |
+| 0x80C44000-0x80CE3FFF | Language mod: extended fonts, enlarged texture/material tables, encoded text ([src/game/lang/lang.cpp](src/game/lang/lang.cpp)) |
 | 0x80CE4000-0x80FFFFFF | Scene texture pool (language mod only) |
 
 `ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).

@@ -1,4 +1,4 @@
-#include "game/lang_core.h"
+#include "game/lang/lang_core.h"
 #include "check.h"
 #include <cstdio>
 

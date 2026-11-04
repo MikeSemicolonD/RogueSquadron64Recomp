@@ -26,7 +26,7 @@
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
-#include "game/lang.h"
+#include "game/lang/lang.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include "hle/rt64_rs64_hud.h"

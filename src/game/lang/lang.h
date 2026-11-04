@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#include "game/lang_core.h"
+#include "game/lang/lang_core.h"
 
 namespace rs64::lang {
 

@@ -1,6 +1,6 @@
 // Mod asset overrides: files under <mod>/assets/ appended past the ROM end and patched into the game's RAM manifests.
 
-#include "game/asset_overrides.h"
+#include "game/mod_content/asset_overrides.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -27,9 +27,9 @@
 #include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
 #include "game/game_state.h"
-#include "game/mod_levels.h"
-#include "game/lang.h"
-#include "game/level_rules.h"
+#include "game/mod_content/mod_levels.h"
+#include "game/lang/lang.h"
+#include "game/mod_content/level_rules.h"
 #include "host_api/host_api.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"

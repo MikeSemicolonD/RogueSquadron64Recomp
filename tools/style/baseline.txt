@@ -38,11 +38,11 @@ src/game/hook_helpers.cpp: two statements on one line: if (comma && comma[1]) { 
 src/game/hook_helpers.cpp: two statements on one line: if (lrx/4 > tr_maxx) tr_maxx = lrx/4; if (lry/4 > tr_maxy) t
 src/game/hook_helpers.cpp: two statements on one line: if (ulx/4 < tr_minx) tr_minx = ulx/4; if (uly/4 < tr_miny) t
 src/game/hook_helpers.h: comment block over 2 lines: // hook_helpers.h — public C-linkage surface of hook_helpers
-src/game/menu_config.cpp: comment after code: constexpr int MAX_ENTRIES = 8;                      // menu_
-src/game/menu_config.cpp: comment after code: constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte 
-src/game/menu_config.cpp: comment after code: int smin = 0, smax = 100, sstep = 10;   // slider range
-src/game/menu_config.cpp: comment after code: std::string label_on, label_off;        // toggle labels (fo
-src/game/menu_config.h: comment block over 2 lines: // Host entry points for the custom front-end menu entries, 
+src/game/menus/menu_config.cpp: comment after code: constexpr int MAX_ENTRIES = 8;                      // menu_
+src/game/menus/menu_config.cpp: comment after code: constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte 
+src/game/menus/menu_config.cpp: comment after code: int smin = 0, smax = 100, sstep = 10;   // slider range
+src/game/menus/menu_config.cpp: comment after code: std::string label_on, label_off;        // toggle labels (fo
+src/game/menus/menu_config.h: comment block over 2 lines: // Host entry points for the custom front-end menu entries, 
 src/game/nav_sequencer.h: comment after code: bool rs64_nav_consume(uint16_t* buttons, float* x, float* y)
 src/game/nav_sequencer.h: comment after code: struct RsNavTarget { RsNavKind kind; int a; int b; int c = -
 src/game/nav_sequencer.h: comment after code: void rs64_nav_inject(uint16_t buttons, float x, float y);  /

@@ -80,7 +80,7 @@ Other user options without flags:
 
 ### RT64 display overrides
 
-Applied in `create_render_context` (`src/video/rt64_render_context.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
+Applied by `apply_env_overrides` (`src/video/video_config.cpp`) after `roguesq_video.json` is loaded; each acts only when set and wins over the file. Raster-only (`RT_ENABLED` is off: no RT/DLSS/FSR/XeSS).
 
 | Env var | Default | Effect |
 | --- | --- | --- |
@@ -332,7 +332,7 @@ Probes:
 - `ROGUESQ_DROP_PROBE` (f3dfactor5) — dropped or no-op'd commands, deduped by opcode.
 - `ROGUESQ_F5_CULL_LOG` (f3dfactor5) — sampled `[f5-cull]` distances for `F5_CULL_DIST`.
 - `ROGUESQ_CHECK_CHUNKLIST` (upstream_compat.cpp) — walk the DL chunk free list at each SP task; dumps RDRAM on the first bad node.
-- `ROGUESQ_DUMP_UCODE=<path>` (rt64_render_context.cpp) — one-shot IMEM + DMEM dump.
+- `ROGUESQ_DUMP_UCODE=<path>` (render_diag.cpp) — one-shot IMEM + DMEM dump.
 - `ROGUESQ_DUMP_PARSE_SNAPSHOT_ON_ITER=<n>` + `ROGUESQ_DUMP_PARSE_SNAPSHOT_COUNT` (1) + `ROGUESQ_DUMP_PARSE_SNAPSHOT_PATH` (ultramodern events.cpp) — dump the exact RDRAM snapshot a parse walked.
 
 ## Plume / GPU device
@@ -363,7 +363,7 @@ Keyboard, mouse and gamepad bindings load from `roguesq_input.json` next to the 
 
 ## RDRAM dump triggers
 
-One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/validate/rdram_golden_diff.py`, from `src/video/rt64_render_context.cpp`. First match wins.
+One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/validate/rdram_golden_diff.py`, from `src/video/render_diag.cpp`. First match wins.
 
 | Env var | Effect |
 | --- | --- |

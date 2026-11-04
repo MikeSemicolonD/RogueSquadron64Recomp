@@ -6,7 +6,7 @@
 #include "lockstep/lockstep_core.h"
 #include "host_api/host_api.h"
 #include "rs64_toml_hooks.h"
-#include "game/menu_config.h"
+#include "game/menus/menu_config.h"
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
 #include <cstring>

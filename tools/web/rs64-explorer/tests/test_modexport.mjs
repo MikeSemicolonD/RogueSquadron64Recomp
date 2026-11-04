@@ -1458,7 +1458,7 @@ await check('menu font gaps', () => {
   assert.deepEqual(RS64.menuFontGaps('AUFLÖSUNG <>'), []);
 });
 await check('native menus match the game', () => {
-  // kNativeAliases / pause_native_alias in src/game/menu_layout.h
+  // kNativeAliases / pause_native_alias in src/game/menus/menu_layout.h
   const cpp = {
     main_menu: ['start', 'options'], options: ['biographies', 'elite_rogues', 'passcodes', 'game_settings', 'sound_settings', 'controller_settings', 'back'],
     game_settings: ['auto_roll', 'auto_level', 'free_camera', 'crosshairs', 'high_resolution', 'restore_defaults', 'back'],

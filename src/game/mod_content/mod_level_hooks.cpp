@@ -1,6 +1,6 @@
 // Mod level content: mid-mission camera shots, mod levels and their crawls, medals, objectives, music and level rules.
 
-#include "game/asset_overrides.h"
+#include "game/mod_content/asset_overrides.h"
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -24,9 +24,9 @@
 #include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
 #include "game/game_state.h"
-#include "game/camera_shots.h"
-#include "game/mod_levels.h"
-#include "game/level_rules.h"
+#include "game/mod_content/camera_shots.h"
+#include "game/mod_content/mod_levels.h"
+#include "game/mod_content/level_rules.h"
 #include "lockstep/lockstep_core.h"
 #include "rs64/camera_shots.h"
 #include "host_api/host_api.h"

@@ -5,7 +5,7 @@
 #include "librecomp/mods.hpp"
 #include "librecomp/overlays.hpp"
 #include "game/game_state.h"
-#include "game/terrain_edit.h"
+#include "game/mod_content/terrain_edit.h"
 #include "lockstep/lockstep_core.h"
 #include "util/mips_call.h"
 #ifdef _WIN32

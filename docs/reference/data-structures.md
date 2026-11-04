@@ -565,8 +565,8 @@ far@+0x28.)
 ### Buffer arbiter slot arrays — ADDRESS CORRECTION
 
 The 6-state arbiter arrays are at **0x80128E98 / 0x80128EAA**, not 0x80138E98/EAA (the recomp
-reaches them via `lui 0x8013, -0x7168/-0x7156`, underflowing into the 0x8012 bank; host
-`rt64_render_context.cpp` reads `STATE_BASE = 0x128EAA`). Layout: fb-target ptr array @0x80128E98 (stride
+reaches them via `lui 0x8013, -0x7168/-0x7156`, underflowing into the 0x8012 bank).
+Layout: fb-target ptr array @0x80128E98 (stride
 4), state byte array @0x80128EAA (0=free, 1=alloc/in-flight, 2=ready), slot count @0x80128EAD,
 secondary record-ptr array @0x80128EC0, active index @0x80128D2C (XOR 1 = inactive). `submitGfxFrame`
 populates a standard OSTask (data_ptr@0x800377D0, data_size@0x800377D4, ucode@0x800377D8) and

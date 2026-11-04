@@ -56,7 +56,7 @@ Base code sees multiplayer only through hooks, actions and flags.
 | `menu_page_shown` | `rs64_menu_pass` (`menu_config.cpp`) | `mp_register.cpp` `menu_pad` | A mod menu page is up |
 | `hangar_launch` | `skip_filter` (`ghost_lobby.cpp`) | `nav_sequencer.cpp` | The hangar is launching a mission after both players picked |
 | `craft_picked` | `rs64_lobby_craft_select_tick` (`ghost_lobby.cpp`) | `nav_sequencer.cpp` | This player picked a craft in a lobby session; the scripted driver stops pressing so the hangar can launch |
-| `mp_trigger_for_peer` | `apply_remote_triggers` (`world_sync.cpp`) | `hook_helpers.cpp` (mid-mission camera shots) | The host is applying the other player's trigger, so a personal camera shot goes to that player only |
+| `mp_trigger_for_peer` | `apply_remote_triggers` (`world_sync.cpp`) | `mod_level_hooks.cpp` (mid-mission camera shots) | The host is applying the other player's trigger, so a personal camera shot goes to that player only |
 
 ### Hook placement
 
@@ -116,7 +116,7 @@ The hooks live in the menu overlay (`drawRadarIcon`, `tickCraftSelectScreen`, th
 Mod menu pages are defined in `roguesq_menu.json` (format: [adding-menus-and-buttons.md](adding-menus-and-buttons.md)). Two fields exist for the multiplayer page:
 
 - `title_y`: the page title's y offset (written at `gCurrentMenuData+0x52`).
-- `row`: entries sharing a `row` string sit on one line (JOIN GAME and HOST GAME). `page_row_nav` in [menu_config.cpp](../../src/game/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
+- `row`: entries sharing a `row` string sit on one line (JOIN GAME and HOST GAME). `page_row_nav` in [menu_config.cpp](../../src/game/menus/menu_config.cpp) then moves the cursor by line (up/down, wrapping) and left/right within a line, remembering the column last used. It runs before the menu reads the pressed word and consumes the presses it handles. A line with a single entry leaves left/right to the entry (a slider's).
 
 ## LAN discovery
 
@@ -186,7 +186,7 @@ While typing on a phone, the picture slides up so the highlighted entry clears t
 
 ### Touch on mod pages
 
-`rs64_menu_page_shown()` (menu_config.cpp) reports that a mod page is up. `touch_context()` in `input_host.cpp` then classifies the screen as a list menu, since the page's title lives in host RAM and the state classifier would say "unknown". Label entries (sub-type 13, `kSubtypeLabel` in `touch_menu.cpp`) are drawn and active but get no tap box.
+`rs64_menu_page_shown()` (menu_config.cpp) reports that a mod page is up. `touch_context()` in `touch_host.cpp` then classifies the screen as a list menu, since the page's title lives in host RAM and the state classifier would say "unknown". Label entries (sub-type 13, `kSubtypeLabel` in `touch_menu.cpp`) are drawn and active but get no tap box.
 
 ## Session protocol
 

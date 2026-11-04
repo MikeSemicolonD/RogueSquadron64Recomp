@@ -280,17 +280,17 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/input/touch_menu.cpp
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
     ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/menu_config.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/pause_menu.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/lang.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/menu_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/pause_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/lang/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/video/render_diag.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/game/upstream_compat.cpp
     ${CMAKE_SOURCE_DIR}/src/game/hook_helpers.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/asset_overrides.cpp
-    ${CMAKE_SOURCE_DIR}/src/game/mod_level_hooks.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/mod_content/asset_overrides.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/mod_content/mod_level_hooks.cpp
     ${CMAKE_SOURCE_DIR}/src/game/static_standins.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp

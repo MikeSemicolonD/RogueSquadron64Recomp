@@ -1,6 +1,6 @@
 #include "input/input_host.h"
 #include "lockstep/lockstep_core.h"
-#include "game/menu_config.h"
+#include "game/menus/menu_config.h"
 
 #include <algorithm>
 #include <chrono>

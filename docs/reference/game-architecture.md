@@ -41,14 +41,19 @@ The host glue lives in `src/`:
 | File | Role |
 | --- | --- |
 | `src/main/main.cpp` | Entry point; SDL2 window, gfx and VI callbacks |
-| `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, touch, sensors, the SDL event loop |
+| `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, sensors, the SDL event loop |
+| `src/input/touch_host.cpp` | Touch and mouse on the menus (taps, slider and MODS-page drags, hover) |
 | `src/main/ui_panels.cpp` | ImGui panels: controls/rebind, mods, touch overlay |
 | `src/main/crash.cpp` | Crash handlers and minidumps (Windows) |
 | `src/audio/audio.cpp` | `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); SDL2 audio output |
-| `src/video/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer, RDRAM dump triggers |
+| `src/video/rt64_render_context.cpp` | `RendererContext` subclass — `send_dl`, `update_screen`, VI-register wiring, fb-registry sanitizer |
+| `src/video/render_diag.cpp` | The render context's env-gated traces, RDRAM watches and dump triggers |
 | `src/game/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
 | `src/game/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
-| `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks |
+| `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks (draw distance, HUD placement, pacing, DL walkers) |
+| `src/game/menus/` | Front-end menus and mod pages (`menu_config.cpp`) and the pause menu (`pause_menu.cpp`) |
+| `src/game/mod_content/` | Mod asset overrides and mod level content: camera shots, levels, crawls, medals, objectives, level rules |
+| `src/game/lang/` | Language mods |
 | `src/game/builtin_hooks.cpp` | Built-in hooks registered through the host API |
 | `src/host_api/`, `include/rs64/host_api.h` | Host API for native mods and its public header ([modding-host-api.md](../engine/modding-host-api.md)) |
 | `src/lockstep/` | Mission input record/replay with per-frame state hashes |

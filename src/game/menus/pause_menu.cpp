@@ -1,7 +1,7 @@
 // In-mission pause menu: GAME SETTINGS and mod pages built from the menu button config (menu_config.cpp) into host-RAM PauseMenuStuff arrays.
 
-#include "game/menu_config_internal.h"
-#include "game/menu_config.h"
+#include "game/menus/menu_config_internal.h"
+#include "game/menus/menu_config.h"
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -30,9 +30,9 @@
 #include "recomp.h"   // recomp_context, recomp_func_t (for mod-provided @exports)
 #include "librecomp/addresses.hpp"
 #include "rs64_toml_hooks.h"
-#include "game/lang.h"
-#include "game/menu_layout.h"
-#include "game/mods_page.h"
+#include "game/lang/lang.h"
+#include "game/menus/menu_layout.h"
+#include "game/menus/mods_page.h"
 #include "video/video_config.h"
 #include "main/main.h"   // rs64_menu_request_quit, rs64_toggle_fullscreen, rs64_get_fullscreen
 #include "input/input_host.h"

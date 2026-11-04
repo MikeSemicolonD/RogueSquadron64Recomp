@@ -1,7 +1,7 @@
 // Touch and mouse input on the menus: the touch engine's game context, menu taps, slider and MODS-page drags, and mouse hover/clicks.
 
 #include "input/input_host.h"
-#include "game/menu_config.h"
+#include "game/menus/menu_config.h"
 
 #include <algorithm>
 #include <chrono>

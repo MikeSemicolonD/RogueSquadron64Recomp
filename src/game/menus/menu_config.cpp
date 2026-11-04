@@ -1,5 +1,5 @@
-#include "game/menu_config.h"
-#include "game/menu_config_internal.h"
+#include "game/menus/menu_config.h"
+#include "game/menus/menu_config_internal.h"
 
 #include <algorithm>
 #include <atomic>
@@ -31,9 +31,9 @@
 #include "recomp.h"   // recomp_context, recomp_func_t (for mod-provided @exports)
 #include "librecomp/addresses.hpp"
 #include "rs64_toml_hooks.h"
-#include "game/lang.h"
-#include "game/menu_layout.h"
-#include "game/mods_page.h"
+#include "game/lang/lang.h"
+#include "game/menus/menu_layout.h"
+#include "game/menus/mods_page.h"
 #include "video/video_config.h"
 
 // Menu button system v2: one typed button model { menu, type, behavior, labels, placement } for the front-end and pause menus, driven by mod JSON (docs/guides/adding-menus-and-buttons.md).

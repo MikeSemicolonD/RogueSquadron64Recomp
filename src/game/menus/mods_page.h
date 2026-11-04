@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "game/menu_layout.h"
+#include "game/menus/menu_layout.h"
 
 // The MODS page's list (main menu > MODS): every installed mod in load order, a window of rows over it, and the carry that moves one mod.
 namespace rs64::mods_page {
