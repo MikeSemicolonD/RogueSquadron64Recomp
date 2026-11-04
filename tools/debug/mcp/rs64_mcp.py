@@ -388,7 +388,6 @@ class Game:
         """PNG of the game window's client area, found by this server's own PID; returns path, size and distinct colour count."""
         if not self.alive():
             raise GameError("game not running")
-        rgba, w, h = capture_window(self.proc.pid)
         if path is None:
             try:
                 dl = self.call("frame_info", timeout_s=2)["clocks"].get("dl", 0)
@@ -396,6 +395,13 @@ class Game:
                 dl = "nodl"
             path = os.path.join(self.session_dir, "shots", f"{dl}_{int(time.time() * 1000) % 100000}.png")
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        # The game saves its own color buffer; window capture is the fallback (it reads black when the swapchain bypasses DWM).
+        try:
+            r = self.call("capture_frame", {"path": os.path.abspath(path)}, timeout_s=4)
+            return {"path": path, "width": r["width"], "height": r["height"], "colours": r["colours"]}
+        except GameError:
+            pass
+        rgba, w, h = capture_window(self.proc.pid)
         tmem_decode.write_png(path, rgba, w, h)
         colours = len(set(rgba[i:i + 4] for i in range(0, min(len(rgba), 4 * 65536), 4)))
         return {"path": path, "width": w, "height": h, "colours": colours}

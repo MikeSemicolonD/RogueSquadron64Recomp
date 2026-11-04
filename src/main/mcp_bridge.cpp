@@ -539,10 +539,32 @@ static json mouse_input(const json& p)
     return { { "op", op }, { "x", x }, { "y", y } };
 }
 
+// The game's own color buffer at the next present as a PNG (no window capture, so it works fullscreen and covered).
+static json capture_frame(const json& p)
+{
+
+    const std::string path = p.value("path", "");
+
+    if (path.empty())
+    {
+        throw std::runtime_error("path required");
+    }
+
+    const RT64::RS64CaptureResult r = RT64::rs64CaptureFrame(path, p.value("timeout_ms", 2000));
+
+    if (!r.ok)
+    {
+        throw std::runtime_error("no present wrote the frame in time");
+    }
+
+    return { { "path", path }, { "width", r.width }, { "height", r.height }, { "colours", r.colours } };
+}
+
 void rs64_mcp_bridge_start(uint16_t port)
 {
 
     rs64_mcp_register("mouse", mouse_input);
+    rs64_mcp_register("capture_frame", capture_frame);
     rs64_mcp_register("rdram_read", rdram_read);
     rs64_mcp_register("rdram_write", rdram_write);
     rs64_mcp_register("renderdoc_capture", renderdoc_capture);
