@@ -818,9 +818,9 @@ void rs64_th_cutsceneActorNpcHandler_80044924(uint8_t* rdram, recomp_context* ct
 // linkDirectionalTrailSegments 0x8005B418
 void rs64_th_linkDirectionalTrailSegments_8005B418(uint8_t* rdram, recomp_context* ctx)
 {
-    if (rs64_cull_widen() > 1.0f && (int32_t)ctx->r6 - (int32_t)ctx->r7 == 4) {
-        ctx->r7 = (gpr)((int32_t)ctx->r7 - 1);
-        ctx->r6 = (gpr)((int32_t)ctx->r6 + 1);
+    if (rs64_cull_widen() > 1.0f) {
+        ctx->r7 = 0;
+        ctx->r6 = 7;
     }
 }
 

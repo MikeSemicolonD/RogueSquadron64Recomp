@@ -928,7 +928,8 @@ func = "cutsceneActorNpcHandler"
 before_vram = 0x80044924
 text = '{ rs64_th_cutsceneActorNpcHandler_80044924(rdram, ctx); }'
 
-# Sky horizon ring draws heading±2 of 8 sectors, only ~45° on some headings; widen to ±3 when widescreen is active ($a3/$a2 = first/last sector).
+# The sky draws heading±2 of its 8 sectors unless pitched steeply (then all 8); a widescreen view tilted up or rolled sees past them as black wedges from the
+# top of the sky, so widescreen draws all 8 ($a3/$a2 = first/last sector).
 [[patches.hook]]
 func = "linkDirectionalTrailSegments"
 before_vram = 0x8005B418
