@@ -75,6 +75,9 @@ rs64::input::Device last_device() {
     return s_last_device.load();
 }
 
+// Esc pressed in a pause submenu went to the game as B (pause_escape); the held key drives no binding until released.
+static std::atomic<bool> s_esc_dropped{false};
+
 // Every open gamepad; `controller` is whichever one last produced input (Steam Input / DS4Windows can expose an idle virtual pad alongside the real one).
 std::vector<SDL_GameController*> g_pads;
 
@@ -858,6 +861,7 @@ void poll_input()
             break;
         case SDL_MOUSEWHEEL:
             rs64_controls_wheel(e.wheel.y);
+            menu_wheel_x(e.wheel.x);
             break;
         case SDL_SENSORUPDATE:
             if (g_gyro_sensor && e.sensor.which == SDL_SensorGetInstanceID(g_gyro_sensor))
@@ -920,7 +924,11 @@ void poll_input()
                 } else if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                     // Esc closes the controls window; otherwise it falls through to
                     // the game (bound to Start/pause).
-                    if (g_show_controls.load()) g_show_controls.store(false);
+                    if (g_show_controls.load()) {
+                        g_show_controls.store(false);
+                    } else if (pause_escape()) {
+                        s_esc_dropped.store(true);
+                    }
                 }
             }
 
@@ -1161,6 +1169,22 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
         s_typing_keys[SDL_SCANCODE_BACKSPACE] = 0;
         st.keys = s_typing_keys;
         st.keys_len = n;
+    }
+
+    // An Esc that pause_escape turned into B drives no binding until it is released.
+    static uint8_t s_esc_keys[SDL_NUM_SCANCODES];
+
+    if (st.keys && s_esc_dropped.load()) {
+        const int n = std::min(st.keys_len, (int)SDL_NUM_SCANCODES);
+
+        if (n > SDL_SCANCODE_ESCAPE && st.keys[SDL_SCANCODE_ESCAPE]) {
+            std::memcpy(s_esc_keys, st.keys, n);
+            s_esc_keys[SDL_SCANCODE_ESCAPE] = 0;
+            st.keys = s_esc_keys;
+            st.keys_len = n;
+        } else {
+            s_esc_dropped.store(false);
+        }
     }
 
     // While the F1 inspector is open (as for the mouse in menu_mouse_event) or an ImGui window takes the keyboard, keys drive no binding.

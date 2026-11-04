@@ -78,6 +78,10 @@ namespace rs64::app {
     // touch_host.cpp, called from poll_input: finger and mouse events on the menus, and the touch state poll_input resets.
     void touch_event(const SDL_Event& e);
     void menu_mouse_event(const SDL_Event& e);
+    void menu_wheel_x(int steps);
+    bool pause_escape();
+    // Mouse id of events the MCP bridge pushes; the menus take them without window focus.
+    constexpr uint32_t kMcpMouseId = 0x4D435000u;
     void touch_slider_cancel();
     bool take_touch_edit_request();
 }

@@ -119,10 +119,10 @@ static bool touch_state_is(const char* want) {
     return id && std::strcmp(id, want) == 0;
 }
 
-// A Sound Settings volume bar is open (opened by any input): the highlight must not move until it closes.
+// A volume bar (Sound Settings or a mod page slider) is open, opened by any input: the highlight must not move until it closes.
 static bool sound_bar_editing()
 {
-    return rs64_menu_slider_editing() && touch_state_is("menu.sound_settings");
+    return rs64_menu_slider_editing() != 0;
 }
 
 // Tap-to-select only where the resident menu data is what's on screen: list menus, Passcodes' ENTER CODE/BACK, SELECT GAME's ERASE GAME.
@@ -282,7 +282,7 @@ static bool touch_slider_event(rs64::touch::FingerEvent ev, int64_t finger, floa
 
     rs64::touch::SliderBar bar{};
 
-    if (!s.active || !r || !touch_state_is("menu.sound_settings") || !rs64::touch::sound_slider(r, s.entry, w, h, &bar))
+    if (!s.active || !r || !rs64::touch::sound_slider(r, s.entry, w, h, &bar))
     {
         s.active = false;
 
@@ -541,6 +541,89 @@ static bool touch_pause_slider_event(rs64::touch::FingerEvent ev, int64_t finger
     return true;
 }
 
+// Horizontal wheel notches (+ right): an open volume bar or a highlighted pause bar steps a tenth of its range, and SELECT LEVEL,
+// the hangar and the carousels step left/right.
+void menu_wheel_x(int steps)
+{
+
+    uint8_t* r = touch_rdram();
+
+    if (!r || steps == 0 || g_show_controls.load() || rs64_rt64_inspector_open())
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    float w, h;
+    window_size(&w, &h);
+    int channel = -1, top = 128;
+
+    if (sound_bar_editing()) {
+        rs64::touch::MenuSnapshot snap{};
+        std::vector<rs64::touch::Box> boxes;
+        rs64::touch::SliderBar bar{};
+
+        if (rs64::touch::read_menu(r, &snap, &boxes, w, h) && rs64::touch::sound_slider(r, snap.current, w, h, &bar)) {
+            const int ch = rs64_menu_slider_channel(snap.current);
+
+            channel = ch >= 0 ? ch : bar.channel;
+        }
+    } else if (touch_context() == rs64::touch::Context::PauseMenu) {
+        std::vector<rs64::touch::PauseLine> lines;
+        const int k = rs64::touch::pause_entry(r);
+
+        if (k >= 0 && rs64::touch::read_pause_lines(r, w, h, &lines)) {
+            for (const rs64::touch::PauseLine& l : lines) {
+                if (l.bar && l.channel >= 0 && l.selectable == k) channel = l.channel;
+            }
+        }
+
+        top = 127;
+    }
+
+    if (channel >= 0) {
+        const int target = std::clamp((int)rs64::touch::read_volume(r, channel) + steps * ((top + 9) / 10), 0, top);
+
+        // As touch_slider_event: one step short of the target plus one frame toward it, so the game applies the mixer.
+        rs64::touch::write_volume(r, channel, (uint8_t)(target > 0 ? target - 1 : 1));
+        g_touch.inject(0, target > 0 ? 1.0f : -1.0f, 0.0f, 1);
+
+        return;
+    }
+
+    const rs64::touch::AccountScreen acct = touch_account_screen();
+
+    if (acct == rs64::touch::AccountScreen::Levels || acct == rs64::touch::AccountScreen::Craft || touch_context() == rs64::touch::Context::Carousel) {
+        for (int i = 0; i < std::abs(steps); ++i) {
+            g_touch.inject(0, steps > 0 ? 1.0f : -1.0f, 0.0f, 3);
+        }
+    }
+}
+
+// Esc in the pause menu (bound to Start, which confirms the highlighted row): a submenu goes back with B and the caller drops the key;
+// the root highlights its first row (resume) for the Start to confirm, so Esc never picks the row the mouse hovers.
+bool pause_escape()
+{
+
+    uint8_t* r = touch_rdram();
+
+    if (!r || touch_context() != rs64::touch::Context::PauseMenu)
+    {
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lk(g_touch_mtx);
+    const int menu = rs64::touch::pause_submenu(r);
+
+    if (menu == 0) {
+        rs64::touch::pause_set_entry(r, 0);
+    } else if (menu > 0) {
+        g_touch.inject(rs64::touch::B, 0.0f, 0.0f, 3);
+    }
+
+    return menu > 0;
+}
+
 // Menus where the cursor is freed from steering capture and clicks go through the touch menu layer.
 bool mouse_menu_context(rs64::touch::Context ctx)
 {
@@ -562,7 +645,7 @@ void menu_mouse_event(const SDL_Event& e)
     }
 
     // SDL still sends motion over an unfocused window.
-    if (e.type == SDL_MOUSEMOTION && !SDL_GetKeyboardFocus())
+    if (e.type == SDL_MOUSEMOTION && !SDL_GetKeyboardFocus() && which != kMcpMouseId)
     {
         return;
     }
@@ -659,7 +742,8 @@ void menu_mouse_event(const SDL_Event& e)
             }
         }
 
-        s_hovered = hovered;
+        // While a bar is open nothing counts as hovered, so the first move after it closes highlights the entry under the cursor.
+        s_hovered = sound_bar_editing() ? -1 : hovered;
     } else if (e.button.button == SDL_BUTTON_LEFT && e.type == SDL_MOUSEBUTTONDOWN) {
         rs64::touch::read_menu(r, &g_touch_menu_at_down, &boxes, w, h);
     } else if (e.button.button == SDL_BUTTON_LEFT && e.type == SDL_MOUSEBUTTONUP) {

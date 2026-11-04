@@ -10,6 +10,9 @@
 #include <thread>
 #include <vector>
 
+#include <SDL.h>
+
+#include "input/input_host.h"
 #include "main/mcp_framing.h"
 #include "hle/rt64_rs64_mcp.h"
 #include "host_api/host_api.h"
@@ -497,9 +500,49 @@ static json renderdoc_capture(const json& p)
     throw std::runtime_error("no capture saved before the timeout");
 }
 
+extern SDL_Window* g_sdl_window;
+
+// One mouse event pushed into SDL's queue (op move/down/up/wheel, fx/fy window fractions), so the real cursor and focus stay untouched.
+static json mouse_input(const json& p)
+{
+
+    const std::string op = p.value("op", "");
+    int w = 0, h = 0;
+
+    if (!g_sdl_window)
+    {
+        throw std::runtime_error("no window");
+    }
+
+    SDL_GetWindowSize(g_sdl_window, &w, &h);
+
+    const int x = (int)(p.value("fx", 0.5) * w);
+    const int y = (int)(p.value("fy", 0.5) * h);
+    const Uint32 wid = SDL_GetWindowID(g_sdl_window);
+    SDL_Event e{};
+
+    if (op == "move") {
+        e.type = SDL_MOUSEMOTION;
+        e.motion = { SDL_MOUSEMOTION, SDL_GetTicks(), wid, rs64::app::kMcpMouseId, 0, x, y, 0, 0 };
+    } else if (op == "down" || op == "up") {
+        const Uint8 down = op == "down" ? SDL_PRESSED : SDL_RELEASED;
+
+        e.button = { (Uint32)(down ? SDL_MOUSEBUTTONDOWN : SDL_MOUSEBUTTONUP), SDL_GetTicks(), wid, rs64::app::kMcpMouseId, (Uint8)p.value("button", 1), down, 1, 0, x, y };
+    } else if (op == "wheel") {
+        e.wheel = { SDL_MOUSEWHEEL, SDL_GetTicks(), wid, rs64::app::kMcpMouseId, p.value("x", 0), p.value("y", 0), SDL_MOUSEWHEEL_NORMAL };
+    } else {
+        throw std::runtime_error("op must be move, down, up or wheel");
+    }
+
+    SDL_PushEvent(&e);
+
+    return { { "op", op }, { "x", x }, { "y", y } };
+}
+
 void rs64_mcp_bridge_start(uint16_t port)
 {
 
+    rs64_mcp_register("mouse", mouse_input);
     rs64_mcp_register("rdram_read", rdram_read);
     rs64_mcp_register("rdram_write", rdram_write);
     rs64_mcp_register("renderdoc_capture", renderdoc_capture);

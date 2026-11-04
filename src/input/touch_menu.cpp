@@ -13,7 +13,6 @@ namespace rs64::touch {
         constexpr uint32_t kPauseWord = 0x8010CA20u - 0x80000000u;
         constexpr uint32_t kSettingsFlags = 0x80130B50u - 0x80000000u;
         constexpr uint32_t kVolumes = 0x80130B60u - 0x80000000u;   // music, sfx, speech (u8, 0..128)
-        constexpr uint8_t kMenuSoundSettings = 6;
         constexpr uint8_t kMenuAccount = 1;
         constexpr uint8_t kMenuMediaHub = 10;
         constexpr uint8_t kFirstModPage = 13;
@@ -458,7 +457,8 @@ namespace rs64::touch {
         const uint32_t ptr = rw(r, kGcmd);
         const uint8_t count = rb(r, kGcmd + 0x95);
 
-        if (!in_ram(ptr) || rb(r, kGcmd + 0x04) != kMenuSoundSettings || entry < 0 || entry >= count || count > 8)
+        // Mod pages (DRAW DISTANCE) reuse the volume bar entry type, so any menu can hold one.
+        if (!in_label_mem(ptr) || entry < 0 || entry >= count || count > 8)
         {
             return false;
         }

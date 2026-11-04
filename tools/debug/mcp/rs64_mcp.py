@@ -863,6 +863,32 @@ def serve():
         return {"typed": text, "backspaces": backspaces}
 
     @mcp.tool()
+    def mouse(actions: list[str], delay_ms: int = 150) -> dict:
+        """Mouse on the game window, in client pixels (the screenshot's size): "move:x:y", "click:x:y", "down:x:y", "up:x:y" (x:y optional = last point), "rclick", "wheel:n" (horizontal notches, + right), "vwheel:n" (vertical, + up). Pushed into the game's SDL queue: the real cursor and focus are untouched. Game must be running, not frozen."""
+        if not game.alive():
+            raise GameError("game not running")
+        _, w, h = game_window(game.proc.pid)
+        at = [0.5, 0.5]
+        for a in actions:
+            p = a.split(":")
+            if len(p) >= 3:
+                at = [float(p[1]) / w, float(p[2]) / h]
+                game.call("mouse", {"op": "move", "fx": at[0], "fy": at[1]})
+                time.sleep(0.05)
+            op = p[0]
+            button = 3 if op == "rclick" else 1
+            if op in ("down", "click", "rclick"):
+                game.call("mouse", {"op": "down", "fx": at[0], "fy": at[1], "button": button})
+            if op in ("click", "rclick"):
+                time.sleep(0.08)
+            if op in ("up", "click", "rclick"):
+                game.call("mouse", {"op": "up", "fx": at[0], "fy": at[1], "button": button})
+            if op in ("wheel", "vwheel"):
+                game.call("mouse", {"op": "wheel", "x" if op == "wheel" else "y": int(float(p[1]))})
+            time.sleep(delay_ms / 1000)
+        return {"done": actions, "client": [w, h]}
+
+    @mcp.tool()
     def release() -> dict:
         """Let go of the input held by press."""
         return game.call("release")
