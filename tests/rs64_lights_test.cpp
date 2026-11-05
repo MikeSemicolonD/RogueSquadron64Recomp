@@ -1492,12 +1492,18 @@ static void testComposeFactor() {
     const float none[3] = { 0.0f, 0.0f, 0.0f };
     const float big[3] = { 5.0f, 0.2f, 0.0f };
     float f[4];
-    composeFactor(1.0f, 0.0f, none, 0.45f, 0.5f, f);
+    composeFactor(1.0f, 0.0f, none, 0.0f, 0.45f, 0.5f, f);
     CHECK(near(f[3], 0.55f, 1e-6f) && (f[0] == 0.0f));
-    composeFactor(0.0f, 1.0f, big, 0.45f, 0.5f, f);
+    composeFactor(0.0f, 1.0f, big, 0.0f, 0.45f, 0.5f, f);
     CHECK(near(f[3], 0.5f, 1e-6f));
     CHECK(near(f[0], 0.5f, 1e-6f) && near(f[1], 0.1f, 1e-6f));
     CHECK(f[0] <= 1.0f);
+
+    // Water: the factor keeps 1 - F of the drawn water and carries no multiplier, so a bright reflection is never clipped to the water's own colour.
+    const float sky[3] = { 0.9f, 0.95f, 1.0f };
+    composeFactor(0.0f, 0.0f, sky, 0.65f, 0.45f, 0.5f, f);
+    CHECK((f[0] == 0.0f) && (f[1] == 0.0f) && (f[2] == 0.0f));
+    CHECK(near(f[3], 0.35f, 1e-6f));
 }
 
 static void testPassGateAndReflectionReceiver() {
