@@ -22,7 +22,9 @@ You can also find a model in a level: right-click a placed object and open it in
 
 The explorer scales your image to the texture's size and converts it to the game's format. Many textures use a small palette of colours, so subtle gradients can come out banded. Check the result in the view before you export.
 
-> TODO: screenshot of the right-click card, tips for palette textures, textures shared by several models.
+![Right-clicking the X-wing opens a card with Replace texture from image](images/model-texture-card.png)
+
+> TODO: tips for palette textures, textures shared by several models.
 
 ## Replace a player craft with your own model
 

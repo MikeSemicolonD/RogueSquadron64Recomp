@@ -10,6 +10,8 @@ Open the [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/
 
 ## Moving around the view
 
+![The RS64 Explorer with the X-wing open in the Models tab](images/overview.png)
+
 The help box in the corner of the view always lists the controls for what you are doing. The common ones:
 
 | Do this | To |

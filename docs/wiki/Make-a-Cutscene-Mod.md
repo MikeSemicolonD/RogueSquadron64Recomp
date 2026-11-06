@@ -14,6 +14,8 @@ Each level has an intro and an ending cutscene, and the chapter levels open with
 
 Click the **pencil** on the timeline to start editing. A separate window (the inspector) opens for the parts of the cutscene.
 
+![The intro of Ambush at Mos Eisley in the cutscene editor, with the timeline at the top and the inspector on the right](images/cutscene-editor.png)
+
 ### The timeline
 
 - Drag a clip to move it, and drag its ends to trim it.
@@ -37,7 +39,7 @@ Click the **pencil** on the timeline to start editing. A separate window (the in
 
 **Start from blank** removes every actor, camera move, sound and voice line, keeping one still camera. Undo brings everything back.
 
-> TODO: screenshots of the timeline and inspector, a worked example (a new fly-by shot).
+> TODO: a worked example (a new fly-by shot).
 
 ## Opening crawls
 

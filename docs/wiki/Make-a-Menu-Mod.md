@@ -6,6 +6,8 @@ A menu mod adds, hides, moves or renames buttons in the game's menus and the pau
 
 Open the **Menus** tab and pick a menu. It shows a preview of the menu as it looks in the game.
 
+![The main menu in the Menus tab](images/menu-editor.png)
+
 ## Change it
 
 - **Click** a button to hide it, replace it, or add a new button above or below it.
@@ -13,7 +15,7 @@ Open the **Menus** tab and pick a menu. It shows a preview of the menu as it loo
 - A new button can be a plain button, an on/off toggle, a list of choices or a slider, or it can open a new page of buttons.
 - **Language** sets which language the preview and the text boxes show. Each button's text can be written once for every language, or separately per language.
 
-> TODO: what each kind of button can do without code (built-in settings, mod options), with screenshots.
+> TODO: what each kind of button can do without code (built-in settings, mod options).
 
 ## Edit an existing menu mod
 

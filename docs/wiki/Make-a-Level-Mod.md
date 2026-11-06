@@ -13,9 +13,13 @@ To build a new mission instead, see [Make a custom level](Make-a-Custom-Level). 
    - **Objects**: buildings, turrets, enemies, wingmen and everything else placed in the level.
    - **Events**: flight paths, trigger areas, music regions and the level's rules.
 
+![Ambush at Mos Eisley open in the level editor, in Objects mode](images/level-objects.png)
+
 ## Reshape the ground
 
 In Terrain mode, pick a **Tool** and drag on the ground:
+
+![The Terrain mode panel](images/level-terrain.png)
 
 - **Raise**, **Lower**, **Flatten**, **Smooth** reshape it. **Radius** sets the brush size and **Strength** sets how much each stroke changes.
 - **Paint texture** paints ground tiles, and **Pick texture** picks up the tile under the cursor to paint with.
@@ -76,6 +80,8 @@ It then runs its actions in order:
 - wait a few seconds before the next action
 
 A rule fires once unless you make it repeat. **Level events…** opens a window with the level-wide rules (mission start, timers, objectives) and a list of every rule in the level. A rule whose object you deleted shows red there, and Export mod warns you about it.
+
+![The Level events window](images/level-events.png)
 
 > TODO: a worked example: "Hold the bridge" message, wave release, win on a destroyed target.
 

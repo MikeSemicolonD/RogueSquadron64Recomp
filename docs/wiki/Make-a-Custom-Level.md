@@ -17,6 +17,8 @@ Every custom level runs on top of a stock level, its *template*. The template de
 
 **Level settings…** holds what the player sees before and after the mission:
 
+![The Level settings window for a new level](images/level-settings.png)
+
 - **Title** and **description** for SELECT LEVEL.
 - **Briefing**: pick a voice line from the game, or **Import recording…** to use your own `.wav` or `.mp3`.
 - **Approved craft**: which ships the player can pick.
