@@ -1,0 +1,61 @@
+# Make a custom level
+
+A custom level is a new mission that shows in SELECT LEVEL after the last level the player has unlocked. It can have its own ground, enemies, objectives, briefing, opening crawl, intro and ending cutscenes, models and textures. Its medals are saved separately from the game's, so playing it never changes the player's progress.
+
+This guide puts the other guides together, roughly in the order you'd build a level.
+
+## 1. Start the level
+
+Open a stock level in the **Levels** tab and pick one:
+
+- **New level from this one…**: a full copy of the level to change.
+- **New blank level…**: only a player start on flat ground, a blank 3-second intro and ending, and the original level's sky, ground textures and music.
+
+Every custom level runs on top of a stock level, its *template*. The template decides the sky and the ground textures, and the size of the map.
+
+## 2. Level settings
+
+**Level settings…** holds what the player sees before and after the mission:
+
+- **Title** and **description** for SELECT LEVEL.
+- **Briefing**: pick a voice line from the game, or **Import recording…** to use your own `.wav` or `.mp3`.
+- **Approved craft**: which ships the player can pick.
+- **Objectives** (1 to 4): destroy, reach an area, protect, survive for a time, or finish within a time limit. Click the targets in the view; the explorer does the bookkeeping. Each objective can play a voice line, your recording or a camera shot when it's done or failed, and a voice line on the pause screen.
+- **Medals**: time, kills, accuracy and friendlies saved for bronze, silver and gold.
+- **Opening crawl** and **starting song**.
+
+With your own objectives, none of the template's mission runs: the level is won when every objective is done.
+
+## 3. Shape the ground
+
+See [Make a level mod: reshape the ground](Make-a-Level-Mod#reshape-the-ground).
+
+## 4. Place things and enemies
+
+See [move, add and remove things](Make-a-Level-Mod#move-add-and-remove-things), [enemies and waves](Make-a-Level-Mod#enemies-and-waves) and [flight paths](Make-a-Level-Mod#flight-paths).
+
+## 5. Make it react
+
+Add trigger areas, music regions, camera shots and rules: see [Make a level mod](Make-a-Level-Mod#trigger-areas-music-and-camera-shots).
+
+## 6. Custom models and textures
+
+Repaint anything placed in the level with **Replace texture from image…**, or give a player craft your own model. See [Make a model mod](Make-a-Model-Mod). A level and the custom ship it uses always export together.
+
+## 7. Opening crawl, intro and ending
+
+Your level's Cutscene list has its intro, ending and **Opening crawl**. See [Make a cutscene mod](Make-a-Cutscene-Mod). A blank level's intro and ending start empty, so build them from scratch: add actors, cameras and voice lines.
+
+## 8. Play it and share it
+
+**Play in game** starts the game straight into your level. See [Saving, testing and sharing](Saving-Testing-and-Sharing).
+
+> TODO: a complete worked example, from a blank level to the medal screen, with screenshots.
+
+## Not yet possible
+
+- Drawing new flight paths, and renaming objects (see the [level mod list](Make-a-Level-Mod#not-yet-possible)).
+- New camera positions for camera shots and objective cameras in a blank level.
+- A map bigger than its template.
+- Your own model as a **new** ship to pick, with its own hangar shot.
+- Still to be checked in the game: approved craft for custom levels, medals on save slots 1 and 2, and imported briefing recordings.
