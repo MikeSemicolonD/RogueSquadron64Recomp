@@ -1467,7 +1467,12 @@ async function showCutscene(path)
       prev = { c, p };
     }
 
-    camPath = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)), new THREE.LineBasicMaterial({ color: 0xffcc33, transparent: true, opacity: 0.5 }));
+    camPath = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)), new THREE.LineBasicMaterial({
+      color: 0xffcc33,
+      transparent: true,
+      opacity: 0.5
+    }));
+
     world.add(camPath);
   }
 
@@ -2145,27 +2150,6 @@ function crawlQuad(tl, tr, bl, br, map)
   return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
 }
 
-// A route (DAT type 3 sub 8) as evalCubicSplineAtTime 0x80018F98 reads it: Catmull-Rom over the points, u spread by the arc fractions.
-function crawlRoute(dv, it)
-{
-  const pts = splinePoints(dv, it);
-  const o = it.offset;
-  const at = o + dv.getUint32(o + 0x20) + pts.length * 12;
-  const frac = Array.from({ length: pts.length - 2 }, (_, k) => dv.getFloat32(at + k * 4));
-
-  return (u) => {
-    let j = 0;
-
-    while (j < frac.length - 2 && u > frac[j + 1])
-      j++;
-
-    const t = THREE.MathUtils.clamp((u - frac[j]) / (frac[j + 1] - frac[j] || 1), 0, 1);
-    const [p0, p1, p2, p3] = pts.slice(j, j + 4);
-
-    return [0, 1, 2].map((a) => 0.5 * (2 * p1[a] + (p2[a] - p0[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t * t + (3 * p1[a] - p0[a] - 3 * p2[a] + p3[a]) * t * t * t));
-  };
-}
-
 // which: the level directory whose opening crawl plays (levelCrawl).
 async function showCrawl(which, keep = null)
 {
@@ -2252,7 +2236,12 @@ async function showCrawl(which, keep = null)
   const camKeys = c.camera?.length ? c.camera : CRAWL_STOCK_CAMERA;
   const s4 = 0.25;
   const mp = [0, 0, 0, -s4, -s4, 2 * s4, s4, -s4, 2 * s4, s4, s4, 2 * s4, -s4, s4, 2 * s4];
-  const camNode = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 1, 0, 2, 0, 3, 0, 4, 1, 2, 2, 3, 3, 4, 4, 1].flatMap((i) => mp.slice(i * 3, i * 3 + 3)), 3)), new THREE.LineBasicMaterial({ color: 0xffcc33, fog: false, depthTest: false }));
+
+  const camNode = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 1, 0, 2, 0, 3, 0, 4, 1, 2, 2, 3, 3, 4, 4, 1].flatMap((i) => mp.slice(i * 3, i * 3 + 3)), 3)), new THREE.LineBasicMaterial({
+    color: 0xffcc33,
+    fog: false,
+    depthTest: false
+  }));
 
   camNode.matrixAutoUpdate = false;
   camNode.renderOrder = 10;
@@ -2263,7 +2252,13 @@ async function showCrawl(which, keep = null)
   for (let i = 0; i < 400; i++)
     camPts.push(...crawlCameraAt(camKeys, (i / 400) * CRAWL_T.end).pos, ...crawlCameraAt(camKeys, ((i + 1) / 400) * CRAWL_T.end).pos);
 
-  const camPath = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(camPts, 3)), new THREE.LineBasicMaterial({ color: 0xffcc33, transparent: true, opacity: 0.5, fog: false, depthTest: false }));
+  const camPath = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(camPts, 3)), new THREE.LineBasicMaterial({
+    color: 0xffcc33,
+    transparent: true,
+    opacity: 0.5,
+    fog: false,
+    depthTest: false
+  }));
 
   camPath.renderOrder = 10;
   world.add(camPath);
@@ -2321,7 +2316,7 @@ async function showCrawl(which, keep = null)
     holder.add(buildObject(cobj, cm, 'data/pl_crafts/' + craftName, counts));
     order(holder, 2);
     world.add(holder);
-    crafts.push({ holder, at: crawlRoute(sceneDat, route), delay: 0.05 * i });
+    crafts.push({ holder, at: splineAt(sceneDat, route), delay: 0.05 * i });
   }
 
   // Editing (the cutscene panel's pencil): each route as the line its craft flies, with a handle per point.
@@ -2329,14 +2324,19 @@ async function showCrawl(which, keep = null)
 
   for (const it of cutEditing ? items.filter((x) => /^route_\d$/.test(x.name)) : [])
   {
-    const at = crawlRoute(sceneDat, it);
+    const at = splineAt(sceneDat, it);
     const line = [];
 
     for (let i = 0; i < 64; i++)
       line.push(...at(i / 64), ...at((i + 1) / 64));
 
     const off = new THREE.Matrix4().makeTranslation(...CRAWL_FLY_OFFSET);
-    const lines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(line, 3)), new THREE.LineBasicMaterial({ color: 0x66ccff, fog: false, depthTest: false }));
+
+    const lines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(line, 3)), new THREE.LineBasicMaterial({
+      color: 0x66ccff,
+      fog: false,
+      depthTest: false
+    }));
 
     lines.applyMatrix4(off);
     lines.renderOrder = 10;
@@ -2837,8 +2837,27 @@ $('cutCam').onchange = () => {
 const TL_LANES = [['camera', 'Camera'], ['audio', 'Audio'], ['action', 'Action'], ['scene', 'Scene']];
 const tlHidden = new Set();
 
-const TL_KIND = { 0: 'Voice', 1: 'Music', 2: 'Music stop', 3: 'Sound', 5: 'Effect', 6: 'Appear', 7: 'Disappear', 8: 'Weapon fire', 10: 'End transition',
-  11: 'S-foils', 12: 'Voice stop', 13: 'Walk rate', 15: 'Fireworks / debris', 16: 'NPC burst', 17: 'Fog', 19: 'Smoothing', 20: 'NPCs cleared', 21: 'Effect flag', 22: 'Render pass' };
+const TL_KIND = {
+  0: 'Voice',
+  1: 'Music',
+  2: 'Music stop',
+  3: 'Sound',
+  5: 'Effect',
+  6: 'Appear',
+  7: 'Disappear',
+  8: 'Weapon fire',
+  10: 'End transition',
+  11: 'S-foils',
+  12: 'Voice stop',
+  13: 'Walk rate',
+  15: 'Fireworks / debris',
+  16: 'NPC burst',
+  17: 'Fog',
+  19: 'Smoothing',
+  20: 'NPCs cleared',
+  21: 'Effect flag',
+  22: 'Render pass'
+};
 
 // What each event's four parameters mean (spawnCutsceneEffectsAndCues, processCutsceneActions; see cutEventInfo): [label, tooltip].
 const CUT_PARAM_NAMES = {
@@ -3600,17 +3619,20 @@ addEventListener('resize', () => {
   placeCutInspector();
 });
 
-{
-  const head = $('insCut').querySelector('h4');
-
-  head.title = 'Drag to move the inspector; double-click to put it back';
-
+// Drags a floating panel by its heading (not its buttons) and double-click puts it back: setPos keeps the position (null = default),
+// place redraws, and key remembers it for the next visit.
+function dragByHead(head, panel, key, setPos, place) {
   let drag = null;
+  let pos = null;
 
   head.addEventListener('pointerdown', (e) => {
-    const r = $('cutInspector').getBoundingClientRect();
+    if (e.target.closest('button'))
+      return;
+
+    const r = panel.getBoundingClientRect();
 
     drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    pos = null;
     head.setPointerCapture(e.pointerId);
   });
 
@@ -3618,23 +3640,30 @@ addEventListener('resize', () => {
     if (!drag)
       return;
 
-    const main = $('cutInspector').parentElement.getBoundingClientRect();
+    const main = panel.parentElement.getBoundingClientRect();
 
-    insPos = { x: e.clientX - main.left - drag.dx, y: e.clientY - main.top - drag.dy };
-    placeCutInspector();
+    pos = { x: e.clientX - main.left - drag.dx, y: e.clientY - main.top - drag.dy };
+    setPos(pos);
+    place();
   });
 
   head.addEventListener('pointerup', () => {
+    if (drag && pos)
+      store(key, pos);
+
     drag = null;
-    store('rs64.insPos', insPos);
   });
 
   head.addEventListener('dblclick', () => {
-    insPos = null;
-    store('rs64.insPos', null);
-    placeCutInspector();
+    setPos(null);
+    store(key, null);
+    place();
   });
 }
+
+const insHead = $('insCut').querySelector('h4');
+insHead.title = 'Drag to move the inspector; double-click to put it back';
+dragByHead(insHead, $('cutInspector'), 'rs64.insPos', (p) => (insPos = p), placeCutInspector);
 
 function syncCutEditUi()
 {

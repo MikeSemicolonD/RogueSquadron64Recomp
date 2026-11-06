@@ -17,17 +17,7 @@ let audioBank = null;
 let audioCtx = null;
 let audioSel = null;
 let playToken = 0;
-const svgIcon = (d) => `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="${d}"/></svg>`;
-
-const ICON = {
-  loop: svgIcon('M4 5h7V3l3 3-3 3V7H4a1 1 0 0 0-1 1v1H1V8a3 3 0 0 1 3-3zm8 6H5v2l-3-3 3-3v2h7a1 1 0 0 0 1-1V7h2v1a3 3 0 0 1-3 3z'),
-  play: svgIcon('M4 2.5v11l9-5.5z'),
-  pause: svgIcon('M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z'),
-  stop: svgIcon('M3 3h10v10H3z'),
-  speaker: svgIcon('M2 6h3l4-3.5v11L5 10H2zM11 5.2a4 4 0 0 1 0 5.6l-.9-.9a2.7 2.7 0 0 0 0-3.8zM12.8 3.4a6.5 6.5 0 0 1 0 9.2l-.9-.9a5.2 5.2 0 0 0 0-7.4z'),
-  muted: svgIcon('M2 6h3l4-3.5v11L5 10H2zM10.6 5.5l.9-.9 1.7 1.7 1.7-1.7.9.9-1.7 1.7 1.7 1.7-.9.9-1.7-1.7-1.7 1.7-.9-.9 1.7-1.7z'),
-  solo: svgIcon('M8 2a6 6 0 0 0-6 6v4.5A1.5 1.5 0 0 0 3.5 14H5V9H3.3V8a4.7 4.7 0 0 1 9.4 0v1H11v5h1.5a1.5 1.5 0 0 0 1.5-1.5V8a6 6 0 0 0-6-6z')
-};
+const ICON = Object.fromEntries(['loop', 'play', 'pause', 'stop', 'speaker', 'muted', 'solo'].map((n) => [n, iconImg(n)]));
 
 // Every sound goes out through one gain, so the speaker by the theme button mutes all of it. The speaker shows while a sound plays or is paused
 // (a source still alive, a cutscene's suspended ones included, or the Audio tab's paused player) and goes once everything has stopped.
@@ -94,7 +84,7 @@ function syncNav()
   const t = open ? 'Hide the sidebar' : 'Show the sidebar';
   const b = $('navToggle');
 
-  b.innerHTML = svgIcon(open ? 'M10.5 3.5 6 8l4.5 4.5-1 1L4 8l5.5-5.5z' : 'M5.5 3.5 10 8l-4.5 4.5 1 1L12 8 6.5 2.5z');
+  b.innerHTML = iconImg(open ? 'chevronLeft' : 'chevronRight');
   b.title = t;
   b.setAttribute('aria-label', t);
   b.setAttribute('aria-expanded', open);

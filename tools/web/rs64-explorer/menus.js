@@ -36,7 +36,13 @@ const MENU_CONDITIONS = {
   frame_interpolation: 'Only while frame interpolation is on',
 };
 
-const MENU_CONDITION_LABEL = { desktop: 'Using Desktop', front_end: 'Opened From Front End', ray_query: 'Supports RT', expansion_pak: 'Uses Expansion Pak', frame_interpolation: 'Uses Frame Interpolation' };
+const MENU_CONDITION_LABEL = {
+  desktop: 'Using Desktop',
+  front_end: 'Opened From Front End',
+  ray_query: 'Supports RT',
+  expansion_pak: 'Uses Expansion Pak',
+  frame_interpolation: 'Uses Frame Interpolation'
+};
 
 const MENU_TEXT_FIELDS = {
   action: ['label', 'confirm'],
@@ -47,7 +53,15 @@ const MENU_TEXT_FIELDS = {
   label: ['label']
 };
 
-const MENU_FIELD_NAME = { label: 'Label', label_on: 'Label when on', label_off: 'Label when off', confirm: 'Confirm question', label_other: 'Label for a custom value', title: 'Page title' };
+const MENU_FIELD_NAME = {
+  label: 'Label',
+  label_on: 'Label when on',
+  label_off: 'Label when off',
+  confirm: 'Confirm question',
+  label_other: 'Label for a custom value',
+  title: 'Page title'
+};
+
 const MENU_KEY_FIELD = { action: 'action', toggle: 'toggle', cycle: 'cycle', slider: 'slider', submenu: 'action' };
 const LANG_MENU = 'mod/lang/menu.json';
 const readMenu = async () => menuParse(await virtualText(MENU_FILE));
@@ -183,15 +197,6 @@ async function showMenu(name)
   const groups = await readJson(EXPORT_GROUPS, () => ({ groups: [], assign: {} }));
 
   // Toolbar: import, preview language, the group new buttons go in, add a button.
-  const tool = (icon, tip, fn) => {
-    const b = elem('button', { title: tip });
-
-    setEditIcon(b, icon);
-    b.onclick = fn;
-
-    return b;
-  };
-
   const lang = elem('select', { title: 'Language the preview and the label fields show' }, ...(await menuLangs()).map((c) => new Option(c, c)));
 
   lang.value = menuLang;
@@ -221,11 +226,11 @@ async function showMenu(name)
     menuGroup = group.value;
   };
 
-  const tools = elem('div', { className: 'fontTools' }, tool('open', 'Import menu files: any menu JSON (and menu_text.json), added on top of this mod\'s menu as the game layers mods', importMenuFile),
+  const tools = elem('div', { className: 'fontTools' }, iconButton('open', 'Import menu files: any menu JSON (and menu_text.json), added on top of this mod\'s menu as the game layers mods', importMenuFile),
     elem('label', null, 'Language ', lang), elem('label', null, 'Mod for new buttons ', group));
 
   if (!native?.locked && !native?.limit)
-    tools.append(tool('add', 'Add a button at the end of this menu', () => addMenuButton(name, {})));
+    tools.append(iconButton('add', 'Add a button at the end of this menu', () => addMenuButton(name, {})));
 
   // The preview: the game's 640 x 480 screen (4:3). Front-end lines sit where setupMenuData puts them: top = 240 + list_base + 36 i - 18 n + y
   // (gCurrentMenuData +0x96, docs/guides/adding-menus-and-buttons.md), centred plus x (the main menu is left-aligned at 249 + x). Pause menus are the HUD's:
@@ -559,10 +564,7 @@ function menuTitlePanel(menu, doc, langMenu)
       x.label = keys.length === 1 && keys[0] === 'en' ? next.en : next;
   }, `${menu} title`);
 
-  const globe = elem('button', { title: 'Every language\'s text for this title, and its text key' });
-
-  setEditIcon(globe, 'globe');
-  globe.onclick = () => menuTranslations(menu, 'title:' + menu, 'label');
+  const globe = iconButton('globe', 'Every language\'s text for this title, and its text key', () => menuTranslations(menu, 'title:' + menu, 'label'));
 
   const num = (k) => {
     const n = elem('input', { type: 'number', value: t[k] ?? '', placeholder: k === 'y' ? `${MENU_TITLE_Y} (the game's)` : '0' });
@@ -933,10 +935,7 @@ async function menuInspector(menu, doc, b, groups, langMenu)
       set(f, !keys.length ? '' : (keys.length === 1 && keys[0] === 'en' ? next.en : next), `${b.id}: ${f}`);
     };
 
-    const globe = elem('button', { title: `Every language's text for this, and its text key${map.key ? ` (${map.key})` : ''}` });
-
-    setEditIcon(globe, 'globe');
-    globe.onclick = () => menuTranslations(menu, b.id, f);
+    const globe = iconButton('globe', `Every language's text for this, and its text key${map.key ? ` (${map.key})` : ''}`, () => menuTranslations(menu, b.id, f));
 
     return [field(MENU_FIELD_NAME[f] ?? f, elem('span', { className: 'menuText' }, input, globe)), gaps];
   };
@@ -1099,16 +1098,12 @@ async function menuTranslations(menu, id, f)
       save(next, `${id}: ${f} ${code}`);
     };
 
-    const del = elem('button', { title: `Remove the ${code} text` });
-
-    setEditIcon(del, 'delete');
-
-    del.onclick = () => {
+    const del = iconButton('delete', `Remove the ${code} text`, () => {
       const next = { ...map };
 
       delete next[code];
       save(next, `${id}: ${f} ${code} removed`);
-    };
+    });
 
     return elem('div', { className: 'menuLangRow' }, elem('b', { textContent: code }), input, map[code] !== undefined ? del : elem('span'), gaps);
   };

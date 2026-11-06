@@ -3,7 +3,7 @@
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
 const { parseShadowTextures, parseMusicCues, musicZoneSet, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
-  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, splineSetPoints, splinePoints, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
+  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 function elem(tag, props, ...children) {
@@ -85,74 +85,216 @@ const SUBTYPE_MODEL = {
 
 // DAT item types; subtypes from rogue_squadron64/docs/dat_files/dat_file.md (several are educated guesses there).
 const TYPES = {
-  player: { color: 0xe8b84a, label: 'Player start / restarts', icon: 'tri', tip: 'Where the player begins (0x01) and respawns after dying (0x02); the cone shows the facing' },
+  player: {
+    color: 0xe8b84a,
+    label: 'Player start / restarts',
+    icon: 'tri',
+    tip: 'Where the player begins (0x01) and respawns after dying (0x02); the cone shows the facing'
+  },
   wing: { color: 0xe6edf7, label: 'Wingmen', icon: 'wing', tip: 'Wingman start positions (0x27), e.g. WEDGE, ROGUE_10' },
-  0: { color: 0xc9b38a, label: 'Other units / objects', icon: 'tri', tip: 'Placed units or objects the viewer has no model for (trains, pilots, landing pads, unnamed items); the cone shows the facing' },
-  cam: { color: 0xff79c6, label: 'Camera positions', icon: 'cam', tip: 'Cutscene and intro camera placements (subtype 0x26); the pyramid opens toward where it looks' },
+  0: {
+    color: 0xc9b38a,
+    label: 'Other units / objects',
+    icon: 'tri',
+    tip: 'Placed units or objects the viewer has no model for (trains, pilots, landing pads, unnamed items); the cone shows the facing'
+  },
+  cam: {
+    color: 0xff79c6,
+    label: 'Camera positions',
+    icon: 'cam',
+    tip: 'Cutscene and intro camera placements (subtype 0x26); the pyramid opens toward where it looks'
+  },
   // DAT type 2 is a generic point list; the subtype says what each point is.
   2: { color: 0xff6a3d, label: 'Lava vents', icon: 'circle', tip: 'Lava vent (point subtype 0x51, LavaFart* in Raid on Sullust): erupts lava' },
-  wdgun: { color: 0xb0b8c8, label: 'Devastator gun settings', icon: 'square', tip: 'Subtype 0x49 (lv_f): settings records for the World Devastator gun turrets, all at one dummy point; the guns themselves are parts of the wrld_dvstr model' },
-  point: { color: 0x9ad0ff, label: 'Menu points', icon: 'circle', tip: 'Frontend point (subtype 0x09): hangar camera starts (camstart_*) and bridge scene points (steps*)' },
-  3: { color: 0x4ac0e8, label: 'Unassigned paths', icon: 'cross', tip: 'Splines no NPC names (a level script may switch an NPC onto them); the cross marks the start' },
+  wdgun: {
+    color: 0xb0b8c8,
+    label: 'Devastator gun settings',
+    icon: 'square',
+    tip: 'Subtype 0x49 (lv_f): settings records for the World Devastator gun turrets, all at one dummy point; the guns themselves are parts of the wrld_dvstr model'
+  },
+  point: {
+    color: 0x9ad0ff,
+    label: 'Menu points',
+    icon: 'circle',
+    tip: 'Frontend point (subtype 0x09): hangar camera starts (camstart_*) and bridge scene points (steps*)'
+  },
+  3: {
+    color: 0x4ac0e8,
+    label: 'Unassigned paths',
+    icon: 'cross',
+    tip: 'Splines no NPC names (a level script may switch an NPC onto them); the cross marks the start'
+  },
   6: { color: 0x9aa3b5, label: 'Other zones', icon: 'zother', tip: 'Zone of an unidentified kind (subtype 0x39)' },
-  zhi: { color: 0x8a7cff, label: 'High-detail regions', icon: 'zhi', tip: 'LOD zone (0x04): objects use their high-detail models while the player is over this area' },
-  zlo: { color: 0x5b6bd8, label: 'Low-detail regions', icon: 'zlo', tip: 'LOD zone (0x05): objects use their low-detail models while the player is over this area' },
+  zhi: {
+    color: 0x8a7cff,
+    label: 'High-detail regions',
+    icon: 'zhi',
+    tip: 'LOD zone (0x04): objects use their high-detail models while the player is over this area'
+  },
+  zlo: {
+    color: 0x5b6bd8,
+    label: 'Low-detail regions',
+    icon: 'zlo',
+    tip: 'LOD zone (0x05): objects use their low-detail models while the player is over this area'
+  },
   zmus: { color: 0xf0a24a, label: 'Music regions', icon: 'zmus', tip: 'Music zone (0x10): the music changes while the player is over this area' },
-  zmtrig: { color: 0xffd36b, label: 'Music trigger areas', icon: 'zmtrig', tip: 'Music trigger area (0x39): the linked music zone switches to its track while the player is inside; it can be gated on mission objectives' },
+  zmtrig: {
+    color: 0xffd36b,
+    label: 'Music trigger areas',
+    icon: 'zmtrig',
+    tip: 'Music trigger area (0x39): the linked music zone switches to its track while the player is inside; it can be gated on mission objectives'
+  },
   zunit: { color: 0xff5f8f, label: 'Ground-unit areas', icon: 'zunit', tip: 'Ground-unit area (0x16): troopers and civilians spawn and roam inside this area' },
-  tvoice: { color: 0x6be0d0, label: 'Voice-line triggers', icon: 'tvoice', tip: 'Event trigger (0x18) named for a voice line (LINE_n / say): entering the area sets objective flags that make the level script play the line' },
-  tevent: { color: 0x5fd17a, label: 'Objective triggers', icon: 'tevent', tip: 'Event trigger (0x18): entering or leaving the area adjusts objective flags and counters that the level script reacts to' },
-  tspawn: { color: 0xc3e65a, label: 'Spawn triggers', icon: 'tspawn', tip: 'Trigger (0x19, usually Gen_*): like an event trigger, and also flags the unit it names so it spawns' },
-  troam: { color: 0xd17aff, label: 'NPC roam areas', icon: 'troam', tip: 'Roam area (0x11 For_*, 0x17 *_SPHERE): an NPC names it as its box; it wanders inside the radius and turns back toward the centre when it strays out' },
+  tvoice: {
+    color: 0x6be0d0,
+    label: 'Voice-line triggers',
+    icon: 'tvoice',
+    tip: 'Event trigger (0x18) named for a voice line (LINE_n / say): entering the area sets objective flags that make the level script play the line'
+  },
+  tevent: {
+    color: 0x5fd17a,
+    label: 'Objective triggers',
+    icon: 'tevent',
+    tip: 'Event trigger (0x18): entering or leaving the area adjusts objective flags and counters that the level script reacts to'
+  },
+  tspawn: {
+    color: 0xc3e65a,
+    label: 'Spawn triggers',
+    icon: 'tspawn',
+    tip: 'Trigger (0x19, usually Gen_*): like an event trigger, and also flags the unit it names so it spawns'
+  },
+  troam: {
+    color: 0xd17aff,
+    label: 'NPC roam areas',
+    icon: 'troam',
+    tip: 'Roam area (0x11 For_*, 0x17 *_SPHERE): an NPC names it as its box; it wanders inside the radius and turns back toward the centre when it strays out'
+  },
   // Path events (fired when an NPC on a spline passes the node; func_800F3CB0), one kind per subtype.
   pspeed: { color: 0x7ee0ff, label: 'Speed changes', icon: 'bead', tip: 'Path event 0x1B: eases the NPC to a new speed along its spline' },
-  phold: { color: 0xffb347, label: 'Hold orders', icon: 'bead', tip: 'Path event 0x22: the NPC stops at this node until a timer runs out and an objective flag/counter condition is met (func_800F9AB8)' },
+  phold: {
+    color: 0xffb347,
+    label: 'Hold orders',
+    icon: 'bead',
+    tip: 'Path event 0x22: the NPC stops at this node until a timer runs out and an objective flag/counter condition is met (func_800F9AB8)'
+  },
   pattack: { color: 0xff3b30, label: 'Attack orders', icon: 'bead', tip: 'Path event 0x20: sets the NPC attack target (red dashed arrow)' },
-  paction: { color: 0xff9ad5, label: 'Craft actions', icon: 'bead', tip: 'Path event 0x1A: a per-craft action; TIE bombers start a bombing run, shuttles play their wing/landing animation, wingmen trigger an effect' },
-  pfly: { color: 0xc792ff, label: 'Fly-to orders', icon: 'bead', tip: 'Path event 0x4E: sends the NPC off its spline toward a named item (or the player); TIE fighters and the boss shuttle only' },
+  paction: {
+    color: 0xff9ad5,
+    label: 'Craft actions',
+    icon: 'bead',
+    tip: 'Path event 0x1A: a per-craft action; TIE bombers start a bombing run, shuttles play their wing/landing animation, wingmen trigger an effect'
+  },
+  pfly: {
+    color: 0xc792ff,
+    label: 'Fly-to orders',
+    icon: 'bead',
+    tip: 'Path event 0x4E: sends the NPC off its spline toward a named item (or the player); TIE fighters and the boss shuttle only'
+  },
   pweave: { color: 0x9be37a, label: 'Weave changes', icon: 'bead', tip: 'Path event 0x1C: changes how much the craft sways side to side along its spline' },
-  ppitch: { color: 0xf5e663, label: 'Landing pitch', icon: 'bead', tip: 'Path event 0x23: tilts the craft up to 90 degrees over a few seconds (landing) or back level (take-off)' },
-  twaypoint: { color: 0xffe14a, label: 'Objective arrow targets', icon: 'twaypoint', tip: 'HUD arrow target (0x3A): the objective arrow points at the nearest one whose objective flag/counter conditions hold' },
-  7: { color: 0x3f9a58, label: 'Other triggers', icon: 'diamond', tip: 'Trigger records no game code was found to read (none left among the subtypes in the levels). Lines point at what they name' },
+  ppitch: {
+    color: 0xf5e663,
+    label: 'Landing pitch',
+    icon: 'bead',
+    tip: 'Path event 0x23: tilts the craft up to 90 degrees over a few seconds (landing) or back level (take-off)'
+  },
+  twaypoint: {
+    color: 0xffe14a,
+    label: 'Objective arrow targets',
+    icon: 'twaypoint',
+    tip: 'HUD arrow target (0x3A): the objective arrow points at the nearest one whose objective flag/counter conditions hold'
+  },
+  7: {
+    color: 0x3f9a58,
+    label: 'Other triggers',
+    icon: 'diamond',
+    tip: 'Trigger records no game code was found to read (none left among the subtypes in the levels). Lines point at what they name'
+  },
 };
 
 const SUBTYPES = {
-  0x01: 'Player start', 0x02: 'Restart point', 0x03: 'Spline', 0x04: 'LOD region (high detail)', 0x05: 'LOD region (low detail)',
-  0x06: 'Hangar placement', 0x07: 'Scene placement', 0x08: 'Scene spline', 0x09: 'Menu point', 0x0C: 'TIE fighter',
-  0x0D: 'Gun turret', 0x0E: 'Probe droid', 0x0F: 'AT-AT', 0x10: 'Music region', 0x11: 'Proximity trigger', 0x12: 'TIE interceptor',
-  0x13: 'TIE bomber', 0x14: 'Building / prop', 0x16: 'Zone', 0x17: 'Sphere trigger', 0x18: 'Event trigger', 0x19: 'Trigger',
-  0x1A: 'Trigger', 0x1B: 'Trigger', 0x1C: 'Trigger', 0x1E: 'Missile turret', 0x1F: 'AT-ST', 0x20: 'Spawn trigger',
-  0x21: 'Stationary NPC spawn', 0x22: 'Trigger', 0x23: 'Trigger', 0x24: 'Shuttle', 0x25: 'Tank droid', 0x26: 'Camera position',
-  0x27: 'Wingman position', 0x28: 'Mega turret', 0x29: 'TIE (D)', 0x2A: 'Radar dish', 0x2B: 'Rebel transport',
-  0x2C: 'Heavy shuttle', 0x2D: 'Cargo', 0x2E: 'Rebel combat', 0x2F: 'Imperial train', 0x30: 'Imperial train',
-  0x31: 'Imperial train', 0x32: 'Shield', 0x33: 'Train pillar', 0x34: 'Rebel train', 0x35: 'Rebel train',
-  0x36: 'Rebel train pillar', 0x37: 'World Devastator', 0x39: 'Music trigger area', 0x3A: 'Trigger', 0x3B: 'Stormtrooper',
-  0x3C: 'Rebel pilot', 0x3D: 'Civilian', 0x3E: 'Assault boat', 0x40: 'Wave skimmer', 0x41: 'Rebel turret',
-  0x42: 'Taloraan turret', 0x43: 'Cloud car', 0x44: 'Imperial platform', 0x46: 'Moving NPC spawn', 0x47: 'AT-PT',
-  0x48: 'Boss hut', 0x49: 'World Devastator gun', 0x4A: 'Power generator', 0x4B: 'Large building', 0x4C: 'Power-up',
-  0x4D: 'Heavy raptor shuttle', 0x4E: 'Trigger', 0x4F: 'Exhaust port', 0x50: 'B soldier', 0x51: 'Lava vent', 0x52: 'Unnamed item',
+  0x01: 'Player start',
+  0x02: 'Restart point',
+  0x03: 'Spline',
+  0x04: 'LOD region (high detail)',
+  0x05: 'LOD region (low detail)',
+  0x06: 'Hangar placement',
+  0x07: 'Scene placement',
+  0x08: 'Scene spline',
+  0x09: 'Menu point',
+  0x0C: 'TIE fighter',
+  0x0D: 'Gun turret',
+  0x0E: 'Probe droid',
+  0x0F: 'AT-AT',
+  0x10: 'Music region',
+  0x11: 'Proximity trigger',
+  0x12: 'TIE interceptor',
+  0x13: 'TIE bomber',
+  0x14: 'Building / prop',
+  0x16: 'Zone',
+  0x17: 'Sphere trigger',
+  0x18: 'Event trigger',
+  0x19: 'Trigger',
+  0x1A: 'Trigger',
+  0x1B: 'Trigger',
+  0x1C: 'Trigger',
+  0x1E: 'Missile turret',
+  0x1F: 'AT-ST',
+  0x20: 'Spawn trigger',
+  0x21: 'Stationary NPC spawn',
+  0x22: 'Trigger',
+  0x23: 'Trigger',
+  0x24: 'Shuttle',
+  0x25: 'Tank droid',
+  0x26: 'Camera position',
+  0x27: 'Wingman position',
+  0x28: 'Mega turret',
+  0x29: 'TIE (D)',
+  0x2A: 'Radar dish',
+  0x2B: 'Rebel transport',
+  0x2C: 'Heavy shuttle',
+  0x2D: 'Cargo',
+  0x2E: 'Rebel combat',
+  0x2F: 'Imperial train',
+  0x30: 'Imperial train',
+  0x31: 'Imperial train',
+  0x32: 'Shield',
+  0x33: 'Train pillar',
+  0x34: 'Rebel train',
+  0x35: 'Rebel train',
+  0x36: 'Rebel train pillar',
+  0x37: 'World Devastator',
+  0x39: 'Music trigger area',
+  0x3A: 'Trigger',
+  0x3B: 'Stormtrooper',
+  0x3C: 'Rebel pilot',
+  0x3D: 'Civilian',
+  0x3E: 'Assault boat',
+  0x40: 'Wave skimmer',
+  0x41: 'Rebel turret',
+  0x42: 'Taloraan turret',
+  0x43: 'Cloud car',
+  0x44: 'Imperial platform',
+  0x46: 'Moving NPC spawn',
+  0x47: 'AT-PT',
+  0x48: 'Boss hut',
+  0x49: 'World Devastator gun',
+  0x4A: 'Power generator',
+  0x4B: 'Large building',
+  0x4C: 'Power-up',
+  0x4D: 'Heavy raptor shuttle',
+  0x4E: 'Trigger',
+  0x4F: 'Exhaust port',
+  0x50: 'B soldier',
+  0x51: 'Lava vent',
+  0x52: 'Unnamed item',
 };
 
-const ICONS = {
-  cam: '<path d="M2 4 H9 V10 H2 Z M9 7 L13 4 V10 Z"/>', tri: '<path d="M7 1 L13 12 L1 12 Z"/>', circle: '<circle cx="7" cy="7" r="5"/>', cross: '<path d="M7 1 V13 M1 7 H13 M2.5 2.5 L11.5 11.5"/>',
-  square: '<rect x="2" y="2" width="10" height="10"/>', diamond: '<path d="M7 1 L13 7 L7 13 L1 7 Z"/>',
-  // Trigger kinds: speech bubble = voice line, flag = objective, circled plus = spawn, down arrow = HUD arrow target, dashed ring = roam area.
-  tvoice: '<path d="M1.5 2 H12.5 V9 H6 L3 12 V9 H1.5 Z"/>', tevent: '<path d="M3 13 V1.5 M3 2 H11.5 L9.5 4.75 L11.5 7.5 H3"/>',
-  tspawn: '<circle cx="7" cy="7" r="5.5"/><path d="M7 4 V10 M4 7 H10"/>', twaypoint: '<path d="M7 1.5 V12 M3 8 L7 12 L11 8"/>',
-  troam: '<circle cx="7" cy="7" r="5.5" stroke-dasharray="2.6 1.8"/><circle cx="7" cy="7" r="1.4" fill="currentColor" stroke="none"/>',
-  // Path event: a bead threaded on its spline.
-  bead: '<path d="M1 7 H13" stroke-width="1.4"/><circle cx="7" cy="7" r="3.4"/>',
-  // Zone kinds: dense grid = high detail, coarse grid = low detail, note = music, figure = ground units, dashed = unknown.
-  zhi: '<rect x="1.5" y="1.5" width="11" height="11"/><path d="M5.2 1.5 V12.5 M8.8 1.5 V12.5 M1.5 5.2 H12.5 M1.5 8.8 H12.5" stroke-width="1"/>',
-  zlo: '<rect x="1.5" y="1.5" width="11" height="11"/><path d="M7 1.5 V12.5 M1.5 7 H12.5" stroke-width="1"/>',
-  zmus: '<path d="M9.5 2 V10.5 M9.5 2 L13 3.5"/><circle cx="6.5" cy="10.5" r="2.5" fill="currentColor"/>',
-  zunit: '<circle cx="7" cy="3.8" r="2.2"/><path d="M2.5 13 C2.5 8.2 11.5 8.2 11.5 13"/>',
-  wing: '<path d="M7 2 L9 7 L13 9 L9 9 L7 13 L5 9 L1 9 L5 7 Z"/>',
-  zmtrig: '<rect x="1.5" y="1.5" width="11" height="11" stroke-width="1.2"/><path d="M8.5 3.5 V9 M8.5 3.5 L11 4.5" stroke-width="1.4"/><circle cx="6.5" cy="9" r="1.8" fill="currentColor" stroke="none"/>',
-  zother: '<rect x="2" y="2" width="10" height="10" stroke-dasharray="2.5 2"/>',
-};
+// An icon from icons/<name>.svg drawn in color (default: the text colour around it). From file:// an <img> is the only way to load an SVG
+// file, and it can't take the page's colours, so it sits clipped just out of its box while its drop shadow paints the shape in place.
+const iconImg = (name, color) => `<span class="icon" aria-hidden="true"${color ? ` style="--icon-color: ${color}"` : ''}><img src="icons/${name}.svg" alt=""></span>`;
 
-const icon = (t) => `<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#${t.color.toString(16).padStart(6, '0')}" color="#${t.color.toString(16).padStart(6, '0')}" stroke-width="2">${ICONS[t.icon]}</svg>`;
+// A marker kind's legend glyph (icons/markers: trigger, zone and path event kinds each have their own), in the kind's colour.
+const icon = (t) => iconImg('markers/' + t.icon, '#' + t.color.toString(16).padStart(6, '0'));
 
 // ---------- renderer ----------
 const canvas = $('view');
@@ -1914,7 +2056,8 @@ function inspect(hit)
       voiceIds: triggerVoiceIds(o.userData.item, selected?.split('/').pop())
     };
 
-  if (o.userData.tiles) {
+  if (o.userData.tiles)
+  {
     const { hmp, texIds } = o.userData.tiles;
     const p = o.worldToLocal(hit.point.clone());
     const tx = Math.min(hmp.w - 1, Math.max(0, Math.floor(p.x / 2)));
@@ -1937,10 +2080,7 @@ function inspect(hit)
       rows: [
         ['Tile record', ti],
         ['Texmap id', tile.tex],
-        [
-          'Bank texture',
-          texIds[tile.tex] ?? '-'
-        ],
+        ['Bank texture', texIds[tile.tex] ?? '-'],
         ['Flags', hex(tile.flags)],
         ['Height range', `${Math.min(...tile.hts)} .. ${Math.max(...tile.hts)} (x${+hmp.heightScale.toFixed(3)})`]
       ]
@@ -1964,12 +2104,22 @@ function inspect(hit)
 
   const t = info.tex;
   const editId = placed?.userData.source?.id ?? (selectedLevel ? null : selected);
+  let alpha = 'opaque';
 
-  const light = !selectedLevel && o.userData.hob && [[
-    'Add light here',
-    'A ray-traced light at this point that rides on this part in game (a light preset for the part, in the mod\'s roguesq_lights.json)',
-    () => lightsAdd(hit)
-  ]];
+  if (info.valpha)
+    alpha = 'blended (vertex alpha)';
+  else if (info.blend)
+    alpha = 'blended (texture alpha)';
+  else if (info.cutout)
+    alpha = 'cutout (alpha test 0.5)';
+
+  const light = !selectedLevel && o.userData.hob && [
+    [
+      'Add light here',
+      'A ray-traced light at this point that rides on this part in game (a light preset for the part, in the mod\'s roguesq_lights.json)',
+      () => lightsAdd(hit)
+    ]
+  ];
 
   return {
     title: `${obj.name || 'model'} / ${o.name || 'part'}`,
@@ -1977,21 +2127,12 @@ function inspect(hit)
     edit: t && editId && { id: editId, tex: t.name },
     actions: light || [],
     rows: [
-      [
-        'Material',
-        `#${info.index} ${esc(info.matName)}`
-      ],
-      [
-        'Texture',
-        t ? `${esc(t.name)} ${t.w}x${t.h}` : 'none (vertex colour only)'
-      ],
-      t && [
-        'Format',
-        `${TEX_TYPES[t.type] ?? 'type ' + t.type}, flags ${hex(t.flags)}`
-      ],
+      ['Material', `#${info.index} ${esc(info.matName)}`],
+      ['Texture', t ? `${esc(t.name)} ${t.w}x${t.h}` : 'none (vertex colour only)'],
+      t && ['Format', `${TEX_TYPES[t.type] ?? 'type ' + t.type}, flags ${hex(t.flags)}`],
       t && ['Wrap', info.map?.wrapS === THREE.ClampToEdgeWrapping ? 'clamp (UVs stay in 0..1)' : 'repeat'],
       info.emissive && info.valpha && !info.blend && t && ['Shading', 'sphere-mapped reflection (glass)'],
-      ['Alpha', info.valpha ? 'blended (vertex alpha)' : (info.blend ? 'blended (texture alpha)' : (info.cutout ? 'cutout (alpha test 0.5)' : 'opaque'))],
+      ['Alpha', alpha],
       ['Part triangles', o.geometry.attributes.position.count / 3]
     ]
   };

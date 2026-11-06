@@ -913,7 +913,10 @@ const sculptActive = () => $('optSculpt').checked && selectedLevel && !!sculpt;
 async function loadSculpt()
 {
   sculpt = null;
+  sculptRing.removeFromParent();
+  showTileGrid();
   $('sculptInfo').textContent = '';
+  $('sculptPalette').textContent = '';
 
   if (!$('optSculpt').checked || !selectedLevel || !rom.assets.has(selected + '/hmp'))
   {
@@ -925,25 +928,79 @@ async function loadSculpt()
   const dir = selected;
   const dv = await rom.read(dir + '/hmp');
   const base = u8(dv).slice();
+  const hmp = parseHMP(dv);
   const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
 
-  sculpt = { dir, base, grid: hmpGrid(parseHMP(dv)), texIds, bank, undo: [], tex: null, bytes: null };
+  sculpt = { dir, base, grid: hmpGrid(hmp), texIds, bank, undo: [], tex: null, bytes: null, scale: dv.getFloat32(0x10) };
   sculpt.committed = sculpt.grid.hts.slice();
   controls.mouseButtons.LEFT = null;
-  sculptStatus();
+  fillSculptPalette();
+  sculptBudget(hmp.tiles.length);
+  sculptStatus('');
+  showTileGrid();
+
+  // Stored heights are -128..127 steps, so each level has its own height range.
+  const flat = $('sculptFlat');
+  const hi = +(128 * sculpt.scale).toFixed(2);
+  const lo = +(-127 * sculpt.scale).toFixed(2);
+
+  Object.assign(flat, { min: lo, max: hi, title: `${lo} to ${hi} on this level` });
 }
 
-function sculptStatus(extra = '')
+// The status line: text (the hover readout or an error), then a notice that stays until the next stroke.
+function sculptStatus(text)
 {
-  if (!sculpt)
-    return;
-
-  const t = sculpt.tex == null ? 'none (use Pick texture)' : `#${sculpt.tex}`;
-
-  $('sculptInfo').textContent = `Paint texture: ${t}${extra ? ' · ' + extra : ''}`;
+  if (sculpt)
+    $('sculptInfo').textContent = [text, sculpt.notice].filter(Boolean).join(' · ');
 }
 
-function sculptHit(e) {
+function sculptBudget(tiles) {
+  const m = $('sculptBudget');
+
+  m.value = tiles;
+  m.title = `${tiles} of ${m.max} ground tiles`;
+}
+
+// The level's terrain textures as swatches: a click picks one to paint with (and the Paint tool); the current one is outlined.
+function fillSculptPalette() {
+  const pal = $('sculptPalette');
+
+  pal.textContent = '';
+
+  sculpt.texIds.forEach((id, k) => {
+    if (id === undefined)
+      return;
+
+    const c = elem('canvas', { width: 64, height: 64, title: 'Paint with this texture', role: 'option' });
+
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(decodeTerrainTex(sculpt.bank, id)), 64, 64), 0, 0);
+    c.dataset.tex = k;
+
+    c.onclick = () => {
+      $('sculptTool').value = 'paint';
+      setSculptTex(k);
+    };
+
+    pal.append(c);
+  });
+
+  setSculptTex(sculpt.tex);
+  sculptToolChanged();
+}
+
+function setSculptTex(k)
+{
+  sculpt.tex = k;
+
+  for (const c of $('sculptPalette').children)
+    c.setAttribute('aria-selected', String(+c.dataset.tex === k));
+
+  $('sculptPalette').querySelector('[aria-selected=true]')?.scrollIntoView({ block: 'nearest' });
+}
+
+// Grid point under the cursor, with the stroke modifiers: Shift swaps raise and lower, Alt picks a texture.
+function sculptHit(e)
+{
   const terrain = root?.getObjectByName('terrain');
   const hit = terrain && pick(e, [terrain]);
 
@@ -952,37 +1009,144 @@ function sculptHit(e) {
 
   const p = terrain.worldToLocal(hit.point.clone());
 
-  return { gx: p.x * 2, gy: p.z * 2 };
+  return { gx: p.x * 2, gy: p.z * 2, swap: e.shiftKey, pick: e.altKey };
 }
 
-function brush({ gx, gy })
+const inMap = (h) => h.gx >= 0 && h.gy >= 0 && h.gx <= sculpt.grid.W - 1 && h.gy <= sculpt.grid.H - 1;
+
+// The brush outline draped on the ground under the cursor, coloured by tool.
+const SCULPT_RING_COLORS = { raise: 0x6fdc6f, lower: 0xff7a5c, flatten: 0xe8d04a, smooth: 0x6fb8ff, paint: 0xd08cff, pick: 0xffffff };
+const sculptRing = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(65 * 3), 3)), new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
+
+// A faint disc under the 1-pixel outline, so the brush reads on any ground: a fan from the centre (vertex 65) over the ring's points.
+const sculptDisc = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(66 * 3), 3)).setIndex(Array.from({ length: 64 }, (_, k) => [65, k, k + 1]).flat()), new THREE.MeshBasicMaterial({
+  depthTest: false,
+  transparent: true,
+  opacity: 0.18,
+  side: THREE.DoubleSide
+}));
+
+sculptRing.add(sculptDisc);
+
+for (const o of [sculptRing, sculptDisc]) {
+  o.renderOrder = 20;
+  o.frustumCulled = false;
+}
+
+const setRingColor = (tool) => [sculptRing, sculptDisc].forEach((o) => o.material.color.setHex(SCULPT_RING_COLORS[tool]));
+
+// A point t (0-1) around the unit circle, or around the square of half-size 1.
+function outlineAt(t, square)
 {
+  if (!square)
+    return [Math.cos(t * Math.PI * 2), Math.sin(t * Math.PI * 2)];
+
+  const c = [[1, 1], [-1, 1], [-1, -1], [1, -1], [1, 1]];
+  const s = Math.min(3.9999, t * 4);
+  const k = Math.floor(s);
+  const f = s - k;
+
+  return [c[k][0] + (c[k + 1][0] - c[k][0]) * f, c[k][1] + (c[k + 1][1] - c[k][1]) * f];
+}
+
+function sculptHover(e)
+{
+  const terrain = root?.getObjectByName('terrain');
+  const h = sculptActive() && terrain ? sculptHit(e) : null;
+
+  sculptRing.visible = !!h;
+
+  if (!h)
+    return;
+
+  if (sculptRing.parent !== terrain.parent)
+    terrain.parent.add(sculptRing);
+
+  sculptRing.position.copy(terrain.position);
+  sculptRing.quaternion.copy(terrain.quaternion);
+  sculptRing.scale.copy(terrain.scale);
+
   const g = sculpt.grid;
-  const r = +$('sculptRadius').value;
-  const s = +$('sculptStrength').value;
-  const tool = $('sculptTool').value;
-  const cell = (x, y) => Math.min(g.h - 1, Math.max(0, Math.floor(y / 4))) * g.w + Math.min(g.w - 1, Math.max(0, Math.floor(x / 4)));
+  const r = +$('sculptRadius').value / 2;
+  const x = h.gx / 2;
+  const z = h.gy / 2;
+  const a = sculptRing.geometry.attributes.position;
+  const d = sculptDisc.geometry.attributes.position;
+  const square = brushShape().square;
 
-  if (tool === 'pick') {
-    sculpt.tex = g.tex[cell(gx, gy)];
-    sculptStatus();
+  for (let k = 0; k <= 64; k++) {
+    const [ox, oz] = outlineAt(k / 64, square);
+    const px = x + ox * r;
+    const pz = z + oz * r;
+    const py = groundAt(g.hts, g, sculpt.scale, px, pz);
 
+    a.setXYZ(k, px, py, pz);
+    d.setXYZ(k, px, py, pz);
+  }
+
+  d.setXYZ(65, x, groundAt(g.hts, g, sculpt.scale, x, z), z);
+  a.needsUpdate = d.needsUpdate = true;
+  setRingColor(brushTool(h));
+
+  if (!inMap(h))
+    return sculptStatus('Outside the map: the brush only changes the map');
+
+  const flat = stroke && brushTool(h) === 'flatten' ? ` · flattening to ${(-sculpt.flat * sculpt.scale).toFixed(1)}` : '';
+
+  sculptStatus(`Ground height ${(-groundAt(g.hts, g, sculpt.scale, x, z)).toFixed(1)}${flat}`);
+}
+
+canvas.addEventListener('pointermove', sculptHover);
+const brushTool = (h) => (h.pick ? 'pick' : (h.swap ? { raise: 'lower', lower: 'raise' }[$('sculptTool').value] ?? $('sculptTool').value : $('sculptTool').value));
+
+// Terrain-mode keys: 1-6 pick the tool, [ and ] shrink and grow the brush.
+function sculptKey(e) {
+  const tools = [...$('sculptTool').options].map((o) => o.value);
+  const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+
+  if (e.ctrlKey || e.metaKey || e.altKey)
     return false;
-  }
 
-  if (tool === 'paint') {
-    if (sculpt.tex == null)
-      return false;
+  if (digit && tools[digit - 1])
+    $('sculptTool').value = tools[digit - 1];
+  else if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    const r = $('sculptRadius');
 
-    for (let ty = 0; ty < g.h; ty++)
-      for (let tx = 0; tx < g.w; tx++) {
-        if (Math.hypot(tx * 4 + 2 - gx, ty * 4 + 2 - gy) <= r)
-          g.tex[ty * g.w + tx] = sculpt.tex;
-      }
+    r.value = +r.value + (e.code === 'BracketLeft' ? -2 : 2);
+    $('sculptRadiusVal').textContent = r.value;
+  } else
+    return false;
 
-    return true;
-  }
+  setRingColor($('sculptTool').value);
+  sculptToolChanged();
 
+  return true;
+}
+
+// The palette shows only for the texture tools, keeping the panel short.
+function sculptToolChanged()
+{
+  $('sculptPalette').hidden = !['paint', 'pick'].includes($('sculptTool').value);
+  $('sculptFlatRow').hidden = $('sculptTool').value !== 'flatten';
+}
+
+$('sculptTool').addEventListener('change', sculptToolChanged);
+
+// The map tiles a brush of radius r (grid steps) at grid point (gx, gy) can touch.
+const brushBox = (g, gx, gy, r) => ({
+  x0: Math.max(0, Math.floor((gx - r) / 4)),
+  y0: Math.max(0, Math.floor((gy - r) / 4)),
+  x1: Math.min(g.w - 1, Math.floor((gx + r) / 4)),
+  y1: Math.min(g.h - 1, Math.floor((gy + r) / 4))
+});
+
+// Height brush on the grid (stored heights, Y-down), falling off smoothly to radius r: raise / lower move by amount at the centre, flatten
+// and smooth blend toward flat / the neighbours' mean by mix at the centre.
+// square: the brush covers a square of half-size r instead of a circle; hard: full strength to the edge instead of fading.
+const brushDist = (dx, dy, square) => (square ? Math.max(Math.abs(dx), Math.abs(dy)) : Math.hypot(dx, dy));
+
+function brushHeights(g, gx, gy, r, tool, { amount = 0, flat = 0, mix = 0, square = false, hard = false })
+{
   const src = tool === 'smooth' ? g.hts.slice() : null;
   const at = (x, y) => src[Math.min(g.H - 1, Math.max(0, y)) * g.W + Math.min(g.W - 1, Math.max(0, x))];
 
@@ -990,35 +1154,71 @@ function brush({ gx, gy })
   {
     for (let x = Math.max(0, Math.floor(gx - r)); x <= Math.min(g.W - 1, Math.ceil(gx + r)); x++)
     {
-      const d = Math.hypot(x - gx, y - gy);
+      const d = brushDist(x - gx, y - gy, square);
 
       if (d > r)
         continue;
 
-      let w = 1 - d / r;
+      let w = hard ? 1 : 1 - d / r;
 
       w = w * w * (3 - 2 * w);
 
       const i = y * g.W + x;
 
       if (tool === 'raise')
-        g.hts[i] -= s * w;
+        g.hts[i] -= amount * w;
       else if (tool === 'lower')
-        g.hts[i] += s * w;
+        g.hts[i] += amount * w;
       else if (tool === 'flatten')
-        g.hts[i] += (sculpt.flat - g.hts[i]) * Math.min(1, s * w * 0.1);
+        g.hts[i] += (flat - g.hts[i]) * Math.min(1, mix * w);
       else
-        g.hts[i] += ((at(x - 1, y) + at(x + 1, y) + at(x, y - 1) + at(x, y + 1)) / 4 - g.hts[i]) * Math.min(1, s * w * 0.1);
+        g.hts[i] += ((at(x - 1, y) + at(x + 1, y) + at(x, y - 1) + at(x, y + 1)) / 4 - g.hts[i]) * Math.min(1, mix * w);
 
       g.hts[i] = Math.max(-128, Math.min(127, g.hts[i]));
     }
   }
 
-  return true;
+  return brushBox(g, gx, gy, r);
 }
 
-// Re-tiles the grid and swaps the terrain mesh's geometry; returns the new HMP bytes (null when it does not fit).
-function rebuildTerrain()
+// Paints texture on every tile whose centre is within the brush.
+function brushPaint(g, gx, gy, r, texture, square = false) {
+  for (let ty = 0; ty < g.h; ty++)
+    for (let tx = 0; tx < g.w; tx++) {
+      if (brushDist(tx * 4 + 2 - gx, ty * 4 + 2 - gy, square) <= r)
+        g.tex[ty * g.w + tx] = texture;
+    }
+
+  return brushBox(g, gx, gy, r);
+}
+
+const brushShape = () => ({ square: $('sculptShape').value.includes('square'), hard: $('sculptShape').value.includes('hard') });
+
+// Applies the panel's brush at grid point (gx, gy); returns the map tiles it may have changed ({ x0, y0, x1, y1 }) or false.
+function brush(h)
+{
+  const { gx, gy } = h;
+  const g = sculpt.grid;
+  const r = +$('sculptRadius').value;
+  const s = +$('sculptStrength').value;
+  const tool = brushTool(h);
+
+  if (tool === 'pick')
+  {
+    setSculptTex(g.tex[Math.min(g.h - 1, Math.max(0, Math.floor(gy / 4))) * g.w + Math.min(g.w - 1, Math.max(0, Math.floor(gx / 4)))]);
+
+    return false;
+  }
+
+  if (tool === 'paint')
+    return sculpt.tex != null && brushPaint(g, gx, gy, r, sculpt.tex, brushShape().square);
+
+  return brushHeights(g, gx, gy, r, tool, { amount: s, flat: sculpt.flat, mix: s * 0.1, ...brushShape() });
+}
+
+// Re-tiles the grid and updates the terrain mesh, in place for the tiles in box when the sculpt mesh allows it, else as a new mesh;
+// returns the new HMP bytes (null when it does not fit).
+function rebuildTerrain(box = null)
 {
   let bytes;
 
@@ -1026,6 +1226,7 @@ function rebuildTerrain()
     bytes = writeHMP(sculpt.base, sculpt.grid);
   } catch (err) {
     sculptStatus(err.message);
+    sculptBudget(+$('sculptBudget').max);
 
     return null;
   }
@@ -1035,6 +1236,13 @@ function rebuildTerrain()
 
   if (!terrain)
     return bytes;
+
+  if (box && terrain.userData.update?.(hmp, box)) {
+    terrain.userData.tiles = { hmp, texIds: sculpt.texIds };
+    sculptBudget(hmp.tiles.length);
+
+    return bytes;
+  }
 
   // A new mesh rather than a geometry swap: the WebGPU renderer keeps drawing a mesh's first geometry.
   const t = buildTerrain(hmp, sculpt.texIds, sculpt.bank);
@@ -1046,7 +1254,7 @@ function rebuildTerrain()
   const mesh = new THREE.Mesh(t.g, material);
 
   mesh.name = 'terrain';
-  mesh.userData = { ...terrain.userData, terrain: t.map, tiles: { hmp, texIds: sculpt.texIds } };
+  mesh.userData = { ...terrain.userData, terrain: t.map, tiles: { hmp, texIds: sculpt.texIds }, update: t.update };
   mesh.position.copy(terrain.position);
   mesh.quaternion.copy(terrain.quaternion);
   mesh.scale.copy(terrain.scale);
@@ -1061,7 +1269,7 @@ function rebuildTerrain()
 
   sculpt.built = true;
   texCache.set('terrain', { map: t.map });
-  sculptStatus(`${hmp.tiles.length} of ${0x1FFF} tiles`);
+  sculptBudget(hmp.tiles.length);
 
   return bytes;
 }
@@ -1142,6 +1350,7 @@ async function commitTerrain(bytes) {
   });
 
   sculpt.committed = sculpt.grid.hts.slice();
+  showTileGrid();
 }
 
 // Heightmap as an 8-bit grey PNG, one pixel per grid point (the 256 stored height steps); white is high (game Y is down).
@@ -1226,12 +1435,32 @@ canvas.addEventListener('pointerdown', (e) => {
   if (sculpt.undo.length > 30)
     sculpt.undo.shift();
 
-  sculpt.flat = g.hts[Math.round(h.gy) * g.W + Math.round(h.gx)];
-  stroke = { last: h, dirty: brush(h), queued: false };
+  // Flatten levels to the typed height (shown up-positive, stored Y-down), else to the ground where the stroke starts.
+  const typed = $('sculptFlat').value;
+  const cx = Math.min(g.W - 1, Math.max(0, Math.round(h.gx)));
+  const cy = Math.min(g.H - 1, Math.max(0, Math.round(h.gy)));
 
-  if (stroke.dirty)
-    stroke.bytes = rebuildTerrain();
+  sculpt.flat = typed !== '' && Number.isFinite(+typed) ? Math.max(-128, Math.min(127, -typed / sculpt.scale)) : g.hts[cy * g.W + cx];
+  stroke = { last: h, dirty: false, queued: false, box: null };
+  sculpt.notice = '';
+  strokeStep(h);
 });
+
+// The stroke's tiles so far: a step over the tile limit leaves the mesh behind, so the next one updates everything since the stroke began.
+function strokeStep(h)
+{
+  const b = brush(h);
+
+  if (!b)
+    return;
+
+  const u = stroke.box;
+
+  stroke.box = u ? { x0: Math.min(u.x0, b.x0), y0: Math.min(u.y0, b.y0), x1: Math.max(u.x1, b.x1), y1: Math.max(u.y1, b.y1) } : b;
+  stroke.dirty = true;
+  stroke.bytes = rebuildTerrain(stroke.box);
+  updateTileGrid(b);
+}
 
 canvas.addEventListener('pointermove', (e) => {
   if (!stroke || !sculptActive())
@@ -1249,7 +1478,7 @@ canvas.addEventListener('pointermove', (e) => {
       return;
 
     stroke.queued = false;
-    if (brush(stroke.last)) { stroke.dirty = true; stroke.bytes = rebuildTerrain(); }
+    strokeStep(stroke.last);
   });
 });
 
@@ -1264,19 +1493,120 @@ canvas.addEventListener('pointerup', async (e) => {
   if (!s.dirty)
     return;
 
-  if (!s.bytes) {
+  if (!s.bytes)
+  {
     // Over the tile limit: drop the stroke.
     const u = sculpt.undo.pop();
 
     sculpt.grid.hts.set(u.hts);
     sculpt.grid.tex.set(u.tex);
     rebuildTerrain();
+    sculpt.notice = 'That stroke needed more ground tiles than a level holds, so it was undone';
+    sculptStatus('');
 
     return;
   }
 
+  const before = sculpt.undo.at(-1).tex;
+  const painted = [];
+
+  sculpt.grid.tex.forEach((t, i) => t !== before[i] && painted.push(i));
   await commitTerrain(s.bytes);
+
+  if (painted.length)
+    flashTiles(painted);
 });
+
+// Tile outlines draped on the ground (terrain-local, like the mesh), for the given tile indices.
+const tileGridMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthTest: false });
+const tileFlashMat = new THREE.LineBasicMaterial({ color: 0xe8b84a, depthTest: false });
+
+// Tile t's outline (16 segments along its edge grid points) into pos at float offset o.
+function writeTileOutline(pos, o, t)
+{
+  const g = sculpt.grid;
+  const pt = (x, y, at) => pos.set([x / 2, g.hts[Math.min(g.H - 1, y) * g.W + Math.min(g.W - 1, x)] * sculpt.scale, y / 2], at);
+  const x0 = (t % g.w) * 4;
+  const y0 = Math.floor(t / g.w) * 4;
+
+  for (let k = 0; k < 4; k++) {
+    for (const [ax, ay, bx, by] of [
+      [x0 + k, y0, x0 + k + 1, y0],
+      [x0 + k, y0 + 4, x0 + k + 1, y0 + 4],
+      [x0, y0 + k, x0, y0 + k + 1],
+      [x0 + 4, y0 + k, x0 + 4, y0 + k + 1]
+    ])
+    {
+      pt(ax, ay, o);
+      pt(bx, by, o + 3);
+      o += 6;
+    }
+  }
+}
+
+const TILE_OUTLINE_FLOATS = 16 * 6;
+
+function tileOutline(tiles, material)
+{
+  const terrain = root?.getObjectByName('terrain');
+  const pos = new Float32Array(tiles.length * TILE_OUTLINE_FLOATS);
+
+  tiles.forEach((t, i) => writeTileOutline(pos, i * TILE_OUTLINE_FLOATS, t));
+
+  const lines = new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(pos, 3)), material);
+
+  lines.renderOrder = 19;
+  lines.frustumCulled = false;
+  lines.position.copy(terrain.position);
+  lines.quaternion.copy(terrain.quaternion);
+  lines.scale.copy(terrain.scale);
+  terrain.parent.add(lines);
+
+  return lines;
+}
+
+let tileGrid = null;
+
+function showTileGrid()
+{
+  tileGrid?.removeFromParent();
+  tileGrid?.geometry.dispose();
+  tileGrid = $('optTileGrid').checked && sculptActive() && root?.getObjectByName('terrain') ? tileOutline([...sculpt.grid.tex.keys()], tileGridMat) : null;
+}
+
+// During a stroke the grid follows the ground: the tiles in box, and one around it (their edges share the changed points), rewritten in place.
+function updateTileGrid(box)
+{
+  if (!tileGrid)
+    return;
+
+  const g = sculpt.grid;
+  const pos = tileGrid.geometry.attributes.position;
+
+  for (let ty = Math.max(0, box.y0 - 1); ty <= Math.min(g.h - 1, box.y1 + 1); ty++)
+  {
+    for (let tx = Math.max(0, box.x0 - 1); tx <= Math.min(g.w - 1, box.x1 + 1); tx++)
+    {
+      const t = ty * g.w + tx;
+
+      writeTileOutline(pos.array, t * TILE_OUTLINE_FLOATS, t);
+    }
+  }
+
+  pos.needsUpdate = true;
+}
+
+$('optTileGrid').onchange = showTileGrid;
+
+// The tiles a paint stroke changed, outlined for a moment (a near-identical texture is otherwise hard to see).
+function flashTiles(tiles) {
+  const lines = tileOutline(tiles, tileFlashMat);
+
+  setTimeout(() => {
+    lines.removeFromParent();
+    lines.geometry.dispose();
+  }, 1500);
+}
 
 const needSculpt = (fn) => () => (sculpt ? fn() : ($('sculptInfo').textContent = 'This level has no terrain to edit.'));
 $('btnHeightOut').onclick = needSculpt(exportHeightmap);

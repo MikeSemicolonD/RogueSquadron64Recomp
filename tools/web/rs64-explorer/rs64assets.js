@@ -1631,19 +1631,108 @@ function rs64Lib()
     return Array.from({ length: n }, (_, k) => [0, 1, 2].map((a) => dv.getFloat32(po + k * 12 + a * 4) + base[a]));
   }
 
+  const catmullRom = (p0, p1, p2, p3, t) => [0, 1, 2].map((a) => 0.5 * (2 * p1[a] + (p2[a] - p0[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t * t + (3 * p1[a] - p0[a] - 3 * p2[a] + p3[a]) * t * t * t));
+
+  // The point at fraction u along a path or route, as evalCubicSplineAtTime 0x80018F98 reads it: Catmull-Rom over the points, u spread by
+  // the arc fractions.
+  function splineAt(dv, item)
+  {
+    const pts = splinePoints(dv, item);
+    const o = item.offset;
+    const at = o + dv.getUint32(o + 0x20) + pts.length * 12;
+    const frac = Array.from({ length: pts.length - 2 }, (_, k) => dv.getFloat32(at + k * 4));
+
+    return (u) => {
+      let j = 0;
+
+      while (j < frac.length - 2 && u > frac[j + 1])
+        j++;
+
+      const t = Math.min(1, Math.max(0, (u - frac[j]) / (frac[j + 1] - frac[j] || 1)));
+
+      return catmullRom(...pts.slice(j, j + 4), t);
+    };
+  }
+
+  // Event fractions that keep each event (in order along the path) nearest where it was on the old curve; end attacks keep theirs.
+  function splineRefitEvents(oldAt, newAt, nodes, keep) {
+    let from = 0;
+
+    return nodes.map((n) => {
+      if (keep(n))
+        return n.at;
+
+      const want = oldAt(n.at);
+      let best = from;
+      let bestD = Infinity;
+
+      for (let i = 0; i <= 2000; i++) {
+        const u = from + ((1 - from) * i) / 2000;
+        const d = Math.hypot(...newAt(u).map((v, a) => v - want[a]));
+
+        if (d < bestD)
+          [best, bestD] = [u, d];
+      }
+
+      from = best;
+
+      return best;
+    });
+  }
+
+  // A new point count moves the points and table to the record's end (the item keeps its index) and moves its events to stay where they
+  // were on the ground.
   function splineSetPoints(bytes, item, points)
   {
+    const n = points.length;
+    const oldN = viewOf(bytes).getUint32(item.offset + 0x1C);
+
+    if (n < 4)
+      throw new Error('A path needs at least 4 points');
+
+    if (n === oldN)
+      return splineWritePoints(bytes, item, points);
+
+    const oldAt = splineAt(viewOf(bytes), item);
+    const index = item.index;
+    const size = viewOf(bytes).getUint32(item.offset + 8);
+    const at = (size + 3) & ~3;
+    const rec = new Uint8Array(at + n * 12 + (n - 2) * 4);
+    const r = new DataView(rec.buffer);
+
+    rec.set(bytes.subarray(item.offset, item.offset + size));
+    r.setUint32(8, rec.length);
+    r.setUint32(0x1C, n);
+    r.setUint32(0x20, at);
+
+    const moved = datReplaceItem(bytes, 3, index, rec);
+    const find = (b) => parseDAT(viewOf(b)).items.find((x) => x.type === 3 && x.index === index);
+    const out = splineWritePoints(moved, find(moved), points);
+    const now = find(out);
+    const dv = viewOf(out);
+    const { nodes, refs } = splineEvents(dv, now);
+    const t7 = parseDAT(dv).items.filter((x) => x.type === 7);
+    const no = now.offset + dv.getUint32(now.offset + 0x2C);
+    const order = nodes.map((nd, k) => ({ ...nd, slot: k })).sort((a, b) => a.at - b.at);
+
+    splineRefitEvents(oldAt, splineAt(dv, now), order, (nd) => isEndAttack(nd, refs, t7)).forEach((u, i) => dv.setFloat32(no + order[i].slot * 8, u));
+
+    return out;
+  }
+
+  // Writes points over a record that has room for exactly that many, with the arc length and fraction table.
+  function splineWritePoints(bytes, item, points)
+  {
+    const n = points.length;
     const out = bytes.slice();
     const dv = new DataView(out.buffer);
     const o = item.offset;
-    const n = points.length;
     const po = o + dv.getUint32(o + 0x20);
     const base = [0x10, 0x14, 0x18].map((c) => dv.getFloat32(o + c));
     const rel = points.map((p) => p.map((v, a) => Math.fround(v - base[a])));
 
     rel.forEach((p, k) => p.forEach((v, a) => dv.setFloat32(po + k * 12 + a * 4, v)));
 
-    const cr = (p0, p1, p2, p3, t) => [0, 1, 2].map((a) => 0.5 * (2 * p1[a] + (p2[a] - p0[a]) * t + (2 * p0[a] - 5 * p1[a] + 4 * p2[a] - p3[a]) * t * t + (3 * p1[a] - p0[a] - 3 * p2[a] + p3[a]) * t * t * t));
     const cum = [0];
 
     for (let k = 1; k < n - 2; k++) {
@@ -1652,7 +1741,7 @@ function rs64Lib()
 
       for (let i = 1; i <= 16; i++)
       {
-        const q = cr(rel[k - 1], rel[k], rel[k + 1], rel[k + 2], i / 16);
+        const q = catmullRom(rel[k - 1], rel[k], rel[k + 1], rel[k + 2], i / 16);
 
         l += Math.hypot(q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]);
         prev = q;
@@ -1704,8 +1793,8 @@ function rs64Lib()
     }
 
     if (clearLinks)
-      for (let k = 0; k < 8; k++)
-        r.setUint32(0x60 + k * 16, nameAt + text.length);
+      for (const f of PATH_LINK_FIELDS)
+        r.setUint32(f, nameAt + text.length);
 
     nodes.forEach((n, k) => {
       r.setFloat32(nodesAt + k * 8, n.at);
@@ -1789,6 +1878,31 @@ function rs64Lib()
     return { bytes: datAddItem(out, 3, rec), dropped };
   }
 
+  // A new path under name: a stock path's record with no events or continuation, a straight line of 4 points from `at` (where its NPC
+  // starts) in the stock path's first direction and spacing, ending in an attack on the player. Returns splineCopy's shape.
+  function splineNew(fromBytes, spline, toBytes, { name, at, attack })
+  {
+    const fdv = viewOf(fromBytes);
+    const src = splinePoints(fdv, spline);
+    const d = [src[2][0] - src[1][0], 0, src[2][2] - src[1][2]];
+    const len = Math.hypot(...d) || 1;
+    const step = Math.max(10, Math.hypot(...src[src.length - 1].map((v, a) => v - src[0][a])) / (src.length - 1));
+    const dir = d.map((v) => (v / len) * step);
+    const points = [-1, 0, 1, 2].map((k) => at.map((v, a) => v + dir[a] * k));
+    const rec = splineRecord(fdv, spline, { name, nodes: [], refs: [], clearLinks: true });
+    const r = new DataView(rec.buffer);
+
+    at.forEach((v, a) => r.setFloat32(0x10 + a * 4, v));
+
+    let out = datAddItem(toBytes, 3, rec);
+    let item = parseDAT(viewOf(out)).items.filter((x) => x.type === 3).at(-1);
+
+    out = splineSetPoints(out, item, points);
+    item = parseDAT(viewOf(out)).items.find((x) => x.type === 3 && x.index === item.index);
+
+    return { bytes: attack ? splineSetAttackEnd(out, item, true, attack) : out, dropped: 0 };
+  }
+
   // True when the path ends by sending its NPC at the player (a fly-to event with no target at the end).
   function splineAttackEnd(bytes, item) {
     const dv = viewOf(bytes);
@@ -1846,6 +1960,8 @@ function rs64Lib()
   // counter2 +0x80 += +0x84. All 1-based; 0 = none. Only units the game can destroy run it.
   const UNIT_DEATH = { counter: 0x70, add: 0x74, flag: 0x78, value: 0x7C, counter2: 0x80, add2: 0x84 };
   const isUnit = (it) => it.type === 0 && ![0x01, 0x02, 0x26, 0x27].includes(it.sub);
+  const isTriggerArea = (it) => it.type === 7 && (it.sub === 0x18 || it.sub === 0x19);
+  const isFlightPath = (it) => it.type === 3 && it.sub === 3 && it.points?.length >= 4;
   const unitDeath = (dv, it) => Object.fromEntries(Object.entries(UNIT_DEATH).map(([k, o]) => [k, dv.getInt32(it.offset + o)]));
 
   // Objective counters and flags the level's DAT already uses (so objectives take others).
@@ -2249,14 +2365,37 @@ function rs64Lib()
         map[ty * grid.w + tx] = keys.get(key);
       }
 
-    const total = count + added.length;
+    // Existing tiles keep their numbers (a small patch) unless that runs past the limit; then tiles no cell uses any more, such as the
+    // leftovers of earlier edits, are dropped and the rest renumbered.
+    let keep = null;
+
+    if (count + added.length > 0x1FFF) {
+      const used = new Set(map);
+
+      keep = [...Array(count).keys()].filter((i) => used.has(i));
+    }
+
+    const kept = keep ? keep.length : count;
+    const total = kept + added.length;
 
     if (total > 0x1FFF)
-      throw new Error(`Terrain needs ${total} tiles; the map index holds ${0x1FFF}`);
+      throw new Error(`This ground needs ${total} different tiles and a level holds ${0x1FFF}. Smoother shapes use fewer`);
 
     const out = new Uint8Array((tileOff + total * 0x1E + 3) & ~3);
 
-    out.set(orig.subarray(0, Math.min(orig.length, tileOff + count * 0x1E)));
+    out.set(orig.subarray(0, tileOff));
+
+    if (keep)
+    {
+      const renum = new Map(keep.map((i, k) => [i, k]));
+
+      keep.forEach((i, k) => out.set(orig.subarray(tileOff + i * 0x1E, tileOff + (i + 1) * 0x1E), tileOff + k * 0x1E));
+      map.forEach((v, i) => (map[i] = v < count ? renum.get(v) : v - count + kept));
+    }
+    else
+    {
+      out.set(orig.subarray(tileOff, tileOff + count * 0x1E), tileOff);
+    }
 
     const o = new DataView(out.buffer);
 
@@ -2264,7 +2403,7 @@ function rs64Lib()
     map.forEach((v, i) => o.setUint16(0x28 + i * 2, v));
 
     added.forEach((t, i) => {
-      const p = tileOff + (count + i) * 0x1E;
+      const p = tileOff + (kept + i) * 0x1E;
 
       o.setUint16(p, t.tex);
       o.setInt8(p + 3, Math.min(...t.hts));
@@ -3581,8 +3720,7 @@ function rs64Lib()
         const spc8 = [];
         const sp60 = [];
 
-        for (let x = 0; x < 4; x++)
-        {
+        for (let x = 0; x < 4; x++) {
           spe0.push(readBits(7, s));
           spd0.push(readBits(2, s));
           sbOff.push(readBits(2, s));
@@ -4226,7 +4364,14 @@ function rs64Lib()
 
   // Effect sprite light keys (a light preset's "sprite"): the name the game registers each frame's texture under. loadExplosionTextures
   // (0x8006108C) registers the explosion sheets' frames as prefix + file index; every other sheet keeps its frames' own names.
-  const SPRITE_TEX_PREFIX = { 'data/explo2_IMGS': 'explo_tex', 'data/explo2hi_IMGS': 'explh_tex', 'data/ionexp_IMGS': 'iexplo_tx', 'data/ionex2_IMGS': 'iexpl2_tx', 'data/smkexp_IMGS': 'sexplo_tx' };
+  const SPRITE_TEX_PREFIX = {
+    'data/explo2_IMGS': 'explo_tex',
+    'data/explo2hi_IMGS': 'explh_tex',
+    'data/ionexp_IMGS': 'iexplo_tx',
+    'data/ionex2_IMGS': 'iexpl2_tx',
+    'data/smkexp_IMGS': 'sexplo_tx'
+  };
+
   const spriteKeys = (path, frames) => frames.map((f, i) => 'spr:' + (SPRITE_TEX_PREFIX[path] ? SPRITE_TEX_PREFIX[path] + i : f.name));
 
   // ---- Audio: MusyX samples (sdir_SND + samp_SND): N64 MusyX ADPCM ----
@@ -4403,23 +4548,101 @@ function rs64Lib()
   // +8 = the new size); the record keeps its place and index, and the name map is rebuilt.
   function datNameItem(orig, item, name)
   {
-    const dv = viewOf(orig);
-    const size = dv.getUint32(item.offset + 8);
-
     // Past every path-event body field (they run to +0x5C), so a short record's tail stays zero where the game reads it.
-    const at = Math.max(size, 0x60);
-    const text = new TextEncoder().encode(name);
-    const rec = new Uint8Array((at + text.length + 1 + 3) & ~3);
+    return recordAppendField(orig, item, 0x0C, new TextEncoder().encode(name), 0x60);
+  }
+
+  // The record with data (then a 0 byte) appended at its end (or at minAt), the record-relative offset at `field` pointing at it.
+  function recordAppendField(orig, item, field, data, minAt = 0) {
+    const size = viewOf(orig).getUint32(item.offset + 8);
+    const at = Math.max(size, minAt);
+    const rec = new Uint8Array((at + data.length + 1 + 3) & ~3);
 
     rec.set(orig.subarray(item.offset, item.offset + size));
-    rec.set(text, at);
+    rec.set(data, at);
 
     const r = new DataView(rec.buffer);
 
-    r.setUint32(0x0C, at);
+    r.setUint32(field, at);
     r.setUint32(8, rec.length);
 
     return datReplaceItem(orig, item.type, item.index, rec);
+  }
+
+  // Name lists (trigger activators, path continuations): a count byte, then "a|b|c". Only the first `count` names are live.
+  function nameListGet(dv, item, field)
+  {
+    const o = item.offset;
+    const size = dv.getUint32(o + 8);
+    const rel = dv.getUint32(o + field);
+
+    if (!rel || rel >= size)
+      return [];
+
+    let text = '';
+
+    for (let i = rel + 1; i < size && dv.getUint8(o + i); i++)
+      text += String.fromCharCode(dv.getUint8(o + i));
+
+    return text.split('|').filter(Boolean).slice(0, dv.getUint8(o + rel));
+  }
+
+  function nameListSet(orig, item, field, names) {
+    const text = new TextEncoder().encode(names.join('|'));
+    const data = new Uint8Array(text.length + 1);
+
+    data[0] = names.length;
+    data.set(text, 1);
+
+    return recordAppendField(orig, item, field, data);
+  }
+
+  // Who sets off a trigger area (type 7 sub 0x18/0x19): object names, "ply" for the player.
+  const activatorField = (item) => (item.sub === 0x18 ? 0x58 : 0x68);
+  const triggerSetActivators = (orig, item, names) => nameListSet(orig, item, activatorField(item), names);
+
+  // A path's 8 continuation blocks (+0x60, 16 bytes each) start with the offset of the paths its craft can go on to.
+  const PATH_LINK_FIELDS = Array.from({ length: 8 }, (_, k) => 0x60 + k * 16);
+
+  // Names an item, and moves the NPCs flying it (a path, or "+name" for a roam area), the trigger areas it sets off and the paths
+  // continuing into it to the new name.
+  function datRenameItem(orig, item, name)
+  {
+    const old = item.name;
+    const now = (it) => parseDAT(viewOf(out)).items.find((x) => x.type === it.type && x.index === it.index);
+    const moved = { npcs: 0, triggers: 0, links: 0 };
+    let out = datNameItem(orig, item, name);
+
+    const swapList = (it, field, key) => {
+      const names = nameListGet(viewOf(out), now(it), field);
+
+      if (!names.includes(old))
+        return;
+
+      out = nameListSet(out, now(it), field, names.map((a) => (a === old ? name : a)));
+      moved[key]++;
+    };
+
+    if (!old)
+      return { bytes: out, ...moved };
+
+    for (const it of parseDAT(viewOf(out)).items) {
+      const path = npcPathField(it) && npcPathGet(viewOf(out), it);
+
+      if (path === old || path === '+' + old) {
+        out = npcSetPath(out, now(it), path.replace(old, name));
+        moved.npcs++;
+      }
+
+      if (isTriggerArea(it))
+        swapList(it, activatorField(it), 'triggers');
+
+      if (it.type === 3 && it.sub === 3)
+        for (const f of PATH_LINK_FIELDS)
+          swapList(it, f, 'links');
+    }
+
+    return { bytes: out, ...moved };
   }
 
   // A music region (DAT type 6 sub 0x10) playing cue on entry: flag 0x80 at +0x34 (also what preloads its songs), cue in slot 0
@@ -5122,13 +5345,15 @@ function rs64Lib()
 
         if (envStage === 'attack') {
           env = A ? Math.min(1, envT / A) : 1;
-          if (env >= 1) { envStage = 'decay'; envT = 0; }
-        }
-        else if (envStage === 'decay') {
+
+          if (env >= 1)
+            [envStage, envT] = ['decay', 0];
+        } else if (envStage === 'decay') {
           env = D ? 1 + (sus - 1) * Math.min(1, envT / D) : sus;
-          if (envT >= D) { envStage = 'hold'; env = sus; }
-        }
-        else if (envStage === 'release') {
+
+          if (envT >= D)
+            [envStage, env] = ['hold', sus];
+        } else if (envStage === 'release') {
           const r = Rl || 20;
 
           env = Math.max(0, envFrom * (1 - envT / r));
@@ -6318,6 +6543,24 @@ function rs64Lib()
     return out.length ? out.join('\n') + '\n' : '';
   }
 
+  // The level's lines with object name `from` (trigger, camera or destroy target) renamed; n = lines changed.
+  function shotRename(text, level, from, to) {
+    let n = 0;
+
+    const lines = shotLines(text).map((l) => {
+      const f = shotFields(l);
+
+      if (f[0] !== level || !f.slice(1).includes(from))
+        return l;
+
+      n++;
+
+      return f.map((x, k) => (k && x === from ? to : x)).join(' ');
+    });
+
+    return { text: lines.length ? lines.join('\n') + '\n' : '', n };
+  }
+
   // Snapshots after a length change: same seconds, so t scales by oldLen / newLen; ones past the new end are dropped.
   const cutRetimeSnaps = (snaps, oldLen, newLen) => snaps.map((s) => ({ ...s, t: (s.t * oldLen) / newLen })).filter((s) => s.t <= 1 + 1e-9);
 
@@ -6722,7 +6965,19 @@ function rs64Lib()
   // (7); music (1) plays to the next cue or a stop (2); S-foils (11) last p2 frames; walk rate (13) and fog (17) hold to the next of their
   // kind; voice (0) and sounds (3) are as long as their audio (audioLength(e) seconds, or null) with locked ends; the rest are instants.
   // startEvent / endEvent are the events a drag of that end moves (null: the clip's edge is the cutscene's, or a stop to be created).
-  const CUT_LANES = { 0: 'audio', 1: 'audio', 2: 'audio', 3: 'audio', 12: 'audio', 4: 'camera', 10: 'scene', 17: 'scene', 19: 'scene', 21: 'scene', 22: 'scene' };
+  const CUT_LANES = {
+    0: 'audio',
+    1: 'audio',
+    2: 'audio',
+    3: 'audio',
+    12: 'audio',
+    4: 'camera',
+    10: 'scene',
+    17: 'scene',
+    19: 'scene',
+    21: 'scene',
+    22: 'scene'
+  };
 
   function cutClips(data, audioLength)
   {
@@ -6791,7 +7046,12 @@ function rs64Lib()
       {
         const len = audioLength(e);
 
-        clip(lane, e.type === 0 ? 'voice' : 'sound', e.frame, e.frame + Math.max(1, Math.round((len ?? 0) * data.fps)), { startEvent: e, lockStart: true, lockEnd: true, event: e });
+        clip(lane, e.type === 0 ? 'voice' : 'sound', e.frame, e.frame + Math.max(1, Math.round((len ?? 0) * data.fps)), {
+          startEvent: e,
+          lockStart: true,
+          lockEnd: true,
+          event: e
+        });
       }
       else if (e.type !== 2 && e.type !== 4)
       {
@@ -7186,8 +7446,7 @@ function rs64Lib()
     const central = [];
     let off = 0;
 
-    for (const f of files)
-    {
+    for (const f of files) {
       const name = enc.encode(f.name);
       const crc = crc32(f.data);
       const size = f.data.length;
@@ -7443,7 +7702,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineEvents, splineCopy, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

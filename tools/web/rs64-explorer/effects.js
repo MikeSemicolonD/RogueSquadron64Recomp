@@ -650,7 +650,16 @@ function tickParticles(dt)
 // ---------- effect simulations ----------
 // Whole effects rebuilt from the game's spawners (asm/main/738F0.s), in world units on a ground plane (three.js Y up; the game's
 // "up" is -Y). Effect textures come from part_spr in the order of the game's table D_80130C08: 6..11 = srp_f comet fireballs.
-const PART_LABELS = { 'data/part_spr#srp_s': 'Smoke trail puffs', 'data/part_spr#srp_f': 'Comet fireballs (debris)', 'data/part_spr#sm_f': 'Smoke (plume)', 'data/part_spr#wsm_f': 'Water mist (splash)', 'data/part_spr#spark': 'Spark (embers)', 'data/part_spr#starex': 'Star flare', 'data/part_spr#trail': 'Trail streak', 'data/part_spr#halo': 'Halo glow' };
+const PART_LABELS = {
+  'data/part_spr#srp_s': 'Smoke trail puffs',
+  'data/part_spr#srp_f': 'Comet fireballs (debris)',
+  'data/part_spr#sm_f': 'Smoke (plume)',
+  'data/part_spr#wsm_f': 'Water mist (splash)',
+  'data/part_spr#spark': 'Spark (embers)',
+  'data/part_spr#starex': 'Star flare',
+  'data/part_spr#trail': 'Trail streak',
+  'data/part_spr#halo': 'Halo glow'
+};
 
 const SIMS = {
   ...Object.fromEntries(Object.entries(SHOCKS).map(([k, s]) => [
@@ -660,7 +669,10 @@ const SIMS = {
       tip: `${s.src}: ${s.rings(1).length} shockwave(s) via func_80072684, all spawned together; the ring meshes grow, spin 640 deg/s and fade over their own lifetimes.${s.sized ? ' Sizes scale with the object size field (Size slider).' : ''}`
     }
   ])),
-  'sim:ground': { label: 'Ground explosion', tip: 'triggerDistanceScaledExplosion 0x80074600 at 2.5 units from the camera: 7 debris fireballs (50 degree cone around up, 0.8..3.5 units/s, gravity 5) and a shock sphere (0.05 -> 0.18 over 0.5 s) and an ember burst (0x80073E4C: 20 sparks in all directions at 0.4 units/s, shrinking to nothing over 1 s). Each fireball that lands kicks up a brown dust splash (the wtrspray mesh, func_80072EC4 type 3, tinted 0x7C2206: 0.2 rising to 0.4 tall and back over 0.5 s, widening 0.05 -> 0.2).' },
+  'sim:ground': {
+    label: 'Ground explosion',
+    tip: 'triggerDistanceScaledExplosion 0x80074600 at 2.5 units from the camera: 7 debris fireballs (50 degree cone around up, 0.8..3.5 units/s, gravity 5) and a shock sphere (0.05 -> 0.18 over 0.5 s) and an ember burst (0x80073E4C: 20 sparks in all directions at 0.4 units/s, shrinking to nothing over 1 s). Each fireball that lands kicks up a brown dust splash (the wtrspray mesh, func_80072EC4 type 3, tinted 0x7C2206: 0.2 rising to 0.4 tall and back over 0.5 s, widening 0.05 -> 0.2).'
+  },
   ...Object.fromEntries(Object.entries(BURSTS).map(([k, b]) => [
     k,
     {
@@ -668,14 +680,32 @@ const SIMS = {
       tip: `${b.src}: ${b.n} debris1 chunks (spawnDebris1Npc 0x80072384) thrown within ${b.cone} degrees of up at ${b.speed[0]}..${b.speed[1]} units/s${b.radius ? `, starting ${b.radius} units out along their direction` : ''}. Each chunk runs the debris landing effect when it hits the ground.${b.shock ? ` It also spawns its shockwaves (${SHOCKS[b.shock].label} in Shockwaves).` : ''}${b.note ? ' ' + b.note : ''}`
     }
   ])),
-  'sim:shotdown': { label: 'Craft shot down', tip: 'npcWingmanUpdate shot-down state (+0x5C = 2) -> func_800D8988: three emitters ride the craft (smoke sm_f, tiny srp_f fireballs, srp_s smoke-trail puffs) for 4 s. The crash (a ~60 degree dive, then a short slide to a stop) is a viewer choice; pick the craft above the background colour.' },
-  'sim:land': { label: 'Debris landing', tip: 'triggerObjectDestructionEffects 0x8007483C, called by a landing debris1 chunk (npcDebris1Update): a 0.5 smoke puff, then rand % 100 rolls another chunk (under 2) or a 2-puff smoke plume (0x80073750, 2..9). The Chunk / Plume chances set those odds (game: 2% and 8%, only when the player made the kill).' },
+  'sim:shotdown': {
+    label: 'Craft shot down',
+    tip: 'npcWingmanUpdate shot-down state (+0x5C = 2) -> func_800D8988: three emitters ride the craft (smoke sm_f, tiny srp_f fireballs, srp_s smoke-trail puffs) for 4 s. The crash (a ~60 degree dive, then a short slide to a stop) is a viewer choice; pick the craft above the background colour.'
+  },
+  'sim:land': {
+    label: 'Debris landing',
+    tip: 'triggerObjectDestructionEffects 0x8007483C, called by a landing debris1 chunk (npcDebris1Update): a 0.5 smoke puff, then rand % 100 rolls another chunk (under 2) or a 2-puff smoke plume (0x80073750, 2..9). The Chunk / Plume chances set those odds (game: 2% and 8%, only when the player made the kill).'
+  },
   'sim:impact_fire': { label: 'Laser impact', tip: 'Projectile impact 0x80076250, weapon types 10/11/13/14: one fire particle at scale 0.6.' },
   'sim:impact_ion': { label: 'Ion impact', tip: 'Projectile impact 0x80076250, weapon type 12: one ion particle (ionex2, A 0.4, B 0.8).' },
-  'sim:impact_small': { label: 'Small impact', tip: 'Projectile impact 0x80076250, other weapon types: an ember burst (0x80073E4C, 0.05, 0.2) and one fire particle at 0.2.' },
-  'sim:water': { label: 'Water hit', tip: '0x8007483C over water: a 20-puff spray (0x800739A4: +-15 degrees, 0.38 units/s, 0.5 s) water-tinted smoke and the wtrspray splash model (func_80072EC4 type 1: 0.3 tall, widening 0.05 -> 0.4 and fading over 0.3 s, its texture cycling wtrspray_ANM at 12 fps). This is a hit by anyone other than the player.' },
-  'sim:fireworks': { label: 'Fireworks', tip: 'spawnCutsceneDebrisField 0x800AAC88 (medal ceremony event type 15, case 8): an i_missile rocket every 0.3 s for 6 s from a 3.2 x 0.6 x 3.2 box, each rising 1.5 units in 0.9 s and bursting into 30 starex sparks (spawnNpcBurstAlongSegment case 6) coloured by one of three ramps.' },
-  'sim:water_player': { label: 'Water hit (player)', tip: 'The water hit when the player made it: 0x8007483C then also calls func_80074600(pos, 0.1, 0.4, 1.0), the full ground explosion (fireballs that splash where they land, the shock sphere, embers).' },
+  'sim:impact_small': {
+    label: 'Small impact',
+    tip: 'Projectile impact 0x80076250, other weapon types: an ember burst (0x80073E4C, 0.05, 0.2) and one fire particle at 0.2.'
+  },
+  'sim:water': {
+    label: 'Water hit',
+    tip: '0x8007483C over water: a 20-puff spray (0x800739A4: +-15 degrees, 0.38 units/s, 0.5 s) water-tinted smoke and the wtrspray splash model (func_80072EC4 type 1: 0.3 tall, widening 0.05 -> 0.4 and fading over 0.3 s, its texture cycling wtrspray_ANM at 12 fps). This is a hit by anyone other than the player.'
+  },
+  'sim:fireworks': {
+    label: 'Fireworks',
+    tip: 'spawnCutsceneDebrisField 0x800AAC88 (medal ceremony event type 15, case 8): an i_missile rocket every 0.3 s for 6 s from a 3.2 x 0.6 x 3.2 box, each rising 1.5 units in 0.9 s and bursting into 30 starex sparks (spawnNpcBurstAlongSegment case 6) coloured by one of three ramps.'
+  },
+  'sim:water_player': {
+    label: 'Water hit (player)',
+    tip: 'The water hit when the player made it: 0x8007483C then also calls func_80074600(pos, 0.1, 0.4, 1.0), the full ground explosion (fireballs that splash where they land, the shock sphere, embers).'
+  },
 };
 
 // Effect kit: the particle, shockwave, debris and emitter helpers, spawning into `group` (Y up) with items stepped by the caller.
@@ -1629,23 +1659,29 @@ async function showModel(id, objIndex = -1, keepView = false)
 const TERRAIN_PAD = 20;
 
 // One 64x64 texture per tile, packed into an atlas; tiles get their own vertices so UVs don't share across tile edges.
+// update(hmp2, box) rewrites the tiles in box ({ x0, y0, x1, y1 }, inclusive map tiles) from an edited HMP of the same size in place, or returns false when it uses a texture the atlas lacks.
 function buildTerrain(hmp, texIds, bank)
 {
   const P = TERRAIN_PAD;
-  const W = (hmp.w + 2 * P) * 4 + 1;
+  const TW = hmp.w + 2 * P;
+  const W = TW * 4 + 1;
   const H = (hmp.h + 2 * P) * 4 + 1;
   const ht = new Float32Array(W * H);
-  const tileAt = (tx, ty) => hmp.tiles[hmp.map[Math.min(hmp.h - 1, Math.max(0, ty)) * hmp.w + Math.min(hmp.w - 1, Math.max(0, tx))]];
+  const tileOf = (hm, tx, ty) => hm.tiles[hm.map[Math.min(hm.h - 1, Math.max(0, ty)) * hm.w + Math.min(hm.w - 1, Math.max(0, tx))]];
 
-  for (let ty = -P; ty < hmp.h + P; ty++)
-    for (let tx = -P; tx < hmp.w + P; tx++)
-    {
-      const tile = tileAt(tx, ty);
+  const writeHeights = (hm, x0, y0, x1, y1) => {
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+      {
+        const tile = tileOf(hm, tx, ty);
 
-      for (let py = 0; py < 5; py++)
-        for (let px = 0; px < 5; px++)
-          ht[((ty + P) * 4 + py) * W + (tx + P) * 4 + px] = tile ? tile.hts[py * 5 + px] * hmp.heightScale : 0;
-    }
+        for (let py = 0; py < 5; py++)
+          for (let px = 0; px < 5; px++)
+            ht[((ty + P) * 4 + py) * W + (tx + P) * 4 + px] = tile ? tile.hts[py * 5 + px] * hm.heightScale : 0;
+      }
+  };
+
+  writeHeights(hmp, -P, -P, hmp.w + P - 1, hmp.h + P - 1);
 
   const hAt = (x, y) => ht[Math.min(H - 1, Math.max(0, y + P * 4)) * W + Math.min(W - 1, Math.max(0, x + P * 4))];
 
@@ -1680,11 +1716,14 @@ function buildTerrain(hmp, texIds, bank)
   // LOD drops the 4x4 quads per tile to 2x2 then 1x1, like the game's distant tiles.
   const st = 1 << +$('optTerrainLod').value;
   const n = 4 / st + 1;
-  const pos = [];
-  const nrm = [];
-  const uv = [];
-  const idx = [];
-  const col = [];
+  const tiles = (hmp.w + 2 * P) * (hmp.h + 2 * P);
+
+  // Typed arrays filled in place: pushing per vertex made this the whole cost of a sculpt step on the large maps.
+  const pos = new Float32Array(tiles * n * n * 3);
+  const nrm = new Float32Array(pos.length);
+  const col = new Float32Array(pos.length);
+  const uv = new Float32Array(tiles * n * n * 2);
+  const idx = new Uint32Array(tiles * (n - 1) * (n - 1) * 6);
 
   // Baked like the game: shadow colour as ambient plus world light scaled by N.L, clamped (matches the warm, full-bright Tatooine sand in the PJ64 reference; a plain lerp greyed it out).
   // The stored horizontal direction points away from the sun used for the baked shading (verified on Tatooine and level 6 in the recomp).
@@ -1695,54 +1734,95 @@ function buildTerrain(hmp, texIds, bank)
   const L = [-sunDir[0], -Math.abs(sunDir[1]), -sunDir[2]];
   const Ll = Math.hypot(...L) || 1;
 
-  for (let ty = -P; ty < hmp.h + P; ty++)
-    for (let tx = -P; tx < hmp.w + P; tx++) {
-      const slot = slots.get(texIds[tileAt(tx, ty)?.tex]) ?? 0;
-      const u0 = (slot % cols) * 64 + 0.5;
-      const v0 = ((slot / cols) | 0) * 64 + 0.5;
-      const base = pos.length / 3;
+  const writeTiles = (hm, x0, y0, x1, y1) => {
+    for (let ty = y0; ty <= y1; ty++)
+      for (let tx = x0; tx <= x1; tx++)
+        writeTile(hm, tx, ty);
+  };
 
-      for (let j = 0; j < n; j++)
-        for (let i = 0; i < n; i++)
-        {
-          const x = tx * 4 + i * st;
-          const y = ty * 4 + j * st;
+  const writeTile = (hm, tx, ty) => {
+    const slot = slots.get(texIds[tileOf(hm, tx, ty)?.tex]) ?? 0;
+    const u0 = (slot % cols) * 64 + 0.5;
+    const v0 = ((slot / cols) | 0) * 64 + 0.5;
+    const base = ((ty + P) * TW + tx + P) * n * n;
+    let v = base;
+    let f = ((ty + P) * TW + tx + P) * (n - 1) * (n - 1) * 6;
 
-          pos.push(x * 0.5, hAt(x, y), y * 0.5);
+    for (let j = 0; j < n; j++)
+      for (let i = 0; i < n; i++)
+      {
+        const x = tx * 4 + i * st;
+        const y = ty * 4 + j * st;
+        const p3 = v * 3;
 
-          // Height slope per world unit (grid step 0.5); sign matches the triangle winding below.
-          const gx = hAt(x - 1, y) - hAt(x + 1, y);
-          const gz = hAt(x, y - 1) - hAt(x, y + 1);
-          const l = Math.hypot(gx, 1, gz);
+        pos[p3] = x * 0.5;
+        pos[p3 + 1] = hAt(x, y);
+        pos[p3 + 2] = y * 0.5;
 
-          nrm.push(gx / l, 1 / l, gz / l);
+        // Height slope per world unit (grid step 0.5); sign matches the triangle winding below.
+        const gx = hAt(x - 1, y) - hAt(x + 1, y);
+        const gz = hAt(x, y - 1) - hAt(x, y + 1);
+        const l = Math.sqrt(gx * gx + 1 + gz * gz);
 
-          // Up normal in game (Y-down) space is (-gx, -1, -gz)/l.
-          const ndl = Math.max(0, (gx * L[0] + L[1] + gz * L[2]) / (l * Ll) * -1);
+        nrm[p3] = gx / l;
+        nrm[p3 + 1] = 1 / l;
+        nrm[p3 + 2] = gz / l;
 
-          col.push(...dark.map((d, k) => Math.min(1, d + lit[k] * ndl)));
+        // Up normal in game (Y-down) space is (-gx, -1, -gz)/l.
+        const ndl = Math.max(0, (gx * L[0] + L[1] + gz * L[2]) / (l * Ll) * -1);
 
-          // Texture rows run opposite to tile z: edge-seam scoring across levels picks this flip over the other 7 orientations.
-          uv.push((u0 + (i * st) / 4 * 63) / AW, (v0 + (1 - (j * st) / 4) * 63) / AH);
-        }
+        for (let k = 0; k < 3; k++)
+          col[p3 + k] = Math.min(1, dark[k] + lit[k] * ndl);
 
-      for (let j = 0; j < n - 1; j++)
-        for (let i = 0; i < n - 1; i++) {
-          const a = base + j * n + i;
+        // Texture rows run opposite to tile z: edge-seam scoring across levels picks this flip over the other 7 orientations.
+        uv[v * 2] = (u0 + (i * st) / 4 * 63) / AW;
+        uv[v * 2 + 1] = (v0 + (1 - (j * st) / 4) * 63) / AH;
+        v++;
+      }
 
-          idx.push(a, a + n, a + 1, a + 1, a + n, a + n + 1);
-        }
-    }
+    for (let j = 0; j < n - 1; j++)
+      for (let i = 0; i < n - 1; i++) {
+        const a = base + j * n + i;
+
+        idx[f++] = a;
+        idx[f++] = a + n;
+        idx[f++] = a + 1;
+        idx[f++] = a + 1;
+        idx[f++] = a + n;
+        idx[f++] = a + n + 1;
+      }
+  };
+
+  writeTiles(hmp, -P, -P, hmp.w + P - 1, hmp.h + P - 1);
 
   const g = new THREE.BufferGeometry();
 
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx);
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
 
-  return { g, map, tris: idx.length / 3 };
+  const update = (hm, box) => {
+    if (hm.w !== hmp.w || hm.h !== hmp.h || hm.tiles.some((t) => texIds[t.tex] !== undefined && !slots.has(texIds[t.tex])))
+      return false;
+
+    // One tile more each way for the normals across the box edge; a box on the map edge reaches across the drawn border too.
+    const x0 = box.x0 <= 0 ? -P : box.x0 - 1;
+    const y0 = box.y0 <= 0 ? -P : box.y0 - 1;
+    const x1 = box.x1 >= hm.w - 1 ? hm.w + P - 1 : box.x1 + 1;
+    const y1 = box.y1 >= hm.h - 1 ? hm.h + P - 1 : box.y1 + 1;
+
+    writeHeights(hm, x0, y0, x1, y1);
+    writeTiles(hm, x0, y0, x1, y1);
+
+    for (const a of ['position', 'normal', 'uv', 'color'])
+      g.attributes[a].needsUpdate = true;
+
+    return true;
+  };
+
+  return { g, map, tris: idx.length / 3, update };
 }
 
 // Terrain geometry and atlas are cached per level and terrain LOD (cleared with the other caches); the mesh and material are rebuilt.
@@ -1753,7 +1833,7 @@ function terrainMesh(hmp, texIds, bank, key)
   if (!terrainCache.has(key))
     terrainCache.set(key, buildTerrain(hmp, texIds, bank));
 
-  const { g, map, tris } = terrainCache.get(key);
+  const { g, map, tris, update } = terrainCache.get(key);
 
   texCache.set('terrain', { map });
 
@@ -1764,6 +1844,7 @@ function terrainMesh(hmp, texIds, bank, key)
   m.userData.shared = true;
   m.userData.terrain = map;
   m.userData.tiles = { hmp, texIds };
+  m.userData.update = update;
 
   return { mesh: m, tris };
 }
@@ -2327,8 +2408,7 @@ async function showLevel(dir, keepView = false, skyOverride = null)
     let b = 0;
     let n = 0;
 
-    for (const q of edge)
-    {
+    for (const q of edge) {
       if (q.y < low - 1)
         continue;
 

@@ -72,11 +72,14 @@
         <input type="checkbox" id="optSculpt" hidden>
         <div data-modes="terrain" class="rows">
           <label>Tool <select id="sculptTool" style="flex:1"><option value="raise">Raise</option><option value="lower">Lower</option><option value="flatten">Flatten</option><option value="smooth">Smooth</option><option value="paint">Paint texture</option><option value="pick">Pick texture</option></select></label>
+          <label title="Soft brushes fade toward the edge; square ones cover whole tiles to the edge, for flat pads and straight edges">Brush <select id="sculptShape" style="flex:1"><option value="soft">Soft round</option><option value="hard">Hard round</option><option value="soft square">Soft square</option><option value="hard square">Hard square</option></select></label>
+          <label id="sculptFlatRow" title="The height Flatten levels to; empty uses the ground where the stroke starts">Height <input type="number" id="sculptFlat" step="0.5" placeholder="Where you start" style="flex:1"></label>
           <label title="Brush radius in terrain grid steps (0.5 world units each)">Radius <input type="range" id="sculptRadius" min="1" max="40" value="8"><output id="sculptRadiusVal">8</output></label>
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
-          <label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow ground</label>
+          <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
           <div class="pair"><button id="btnHeightOut" data-icon="download" title="Heightmap PNG: grey, one pixel per terrain grid point; white is high"></button><button id="btnHeightIn" data-icon="upload" title="Import heightmap: any image, scaled to the level's grid (256 height steps). Undo with Ctrl+Z"></button></div>
-          <span id="sculptInfo" style="color: var(--dim); font-size: 12px"></span>
+          <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
+          <div class="sculptFoot"><meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0" aria-label="Ground tiles used"></meter><span id="sculptInfo"></span></div>
         </div>
         <div data-modes="objects events" class="rows">
           <div class="tools" role="group" aria-label="Transform tool"><button data-tool="view" data-icon="view" title="View: select only (Q)"></button><button data-tool="translate" data-icon="move" title="Move (W)"></button><button data-tool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-tool="scale" data-icon="scale" title="Scale (R)"></button></div>
@@ -201,6 +204,10 @@
     <span data-modes="objects events">Q W E R</span><span data-modes="objects events">select, move, rotate, scale</span>
     <span data-modes="objects events">X</span><span data-modes="objects events">global / local axes</span>
     <span data-modes="objects events">Ctrl+D / Delete</span><span data-modes="objects events">duplicate / delete</span>
+    <span data-modes="terrain">1 - 6 / [ ]</span><span data-modes="terrain">brush tool / smaller, bigger brush</span>
+    <span data-modes="terrain">Shift / Alt+drag</span><span data-modes="terrain">raise and lower swapped / pick a texture</span>
+    <span data-modes="events">Drag / Shift+drag path point</span><span data-modes="events">move it / change its height</span>
+    <span data-modes="events">Ctrl / Alt+click path point</span><span data-modes="events">add one after it / delete it</span>
   </div>
   <div id="busy" role="status" aria-live="polite" hidden><span class="spinner"></span><span id="busyText"></span></div>
   <div id="drop"><div class="box" role="button" tabindex="0" title="Choose a ROM file">

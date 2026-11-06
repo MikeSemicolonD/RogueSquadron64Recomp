@@ -231,20 +231,11 @@ async function showFont(name)
   const have = new Set(pack.glyphs.map((g) => g.cp));
   const missing = cps.filter((c) => !have.has(c));
 
-  const tool = (icon, tip, fn) => {
-    const b = elem('button', { title: tip });
-
-    setEditIcon(b, icon);
-    b.onclick = fn;
-
-    return b;
-  };
-
-  const tools = elem('div', { className: 'fontTools' }, tool('open', 'Import a language mod: pick its folder (the one holding lang/)', importLangFiles));
+  const tools = elem('div', { className: 'fontTools' }, iconButton('open', 'Import a language mod: pick its folder (the one holding lang/)', importLangFiles));
 
   if (f.extended)
-    tools.append(tool('upload', 'Draw this font\'s glyphs from a font file (.ttf or .otf): every character the text uses, and later ones when you import the text again', () => drawPacksFrom([f])),
-      tool('modExport', 'Draw every font\'s glyphs from one font file (a pixel font often reads better at the small sizes: draw those again one by one)', () => drawPacksFrom(gameFonts(romBytes).filter((x) => x.extended))));
+    tools.append(iconButton('upload', 'Draw this font\'s glyphs from a font file (.ttf or .otf): every character the text uses, and later ones when you import the text again', () => drawPacksFrom([f])),
+      iconButton('modExport', 'Draw every font\'s glyphs from one font file (a pixel font often reads better at the small sizes: draw those again one by one)', () => drawPacksFrom(gameFonts(romBytes).filter((x) => x.extended))));
 
   const stock = elem('div', { className: 'glyphGrid' });
   const mine = elem('div', { className: 'glyphGrid' });
@@ -296,7 +287,10 @@ async function showFont(name)
     parts.push(glyphEditor(f, pack, g), elem('hr', { className: 'fontDivider' }));
 
   if (f.extended && (pack.glyphs.length || cps.length))
-    parts.push(elem('h4', { textContent: 'This mod\'s glyphs' }), pack.glyphs.length ? mine : elem('small', { className: 'shotNote', textContent: 'None yet: draw them from a font file, or import a pack.' }));
+    parts.push(elem('h4', { textContent: 'This mod\'s glyphs' }), pack.glyphs.length ? mine : elem('small', {
+      className: 'shotNote',
+      textContent: 'None yet: draw them from a font file, or import a pack.'
+    }));
 
   parts.push(elem('h4', { textContent: 'The game\'s glyphs' }), stock);
   panel.replaceChildren(...parts);
@@ -369,7 +363,14 @@ function glyphEditor(f, pack, g)
     }, `paint ${String.fromCodePoint(g.cp)}`).then(() => showFont(f.name));
   };
 
-  const level = elem('input', { type: 'range', min: 0, max: 15, value: glyphLevel, title: 'Brightness the left button paints with, from 0 (clear) to 15 (solid)' });
+  const level = elem('input', {
+    type: 'range',
+    min: 0,
+    max: 15,
+    value: glyphLevel,
+    title: 'Brightness the left button paints with, from 0 (clear) to 15 (solid)'
+  });
+
   const swatch = elem('span', { className: 'inkSwatch' });
   const showLevel = () => (swatch.style.background = `rgb(${glyphLevel * 17},${glyphLevel * 17},${glyphLevel * 17})`);
 

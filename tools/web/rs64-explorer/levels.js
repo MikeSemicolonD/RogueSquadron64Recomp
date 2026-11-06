@@ -40,56 +40,19 @@ for (const g of [gizmoParts?.translate, gizmoParts?.scale])
       h.removeFromParent();
   }
 
-// Edit panel buttons are icons; each keeps its label as the title (and accessible name).
-const EDIT_ICONS = {
-  add: { stroke: 'M8 3v10M3 8h10' },
-  // The view toggle: a camera body with its view volume out of the lens, widening (perspective) or straight (orthographic).
-  camPersp: { stroke: 'M9 7L15 2.5v11L9 9', fill: 'M0.5 4.5h8v7h-8zM2 2.5h3v1.5H2z' },
-  camOrtho: { stroke: 'M9 5.5H15v5H9', fill: 'M0.5 4.5h8v7h-8zM2 2.5h3v1.5H2z' },
-  up: { stroke: 'M8 13V3M4 7l4-4 4 4' },
-  down: { stroke: 'M8 3v10M4 9l4 4 4-4' },
-  globe: { stroke: 'M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13zM1.5 8h13M8 1.5c2 1.8 2.8 4 2.8 6.5S10 12.7 8 14.5M8 1.5C6 3.3 5.2 5.5 5.2 8S6 12.7 8 14.5' },
-  edit: 'M11.3 1.3l3.4 3.4-9.2 9.2H2.1v-3.4zM10 4.4l-6.4 6.4v1.6h1.6L11.6 6z',
-  grip: 'M5 2.5h2v2H5zm4 0h2v2H9zM5 7h2v2H5zm4 0h2v2H9zM5 11.5h2v2H5zm4 0h2v2H9z',
-  terrain: 'M1 14l4.5-8 3 4.5 2-3L15 14z',
-  objects: 'M8 1l6 3.5v7L8 15l-6-3.5v-7zm0 1.7L3.6 5.2 8 7.7l4.4-2.5zM3 6.1v4.8l4.5 2.6V8.6zm10 0L8.5 8.6v4.9l4.5-2.6z',
-  events: 'M3 1h1.5v14H3zM5.5 2h8l-2 3 2 3h-8z',
-  view: 'M3 1l10 6.2-4.4 1.1 2.6 4.6-1.8 1-2.6-4.7L3 12.5z',
-  move: 'M8 0l3 3H9v4h4V5l3 3-3 3V9H9v4h2l-3 3-3-3h2V9H3v2L0 8l3-3v2h4V3H5z',
-  rotate: { stroke: 'M13.2 9.5A5.5 5.5 0 1 1 11.6 3.8M12.2 1v3.4H8.8' },
-  scale: { stroke: 'M2 8.5h5.5V14H2zM7 9l6.5-6.5M9.5 2.5h4v4' },
-  duplicate: 'M5 1h10v10H5zm2 2v6h6V3zM1 5h2v8h8v2H1z',
-  delete: 'M5 1h6v2h4v2H1V3h4zM3 6h10l-1 9H4z',
-  place: 'M8 1a5 5 0 0 1 5 5c0 3.5-5 9-5 9S3 9.5 3 6a5 5 0 0 1 5-5zm0 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
-  download: 'M7 1h2v7.2l2.6-2.6 1.4 1.4L8 12 3 7l1.4-1.4L7 8.2zM2 13h12v2H2z',
-  upload: 'M7 12h2V4.8l2.6 2.6L13 6 8 1 3 6l1.4 1.4L7 4.8zM2 13h12v2H2z',
-  open: 'M1 3h5l1.5 1.5H15V6H3.2L1.6 13H1zm2.8 4H16l-2 7H2z',
-  camAdd: 'M0.5 2.5h8v6h-8zm8 2L12 2.5v6L8.5 6.5zM11 9.5h1.6v2h2v1.6h-2v2H11v-2H9v-1.6h2z',
-  save: 'M2 1h10l3 3v11H1V1zm2 1.5V6h7V2.5zM4 9v4.5h8V9z',
-  undo: { stroke: 'M5.5 3.5L2.5 6.5l3 3M2.8 6.5h6.7a4 4 0 0 1 0 8H7' },
-  redo: { stroke: 'M10.5 3.5l3 3-3 3M13.2 6.5H6.5a4 4 0 0 0 0 8H9' },
-  play: 'M4 2l10 6-10 6z',
-  // The mod package: a box with a play badge (play in game) or an arrow out of it (export).
-  modPlay: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M10 9l6 3.5-6 3.5z' },
-  modExport: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M12 8h1.6v3.6h1.9L12.8 15.5 10.1 11.6H12z' },
-  blank: { stroke: 'M3 1.5h6.5l3.5 3.5v9.5H3zM9.5 1.5V5H13' },
-  eye: { stroke: 'M1 8s2.5-4.5 7-4.5S15 8 15 8s-2.5 4.5-7 4.5S1 8 1 8zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z' },
-  close: { stroke: 'M3.5 3.5l9 9M12.5 3.5l-9 9' },
-  // A bulb with a plus badge (add a light).
-  lightAdd: { stroke: 'M6.5 1.5a4 4 0 0 0-2.3 7.3V11h4.6V8.8A4 4 0 0 0 6.5 1.5zM4.6 13.5h3.8', fill: 'M12 8h1.6v2.4H16V12h-2.4v2.4H12V12H9.6v-1.6H12z' },
-  // The game's lights: the mod box with a bulb.
-  gameLights: { stroke: 'M6 1.5l4.5 2.5v5L6 11.5 1.5 9V4zM1.5 4L6 6.5 10.5 4M6 6.5v5', fill: 'M12.5 7.5a2.6 2.6 0 0 0-1.6 4.7V13.5h3.2v-1.3a2.6 2.6 0 0 0-1.6-4.7zM11 14.3h3v1.2h-3z' },
-  // Lights from hardpoints: a target crosshair (the hardpoint) with a spark.
-  hardpoints: { stroke: 'M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM7 0.5v3M7 10.5v3M0.5 7h3M10.5 7h3', fill: 'M7 5.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3zM13 10.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z' },
-};
-
-// An icon is a filled path, or { stroke } for line drawings (rotate, scale).
-function setEditIcon(b, name)
-{
-  const i = EDIT_ICONS[name];
-
-  b.innerHTML = i.stroke ? `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="${i.stroke}"/>${i.fill ? `<path fill="currentColor" d="${i.fill}"/>` : ''}</svg>` : svgIcon(i);
+// Edit panel buttons are icons (icons/<name>.svg); each keeps its label as the title (and accessible name).
+function setEditIcon(b, name) {
+  b.innerHTML = iconImg(name);
   b.setAttribute('aria-label', b.title);
+}
+
+// A panel button drawn as an icon, its label as the tooltip and accessible name.
+function iconButton(icon, title, onclick) {
+  const b = elem('button', { title, onclick });
+
+  setEditIcon(b, icon);
+
+  return b;
 }
 
 for (const b of $('editPanel').querySelectorAll('[data-icon]'))
@@ -620,7 +583,11 @@ function shotLinkRow(it)
 
   setEditIcon(preview, 'eye');
 
-  const personal = elem('input', { type: 'checkbox', title: 'Personal: in online co-op only the player who set the trigger off sees the shot (use it when the camera chain ends at a restart point that moves the player). Off: both players see it' });
+  const personal = elem('input', {
+    type: 'checkbox',
+    title: 'Personal: in online co-op only the player who set the trigger off sees the shot (use it when the camera chain ends at a restart point that moves the player). Off: both players see it'
+  });
+
   const personalLabel = elem('label', { className: 'shotPersonal' }, personal, ' Personal');
   const text = () => virtualText(SHOT_LINKS);
 
@@ -742,7 +709,19 @@ const CRAFT = [
 ];
 
 // What a template brings that the new level cannot change (yet).
-const TEMPLATE_NOTES = { 0: 'opening crawl (chapter 1)', 5: 'opening crawl (chapter 2)', 10: 'opening crawl (chapter 3); no Y-wing or speeder', 15: 'opening crawl (chapter 4)', 16: 'no craft select (T-16), friendlies-saved medal', 3: 'speeder only', 6: 'speeder only', 11: 'speeder only', 18: 'speeder only', 8: 'X-wing and Y-wing only', 17: 'X-wing only' };
+const TEMPLATE_NOTES = {
+  0: 'opening crawl (chapter 1)',
+  5: 'opening crawl (chapter 2)',
+  10: 'opening crawl (chapter 3); no Y-wing or speeder',
+  15: 'opening crawl (chapter 4)',
+  16: 'no craft select (T-16), friendlies-saved medal',
+  3: 'speeder only',
+  6: 'speeder only',
+  11: 'speeder only',
+  18: 'speeder only',
+  8: 'X-wing and Y-wing only',
+  17: 'X-wing only'
+};
 
 // blank: only a player start on flat ground, with this level's look (sky, textures, music); give it objectives in Level settings.
 async function newModLevel(fromDir, blank = false, named = null)
@@ -976,7 +955,10 @@ async function modLevelDialog(dir)
   await fillVoiceSelect(voice);
   voice.value = l.voice != null ? String(l.voice) : '';
 
-  const useSub = elem('button', { textContent: 'Copy voiceline subtitles to Description', title: 'Stock descriptions are the exact words of their briefing line' });
+  const useSub = elem('button', {
+    textContent: 'Copy voiceline subtitles to Description',
+    title: 'Stock descriptions are the exact words of their briefing line'
+  });
 
   // Only offered when the chosen line has words to copy.
   const syncUseSub = () => (useSub.hidden = voice.disabled || !voice.value || !(voiceWords(+voice.value) ?? '').trim());
@@ -1005,10 +987,17 @@ async function modLevelDialog(dir)
     return [k, c, elem('label', null, c, ' ' + name)];
   });
 
-  const craftBox = elem('div', { className: 'craftGrid', title: 'Craft approved for this level; none ticked keeps the template\'s' }, ...crafts.map(([, , lab]) => lab));
+  const craftBox = elem('div', {
+    className: 'craftGrid',
+    title: 'Craft approved for this level; none ticked keeps the template\'s'
+  }, ...crafts.map(([, , lab]) => lab));
   const tiers = ['bronze', 'silver', 'gold'];
   const cols = [['time', 'Time (min)', 0.5], ['kills', 'Kills', 1], ['accuracy', 'Accuracy %', 1], ['friendlies', 'Friendlies saved', 1]];
-  const medals = elem('table', { className: 'medalGrid', title: 'A medal needs all of: time at most, the rest at least. Empty keeps the template\'s thresholds' });
+
+  const medals = elem('table', {
+    className: 'medalGrid',
+    title: 'A medal needs all of: time at most, the rest at least. Empty keeps the template\'s thresholds'
+  });
 
   medals.innerHTML = `<tr><th></th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}</tr>`;
 
@@ -1154,7 +1143,11 @@ async function modLevelDialog(dir)
     addBtn.hidden = objRows.length >= 4;
   };
 
-  const addBtn = elem('button', { className: 'addObjective', textContent: 'Add objective', title: 'Up to 4; the mission is won when every destroy, reach and survive objective is done' });
+  const addBtn = elem('button', {
+    className: 'addObjective',
+    textContent: 'Add objective',
+    title: 'Up to 4; the mission is won when every destroy, reach and survive objective is done'
+  });
 
   addBtn.onclick = (e) => {
     e.preventDefault();
@@ -1495,9 +1488,12 @@ async function getAttackTemplate()
   return attackTemplate;
 }
 
-function pathAttackRow(it)
-{
-  const label = elem('label', { className: 'shotPersonal', title: 'At the end of this path, NPCs flying it turn on the player (a fly-to event with no target at the very end)' });
+function pathAttackRow(it) {
+  const label = elem('label', {
+    className: 'shotPersonal',
+    title: 'At the end of this path, NPCs flying it turn on the player (a fly-to event with no target at the very end)'
+  });
+
   const box = elem('input', { type: 'checkbox', disabled: true });
 
   label.append(box, ' At the end: attack the player');
@@ -1549,42 +1545,58 @@ async function getPathCatalog()
       kinds.get(path).add(SUBTYPES[e.sub]);
     }
 
-    for (const s of items.filter((x) => x.type === 3 && x.sub === 3 && x.name && kinds.has(x.name) && x.points?.length >= 4))
+    for (const s of items.filter((x) => isFlightPath(x) && x.name && kinds.has(x.name)))
       pathCatalog.push({ dir: p.slice(0, -4), name: s.name, index: s.index, kinds: [...kinds.get(s.name)].join(', ') });
   }
 
   return pathCatalog;
 }
 
-// Copies a stock path next to the enemy (its first interior point, where the NPC starts, at the enemy) and puts the enemy on it.
-async function copyPathFor(it, src, quiet = false)
-{
+// Replaces a path's points (any count from 4; the craft starts at the second and stops at the second-last).
+const setPathPoints = (it, points, label) => editItem(it, (bytes) => splineSetPoints(bytes, it, points), `${label}: ${it.name || 'path'}`);
+
+// Adds a path built from stock path src (build = splineCopy or splineNew, starting it at the enemy) and puts the enemy on it.
+async function addPathFor(it, src, build, name, label) {
   let dropped = 0;
 
-  await historyGroup(`Copy path ${src.name}: ${it.name}`, async () => {
-    const fdv = await rom.read(src.dir + '/dat');
-    const from = u8(fdv).slice();
+  await historyGroup(label, async () => {
+    const from = u8(await rom.read(src.dir + '/dat')).slice();
     const attack = await getAttackTemplate();
     const s = parseDAT(new DataView(from.buffer)).items.find((x) => x.type === 3 && x.index === src.index);
 
     await editAsset(selected + '/dat', (bytes) => {
-      const r = splineCopy(from, s, bytes, { name: uniqueName(bytes, src.name), at: it.pos, attack });
+      const r = build(from, s, bytes, { name: uniqueName(bytes, name), at: it.pos, attack });
+      const items = parseDAT(new DataView(r.bytes.buffer)).items;
 
       dropped = r.dropped;
 
-      const copy = parseDAT(new DataView(r.bytes.buffer)).items.filter((x) => x.type === 3).at(-1);
-      const enemy = parseDAT(new DataView(r.bytes.buffer)).items.find((x) => x.type === 0 && x.index === it.index);
-
-      return npcSetPath(r.bytes, enemy, copy.name);
+      return npcSetPath(r.bytes, items.find((x) => x.type === 0 && x.index === it.index), items.filter((x) => x.type === 3).at(-1).name);
     });
-
-    if (dropped && !quiet)
-      alert(`${dropped} of ${src.name}'s path events named things in its own level (attack targets, holds) and were left out.`);
   });
 
   await reselect(it.type, it.index);
 
   return dropped;
+}
+
+// Copies a stock path next to the enemy (its first interior point, where the NPC starts, at the enemy).
+async function copyPathFor(it, src, quiet = false)
+{
+  const dropped = await addPathFor(it, src, splineCopy, src.name, `Copy path ${src.name}: ${it.name}`);
+
+  if (dropped && !quiet)
+    alert(`${dropped} of ${src.name}'s path events named things in its own level (attack targets, holds) and were left out.`);
+
+  return dropped;
+}
+
+// A new straight path from the enemy, on the record of a stock path its kind flies.
+async function newPathFor(it)
+{
+  const cat = await getPathCatalog();
+  const src = cat.find((c) => c.kinds.split(', ').includes(SUBTYPES[it.sub])) ?? cat[0];
+
+  return addPathFor(it, src, splineNew, `${it.name || 'Enemy'}_Path`, `New path: ${it.name}`);
 }
 
 // Enemy side: waits for a wave (WAVE_FIELDS gate, spawned when its flag is raised) and flies a path once it appears.
@@ -1629,12 +1641,16 @@ function npcPathSelect(it, dv, none, noneLabel)
     [none, noneLabel],
     ...splines.map((s) => [s.name, s.name + (attacks(s) ? ' (then attacks the player)' : '')]),
     ...other,
+    ['__new', 'New path'],
     ['__copy', 'Copy from another level…']
   ];
 
   const path = selectOf(pairs, cur, { title: 'The path it flies from where it appears (a path starts it at the path\'s first point)' });
 
   path.onchange = async () => {
+    if (path.value === '__new')
+      return newPathFor(it);
+
     if (path.value !== '__copy')
       return editItem(it, (bytes) => npcSetPath(bytes, it, path.value), `Path: ${it.name} -> ${path.value}`, dir);
 
@@ -1668,6 +1684,60 @@ async function writeRules(dir, doc, label)
   await editText(RULES_PATH(rulesFolderOf(dir)), rulesWrite(doc), label);
 }
 
+const scriptFinds = (name) => !!name && nameUses(romBytes.subarray(0, BLOB_START), name, 0, 0) > 0;
+
+// Renames an object; its rules, camera shot lines and every DAT reference (datRenameItem) follow. Throws a modder-facing reason when it
+// can't. Returns how many of each moved.
+async function renameObject(it, name, dir = selected)
+{
+  const old = it.name;
+  const moved = { rules: 0, shots: 0, npcs: 0, triggers: 0, links: 0 };
+  const lv = dir.split('/').pop();
+
+  if (!/^[!-~]{1,47}$/.test(name))
+    throw new Error('A name is 1 to 47 letters, digits or symbols, with no spaces');
+
+  if (old === name)
+    return moved;
+
+  if (scriptFinds(old))
+    throw new Error(`The mission's script looks "${old}" up by name, so it can't be renamed`);
+
+  if (parseDAT(await rom.read(dir + '/dat')).items.some((x) => x.name === name))
+    throw new Error(`"${name}" is already used in this level`);
+
+  await historyGroup(`Name ${name}`, async () => {
+    await editAsset(dir + '/dat', (b) => {
+      const { bytes, ...r } = datRenameItem(b, it, name);
+
+      Object.assign(moved, r);
+
+      return bytes;
+    }, `Name ${name}`);
+
+    if (!old)
+      return;
+
+    const doc = await readRules(dir);
+
+    moved.rules = rulesRename(doc, old, name, ruleExt);
+
+    if (moved.rules)
+      await writeRules(dir, doc, `Rules: ${old} -> ${name}`);
+
+    const shots = shotRename(await virtualText(SHOT_LINKS), lv, old, name);
+
+    moved.shots = shots.n;
+
+    if (shots.n)
+      await editText(SHOT_LINKS, shots.text, `Camera shots: ${old} -> ${name}`);
+  });
+
+  await reselect(it.type, it.index);
+
+  return moved;
+}
+
 // The object a rule attaches to needs a unique name; unnamed or shared ones get one, unless the stock script finds it by name.
 // Rules already on a shared name stay on it: in game they fire for every object of that name, not just this one.
 async function ensureRuleName(dir, it)
@@ -1678,7 +1748,7 @@ async function ensureRuleName(dir, it)
   if (it.name && items.filter((x) => x.name === it.name).length === 1)
     return it.name;
 
-  if (it.name && nameUses(romBytes.subarray(0, BLOB_START), it.name, 0, 0))
+  if (scriptFinds(it.name))
   {
     alert(`"${it.name}" is shared with another object and the mission's script looks it up by name, so it cannot be renamed for a rule.`);
 
@@ -1718,7 +1788,7 @@ async function rulePicker(p, value, set, ctx)
     return sel(named((it) => it.pathEvent), 'obj');
 
   if (p.picker === 'unit')
-    return sel(named((it) => isUnit(it)), 'obj');
+    return sel(namedByKind(items, isUnit), 'obj');
 
   if (p.picker === 'camera')
     return sel(named((it) => it.type === 0 && it.sub === 0x26), 'obj');
@@ -1759,6 +1829,24 @@ async function rulePicker(p, value, set, ctx)
 }
 
 const optGroup = (label, opts) => elem('optgroup', { label }, ...opts.map(([v, t]) => new Option(t, v)));
+
+// Named objects passing f, one option group per kind (a level can name hundreds), each name once.
+function namedByKind(items, f)
+{
+  const groups = new Map();
+  const seen = new Set();
+
+  for (const it of items.filter((x) => x.name && f(x) && !seen.has(x.name)))
+  {
+    seen.add(it.name);
+
+    const kind = SUBTYPES[it.sub] ?? 'Other';
+
+    groups.set(kind, [...(groups.get(kind) ?? []), [it.name, it.name]]);
+  }
+
+  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([kind, opts]) => optGroup(kind, opts.sort((a, b) => a[1].localeCompare(b[1]))));
+}
 
 // The in-mission cue table's songs as [song id, name], one each.
 const songChoices = () => [...new Map(parseMusicCues(romBytes).cues.map((c) => [c.song, c.name])).entries()];
@@ -1849,10 +1937,8 @@ function rulesSection(owner) {
 
       every.onchange = () => ((r.every = every.checked), save('Rule: every time'));
 
-      const del = elem('button', { title: 'Remove rule' });
+      const del = iconButton('delete', 'Remove rule', () => (doc.rules.splice(i, 1), save('Remove rule')));
 
-      setEditIcon(del, 'delete');
-      del.onclick = () => (doc.rules.splice(i, 1), save('Remove rule'));
       head.append(w);
 
       if (orphan(i))
@@ -1882,10 +1968,8 @@ function rulesSection(owner) {
 
         kind.onchange = () => ((r.actions[k] = { do: kind.value }), save('Rule: action'));
 
-        const rm = elem('button', { title: 'Remove action' });
+        const rm = iconButton('delete', 'Remove action', () => (r.actions.splice(k, 1), save('Remove action')));
 
-        setEditIcon(rm, 'delete');
-        rm.onclick = () => (r.actions.splice(k, 1), save('Remove action'));
         row.append(kind);
 
         for (const p of RULE_ACTIONS.find((x) => x.do === a.do)?.params ?? extActs.find((e) => e.name === a.do)?.params ?? [])
@@ -2252,7 +2336,10 @@ function openCrawlPanel(ctx)
   const textRow = stacked(fld('Text', body, 'Wrapped to the crawl width; an empty line starts a paragraph'));
 
   textRow.classList.add('crawlText');
-  box.append(elem('small', { className: 'shotNote', textContent: status }), stacked(fld('Chapter', chapter, 'Small line above the title; may be empty')), stacked(fld('Title', title)), textRow, note);
+  box.append(elem('small', {
+    className: 'shotNote',
+    textContent: status
+  }), stacked(fld('Chapter', chapter, 'Small line above the title; may be empty')), stacked(fld('Title', title)), textRow, note);
   $('crawlBody').replaceChildren(box);
   $('crawlPanel').hidden = false;
   placeCrawlPanel();
@@ -2299,44 +2386,9 @@ new ResizeObserver(() => {
     store('rs64.crawlSize', { w: p.offsetWidth, h: p.offsetHeight });
 }).observe($('crawlPanel'));
 
-{
-  const head = $('crawlPanel').querySelector('.rulesPanelHead');
-
-  head.title = 'Drag to move the window; double-click to put it back';
-
-  let drag = null;
-
-  head.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button'))
-      return;
-
-    const r = $('crawlPanel').getBoundingClientRect();
-
-    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    head.setPointerCapture(e.pointerId);
-  });
-
-  head.addEventListener('pointermove', (e) => {
-    if (!drag)
-      return;
-
-    const main = $('crawlPanel').parentElement.getBoundingClientRect();
-
-    crawlPos = { x: e.clientX - main.left - drag.dx, y: e.clientY - main.top - drag.dy };
-    placeCrawlPanel();
-  });
-
-  head.addEventListener('pointerup', () => {
-    drag = null;
-    store('rs64.crawlPos', crawlPos);
-  });
-
-  head.addEventListener('dblclick', () => {
-    crawlPos = null;
-    store('rs64.crawlPos', null);
-    placeCrawlPanel();
-  });
-}
+const crawlHead = $('crawlPanel').querySelector('.rulesPanelHead');
+crawlHead.title = 'Drag to move the window; double-click to put it back';
+dragByHead(crawlHead, $('crawlPanel'), 'rs64.crawlPos', (p) => (crawlPos = p), placeCrawlPanel);
 
 setEditIcon($('crawlClose'), 'close');
 $('crawlClose').onclick = () => ($('crawlPanel').hidden = true);
@@ -2409,6 +2461,30 @@ function spawnWaveButton(a, dir, done) {
   };
 
   return b;
+}
+
+// Who sets off a trigger area: the player or a named unit of the level (a stock list of several stays as it is until changed).
+const whoLabel = (names) => names.map((a) => (a === 'ply' ? 'The player' : a)).join(', ') || 'Nothing';
+
+function triggerWhoRow(it) {
+  const row = elem('div', { className: 'shotRow' });
+  const cur = (it.activators ?? []).join('|');
+
+  rom.read(selected + '/dat').then((dv) => {
+    const units = namedByKind(parseDAT(dv).items, (x) => isUnit(x) || (x.type === 0 && x.sub === 0x27));
+    const known = cur === 'ply' || units.some((g) => [...g.children].some((o) => o.value === cur));
+
+    const pick = selectOf([
+      ...(known ? [] : [[cur, whoLabel(it.activators ?? [])]]),
+      ['ply', 'The player'],
+      ...units
+    ], cur, { title: 'What has to come into this area for it to fire' });
+
+    pick.onchange = () => editItem(it, (b) => triggerSetActivators(b, it, pick.value.split('|').filter(Boolean)), `Set off by: ${it.name || 'trigger'} -> ${whoLabel([pick.value])}`);
+    row.append('Set off by ', pick);
+  });
+
+  return row;
 }
 
 // The song a music region plays when the player flies into it (a cue of the in-mission cue table).
@@ -2580,7 +2656,27 @@ function cursorGround(e) {
 
 canvas.addEventListener('pointermove', (e) => zoneDrag || placeGhost(e));
 
-// Zones are dragged out: press on one corner, release on the opposite one (a click keeps the copied zone's size).
+// The median stock size of each zone kind (type 6 subtype), for a zone placed with a click; a copied zone can be the size of a map.
+let zoneSizes = null;
+
+async function zoneDefaultSize(sub) {
+  if (!zoneSizes)
+  {
+    const all = new Map();
+
+    for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)))
+    {
+      for (const z of parseDAT(await rom.read(p)).items.filter((x) => x.type === 6 && x.size))
+        all.set(z.sub, [...(all.get(z.sub) ?? []), z.size]);
+    }
+
+    zoneSizes = new Map([...all].map(([s, l]) => [s, [0, 1, 2].map((a) => l.map((v) => v[a]).sort((x, y) => x - y)[l.length >> 1])]));
+  }
+
+  return zoneSizes.get(sub);
+}
+
+// Zones are dragged out: press on one corner, release on the opposite one (a click places one of the kind's usual size around it).
 let zoneDrag = null;
 
 const zoneFrom = (a, b, t) => ({
@@ -2630,11 +2726,10 @@ canvas.addEventListener('pointerup', (e) => {
   placing = null;
   renderAddList();
 
-  // A press that barely moved places the zone as copied, at the press point.
-  if (z.size[0] < 0.5 && z.size[2] < 0.5)
-    addItem(src, [a.x, a.y, a.z]);
-  else
-    addItem(src, z.pos, z);
+  if (z.size[0] >= 0.5 || z.size[2] >= 0.5)
+    return addItem(src, z.pos, z);
+
+  zoneDefaultSize(t.sub).then((size = t.size) => addItem(src, [a.x - size[0] / 2, a.y, a.z - size[2] / 2], { size, rot: [0, 0, 0] }));
 }, true);
 $('addSearch').oninput = renderAddList;
 
@@ -2678,6 +2773,28 @@ async function addEnemy(sub, pos)
   await reselect(0, count - 1);
 }
 
+function nameRow(it)
+{
+  const row = elem('label', { textContent: 'Name' });
+
+  const inp = elem('input', {
+    type: 'text',
+    value: it.name ?? '',
+    maxLength: 47,
+    placeholder: '(unnamed)',
+    title: 'Rules, camera shots and NPCs flying it follow a new name'
+  });
+
+  inp.onchange = () => renameObject(it, inp.value.trim()).catch((e) => {
+    alert(e.message);
+    inp.value = it.name ?? '';
+  });
+
+  row.append(inp);
+
+  return row;
+}
+
 function syncSelPanel()
 {
   const it = sel?.it;
@@ -2689,6 +2806,9 @@ function syncSelPanel()
   const f = $('selFields');
 
   f.textContent = '';
+
+  if (sel && !sel.fixed && !sel.pathNode)
+    f.append(nameRow(it));
 
   if (sel?.pathNode)
   {
@@ -2751,7 +2871,10 @@ function syncSelPanel()
       f.append(row);
     }
 
-  if (sel && editMode === 'events' && it.type === 7 && (it.sub === 0x18 || it.sub === 0x19) && it.name)
+  if (sel && editMode === 'events' && isTriggerArea(it))
+    f.append(triggerWhoRow(it));
+
+  if (sel && editMode === 'events' && isTriggerArea(it) && it.name)
     f.append(shotLinkRow(it), destroyRow(it), waveTriggerRow(it));
 
   if (sel && editMode === 'objects' && it.type === 0 && WAVE_FIELDS[it.sub])
@@ -2771,7 +2894,7 @@ function syncSelPanel()
   if (sel && editMode === 'events' && it.type === 6 && it.sub === 0x10)
     f.append(musicZoneRow(it));
 
-  if (sel && editMode === 'events' && it.type === 3 && it.sub === 3 && it.points?.length >= 4 && !sel.pathNode)
+  if (sel && editMode === 'events' && isFlightPath(it) && !sel.pathNode)
     f.append(pathAttackRow(it));
 
   $('btnDup').disabled = !sel || !!sel.fixed || !!it.pathEvent;
@@ -3010,6 +3133,9 @@ function editKey(e)
     return true;
   }
 
+  if (editMode === 'terrain')
+    return sculptActive() && sculptKey(e);
+
   if (editMode !== 'objects' && editMode !== 'events')
     return false;
 
@@ -3054,7 +3180,8 @@ function cornerPoint(it, cu, cv)
   return p;
 }
 
-// A selected path gets a handle per control point: drag moves it over the ground, Shift+drag changes its height.
+// A selected path gets a handle per control point: drag moves it over the ground, Shift+drag changes its height, Ctrl+click adds a
+// point after it, Alt+click deletes it.
 const pathPointMat = new THREE.MeshBasicMaterial({ color: 0x4ac0e8, depthTest: false, transparent: true });
 
 function showCorners()
@@ -3103,9 +3230,34 @@ canvas.addEventListener('pointerdown', (e) => {
   if (!h)
     return;
 
+  if (h.object.userData.pathPoint !== undefined && (e.ctrlKey || e.altKey))
+  {
+    e.stopImmediatePropagation();
+    e.preventDefault();
+
+    const it = sel.it;
+    const k = h.object.userData.pathPoint;
+    const pts = it.points.map((p) => p.slice());
+
+    if (e.altKey) {
+      if (pts.length <= 4)
+        return alert('A path needs at least 4 points.');
+
+      pts.splice(k, 1);
+    } else
+    {
+      const a = pts[k];
+      const b = pts[k + 1] ?? a.map((v, ax) => 2 * v - pts[k - 1][ax]);
+
+      pts.splice(k + 1, 0, a.map((v, ax) => (v + b[ax]) / 2));
+    }
+
+    return setPathPoints(it, pts, `${e.altKey ? 'Delete' : 'Add'} point ${k + (e.altKey ? 1 : 2)}`);
+  }
+
   if (h.object.userData.pathPoint !== undefined)
   {
-    cornerDrag = { point: h.object.userData.pathPoint, handle: h.object, vertical: e.shiftKey };
+    cornerDrag ={ point: h.object.userData.pathPoint, handle: h.object, vertical: e.shiftKey };
     controls.enabled = false;
     canvas.setPointerCapture(e.pointerId);
     e.stopImmediatePropagation();
@@ -3201,7 +3353,7 @@ canvas.addEventListener('pointerup', (e) => {
 
   const it = sel.it;
 
-  editItem(it, (bytes) => splineSetPoints(bytes, it, it.points), `Move point ${c.point + 1}: ${it.name || 'path'}`);
+  setPathPoints(it, it.points, `Move point ${c.point + 1}`);
 }, true);
 setTool('translate');
 setEditMode(null);
@@ -3453,16 +3605,11 @@ async function exportDialog(items, doc, base)
         className: 'shotNote',
         textContent: `${e.name} uses changes from ${e.merged.join(', ')}: they export as one mod.`
       }) : '';
-      const del = doc.groups.some((g) => g.name === e.name) && elem('button', { title: 'Remove this mod (its changes go back to the mod for their kind)' });
 
-      if (del) {
-        setEditIcon(del, 'delete');
-
-        del.onclick = () => {
-          doc.groups = doc.groups.filter((g) => g.name !== e.name);
-          render();
-        };
-      }
+      const del = doc.groups.some((g) => g.name === e.name) && iconButton('delete', 'Remove this mod (its changes go back to the mod for their kind)', () => {
+        doc.groups = doc.groups.filter((g) => g.name !== e.name);
+        render();
+      });
 
       return elem('div', { className: 'exportRow' }, elem('div', { className: 'exportHead' }, tick, name, del || ''), note, more);
     });
@@ -3503,7 +3650,10 @@ async function exportDialog(items, doc, base)
     };
 
     dlg.replaceChildren(elem('h3', { textContent: 'Export mods' }),
-      elem('small', { className: 'shotNote', textContent: 'Each kind of change exports as its own mod, so players can turn them on separately. Changes that need each other stay in one mod.' }),
+      elem('small', {
+        className: 'shotNote',
+        textContent: 'Each kind of change exports as its own mod, so players can turn them on separately. Changes that need each other stay in one mod.'
+      }),
       ...rows, elem('div', { className: 'exportFoot' }, addGroup, elem('label', null, one, ` All in one mod (${base})`), elem('span', { className: 'spacer' }), cancel, go));
   };
 

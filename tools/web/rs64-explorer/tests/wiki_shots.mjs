@@ -114,7 +114,14 @@ function drawAnnotations(list)
 }
 
 // Served from the repo root so the explorer's ../../../src/video/default_lights.json resolves as on the site.
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
+const types = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png'
+};
 
 const server = createServer(async (req, res) => {
   const path = join(repo, decodeURIComponent(new URL(req.url, 'http://x').pathname));

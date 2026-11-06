@@ -211,6 +211,36 @@ await check('a small terrain edit makes a small patch (no original tile data)', 
   assert.ok(bps.length < 2000, `patch is ${bps.length} bytes`);
 });
 
+await check('a terrain edit that would run out of tiles drops the tiles nothing uses', async () => {
+  const orig = bytesOf(await rom.read('data/level/lv_0/hmp'));
+  const count = (b) => new DataView(b.buffer).getUint16(0x18);
+
+  const noise = (bytes, seed) => {
+    const grid = RS64.hmpGrid(RS64.parseHMP(new DataView(bytes.buffer)));
+    let s = seed;
+
+    for (let i = 0; i < grid.hts.length; i++)
+      grid.hts[i] = ((s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff) % 200) - 100;
+
+    return grid;
+  };
+
+  // Noise makes every cell a new tile: appended to the stock ones it would pass the limit, so the stock tiles (now unused) go.
+  const grid = noise(orig, 1);
+  const cells = grid.w * grid.h;
+  const cur = RS64.writeHMP(orig, grid);
+
+  assert.ok(count(orig) + cells > 0x1FFF, 'the test edit would not fit by appending');
+  assert.equal(count(cur), cells);
+
+  const back = RS64.hmpGrid(RS64.parseHMP(new DataView(cur.buffer)));
+
+  for (let i = 0; i < grid.hts.length; i++)
+    assert.equal(back.hts[i], grid.hts[i]);
+
+  assert.deepEqual(back.tex, grid.tex);
+});
+
 await check('a raised hill keeps tile edges shared and re-tiles under the index limit', async () => {
   const orig = bytesOf(await rom.read('data/level/lv_0/hmp'));
   const grid = RS64.hmpGrid(RS64.parseHMP(new DataView(orig.buffer)));
@@ -1501,7 +1531,13 @@ await check('waveSet then waveGet round-trips and changes only those bytes', asy
     if (same[i] !== b[i])
       assert.ok(i >= it.offset + 0x60 && i < it.offset + 0x6C, `byte ${i - it.offset} changed`);
 
-  assert.deepEqual(RS64.waveGet(new DataView(same.buffer), itemNamed(same, 'TIE_Attack_Madine_1')), { flag: 7, counter: 3, atLeast: 2, gridSpawn: 0, path: 'Madine_Attack' });
+  assert.deepEqual(RS64.waveGet(new DataView(same.buffer), itemNamed(same, 'TIE_Attack_Madine_1')), {
+    flag: 7,
+    counter: 3,
+    atLeast: 2,
+    gridSpawn: 0,
+    path: 'Madine_Attack'
+  });
 
   const short = RS64.waveSet(b, it, { path: 'Ab' });
 
@@ -1579,6 +1615,14 @@ await check('datAddEnemy places a copied enemy with no wave and no path, whateve
   assert.ok(RS64.WAVE_FOREIGN.has(0x0C) && RS64.WAVE_FOREIGN.has(0x12) && !RS64.WAVE_FOREIGN.has(0x0F));
 });
 
+// A stock fly-at-the-player path event record (0x4E, no target), as the explorer's attack switch copies.
+const stockAttack = async () => {
+  const e = bytesOf(await rom.read('data/level/lv_e/dat'));
+  const t = RS64.parseDAT(new DataView(e.buffer)).items.find((x) => x.type === 7 && x.sub === 0x4E && !x.pathEvent.target);
+
+  return e.slice(t.offset, t.offset + new DataView(e.buffer).getUint32(t.offset + 8));
+};
+
 const splineTable = (dv, s) => {
   const n = dv.getUint32(s.offset + 0x1C);
   const fo = s.offset + dv.getUint32(s.offset + 0x20) + n * 12;
@@ -1641,6 +1685,107 @@ await check('dragging a path point recomputes length and table', async () => {
   assert.ok(splineTable(fdv, itemNamed(flat, 'Madine_Attack')).every(Number.isFinite));
 });
 
+await check('adding and deleting path points keeps the path whole', async () => {
+  const b = await lv3();
+  const s = itemNamed(b, 'Madine_Attack');
+  const dv = new DataView(b.buffer);
+  const pts = RS64.splinePoints(dv, s);
+  const ev = RS64.splineEvents(dv, s);
+  const more = pts.slice();
+
+  more.splice(2, 0, pts[2].map((v, a) => (v + pts[3][a]) / 2));
+
+  const up = RS64.splineSetPoints(b, s, more);
+  const udv = new DataView(up.buffer);
+  const u = itemNamed(up, 'Madine_Attack');
+
+  assert.equal(u.index, s.index);
+  assert.deepEqual(RS64.splinePoints(udv, u).map((p) => p.map((v) => +v.toFixed(3))), more.map((p) => p.map((v) => +v.toFixed(3))));
+  assert.equal(RS64.splineEvents(udv, u).nodes.length, ev.nodes.length);
+
+  const t = splineTable(udv, u);
+
+  assert.equal(t.length, more.length - 2);
+  assert.equal(t[0], 0);
+  assert.equal(t.at(-1), 1);
+  lookupAll(up);
+
+  const back = RS64.splineSetPoints(up, u, pts);
+  const bdv = new DataView(back.buffer);
+
+  assert.equal(RS64.splinePoints(bdv, itemNamed(back, 'Madine_Attack')).length, pts.length);
+  assert.throws(() => RS64.splineSetPoints(b, s, pts.slice(0, 3)));
+});
+
+await check('path events stay where they were on the ground when points are added or deleted', async () => {
+  let n = 0;
+
+  for (const p of datLevels)
+  {
+    const b = bytesOf(await rom.read(p));
+    const dv = new DataView(b.buffer);
+
+    for (const s of RS64.parseDAT(dv).items.filter((x) => RS64.isFlightPath(x) && x.points.length >= 7 && RS64.splineEvents(dv, x).nodes.length >= 2))
+    {
+      const pts = RS64.splinePoints(dv, s);
+      const ev = RS64.splineEvents(dv, s).nodes;
+      const oldAt = RS64.splineAt(dv, s);
+      const len = dv.getFloat32(s.offset + 0x24);
+      const fewer = pts.filter((_, k) => k !== 3);
+      const more = pts.slice();
+
+      more.splice(3, 0, pts[3].map((v, a) => (v + pts[4][a]) / 2));
+
+      for (const next of [fewer, more])
+      {
+        const out = RS64.splineSetPoints(b, s, next);
+        const odv = new DataView(out.buffer);
+        const o = RS64.parseDAT(odv).items.find((x) => x.type === 3 && x.index === s.index);
+        const now = RS64.splineEvents(odv, o).nodes;
+        const newAt = RS64.splineAt(odv, o);
+        const sorted = [...now].map((x, k) => [ev[k].at, x.at]).sort((a, c) => a[0] - c[0]);
+
+        for (let k = 1; k < sorted.length; k++)
+          assert.ok(sorted[k][1] >= sorted[k - 1][1], `${p} ${s.name} order`);
+
+        // Deleting a point reshapes the curve near it, so events there may move up to about a segment; elsewhere they stay put.
+        ev.forEach((e, k) => assert.ok(Math.hypot(...newAt(now[k].at).map((v, a) => v - oldAt(e.at)[a])) <= Math.max(1, 0.15 * len), `${p} ${s.name} event ${k}`));
+      }
+
+      if (++n >= 20)
+        break;
+    }
+
+    if (n >= 20)
+      break;
+  }
+
+  assert.ok(n >= 5, `${n} paths with events`);
+});
+
+await check('a new path starts at the enemy, goes nowhere else and ends in an attack', async () => {
+  const from = await lv3();
+  const to = bytesOf(await rom.read('data/level/lv_0/dat'));
+  const src = itemNamed(from, 'Madine_Attack');
+  const attack = await stockAttack();
+  const out = RS64.splineNew(from, src, to, { name: 'New_Path', at: [10, -5, 20], attack }).bytes;
+  const dv = new DataView(out.buffer);
+  const p = itemNamed(out, 'New_Path');
+  const pts = RS64.splinePoints(dv, p);
+
+  assert.equal(pts.length, 4);
+  assert.deepEqual(pts[1].map((v) => +v.toFixed(3)), [10, -5, 20]);
+  assert.ok(Math.hypot(...pts[2].map((v, a) => v - pts[1][a])) >= 10);
+  assert.equal(RS64.splineAttackEnd(out, p), true);
+  assert.equal(RS64.splineEvents(dv, p).nodes.length, 1);
+
+  for (let k = 0; k < 8; k++)
+    assert.equal(dv.getUint8(p.offset + dv.getUint32(p.offset + 0x60 + k * 16)), 0);
+
+  assert.deepEqual(RS64.datLookup(out, 'New_Path'), { type: 3, index: p.index });
+  lookupAll(out);
+});
+
 const eventSubs = (bytes, s) => {
   const items = RS64.parseDAT(new DataView(bytes.buffer)).items;
 
@@ -1655,9 +1800,7 @@ await check('a path copied from another level keeps its shape and safe events, u
 
   assert.equal(name, 'Madine_Attack');
 
-  const e0 = bytesOf(await rom.read('data/level/lv_e/dat'));
-  const t0 = RS64.parseDAT(new DataView(e0.buffer)).items.find((x) => x.type === 7 && x.sub === 0x4E && !x.pathEvent.target);
-  const attack = e0.slice(t0.offset, t0.offset + new DataView(e0.buffer).getUint32(t0.offset + 8));
+  const attack = await stockAttack();
   const { bytes, dropped } = RS64.splineCopy(from, src, to, { name, at: [10, -5, 20], attack });
 
   assert.equal(dropped, 0);
@@ -1719,10 +1862,7 @@ await check('a path copied from another level keeps its shape and safe events, u
 await check('the attack-at-end switch adds and removes one fly-at-player event', async () => {
   const b = await lv3();
   const s = itemNamed(b, 'Madine_Attack');
-  const e = bytesOf(await rom.read('data/level/lv_e/dat'));
-  const tpl = RS64.parseDAT(new DataView(e.buffer)).items.find((x) => x.type === 7 && x.sub === 0x4E && !x.pathEvent.target);
-  const tdv = new DataView(e.buffer);
-  const template = e.slice(tpl.offset, tpl.offset + tdv.getUint32(tpl.offset + 8));
+  const template = await stockAttack();
 
   assert.equal(RS64.splineAttackEnd(b, s), false);
 
@@ -1905,6 +2045,87 @@ await check('renaming an object rewrites every rule that names it', () => {
   assert.equal(RS64.rulesRename(doc, 'bridge', 'bridge_2'), 3);
   assert.ok(!JSON.stringify(doc).includes('"bridge"'));
   assert.equal(doc.rules[3].actions[0].unit, 'other');
+});
+
+await check('renaming moves camera shot lines and the NPCs flying a path', async () => {
+  const text = '# lv_3 bridge cam\nlv_3 bridge cam_a personal\nlv_3 t1 destroy bridge\nlv_3 t1 destroy other\nlv_4 bridge cam_a\n';
+  const r = RS64.shotRename(text, 'lv_3', 'bridge', 'span');
+
+  assert.equal(r.n, 2);
+  assert.equal(r.text, '# lv_3 bridge cam\nlv_3 span cam_a personal\nlv_3 t1 destroy span\nlv_3 t1 destroy other\nlv_4 bridge cam_a\n');
+
+  const b = await lv3();
+  const dv = new DataView(b.buffer);
+  const items = RS64.parseDAT(dv).items;
+  const flown = items.filter((x) => RS64.npcPathField(x) && RS64.npcPathGet(dv, x) === 'Madine_Attack');
+
+  assert.ok(flown.length > 0);
+
+  const { bytes, npcs } = RS64.datRenameItem(b, itemNamed(b, 'Madine_Attack'), 'Madine_Run');
+
+  assert.equal(npcs, flown.length);
+
+  const odv = new DataView(bytes.buffer);
+  const now = RS64.parseDAT(odv).items;
+
+  assert.ok(!now.some((x) => x.name === 'Madine_Attack'));
+  assert.deepEqual(RS64.datLookup(bytes, 'Madine_Run'), { type: 3, index: itemNamed(b, 'Madine_Attack').index });
+
+  for (const f of flown)
+    assert.equal(RS64.npcPathGet(odv, now.find((x) => x.type === f.type && x.index === f.index)), 'Madine_Run');
+
+  lookupAll(bytes);
+});
+
+await check('renaming a path moves the continuation links of the paths leading into it', async () => {
+  const b = bytesOf(await rom.read('data/level/lv_0/dat'));
+  const p = itemNamed(b, 'WEDGE_Spline_02');
+  const links = (bytes, name) => RS64.PATH_LINK_FIELDS.map((f) => RS64.nameListGet(new DataView(bytes.buffer), itemNamed(bytes, name), f)).flat();
+
+  assert.ok(links(b, 'WEDGE_Spline_01').includes('WEDGE_Spline_02'));
+
+  const r = RS64.datRenameItem(b, p, 'Wedge_Leg_2');
+
+  assert.ok(r.links >= 1);
+  assert.ok(links(r.bytes, 'WEDGE_Spline_01').includes('Wedge_Leg_2'));
+  assert.ok(!links(r.bytes, 'WEDGE_Spline_01').includes('WEDGE_Spline_02'));
+  assert.deepEqual(links(r.bytes, 'Wedge_Leg_2'), links(b, 'WEDGE_Spline_02'));
+  lookupAll(r.bytes);
+});
+
+await check('a trigger area\'s set-off-by list is written as the stock count + "a|b" and follows a rename', async () => {
+  let found = null;
+
+  for (const p of datLevels)
+  {
+    const b = bytesOf(await rom.read(p));
+    const items = RS64.parseDAT(new DataView(b.buffer)).items;
+    const t = items.find((x) => x.activators?.length === 1 && x.activators[0] !== 'ply' && items.filter((u) => u.name === x.activators[0]).length === 1);
+
+    if (t)
+    {
+      found = { b, t, unit: items.find((u) => u.name === t.activators[0]) };
+      break;
+    }
+  }
+
+  assert.ok(found, 'a stock trigger set off by one unit');
+
+  const { b, t, unit } = found;
+  const at = (bytes) => RS64.parseDAT(new DataView(bytes.buffer)).items.find((x) => x.type === t.type && x.index === t.index);
+  const two = RS64.triggerSetActivators(b, t, ['ply', unit.name]);
+  const dv = new DataView(two.buffer);
+  const t2 = at(two);
+
+  assert.deepEqual(t2.activators, ['ply', unit.name]);
+  assert.equal(dv.getUint8(t2.offset + dv.getUint32(t2.offset + (t.sub === 0x18 ? 0x58 : 0x68))), 2);
+  assert.equal(t2.radius, t.radius);
+  lookupAll(two);
+
+  const r = RS64.datRenameItem(b, unit, 'Renamed_Unit');
+
+  assert.equal(r.triggers, RS64.parseDAT(new DataView(b.buffer)).items.filter((x) => x.activators?.includes(unit.name)).length);
+  assert.deepEqual(at(r.bytes).activators, ['Renamed_Unit']);
 });
 
 await check('a rule whose object is gone is reported broken', async () => {
@@ -2482,6 +2703,33 @@ await check('defaults merge by id', () => {
   // A dropped spacer gives the natives below it back the 10 px the game pulled them up (rebuild_frontend_menu's lift).
   assert.deepEqual(full.rows.filter((r) => r.native).map((r) => r.y ?? 0), [0, 0, 0, 0, 0, 0, 0]);
   assert.deepEqual(RS64.menuLayout({ buttons: [] }, 'options', RS64.NATIVE_MENUS.options.entries, () => true, 8).rows.map((r) => r.y ?? 0), [0, 0, 0, 0, -10, -10, -10, -10]);
+});
+
+await check('every icon the explorer names has its SVG file', async () => {
+  const { readdirSync, existsSync } = await import('node:fs');
+  const dir = new URL('../', import.meta.url);
+  const sources = readdirSync(dir).filter((f) => /\.(js|html)$/.test(f)).map((f) => readFileSync(new URL(f, dir), 'utf8')).join('\n');
+  const names = new Set();
+
+  // The icon argument of setEditIcon / iconButton / iconImg / the panels' tool helpers (a name, or cond ? 'a' : 'b'), data-icon attributes,
+  // marker kinds, and the audio player's set.
+  const arg = /(?:setEditIcon\((?:\$\('\w+'\)|\w+), |iconButton\(|iconImg\(|\btool\()((?:\w+ \? )?'\w+'(?: : '\w+')?)/g;
+
+  for (const m of sources.matchAll(arg))
+    for (const n of m[1].matchAll(/'(\w+)'/g))
+      names.add(n[1]);
+
+  for (const m of sources.matchAll(/data-icon="(\w+)"/g))
+    names.add(m[1]);
+
+  for (const m of sources.matchAll(/\bicon: '([a-z]+)'/g))
+    names.add('markers/' + m[1]);
+
+  for (const n of ['loop', 'play', 'pause', 'stop', 'speaker', 'muted', 'solo'])
+    names.add(n);
+
+  assert.ok(names.size > 40, `only ${names.size} names found`);
+  assert.deepEqual([...names].filter((n) => !existsSync(new URL(`icons/${n}.svg`, dir))), []);
 });
 
 if (failed) { console.log(`${failed} failed`); process.exit(1); }

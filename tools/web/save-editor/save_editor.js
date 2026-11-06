@@ -50,8 +50,18 @@
       items:[
         {bit:0x00000004,name:"Millennium Falcon",code:"FARMBOY"},
         {bit:0x00000008,name:"TIE Fighter",code:"TIEDUP"},
-        {naboo:true,name:"Naboo Starfighter",code:"HALIFAX? !YNGWIE!",note:"Same as typing HALIFAX? and then !YNGWIE! on the passcode screen: the game saves the ship's unlock key, so the Naboo Starfighter stays unlocked for every pilot"},
-        {bit:0x00000002,name:"Buick V-Wing",code:"KOELSCH",note:"Same as typing KOELSCH on the passcode screen: the V-wing is replaced by a 1969 Buick convertible for every pilot"},
+        {
+          naboo:true,
+          name:"Naboo Starfighter",
+          code:"HALIFAX? !YNGWIE!",
+          note:"Same as typing HALIFAX? and then !YNGWIE! on the passcode screen: the game saves the ship's unlock key, so the Naboo Starfighter stays unlocked for every pilot"
+        },
+        {
+          bit:0x00000002,
+          name:"Buick V-Wing",
+          code:"KOELSCH",
+          note:"Same as typing KOELSCH on the passcode screen: the V-wing is replaced by a 1969 Buick convertible for every pilot"
+        },
         {bit:0x02000000,name:"Play as AT-ST",code:"CHICKEN",disabled:true,note:"Passcode screen only: CHICKEN takes effect when typed there"}
       ]
     },
@@ -168,8 +178,7 @@
   }
 
   // ---- checksums + header ----
-  function rebuildHeader()
-  {
+  function rebuildHeader(){
     // "GSYS"
     su32(0x04,0xF5F5F5F5);
     su32(0x08,0x47535953);
@@ -928,8 +937,7 @@
     return (c^0xFFFFFFFF)>>>0;
   }
 
-  function zipStore(name,data)
-  {
+  function zipStore(name,data){
     var nb=new TextEncoder().encode(name);
     var nlen=nb.length;
     var dlen=data.length;
@@ -989,8 +997,7 @@
     return out;
   }
 
-  function toast(msg,bad)
-  {
+  function toast(msg,bad){
     var el=document.getElementById("toast");
 
     el.textContent=msg;
@@ -1342,14 +1349,12 @@
             throw new Error("Slot "+i+" already holds a pilot");
 
           addPilot(i);
-        }
-        else if(a.action==="delete"){
+        } else if(a.action==="delete"){
           if(!acctActive(i))
             throw new Error("Slot "+i+" is empty");
 
           deletePilot(i);
-        }
-        else {
+        } else {
           var to=slotOf(a.to);
 
           if(to!==i)

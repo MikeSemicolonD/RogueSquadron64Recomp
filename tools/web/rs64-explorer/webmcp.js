@@ -88,6 +88,9 @@ const mcpEditMenu = () => {
 
 const mcpRound = (v) => v.map((n) => +n.toFixed(2));
 
+// Cutscenes are the intros, extros and specials; data/cuts also holds cutsave, 32 bytes that are not a cutscene.
+const MCP_CUTSCENE = /^data\/cuts\/.+_(intro|extro|special)$/;
+
 const mcpNeedRom = () => {
   if (!rom)
     throw new Error('No ROM loaded: open the Rogue Squadron (USA v1.0) ROM in the page first');
@@ -107,7 +110,8 @@ const mcpItem = (it) => ({
   kind: TYPES[markerKind(it)]?.label ?? String(markerKind(it)),
   name: it.name || null,
   model: it.model || null,
-  pos: mcpRound(it.pos)
+  pos: mcpRound(it.pos),
+  ...(it.type === 3 && it.points ? { points: it.points.map(mcpRound) } : {})
 });
 
 const mcpEvent = (e, i) => ({ index: i, kind: TL_KIND[e.type] ?? `type ${e.type}`, type: e.type, frame: e.frame, params: e.p });
@@ -152,7 +156,7 @@ const WEBMCP_TOOLS = [
       const keep = (...s) => !q || s.some((x) => String(x ?? '').toLowerCase().includes(q));
 
       const all = kind === 'levels' ? mcpLevels()
-        : (kind === 'cutscenes' ? [...rom.assets.keys()].filter((k) => k.startsWith('data/cuts/')).sort().map((id) => ({ id }))
+        : (kind === 'cutscenes' ? [...rom.assets.keys()].filter((k) => MCP_CUTSCENE.test(k)).sort().map((id) => ({ id }))
         : (kind === 'models' ? [...rom.assets.values()].filter((a) => a.name.endsWith('_HOB') && a.size > 8).map((a) => ({ id: a.path.replace(/_HOB$/, '') }))
         : (kind === 'audio' ? [
           ...(audioBank?.voice ?? []),
@@ -173,11 +177,14 @@ const WEBMCP_TOOLS = [
   },
   {
     name: 'rs64_level_objects',
-    description: 'The objects and event markers in a level\'s DAT (with the project\'s edits): type, index, kind, name, model and position. Defaults to the open level; optional type filters by DAT record type (0 units, 2 points, 3 paths, 6 zones, 7 triggers).',
+    description: 'The objects and event markers in a level\'s DAT (with the project\'s edits): type, index, kind, name, model and position (and a path\'s points). Defaults to the open level; optional type filters by DAT record type (0 units, 2 points, 3 paths, 6 zones, 7 triggers).',
     inputSchema: {
       type: 'object',
       properties: {
-        level: { type: 'string', description: 'A level id from rs64_list kind levels, e.g. data/level/lv_0' },
+        level: {
+          type: 'string',
+          description: 'A level id from rs64_list kind levels, e.g. data/level/lv_0'
+        },
         type: { type: 'integer' },
         limit: { type: 'integer', minimum: 1, maximum: 2000 }
       }
@@ -290,15 +297,17 @@ const WEBMCP_TOOLS = [
 
         setMode('levels');
         await showLevel(id);
-      } else if (kind === 'cutscene') {
-        if (!rom.assets.has(id))
-          throw new Error(`No cutscene ${id}`);
+      } else if (kind === 'cutscene')
+      {
+        if (!rom.assets.has(id) || !MCP_CUTSCENE.test(id))
+          throw new Error(`No cutscene ${id}: use rs64_list with kind cutscenes`);
 
         await showCutscene(id);
 
         if (!cutEditing)
           $('cutEdit').click();
-      } else if (kind === 'model') {
+      }
+      else if (kind === 'model') {
         if (!rom.assets.has(id + '_HOB'))
           throw new Error(`No model ${id}`);
 
@@ -1252,7 +1261,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_level_rename_object',
     edit: true,
-    description: 'Names an object in the open level (rules, camera shots and destroy lists name objects). Refused when the mission\'s script looks the old name up, or the new name is taken. The level\'s rules that named it follow the new name.',
+    description: 'Names an object in the open level (rules, camera shots and destroy lists name objects). Refused when the mission\'s script looks the old name up, or the new name is taken. The level\'s rules, camera shot lines, the NPCs flying it (a path or roam area), the trigger areas it sets off and the paths continuing into it follow the new name; moved counts each.',
     inputSchema: {
       type: 'object',
       properties: { type: { type: 'integer' }, index: { type: 'integer' }, name: { type: 'string', pattern: '^[!-~]{1,47}$' } },
@@ -1261,55 +1270,15 @@ const WEBMCP_TOOLS = [
     run: async ({ type, index, name }) => {
       mcpNeedLevel();
 
-      const it = mcpObject(type, index)[1];
-      const dir = selected;
-      const dv = await rom.read(dir + '/dat');
-      const old = it.name;
+      const moved = await renameObject(mcpObject(type, index)[1], name);
 
-      if (!/^[!-~]{1,47}$/.test(name))
-        throw new Error('A name is 1 to 47 printable characters with no spaces');
-
-      if (old === name)
-        return { object: mcpItem(it) };
-
-      if (old && nameUses(romBytes.subarray(0, BLOB_START), old, 0, 0))
-        throw new Error(`The mission's script looks "${old}" up by name, so it can't be renamed`);
-
-      if (parseDAT(dv).items.some((x) => x.name === name))
-        throw new Error(`"${name}" is already used in this level`);
-
-      let moved = 0;
-
-      await historyGroup(`Name ${name}`, async () => {
-        await editAsset(dir + '/dat', (b) => datNameItem(b, it, name), `Name ${name}`);
-
-        if (!old)
-          return;
-
-        const doc = await readRules(dir);
-
-        moved = rulesRename(doc, old, name, ruleExt);
-
-        if (moved)
-          await writeRules(dir, doc, `Rules: ${old} -> ${name}`);
-      });
-
-      await reselect(type, index);
-
-      const lv = dir.split('/').pop();
-      const shots = old ? await virtualText(SHOT_LINKS) : '';
-
-      return {
-        object: mcpItem(mcpObject(type, index)[1]),
-        rulesMoved: moved,
-        note: old && (shotLinkGet(shots, lv, old) || shotDestroyGet(shots, lv, old).length) ? `camera_shots.txt still names ${old}: set its links again with rs64_level_set_link` : undefined
-      };
+      return { object: mcpItem(mcpObject(type, index)[1]), moved };
     },
   },
   {
     name: 'rs64_level_links',
     edit: false,
-    description: 'What an object in the open level is linked to, as its Events / Objects panel shows: for a trigger area (type 7 sub 0x18/0x19) its camera shot, destroy list and the wave it starts; for an enemy its wave and path; for a wingman start its path; for a music region its song; for a path whether NPCs attack the player at its end. Also lists the level\'s waves, cameras, paths and songs to choose from.',
+    description: 'What an object in the open level is linked to, as its Events / Objects panel shows: for a trigger area (type 7 sub 0x18/0x19) what sets it off, its camera shot, destroy list and the wave it starts; for an enemy its wave and path; for a wingman start its path; for a music region its song; for a path whether NPCs attack the player at its end. Also lists the level\'s waves, cameras, paths and songs to choose from.',
     inputSchema: { type: 'object', properties: { type: { type: 'integer' }, index: { type: 'integer' } }, required: ['type', 'index'] },
     run: async ({ type, index }) => {
       mcpNeedLevel();
@@ -1325,8 +1294,7 @@ const WEBMCP_TOOLS = [
       const L = out.links;
       const waveName = (flag) => (flag ? Object.entries(waves).find(([, f]) => f === flag)?.[0] ?? `stock flag ${flag}` : null);
 
-      if (it.type === 7 && (it.sub === 0x18 || it.sub === 0x19) && it.name)
-      {
+      if (isTriggerArea(it) && it.name) {
         const s = shotLinkGet(shots, lv, it.name);
 
         Object.assign(L, {
@@ -1335,6 +1303,9 @@ const WEBMCP_TOOLS = [
           startWave: waveName(it.onEnter?.flag)
         });
       }
+
+      if (isTriggerArea(it))
+        L.setOffBy = (it.activators ?? []).map((a) => (a === 'ply' ? 'player' : a));
 
       if (it.type === 0 && WAVE_FIELDS[it.sub])
         Object.assign(L, { waitWave: waveName(waveGet(dv, it).flag), path: npcPathGet(dv, it) || null });
@@ -1345,7 +1316,7 @@ const WEBMCP_TOOLS = [
       if (it.type === 6 && it.sub === 0x10)
         L.song = parseMusicCues(romBytes).cues.find((c) => c.cue === it.songs?.[0])?.name ?? it.songs?.[0] ?? null;
 
-      if (it.type === 3 && it.sub === 3 && it.points?.length >= 4)
+      if (isFlightPath(it))
         L.attackAtEnd = splineAttackEnd(u8(dv), it);
 
       out.choices = {
@@ -1361,7 +1332,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_level_set_link',
     edit: true,
-    description: 'Sets one link of an object in the open level (see rs64_level_links). link: "cameraShot" (value: a camera name or null; personal: co-op only the trigger\'s player sees it), "destroy" (value: object names), "startWave" / "waitWave" (value: a wave name, new names make a wave; null for none; force replaces a trigger\'s stock flag), "path" (value: a path name or null; copyFrom: { level, path } copies a stock flight path), "song" (value: a song name or cue number), "attackAtEnd" (value: boolean; false needs force, as a path leading nowhere crashes the game).',
+    description: 'Sets one link of an object in the open level (see rs64_level_links). link: "cameraShot" (value: a camera name or null; personal: co-op only the trigger\'s player sees it), "destroy" (value: object names), "setOffBy" (value: "player" and/or unit names that fire a trigger area), "startWave" / "waitWave" (value: a wave name, new names make a wave; null for none; force replaces a trigger\'s stock flag), "path" (value: a path name, null, or "__new" for a new straight path from the object; copyFrom: { level, path } copies a stock flight path), "song" (value: a song name or cue number), "attackAtEnd" (value: boolean; false needs force, as a path leading nowhere crashes the game).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1369,7 +1340,7 @@ const WEBMCP_TOOLS = [
         index: { type: 'integer' },
         link: {
           type: 'string',
-          enum: ['cameraShot', 'destroy', 'startWave', 'waitWave', 'path', 'song', 'attackAtEnd']
+          enum: ['cameraShot', 'destroy', 'setOffBy', 'startWave', 'waitWave', 'path', 'song', 'attackAtEnd']
         },
         value: {},
         personal: { type: 'boolean' },
@@ -1389,7 +1360,7 @@ const WEBMCP_TOOLS = [
       const lv = dir.split('/').pop();
       const dv = await rom.read(dir + '/dat');
       const items = parseDAT(dv).items;
-      const area = it.type === 7 && (it.sub === 0x18 || it.sub === 0x19) && it.name;
+      const area = isTriggerArea(it) && it.name;
       const enemy = it.type === 0 && WAVE_FIELDS[it.sub];
       const wing = it.type === 0 && it.sub === 0x27;
 
@@ -1474,6 +1445,13 @@ const WEBMCP_TOOLS = [
       {
         need(enemy || wing, 'path');
 
+        if (value === '__new')
+        {
+          await newPathFor(it);
+
+          return WEBMCP_TOOLS.find((x) => x.name === 'rs64_level_links').run({ type, index });
+        }
+
         if (copyFrom)
         {
           const src = (await getPathCatalog()).find((c) => c.dir === copyFrom.level && c.name === copyFrom.path);
@@ -1491,6 +1469,18 @@ const WEBMCP_TOOLS = [
 
         await editItem(it, (bytes) => npcSetPath(bytes, it, value ?? (enemy ? '-' : '')), `Path: ${it.name} -> ${value ?? 'none'}`, dir);
       }
+      else if (link === 'setOffBy')
+      {
+        need(isTriggerArea(it), 'set-off-by');
+
+        const names = [value ?? []].flat().map((n) => (n === 'player' ? 'ply' : n));
+        const missing = names.find((n) => n !== 'ply' && !items.some((x) => x.name === n));
+
+        if (missing)
+          throw new Error(`No object ${missing} in this level`);
+
+        await editItem(it, (b) => triggerSetActivators(b, it, names), `Set off by: ${it.name || 'trigger'}`);
+      }
       else if (link === 'song')
       {
         need(it.type === 6 && it.sub === 0x10, 'song');
@@ -1504,7 +1494,7 @@ const WEBMCP_TOOLS = [
       }
       else
       {
-        need(it.type === 3 && it.sub === 3 && it.points?.length >= 4, 'attack-at-end');
+        need(isFlightPath(it), 'attack-at-end');
 
         if (!value && !force)
           throw new Error('A craft that reaches the end of a path leading nowhere crashes the game: pass force if this path continues into another one');
@@ -1515,6 +1505,28 @@ const WEBMCP_TOOLS = [
       }
 
       return WEBMCP_TOOLS.find((x) => x.name === 'rs64_level_links').run({ type, index });
+    },
+  },
+  {
+    name: 'rs64_level_set_path_points',
+    edit: true,
+    description: 'Replaces the points of a flight path (DAT type 3 sub 3) in the open level: at least 4 world [x, y, z] points; a craft flies from the second to the second-last, and the path\'s events keep their place along it. rs64_level_objects lists a path\'s current points.',
+    inputSchema: {
+      type: 'object',
+      properties: { type: { type: 'integer' }, index: { type: 'integer' }, points: { type: 'array', minItems: 4, items: vec3 } },
+      required: ['type', 'index', 'points']
+    },
+    run: async ({ type, index, points }) => {
+      mcpNeedLevel();
+
+      const it = mcpObject(type, index)[1];
+
+      if (it.type !== 3 || it.sub !== 3)
+        throw new Error('Only flight paths (type 3 sub 3) have points to set');
+
+      await setPathPoints(it, points, `Set ${points.length} points`);
+
+      return { object: mcpItem(mcpObject(type, index)[1]) };
     },
   },
   {
@@ -1698,7 +1710,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_terrain_brush',
     edit: true,
-    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius. Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
+    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius. square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1711,14 +1723,24 @@ const WEBMCP_TOOLS = [
         radius: { type: 'number', exclusiveMinimum: 0 },
         amount: { type: 'number' },
         height: { type: 'number' },
-        strength: { type: 'number', minimum: 0, maximum: 1 },
-        passes: { type: 'integer', minimum: 1, maximum: 50 },
+        strength: {
+          type: 'number',
+          minimum: 0,
+          maximum: 1
+        },
+        passes: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 50
+        },
         texture: { type: 'integer' },
+        square: { type: 'boolean' },
+        hard: { type: 'boolean' },
         followObjects: { type: 'boolean' }
       },
       required: ['tool', 'x', 'z', 'radius']
     },
-    run: async ({ tool, x, z, radius, amount, height, strength = 1, passes = 1, texture, followObjects = true }) => {
+    run: async ({ tool, x, z, radius, amount, height, strength = 1, passes = 1, texture, square = false, hard = false, followObjects = true }) => {
       const s = await mcpSculptLoad();
       const g = s.grid;
       const scale = mcpTerrainScale(s);
@@ -1733,10 +1755,7 @@ const WEBMCP_TOOLS = [
         if (texture == null)
           throw new Error('Give texture (a tile texture id, as rs64_terrain_get reports one)');
 
-        for (let ty = 0; ty < g.h; ty++)
-          for (let tx = 0; tx < g.w; tx++)
-            if (Math.hypot(tx * 4 + 2 - gx, ty * 4 + 2 - gy) <= Math.max(r, 2))
-              g.tex[ty * g.w + tx] = texture;
+        brushPaint(g, gx, gy, Math.max(r, 2), texture, square);
       }
       else
       {
@@ -1746,39 +1765,7 @@ const WEBMCP_TOOLS = [
         const flat = (height ?? groundAt(g.hts, g, scale, x, z)) / scale;
 
         for (let p = 0; p < (tool === 'smooth' ? passes : 1); p++)
-        {
-          const src = g.hts.slice();
-          const at = (ix, iy) => src[Math.min(g.H - 1, Math.max(0, iy)) * g.W + Math.min(g.W - 1, Math.max(0, ix))];
-
-          for (let iy = Math.max(0, Math.floor(gy - r)); iy <= Math.min(g.H - 1, Math.ceil(gy + r)); iy++)
-          {
-            for (let ix = Math.max(0, Math.floor(gx - r)); ix <= Math.min(g.W - 1, Math.ceil(gx + r)); ix++)
-            {
-              const d = Math.hypot(ix - gx, iy - gy);
-
-              if (d > r)
-                continue;
-
-              let w = 1 - d / r;
-
-              w = w * w * (3 - 2 * w);
-
-              const i = iy * g.W + ix;
-
-              // Heights are stored game Y-down, so raising subtracts.
-              if (tool === 'raise')
-                g.hts[i] -= (amount / scale) * w;
-              else if (tool === 'lower')
-                g.hts[i] += (amount / scale) * w;
-              else if (tool === 'flatten')
-                g.hts[i] += (flat - g.hts[i]) * strength * w;
-              else
-                g.hts[i] += ((at(ix - 1, iy) + at(ix + 1, iy) + at(ix, iy - 1) + at(ix, iy + 1)) / 4 - g.hts[i]) * strength * w;
-
-              g.hts[i] = Math.max(-128, Math.min(127, g.hts[i]));
-            }
-          }
-        }
+          brushHeights(g, gx, gy, r, tool, { amount: amount / scale, flat, mix: strength, square, hard });
       }
 
       const bytes = rebuildTerrain();

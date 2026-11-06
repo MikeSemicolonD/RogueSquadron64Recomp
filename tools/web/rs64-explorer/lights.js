@@ -548,15 +548,6 @@ async function lightsAddFx() {
     lightNew([0, 0, 0], LIGHT_FX_RADIUS));
 }
 
-// A panel button drawn as an icon, its label as the tooltip and accessible name.
-function iconButton(icon, title, onclick) {
-  const b = elem('button', { title, onclick });
-
-  setEditIcon(b, icon);
-
-  return b;
-}
-
 const lightMarkers = () => {
   const out = [];
 
