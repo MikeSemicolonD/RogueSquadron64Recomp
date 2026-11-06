@@ -53,6 +53,11 @@ void rs64_renderdoc_init()
         g_rdoc->SetCaptureFilePathTemplate(out);
     }
 
+    // F12 is the game's minidump key, so RenderDoc captures on Print Screen only.
+    RENDERDOC_InputButton capture_key = eRENDERDOC_Key_PrtScrn;
+
+    g_rdoc->SetCaptureKeys(&capture_key, 1);
+
     if (requested) {
         g_rdoc->MaskOverlayBits(eRENDERDOC_Overlay_None, eRENDERDOC_Overlay_None);
     }
