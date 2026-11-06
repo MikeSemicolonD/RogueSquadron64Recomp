@@ -99,8 +99,8 @@ extern "C" float rs64_draw_dist(void)
     return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view());
 }
 
-// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own terrain ("legacyTerrain", and
-// cutscenes that keep their own view: their sky sits below the map's horizon), 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides.
+// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own terrain ("legacyTerrain"),
+// 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides.
 extern "C" int rs64_static_terrain_mode(void)
 {
 
@@ -108,9 +108,12 @@ extern "C" int rs64_static_terrain_mode(void)
 
     if (s_env >= 0) return s_env;
 
-    if (game_owns_view()) return 0;
-
     return rs64::video::legacy_terrain() ? 0 : 1;
+}
+
+// A cutscene that keeps its own view: the map pass drops land past the fog end, where the game draws no terrain and its sky sits below the map's horizon.
+extern "C" int rs64_terrain_fog_clip(void) {
+    return game_owns_view() ? 1 : 0;
 }
 
 static bool terrain_pass_on() {
