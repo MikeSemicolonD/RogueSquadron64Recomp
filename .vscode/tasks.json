@@ -259,6 +259,20 @@
             "detail": "Builds rs64_relay, then opens it in its own console window on UDP 27070, run from build/<config> (its rs64_relay.cfg is saved there). Type help in that window for commands; quit or Ctrl+C stops it. Point the game at it with \"relay_server\": \"127.0.0.1\" in roguesq_net.json (docs/guides/relay-server.md)."
         },
         {
+            "label": "Docs: Wiki screenshots",
+            "type": "shell",
+            "command": "if (-not (Test-Path node_modules)) { npm install --no-audit --no-fund; npx playwright install chromium }; node wiki_shots.mjs",
+            "options": {
+                "cwd": "${workspaceFolder}/tools/web/rs64-explorer/tests",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Takes the RS64 Explorer screenshots listed in tools/web/rs64-explorer/tests/wiki_shots.json into docs/wiki/images/, in headless Chromium with build/Debug/rogue_squadron.z64 loaded. Installs Playwright on first run. Takes a few minutes; add --only <name> to retake one."
+        },
+        {
             "label": "Debug: Full dump of running game(s)",
             "type": "shell",
             "command": "& .\\tools\\debug\\dump-game.ps1",

@@ -1,0 +1,10 @@
+[
+  {"name":"overview","steps":[{"tool":"rs64_open","args":{"kind":"model","id":"data/pl_crafts/xwing"}}]},
+  {"name":"model-texture-card","steps":[{"tool":"rs64_open","args":{"kind":"model","id":"data/pl_crafts/xwing"}},{"wait":500},{"rightClick":[0.42,0.62]}]},
+  {"name":"level-objects","steps":[{"tool":"rs64_open","args":{"kind":"level","id":"data/level/lv_0"}},{"click":"#editTab"},{"click":"[data-mode=objects]"}]},
+  {"name":"level-terrain","steps":[{"tool":"rs64_open","args":{"kind":"level","id":"data/level/lv_0"}},{"click":"#editTab"},{"click":"[data-mode=terrain]"}],"element":"#editPanel","pad":8},
+  {"name":"level-events","steps":[{"tool":"rs64_open","args":{"kind":"level","id":"data/level/lv_0"}},{"click":"#editTab"},{"click":"[data-mode=events]"},{"click":"#btnRules"}],"element":"#rulesPanel","pad":8},
+  {"name":"level-settings","steps":[{"tool":"rs64_mod_level_new","args":{"from":"data/level/lv_0","title":"Dune Sea Ambush"}},{"click":"#btnLevelSettings"}],"element":"dialog[open]","pad":8},
+  {"name":"cutscene-editor","settle":1500,"steps":[{"tool":"rs64_open","args":{"kind":"level","id":"data/level/lv_0"}},{"select":["#cutPick","cut:data/cuts/id0_intro"]},{"wait":4000},{"click":"#cutPlay"},{"click":"#cutEdit"}],"clip":[280,0,1120,730]},
+  {"name":"menu-editor","steps":[{"tool":"rs64_open","args":{"kind":"menu","id":"main_menu"}}],"element":"#menuPanel"}
+]
