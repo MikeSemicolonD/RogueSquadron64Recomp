@@ -522,13 +522,21 @@ static void testCasterFragment() {
 static void testLastPassPerTarget() {
     int a = 0, b = 0;
     const void* targets[4] = { &a, &a, &b, &a };
+    const bool same[4] = { false, false, false, false };
     bool on[4] = { true, true, true, false };
-    lastPassPerTarget(targets, on, 4);
+    lastPassPerTarget(targets, same, on, 4);
     CHECK(!on[0] && on[1] && on[2] && !on[3]);
     bool on2[2] = { true, false };
     const void* t2[2] = { &a, &a };
-    lastPassPerTarget(t2, on2, 2);
+    lastPassPerTarget(t2, same, on2, 2);
     CHECK(on2[0] && !on2[1]);
+
+    // The cockpit after a depth clear starts a new view: the world keeps its pass, and the cockpit keeps its own.
+    const void* t3[3] = { &a, &a, &a };
+    const bool cockpit[3] = { false, false, true };
+    bool on3[3] = { true, true, true };
+    lastPassPerTarget(t3, cockpit, on3, 3);
+    CHECK(!on3[0] && on3[1] && on3[2]);
 }
 
 static void testConsensusUp() {
