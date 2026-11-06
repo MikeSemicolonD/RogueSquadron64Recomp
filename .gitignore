@@ -49,6 +49,7 @@ bld/
 out/
 node_modules/
 vcpkg_installed/
+/wiki-preview/
 
 # Build artifacts
 *.exe

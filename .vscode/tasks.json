@@ -174,7 +174,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android, plus RecompModTool and the relay server for Windows x64 and Linux x64) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
+            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android, plus RecompModTool and the relay server for Windows x64 and Linux x64) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: build/packages). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
         },
         {
             "label": "Package: RecompModTool (Windows + Linux)",
@@ -271,6 +271,20 @@
             },
             "problemMatcher": [],
             "detail": "Takes the RS64 Explorer screenshots listed in tools/web/rs64-explorer/tests/wiki_shots.json into docs/wiki/images/, in headless Edge with build/Debug/rogue_squadron.z64 loaded. Installs Playwright on first run. About 30 s; add --only <name> to retake one."
+        },
+        {
+            "label": "Docs: Wiki preview",
+            "type": "shell",
+            "command": "node tools/web/rs64-explorer/tests/wiki_preview.mjs; if ($?) { code wiki-preview/Home.md }",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Copies docs/wiki to wiki-preview/ (gitignored) with the wiki's page links turned into .md links and the sidebar under each page, then opens Home.md. Press Ctrl+Shift+V to preview; links between pages work there."
         },
         {
             "label": "Debug: Full dump of running game(s)",
@@ -1070,7 +1084,7 @@
             "id": "releaseOutDir",
             "type": "promptString",
             "description": "Folder for the release packages (a <version> subfolder is created; %VARS% are expanded)",
-            "default": "%USERPROFILE%\\Desktop\\rs64-release"
+            "default": "build\\packages"
         },
         {
             "id": "releaseTargets",
