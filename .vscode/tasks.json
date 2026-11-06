@@ -808,10 +808,10 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "set -e; R=\"$(wslpath '${workspaceFolder}')\"; bash \"$R/tools/release/macos/cross-build.sh\" arm64 Release; bash \"$R/tools/release/macos/cross-build.sh\" x86_64 Release; mkdir -p \"$R/build/release\"; bash \"$R/tools/release/macos/package.sh\" \"$R/build/release/RogueSquadron64Recomp-macos.zip\" ~/rs64-build-macos-arm64-release ~/rs64-build-macos-x86_64-release"
+                "set -e; R=\"$(wslpath '${workspaceFolder}')\"; bash \"$R/tools/release/macos/cross-build.sh\" arm64 Release; bash \"$R/tools/release/macos/cross-build.sh\" x86_64 Release; mkdir -p \"$R/build/release\"; bash \"$R/tools/release/macos/package.sh\" \"$R/build/release/RogueSquadron64Recomp-macos-universal.zip\" ~/rs64-build-macos-arm64-release ~/rs64-build-macos-x86_64-release"
             ],
             "problemMatcher": [],
-            "detail": "Release cross-builds for arm64 and x86_64, then one universal RogueSquadron64Recomp.app zipped with README.txt and LICENSE.txt into build/release/RogueSquadron64Recomp-macos.zip."
+            "detail": "Release cross-builds for arm64 and x86_64, then one universal RogueSquadron64Recomp.app zipped with README.txt and LICENSE.txt into build/release/RogueSquadron64Recomp-macos-universal.zip."
         },
         {
             "label": "Run (Linux/WSL, GPU via dzn)",
