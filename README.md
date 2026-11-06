@@ -205,14 +205,11 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 - Ray Tracing is implemented but has some issues:
   - Odd shadow patches in places
   - Incorrect shadow cast intensity relative to the self casted shadow.
-  - Incorrect shadow reflection or shadow culling when look at the water from and obleak OR downward angle. Especially noticable at the edges of the level.
+  - Incorrect shadow reflection or shadow culling when look at the water from and obleak OR downward angle.
   - Weird/hard looking shadows in the fog (calamari intro cutscene is a good example of this)
   - World Devestator Shadows being cutout during the cutscene (calamari intro cutscene is a good example of this)
-  - Shadows should be getting casted in the cockpit relative to sun direction
 
-- Fog doesn't blend well with the terrain edge (initial tatoine cutscene is a good example)
-
-- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations looks choppy for a few ms) due to things like glpyhs, graphics amd music loading on the fly when menus load.
+- Horizon ring culls on the edges of the screen (showing just black) when doing hard banking turns while at a low altitude. (high altitudes don't show this issue.)
 
 ### Game specific Issues
 
@@ -222,6 +219,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has it's own internal scheduler meaning majority of the time it's actually waiting on a counter or something to 'finish'.
+
+- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations looks choppy for a few ms) due to things like glpyhs, graphics amd music loading in on the fly when menus load.
 
 - Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
 
@@ -233,7 +232,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
 
-- Lasers + missiles popping out of existance due to the number of them being generated at once. This is normal game behaviour based on  a pre-defined budget. There's a larger-object-pool mod that extends this limit.
+- Lasers + missiles popping out of existance due to the number of them being generated at once. This is the game's normal pooled object behaviour. There's a larger-object-pool mod that extends this limit.
 
 - During the end sequence a few firework effects (After 4 go off in sequence and are visible on screen) don't display.
 
@@ -245,14 +244,14 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- Explosion RT lights
-
-- Better RT Water Shader effects like ripples
-
 - RS64 Explorer Fixes & Improvements
   - Terrain texture painting
   - Path authoring
   - Level event & objective scripting
+
+- Removing frame limits
+
+- VR Support via OpenXR (Dependant on removing frame limits)
 
 ## Building
 
