@@ -709,10 +709,11 @@ static void testSelectLights() {
         in[i].intensity = 1.0f;
     }
     in[39].intensity = 0.0f;
+    in[38].intensity = 0.001f;
     std::vector<Resolved> out(MaxLights);
     const size_t n = selectLights(in.data(), in.size(), out.data(), kSlots);
     CHECK(n == kSlots);
-    CHECK(near(out[0].pos[2], 200.0f, 1e-5f));
+    CHECK(near(out[0].pos[2], 300.0f, 1e-5f));
     for (size_t i = 1; i < n; ++i) {
         CHECK(out[i].pos[2] >= out[i - 1].pos[2]);
     }
