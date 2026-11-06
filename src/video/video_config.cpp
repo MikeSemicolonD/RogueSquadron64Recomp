@@ -469,8 +469,8 @@ bool peek_fullscreen(const std::string& path)
     return j.is_object() && j.contains("fullscreen") && j["fullscreen"].is_boolean() && j["fullscreen"].get<bool>();
 }
 
-float effective_draw_distance(float setting, bool game_view, uint32_t level) {
-    return (game_view || level == kGameViewLevel) ? 1.0f : setting;
+float effective_draw_distance(float setting, bool game_view) {
+    return game_view ? 1.0f : setting;
 }
 
 void apply_friendly(UC& uc, const json& j)

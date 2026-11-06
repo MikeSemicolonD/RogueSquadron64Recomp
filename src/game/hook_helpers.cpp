@@ -96,7 +96,7 @@ static bool game_owns_view() {
 
 extern "C" float rs64_draw_dist(void)
 {
-    return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view(), rs64_state_level());
+    return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view());
 }
 
 // Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own terrain ("legacyTerrain", and
@@ -124,7 +124,7 @@ extern "C" float rs64_terrain_dist(void)
 
     if (terrain_pass_on()) return 1.0f;
 
-    return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view(), rs64_state_level());
+    return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view());
 }
 
 // Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map.

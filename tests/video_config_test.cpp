@@ -299,10 +299,9 @@ static void test_language_code_roundtrip() {
 
 static void test_effective_draw_distance() {
     using rs64::video::effective_draw_distance;
-    CHECK(effective_draw_distance(2.0f, false, 15) == 2.0f);
-    CHECK(effective_draw_distance(2.0f, true, 15) == 1.0f);
-    CHECK(effective_draw_distance(2.0f, false, rs64::video::kGameViewLevel) == 1.0f);
-    CHECK(effective_draw_distance(1.0f, false, 0) == 1.0f);
+    CHECK(effective_draw_distance(2.0f, false) == 2.0f);
+    CHECK(effective_draw_distance(2.0f, true) == 1.0f);
+    CHECK(effective_draw_distance(1.0f, false) == 1.0f);
 }
 
 // rayTracing: the file round-trips the player's setting; an env var pins the live switch but never leaks into the file.
