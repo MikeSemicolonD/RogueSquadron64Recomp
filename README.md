@@ -203,44 +203,51 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Recomp. specific Issues
 
 - Ray Tracing is implemented but has some issues:
-  - There are situations where light 'sticks' to the player and begins to flicker
-  - Odd shadows in places
-  - Incorrect shadow reflections
-  - Some/parts of objects not reflecting in the water at all
-  - Incorrect shadow reflection culling when look at the water from and obleak angle
+  - Odd shadow patches in places
+  - Incorrect shadow cast intensity relative to the self casted shadow.
+  - Incorrect shadow reflection or shadow culling when look at the water from and obleak OR downward angle. Especially noticable at the edges of the level.
+  - Weird/hard looking shadows in the fog (calamari intro cutscene is a good example of this)
+  - World Devestator Shadows being cutout during the cutscene (calamari intro cutscene is a good example of this)
+  - Shadows should be getting casted in the cockpit relative to sun direction
 
-- Cutscenes don't seem to use the water plane or new terrain renderer during cutscenes.
+- Fog doesn't blend well with the terrain edge (initial tatoine cutscene is a good example)
 
-- When using base setting + no mods homing missiles don't attract to targets like normal (This an caused from the draw distance changes?) In turn would a larger draw distance affect homing missile tracking in general for both the player and the turret/enemy like the turret being able to track the player farther than usual?
-
-- World devestators show signs of 'flickering in place' especially by the feet (and the feet's top segment) of the devestator when frame interpolation is on.
-
-- When Draw distance is at Max I've seen what looks like a red laser streak across the whole screen when playing the calamari mission. (Issue with interpolation + object pooling?) Specifically can be seen after taking out the 2nd devestator and flying towards the city.
-
-- A few firework effects (maybe 1 or 2 types?) don't display during the end cutscene. Could be an object pooling issue but not sure.
-
-- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition coming in looks choppy) due to things like glpyhs, graphics amd music loading on the fly.
+- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations looks choppy for a few ms) due to things like glpyhs, graphics amd music loading on the fly when menus load.
 
 ### Game specific Issues
+
+> [!IMPORTANT]
+> **Game Issues**" are usually deep seeded issues that can touch hundreds of different functions and effect various internal systems in the game.
+> Game Issues are less of a priority since they exist in the base game and fixing some of them might take away the charm that those rough edges bring.
+> Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has it's own internal scheduler meaning majority of the time it's actually waiting on a counter or something to 'finish'.
 
 - Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
 
+- Some enemies pop in at a distance because the game spawns them in view where as the original fog + draw distance would hide most of this.
+
 - Shooting at the lava or colliding against the ground in Raid on Sullust produces fire balls that look dim/muted compared to the other bigger lava explosion effects in the level
 
 - Terrain tile and normal textures don't align perfectly and seem to have a slight cut off.
 
-- The starfield in the background used during the credits sequence **is** really *that* blurry with visible artifacts everywhere.
+- The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
 
-- Lasers + missiles popping out of existance due to the number of them being generated at once. This is normal game behaviour based on pre-defined budget. There's a larger-object-pool mod that  extends this limit.
+- Lasers + missiles popping out of existance due to the number of them being generated at once. This is normal game behaviour based on  a pre-defined budget. There's a larger-object-pool mod that extends this limit.
+
+- During the end sequence a few firework effects (After 4 go off in sequence and are visible on screen) don't display.
 
 #### Draw distance Caveats
 
 - Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
 - With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x`.
+- Draw distance will change on the fly relative to the cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes.
 
 ### Roadmap
+
+- Explosion RT lights
+
+- Better RT Water Shader effects like ripples
 
 - RS64 Explorer Fixes & Improvements
   - Terrain texture painting
