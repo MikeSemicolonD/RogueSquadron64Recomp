@@ -284,9 +284,10 @@ static void testBuildTerrainMesh() {
 
     CHECK(pos.size() == (2 * 25 + 4 * (span - 1)) * 3);
     CHECK(pos[50 * 3] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512) && pos[50 * 3 + 2] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512));
-    CHECK(pos[50 * 3 + 1] == 160.0f - TerrainWaterLift + TerrainWaterTraceGap);
+    // Past the ground cell the margin follows its ground (height 0), as the terrain pass draws it; the shore cell sits just under the drawn water.
+    CHECK(pos[50 * 3 + 1] == TerrainWaterTraceGap);
     CHECK(pos[53 * 3] == float((1 - TerrainWaterMargin) * 512));
-    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == pos[50 * 3 + 1] && pos[shore * 3 + 2] == 0.0f);
+    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == 160.0f - TerrainWaterLift + TerrainWaterTraceGap && pos[shore * 3 + 2] == 0.0f);
     CHECK(pos[(shore + 3) * 3] == 1024.0f && pos[(shore + 3) * 3 + 2] == 512.0f);
     CHECK(idx[shoreIdx] == shore && idx[shoreIdx + 1] == shore + 3 && idx[shoreIdx + 2] == shore + 2);
 }
