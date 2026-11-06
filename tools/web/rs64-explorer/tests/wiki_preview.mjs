@@ -21,8 +21,10 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 cpSync(join(src, 'images'), join(out, 'images'), { recursive: true });
 
-for (const page of pages) {
-  if (page.startsWith('_')) continue;
+for (const page of pages)
+{
+  if (page.startsWith('_'))
+    continue;
 
   writeFileSync(join(out, page + '.md'), read(page) + (tail ? '\n\n---\n\n' + tail : '') + '\n');
 }

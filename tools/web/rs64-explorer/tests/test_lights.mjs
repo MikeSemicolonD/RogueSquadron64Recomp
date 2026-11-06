@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 createRequire(import.meta.url)('../rs64assets.js');
 const { lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, spriteKeys } = globalThis.RS64;
+
 // rmobil's 7-node "vwing" keys apart from the 3-node V-wing (same table as rs64lights::meshKeyName).
 assert.equal(meshKeyName('vwing', 7), 'rmobil');
 assert.equal(meshKeyName('vwing', 3), 'vwing');
@@ -27,6 +28,7 @@ assert.ok(lightsMeshMatches('xwing#s0.p1.2', 'xwing#s0.p1.2'));
 assert.ok(!lightsMeshMatches('red_laser', 'red_laser_dst#s0.p0.0'));
 assert.ok(!lightsMeshMatches('xwing#s0.p1', 'xwing#s0.p10.0'));
 assert.ok(!lightsMeshMatches('', 'xwing#s0.p1.2'));
+
 // Several keys: a player craft part and its wingman model's parts on the same joint.
 assert.ok(lightsMeshMatches('xwing#s0.p1|wmxwng#s0.p3', 'wmxwng#s0.p3.0'));
 assert.ok(lightsMeshMatches('xwing#s0.p1|wmxwng#s0.p3', 'xwing#s0.p1.2'));

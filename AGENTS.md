@@ -107,7 +107,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 
 ## Style conventions
 
-`style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/`, `relay-server/src` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists); the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
+`style_check` ([tests/style_check.cpp](tests/style_check.cpp), run by `rs64_unit_tests`) enforces these rules for `src/`, `relay-server/src` and `mods/multiplayer-native/src` (which may include only the base headers its CMakeLists lists), and the subset under Web JS below for `tools/web`; the baseline only shrinks (`build/Debug/style_check . --update-baseline` after fixing findings).
 
 - **No emojis** in code, comments, or docs unless explicitly requested.
 - **Minimal UI controls.** When placing buttons and toggles (RS64 Explorer, ImGui panels), keep them few and compact, use an icon with a tooltip instead of a text label wherever the action reads from an icon, and keep a toggle away from a destructive button. The RS64 Explorer's full design rules are in [tools/web/rs64-explorer/DESIGN.md](tools/web/rs64-explorer/DESIGN.md); follow them and update that file when a new rule is agreed.
@@ -188,6 +188,41 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **Env gates on hot paths must read the environment once.** Use a `static const` initializer, or a distinct uninitialized sentinel checked with `== -1`. Never cache "off" as a negative value that a `< 0` check re-reads: 12 such gates in the F5 GBI ran `getenv()` on every command and were half the walk time.
 - **Read env vars through the shared `recomp::dbg::env_*` helpers** (`src/util/debug_logs.h`: `env_on`/`env_int`/`env_str`/`env_u32`), not open-coded `getenv` parsing.
 - **Remove a debug env var once the fix or feature it served is done** — the gate, the code behind it, its row in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md), and any comment naming it. Keep one only if it can test, validate or probe for other bugs (a trace category, a dump, an address watch, an A/B toggle for a still-heuristic path). A probe for one frame, one address or one already-verified fix does not qualify.
+- **Web JS** (`tools/web`, checked by `style_check` too; `voice_cats.js` is generated and skipped) keeps the comment, one-statement and no-bare-block rules, with its own layout. `node tools/web/rs64-explorer/tests/jsfmt.mjs --write` applies it to every file (or the ones named) and `--check` lists the files that differ; both need `npm install` in that folder.
+
+  ```js
+  function inspect(hit)
+  {
+    const o = hit.object;
+    const tile = tileOf(o);
+
+    if (!tile)
+      return null;
+
+    let alpha = 'opaque';
+
+    if (info.valpha)
+      alpha = 'blended';
+    else if (info.cutout)
+      alpha = 'cutout';
+
+    return {
+      title: `Tile ${tile.x}, ${tile.y}`,
+      rows: [
+        ['Alpha', alpha],
+        ['Flags', hex(tile.flags)]
+      ]
+    };
+  }
+  ```
+
+  - The opening brace of an `if` / `else` / loop / `switch` / named function goes on its own line when the header spans lines or the header or a direct body line is 70+ characters; otherwise, and for every arrow function, object and array, it stays on the statement's line.
+  - A body without braces always goes on the next line, two spaces in (`if (x)` / `return;`, `else` / `y();`, `while (...)` / `i++;`).
+  - One declaration per `const` / `let` / `var`.
+  - A literal that spans lines is the opening brace, one element per line two spaces in, then the closing brace; a single-line literal on a line over 160 characters is split that way. Lists of plain numbers, strings or shorthand names, and `key: plain value` lookup tables, stay packed. Comment lines inside a literal stay above the element they describe.
+  - A ternary inside a ternary is in parentheses; a chain of three or more reads better as `if` / `else if` (as above).
+  - Blank lines separate steps: around multi-line blocks and statements (a guard with its body on the next line counts), where a run of declarations gives way to other statements or back, before a `return` or `throw` that follows other statements, and before a comment that follows code. Never before a closing brace.
+  - A file's header comment and reference notes on data formats may run past 2 lines.
 
 ## Environment variables
 

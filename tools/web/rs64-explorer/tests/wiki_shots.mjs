@@ -13,10 +13,13 @@ import { join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repo = resolve(fileURLToPath(import.meta.url), '../../../../..');
+
 const arg = (name, def) => {
   const i = process.argv.indexOf(name);
+
   return i > 0 ? process.argv[i + 1] : def;
 };
+
 const rom = resolve(arg('--rom', join(repo, 'build/Debug/rogue_squadron.z64')));
 const out = resolve(arg('--out', join(repo, 'docs/wiki/images')));
 const only = arg('--only', '')?.split(',').filter(Boolean);
@@ -24,7 +27,8 @@ const shots = JSON.parse(readFileSync(new URL('./wiki_shots.json', import.meta.u
 
 // Runs in the page: draws arrows and labels over everything, in page pixels. An arrow's tip sits on the edge of its target's box facing
 // where it comes from; angle 0 comes from the right, 90 from below, 180 from the left, 270 from above.
-function drawAnnotations(list) {
+function drawAnnotations(list)
+{
 
   const NS = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(NS, 'svg');
@@ -36,11 +40,13 @@ function drawAnnotations(list) {
 
   const rectOf = (at) => {
 
-    if (Array.isArray(at)) return { x: at[0], y: at[1], width: 0, height: 0 };
+    if (Array.isArray(at))
+      return { x: at[0], y: at[1], width: 0, height: 0 };
 
     const el = document.querySelector(at);
 
-    if (!el) throw new Error(`annotation target ${at} not found`);
+    if (!el)
+      throw new Error(`annotation target ${at} not found`);
 
     return el.getBoundingClientRect();
   };
@@ -54,17 +60,20 @@ function drawAnnotations(list) {
     box.setAttribute('style', `position:absolute;left:0;top:0;white-space:nowrap;font:600 ${size}px system-ui,sans-serif;color:${s.textColor};background:${s.color};padding:${size * 0.3}px ${size * 0.6}px;border-radius:${size * 0.4}px;box-shadow:0 0 0 ${s.outline}px ${s.outlineColor}`);
     layer.append(box);
 
-    const w = box.offsetWidth, h = box.offsetHeight;
+    const w = box.offsetWidth;
+    const h = box.offsetHeight;
     const t = Math.min(dx ? w / 2 / Math.abs(dx) : Infinity, dy ? h / 2 / Math.abs(dy) : Infinity);
     const shift = Number.isFinite(t) ? t + 4 : 0;
 
     box.style.transform = `translate(${x + dx * shift - w / 2}px, ${y + dy * shift - h / 2}px)`;
   };
 
-  for (const a of list) {
+  for (const a of list)
+  {
     const s = { color: a.color ?? '#ff4f2e', textColor: a.textColor ?? '#fff', outline: a.outline ?? 2, outlineColor: a.outlineColor ?? 'rgba(0,0,0,.6)' };
 
-    if (a.label != null) {
+    if (a.label != null)
+    {
       const r = rectOf(a.at);
       const [ox, oy] = a.offset ?? [0, 0];
 
@@ -74,16 +83,24 @@ function drawAnnotations(list) {
 
     const r = rectOf(a.arrow);
     const ang = ((a.angle ?? 225) * Math.PI) / 180;
-    const dx = Math.cos(ang), dy = Math.sin(ang);
-    const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+    const dx = Math.cos(ang);
+    const dy = Math.sin(ang);
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height / 2;
     const edge = Math.min(dx ? r.width / 2 / Math.abs(dx) : Infinity, dy ? r.height / 2 / Math.abs(dy) : Infinity);
     const gap = edge + (a.gap ?? 6);
     const [ox, oy] = a.offset ?? [0, 0];
-    const tipX = cx + dx * gap + ox, tipY = cy + dy * gap + oy;
-    const len = a.length ?? 70, size = a.size ?? 4, head = size * 3.5;
-    const tailX = tipX + dx * len, tailY = tipY + dy * len;
-    const baseX = tipX + dx * head, baseY = tipY + dy * head;
-    const nx = -dy * head * 0.6, ny = dx * head * 0.6;
+    const tipX = cx + dx * gap + ox;
+    const tipY = cy + dy * gap + oy;
+    const len = a.length ?? 70;
+    const size = a.size ?? 4;
+    const head = size * 3.5;
+    const tailX = tipX + dx * len;
+    const tailY = tipY + dy * len;
+    const baseX = tipX + dx * head;
+    const baseY = tipY + dy * head;
+    const nx = -dy * head * 0.6;
+    const ny = dx * head * 0.6;
     const shape = `<polygon points="${tipX},${tipY} ${baseX + nx},${baseY + ny} ${baseX - nx},${baseY - ny}" stroke-linejoin="round"/>`;
     const line = (w) => `<line x1="${tailX}" y1="${tailY}" x2="${baseX}" y2="${baseY}" stroke-width="${w}" stroke-linecap="round"/>`;
 
@@ -91,17 +108,20 @@ function drawAnnotations(list) {
     svg.insertAdjacentHTML('beforeend', `<g stroke="${s.outlineColor}" fill="${s.outlineColor}" stroke-width="${s.outline * 2}">${line(size + s.outline * 2)}${shape}</g>`
       + `<g stroke="${s.color}" fill="${s.color}" stroke-width="0">${line(size)}${shape}</g>`);
 
-    if (a.text) label(a.text, tailX, tailY, a.textSize ?? 15, s, dx, dy);
+    if (a.text)
+      label(a.text, tailX, tailY, a.textSize ?? 15, s, dx, dy);
   }
 }
 
 // Served from the repo root so the explorer's ../../../src/video/default_lights.json resolves as on the site.
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png' };
+
 const server = createServer(async (req, res) => {
   const path = join(repo, decodeURIComponent(new URL(req.url, 'http://x').pathname));
 
   if (!path.startsWith(repo)) {
     res.writeHead(403).end();
+
     return;
   }
 
@@ -117,13 +137,15 @@ const server = createServer(async (req, res) => {
 await new Promise((ok) => server.listen(0, '127.0.0.1', ok));
 
 const url = `http://127.0.0.1:${server.address().port}/tools/web/rs64-explorer/index.html`;
+
 // The installed Edge runs headless on the GPU; Playwright's bundled headless shell renders WebGPU/WebGL on the CPU, minutes per shot.
 const browser = await chromium.launch({ channel: arg('--browser', 'msedge'), args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'] });
 let failed = 0;
 
 mkdirSync(out, { recursive: true });
 
-for (const shot of shots) {
+for (const shot of shots)
+{
   const [width, height] = shot.viewport ?? [1400, 860];
   const page = await browser.newPage({ viewport: { width, height }, colorScheme: shot.theme ?? 'dark' });
 
@@ -133,17 +155,22 @@ for (const shot of shots) {
     await page.waitForFunction(() => !document.body.classList.contains('no-rom'), null, { timeout: 120000 });
 
     for (const step of shot.steps ?? []) {
-      if (step.tool) {
+      if (step.tool)
+      {
         const r = await page.evaluate(([name, args]) => WEBMCP_TOOLS.find((t) => t.name === name).run(args), [step.tool, step.args ?? {}]);
 
-        if (step.log) console.log(`  ${step.tool}:`, JSON.stringify(r).slice(0, 400));
-      } else if (step.click) {
+        if (step.log)
+          console.log(`  ${step.tool}:`, JSON.stringify(r).slice(0, 400));
+      }
+      else if (step.click) {
         await page.click(step.click);
-      } else if (step.rightClick) {
+      } else if (step.rightClick)
+      {
         const box = await page.locator('#view').boundingBox();
 
         await page.mouse.click(box.x + box.width * step.rightClick[0], box.y + box.height * step.rightClick[1], { button: 'right' });
-      } else if (step.select) {
+      }
+      else if (step.select) {
         await page.selectOption(step.select[0], step.select[1]);
       } else if (step.press) {
         await page.keyboard.press(step.press);
@@ -152,9 +179,11 @@ for (const shot of shots) {
       }
     }
 
-    if (shot.hide) await page.addStyleTag({ content: `${shot.hide.join(', ')} { visibility: hidden !important; }` });
+    if (shot.hide)
+      await page.addStyleTag({ content: `${shot.hide.join(', ')} { visibility: hidden !important; }` });
 
-    if (shot.annotations) await page.evaluate(drawAnnotations, shot.annotations);
+    if (shot.annotations)
+      await page.evaluate(drawAnnotations, shot.annotations);
 
     // Lets the view draw the final state (and textures finish uploading) before the capture.
     await page.waitForTimeout(shot.settle ?? 800);
@@ -165,17 +194,21 @@ for (const shot of shots) {
     const pad = shot.pad ?? 0;
     let clip = shot.clip && { x: shot.clip[0], y: shot.clip[1], width: shot.clip[2], height: shot.clip[3] };
 
-    if (shot.element) {
+    if (shot.element)
+    {
       const b = await page.locator(shot.element).boundingBox();
 
-      if (!b) throw new Error(`${shot.element} is not on screen`);
+      if (!b)
+        throw new Error(`${shot.element} is not on screen`);
 
       // clip, when given with element, is an offset from the element's top-left corner.
       clip = clip ? { ...clip, x: b.x + clip.x, y: b.y + clip.y } : b;
     }
 
-    if (clip) {
-      const x = Math.max(0, clip.x - pad), y = Math.max(0, clip.y - pad);
+    if (clip)
+    {
+      const x = Math.max(0, clip.x - pad);
+      const y = Math.max(0, clip.y - pad);
 
       clip = { x, y, width: Math.min(view.width, clip.x + clip.width + pad) - x, height: Math.min(view.height, clip.y + clip.height + pad) - y };
     }
