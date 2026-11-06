@@ -261,7 +261,7 @@
         {
             "label": "Docs: Wiki screenshots",
             "type": "shell",
-            "command": "if (-not (Test-Path node_modules)) { npm install --no-audit --no-fund; npx playwright install chromium }; node wiki_shots.mjs",
+            "command": "if (-not (Test-Path node_modules)) { npm install --no-audit --no-fund }; node wiki_shots.mjs",
             "options": {
                 "cwd": "${workspaceFolder}/tools/web/rs64-explorer/tests",
                 "shell": {
@@ -270,7 +270,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Takes the RS64 Explorer screenshots listed in tools/web/rs64-explorer/tests/wiki_shots.json into docs/wiki/images/, in headless Chromium with build/Debug/rogue_squadron.z64 loaded. Installs Playwright on first run. Takes a few minutes; add --only <name> to retake one."
+            "detail": "Takes the RS64 Explorer screenshots listed in tools/web/rs64-explorer/tests/wiki_shots.json into docs/wiki/images/, in headless Edge with build/Debug/rogue_squadron.z64 loaded. Installs Playwright on first run. About 30 s; add --only <name> to retake one."
         },
         {
             "label": "Debug: Full dump of running game(s)",
