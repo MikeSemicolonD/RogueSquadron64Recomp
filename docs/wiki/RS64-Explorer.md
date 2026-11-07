@@ -49,4 +49,8 @@ Everything you can change, you can view first. These tabs are useful for finding
 
 ## Troubleshooting
 
-> TODO: the ROM is rejected (wrong version, byte order), the view stays blank (graphics support in the browser), edits vanished (a project wasn't saved).
+**The ROM is rejected.** The reason shows under the drop box. The explorer needs Rogue Squadron for the N64, the USA v1.0 version. Any of the usual file types works (`.z64`, `.v64` or `.n64`); it puts the bytes in order itself. *Not a Rogue Squadron N64 ROM* usually means a zipped ROM, so unzip it first, or a file that isn't an N64 ROM.
+
+**The view stays blank.** The explorer draws with your graphics card (WebGPU, or WebGL 2 where the browser has no WebGPU). Use a recent Chrome, Edge or Firefox with hardware acceleration on: in Chrome it's *Settings > System > Use graphics acceleration when available*, and `chrome://gpu` shows whether it's working.
+
+**My edits are gone.** Edits live in the page until you save them. **Save project** (Ctrl+S) writes a `.rs64proj` file with every edit and its undo history, and **Open project** brings them back. Closing or reloading the page warns you when there are unsaved edits. A project opens only with the ROM it was made with. An exported mod can't be opened back as a project (only its menu and language files can be imported), so keep the project file as well.

@@ -34,7 +34,15 @@ The exported mod holds no game data, only patches that the game applies to the p
 
 ## Sharing your mod
 
-> TODO: what to upload (the zip), what to write in its description, never share the ROM, how players install it.
+Upload the `.zip` that **Export mod** made. It holds patches, not game data, so it's safe to share. Never share the ROM or any file taken out of it.
+
+In the description, say:
+
+- what the mod changes: which levels, ships, cutscenes, menus or sounds
+- that it's made for the USA v1.0 version of the game, because its patches only fit that version
+- any other mods it needs, and any it doesn't work with because they change the same thing
+
+Players install it the same way you test an export: unzip it into the `mods` folder next to the game, start the game, and turn the mod on in the **Mods** window (**F6**).
 
 ## When two mods change the same thing
 
