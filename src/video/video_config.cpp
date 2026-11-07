@@ -28,7 +28,13 @@ void adv_get(const json& a, const char* key, T& out)
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+
+#if defined(__ANDROID__)
+std::atomic<bool> g_legacy_terrain{true};
+#else
 std::atomic<bool> g_legacy_terrain{false};
+#endif
+
 std::atomic<bool> g_fb_writeback{true};
 std::atomic<bool> g_d3d10{false};
 std::atomic<bool> g_fullscreen{false};

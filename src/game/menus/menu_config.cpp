@@ -1341,7 +1341,14 @@ std::string slider_bar_text(const std::string& label, int value, int vmin, int v
 
     for (int i = 0; i < width; ++i) bar += (i < filled) ? fch : ech;
 
-    return label.empty() ? bar : (label + " " + bar);
+    if (label.empty()) return bar;
+
+    // The game centres the whole string, so blank empty cells would push the label off centre.
+    std::string text = label + " " + bar;
+
+    text.erase(text.find_last_not_of(' ') + 1);
+
+    return text;
 }
 
 // Step a slider value on confirm: +step, wrapping max -> min.

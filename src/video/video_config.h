@@ -34,7 +34,7 @@ constexpr float kDrawDistanceMax = 8.0f;
 float draw_distance();
 void set_draw_distance(float mult);
 
-// The game's own terrain instead of RT64's whole-map pass ("legacyTerrain", default off; ROGUESQ_F5_STATIC_TERRAIN overrides). Its grid breaks up
+// The game's own terrain instead of RT64's whole-map pass ("legacyTerrain", default off, on for Android; ROGUESQ_F5_STATIC_TERRAIN overrides). Its grid breaks up
 // past kLegacyTerrainDrawDistanceMax, so turning it on clamps the saved draw distance and set_draw_distance clamps to draw_distance_max().
 constexpr float kLegacyTerrainDrawDistanceMax = 1.3f;
 bool legacy_terrain();
