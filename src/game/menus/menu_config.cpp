@@ -715,7 +715,7 @@ int draw_step()
     return -1;
 }
 
-// The next step above d that the current maximum allows (legacy terrain stops at 1.3X), wrapping to 1X.
+// The next step above d that the current maximum allows, then the maximum itself (legacy terrain's 1.3X), wrapping to 1X.
 float next_draw_step(float d, float max)
 {
 
@@ -723,7 +723,7 @@ float next_draw_step(float d, float max)
         if (v > d + 0.01f && v <= max + 0.01f) return v;
     }
 
-    return kDrawStepValues[0];
+    return d < max - 0.01f ? max : kDrawStepValues[0];
 }
 
 std::string draw_step_text(int i)
@@ -735,7 +735,7 @@ std::string draw_step_text(int i)
 
     char buf[16];
 
-    std::snprintf(buf, sizeof(buf), "%.2fX", rs64::video::draw_distance());
+    std::snprintf(buf, sizeof(buf), "%.3gX", rs64::video::draw_distance());
 
     return buf;
 }

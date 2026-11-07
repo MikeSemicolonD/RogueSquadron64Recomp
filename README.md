@@ -204,18 +204,18 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Recomp. specific Issues
 
 - Ray Tracing is implemented but has some issues:
-  - Odd shadow patches in places
-  - Incorrect shadow cast intensity relative to the self casted shadow.
-  - Incorrect shadow reflection or shadow culling when look at the water from and obleak OR downward angle.
-  - Weird/hard looking shadows in the fog (calamari intro cutscene is a good example of this)
-  - World Devestator Shadows being cutout during the cutscene (calamari intro cutscene is a good example of this)
+  - Stray shadows
+  - Incorrect shadow reflection or shadow culling when look at the water from and obleak OR downward angle. (Screen space reflection issue?)
+  - Explosion effect reflections leave black boxes or black meshes instead of an accurate reflection. If we're having issues with this one this could also affect other kinda of effects involving meshes. (calamari mission when the legs on the devestator fall and explode is a good example)
+  - Reflections pop in when level first begins. (can we somehow pre-warm?)
+  - World devestator texture (lava looking texture) in the back needs to be emissive
 
-- Horizon ring culls on the edges of the screen (showing just black) when doing hard banking turns while at a low altitude. (high altitudes don't show this issue.)
+- MSAA 8X and SSAA 4X are too heavy for phone GPUs and drop below 30 fps on mobile
 
 ### Game specific Issues
 
 > [!IMPORTANT]
-> **Game Issues**" are usually deep seeded issues that can touch hundreds of different functions and effect various internal systems in the game.
+> **Game Issues**" are deep seeded issues that can touch hundreds of different functions and effect various internal systems in the game.
 > Game Issues are less of a priority since they exist in the base game and fixing some of them might take away the charm that those rough edges bring.
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
@@ -240,19 +240,17 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 #### Draw distance Caveats
 
 - Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
-- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x`.
+
+- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x` for performance reasons.
+
 - Draw distance will change on the fly relative to the cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes.
 
 ### Roadmap
 
 - RS64 Explorer Fixes & Improvements
-  - Terrain texture painting
-  - Path authoring
-  - Level event & objective scripting
 
-- Removing frame limits
-
-- VR Support via OpenXR (Dependant on removing frame limits)
+- Removing system/frame limits while maintaining others for playability
+- VR Support via OpenXR (Dependant on removing system/frame limits)
 
 ## Building
 

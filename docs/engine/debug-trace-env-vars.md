@@ -399,6 +399,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 | `ROGUESQ_LOG_GFX_TASK` | off | one line per graphics task | Low-volume task-submission trace. |
 | `ROGUESQ_LOG_FRAME_PROFILE` | off | `[frameprof]`, `[frameprof HITCH]` | Real fps and per-hitch phase attribution (walk / snapshot memcpy / present). `present=` counts the game's frames handed to the host, `display=` the frames RT64 shows (the F7 Display line). `tools/debug/android-perf.ps1` reads `display=` to compare frame rates across Android emulator profiles or a connected phone, replaying a mission recording. |
 | `ROGUESQ_LOG_WALK_PROFILE` | off | `[walkprof]` | Per-opcode timing for walks over 20 ms. |
+| `ROGUESQ_LOG_SLOW_PIPELINES=<ms>` | off | `[pipeline]` | Vulkan: each pipeline that takes at least that long to create (`1` = 20 ms), with the creating thread, its shaders' entry points and sizes, and the sample count. |
 | `ROGUESQ_LOG_BATCH` | off | batching counters | Pipeline/scissor binds a per-scene sort could save. |
 | `ROGUESQ_LOG_MESG_TRACE` | off | message-order trace | For `tools/debug/validate/compare_mesg_trace.py`. Scope with `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`. |
 | `ROGUESQ_LOG_FRAMEQ` | off | `[frameq]` | Every send/recv on the frame-protocol queues; the last line shows which thread stopped calling the OS. |
