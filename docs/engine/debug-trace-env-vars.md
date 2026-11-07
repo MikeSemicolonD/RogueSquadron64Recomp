@@ -60,6 +60,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_FORCE_LEVEL` / `ROGUESQ_FORCE_CRAFT` | `--force-level`, `--force-craft` | unset | Level id (0-18) / craft id (0-8) pinned while you navigate the menus yourself (no injected input, unlike `BOOT_TARGET`): from SELECT LEVEL, AVAILABLE CRAFT or the end of ENTER NAME (a new pilot auto-launches level 0) until the mission starts. Writes the same fields as `level:<id>,<craft>` (0x130B40, 0x130B70 u32, 0x130B41, plus the matching secondary weapon at 0x130B43). |
 | `ROGUESQ_FORCE_LOWRES=1` | — | off | From the main menu on, keeps the game's HIGH RESOLUTION option off (clears bit 0 of `gGameSettings+0x10`, byte 0x130B53, every present) without touching the save, like switching it in Options after a hi-res boot; for low-res A/B runs. |
 | `ROGUESQ_BOOT_TARGET` | `--boot-target` | unset | Drive the game to a target; see [Boot / attract-demo navigation](#boot--attract-demo-navigation). |
+| `ROGUESQ_LS_RECORD=<path.rec>` | `--record` | unset | Record the next mission's input; see [Record / replay and co-op](#record--replay-and-co-op). |
 
 Other user options without flags:
 
@@ -111,7 +112,7 @@ Driven from `update_screen` (`src/video/rt64_render_context.cpp`) and the nav se
 | `ROGUESQ_SKIP_DEMO` | unset | Pins `gGameSettings.demoId` (`0x80130B54`) = N (0-5) and its wrap counter (`0x80130B55`) = 0 every present, so attract mode plays and loops that demo. 0 = Mos Eisley, 1 = Jade Moon, 2 = Kile II, 3 = Taloraan, 4 = Fest, 5 = Trench Run (`dLevelByDemoId` `0x800CD404`). Example: `ROGUESQ_SKIP_DEMO=1 ROGUESQ_CINE_FASTFWD=200` reaches Jade Moon in about 2 min. |
 | `ROGUESQ_NAV_STEP_BUDGET` | 1200 | Presents per nav step before the sequencer gives up. Raise for slow builds (e.g. `12000` for Linux Debug under WSL). |
 | `ROGUESQ_NAV_WATCH_CUTSCENES` | off | `1`: the nav sequencer presses nothing while a cutscene or opening crawl plays. |
-| `ROGUESQ_MOD_LEVEL` | unset | `<id>` of an installed mod level (a mod's levels.json): whenever its template plays (a `BOOT_TARGET` run, a replay of the template's recording), it plays as that mod level: its files, cutscenes, craft, medals and debrief. Logs the `[levels]` redirects. |
+| `ROGUESQ_MOD_LEVEL` | unset | Set for you by `--boot-target=level:<id>` (also `hangar:` and `cutscene:`) when `<id>` is a mod level; the nav then picks the level's own SELECT LEVEL entry, so its briefing recording plays as for a player's pick (`[levels] playing <id>`). `<id>` of an installed mod level (a mod's levels.json): whenever its template plays (a `BOOT_TARGET` run, a replay of the template's recording), it plays as that mod level: its files, cutscenes, craft, medals and debrief. Logs the `[levels]` redirects. |
 
 ### Cutscene targets
 

@@ -8,7 +8,7 @@
 namespace rs64::cli {
 // Set an env var so the getenv-based knobs below pick it up. The whole program
 // is configured through the environment, not argv, so CLI args are translated here.
-static void set_env(const char* name, const char* value) {
+void set_env(const char* name, const char* value) {
 
 #ifdef _WIN32
     _putenv_s(name, value);
@@ -55,7 +55,8 @@ static const CliFlag kCliFlags[] = {
     {"mcp-port",         "ROGUESQ_MCP_PORT",         CliFlag::Value, "",  "",  "dev: serve the RT64 MCP bridge on 127.0.0.1:<port> (tools/debug/mcp)"},
 #endif
 
-    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
+    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]; N can be a mod level's id"},
+    {"record",           "ROGUESQ_LS_RECORD",        CliFlag::Value, "",  "",  "record the next mission's input to <path.rec>, to replay it later"},
 };
 
 static void print_cli_usage()

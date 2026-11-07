@@ -28,8 +28,9 @@ int main() {
             { "id": "c", "title": "C", "template": 0, "folder": "x/y" },
             { "id": "d", "title": "D", "template": 0, "folder": "" },
             { "id": "e", "title": "E", "template": 1, "folder": "e" },
-            { "id": "f", "title": "F", "template": 1, "folder": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" } ] })", errors);
-        CHECK(lv.size() == 1 && lv[0].id == "e");
+            { "id": "f", "title": "F", "template": 1, "folder": "xxxxxxxxxx" },
+            { "id": "g", "title": "G", "template": 1, "folder": "xxxxxxxxx" } ] })", errors);
+        CHECK(lv.size() == 2 && lv[0].id == "e" && lv[1].id == "g");
         CHECK(errors.size() == 5);
         CHECK(parseModLevels("m", "not json", errors).empty());
     }
@@ -48,6 +49,21 @@ int main() {
         l.tmpl = 0x0A;
         CHECK(remapPath("level/lv_a/dat", l, { "level/dune_sea/dat" }) == "level/dune_sea/dat");
         CHECK(remapPath("cuts/id10_intro", l, { "cuts/dune_sea_intro" }) == "cuts/dune_sea_intro");
+    }
+    // boot_target_names_a_mod_level: level/hangar/cutscene targets take a mod level id and become its template's target
+    {
+        std::vector<ModLevel> lv(2);
+        lv[0].id = "a";
+        lv[1].id = "desert_hu";
+        lv[1].tmpl = 3;
+        int index = -1;
+        CHECK(bootTargetFor("level:desert_hu", lv, index) == "level:3" && index == 1);
+        CHECK(bootTargetFor("level:desert_hu,2", lv, index) == "level:3,2");
+        CHECK(bootTargetFor("cutscene:desert_hu,1", lv, index) == "cutscene:3,1");
+        CHECK(bootTargetFor("hangar:desert_hu", lv, index) == "hangar:3");
+        CHECK(bootTargetFor("level:3", lv, index).empty());
+        CHECK(bootTargetFor("demo:desert_hu", lv, index).empty());
+        CHECK(bootTargetFor("menu", lv, index).empty());
     }
     // layout_follows_stock_and_caps_at_0x1e: mod entries start after the highest stock entry; the selector mask allows index 0x1E at most
     {

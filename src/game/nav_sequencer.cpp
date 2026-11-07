@@ -46,6 +46,9 @@ extern "C" bool rs64_nav_consume(uint16_t* buttons, float* x, float* y) {
 
 // ---- Target ----
 
+// The SELECT LEVEL entry of a mod level the boot target names, -1 for none (mod_level_hooks.cpp).
+extern "C" int rs64_mod_levels_boot_entry();
+
 // menu:<label>/<label>/...: the entries to select in turn from the main menu (the last may be an action on a page).
 static std::vector<std::string>& menu_path() {
 
@@ -327,7 +330,21 @@ static void nav_level(uint8_t* rdram, const char* st)
             break;
         case 3:  // SELECT LEVEL: write target level, confirm, until AVAILABLE CRAFT
             if (is(st, "menu.account.level_select")) {
-                // gGameSettings currentLevel (u8), gCurrentLevel (u32)
+
+                // A mod level is walked to with the D-pad (cursor u8 0x800CDAC1, screen state 0x800CDAC4) and picked as a player would, so
+                // its confirm (briefing, medals, craft) runs; a stock level is written: gGameSettings currentLevel (u8), gCurrentLevel (u32).
+                const int entry = rs64_mod_levels_boot_entry();
+
+                if (entry >= 0)
+                {
+                    const int step = rs64::ls::follow_step(rdram[0xCDAC1u ^ 3], rdram[0xCDAC4u ^ 3], entry, 3, true);
+                    const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : 0;
+
+                    if (btn) nav_repress(btn);
+
+                    break;
+                }
+
                 nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
                 nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
                 nav_repress(N64_A_BUTTON);

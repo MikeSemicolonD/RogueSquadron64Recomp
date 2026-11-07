@@ -23,7 +23,8 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `close` | Kill the game (an attached one is only disconnected). |
 | `status` | `running`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
 | `call` | Send any bridge method directly. |
-| `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). |
+| `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). Errors at once if the shown state's clock is already past `frame`. |
+| `pause_now` | Freeze on the next frame, whatever is on screen. |
 | `step` / `resume` | From a freeze, run `frames` more and re-freeze / let it run. |
 | `pause_when` | Freeze when an RDRAM value changes or meets eq/ne/gt/lt (checked once a frame). A state change is `pause_at(<state>, 0)`. |
 | `pause_when_drawn` | Freeze once a model part or effect sprite is on screen, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`; `\|` separates several). One or two frames after it first shows. |

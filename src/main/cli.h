@@ -8,4 +8,6 @@
 namespace rs64::cli {
     // Returns an exit code to stop startup (0 for --help, 2 for a bad option), or -1 to continue.
     int apply_args(int argc, char* argv[]);
+
+    void set_env(const char* name, const char* value);
 }

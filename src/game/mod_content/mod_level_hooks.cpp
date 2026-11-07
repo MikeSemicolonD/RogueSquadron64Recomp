@@ -24,6 +24,7 @@
 #include "librecomp/addresses.hpp"
 #include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
+#include "main/cli.h"
 #include "game/game_state.h"
 #include "game/mod_content/camera_shots.h"
 #include "game/mod_content/mod_levels.h"
@@ -343,6 +344,21 @@ extern "C" void rs64_mod_levels_init() {
 
     rs64_rules_init();
     rs64_crawls_init();
+
+    int named = -1;
+    const char* env_boot = recomp::dbg::env_str("ROGUESQ_BOOT_TARGET");
+    const std::string boot = env_boot ? env_boot : "";
+    const std::string tmpl_target = rs64levels::bootTargetFor(boot, s_mod_levels, named);
+
+    // --boot-target=level:<mod level id>: the nav drives to its template, and the mod level plays in its place.
+    if (!tmpl_target.empty())
+    {
+        rs64::cli::set_env("ROGUESQ_BOOT_TARGET", tmpl_target.c_str());
+        rs64::cli::set_env("ROGUESQ_MOD_LEVEL", s_mod_levels[named].id.c_str());
+
+        fprintf(stderr, "[levels] boot target %s -> %s\n", boot.c_str(), tmpl_target.c_str());
+    }
+
     s_current_mod_level = forced_mod_level();
 }
 
@@ -470,6 +486,16 @@ extern "C" void rs64_mod_levels_brief_stream(uint8_t* rdram, recomp_context* ctx
     s_brief_index = -1;
     const uint32_t base = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80154684u);
     ctx->r5 = (gpr)(int32_t)(s_brief_rom - (base & 0x0FFFFFFFu));
+}
+
+// The SELECT LEVEL entry of the mod level a boot target names (ROGUESQ_MOD_LEVEL), while SELECT LEVEL is open; -1 otherwise. The nav
+// picks it there so the run goes through the same confirm as a player's pick (briefing, medals).
+extern "C" int rs64_mod_levels_boot_entry()
+{
+
+    const int i = forced_mod_level();
+
+    return s_level_select_open && i >= 0 && i < s_level_entries.count ? s_level_entries.base + i : -1;
 }
 
 // Back in the menus (menuOverlayInit state; 3 = a mission's debrief, after which a death replays the level): no mod level is being

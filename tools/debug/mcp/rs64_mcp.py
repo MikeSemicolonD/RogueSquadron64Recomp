@@ -833,8 +833,22 @@ def serve():
 
     @tool()
     def pause_at(clock: str, frame: int, timeout_s: float = 120) -> dict:
-        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot)."""
+        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        info = game.call("frame_info")
+        now = info.get("clocks", {}).get(clock)
+
+        # A clock already past frame (the state being shown, or dl) would only time out: say so instead of waiting.
+        if now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
+            raise RuntimeError(f"{clock} is already at frame {now} (past {frame}): use pause_now, or step from a pause")
+
         return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s}, timeout_s + 15)
+
+    @tool()
+    def pause_now(timeout_s: float = 30) -> dict:
+        """Freeze the game on the next frame, whatever screen it is on (then step, screenshot, inspect)."""
+        dl = game.call("frame_info").get("clocks", {}).get("dl", 0)
+
+        return game.call("pause_at", {"clock": "dl", "frame": dl + 2, "timeout_s": timeout_s}, timeout_s + 15)
 
     @tool()
     def pause_when(addr: int, size: int = 4, op: str = "changes", value: int | None = None, timeout_s: float = 120) -> dict:

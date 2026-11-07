@@ -20,7 +20,6 @@ extern SDL_Window* g_sdl_window;
 #endif
 #include "common/rt64_user_configuration.h"
 #include "video/video_config.h"
-#include "video/rt64_render_context.h"
 
 #ifndef HLSL_CPU
 #define HLSL_CPU
@@ -32,6 +31,7 @@ extern SDL_Window* g_sdl_window;
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
+#include "video/rt64_render_context.h"
 #include "util/debug_logs.h"
 #include "rs64_toml_hooks.h"
 #include "game/upstream_compat.h"      // rs64_fb_guards_mask, g_active_overlay, g_last_swap_fb
