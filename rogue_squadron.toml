@@ -532,6 +532,17 @@ text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(rdram, ctx); }'
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E168
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E168(rdram, ctx); }'
+# Draw distance: water craft (the Calamari boats) keep their active range out to the draw distance, or they visibly loop back to their start.
+[[patches.hook]]
+func = "npcWaterCraftUpdate"
+before_vram = 0x800E6D6C
+text = '{ rs64_th_npcWaterCraftUpdate_800E6D6C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "isPointXzWithinRangeOfRef"
+before_vram = 0x80047DF0
+text = '{ rs64_th_isPointXzWithinRangeOfRef_80047DF0(rdram, ctx); }'
+
 # Draw distance: scale each read of the camera far plane (cam+0x28, in $f0) by rs64_draw_dist for the render and effect callers only (flagged before their calls; the gameplay callers draw randoms when the test passes), and the terrain trapezoid far distance ($f2) by rs64_terrain_dist.
 [[patches.hook]]
 func = "setupCameraMatrices"
