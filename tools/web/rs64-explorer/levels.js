@@ -2417,7 +2417,7 @@ function selectNamed(name)
 // A spawn action's wave: count copies of the kind on the path, waiting for a free flag the action raises.
 function spawnWaveButton(a, dir, done) {
   const b = elem('button', {
-    textContent: a.flag ? `Wave ready (flag ${a.flag})` : 'Create wave',
+    textContent: a.flag ? 'Wave ready' : 'Create wave',
     title: 'Adds the enemies to the level, waiting off-stage until this action brings them in'
   });
 

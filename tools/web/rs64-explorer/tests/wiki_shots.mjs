@@ -1,6 +1,6 @@
 // node tools/web/rs64-explorer/tests/wiki_shots.mjs [--rom <rom.z64>] [--out <dir>] [--only <name,...>] [--browser msedge|chrome]
 // Takes the wiki's explorer screenshots listed in wiki_shots.json, each in a fresh page with the ROM loaded. Steps call the page's WebMCP tools
-// (WEBMCP_TOOLS in webmcp.js) or click / right-click / press like a user. Needs `npm install` in this folder and an installed Edge or Chrome.
+// (WEBMCP_TOOLS in webmcp.js) or click / right-click / select / fill / press like a user. Needs `npm install` in this folder and an installed Edge or Chrome.
 // Crop: "clip": [x, y, width, height] in page pixels, "element": a CSS selector to crop to (then clip is relative to it), "pad": pixels added around.
 // "viewport": [width, height] (default 1400 x 860), "hide": selectors hidden before the capture, "theme": "light" (default dark).
 // "annotations": { "arrow": <selector or [x, y]>, "angle", "length", "size", "offset": [dx, dy], "gap", "text", "textSize" }
@@ -120,7 +120,8 @@ const types = {
   '.mjs': 'text/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
-  '.png': 'image/png'
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml'
 };
 
 const server = createServer(async (req, res) => {
@@ -179,6 +180,8 @@ for (const shot of shots)
       }
       else if (step.select) {
         await page.selectOption(step.select[0], step.select[1]);
+      } else if (step.fill) {
+        await page.fill(step.fill[0], step.fill[1]);
       } else if (step.press) {
         await page.keyboard.press(step.press);
       } else if (step.wait) {

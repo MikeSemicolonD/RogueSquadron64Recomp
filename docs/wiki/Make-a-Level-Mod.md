@@ -46,7 +46,10 @@ To add something, use **Add to level** at the bottom of the panel. Search the li
 
 An enemy can belong to a **wave**: it waits off-stage until something releases it, such as the player entering an area or a target being destroyed. Pick the wave from the enemy's panel, or **New wave…** to start one. TIE fighters and TIE interceptors can be added from other levels.
 
-> TODO: how to release a wave with a rule, and a short example.
+A wave comes in one of two ways:
+
+- **From a trigger area.** In Events mode, select the area and pick the wave in its **Start wave** box. The wave comes in when the area is set off.
+- **From a rule.** Add the **Spawn** action to a rule (see [Rules](#rules-when-this-happens-do-that)), pick the enemy kind, how many (up to 8) and the path they fly, then click **Create wave**. The explorer adds those enemies to the level, waiting off-stage, and the button changes to *Wave ready*. They come in when the rule runs.
 
 ## Flight paths
 
@@ -79,7 +82,7 @@ It then runs its actions in order:
 - play a voice line or your own recording
 - show a message on screen
 - change the music
-- release an enemy wave
+- release an enemy wave (**Spawn**)
 - cut to a camera, or destroy a unit
 - win or fail the mission, or mark an objective done or failed
 - wait a few seconds before the next action
@@ -88,7 +91,20 @@ A rule fires once unless you make it repeat. **Level events…** opens a window 
 
 ![The Level events window](images/level-events.png)
 
-> TODO: a worked example: "Hold the bridge" message, wave release, win on a destroyed target.
+### Example: hold the bridge
+
+The player flies in, is told to hold the bridge, a wave of TIE fighters attacks, and destroying a target wins the mission. Built on a copy of Ambush at Mos Eisley (**New level from this one…**):
+
+1. In Events mode, select a trigger area on the player's way in and name it `bridge_entry` in its **Name** field. Check its **Set off by** is *The player*.
+2. Click **+ Add rule** and pick *Something enters this area*.
+3. **+ Add action**: *Show message*, type `Hold the bridge!` and give it 4 seconds.
+4. **+ Add action**: *Spawn*, pick *TIE fighter*, 4, and a path for them to fly. Click **Create wave**.
+5. In Objects mode, select the unit the player must destroy (a probe droid works) and name it `relay_droid`.
+6. Click **+ Add rule**, pick *This unit is destroyed*, then **+ Add action**: *Win the mission*.
+
+![The bridge_entry rule: a message, then a wave of four TIE fighters](images/level-rules-example.png)
+
+On a custom level the same win can come from an objective instead (*Destroy units*, picking `relay_droid`): see [objectives](Make-a-Custom-Level#objectives).
 
 ## Lights
 
@@ -100,8 +116,7 @@ Right-click the ground and pick **Add light here** for a ray-traced light in the
 
 ## Not yet possible
 
-- **Drawing a new flight path**, or adding and removing points on one. You can copy a stock path and move its points.
-- **Renaming** objects and areas. Copied areas keep their original name and size.
 - Adding enemy craft other than TIE fighters and TIE interceptors from other levels.
-- Adding new camera positions for camera shots: you can only use the cameras already in the level.
 - Making a map larger than the level it started from.
+
+Still to be checked in the game: new and edited flight paths, a camera position copied from another level used in a camera shot, a unit chosen in **Set off by**, and the *Show message* and *Play recording* actions.
