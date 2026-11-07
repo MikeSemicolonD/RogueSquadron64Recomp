@@ -853,7 +853,7 @@
         {
             "label": "Install + Run (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/debug/RogueSquadron64Recomp-debug.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" install -r app/build/outputs/apk/debug/RogueSquadron64Recomp-debug.apk; if ($?) { & \"${env:ANDROID_HOME}/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -891,7 +891,7 @@
         {
             "label": "Install + Run (Android, Release)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if ($?) { & \"${env:ANDROID_HOME}/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -905,7 +905,7 @@
         {
             "label": "Install (Android, Release)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -919,7 +919,7 @@
         {
             "label": "Build + Install over USB (Android, Release)",
             "type": "shell",
-            "command": "$adb = '${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe'; if ((& $adb -d get-state 2>$null) -ne 'device') { Write-Host 'No USB device found: plug the phone in, enable USB debugging, and accept the RSA prompt.'; exit 1 }; & $adb -d install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if (-not $?) { exit 1 }; & $adb -d shell am start -n com.rs64recomp.app/.MainActivity",
+            "command": "$adb = '${env:ANDROID_HOME}/platform-tools/adb.exe'; if ((& $adb -d get-state 2>$null) -ne 'device') { Write-Host 'No USB device found: plug the phone in, enable USB debugging, and accept the RSA prompt.'; exit 1 }; & $adb -d install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if (-not $?) { exit 1 }; & $adb -d shell am start -n com.rs64recomp.app/.MainActivity",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -933,7 +933,7 @@
         {
             "label": "Push ROM (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell mkdir -p /sdcard/Android/data/com.rs64recomp.app/files; & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" push build/Debug/rogue_squadron.z64 /sdcard/Android/data/com.rs64recomp.app/files/",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" shell mkdir -p /sdcard/Android/data/com.rs64recomp.app/files; & \"${env:ANDROID_HOME}/platform-tools/adb.exe\" push build/Debug/rogue_squadron.z64 /sdcard/Android/data/com.rs64recomp.app/files/",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -944,7 +944,7 @@
         {
             "label": "Logcat (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" logcat -v time RS64:V SDL:V DEBUG:V AndroidRuntime:E *:S",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" logcat -v time RS64:V SDL:V DEBUG:V AndroidRuntime:E *:S",
             "options": {
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
             },
