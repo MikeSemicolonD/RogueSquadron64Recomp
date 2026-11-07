@@ -6,6 +6,8 @@ param(
     [string[]]$Avds,
     [string]$Serial,
     [string]$Recording = "$PSScriptRoot\recordings\00-ambush-at-mos-eisley\mos_eisley.rec",
+    # Extra NAME=VALUE lines for the device's roguesq_env.txt, e.g. ROGUESQ_F5_STATIC_TERRAIN=1.
+    [string[]]$Set = @(),
     [int]$TimeoutS = 900,
     [string]$Apk = "$PSScriptRoot\..\..\android\app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk",
     [string]$Sdk = $(if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { 'A:\Android\Sdk' }),
@@ -44,14 +46,27 @@ function Measure-Target($s, $name)
         Start-Sleep 3
     }
 
-    & $adb -s $s install -r $Apk | Out-Null
+    # Right after boot the package manager can still be scanning and reject the install as a duplicate pending request.
+    for ($i = 0; $i -lt 10; $i++) {
+        if ((& $adb -s $s install -r $Apk 2>&1) -match 'Success') {
+            break
+        }
+
+        Start-Sleep 10
+    }
+
+    if ($i -eq 10) {
+        return [pscustomobject]@{ Target = $name; Fps = 'install failed' }
+    }
+
     & $adb -s $s push $Recording $rec 2>&1 | Out-Null
     & $adb -s $s shell "am force-stop $pkg; settings put secure immersive_mode_confirmations confirmed; settings put system accelerometer_rotation 0; settings put system user_rotation 1"
 
     $hadEnv = (& $adb -s $s shell "test -f $files/roguesq_env.txt && echo y") -eq 'y'
     $saved = & $adb -s $s shell "cat $files/roguesq_env.txt 2>/dev/null"
-    $kept = @($saved | Where-Object { $_ -and ($_ -notmatch '^ROGUESQ_(BOOT_TARGET|FAKE_CONTROLLER|LOG_FRAME_PROFILE|LOG_GAMESTATE|LS_REPLAY|NAV_STEP_BUDGET)=') })
-    $lines = $kept + @("ROGUESQ_BOOT_TARGET=level:$level,$craft", "ROGUESQ_LS_REPLAY=$rec", 'ROGUESQ_NAV_STEP_BUDGET=19200', 'ROGUESQ_FAKE_CONTROLLER=1', 'ROGUESQ_LOG_FRAME_PROFILE=1', 'ROGUESQ_LOG_GAMESTATE=1')
+    $names = @('ROGUESQ_BOOT_TARGET', 'ROGUESQ_FAKE_CONTROLLER', 'ROGUESQ_LOG_FRAME_PROFILE', 'ROGUESQ_LOG_GAMESTATE', 'ROGUESQ_LS_REPLAY', 'ROGUESQ_NAV_STEP_BUDGET') + @($Set | ForEach-Object { ($_ -split '=', 2)[0] })
+    $kept = @($saved | Where-Object { $_ -and ($names -notcontains ($_ -split '=', 2)[0]) })
+    $lines = $kept + $Set + @("ROGUESQ_BOOT_TARGET=level:$level,$craft", "ROGUESQ_LS_REPLAY=$rec", 'ROGUESQ_NAV_STEP_BUDGET=19200', 'ROGUESQ_FAKE_CONTROLLER=1', 'ROGUESQ_LOG_FRAME_PROFILE=1', 'ROGUESQ_LOG_GAMESTATE=1')
 
     try {
         & $adb -s $s shell "printf '%s\n' $(($lines | ForEach-Object { "'$_'" }) -join ' ') > $files/roguesq_env.txt"
@@ -62,6 +77,8 @@ function Measure-Target($s, $name)
         $fps = @()
         $inMission = $false
         $ended = $false
+        $seen = $false
+        $replayDone = $false
         $t0 = Get-Date
 
         while (-not $ended -and (((Get-Date) - $t0).TotalSeconds -lt $TimeoutS)) {
@@ -81,16 +98,21 @@ function Measure-Target($s, $name)
                 }
                 elseif ($line -match '\[ls\] session ended') {
                     $ended = $true
+                    $replayDone = $true
                 }
             }
 
-            if (-not (& $adb -s $s shell "pidof $pkg")) {
+            # The process exiting ends the run only once it has been seen: it takes a few seconds to start.
+            $running = [bool](& $adb -s $s shell "pidof $pkg")
+            $seen = $seen -or $running
+
+            if ($seen -and -not $running) {
                 $ended = $true
             }
         }
 
         if ($fps.Count -eq 0) {
-            return [pscustomobject]@{ Target = $name; Fps = 'no samples' }
+            return [pscustomobject]@{ Target = $name; Fps = 'no samples'; Finished = $replayDone }
         }
 
         $stats = $fps.Fps | Measure-Object -Average -Minimum
@@ -101,7 +123,8 @@ function Measure-Target($s, $name)
             MinFps = [math]::Round($stats.Minimum, 1)
             WorstFrameMs = ($fps.Max | Measure-Object -Maximum).Maximum
             Seconds = $fps.Count
-            Finished = $ended
+            # False: the game exited (a crash or a kill) or the timeout hit before the replay's end.
+            Finished = $replayDone
         }
     }
     finally {
@@ -130,20 +153,27 @@ else {
     if (-not $Avds) {
         $Avds = Get-ChildItem $AvdHome -Filter *.avd -Directory | Where-Object {
             [int](Get-Content (Join-Path $_.FullName 'config.ini') | Select-String 'image.sysdir.1=.*android-(\d+)').Matches[0].Groups[1].Value -ge 29
-        } | ForEach-Object { $_.BaseName }
+        } | ForEach-Object { $_.Name -replace '\.avd$', '' }
     }
 
     $env:ANDROID_AVD_HOME = $AvdHome
 
     foreach ($avd in $Avds) {
+        # A fresh port each time: the previous emulator can still hold its port while it shuts down, and a second one on it exits at once.
+        $port += 2
         $s = "emulator-$port"
         $emu = Start-Process -FilePath (Join-Path $Sdk 'emulator\emulator.exe') -ArgumentList '-avd', $avd, '-port', $port, '-no-snapshot', '-no-audio' -PassThru
 
         try {
-            & $adb -s $s wait-for-device
+            $t0 = Get-Date
 
-            while ((& $adb -s $s shell getprop sys.boot_completed) -ne '1') {
+            while (((& $adb -s $s shell getprop sys.boot_completed 2>$null) -ne '1') -and (-not $emu.HasExited) -and (((Get-Date) - $t0).TotalSeconds -lt 300)) {
                 Start-Sleep 3
+            }
+
+            if ((& $adb -s $s shell getprop sys.boot_completed 2>$null) -ne '1') {
+                $results += [pscustomobject]@{ Target = $avd; Fps = 'emulator did not boot' }
+                continue
             }
 
             $results += Measure-Target $s $avd
@@ -156,6 +186,8 @@ else {
 }
 
 $csv = Join-Path $out 'results.csv'
+# Fixed columns: Export-Csv takes them from the first row, which can be an error row with only two.
+$results = $results | Select-Object Target, Fps, MinFps, WorstFrameMs, Seconds, Finished
 $results | Export-Csv -NoTypeInformation $csv
 $results | Format-Table -AutoSize
 "Saved $csv"
