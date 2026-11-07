@@ -1684,7 +1684,15 @@ async function writeRules(dir, doc, label)
   await editText(RULES_PATH(rulesFolderOf(dir)), rulesWrite(doc), label);
 }
 
-const scriptFinds = (name) => !!name && nameUses(romBytes.subarray(0, BLOB_START), name, 0, 0) > 0;
+// The stock mission scripts (and the names they look up) are in the mission overlay; a mod level with its own objectives runs none of them,
+// so there only the main code's lookups (the player start and the like, used by every level) count.
+const MISSION_OVERLAY_ROM = 0xA5D30;
+
+const scriptFinds = (name, dir = selected) => {
+  const end = modLevelOf(dir)?.objectives?.length ? MISSION_OVERLAY_ROM : BLOB_START;
+
+  return !!name && nameUses(romBytes.subarray(0, end), name, 0, 0) > 0;
+};
 
 // Renames an object; its rules, camera shot lines and every DAT reference (datRenameItem) follow. Throws a modder-facing reason when it
 // can't. Returns how many of each moved.
@@ -1700,8 +1708,8 @@ async function renameObject(it, name, dir = selected)
   if (old === name)
     return moved;
 
-  if (scriptFinds(old))
-    throw new Error(`The mission's script looks "${old}" up by name, so it can't be renamed`);
+  if (scriptFinds(old, dir))
+    throw new Error(`The game looks "${old}" up by name, so it can't be renamed`);
 
   if (parseDAT(await rom.read(dir + '/dat')).items.some((x) => x.name === name))
     throw new Error(`"${name}" is already used in this level`);
@@ -1748,9 +1756,9 @@ async function ensureRuleName(dir, it)
   if (it.name && items.filter((x) => x.name === it.name).length === 1)
     return it.name;
 
-  if (scriptFinds(it.name))
+  if (scriptFinds(it.name, dir))
   {
-    alert(`"${it.name}" is shared with another object and the mission's script looks it up by name, so it cannot be renamed for a rule.`);
+    alert(`"${it.name}" is shared with another object and the game looks it up by name, so it cannot be renamed for a rule.`);
 
     return null;
   }
@@ -2487,6 +2495,32 @@ function triggerWhoRow(it) {
   return row;
 }
 
+// A trigger area's reach (record +0x1C, in level units): how close what sets it off has to come.
+const TRIGGER_RADIUS = 0x1C;
+
+function setTriggerRadius(bytes, it, r)
+{
+  const out = bytes.slice();
+
+  new DataView(out.buffer).setFloat32(it.offset + TRIGGER_RADIUS, r);
+
+  return out;
+}
+
+function triggerRadiusRow(it)
+{
+  const inp = elem('input', { type: 'number', min: 0.5, step: 0.5, value: +(it.radius ?? 0).toFixed(2), title: 'How close it has to come, in level units' });
+
+  inp.onchange = () => {
+    const r = parseFloat(inp.value);
+
+    if (Number.isFinite(r) && r > 0)
+      editItem(it, (b) => setTriggerRadius(b, it, r), `Radius: ${it.name || 'trigger'} -> ${r}`);
+  };
+
+  return elem('label', {}, 'Radius ', inp);
+}
+
 // The song a music region plays when the player flies into it (a cue of the in-mission cue table).
 function musicZoneRow(it)
 {
@@ -2872,7 +2906,7 @@ function syncSelPanel()
     }
 
   if (sel && editMode === 'events' && isTriggerArea(it))
-    f.append(triggerWhoRow(it));
+    f.append(triggerWhoRow(it), triggerRadiusRow(it));
 
   if (sel && editMode === 'events' && isTriggerArea(it) && it.name)
     f.append(shotLinkRow(it), destroyRow(it), waveTriggerRow(it));
@@ -2926,17 +2960,26 @@ async function addItem(src, pos, zone)
   // A copy keeps its source's name; one that rules name (its source deleted or not) gets its own, so it never takes over their rules.
   const ruled = await ruleNames(dir);
 
+  const newest = (bytes) => parseDAT(dvOf(bytes)).items.filter((x) => x.type === it.type).reduce((a, b) => (a && a.index >= b.index ? a : b), null);
+
   await historyGroup(`Add ${it.name || TYPES[markerKind(it)]?.label || 'item'}`, async () => {
     await editAsset(dir + '/dat', (bytes) => datAddItem(bytes, it.type, rec));
+
+    // A trigger area from another level would still wait for that level's units, and may be sized for them, so the copy is set off by the
+    // player and reaches at least 10 units.
+    if (src.dv && isTriggerArea(it))
+    {
+      await editAsset(dir + '/dat', (bytes) => {
+        const set = triggerSetActivators(bytes, newest(bytes), ['ply']);
+
+        return setTriggerRadius(set, newest(set), Math.max(it.radius ?? 0, 10));
+      });
+    }
 
     if (!it.name || !ruled.has(it.name))
       return;
 
-    await editAsset(dir + '/dat', (bytes) => {
-      const added = parseDAT(dvOf(bytes)).items.filter((x) => x.type === it.type).reduce((a, b) => (a && a.index >= b.index ? a : b), null);
-
-      return datNameItem(bytes, added, uniqueName(bytes, it.name, ruled));
-    });
+    await editAsset(dir + '/dat', (bytes) => datNameItem(bytes, newest(bytes), uniqueName(bytes, it.name, ruled)));
   });
 
   await reloadLevel(dir);
@@ -3057,9 +3100,13 @@ async function fillAddKinds() {
 
   for (const m of root?.getObjectByName('markers')?.children ?? []) {
     const it = m.userData.item;
+
+    if (!it || it.pathEvent)
+      continue;
+
     const k = String(markerKind(it));
 
-    if (!it.pathEvent && !addTemplates.has(k))
+    if (!addTemplates.has(k))
       addTemplates.set(k, it);
   }
 
@@ -3707,13 +3754,12 @@ async function gameFolder()
 }
 
 // The game's --boot-target for what is open: a cutscene file plays on its own, a level (or one of its sequences) starts its mission.
-// A mod level boots as its template with ROGUESQ_MOD_LEVEL naming it.
 function bootTarget()
 {
   const mc = modLevels.find((l) => selected === `cut:data/cuts/${l.folder}_intro` || selected === `cut:data/cuts/${l.folder}_extro`);
 
   if (mc)
-    return `cutscene:${mc.template},${selected.endsWith('_intro') ? 0 : 1} --set ROGUESQ_MOD_LEVEL=${mc.id}`;
+    return `cutscene:${mc.id},${selected.endsWith('_intro') ? 0 : 1}`;
 
   const c = selected?.match(/^cut:data\/cuts\/id(\d+)_(intro|extro|special)$/);
 
@@ -3723,7 +3769,7 @@ function bootTarget()
   const ml = selectedLevel && modLevelOf(selected);
 
   if (ml)
-    return `level:${ml.template} --set ROGUESQ_MOD_LEVEL=${ml.id}`;
+    return `level:${ml.id}`;
 
   const lv = selectedLevel && selected.match(/\/lv_([0-9a-z])(:\d+)?$/);
 

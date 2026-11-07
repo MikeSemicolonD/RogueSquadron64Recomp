@@ -321,6 +321,15 @@ await check('added, removed and replaced items stay findable by name', async () 
   assert.deepEqual(RS64.datLookup(removed, name), { type: 0, index: count0 - 2 });
   lookupAll(removed);
 
+  // The game indexes a type's table with the record's own +0x04 (a trigger's activators), so it must follow every add and remove.
+  for (const bytes of [added, removed])
+  {
+    const v = new DataView(bytes.buffer);
+
+    for (const x of RS64.parseDAT(v).items)
+      assert.equal(v.getUint16(x.offset + 4), x.index, `${x.name ?? 'item'} (type ${x.type}) keeps its index at +0x04`);
+  }
+
   const grown = RS64.waveSet(removed, RS64.parseDAT(new DataView(removed.buffer)).items.find((x) => x.name === 'TIE_Attack_Madine_2'), { path: 'A_Longer_Path_Name_Than_Before_X' });
 
   lookupAll(grown);
@@ -1889,22 +1898,22 @@ await check('levels.json round-trips and a new level gets a unique plain folder'
   const a = RS64.modLevelNew(levels, 'Dune Sea Ambush!', 0);
 
   assert.deepEqual(a, {
-    id: 'dune_sea_ambush',
+    id: 'dune_sea',
     title: 'Dune Sea Ambush!',
     description: '',
     template: 0,
-    folder: 'dune_sea_ambush',
+    folder: 'dune_sea',
     medals: RS64.MEDALS_SIMPLE
   });
 
   levels = [a];
-  assert.equal(RS64.modLevelNew(levels, 'dune sea ambush', 3).folder, 'dune_sea_ambush_2');
+  assert.equal(RS64.modLevelNew(levels, 'dune sea ambush', 3).folder, 'dune_se_2');
 
   const text = RS64.modLevelsWrite(levels);
 
   assert.deepEqual(RS64.modLevelsParse(text), levels);
   assert.deepEqual(RS64.modLevelsParse('not json'), []);
-  assert.ok(RS64.modLevelNew([], 'x'.repeat(80), 1).folder.length <= 48);
+  assert.ok(RS64.modLevelNew([], 'x'.repeat(80), 1).folder.length <= 9);
 });
 
 await check('objectives wire units and triggers in the DAT and read back; re-applying clears the old wiring', async () => {

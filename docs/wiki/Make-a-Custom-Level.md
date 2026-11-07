@@ -21,9 +21,9 @@ Every custom level runs on top of a stock level, its *template*. The template de
 
 - **Title** and **description** for SELECT LEVEL.
 - **Briefing**: pick a voice line from the game, or **Import recording…** to use your own `.wav` or `.mp3`.
-- **Approved craft**: which ships the player can pick.
+- **Approved craft**: which ships the player can pick. As in the stock levels, the hangar still shows every ship the player owns, and one that isn't approved can't be launched.
 - **Objectives** (1 to 4): see [Objectives](#objectives) below.
-- **Medals**: time, kills, accuracy and friendlies saved for bronze, silver and gold.
+- **Medals**: time, kills, accuracy and friendlies saved for bronze, silver and gold. Each save slot keeps its own medals for the level.
 - **Opening crawl** and **starting song**.
 
 ### Objectives
@@ -76,22 +76,26 @@ Your level's Cutscene list has its intro, ending and **Opening crawl**. See [Mak
 
 ## Example: a short hunt on Tatooine
 
-A level where the player destroys three TIE fighters and reaches a landing area.
+A level where the player destroys three TIE fighters.
 
 1. Open Ambush at Mos Eisley in **Levels** and pick **New blank level…** for flat ground with the Tatooine sky.
-2. **Level settings…**: title *Desert Hunt*, a one-line description, a briefing voice line, and the X-wing as the approved craft.
-3. In Objects mode, open **Add to level**, search *TIE fighter* (from another level) and click three spots ahead of the player start. Give each one a path with **New path** in its panel.
-4. In Events mode, add a trigger area past the TIEs and name it *landing*.
-5. Back in **Level settings…**, **Add objective** twice:
-   - *Destroy the TIE fighters*: goal **Destroy units**, Ctrl+click all three.
-   - *Land at the outpost*: goal **Reach an area**, pick *landing*.
-6. Set the medal times, kills and accuracy, then **Play in game**. Destroying the TIEs and flying into the area ends the mission with the medal screen.
+2. **Level settings…**: title *Desert Hunt*, a one-line description, and the X-wing as the approved craft.
+3. In Objects mode, open **Add to level**, search *TIE fighter* (from another level) and click three spots ahead of the player start. Give each one a path with **New path** in its panel, so it flies in and attacks.
+4. Back in **Level settings…**, **Add objective**: *Destroy the TIE fighters*, goal **Destroy units**, Ctrl+click all three.
+5. Set the medal times, kills and accuracy, then **Play in game**.
 
-> TODO: screenshots of this example in the game, up to the medal screen.
+The TIEs come at you as soon as the intro ends:
+
+![Desert Hunt in the game: the X-wing turns into the three TIE fighters over the flat desert](images/custom-level-flight.png)
+
+Destroying the last one ends the mission with the medal screen, scored against your level's medals:
+
+![The medal screen for Desert Hunt: mission complete, 3 enemies destroyed, no medal](images/custom-level-debrief.png)
+
+To make the player land as well, add an **Objective trigger** in Events mode where the outpost should be (a blank level has none, so it comes from another level, set off by the player) and set its **Radius** to the size of the outpost, then add a second objective with goal **Reach an area** that picks it. The mission then ends once both are done.
 
 ## Not yet possible
 
 - Enemy craft other than TIE fighters and TIE interceptors from other levels (see the [level mod list](Make-a-Level-Mod#not-yet-possible)).
 - A map bigger than its template.
 - Your own model as a **new** ship to pick, with its own hangar shot.
-- Still to be checked in the game: approved craft for custom levels, medals on save slots 1 and 2, imported briefing recordings, and a camera position copied into a blank level (**Add to level**) used as an objective's camera.

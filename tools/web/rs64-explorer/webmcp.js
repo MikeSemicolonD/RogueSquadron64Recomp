@@ -1099,11 +1099,26 @@ const WEBMCP_TOOLS = [
 
       controls.update();
 
+      const throughCut = !!(cut?.file && $('cutCam').checked && cut.camNode);
+      let eye = camera.position;
+      let look = controls.target;
+
+      // Through the cutscene camera the orbit target is stale (and controls.update just turned the view to it until the next frame): report
+      // the cutscene camera's own pose, its target a point straight ahead as far away as the orbit target.
+      if (throughCut)
+      {
+        const m = new THREE.Matrix4().multiplyMatrices(cut.camNode.matrixWorld, CAM_FLIP);
+        const ahead = new THREE.Vector3(0, 0, -1).transformDirection(m);
+
+        eye = new THREE.Vector3().setFromMatrixPosition(m);
+        look = eye.clone().addScaledVector(ahead, eye.distanceTo(controls.target));
+      }
+
       return {
-        position: toSpace(camera.position),
-        target: toSpace(controls.target),
+        position: toSpace(eye),
+        target: toSpace(look),
         space: space ? 'level' : 'scene',
-        cutsceneCamera: !!(cut?.file && $('cutCam').checked)
+        cutsceneCamera: throughCut
       };
     },
   },
@@ -1261,7 +1276,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_level_rename_object',
     edit: true,
-    description: 'Names an object in the open level (rules, camera shots and destroy lists name objects). Refused when the mission\'s script looks the old name up, or the new name is taken. The level\'s rules, camera shot lines, the NPCs flying it (a path or roam area), the trigger areas it sets off and the paths continuing into it follow the new name; moved counts each.',
+    description: 'Names an object in the open level (rules, camera shots and destroy lists name objects). Refused when the game looks the old name up (a stock mission script, or in every level the player start and the like; a mod level with its own objectives runs no stock script), or the new name is taken. The level\'s rules, camera shot lines, the NPCs flying it (a path or roam area), the trigger areas it sets off and the paths continuing into it follow the new name; moved counts each.',
     inputSchema: {
       type: 'object',
       properties: { type: { type: 'integer' }, index: { type: 'integer' }, name: { type: 'string', pattern: '^[!-~]{1,47}$' } },

@@ -47,7 +47,10 @@ This adds a fly-by to the intro of Ambush at Mos Eisley.
 2. **Actor…** → pick the X-wing from the player craft. It appears at the centre of the view.
 3. Pick the X-wing from **Pose…**. Move the playhead to 0.5 s, drag it off to one side of the shot with W, and turn it with E so its nose points along the way it will fly.
 4. Move the playhead to 1.5 s and drag it across to the other side. Keep the same turn, or it rolls on the way.
-5. Press play. The X-wing crosses the shot between the two keys. Drag the keys on the **Keys** row to make it faster (closer together) or slower.
+5. Tick **Camera** (posing unticks it) and press play. The X-wing crosses the shot between the two keys. Drag the keys on the **Keys** row to make it faster (closer together) or slower.
+
+   ![The new X-wing crossing the opening shot of the Mos Eisley intro, seen through the cutscene camera](images/cutscene-flyby.png)
+
 6. Optional: drag an engine sound from the sound list onto the timeline at 0.5 s.
 
 To follow it, pick a camera from **Pose…**, set its **Mode** to aim at the X-wing, and the camera turns to keep it in view.

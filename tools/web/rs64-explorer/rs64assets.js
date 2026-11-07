@@ -801,13 +801,17 @@ function rs64Lib()
     gold: { time: 6, kills: 30, accuracy: 50, friendlies: 0 },
   };
 
+  const MOD_FOLDER_MAX = 9;
+
   function modLevelNew(levels, title, template, medals = MEDALS_SIMPLE)
   {
-    const base = title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 44) || 'level';
+    // The game's manifest names hold 15 characters and the folder names "<folder>_intro", so a folder is at most 9 (MOD_FOLDER_MAX).
+    const cut = (s, n) => s.slice(0, n).replace(/_+$/, '');
+    const base = cut(title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), MOD_FOLDER_MAX) || 'level';
     let folder = base;
 
     for (let k = 2; levels.some((l) => l.folder === folder || l.id === folder); k++)
-      folder = `${base}_${k}`;
+      folder = `${cut(base, MOD_FOLDER_MAX - String(k).length - 1)}_${k}`;
 
     return { id: folder, title, description: '', template, folder, medals: structuredClone(medals) };
   }
@@ -1476,6 +1480,12 @@ function rs64Lib()
 
     if (o.getUint32(0x44) >= s.end)
       o.setUint32(0x44, o.getUint32(0x44) + delta);
+
+    // Every record holds its own index in its type at +0x04, and the game indexes the type's table with it (a trigger's activators,
+    // parseDatEventTriggers), so a copied record or one after a removed item would point at the wrong entry or past the table.
+    for (const it of parseDAT(o).items)
+      if (it.type === type)
+        o.setUint16(it.offset + 4, it.index);
 
     return datRebuildNameMap(out);
   }

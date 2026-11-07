@@ -2385,6 +2385,11 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
     sky = buildObject(m.hob.objects[0], m, skyId, { tris: 0, verts: 0, parts: 0 });
     sky.name = 'sky';
+
+    const bound = new THREE.Box3().setFromObject(sky).getBoundingSphere(new THREE.Sphere());
+
+    // How far its farthest point is from the camera at scale 1, with the rim dropped to the horizon (SKY_DROP per unit of scale).
+    sky.userData.reach = bound.center.clone().setY(bound.center.y + SKY_DROP).length() + bound.radius;
     sky.scale.setScalar(2);
     sky.visible = $('optSky').checked;
 

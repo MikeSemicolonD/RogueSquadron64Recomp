@@ -37,7 +37,7 @@ In Objects or Events mode:
 
 - **Click** something to select it, and **right-click** to pick from everything under the cursor.
 - **W**, **E**, **R** move, rotate and scale it with the handles. **X** switches between world and local axes. The panel also has number boxes for exact values.
-- **Name** in the panel renames it. Rules, camera shots and the units flying a renamed path follow the new name. Objects the mission's own script looks up by name can't be renamed.
+- **Name** in the panel renames it. Rules, camera shots and the units flying a renamed path follow the new name. Objects the game looks up by name can't be renamed, such as the player start or what a stock mission's script uses. A custom level with its own objectives doesn't run the stock script, so there only the player start and the like are fixed.
 - **Ctrl+D** duplicates it and **Delete** removes it. The explorer won't let you delete something the mission needs (for example the target of an objective), and tells you why.
 
 To add something, use **Add to level** at the bottom of the panel. Search the list, pick an item, then click where it goes (Esc cancels). Items marked *from another level* are copied from that mission. You can also drag a row in by its grip icon.
@@ -61,7 +61,7 @@ Select a path in Events mode to edit its points. Drag a point to move it, or **S
 
 In Events mode:
 
-- A **trigger area** fires when something enters it. **Set off by** in its panel picks what that is: the player or one of the level's named units. Check it on triggers copied from another level, which can still name that level's units.
+- A **trigger area** fires when something enters it. **Set off by** in its panel picks what that is: the player or one of the level's named units. **Radius** is how close it has to come. A trigger copied from another level starts out set off by the player, with a radius of at least 10.
 - A **music region** changes the song when the player flies into it. Pick the song by name.
 - A trigger can **Play camera shot**: the game cuts to one of the level's cameras the first time the trigger fires, then hands control back while the fight goes on. In online co-op, both players see the shot unless you set it to show only for the player who fired it.
 

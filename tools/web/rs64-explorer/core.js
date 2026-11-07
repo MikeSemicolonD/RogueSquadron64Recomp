@@ -676,6 +676,7 @@ let spin = 0;
 let sky = null;
 let skyColor = null;
 const skyPos = new THREE.Vector3();
+const SKY_DROP = 38;
 
 ready.then(() => renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
@@ -698,9 +699,15 @@ ready.then(() => renderer.setAnimationLoop(() => {
   updateCutSfxPositions();
   updateFog();
 
-  // The dome rim sits 38 units above its origin (x2 scale); drop it so the rim meets the horizon.
+  // The dome rim sits 38 units above its origin (x2 scale); drop it so the rim meets the horizon. It is drawn first without depth, so a
+  // short far plane (a cutscene's fog distance) only shrinks it around the camera, as the game draws its sky past the terrain's clip.
   if (sky && sky.parent)
-    sky.position.copy(sky.parent.worldToLocal(skyPos.copy(camera.position))).y += 76;
+  {
+    const s = Math.min(2, (camera.far * 0.9) / (sky.userData.reach * sky.parent.matrixWorld.getMaxScaleOnAxis()));
+
+    sky.scale.setScalar(s);
+    sky.position.copy(sky.parent.worldToLocal(skyPos.copy(camera.position))).y += SKY_DROP * s;
+  }
 
   // Cutscenes drive the lens themselves.
   if (orthoView && cut)
