@@ -420,7 +420,8 @@ class Game:
         self.call("rdram_dump", {"path": dump}, 60)
         out = os.path.join(self.session_dir, f"dl_walk_{dl}_{addr}.txt")
         walker = os.path.join(REPO, "tools", "debug", "validate", "f5_dl_walk.py")
-        r = subprocess.run([sys.executable, walker, dump, addr], capture_output=True, text=True, timeout=300)
+        # A child Python inheriting the MCP stdin pipe blocks at startup while FastMCP has a read pending on it.
+        r = subprocess.run([sys.executable, walker, dump, addr], capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
         with open(out, "w", encoding="utf-8") as f:
             f.write(r.stdout + r.stderr)
         return {"walk_path": out, "dump_path": dump, "exit_code": r.returncode, "tail": (r.stdout + r.stderr)[-3000:]}
@@ -459,7 +460,7 @@ class Game:
         write_minidump(self.proc.pid, path)
         report = {"dump_path": path}
         for name, script in (("freeze", "reconstruct-freeze.py"), ("host_stacks", "host-stacks.py")):
-            r = subprocess.run([sys.executable, os.path.join(REPO, "tools", "debug", script), path], capture_output=True, text=True, timeout=600, cwd=REPO)
+            r = subprocess.run([sys.executable, os.path.join(REPO, "tools", "debug", script), path], capture_output=True, text=True, timeout=600, cwd=REPO, stdin=subprocess.DEVNULL)
             text_path = os.path.join(self.session_dir, f"{os.path.splitext(os.path.basename(path))[0]}_{name}.txt")
             with open(text_path, "w", encoding="utf-8") as f:
                 f.write(r.stdout + r.stderr)
