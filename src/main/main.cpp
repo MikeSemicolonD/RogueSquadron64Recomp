@@ -329,7 +329,13 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
         SDL_SetHint(SDL_HINT_WINDOW_NO_ACTIVATION_WHEN_SHOWN, "1");
     }
 
-    auto create = [&] { return SDL_CreateWindow("Star Wars: Rogue Squadron 64 Recompiled", window_x, window_y, window_w, window_h, window_flags); };
+#ifdef NDEBUG
+    static constexpr const char* kWindowTitle = "Star Wars: Rogue Squadron 64 Recompiled";
+#else
+    static constexpr const char* kWindowTitle = "Star Wars: Rogue Squadron 64 Recompiled (Debug)";
+#endif
+
+    auto create = [&] { return SDL_CreateWindow(kWindowTitle, window_x, window_y, window_w, window_h, window_flags); };
 
     SDL_Window* sdl_window = create();
 

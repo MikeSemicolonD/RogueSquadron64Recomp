@@ -347,8 +347,8 @@ endif()
 # Linux executables carry no icon resource: favicon.ico is embedded and set as the window icon at startup.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
-        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/favicon.ico rs64_favicon_ico ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/favicon.ico file_to_c
+        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/$<IF:$<CONFIG:Debug>,favicon_debug.ico,favicon.ico> rs64_favicon_ico ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
+        DEPENDS ${CMAKE_SOURCE_DIR}/favicon.ico ${CMAKE_SOURCE_DIR}/favicon_debug.ico file_to_c
         VERBATIM)
     target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/favicon_ico.c)
     target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR})
