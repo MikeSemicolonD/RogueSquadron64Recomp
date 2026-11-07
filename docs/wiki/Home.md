@@ -2,6 +2,10 @@
 
 These pages show you how to mod with the [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/rs64-explorer/).
 
+> [!IMPORTANT]
+> These documents are still a **work in progress**.
+> The explorer functionality works but UI/UX still needs work.
+
 ## Start here
 
 - [Getting started](RS64-Explorer): what you need, moving around the view, and the shortcuts.
