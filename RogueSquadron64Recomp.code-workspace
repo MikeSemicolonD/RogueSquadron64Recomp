@@ -10,7 +10,9 @@
         { "name": "Save Editor", "path": "tools/web/save-editor" },
         { "name": "Relay Server", "path": "relay-server" },
         { "name": "Mods", "path": "mods" },
-        { "name": "Wiki Preview Output", "path": "wiki-preview" }
+        { "name": "Docs", "path": "docs" },
+        { "name": "Wiki", "path": "docs/wiki" },
+        { "name": "Wiki (Preview Output)", "path": "wiki-preview" }
     ],
     "settings": {
         "java.import.gradle.enabled": false,
