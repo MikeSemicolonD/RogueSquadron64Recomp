@@ -1,6 +1,6 @@
 ---
 name: rs64-mcp-usage
-description: Drive the running game through the rs64 MCP server (tools/debug/mcp/rs64_mcp.py) to see or prove something in a real frame - launch to a level, freeze on an exact frame, fly the craft with press/step, screenshot, inspect draws/textures/framebuffers/RDRAM, then close and clean up. Use whenever a change must be checked in-game (a renderer/terrain/lighting fix, a "looks wrong at a distance" report, a menu or mission screen), when the user asks to "try it", "look at", "fly to" or "capture" something, or before asking the user for an F1 screenshot. Covers the launch -> pause_at -> press/step -> screenshot loop, how the craft responds to stick input, frame-clock choice, the free_cam limitation with the terrain pass, and the gotchas (already paused, one launch, env per launch, cleanup). Triggers on mcp__rs64__*, pause_at, press, step, free_cam, screenshot of the game, fly/steer the ship, check in game. Complements roguesquadron-debug (crash/hang triage), roguesquadron-menu-drive (keyboard menus) and renderdoc-mcp (GPU captures, via renderdoc_capture).
+description: Drive the running game through the rs64 MCP server (tools/debug/mcp/rs64_mcp.py) to see or prove something in a real frame - launch to a level, freeze on an exact frame, fly the craft with press/step, screenshot, inspect draws/textures/framebuffers/RDRAM, then close and clean up. Use whenever a change must be checked in-game (a renderer/terrain/lighting fix, a "looks wrong at a distance" report, a menu or mission screen), when the user asks to "try it", "look at", "fly to" or "capture" something, or before asking the user for an F1 screenshot. Covers the launch -> pause_at -> press/step -> screenshot loop, how the craft responds to stick input, frame-clock choice, the free_cam limitation with the terrain pass, and event triggers (pause_when_drawn, pause_when, wait_log), menu driving by RDRAM cursor, attaching to a user's game, and the gotchas (already paused, one launch, Debug vs Release config, env per launch, set_config saving, cleanup). Triggers on mcp__rs64__*, pause_at, press, step, attach, pause_when_drawn, free_cam, screenshot of the game, fly/steer the ship, check in game. Complements roguesquadron-debug (crash/hang triage), roguesquadron-menu-drive (keyboard menus) and renderdoc-mcp (GPU captures, via renderdoc_capture).
 ---
 
 # Using the rs64 MCP
@@ -9,11 +9,15 @@ What each tool does: [tools/debug/mcp/README.md](../../../tools/debug/mcp/README
 
 ## Before launching
 
-- Build first (Debug has the bridge). A running exe blocks the link, and so does a game another session launched, so check with `Get-Process RogueSquadron64Recomp` and ask before killing one you did not start.
+- Build first (Debug has the bridge). A running exe blocks the link, and so does a game another session launched, so check with `Get-Process RogueSquadron64Recomp` and ask before killing one you did not start. Never stop the game by name (`taskkill /IM`, `Get-Process ... | Stop-Process`): it closes the user's own game too. Stop only your PID, or `close`.
+- `launch` defaults to `config="Debug"`. After a Release build pass `config="Release"`, or every check runs the stale Debug exe. A Release launch uses the user's own settings with the RT features off; turn them on with `rt_features(set={...})` after the first `pause_at`.
 - Launch once. `launch` refuses while its own game runs, so if a launch seems to fail, check `status` and the process list before retrying.
+- For a game the user started (Debug serves the bridge on port 47064), use `attach` instead of `launch`. Everything but `wait_log` works and `close` only disconnects. `screenshot` can come back one colour on an attached game; use `capture_window_by_pid` from the windows-screenshot MCP instead.
 - All settings go in `launch`'s `env`, every launch. Nothing carries over between launches, and trace categories (`ROGUESQ_LOG_*`) are read once at startup.
   - `ROGUESQ_BOOT_TARGET=level:<id>[,craft]` drives the real menus into a mission. `menu:...`, `hangar:<id>`, `pause:<id>`, `cutscene:<level>,<kind>`: [debug-trace-env-vars.md](../../../docs/engine/debug-trace-env-vars.md).
+  - `hangar:<lvl>[,craft]` reaches the 3D craft-select hangar in ~35 s through the saved pilot; `pause_at` / `step` work there too.
   - `ROGUESQ_DRAW_DIST=<x>` overrides the draw distance setting (1-8 with the terrain pass).
+  - `ROGUESQ_WIDESCREEN=1` for widescreen. Don't flip display settings with `set_config`: it writes the user's `roguesq_video.json` even with `save=false`.
   - Level ids seen so far: 3 = Corellia (78x78 map, water). The boot loads a 32x32 map (level 19) for the front end; ignore it.
 
 ## The core loop
@@ -33,6 +37,23 @@ close()
 - `press` with `frames=N` then `step N` plays exactly N frames of that input. `frames=0` holds until `release`.
 - A mission's first ~200 frames are the opening fly-in. Steer after that.
 - `screenshot` returns a path, so `Read` it to look. Judge one image per step; don't batch ten blind steps.
+- Cutscene clocks run on wall time, so a hold skips ahead. To A/B a cutscene frame, launch once per variant.
+
+## Freezing on an event
+
+Never ask the user to say when something is on screen; their message arrives seconds late. Arm a trigger and let the game freeze itself:
+
+- `pause_when_drawn(key)` for a model part or effect sprite, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`).
+- `pause_when(addr, op=...)` for an RDRAM change (e.g. the pickup counter 0x80130B87).
+- `pause_at(<state>, 0)` for a state change.
+- `wait_log(regex)` once per real event. Don't chain a second `wait_log` for a state that may already have happened (or never will); check `status` / `frame_info` / a screenshot instead.
+
+## Driving menus
+
+- Read the cursor from RDRAM instead of judging highlights in screenshots. Main menu: byte 0x800CE7C4 (START 0, OPTIONS 1, MULTIPLAYER 2, MODS 3, QUIT 4).
+- Wait until `menu.main` frame ~150 before input; the slide-in eats presses. Move with 2-frame stick taps (`press(stick=[0, -1], frames=2)`, then step ~20); 6-frame holds auto-repeat.
+- MULTIPLAYER goes through SELECT GAME: A on the profile, step ~200, and the lobby shows. `ROGUESQ_MP_TRANSPORT=enet` shows the IP line instead of the Steam join code.
+- `type_text` fills the PASSCODES / ENTER NAME wheels.
 
 ## Flying the craft (X-wing class, measured on Corellia)
 
@@ -54,7 +75,8 @@ close()
 - `rdram_read` / `read_symbol` / `pause_when(addr, op=...)` for game state; `walk_dl` for the F5 display list; `loaded_models` for the level's model names.
 - `renderdoc_capture` for GPU-level questions, then the renderdoc MCP (`renderdoc-mcp` skill).
 - `free_cam` does not work with the whole-map terrain pass (the default renderer): the pass keeps drawing with the game camera, so the picture comes out mixed. Steer the craft to the view instead. Disable it again with `free_cam(enabled=false)`.
-- Light preset edits and `rt_debug_view` show only after the next `step`.
+- Light preset edits, `rt_features` and `rt_debug_view` show only after the next `step`. `lights_active` lists the lights that shone in the last frame and the traced sun.
+- Hard-shadow debug views 1-4 are not the soft path the final image uses; check the soft shadow view too.
 
 ## Finishing
 
