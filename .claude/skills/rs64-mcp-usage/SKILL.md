@@ -51,7 +51,7 @@ close()
 ## Inspecting a frozen frame
 
 - `frame_summary` -> `list_draws(fb, proj)` -> `get_draw` / `dump_texture` / `view_draw(index)` + `screenshot`. `pick(x, y)` takes native framebuffer coordinates (`vi_info` fb size, e.g. 320x240).
-- `rdram_read` / `read_symbol` / `pause_when(addr, op=...)` for game state; `walk_dl` for the F5 display list.
+- `rdram_read` / `read_symbol` / `pause_when(addr, op=...)` for game state; `walk_dl` for the F5 display list; `loaded_models` for the level's model names.
 - `renderdoc_capture` for GPU-level questions, then the renderdoc MCP (`renderdoc-mcp` skill).
 - `free_cam` does not work with the whole-map terrain pass (the default renderer): the pass keeps drawing with the game camera, so the picture comes out mixed. Steer the craft to the view instead. Disable it again with `free_cam(enabled=false)`.
 - Light preset edits and `rt_debug_view` show only after the next `step`.

@@ -413,6 +413,23 @@ class Game:
             raise GameError(f"no symbol named {name}")
         return {"name": name, "addr": addr, **self.call("rdram_read", {"addr": addr, "size": size})}
 
+    def loaded_models(self):
+        """The level's loaded models (walkMeshdef0List's table: 25 u16 hash chains at 0x801394B0 into 12-byte entries at 0x80139020, +0 next, +4 the model, its name at +0)."""
+        heads = bytes.fromhex(self.call("rdram_read", {"addr": 0x801394B0, "size": 50})["hex"])
+        entries = bytes.fromhex(self.call("rdram_read", {"addr": 0x80139020, "size": 0x490})["hex"])
+        models = []
+        for chain in range(25):
+            idx = int.from_bytes(heads[chain * 2:chain * 2 + 2], "big")
+            hops = 0
+            while idx != 0xFFFF and idx * 12 + 8 <= len(entries) and hops < 1024:
+                e = entries[idx * 12:idx * 12 + 12]
+                model = int.from_bytes(e[4:8], "big")
+                name = bytes.fromhex(self.call("rdram_read", {"addr": model, "size": 16})["hex"]).split(b"\0")[0].decode("ascii", "replace")
+                models.append({"name": name, "model": f"0x{model:08X}"})
+                idx = int.from_bytes(e[0:2], "big")
+                hops += 1
+        return {"count": len(models), "models": sorted(models, key=lambda m: m["name"])}
+
     def walk_dl(self, addr="task"):
         """Dump RDRAM and walk a display list offline with tools/debug/validate/f5_dl_walk.py (default: the current gfx task)."""
         dl = self.call("frame_info")["clocks"]["dl"]
@@ -847,6 +864,11 @@ def serve():
     def rdram_read(addr: int, size: int = 4) -> dict:
         """Read game memory as hex (big-endian, as the N64 sees it). addr is a KSEG0 address, e.g. 0x80130B70; size <= 65536."""
         return game.call("rdram_read", {"addr": addr, "size": size})
+
+    @mcp.tool()
+    def loaded_models() -> dict:
+        """Every model the level has loaded, by name, with its address."""
+        return game.loaded_models()
 
     @mcp.tool()
     def rdram_write(addr: int, hex: str) -> dict:
