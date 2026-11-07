@@ -663,7 +663,7 @@ static void draw_shader_compile_indicator()
     ImGui::End();
 }
 
-// Top-left present rate (F7); ImGui's frame is one per present, averaged over its last 60.
+// Top-left frame rates (F7): ImGui runs once per game frame, so its rate is the game's; RT64's present profiler gives the display's.
 static void draw_fps_counter()
 {
 
@@ -680,7 +680,10 @@ static void draw_fps_counter()
 
     if (ImGui::Begin("##fps", nullptr, flags))
     {
-        ImGui::Text("%.0f FPS  %.1f ms  frame %d", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f, ImGui::GetFrameCount());
+        const double present_ms = rs64_rt64_present_ms();
+
+        ImGui::Text("Game     %3.0f FPS  %5.1f ms  frame %d", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f, ImGui::GetFrameCount());
+        ImGui::Text("Display  %3.0f FPS  %5.1f ms", present_ms > 0.0 ? 1000.0 / present_ms : 0.0, present_ms);
     }
 
     ImGui::End();

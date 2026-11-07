@@ -16,6 +16,9 @@ namespace recomp {
 // input layer, which releases mouse-steering capture when the inspector is up.
 extern "C" int rs64_rt64_inspector_open(void);
 
+// RT64's average interval between presented frames in ms (0 before the first present).
+extern "C" double rs64_rt64_present_ms(void);
+
 // Hands RT64's light preset library the built-in presets, each enabled mod's roguesq_lights.json in mod order, then the one next to the exe;
 // later files override same-named presets. Call once mods are known (after recomp::start_game).
 void rs64_queue_light_presets();

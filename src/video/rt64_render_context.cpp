@@ -24,6 +24,7 @@ extern SDL_Window* g_sdl_window;
 #define HLSL_CPU
 #endif
 #include "hle/rt64_application.h"
+#include "hle/rt64_present_queue.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
 #include "librecomp/mods.hpp"
@@ -207,6 +208,14 @@ extern "C" int rs64_rt64_inspector_open(void)
 
     // The inspector object always exists to host the Controls window, so only the F1 visibility counts.
     return (app->userConfig.developerMode && app->inspectorVisible) ? 1 : 0;
+}
+
+extern "C" double rs64_rt64_present_ms(void)
+{
+
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+
+    return (app && app->presentQueue) ? app->presentQueue->presentProfiler.average() : 0.0;
 }
 
 extern "C" void rs64_render_suspend_surface(void) {
