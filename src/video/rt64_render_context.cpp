@@ -285,14 +285,26 @@ extern "C" float rs64_aspect_scale(void)
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
 }
 
-// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
-// ROGUESQ_CULL_WIDEN=0 disables.
+// The game's frustum culls (scaled via rogue_squadron.toml hooks) assume 4:3, so in widescreen they widen to the window over 4:3, plus slack for
+// wings past a model's bounding sphere (the Calamari intro's far-left V-wing vanished while its wingtip showed). ROGUESQ_CULL_WIDEN=0 disables.
+constexpr float kCullEdgeSlack = 1.05f;
+
 extern "C" float rs64_cull_widen(void)
 {
 
     static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+    const float scale = rs64_aspect_scale();
 
-    return s_on ? rs64_aspect_scale() : 1.0f;
+    if (!s_on || !app || !app->presentQueue) return s_on ? scale : 1.0f;
+
+    // Cutscene frames report no resolution-scale widening while the picture still widens, so widescreen is read from the setting.
+    const auto& shared = *app->presentQueue->ext.sharedResources;
+    const bool expand = (shared.userConfig.aspectRatio == RT64::UserConfiguration::AspectRatio::Expand);
+    const float window = (shared.swapChainHeight > 0) ? float(shared.swapChainWidth) / float(shared.swapChainHeight) : 0.0f;
+    const float widened = std::max(scale, expand ? window * 0.75f : 1.0f);
+
+    return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
 }
 
 // Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
