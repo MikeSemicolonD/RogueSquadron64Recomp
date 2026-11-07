@@ -74,7 +74,20 @@ Your level's Cutscene list has its intro, ending and **Opening crawl**. See [Mak
 
 **Play in game** starts the game straight into your level. See [Saving, testing and sharing](Saving-Testing-and-Sharing).
 
-> TODO: a complete worked example, from a blank level to the medal screen, with screenshots.
+## Example: a short hunt on Tatooine
+
+A level where the player destroys three TIE fighters and reaches a landing area.
+
+1. Open Ambush at Mos Eisley in **Levels** and pick **New blank level…** for flat ground with the Tatooine sky.
+2. **Level settings…**: title *Desert Hunt*, a one-line description, a briefing voice line, and the X-wing as the approved craft.
+3. In Objects mode, open **Add to level**, search *TIE fighter* (from another level) and click three spots ahead of the player start. Give each one a path with **New path** in its panel.
+4. In Events mode, add a trigger area past the TIEs and name it *landing*.
+5. Back in **Level settings…**, **Add objective** twice:
+   - *Destroy the TIE fighters*: goal **Destroy units**, Ctrl+click all three.
+   - *Land at the outpost*: goal **Reach an area**, pick *landing*.
+6. Set the medal times, kills and accuracy, then **Play in game**. Destroying the TIEs and flying into the area ends the mission with the medal screen.
+
+> TODO: screenshots of this example in the game, up to the medal screen.
 
 ## Not yet possible
 

@@ -1004,9 +1004,13 @@ function buildObject(obj, model, key, counts)
   group.userData.lodSlot = obj.lodSlots?.[lodIndex] ?? 0;
   counts.lods = Math.max(counts.lods || 0, obj.lods.length);
 
+  // Joints (moving nodes, such as wngrot_a) keep their names, so the inspect card and an exported .glb show what an import must use.
+  const jointName = new Map([...(obj.nodeNames ?? [])].map(([name, index]) => [index, name]));
+
   const nodes = obj.nodes.map((n, i) => {
     const g = new THREE.Group();
 
+    g.name = jointName.get(i) ?? '';
     g.matrixAutoUpdate = false;
     poseNode(g, n);
 
@@ -2133,7 +2137,8 @@ function inspect(hit)
       t && ['Wrap', info.map?.wrapS === THREE.ClampToEdgeWrapping ? 'clamp (UVs stay in 0..1)' : 'repeat'],
       info.emissive && info.valpha && !info.blend && t && ['Shading', 'sphere-mapped reflection (glass)'],
       ['Alpha', alpha],
-      ['Part triangles', o.geometry.attributes.position.count / 3]
+      ['Part triangles', o.geometry.attributes.position.count / 3],
+      o.parent?.name && ['Joint', `${o.parent.name} (moves; a mesh named this in an imported model moves with it)`]
     ]
   };
 }
