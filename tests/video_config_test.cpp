@@ -324,6 +324,13 @@ static void test_ray_tracing_settings() {
     rs64::video::apply_friendly(uc, json{{"rayTracing", {{"ambientOcclusion", true}}}});
     CHECK(rs64lights::feature(Feature::AmbientOcclusion));
     _putenv("ROGUESQ_RT_FOG_SHAFTS=");
+    CHECK(j["rayTracing"]["lightLimits"]["engines"] == 12 && j["rayTracing"]["lightLimits"]["lasersMax"] == 8);
+    rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lightLimits", {{"effects", 20}, {"lasersMax", 2}, {"models", 999}}}}}});
+    CHECK(rs64lights::priorityShare(5) == 20 && rs64lights::config().maxProjectileLights == 2);
+    CHECK(rs64lights::priorityShare(3) == rs64lights::MaxLights);
+    j = rs64::video::to_friendly(uc);
+    CHECK(j["rayTracing"]["lightLimits"]["effects"] == 20 && j["rayTracing"]["lightLimits"]["lasersMax"] == 2);
+    rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lightLimits", {{"effects", 10}, {"lasersMax", 8}, {"models", 6}}}}}});
 }
 
 static void test_aa_presets() {

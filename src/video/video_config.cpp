@@ -173,6 +173,35 @@ const std::pair<const char*, rs64lights::Feature> kRtKeys[] = {
 };
 
 std::atomic<bool> g_rt_setting[7] = { false, false, true, false, false, false, false };
+
+// "rayTracing.lightLimits": light slots per category (its default priority's share); "lasersMax" (priority -1) caps laser bolts in all.
+const std::pair<const char*, int> kLightLimitKeys[] = {
+    { "engines", 7 },
+    { "pickups", 6 },
+    { "effects", 5 },
+    { "models", 3 },
+    { "level", 2 },
+    { "torpedoes", 1 },
+    { "lasers", 0 },
+    { "lasersMax", -1 },
+};
+
+std::atomic<int> g_light_limit[8] = { 12, 4, 10, 6, 4, 2, 4, 8 };
+
+void set_light_limit(size_t i, int n)
+{
+
+    n = std::clamp(n, 0, static_cast<int>(rs64lights::MaxLights));
+    g_light_limit[i].store(n, std::memory_order_relaxed);
+
+    const int priority = kLightLimitKeys[i].second;
+
+    if (priority >= 0) {
+        rs64lights::g_priorityShare[priority] = static_cast<size_t>(n);
+    } else {
+        rs64lights::setMaxProjectileLights(n);
+    }
+}
 } // namespace
 
 bool rt_setting(rs64lights::Feature f)
@@ -519,6 +548,18 @@ void apply_friendly(UC& uc, const json& j)
                 set_rt_setting(feature, rt.at(key).get<bool>());
             }
         }
+
+        if (rt.contains("lightLimits") && rt.at("lightLimits").is_object()) {
+            const json& limits = rt.at("lightLimits");
+
+            for (size_t i = 0; i < std::size(kLightLimitKeys); ++i) {
+                const char* key = kLightLimitKeys[i].first;
+
+                if (limits.contains(key) && limits.at(key).is_number_integer()) {
+                    set_light_limit(i, limits.at(key).get<int>());
+                }
+            }
+        }
     }
 
     if (has("widescreen"))
@@ -657,6 +698,13 @@ json to_friendly(const UC& uc)
         rt[key] = rt_setting(feature);
     }
 
+    json limits = json::object();
+
+    for (size_t i = 0; i < std::size(kLightLimitKeys); ++i) {
+        limits[kLightLimitKeys[i].first] = g_light_limit[i].load(std::memory_order_relaxed);
+    }
+
+    rt["lightLimits"] = limits;
     j["rayTracing"] = rt;
     json adv = json::object();
 

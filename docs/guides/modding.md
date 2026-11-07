@@ -193,7 +193,7 @@ A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the 
 - Any light can flicker (`flickerIntensity`, 0-1) or be a spotlight (`direction`, `spotMaxCosine` / `spotFalloffCosine`, RT64's negative cosines; the RS64 Explorer shows them as cone angles).
 - Only 64 lights shine at once. A preset's `priority` decides which are kept when there are more (see the table below).
 
-**Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over.
+**Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over. Players can change the shares in `roguesq_video.json` (`rayTracing.lightLimits`).
 
 | Priority | Lights | Share |
 | --- | --- | --- |
@@ -203,7 +203,7 @@ A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the 
 | 3 | Model parts: building glows, lamps (default for `mesh` presets) | 6 |
 | 2 | Level lights (always; `priority` is not read for them) | 4 |
 | 1 | Torpedoes (built-in `proton_torpedo`) | 2 |
-| 0 | Laser bolts (any `red_laser`, `green_laser`, `ion_laser` light; never more than 8, `ROGUESQ_RT_LIGHTS_PROJECTILE_MAX`) | 4 |
+| 0 | Laser bolts (any `red_laser`, `green_laser`, `ion_laser` light; never more than 8, `lasersMax`) | 4 |
 
 The built-in lights include the briefing room's hologram and table ring and, generated from the models' own glow markers, the engines of every other craft and the lamps on level buildings and platforms.
 
