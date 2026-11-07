@@ -20,6 +20,7 @@ extern SDL_Window* g_sdl_window;
 #endif
 #include "common/rt64_user_configuration.h"
 #include "video/video_config.h"
+#include "video/rt64_render_context.h"
 
 #ifndef HLSL_CPU
 #define HLSL_CPU
@@ -179,11 +180,12 @@ void RenderDiag::frame_profile(std::chrono::high_resolution_clock::time_point pr
         const long long dl_us = g_rs64_pdl_us_total - s_pdl_base;
         const long long dl_tasks = g_rs64_pdl_task_total - s_task_base;
         const double fps = s_frames * 1e6 / (double)win_us;
+        const double display_ms = rs64_rt64_present_ms();
 
         fprintf(stderr,
-            "[frameprof] present=%.1f fps | period ms min/avg/max=%.1f/%.1f/%.1f | "
+            "[frameprof] present=%.1f fps display=%.1f fps | period ms min/avg/max=%.1f/%.1f/%.1f | "
             "dl us/frame=%.0f tasks/frame=%.1f | present us avg/max=%.0f/%lld | other ms/frame=%.1f\n",
-            fps,
+            fps, (display_ms > 0.0) ? 1000.0 / display_ms : 0.0,
             s_period_min / 1000.0, (s_period_sum / (double)s_frames) / 1000.0, s_period_max / 1000.0,
             dl_us / (double)s_frames, dl_tasks / (double)s_frames,
             s_pres_sum / (double)s_frames, s_pres_max,

@@ -396,7 +396,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 | `ROGUESQ_LOG_PIPELINE` | off | `[skip-null-rt]`, `[pipe-noshader]`, `[pipe-scissor]` | Draws the RT64 framebuffer renderer skips: no color target, no compiled pipeline yet (no ubershader), or an empty scissor. |
 | `ROGUESQ_LOG_GBI` | off | per-handler GBI logs | Every F5 GBI handler as it fires. Very high volume. |
 | `ROGUESQ_LOG_GFX_TASK` | off | one line per graphics task | Low-volume task-submission trace. |
-| `ROGUESQ_LOG_FRAME_PROFILE` | off | `[frameprof]`, `[frameprof HITCH]` | Real fps and per-hitch phase attribution (walk / snapshot memcpy / present). |
+| `ROGUESQ_LOG_FRAME_PROFILE` | off | `[frameprof]`, `[frameprof HITCH]` | Real fps and per-hitch phase attribution (walk / snapshot memcpy / present). `present=` counts the game's frames handed to the host, `display=` the frames RT64 shows (the F7 Display line). `tools/debug/android-perf.ps1` reads `display=` to compare frame rates across Android emulator profiles or a connected phone, replaying a mission recording. |
 | `ROGUESQ_LOG_WALK_PROFILE` | off | `[walkprof]` | Per-opcode timing for walks over 20 ms. |
 | `ROGUESQ_LOG_BATCH` | off | batching counters | Pipeline/scissor binds a per-scene sort could save. |
 | `ROGUESQ_LOG_MESG_TRACE` | off | message-order trace | For `tools/debug/validate/compare_mesg_trace.py`. Scope with `ROGUESQ_MESG_TRACE_FRAMES=lo-hi`. |
