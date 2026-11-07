@@ -680,7 +680,7 @@ static void draw_fps_counter()
 
     if (ImGui::Begin("##fps", nullptr, flags))
     {
-        ImGui::Text("%.0f FPS  %.1f ms", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+        ImGui::Text("%.0f FPS  %.1f ms  frame %d", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f, ImGui::GetFrameCount());
     }
 
     ImGui::End();
