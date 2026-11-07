@@ -175,6 +175,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | <kbd>F4</kbd> | Texture replacement | All |
 | <kbd>F5</kbd> | In-game profiler HUD | All |
 | <kbd>F6</kbd> | Controls window (rebinding, joysticks, rumble, mouse) | All |
+| <kbd>F7</kbd> | FPS counter | All |
 | <kbd>F9</kbd> / <kbd>Shift</kbd>+<kbd>F9</kbd> | Step forward / back through the ray tracing debug views | All |
 | <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
 | <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |

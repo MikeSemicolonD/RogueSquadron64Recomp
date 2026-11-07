@@ -663,6 +663,29 @@ static void draw_shader_compile_indicator()
     ImGui::End();
 }
 
+// Top-left present rate (F7); ImGui's frame is one per present, averaged over its last 60.
+static void draw_fps_counter()
+{
+
+    if (!g_show_fps.load())
+    {
+        return;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(12.0f, 12.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove;
+
+    if (ImGui::Begin("##fps", nullptr, flags))
+    {
+        ImGui::Text("%.0f FPS  %.1f ms", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
+    }
+
+    ImGui::End();
+}
+
 struct Notice {
     std::string key;
     std::string text;
@@ -746,6 +769,7 @@ void draw_dev_ui()
     draw_mods_ui();
     draw_shader_compile_indicator();
     draw_notices();
+    draw_fps_counter();
 
     s_imgui_keyboard.store(ImGui::GetIO().WantCaptureKeyboard);
 

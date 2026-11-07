@@ -34,6 +34,7 @@ namespace rs64::app {
     // UI thread mutates, game thread reads.
     extern std::mutex g_bindings_mtx;
     extern std::atomic<bool> g_show_controls;
+    extern std::atomic<bool> g_show_fps;
     extern std::atomic<bool> g_mouse_capture;
     extern std::vector<OpenJoy> g_open_joys;
     extern std::vector<SDL_Joystick*> g_joy_by_dev;
