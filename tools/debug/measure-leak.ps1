@@ -1,9 +1,10 @@
 param(
     [int]$Timeout = 30,
     [string]$Tag = "leak-baseline",
-    [string]$EnvVars = ""
+    [string]$EnvVars = "",
+    [string]$Config = "Debug"
 )
-$Binary = ".\build\Debug\RogueSquadron64Recomp.exe"
+$Binary = Join-Path (Get-Location) "build\$Config\RogueSquadron64Recomp.exe"
 $logDir = Join-Path (Get-Location) "logs\stability\$Tag"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 
@@ -18,11 +19,12 @@ if ($EnvVars) {
 $log = Join-Path $logDir "run.log"
 $memCsv = Join-Path $logDir "memory.csv"
 
-"second,working_set_mb,private_bytes_mb,virt_mb" | Out-File -FilePath $memCsv -Encoding utf8
+"second,working_set_mb,private_bytes_mb,virt_mb,missions" | Out-File -FilePath $memCsv -Encoding utf8
 
 $proc = Start-Process -FilePath $Binary `
     -RedirectStandardError $log `
     -RedirectStandardOutput "$log.stdout" `
+    -WorkingDirectory (Split-Path $Binary) `
     -PassThru -WindowStyle Hidden
 
 $start = Get-Date
@@ -37,8 +39,9 @@ while ((-not $proc.HasExited) -and ((New-TimeSpan -Start $start -End (Get-Date))
                 $ws = [math]::Round($p.WorkingSet64 / 1MB, 1)
                 $pb = [math]::Round($p.PrivateMemorySize64 / 1MB, 1)
                 $vm = [math]::Round($p.VirtualMemorySize64 / 1MB, 1)
-                "$sec,$ws,$pb,$vm" | Out-File -FilePath $memCsv -Append -Encoding utf8
-                Write-Host "  t=${sec}s ws=${ws}MB pb=${pb}MB vm=${vm}MB"
+                $missions = @(Select-String -Path $log -Pattern "abort complete" -ErrorAction SilentlyContinue).Count
+                "$sec,$ws,$pb,$vm,$missions" | Out-File -FilePath $memCsv -Append -Encoding utf8
+                Write-Host "  t=${sec}s ws=${ws}MB pb=${pb}MB vm=${vm}MB missions=$missions"
             }
         } catch {}
     }

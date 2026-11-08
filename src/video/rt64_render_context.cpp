@@ -1240,6 +1240,18 @@ private:
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
 
         diag().log_gamestate();
+
+        // ROGUESQ_LOG_GPU_MEM=1: the GPU allocator's per-heap use on every game-state change, to tell level loads from leftovers.
+        static const bool s_gpu_mem = env_on("ROGUESQ_LOG_GPU_MEM");
+        static std::string s_gpu_mem_state;
+        const char* st = rs64_state_current_id();
+
+        if (s_gpu_mem && app->device && s_gpu_mem_state != st)
+        {
+            s_gpu_mem_state = st;
+            fprintf(stderr, "[gpu-mem] state=%s %s\n", st, app->device->memoryStats().c_str());
+            fflush(stderr);
+        }
     }
 };
 
