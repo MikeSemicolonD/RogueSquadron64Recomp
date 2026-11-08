@@ -89,6 +89,7 @@ void rs64_th_buildGridCellMeshForFace_8004368C(uint8_t* rdram, recomp_context* c
 void rs64_th_loadLevelAssets_800453C8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_buildVisibleTerrainGridAroundCamera_80043A84(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_loadLevelAssets_800453D8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_loadLevelAssets_800454D0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_computeGridLayerScrollOffset_800456D4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCutsceneLevel_800A6D3C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCutsceneLevel_800A6D44(uint8_t* rdram, recomp_context* ctx);
@@ -316,6 +317,8 @@ void rs64_lang_record_tables_release(uint8_t* rdram);
 void rs64_lang_slot_tables(uint8_t* rdram);
 void rs64_lang_slot_tables_release(uint8_t* rdram);
 void rs64_lang_texture_pool(uint8_t* rdram);
+void rs64_level_fog_frac(float frac);
+void rs64_fog_color_note(uint8_t* rdram);
 void rs64_lang_txt_file(uint8_t* rdram, uint32_t name, int kind);
 void rs64_lang_voice_id(uint32_t id);
 void rs64_lang_voice_text(uint8_t*);

@@ -90,6 +90,12 @@ static bool game_owns_view_setting()
     return (s_env >= 0) ? (s_env != 0) : rs64::video::keep_cutscene_draw_distance();
 }
 
+static float s_level_fog_frac = 0.9f;
+
+extern "C" void rs64_level_fog_frac(float frac) {
+    s_level_fog_frac = frac;
+}
+
 static bool game_owns_view() {
     return game_owns_view_setting() && (rs64_state_in_cinematic() || rs64_crawl_playing());
 }
@@ -130,13 +136,40 @@ extern "C" float rs64_terrain_dist(void)
     return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view());
 }
 
+static std::atomic<uint32_t> s_level_fog_rgb{0};
+
+// The fog colour the game set this frame (setFog bytes 0x8011A873..75), for the draws RT64 fogs itself.
+extern "C" void rs64_fog_color_note(uint8_t* rdram) {
+    s_level_fog_rgb = (rb(rdram, 0x8011A873u) << 16) | (rb(rdram, 0x8011A874u) << 8) | rb(rdram, 0x8011A875u);
+}
+
+extern "C" uint32_t rs64_level_fog_rgb(void) {
+    return s_level_fog_rgb;
+}
+
+static float fog_reach() {
+    return terrain_pass_on() ? rs64_draw_dist() : rs64_terrain_dist();
+}
+
+// A level whose fog starts early (Nonnah, 0.3 of the far plane) keeps its stock fog past the stock view and thins it out to the draw distance instead.
+static bool fog_tail_on() {
+    return (s_level_fog_frac < 0.85f) && (fog_reach() > 1.0f);
+}
+
 // Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map.
-extern "C" float rs64_fog_dist(void)
+extern "C" float rs64_fog_dist(void) {
+    return fog_tail_on() ? 1.0f : fog_reach();
+}
+
+// The linear fog value at the scaled far plane, where the fog tail reaches full (0 = stock fog). Fog is linear in 1/depth from start f*e to end e.
+extern "C" float rs64_fog_tail_end(void)
 {
 
-    if (terrain_pass_on()) return rs64_draw_dist();
+    if (!fog_tail_on()) return 0.0f;
 
-    return rs64_terrain_dist();
+    const float f = s_level_fog_frac;
+
+    return (1.0f / f - 1.0f / fog_reach()) / (1.0f / f - 1.0f);
 }
 
 // The game's text slot for the language setting: a built-in's own slot, 0 (English fallback) for a mod language, -1 when unset.

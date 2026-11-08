@@ -787,6 +787,12 @@ void rs64_th_loadLevelAssets_800453D8(uint8_t* rdram, recomp_context* ctx) {
     ctx->r16 = (gpr)(int32_t)rs64_tgrid_budget((uint32_t)ctx->r16);
 }
 
+// loadLevelAssets 0x800454D0
+void rs64_th_loadLevelAssets_800454D0(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_level_fog_frac(ctx->f0.fl);
+}
+
 // computeGridLayerScrollOffset 0x800456D4
 void rs64_th_computeGridLayerScrollOffset_800456D4(uint8_t* rdram, recomp_context* ctx) {
 
@@ -822,6 +828,7 @@ void rs64_th_buildVisibleTerrainGridAroundCamera_80043A8C(uint8_t* rdram, recomp
 // setupCameraMatrices 0x800170D0
 void rs64_th_setupCameraMatrices_800170D0(uint8_t* rdram, recomp_context* ctx) {
 
+    rs64_fog_color_note(rdram);
     ctx->f4.fl *= rs64_fog_dist();
 }
 

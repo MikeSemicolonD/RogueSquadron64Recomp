@@ -893,6 +893,12 @@ func = "loadLevelAssets"
 before_vram = 0x800453D8
 text = '{ rs64_th_loadLevelAssets_800453D8(rdram, ctx); }'
 
+# Level fog fraction ($f0, just stored to 0x80136FBC): 0.9 on every level but Nonnah (0.3), whose fog keeps its stock range and thins out to the draw distance.
+[[patches.hook]]
+func = "loadLevelAssets"
+before_vram = 0x800454D0
+text = '{ rs64_th_loadLevelAssets_800454D0(rdram, ctx); }'
+
 # Terrain detail radius: cells nearer than this squared distance (0x8009DEB4, from the far-range base D) get relief meshes, the rest coarse quads; scale it with the terrain reach so the coarse band stays at the fog line.
 [[patches.hook]]
 func = "computeGridLayerScrollOffset"

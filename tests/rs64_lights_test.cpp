@@ -829,6 +829,15 @@ static void testFogSteps() {
 static CasterMode opaqueMode() {
     CasterMode m{};
     m.zUpd = true;
+
+    // Fog tail: stock up to the knee, continuous there, full exactly at the tail end, and 0 keeps the stock ramp.
+    CHECK(fogCurve(0.5f, 1.35f) == 0.5f);
+    CHECK(near(fogCurve(0.85f, 1.35f), 0.85f, 1e-6f));
+    CHECK((fogCurve(1.0f, 1.35f) > 0.85f) && (fogCurve(1.0f, 1.35f) < 1.0f));
+    CHECK(near(fogCurve(1.35f, 1.35f), 1.0f, 1e-6f));
+    CHECK(fogCurve(2.0f, 1.35f) == 1.0f);
+    CHECK(fogCurve(1.0f, 0.0f) == 1.0f);
+    CHECK(near(fogCurve(0.9f, 1.0f), 0.9f, 1e-6f));
     m.triangles = 4;
     return m;
 }
