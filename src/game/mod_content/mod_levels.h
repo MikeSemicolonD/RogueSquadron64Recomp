@@ -16,8 +16,38 @@ namespace rs64levels {
 constexpr int kVoiceNone = -1, kMusicTemplate = -1;
 // Highest SELECT LEVEL index: the selector's mask is (1 << (max + 1)) - 1, which wraps at 0x1F.
 constexpr int kMaxEntry = 0x1E;
-// Manifest names hold 15 characters, so "<folder>_intro" / "<folder>_extro" must fit in 15.
-constexpr size_t kMaxFolder = 9;
+constexpr size_t kManifestNameMax = 15;
+
+// Manifest names hold 15 characters: a longer path part is stored as its start plus a hash of the whole part, which keeps <long>_intro and <long>_extro distinct.
+inline std::string manifestPath(const std::string& path) {
+
+    std::string out;
+    size_t start = 0;
+
+    for (;;) {
+        const size_t slash = path.find('/', start);
+        std::string part = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+
+        if (part.size() > kManifestNameMax) {
+            uint32_t hash = 2166136261u;
+
+            for (const unsigned char c : part) hash = (hash ^ c) * 16777619u;
+
+            part.resize(kManifestNameMax - 8);
+
+            for (int shift = 28; shift >= 0; shift -= 4) part += "0123456789abcdef"[(hash >> shift) & 0xF];
+        }
+
+        out += part;
+
+        if (slash == std::string::npos) return out;
+
+        out += '/';
+        start = slash + 1;
+    }
+}
+
+constexpr size_t kMaxFolder = 48;
 
 // A medal tier as the game's medal_info record: at most `minutes`, at least the others (accuracy in %).
 struct MedalTier {
@@ -377,7 +407,7 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
         }
         const bool plain = !l.folder.empty() && l.folder.size() <= kMaxFolder && l.folder.find_first_of("/\\") == std::string::npos && l.folder != "." && l.folder != "..";
         if (l.tmpl < 0 || l.tmpl > 0x12 || !plain || l.id.empty()) {
-            errors.push_back(mod + ": level '" + l.id + "' needs a template 0-18 and a plain folder name of at most 9 characters");
+            errors.push_back(mod + ": level '" + l.id + "' needs a template 0-18 and a plain folder name of at most 48 characters");
             continue;
         }
         out.push_back(std::move(l));

@@ -1898,22 +1898,22 @@ await check('levels.json round-trips and a new level gets a unique plain folder'
   const a = RS64.modLevelNew(levels, 'Dune Sea Ambush!', 0);
 
   assert.deepEqual(a, {
-    id: 'dune_sea',
+    id: 'dune_sea_ambush',
     title: 'Dune Sea Ambush!',
     description: '',
     template: 0,
-    folder: 'dune_sea',
+    folder: 'dune_sea_ambush',
     medals: RS64.MEDALS_SIMPLE
   });
 
   levels = [a];
-  assert.equal(RS64.modLevelNew(levels, 'dune sea ambush', 3).folder, 'dune_se_2');
+  assert.equal(RS64.modLevelNew(levels, 'dune sea ambush', 3).folder, 'dune_sea_ambush_2');
 
   const text = RS64.modLevelsWrite(levels);
 
   assert.deepEqual(RS64.modLevelsParse(text), levels);
   assert.deepEqual(RS64.modLevelsParse('not json'), []);
-  assert.ok(RS64.modLevelNew([], 'x'.repeat(80), 1).folder.length <= 9);
+  assert.ok(RS64.modLevelNew([], 'x'.repeat(80), 1).folder.length <= 48);
 });
 
 await check('objectives wire units and triggers in the DAT and read back; re-applying clears the old wiring', async () => {

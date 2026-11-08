@@ -801,11 +801,10 @@ function rs64Lib()
     gold: { time: 6, kills: 30, accuracy: 50, friendlies: 0 },
   };
 
-  const MOD_FOLDER_MAX = 9;
+  const MOD_FOLDER_MAX = 48;
 
   function modLevelNew(levels, title, template, medals = MEDALS_SIMPLE)
   {
-    // The game's manifest names hold 15 characters and the folder names "<folder>_intro", so a folder is at most 9 (MOD_FOLDER_MAX).
     const cut = (s, n) => s.slice(0, n).replace(/_+$/, '');
     const base = cut(title.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''), MOD_FOLDER_MAX) || 'level';
     let folder = base;

@@ -1333,7 +1333,7 @@ extern "C" uint32_t rs64_mod_levels_lookup(uint8_t* rdram, uint32_t name)
     {
         if (const auto own = rs64levels::crawlAsset(*s_playing_crawl, cur, s_mod_level_files))
         {
-            wstr(rdram, kLookupName, *own);
+            wstr(rdram, kLookupName, rs64levels::manifestPath(*own));
 
             fprintf(stderr, "[crawl] %s -> %s\n", cur.c_str(), own->c_str());
 
@@ -1347,7 +1347,7 @@ extern "C" uint32_t rs64_mod_levels_lookup(uint8_t* rdram, uint32_t name)
 
     if (mod.empty()) return name;
 
-    wstr(rdram, kLookupName, mod);
+    wstr(rdram, kLookupName, rs64levels::manifestPath(mod));
 
     fprintf(stderr, "[levels] %s -> %s\n", cur.c_str(), mod.c_str());
 
