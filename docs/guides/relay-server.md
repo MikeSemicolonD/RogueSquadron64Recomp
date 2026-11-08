@@ -4,19 +4,19 @@
 
 ## Pointing the game at a server
 
-Each player types the server's address (a name or an IP, with `:port` if it is not 27070) into the address row on the MULTIPLAYER page, as they would a friend's address. When the server answers, the game remembers it as `relay_server` in `roguesq_net.json` next to the game; it can also be set there by hand:
+Each player types the server's address (a name or an IP, with `:port` if it is not 27070) into the address row on the MULTIPLAYER page, as they would a friend's address. When the server answers, the game saves it as `relay_server` in `roguesq_net.json` next to the game. It can also be set there by hand, with the same text as the address row's `last_address`:
 
 ```json
-{ "relay_server": "relay.example.com:27070" }
+{ "last_address": "relay.example.com:27070", "relay_server": "relay.example.com:27070" }
 ```
 
-The game then lists the server's games under MULTIPLAYER > JOIN GAME (after Steam's, when the steam-relay mod is running), and HOST GAME opens games on it when Steam is not in use. A game's id on the server, as `games` shows it, is the name it lists under when the host has not set one.
+While the server's address is in the row, the game lists its games under MULTIPLAYER > JOIN GAME (after Steam's, when the steam-relay mod is running), and HOST GAME opens games on it when Steam is not in use. A game's id on the server, as `games` shows it, is the name it lists under when the host has not set one.
 
 When the server is down or the address is wrong, the JOIN GAME list says COULD NOT CONNECT TO SERVER over any Steam games, and a host waiting on it stops hosting with the same message.
 
 ## Download and run
 
-Release packages (draft releases tagged `relay-v*`):
+Each game release on GitHub has these downloads alongside the game's own:
 
 | Package | Contents |
 | --- | --- |

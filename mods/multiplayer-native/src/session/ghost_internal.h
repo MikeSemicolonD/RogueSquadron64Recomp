@@ -167,7 +167,7 @@ struct Ghost {
     rs64::net::CodeEditor code;
     bool relay_session = false;
 
-    // The relay this session runs over (Steam's service or the relay server); relay_server: roguesq_net.json's "host[:port]" of an rs64_relay (ROGUESQ_MP_RELAY overrides).
+    // The relay this session runs over (Steam's service or the relay server); relay_server: roguesq_net.json's "host[:port]" of an rs64_relay, used while the address row holds it (ROGUESQ_MP_RELAY overrides).
     const rs64_mp_transport* relay_t = nullptr;
     std::string relay_server;
 
