@@ -52,7 +52,7 @@ void rs64_th_heavyMechSubEffectNpcHandler_80079958(uint8_t* rdram, recomp_contex
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DD70(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_npcWaterCraftUpdate_800E6D6C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_isNpcWithinActiveReferenceRange_80047D40(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_isPointXzWithinRangeOfRef_80047DF0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx);

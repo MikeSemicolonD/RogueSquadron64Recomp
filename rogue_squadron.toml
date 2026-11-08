@@ -533,11 +533,11 @@ text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(rdram, ctx); }'
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E168
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E168(rdram, ctx); }'
-# Draw distance: water craft (the Calamari boats) keep their active range out to the draw distance, or they visibly loop back to their start.
+# Draw distance: units keep their active range out to the draw distance in normal play, or they would be removed and respawned in view.
 [[patches.hook]]
-func = "npcWaterCraftUpdate"
-before_vram = 0x800E6D6C
-text = '{ rs64_th_npcWaterCraftUpdate_800E6D6C(rdram, ctx); }'
+func = "isNpcWithinActiveReferenceRange"
+before_vram = 0x80047D40
+text = '{ rs64_th_isNpcWithinActiveReferenceRange_80047D40(rdram, ctx); }'
 
 [[patches.hook]]
 func = "isPointXzWithinRangeOfRef"

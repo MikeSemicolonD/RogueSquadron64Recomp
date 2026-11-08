@@ -389,15 +389,15 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_co
     }
 }
 
-// Water craft out of the active range for 21 frames are destroyed and respawned at their start, a loop the stock far plane hid: their range test
-// alone widens with the draw distance, so a boat in view keeps sailing.
-static int s_watercraft_range = 0;
+// Units out of the active range for 21 frames are destroyed and respawned at their start, a loop the stock far plane hid: their range test
+// widens with the draw distance in normal play, so a unit in view stays where it is.
+static int s_unit_active_range = 0;
 
-// npcWaterCraftUpdate 0x800E6D6C: before its isNpcWithinActiveReferenceRange call.
-void rs64_th_npcWaterCraftUpdate_800E6D6C(uint8_t* rdram, recomp_context* ctx)
+// isNpcWithinActiveReferenceRange entry
+void rs64_th_isNpcWithinActiveReferenceRange_80047D40(uint8_t* rdram, recomp_context* ctx)
 {
 
-    s_watercraft_range = 1;
+    s_unit_active_range = 1;
 }
 
 // isPointXzWithinRangeOfRef 0x80047DF0: the squared range ($f0) against the squared distance ($f2).
@@ -406,9 +406,9 @@ void rs64_th_isPointXzWithinRangeOfRef_80047DF0(uint8_t* rdram, recomp_context* 
 
     const float d = rs64_draw_dist();
 
-    if (s_watercraft_range && d > 1.0f) ctx->f0.fl *= d * d;
+    if (s_unit_active_range && d > 1.0f && !rs64_ls_session()) ctx->f0.fl *= d * d;
 
-    s_watercraft_range = 0;
+    s_unit_active_range = 0;
 }
 
 // setupCameraMatrices 0x80016CE0
