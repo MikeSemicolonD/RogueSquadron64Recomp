@@ -15,6 +15,6 @@
 
 ## Checklist
 
-- [ ] Unit tests pass if code changes were made: `cmake --build build --config Release --target rs64_unit_tests` ([what it runs](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/docs/engine/release-ci.md#unit-tests))
+- [ ] Unit tests pass if code changes were made ([how to run them](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/docs/engine/release-ci.md#unit-tests))
 - [ ] **No** ROM data, recompiled output or game assets are included
 - [ ] Docs updated if behaviour or options changed
