@@ -29,7 +29,7 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `pause_when` | Freeze when an RDRAM value changes or meets eq/ne/gt/lt (checked once a frame). A state change is `pause_at(<state>, 0)`. |
 | `pause_when_drawn` | Freeze once a model part or effect sprite is on screen, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`; `\|` separates several). One or two frames after it first shows. |
 | `wait_log` | Wait for a regex in the game's log (e.g. `SEH caught\|null-call\|Assertion`). |
-| `pick` / `highlight` | The draw calls under a framebuffer pixel (F1's right-click picker); tint one on screen or clear tints. |
+| `pick` / `highlight` | The draw calls under a framebuffer pixel (F1's right-click picker), each with its model part's light-preset `mesh_key` when it has one (RT lights on); tint one on screen or clear tints. |
 | `read_symbol` | Read memory at a `syms/` symbol name. |
 | `walk_dl` | RDRAM dump + `f5_dl_walk.py` over the current task (or a `frame_summary` `dl_addr`). |
 | `hang_dump` | Full-memory minidump + `reconstruct-freeze.py` + `host-stacks.py` (about 2 GB; delete it after). |

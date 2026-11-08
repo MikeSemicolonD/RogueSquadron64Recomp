@@ -974,7 +974,8 @@ function lightFields(p, l)
         onchange: (e) => { p.mesh = e.target.value.trim(); commit('Light preset mesh'); }
       })),
       check('Radius in camera units', !!p.cameraUnits, (v) => (p.cameraUnits = v), 'For models drawn at varying scales (laser bolts): the reach stays the same on screen'),
-      check('Follows the game\'s blinking lamp', !!p.lamp, (v) => (p.lamp = v), 'For lights on a model\'s glow hardpoints: in game each light shines only while the lamp drawn there is lit, in its colour and fade')
+      check('Follows the game\'s blinking lamp', !!p.lamp, (v) => (p.lamp = v), 'For lights on a model\'s glow hardpoints: in game each light shines only while the lamp drawn there is lit, in its colour and fade'),
+      check('Emissive', !!p.emissive, (v) => (p.emissive = v), 'The part is self-lit (an exhaust, light strips): in game it is never shadowed, casts no shadow and glows in reflections')
     ]
     : [num('Level', p.level ?? LIGHTS_ANY_LEVEL, 1, (v) => (p.level = v), 'gCurrentLevel the preset lights; -1 outside missions, -2 every level, -3 briefing room, -4 hangar')];
 

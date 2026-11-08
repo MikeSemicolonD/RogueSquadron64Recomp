@@ -86,6 +86,17 @@ static void testSpriteLightRadiusCap() {
     CHECK(near(c.radius, 1200.0f, 1e-5f));
 }
 
+// Two triangles' first vertices (red at alpha 157, white at 255) averaged into the cutout flags: rgb in bits 8-31, alpha / 4 in bits 2-7, bits 0-1 clear.
+static void testCutoutShadeAlpha() {
+    const std::vector<uint32_t> faces = { 0, 1, 1, 1, 0, 0 };
+    const std::vector<uint8_t> normCol = { 255, 0, 0, 157, 255, 255, 255, 255 };
+    const uint32_t flags = packCutoutShade(faces, normCol, 0, 2);
+    CHECK((flags & 3u) == 0u);
+    CHECK(((flags >> 8) & 0xFFu) == 255u);
+    CHECK(((flags >> 2) & 0x3Fu) == (206u >> 2));
+    CHECK(packCutoutShade(faces, {}, 0, 2) == 0xFFFFFFFCu);
+}
+
 // White RGBA16 8x8 frame with a half-size I8 mask covering its left half: half the frame shows.
 static void testSpriteEmission() {
 
@@ -1544,6 +1555,7 @@ int main() {
     testScreenRoundTrip();
     testSpriteLight();
     testSpriteLightRadiusCap();
+    testCutoutShadeAlpha();
     testSpriteEmission();
     testSameMatrix();
     testSunCameraDir();

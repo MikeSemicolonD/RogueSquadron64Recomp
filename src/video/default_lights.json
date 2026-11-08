@@ -1,6 +1,20 @@
 {
     "presets": [
         {
+            "name": "emissive_briefing_strips",
+            "enabled": true,
+            "mesh": "lights",
+            "emissive": true,
+            "lights": []
+        },
+        {
+            "name": "emissive_devastator_exhaust",
+            "enabled": true,
+            "mesh": "wrld_dvstr#s0.p5",
+            "emissive": true,
+            "lights": []
+        },
+        {
             "name": "laser_red",
             "enabled": true,
             "mesh": "red_laser",
