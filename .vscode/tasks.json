@@ -6,7 +6,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Debug",
                 "--target", "RogueSquadron64Recomp"
             ],
@@ -28,7 +28,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Release",
                 "--target", "RogueSquadron64Recomp"
             ],
@@ -57,7 +57,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Release",
                 "--target", "RogueSquadron64Recomp"
             ],
@@ -233,7 +233,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "${input:rsConfig}",
                 "--target", "rs64_relay"
             ],
@@ -414,7 +414,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Debug",
                 "--target", "regen_funcs"
             ],
@@ -430,7 +430,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Debug",
                 "--target", "RecompiledFuncs"
             ],
@@ -448,7 +448,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "${input:rsConfig}",
                 "--target", "rs64_unit_tests"
             ],
