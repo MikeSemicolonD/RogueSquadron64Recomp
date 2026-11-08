@@ -60,7 +60,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Longer draw distance:** see much farther away by up to 8x the original, set with the DRAW DISTANCE slider in Display Settings. [Has some caveats](#draw-distance-caveats).
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
-- **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [experimental](#status).
+- **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [Has some caveats](#ray-tracing-caveats).
 
 #### Input
 
@@ -70,7 +70,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
 - **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Control Settings Mod](#mods). See [Controls](#controls).
-- **Touch controls on Android:** tap menu and in-game buttons and fly with an on-screen stick. You can move and resize the buttons, and turn on 'gyro steering' to help fine tune your aim.
+- **Touch controls on Android:** tap menu and in-game buttons and fly with an on-screen stick. You can move and resize the buttons, and turn on 'gyro steering' to help fine-tune your aim.
 
 #### Languages
 
@@ -89,7 +89,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 
 > [!NOTE]
-> Steam-Relay mod on Linux, Steam Deck and macOS are untested.
+> Steam-Relay mod on Linux, Steam Deck and macOS is untested.
 
 #### Mods
 
@@ -205,37 +205,37 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Ray Tracing is implemented but has some issues:
   - Stray shadows
-  - Incorrect shadow reflection or shadow culling when look at the water from and obleak OR downward angle. (Screen space reflection issue?)
-  - Explosion effect reflections leave black boxes or black meshes instead of an accurate reflection. If we're having issues with this one this could also affect other kinda of effects involving meshes. (calamari mission when the legs on the devestator fall and explode is a good example)
-  - Reflections pop in when level first begins. (can we somehow pre-warm?)
-  - World devestator texture (lava looking texture) in the back needs to be emissive
-
-- MSAA 8X and SSAA 4X are too heavy for phone GPUs and drop below 30 fps on mobile
 
 ### Game specific Issues
 
 > [!IMPORTANT]
-> **Game Issues**" are deep seeded issues that can touch hundreds of different functions and effect various internal systems in the game.
+> **Game Issues** are deep-seated issues that can touch hundreds of different functions and affect various internal systems in the game.
 > Game Issues are less of a priority since they exist in the base game and fixing some of them might take away the charm that those rough edges bring.
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
-- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has it's own internal scheduler meaning majority of the time it's actually waiting on a counter or something to 'finish'.
+- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'.
 
-- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations looks choppy for a few ms) due to things like glpyhs, graphics amd music loading in on the fly when menus load.
+- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations look choppy for a few ms) due to things like glyphs, graphics and music loading in on the fly when menus load.
 
 - Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
 
-- Some enemies pop in at a distance because the game spawns them in view where as the original fog + draw distance would hide most of this.
+- Some enemies pop in at a distance because the game spawns them in view whereas the original fog + draw distance would hide most of this.
 
-- Shooting at the lava or colliding against the ground in Raid on Sullust produces fire balls that look dim/muted compared to the other bigger lava explosion effects in the level
+- Shooting at the lava or colliding against the ground in Raid on Sullust produces fireballs that look dim/muted compared to the other bigger lava explosion effects in the level
 
 - Terrain tile and normal textures don't align perfectly and seem to have a slight cut off.
 
 - The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
 
-- Lasers + missiles popping out of existance due to the number of them being generated at once. This is the game's normal pooled object behaviour. There's a larger-object-pool mod that extends this limit.
+- Lasers + missiles popping out of existence due to the number of them being generated at once. This is the game's normal pooled object behavior. There's a larger-object-pool mod that extends this limit.
 
 - During the end sequence a few firework effects (After 4 go off in sequence and are visible on screen) don't display.
+
+#### Ray Tracing Caveats
+
+- Initial Calamari cutscene doesn't reflect the explosion: physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
+
+- Reflections might not look completely accurate because of the nature of Screen Space Reflections
 
 #### Draw distance Caveats
 
@@ -250,7 +250,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 - RS64 Explorer Fixes & Improvements
 
 - Removing system/frame limits while maintaining others for playability
-- VR Support via OpenXR (Dependant on removing system/frame limits)
+- VR Support via OpenXR (Dependent on removing system/frame limits)
 
 ## Building
 
@@ -336,7 +336,7 @@ The recomp's build process then fixes up both microcode files in place (`tools/f
 
 ### 4. Build
 
-Can specify 'Debug' in `config` when debugging. 'Release' provides MUCH better performance.
+Can specify 'Debug' in `config` when debugging. 'Release' provides MUCH better performance. 'Debug' builds also hitch and jitter with frame interpolation, depending on settings and the debug features in use, so check interpolation issues in 'Release'.
 
 ```sh
 # Windows (Visual Studio + ClangCL)
@@ -472,7 +472,7 @@ A save editor also exists in *`tools/web/save-editor`* as an HTML page, allowing
 
 Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.MD** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.MD)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
 
-This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and set up by the user themselves and is something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
+This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and set up by the user themselves and are something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
 
 Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
 

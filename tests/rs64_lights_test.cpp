@@ -97,6 +97,29 @@ static void testCutoutShadeAlpha() {
     CHECK(packCutoutShade(faces, {}, 0, 2) == 0xFFFFFFFCu);
 }
 
+// The map's water plane normal: map y under a scale, a quarter turn about x (y -> z), and a shear that leaves the plane's directions alone.
+static void testAffinePlaneNormalY() {
+
+    float n[3];
+    const float scale[3][4] = { { 2, 0, 0, 5 }, { 0, 3, 0, 6 }, { 0, 0, 4, 7 } };
+
+    CHECK(affinePlaneNormalY(scale, n) && (std::fabs(std::fabs(n[1]) - 1.0f) < 1e-6f) && (n[0] == 0.0f) && (n[2] == 0.0f));
+
+    const float turn[3][4] = { { 1, 0, 0, 0 }, { 0, 0, -1, 0 }, { 0, 1, 0, 0 } };
+
+    CHECK(affinePlaneNormalY(turn, n) && (std::fabs(std::fabs(n[2]) - 1.0f) < 1e-6f));
+
+    const float shear[3][4] = { { 25.4f, 0, 0, 0 }, { 0, 25.2f, -2.19f, 0 }, { 0, 3.1f, 17.9f, 0 } };
+
+    CHECK(affinePlaneNormalY(shear, n));
+    CHECK(std::fabs(n[0] * 25.4f) < 1e-4f);
+    CHECK(std::fabs(n[1] * -2.19f + n[2] * 17.9f) < 1e-4f);
+
+    const float flat[3][4] = {};
+
+    CHECK(!affinePlaneNormalY(flat, n));
+}
+
 // White RGBA16 8x8 frame with a half-size I8 mask covering its left half: half the frame shows.
 static void testSpriteEmission() {
 
@@ -806,6 +829,15 @@ static void testFogFactor() {
         CHECK(std::isfinite(f) && (f >= prev - 1e-6f) && (f >= 0.0f) && (f <= 1.0f));
         prev = f;
     }
+
+    // Fog tail: stock up to the knee, continuous there, full exactly at the tail end, and 0 keeps the stock ramp.
+    CHECK(fogCurve(0.5f, 1.35f) == 0.5f);
+    CHECK(near(fogCurve(0.85f, 1.35f), 0.85f, 1e-6f));
+    CHECK((fogCurve(1.0f, 1.35f) > 0.85f) && (fogCurve(1.0f, 1.35f) < 1.0f));
+    CHECK(near(fogCurve(1.35f, 1.35f), 1.0f, 1e-6f));
+    CHECK(fogCurve(2.0f, 1.35f) == 1.0f);
+    CHECK(fogCurve(1.0f, 0.0f) == 1.0f);
+    CHECK(near(fogCurve(0.9f, 1.0f), 0.9f, 1e-6f));
 }
 
 static void testFogSteps() {
@@ -829,15 +861,6 @@ static void testFogSteps() {
 static CasterMode opaqueMode() {
     CasterMode m{};
     m.zUpd = true;
-
-    // Fog tail: stock up to the knee, continuous there, full exactly at the tail end, and 0 keeps the stock ramp.
-    CHECK(fogCurve(0.5f, 1.35f) == 0.5f);
-    CHECK(near(fogCurve(0.85f, 1.35f), 0.85f, 1e-6f));
-    CHECK((fogCurve(1.0f, 1.35f) > 0.85f) && (fogCurve(1.0f, 1.35f) < 1.0f));
-    CHECK(near(fogCurve(1.35f, 1.35f), 1.0f, 1e-6f));
-    CHECK(fogCurve(2.0f, 1.35f) == 1.0f);
-    CHECK(fogCurve(1.0f, 0.0f) == 1.0f);
-    CHECK(near(fogCurve(0.9f, 1.0f), 0.9f, 1e-6f));
     m.triangles = 4;
     return m;
 }
@@ -1565,6 +1588,7 @@ int main() {
     testSpriteLight();
     testSpriteLightRadiusCap();
     testCutoutShadeAlpha();
+    testAffinePlaneNormalY();
     testSpriteEmission();
     testSameMatrix();
     testSunCameraDir();
