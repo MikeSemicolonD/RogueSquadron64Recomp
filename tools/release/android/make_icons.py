@@ -58,17 +58,17 @@ def main() -> None:
     for name, scale in DENSITIES.items():
         out = RES / f"mipmap-{name}"
         out.mkdir(parents=True, exist_ok=True)
-        # Adaptive icon: 108dp layers, art inside the 66dp safe zone so launcher masks never clip it.
+        # Adaptive icon: 108dp layers, art at 75% of the 66dp safe zone so launcher masks never clip it.
         size = round(108 * scale)
         field.resize((size, size), Image.Resampling.LANCZOS).save(out / "ic_launcher_background.png")
         fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        a = fit(art, round(66 * scale))
+        a = fit(art, round(66 * 0.75 * scale))
         fg.alpha_composite(a, ((size - a.width) // 2 + round(a.width * NUDGE_X), (size - a.height) // 2))
         fg.save(out / "ic_launcher_foreground.png")
         # Legacy 48dp icons for launchers without adaptive icon support: the same starfield, square and round.
         legacy = round(48 * scale)
         sq = field.resize((legacy, legacy), Image.Resampling.LANCZOS)
-        a = fit(art, round(legacy * 0.66))
+        a = fit(art, round(legacy * 0.66 * 0.75))
         sq.alpha_composite(a, ((legacy - a.width) // 2 + round(a.width * NUDGE_X), (legacy - a.height) // 2))
         sq.save(out / "ic_launcher.png")
         mask = Image.new("L", (legacy, legacy), 0)
