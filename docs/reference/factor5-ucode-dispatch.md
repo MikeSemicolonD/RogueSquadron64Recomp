@@ -12,26 +12,13 @@ Read by `tools/re/disasm_rsp_entry.py`, `tools/re/disasm_op01_area.py`, `tools/r
 
 ## Dispatch loop (IMEM 0x010 - 0x05C)
 
-```
-04001010  mfc0  $2, SP_STATUS
-04001014  lw    $19, 0x0($17)   ; w0
-04001018  lw    $20, 0x4($17)   ; w1
-0400101C  andi  $2, 0x80        ; halt bit
-04001020  bnez  $2, exit
-04001024  srl   $2, $19, 30     ; top 2 bits of opcode byte
-04001028  ori   $3, 0x3
-0400102C  beq   $2, $3, ...     ; opcodes >= 0xC0 go a different path
-04001030  addiu $17, $17, 0x8   ; (delay) advance DL ptr
-04001034  bnez  $2, alt         ; opcodes 0x40..0xBF go alt path
-04001038  sra   $2, $19, 23     ; (delay) idx = (w0 >> 23) & 0x1FE
-0400103C  andi  $2, $2, 0x1FE
-04001040  lhu   $2, 0xD6($2)    ; opcodes 0x00..0x3F: table 1 at DMEM 0xD6
-04001044  jr    $2
-04001048  negu  $2, $2          ; (delay slot — also alt path entry)
-0400104C  andi  $2, 0x1FE
-04001050  lhu   $2, 0x64($2)    ; opcodes 0x40..0xBF: table 2 at DMEM 0x64
-04001054  jr    $2
-```
+Each pass of the loop:
+
+1. Reads `SP_STATUS` and leaves the loop if the halt bit (`0x80`) is set.
+2. Loads the command's `w0` and `w1` from the DL pointer (`$17`), then moves the pointer on by 8.
+3. Branches on the top two bits of `w0`. Opcodes `0xC0..0xFF` take a separate path.
+4. Opcodes `0x00..0x3F` jump through the halfword table at DMEM `0xD6`.
+5. Opcodes `0x40..0xBF` negate the index first, then jump through the table at DMEM `0x64`.
 
 **Opcode → IMEM PC mapping:**
 
