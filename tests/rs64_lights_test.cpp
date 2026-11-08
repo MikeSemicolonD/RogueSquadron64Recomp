@@ -1419,8 +1419,16 @@ static void testTmemAverage() {
     // Fully transparent: no colour.
     std::fill(tmem.begin(), tmem.end(), 0);
     CHECK(!tmemAverage(tmem.data(), 0, 2, 0, 1, 4, 1, 0, rgb, cov));
-    // RGBA32 is not handled.
-    CHECK(!tmemAverage(tmem.data(), 0, 3, 0, 1, 4, 1, 0, rgb, cov));
+    // RGBA32: red and green in the low half of TMEM, blue and alpha in the high half.
+    std::fill(tmem.begin(), tmem.end(), 0);
+    for (int i = 0; i < 4; ++i) {
+        tmem[i * 2] = 0x20;
+        tmem[i * 2 + 1] = 0x40;
+        tmem[0x800 + i * 2] = 0x60;
+        tmem[0x800 + i * 2 + 1] = 0xFF;
+    }
+    CHECK(tmemAverage(tmem.data(), 0, 3, 0, 1, 4, 1, 0, rgb, cov));
+    CHECK(near(rgb[0], 0x20 / 255.0f, 1e-3f) && near(rgb[1], 0x40 / 255.0f, 1e-3f) && near(rgb[2], 0x60 / 255.0f, 1e-3f) && near(cov, 1.0f, 1e-3f));
 }
 
 static void testTransformScale() {
