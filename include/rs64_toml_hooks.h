@@ -1,6 +1,7 @@
 // Declarations for src/game/toml_hooks.c; N64Recomp includes this in every RecompiledFuncs file (recomp_include in rogue_squadron.toml).
 #pragma once
 #include "recomp.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,7 +26,6 @@ void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_con
 void rs64_th_addNpcToVisibilityBucket_80057D84(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057E08(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DCEC(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DD38(uint8_t* rdram, recomp_context* ctx);
@@ -101,6 +101,12 @@ void rs64_th_cutsceneActorNpcHandler_80044924(uint8_t* rdram, recomp_context* ct
 void rs64_th_linkDirectionalTrailSegments_8005B418(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_projectModelBoundsToScreen_80065FE4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_addNpcToVisibilityBucket_8005804C(uint8_t* rdram, recomp_context* ctx);
+void rs64_npc_draw_only_mark(int on);
+int rs64_ls_session(void);
+void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
+int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args);
+void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj, uint32_t pos, int drawn, int seen, float nx, float ny);
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx);

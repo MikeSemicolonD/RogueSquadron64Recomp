@@ -799,6 +799,10 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
     }
 }
 
+extern "C" int rs64_ls_session(void) {
+    return mode() != Mode::Off;
+}
+
 extern "C" int rs64_ls_replaying(void) {
     return st().mode == Mode::Replay ? 1 : 0;
 }

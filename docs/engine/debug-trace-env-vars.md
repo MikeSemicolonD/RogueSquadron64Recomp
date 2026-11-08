@@ -206,6 +206,7 @@ Draw distance and terrain grid (`src/game/hook_helpers.cpp`):
 | `ROGUESQ_TERRAIN_DIST=<mult>` | draw dist | Legacy terrain: scales the game's terrain grid reach and fog start/end. Accepts 0.25-8, capped at 2.5 (the terrain grid is 128x128 cells). Under the whole-map pass the grid stays at stock reach and fog follows the draw distance. |
 | `ROGUESQ_LOG_FOG=1` | off | One `[fog]` line per change: level, far-range base D (0x8009DEAC) and its bounds, the fog start/end/color the game set, the cutscene flag, our draw/terrain multipliers. |
 | `ROGUESQ_LOG_TERRAIN_GRID` | off | `[tgrid]` terrain view bounding box (cells), level cell budget, running max dimension, peak cells streamed and budget hits, every 60 grid builds. |
+| `ROGUESQ_LOG_POP` | off | `[pop] gone` / `[pop] back`: an object the game still processes that stops being drawn while inside the picture, with its model, game frame, screen position (1.0 = 4:3 edge), and how long until it returns. Destroyed objects are not reported. Replays give the same frames every run, so two runs' logs can be diffed. |
 | `ROGUESQ_TGRID_BUDGET_MULT=<1-2>` | 2 when terrain dist >= 2, else 1 (cutscene levels: 2 on legacy terrain in widescreen, else 1, ignoring this variable) | Scales the level's terrain cell budget (and its heap pools) at level load. 3x exhausts the game heap and stalls the level load. |
 
 Presentation (`lib/rt64/src/hle/rt64_present_queue.cpp`, `src/video/rt64_render_context.cpp`):

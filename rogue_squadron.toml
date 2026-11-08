@@ -486,7 +486,7 @@ func = "updateSnowSpeederFlightControls"   # snowspeeder speed update (misnamed)
 before_vram = 0x800ABDA0
 text = '{ rs64_th_updateSnowSpeederFlightControls_800ABDA0(rdram, ctx); }'
 
-# RT shadows: the render paths' object view tests (addNpcToVisibilityBucket, selectMeshLodAndSubmitForRender) also widen by rs64_shadow_cull_margin, so craft just off screen still cast.
+# The object view tests in addNpcToVisibilityBucket; the widening runs in its draw-only pass (rs64_npc_draw_only_pass), so game state keeps the stock test.
 [[patches.hook]]
 func = "addNpcToVisibilityBucket"
 before_vram = 0x80057D84
@@ -502,10 +502,11 @@ func = "addNpcToVisibilityBucket"
 before_vram = 0x80057E48
 text = '{ rs64_th_addNpcToVisibilityBucket_80057E48(rdram, ctx); }'
 
+# Draw-only pass for objects the stock test rejected; see rs64_npc_draw_only_pass.
 [[patches.hook]]
-func = "selectMeshLodAndSubmitForRender"
-before_vram = 0x80058104
-text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'
+func = "addNpcToVisibilityBucket"
+before_vram = 0x8005804C
+text = '{ rs64_th_addNpcToVisibilityBucket_8005804C(rdram, ctx); }'
 
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"
@@ -1903,3 +1904,8 @@ text = '{ rs64_th_getVoiceText_80055A10(rdram, ctx); }'
 [[patches.hook]]
 func = "updateNpcEffectIntensity"
 text = '{ rs64_th_updateNpcEffectIntensity_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x80058104
+text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'

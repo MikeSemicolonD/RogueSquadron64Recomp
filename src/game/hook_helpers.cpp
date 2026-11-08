@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_map>
 #include <cstring>
 #include <algorithm>
 #include <atomic>
@@ -786,5 +787,116 @@ extern "C" void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys) {
         fprintf(stderr, "[cimg-walker] dl=0x%08X visited cimg=%d killed=%d passed=%d jumps_used=%d stack_max=%d\n",
                 (dl_phys & 0x3FFFFFFu) | 0x80000000u, cimg_seen, cimg_killed, cimg_passed, 64 - jumps_left, sp);
         fflush(stderr);
+    }
+}
+
+// Runs addNpcToVisibilityBucket again with the display widening on, for an object the stock test rejected: it joins the draw list and its LOD updates, but the fields game logic reads go back to their stock values.
+extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
+    {
+        return 0;
+    }
+
+    const uint32_t obj = args[1];
+    const uint32_t model = rw(rdram, obj);
+    const uint16_t flags = rh(rdram, obj + 8u);
+    const uint16_t even = rh(rdram, 0x801394E2u);
+    const uint16_t odd = rh(rdram, 0x801394E4u);
+    const uint16_t modelFlags = rh(rdram, model + 0x38u);
+    const uint32_t modelFrame = rw(rdram, model + 0x3Cu);
+
+    // Without the every-other-frame bits the object is tested this frame instead of reusing its last answer.
+    wh(rdram, obj + 8u, flags & 0xFE7Fu);
+    rs64_npc_draw_only_mark(1);
+    const uint32_t drawn = rs64::mips::mips_call(rdram, ctx, 0x80057C8Cu, { args[0], args[1], args[2], args[3] }).v0;
+    rs64_npc_draw_only_mark(0);
+
+    wh(rdram, obj + 8u, flags);
+    wh(rdram, 0x801394E2u, even);
+    wh(rdram, 0x801394E4u, odd);
+    wh(rdram, model + 0x38u, modelFlags);
+    ww(rdram, model + 0x3Cu, modelFrame);
+
+    return drawn != 0;
+}
+
+// Whether a hill stands between the camera and the world position at pos: the game's terrain height at points along the line. Debug only (ROGUESQ_LOG_POP).
+static bool terrain_hides(uint8_t* rdram, recomp_context* ctx, uint32_t pos)
+{
+
+    const uint32_t cam = rw(rdram, 0x80138D1Cu);
+    const float cx = rf(rdram, cam + 0x10u), cy = rf(rdram, cam + 0x14u), cz = rf(rdram, cam + 0x18u);
+    const float ox = rf(rdram, pos), oy = rf(rdram, pos + 4u), oz = rf(rdram, pos + 8u);
+    const uint32_t scratch = (uint32_t)ctx->r29 - 0x200u;
+
+    const auto height = [&](float x, float z) {
+        return rs64::mips::mips_call(rdram, ctx, 0x80068180u, { 0u, 0u, scratch, scratch + 0x40u }, {}, x, z).f0;
+    };
+
+    const float side = (cy >= height(cx, cz)) ? 1.0f : -1.0f;
+
+    for (int i = 1; i < 15; ++i) {
+        const float t = (float)i / 16.0f;
+
+        if (side * ((cy + (oy - cy) * t) - height(cx + (ox - cx) * t, cz + (oz - cz) * t)) < 0.0f) return true;
+    }
+
+    return false;
+}
+
+namespace {
+struct PopTrack {
+    uint32_t lastDrawn = 0;
+    uint32_t goneAt = 0;
+    float nx = 0.0f;
+    float ny = 0.0f;
+};
+}
+
+// ROGUESQ_LOG_POP=1: an object still being processed that stops drawing away from the screen edges. Keyed by object, so naturally small.
+extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj, uint32_t pos, int drawn, int seen, float nx, float ny)
+{
+
+    static const bool s_on = env_on("ROGUESQ_LOG_POP");
+
+    if (!s_on)
+    {
+        return;
+    }
+
+    static std::unordered_map<uint32_t, PopTrack> s_objects;
+
+    constexpr float kInsideScreen = 0.85f;
+    constexpr uint32_t kBackWindow = 900u;
+    const uint32_t frame = rw(rdram, 0x8013889Cu);
+    const uint32_t model = rw(rdram, obj);
+    PopTrack& t = s_objects[obj];
+    char name[17] = {};
+
+    for (int i = 0; i < 16; ++i) name[i] = (char)rb(rdram, model + (uint32_t)i);
+
+    if (drawn) {
+        if (t.goneAt && ((frame - t.goneAt) <= kBackWindow)) {
+            fprintf(stderr, "[pop] back %s obj=%08X frame=%u after %u\n", name, obj, frame, frame - t.goneAt);
+        }
+
+        t.goneAt = 0;
+        t.lastDrawn = frame;
+
+        if (seen) {
+            t.nx = nx;
+            t.ny = ny;
+        }
+
+        return;
+    }
+
+    const float edge = std::max(std::fabs(t.nx) / std::max(rs64_cull_widen(), 1.0f), std::fabs(t.ny));
+
+    if (t.lastDrawn && !t.goneAt && ((frame - t.lastDrawn) <= 2u) && (edge < kInsideScreen) && !terrain_hides(rdram, ctx, pos)) {
+        t.goneAt = frame;
+        fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f\n", name, obj, frame, t.nx, t.ny);
     }
 }
