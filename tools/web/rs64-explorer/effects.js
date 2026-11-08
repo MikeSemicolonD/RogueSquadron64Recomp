@@ -2525,6 +2525,8 @@ async function openFile(file)
     if (rom.assets.has(first + '_HOB'))
       showModel(first);
 
+    showGoalsOnce();
+
     busy('Indexing object packages...');
 
     const pkgs = [...rom.assets.values()].filter((a) => /\/opkg\d*_HOB$/.test(a.path) && a.size > 8);

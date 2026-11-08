@@ -1,1 +1,1 @@
-These pages are generated from [docs/wiki](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/tree/main/docs/wiki) in the repo. Edits made here are overwritten; open a pull request against those files instead.
+Generated from [docs/wiki](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/tree/main/docs/wiki); edits here are overwritten, so open a pull request there.

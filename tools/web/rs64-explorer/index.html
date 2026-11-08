@@ -23,7 +23,7 @@
 <body class="no-rom">
 <aside>
   <header>
-    <div class="titleRow"><h1>RS64 EXPLORER</h1><span class="titleBtns"><button id="audioBtn" hidden title="Mute the sound" aria-label="Mute the sound"></button><button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button></span></div>
+    <div class="titleRow"><h1>RS64 EXPLORER</h1><span class="titleBtns"><button id="goalsBtn" class="needs-rom" data-icon="goals" title="What do you want to make?" aria-label="What do you want to make?"></button><button id="audioBtn" hidden title="Mute the sound" aria-label="Mute the sound"></button><button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button></span></div>
     <a class="toolLink" id="saveEditorLink" href="save-editor/" target="_blank" rel="noopener" title="The save editor, a separate tool (opens in a new tab)">&larr; Save editor</a>
     <button id="btnBack" hidden style="width:100%;margin-bottom:8px"></button>
     <input type="file" id="romfile" accept=".z64,.v64,.n64">
@@ -63,6 +63,7 @@
   <div id="cutBars" hidden></div>
   <button id="navToggle" class="needs-rom" title="Hide the sidebar" aria-label="Hide the sidebar" aria-expanded="true"></button>
   <div id="lightPanel" class="panel needs-rom" hidden></div>
+  <div id="goalPanel" class="panel needs-rom" hidden></div>
   <div id="viewNav" class="panel needs-rom" hidden><svg id="viewAxes" viewBox="-36 -36 72 72" width="72" height="72" role="group" aria-label="View axes"></svg><button id="viewOrtho" data-icon="camPersp" title="Perspective view: click for orthographic, which flattens the view for precise placement (numpad 5)"></button></div>
   <div id="topLeft">
     <div id="editPanel" class="panel needs-rom" hidden>

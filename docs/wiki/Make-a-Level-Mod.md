@@ -1,114 +1,111 @@
 # Make a level mod
 
-A level mod changes one of the game's missions: the ground, what's placed in it, where enemies fly, and what happens when.
-
-To build a new mission instead, see [Make a custom level](Make-a-Custom-Level). It uses all the tools on this page.
+Change a mission's ground, objects, enemy routes and events. For a new mission, see [Make a custom level](Make-a-Custom-Level).
 
 ## Open the editor
 
-1. Open the **Levels** tab and pick a level.
-2. Click the **pencil** button at the top of the view to start editing. Changes go into your project; nothing touches the game until you export.
-3. Pick one of the three edit modes (Tab cycles through them):
-   - **Terrain**: reshape and repaint the ground.
-   - **Objects**: buildings, turrets, enemies, wingmen and everything else placed in the level.
-   - **Events**: flight paths, trigger areas, music regions and the level's rules.
+1. In **Levels**, pick a level.
+2. Click the **pencil** at the top of the view. Nothing touches the game until you export.
+3. Pick an edit mode (Tab cycles):
+   - **Terrain**: shape and paint the ground.
+   - **Objects**: buildings, turrets, enemies, wingmen and the rest.
+   - **Events**: flight paths, trigger areas, music regions and rules.
 
 ![Ambush at Mos Eisley open in the level editor, in Objects mode](images/level-objects.png)
 
 ## Reshape the ground
 
-In Terrain mode, pick a **Tool** and drag on the ground:
+In Terrain mode, pick a **Tool** and drag:
 
 ![The Terrain mode panel](images/level-terrain.png)
 
-- **Raise**, **Lower**, **Flatten**, **Smooth** reshape it. **Radius** sets the brush size and **Strength** sets how much each stroke changes. The circle under the cursor shows the brush, and the line at the bottom of the panel shows the ground height there.
-- **Paint texture** paints ground tiles with the texture picked in the swatches below it. **Pick texture**, or **Alt+drag** with any tool, picks up the texture under the cursor.
-- **Brush** picks soft or hard edges and a round or square shape. A hard square with **Flatten** makes flat pads with straight edges, and Flatten's **Height** box sets the height to level to (empty uses the ground where you start).
-- Keys: **1** to **6** pick the tool, **[** and **]** shrink and grow the brush, and **Shift+drag** swaps Raise and Lower.
-- With **Objects follow** ticked, things on the ground keep their height above it as you reshape it. **Show tiles** outlines the ground tiles, and the tiles a paint stroke changed flash briefly.
+- **Raise**, **Lower**, **Flatten**, **Smooth**, with **Radius** and **Strength**.
+- **Paint texture** paints the picked swatch. **Pick texture** or **Alt+drag** picks one up.
+- **Brush**: soft or hard, round or square. Flatten's **Height** sets the level (empty: where you start).
+- Keys: **1**-**6** tools, **[** **]** brush size, **Shift+drag** swaps Raise and Lower.
+- **Objects follow** keeps things on the ground. **Show tiles** outlines tiles.
 
-You can also work on a heightmap in an image editor. The download button saves the ground as a grey PNG (white is high), and the upload button loads any image back, scaled to fit the level.
+The download button saves a grey heightmap PNG (white is high); upload loads any image back.
 
-A level holds at most 8191 different ground tiles. The bar at the bottom of the panel shows how many are used and turns yellow, then red, as it fills. When the level is close to the limit, the explorer drops tiles that are no longer used anywhere, such as leftovers from earlier edits. A stroke that would still go over the limit is undone and the panel says so. Smoother shapes use fewer tiles.
+A level holds 8191 different ground tiles; the bar shows use. Unused tiles are dropped near the limit, and a stroke past it is undone. Smoother shapes use fewer.
 
 ## Move, add and remove things
 
 In Objects or Events mode:
 
-- **Click** something to select it, and **right-click** to pick from everything under the cursor.
-- **W**, **E**, **R** move, rotate and scale it with the handles. **X** switches between world and local axes. The panel also has number boxes for exact values.
-- **Name** in the panel renames it. Rules, camera shots and the units flying a renamed path follow the new name. Objects the game looks up by name can't be renamed, such as the player start or what a stock mission's script uses. A custom level with its own objectives doesn't run the stock script, so there only the player start and the like are fixed.
-- **Ctrl+D** duplicates it and **Delete** removes it. The explorer won't let you delete something the mission needs (for example the target of an objective), and tells you why.
+- **Click** to select; **right-click** picks from everything under the cursor.
+- **W**, **E**, **R** move, rotate, scale; **X** toggles world / local axes. The panel has exact values.
+- **Name** renames it; rules, camera shots and paths follow. The player start and names a stock script uses can't change.
+- **Ctrl+D** duplicates, **Delete** removes (refused, with the reason, if the mission needs it).
+- **Used by** lists the objectives and rules using it.
 
-To add something, use **Add to level** at the bottom of the panel. Search the list, pick an item, then click where it goes (Esc cancels). Items marked *from another level* are copied from that mission. You can also drag a row in by its grip icon.
+**Add to level** (bottom of the panel): pick an item, click where it goes (Esc cancels), or drag it in by its grip. *From another level* items are copied from that mission. A **Camera** is added at your view.
 
 ## Enemies and waves
 
-An enemy can belong to a **wave**: it waits off-stage until something releases it, such as the player entering an area or a target being destroyed. Pick the wave from the enemy's panel, or **New wave…** to start one. TIE fighters and TIE interceptors can be added from other levels.
+An enemy in a **wave** waits off-stage until released. Pick the wave in its panel, or **New wave…**. TIE fighters and interceptors can come from other levels.
 
-A wave comes in one of two ways:
+A wave is released:
 
-- **From a trigger area.** In Events mode, select the area and pick the wave in its **Start wave** box. The wave comes in when the area is set off.
-- **From a rule.** Add the **Spawn** action to a rule (see [Rules](#rules-when-this-happens-do-that)), pick the enemy kind, how many (up to 8) and the path they fly, then click **Create wave**. The explorer adds those enemies to the level, waiting off-stage, and the button changes to *Wave ready*. They come in when the rule runs.
+- **By a trigger area**: its **Start wave** box in Events mode.
+- **By a rule**: the **Spawn** action. Pick the kind, count (up to 8) and path, then **Create wave**.
 
 ## Flight paths
 
-Enemies and wingmen fly along paths. Pick an existing path from the unit's panel. Each path is named after what flies it, and *(then attacks the player)* marks the ones that end in an attack run. **Copy from another level…** brings in a path from another mission, and **New path** starts a short straight one at the unit. Every copied or new path ends in an attack on the player, because a craft that reaches the end of a path leading nowhere crashes the game.
+Pick a path in the unit's panel. *(then attacks the player)* marks paths ending in an attack run. **Copy from another level…** or **New path** add one; both end in an attack, since a path leading nowhere crashes the game.
 
-Select a path in Events mode to edit its points. Drag a point to move it, or **Shift+drag** to change its height. **Ctrl+click** a point to add one after it, and **Alt+click** to delete it (a path keeps at least 4). The craft starts at the second point and stops at the second-last; the first and last only shape the curve.
+In Events mode, drag a path's points (**Shift+drag**: height, **Ctrl+click**: add after, **Alt+click**: delete, minimum 4). Craft fly from the second point to the second-last.
 
 ## Trigger areas, music and camera shots
 
 In Events mode:
 
-- A **trigger area** fires when something enters it. **Set off by** in its panel picks what that is: the player or one of the level's named units. **Radius** is how close it has to come. A trigger copied from another level starts out set off by the player, with a radius of at least 10.
-- A **music region** changes the song when the player flies into it. Pick the song by name.
-- A trigger can **Play camera shot**: the game cuts to one of the level's cameras the first time the trigger fires, then hands control back while the fight goes on. In online co-op, both players see the shot unless you set it to show only for the player who fired it.
+- A **trigger area** fires when what **Set off by** names (the player or a unit) comes within its **Radius**. Copied triggers start set off by the player, radius 10 or more.
+- A **music region** changes the song when the player enters.
+- **Play camera shot** cuts to a level camera the first time the trigger fires. In co-op, both players see it unless set to the one who fired it.
 
 ## Rules: "when this happens, do that"
 
-Rules let a level react to the player without any code. Select the thing a rule is about (a trigger area or path in Events mode, a unit in Objects mode) and click **+ Add rule**. Pick **When…** and then what to do.
-
-A rule can start when:
+Select a trigger area, path or unit and click **+ Add rule**, then pick **When…**:
 
 - something enters or leaves an area
-- a unit passes a point on a path
-- a unit is destroyed, or its health drops below a set amount
-- the mission starts, or some time after it starts
+- a unit passes a path point
+- a unit is destroyed or drops below some health
+- the mission starts, or a time after
 - an objective is done or failed
 
-It then runs its actions in order:
+Actions run in order:
 
-- play a voice line or your own recording
-- show a message on screen
+- play a voice line or recording
+- show a message
 - change the music
-- release an enemy wave (**Spawn**)
+- release a wave (**Spawn**)
 - cut to a camera, or destroy a unit
-- win or fail the mission, or mark an objective done or failed
-- wait a few seconds before the next action
+- win or fail the mission or an objective
+- wait
 
-A rule fires once unless you make it repeat. **Level events…** opens a window with the level-wide rules (mission start, timers, objectives) and a list of every rule in the level. A rule whose object you deleted shows red there, and Export mod warns you about it.
+A rule fires once unless set to repeat. **Level events…** holds level-wide rules and lists every rule; one whose object is gone shows red, and Export mod warns.
 
 ![The Level events window](images/level-events.png)
 
 ### Example: hold the bridge
 
-The player flies in, is told to hold the bridge, a wave of TIE fighters attacks, and destroying a target wins the mission. Built on a copy of Ambush at Mos Eisley (**New level from this one…**):
+On a copy of Ambush at Mos Eisley:
 
-1. In Events mode, select a trigger area on the player's way in and name it `bridge_entry` in its **Name** field. Check its **Set off by** is *The player*.
-2. Click **+ Add rule** and pick *Something enters this area*.
-3. **+ Add action**: *Show message*, type `Hold the bridge!` and give it 4 seconds.
-4. **+ Add action**: *Spawn*, pick *TIE fighter*, 4, and a path for them to fly. Click **Create wave**.
-5. In Objects mode, select the unit the player must destroy (a probe droid works) and name it `relay_droid`.
-6. Click **+ Add rule**, pick *This unit is destroyed*, then **+ Add action**: *Win the mission*.
+1. In Events mode, name a trigger area on the way in `bridge_entry`, set off by *The player*.
+2. **+ Add rule**: *Something enters this area*.
+3. **+ Add action**: *Show message*, `Hold the bridge!`, 4 seconds.
+4. **+ Add action**: *Spawn*, *TIE fighter*, 4, a path, **Create wave**.
+5. In Objects mode, name a probe droid `relay_droid`.
+6. **+ Add rule**: *This unit is destroyed*, action *Win the mission*.
 
 ![The bridge_entry rule: a message, then a wave of four TIE fighters](images/level-rules-example.png)
 
-On a custom level the same win can come from an objective instead (*Destroy units*, picking `relay_droid`): see [objectives](Make-a-Custom-Level#objectives).
+A custom level can use a [Destroy units objective](Make-a-Custom-Level#objectives) instead.
 
 ## Lights
 
-Right-click the ground and pick **Add light here** for a ray-traced light in the level. Drag the bulb to move it.
+Right-click the ground, **Add light here**; drag the bulb to move it.
 
 ## Finish
 
@@ -116,7 +113,7 @@ Right-click the ground and pick **Add light here** for a ray-traced light in the
 
 ## Not yet possible
 
-- Adding enemy craft other than TIE fighters and TIE interceptors from other levels.
-- Making a map larger than the level it started from.
+- Enemy craft other than TIE fighters and interceptors from other levels.
+- A map larger than the original.
 
-Still to be checked in the game: new and edited flight paths, a camera position copied from another level used in a camera shot, a unit chosen in **Set off by**, and the *Show message* and *Play recording* actions.
+Untested in game: new and edited paths, a copied camera in a camera shot, a unit in **Set off by**, *Show message* and *Play recording*.

@@ -89,9 +89,9 @@ const TYPES = {
     color: 0xe8b84a,
     label: 'Player start / restarts',
     icon: 'tri',
-    tip: 'Where the player begins (0x01) and respawns after dying (0x02); the cone shows the facing'
+    tip: 'Where the player begins, and where they come back after being shot down; the cone shows the facing'
   },
-  wing: { color: 0xe6edf7, label: 'Wingmen', icon: 'wing', tip: 'Wingman start positions (0x27), e.g. WEDGE, ROGUE_10' },
+  wing: { color: 0xe6edf7, label: 'Wingmen', icon: 'wing', tip: 'Where the wingmen start, such as Wedge and Rogue 10' },
   0: {
     color: 0xc9b38a,
     label: 'Other units / objects',
@@ -100,115 +100,75 @@ const TYPES = {
   },
   cam: {
     color: 0xff79c6,
-    label: 'Camera positions',
+    label: 'Cameras',
     icon: 'cam',
-    tip: 'Cutscene and intro camera placements (subtype 0x26); the pyramid opens toward where it looks'
+    tip: 'Camera positions for intros, endings and camera shots; the pyramid opens toward where it looks. A new one is placed at your view, looking where you look'
   },
   // DAT type 2 is a generic point list; the subtype says what each point is.
-  2: { color: 0xff6a3d, label: 'Lava vents', icon: 'circle', tip: 'Lava vent (point subtype 0x51, LavaFart* in Raid on Sullust): erupts lava' },
+  2: { color: 0xff6a3d, label: 'Lava vents', icon: 'circle', tip: 'Spots that erupt lava (Raid on Sullust)' },
   wdgun: {
     color: 0xb0b8c8,
     label: 'Devastator gun settings',
     icon: 'square',
-    tip: 'Subtype 0x49 (lv_f): settings records for the World Devastator gun turrets, all at one dummy point; the guns themselves are parts of the wrld_dvstr model'
+    tip: 'Settings for the World Devastator gun turrets, all at one spot; the guns themselves are part of the World Devastator model'
   },
-  point: {
-    color: 0x9ad0ff,
-    label: 'Menu points',
-    icon: 'circle',
-    tip: 'Frontend point (subtype 0x09): hangar camera starts (camstart_*) and bridge scene points (steps*)'
-  },
+  point: { color: 0x9ad0ff, label: 'Menu points', icon: 'circle', tip: 'Front-end spots: hangar camera starts and bridge scene points' },
   3: {
     color: 0x4ac0e8,
     label: 'Unassigned paths',
     icon: 'cross',
-    tip: 'Splines no NPC names (a level script may switch an NPC onto them); the cross marks the start'
+    tip: 'Flight paths nothing flies yet (a mission script may switch a unit onto one); the cross marks the start'
   },
-  6: { color: 0x9aa3b5, label: 'Other zones', icon: 'zother', tip: 'Zone of an unidentified kind (subtype 0x39)' },
-  zhi: {
-    color: 0x8a7cff,
-    label: 'High-detail regions',
-    icon: 'zhi',
-    tip: 'LOD zone (0x04): objects use their high-detail models while the player is over this area'
-  },
-  zlo: {
-    color: 0x5b6bd8,
-    label: 'Low-detail regions',
-    icon: 'zlo',
-    tip: 'LOD zone (0x05): objects use their low-detail models while the player is over this area'
-  },
-  zmus: { color: 0xf0a24a, label: 'Music regions', icon: 'zmus', tip: 'Music zone (0x10): the music changes while the player is over this area' },
+  6: { color: 0x9aa3b5, label: 'Other regions', icon: 'zother', tip: 'A region whose purpose isn\'t known yet' },
+  zhi: { color: 0x8a7cff, label: 'High-detail regions', icon: 'zhi', tip: 'Objects show their detailed models while the player is over this region' },
+  zlo: { color: 0x5b6bd8, label: 'Low-detail regions', icon: 'zlo', tip: 'Objects show their simpler models while the player is over this region' },
+  zmus: { color: 0xf0a24a, label: 'Music regions', icon: 'zmus', tip: 'The music changes while the player is over this region' },
   zmtrig: {
     color: 0xffd36b,
     label: 'Music trigger areas',
     icon: 'zmtrig',
-    tip: 'Music trigger area (0x39): the linked music zone switches to its track while the player is inside; it can be gated on mission objectives'
+    tip: 'Switches a music region to its song while the player is inside; it can wait for an objective'
   },
-  zunit: { color: 0xff5f8f, label: 'Ground-unit areas', icon: 'zunit', tip: 'Ground-unit area (0x16): troopers and civilians spawn and roam inside this area' },
+  zunit: { color: 0xff5f8f, label: 'Ground-unit areas', icon: 'zunit', tip: 'Troopers and civilians appear and walk around inside this area' },
   tvoice: {
     color: 0x6be0d0,
-    label: 'Voice-line triggers',
+    label: 'Voice-line areas',
     icon: 'tvoice',
-    tip: 'Event trigger (0x18) named for a voice line (LINE_n / say): entering the area sets objective flags that make the level script play the line'
+    tip: 'Flying in makes the mission play a voice line (the stock mission script picks which)'
   },
   tevent: {
     color: 0x5fd17a,
-    label: 'Objective triggers',
+    label: 'Goal areas',
     icon: 'tevent',
-    tip: 'Event trigger (0x18): entering or leaving the area adjusts objective flags and counters that the level script reacts to'
+    tip: 'Fires when the player or a chosen unit comes close: it can complete a Reach an area objective, bring in a wave, play a camera shot or set off a rule'
   },
-  tspawn: {
-    color: 0xc3e65a,
-    label: 'Spawn triggers',
-    icon: 'tspawn',
-    tip: 'Trigger (0x19, usually Gen_*): like an event trigger, and also flags the unit it names so it spawns'
-  },
-  troam: {
-    color: 0xd17aff,
-    label: 'NPC roam areas',
-    icon: 'troam',
-    tip: 'Roam area (0x11 For_*, 0x17 *_SPHERE): an NPC names it as its box; it wanders inside the radius and turns back toward the centre when it strays out'
-  },
+  tspawn: { color: 0xc3e65a, label: 'Wave areas', icon: 'tspawn', tip: 'Like a goal area, and also brings in the unit it names' },
+  troam: { color: 0xd17aff, label: 'Roam areas', icon: 'troam', tip: 'A unit wanders inside this circle and turns back toward the middle when it strays out' },
   // Path events (fired when an NPC on a spline passes the node; func_800F3CB0), one kind per subtype.
-  pspeed: { color: 0x7ee0ff, label: 'Speed changes', icon: 'bead', tip: 'Path event 0x1B: eases the NPC to a new speed along its spline' },
-  phold: {
-    color: 0xffb347,
-    label: 'Hold orders',
-    icon: 'bead',
-    tip: 'Path event 0x22: the NPC stops at this node until a timer runs out and an objective flag/counter condition is met (func_800F9AB8)'
-  },
-  pattack: { color: 0xff3b30, label: 'Attack orders', icon: 'bead', tip: 'Path event 0x20: sets the NPC attack target (red dashed arrow)' },
+  pspeed: { color: 0x7ee0ff, label: 'Speed changes', icon: 'bead', tip: 'The unit eases to a new speed here' },
+  phold: { color: 0xffb347, label: 'Hold orders', icon: 'bead', tip: 'The unit stops here until a timer runs out and an objective lets it go on' },
+  pattack: { color: 0xff3b30, label: 'Attack orders', icon: 'bead', tip: 'The unit picks a new attack target here (red dashed arrow)' },
   paction: {
     color: 0xff9ad5,
     label: 'Craft actions',
     icon: 'bead',
-    tip: 'Path event 0x1A: a per-craft action; TIE bombers start a bombing run, shuttles play their wing/landing animation, wingmen trigger an effect'
+    tip: 'A craft action here: TIE bombers start a bombing run, shuttles land or fold their wings, wingmen play an effect'
   },
   pfly: {
     color: 0xc792ff,
     label: 'Fly-to orders',
     icon: 'bead',
-    tip: 'Path event 0x4E: sends the NPC off its spline toward a named item (or the player); TIE fighters and the boss shuttle only'
+    tip: 'The unit leaves its path here and flies toward a named object or the player (TIE fighters and the boss shuttle only)'
   },
-  pweave: { color: 0x9be37a, label: 'Weave changes', icon: 'bead', tip: 'Path event 0x1C: changes how much the craft sways side to side along its spline' },
-  ppitch: {
-    color: 0xf5e663,
-    label: 'Landing pitch',
-    icon: 'bead',
-    tip: 'Path event 0x23: tilts the craft up to 90 degrees over a few seconds (landing) or back level (take-off)'
-  },
+  pweave: { color: 0x9be37a, label: 'Weave changes', icon: 'bead', tip: 'Changes how much the craft sways side to side from here on' },
+  ppitch: { color: 0xf5e663, label: 'Landing pitch', icon: 'bead', tip: 'The craft tilts up to land, or levels out to take off, over a few seconds' },
   twaypoint: {
     color: 0xffe14a,
-    label: 'Objective arrow targets',
+    label: 'Objective arrow points',
     icon: 'twaypoint',
-    tip: 'HUD arrow target (0x3A): the objective arrow points at the nearest one whose objective flag/counter conditions hold'
+    tip: 'The HUD arrow points at the nearest one whose objective allows it'
   },
-  7: {
-    color: 0x3f9a58,
-    label: 'Other triggers',
-    icon: 'diamond',
-    tip: 'Trigger records no game code was found to read (none left among the subtypes in the levels). Lines point at what they name'
-  },
+  7: { color: 0x3f9a58, label: 'Other triggers', icon: 'diamond', tip: 'Trigger areas the game never reads; lines point at what they name' },
 };
 
 const SUBTYPES = {
@@ -1892,12 +1852,12 @@ function applyMarkerVisibility(markers)
 }
 
 const LEGEND_GROUPS = [
-  ['Spawns & cameras', ['player', 'wing', '0', 'cam', 'point', 'wdgun']],
+  ['Starts and cameras', ['player', 'wing', '0', 'cam', 'point', 'wdgun']],
   // Paths get one row per NPC kind found on the level (path:*), then unassigned splines.
   ['Paths', null],
-  ['Triggers', ['tvoice', 'tevent', 'tspawn', 'twaypoint', '7', '2']],
+  ['Trigger areas', ['tevent', 'tspawn', 'tvoice', 'twaypoint', '7', '2']],
   ['Path events', ['pspeed', 'phold', 'pattack', 'paction', 'pfly', 'pweave', 'ppitch']],
-  ['Zones', ['zhi', 'zlo', 'zmus', 'zmtrig', 'zunit', 'troam', '6']],
+  ['Regions', ['zhi', 'zlo', 'zmus', 'zmtrig', 'zunit', 'troam', '6']],
 ];
 
 function renderLegend(markers)

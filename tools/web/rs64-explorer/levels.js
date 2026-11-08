@@ -1044,6 +1044,7 @@ async function modLevelDialog(dir)
     ['timelimit', 'Finish within']
   ];
 
+  const picked = (select) => (select.value === '' ? [] : [+select.value]);
   const objRows = [];
   const objBox = elem('div', { className: 'objectives' });
   const objNote = elem('small', { className: 'shotNote' });
@@ -1056,6 +1057,29 @@ async function modLevelDialog(dir)
     const pickUnits = selectOf(unitOpts, null, { multiple: true, size: 5, title: 'Ctrl-click to pick several' });
     const pickUnit = selectOf(unitOpts);
     const pickZone = selectOf(zones.map(([it, i]) => [i, itemName(it)]));
+
+    // A Reach an area goal can make its own area: a goal area where the view looks, set off by the player. Trigger areas are the DAT's
+    // last section, so the new one is the last item and the other objectives' picks keep their indices.
+    const newArea = iconButton('add', 'New goal area: added where you are looking, set off by the player', async (e) => {
+      e.preventDefault();
+      await fillAddKinds();
+
+      const src = addTemplates.get('tevent');
+      const r = canvas.getBoundingClientRect();
+      const at = cursorGround({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+
+      if (!src || !at)
+        return;
+
+      await addItem(src, at.toArray());
+
+      const items = parseDAT(await rom.read(datPath)).items;
+      const k = items.length - 1;
+
+      pickZone.append(elem('option', { value: k, textContent: itemName(items[k]) }));
+      pickZone.value = String(k);
+    });
+
     const minutes = elem('input', { type: 'number', min: 0.25, step: 0.25, value: o.seconds ? o.seconds / 60 : 5, title: 'Minutes' });
     const targets = o.counter || o.flag ? objectiveTargets(datView, o).map((it) => String(datItems.findIndex((x) => x.offset === it.offset))) : [];
 
@@ -1073,7 +1097,7 @@ async function modLevelDialog(dir)
     const sync = () => {
       pickUnits.hidden = goal.value !== 'destroy';
       pickUnit.hidden = goal.value !== 'protect';
-      pickZone.hidden = goal.value !== 'reach';
+      pickZone.hidden = newArea.hidden = goal.value !== 'reach';
       minutesRow.hidden = goal.value !== 'survive' && goal.value !== 'timelimit';
     };
 
@@ -1122,14 +1146,15 @@ async function modLevelDialog(dir)
       addBtn.hidden = false;
     };
 
-    row.append(text, goal, remove, pickUnits, pickUnit, pickZone, minutesRow, callout);
+    row.append(text, goal, remove, pickUnits, pickUnit, pickZone, newArea, minutesRow, callout);
 
     const entry = {
       value: () => ({
         text: text.value.trim(),
         goal: goal.value,
         seconds: +minutes.value * 60,
-        targets: goal.value === 'destroy' ? [...pickUnits.selectedOptions].map((x) => +x.value) : (goal.value === 'protect' ? [+pickUnit.value] : (goal.value === 'reach' ? [+pickZone.value] : [])),
+        // An empty picker is no target (not item 0, the player start), so the save refuses it instead of wiring the wrong object.
+        targets: goal.value === 'destroy' ? [...pickUnits.selectedOptions].map((x) => +x.value) : (goal.value === 'protect' ? picked(pickUnit) : (goal.value === 'reach' ? picked(pickZone) : [])),
         voice: !hasRec && voice.value ? +voice.value : undefined,
         camera: camera.value || undefined,
         recording: hasRec ? recName : undefined,
@@ -2495,6 +2520,36 @@ function triggerWhoRow(it) {
   return row;
 }
 
+// What uses the selected object: the mod level's objectives that target it and the level events (rules) that name it. Shown only when
+// something does, with a way to the window that edits them.
+function usedByRow(it)
+{
+  const dir = selected;
+  const row = elem('div', { className: 'shotRow usedBy', hidden: true });
+
+  Promise.all([rom.read(dir + '/dat'), readRules(dir)]).then(([dv, doc]) => {
+    const l = modLevelOf(dir);
+    const goals = (l?.objectives ?? []).map((o, k) => [o, k]).filter(([o]) => objectiveTargets(dv, o).some((t) => t.offset === it.offset));
+    const rules = it.name ? doc.rules.filter((r) => ruleRefs(r, ruleExt).some((x) => x.name === it.name)).length : 0;
+    const parts = goals.map(([o, k]) => `objective ${k + 1} (${o.text || 'no text'})`);
+
+    if (rules)
+      parts.push(`${rules} level event${rules > 1 ? 's' : ''}`);
+
+    if (!parts.length)
+      return;
+
+    row.append(`Used by ${parts.join(', ')}`);
+
+    if (goals.length)
+      row.append(iconButton('edit', 'Level settings…', () => modLevelDialog(dir)));
+
+    row.hidden = false;
+  });
+
+  return row;
+}
+
 // A trigger area's reach (record +0x1C, in level units): how close what sets it off has to come.
 const TRIGGER_RADIUS = 0x1C;
 
@@ -2595,7 +2650,11 @@ function renderAddList()
 
     row.innerHTML = `${e.icon ?? ''}<span>${esc(e.label)}</span>`;
 
+    // A camera is placed at the view, looking where the view looks, so the shot shows what the modder sees.
     row.onclick = () => {
+      if (e.key === 'cam')
+        return addCameraAtView(addTemplates.get('cam'));
+
       placing = placing === e.key ? null : e.key;
       select(null);
       renderAddList();
@@ -2908,6 +2967,9 @@ function syncSelPanel()
   if (sel && editMode === 'events' && isTriggerArea(it))
     f.append(triggerWhoRow(it), triggerRadiusRow(it));
 
+  if (sel && !sel.pathNode && (editMode === 'objects' || editMode === 'events'))
+    f.append(usedByRow(it));
+
   if (sel && editMode === 'events' && isTriggerArea(it) && it.name)
     f.append(shotLinkRow(it), destroyRow(it), waveTriggerRow(it));
 
@@ -2942,7 +3004,7 @@ function syncSelPanel()
 
 // Copies an item's record with a new position and appends it as the last of its kind, so no existing index moves.
 // src is an item of this level, or { it, dv } from another level's DAT (copied inert). zone: { size, rot } written over a zone's footprint (+0x28) and rotation (+0x1C) when it was dragged out.
-async function addItem(src, pos, zone)
+async function addItem(src, pos, zone, rot = null)
 {
   const it = src.it ?? src;
   const dir = selected;
@@ -2953,6 +3015,9 @@ async function addItem(src, pos, zone)
     rec = recordInert(rec, it);
 
   pos.forEach((v, a) => new DataView(rec.buffer).setFloat32(0x10 + a * 4, v));
+
+  if (rot)
+    rot.forEach((v, a) => new DataView(rec.buffer).setFloat32(0x1C + a * 4, v));
 
   if (zone)
     zone.size.concat(zone.rot).forEach((v, a) => new DataView(rec.buffer).setFloat32((a < 3 ? 0x28 : 0x1C - 12) + a * 4, v));
@@ -2988,6 +3053,30 @@ async function addItem(src, pos, zone)
 
   if (last)
     select(last[0]);
+}
+
+// The view as a camera position in level terms: the eye, and the ZYX rotation (degrees) that turns the camera marker's -Z onto the view's.
+function viewAsCameraPose()
+{
+  const space = root.getObjectByName('markers');
+  const worldQ = space.getWorldQuaternion(new THREE.Quaternion());
+  const q = worldQ.invert().multiply(camera.getWorldQuaternion(new THREE.Quaternion()));
+  const e = new THREE.Euler().setFromQuaternion(q, 'ZYX');
+
+  return {
+    pos: space.worldToLocal(camera.getWorldPosition(new THREE.Vector3())).toArray(),
+    rot: [e.x, e.y, e.z].map((r) => THREE.MathUtils.radToDeg(r))
+  };
+}
+
+async function addCameraAtView(src)
+{
+  if (!src)
+    return;
+
+  const { pos, rot } = viewAsCameraPose();
+
+  await addItem(src, pos, null, rot);
 }
 
 // Dragging a list row by its grip (a click on the row still opens it): a model into a cutscene being edited (a new actor) or a level in object
@@ -3827,3 +3916,115 @@ $('btnPlay').onclick = async () => {
     st.hidden = e.name === 'AbortError';
   }
 };
+
+// ---------- What do you want to make? ----------
+
+// Each goal opens where it starts and points at the control to use next, with its wiki guide.
+const GUIDE_URL = (page) => `https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/docs/wiki/${page}.md`;
+
+const openLevel0 = async () => {
+  setMode('levels');
+  await showLevel('data/level/lv_0');
+};
+
+const GOALS = [
+  {
+    label: 'Make a new level',
+    page: 'Make-a-Custom-Level',
+    next: 'Pick New blank level… (or New level from this one…) under the list, then open Level settings… for its title, craft and objectives.',
+    go: async () => (await openLevel0(), 'btnBlankLevel')
+  },
+  {
+    label: 'Change a stock level',
+    page: 'Make-a-Level-Mod',
+    next: 'Pick a level in the list, then click the pencil to edit its ground, objects and events.',
+    go: async () => (await openLevel0(), 'editTab')
+  },
+  {
+    label: 'Repaint or replace a ship',
+    page: 'Make-a-Model-Mod',
+    next: 'Right-click a part to repaint it, or bring in your own model with Import craft model.',
+    go: async () => {
+      setMode('models');
+      await showModel('data/pl_crafts/xwing');
+
+      return 'btnImport';
+    }
+  },
+  {
+    label: 'Edit a cutscene',
+    page: 'Make-a-Cutscene-Mod',
+    next: 'Pick the intro or ending from the Cutscene list, then click the pencil on the timeline.',
+    go: async () => (await openLevel0(), 'cutPick')
+  },
+  {
+    label: 'Change the menus',
+    page: 'Make-a-Menu-Mod',
+    next: 'Pick a menu in the list, then add buttons or change what they do.',
+    go: async () => {
+      await menuRefreshPages();
+      setMode('menus');
+
+      return 'list';
+    }
+  }
+];
+
+function pointAt(id)
+{
+  const el = $(id);
+
+  if (!el)
+    return;
+
+  el.scrollIntoView({ block: 'nearest' });
+  el.classList.remove('pointHere');
+  void el.offsetWidth;
+  el.classList.add('pointHere');
+}
+
+function showGoals(goal = null)
+{
+  const p = $('goalPanel');
+
+  const close = iconButton('close', 'Close', () => {
+    p.hidden = true;
+    store('rs64.goalsSeen', true);
+  });
+
+  p.replaceChildren(elem('div', { className: 'goalHead' }, elem('b', { textContent: goal ? goal.label : 'What do you want to make?' }), close));
+
+  if (goal)
+  {
+    const back = elem('button', { className: 'linkBtn', textContent: 'Something else', onclick: () => showGoals() });
+
+    p.append(elem('p', { textContent: goal.next }), elem('div', { className: 'goalFoot' }, elem('a', {
+      href: GUIDE_URL(goal.page),
+      target: '_blank',
+      rel: 'noopener',
+      textContent: 'Step-by-step guide'
+    }), back));
+  }
+  else
+    for (const g of GOALS)
+      p.append(elem('button', {
+        className: 'goalBtn',
+        textContent: g.label,
+        onclick: async () => {
+          showGoals(g);
+          pointAt(await g.go());
+        }
+      }));
+
+  p.hidden = false;
+}
+
+// Shown once after the first ROM load; the flag button in the header brings it back.
+function showGoalsOnce()
+{
+  if (!stored('rs64.goalsSeen', false))
+    showGoals();
+}
+
+setEditIcon($('goalsBtn'), 'goals');
+$('goalsBtn').onclick = () => ($('goalPanel').hidden ? showGoals() : ($('goalPanel').hidden = true));

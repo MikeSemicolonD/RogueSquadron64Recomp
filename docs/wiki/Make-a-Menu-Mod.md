@@ -1,46 +1,43 @@
 # Make a menu mod
 
-A menu mod adds, hides, moves or renames buttons in the game's menus and the pause menu, and can add whole new pages.
+Add, hide, move or rename buttons in the menus and pause menu, or add new pages.
 
 ## Open a menu
 
-Open the **Menus** tab and pick a menu. It shows a preview of the menu as it looks in the game.
+Open the **Menus** tab and pick a menu to preview it.
 
 ![The main menu in the Menus tab](images/menu-editor.png)
 
 ## Change it
 
-- **Click** a button to hide it, replace it, or add a new button above or below it.
+- **Click** a button to hide or replace it, or add one above or below.
 - **Drag** buttons and titles to move them.
-- A new button can be a plain button, an on/off toggle, a list of choices or a slider, or it can open a new page of buttons.
-- **Language** sets which language the preview and the text boxes show. Each button's text can be written once for every language, or separately per language.
+- **Language** picks the language shown. Text can be one for all languages or one per language.
 
 ## What a button can do
 
-A button's **Type** decides what it is, and for most types you then pick what it runs or changes from a list:
-
 | Type | What it is | Built-in choices |
 | --- | --- | --- |
-| `action` | Does something when pressed, optionally after a yes/no question you write | Quit the game (desktop only), reset the controls, open the mods folder, the touch layout editor (Android), or nothing (an info line) |
-| `toggle` | An on/off switch for a setting | Fullscreen, widescreen, frame interpolation, the ray-traced lights, shadows, soft shadows and fog shafts, rumble, gyro aiming (Android), cutscene draw distance, frame writeback |
-| `cycle` | Steps through a list of choices each time it's pressed | Draw distance, resolution, anti-aliasing, target frame rate, texture filter, upscale filter |
-| `slider` | A bar the player drags or steps | Draw distance, mouse sensitivity, mouse smoothing, dead zone |
-| `submenu` | Opens a page | One of your own new pages (up to 7 buttons, BACK is added for you) or one of the game's menus |
-| `label` | A line of text the cursor skips | |
+| `action` | Runs when pressed, optionally after a yes/no question | Quit (desktop), reset controls, open the mods folder, touch layout editor (Android), nothing (an info line) |
+| `toggle` | On/off setting | Fullscreen, widescreen, frame interpolation, ray-traced lights, shadows, soft shadows, fog shafts, rumble, gyro aiming (Android), cutscene draw distance, frame writeback |
+| `cycle` | Steps through choices | Draw distance, resolution, anti-aliasing, frame rate, texture filter, upscale filter |
+| `slider` | A bar | Draw distance, mouse sensitivity, mouse smoothing, dead zone |
+| `submenu` | Opens a page | A new page (up to 7 buttons plus BACK) or a game menu |
+| `label` | Text the cursor skips | |
 
-Settings change straight away and are saved with the game's own settings.
+Settings apply at once and save with the game's settings.
 
-**Shows only if** hides a button unless something holds: the game runs on desktop, the page was opened from the front end rather than the pause menu, the graphics card can do ray tracing, the Expansion Pak is in use, or frame interpolation is on. It can also follow one of your mod's options.
+**Shows only if** hides a button unless: on desktop, opened from the front end (not pause), ray tracing works, the Expansion Pak is on, frame interpolation is on, or one of your mod's options is set.
 
-**Custom…** in the choice list takes a key typed in: `config:<option id>` shows one of your mod's config options (a toggle steps through its values, a slider sets a number), and `@name` calls a function that your own code mod exports.
+**Custom…** takes a key: `config:<option id>` for one of your mod's options, or `@name` for a function your code mod exports.
 
 ## Edit an existing menu mod
 
-**Import** opens a menu mod that's already made, such as one from the game's `mods` folder, so you can change it.
+**Import** opens a menu mod, such as one from the game's `mods` folder.
 
 ## Splitting into several mods
 
-Each new button belongs to one exported mod. The panel sets which one, and Export mod can move buttons between mods later.
+The panel sets which exported mod a new button belongs to; Export mod can change it later.
 
 ## Finish
 
@@ -50,13 +47,13 @@ Each new button belongs to one exported mod. The panel sets which one, and Expor
 
 Without a code mod, a button can't:
 
-- **Do anything beyond the built-in choices**, such as starting a level or changing the game while you play. That needs a function in a code mod (`@name`).
-- **Change a setting that isn't listed.** A mod's own config options can be shown and changed, but they only do something if code reads them.
-- **Show text that updates by itself**, like the co-op lobby's status lines. Those come from native mods.
+- **Do more than the built-in choices**, such as starting a level. That needs `@name`.
+- **Change unlisted settings.** Your mod's options only do something if code reads them.
+- **Show live text**, like the co-op lobby status. That needs a native mod.
 
-Some limits hold for every menu mod:
+Always:
 
-- The game's menus fit 8 lines, and **Options** and **Game Settings** are already full: a new button there replaces or hides one of the game's.
-- A new page holds 7 buttons plus BACK. The pause menus fit about 16 lines.
-- The pause menu's titles can't be changed.
-- The menu font has capital letters, numbers and some punctuation only; lower case and other symbols draw as blanks.
+- Menus fit 8 lines; **Options** and **Game Settings** are full, so a new button there replaces or hides one.
+- A new page holds 7 buttons plus BACK; pause menus about 16 lines.
+- Pause menu titles can't change.
+- The menu font has capitals, numbers and some punctuation only.
