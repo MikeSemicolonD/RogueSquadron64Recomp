@@ -288,6 +288,40 @@ const lightReachGeo = new THREE.SphereGeometry(1, 24, 12);
 
 // One light under parent at local position pos; reach (parent-local units, null = none) shows while it is picked. Switched-off lights fade.
 // fromLocal turns a dragged local position back into the file's; dir is the beam in parent-local space (default: the file's).
+// A glowing panel's corners in its preset's space, as the game builds them: width across the facing along the horizontal (X when it faces
+// straight up or down), height across both.
+function panelCorners(pos, facing, [w, h])
+{
+  const len = Math.hypot(...facing) || 1;
+  const n = facing.map((v) => v / len);
+  const ul = Math.hypot(n[2], n[0]);
+  const u = ul < 1e-4 ? [1, 0, 0] : [-n[2] / ul, 0, n[0] / ul];
+  const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+
+  return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => pos.map((p, i) => p + u[i] * a * w * 0.5 + v[i] * b * h * 0.5));
+}
+
+function lightPanelMesh(corners, colour)
+{
+  const geo = new THREE.BufferGeometry();
+
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(corners.flat(), 3));
+  geo.setIndex([0, 1, 2, 0, 2, 3]);
+
+  const peak = Math.max(...colour, 1e-6);
+
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: new THREE.Color(...colour.map((c) => c / peak)),
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.6
+  }));
+
+  mesh.raycast = () => {};
+
+  return mesh;
+}
+
 function lightPlace(parent, p, l, pos, reach, fromLocal, dir)
 {
   const on = l.enabled !== false && p.enabled !== false;
@@ -411,6 +445,11 @@ async function lightsShowLevel(world, hmp, level)
       const b = mapToWorld(m.map((v, i) => v + beam[i]), hs);
 
       lightPlace(world, p, l, a, (l.description?.attenuationRadius ?? 500) / 256, (v) => worldToMap(v, hs), b.map((v, i) => v - a[i]));
+
+      const size = l.description?.rectSize;
+
+      if (size?.[0] > 0 && size?.[1] > 0)
+        world.add(lightPanelMesh(panelCorners(m, beam, size).map((c) => mapToWorld(c, hs)), l.description.diffuseColor ?? [1, 1, 1]));
     }
   }
 
@@ -991,7 +1030,8 @@ function lightFields(p, l)
     // RT64's cone cosines are negative: lit where the angle from the beam is under acos(-spotMaxCosine); 1 = no cone.
     num('Cone (deg)', coneDeg(d.spotMaxCosine), 1, (v) => (d.spotMaxCosine = coneCos(v)), 'Spotlight: the beam\'s outer half-angle, 0 = a plain point light. It shines along Beam X / Y / Z'),
     num('Cone inner (deg)', coneDeg(d.spotFalloffCosine), 1, (v) => (d.spotFalloffCosine = Math.min(coneCos(v), d.spotMaxCosine ?? 1)), 'Full brightness inside this half-angle, fading to the outer one'),
-    ...[0, 1, 2].map((i) => num('Beam ' + 'XYZ'[i], (d.direction ?? [0, -1, 0])[i], 0.1, (v) => ((d.direction ??= [0, -1, 0])[i] = v), 'Spotlight direction, in the same space as the position')),
+    ...[0, 1, 2].map((i) => num('Beam ' + 'XYZ'[i], (d.direction ?? [0, -1, 0])[i], 0.1, (v) => ((d.direction ??= [0, -1, 0])[i] = v), 'Spotlight or panel direction, in the same space as the position')),
+    ...(p.mesh || p.sprite ? [] : [0, 1].map((i) => num(['Panel width', 'Panel height'][i], (d.rectSize ?? [0, 0])[i], 10, (v) => ((d.rectSize ??= [0, 0])[i] = Math.max(v, 0)), `A glowing panel facing along Beam X / Y / Z (${unit}); 0 = a point light`))),
     presetHead,
     ...scope,
   ];
