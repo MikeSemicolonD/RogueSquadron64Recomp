@@ -226,7 +226,7 @@ extern "C" void rs64_fog_probe(uint8_t* rdram)
 // Level terrain cell budget scale, evaluated at each level load: ROGUESQ_TGRID_BUDGET_MULT (1-2), default 2 when terrain distance is 2x or more.
 // Stock under the terrain pass, whose grid keeps the stock reach: a bigger budget moves the game's heap allocations and so the game state.
 // 3x exhausts the game heap and the level load stalls; N is also capped at 6553 (u16 vertex-block indices up to 10N-4).
-// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view.
+// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view, doubled on legacy terrain in widescreen, whose extra cells run the stock mesh pool dry.
 static bool s_cutscene_level_load = false;
 extern "C" void rs64_cutscene_level_load(int on) {
     s_cutscene_level_load = on != 0;
@@ -237,7 +237,8 @@ extern "C" uint32_t rs64_tgrid_budget(uint32_t original)
 
     static const int s_env = env_int("ROGUESQ_TGRID_BUDGET_MULT", 0);
     const bool cutscene_level = s_cutscene_level_load && game_owns_view_setting();
-    const uint32_t s_mult = cutscene_level ? 1u : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
+    const bool wide = !terrain_pass_on() && rs64_cull_widen() > 1.0f;
+    const uint32_t s_mult = cutscene_level ? (wide ? 2u : 1u) : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
     const uint32_t n = original * s_mult;
     static const bool s_log = env_on("ROGUESQ_LOG_TERRAIN_GRID");
 

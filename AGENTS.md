@@ -378,7 +378,7 @@ Host-side tables above 8 MB (keep any new one clear of all of these):
 | 0x80C44000-0x80CE3FFF | Language mod: extended fonts, enlarged texture/material tables, encoded text ([src/game/lang/lang.cpp](src/game/lang/lang.cpp)) |
 | 0x80CE4000-0x80FFFFFF | Scene texture pool (language mod only) |
 
-`ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`).
+`ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`), and for cutscene levels on legacy terrain in widescreen.
 
 ### Co-op lives in the `multiplayer-native` mod
 
