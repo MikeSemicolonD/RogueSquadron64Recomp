@@ -15,17 +15,23 @@ jobs:
         with:
           script: |
             // Issue forms render each dropdown as "### <label>\n\n<choice>"; a choice that starts with a repo label's name gets that label.
-            const m = (context.payload.issue.body || '').match(/^### (?:Issue type|Kind)\s+(.+)$/m);
+            const body = context.payload.issue.body || '';
+            const m = body.match(/^### (?:Issue type|Kind)\s+(.+)$/m);
             const choice = m ? m[1].trim().toLowerCase() : '';
             const labels = await github.paginate(github.rest.issues.listLabelsForRepo, context.repo);
             const hit = labels
               .filter(l => choice.startsWith(l.name.toLowerCase()))
               .sort((a, b) => b.name.length - a.name.length)[0];
+            const add = hit ? [hit.name] : [];
 
-            if (hit) {
+            // The question form's labels field is skipped if the label is missing; addLabels creates it.
+            if (/^### Question\s/m.test(body))
+              add.push('question');
+
+            if (add.length) {
               await github.rest.issues.addLabels({
                 ...context.repo,
                 issue_number: context.issue.number,
-                labels: [hit.name],
+                labels: add,
               });
             }

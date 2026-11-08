@@ -1,0 +1,27 @@
+name: Question
+description: Ask how to set up, run, build or mod the game.
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [README](https://github.com/MikeSemicolonD/RogueSquadron64Recomp#readme) and [docs](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/tree/main/docs) may already answer it. Never attach or link a ROM.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you've tried
+      description: Anything you've already checked or attempted.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version and platform
+      placeholder: e.g. v1.2.0, Windows
