@@ -21,6 +21,10 @@ int main() {
     CHECK(classify(0x8019C760u, -218.0f, 0x32u, 512.0f) == None);
     CHECK(classify(0x80376224u, -127.0f, 0x32u, 512.0f) == None);
 
+    // The wipe panel spans the 0..447 scissor; a tall HUD piece does not.
+    CHECK(spansHeight(0, 448 * 4, 0, 447 * 4));
+    CHECK(!spansHeight(16 * 4, 428 * 4, 0, 447 * 4));
+
     // 16:9 over the 512x448 view's 1.45 source aspect: the full shift is half the extra width.
     const float a = (16.0f / 9.0f) / 1.45f;
     CHECK(std::fabs(shiftNative(512.0f, 1.0f, a) - 256.0f * (a - 1.0f)) < 1e-4f);
