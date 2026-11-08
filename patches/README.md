@@ -8,6 +8,7 @@ Patch sources include `rs64_api.h` ([syms/include/](../syms/include/rs64_api.h))
 - `RECOMP_DECLARE_EVENT` declares a base event; mods subscribe with `RECOMP_CALLBACK("*", ...)`.
 - `RECOMP_PATCH` replaces a game function by name: [src/npc_health.c](src/npc_health.c) (the five NPC health accessors, guarding the per-difficulty slot) [src/factor5_mutex.c](src/factor5_mutex.c) (`initFactor5Mutex` runs once) and [src/profiler_hud.c](src/profiler_hud.c) (the F5 profiler HUD's bars keep one size across framebuffer resolutions). A patched name that doesn't exist fails the build (`strict_patch_mode`). Mods can `RECOMP_HOOK` these functions: the hook is rebuilt from the patch, so the fix stays.
 - Game functions and data are reached by name (`syms/`) or absolute address. Calls to libultra functions go to ultramodern's `_recomp` versions, as in the game's own code. Patch RAM runs from 0x80801000 to 0x80A00000 (`patches.ld`), below the host-only tables.
+- Don't divide by a variable int: GCC adds a `teq` trap that N64Recomp doesn't handle. Use float.
 
 ## Where most base-game fixes live today
 

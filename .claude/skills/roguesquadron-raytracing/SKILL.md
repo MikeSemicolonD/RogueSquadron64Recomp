@@ -38,8 +38,8 @@ Audience: AI agents. Read `AGENTS.md` first (project map, env vars, dead ends), 
 6. **wait_log hygiene**: it only sees lines printed after it starts unless `from_start`; it gives up at 120 s and
    on crash markers (`fail_pattern`, pass `""` to disable). A line printed before the call is missed: grep instead.
 7. **Launch hygiene**: one game at a time; `close` before rebuilding (a running exe locks `build/Debug/mods/*` and
-   the link fails with MSB3073 copy errors); clean `dumps/mcp/<session>` afterwards. Test with RT features on, audio muted, from the exe dir,
-   RenderDoc injected (the MCP `launch` does all of this).
+   the link fails with MSB3073 copy errors); clean `dumps/mcp/<session>` afterwards. For RT work, test with every feature on unless isolating one, because they interact (`ROGUESQ_RT_LIGHTS`, `_SHADOWS`, `_SHADOWS_SOFT`, `_FOG_SHAFTS`, `_AO`, `_GI`, `_REFLECTIONS` = 1).
+   For non-RT bugs, leave RT settings as they launch. Run with audio muted, from the exe dir, RenderDoc injected (the MCP `launch` does these three).
 8. **IDE diagnostics lag**: "undeclared identifier" right after an edit is usually stale; trust the build.
    `near`/`far` are Windows macros: never name a variable or lambda `near`.
 

@@ -49,6 +49,7 @@ Never ask the user to say when something is on screen; their message arrives sec
 - `pause_when(addr, op=...)` for an RDRAM change (e.g. the pickup counter 0x80130B87).
 - `pause_at(<state>, 0)` for a state change.
 - `wait_log(regex)` once per real event. Don't chain a second `wait_log` for a state that may already have happened (or never will); check `status` / `frame_info` / a screenshot instead.
+- Send a `wait_log` or `pause_at` alone and read its result before sending `step`, `screenshot` or `pause_now`. Calls batched behind a wait that fails run on the wrong screen. Batching step + screenshot pairs on a confirmed held frame is fine.
 
 ## Driving menus
 

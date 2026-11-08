@@ -8,6 +8,7 @@ Rules come first; reference sections (Environment variables onward) follow. Some
 
 - **No trailing summary blocks** in chat responses — one-line wrap-up max.
 - Commit messages match the existing history: a short Title Case subject with no trailing period, under about 60 characters (GitHub cuts subjects at 72 and wraps the rest into the body; name the main change and leave the rest to the bullets); when a body is needed, `-` bullets stating what changed and why as plain fact, without "I". **No `Co-Authored-By` or other AI attribution trailers.** No semicolons tacking a one-off aside onto a bullet - make it its own bullet or cut it.
+- **Never undo an edit with `git checkout` or `git restore`** when the file has other uncommitted work. Check `git diff --stat <file>` first and reverse your change with an edit.
 
 ## Skills
 
@@ -42,6 +43,10 @@ Remove-Job $job
 
 ROM lives at `build/Debug/rogue_squadron.z64` (USA v1.0, xxHash3-64 = `0x6B66A44153594DEA`).
 
+Launch the game from its exe folder. From the repo root it uses and leaves `roguesq_*.json` files there.
+
+Stop only the process you launched, by PID or the MCP `close`. Never stop the game by image name (`taskkill /IM`, `Get-Process ... | Stop-Process`): that closes the user's own game too. If a running exe you didn't start blocks the link, ask or build the other config.
+
 For a headless run that drives past the title without a controller, pass `--fake-controller --auto-start <ms>` (or the env vars `ROGUESQ_FAKE_CONTROLLER=1` / `ROGUESQ_AUTO_START=<ms>`).
 
 **Test against a mission recording in Release at `ROGUESQ_SPEED=16`, reading the log, whenever the check is a log or counter** (pairing rates, light/terrain traces, hashes): the 3126-frame `construction_yards_bonus.rec` runs from launch to exit in under a minute (`ROGUESQ_BOOT_TARGET=level:<id>,<craft>` from the `.rec` header, `ROGUESQ_NAV_STEP_BUDGET=19200`, `ROGUESQ_LS_REPLAY`, `ROGUESQ_FAKE_CONTROLLER=1`, the trace vars, stderr redirected to a file under `dumps/`; the game exits when the replay ends). Debug is about 10x slower per frame. Use the Debug MCP session only when a frozen frame has to be inspected. Session recordings (`rs64-input`) diverge; use mission (`rs64-ls`) recordings.
@@ -58,7 +63,7 @@ Base-game fixes are `[[patches.hook]]` (C inserted at the function's entry or `b
 
 N64Recomp is `build/Debug/N64Recomp.exe` (override `N64RECOMP_EXE`), built from `lib/N64ModernRuntime/N64Recomp` (a directory in the N64ModernRuntime fork) via `N64RecompCLI`; `regen_funcs` depends on it. It supports `--dump-context`, `func_reference_syms_file` and `patch_files`.
 
-Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and [docs/guides/modding.md](docs/guides/modding.md). Native-library mods that hook game code through the host API: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
+Build a new gameplay mod as an `.nrm` unless a patch can't express it. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and [docs/guides/modding.md](docs/guides/modding.md). Native-library mods that hook game code through the host API: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
 
 `mods/platforms.json` decides which mods ship per platform: a mod not listed there ships nowhere. `desktop` entries (data-only folders and `.nrm` files) are staged next to the exe by `tools/mods/stage_mods.cmake`; `android` entries are packed into the APK. Release CI builds every `.nrm` listed under `desktop` via `tools/mods/build_code_mods.cmake`, matching each entry to the `mods/*/mod.toml` whose `mod_filename` equals the `.nrm` name, so a new code mod must be added to that list to ship ([docs/engine/release-ci.md](docs/engine/release-ci.md#code-mods)).
 
@@ -87,6 +92,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **`op_80` as a sub-DL call** — treating its 24-bit w0 as a call target infinite-loops and hangs after ~200 DLs. It's a state/param load.
 - **Y-flip / component swap on model textures** — retired. The real cause was the missing `03 82` texcoord scale (see the Factor 5 GBI section).
 - **Moving more work from the CPU to the GPU to raise the frame rate** — the game caps itself at 30 fps (see Frame pacing), and RT64 already transforms vertices in GPU compute. Draw coalescing cut recording 4-8x with no change in frame rate.
+- **Hand-built glyphs or shapes standing in for game text** — fix the game's own text path. One solid rect or triangle to prove the plumbing is the limit.
 - **A `cv.wait` rewrite of RT64's present-queue busy-wait** (`advanceToNextPresent` in `rt64_present_queue.cpp`) — regressed natural-exit rate. Reverted.
 
 ### Boot flow / state machine
@@ -99,6 +105,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **Hand-editing `funcs_*.c` for game-logic overrides** — next regen silently strips it. Use a `[[patches.hook]]`. Diagnostic `fprintf` probes are fine.
 - **Regenerating `funcs_*.c` with a stale N64Recomp binary** — a binary built from old source errors on the `cache` instruction (its entrypoint recompile reads past the 0xC bound into `func_8000040C`) and **truncates `funcs.h` to ~7 lines**. `regen_funcs` rebuilds `N64RecompCLI` first, so this only happens with an `N64RECOMP_EXE` override pointing at an old exe; rebuild it and rerun `regen_funcs`. A good regen produces a ~2561-line `funcs.h`.
 - **Never write repo files via Python `open(...,'w')`** — a bad Python write once truncated the entire GBI core and it had to be rebuilt from goldens. Use the editor tools.
+- **Python steps in CMake or the build/regen pipeline** — a plain build needs no Python. Generate at build time with C++ (N64Recomp) or CMake script logic. Python is fine for offline tools under `tools/`.
 
 ### Miscellaneous
 
@@ -117,9 +124,10 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **At most 1-2 lines per comment block, and don't hard-wrap at ~90 columns** — let a line run long rather than splitting one sentence across several. No trailing side comments after code (`x = 1;  // note`) and no extra notes tacked on after a semicolon; if it matters, it goes in the one comment above the code.
 - Don't reference the current task or session in comments — they rot.
 - **README and docs: write for the reader who needs it.** There are three readers: players (want a download and how to run it), builders (build, run, simple mods) and engine developers (internals, debugging). The README is curated by the maintainer: don't add sections to it without asking. A README build section holds only what a builder needs to act (commands, a gotcha that blocks the build, a link); player details (supported GPUs, distro/board lists, save locations, config keys) go in [docs/guides/building-all-platforms.md](docs/guides/building-all-platforms.md#what-players-need), and a runtime caveat is one bullet under Status. State each fact in one place and link to it; don't copy a doc's details into the README. Mark platforms that only build as untested. [docs/README.md](docs/README.md) is the docs index; put a new doc in `docs/guides/` (builders), `docs/engine/` (engine how-to) or `docs/reference/` (RE notes), and list it in the index under that reader.
+- **When a fix resolves or changes a README Status issue**, update that entry in the same change.
 - **Never mention or link `plans/` from committed files** (README, `docs/`, code and config comments). `plans/` is gitignored and never committed, so those references are dead for everyone else. State the fact or direction in plain words instead.
 - Prefer **editing existing files** over creating new ones. The runtime is already large; new files attract drift.
-- **Clean up after yourself** as soon as a test is done: scripts, logs, screenshots, temp folders and debug binaries you created, locally (`build/*/screenshots`, `%TEMP%`, scratch dirs) and on remote test machines such as the Pi. Leave only what the user asked for and the game's own data.
+- **Clean up after yourself** as soon as a test is done: scripts, logs, screenshots, temp folders and debug binaries you created, locally (`build/*/screenshots`, `dumps/`, scratch dirs in the repo) and on remote test machines such as the Pi. Never delete anything under `%TEMP%` or the agent's session scratchpad, even your own files. Leave only what the user asked for and the game's own data.
 - For probe instrumentation in `funcs_*.c`, rate-limit:
   ```c
   { static int n=0; ++n; if (n<=10 || (n%50)==0) { fprintf(stderr, "..."); fflush(stderr); } }
@@ -187,6 +195,8 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
   ```
 - **Env gates on hot paths must read the environment once.** Use a `static const` initializer, or a distinct uninitialized sentinel checked with `== -1`. Never cache "off" as a negative value that a `< 0` check re-reads: 12 such gates in the F5 GBI ran `getenv()` on every command and were half the walk time.
 - **Read env vars through the shared `recomp::dbg::env_*` helpers** (`src/util/debug_logs.h`: `env_on`/`env_int`/`env_str`/`env_u32`), not open-coded `getenv` parsing.
+- **No env var, `--set` key or config field may pick an external identity** (Steam app id, store or account ids). Use a constant.
+- **Hardware detection only seeds first-run defaults.** Never cap or override a saved setting because of detected hardware.
 - **Remove a debug env var once the fix or feature it served is done** — the gate, the code behind it, its row in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md), and any comment naming it. Keep one only if it can test, validate or probe for other bugs (a trace category, a dump, an address watch, an A/B toggle for a still-heuristic path). A probe for one frame, one address or one already-verified fix does not qualify.
 - **Web JS** (`tools/web`, checked by `style_check` too; `voice_cats.js` is generated and skipped) keeps the comment, one-statement and no-bare-block rules, with its own layout. `node tools/web/rs64-explorer/tests/jsfmt.mjs --write` applies it to every file (or the ones named) and `--check` lists the files that differ; both need `npm install` in that folder.
 
