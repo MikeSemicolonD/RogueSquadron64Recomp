@@ -375,6 +375,11 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     SDL_VERSION(&wm.version);
     SDL_GetWindowWMInfo(sdl_window, &wm);
 
+    // A window shown without activation still lands on top of the z-order.
+    if (env_on("ROGUESQ_UNFOCUSED")) {
+        SetWindowPos(wm.info.win.window, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+
     return { wm.info.win.window };
 
 #elif defined(__APPLE__)

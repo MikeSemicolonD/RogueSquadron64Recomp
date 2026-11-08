@@ -42,7 +42,7 @@ static const CliFlag kCliFlags[] = {
     {"auto-start",       "ROGUESQ_AUTO_START",       CliFlag::Value, "",  "",  "pulse START after <ms> (headless runs)"},
     {"hide-window",      "ROGUESQ_HIDE_WINDOW",      CliFlag::Bool,  "1", "0", "create the window hidden (background process; no display/screenshots)"},
     {"maximized",        "ROGUESQ_MAXIMIZED",        CliFlag::Bool,  "1", "0", "start with the window maximized"},
-    {"unfocused",        "ROGUESQ_UNFOCUSED",        CliFlag::Bool,  "1", "0", "show the window without taking focus (test runs)"},
+    {"unfocused",        "ROGUESQ_UNFOCUSED",        CliFlag::Bool,  "1", "0", "open the window behind other windows without taking focus (test runs)"},
     {"fullscreen",       "ROGUESQ_FULLSCREEN",       CliFlag::Bool,  "1", "0", "start in borderless fullscreen (Alt+Enter toggles)"},
     {"language",         "ROGUESQ_LANGUAGE",         CliFlag::Value, "",  "",  "game text language for this run: en | de | fr or a language mod's code (the saved setting is unchanged)"},
     {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
