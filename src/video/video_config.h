@@ -34,12 +34,18 @@ constexpr float kDrawDistanceMax = 8.0f;
 float draw_distance();
 void set_draw_distance(float mult);
 
-// The game's own terrain instead of RT64's whole-map pass ("legacyTerrain", default off, on for Android; ROGUESQ_F5_STATIC_TERRAIN overrides). Its grid breaks up
+// The game's own terrain instead of RT64's whole-map pass ("legacyTerrain", default off; ROGUESQ_F5_STATIC_TERRAIN overrides). Its grid breaks up
 // past kLegacyTerrainDrawDistanceMax, so turning it on clamps the saved draw distance and set_draw_distance clamps to draw_distance_max().
 constexpr float kLegacyTerrainDrawDistanceMax = 1.3f;
 bool legacy_terrain();
 void set_legacy_terrain(bool on);
 float draw_distance_max();
+
+// Terrain pass quads per height sample at full detail ("terrainTessellation", default 4, 2 on Android; ROGUESQ_F5_STATIC_TERRAIN_SUB overrides). Applies live.
+constexpr int kTerrainTessellationMin = 1;
+constexpr int kTerrainTessellationMax = 8;
+int terrain_tessellation();
+void set_terrain_tessellation(int quads);
 
 // Where widescreen puts the edge HUD ("hudPlacement" in roguesq_video.json): 0 = the original 4:3 spots, 1 = the screen edges. Applies live.
 float hud_placement();

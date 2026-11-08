@@ -29,10 +29,12 @@ void adv_get(const json& a, const char* key, T& out)
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
 
-#if defined(__ANDROID__)
-std::atomic<bool> g_legacy_terrain{true};
-#else
 std::atomic<bool> g_legacy_terrain{false};
+
+#if defined(__ANDROID__)
+std::atomic<int> g_terrain_tessellation{2};
+#else
+std::atomic<int> g_terrain_tessellation{4};
 #endif
 
 std::atomic<bool> g_fb_writeback{true};
@@ -256,6 +258,16 @@ void set_legacy_terrain(bool on)
 
     g_legacy_terrain.store(on, std::memory_order_relaxed);
     set_draw_distance(draw_distance());
+}
+
+int terrain_tessellation() {
+    return g_terrain_tessellation.load(std::memory_order_relaxed);
+}
+
+void set_terrain_tessellation(int quads)
+{
+
+    g_terrain_tessellation.store(std::clamp(quads, kTerrainTessellationMin, kTerrainTessellationMax), std::memory_order_relaxed);
 }
 
 void set_keep_cutscene_draw_distance(bool on) {
@@ -530,6 +542,10 @@ void apply_friendly(UC& uc, const json& j)
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
 
+    if (has("terrainTessellation") && j["terrainTessellation"].is_number()) {
+        set_terrain_tessellation(j["terrainTessellation"].get<int>());
+    }
+
     if (has("framebufferWriteback") && j["framebufferWriteback"].is_boolean()) {
         set_framebuffer_writeback(j["framebufferWriteback"].get<bool>());
     }
@@ -687,6 +703,7 @@ json to_friendly(const UC& uc)
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["legacyTerrain"] = legacy_terrain();
+    j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
 
@@ -814,7 +831,7 @@ LoadResult load(UC& uc, const std::string& path)
         apply_friendly(uc, j);
 
         // Rewrite files that predate a friendly key so it shows up for editing.
-        r.migrated = !j.contains("drawDistance") || !j.contains("hudPlacement");
+        r.migrated = !j.contains("drawDistance") || !j.contains("hudPlacement") || !j.contains("terrainTessellation");
     } else {
         // Legacy raw UserConfiguration: merge onto the current baseline, same as
         // the pre-migration loader, then flag for rewrite in friendly form.

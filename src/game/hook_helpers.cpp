@@ -118,6 +118,16 @@ extern "C" int rs64_static_terrain_mode(void)
     return rs64::video::legacy_terrain() ? 0 : 1;
 }
 
+extern "C" int rs64_terrain_tessellation(void)
+{
+
+    static const int s_env = env_int("ROGUESQ_F5_STATIC_TERRAIN_SUB", 0);
+
+    if (s_env > 0) return std::min(s_env, rs64::video::kTerrainTessellationMax);
+
+    return rs64::video::terrain_tessellation();
+}
+
 // A cutscene that keeps its own view: the map pass drops land past the fog end, where the game draws no terrain and its sky sits below the map's horizon.
 extern "C" int rs64_terrain_fog_clip(void) {
     return game_owns_view() ? 1 : 0;
