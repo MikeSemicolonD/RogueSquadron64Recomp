@@ -215,6 +215,30 @@
             "detail": "Launch the game with an optional forced level and/or craft (--force-level / --force-craft). You drive the menus; whatever mission you launch uses the forced values."
         },
         {
+            "label": "Run: Game with RS64 MCP",
+            "type": "shell",
+            "command": "& .\\RogueSquadron64Recomp.exe --mcp-port 47064",
+            "options": {
+                "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "linux": {
+                "command": "./RogueSquadron64Recomp --mcp-port 47064",
+                "options": {
+                    "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Launch the game so an agent can attach to it with the rs64 MCP (port 47064). Release needs the \"Build: RogueSquadron64Recomp (Release, MCP)\" build."
+        },
+        {
             "label": "Run: Game with RenderDoc",
             "type": "shell",
             "command": "$dll = @('E:\\Projects\\renderdoc\\x64\\Release\\renderdoc.dll', \"$env:ProgramFiles\\RenderDoc\\renderdoc.dll\") | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $dll) { Write-Error 'renderdoc.dll not found (install RenderDoc)'; exit 1 }; $out = '${workspaceFolder}\\dumps\\renderdoc'; New-Item -ItemType Directory -Force $out | Out-Null; $env:ROGUESQ_RENDERDOC = $dll; $env:ROGUESQ_RENDERDOC_OUT = \"$out\\rs64\"; Write-Host \"Print Screen captures a frame to $out\"; & .\\RogueSquadron64Recomp.exe",
