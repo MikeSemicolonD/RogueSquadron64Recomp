@@ -100,6 +100,7 @@ void rs64_th_setupCameraMatrices_80017168(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_cutsceneActorNpcHandler_80044924(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_linkDirectionalTrailSegments_8005B418(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_projectModelBoundsToScreen_80065FE4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx);

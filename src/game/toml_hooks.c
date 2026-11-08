@@ -859,6 +859,16 @@ void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp
     ctx->f6.fl *= rs64_cull_widen();
 }
 
+// projectModelBoundsToScreen 0x80065FE4: the corner just moved to camera space ($s0, x first).
+void rs64_th_projectModelBoundsToScreen_80065FE4(uint8_t* rdram, recomp_context* ctx) {
+
+    union { uint32_t u; float f; } x;
+
+    x.u = (uint32_t)MEM_W(0, ctx->r16);
+    x.f /= rs64_cull_widen();
+    MEM_W(0, ctx->r16) = (int32_t)x.u;
+}
+
 // runMenuShipSelectScreen 0x800C14A8
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx)
 {

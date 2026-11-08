@@ -958,6 +958,12 @@ func = "buildVisibleTerrainGridAroundCamera"
 before_vram = 0x8004395C
 text = '{ rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(rdram, ctx); }'
 
+# Hangar pieces (floors, walls): the corner test against the screen edges assumes 4:3.
+[[patches.hook]]
+func = "projectModelBoundsToScreen"
+before_vram = 0x80065FE4
+text = '{ rs64_th_projectModelBoundsToScreen_80065FE4(rdram, ctx); }'
+
 # Credits pacing (0x800c14a8 = loop top of runMenuShipSelectScreen, the credits
 # sequence — misnamed in the ELF syms). Same race as the attribution screen: the
 # un-paced fade loop free-runs and starves the VI-driven glyph-layout producer, so
