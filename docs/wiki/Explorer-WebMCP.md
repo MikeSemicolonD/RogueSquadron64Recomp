@@ -1,6 +1,10 @@
 # WebMCP tools for AI agents
 
-[WebMCP](https://developer.chrome.com/docs/ai/webmcp) lets a page offer tools to an AI agent in the browser. The RS64 Explorer offers 44: an agent can see what's open, capture the view, and make the same edits you can. The save editor offers 9 more.
+[WebMCP](https://developer.chrome.com/docs/ai/webmcp) lets a page offer tools to an AI agent in the browser.
+
+With the RS64 Explorer's tools, an agent can see what's open, capture the view, and make the same edits you can.
+
+The save editor has its own tools for reading and changing saves.
 
 Each agent edit is one undo step and saves with your project. Exporting stays your click.
 
