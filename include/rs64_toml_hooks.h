@@ -1,6 +1,7 @@
 // Declarations for src/game/toml_hooks.c; N64Recomp includes this in every RecompiledFuncs file (recomp_include in rogue_squadron.toml).
 #pragma once
 #include "recomp.h"
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,7 +26,6 @@ void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_con
 void rs64_th_addNpcToVisibilityBucket_80057D84(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057E08(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DCEC(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DD38(uint8_t* rdram, recomp_context* ctx);
@@ -52,6 +52,8 @@ void rs64_th_heavyMechSubEffectNpcHandler_80079958(uint8_t* rdram, recomp_contex
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DD70(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_isNpcWithinActiveReferenceRange_80047D40(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_isPointXzWithinRangeOfRef_80047DF0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx);void rs64_th_setupCameraMatrices_80016CE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCameraMatrices_80016D50(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_drawSubtitleText_80015EF8(uint8_t* rdram, recomp_context* ctx);
@@ -87,6 +89,7 @@ void rs64_th_buildGridCellMeshForFace_8004368C(uint8_t* rdram, recomp_context* c
 void rs64_th_loadLevelAssets_800453C8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_buildVisibleTerrainGridAroundCamera_80043A84(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_loadLevelAssets_800453D8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_loadLevelAssets_800454D0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_computeGridLayerScrollOffset_800456D4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCutsceneLevel_800A6D3C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_setupCutsceneLevel_800A6D44(uint8_t* rdram, recomp_context* ctx);
@@ -97,6 +100,13 @@ void rs64_th_setupCameraMatrices_80017168(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_cutsceneActorNpcHandler_80044924(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_linkDirectionalTrailSegments_8005B418(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_projectModelBoundsToScreen_80065FE4(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_addNpcToVisibilityBucket_8005804C(uint8_t* rdram, recomp_context* ctx);
+void rs64_npc_draw_only_mark(int on);
+int rs64_ls_session(void);
+void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
+int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args);
+void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj, uint32_t pos, int drawn, int seen, float nx, float ny);
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx);
@@ -105,6 +115,8 @@ void rs64_th_loadOverlay_80000B3C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_rs_malloc_80001C74(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_saveServiceWorker_8006F2CC(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_spawnCutsceneEffectsAndCues_800A8AB8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_cinematicLoopBody_800A6084(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_waitForMusyXAudioTaskDone_80091ED0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_anyAudioSlotActive_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_shutdownMusyXVoices_8009BCEC(uint8_t* rdram, recomp_context* ctx);
@@ -292,6 +304,9 @@ void rs64_camera_shots_frame(uint8_t*, recomp_context*);
 void rs64_camera_shots_mission_start(uint8_t*);
 void rs64_camera_shots_trigger(uint8_t*, uint32_t, uint32_t);
 void rs64_cine_iter_tick(unsigned iter);
+int rs64_cut_fade_active(void);
+void rs64_cut_fade_request(void);
+void rs64_cut_fade_tick(uint8_t* rdram, recomp_context* ctx);
 void rs64_cine_pause_point(uint8_t* rdram);
 void rs64_cine_yield(void);
 void rs64_controls_force_luke(uint8_t* rdram);
@@ -314,6 +329,14 @@ void rs64_lang_record_tables_release(uint8_t* rdram);
 void rs64_lang_slot_tables(uint8_t* rdram);
 void rs64_lang_slot_tables_release(uint8_t* rdram);
 void rs64_lang_texture_pool(uint8_t* rdram);
+void rs64_th_setViewStateBytesAndFadeScale_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateWalkerParticlePositions_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_env_level_load(uint8_t* rdram, float game_frac);
+void rs64_env_fog_color(recomp_context* ctx);
+void rs64_env_clouds_load(uint8_t* rdram, recomp_context* ctx);
+void rs64_env_clouds_tick(uint8_t* rdram, recomp_context* ctx);
+void rs64_fog_color_note(uint8_t* rdram);
 void rs64_lang_txt_file(uint8_t* rdram, uint32_t name, int kind);
 void rs64_lang_voice_id(uint32_t id);
 void rs64_lang_voice_text(uint8_t*);

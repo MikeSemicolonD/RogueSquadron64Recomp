@@ -19,6 +19,11 @@ if (WIN32)
     add_compile_definitions(NOMINMAX _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
+# MSBuild compiles a project's sources one at a time under ClangCL without the multi-tool task.
+if (CMAKE_GENERATOR MATCHES "Visual Studio")
+    set(CMAKE_VS_GLOBALS "UseMultiToolTask=true" "EnforceProcessCountAcrossBuilds=true")
+endif()
+
 # Turns off MSVC debug iterators (and their bounds checks) across the whole build for faster Debug runs. Both defines are needed to keep the libs link-compatible.
 option(ROGUESQ_NO_ITER_DEBUG "Disable MSVC debug iterators (skip bounds checks)" OFF)
 if(WIN32 AND ROGUESQ_NO_ITER_DEBUG)
@@ -347,8 +352,8 @@ endif()
 # Linux executables carry no icon resource: favicon.ico is embedded and set as the window icon at startup.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
-        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/favicon.ico rs64_favicon_ico ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
-        DEPENDS ${CMAKE_SOURCE_DIR}/favicon.ico file_to_c
+        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/$<IF:$<CONFIG:Debug>,favicon_debug.ico,favicon.ico> rs64_favicon_ico ${CMAKE_BINARY_DIR}/favicon_ico.c ${CMAKE_BINARY_DIR}/favicon_ico.h
+        DEPENDS ${CMAKE_SOURCE_DIR}/favicon.ico ${CMAKE_SOURCE_DIR}/favicon_debug.ico file_to_c
         VERBATIM)
     target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/favicon_ico.c)
     target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR})

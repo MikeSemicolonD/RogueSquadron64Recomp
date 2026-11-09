@@ -16,6 +16,37 @@ namespace rs64levels {
 constexpr int kVoiceNone = -1, kMusicTemplate = -1;
 // Highest SELECT LEVEL index: the selector's mask is (1 << (max + 1)) - 1, which wraps at 0x1F.
 constexpr int kMaxEntry = 0x1E;
+constexpr size_t kManifestNameMax = 15;
+
+// Manifest names hold 15 characters: a longer path part is stored as its start plus a hash of the whole part, which keeps <long>_intro and <long>_extro distinct.
+inline std::string manifestPath(const std::string& path) {
+
+    std::string out;
+    size_t start = 0;
+
+    for (;;) {
+        const size_t slash = path.find('/', start);
+        std::string part = path.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+
+        if (part.size() > kManifestNameMax) {
+            uint32_t hash = 2166136261u;
+
+            for (const unsigned char c : part) hash = (hash ^ c) * 16777619u;
+
+            part.resize(kManifestNameMax - 8);
+
+            for (int shift = 28; shift >= 0; shift -= 4) part += "0123456789abcdef"[(hash >> shift) & 0xF];
+        }
+
+        out += part;
+
+        if (slash == std::string::npos) return out;
+
+        out += '/';
+        start = slash + 1;
+    }
+}
+
 constexpr size_t kMaxFolder = 48;
 
 // A medal tier as the game's medal_info record: at most `minutes`, at least the others (accuracy in %).
@@ -396,6 +427,22 @@ inline std::string remapPath(const std::string& path, const ModLevel& l, const s
         out = "cuts/" + l.folder + "_" + path.substr(cut.size());
     }
     return have.count(out) ? out : std::string();
+}
+
+// A boot target naming a mod level ("level:<id>[,craft]", "hangar:<id>", "cutscene:<id>[,kind]") as its template's target; the level's index in
+// levels goes to index. Empty when the target names no mod level.
+inline std::string bootTargetFor(const std::string& target, const std::vector<ModLevel>& levels, int& index) {
+    const size_t colon = target.find(':');
+    const std::string kind = target.substr(0, colon);
+    if (colon == std::string::npos || (kind != "level" && kind != "hangar" && kind != "cutscene")) return {};
+    const size_t comma = target.find(',', colon);
+    const std::string id = target.substr(colon + 1, comma == std::string::npos ? std::string::npos : comma - colon - 1);
+    for (size_t k = 0; k < levels.size(); k++) {
+        if (levels[k].id != id) continue;
+        index = (int)k;
+        return kind + ":" + std::to_string(levels[k].tmpl) + (comma == std::string::npos ? "" : target.substr(comma));
+    }
+    return {};
 }
 
 // SELECT LEVEL text in its fonts: letters uppercased (no lowercase glyphs) and anything a candidate font lacks dropped (drawing stops

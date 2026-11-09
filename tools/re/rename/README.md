@@ -42,6 +42,15 @@ python tools/re/rename/find_callers.py initMission
 python tools/re/rename/find_callers.py func_8006E468
 ```
 
+### Named-caller fan-in
+`../rogue_squadron64/tools/rename/find_named_caller_fanin.py` ranks unnamed functions by how many distinct named functions call them, because the callers' names limit what the function can be.
+
+- 9+ callers in a tight cluster (all `npc*Update`): high confidence.
+- 4-8 coherent callers: medium. Name the behavior rather than the purpose.
+- 1-3 callers: too little context.
+
+Skip a hit that is a recursive walker with no clear leaf action, or a wrapper around an unnamed function.
+
 ### `find_state_machines.py`
 Scans unnamed functions (`func_8XXXXXXX`) for state-machine shape. Two signals:
 1. Jump-table dispatch: body contains a `switch_error(...)` call (N64Recomp's

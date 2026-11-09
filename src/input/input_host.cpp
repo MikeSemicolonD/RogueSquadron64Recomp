@@ -247,6 +247,7 @@ extern "C" void rs64_menu_request_quit(void) {
 rs64::input::Bindings g_bindings = rs64::input::default_bindings();
 std::mutex            g_bindings_mtx;
 std::atomic<bool>     g_show_controls{false};
+std::atomic<bool>     g_show_fps{false};
 std::atomic<bool>     g_mouse_capture{false};
 static float                 g_mouse_ax = 0.0f;   // accumulated relative motion this frame
 static float                 g_mouse_ay = 0.0f;
@@ -901,34 +902,44 @@ void poll_input()
             // F6 toggles the controls/rebind window. Mouse-steering capture is automatic (focus-driven, in update_gfx).
             if (e.key.repeat == 0)
             {
-                if (e.key.keysym.scancode == SDL_SCANCODE_RETURN && (e.key.keysym.mod & KMOD_ALT))
-                {
-                    rs64_toggle_fullscreen();
-                } else if (e.key.keysym.scancode == SDL_SCANCODE_F6) {
-                    g_show_controls.store(!g_show_controls.load());
-                } else if (e.key.keysym.scancode == SDL_SCANCODE_F5) {
-                    // Toggle Factor 5's built-in frame-profiler/debug-text HUD.
-                    // Gate byte at virtual 0x80038CE0 (retail leaves it 0); the
-                    // emitter early-returns when zero. ^3 = N64 byte order.
-                    if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
-                        uint8_t& gate = rd[0x38CE0 ^ 3];
-                        gate = gate ? 0 : 1;
+                switch (e.key.keysym.scancode) {
+                    case SDL_SCANCODE_RETURN:
+                        if (e.key.keysym.mod & KMOD_ALT) rs64_toggle_fullscreen();
 
-                        fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
-                        fflush(stderr);
-                    }
-                } else if (e.key.keysym.scancode == SDL_SCANCODE_F9) {
-                    const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
+                        break;
+                    case SDL_SCANCODE_F6:
+                        g_show_controls.store(!g_show_controls.load());
+                        break;
+                    case SDL_SCANCODE_F7:
+                        g_show_fps.store(!g_show_fps.load());
+                        break;
+                    case SDL_SCANCODE_F5: {
+                        // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
+                        if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
+                            uint8_t& gate = rd[0x38CE0 ^ 3];
+                            gate = gate ? 0 : 1;
 
-                    rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (F9 next, Shift+F9 previous)", 3.0f);
-                } else if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
-                    // Esc closes the controls window; otherwise it falls through to
-                    // the game (bound to Start/pause).
-                    if (g_show_controls.load()) {
-                        g_show_controls.store(false);
-                    } else if (pause_escape()) {
-                        s_esc_dropped.store(true);
+                            fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
+                            fflush(stderr);
+                        }
+                        break;
                     }
+                    case SDL_SCANCODE_F9: {
+                        const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
+
+                        rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (F9 next, Shift+F9 previous)", 3.0f);
+                        break;
+                    }
+                    case SDL_SCANCODE_ESCAPE:
+                        // Esc closes the controls window; otherwise it falls through to the game (bound to Start/pause).
+                        if (g_show_controls.load()) {
+                            g_show_controls.store(false);
+                        } else if (pause_escape()) {
+                            s_esc_dropped.store(true);
+                        }
+                        break;
+                    default:
+                        break;
                 }
             }
 
@@ -1157,16 +1168,23 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     rs64::input::RawState st;
     st.keys = SDL_GetKeyboardState(&st.keys_len);
 
-    // While a letter wheel takes typing, keys that type (letters, digits, Space, punctuation, Backspace) drive no binding; arrows, Enter and Esc still do.
+    // While a letter wheel takes typing, keys that type (letters, digits, Space, punctuation, Backspace) drive no binding; arrows and Esc still do, and Enter does except on PASSCODES, where it submits the code.
     static uint8_t s_typing_keys[SDL_NUM_SCANCODES];
+    const int typing = st.keys ? rs64_menu_typing() : 0;
 
-    if (st.keys && rs64_menu_typing()) {
+    if (typing) {
         const int n = std::min(st.keys_len, (int)SDL_NUM_SCANCODES);
 
         std::memcpy(s_typing_keys, st.keys, n);
         std::memset(s_typing_keys + SDL_SCANCODE_A, 0, SDL_SCANCODE_0 - SDL_SCANCODE_A + 1);
         std::memset(s_typing_keys + SDL_SCANCODE_SPACE, 0, SDL_SCANCODE_SLASH - SDL_SCANCODE_SPACE + 1);
         s_typing_keys[SDL_SCANCODE_BACKSPACE] = 0;
+
+        if (typing == 2) {
+            s_typing_keys[SDL_SCANCODE_RETURN] = 0;
+            s_typing_keys[SDL_SCANCODE_KP_ENTER] = 0;
+        }
+
         st.keys = s_typing_keys;
         st.keys_len = n;
     }

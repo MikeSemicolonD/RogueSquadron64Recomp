@@ -486,7 +486,7 @@ func = "updateSnowSpeederFlightControls"   # snowspeeder speed update (misnamed)
 before_vram = 0x800ABDA0
 text = '{ rs64_th_updateSnowSpeederFlightControls_800ABDA0(rdram, ctx); }'
 
-# RT shadows: the render paths' object view tests (addNpcToVisibilityBucket, selectMeshLodAndSubmitForRender) also widen by rs64_shadow_cull_margin, so craft just off screen still cast.
+# The object view tests in addNpcToVisibilityBucket; the widening runs in its draw-only pass (rs64_npc_draw_only_pass), so game state keeps the stock test.
 [[patches.hook]]
 func = "addNpcToVisibilityBucket"
 before_vram = 0x80057D84
@@ -502,10 +502,11 @@ func = "addNpcToVisibilityBucket"
 before_vram = 0x80057E48
 text = '{ rs64_th_addNpcToVisibilityBucket_80057E48(rdram, ctx); }'
 
+# Draw-only pass for objects the stock test rejected; see rs64_npc_draw_only_pass.
 [[patches.hook]]
-func = "selectMeshLodAndSubmitForRender"
-before_vram = 0x80058104
-text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'
+func = "addNpcToVisibilityBucket"
+before_vram = 0x8005804C
+text = '{ rs64_th_addNpcToVisibilityBucket_8005804C(rdram, ctx); }'
 
 [[patches.hook]]
 func = "transformVec3ToNpcLocalWithScale"
@@ -532,6 +533,17 @@ text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(rdram, ctx); }'
 func = "transformVec3ToNpcLocalWithScale"
 before_vram = 0x8001E168
 text = '{ rs64_th_transformVec3ToNpcLocalWithScale_8001E168(rdram, ctx); }'
+# Draw distance: units keep their active range out to the draw distance in normal play, or they would be removed and respawned in view.
+[[patches.hook]]
+func = "isNpcWithinActiveReferenceRange"
+before_vram = 0x80047D40
+text = '{ rs64_th_isNpcWithinActiveReferenceRange_80047D40(rdram, ctx); }'
+
+[[patches.hook]]
+func = "isPointXzWithinRangeOfRef"
+before_vram = 0x80047DF0
+text = '{ rs64_th_isPointXzWithinRangeOfRef_80047DF0(rdram, ctx); }'
+
 # Draw distance: scale each read of the camera far plane (cam+0x28, in $f0) by rs64_draw_dist for the render and effect callers only (flagged before their calls; the gameplay callers draw randoms when the test passes), and the terrain trapezoid far distance ($f2) by rs64_terrain_dist.
 [[patches.hook]]
 func = "setupCameraMatrices"
@@ -882,6 +894,28 @@ func = "loadLevelAssets"
 before_vram = 0x800453D8
 text = '{ rs64_th_loadLevelAssets_800453D8(rdram, ctx); }'
 
+# Level fog fraction ($f0, just stored to 0x80136FBC): 0.9 on every level but Nonnah (0.3), whose fog keeps its stock range and thins out to the draw distance. A level's environment.json can replace it.
+[[patches.hook]]
+func = "loadLevelAssets"
+before_vram = 0x800454D0
+text = '{ rs64_th_loadLevelAssets_800454D0(rdram, ctx); }'
+
+# setFog: a level's environment.json can replace the colour (a0-a2).
+[[patches.hook]]
+func = "setViewStateBytesAndFadeScale"
+text = '{ rs64_th_setViewStateBytesAndFadeScale_entry(rdram, ctx); }'
+
+# After the sky object's per-level jump table: a level's environment.json can add Taloraan's cloud sheets.
+[[patches.hook]]
+func = "cinematicSplineWalkerNpcHandler"
+before_vram = 0x8005C2F0
+text = '{ rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(rdram, ctx); }'
+
+# Cloud sheet update: wind and a fixed altitude from a level's environment.json.
+[[patches.hook]]
+func = "updateWalkerParticlePositions"
+text = '{ rs64_th_updateWalkerParticlePositions_entry(rdram, ctx); }'
+
 # Terrain detail radius: cells nearer than this squared distance (0x8009DEB4, from the far-range base D) get relief meshes, the rest coarse quads; scale it with the terrain reach so the coarse band stays at the fog line.
 [[patches.hook]]
 func = "computeGridLayerScrollOffset"
@@ -940,6 +974,12 @@ text = '{ rs64_th_linkDirectionalTrailSegments_8005B418(rdram, ctx); }'
 func = "buildVisibleTerrainGridAroundCamera"
 before_vram = 0x8004395C
 text = '{ rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(rdram, ctx); }'
+
+# Hangar pieces (floors, walls): the corner test against the screen edges assumes 4:3.
+[[patches.hook]]
+func = "projectModelBoundsToScreen"
+before_vram = 0x80065FE4
+text = '{ rs64_th_projectModelBoundsToScreen_80065FE4(rdram, ctx); }'
 
 # Credits pacing (0x800c14a8 = loop top of runMenuShipSelectScreen, the credits
 # sequence — misnamed in the ELF syms). Same race as the attribution screen: the
@@ -1028,6 +1068,18 @@ text = '{ if (rs64_th_saveServiceWorker_8006F2CC(rdram, ctx)) return; }'
 func = "cinematicLoopBody"
 before_vram = 0x800A6024
 text = '{ rs64_th_cinematicLoopBody_800A6024(rdram, ctx); }'
+
+# The ending fade also lowers speech; a mod's fade in must not.
+[[patches.hook]]
+func = "cinematicLoopBody"
+before_vram = 0x800A6084
+text = '{ rs64_th_cinematicLoopBody_800A6084(rdram, ctx); }'
+
+# Mod cutscene event 0x17 (fade in), which the event switch below this skips.
+[[patches.hook]]
+func = "spawnCutsceneEffectsAndCues"
+before_vram = 0x800A8AB8
+text = '{ rs64_th_spawnCutsceneEffectsAndCues_800A8AB8(rdram, ctx); }'
 
 
 # Load-bearing inline-edit migration: hooks reproducing hand-edits that had no
@@ -1880,3 +1932,8 @@ text = '{ rs64_th_getVoiceText_80055A10(rdram, ctx); }'
 [[patches.hook]]
 func = "updateNpcEffectIntensity"
 text = '{ rs64_th_updateNpcEffectIntensity_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "selectMeshLodAndSubmitForRender"
+before_vram = 0x80058104
+text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'

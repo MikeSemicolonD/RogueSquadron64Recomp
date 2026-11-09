@@ -15,7 +15,6 @@
 
 ## Checklist
 
-- [ ] Code changes: the unit tests in `rs64_unit_tests` pass (`style_check` findings are optional)
-- [ ] No ROM data, recompiled output (`RecompiledFuncs/`) or game assets are included
-- [ ] Game-logic changes are `rogue_squadron.toml` hooks or patches, not edits to `RecompiledFuncs/`
+- [ ] [`rs64_unit_tests`](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/docs/engine/release-ci.md#unit-tests) pass if code changes were made
+- [ ] **No** ROM data, recompiled output or game assets are included
 - [ ] Docs updated if behaviour or options changed

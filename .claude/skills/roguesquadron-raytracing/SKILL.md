@@ -38,8 +38,8 @@ Audience: AI agents. Read `AGENTS.md` first (project map, env vars, dead ends), 
 6. **wait_log hygiene**: it only sees lines printed after it starts unless `from_start`; it gives up at 120 s and
    on crash markers (`fail_pattern`, pass `""` to disable). A line printed before the call is missed: grep instead.
 7. **Launch hygiene**: one game at a time; `close` before rebuilding (a running exe locks `build/Debug/mods/*` and
-   the link fails with MSB3073 copy errors); clean `dumps/mcp/<session>` afterwards. Test with RT features on, audio muted, from the exe dir,
-   RenderDoc injected (the MCP `launch` does all of this).
+   the link fails with MSB3073 copy errors); clean `dumps/mcp/<session>` afterwards. For RT work, test with every feature on unless isolating one, because they interact (`ROGUESQ_RT_LIGHTS`, `_SHADOWS`, `_SHADOWS_SOFT`, `_FOG_SHAFTS`, `_AO`, `_GI`, `_REFLECTIONS` = 1).
+   For non-RT bugs, leave RT settings as they launch. Run with audio muted, from the exe dir, RenderDoc injected (the MCP `launch` does these three).
 8. **IDE diagnostics lag**: "undeclared identifier" right after an edit is usually stale; trust the build.
    `near`/`far` are Windows macros: never name a variable or lambda `near`.
 
@@ -51,7 +51,7 @@ F5 GBI parse (gbi/rt64_gbi_f3dfactor5.cpp, rt64_gbi_f5_rdpstate.cpp)
 render thread: FramebufferRenderer::fillRS64Lights (render/rt64_framebuffer_renderer.cpp)
   -> resolve each Candidate to camera space (world[transformIndex], or CameraSpace)
   -> level presets (map space -> camera via the terrain frame), mesh/sprite presets already candidates
-  -> lamp gating (lamp presets vs lamp marks), dedupe (same colour within 1 unit), keep the 64 nearest
+  -> lamp gating (lamp presets vs lamp marks), dedupe (same colour within 1 unit), keep 64 (`MaxLights`; `selectLights`: priority pools, nearest edge first, projectiles capped at `maxProjectileLights`)
   -> RS64LightsCB (shared/rt64_rs64_lights_cb.h) -> shaders/RS64LightsPS.hlsl (additive over the prelit frame)
 ```
 
@@ -145,7 +145,7 @@ frames are converted into the texture pool; manifest +8 is not a load address).
   (`loadGameLights`, shown under the mod's; editing one makes a same-named override; delete = disabled override),
   "Lights from hardpoints" (`glw*` only: `trl*` are contrail/wingtip points, not lights).
 - Shaded preview: `rtLit(mat)` adds the RS64LightsPS sum to opaque node materials' `outputNode`;
-  `lightsPreviewTick` fills 32 uniform slots from collected icons, nearest to the camera first.
+  `lightsPreviewTick` fills 64 uniform slots (`LIGHT_MAX`) from collected icons, nearest to the camera first.
   **three r170 gotcha: `THREE.uniform(0, 'int')` uploads float bits; a loop bound of 1 read as ~1e9 and hung the GPU
   (device lost, Chrome then dropped WebGPU).** Use a float uniform -> `int(min(count, MAX))`, always cap loops.
 - Effects timeline holds at 0 until `renderer.compileAsync` resolves and treats frames > 50 ms as stalls (else first

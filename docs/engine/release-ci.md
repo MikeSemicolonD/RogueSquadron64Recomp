@@ -110,8 +110,11 @@ Both jobs run `cmake --build build --config Release --target rs64_unit_tests` (w
 
 ## Security
 
-- The workflow runs only on `v*` tags and manual dispatch, and each job checks that the repository owner started it. **Never add a `pull_request` trigger**: a fork's pull request would run arbitrary code on your machine with the ROM-derived inputs mounted. Also set **Settings > Actions > General > Fork pull request workflows** to require approval.
-- Keep the self-hosted runners attached to this repository only, not to an organization.
+- **A self-hosted runner on a public repository is exposed to every fork.** A pull request can add its own workflow with `on: pull_request` and `runs-on: [self-hosted, rs64]`, and the triggers and owner checks in `release.yml` don't apply to it. The Windows runner has no container, so that code runs under your account with the ROM-derived inputs in reach.
+- The safe route is no runner on this repository: build with the VS Code task **Package: Release bundle (all platforms)** and attach the packages to a draft release by hand. Those packages have no build provenance attestation.
+- If a runner is attached here anyway, set **Settings > Actions > General > Fork pull request workflows** to require approval for all external contributors, read every file under `.github/` in a pull request before approving its run, and keep the runners offline except during a release.
+- **Never add a `pull_request` trigger to `release.yml`**: a fork's pull request would run its code in that job.
+- Keep self-hosted runners attached to this repository only, not to an organization.
 
 ## Legal
 

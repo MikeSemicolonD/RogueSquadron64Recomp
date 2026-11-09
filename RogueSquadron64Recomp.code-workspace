@@ -1,7 +1,18 @@
 {
     "folders": [
         { "name": "RogueSquadron64Recomp", "path": "." },
-        { "name": "rogue_squadron64 (decomp)", "path": "../rogue_squadron64" }
+        { "name": "rogue_squadron64 (decomp)", "path": "../rogue_squadron64" },
+        { "name": "Debug Build", "path": "build/Debug" },
+        { "name": "Release Build", "path": "build/Release" },
+        { "name": "build/dist", "path": "build/dist" },
+        { "name": "Release Packages", "path": "build/packages" },
+        { "name": "RS64 Explorer", "path": "tools/web/rs64-explorer" },
+        { "name": "Save Editor", "path": "tools/web/save-editor" },
+        { "name": "Relay Server", "path": "relay-server" },
+        { "name": "Mods", "path": "mods" },
+        { "name": "Docs", "path": "docs" },
+        { "name": "Wiki", "path": "docs/wiki" },
+        { "name": "Wiki (Preview Output)", "path": "wiki-preview" }
     ],
     "settings": {
         "java.import.gradle.enabled": false,

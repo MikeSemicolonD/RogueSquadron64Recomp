@@ -596,7 +596,9 @@ extern "C" void rs64_asset_overrides_patch(uint8_t* rdram, uint32_t idx)
 
     for (const auto& [path, ov] : s_asset_overrides)
     {
-        if (!seen.count(path) && top_dirs.count(path.substr(0, path.find('/')))) added.emplace_back(path, ov);
+        const std::string stored = rs64levels::manifestPath(path);
+
+        if (!seen.count(stored) && top_dirs.count(stored.substr(0, stored.find('/')))) added.emplace_back(stored, ov);
     }
 
     if (!added.empty()) add_manifest_files(rdram, idx, block_rom, added);

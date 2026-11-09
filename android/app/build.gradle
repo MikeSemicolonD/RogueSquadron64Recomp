@@ -25,6 +25,10 @@ def hostN64Recomp = findProperty('rs64N64Recomp') ?: rootProject.file("../build/
 // RecompModTool writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
 def hostRecompModTool = findProperty('rs64RecompModTool') ?: rootProject.file("../build/Debug/RecompModTool.exe").absolutePath
 def mipsDirArgs = findProperty('rs64MipsDir') ? ["-DMIPS_TOOLCHAIN_DIR=${findProperty('rs64MipsDir')}"] : []
+// ccache on PATH caches native objects; base_dir and hash_dir=false let a new .cxx/<hash> folder reuse them.
+def ccacheExe = providers.environmentVariable('PATH').getOrElse('').tokenize(File.pathSeparator).collectMany { [new File(it, 'ccache.exe'), new File(it, 'ccache')] }.find { it.isFile() }
+def ccacheLauncher = ccacheExe ? "${ccacheExe.absolutePath.replace('\\', '/')};base_dir=${rootProject.file('..').absolutePath.replace('\\', '/')};hash_dir=false" : null
+def ccacheArgs = ccacheLauncher ? ["-DCMAKE_C_COMPILER_LAUNCHER=${ccacheLauncher}", "-DCMAKE_CXX_COMPILER_LAUNCHER=${ccacheLauncher}"] : []
 
 // Task actions must not touch `project` at execution time (Gradle 9), so file ops come from injected services.
 interface FileOps {
@@ -144,7 +148,7 @@ android {
         externalNativeBuild {
             cmake {
                 // Multiplayer ships as the multiplayer-native mod, as on desktop: libmultiplayer_native.so is packed with the game's libraries.
-                arguments '-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs
+                arguments('-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs, *ccacheArgs)
                 targets 'RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'
             }
         }
@@ -176,7 +180,8 @@ android {
             signingConfig = signingConfigs.debug
             externalNativeBuild {
                 cmake {
-                    arguments "-DRS64_BUILT_MODS_DIR=${layout.buildDirectory.dir('built_mods/release').get().asFile}"
+                    // Release, not AGP's default RelWithDebInfo: no -g, so compiles and links are faster.
+                    arguments '-DCMAKE_BUILD_TYPE=Release', "-DRS64_BUILT_MODS_DIR=${layout.buildDirectory.dir('built_mods/release').get().asFile}"
                 }
             }
         }

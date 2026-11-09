@@ -9,6 +9,7 @@
 #include "game/menus/menu_config.h"
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -45,6 +46,9 @@ extern "C" bool rs64_nav_consume(uint16_t* buttons, float* x, float* y) {
 }
 
 // ---- Target ----
+
+// The SELECT LEVEL entry of a mod level the boot target names, -1 for none (mod_level_hooks.cpp).
+extern "C" int rs64_mod_levels_boot_entry();
 
 // menu:<label>/<label>/...: the entries to select in turn from the main menu (the last may be an action on a page).
 static std::vector<std::string>& menu_path() {
@@ -327,7 +331,21 @@ static void nav_level(uint8_t* rdram, const char* st)
             break;
         case 3:  // SELECT LEVEL: write target level, confirm, until AVAILABLE CRAFT
             if (is(st, "menu.account.level_select")) {
-                // gGameSettings currentLevel (u8), gCurrentLevel (u32)
+
+                // A mod level is walked to with the D-pad (cursor u8 0x800CDAC1, screen state 0x800CDAC4) and picked as a player would, so
+                // its confirm (briefing, medals, craft) runs; a stock level is written: gGameSettings currentLevel (u8), gCurrentLevel (u32).
+                const int entry = rs64_mod_levels_boot_entry();
+
+                if (entry >= 0)
+                {
+                    const int step = rs64::ls::follow_step(rdram[0xCDAC1u ^ 3], rdram[0xCDAC4u ^ 3], entry, 3, true);
+                    const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : 0;
+
+                    if (btn) nav_repress(btn);
+
+                    break;
+                }
+
                 nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
                 nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
                 nav_repress(N64_A_BUTTON);
@@ -408,9 +426,21 @@ static void nav_abort(uint8_t* rdram, const char* st) {
 
     switch (s_step)
     {
-        case 10:  // let the mission start before pausing
-            if (is(st, "mission") && !paused && ++s_settle >= 180) nav_advance();
+        // let the mission start before pausing; ROGUESQ_NAV_ABORT_HOLD=<s> plays that many wall-clock seconds first
+        case 10: {
+            static const int hold = recomp::dbg::env_int("ROGUESQ_NAV_ABORT_HOLD", 0);
+            static auto s_t0 = std::chrono::steady_clock::now();
+
+            if (!is(st, "mission") || paused) break;
+
+            if (s_settle++ == 0) s_t0 = std::chrono::steady_clock::now();
+
+            s_watchdog = 0;
+
+            if (s_settle >= 180 && std::chrono::steady_clock::now() - s_t0 >= std::chrono::seconds(hold)) nav_advance();
+
             break;
+        }
         case 11:  // START until the pause root is open; no re-press while the HUD animates
             if (menu == 0) {
                 nav_log_pause(rdram, "pause open");
@@ -514,14 +544,38 @@ static void nav_abort(uint8_t* rdram, const char* st) {
                 fprintf(stderr, "[nav] abort complete: level %d -> SELECT LEVEL\n", g_target.a);
                 fflush(stderr);
 
+                // ROGUESQ_NAV_ABORT_LOOP=<n>: n missions in a row, the next stock level (0-15) each time, then quit.
+                static const int loops = recomp::dbg::env_int("ROGUESQ_NAV_ABORT_LOOP", 0);
+                static int s_loops_done = 0;
+
                 if (g_target.c == 1) {
                     s_since_press = 0;
                     begin_pulse(N64_A_BUTTON);
                     nav_advance();
+                } else if (++s_loops_done < loops) {
+                    static const bool same = recomp::dbg::env_on("ROGUESQ_NAV_ABORT_SAME");
+
+                    if (!same) g_target.a = (g_target.a + 1) % 16;
+
+                    fprintf(stderr, "[nav] abort loop %d/%d: next level %d\n", s_loops_done, loops, g_target.a);
+                    fflush(stderr);
+                    s_settle = 0;
+                    s_abort_wait = 0;
+                    s_hangar_frames = 0;
+                    s_step = 2;
+                    nav_advance();
+                } else if (loops > 0) {
+                    fprintf(stderr, "[nav] abort loop done (%d missions), exiting\n", loops);
+                    fflush(stderr);
+                    rs64_menu_request_quit();
+                    s_disabled = true;
                 } else {
                     s_disabled = true;
                 }
             } else if (s_overlay == 1 && screen == 3) {
+                nav_repress(N64_A_BUTTON);
+            } else if (!std::strncmp(st, "menu.", 5)) {
+                // Some results return to the front end (ELITE ROGUES, then MAIN MENU); A on the first entry of each walks back through SELECT GAME to SELECT LEVEL.
                 nav_repress(N64_A_BUTTON);
             }
             break;

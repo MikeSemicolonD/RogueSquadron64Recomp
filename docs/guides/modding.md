@@ -101,7 +101,7 @@ A `levels.json` at the mod root lists them:
 ```
 
 - `template`: a playable stock level, 0-18. Its mission script runs, so keep the objects it uses (start from a copy of its files). Templates 0, 5, 10 and 15 play their chapter crawl first; Beggar's Canyon (16) has no craft select.
-- `folder`: the level's files are `assets/level/<folder>/` (the template's file names: `dat`, `hmp`, ...), its cutscenes `assets/cuts/<folder>_intro` and `_extro`. A file the folder lacks is the template's; `.from` and `.bps` work as anywhere in `assets/`.
+- `folder`: up to 48 characters. The level's files are `assets/level/<folder>/` (the template's file names: `dat`, `hmp`, ...), its cutscenes `assets/cuts/<folder>_intro` and `_extro`. A file the folder lacks is the template's; `.from` and `.bps` work as anywhere in `assets/`.
 - `title` and `description` show in capitals; characters the menu fonts lack are left out (letters, digits and `! ( ) _ - / \ , . : '` show).
 - `voice`: a stock voice line played as the SELECT LEVEL briefing (none if left out). A recording of your own goes in `assets/level/<folder>/brief` and plays instead: a MORT stream (the game's 8 kHz GSM 06.10 voice codec). The explorer's *Import recording…* makes it from a .wav or .mp3.
 - `craft`: approved craft, any of `xwing`, `ywing`, `awing`, `vwing`, `speeder`, `falcon`, `tie`, `t16`, `naboo` (the template's if left out).
@@ -118,7 +118,7 @@ A `levels.json` at the mod root lists them:
 
   Any objective can also carry `"voice"` (a stock voice id, played with its subtitle when it completes, or fails for `protect` and `timelimit`), `"recording"` (a file in `assets/level/<folder>/` played instead), `"camera"` (a camera position the game cuts to then), and `"pauseVoice"` / `"pauseRecording"` (what the pause screen reads aloud for the line; silent without one).
 
-The RS64 Explorer makes all of this: open a stock level and click *New level from this one…* (a copy to change) or *New blank level…* (only a player start on flat ground, blank 3-second intro and outro, and that level's sky, textures and music; give it objectives), edit it like any level, set *Level settings…* (title, description, briefing voice or recording, craft, objectives, medals, opening crawl), then *Export mod*. Camera-shot links (`camera_shots.txt`) for a new level use its folder name in place of `lv_<n>`.
+The RS64 Explorer makes all of this: open a stock level and click *New level from this one* (a copy to change) or *New blank level* (only a player start on flat ground, blank 3-second intro and outro, and that level's sky, textures and music; give it objectives), edit it like any level, set *Level settings…* (title, description, briefing voice or recording, craft, medals, opening crawl) and *Objectives…* in the edit panel, then *Export mod*. Camera-shot links (`camera_shots.txt`) for a new level use its folder name in place of `lv_<n>`.
 
 ### Opening crawls
 
@@ -140,6 +140,23 @@ An opening crawl is a mod folder `assets/crawl/<name>/` (`name` up to 15 lowerca
 - `dat`: a copy of `frontend/starwars/dat` with the fly-by routes (`route_0`-`route_2`) moved, used instead of the stock one.
 
 In the RS64 Explorer, the *Cutscene* list of a chapter level (0, 5, 10, 15) or a mod level has *Opening crawl*. It opens like a cutscene, with its timeline and the game's scene, and the crawl window edits its text. The first edit makes the mod's own crawl: for a chapter level, one that replaces that chapter; for a mod level, one its `levels.json` names. Right-click the backdrop to replace it from an image. With the cutscene pencil on, the camera poses like a cutscene camera: pick *Camera* and drag the gizmo, or take the free view (V). Its keys show on the timeline's Keys row, where they can be dragged or deleted, and route points are dragged in the view.
+
+### Water, fog and clouds
+
+In the RS64 Explorer, the terrain tools' *Water, fog and clouds…* window sets these for any level.
+
+Water belongs to the level's `dat`. Everything below the water level becomes water, so shape it with the terrain tools. Paint it with one of the level's water textures; a level with none shows its ground texture on the water.
+
+Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>`. Every field is optional; with two enabled mods setting one level, the later-loaded one's file is used.
+
+```json
+{ "fog": { "start": 0.3, "reach": "thin", "color": [120, 128, 96] },
+  "clouds": { "wind": [1.5, -0.5], "altitude": -20, "tint": [230, 230, 240] } }
+```
+
+- `fog.start`: where fog begins, as a share of the view distance (stock levels use 0.9; the Nonnah 0.3).
+- `fog.reach`: at a longer draw distance, `scale` moves the fog out with it, `thin` keeps the stock fog and thins it out to the new edge, and `stock` holds a solid wall. Left out, `thin` when `start` is under 0.85, otherwise `scale`.
+- `clouds`: its presence adds Battle Above Taloraan's cloud sheets. `wind` is `[x, z]` in units per second. `altitude` holds them around one height (Y points down, so above the ground is negative); left out, they stay around the player, which suits a level with no ground. `tint` replaces their tan colour.
 
 ### Level rules
 
@@ -188,12 +205,14 @@ The [exhaust-color](../../mods/exhaust-color/) mod is a different approach: it r
 A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the RAY TRACING page's lights setting). A preset replaces an earlier one with the same name, read in this order: the game's built-in lights ([src/video/default_lights.json](../../src/video/default_lights.json), compiled into the game: the engine, laser, torpedo and pickup lights) always first, then every other enabled mod in MODS-list order (lower in the list wins; a newly installed mod starts at the top), then the copy next to the exe, which the F1 Lights tab saves and which wins over all of them.
 
 - A preset with a `mesh` rides on a model part: `red_laser` lights every red bolt, `xwing#s0.p1` one X-wing part. Positions, radius and shadow offset are in the part's model units, or the radius in camera units with `"cameraUnits": true` (laser bolts are drawn at varying sizes).
+- A mesh preset with `"emissive": true` makes those parts self-lit (the World Devastator's exhaust, the briefing room's light strips): they are never shadowed, cast no shadow, and glow in reflections and bounce light. It can have lights of its own or an empty `lights` array. The F1 Lights tab's mesh picker lists the keys drawn on screen.
 - A preset without one lights a level: `level` is the level number (`-1` outside missions, `-2` or absent every level, `-3` the mission-select briefing room, `-4` the craft-select hangar) and positions are in the level's map space (512 per terrain cell, Y down; camera space in the front end).
 - A preset with a `sprite` (`|`-separated `spr:<texture name>` keys, one per effect frame, such as `spr:explo_tex0`) replaces the automatic light of those fire, smoke and explosion sprites: its lights sit on each sprite showing one of those frames, the radius is a multiple of the sprite's size and the brightness follows its fade. In the RS64 Explorer's Effects tab, the bulb-plus button lights every frame of the open effect and previews the lights on the playing sprites; in game, the F1 Lights tab lists the keys drawn while the effect is on screen.
+- A level light with `"rectSize": [width, height]` is a glowing panel facing along `direction`: it draws as a solid face and lights what is in front of it.
 - Any light can flicker (`flickerIntensity`, 0-1) or be a spotlight (`direction`, `spotMaxCosine` / `spotFalloffCosine`, RT64's negative cosines; the RS64 Explorer shows them as cone angles).
 - Only 64 lights shine at once. A preset's `priority` decides which are kept when there are more (see the table below).
 
-**Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over.
+**Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over. Players can change the shares in `roguesq_video.json` (`rayTracing.lightLimits`).
 
 | Priority | Lights | Share |
 | --- | --- | --- |
@@ -203,7 +222,7 @@ A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the 
 | 3 | Model parts: building glows, lamps (default for `mesh` presets) | 6 |
 | 2 | Level lights (always; `priority` is not read for them) | 4 |
 | 1 | Torpedoes (built-in `proton_torpedo`) | 2 |
-| 0 | Laser bolts (any `red_laser`, `green_laser`, `ion_laser` light; never more than 8, `ROGUESQ_RT_LIGHTS_PROJECTILE_MAX`) | 4 |
+| 0 | Laser bolts (any `red_laser`, `green_laser`, `ion_laser` light; never more than 8, `lasersMax`) | 4 |
 
 The built-in lights include the briefing room's hologram and table ring and, generated from the models' own glow markers, the engines of every other craft and the lamps on level buildings and platforms.
 

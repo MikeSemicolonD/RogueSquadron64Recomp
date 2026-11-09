@@ -3,12 +3,90 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
+#ifdef _WIN32
+
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+
+#endif
+
 namespace rs64::cli {
+static constexpr const char* kPlayLinkFlag = "--play-link";
+
+#ifdef _WIN32
+
+static std::filesystem::path exe_path()
+{
+
+    std::wstring path(32768, L'\0');
+
+    path.resize(GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size())));
+
+    return path;
+}
+
+static bool set_user_registry_text(const wchar_t* key, const wchar_t* name, const std::wstring& value)
+{
+
+    HKEY handle = nullptr;
+
+    if (RegCreateKeyExW(HKEY_CURRENT_USER, key, 0, nullptr, 0, KEY_SET_VALUE, nullptr, &handle, nullptr) != ERROR_SUCCESS)
+    {
+        return false;
+    }
+
+    const DWORD bytes = static_cast<DWORD>((value.size() + 1) * sizeof(wchar_t));
+    const LONG rc = RegSetValueExW(handle, name, 0, REG_SZ, reinterpret_cast<const BYTE*>(value.c_str()), bytes);
+
+    RegCloseKey(handle);
+
+    return rc == ERROR_SUCCESS;
+}
+
+// The Explorer leaves this file in the game folder, so a player who never uses it gets no registry entry. "ready" tells the Explorer the link works.
+void register_play_link()
+{
+
+    static constexpr const wchar_t* kLinkKey = L"Software\\Classes\\rs64recomp";
+
+    const std::filesystem::path exe = exe_path();
+    const std::filesystem::path marker = exe.parent_path() / "explorer-link.txt";
+    std::error_code ec;
+
+    if (!std::filesystem::exists(marker, ec))
+    {
+        return;
+    }
+
+    const std::wstring open = L"\"" + exe.wstring() + L"\" --play-link \"%1\"";
+    const std::wstring command = std::wstring(kLinkKey) + L"\\shell\\open\\command";
+
+    const bool ok = set_user_registry_text(kLinkKey, nullptr, L"URL:Rogue Squadron 64 Recompiled")
+        && set_user_registry_text(kLinkKey, L"URL Protocol", L"")
+        && set_user_registry_text(command.c_str(), nullptr, open);
+
+    if (ok)
+    {
+        std::ofstream(marker) << "ready";
+    }
+
+    fprintf(stderr, "[main] Explorer play link %s\n", ok ? "registered" : "could not be registered");
+}
+
+#else
+
+void register_play_link() {}
+
+#endif
+
 // Set an env var so the getenv-based knobs below pick it up. The whole program
 // is configured through the environment, not argv, so CLI args are translated here.
-static void set_env(const char* name, const char* value) {
+void set_env(const char* name, const char* value) {
 
 #ifdef _WIN32
     _putenv_s(name, value);
@@ -42,7 +120,7 @@ static const CliFlag kCliFlags[] = {
     {"auto-start",       "ROGUESQ_AUTO_START",       CliFlag::Value, "",  "",  "pulse START after <ms> (headless runs)"},
     {"hide-window",      "ROGUESQ_HIDE_WINDOW",      CliFlag::Bool,  "1", "0", "create the window hidden (background process; no display/screenshots)"},
     {"maximized",        "ROGUESQ_MAXIMIZED",        CliFlag::Bool,  "1", "0", "start with the window maximized"},
-    {"unfocused",        "ROGUESQ_UNFOCUSED",        CliFlag::Bool,  "1", "0", "show the window without taking focus (test runs)"},
+    {"unfocused",        "ROGUESQ_UNFOCUSED",        CliFlag::Bool,  "1", "0", "open the window behind other windows without taking focus (test runs)"},
     {"fullscreen",       "ROGUESQ_FULLSCREEN",       CliFlag::Bool,  "1", "0", "start in borderless fullscreen (Alt+Enter toggles)"},
     {"language",         "ROGUESQ_LANGUAGE",         CliFlag::Value, "",  "",  "game text language for this run: en | de | fr or a language mod's code (the saved setting is unchanged)"},
     {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
@@ -55,7 +133,8 @@ static const CliFlag kCliFlags[] = {
     {"mcp-port",         "ROGUESQ_MCP_PORT",         CliFlag::Value, "",  "",  "dev: serve the RT64 MCP bridge on 127.0.0.1:<port> (tools/debug/mcp)"},
 #endif
 
-    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]"},
+    {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]; N can be a mod level's id"},
+    {"record",           "ROGUESQ_LS_RECORD",        CliFlag::Value, "",  "",  "record the next mission's input to <path.rec>, to replay it later"},
 };
 
 static void print_cli_usage()
@@ -86,6 +165,32 @@ static void print_cli_usage()
 // Translate argv into the ROGUESQ_* env vars the rest of main reads. Returns an
 // exit code to stop startup (0 for --help, 2 for a bad option), or -1 to continue.
 int apply_args(int argc, char* argv[]) {
+
+    // Nothing else may come with a link: a quote inside one would otherwise add options such as --set.
+    if (argc >= 2 && !strcmp(argv[1], kPlayLinkFlag))
+    {
+        std::string target;
+
+        if (argc != 3 || !play_link_target(argv[2], target))
+        {
+            fprintf(stderr, "error: bad play link\n");
+
+            return 2;
+        }
+
+#ifdef _WIN32
+        std::error_code ec;
+
+        std::filesystem::current_path(exe_path().parent_path(), ec);
+#endif
+
+        if (!target.empty())
+        {
+            set_env("ROGUESQ_BOOT_TARGET", target.c_str());
+        }
+
+        return -1;
+    }
 
     for (int i = 1; i < argc; ++i) {
         const char* a = argv[i];

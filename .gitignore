@@ -49,6 +49,7 @@ bld/
 out/
 node_modules/
 vcpkg_installed/
+/wiki-preview/
 
 # Build artifacts
 *.exe
@@ -113,6 +114,7 @@ __pycache__/
 # Lockstep replay run outputs (the .rec/.rec.hash recordings are inputs and stay)
 tools/debug/recordings/**/*.out
 tools/debug/recordings/**/*.hash.dump
+tools/debug/recordings/**/*.replay.hash
 
 # native-demo example mod: separate-build DLL artifacts (built via mods/native-demo/CMakeLists.txt)
 mods/native-demo/build/

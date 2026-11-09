@@ -86,6 +86,40 @@ static void testSpriteLightRadiusCap() {
     CHECK(near(c.radius, 1200.0f, 1e-5f));
 }
 
+// Two triangles' first vertices (red at alpha 157, white at 255) averaged into the cutout flags: rgb in bits 8-31, alpha / 4 in bits 2-7, bits 0-1 clear.
+static void testCutoutShadeAlpha() {
+    const std::vector<uint32_t> faces = { 0, 1, 1, 1, 0, 0 };
+    const std::vector<uint8_t> normCol = { 255, 0, 0, 157, 255, 255, 255, 255 };
+    const uint32_t flags = packCutoutShade(faces, normCol, 0, 2);
+    CHECK((flags & 3u) == 0u);
+    CHECK(((flags >> 8) & 0xFFu) == 255u);
+    CHECK(((flags >> 2) & 0x3Fu) == (206u >> 2));
+    CHECK(packCutoutShade(faces, {}, 0, 2) == 0xFFFFFFFCu);
+}
+
+// The map's water plane normal: map y under a scale, a quarter turn about x (y -> z), and a shear that leaves the plane's directions alone.
+static void testAffinePlaneNormalY() {
+
+    float n[3];
+    const float scale[3][4] = { { 2, 0, 0, 5 }, { 0, 3, 0, 6 }, { 0, 0, 4, 7 } };
+
+    CHECK(affinePlaneNormalY(scale, n) && (std::fabs(std::fabs(n[1]) - 1.0f) < 1e-6f) && (n[0] == 0.0f) && (n[2] == 0.0f));
+
+    const float turn[3][4] = { { 1, 0, 0, 0 }, { 0, 0, -1, 0 }, { 0, 1, 0, 0 } };
+
+    CHECK(affinePlaneNormalY(turn, n) && (std::fabs(std::fabs(n[2]) - 1.0f) < 1e-6f));
+
+    const float shear[3][4] = { { 25.4f, 0, 0, 0 }, { 0, 25.2f, -2.19f, 0 }, { 0, 3.1f, 17.9f, 0 } };
+
+    CHECK(affinePlaneNormalY(shear, n));
+    CHECK(std::fabs(n[0] * 25.4f) < 1e-4f);
+    CHECK(std::fabs(n[1] * -2.19f + n[2] * 17.9f) < 1e-4f);
+
+    const float flat[3][4] = {};
+
+    CHECK(!affinePlaneNormalY(flat, n));
+}
+
 // White RGBA16 8x8 frame with a half-size I8 mask covering its left half: half the frame shows.
 static void testSpriteEmission() {
 
@@ -284,9 +318,10 @@ static void testBuildTerrainMesh() {
 
     CHECK(pos.size() == (2 * 25 + 4 * (span - 1)) * 3);
     CHECK(pos[50 * 3] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512) && pos[50 * 3 + 2] == float(-(TerrainWaterMargin + TerrainWaterFarCells) * 512));
-    CHECK(pos[50 * 3 + 1] == 160.0f - TerrainWaterLift + TerrainWaterTraceGap);
+    // Past the ground cell the margin follows its ground (height 0), as the terrain pass draws it; the shore cell sits just under the drawn water.
+    CHECK(pos[50 * 3 + 1] == TerrainWaterTraceGap);
     CHECK(pos[53 * 3] == float((1 - TerrainWaterMargin) * 512));
-    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == pos[50 * 3 + 1] && pos[shore * 3 + 2] == 0.0f);
+    CHECK(pos[shore * 3] == 512.0f && pos[shore * 3 + 1] == 160.0f - TerrainWaterLift + TerrainWaterTraceGap && pos[shore * 3 + 2] == 0.0f);
     CHECK(pos[(shore + 3) * 3] == 1024.0f && pos[(shore + 3) * 3 + 2] == 512.0f);
     CHECK(idx[shoreIdx] == shore && idx[shoreIdx + 1] == shore + 3 && idx[shoreIdx + 2] == shore + 2);
 }
@@ -508,6 +543,13 @@ static void testMenuSun() {
     CHECK(!introScene(true, 0u, MenuSceneNone));
     CHECK(!introScene(false, 0x8025CAC0u, MenuSceneNone));
     CHECK(!introScene(false, 0u, MenuSceneHangar));
+    // After a pause the light list is gone and the root is 0: the mission keeps its sun, the boot sequence does not.
+    CHECK(keepMissionSun(false, 0u, true, MenuSceneNone, true));
+    CHECK(keepMissionSun(false, 0x803677ECu, false, MenuSceneNone, true));
+    CHECK(!keepMissionSun(false, 0u, false, MenuSceneNone, true));
+    CHECK(!keepMissionSun(false, 0u, true, MenuSceneNone, false));
+    CHECK(!keepMissionSun(false, 0u, true, MenuSceneHangar, true));
+    CHECK(!keepMissionSun(true, 0u, true, MenuSceneNone, true));
     const float* h = hangarSunDir();
     CHECK(h[1] > 0.5f * std::sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]));
 }
@@ -522,13 +564,21 @@ static void testCasterFragment() {
 static void testLastPassPerTarget() {
     int a = 0, b = 0;
     const void* targets[4] = { &a, &a, &b, &a };
+    const bool same[4] = { false, false, false, false };
     bool on[4] = { true, true, true, false };
-    lastPassPerTarget(targets, on, 4);
+    lastPassPerTarget(targets, same, on, 4);
     CHECK(!on[0] && on[1] && on[2] && !on[3]);
     bool on2[2] = { true, false };
     const void* t2[2] = { &a, &a };
-    lastPassPerTarget(t2, on2, 2);
+    lastPassPerTarget(t2, same, on2, 2);
     CHECK(on2[0] && !on2[1]);
+
+    // The cockpit after a depth clear starts a new view: the world keeps its pass, and the cockpit keeps its own.
+    const void* t3[3] = { &a, &a, &a };
+    const bool cockpit[3] = { false, false, true };
+    bool on3[3] = { true, true, true };
+    lastPassPerTarget(t3, cockpit, on3, 3);
+    CHECK(!on3[0] && on3[1] && on3[2]);
 }
 
 static void testConsensusUp() {
@@ -701,10 +751,11 @@ static void testSelectLights() {
         in[i].intensity = 1.0f;
     }
     in[39].intensity = 0.0f;
+    in[38].intensity = 0.001f;
     std::vector<Resolved> out(MaxLights);
     const size_t n = selectLights(in.data(), in.size(), out.data(), kSlots);
     CHECK(n == kSlots);
-    CHECK(near(out[0].pos[2], 200.0f, 1e-5f));
+    CHECK(near(out[0].pos[2], 300.0f, 1e-5f));
     for (size_t i = 1; i < n; ++i) {
         CHECK(out[i].pos[2] >= out[i - 1].pos[2]);
     }
@@ -785,6 +836,15 @@ static void testFogFactor() {
         CHECK(std::isfinite(f) && (f >= prev - 1e-6f) && (f >= 0.0f) && (f <= 1.0f));
         prev = f;
     }
+
+    // Fog tail: stock up to the knee, continuous there, full exactly at the tail end, and 0 keeps the stock ramp.
+    CHECK(fogCurve(0.5f, 1.35f) == 0.5f);
+    CHECK(near(fogCurve(0.85f, 1.35f), 0.85f, 1e-6f));
+    CHECK((fogCurve(1.0f, 1.35f) > 0.85f) && (fogCurve(1.0f, 1.35f) < 1.0f));
+    CHECK(near(fogCurve(1.35f, 1.35f), 1.0f, 1e-6f));
+    CHECK(fogCurve(2.0f, 1.35f) == 1.0f);
+    CHECK(fogCurve(1.0f, 0.0f) == 1.0f);
+    CHECK(near(fogCurve(0.9f, 1.0f), 0.9f, 1e-6f));
 }
 
 static void testFogSteps() {
@@ -1366,8 +1426,16 @@ static void testTmemAverage() {
     // Fully transparent: no colour.
     std::fill(tmem.begin(), tmem.end(), 0);
     CHECK(!tmemAverage(tmem.data(), 0, 2, 0, 1, 4, 1, 0, rgb, cov));
-    // RGBA32 is not handled.
-    CHECK(!tmemAverage(tmem.data(), 0, 3, 0, 1, 4, 1, 0, rgb, cov));
+    // RGBA32: red and green in the low half of TMEM, blue and alpha in the high half.
+    std::fill(tmem.begin(), tmem.end(), 0);
+    for (int i = 0; i < 4; ++i) {
+        tmem[i * 2] = 0x20;
+        tmem[i * 2 + 1] = 0x40;
+        tmem[0x800 + i * 2] = 0x60;
+        tmem[0x800 + i * 2 + 1] = 0xFF;
+    }
+    CHECK(tmemAverage(tmem.data(), 0, 3, 0, 1, 4, 1, 0, rgb, cov));
+    CHECK(near(rgb[0], 0x20 / 255.0f, 1e-3f) && near(rgb[1], 0x40 / 255.0f, 1e-3f) && near(rgb[2], 0x60 / 255.0f, 1e-3f) && near(cov, 1.0f, 1e-3f));
 }
 
 static void testTransformScale() {
@@ -1492,12 +1560,18 @@ static void testComposeFactor() {
     const float none[3] = { 0.0f, 0.0f, 0.0f };
     const float big[3] = { 5.0f, 0.2f, 0.0f };
     float f[4];
-    composeFactor(1.0f, 0.0f, none, 0.45f, 0.5f, f);
+    composeFactor(1.0f, 0.0f, none, 0.0f, 0.45f, 0.5f, f);
     CHECK(near(f[3], 0.55f, 1e-6f) && (f[0] == 0.0f));
-    composeFactor(0.0f, 1.0f, big, 0.45f, 0.5f, f);
+    composeFactor(0.0f, 1.0f, big, 0.0f, 0.45f, 0.5f, f);
     CHECK(near(f[3], 0.5f, 1e-6f));
     CHECK(near(f[0], 0.5f, 1e-6f) && near(f[1], 0.1f, 1e-6f));
     CHECK(f[0] <= 1.0f);
+
+    // Water: the factor keeps 1 - F of the drawn water and carries no multiplier, so a bright reflection is never clipped to the water's own colour.
+    const float sky[3] = { 0.9f, 0.95f, 1.0f };
+    composeFactor(0.0f, 0.0f, sky, 0.65f, 0.45f, 0.5f, f);
+    CHECK((f[0] == 0.0f) && (f[1] == 0.0f) && (f[2] == 0.0f));
+    CHECK(near(f[3], 0.35f, 1e-6f));
 }
 
 static void testPassGateAndReflectionReceiver() {
@@ -1523,11 +1597,55 @@ static void testShadowDepthWeight() {
     CHECK(shadowDepthWeight(0.0f, 0.0f, 0.02f) == 0.0f);
 }
 
+static void testTerrainWaterLayers() {
+    const auto word = [](uint32_t layer, uint8_t kind) { return layer | (uint32_t(kind) << 16); };
+    const auto waterLayer = [](uint32_t w) { return w >> 18; };
+
+    // Open water of layer 7 around a stray open-water cell of layer 11, a shore cell and a ground cell.
+    std::vector<uint8_t> kinds(15, 1);
+    std::vector<uint32_t> cells(15, word(7, 1));
+    cells[6] = word(11, 1);
+    kinds[7] = 2;
+    cells[7] = word(20, 2);
+    kinds[8] = 0;
+    cells[8] = word(30, 0);
+    terrainWaterLayers(cells, kinds, 5, 3);
+    CHECK(waterLayer(cells[0]) == 7);
+    CHECK(waterLayer(cells[6]) == 7);
+    CHECK(waterLayer(cells[7]) == 7);
+    CHECK(waterLayer(cells[8]) == 30);
+    CHECK((cells[7] & 0xFFFFu) == 20);
+
+    // With only the stray layer in reach, both take the map's main water texture.
+    std::vector<uint8_t> farKinds(14, 1);
+    std::vector<uint32_t> farCells(14, word(7, 1));
+    for (size_t c = 9; c <= 11; ++c) {
+        farKinds[c] = 0;
+        farCells[c] = word(1, 0);
+    }
+
+    farCells[12] = word(11, 1);
+    farKinds[13] = 2;
+    farCells[13] = word(20, 2);
+    terrainWaterLayers(farCells, farKinds, 14, 1);
+    CHECK(waterLayer(farCells[12]) == 7);
+    CHECK(waterLayer(farCells[13]) == 7);
+
+    // A map with no open water keeps the shore cell's own texture.
+    std::vector<uint8_t> shoreKinds(2, 2);
+    std::vector<uint32_t> shoreCells{ word(20, 2), word(21, 2) };
+    terrainWaterLayers(shoreCells, shoreKinds, 2, 1);
+    CHECK(waterLayer(shoreCells[0]) == 20);
+    CHECK(waterLayer(shoreCells[1]) == 21);
+}
+
 int main() {
     testInverse();
     testScreenRoundTrip();
     testSpriteLight();
     testSpriteLightRadiusCap();
+    testCutoutShadeAlpha();
+    testAffinePlaneNormalY();
     testSpriteEmission();
     testSameMatrix();
     testSunCameraDir();
@@ -1605,6 +1723,7 @@ int main() {
     testDrawAverageColor();
     testComposeFactor();
     testPassGateAndReflectionReceiver();
+    testTerrainWaterLayers();
     std::printf("rs64_lights_test: OK\n");
     return 0;
 }

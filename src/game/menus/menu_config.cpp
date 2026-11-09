@@ -715,7 +715,7 @@ int draw_step()
     return -1;
 }
 
-// The next step above d that the current maximum allows (legacy terrain stops at 1.3X), wrapping to 1X.
+// The next step above d that the current maximum allows, then the maximum itself (legacy terrain's 1.3X), wrapping to 1X.
 float next_draw_step(float d, float max)
 {
 
@@ -723,7 +723,7 @@ float next_draw_step(float d, float max)
         if (v > d + 0.01f && v <= max + 0.01f) return v;
     }
 
-    return kDrawStepValues[0];
+    return d < max - 0.01f ? max : kDrawStepValues[0];
 }
 
 std::string draw_step_text(int i)
@@ -735,7 +735,7 @@ std::string draw_step_text(int i)
 
     char buf[16];
 
-    std::snprintf(buf, sizeof(buf), "%.2fX", rs64::video::draw_distance());
+    std::snprintf(buf, sizeof(buf), "%.3gX", rs64::video::draw_distance());
 
     return buf;
 }
@@ -1341,7 +1341,14 @@ std::string slider_bar_text(const std::string& label, int value, int vmin, int v
 
     for (int i = 0; i < width; ++i) bar += (i < filled) ? fch : ech;
 
-    return label.empty() ? bar : (label + " " + bar);
+    if (label.empty()) return bar;
+
+    // The game centres the whole string, so blank empty cells would push the label off centre.
+    std::string text = label + " " + bar;
+
+    text.erase(text.find_last_not_of(' ') + 1);
+
+    return text;
 }
 
 // Step a slider value on confirm: +step, wrapping max -> min.
@@ -3605,17 +3612,20 @@ static bool take_hover_sound(int kind) {
 // Keyboard typing on the letter wheels (ENTER NAME, PASSCODES): text queued on the SDL thread, entered by the wheel hooks through the game's own A/B path.
 static std::mutex s_typed_mtx;
 static std::string s_typed;
-static std::atomic<bool> s_typing{false};
-static bool s_wheel_seen = false;
+// 0 = no wheel, 1 = ENTER NAME, 2 = PASSCODES (Enter submits the code).
+static std::atomic<int> s_typing{0};
+static int s_wheel_seen = 0;
 
 extern "C" int rs64_menu_typing(void) {
-    return s_typing.load() ? 1 : 0;
+    return s_typing.load();
 }
 
 extern "C" int rs64_menu_type(const char* utf8, int key)
 {
 
-    if (!s_typing.load() || (!utf8 && key != '\b'))
+    const int typing = s_typing.load();
+
+    if (!typing || (!utf8 && key != '\b' && !(key == '\r' && typing == 2)))
     {
         return 0;
     }
@@ -3623,7 +3633,7 @@ extern "C" int rs64_menu_type(const char* utf8, int key)
     std::lock_guard<std::mutex> lk(s_typed_mtx);
 
     if (!utf8) {
-        s_typed.push_back('\b');
+        s_typed.push_back((char)key);
         return 1;
     }
 
@@ -3651,6 +3661,12 @@ static int pop_typed(uint8_t* rdram)
     while (!s_typed.empty()) {
         const char c = s_typed.front();
 
+        // Enter stays queued for rs64_passcode_row.
+        if (c == '\r')
+        {
+            return -1;
+        }
+
         s_typed.erase(0, 1);
 
         if (c == '\b')
@@ -3673,9 +3689,9 @@ static int pop_typed(uint8_t* rdram)
 extern "C" void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx)
 {
 
-    s_wheel_seen = true;
+    s_wheel_seen = std::max(s_wheel_seen, 1);
 
-    const uint32_t wheel = (uint32_t)rd_w(rdram, 0x800CF258u - 0x80000000u) - 0x80000000u;
+    const uint32_t wheel =(uint32_t)rd_w(rdram, 0x800CF258u - 0x80000000u) - 0x80000000u;
     const int32_t spin = rd_w(rdram, wheel + 0x14EC);
 
     // The game enters a letter only with the wheel at rest (spin speed 0.0f); the key waits.
@@ -3697,15 +3713,35 @@ extern "C" void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx)
     wr_w(rdram, pressed, rd_w(rdram, pressed) | (c >= 0 ? 0x8000 : 0x4000));
 }
 
-// PASSCODES row check ($s4 = menu, +0x94 = cursor, the wheel is row 0): a typed key moves the cursor to the wheel, as an up/down move would.
+// PASSCODES row check ($s4 = menu, +0x94 = cursor, the wheel is row 0, ENTER CODE row 1): a typed key moves the cursor to the wheel, as an up/down move would; Enter, once the letters before it are in, selects ENTER CODE and presses A.
 extern "C" void rs64_passcode_row(uint8_t* rdram, recomp_context* ctx)
 {
 
-    s_wheel_seen = true;
+    s_wheel_seen = 2;
 
     const uint32_t menu = (uint32_t)ctx->r20 - 0x80000000u;
+    bool submit = false;
+    std::unique_lock<std::mutex> lk(s_typed_mtx);
 
-    if (!typed_pending() || rd_b(rdram, menu + 0x94) == 0) return;
+    if (!s_typed.empty() && s_typed.front() == '\r') {
+        s_typed.erase(0, 1);
+        submit = true;
+    }
+
+    const bool pending = !s_typed.empty();
+
+    lk.unlock();
+
+    if (submit) {
+        const uint32_t pressed = 0x8013A960u - 0x80000000u + (uint32_t)(ctx->r30 & 0xFF) * 4;
+
+        wr_b(rdram, menu + 0x94, 1);
+        wr_w(rdram, pressed, rd_w(rdram, pressed) | 0x8000);
+
+        return;
+    }
+
+    if (!pending || rd_b(rdram, menu + 0x94) == 0) return;
 
     wr_b(rdram, menu + 0x94, 0);
     rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, { 0x17, 0x7F, 0x40 });
@@ -3718,9 +3754,9 @@ extern "C" void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx)
 
     s_slider_editing.store(ctx->r22 == 0x11 && (rd_b(rdram, GCMD_OFF + 0x04) == MENU_SOUND_SETTINGS || snd_sliders_here(rdram)));
     // A wheel hook ran on the previous pass: typing stays on (on a phone this raises the keyboard).
-    const bool typing = s_wheel_seen;
+    const int typing = s_wheel_seen;
 
-    s_wheel_seen = false;
+    s_wheel_seen = 0;
 
     if (typing != s_typing.load()) {
         s_typing.store(typing);

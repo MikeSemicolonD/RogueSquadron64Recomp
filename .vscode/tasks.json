@@ -6,7 +6,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Debug",
                 "--target", "RogueSquadron64Recomp"
             ],
@@ -28,7 +28,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Release",
                 "--target", "RogueSquadron64Recomp"
             ],
@@ -57,7 +57,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Release",
                 "--target", "RogueSquadron64Recomp"
             ],
@@ -174,7 +174,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android, plus RecompModTool and the relay server for Windows x64 and Linux x64) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: your Desktop). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
+            "detail": "Builds Release for the chosen targets (Windows x64/x86, Linux x64/arm64/armhf/i386 through WSL, Android, plus RecompModTool and the relay server for Windows x64 and Linux x64) and writes the zips, tarballs, AppImages, Flatpaks and APK to <folder>/v<VERSION>/ (default: build/packages). Windows zips are staged fresh, so ROMs and saves in build*/dist never ship. Prints a table of what was built."
         },
         {
             "label": "Package: RecompModTool (Windows + Linux)",
@@ -215,11 +215,49 @@
             "detail": "Launch the game with an optional forced level and/or craft (--force-level / --force-craft). You drive the menus; whatever mission you launch uses the forced values."
         },
         {
+            "label": "Run: Game with RS64 MCP",
+            "type": "shell",
+            "command": "& .\\RogueSquadron64Recomp.exe --mcp-port 47064",
+            "options": {
+                "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "linux": {
+                "command": "./RogueSquadron64Recomp --mcp-port 47064",
+                "options": {
+                    "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                    "shell": {
+                        "executable": "bash",
+                        "args": ["-c"]
+                    }
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Launch the game so an agent can attach to it with the rs64 MCP (port 47064). Release needs the \"Build: RogueSquadron64Recomp (Release, MCP)\" build."
+        },
+        {
+            "label": "Run: Game with RenderDoc",
+            "type": "shell",
+            "command": "$dll = @('E:\\Projects\\renderdoc\\x64\\Release\\renderdoc.dll', \"$env:ProgramFiles\\RenderDoc\\renderdoc.dll\") | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $dll) { Write-Error 'renderdoc.dll not found (install RenderDoc)'; exit 1 }; $out = '${workspaceFolder}\\dumps\\renderdoc'; New-Item -ItemType Directory -Force $out | Out-Null; $env:ROGUESQ_RENDERDOC = $dll; $env:ROGUESQ_RENDERDOC_OUT = \"$out\\rs64\"; Write-Host \"Print Screen captures a frame to $out\"; & .\\RogueSquadron64Recomp.exe",
+            "options": {
+                "cwd": "${workspaceFolder}/build/${input:rsConfig}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Launch the game with RenderDoc attached. Press Print Screen in game to capture a frame; captures go to dumps/renderdoc/. Open them in RenderDoc."
+        },
+        {
             "label": "Build: Relay server",
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "${input:rsConfig}",
                 "--target", "rs64_relay"
             ],
@@ -257,6 +295,34 @@
                 "problemMatcher": "$gcc"
             },
             "detail": "Builds rs64_relay, then opens it in its own console window on UDP 27070, run from build/<config> (its rs64_relay.cfg is saved there). Type help in that window for commands; quit or Ctrl+C stops it. Point the game at it with \"relay_server\": \"127.0.0.1\" in roguesq_net.json (docs/guides/relay-server.md)."
+        },
+        {
+            "label": "Docs: Wiki screenshots",
+            "type": "shell",
+            "command": "if (-not (Test-Path node_modules)) { npm install --no-audit --no-fund }; node wiki_shots.mjs",
+            "options": {
+                "cwd": "${workspaceFolder}/tools/web/rs64-explorer/tests",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Takes the RS64 Explorer screenshots listed in tools/web/rs64-explorer/tests/wiki_shots.json into docs/wiki/images/, in headless Edge with build/Debug/rogue_squadron.z64 loaded. Installs Playwright on first run. About 30 s; add --only <name> to retake one."
+        },
+        {
+            "label": "Docs: Wiki preview",
+            "type": "shell",
+            "command": "node tools/web/rs64-explorer/tests/wiki_preview.mjs; if ($?) { code wiki-preview/Home.md }",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+                }
+            },
+            "problemMatcher": [],
+            "detail": "Copies docs/wiki to wiki-preview/ (gitignored) with the wiki's page links turned into .md links and the sidebar under each page, then opens Home.md. Press Ctrl+Shift+V to preview; links between pages work there."
         },
         {
             "label": "Debug: Full dump of running game(s)",
@@ -372,7 +438,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Debug",
                 "--target", "regen_funcs"
             ],
@@ -388,7 +454,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "Debug",
                 "--target", "RecompiledFuncs"
             ],
@@ -406,7 +472,7 @@
             "type": "shell",
             "command": "cmake",
             "args": [
-                "--build", "build",
+                "--build", "build", "--parallel",
                 "--config", "${input:rsConfig}",
                 "--target", "rs64_unit_tests"
             ],
@@ -766,10 +832,10 @@
             "args": [
                 "-d", "${input:wslDistro}",
                 "-e", "bash", "-lc",
-                "set -e; R=\"$(wslpath '${workspaceFolder}')\"; bash \"$R/tools/release/macos/cross-build.sh\" arm64 Release; bash \"$R/tools/release/macos/cross-build.sh\" x86_64 Release; mkdir -p \"$R/build/release\"; bash \"$R/tools/release/macos/package.sh\" \"$R/build/release/RogueSquadron64Recomp-macos.zip\" ~/rs64-build-macos-arm64-release ~/rs64-build-macos-x86_64-release"
+                "set -e; R=\"$(wslpath '${workspaceFolder}')\"; bash \"$R/tools/release/macos/cross-build.sh\" arm64 Release; bash \"$R/tools/release/macos/cross-build.sh\" x86_64 Release; mkdir -p \"$R/build/release\"; bash \"$R/tools/release/macos/package.sh\" \"$R/build/release/RogueSquadron64Recomp-macos-universal.zip\" ~/rs64-build-macos-arm64-release ~/rs64-build-macos-x86_64-release"
             ],
             "problemMatcher": [],
-            "detail": "Release cross-builds for arm64 and x86_64, then one universal RogueSquadron64Recomp.app zipped with README.txt and LICENSE.txt into build/release/RogueSquadron64Recomp-macos.zip."
+            "detail": "Release cross-builds for arm64 and x86_64, then one universal RogueSquadron64Recomp.app zipped with README.txt and LICENSE.txt into build/release/RogueSquadron64Recomp-macos-universal.zip."
         },
         {
             "label": "Run (Linux/WSL, GPU via dzn)",
@@ -811,7 +877,7 @@
         {
             "label": "Install + Run (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/debug/RogueSquadron64Recomp-debug.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" install -r app/build/outputs/apk/debug/RogueSquadron64Recomp-debug.apk; if ($?) { & \"${env:ANDROID_HOME}/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -849,7 +915,7 @@
         {
             "label": "Install + Run (Android, Release)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if ($?) { & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if ($?) { & \"${env:ANDROID_HOME}/platform-tools/adb.exe\" shell am start -n com.rs64recomp.app/.MainActivity }",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -863,7 +929,7 @@
         {
             "label": "Install (Android, Release)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -877,7 +943,7 @@
         {
             "label": "Build + Install over USB (Android, Release)",
             "type": "shell",
-            "command": "$adb = '${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe'; if ((& $adb -d get-state 2>$null) -ne 'device') { Write-Host 'No USB device found: plug the phone in, enable USB debugging, and accept the RSA prompt.'; exit 1 }; & $adb -d install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if (-not $?) { exit 1 }; & $adb -d shell am start -n com.rs64recomp.app/.MainActivity",
+            "command": "$adb = '${env:ANDROID_HOME}/platform-tools/adb.exe'; if ((& $adb -d get-state 2>$null) -ne 'device') { Write-Host 'No USB device found: plug the phone in, enable USB debugging, and accept the RSA prompt.'; exit 1 }; & $adb -d install -r app/build/outputs/apk/release/RogueSquadron64Recomp-release.apk; if (-not $?) { exit 1 }; & $adb -d shell am start -n com.rs64recomp.app/.MainActivity",
             "options": {
                 "cwd": "${workspaceFolder}/android",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -891,7 +957,7 @@
         {
             "label": "Push ROM (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" shell mkdir -p /sdcard/Android/data/com.rs64recomp.app/files; & \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" push build/Debug/rogue_squadron.z64 /sdcard/Android/data/com.rs64recomp.app/files/",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" shell mkdir -p /sdcard/Android/data/com.rs64recomp.app/files; & \"${env:ANDROID_HOME}/platform-tools/adb.exe\" push build/Debug/rogue_squadron.z64 /sdcard/Android/data/com.rs64recomp.app/files/",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
@@ -902,7 +968,7 @@
         {
             "label": "Logcat (Android)",
             "type": "shell",
-            "command": "& \"${env:LOCALAPPDATA}/Android/Sdk/platform-tools/adb.exe\" logcat -v time RS64:V SDL:V DEBUG:V AndroidRuntime:E *:S",
+            "command": "& \"${env:ANDROID_HOME}/platform-tools/adb.exe\" logcat -v time RS64:V SDL:V DEBUG:V AndroidRuntime:E *:S",
             "options": {
                 "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-Command"] }
             },
@@ -1056,7 +1122,7 @@
             "id": "releaseOutDir",
             "type": "promptString",
             "description": "Folder for the release packages (a <version> subfolder is created; %VARS% are expanded)",
-            "default": "%USERPROFILE%\\Desktop\\rs64-release"
+            "default": "build\\packages"
         },
         {
             "id": "releaseTargets",

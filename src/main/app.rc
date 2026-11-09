@@ -1,1 +1,5 @@
+#ifdef _DEBUG
+IDI_APPICON ICON "../../favicon_debug.ico"
+#else
 IDI_APPICON ICON "../../favicon.ico"
+#endif

@@ -78,9 +78,14 @@ const rs64_mp_transport* server_relay()
 
     load_net_config();
 
-    // ROGUESQ_MP_RELAY: the server for scripted runs (never saved).
+    // ROGUESQ_MP_RELAY: the server for scripted runs (never saved). The saved server counts only while the address row holds it or a session runs on it.
     const char* env = recomp::dbg::env_str("ROGUESQ_MP_RELAY");
-    s_client.set_server(env ? env : g().relay_server);
+    const Ghost& s = g();
+    const std::string row = s.row_hosting ? s.join_entry : s.editor.entry();
+    const bool in_use = s.relay_session && s.relay_t == s_client.table();
+    const std::string saved = in_use || row == s.relay_server ? s.relay_server : std::string{};
+
+    s_client.set_server(env ? env : saved);
     return s_client.configured() ? s_client.table() : nullptr;
 }
 
@@ -231,6 +236,11 @@ extern "C" void rs64_lobby_host(void)
     s.pin_mode = false;
     s.join_pin.cancel_typing();
     load_net_config();
+
+    // The address row picks the server, so a half-typed address has to land first.
+    if (s.editor.typing) {
+        s.editor.end_typing();
+    }
 
     if (const rs64_mp_transport* t = relay_ready()) {
         relay_start(t, rs64::net::Role::Host, "");

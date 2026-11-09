@@ -24,6 +24,7 @@ extern SDL_Window* g_sdl_window;
 #define HLSL_CPU
 #endif
 #include "hle/rt64_application.h"
+#include "hle/rt64_present_queue.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
 #include "librecomp/mods.hpp"
@@ -209,6 +210,14 @@ extern "C" int rs64_rt64_inspector_open(void)
     return (app->userConfig.developerMode && app->inspectorVisible) ? 1 : 0;
 }
 
+extern "C" double rs64_rt64_present_ms(void)
+{
+
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+
+    return (app && app->presentQueue) ? app->presentQueue->presentProfiler.average() : 0.0;
+}
+
 extern "C" void rs64_render_suspend_surface(void) {
 
     RT64::Application* app = g_rt64_app.load();
@@ -285,14 +294,26 @@ extern "C" float rs64_aspect_scale(void)
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
 }
 
-// Horizontal widening RT64 applies to the frame; the game's frustum culls scale by it via rogue_squadron.toml hooks.
-// ROGUESQ_CULL_WIDEN=0 disables.
+// The game's frustum culls (scaled via rogue_squadron.toml hooks) assume 4:3, so in widescreen they widen to the window over 4:3, plus slack for
+// wings past a model's bounding sphere (the Calamari intro's far-left V-wing vanished while its wingtip showed). ROGUESQ_CULL_WIDEN=0 disables.
+constexpr float kCullEdgeSlack = 1.05f;
+
 extern "C" float rs64_cull_widen(void)
 {
 
     static const bool s_on = env_on("ROGUESQ_CULL_WIDEN", true);
+    RT64::Application* app = g_rt64_app.load(std::memory_order_relaxed);
+    const float scale = rs64_aspect_scale();
 
-    return s_on ? rs64_aspect_scale() : 1.0f;
+    if (!s_on || !app || !app->presentQueue) return s_on ? scale : 1.0f;
+
+    // Cutscene frames report no resolution-scale widening while the picture still widens, so widescreen is read from the setting.
+    const auto& shared = *app->presentQueue->ext.sharedResources;
+    const bool expand = (shared.userConfig.aspectRatio == RT64::UserConfiguration::AspectRatio::Expand);
+    const float window = (shared.swapChainHeight > 0) ? float(shared.swapChainWidth) / float(shared.swapChainHeight) : 0.0f;
+    const float widened = std::max(scale, expand ? window * 0.75f : 1.0f);
+
+    return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
 }
 
 // Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
@@ -343,8 +364,10 @@ static int hle_seh_filter(EXCEPTION_POINTERS* ep) {
 
         fprintf(stderr, "[hle-seh] code=0x%08X pc=%p access=0x%llX rw=%d (0=read,1=write,8=exec)\n",
                 (unsigned)er->ExceptionCode, er->ExceptionAddress, acc, rw);
+
         void* frames[24];
         unsigned short n = RtlCaptureStackBackTrace(0, 24, frames, nullptr);
+
         print_stack_with_symbols(frames, n);
         fflush(stderr);
     }
@@ -410,7 +433,8 @@ public:
     static inline std::atomic<bool> s_hle_disabled{false};  // tripped by the SEH streak, retried periodically
 
     RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool debug)
-        : rdram_(rdram), window_handle_(window_handle), debug_(debug) {
+        : rdram_(rdram), window_handle_(window_handle), debug_(debug)
+    {
         create_app();
     }
 
@@ -461,7 +485,8 @@ public:
         appCore.DPC_TMEM_REG    = &DPC_TMEM_REG;
 
         ultramodern::renderer::ViRegs* vi = ultramodern::renderer::get_vi_regs();
-        appCore.VI_STATUS_REG         = &vi->VI_STATUS_REG;
+
+        appCore.VI_STATUS_REG        = &vi->VI_STATUS_REG;
         appCore.VI_ORIGIN_REG         = &vi->VI_ORIGIN_REG;
         appCore.VI_WIDTH_REG          = &vi->VI_WIDTH_REG;
         appCore.VI_INTR_REG           = &vi->VI_INTR_REG;
@@ -587,6 +612,7 @@ public:
                 {
                     std::vector<RT64::ReplacementDirectory> dirs;
                     dirs.emplace_back(std::filesystem::path(tp));
+
                     bool ok = app->textureCache->loadReplacementDirectories(dirs);
                     app->textureCache->textureMap.replacementMapEnabled = ok;
 
@@ -724,6 +750,7 @@ public:
         if (menu_cfg.changed) app->updateUserConfig(menu_cfg.discard_fbs);
 
         maybe_persist_video_cfg();
+
         const auto pres0 = std::chrono::high_resolution_clock::now();
         app->updateScreen();
         diag().frame_profile(pres0);
@@ -756,6 +783,11 @@ private:
     uint8_t* rdram_ = nullptr;
     ultramodern::renderer::WindowHandle window_handle_{};
     bool debug_ = false;
+    int vi_count_ = 0;
+    uint32_t game_vi_origin_ = 0;     // VI origin/width as the game set them, before apply_vi_overrides
+    uint32_t game_vi_width_ = 0;
+    std::string video_cfg_path_;      // roguesq_video.json next to the exe ("" = disabled)
+    std::string video_cfg_snapshot_;  // last-persisted userConfig json; F1-menu edits rewrite the file
 
     // A lost GPU device never recovers; rebuild RT64 on the same window. Rebuilds back off (1 s, doubling to 16 s) while losses keep recurring so a persistent fault can't spin.
     // ROGUESQ_NO_DEVICE_LOST_RECOVERY=1 disables. Runs on the gfx thread, which is the only caller of send_dl/update_screen.
@@ -770,6 +802,7 @@ private:
         }
 
         using clock = std::chrono::steady_clock;
+
         static clock::time_point s_last_rebuild{};
         static std::chrono::milliseconds s_backoff{ 0 };
         static int s_rebuilds = 0;
@@ -794,6 +827,7 @@ private:
 
         fprintf(stderr, "[RT64] GPU device lost, rebuilding renderer (#%d, next retry backoff %lld ms)\n", s_rebuilds, (long long)s_backoff.count());
         fflush(stderr);
+
         g_rt64_app.store(nullptr);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
         app->end();
@@ -805,12 +839,6 @@ private:
 
         return true;
     }
-
-    int vi_count_ = 0;
-    uint32_t game_vi_origin_ = 0;     // VI origin/width as the game set them, before apply_vi_overrides
-    uint32_t game_vi_width_ = 0;
-    std::string video_cfg_path_;      // roguesq_video.json next to the exe ("" = disabled)
-    std::string video_cfg_snapshot_;  // last-persisted userConfig json; F1-menu edits rewrite the file
 
     rs64::video::RenderDiag diag() const {
         return { app.get(), vi_count_, game_vi_origin_, game_vi_width_ };
@@ -847,11 +875,13 @@ private:
         if ((vi_count_ % 15) != 0) return;                 // ~4x/sec; config changes are rare
 
         std::string cur;
+
         try { cur = rs64::video::to_friendly(app->userConfig).dump(); } catch (...) { return; }
 
         if (cur == video_cfg_snapshot_) return;
 
         video_cfg_snapshot_ = cur;
+
         std::ofstream out(video_cfg_path_, std::ios::trunc);
 
         if (out.is_open())
@@ -907,6 +937,7 @@ private:
 #ifdef _WIN32
 
         static std::atomic<int> s_seh_streak{0};
+
         __try {
             process_hle_task(task);
             s_seh_streak.store(0, std::memory_order_relaxed);
@@ -953,22 +984,28 @@ private:
         // Parse from the task-start RDRAM snapshot (events.cpp) when one exists; RT64 writes
         // back to live RDRAM.
         uint8_t* const parseMem = g_rs64_parse_rdram ? g_rs64_parse_rdram : app->core.RDRAM;
+
         rs64_neutralize_matpool_cimg(parseMem, (uint32_t)task->t.data_ptr & 0x3FFFFFF);
+
         const auto pdl0 = std::chrono::high_resolution_clock::now();
+
         app->state->RDRAM = parseMem;
         app->state->writeBackRDRAM = (parseMem != app->core.RDRAM) ? app->core.RDRAM : nullptr;
         app->emulatorConfig.framebuffer.writeBack = rs64::video::framebuffer_writeback();
 
         // ROGUESQ_FB_COPY_GPU=0: textures read from a known framebuffer come from RDRAM instead of RT64's GPU render-target copy (A/B for fb-as-texture alignment).
         static const bool s_fb_copy_gpu = env_on("ROGUESQ_FB_COPY_GPU", true);
+
         app->emulatorConfig.framebuffer.copyWithGPU = s_fb_copy_gpu;
         app->processDisplayLists(parseMem, task->t.data_ptr & 0x3FFFFFF, 0, /*isHLE*/ true);
         app->state->RDRAM = app->core.RDRAM;
         app->state->writeBackRDRAM = nullptr;
+
         g_rs64_pdl_us = (long long)std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::high_resolution_clock::now() - pdl0).count();
         g_rs64_pdl_us_total += g_rs64_pdl_us;
         g_rs64_pdl_task_total += 1;
+
         rs64_sanitize_fb_registry();
 
         static int s_n = 0;
@@ -1050,6 +1087,7 @@ private:
         // Hold the redirect while a mode-change clear is pending or gated, at most 30 VIs: the redirect may be what lets this screen present at all.
         static int s_heldVis = 0;
         const bool held = g_rs64_cpu_cleared_fb.load(std::memory_order_acquire) != 0 || g_rs64_transition_gate_fb.load(std::memory_order_acquire) != 0;
+
         s_heldVis = held ? (s_heldVis + 1) : 0;
 
         if (held && s_heldVis <= 30) return;
@@ -1061,7 +1099,13 @@ private:
         // Only redirect to a buffer that is still being drawn. The mission text crawl draws
         // only triangles into a 640-wide buffer, so the texrect-based most-drawn value stays
         // on the 512-wide hangar buffer and would black out the crawl. ROGUESQ_MENU_FIX_STALE_MS.
-        static const uint64_t s_stale_ms = [](){ uint32_t v = env_u32("ROGUESQ_MENU_FIX_STALE_MS"); return v ? v : 250u; }();
+        static const uint64_t s_stale_ms = [](){
+
+            const uint32_t v = env_u32("ROGUESQ_MENU_FIX_STALE_MS");
+
+            return v ? v : 250u;
+        }();
+
         const uint64_t now_ms = (uint64_t)std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
 
@@ -1145,8 +1189,10 @@ private:
                 const uint32_t gate = diag().rd32(0x0B0B28);
                 const uint32_t end_frame = diag().rd32((cut - 0x80000000u) + 0x44);
 
-                if (end_frame > 0x10 && end_frame < 0x100000u && gate < (end_frame - 0xA)) {
+                if (end_frame > 0x10 && end_frame < 0x100000u && gate < (end_frame - 0xA))
+                {
                     diag().wr32(0x11A890, diag().rd32(0x11A890) + (uint32_t)s_ffwd);
+
                     static int s_log = 0;
 
                     if ((s_log++ & 127) == 0)
@@ -1194,6 +1240,18 @@ private:
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
 
         diag().log_gamestate();
+
+        // ROGUESQ_LOG_GPU_MEM=1: the GPU allocator's per-heap use on every game-state change, to tell level loads from leftovers.
+        static const bool s_gpu_mem = env_on("ROGUESQ_LOG_GPU_MEM");
+        static std::string s_gpu_mem_state;
+        const char* st = rs64_state_current_id();
+
+        if (s_gpu_mem && app->device && s_gpu_mem_state != st)
+        {
+            s_gpu_mem_state = st;
+            fprintf(stderr, "[gpu-mem] state=%s %s\n", st, app->device->memoryStats().c_str());
+            fflush(stderr);
+        }
     }
 };
 

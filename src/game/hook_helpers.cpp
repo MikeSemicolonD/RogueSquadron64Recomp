@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_map>
 #include <cstring>
 #include <algorithm>
 #include <atomic>
@@ -26,6 +27,7 @@
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
+#include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
@@ -90,17 +92,29 @@ static bool game_owns_view_setting()
     return (s_env >= 0) ? (s_env != 0) : rs64::video::keep_cutscene_draw_distance();
 }
 
+static float s_level_fog_frac = 0.9f;
+
+extern "C" void rs64_level_fog_frac(float frac) {
+    s_level_fog_frac = frac;
+}
+
+static std::atomic<int> s_level_fog_reach{(int)rs64env::FogReach::Auto};
+
+extern "C" void rs64_level_fog_reach(int reach) {
+    s_level_fog_reach = reach;
+}
+
 static bool game_owns_view() {
     return game_owns_view_setting() && (rs64_state_in_cinematic() || rs64_crawl_playing());
 }
 
 extern "C" float rs64_draw_dist(void)
 {
-    return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view(), rs64_state_level());
+    return rs64::video::effective_draw_distance(draw_dist_setting(), game_owns_view());
 }
 
-// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own terrain ("legacyTerrain", and
-// cutscenes that keep their own view: their sky sits below the map's horizon), 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides.
+// Terrain renderer for RT64: 1 = the whole-map pass draws the HMP map and drops the game's terrain records (default), 0 = the game's own terrain ("legacyTerrain"),
+// 2 = each record draws its cell from the map (validation). ROGUESQ_F5_STATIC_TERRAIN overrides.
 extern "C" int rs64_static_terrain_mode(void)
 {
 
@@ -108,9 +122,22 @@ extern "C" int rs64_static_terrain_mode(void)
 
     if (s_env >= 0) return s_env;
 
-    if (game_owns_view()) return 0;
-
     return rs64::video::legacy_terrain() ? 0 : 1;
+}
+
+extern "C" int rs64_terrain_tessellation(void)
+{
+
+    static const int s_env = env_int("ROGUESQ_F5_STATIC_TERRAIN_SUB", 0);
+
+    if (s_env > 0) return std::min(s_env, rs64::video::kTerrainTessellationMax);
+
+    return rs64::video::terrain_tessellation();
+}
+
+// The map pass drops land past the fog end, where the game draws no terrain and its sky sits below the map's horizon.
+extern "C" int rs64_terrain_fog_clip(void) {
+    return 1;
 }
 
 static bool terrain_pass_on() {
@@ -124,16 +151,55 @@ extern "C" float rs64_terrain_dist(void)
 
     if (terrain_pass_on()) return 1.0f;
 
-    return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view(), rs64_state_level());
+    return rs64::video::effective_draw_distance(terrain_dist_setting(), game_owns_view());
 }
 
-// Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map.
+static std::atomic<uint32_t> s_level_fog_rgb{0};
+
+// The fog colour the game set this frame (setFog bytes 0x8011A873..75), for the draws RT64 fogs itself.
+extern "C" void rs64_fog_color_note(uint8_t* rdram) {
+    s_level_fog_rgb = (rb(rdram, 0x8011A873u) << 16) | (rb(rdram, 0x8011A874u) << 8) | rb(rdram, 0x8011A875u);
+}
+
+extern "C" uint32_t rs64_level_fog_rgb(void) {
+    return s_level_fog_rgb;
+}
+
+static float fog_reach() {
+    return terrain_pass_on() ? rs64_draw_dist() : rs64_terrain_dist();
+}
+
+// A level whose fog starts early (Nonnah, 0.3 of the far plane), or one set to it, keeps its stock fog past the stock view and thins it out to the draw distance instead.
+static bool fog_tail_on()
+{
+
+    const auto reach = (rs64env::FogReach)s_level_fog_reach.load();
+    const bool thin = (reach == rs64env::FogReach::Thin) || ((reach == rs64env::FogReach::Auto) && (s_level_fog_frac < 0.85f));
+
+    return thin && (fog_reach() > 1.0f);
+}
+
+// Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map. A level set to Stock holds its fog wall.
 extern "C" float rs64_fog_dist(void)
 {
 
-    if (terrain_pass_on()) return rs64_draw_dist();
+    if (((rs64env::FogReach)s_level_fog_reach.load() == rs64env::FogReach::Stock) || fog_tail_on())
+    {
+        return 1.0f;
+    }
 
-    return rs64_terrain_dist();
+    return fog_reach();
+}
+
+// The linear fog value at the scaled far plane, where the fog tail reaches full (0 = stock fog). Fog is linear in 1/depth from start f*e to end e.
+extern "C" float rs64_fog_tail_end(void)
+{
+
+    if (!fog_tail_on()) return 0.0f;
+
+    const float f = s_level_fog_frac;
+
+    return (1.0f / f - 1.0f / fog_reach()) / (1.0f / f - 1.0f);
 }
 
 // The game's text slot for the language setting: a built-in's own slot, 0 (English fallback) for a mod language, -1 when unset.
@@ -190,7 +256,7 @@ extern "C" void rs64_fog_probe(uint8_t* rdram)
 // Level terrain cell budget scale, evaluated at each level load: ROGUESQ_TGRID_BUDGET_MULT (1-2), default 2 when terrain distance is 2x or more.
 // Stock under the terrain pass, whose grid keeps the stock reach: a bigger budget moves the game's heap allocations and so the game state.
 // 3x exhausts the game heap and the level load stalls; N is also capped at 6553 (u16 vertex-block indices up to 10N-4).
-// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view.
+// Set around setupCutsceneLevel's loadLevelAssets call (the classifier may not report "cinematic" yet at load); cutscene levels keep the stock budget while cutscenes keep their own view, doubled on legacy terrain in widescreen, whose extra cells run the stock mesh pool dry.
 static bool s_cutscene_level_load = false;
 extern "C" void rs64_cutscene_level_load(int on) {
     s_cutscene_level_load = on != 0;
@@ -201,7 +267,8 @@ extern "C" uint32_t rs64_tgrid_budget(uint32_t original)
 
     static const int s_env = env_int("ROGUESQ_TGRID_BUDGET_MULT", 0);
     const bool cutscene_level = s_cutscene_level_load && game_owns_view_setting();
-    const uint32_t s_mult = cutscene_level ? 1u : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
+    const bool wide = !terrain_pass_on() && rs64_cull_widen() > 1.0f;
+    const uint32_t s_mult = cutscene_level ? (wide ? 2u : 1u) : (uint32_t)std::clamp(s_env > 0 ? s_env : ((!terrain_pass_on() && terrain_dist_setting() >= 2.0f) ? 2 : 1), 1, 2);
     const uint32_t n = original * s_mult;
     static const bool s_log = env_on("ROGUESQ_LOG_TERRAIN_GRID");
 
@@ -463,6 +530,55 @@ static std::atomic<uint64_t> g_cine_iter{0};
 
 extern "C" unsigned long long rs64_cine_iter_get(void) { return g_cine_iter.load(std::memory_order_relaxed); }
 extern "C" void rs64_cine_iter_tick(unsigned iter) { g_cine_iter.store(iter, std::memory_order_relaxed); }
+
+// A mod cutscene's fade in borrows the ending's full-screen overlay. It starts at zero speed so the game's own ramp, which would end the cutscene, leaves it alone.
+static constexpr int kCutFadeFrames = 30;
+static bool s_cut_fade_wanted = false;
+static int s_cut_fade_left = 0;
+
+extern "C" void rs64_cut_fade_request(void) { s_cut_fade_wanted = true; }
+extern "C" int rs64_cut_fade_active(void) { return s_cut_fade_left > 0; }
+
+extern "C" void rs64_cut_fade_tick(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using namespace rs64::mips;
+
+    static constexpr uint32_t kOverlay = 0x800B0934u;
+    static constexpr uint32_t kOverlayTable = 0x800B0AFCu;
+
+    if (s_cut_fade_wanted)
+    {
+        s_cut_fade_wanted = false;
+
+        // Only the loop's frame holds the screen size at sp+0x18 that cinematicInitializer reads.
+        if (!rw(rdram, kOverlay))
+        {
+            mips_call(rdram, ctx, 0x800AF408u, { rw(rdram, kOverlayTable), (uint32_t)ctx->r29 + 0x18u, 0u });
+            s_cut_fade_left = kCutFadeFrames;
+        }
+    }
+
+    const uint32_t overlay = rw(rdram, kOverlay);
+
+    if (!s_cut_fade_left || !overlay)
+    {
+        s_cut_fade_left = 0;
+
+        return;
+    }
+
+    --s_cut_fade_left;
+
+    if (s_cut_fade_left)
+    {
+        wb(rdram, rw(rdram, overlay + 0xCu) + 0x2Fu, (uint8_t)(255 * s_cut_fade_left / kCutFadeFrames));
+
+        return;
+    }
+
+    mips_call(rdram, ctx, 0x800AF60Cu, { rw(rdram, kOverlayTable), (uint32_t)ctx->r29 + 0x18u });
+}
 
 // ---- Pacing ----
 
@@ -749,5 +865,116 @@ extern "C" void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys) {
         fprintf(stderr, "[cimg-walker] dl=0x%08X visited cimg=%d killed=%d passed=%d jumps_used=%d stack_max=%d\n",
                 (dl_phys & 0x3FFFFFFu) | 0x80000000u, cimg_seen, cimg_killed, cimg_passed, 64 - jumps_left, sp);
         fflush(stderr);
+    }
+}
+
+// Runs addNpcToVisibilityBucket again with the display widening on, for an object the stock test rejected: it joins the draw list and its LOD updates, but the fields game logic reads go back to their stock values.
+extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
+    {
+        return 0;
+    }
+
+    const uint32_t obj = args[1];
+    const uint32_t model = rw(rdram, obj);
+    const uint16_t flags = rh(rdram, obj + 8u);
+    const uint16_t even = rh(rdram, 0x801394E2u);
+    const uint16_t odd = rh(rdram, 0x801394E4u);
+    const uint16_t modelFlags = rh(rdram, model + 0x38u);
+    const uint32_t modelFrame = rw(rdram, model + 0x3Cu);
+
+    // Without the every-other-frame bits the object is tested this frame instead of reusing its last answer.
+    wh(rdram, obj + 8u, flags & 0xFE7Fu);
+    rs64_npc_draw_only_mark(1);
+    const uint32_t drawn = rs64::mips::mips_call(rdram, ctx, 0x80057C8Cu, { args[0], args[1], args[2], args[3] }).v0;
+    rs64_npc_draw_only_mark(0);
+
+    wh(rdram, obj + 8u, flags);
+    wh(rdram, 0x801394E2u, even);
+    wh(rdram, 0x801394E4u, odd);
+    wh(rdram, model + 0x38u, modelFlags);
+    ww(rdram, model + 0x3Cu, modelFrame);
+
+    return drawn != 0;
+}
+
+// Whether a hill stands between the camera and the world position at pos: the game's terrain height at points along the line. Debug only (ROGUESQ_LOG_POP).
+static bool terrain_hides(uint8_t* rdram, recomp_context* ctx, uint32_t pos)
+{
+
+    const uint32_t cam = rw(rdram, 0x80138D1Cu);
+    const float cx = rf(rdram, cam + 0x10u), cy = rf(rdram, cam + 0x14u), cz = rf(rdram, cam + 0x18u);
+    const float ox = rf(rdram, pos), oy = rf(rdram, pos + 4u), oz = rf(rdram, pos + 8u);
+    const uint32_t scratch = (uint32_t)ctx->r29 - 0x200u;
+
+    const auto height = [&](float x, float z) {
+        return rs64::mips::mips_call(rdram, ctx, 0x80068180u, { 0u, 0u, scratch, scratch + 0x40u }, {}, x, z).f0;
+    };
+
+    const float side = (cy >= height(cx, cz)) ? 1.0f : -1.0f;
+
+    for (int i = 1; i < 15; ++i) {
+        const float t = (float)i / 16.0f;
+
+        if (side * ((cy + (oy - cy) * t) - height(cx + (ox - cx) * t, cz + (oz - cz) * t)) < 0.0f) return true;
+    }
+
+    return false;
+}
+
+namespace {
+struct PopTrack {
+    uint32_t lastDrawn = 0;
+    uint32_t goneAt = 0;
+    float nx = 0.0f;
+    float ny = 0.0f;
+};
+}
+
+// ROGUESQ_LOG_POP=1: an object still being processed that stops drawing away from the screen edges. Keyed by object, so naturally small.
+extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj, uint32_t pos, int drawn, int seen, float nx, float ny)
+{
+
+    static const bool s_on = env_on("ROGUESQ_LOG_POP");
+
+    if (!s_on)
+    {
+        return;
+    }
+
+    static std::unordered_map<uint32_t, PopTrack> s_objects;
+
+    constexpr float kInsideScreen = 0.85f;
+    constexpr uint32_t kBackWindow = 900u;
+    const uint32_t frame = rw(rdram, 0x8013889Cu);
+    const uint32_t model = rw(rdram, obj);
+    PopTrack& t = s_objects[obj];
+    char name[17] = {};
+
+    for (int i = 0; i < 16; ++i) name[i] = (char)rb(rdram, model + (uint32_t)i);
+
+    if (drawn) {
+        if (t.goneAt && ((frame - t.goneAt) <= kBackWindow)) {
+            fprintf(stderr, "[pop] back %s obj=%08X frame=%u after %u\n", name, obj, frame, frame - t.goneAt);
+        }
+
+        t.goneAt = 0;
+        t.lastDrawn = frame;
+
+        if (seen) {
+            t.nx = nx;
+            t.ny = ny;
+        }
+
+        return;
+    }
+
+    const float edge = std::max(std::fabs(t.nx) / std::max(rs64_cull_widen(), 1.0f), std::fabs(t.ny));
+
+    if (t.lastDrawn && !t.goneAt && ((frame - t.lastDrawn) <= 2u) && (edge < kInsideScreen) && !terrain_hides(rdram, ctx, pos)) {
+        t.goneAt = frame;
+        fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f\n", name, obj, frame, t.nx, t.ny);
     }
 }

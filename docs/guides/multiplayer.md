@@ -1,5 +1,7 @@
 # Online co-op (ghost model)
 
+To get connected, see [co-op-setup.md](co-op-setup.md). This page covers how co-op works.
+
 Online co-op runs one game per player. Each instance flies its own player 1 in its own world and streams that state to the other, which poses a wingman NPC (the "imposter", see [AGENTS.md](#the-imposter)) from it. The two worlds are independent: only a few things are shared on purpose (objectives, deaths and lives, picked-up upgrades, the mission result, cutscene skips). Env vars are in [debug-trace-env-vars.md](../engine/debug-trace-env-vars.md).
 
 ## What players see
@@ -140,7 +142,7 @@ JOIN GAME always opens the `mp_games` page (`mp_join_open`). It lists the games 
 
 ## Relay server transport
 
-With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; set when a typed address answers as a server, see above; `ROGUESQ_MP_RELAY` overrides it), `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/net/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
+With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default port 27070; set when a typed address answers as a server, see above; `ROGUESQ_MP_RELAY` overrides it), and only while the address row holds that exact text or a session runs on it, `server_relay()` in `ghost_lobby.cpp` offers a second relay transport: `RelayClient` ([relay_client.cpp](../../mods/multiplayer-native/src/net/relay_client.cpp)) over an `rs64_relay` ([relay-server.md](relay-server.md)).
 
 - Precedence: HOST GAME uses Steam when it is available, else the relay server (`relay_ready()`). The JOIN GAME list shows Steam's games first, then the server's, and a picked game joins over the transport it came from (`relay_t`). `pending_join` (friends-list joins) is Steam's only.
 - A game's id on the server is a random 6-digit number; picking it on the list sends `JOIN(id, build)`.

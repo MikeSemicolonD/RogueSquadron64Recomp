@@ -28,7 +28,15 @@ void adv_get(const json& a, const char* key, T& out)
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+
 std::atomic<bool> g_legacy_terrain{false};
+
+#if defined(__ANDROID__)
+std::atomic<int> g_terrain_tessellation{2};
+#else
+std::atomic<int> g_terrain_tessellation{4};
+#endif
+
 std::atomic<bool> g_fb_writeback{true};
 std::atomic<bool> g_d3d10{false};
 std::atomic<bool> g_fullscreen{false};
@@ -173,6 +181,35 @@ const std::pair<const char*, rs64lights::Feature> kRtKeys[] = {
 };
 
 std::atomic<bool> g_rt_setting[7] = { false, false, true, false, false, false, false };
+
+// "rayTracing.lightLimits": light slots per category (its default priority's share); "lasersMax" (priority -1) caps laser bolts in all.
+const std::pair<const char*, int> kLightLimitKeys[] = {
+    { "engines", 7 },
+    { "pickups", 6 },
+    { "effects", 5 },
+    { "models", 3 },
+    { "level", 2 },
+    { "torpedoes", 1 },
+    { "lasers", 0 },
+    { "lasersMax", -1 },
+};
+
+std::atomic<int> g_light_limit[8] = { 12, 4, 10, 6, 4, 2, 4, 8 };
+
+void set_light_limit(size_t i, int n)
+{
+
+    n = std::clamp(n, 0, static_cast<int>(rs64lights::MaxLights));
+    g_light_limit[i].store(n, std::memory_order_relaxed);
+
+    const int priority = kLightLimitKeys[i].second;
+
+    if (priority >= 0) {
+        rs64lights::g_priorityShare[priority] = static_cast<size_t>(n);
+    } else {
+        rs64lights::setMaxProjectileLights(n);
+    }
+}
 } // namespace
 
 bool rt_setting(rs64lights::Feature f)
@@ -221,6 +258,16 @@ void set_legacy_terrain(bool on)
 
     g_legacy_terrain.store(on, std::memory_order_relaxed);
     set_draw_distance(draw_distance());
+}
+
+int terrain_tessellation() {
+    return g_terrain_tessellation.load(std::memory_order_relaxed);
+}
+
+void set_terrain_tessellation(int quads)
+{
+
+    g_terrain_tessellation.store(std::clamp(quads, kTerrainTessellationMin, kTerrainTessellationMax), std::memory_order_relaxed);
 }
 
 void set_keep_cutscene_draw_distance(bool on) {
@@ -469,8 +516,8 @@ bool peek_fullscreen(const std::string& path)
     return j.is_object() && j.contains("fullscreen") && j["fullscreen"].is_boolean() && j["fullscreen"].get<bool>();
 }
 
-float effective_draw_distance(float setting, bool game_view, uint32_t level) {
-    return (game_view || level == kGameViewLevel) ? 1.0f : setting;
+float effective_draw_distance(float setting, bool game_view) {
+    return game_view ? 1.0f : setting;
 }
 
 void apply_friendly(UC& uc, const json& j)
@@ -495,6 +542,10 @@ void apply_friendly(UC& uc, const json& j)
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
 
+    if (has("terrainTessellation") && j["terrainTessellation"].is_number()) {
+        set_terrain_tessellation(j["terrainTessellation"].get<int>());
+    }
+
     if (has("framebufferWriteback") && j["framebufferWriteback"].is_boolean()) {
         set_framebuffer_writeback(j["framebufferWriteback"].get<bool>());
     }
@@ -517,6 +568,18 @@ void apply_friendly(UC& uc, const json& j)
         for (const auto& [key, feature] : kRtKeys) {
             if (rt.contains(key) && rt.at(key).is_boolean()) {
                 set_rt_setting(feature, rt.at(key).get<bool>());
+            }
+        }
+
+        if (rt.contains("lightLimits") && rt.at("lightLimits").is_object()) {
+            const json& limits = rt.at("lightLimits");
+
+            for (size_t i = 0; i < std::size(kLightLimitKeys); ++i) {
+                const char* key = kLightLimitKeys[i].first;
+
+                if (limits.contains(key) && limits.at(key).is_number_integer()) {
+                    set_light_limit(i, limits.at(key).get<int>());
+                }
             }
         }
     }
@@ -640,6 +703,7 @@ json to_friendly(const UC& uc)
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["legacyTerrain"] = legacy_terrain();
+    j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
 
@@ -657,6 +721,13 @@ json to_friendly(const UC& uc)
         rt[key] = rt_setting(feature);
     }
 
+    json limits = json::object();
+
+    for (size_t i = 0; i < std::size(kLightLimitKeys); ++i) {
+        limits[kLightLimitKeys[i].first] = g_light_limit[i].load(std::memory_order_relaxed);
+    }
+
+    rt["lightLimits"] = limits;
     j["rayTracing"] = rt;
     json adv = json::object();
 
@@ -760,7 +831,7 @@ LoadResult load(UC& uc, const std::string& path)
         apply_friendly(uc, j);
 
         // Rewrite files that predate a friendly key so it shows up for editing.
-        r.migrated = !j.contains("drawDistance") || !j.contains("hudPlacement");
+        r.migrated = !j.contains("drawDistance") || !j.contains("hudPlacement") || !j.contains("terrainTessellation");
     } else {
         // Legacy raw UserConfiguration: merge onto the current baseline, same as
         // the pre-migration loader, then flag for rewrite in friendly form.

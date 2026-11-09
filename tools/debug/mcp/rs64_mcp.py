@@ -3,6 +3,7 @@
 Run as a stdio MCP server (Claude Code .mcp.json), or `python rs64_mcp.py --self-test` against a Debug build.
 """
 
+import functools
 import http.client
 import json
 import os
@@ -413,6 +414,23 @@ class Game:
             raise GameError(f"no symbol named {name}")
         return {"name": name, "addr": addr, **self.call("rdram_read", {"addr": addr, "size": size})}
 
+    def loaded_models(self):
+        """The level's loaded models (walkMeshdef0List's table: 25 u16 hash chains at 0x801394B0 into 12-byte entries at 0x80139020, +0 next, +4 the model, its name at +0)."""
+        heads = bytes.fromhex(self.call("rdram_read", {"addr": 0x801394B0, "size": 50})["hex"])
+        entries = bytes.fromhex(self.call("rdram_read", {"addr": 0x80139020, "size": 0x490})["hex"])
+        models = []
+        for chain in range(25):
+            idx = int.from_bytes(heads[chain * 2:chain * 2 + 2], "big")
+            hops = 0
+            while idx != 0xFFFF and idx * 12 + 8 <= len(entries) and hops < 1024:
+                e = entries[idx * 12:idx * 12 + 12]
+                model = int.from_bytes(e[4:8], "big")
+                name = bytes.fromhex(self.call("rdram_read", {"addr": model, "size": 16})["hex"]).split(b"\0")[0].decode("ascii", "replace")
+                models.append({"name": name, "model": f"0x{model:08X}"})
+                idx = int.from_bytes(e[0:2], "big")
+                hops += 1
+        return {"count": len(models), "models": sorted(models, key=lambda m: m["name"])}
+
     def walk_dl(self, addr="task"):
         """Dump RDRAM and walk a display list offline with tools/debug/validate/f5_dl_walk.py (default: the current gfx task)."""
         dl = self.call("frame_info")["clocks"]["dl"]
@@ -420,7 +438,8 @@ class Game:
         self.call("rdram_dump", {"path": dump}, 60)
         out = os.path.join(self.session_dir, f"dl_walk_{dl}_{addr}.txt")
         walker = os.path.join(REPO, "tools", "debug", "validate", "f5_dl_walk.py")
-        r = subprocess.run([sys.executable, walker, dump, addr], capture_output=True, text=True, timeout=300)
+        # A child Python inheriting the MCP stdin pipe blocks at startup while FastMCP has a read pending on it.
+        r = subprocess.run([sys.executable, walker, dump, addr], capture_output=True, text=True, timeout=300, stdin=subprocess.DEVNULL)
         with open(out, "w", encoding="utf-8") as f:
             f.write(r.stdout + r.stderr)
         return {"walk_path": out, "dump_path": dump, "exit_code": r.returncode, "tail": (r.stdout + r.stderr)[-3000:]}
@@ -459,7 +478,7 @@ class Game:
         write_minidump(self.proc.pid, path)
         report = {"dump_path": path}
         for name, script in (("freeze", "reconstruct-freeze.py"), ("host_stacks", "host-stacks.py")):
-            r = subprocess.run([sys.executable, os.path.join(REPO, "tools", "debug", script), path], capture_output=True, text=True, timeout=600, cwd=REPO)
+            r = subprocess.run([sys.executable, os.path.join(REPO, "tools", "debug", script), path], capture_output=True, text=True, timeout=600, cwd=REPO, stdin=subprocess.DEVNULL)
             text_path = os.path.join(self.session_dir, f"{os.path.splitext(os.path.basename(path))[0]}_{name}.txt")
             with open(text_path, "w", encoding="utf-8") as f:
                 f.write(r.stdout + r.stderr)
@@ -772,42 +791,66 @@ def expect_error(fn, text):
 
 
 def serve():
+    import anyio
     from mcp.server.fastmcp import FastMCP
 
     mcp = FastMCP("rs64")
     game = Game()
 
-    @mcp.tool()
+    # FastMCP runs a plain function on its event loop, so one waiting call (pause_at) held every other tool, close included, until it returned.
+    def tool():
+        def register(fn):
+            @functools.wraps(fn)
+            async def run(*args, **kwargs):
+                return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+            return mcp.tool()(run)
+        return register
+
+    @tool()
     def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None) -> dict:
         """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target)."""
         return game.launch(config, env, args, timeout_s, record)
 
-    @mcp.tool()
+    @tool()
     def attach(port: int = DEFAULT_BRIDGE_PORT) -> dict:
         """Connect to a game the user started themselves: Debug builds serve the bridge on this port by default. Every tool then works on that game; wait_log does not (its console is not captured). close only disconnects."""
         return game.attach(port)
 
-    @mcp.tool()
+    @tool()
     def close() -> dict:
         """Kill the launched game and return its final status (an attached game is only disconnected)."""
         return game.close()
 
-    @mcp.tool()
+    @tool()
     def status() -> dict:
         """Game process status: running, pid, port, exit_code, log_path (stdout+stderr) and session_dir (outputs)."""
         return game.status()
 
-    @mcp.tool()
+    @tool()
     def call(method: str, params: dict | None = None, timeout_s: float = 30) -> dict:
         """Send any bridge method directly (for methods without a dedicated tool)."""
         return game.call(method, params, timeout_s)
 
-    @mcp.tool()
+    @tool()
     def pause_at(clock: str, frame: int, timeout_s: float = 120) -> dict:
-        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot)."""
+        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        info = game.call("frame_info")
+        now = info.get("clocks", {}).get(clock)
+
+        # A clock already past frame (the state being shown, or dl) would only time out: say so instead of waiting.
+        if now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
+            raise RuntimeError(f"{clock} is already at frame {now} (past {frame}): use pause_now, or step from a pause")
+
         return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s}, timeout_s + 15)
 
-    @mcp.tool()
+    @tool()
+    def pause_now(timeout_s: float = 30) -> dict:
+        """Freeze the game on the next frame, whatever screen it is on (then step, screenshot, inspect)."""
+        dl = game.call("frame_info").get("clocks", {}).get("dl", 0)
+
+        return game.call("pause_at", {"clock": "dl", "frame": dl + 2, "timeout_s": timeout_s}, timeout_s + 15)
+
+    @tool()
     def pause_when(addr: int, size: int = 4, op: str = "changes", value: int | None = None, timeout_s: float = 120) -> dict:
         """Freeze when an RDRAM value (KSEG0 addr, 1/2/4 bytes) changes, or is eq/ne/gt/lt `value`; checked once a frame. The picture includes the value seen. For a game state change use pause_at(state, 0)."""
         params = {"addr": addr, "size": size, "op": op, "timeout_s": timeout_s}
@@ -815,44 +858,49 @@ def serve():
             params["value"] = value
         return game.call("pause_when", params, timeout_s + 15)
 
-    @mcp.tool()
+    @tool()
     def pause_when_drawn(key: str, timeout_s: float = 600) -> dict:
         """Freeze as soon as a model part or effect sprite is on screen: key is '|'-separated prefixes of the light-preset keys (a HOB object name such as "r_pow", a part "xwing#s0.p4", a sprite frame "spr:explo_tex"); a part counts when one of its vertices is inside the view. Lands one or two frames after it first shows. The picture's watch.drawn is the matched key. Plays on while waiting, so the user can fly there."""
         return game.call("pause_when_drawn", {"key": key, "timeout_s": timeout_s}, timeout_s + 15)
 
-    @mcp.tool()
+    @tool()
     def wait_log(pattern: str, timeout_s: float = 30, from_start: bool = False, fail_pattern: str = WAIT_LOG_FAIL) -> dict:
         """Wait until a regex appears in the game's log; new lines only unless from_start. Ends early with an error when the game exits or
         a fail_pattern line appears (default: crash markers; pass a line that proves the awaited one will not come, or "" for none).
         timeout_s is capped at 120: drive the game toward the event (press, step) and wait again rather than waiting long."""
         return game.wait_log(pattern, timeout_s, from_start, fail_pattern)
 
-    @mcp.tool()
+    @tool()
     def step(frames: int = 1, clock: str = "dl", timeout_s: float = 30) -> dict:
         """From a frozen frame, run `frames` more frames of `clock` and freeze again. Light edits show after a step."""
         return game.call("step", {"frames": frames, "clock": clock, "timeout_s": timeout_s}, timeout_s + 15)
 
-    @mcp.tool()
+    @tool()
     def resume() -> dict:
         """Release a pause and let the game run."""
         return game.call("resume")
 
-    @mcp.tool()
+    @tool()
     def frame_info() -> dict:
         """Game state, every clock's latest frame (dl = display lists since boot), held/rt64_paused, and the frozen picture's clocks."""
         return game.call("frame_info")
 
-    @mcp.tool()
+    @tool()
     def rdram_read(addr: int, size: int = 4) -> dict:
         """Read game memory as hex (big-endian, as the N64 sees it). addr is a KSEG0 address, e.g. 0x80130B70; size <= 65536."""
         return game.call("rdram_read", {"addr": addr, "size": size})
 
-    @mcp.tool()
+    @tool()
+    def loaded_models() -> dict:
+        """Every model the level has loaded, by name, with its address."""
+        return game.loaded_models()
+
+    @tool()
     def rdram_write(addr: int, hex: str) -> dict:
         """Write hex bytes to game memory at a KSEG0 address. Prefer writing while paused."""
         return game.call("rdram_write", {"addr": addr, "hex": hex})
 
-    @mcp.tool()
+    @tool()
     def press(buttons: list[str] | None = None, stick: list[float] | None = None, frames: int = 0) -> dict:
         """Hold controller-1 buttons (start a b z l r dup ddown dleft dright cup cdown cleft cright; up/down/left/right = full stick) and/or stick [x, y] for `frames` display lists (0 = until release). While paused, follow with step to play exactly those frames."""
         params = {"buttons": buttons or [], "frames": frames}
@@ -860,7 +908,7 @@ def serve():
             params["stick"] = stick
         return game.call("press", params)
 
-    @mcp.tool()
+    @tool()
     def type_text(text: str, backspaces: int = 0, delay_ms: int = 350) -> dict:
         """Type on the PASSCODES / ENTER NAME letter wheels as the keyboard does (posted to the window, no focus needed): `backspaces` Backspaces first, then each character. Game must be running, not frozen. Enter adds the wheel letter instead of submitting: to submit, press ddown to ENTER CODE, then a."""
         if not game.alive():
@@ -868,7 +916,7 @@ def serve():
         post_text(game.proc.pid, text, backspaces, delay_ms)
         return {"typed": text, "backspaces": backspaces}
 
-    @mcp.tool()
+    @tool()
     def mouse(actions: list[str], delay_ms: int = 150) -> dict:
         """Mouse on the game window, in client pixels (the screenshot's size): "move:x:y", "click:x:y", "down:x:y", "up:x:y" (x:y optional = last point), "rclick", "wheel:n" (horizontal notches, + right), "vwheel:n" (vertical, + up). Pushed into the game's SDL queue: the real cursor and focus are untouched. Game must be running, not frozen."""
         if not game.alive():
@@ -894,17 +942,17 @@ def serve():
             time.sleep(delay_ms / 1000)
         return {"done": actions, "client": [w, h]}
 
-    @mcp.tool()
+    @tool()
     def release() -> dict:
         """Let go of the input held by press."""
         return game.call("release")
 
-    @mcp.tool()
+    @tool()
     def pick(x: float, y: float) -> dict:
         """Frozen frame only: the draw calls covering framebuffer pixel (x, y) in native coordinates (vi_info fb_size, e.g. 320x240), front-most first: the F1 right-click picker."""
         return game.call("pick", {"x": x, "y": y})
 
-    @mcp.tool()
+    @tool()
     def highlight(fb: int | None = None, proj: int | None = None, call: int | None = None, color: int | None = None, clear: bool = False) -> dict:
         """Frozen frame only: tint one draw call on screen (RGBA color, default magenta), or clear=true to remove every tint. Follow with screenshot."""
         if clear:
@@ -914,47 +962,47 @@ def serve():
             params["color"] = color
         return game.call("highlight", params)
 
-    @mcp.tool()
+    @tool()
     def read_symbol(name: str, size: int = 4) -> dict:
         """Read game memory at a symbol from syms/ (e.g. gCurrentLevel) as hex."""
         return game.read_symbol(name, size)
 
-    @mcp.tool()
+    @tool()
     def walk_dl(addr: str = "task") -> dict:
         """Dump RDRAM and walk a Factor 5 display list offline (tools/debug/validate/f5_dl_walk.py): the current gfx task, or a hex address such as frame_summary's dl_addr. Returns the walk file and its tail."""
         return game.walk_dl(addr)
 
-    @mcp.tool()
+    @tool()
     def hang_dump() -> dict:
         """Full-memory minidump of the running game plus reconstruct-freeze.py (blocked game threads and queues) and host-stacks.py (symbolized host stacks, Debug builds). Several GB on disk; delete the dump when done."""
         return game.hang_dump()
 
-    @mcp.tool()
+    @tool()
     def frame_warnings() -> dict:
         """Frozen frame only: RT64's command warnings (message plus the load, tile or draw call it refers to)."""
         return game.call("frame_warnings")
 
-    @mcp.tool()
+    @tool()
     def sprite_commands() -> dict:
         """Frozen frame only: the frame's S2D sprite commands (draw call range and replacement hash)."""
         return game.call("sprite_commands")
 
-    @mcp.tool()
+    @tool()
     def rsp_state() -> dict:
         """Frozen frame only: RSP fog (mul/offset), lights, LookAt and vertex modifies, as the F1 Debugger lists them."""
         return game.call("rsp_state")
 
-    @mcp.tool()
+    @tool()
     def vi_info() -> dict:
         """The last screen VI registers plus framebuffer address/size, visibility and pixel aspect."""
         return game.call("vi_info")
 
-    @mcp.tool()
+    @tool()
     def get_config() -> dict:
         """RT64's Configuration tab: user settings (resolution, antialiasing, filtering, aspect, refresh rate, ...) and enhancement settings."""
         return game.call("get_config")
 
-    @mcp.tool()
+    @tool()
     def set_config(user: dict | None = None, enhancement: dict | None = None, save: bool = False) -> dict:
         """Change Configuration-tab settings live (keys as get_config returns them). Not written to RT64's config file unless save=true."""
         params = {"save": save}
@@ -964,12 +1012,12 @@ def serve():
             params["enhancement"] = enhancement
         return game.call("set_config", params)
 
-    @mcp.tool()
+    @tool()
     def rt_features(set: dict | None = None) -> dict:
         """Read or toggle the RS64 ray-tracing passes: lights, shadows, soft_shadows, fog_shafts, ao, gi, reflections. A feature pinned by its env var can't change (listed in pinned_by_env)."""
         return game.call("rt_features", {"set": set} if set else {})
 
-    @mcp.tool()
+    @tool()
     def rt_debug_view(step: int | None = None, name: str | None = None) -> dict:
         """The ray-tracing debug view (as F9 / Shift+F9 in game): step=+1/-1 (or +-n) cycles through them, name picks one (e.g.
         "shadow mask", "light reach", "off"); returns the view in use and every name. Shows after the next step when paused;
@@ -981,7 +1029,7 @@ def serve():
             params["name"] = name
         return game.call("rt_debug_view", params)
 
-    @mcp.tool()
+    @tool()
     def render_toggles(texture_replacement: bool | None = None, view_rdram: bool | None = None) -> dict:
         """Read or set texture-pack replacement (F4) and ViewRDRAM (F3)."""
         params = {}
@@ -991,23 +1039,23 @@ def serve():
             params["view_rdram"] = view_rdram
         return game.call("render_toggles", params)
 
-    @mcp.tool()
+    @tool()
     def rdram_dump(path: str | None = None, full: bool = True) -> dict:
         """Write a big-endian RAM snapshot to path (default under the session dir, named by dl frame): full=true is all 16 MB including the host tables above 8 MB (fonts, terrain grid, manifests), full=false the game's 8 MB (the ROGUESQ_DUMP_RDRAM_AT_VI / PJ64 golden format). rdram_golden_diff.py diffs either. Best while paused."""
         target = path or os.path.join(game.session_dir, f"rdram_dl{game.call('frame_info')['clocks']['dl']}{'' if full else '_8mb'}.bin")
         return game.call("rdram_dump", {"path": target, "full": full}, 60)
 
-    @mcp.tool()
+    @tool()
     def rdram_find(hex: str, align: int = 1, limit: int = 64) -> dict:
         """Search all 16 MB of RAM for a big-endian byte pattern (hex, e.g. "462e4100" for a glyph name or "80c54000" for a pointer); returns up to limit KSEG0 addresses at multiples of align, and more=true if there were others."""
         return game.call("rdram_find", {"hex": hex, "align": align, "limit": limit}, 60)
 
-    @mcp.tool()
+    @tool()
     def frame_summary() -> dict:
         """Frozen frame only: draw/triangle counts and every framebuffer pair (color/depth address, width, projections with draw counts)."""
         return game.call("frame_summary")
 
-    @mcp.tool()
+    @tool()
     def list_draws(fb: int | None = None, proj: int | None = None, offset: int = 0, limit: int = 500) -> dict:
         """Frozen frame only: one compact row per draw call (tris, TMEM hashes, combiner, other mode, geometry mode, world matrix), optionally for one fb pair / projection."""
         params = {"offset": offset, "limit": limit}
@@ -1017,7 +1065,7 @@ def serve():
             params["proj"] = proj
         return game.call("list_draws", params)
 
-    @mcp.tool()
+    @tool()
     def get_draw(fb: int, proj: int, call: int, vertices: bool = False, shaders: bool = False) -> dict:
         """Frozen frame only: everything the F1 Debugger shows for one draw call (loads, tiles, combiner, other modes, RDP colors, world matrices; vertices on request). shaders=true writes its pixel/vertex HLSL under the session dir."""
         params = {"fb": fb, "proj": proj, "call": call, "vertices": vertices}
@@ -1025,32 +1073,32 @@ def serve():
             params["shader_dir"] = os.path.join(game.session_dir, "shaders")
         return game.call("get_draw", params)
 
-    @mcp.tool()
+    @tool()
     def dump_texture(fb: int, proj: int, call: int, tile: int = 0) -> dict:
         """Frozen frame only: save a draw tile's TMEM (.tmem + .json) and its decoded .png under the session dir; returns the paths and tile parameters."""
         return game.dump_texture(fb, proj, call, tile)
 
-    @mcp.tool()
+    @tool()
     def texture_dumping(dir: str | None = None) -> dict:
         """Start RT64's texture dumper into dir (every texture load, .tmem + RDRAM + json), or stop it with no dir."""
         return game.call("texture_dumping", {"dir": dir} if dir else {})
 
-    @mcp.tool()
+    @tool()
     def screenshot(path: str | None = None) -> dict:
         """PNG of the game window (client area, captured by the game's PID; default path under the session dir). Returns path, size and distinct colour count."""
         return game.screenshot(path)
 
-    @mcp.tool()
+    @tool()
     def view_framebuffer(index: int = -1, depth: bool = False) -> dict:
         """Frozen frame only: show framebuffer pair `index`'s color (or depth) image on screen in place of the frame; -1 restores the normal picture. Follow with screenshot."""
         return game.call("view_framebuffer", {"index": index, "depth": depth})
 
-    @mcp.tool()
+    @tool()
     def view_draw(index: int = -1) -> dict:
         """Frozen frame only: draw the frame only up to global draw call `index`; -1 draws everything."""
         return game.call("view_draw", {"index": index})
 
-    @mcp.tool()
+    @tool()
     def free_cam(enabled: bool = True, position: list[float] | None = None, target: list[float] | None = None,
                  move: list[float] | None = None, rotate: list[float] | None = None) -> dict:
         """Frozen frame only: RT64's free camera. First enable starts at the game camera; position+target place it, move is [right, up, forward] in world units, rotate is [yaw, pitch] radians. enabled=false restores the game camera."""
@@ -1060,42 +1108,42 @@ def serve():
                 params[key] = value
         return game.call("free_cam", params)
 
-    @mcp.tool()
+    @tool()
     def get_camera() -> dict:
         """The free camera: enabled, position, forward, near/far planes, fov, view matrix."""
         return game.call("get_camera")
 
-    @mcp.tool()
+    @tool()
     def lights_list() -> dict:
         """RT light presets (the F1 Lights tab) and the current level. Lights render only with ROGUESQ_RT_LIGHTS=1."""
         return game.call("lights_list")
 
-    @mcp.tool()
+    @tool()
     def lights_active() -> dict:
         """The lights shining in the last drawn frame (camera space, after the 32-slot selection: kind, priority, position, radius, colour) out of `candidates`, and the sun the shadow pass traced (camera-space dir, hangar floor_up, strength)."""
         return game.call("lights_active")
 
-    @mcp.tool()
+    @tool()
     def lights_set(name: str, preset: dict) -> dict:
         """Add or replace a light preset (roguesq_lights.json schema: {"enabled", "level" (-2 any, -1 outside missions), "lights": [{"name", "enabled", "description": {"position", "diffuseColor", "attenuationRadius", ...}}]}). Positions are map space in a level (512 per cell, y down). Shows after the next step."""
         return game.call("lights_set", {"name": name, "preset": preset})
 
-    @mcp.tool()
+    @tool()
     def lights_remove(name: str) -> dict:
         """Remove a light preset; shows after the next step."""
         return game.call("lights_remove", {"name": name})
 
-    @mcp.tool()
+    @tool()
     def lights_save(path: str) -> dict:
         """Write every light preset to a file in the roguesq_lights.json format."""
         return game.call("lights_save", {"path": path})
 
-    @mcp.tool()
+    @tool()
     def frame_times(samples: bool = False) -> dict:
         """RT64's Render-tab frame-time series (ms, last 120): min/avg/max/p99/count for present, renderer_cpu/gpu, matching, workload, dl_api/cpu, update_screen_api/cpu, vi_changed; raw samples on request. Meaningful while running, not paused."""
         return game.call("frame_times", {"samples": samples})
 
-    @mcp.tool()
+    @tool()
     def renderdoc_capture(frames: int = 1, timeout_s: float = 20) -> dict:
         """Capture the next presents with RenderDoc and return the .rdc path (open it with the renderdoc MCP)."""
         return game.call("renderdoc_capture", {"frames": frames, "timeout_s": timeout_s}, timeout_s + 15)

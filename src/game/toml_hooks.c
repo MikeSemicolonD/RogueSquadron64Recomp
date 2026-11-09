@@ -195,6 +195,18 @@ void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_con
 static int s_render_view_test_next;
 static int s_render_view_test;
 
+// While recording or replaying, the render paths' own tests stay stock so game state never depends on the display settings; a second draw-only pass applies the widening.
+static int s_npc_draw_only_pass;
+static uint32_t s_npc_view_args[4];
+
+// ROGUESQ_LOG_POP: where the last view test put the object, 1.0 being the 4:3 screen edge.
+static float s_view_nx, s_view_ny;
+static int s_view_seen;
+
+void rs64_npc_draw_only_mark(int on) {
+    s_npc_draw_only_pass = on;
+}
+
 // Set just before the effect handlers' view tests, which take the draw distance far plane like the render paths. Saved $ra can't tell callers apart: jal doesn't write r31.
 static int s_effect_view_test_next;
 static int s_effect_view_test;
@@ -280,16 +292,11 @@ void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* c
     s_render_view_test_next = 1;
 }
 
-// selectMeshLodAndSubmitForRender 0x80058104
-void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx) {
-
-    s_render_view_test_next = 1;
-}
 
 // transformVec3ToNpcLocalWithScale entry
 void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx) {
 
-    s_render_view_test = s_render_view_test_next;
+    s_render_view_test = s_render_view_test_next && (s_npc_draw_only_pass || !rs64_ls_session());
     s_render_view_test_next = 0;
     s_effect_view_test = s_effect_view_test_next;
     s_effect_view_test_next = 0;
@@ -354,7 +361,11 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E064(uint8_t* rdram, recomp_co
 // transformVec3ToNpcLocalWithScale 0x8001DEA0: the sphere test's projected x, y and radius ($f10, $f12, $f22); shrinking them widens its field of view.
 void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_context* ctx) {
 
-    ctx->f2.fl *= rs64_cull_widen();
+    s_view_nx = ctx->f10.fl / (ctx->f0.fl * ctx->f2.fl);
+    s_view_ny = ctx->f12.fl / ctx->f6.fl;
+    s_view_seen = 1;
+
+    if (s_render_view_test || s_effect_view_test || !rs64_ls_session()) ctx->f2.fl *= rs64_cull_widen();
 
     if (s_render_view_test) {
         const float m = rs64_shadow_cull_margin();
@@ -368,7 +379,7 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_co
 // transformVec3ToNpcLocalWithScale 0x8001E168: the point test's projected x ($f8) and the scale its y is projected with next ($f20).
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx) {
 
-    ctx->f2.fl *= rs64_cull_widen();
+    if (s_render_view_test || s_effect_view_test || !rs64_ls_session()) ctx->f2.fl *= rs64_cull_widen();
 
     if (s_render_view_test) {
         const float m = rs64_shadow_cull_margin();
@@ -376,6 +387,28 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_co
         ctx->f8.fl /= m;
         ctx->f20.fl /= m;
     }
+}
+
+// Units out of the active range for 21 frames are destroyed and respawned at their start, a loop the stock far plane hid: their range test
+// widens with the draw distance in normal play, so a unit in view stays where it is.
+static int s_unit_active_range = 0;
+
+// isNpcWithinActiveReferenceRange entry
+void rs64_th_isNpcWithinActiveReferenceRange_80047D40(uint8_t* rdram, recomp_context* ctx)
+{
+
+    s_unit_active_range = 1;
+}
+
+// isPointXzWithinRangeOfRef 0x80047DF0: the squared range ($f0) against the squared distance ($f2).
+void rs64_th_isPointXzWithinRangeOfRef_80047DF0(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const float d = rs64_draw_dist();
+
+    if (s_unit_active_range && d > 1.0f && !rs64_ls_session()) ctx->f0.fl *= d * d;
+
+    s_unit_active_range = 0;
 }
 
 // setupCameraMatrices 0x80016CE0
@@ -579,6 +612,17 @@ void rs64_th_selectMeshLodAndSubmitForRender_800582F0(uint8_t* rdram, recomp_con
 void rs64_th_addNpcToVisibilityBucket_80057C90(uint8_t* rdram, recomp_context* ctx)
 {
 
+    if (s_npc_draw_only_pass)
+    {
+        return;
+    }
+
+    s_npc_view_args[0] = (uint32_t)ctx->r4;
+    s_npc_view_args[1] = (uint32_t)ctx->r5;
+    s_npc_view_args[2] = (uint32_t)ctx->r6;
+    s_npc_view_args[3] = (uint32_t)ctx->r7;
+    s_view_seen = 0;
+
     rs64_f5_cable_submit((uint32_t)MEM_W(0, (gpr)(int32_t)0x8010B6E0), (uint32_t)ctx->r5, (uint32_t)MEM_W(0, (gpr)(int32_t)0x8010B6E8));
 }
 
@@ -765,6 +809,30 @@ void rs64_th_loadLevelAssets_800453D8(uint8_t* rdram, recomp_context* ctx) {
     ctx->r16 = (gpr)(int32_t)rs64_tgrid_budget((uint32_t)ctx->r16);
 }
 
+// loadLevelAssets 0x800454D0
+void rs64_th_loadLevelAssets_800454D0(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_level_load(rdram, ctx->f0.fl);
+}
+
+// setViewStateBytesAndFadeScale entry
+void rs64_th_setViewStateBytesAndFadeScale_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_fog_color(ctx);
+}
+
+// cinematicSplineWalkerNpcHandler 0x8005C2F0
+void rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_clouds_load(rdram, ctx);
+}
+
+// updateWalkerParticlePositions entry
+void rs64_th_updateWalkerParticlePositions_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_clouds_tick(rdram, ctx);
+}
+
 // computeGridLayerScrollOffset 0x800456D4
 void rs64_th_computeGridLayerScrollOffset_800456D4(uint8_t* rdram, recomp_context* ctx) {
 
@@ -800,6 +868,7 @@ void rs64_th_buildVisibleTerrainGridAroundCamera_80043A8C(uint8_t* rdram, recomp
 // setupCameraMatrices 0x800170D0
 void rs64_th_setupCameraMatrices_800170D0(uint8_t* rdram, recomp_context* ctx) {
 
+    rs64_fog_color_note(rdram);
     ctx->f4.fl *= rs64_fog_dist();
 }
 
@@ -828,6 +897,29 @@ void rs64_th_linkDirectionalTrailSegments_8005B418(uint8_t* rdram, recomp_contex
 void rs64_th_buildVisibleTerrainGridAroundCamera_8004395C(uint8_t* rdram, recomp_context* ctx) {
 
     ctx->f6.fl *= rs64_cull_widen();
+}
+
+// addNpcToVisibilityBucket 0x8005804C (exit): an object the stock test rejected gets the widened draw-only pass.
+void rs64_th_addNpcToVisibilityBucket_8005804C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (s_npc_draw_only_pass)
+    {
+        return;
+    }
+
+    const int drawn = (ctx->r2 != 0) || (rs64_ls_session() && rs64_npc_draw_only_pass(rdram, ctx, s_npc_view_args));
+
+    rs64_pop_note(rdram, ctx, s_npc_view_args[1], s_npc_view_args[2], drawn, s_view_seen, s_view_nx, s_view_ny);
+}
+
+// projectModelBoundsToScreen 0x80065FE4: the corner just moved to camera space ($s0, x first).
+void rs64_th_projectModelBoundsToScreen_80065FE4(uint8_t* rdram, recomp_context* ctx) {
+
+    union { uint32_t u; float f; } x;
+
+    x.u = (uint32_t)MEM_W(0, ctx->r16);
+    x.f /= rs64_cull_widen();
+    MEM_W(0, ctx->r16) = (int32_t)x.u;
 }
 
 // runMenuShipSelectScreen 0x800C14A8
@@ -890,6 +982,24 @@ int rs64_th_saveServiceWorker_8006F2CC(uint8_t* rdram, recomp_context* ctx) {
     return 1;
 }
 
+// cinematicLoopBody 0x800A6084: $f0 is the speech volume from the overlay's strength.
+void rs64_th_cinematicLoopBody_800A6084(uint8_t* rdram, recomp_context* ctx)
+{
+    (void)rdram;
+
+    if (rs64_cut_fade_active())
+        ctx->f0.fl = 1.0f;
+}
+
+// spawnCutsceneEffectsAndCues 0x800A8AB8: $v1 is the event's type.
+void rs64_th_spawnCutsceneEffectsAndCues_800A8AB8(uint8_t* rdram, recomp_context* ctx)
+{
+    (void)rdram;
+
+    if ((uint32_t)ctx->r3 == 0x17)
+        rs64_cut_fade_request();
+}
+
 // cinematicLoopBody 0x800A6024
 void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx)
 {
@@ -898,6 +1008,7 @@ void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx)
     rs64_cine_iter_tick(++s_watchdog_count);
 
     rs64_cine_pause_point(rdram);
+    rs64_cut_fade_tick(rdram, ctx);
 
     // Diagnostic: iterations + gate/cineState. ROGUESQ_LOG_HOOKS=1.
     if (rs64_dbg_hooks_on()) {
@@ -2007,4 +2118,10 @@ void rs64_th_updateNpcEffectIntensity_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
     rs64_rules_path(rdram, (uint32_t)ctx->r5);
+}
+
+// selectMeshLodAndSubmitForRender 0x80058104
+void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
 }

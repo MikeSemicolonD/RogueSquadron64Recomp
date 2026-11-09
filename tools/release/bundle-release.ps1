@@ -14,7 +14,9 @@ if ($Version -eq "") { $Version = "v" + (Get-Content VERSION -TotalCount 1).Trim
 # A single comma-separated string from a VS Code prompt arrives as one element.
 $Only = $Only -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 if ($OutDir -eq "") { $OutDir = Join-Path $repo "build\packages" }
-$out = Join-Path ([Environment]::ExpandEnvironmentVariables($OutDir)) $Version
+$OutDir = [Environment]::ExpandEnvironmentVariables($OutDir)
+if (-not [IO.Path]::IsPathRooted($OutDir)) { $OutDir = Join-Path $repo $OutDir }
+$out = Join-Path $OutDir $Version
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 $results = @()
 $shaderCache = Join-Path $env:TEMP "rs64-bundle-shader-cache"

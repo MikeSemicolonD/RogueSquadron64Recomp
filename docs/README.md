@@ -8,9 +8,11 @@ Pick the section that matches what you want to do.
 - [modding.md](guides/modding.md): the kinds of mod, where mods go, asset mods, and an introduction to code mods.
 - [adding-menus-and-buttons.md](guides/adding-menus-and-buttons.md): adding buttons, toggles, sliders and pages to the menus with a JSON file.
 - [modding-languages.md](guides/modding-languages.md): adding a language (text, subtitles and glyphs for any script) as a mod.
+- [co-op-setup.md](guides/co-op-setup.md): getting online co-op connected: same network, port forwarding, VPN, Steam or a relay server.
 - [multiplayer.md](guides/multiplayer.md): online co-op, from what players see to the session protocol.
 - [relay-server.md](guides/relay-server.md): running the co-op relay server (`rs64_relay`): download, settings, config file and console commands.
 - [RS64 Explorer](../tools/web/rs64-explorer/index.html): a browser tool (open from disk or the project's site) that views models, levels, effects, audio and fonts and makes asset mods, new levels, level rules, opening crawls, menu mods and language glyph packs. In a browser with WebMCP it also gives AI agents tools to read and capture the view, play cutscenes, and edit levels, cutscenes and menu mods ([webmcp.js](../tools/web/rs64-explorer/webmcp.js)).
+- [wiki/](wiki/Home.md): the source of the GitHub wiki (RS64 Explorer user guide). `.github/workflows/wiki.yml` mirrors it to the wiki on every push to main that touches it, so edit these files, not the wiki.
 - [Save editor](../tools/web/save-editor/README.md): a browser tool that edits pilots, high scores, settings and unlocks in a save, also through WebMCP tools.
 
 ## I want to work on the engine

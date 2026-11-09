@@ -1,6 +1,6 @@
 ---
 name: roguesquadron-debug
-description: Debug and iterate on RogueSquadron64Recomp (the Star Wars Rogue Squadron N64 static-recompilation port; N64Recomp + N64ModernRuntime + RT64, Windows/MSVC-clang) using evidence, not screenshots. Use for ANY crash/hang/freeze/AV triage, for landing a durable game-logic override, or for proving a change correct WITHOUT asking the user to eyeball a frame. Covers: symbolizing access violations to the exact recompiled function (llvm-symbolizer against the PDB) instead of trusting a memorized RVA; reading the [cine-progress]/[vi]/[musyx-run] freeze signature; killing the game with taskkill (never TaskStop); reaching any attract demo fast (ROGUESQ_SKIP_DEMO + ROGUESQ_CINE_FASTFWD); landing a game-logic override as a rogue_squadron.toml entry hook (covers func_map/LOOKUP_FUNC indirect calls); and perception-free validation via RDRAM dumps (ROGUESQ_DUMP_RDRAM_AT_VI), offline DL walks (f5_dl_walk.py --tex), offline texture decode from a dump, the TMEM-state trace (ROGUESQ_LOG_CI4_TMEM), PJ64 golden diffs (rdram_golden_diff.py / dl_diff.py) and MusyX audio diffs (audio_cmd_walk.py / audio_diff.py). Triggers on: access violation / C0000005 / av_rva, SEH caught, demo/cinematic freeze or deadlock, "which function crashed", getNpcCurrentHealth, patches build / PatchesLib / /FORCE:MULTIPLE / override didn't take effect, ROGUESQ_* env vars, RDRAM dump, TMEM, taskkill, and "how do I know this is correct without a screenshot". Complements f5-dl-validate (F5 DL/opcode diffing), n64recomp-integration (recompiler + patches pipeline) and rt64-integration (renderer internals); this skill is the top-level debug/validate loop that ties them together. Read AGENTS.md first for the authoritative project map.
+description: Debug and iterate on RogueSquadron64Recomp (the Star Wars Rogue Squadron N64 static-recompilation port; N64Recomp + N64ModernRuntime + RT64, Windows/MSVC-clang) using evidence, not screenshots. Use for ANY crash/hang/freeze/AV triage, for landing a durable game-logic override, or for proving a change correct WITHOUT asking the user to eyeball a frame. Covers: symbolizing access violations to the exact recompiled function (llvm-symbolizer against the PDB) instead of trusting a memorized RVA; reading the [cine-progress]/[vi]/[musyx-run] freeze signature; stopping only the game PID you launched (never by image name, never TaskStop); reaching any attract demo fast (ROGUESQ_SKIP_DEMO + ROGUESQ_CINE_FASTFWD); landing a game-logic override as a rogue_squadron.toml entry hook (covers func_map/LOOKUP_FUNC indirect calls); and perception-free validation via RDRAM dumps (ROGUESQ_DUMP_RDRAM_AT_VI), offline DL walks (f5_dl_walk.py --tex), offline texture decode from a dump, the TMEM-state trace (ROGUESQ_LOG_CI4_TMEM), PJ64 golden diffs (rdram_golden_diff.py / dl_diff.py) and MusyX audio diffs (audio_cmd_walk.py / audio_diff.py). Triggers on: access violation / C0000005 / av_rva, SEH caught, demo/cinematic freeze or deadlock, "which function crashed", getNpcCurrentHealth, patches build / PatchesLib / /FORCE:MULTIPLE / override didn't take effect, ROGUESQ_* env vars, RDRAM dump, TMEM, taskkill, and "how do I know this is correct without a screenshot". Complements f5-dl-validate (F5 DL/opcode diffing), n64recomp-integration (recompiler + patches pipeline) and rt64-integration (renderer internals); this skill is the top-level debug/validate loop that ties them together. Read AGENTS.md first for the authoritative project map.
 ---
 
 # RogueSquadron64Recomp — Debugging & Validation
@@ -35,12 +35,23 @@ ROGUESQ_AUDIO_GAIN=0 ROGUESQ_CINE_FASTFWD=200 ROGUESQ_SKIP_DEMO=<0-5> \
   Pins `demoId` every present so the attract mode loops that demo, skipping the gauntlet.
 - `ROGUESQ_CINE_FASTFWD=200` blasts the intro cinematic. `ROGUESQ_AUDIO_GAIN=0` mutes.
 - Capture stdout/stderr to a FILE (`> run.txt 2>&1`). Bash redirects don't flush before SIGTERM, but a
-  detached run you later `taskkill` flushes fine. In PowerShell use the Start-Job pattern in AGENTS.md.
-- **KILL WITH `taskkill //F //IM RogueSquadron64Recomp.exe`** (Git-Bash double-slash). The Claude
-  `TaskStop`/killing the background task does NOT kill the detached game exe — it orphans it, and the
-  orphan holds a lock on the .exe that blocks the next relink. Always taskkill before rebuilding.
+  detached run you later stop with `taskkill` flushes fine. In PowerShell use the Start-Job pattern in AGENTS.md.
+- **STOP ONLY YOUR OWN GAME, BY PID:** `taskkill //F //PID <pid>` (Git-Bash double-slash). After
+  `./exe &` the Windows PID is in `/proc/$!/winpid`. Never use `//IM RogueSquadron64Recomp.exe`: it
+  closes the user's own game too. The Claude `TaskStop`/killing the background task does NOT kill the
+  detached game exe — it orphans it, and the orphan holds a lock on the .exe that blocks the next
+  relink. Stop your game before rebuilding. If the running exe isn't yours, ask or build the other config.
 - The game never self-exits; wrap a run as: launch detached, wait (background `sleep`), grep the log,
-  taskkill. Don't foreground-`sleep` (blocked); use `run_in_background: true` on the wait+grep command.
+  stop your PID. Don't foreground-`sleep` (blocked); use `run_in_background: true` on the wait+grep command.
+
+## Expected boot screens (not bugs)
+
+- LucasArts logo: blocky gold letters with purple accents on a light ground.
+- N64 logo: on a white background.
+- Factor 5 cinematic: a grey capital-ship surface flythrough on black, then the metallic FACTOR wordmark with a red 5.
+- Title: the Rogue Squadron banner over the hangar photo.
+
+Judge sky rendering only on the attract gameplay demos or in missions.
 
 ## Crash / hang / freeze triage
 
@@ -174,6 +185,9 @@ See `f5-dl-validate` for the full parser/DL/RDRAM-layer method and the landmark-
 cinematic golden is an active-voice oracle. `ROGUESQ_DUMP_PCM=<wav>` drives
 offline capture. You never have to listen.
 
+### 7. Flicker and flashes (count, don't look)
+Capture many frames and count a per-frame quantity (magenta pixels in `ROGUESQ_RT_LIGHTS_DEBUG=2`, or the luma of a region), then list the outliers against the median. Thumbnails miss single-frame flashes. A capture with few unique frames means the game stalled: rerun it.
+
 ## Fast iteration loop
 1. Reproduce with the tightest repro (`ROGUESQ_SKIP_DEMO` + `CINE_FASTFWD`), capturing to a log file.
 2. Classify from the log: crash (symbolize the AV) vs hang (`[cine-progress]` delta=0) vs render (walk
@@ -182,7 +196,7 @@ offline capture. You never have to listen.
    stop at "looks wrong."
 4. Fix in the right place: `rogue_squadron.toml` hooks for game logic, `lib/rt64` for render (scoped, env-
    gated; respect the "ask before new lib/rt64 changes" preference), never inline in `funcs_*.c`.
-5. `taskkill` the game, rebuild (`cmake --build build --config Debug --target RogueSquadron64Recomp`),
+5. Stop your game by PID, rebuild (`cmake --build build --config Debug --target RogueSquadron64Recomp`),
    re-run, and validate with the SAME byte/address-level check — not a new screenshot.
 
 ## Known dead ends (don't re-derive)

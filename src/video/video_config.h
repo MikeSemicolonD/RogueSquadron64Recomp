@@ -41,6 +41,12 @@ bool legacy_terrain();
 void set_legacy_terrain(bool on);
 float draw_distance_max();
 
+// Terrain pass quads per height sample at full detail ("terrainTessellation", default 4, 2 on Android; ROGUESQ_F5_STATIC_TERRAIN_SUB overrides). Applies live.
+constexpr int kTerrainTessellationMin = 1;
+constexpr int kTerrainTessellationMax = 8;
+int terrain_tessellation();
+void set_terrain_tessellation(int quads);
+
 // Where widescreen puts the edge HUD ("hudPlacement" in roguesq_video.json): 0 = the original 4:3 spots, 1 = the screen edges. Applies live.
 float hud_placement();
 void set_hud_placement(float placement);
@@ -107,9 +113,8 @@ ApplyResult apply_pending(RT64::UserConfiguration& uc);
 // Refresh rates the window's display supports (ascending, distinct), for TARGET FPS.
 void set_refresh_rates(std::vector<int> hz);
 
-// Battle Above Taloraan pins its own far plane and fog and has no terrain, so the multiplier stays 1.0 there.
-constexpr uint32_t kGameViewLevel = 10;
-float effective_draw_distance(float setting, bool game_view, uint32_t level);
+// The draw distance multiplier; 1.0 while the game owns the view. Taloraan's cloud floor keeps the stock fog in the renderer (f5_cloud_floor_fog).
+float effective_draw_distance(float setting, bool game_view);
 
 // Seed uc with the baseline before calling. Reads `path`; schema>=2 -> friendly,
 // otherwise legacy raw merge (migrated=true). Missing/unparseable -> loaded=false.

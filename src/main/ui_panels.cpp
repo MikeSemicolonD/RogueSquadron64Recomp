@@ -663,6 +663,32 @@ static void draw_shader_compile_indicator()
     ImGui::End();
 }
 
+// Top-left frame rates (F7): ImGui runs once per game frame, so its rate is the game's; RT64's present profiler gives the display's.
+static void draw_fps_counter()
+{
+
+    if (!g_show_fps.load())
+    {
+        return;
+    }
+
+    const ImGuiIO& io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(12.0f, 12.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoMove;
+
+    if (ImGui::Begin("##fps", nullptr, flags))
+    {
+        const double present_ms = rs64_rt64_present_ms();
+
+        ImGui::Text("Game     %3.0f FPS  %5.1f ms  frame %d", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f, ImGui::GetFrameCount());
+        ImGui::Text("Display  %3.0f FPS  %5.1f ms", present_ms > 0.0 ? 1000.0 / present_ms : 0.0, present_ms);
+    }
+
+    ImGui::End();
+}
+
 struct Notice {
     std::string key;
     std::string text;
@@ -746,6 +772,7 @@ void draw_dev_ui()
     draw_mods_ui();
     draw_shader_compile_indicator();
     draw_notices();
+    draw_fps_counter();
 
     s_imgui_keyboard.store(ImGui::GetIO().WantCaptureKeyboard);
 

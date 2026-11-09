@@ -199,6 +199,29 @@ static void test_legacy_terrain_default_and_roundtrip() {
     rs64::video::set_legacy_terrain(false);
 }
 
+static void test_terrain_tessellation_default_clamp_and_roundtrip() {
+    UC uc; uc.validate();
+    CHECK(rs64::video::to_friendly(uc).value("terrainTessellation", 0) == 4);
+
+    json in = { {"schema", 2}, {"drawDistance", 1.0}, {"terrainTessellation", 2} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::terrain_tessellation() == 2);
+    CHECK(rs64::video::to_friendly(uc).value("terrainTessellation", 0) == 2);
+
+    in["terrainTessellation"] = 99;
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::terrain_tessellation() == 8);
+
+    in["terrainTessellation"] = 0;
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::terrain_tessellation() == 1);
+
+    in["terrainTessellation"] = "many";
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::terrain_tessellation() == 1);
+    rs64::video::set_terrain_tessellation(4);
+}
+
 // Legacy terrain caps the draw distance at 1.3: switching it on clamps the saved value, values set while it is on are clamped, and a file with
 // both keys loads capped. Off, the range is 1 to 8.
 static void test_legacy_terrain_caps_draw_distance() {
@@ -299,10 +322,9 @@ static void test_language_code_roundtrip() {
 
 static void test_effective_draw_distance() {
     using rs64::video::effective_draw_distance;
-    CHECK(effective_draw_distance(2.0f, false, 15) == 2.0f);
-    CHECK(effective_draw_distance(2.0f, true, 15) == 1.0f);
-    CHECK(effective_draw_distance(2.0f, false, rs64::video::kGameViewLevel) == 1.0f);
-    CHECK(effective_draw_distance(1.0f, false, 0) == 1.0f);
+    CHECK(effective_draw_distance(2.0f, false) == 2.0f);
+    CHECK(effective_draw_distance(2.0f, true) == 1.0f);
+    CHECK(effective_draw_distance(1.0f, false) == 1.0f);
 }
 
 // rayTracing: the file round-trips the player's setting; an env var pins the live switch but never leaks into the file.
@@ -325,6 +347,13 @@ static void test_ray_tracing_settings() {
     rs64::video::apply_friendly(uc, json{{"rayTracing", {{"ambientOcclusion", true}}}});
     CHECK(rs64lights::feature(Feature::AmbientOcclusion));
     _putenv("ROGUESQ_RT_FOG_SHAFTS=");
+    CHECK(j["rayTracing"]["lightLimits"]["engines"] == 12 && j["rayTracing"]["lightLimits"]["lasersMax"] == 8);
+    rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lightLimits", {{"effects", 20}, {"lasersMax", 2}, {"models", 999}}}}}});
+    CHECK(rs64lights::priorityShare(5) == 20 && rs64lights::config().maxProjectileLights == 2);
+    CHECK(rs64lights::priorityShare(3) == rs64lights::MaxLights);
+    j = rs64::video::to_friendly(uc);
+    CHECK(j["rayTracing"]["lightLimits"]["effects"] == 20 && j["rayTracing"]["lightLimits"]["lasersMax"] == 2);
+    rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lightLimits", {{"effects", 10}, {"lasersMax", 8}, {"models", 6}}}}}});
 }
 
 static void test_aa_presets() {
@@ -398,6 +427,7 @@ int main() {
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
     test_legacy_terrain_default_and_roundtrip();
+    test_terrain_tessellation_default_clamp_and_roundtrip();
     test_legacy_terrain_caps_draw_distance();
     test_fullscreen_roundtrip_and_peek();
     test_hud_placement();
