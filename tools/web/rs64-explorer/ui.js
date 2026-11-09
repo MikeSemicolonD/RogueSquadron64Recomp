@@ -42,6 +42,9 @@ $('filterClear').onclick = () => {
 };
 
 const setMode = (m) => {
+  if (mode === 'levels' && m !== 'levels')
+    rememberLevel();
+
   mode = m;
 
   for (const [id, k] of [
@@ -71,6 +74,7 @@ const setMode = (m) => {
   if (typeof lightsPanel === 'function')
     lightsPanel();
 
+  syncBackButton();
   renderList();
 };
 
@@ -80,7 +84,7 @@ $('tabAudio').onclick = () => setMode('audio');
 $('audCat').onchange = $('audLevel').onchange = renderList;
 $('viewOrtho').onclick = () => root && !cut && setOrtho(!orthoView);
 $('tabModels').onclick = () => setMode('models');
-$('tabLevels').onclick = () => setMode('levels');
+$('tabLevels').onclick = () => (backTo ? returnToLevel() : setMode('levels'));
 $('tabEffects').onclick = () => setMode('effects');
 
 // Opening the game's link counts as leaving the page, though it does not.
@@ -151,13 +155,70 @@ $('optTerrainLod').oninput = () => {
     refresh();
 };
 
-$('btnBack').onclick = async () => {
+// A level is worth coming back to while its editor is open or it has unexported edits.
+function levelBeingEdited(dir)
+{
+  const folder = dir.split('/').pop();
+
+  return !!editMode || cutEditing || modDirty().some((p) => p.startsWith(dir + '/') || p.includes(`/${folder}/`) || p.includes(`/${folder}_`));
+}
+
+// Leaving a level keeps a way back to it as it was left. always: the right-click card's Open in model view, on any level.
+function rememberLevel(always = false)
+{
+  const dir = cut ? cutLevel : selected;
+
+  if (backTo || !selectedLevel || !dir || (!always && !levelBeingEdited(dir)))
+    return;
+
+  backTo = {
+    level: dir,
+    cut: selected.startsWith('cut:') ? selected.slice(4) : null,
+    view: getView(),
+    editMode,
+    item: sel && { type: sel.it.type, index: sel.it.index }
+  };
+
+  const folder = dir.split('/').pop();
+
+  $('btnBack').textContent = '← Back to ' + (modLevelOf(dir)?.title ?? lvName(folder));
+  syncBackButton();
+}
+
+// The way back shows only once something else has replaced the level on screen.
+function syncBackButton()
+{
+  const covered = document.body.classList.contains('audio') || document.body.classList.contains('fonts');
+
+  $('btnBack').hidden = !backTo || (!covered && selected === (backTo.cut ? 'cut:' + backTo.cut : backTo.level));
+}
+
+async function returnToLevel()
+{
   const b = backTo;
 
-  $('tabLevels').click();
-  await showLevel(b.level, true);
+  backTo = null;
+  $('btnBack').hidden = true;
+  setMode('levels');
+
+  if (selected !== (b.cut ? 'cut:' + b.cut : b.level))
+    await (b.cut ? showCutscene(b.cut) : showLevel(b.level, true));
+
+  if (b.cut)
+    return;
+
   setView(b.view);
-};
+
+  if (b.editMode && editMode !== b.editMode)
+    setEditMode(b.editMode);
+
+  const again = b.item && editObjects().find(([, x]) => x.type === b.item.type && x.index === b.item.index && !x.pathEvent);
+
+  if (again)
+    select(again[0]);
+}
+
+$('btnBack').onclick = returnToLevel;
 
 $('optTex').onchange = () => {
   $('optFilter').disabled = !$('optTex').checked;
@@ -242,7 +303,7 @@ $('optSpread').oninput = () => {
 
 $('optFogDist').oninput = () => {
   $('fogVal').textContent = $('optFogDist').value + 'x';
-  applyFog();
+  updateFog();
 };
 
 // The shown model's skeletal animations as clips: each track key is posed with poseNode (the viewer's own rule, pivots included) and
@@ -403,7 +464,7 @@ function updateModButton()
 
   $('btnMod').disabled = !n;
   $('btnPlay').disabled = !rom;
-  $('btnModLabel').textContent = n ? `Export mod (${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
+  $('btnModLabel').textContent = n ? `Export mod\n(${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
   $('btnUndo').disabled = !history.at;
   $('btnRedo').disabled = history.at >= history.steps.length;
 }
@@ -458,13 +519,19 @@ async function readJson(path, fallback) {
 
 const writeJson = (path, value, label, indent) => editText(path, JSON.stringify(value, null, indent), label);
 
+let historyDepth = 0;
+
+// A group inside a group joins it, so the whole action stays one undo step.
 async function historyGroup(label, fn) {
-  history.begin(label);
+  if (!historyDepth++)
+    history.begin(label);
 
   try {
     return await fn();
   } finally {
-    history.end();
+    if (!--historyDepth)
+      history.end();
+
     updateModButton();
   }
 }
@@ -725,6 +792,76 @@ function askChoice(question, answers) {
   });
 }
 
+// Import options for a craft: the nose direction, and the canopy and exhaust options the craft has parts for.
+function askCraftImport(file, hob, engines)
+{
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const names = hob.objects[0].lods[0].flat().map((p) => p.name ?? '');
+  const hasPart = (prefix) => names.some((n) => n.startsWith(prefix));
+
+  const row = (text, ...inputs) => {
+    const l = elem('label', { textContent: text });
+
+    l.append(...inputs);
+
+    return l;
+  };
+
+  const nose = elem('select', { title: 'The way the front of the model points in your file' });
+
+  nose.append(new Option('+Z (Blender\'s default)', '+z'), new Option('-Z', '-z'));
+
+  const glass = elem('input', { type: 'checkbox' });
+  const exhaust = elem('select');
+  const colour = elem('input', { type: 'color', value: '#20ff20', hidden: true });
+
+  exhaust.append(new Option('Stock', 'stock'), new Option('Colour', 'colour'), new Option('None', 'none'));
+
+  exhaust.onchange = () => {
+    colour.hidden = exhaust.value !== 'colour';
+  };
+
+  const rows = [elem('b', { textContent: `Import ${file}` }), row('Nose ', nose)];
+
+  if (hasPart('wnd_'))
+    rows.push(row('Hide cockpit glass ', glass));
+
+  if (hasPart('eng_'))
+    rows.push(row('Exhaust ', exhaust, colour));
+
+  if (engines.length)
+    rows.push(elem('small', { textContent: `Flames move to the model's ${engines.length} eng_ markers` }));
+
+  const go = elem('button', { textContent: 'Import' });
+  const cancel = elem('button', { textContent: 'Cancel' });
+
+  cancel.onclick = () => d.close();
+
+  return new Promise((res) => {
+    go.onclick = () => {
+      const tint = exhaust.value === 'colour' ? parseInt(colour.value.slice(1), 16) : undefined;
+
+      res({ plusZ: nose.value === '+z', noGlass: glass.checked, exhaust: exhaust.value === 'none' ? 'none' : tint });
+      d.close();
+    };
+
+    d.onclose = () => {
+      d.remove();
+      res(null);
+    };
+
+    const actions = elem('div', { className: 'actions' });
+
+    actions.append(go, cancel);
+    d.append(...rows, actions);
+    document.body.append(d);
+    d.showModal();
+  });
+}
+
+// Highest face count tested in the game; it crashes when the faces fill its display list pool.
+const CRAFT_MAX_FACES = 1500;
+
 // Replaces a player craft's geometry with a .glb (hobImportCraft). Each of the model's textures takes one of the craft's free texture
 // slots, the most used texture the largest slot; untextured faces share a white slot.
 // shortcut: textures beyond the craft's free slots reuse the last slot; pack them into fewer images (an atlas) if that shows.
@@ -744,14 +881,6 @@ async function importCraftModel()
   if (!file)
     return;
 
-  const plusZ = await askChoice(`Which way does the nose of ${file.name} point?`, [
-    [true, '+Z', 'The usual glTF export (Blender\'s default): turned to face the game\'s way'],
-    [false, '-Z', 'Already faces the game\'s way: kept as it is']
-  ]);
-
-  if (plusZ == null)
-    return;
-
   busy('Importing model...');
 
   try {
@@ -768,8 +897,12 @@ async function importCraftModel()
 
     const tris = [];
     const v = new THREE.Vector3();
+    const engines = [];
 
     gltf.scene.traverse((o) => {
+      if (!o.isMesh && !o.children.length && /^eng_/i.test(o.name))
+        engines.push(o.getWorldPosition(new THREE.Vector3()).toArray());
+
       if (!o.isMesh)
         return;
 
@@ -817,6 +950,15 @@ async function importCraftModel()
     if (!tris.length)
       throw new Error('That file has no meshes');
 
+    busy(null);
+
+    const options = await askCraftImport(file.name, model.hob, engines);
+
+    if (!options)
+      return;
+
+    busy('Importing model...');
+
     const uses = new Map();
 
     for (const t of tris)
@@ -829,7 +971,11 @@ async function importCraftModel()
       t.mat = slotOf.get(t.map).mat;
 
     const dv = await rom.read(id + '_HOB');
-    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0].mat, plusZ });
+    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0].mat, engines, ...options });
+    const faces = parseHOB(new DataView(out.buffer, out.byteOffset, out.byteLength)).objects[0].lods[0].flat().reduce((s, p) => s + p.faces.length, 0);
+
+    if (faces > CRAFT_MAX_FACES)
+      throw new Error(`${file.name} has ${faces} faces after import and the game runs out of memory above ${CRAFT_MAX_FACES}. Reduce it (Blender: Decimate modifier) and import again.`);
 
     const images = ranked.slice(0, slots.length).map((map) => {
       const { tex } = slotOf.get(map);
@@ -958,11 +1104,15 @@ function sculptStatus(text)
     $('sculptInfo').textContent = [text, sculpt.notice].filter(Boolean).join(' · ');
 }
 
-function sculptBudget(tiles) {
+function sculptBudget(tiles)
+{
   const m = $('sculptBudget');
 
   m.value = tiles;
   m.title = `${tiles} of ${m.max} ground tiles`;
+
+  // Most maps can never come near the limit, so it only shows once a level does.
+  $('sculptBudgetRow').hidden = tiles < m.max * 0.8;
 }
 
 // The level's terrain textures as swatches: a click picks one to paint with (and the Paint tool); the current one is outlined.
@@ -983,6 +1133,7 @@ function fillSculptPalette() {
     c.onclick = () => {
       $('sculptTool').value = 'paint';
       setSculptTex(k);
+      sculptToolChanged();
     };
 
     pal.append(c);
@@ -1006,14 +1157,93 @@ function setSculptTex(k)
 function sculptHit(e)
 {
   const terrain = root?.getObjectByName('terrain');
-  const hit = terrain && pick(e, [terrain]);
+  const p = terrain?.visible && terrainRay(e, terrain);
 
-  if (!hit || hit.object !== terrain)
+  return p ? { gx: p.x * 2, gy: p.z * 2, swap: e.shiftKey, pick: e.altKey } : null;
+}
+
+// The live heights while sculpting, else the terrain's own, kept until its data changes.
+function terrainHeights(terrain)
+{
+  if (sculpt)
+    return sculpt;
+
+  const { hmp } = terrain.userData.tiles;
+
+  if (terrain.userData.heights?.hmp !== hmp)
+    terrain.userData.heights = { hmp, grid: hmpGrid(hmp), scale: hmp.heightScale };
+
+  return terrain.userData.heights;
+}
+
+// Where the cursor's ray meets the ground, in the terrain's space. It walks the height grid along the ray: testing the mesh's 400,000 triangles took over 30 ms a move.
+function terrainRay(e, terrain)
+{
+  const { grid: g, scale } = terrainHeights(terrain);
+
+  pick(e, []);
+  terrain.updateWorldMatrix(true, false);
+
+  const ray = raycaster.ray.clone().applyMatrix4(terrain.matrixWorld.clone().invert());
+
+  if (!terrain.geometry.boundingBox)
+    terrain.geometry.computeBoundingBox();
+
+  const { min, max } = terrain.geometry.boundingBox;
+  const span = [[ray.origin.x, ray.direction.x, min.x, max.x], [ray.origin.z, ray.direction.z, min.z, max.z]];
+  let t0 = 0;
+  let t1 = Infinity;
+
+  for (const [from, dir, low, high] of span)
+  {
+    if (Math.abs(dir) < 1e-9) {
+      if (from < low || from > high)
+        return null;
+
+      continue;
+    }
+
+    const a = (low - from) / dir;
+    const b = (high - from) / dir;
+
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  }
+
+  if (t0 > t1)
     return null;
 
-  const p = terrain.worldToLocal(hit.point.clone());
+  const point = new THREE.Vector3();
+  const above = (t) => ray.at(t, point).y - groundAt(g.hts, g, scale, point.x, point.z);
 
-  return { gx: p.x * 2, gy: p.z * 2, swap: e.shiftKey, pick: e.altKey };
+  // Only a crossing from the camera's side counts: a ray can enter the map's edge already below the ground there.
+  const side = Math.sign(above(0));
+  const STEP = 0.04;
+
+  for (let t = t0; t < t1; t += STEP)
+  {
+    const next = Math.min(t + STEP, t1);
+
+    if (Math.sign(above(t)) !== side || Math.sign(above(next)) === side)
+      continue;
+
+    let lo = t;
+    let hi = next;
+
+    for (let k = 0; k < 12; k++)
+    {
+      const mid = (lo + hi) / 2;
+
+      if (Math.sign(above(mid)) === side)
+        lo = mid;
+      else
+        hi = mid;
+    }
+
+    return ray.at(hi, point).clone();
+  }
+
+  return null;
 }
 
 const inMap = (h) => h.gx >= 0 && h.gy >= 0 && h.gx <= sculpt.grid.W - 1 && h.gy <= sculpt.grid.H - 1;
@@ -1104,8 +1334,9 @@ canvas.addEventListener('pointermove', sculptHover);
 const brushTool = (h) => (h.pick ? 'pick' : (h.swap ? { raise: 'lower', lower: 'raise' }[$('sculptTool').value] ?? $('sculptTool').value : $('sculptTool').value));
 
 // Terrain-mode keys: 1-6 pick the tool, [ and ] shrink and grow the brush.
-function sculptKey(e) {
-  const tools = [...$('sculptTool').options].map((o) => o.value);
+function sculptKey(e)
+{
+  const tools = [...document.querySelectorAll('[data-sculpt]')].map((b) => b.dataset.sculpt);
   const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
 
   if (e.ctrlKey || e.metaKey || e.altKey)
@@ -1132,9 +1363,22 @@ function sculptToolChanged()
 {
   $('sculptPalette').hidden = !['paint', 'pick'].includes($('sculptTool').value);
   $('sculptFlatRow').hidden = $('sculptTool').value !== 'flatten';
+
+  for (const b of document.querySelectorAll('[data-sculpt]'))
+    b.classList.toggle('on', b.dataset.sculpt === $('sculptTool').value);
+
+  for (const b of document.querySelectorAll('[data-shape]'))
+    b.classList.toggle('on', b.dataset.shape === $('sculptShape').value);
 }
 
-$('sculptTool').addEventListener('change', sculptToolChanged);
+for (const [attr, input] of [['sculpt', 'sculptTool'], ['shape', 'sculptShape']])
+  for (const b of document.querySelectorAll(`[data-${attr}]`))
+    b.onclick = () => {
+      $(input).value = b.dataset[attr];
+      sculptToolChanged();
+    };
+
+sculptToolChanged();
 
 // The map tiles a brush of radius r (grid steps) at grid point (gx, gy) can touch.
 const brushBox = (g, gx, gy, r) => ({
@@ -1196,7 +1440,7 @@ function brushPaint(g, gx, gy, r, texture, square = false) {
   return brushBox(g, gx, gy, r);
 }
 
-const brushShape = () => ({ square: $('sculptShape').value.includes('square'), hard: $('sculptShape').value.includes('hard') });
+const brushShape = () => ({ square: $('sculptShape').value === 'square' });
 
 // Applies the panel's brush at grid point (gx, gy); returns the map tiles it may have changed ({ x0, y0, x1, y1 }) or false.
 function brush(h)
@@ -1625,12 +1869,14 @@ let cutLevel = null;
 
 function fillCutPick(dir)
 {
+  // A refill under the open cutscene keeps it picked while its entry is rebuilt.
+  const open = cut && cutLevel === dir ? $('cutPick').value : '';
+
   cutLevel = dir;
 
   const ml = modLevelOf(dir);
   const n = parseInt(dir.split('/lv_')[1], 36);
   const files = [];
-  const cams = [];
 
   for (const [kind, label] of [['intro', 'Intro'], ['extro', 'Extro'], ['special', 'Ending ceremony']])
   {
@@ -1642,10 +1888,10 @@ function fillCutPick(dir)
 
   const camItems = (root?.getObjectByName('markers')?.children ?? []).map((m) => m.userData.item).filter((it) => it.type === 0 && it.sub === 0x26);
 
-  for (const it of camItems)
-    cams.push([`cam:${it.index}`, it.name || 'camera #' + it.index]);
-
   const opt = ([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`;
+
+  cutSeqs.clear();
+  cutCrawl = null;
 
   // The level's opening crawl plays before its intro (stock chapter levels and mod levels; see levelCrawl).
   let seqsNow = [];
@@ -1655,29 +1901,40 @@ function fillCutPick(dir)
     seqsNow = seqs;
 
     const cuts = [...(crawlOpt ? [crawlOpt] : []), ...files];
+    const keep = $('cutPick').value || open;
 
     $('cutPick').innerHTML = opt(['', 'None (Level Editor)']) + (cuts.length ? `<optgroup label="Cutscenes">${cuts.map(opt).join('')}</optgroup>` : '')
-      + (seqs.length ? `<optgroup label="In-mission sequences">${seqs.map(opt).join('')}</optgroup>` : '')
-      + (cams.length ? `<optgroup label="In-mission cameras">${cams.map(opt).join('')}</optgroup>` : '');
+      + (seqs.length ? `<optgroup label="In-mission sequences">${seqs.map(opt).join('')}</optgroup>` : '');
+
+    $('cutPick').value = keep;
+
+    if ($('cutPick').selectedIndex < 0)
+      $('cutPick').selectedIndex = 0;
 
     if (cut?.crawl)
       $('cutPick').value = 'crawl';
 
-    $('cutPickHead').hidden = $('cutPickRow').hidden = !cuts.length && !cams.length;
+    $('cutPickHead').hidden = $('cutPickRow').hidden = false;
+    syncCutPickTools();
   };
 
   fill([]);
 
-  levelCrawl(dir).then((lc) => {
+  const crawlRead = levelCrawl(dir).then((lc) => {
     if (cutLevel !== dir || !lc)
       return;
 
+    cutCrawl = lc;
     crawlOpt = ['crawl', 'Opening crawl'];
     fill();
   });
 
   // The sequences need the camera records' next-item links, read from the level file.
-  if (camItems.length)
+  if (!camItems.length)
+    return crawlRead;
+
+  return Promise.all([
+    crawlRead,
     rom.read(dir + '/dat').then((dv) => {
       if (cutLevel !== dir)
         return;
@@ -1690,13 +1947,164 @@ function fillCutPick(dir)
         const chain = seqChain(r, byName);
         const unused = SEQ_UNUSED.has(`${dir.split('/').pop()}:${r.it.name}`) ? ', unused' : '';
 
+        cutSeqs.set(`seq:${r.it.index}`, chain);
+
         return [
           `seq:${r.it.index}`,
           chain.length > 1 || unused ? `${r.it.name} (${chain.length > 1 ? chain.length + ' shots' : ''}${chain.length > 1 ? unused : unused.slice(2)})` : r.it.name
         ];
       }));
-    });
+    })
+  ]);
 }
+
+// The level's sequences by list value (each its chain of camera records), and its crawl if it has one.
+const cutSeqs = new Map();
+let cutCrawl = null;
+
+function syncCutPickTools()
+{
+  const v = $('cutPick').value;
+  const chain = cutSeqs.get(v);
+
+  $('cutSeqNameRow').hidden = !chain;
+
+  if (chain)
+    $('cutSeqName').value = chain[0].it.name;
+
+  $('cutDel').hidden = !chain && !(v === 'crawl' && (cutCrawl?.level || cutCrawl?.exists));
+}
+
+// Refills the list after the level changed, then opens that entry.
+async function reopenCutPick(value)
+{
+  await showLevel(cutLevel, true);
+  await fillCutPick(cutLevel);
+  $('cutPick').value = value;
+  await $('cutPick').onchange();
+}
+
+async function addCutSequence()
+{
+  const { index } = await addSeqCamera(cutLevel, 'Sequence');
+
+  await reopenCutPick(`seq:${index}`);
+
+  if (!cutEditing)
+    $('cutEdit').click();
+}
+
+async function addCutCrawl()
+{
+  await saveCrawl(await levelCrawl(cutLevel, true), 'New');
+  await reopenCutPick('crawl');
+
+  if (!cutEditing)
+    $('cutEdit').click();
+}
+
+$('cutAdd').onclick = () => {
+  const menu = $('cutAddMenu');
+  const open = menu.hidden;
+
+  menu.hidden = !open;
+  $('cutAdd').setAttribute('aria-expanded', open);
+
+  if (!open)
+    return;
+
+  const rows = [['Mid-mission sequence', 'Camera shots a trigger area or rule can start', addCutSequence]];
+
+  if (!cutCrawl && modLevelOf(cutLevel))
+    rows.push(['Opening crawl', 'Story text that scrolls before the intro', addCutCrawl]);
+
+  menu.replaceChildren(...rows.map(([label, note, add]) => elem('button', {
+    onclick: () => {
+      menu.hidden = true;
+      add();
+    }
+  }, elem('span', { textContent: label }), elem('small', { textContent: note }))));
+
+  const b = $('cutAdd').getBoundingClientRect();
+
+  menu.style.left = `${Math.max(10, b.right - menu.offsetWidth)}px`;
+  menu.style.top = `${Math.max(10, b.top - menu.offsetHeight - 6)}px`;
+};
+
+document.addEventListener('pointerdown', (e) => {
+  if (!$('cutAddMenu').hidden && !e.target.closest('#cutAddMenu, #cutAdd'))
+    $('cutAddMenu').hidden = true;
+}, true);
+
+async function deleteCutSequence(chain)
+{
+  const dir = cutLevel;
+  const names = chain.map((r) => r.it.name);
+  const named = names.find((n) => scriptFinds(n, dir));
+
+  if (named)
+    return alert(`The game looks "${named}" up by name, so this sequence can't be deleted.`);
+
+  if (!confirm(`Delete the sequence "${names[0]}"${names.length > 1 ? ` and its ${names.length} shots` : ''}? Trigger areas and rules that start it will stop working.`))
+    return;
+
+  try {
+    await historyGroup(`Delete ${names[0]}`, async () => {
+      await editAsset(dir + '/dat', (b) => chain.map((r) => r.it.index).sort((x, y) => y - x).reduce(datRemoveUnit, b));
+
+      const text = await virtualText(SHOT_LINKS);
+      const left = shotDropCameras(text, dir.split('/').pop(), names);
+
+      if (left !== text)
+        await editText(SHOT_LINKS, left, `No camera shot: ${names[0]}`);
+    });
+  } catch (e) {
+    return alert(`${e.message}, so it cannot be deleted.`);
+  }
+
+  await showLevel(dir, true);
+}
+
+async function deleteCutCrawl()
+{
+  const dir = cutLevel;
+  const ctx = await levelCrawl(dir);
+
+  if (!confirm(`Delete this opening crawl? ${ctx.level ? 'The level will start without one.' : "The game's original crawl comes back."}`))
+    return;
+
+  await historyGroup('Delete opening crawl', async () => {
+    for (const p of [CRAWL_PATH(ctx.name), crawlBackdrop(ctx.name), crawlDat(ctx.name)])
+      if (edits.has(p))
+        await editAsset(p, () => new Uint8Array(0), 'Delete opening crawl');
+
+    if (ctx.level)
+      await editModLevels((levels) => {
+        levels.find((x) => x.folder === ctx.level.folder).crawl = false;
+      }, 'No opening crawl');
+  });
+
+  await showLevel(dir, true);
+}
+
+$('cutDel').onclick = () => {
+  const v = $('cutPick').value;
+
+  return v === 'crawl' ? deleteCutCrawl() : deleteCutSequence(cutSeqs.get(v));
+};
+
+$('cutSeqName').onchange = async () => {
+  const v = $('cutPick').value;
+  const first = cutSeqs.get(v)[0].it;
+
+  try {
+    await renameObject(first, $('cutSeqName').value.trim(), cutLevel);
+    await reopenCutPick(v);
+  } catch (e) {
+    alert(e.message);
+    syncCutPickTools();
+  }
+};
 
 // In-mission camera sequences (func_800C7884 from the level script -> func_800FB2F8; traced 2026-10-19). A camera item (DAT 0/0x26) holds
 // for +0x60 seconds; +0x64 / +0x68 are item-relative offsets to its target's and the next item's names ("-" for none). With a spawned
@@ -1776,6 +2184,9 @@ const SEQ_AUDIO = {
   'lv_i:Camera_on_Rogue': [[701, 282, 283], 3],
 };
 
+// Flags the level script raises on the frame a shot starts: the units waiting on them appear in the shot, so they play in its preview too.
+const SEQ_WAVES = { 'lv_3:Camera_HL_Shuttle': [19, 20] };
+
 // A sequence as cutscene data (the shape parseCutscene returns), sampled at 30 Hz, so it plays with the cutscene viewer's timeline, audio
 // and effects: one camera entry per shot with type-4 cuts between them, wingman targets as model actors flying their splines, voice lines
 // (type 0, at the speech queue's times) and the music sting (type 1 with its song id).
@@ -1804,47 +2215,190 @@ async function buildSequenceData(dir, startIndex)
   const TIE = { speed: 0x90, start: 0xA0, lift: 0x98, liftRot: 0x9C, gain: 2 };
   const GROUND = { speed: 0x90, start: 0x9C, lift: 0x94, liftRot: 0x98, gain: 0 };
 
+  const TRANSPORT = {
+    ...GROUND,
+    ground: true,
+    normal: true,
+    sink: 0xA0
+  };
+
+  const TROOP = { ...GROUND, ground: true, troop: true };
+  const R = THREE.MathUtils.degToRad;
+  const D = THREE.MathUtils.radToDeg;
+
   const PATH_NPCS = {
     0x27: { speed: 0x98, start: 0xA8, lift: 0xA0, liftRot: 0xA4, gain: 1.5 },
     0x24: SHUTTLE,
+    0x2C: SHUTTLE,
     0x48: SHUTTLE,
     0x12: TIE,
     0x13: TIE,
     0x1F: { ...GROUND, ground: true, walk: 2 },
     0x0F: { ...GROUND, ground: true, walk: 26.4 },
-    0x2E: {
-      ...GROUND,
-      ground: true,
-      normal: true,
-      sink: 0xA0
-    },
-    0x2F: GROUND
+    0x47: { ...GROUND, ground: true, normal: true, walk: 1 / 0.06 },
+    0x25: { speed: 0x90, gain: 0, ground: true },
+    0x2B: TRANSPORT,
+    0x2D: TRANSPORT,
+    0x2E: TRANSPORT,
+    0x2F: GROUND,
+    0x37: { ...GROUND, ground: true },
+    0x3B: TROOP,
+    0x3C: TROOP,
+    0x3D: TROOP,
+    0x50: TROOP
+  };
+
+  // Foot soldiers named to a roam area (npcGroundTroopUpdate; executeActorType2Effect circle, 3 box): every 4-7 s a new heading 22.5-202.5 deg
+  // away, turned at 30 deg/s; straying out it turns back at 150 deg/s. shortcut: back toward the centre, not the game's wall-normal table.
+  const roamPath = (it, zone, speed) => {
+
+    const dt = 1 / fps;
+    const box = zone.type === 6;
+    const cx = box ? zone.pos[0] + zone.size[0] / 2 : zone.pos[0];
+    const cz = box ? zone.pos[2] + zone.size[2] / 2 : zone.pos[2];
+    const out = (x, z) => (box ? x < zone.pos[0] || z < zone.pos[2] || x > zone.pos[0] + zone.size[0] || z > zone.pos[2] + zone.size[2] : Math.hypot(x - cx, z - cz) > zone.radius);
+    const pts = [];
+    let x = it.pos[0];
+    let z = it.pos[2];
+    let yaw = Math.random() * 360;
+    let want = yaw;
+    let rate = 0;
+    let timer = 0;
+
+    for (let k = 0; k <= frames; k++)
+    {
+      pts.push(new THREE.Vector3(x, 0, z));
+      timer -= dt;
+
+      if (out(x + Math.sin(R(yaw)) * speed * dt, z + Math.cos(R(yaw)) * speed * dt))
+      {
+        want = D(Math.atan2(cx - x, cz - z));
+        rate = 150;
+      }
+      else if (!rate && timer <= 0)
+      {
+        timer = 4 + Math.random() * 3;
+        want = yaw + (Math.random() < 0.5 ? -1 : 1) * (22.5 + Math.random() * 180);
+        rate = 30;
+      }
+
+      if (rate)
+      {
+        const diff = THREE.MathUtils.euclideanModulo(want - yaw + 180, 360) - 180;
+        const step = rate * dt;
+
+        yaw += Math.sign(diff) * Math.min(step, Math.abs(diff));
+
+        if (Math.abs(diff) <= step)
+          rate = 0;
+      }
+
+      x += Math.sin(R(yaw)) * speed * dt;
+      z += Math.cos(R(yaw)) * speed * dt;
+    }
+
+    return (u) => {
+
+      const f = THREE.MathUtils.clamp(u, 0, 1) * frames;
+      const k = Math.min(frames - 1, Math.floor(f));
+
+      return pts[k].clone().lerp(pts[k + 1], f - k);
+    };
+  };
+
+  // Fraction along the path per frame, and its wing moves. 0x1B events retarget the speed (updateNpcEffectIntensity): the value or a multiple
+  // of the current speed, 0.1 if not positive, eased by sin(p * 90 deg) over c seconds (executeActorType1Effect).
+  const pathTrack = (path, u0, speed0, len) => {
+
+    const events = (path.events ?? []).map((e) => ({ at: e.at, t: items.find((i) => i.type === 7 && i.index === e.trigger) })).sort((a, b) => a.at - b.at);
+    const dt = 1 / fps;
+    const us = [u0];
+    const wings = [];
+    let u = u0;
+    let speed = speed0;
+    let from = speed0;
+    let to = speed0;
+    let p = 1;
+    let rate = 0;
+    let next = 0;
+
+    for (let k = 1; k <= frames; k++)
+    {
+      for (; next < events.length && events[next].at <= u; next++)
+      {
+        const { t } = events[next];
+        const e = t?.pathEvent;
+
+        if (t?.sub === 0x1B)
+        {
+          const v = e.ib ? speed * e.a : e.a;
+
+          from = speed;
+          to = v > 0 ? v : 0.1;
+          p = 0;
+          rate = e.c > 0 ? 1 / e.c : 0;
+
+          if (!rate)
+            speed = to;
+        }
+        else if (t?.sub === 0x1A && e.w[0] === 1)
+          wings.push({ frame: k - 1, forward: e.fl[1] > 0, frames: Math.max(1, Math.round(e.fl[2] * fps)) });
+      }
+
+      if (speed !== to)
+      {
+        p += rate * dt;
+        speed = p >= 1 ? to : from + (to - from) * Math.sin((p * Math.PI) / 2);
+      }
+
+      u = Math.min(1, u + (speed * dt) / (len || 1));
+      us.push(u);
+    }
+
+    return { us, wings };
   };
 
   const targets = new Map();
+  const waveFlags = SEQ_WAVES[`${dir.split('/').pop()}:${first.it.name}`] ?? [];
 
-  for (const r of chain)
+  // Besides the camera targets: the units the shot's flags bring in, and ground units with no wave gate near its cameras, which are already walking.
+  const SEQ_NEAR = 50;
+  const nearShot = (i) => chain.some((r) => new THREE.Vector3(...r.it.pos).distanceTo(new THREE.Vector3(...i.pos)) < SEQ_NEAR);
+
+  const joinsShot = (i) => {
+
+    const w = waveGet(dv, i);
+
+    return waveFlags.includes(w?.flag) || (PATH_NPCS[i.sub]?.ground && !w?.flag && !w?.counter && nearShot(i));
+  };
+
+  const extras = new Set(items.filter((i) => i.type === 0 && joinsShot(i)));
+  const inShot = [...chain.map((r) => r.target !== '-' && items.find((i) => i.type === 0 && i.name === r.target)), ...extras];
+
+  for (const it of inShot)
   {
-    const it = r.target !== '-' && items.find((i) => i.type === 0 && i.name === r.target);
-
     if (!it || targets.has(it.name))
       continue;
 
     const path = it.model && items.find((s) => s.type === 3 && s.name === it.model && s.points?.length > 1);
-    const kind = path && PATH_NPCS[it.sub];
+    const zone = !path && PATH_NPCS[it.sub]?.troop && it.model && items.find((s) => s.name === it.model && (s.type === 6 || s.radius));
+    const kind = (path?.points.length >= 4 || zone) && PATH_NPCS[it.sub];
 
-    // A uniform Catmull-Rom over the points, its parameter advancing speed / path length per second from start * speed / length (0 past 1).
-    // shortcut: the path length (path +0x24) is taken as the curve's arc length.
-    const curve = kind && new THREE.CatmullRomCurve3(path.points.map((p) => new THREE.Vector3(...p)), false, 'catmullrom', 0.5);
+    // The game's curve and stored length; the parameter advances speed / length per second from start * speed / length (0 past 1).
+    const curveAt = kind && !zone && splineAt(dv, path);
+    const roamAt = zone && roamPath(it, zone, dv.getFloat32(it.offset + kind.speed));
+    const curve = kind && { getPoint: zone ? roamAt : (u) => new THREE.Vector3(...curveAt(u)) };
     const f = (k) => dv.getFloat32(it.offset + k);
-    const len = curve ? curve.getLength() : 0;
+    const len = curve && !zone ? dv.getFloat32(path.offset + 0x24) : 0;
     const speed = kind ? f(kind.speed) : 0;
-    const t0 = kind && len ? (f(kind.start) * speed) / len : 0;
+    const t0 = kind?.start && len ? (f(kind.start) * speed) / len : 0;
+    const roamTrack = { us: Array.from({ length: frames + 1 }, (_, k) => k / frames), wings: [] };
+    const track = kind && (zone ? roamTrack : pathTrack(path, t0 > 1 ? 0 : t0, speed, len));
 
-    targets.set(it.name, { it, kind, curve, len, speed, t0: t0 > 1 ? 0 : t0, rest: new THREE.Vector3(...(path ? path.points[0] : it.pos)) });
+    targets.set(it.name, { it, kind, curve, len, speed, track, rest: new THREE.Vector3(...(path ? pathStart(path) : it.pos)) });
   }
 
-  const pathU = (tg, sec) => 0.999 * THREE.MathUtils.clamp(tg.t0 + (tg.speed * sec) / tg.len, 0, 1) + 0.001;
+  const pathU = (tg, sec) => 0.999 * tg.track.us[Math.min(frames, Math.round(sec * fps))] + 0.001;
   const at = (tg, sec) => (tg.curve ? tg.curve.getPoint(pathU(tg, sec)) : tg.rest.clone());
 
   const keys = (vals) => {
@@ -1883,8 +2437,6 @@ async function buildSequenceData(dir, startIndex)
   const actors = [];
   const foilEvents = [];
   const hidden = [];
-  const R = THREE.MathUtils.degToRad;
-  const D = THREE.MathUtils.radToDeg;
   const Y = new THREE.Vector3(0, 1, 0);
 
   for (const tg of [...targets.values()].filter((t) => t.curve))
@@ -1897,6 +2449,9 @@ async function buildSequenceData(dir, startIndex)
     let name;
     let src = null;
     let obj;
+
+    if (!holder && extras.has(tg.it))
+      continue;
 
     if (holder) {
       src = holder.userData.source;
@@ -1916,8 +2471,8 @@ async function buildSequenceData(dir, startIndex)
 
     const f = (k) => dv.getFloat32(o + k);
     const scale = tg.it.scale[0] || 0.25;
-    const lift = f(K.lift);
-    const liftRot = f(K.liftRot);
+    const lift = K.lift ? f(K.lift) : 0;
+    const liftRot = K.liftRot ? f(K.liftRot) : 0;
     const sink = K.sink ? f(K.sink) : 0;
     const level = K.level && dv.getUint32(o + K.level);
     const ch = [...Array(11)].map(() => []);
@@ -2101,6 +2656,10 @@ async function buildSequenceData(dir, startIndex)
     if (K.wings && dv.getUint32(o + K.wings))
       foilEvents.push({ type: 11, frame: 0, p: [i, 290, 1, 0] });
 
+    // Path event 0x1A on a shuttle (npcShuttleUpdate): the wings ease to 110 deg, or back to folded.
+    if (K.wings)
+      tg.track.wings.forEach((w) => foilEvents.push({ type: 11, frame: w.frame, p: [i, w.forward ? 290 : 180, w.frames, 0] }));
+
     // Walk cycle (npcAtStUpdate / npcAtAtUpdate): one cycle per walk * scale / speed seconds, as a type-13 rate over the whole sequence.
     if (K.walk && tg.speed > 0)
       foilEvents.push({ type: 13, frame: 0, p: [i, (length * tg.speed * 10) / (K.walk * scale), 0, 0] });
@@ -2109,6 +2668,7 @@ async function buildSequenceData(dir, startIndex)
       name,
       src,
       anim: K.walk && src && src.id.replace(/[^/]*$/, '') + src.id.split('/').pop().split('_')[0] + '_walk',
+      spriteClip: K.troop && src ? src.id.replace(/[^/]*$/, '') + SPRITE_ANIMS[src.id.replace(/^data\//, '')]?.[0] : null,
       phase0: K.walk ? Math.abs(((Math.random() * 128) | 0) - 64) / 64 : 0,
       flags: 0xff,
       model: true,
@@ -2192,28 +2752,10 @@ async function buildSequenceData(dir, startIndex)
   return { name: first.it.name, frames, length, fps, events, cameras, camera: cameras[0], actors, voiceRow, hidden, seq, picAspect: (4 / 3) * (224 / 170) };
 }
 
-// Looks through a camera placement: game cameras look down +Z (the marker pyramid opens that way).
-function lookThroughCamera(index)
-{
-  const m = root?.getObjectByName('markers')?.children.find((c) => c.userData.item.type === 0 && c.userData.item.index === index);
-
-  if (!m)
-    return;
-
-  const it = m.userData.item;
-
-  root.updateMatrixWorld(true);
-
-  const p = root.localToWorld(new THREE.Vector3(...it.pos));
-  const d = new THREE.Vector3(0, 0, 1).applyMatrix4(placementRotation(it.rot)).transformDirection(root.matrixWorld);
-
-  camera.position.copy(p);
-  controls.target.copy(p).addScaledVector(d, 5);
-  controls.update();
-}
-
 $('cutPick').onchange = async () => {
   const v = $('cutPick').value;
+
+  syncCutPickTools();
 
   if (v === 'crawl')
     return showCrawl(cutLevel);
@@ -2228,7 +2770,4 @@ $('cutPick').onchange = async () => {
     await showLevel(cutLevel, true);
     $('cutPick').value = v;
   }
-
-  if (v.startsWith('cam:'))
-    lookThroughCamera(+v.slice(4));
 };

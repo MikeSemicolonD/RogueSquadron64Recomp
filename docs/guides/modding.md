@@ -159,6 +159,10 @@ Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>`
 - `fog.reach`: at a longer draw distance, `scale` moves the fog out with it, `thin` keeps the stock fog and thins it out to the new edge, and `stock` holds a solid wall. Left out, `thin` when `start` is under 0.85, otherwise `scale`.
 - `clouds`: its presence adds Battle Above Taloraan's cloud sheets. `wind` is `[x, z]` in units per second. `altitude` holds them around one height (Y points down, so above the ground is negative); left out, they stay around the player, which suits a level with no ground. `tint` replaces their tan colour.
 
+### Models from other levels
+
+`assets/level/<folder>/packages.json` loads other levels' model packages into a level, so its objects can use their models: `{ "version": 1, "levels": ["lv_2", "lv_h"] }`. The RS64 Explorer writes this file when you place something from another level. The game shares a texture between packages that use the same name, so the Explorer also gives clashing textures their own names in that level's `opkg_HMT`, which ships with the mod.
+
 ### Level rules
 
 Rules add "when this happens, do that" to a level without code. They live in `assets/level/<folder>/rules.json`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>` (`lv_1` is Barkhesh):

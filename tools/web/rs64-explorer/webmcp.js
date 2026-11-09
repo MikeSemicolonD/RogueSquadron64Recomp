@@ -374,12 +374,15 @@ const WEBMCP_TOOLS = [
       properties: { type: { type: 'integer' }, index: { type: 'integer' }, pos: vec3, rot: vec3, scale: vec3 },
       required: ['type', 'index']
     },
-    run: async ({ type, index, pos, rot, scale }) => {
+    run: async ({ type, index, pos: asked, rot, scale }) => {
       mcpNeedLevel();
 
-      const [o] = mcpObject(type, index);
+      const [o, item] = mcpObject(type, index);
 
       select(o);
+
+      // A music region's inner box selects as its outer box, so the same move is applied there.
+      const pos = asked && item !== sel.it ? asked.map((v, a) => v - item.pos[a] + sel.it.pos[a]) : asked;
 
       if (sel.fixed || sel.pathNode)
         throw new Error(`This object can't be moved on its own${sel.fixed ?? ': it sits on a spline'}`);
@@ -419,7 +422,8 @@ const WEBMCP_TOOLS = [
     run: async ({ type, index, force = false }) => {
       mcpNeedLevel();
 
-      const it = mcpObject(type, index)[1];
+      const picked = mcpObject(type, index)[1];
+      const it = picked.musicRegion ?? picked;
       const dir = selected;
 
       if (!canDelete(it))
@@ -434,7 +438,14 @@ const WEBMCP_TOOLS = [
       if (refs && !force)
         throw new Error(`Other items in this level mention "${it.name}" (${refs}x: triggers, paths or areas); pass force to delete it anyway`);
 
-      await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveItem(b, 0, it.index) : datRemoveIndexed(b, it.type, it.index)));
+      await historyGroup(`Delete ${it.name || 'item'}`, async () => {
+        await arrowsForget(dir, it);
+        await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveUnit(b, it.index) : datRemoveIndexed(b, it.type, it.index)));
+
+        if (it.musicTrigger)
+          await editAsset(dir + '/dat', (b) => datRemoveIndexed(b, 6, it.musicTrigger.index - (it.musicTrigger.index > it.index ? 1 : 0)));
+      });
+
       await reloadLevel(dir);
 
       return { deleted: mcpItem(it) };

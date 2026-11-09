@@ -382,6 +382,8 @@ void rs64_rules_frame(uint8_t*, recomp_context*);
 void rs64_rules_mission_start(uint8_t*);
 void rs64_rules_path(uint8_t*, uint32_t);
 void rs64_rules_voice_text(uint8_t*);
+void rs64_load_level_packages(uint8_t*, recomp_context*);
+void rs64_th_loadDatFile_800472E8(uint8_t* rdram, recomp_context* ctx);
 void rs64_rules_voice_text_id(recomp_context*);
 void rs64_set_language(int lang);
 void rs64_slider_redirect(uint8_t* rdram, unsigned sp);

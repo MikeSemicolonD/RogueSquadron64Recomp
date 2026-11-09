@@ -81,20 +81,71 @@ for (const proto of [AudioScheduledSourceNode.prototype, AudioBufferSourceNode.p
 function syncNav()
 {
   const open = !document.body.classList.contains('nav-closed');
-  const t = open ? 'Hide the sidebar' : 'Show the sidebar';
+  const t = open ? 'Drag to resize the sidebar, or click to hide it' : 'Click or drag to show the sidebar';
   const b = $('navToggle');
 
-  b.innerHTML = iconImg(open ? 'chevronLeft' : 'chevronRight');
   b.title = t;
   b.setAttribute('aria-label', t);
   b.setAttribute('aria-expanded', open);
 }
 
+const NAV_WIDTHS = { hide: 120, min: 200, max: 560 };
+const setNavWidth = (w) => document.body.style.setProperty('--nav-w', `${w}px`);
+
+// The bar on the sidebar's edge: drag to resize, past the narrowest width to hide it, or click to hide or show it.
+let navDragged = false;
+
+$('navToggle').onpointerdown = (e) => {
+  const bar = $('navToggle');
+  const body = document.body;
+  const start = body.classList.contains('nav-closed') ? 0 : document.querySelector('aside').offsetWidth;
+  let width = start;
+
+  navDragged = false;
+  bar.setPointerCapture(e.pointerId);
+  body.classList.add('nav-drag');
+
+  bar.onpointermove = (m) => {
+    navDragged ||= Math.abs(m.clientX - e.clientX) > 3;
+
+    if (!navDragged)
+      return;
+
+    width = start + m.clientX - e.clientX;
+    body.classList.toggle('nav-closed', width < NAV_WIDTHS.hide);
+
+    if (width >= NAV_WIDTHS.hide)
+      setNavWidth(Math.round(Math.min(NAV_WIDTHS.max, Math.max(NAV_WIDTHS.min, width))));
+  };
+
+  bar.onpointerup = () => {
+    bar.onpointermove = bar.onpointerup = null;
+    body.classList.remove('nav-drag');
+
+    if (!navDragged)
+      return;
+
+    // Hiding it by dragging passes through the narrowest width; it reopens at the size it had.
+    if (width < NAV_WIDTHS.hide && start)
+      setNavWidth(start);
+
+    store('rs64.navClosed', width < NAV_WIDTHS.hide ? 1 : 0);
+    store('rs64.navWidth', parseInt(body.style.getPropertyValue('--nav-w')) || null);
+    syncNav();
+  };
+};
+
 $('navToggle').onclick = () => {
+  if (navDragged)
+    return void (navDragged = false);
+
   document.body.classList.toggle('nav-closed');
   store('rs64.navClosed', document.body.classList.contains('nav-closed') ? 1 : 0);
   syncNav();
 };
+
+if (stored('rs64.navWidth', null))
+  setNavWidth(stored('rs64.navWidth', null));
 
 document.body.classList.toggle('nav-closed', stored('rs64.navClosed', 0) === 1);
 syncNav();
@@ -1487,7 +1538,7 @@ function renderList() {
       d.textContent = r.label;
       d.title = r.tip ?? (r.obj == null ? r.id : `${r.id} / ${r.label}`);
 
-      if (mode === 'models' || (mode === 'audio' && ['music', 'sfx', 'voice', 'group'].includes(r.row.kind)))
+      if (mode === 'audio' && ['music', 'sfx', 'voice', 'group'].includes(r.row.kind))
         d.prepend(dragGrip(r));
 
       d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : (mode === 'effects' ? showEffect(r.id) : (mode === 'audio' ? showAudio(r.row) : (mode === 'fonts' ? showFont(r.id) : (mode === 'menus' ? showMenu(r.id) : (r.id.startsWith('cut:') ? showCutscene(r.id.slice(4)) : showLevel(r.id)))))));

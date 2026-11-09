@@ -2,8 +2,8 @@
 
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
-const { parseShadowTextures, parseMusicCues, musicZoneSet, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
-  parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
+const { parseShadowTextures, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
+  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 function elem(tag, props, ...children) {
@@ -78,7 +78,7 @@ const SUBTYPE_MODEL = {
   0x2E: 'reb_stuff/r_combat', 0x32: 'gnrc_stuff/shield', 0x37: 'imp_stuff/wrld_dvstr', 0x3B: 'imp_stuff/trooper',
   0x3D: 'gnrc_stuff/civilian', 0x3E: 'imp_stuff/assboat', 0x40: 'imp_stuff/wskimmer', 0x41: 'reb_stuff/r_turret',
   0x42: 'imp_stuff/tal_turret', 0x43: 'gnrc_stuff/cloudcar', 0x47: 'reb_stuff/atpt_i', 0x48: 'imp_stuff/bosshut',
-  0x4A: 'imp_stuff/pwrgen', 0x4C: 'gnrc_stuff/powerup', 0x4D: 'imp_stuff/raptor', 0x3C: 'reb_stuff/r_pilot',
+  0x4A: 'imp_stuff/pwrgen', 0x4C: 'gnrc_stuff/powerup', 0x4D: 'imp_stuff/raptor', 0x3C: 'reb_stuff/r_pilot', 0x50: 'imp_stuff/bsoldier',
   // Trains follow splines like NPCs; '#name' picks the object inside a multi-object HOB.
   0x2F: 'imp_stuff/train#tr_engine', 0x30: 'imp_stuff/train#tr_defense', 0x34: 'reb_stuff/r_train#r_tr_engine', 0x35: 'reb_stuff/r_train#r_tr_cargo',
 };
@@ -89,20 +89,20 @@ const TYPES = {
     color: 0xe8b84a,
     label: 'Player start / restarts',
     icon: 'tri',
-    tip: 'Where the player begins, and where they come back after being shot down; the cone shows the facing'
+    tip: 'Where the player begins and comes back after being shot down'
   },
   wing: { color: 0xe6edf7, label: 'Wingmen', icon: 'wing', tip: 'Where the wingmen start, such as Wedge and Rogue 10' },
   0: {
     color: 0xc9b38a,
     label: 'Other units / objects',
     icon: 'tri',
-    tip: 'Placed units or objects the viewer has no model for (trains, pilots, landing pads, unnamed items); the cone shows the facing'
+    tip: 'Placed units or objects the viewer has no model for'
   },
   cam: {
     color: 0xff79c6,
     label: 'Cameras',
     icon: 'cam',
-    tip: 'Camera positions for intros, endings and camera shots; the pyramid opens toward where it looks. A new one is placed at your view, looking where you look'
+    tip: 'Camera positions for intros, endings and camera shots'
   },
   // DAT type 2 is a generic point list; the subtype says what each point is.
   2: { color: 0xff6a3d, label: 'Lava vents', icon: 'circle', tip: 'Spots that erupt lava (Raid on Sullust)' },
@@ -110,24 +110,24 @@ const TYPES = {
     color: 0xb0b8c8,
     label: 'Devastator gun settings',
     icon: 'square',
-    tip: 'Settings for the World Devastator gun turrets, all at one spot; the guns themselves are part of the World Devastator model'
+    tip: 'Settings for the World Devastator gun turrets'
   },
   point: { color: 0x9ad0ff, label: 'Menu points', icon: 'circle', tip: 'Front-end spots: hangar camera starts and bridge scene points' },
   3: {
     color: 0x4ac0e8,
     label: 'Unassigned paths',
     icon: 'cross',
-    tip: 'Flight paths nothing flies yet (a mission script may switch a unit onto one); the cross marks the start'
+    tip: 'Flight paths nothing flies yet'
   },
   6: { color: 0x9aa3b5, label: 'Other regions', icon: 'zother', tip: 'A region whose purpose isn\'t known yet' },
-  zhi: { color: 0x8a7cff, label: 'High-detail regions', icon: 'zhi', tip: 'Objects show their detailed models while the player is over this region' },
-  zlo: { color: 0x5b6bd8, label: 'Low-detail regions', icon: 'zlo', tip: 'Objects show their simpler models while the player is over this region' },
-  zmus: { color: 0xf0a24a, label: 'Music regions', icon: 'zmus', tip: 'The music changes while the player is over this region' },
+  zhi: { color: 0x8a7cff, label: 'High-detail regions', icon: 'zhi', tip: 'Evens out small bumps in the ground here when the level loads, which also changes collision' },
+  zlo: { color: 0x5b6bd8, label: 'Low-detail regions', icon: 'zlo', tip: 'Flattens the ground here into straight slopes when the level loads, which also changes collision' },
+  zmus: { color: 0xf0a24a, label: 'Music region triggers', icon: 'zmus', tip: 'Entering the inner box changes the song, leaving the outer box brings the earlier song back' },
   zmtrig: {
     color: 0xffd36b,
-    label: 'Music trigger areas',
+    label: 'Music region triggers',
     icon: 'zmtrig',
-    tip: 'Switches a music region to its song while the player is inside; it can wait for an objective'
+    tip: 'The inner box: entering it sets the music region trigger off. The outer box moves with it'
   },
   zunit: { color: 0xff5f8f, label: 'Ground-unit areas', icon: 'zunit', tip: 'Troopers and civilians appear and walk around inside this area' },
   tvoice: {
@@ -143,7 +143,7 @@ const TYPES = {
     tip: 'Fires when the player or a chosen unit comes close: it can complete a Reach an area objective, bring in a wave, play a camera shot or set off a rule'
   },
   tspawn: { color: 0xc3e65a, label: 'Wave areas', icon: 'tspawn', tip: 'Like a goal area, and also brings in the unit it names' },
-  troam: { color: 0xd17aff, label: 'Roam areas', icon: 'troam', tip: 'A unit wanders inside this circle and turns back toward the middle when it strays out' },
+  troam: { color: 0xd17aff, label: 'Roam areas', icon: 'troam', tip: 'A unit wanders inside this ball and turns back toward the middle when it strays out. Height counts, so keep the centre at ground level for ground units' },
   // Path events (fired when an NPC on a spline passes the node; func_800F3CB0), one kind per subtype.
   pspeed: { color: 0x7ee0ff, label: 'Speed changes', icon: 'bead', tip: 'The unit eases to a new speed here' },
   phold: { color: 0xffb347, label: 'Hold orders', icon: 'bead', tip: 'The unit stops here until a timer runs out and an objective lets it go on' },
@@ -168,7 +168,7 @@ const TYPES = {
     icon: 'twaypoint',
     tip: 'The HUD arrow points at the nearest one whose objective allows it'
   },
-  7: { color: 0x3f9a58, label: 'Other triggers', icon: 'diamond', tip: 'Trigger areas the game never reads; lines point at what they name' },
+  7: { color: 0x3f9a58, label: 'Other triggers', icon: 'diamond', tip: 'Trigger areas the game never reads' },
 };
 
 const SUBTYPES = {
@@ -349,6 +349,9 @@ const keys = new Set();
 
 addEventListener('keydown', (e) => {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')
+    return;
+
+  if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !e.altKey && focusSelected())
     return;
 
   if (editKey(e))
@@ -679,15 +682,30 @@ ready.then(() => renderer.setAnimationLoop(() => {
 }));
 
 // In Objects / Events mode the box describes the hovered item, else the selection; otherwise the view's stats.
+// The level's stats when viewing; while editing, the selected or hovered object's details in the side box instead.
 function hud()
 {
-  const lines = [];
   const o = (editMode === 'objects' || editMode === 'events') && (editHovered ?? sel?.o);
+  const rows = o ? editHudRows(o) : (editMode ? [] : Object.entries(stats));
 
-  for (const [k, v] of o ? editHudRows(o) : Object.entries(stats))
-    lines.push(`${k.padEnd(10)} ${typeof v === 'number' ? v.toLocaleString() : v}`);
+  hudBox($('hud'), editMode ? [] : rows);
+  hudBox($('selHud'), editMode ? rows : []);
+}
 
-  $('hud').textContent = lines.join('\n');
+function hudBox(box, rows)
+{
+  const text = rows.map(([k, v]) => `${k.padEnd(10)} ${typeof v === 'number' ? v.toLocaleString() : v}`).join('\n');
+
+  if (box.textContent === text)
+    return;
+
+  box.textContent = text;
+
+  // An explicit width from the text, so a longer row can animate the box (CSS can't transition to auto).
+  const range = document.createRange();
+
+  range.selectNodeContents(box);
+  box.style.width = `${Math.ceil(range.getBoundingClientRect().width)}px`;
 }
 
 // ---------- materials ----------
@@ -1468,9 +1486,6 @@ function describe(it)
     if (it.linkedFrom && !it.label)
       s += '. Used by ' + it.linkedFrom.join(', ');
 
-    if (it.sub === 0x10 && it.linkedTo)
-      s += '. Plays while the player is inside its linked trigger area';
-
     return s;
   }
 
@@ -1493,16 +1508,7 @@ function describe(it)
     {
       const w = it.waypoint;
 
-      lines.push(`Objective arrow target: the HUD arrow points at the nearest active one${w.follow ? `, following ${w.follow}` : ''}`);
-
-      const on = [w.flag && `flag #${w.flag} is set`, w.counter && `counter #${w.counter} ≥ ${w.atLeast}`].filter(Boolean);
-      const off = [w.hideFlag && `flag #${w.hideFlag} is set`, w.hideCounter && `counter #${w.hideCounter} reaches ${w.below}`].filter(Boolean);
-
-      if (on.length)
-        lines.push('Shown once ' + on.join(' and '));
-
-      if (off.length)
-        lines.push('Hidden once ' + off.join(' or '));
+      lines.push(`The HUD arrow points at the nearest active one of these${w.follow ? `, following ${w.follow}` : ''}`);
 
       return lines.join('\n');
     }
@@ -1598,7 +1604,7 @@ function describe(it)
   return SUBTYPES[it.sub] ?? 'subtype ' + hex(it.sub);
 }
 
-// The item's category and subtype names; one when the category is just the subtype's plural (Music trigger areas / Music trigger area).
+// The item's category and subtype names; one when the category is just the subtype's plural.
 function kindParts(it)
 {
   const cat = TYPES[markerKind(it)]?.label ?? 'Type ' + it.type;
@@ -1607,20 +1613,57 @@ function kindParts(it)
   return cat.toLowerCase().replace(/s$/, '') === sub.toLowerCase() ? [sub] : [cat, sub];
 }
 
-function itemRows(it) {
+// The wiki's level reference has a page per legend group; path events extend the Paths page.
+const EVENT_HELP_PAGES = {
+  'Starts and cameras': 'Level-Starts-and-Cameras',
+  Paths: 'Level-Paths',
+  'Trigger areas': 'Level-Trigger-Areas',
+  'Path events': 'Level-Paths',
+  Regions: 'Level-Regions'
+};
+
+// A marker kind's section there, by its legend label (GitHub's heading anchors). Every per-unit path row is the same thing, so they share one section.
+function eventHelpOfKind(kind)
+{
+  const k = legendKindOf(kind);
+  const isPath = k === '3' || k.startsWith('path:');
+  const group = isPath ? 'Paths' : LEGEND_GROUPS.find(([, kinds]) => kinds?.includes(k))?.[0];
+  const label = k.startsWith('path:') ? 'Flight paths' : TYPES[k]?.label;
+
+  return group && label ? `${GUIDE_URL(EVENT_HELP_PAGES[group])}#${label.toLowerCase().replace(/[^a-z0-9 -]/g, '').replaceAll(' ', '-')}` : null;
+}
+
+const eventHelpUrl = (it) => eventHelpOfKind(String(markerKind(it)));
+
+function eventHelpLink(it)
+{
+  const a = elem('a', { className: 'eventHelp', href: eventHelpUrl(it), target: '_blank', rel: 'noopener', title: 'What this is and how to use it' });
+
+  a.setAttribute('aria-label', a.title);
+  a.innerHTML = iconImg('help');
+
+  return a;
+}
+
+function itemRows(it)
+{
+  // A mission camera turns to face its target every frame; its stored rotation only counts until the target appears, and the game never reads its scale.
+  const camera = it.type === 0 && it.sub === 0x26;
+  const aims = camera && it.model && it.model !== '-';
+
   return [
     ['What it is', esc(describe(it)).replaceAll('\n', '<br>')],
     ['Kind', kindParts(it).join(' · ')],
     ['DAT type / subtype', `${it.type} / ${hex(it.sub)}`],
     ['Index / offset', `${it.index} / ${hex(it.offset)}`],
-    it.model && ['Reference', esc(it.model)],
+    it.model && (!camera || aims) && [aims ? 'Aims at' : 'Reference', esc(it.model)],
     [
       it.recordPos ? 'Position (node)' : 'Position',
       fmt(it.pos)
     ],
     it.recordPos && ['Record position', fmt(it.recordPos)],
-    it.rot && ['Rotation°', fmt(it.rot)],
-    it.scale && ['Scale', fmt(it.scale)],
+    it.rot && [aims ? 'Rotation° until its target appears' : 'Rotation°', fmt(it.rot)],
+    it.scale && !camera && ['Scale', fmt(it.scale)],
     it.size && [
       'Footprint',
       it.size[0].toFixed(1) + ' × ' + it.size[2].toFixed(1)
@@ -1680,6 +1723,42 @@ const TRIGGER_GEO = { tvoice: GEO.ball, tspawn: GEO.cube, twaypoint: GEO.downCon
 // The ring's plane faces along the path at the node, so it reads as a bead threaded on the spline. Rotated per marker in the geometry
 // (not the mesh) so the marker's link lines keep their positions.
 const beadGeometry = (tangent) => (tangent ? GEO.bead.clone().applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), tangent)) : GEO.bead);
+
+const BEAD_RADIUS = 0.44;
+const _beadAt = new THREE.Vector3();
+const _beadScale = new THREE.Vector3();
+
+// A bead is a ring with its path running through the hole: it is hit anywhere inside its outer edge.
+function beadRaycast(raycaster, hits)
+{
+  const r = BEAD_RADIUS * Math.abs(this.getWorldScale(_beadScale).x);
+
+  this.getWorldPosition(_beadAt);
+
+  if (raycaster.ray.distanceSqToPoint(_beadAt) <= r * r)
+    hits.push({ distance: raycaster.ray.origin.distanceTo(_beadAt), point: _beadAt.clone(), object: this });
+}
+
+// Stretches a link line (and an attack order's arrowhead) from its marker, now at origin, to the point it links to.
+function aimLink(link, origin)
+{
+  const end = new THREE.Vector3(...link.userData.to).sub(origin);
+  const g = link.geometry;
+  const head = link.children[0];
+
+  g.attributes.position.setXYZ(1, end.x, end.y, end.z);
+  g.attributes.position.needsUpdate = true;
+  g.computeBoundingSphere();
+
+  if (!head)
+    return;
+
+  g.attributes.lineDistance.setX(1, end.length());
+  g.attributes.lineDistance.needsUpdate = true;
+  end.normalize();
+  head.position.set(...g.attributes.position.array.slice(3, 6)).addScaledVector(end, -0.3);
+  head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end);
+}
 
 function makeMarker(it) {
   const [x, y, z] = it.pos;
@@ -1752,8 +1831,12 @@ function makeMarker(it) {
   {
     mk = new THREE.Mesh(it.pathEvent ? beadGeometry(it.nodeTangents?.[0]) : TRIGGER_GEO[markerKind(it)] ?? (it.type === 7 ? GEO.diamond : GEO.ball), meshMat(markerKind(it)));
 
+    if (it.pathEvent)
+      mk.raycast = beadRaycast;
+
     // The real trigger area: a wire sphere, or for cylinder triggers a ring draped on the ground.
-    if (it.radius > 0) {
+    if (it.radius > 0)
+    {
       let area;
 
       if (it.cylinder)
@@ -1771,13 +1854,19 @@ function makeMarker(it) {
 
         area = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat(markerKind(it), 0.7));
       }
-      else if (markerKind(it) === 'troam')
+      else if (markerKind(it) === 'troam' && it.radius ** 2 > (levelHeight(x, z) - y) ** 2)
       {
-        // Roam areas: a flat dashed ring at the area's height (as in the legend), so they read apart from the trigger spheres.
+        // Where a roam ball meets the ground: a dashed ring draped on it, the part ground units can walk. A ball clear of the ground draws as a sphere.
+        const walk = Math.sqrt(it.radius ** 2 - (levelHeight(x, z) - y) ** 2);
         const pts = [];
 
         for (let k = 0; k <= 96; k++)
-          pts.push(new THREE.Vector3(Math.cos((k / 96) * Math.PI * 2) * it.radius, 0, Math.sin((k / 96) * Math.PI * 2) * it.radius));
+        {
+          const px = Math.cos((k / 96) * Math.PI * 2) * walk;
+          const pz = Math.sin((k / 96) * Math.PI * 2) * walk;
+
+          pts.push(new THREE.Vector3(px, levelHeight(x + px, z + pz) - y - 0.15, pz));
+        }
 
         area = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), roamMat);
         area.computeLineDistances();
@@ -1788,6 +1877,7 @@ function makeMarker(it) {
       }
 
       area.userData.item = it;
+      area.userData.triggerArea = true;
       mk.add(area);
     }
   }
@@ -1837,12 +1927,15 @@ function zoneFillMat(kind) {
 
 const hiddenTypes = new Set();
 
+// A music region's inner and outer boxes keep their own colours but share one legend row.
+const legendKindOf = (k) => (k === 'zmtrig' ? 'zmus' : k);
+
 function applyMarkerVisibility(markers)
 {
-  const kinds = new Set(markers.children.map((m) => String(markerKind(m.userData.item))));
+  const kinds = new Set(markers.children.map((m) => legendKindOf(String(markerKind(m.userData.item)))));
 
   for (const m of markers.children)
-    m.visible = !hiddenTypes.has(String(markerKind(m.userData.item)));
+    m.visible = !hiddenTypes.has(legendKindOf(String(markerKind(m.userData.item))));
 
   // The master checkbox mirrors the per-kind toggles: off when all are hidden, indeterminate when some are.
   const hidden = [...kinds].filter((k) => hiddenTypes.has(k)).length;
@@ -1857,13 +1950,24 @@ const LEGEND_GROUPS = [
   ['Paths', null],
   ['Trigger areas', ['tevent', 'tspawn', 'tvoice', 'twaypoint', '7', '2']],
   ['Path events', ['pspeed', 'phold', 'pattack', 'paction', 'pfly', 'pweave', 'ppitch']],
-  ['Regions', ['zhi', 'zlo', 'zmus', 'zmtrig', 'zunit', 'troam', '6']],
+  ['Regions', ['zhi', 'zlo', 'zmus', 'zunit', 'troam', '6']],
 ];
 
 function renderLegend(markers)
 {
   const counts = {};
-  for (const m of markers.children) { const k = markerKind(m.userData.item); counts[k] = (counts[k] || 0) + 1; }
+
+  // A paired inner box is half of an item the outer box already counts.
+  for (const m of markers.children)
+  {
+    if (m.userData.item.musicRegion)
+      continue;
+
+    const k = legendKindOf(markerKind(m.userData.item));
+
+    counts[k] = (counts[k] || 0) + 1;
+  }
+
   const el = $('legendRows');
 
   el.innerHTML = '';
@@ -1967,7 +2071,27 @@ function pick(e, targets)
   });
 
   // Zones (outline and see-through fill) are the last pick: anything else under the cursor wins.
-  return hits.find((h) => !h.object.userData.zone) ?? hits[0];
+  const first = hits.find((h) => !h.object.userData.zone) ?? hits[0];
+
+  // A path event wins over the path it sits on.
+  if (first && hitItem(first)?.type === 3)
+    return hits.find((h) => h.object.raycast === beadRaycast) ?? first;
+
+  // Where a high and a low detail region overlap the game uses the high one.
+  return (first && isLowLod(hitItem(first)) && hits.find((h) => isHighLod(hitItem(h)))) || first;
+}
+
+const isHighLod = (it) => it?.type === 6 && it.sub === 0x04;
+const isLowLod = (it) => it?.type === 6 && it.sub === 0x05;
+
+function hitItem(hit)
+{
+  let o = hit.object;
+
+  while (o && !o.userData.item)
+    o = o.parent;
+
+  return o?.userData.item;
 }
 
 const visibleMarkers = () => {
@@ -2023,6 +2147,7 @@ function inspect(hit)
     return {
       title: o.userData.item.name || o.userData.item.label || '(unnamed)',
       rows: itemRows(o.userData.item),
+      help: o.userData.item,
       place: o.userData.item,
       voiceIds: triggerVoiceIds(o.userData.item, selected?.split('/').pop())
     };
@@ -2118,6 +2243,9 @@ function showInfo(card, x, y)
   if (!card) { el.hidden = true; return; }
   el.innerHTML = `<b>${esc(card.title)}</b>` + card.rows.filter(Boolean).map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
 
+  if (card.help && eventHelpUrl(card.help))
+    el.append(eventHelpLink(card.help));
+
   if (card.open) {
     const btn = elem('button');
 
@@ -2125,11 +2253,9 @@ function showInfo(card, x, y)
 
     btn.onclick = () => {
       el.hidden = true;
-      backTo = { level: selected, view: getView() };
+      rememberLevel(true);
       $('tabModels').click();
       showModel(card.open.id, card.open.objIndex);
-      $('btnBack').textContent = '← Back to ' + backTo.level.split('/').pop();
-      $('btnBack').hidden = false;
     };
 
     el.append(btn);
@@ -2145,7 +2271,7 @@ function showInfo(card, x, y)
     const rep = elem('button');
 
     rep.textContent = 'Replace texture from image…';
-    rep.title = 'Scaled to the texture size and converted to its format (palette textures are re-quantised); Export mod saves the change';
+    rep.title = 'Scaled to the texture size and converted to its format';
     rep.onclick = () => { el.hidden = true; replaceTexture(card.edit.id, card.edit.tex); };
     el.append(dl, rep);
   }
@@ -2236,6 +2362,9 @@ canvas.addEventListener('pointerdown', (e) => (downAt[e.button] = [e.clientX, e.
 const wasClick = (e, button) => downAt[button] && Math.hypot(e.clientX - downAt[button][0], e.clientY - downAt[button][1]) <= 4;
 
 canvas.addEventListener('pointerup', (e) => {
+  if (levelCompose && e.button === 0 && wasClick(e, 0))
+    return levelCompose.shoot();
+
   if (e.button !== 0 || !wasClick(e, 0) || sculptActive() || lightsClick(e) || editClick(e) || cutPickActor(e))
     return;
 
@@ -2245,8 +2374,23 @@ canvas.addEventListener('pointerup', (e) => {
   showInfo(hit && inspect(hit), e.clientX - r.left + 12, e.clientY - r.top + 12);
 });
 
+// A right-click while a card is open only closes it. The press itself closes the card (the camera controls start), so its state is read before them.
+let infoOpenAtPress = false;
+
+canvas.addEventListener('pointerdown', () => (infoOpenAtPress = !$('info').hidden), true);
+
 canvas.addEventListener('contextmenu', (e) => {
   e.preventDefault();
+
+  if (levelCompose)
+    return;
+
+  if (root && wasClick(e, 2) && infoOpenAtPress)
+  {
+    $('info').hidden = true;
+
+    return;
+  }
 
   if (!root || !wasClick(e, 2) || editPickList(e))
     return;

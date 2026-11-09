@@ -72,8 +72,36 @@ function iconButton(icon, title, onclick) {
 for (const b of $('editPanel').querySelectorAll('[data-icon]'))
   setEditIcon(b, b.dataset.icon);
 
-for (const b of document.querySelectorAll('.histRow [data-icon], #cutEdit, #cutInspector [data-icon], #viewNav [data-icon]'))
+for (const b of document.querySelectorAll('.histRow [data-icon], #cutEdit, #cutPickRow [data-icon], #cutInspector [data-icon], #viewNav [data-icon]'))
   setEditIcon(b, b.dataset.icon);
+
+// The side panel's and the brush's sliders get step arrows that move them one notch, the same as dragging. The label names its slider, or a click on its text would press the first arrow.
+for (const input of document.querySelectorAll('#opts input[type=range], #sculptRadius, #sculptStrength, #optFogDist, #optSpread'))
+{
+  const [down, up] = input.dataset.steps?.split('|') ?? ['Decrease', 'Increase'];
+
+  const arrow = (icon, title, step) => {
+
+    const b = iconButton(icon, title, () => {
+
+      const before = input.value;
+
+      step();
+
+      if (input.value !== before)
+        input.dispatchEvent(new Event('input'));
+    });
+
+    b.type = 'button';
+    b.className = 'step';
+
+    return b;
+  };
+
+  input.closest('label').htmlFor ||= input.id;
+  input.before(arrow('chevronLeft', down, () => input.stepDown(+input.dataset.notch || 1)));
+  input.after(arrow('chevronRight', up, () => input.stepUp(+input.dataset.notch || 1)));
+}
 
 // The published site serves the save editor at save-editor/; in the repo it sits beside this folder.
 if (/\/rs64-explorer\/(index\.html)?$/.test(location.pathname))
@@ -120,7 +148,7 @@ addEventListener('pointerup', (e) => e.button === 2 && (rmbHeld = false));
 // Which transforms mean something in the DAT: placed models and zones have a rotation and a scale/size; the other type-0 markers (starts,
 // restarts, cameras, spawns) a facing but no scale that matters; splines, triggers and path events a position only (spline points are
 // relative to it, so moving a spline moves the whole path; a path event slides along its spline).
-const editTools = (s) => (s.o.userData.placedItem || s.it.type === 6 ? ['translate', 'rotate', 'scale'] : (s.it.type === 0 ? ['translate', 'rotate'] : ['translate']));
+const editTools = (s) => (isMusicZone(s.it) ? ['translate', 'scale'] : (s.o.userData.placedItem || s.it.type === 6 ? ['translate', 'rotate', 'scale'] : (s.it.type === 0 ? ['translate', 'rotate'] : ['translate'])));
 const TOOL_KEYS = { KeyQ: 'view', KeyW: 'translate', KeyE: 'rotate', KeyR: 'scale' };
 const editItemOf = (o) => o.userData.placedItem ?? (o.parent?.name === 'markers' ? o.userData.item : null);
 
@@ -136,7 +164,7 @@ function editHit(e) {
   while (o && !editItemOf(o))
     o = o.parent;
 
-  return o ?? null;
+  return o ? musicOuter(o) : null;
 }
 
 // Right-click in Objects / Events mode lists every editable item under the cursor (nearest first) instead of the inspect card, so nested or
@@ -161,9 +189,16 @@ function editPickList(e)
     while (o && !editItemOf(o))
       o = o.parent;
 
-    if (shown && o && !found.includes(o))
-      found.push(o);
+    const one = o && musicOuter(o);
+
+    if (shown && one && !found.includes(one))
+      found.push(one);
   }
+
+  // A path event lists before its path, and a low detail region after the high one the game would use there.
+  const rank = (o) => isLowLod(editItemOf(o)) - !!editItemOf(o).pathEvent;
+
+  found.sort((a, b) => rank(a) - rank(b));
 
   $('tip').hidden = true;
 
@@ -321,6 +356,7 @@ function setEditMode(m)
   $('optSculpt').checked = m === 'terrain';
   loadSculpt();
   $('info').hidden = true;
+  hud();
 
   if (m !== 'events')
     $('rulesPanel').hidden = true;
@@ -376,8 +412,10 @@ function attachGizmo()
   showCorners();
 }
 
-function select(o)
+function select(marker)
 {
+  const o = marker && musicOuter(marker);
+
   // A selection (or clicking empty space) closes the right-click card.
   $('info').hidden = true;
   editHovered = null;
@@ -389,7 +427,7 @@ function select(o)
   {
     const it = editItemOf(o);
 
-    // NPCs on a spline start at its first point whatever their own position says, and path events fire at a fraction along their spline,
+    // NPCs on a spline start on it whatever their own position says, and path events fire at a fraction along their spline,
     // so both move with the spline instead.
     sel = { o, it, fixed: o.userData.path ? `. It starts on the spline ${it.model}; move that in Events mode` : null, pathNode: it.pathNodes?.[0] };
 
@@ -399,8 +437,8 @@ function select(o)
     o.parent.add(editProxy);
     sel.base = { scale: it.scale?.slice(), size: it.size?.slice(), mq: o.quaternion.clone(), ms: o.scale.clone(), pos0: it.pos.slice() };
 
-    if (it.type === 6)
-      Object.assign(sel.base, { c0: new THREE.Vector3(...it.pos).add(zoneHalf(it)), rInv: placementRotation(it.rot).invert() });
+    if (musicPartner(it))
+      sel.base.gaps = musicGaps(it.musicRegion ?? it, it.musicTrigger ?? it);
 
     itemToProxy();
     sel.base.q = editProxy.quaternion.clone();
@@ -413,8 +451,6 @@ function select(o)
 }
 
 // A zone's gizmo sits at its footprint centre (pos + R * size / 2 over X/Z), so moving, rotating and scaling all pivot there.
-const _m4b = new THREE.Matrix4();
-const _m4c = new THREE.Matrix4();
 const _xAxis = new THREE.Vector3(1, 0, 0);
 const zoneHalf = (it) => new THREE.Vector3(it.size[0] / 2, 0, it.size[2] / 2).applyMatrix4(placementRotation(it.rot));
 
@@ -422,7 +458,7 @@ function itemToProxy()
 {
   const { o, it, base } = sel;
 
-  editProxy.position.set(...(o.userData.path ? o.userData.path.points[0] : it.pos));
+  editProxy.position.set(...(o.userData.path ? pathStart(o.userData.path) : it.pos));
 
   if (it.type === 6)
   {
@@ -441,10 +477,13 @@ function itemToProxy()
 }
 
 // Path events fire at a fraction along their spline (arc length, as drawn): a drag slides the (first) node to the nearest point on it.
-function slidePathEvent(at) {
+function slidePathEvent(at)
+{
   const { o, pathNode: { curve } } = sel;
+  const dragged = at == null;
+  const before = sel.pathAt;
 
-  if (at == null) {
+  if (dragged) {
     let bd = Infinity;
 
     for (let i = 0; i <= 500; i++)
@@ -457,9 +496,61 @@ function slidePathEvent(at) {
   }
 
   sel.pathAt = at;
+
+  const tangent = curve.getTangentAt(at);
+
   o.position.copy(curve.getPointAt(at));
+  o.geometry.dispose();
+  o.geometry = beadGeometry(tangent);
+
+  // The order's other beads stay put and its links keep their far ends.
+  for (const c of o.children)
+  {
+    if (c.userData.to)
+      aimLink(c, o.position);
+    else if (c.userData.at)
+      c.position.fromArray(c.userData.at).sub(o.position);
+  }
+
+  if (dragged && at !== before)
+    moveHandlesTo(o.position, tangent);
+
   boxAround(selBox, o);
   syncSelPanel();
+}
+
+// Puts the move handles back on the bead mid-drag, facing along the path, and carries on the drag from there.
+function moveHandlesTo(point, tangent)
+{
+  editProxy.position.copy(point);
+  editProxy.quaternion.setFromUnitVectors(_xAxis, tangent);
+  editProxy.updateWorldMatrix(true, false);
+
+  const world = editProxy.getWorldPosition(new THREE.Vector3());
+
+  gizmo.pointStart.copy(gizmo.pointEnd).add(gizmo.worldPositionStart).sub(world);
+  gizmo.worldPositionStart.copy(world);
+  editProxy.getWorldQuaternion(gizmo.worldQuaternionStart);
+  gizmo._positionStart.copy(point);
+  gizmo._quaternionStart.copy(editProxy.quaternion);
+}
+
+// A roam area's ball or ring depends on where it sits against the ground.
+function redrawRoam(o, it)
+{
+  if (markerKind(it) !== 'troam')
+    return;
+
+  const isArea = (c) => c.userData.triggerArea;
+  const old = o.children.find(isArea);
+  const area = makeMarker(it).children.find(isArea);
+
+  if (!old || !area)
+    return;
+
+  old.geometry.dispose();
+  old.removeFromParent();
+  o.add(area);
 }
 
 function proxyToItem()
@@ -472,6 +563,7 @@ function proxyToItem()
   const d = p.position.toArray().map((v, a) => v - it.pos[a]);
 
   it.pos = p.position.toArray();
+  redrawRoam(sel.o, it);
 
   if (it.rot && gizmo.mode === 'rotate')
   {
@@ -511,16 +603,7 @@ function showItemChange()
   if (o.userData.compose)
     o.userData.compose();
   else if (it.type === 6)
-  {
-    // The drawn footprint (offsets from its old position) turned and stretched about the old centre, then moved to the new one;
-    // the commit rebuilds it draped on the ground.
-    const k = it.size.map((v, a) => (base.size[a] ? v / base.size[a] : 1));
-
-    o.matrixAutoUpdate = false;
-    o.matrix.makeTranslation(editProxy.position.x, base.c0.y, editProxy.position.z).multiply(placementRotation(it.rot)).multiply(_m4b.makeScale(k[0], 1, k[2]))
-      .multiply(base.rInv).multiply(_m4c.makeTranslation(...new THREE.Vector3(...base.pos0).sub(base.c0)));
-    o.matrixWorldNeedsUpdate = true;
-  }
+    drapeZone(o, it);
   else
   {
     o.position.set(...it.pos);
@@ -531,12 +614,70 @@ function showItemChange()
   if (it.type === 3)
     root.traverse((h) => h.userData.path === it && h.userData.compose());
 
+  const partner = musicPartner(it);
+  const other = partner && markerOf(o, partner);
+
+  // A resized region leaves its inner box where it is.
+  if (other && it.size.every((v, a) => v === base.size[a]))
+    drapeZone(other, { ...partner, pos: [partner.pos[0] + it.pos[0] - base.pos0[0], partner.pos[1], partner.pos[2] + it.pos[2] - base.pos0[2]] });
+
   boxAround(selBox, o);
 }
 
-async function commitSel()
+// Redraws a zone's marker over the ground as item says it is now (it may be a preview of an item not yet changed).
+function drapeZone(o, item)
 {
-  const { o, it } = sel;
+  const fresh = makeMarker(item);
+
+  o.geometry.dispose();
+  o.geometry = fresh.geometry;
+  o.children[0].geometry.dispose();
+  o.children[0].geometry = fresh.children[0].geometry;
+  o.position.copy(fresh.position);
+}
+
+// A music region and its trigger area act as one item: the game reads only their position and size, so neither rotates.
+const isMusicZone = (it) => it.type === 6 && (it.sub === 0x10 || it.sub === 0x39);
+const musicPartner = (it) => (it.type === 6 ? it.musicRegion ?? it.musicTrigger ?? null : null);
+const markerOf = (o, item) => o.parent.children.find((m) => m.userData.item === item);
+
+// The two boxes select as one object, the outer box standing for both.
+function musicOuter(o)
+{
+  const region = editItemOf(o)?.musicRegion;
+
+  return (region && markerOf(o, region)) || o;
+}
+
+function mapSize()
+{
+  const h = root?.getObjectByName('terrain')?.userData.tiles?.hmp;
+
+  return h ? [h.w * 2, h.h * 2] : [Infinity, Infinity];
+}
+
+function musicFollow(it, partner, base)
+{
+  if (it.musicRegion)
+    return void Object.assign(partner, musicRegionBox(partner, it, base.gaps));
+
+  // A moved region carries its trigger area; a resized one leaves it there and can't shrink past it, as the part outside would do nothing.
+  if (it.size.every((v, a) => v === base.size[a]))
+    partner.pos = [partner.pos[0] + it.pos[0] - base.pos0[0], partner.pos[1], partner.pos[2] + it.pos[2] - base.pos0[2]];
+  else
+    Object.assign(it, musicRegionBox(it, partner, musicGaps(it, partner).map((g) => Math.max(g, 0))));
+}
+
+// target is what was edited: the selection, or a music region's inner box dragged by its own corners.
+async function commitSel(target = sel)
+{
+  const { o, it } = target;
+  const partner = musicPartner(it);
+
+  if (partner)
+    musicFollow(it, partner, target.base);
+
+  redrawRoam(o, it);
 
   if (sel.pathNode)
   {
@@ -570,10 +711,24 @@ async function commitSel()
 
     if (it.size)
       put(0x28, it.size);
+
+    if (partner)
+      [[0x10, partner.pos], [0x28, partner.size]].forEach(([off, v]) => v.forEach((x, a) => dv.setFloat32(partner.offset + off + a * 4, x)));
   });
 
   // Zones are draped on the terrain when built, so a changed zone is rebuilt rather than left transformed.
   if (it.type === 6) {
+    const other = partner && markerOf(o, partner);
+
+    if (other)
+    {
+      const rebuilt = makeMarker(partner);
+
+      rebuilt.visible = other.visible;
+      other.parent.add(rebuilt);
+      other.removeFromParent();
+    }
+
     const nm = makeMarker(it);
 
     nm.visible = o.visible;
@@ -606,7 +761,7 @@ function shotLinkRow(it)
 
   const personal = elem('input', {
     type: 'checkbox',
-    title: 'Personal: in online co-op only the player who set the trigger off sees the shot (use it when the camera chain ends at a restart point that moves the player). Off: both players see it'
+    title: 'In online co-op, only the player who set the trigger off sees the shot'
   });
 
   const personalLabel = elem('label', { className: 'shotPersonal' }, personal, ' Personal');
@@ -675,7 +830,7 @@ function shotLinkRow(it)
   row.append('Play camera shot ', pick, preview, personalLabel, note);
 
   if (!cams.length)
-    Object.assign(pick, { disabled: true, title: 'This level has no camera items; add one first' });
+    Object.assign(pick, { disabled: true, title: 'Add a camera to this level first' });
 
   return row;
 }
@@ -844,7 +999,7 @@ function recordingControls(path, what, onChange)
 
   const imp = elem('button', {
     textContent: 'Import recording…',
-    title: `A .wav or .mp3 played instead of the ${what}'s voice line; converted to the game's 8 kHz voice codec`
+    title: `A .wav or .mp3 played instead of the ${what}'s voice line`
   });
 
   const play = elem('button', { textContent: 'Play', title: 'How it will sound in the game' });
@@ -953,6 +1108,203 @@ const fld = (label, el, tip) => {
 const stacked = (row) => (row.classList.add('stacked'), row);
 
 // Level settings: title, briefing (text and voice), approved craft and medal thresholds, shown in SELECT LEVEL and the debrief.
+// A level's own SELECT LEVEL picture: 320 x 200 in the game's JPEG layout, and a 160 x 100 mask.
+let levelImageShow = null;
+
+// The picture is read whole into the menu's memory, so it stays near the stock files' size (4.5 to 9 KB).
+function levelImageJpeg(cv)
+{
+  const rgba = cv.getContext('2d').getImageData(0, 0, 320, 200).data;
+  let jpeg = null;
+
+  for (const q of [90, 75, 60, 45, 30])
+  {
+    jpeg = encodeJpeg(rgba, 320, 200, q);
+
+    if (jpeg.length <= 10240)
+      break;
+  }
+
+  return jpeg;
+}
+
+// The hologram's outline. A stock mask is cut to the shape of its own picture, so a custom one gets plain soft edges.
+const levelMaskAt = (x, y) => THREE.MathUtils.smoothstep(Math.min(x, 159 - x, y, 99 - y), 3, 20);
+
+function levelImageMask()
+{
+  const rgba = new Uint8ClampedArray(160 * 100 * 4);
+
+  for (let y = 0; y < 100; y++)
+    for (let x = 0; x < 160; x++)
+    {
+      rgba.fill(255 * levelMaskAt(x, y), (y * 160 + x) * 4, (y * 160 + x) * 4 + 3);
+      rgba[(y * 160 + x) * 4 + 3] = 255;
+    }
+
+  return encodeJpeg(rgba, 160, 100, 75);
+}
+
+// Framing a level picture: the panels step aside and a frame shows the crop and the hologram's soft edge. Editing is off meanwhile, so a click only takes the shot.
+let levelCompose = null;
+
+function composeFit()
+{
+  const r = canvas.getBoundingClientRect();
+  const p = $('composeFrame').parentElement.getBoundingClientRect();
+  const s = Math.min(r.width / 320, r.height / 200);
+
+  Object.assign($('composeFrame').style, {
+    left: `${r.left - p.left + (r.width - 320 * s) / 2}px`,
+    top: `${r.top - p.top + (r.height - 200 * s) / 2}px`,
+    width: `${320 * s}px`,
+    height: `${200 * s}px`
+  });
+}
+
+function composeLevelImage(take)
+{
+  const mode = editMode;
+  const back = sel?.o;
+  const markers = root?.getObjectByName('markers');
+  const shown = markers?.visible;
+  const fade = new ImageData(160, 100);
+  const fit = new ResizeObserver(composeFit);
+
+  for (let y = 0; y < 100; y++)
+    for (let x = 0; x < 160; x++)
+      fade.data[(y * 160 + x) * 4 + 3] = 255 * (1 - levelMaskAt(x, y));
+
+  $('composeFade').getContext('2d').putImageData(fade, 0, 0);
+  select(null);
+  setEditMode(null);
+
+  if (markers)
+    markers.visible = false;
+
+  const end = () => {
+    levelCompose = null;
+    fit.disconnect();
+    document.removeEventListener('keydown', key, true);
+    document.body.classList.remove('composing');
+    $('composeFrame').hidden = $('composeHint').hidden = true;
+
+    if (markers)
+      markers.visible = shown;
+
+    setEditMode(mode);
+
+    if (back)
+      select(back);
+  };
+
+  const shoot = () => {
+    const cv = viewAsLevelImage();
+
+    end();
+    take(cv);
+  };
+
+  // The flying keys still reach the view; undo and mode changes wait.
+  const key = (e) => {
+    if (e.code === 'Enter' || e.code === 'NumpadEnter')
+      shoot();
+    else if (e.code === 'Escape')
+      end();
+    else if (!e.ctrlKey && !e.metaKey && e.code !== 'Tab')
+      return;
+
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  levelCompose = { shoot };
+  document.addEventListener('keydown', key, true);
+  document.body.classList.add('composing');
+  document.activeElement?.blur();
+  $('composeFrame').hidden = $('composeHint').hidden = false;
+  fit.observe(canvas);
+  composeFit();
+}
+
+function levelImageCover(src, w, h)
+{
+  const cv = new OffscreenCanvas(320, 200);
+  const k = Math.max(320 / w, 200 / h);
+
+  cv.getContext('2d').drawImage(src, (320 - w * k) / 2, (200 - h * k) / 2, w * k, h * k);
+
+  return cv;
+}
+
+// The view without markers, handles or selection boxes. WebGPU keeps the canvas image only until the frame is handed off, so it is drawn and copied in one go.
+function viewAsLevelImage()
+{
+  const hide = [root?.getObjectByName('markers'), gizmo.getHelper(), selBox, hoverBox].filter((o) => o?.visible);
+
+  hide.forEach((o) => (o.visible = false));
+  renderer.render(scene, camera);
+
+  const cv = levelImageCover(canvas, canvas.width, canvas.height);
+
+  hide.forEach((o) => (o.visible = true));
+
+  return cv;
+}
+
+function levelImageRow(l)
+{
+  const path = `mod/assets/level/${l.folder}/preview`;
+  const stock = `data/backdrop/level${l.template}`;
+  const img = elem('img', { className: 'levelImage', alt: 'The picture SELECT LEVEL shows' });
+
+  const reset = iconButton('close', 'Back to the picture of the level it was copied from', async () => {
+    await historyGroup(`${l.title}: copied picture`, async () => {
+      await editAsset(path, () => new Uint8Array(0), 'Picture');
+      await editAsset(path + 'alpha', () => new Uint8Array(0), 'Picture');
+    });
+
+    levelImageShow();
+  });
+
+  levelImageShow = async () => {
+    const own = await hasBytes(path);
+    const old = img.src;
+
+    img.src = URL.createObjectURL(new Blob([u8(await rom.read(own ? path : stock))], { type: 'image/jpeg' }));
+    URL.revokeObjectURL(old);
+    reset.hidden = !own;
+  };
+
+  const save = async (cv, label) => {
+    const jpeg = levelImageJpeg(cv);
+
+    await historyGroup(`${l.title}: ${label}`, async () => {
+      await editAsset(path, () => jpeg, 'Picture');
+      await editAsset(path + 'alpha', levelImageMask, 'Picture');
+    });
+
+    levelImageShow();
+  };
+
+  const view = iconButton('camAdd', 'Frame the picture in the 3D view', () => composeLevelImage((cv) => save(cv, 'picture from the view')));
+
+  const file = iconButton('open', 'Choose an image: it is cropped to fill the picture', async () => {
+    const f = await pickImage();
+
+    if (!f)
+      return;
+
+    const bmp = await createImageBitmap(f);
+
+    await save(levelImageCover(bmp, bmp.width, bmp.height), 'picture from a file');
+  });
+
+  levelImageShow();
+
+  return elem('div', { className: 'levelImageRow' }, img, view, file, reset);
+}
+
 async function modLevelDialog(dir)
 {
   const l = modLevelOf(dir);
@@ -1014,7 +1366,7 @@ async function modLevelDialog(dir)
 
   const craftBox = elem('div', {
     className: 'craftGrid',
-    title: 'Craft approved for this level; none ticked keeps the template\'s'
+    title: 'Craft allowed on this level'
   }, ...crafts.map(([, , lab]) => lab));
   const tiers = ['bronze', 'silver', 'gold'];
   const cols = [['time', 'Time (min)', 0.5], ['kills', 'Kills', 1], ['accuracy', 'Accuracy %', 1], ['friendlies', 'Friendlies saved', 1]];
@@ -1042,7 +1394,7 @@ async function modLevelDialog(dir)
   const music = selectOf([
     ['', `The template's (${tmplSong?.name ?? '?'})`],
     ...songChoices()
-  ], l.music ?? '', { title: 'Plays from the start of the mission; music regions placed in the level change it as the player flies into them' });
+  ], l.music ?? '', { title: 'Plays from the start of the mission' });
 
   const tmplCrawl = [0, 5, 10, 15].includes(l.template);
   const ownCrawl = l.crawl && l.crawl !== false;
@@ -1123,6 +1475,7 @@ async function modLevelDialog(dir)
 
   d.append(...(tmplNote ? [elem('small', { className: 'shotNote', textContent: 'From its template it keeps: ' + tmplNote })] : []),
     stacked(fld('Title', title)), fontNote, stacked(fld('Description', desc, 'The SELECT LEVEL briefing text')), fld('Briefing voice ', voice, 'Played when the level is highlighted in SELECT LEVEL'), useSub, recRow, recNote, hr(),
+    elem('b', { textContent: 'Picture' }), levelImageRow(l), hr(),
     elem('b', { textContent: 'Approved craft' }), craftBox, hr(),
     elem('b', { textContent: 'Medals' }), medals, hr(),
     crawlRow,
@@ -1143,6 +1496,9 @@ const levelSettingsKey = (l) => JSON.stringify([l?.title, l?.description, l?.voi
 // An undo or another tool changed the settings: rebuild, so a field can't save a stale value back.
 function syncLevelSettings()
 {
+  if (!$('levelPanel').hidden)
+    levelImageShow?.();
+
   if (!$('levelPanel').hidden && levelPanelDir === selected && levelSettingsKey(modLevelOf(selected)) !== levelPanelKey)
     modLevelDialog(selected);
 }
@@ -1776,6 +2132,26 @@ function waveTriggerRow(it) {
   return row;
 }
 
+// A stock hold order with no flags that lasts 9999 seconds, the stop at the end of a path for UNITS_OWN_PATH.
+let holdTemplate = null;
+
+async function getHoldTemplate()
+{
+  for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)).sort())
+  {
+    if (holdTemplate)
+      break;
+
+    const dv = await rom.read(p);
+    const t = parseDAT(dv).items.find((x) => x.type === 7 && x.sub === 0x22 && x.pathEvent?.a === 9999 && !x.pathEvent.flag && !x.pathEvent.setFlag);
+
+    if (t)
+      holdTemplate = new Uint8Array(dv.buffer, dv.byteOffset + t.offset, dv.getUint32(t.offset + 8)).slice();
+  }
+
+  return holdTemplate;
+}
+
 // A stock fly-to-the-player event record (path event 0x4E, target "+"), the template the attack switch copies.
 let attackTemplate = null;
 
@@ -1869,7 +2245,7 @@ async function addPathFor(it, src, build, name, label) {
 
   await historyGroup(label, async () => {
     const from = u8(await rom.read(src.dir + '/dat')).slice();
-    const attack = await getAttackTemplate();
+    const attack = UNITS_OWN_PATH.has(it.sub) ? await getHoldTemplate() : await getAttackTemplate();
     const s = parseDAT(new DataView(from.buffer)).items.find((x) => x.type === 3 && x.index === src.index);
 
     await editAsset(selected + '/dat', (bytes) => {
@@ -1946,14 +2322,14 @@ function npcPathSelect(it, dv, none, noneLabel)
   const other = [none, ...splines.map((s) => s.name)].includes(cur) ? [] : [[cur, `${cur} (${cur.startsWith('+') ? 'roam area' : 'missing'})`]];
 
   const pairs = [
-    [none, noneLabel],
+    ...(noneLabel ? [[none, noneLabel]] : []),
     ...splines.map((s) => [s.name, s.name + (attacks(s) ? ' (then attacks the player)' : '')]),
     ...other,
     ['__new', 'New path'],
     ['__copy', 'Copy from another level…']
   ];
 
-  const path = selectOf(pairs, cur, { title: 'The path it flies from where it appears (a path starts it at the path\'s first point)' });
+  const path = selectOf(pairs, cur, { title: 'The path it flies from where it appears' });
 
   path.onchange = async () => {
     if (path.value === '__new')
@@ -1967,7 +2343,7 @@ function npcPathSelect(it, dv, none, noneLabel)
     const from = selectOf([
       ['', 'Pick a path to copy…'],
       ...cat.map((c, k) => [k, `${c.dir.split('/').pop()} ${c.name} (${c.kinds})`])
-    ], null, { title: 'A stock flight path to copy into this level (level, path, what flies it); drag its points in Events mode afterwards' });
+    ], null, { title: 'A stock flight path to copy into this level' });
 
     from.onchange = () => (from.value ? copyPathFor(it, cat[+from.value]) : syncSelPanel());
     path.replaceWith(from);
@@ -2049,9 +2425,262 @@ async function renameObject(it, name, dir = selected)
       await editText(SHOT_LINKS, shots.text, `Camera shots: ${old} -> ${name}`);
   });
 
-  await reselect(it.type, it.index);
+  if (selected === dir)
+    await reselect(it.type, it.index);
 
   return moved;
+}
+
+const levelScripts = new Map();
+
+// What a stock level's own script does, read from the ROM once per level. Levels of the player's own have none.
+function levelScript(dir)
+{
+  const id = dir.match(/\/lv_([0-9a-k])$/)?.[1];
+
+  if (id && !levelScripts.has(id))
+    levelScripts.set(id, missionScript(romBytes, parseInt(id, 36)));
+
+  return levelScripts.get(id);
+}
+
+const ARROW_FIELDS = { show: ['flag', 'counter', 'atLeast'], hide: ['hideFlag', 'hideCounter', 'below'] };
+
+const ARROW_MODES = {
+  show: { always: 'Always', units: 'After units are destroyed', area: 'After an area is entered', mission: 'When the mission says' },
+  hide: { always: 'Never', units: 'When units are destroyed', area: 'When an area is entered', mission: 'When the mission says' }
+};
+
+// One side of an arrow as the modder sees it. managed: only rules drive it, so an edit can reuse its counter or flag.
+function arrowCond(w, part, dv, doc, dir)
+{
+  const [flagKey, counterKey] = ARROW_FIELDS[part];
+  const flag = w[flagKey];
+  const counter = w[counterKey];
+
+  if (!flag && !counter)
+    return { mode: 'always', units: [], areas: [], flag, counter };
+
+  const src = arrowSources(dv, doc, flag, counter);
+  const script = levelScript(dir);
+  const scripted = script && !(flag && counter) ? scriptUnits(script, dv, flag, counter) : null;
+  const units = scripted ?? src.units;
+  const named = flag && counter ? 'mission' : (src.areas.length ? 'area' : (units.length ? 'units' : 'mission'));
+
+  return { mode: named, units, areas: src.areas, flag, counter, managed: src.managed && !scripted && named !== 'mission' };
+}
+
+const arrowOwnsRule = (r, flag, counter) => (r.when === 'destroyed' || r.when === 'enter') && r.actions?.length === 1 && ((counter && r.actions[0].do === 'counter' && r.actions[0].counter === counter) || (flag && r.actions[0].do === 'flag' && r.actions[0].flag === flag));
+
+// Sets one side of an arrow: names are the units or the area. The rules that count them and the arrow's numbers change as one undo step.
+async function arrowSet(it, part, mode, names, reload = true)
+{
+  const dir = selected;
+
+  await historyGroup('Objective arrow', async () => {
+    const named = [];
+
+    for (const n of mode === 'units' ? names : [])
+    {
+      const unit = parseDAT(await rom.read(dir + '/dat')).items.find((x) => x.name === n && isUnit(x));
+      const name = unit && (await ensureRuleName(dir, unit));
+
+      if (name)
+        named.push(name);
+    }
+
+    const dv = await rom.read(dir + '/dat');
+    const doc = await readRules(dir);
+    const items = parseDAT(dv).items;
+    const now = items.find((x) => x.type === 7 && x.index === it.index);
+    const w = { ...now.waypoint };
+    const [flagKey, counterKey, countKey] = ARROW_FIELDS[part];
+    const old = arrowCond(w, part, dv, doc, dir);
+    const shared = items.some((x) => x !== now && x.waypoint && ((old.flag && [x.waypoint.flag, x.waypoint.hideFlag].includes(old.flag)) || (old.counter && [
+      x.waypoint.counter,
+      x.waypoint.hideCounter
+    ].includes(old.counter))));
+    const owned = old.managed && !shared;
+
+    if (owned)
+      doc.rules = doc.rules.filter((r) => !arrowOwnsRule(r, old.flag, old.counter));
+
+    const ruleNumbers = (kind) => doc.rules.flatMap((r) => (r.actions ?? []).filter((a) => a.do === kind).map((a) => a[kind]));
+
+    const free = (used) => {
+
+      for (let n = 128; n >= 1; n--)
+        if (!used.has(n))
+          return n;
+
+      throw new Error('This level has no free counters left');
+    };
+
+    let flag = 0;
+    let counter = 0;
+    let count = 0;
+
+    if (mode === 'units' && named.length)
+    {
+      counter = owned && old.counter ? old.counter : free(new Set([...levelUsedObjectiveSlots(dv).counters, ...ruleNumbers('counter')]));
+      count = named.length;
+      named.forEach((object) => doc.rules.push({ when: 'destroyed', object, actions: [{ do: 'counter', counter, add: 1 }] }));
+    }
+
+    if (mode === 'area' && names.length)
+    {
+      const waves = await readWaves(dir);
+
+      flag = owned && old.flag ? old.flag : free(new Set([...levelUsedFlags(dv), ...ruleNumbers('flag'), ...Object.values(waves)]));
+      doc.rules.push({ when: 'enter', object: names[0], actions: [{ do: 'flag', flag, value: 1 }] });
+    }
+
+    Object.assign(w, { [flagKey]: flag, [counterKey]: counter, [countKey]: count });
+    await writeRules(dir, doc, 'Objective arrow');
+
+    const write = (bytes) => arrowWrite(bytes, now, w);
+
+    await (reload ? editItem(now, write, 'Objective arrow', dir) : editAsset(dir + '/dat', write, 'Objective arrow'));
+  });
+
+  rulesChanged();
+}
+
+// Before an item is deleted: arrows waiting on a unit stop counting it, a side waiting on an area goes back to its default, and arrows following it stay put. A deleted arrow takes its rules with it. Call inside the delete's undo step.
+async function arrowsForget(dir, gone)
+{
+  const state = async () => {
+
+    const dv = await rom.read(dir + '/dat');
+
+    return { dv, doc: await readRules(dir), items: parseDAT(dv).items };
+  };
+
+  const start = await state();
+
+  if (gone.waypoint)
+  {
+    for (const part of ['show', 'hide'])
+      if (arrowCond(gone.waypoint, part, start.dv, start.doc, dir).managed)
+        await arrowSet(gone, part, 'always', [], false);
+
+    return;
+  }
+
+  // A shared name stays in use by the objects left behind.
+  if (!gone.name || start.items.filter((x) => x.name === gone.name).length > 1)
+    return;
+
+  for (const { index } of start.items.filter((x) => x.waypoint))
+    for (const part of ['show', 'hide'])
+    {
+      const { dv, doc, items } = await state();
+      const arrow = items.find((x) => x.type === 7 && x.index === index);
+      const cond = arrowCond(arrow.waypoint, part, dv, doc, dir);
+
+      // A stock kill count only needs its target lowered.
+      if (cond.mode === 'units' && cond.units.includes(gone.name) && cond.counter && !cond.managed && cond.units.length > 1)
+      {
+        const d = unitDeath(dv, gone);
+        const key = ARROW_FIELDS[part][2];
+        const count = arrow.waypoint[key] - Math.max(1, d.counter === cond.counter ? d.add : d.add2);
+
+        await editAsset(dir + '/dat', (bytes) => arrowWrite(bytes, arrow, { ...arrow.waypoint, [key]: count }), 'Objective arrow');
+      }
+      else if (cond.mode === 'units' && cond.units.includes(gone.name))
+        await arrowSet(arrow, part, 'units', cond.units.filter((n) => n !== gone.name), false);
+
+      if (cond.mode === 'area' && cond.areas.includes(gone.name))
+        await arrowSet(arrow, part, 'always', [], false);
+    }
+
+  for (const arrow of (await state()).items.filter((x) => x.waypoint?.follow === gone.name))
+    await editAsset(dir + '/dat', (bytes) => arrowWrite(bytes, arrow, { ...arrow.waypoint, follow: '' }), 'Objective arrow target');
+}
+
+// The selected arrow's target and when it shows and hides, in names only: the flags and counters are picked here.
+function arrowPanel(it)
+{
+  const dir = selected;
+  const box = elem('div', { className: 'arrowPanel' });
+  const pending = {};
+
+  const condRow = (part, cond, items) => {
+
+    const mode = pending[part] ?? cond.mode;
+    const modes = Object.entries(ARROW_MODES[part]).filter(([k]) => k !== 'mission' || cond.mode === 'mission');
+    const pick = selectOf(modes, mode, { title: part === 'show' ? 'When the arrow starts pointing here' : 'When the arrow stops pointing here' });
+    const out = [elem('div', { className: 'shotRow' }, part === 'show' ? 'Shows ' : 'Hides ', pick)];
+
+    pick.onchange = () => {
+      if (pick.value === 'always')
+        return arrowSet(it, part, 'always', []);
+
+      pending[part] = pick.value;
+      render();
+    };
+
+    if (mode === 'units')
+    {
+      const units = pending[part] ? [] : cond.units;
+
+      const chips = units.map((n) => elem('button', {
+        className: 'objChip',
+        textContent: n,
+        title: 'Remove',
+        onclick: () => arrowSet(it, part, 'units', units.filter((x) => x !== n))
+      }));
+
+      const add = selectOf([
+        ['', 'Add a unit…'],
+        ...namedByKind(items, (x) => isUnit(x) && !units.includes(x.name))
+      ], '', { title: 'A unit that has to be destroyed' });
+
+      add.onchange = () => add.value && arrowSet(it, part, 'units', [...units, add.value]);
+      out.push(elem('div', { className: 'arrowChips' }, ...chips, add));
+    }
+
+    if (mode === 'area')
+    {
+      const areas = items.filter((x) => x.name && x.onEnter).map((x) => [x.name, x.name]);
+      const area = selectOf([['', 'Pick an area…'], ...areas], pending[part] ? '' : (cond.areas[0] ?? ''), { title: 'The area that has to be entered' });
+
+      area.onchange = () => area.value && arrowSet(it, part, 'area', [area.value]);
+      out.push(area);
+    }
+
+    return out;
+  };
+
+  const render = async () => {
+
+    const [dv, doc] = await Promise.all([rom.read(dir + '/dat'), readRules(dir)]);
+    const items = parseDAT(dv).items;
+    const now = items.find((x) => x.type === 7 && x.index === it.index);
+
+    if (!now?.waypoint)
+      return;
+
+    const w = now.waypoint;
+
+    const follow = selectOf([
+      ['', 'Nothing, stays here'],
+      ...namedByKind(items, isUnit)
+    ], w.follow, { title: 'A unit the arrow keeps pointing at as it moves' });
+
+    follow.onchange = () => editItem(now, (bytes) => arrowWrite(bytes, now, { ...w, follow: follow.value }), 'Objective arrow target', dir);
+
+    box.replaceChildren(
+      elem('div', { className: 'shotRow' }, 'Follows ', follow),
+      ...condRow('show', arrowCond(w, 'show', dv, doc, dir), items),
+      ...condRow('hide', arrowCond(w, 'hide', dv, doc, dir), items)
+    );
+  };
+
+  render();
+  liveRuleViews.add({ box, render });
+
+  return box;
 }
 
 // The object a rule attaches to needs a unique name; unnamed or shared ones get one, unless the stock script finds it by name.
@@ -2219,20 +2848,37 @@ function stopRulePathPick()
   attachGizmo();
 }
 
-// Picks a Spawn action's path by clicking its line in the view. The move handles go away meanwhile, or a click near them would grab them.
-function rulePathButton(set)
+const PICK_PATH = {
+  tip: 'Pick the path by clicking it in the view',
+  prompt: 'Click a flight path in the view. Esc cancels',
+  targets: () => visibleMarkers(),
+  accepts: (it) => it.type === 3
+};
+
+const PICK_UNIT = {
+  tip: 'Pick the target by clicking it in the view',
+  prompt: 'Click the unit to attack in the view. Esc cancels',
+  targets: () => [
+    ...root.children.filter((o) => o.userData.placedItem && o.visible),
+    ...visibleMarkers().filter((m) => m.userData.item && isUnit(m.userData.item))
+  ],
+  accepts: isUnit
+};
+
+// Picks a named object by clicking it in the view. The move handles go away meanwhile, or a click near them would grab them.
+function rulePathButton(set, kind = PICK_PATH)
 {
-  const button = iconButton('place', 'Pick the path by clicking it in the view', () => {
+  const button = iconButton('place', kind.tip, () => {
     if (rulePathPick?.button === button)
       return stopRulePathPick();
 
     objSetPick(null);
     stopPlacing();
     stopRulePathPick();
-    rulePathPick = { set, button, info: $('selInfo').textContent };
+    rulePathPick = { set, button, kind, info: $('selInfo').textContent };
     button.classList.add('on');
     gizmo.detach();
-    $('selInfo').textContent = 'Click a flight path in the view. Esc cancels';
+    $('selInfo').textContent = kind.prompt;
   });
 
   return button;
@@ -2240,20 +2886,56 @@ function rulePathButton(set)
 
 function rulePathClick(e)
 {
-  let o = pick(e, visibleMarkers())?.object;
+  let o = pick(e, rulePathPick.kind.targets())?.object;
 
-  while (o && !o.userData.item)
+  while (o && !o.userData.item && !o.userData.placedItem)
     o = o.parent;
 
-  const it = o?.userData.item;
+  const it = o?.userData.placedItem ?? o?.userData.item;
 
-  if (it?.type !== 3 || !it.name)
+  if (!it?.name || !rulePathPick.kind.accepts(it))
     return;
 
   const { set } = rulePathPick;
 
   stopRulePathPick();
   set(it.name);
+}
+
+// A fly order can only head for a region or an area with a radius; the game sends it at the player for anything else (func_800F5A30).
+const PICK_AREA = {
+  tip: 'Pick the place by clicking it in the view',
+  prompt: 'Click the region or area to fly to in the view. Esc cancels',
+  targets: () => visibleMarkers().filter((m) => m.userData.item && PICK_AREA.accepts(m.userData.item)),
+  accepts: (it) => it.type === 6 || (it.type === 7 && it.radius != null)
+};
+
+// none: the value for "no target" ("-" makes the craft drop the target it has) and its wording.
+const ORDER_TARGETS = {
+  0x20: { none: ['-', 'Nobody (drops its target)'], kind: PICK_UNIT, title: 'The unit this order sends the craft after' },
+  0x4E: { none: ['', 'The player'], kind: PICK_AREA, title: 'Where this order sends the craft' }
+};
+
+function orderTargetRow(it)
+{
+  const { none, kind, title } = ORDER_TARGETS[it.sub];
+  const names = [...new Set(editObjects().filter(([, x]) => kind.accepts(x) && x.name).map(([, x]) => x.name))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const pairs = [none, ...names.map((n) => [n, n])];
+  const box = selectOf(pairs, it.pathEvent.target || none[0], { title }, (v) => v);
+
+  const set = async (name) => {
+    await editAsset(selected + '/dat', (bytes) => orderSetTarget(bytes, it, name), `Order target: ${name || none[1]}`);
+    await reloadLevel(selected);
+    select(editObjects().find(([, x]) => x.type === it.type && x.index === it.index)?.[0] ?? null);
+  };
+
+  box.onchange = () => set(box.value);
+
+  const row = elem('div', { className: 'shotRow' });
+
+  row.append('Target', box, rulePathButton(set, kind));
+
+  return row;
 }
 
 // A new action of that kind; Spawn starts from the last one made, on a flight path of this level.
@@ -2519,7 +3201,6 @@ $('rulesClose').onclick = () => ($('rulesPanel').hidden = true);
 // ---- Water, fog and clouds of the open level: water is on the level's own data, fog and clouds in its environment.json ----
 
 const FOG_REACH = [
-  ['auto', 'Game default'],
   ['scale', 'Move out with the draw distance'],
   ['thin', 'Stay, then thin out toward the view\'s edge'],
   ['stock', 'Stay as a solid wall']
@@ -2549,16 +3230,14 @@ function lookSlider(label, tip, value, min, max, step, change)
   return elem('label', { title: tip }, label, input, out);
 }
 
-function lookColor(label, tip, rgb, fallback, change)
+// A colour swatch, with a button back to the default once it has been changed.
+function lookColor(label, resetTip, rgb, fallback, change)
 {
-  const on = elem('input', { type: 'checkbox', checked: !!rgb, title: `Use your own ${label.toLowerCase()}` });
-  const pick = elem('input', { type: 'color', value: rgbHex(rgb ?? fallback), disabled: !rgb });
-  const send = () => change(on.checked ? hexRgb(pick.value) : undefined);
+  const pick = elem('input', { type: 'color', value: rgbHex(rgb ?? fallback) });
 
-  on.onchange = send;
-  pick.onchange = send;
+  pick.onchange = () => change(hexRgb(pick.value));
 
-  return elem('label', { title: tip }, label, on, pick);
+  return elem('label', {}, label, pick, ...(rgb ? [iconButton('undo', resetTip, () => change(undefined))] : []));
 }
 
 function lookPanel()
@@ -2573,6 +3252,7 @@ function lookPanel()
     change(doc);
     await editText(path, envWrite(doc), label);
     await reloadLevel(dir);
+    await render();
   };
 
   // Drops a section that holds no settings, so an untouched level stays exactly the game's.
@@ -2589,7 +3269,7 @@ function lookPanel()
     const [dv, doc] = await Promise.all([rom.read(dir + '/dat'), virtualText(path).then(envParse)]);
     const water = datWaterGet(dv);
 
-    const setWater = (patch, label) => editAsset(dir + '/dat', (b) => datWaterSet(b, { ...datWaterGet(b), ...patch }), label).then(() => reloadLevel(dir));
+    const setWater = (patch, label) => editAsset(dir + '/dat', (b) => datWaterSet(b, { ...datWaterGet(b), ...patch }), label).then(() => reloadLevel(dir)).then(render);
 
     const fogStart = doc.fog?.start ?? (levelFog?.frac ?? 0.9);
     const clouds = doc.clouds;
@@ -2598,9 +3278,11 @@ function lookPanel()
     const speed = Math.round(Math.hypot(windX, windZ) * 10) / 10;
     const heading = Math.round((Math.atan2(windZ, windX) * 180 / Math.PI + 360) % 360);
     const setWind = (spd, deg) => setClouds('wind', [+(spd * Math.cos(deg * Math.PI / 180)).toFixed(3), +(spd * Math.sin(deg * Math.PI / 180)).toFixed(3)]);
-    const reach = selectOf(FOG_REACH, doc.fog?.reach ?? 'auto');
 
-    reach.onchange = () => setFog('reach', reach.value === 'auto' ? undefined : reach.value);
+    // Unset, the game thins fog that starts close and moves the rest out (FogReach::Auto).
+    const reach = selectOf(FOG_REACH, doc.fog?.reach && doc.fog.reach !== 'auto' ? doc.fog.reach : (fogStart < 0.85 ? 'thin' : 'scale'));
+
+    reach.onchange = () => setFog('reach', reach.value);
 
     const parts = [];
 
@@ -2620,7 +3302,7 @@ function lookPanel()
       elem('div', { className: 'lookHead' }, elem('b', { textContent: 'Fog' })),
       lookSlider('Fog starts at', 'How far out the fog begins, as a share of the view distance', +fogStart.toFixed(2), 0.1, 0.95, 0.05, (v) => setFog('start', v)),
       elem('label', { title: 'What the fog does when the player raises the draw distance' }, 'Far view', reach),
-      lookColor('Fog colour', 'Off uses the level\'s own colour', doc.fog?.color, levelFog ? hexRgb('#' + levelFog.color.getHexString()) : [128, 128, 128], (c) => setFog('color', c)),
+      lookColor('Fog colour', 'Back to the level\'s own colour', doc.fog?.color, levelFog ? hexRgb('#' + levelFog.color.getHexString()) : [128, 128, 128], (c) => setFog('color', c)),
       lookSection('Clouds', !!clouds, (on) => changeEnv('Clouds', (d) => (on ? (d.clouds = {}) : delete d.clouds)))
     );
 
@@ -2640,7 +3322,7 @@ function lookPanel()
       if (pinned)
         parts.push(lookSlider('Cloud height', 'Higher is further up', -clouds.altitude, -100, 200, 1, (v) => setClouds('altitude', -v)));
 
-      parts.push(lookColor('Cloud colour', 'Off keeps the tan Taloraan colour', clouds.tint, [182, 140, 87], (c) => setClouds('tint', c)));
+      parts.push(lookColor('Cloud colour', 'Back to the tan Taloraan colour', clouds.tint, [182, 140, 87], (c) => setClouds('tint', c)));
     }
 
     box.replaceChildren(...parts);
@@ -2694,7 +3376,7 @@ const hasBytes = (path) => rom.read(path).then((d) => d.byteLength > 0, () => fa
 
 // The crawl a level opens, or null (a stock level without a chapter, a mod level set to none): { dir, name (its file, or the one the
 // first edit makes; manifest names are 15 characters), exists, c, base (the stock planet: backdrop and craft), replaces, level, label }.
-async function levelCrawl(dir)
+async function levelCrawl(dir, adding = false)
 {
   const ml = modLevelOf(dir);
   const n = ml ? ml.template : parseInt(dir.split('/lv_')[1], 36);
@@ -2721,11 +3403,15 @@ async function levelCrawl(dir)
     };
   }
 
-  if (ml.crawl === false)
+  if (ml.crawl === false && !adding)
     return null;
 
   const named = typeof ml.crawl === 'string' ? crawls.find((c) => c.name === ml.crawl) : null;
   const inline = ml.crawl && typeof ml.crawl === 'object' ? ml.crawl : null;
+
+  if (!named && !inline && !stock && !adding)
+    return null;
+
   const c = named ?? (inline ? { ...blank, ...inline, planet: inline.planet ?? 0 } : (stock ? { ...blank, ...stock } : blank));
   const taken = new Set(crawls.map((x) => x.name));
   const stem = ml.folder.toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 15);
@@ -2934,7 +3620,7 @@ new ResizeObserver(() => {
 }).observe($('crawlPanel'));
 
 const crawlHead = $('crawlPanel').querySelector('.rulesPanelHead');
-crawlHead.title = 'Drag to move the window; double-click to put it back';
+crawlHead.title = 'Drag to move, double-click to put it back';
 dragByHead(crawlHead, $('crawlPanel'), 'rs64.crawlPos', (p) => (crawlPos = p), placeCrawlPanel);
 
 setEditIcon($('crawlClose'), 'close');
@@ -3067,6 +3753,25 @@ function usedByRow(it)
   return row;
 }
 
+// The game measures roaming in 3D, so a ground unit gets only the slice of the ball at ground level; flyers and probe droids use the whole ball.
+function roamGroundNote(it)
+{
+  if (!it.roamUsers?.some((u) => GROUND_NPCS.has(u.sub)) || !(it.radius > 0))
+    return '';
+
+  const dy = Math.abs(levelHeight(it.pos[0], it.pos[2]) - it.pos[1]);
+  const reach = Math.sqrt(Math.max(it.radius ** 2 - dy ** 2, 0));
+
+  if (reach >= it.radius * 0.9)
+    return '';
+
+  const textContent = reach
+    ? `The ground is ${dy.toFixed(1)} units from this area's centre, so ground units here can only roam ${reach.toFixed(1)} of its ${it.radius.toFixed(1)} units. Move the centre to ground level to use all of it.`
+    : `The ground is ${dy.toFixed(1)} units from this area's centre, past its ${it.radius.toFixed(1)} unit radius, so ground units here will keep turning back. Move the centre to ground level.`;
+
+  return elem('small', { className: 'shotNote', textContent });
+}
+
 // A trigger area's reach (record +0x1C, in level units): how close what sets it off has to come.
 const TRIGGER_RADIUS = 0x1C;
 
@@ -3093,22 +3798,271 @@ function triggerRadiusRow(it)
   return elem('label', {}, 'Radius ', inp);
 }
 
-// The song a music region plays when the player flies into it (a cue of the in-mission cue table).
-function musicZoneRow(it)
+// Which of the music panel's collapsible parts are open, so an edit (which rebuilds the panel) doesn't close them.
+const musicOpen = {};
+
+function musicDetails(key, summary, ...children)
 {
-  const sel = selectOf(parseMusicCues(romBytes).cues.map((c) => [c.cue, c.name]), it.songs?.[0] ?? '', { title: 'Plays when the player enters this region' });
-
-  sel.onchange = () => editItem(it, (b) => musicZoneSet(b, it, +sel.value), `Song: ${it.name || 'music region'} -> ${sel.selectedOptions[0].text}`);
-
-  return elem('div', { className: 'shotRow' }, 'Song on entry ', sel);
+  return elem('details', { open: !!musicOpen[key], ontoggle: (e) => (musicOpen[key] = e.target.open) }, elem('summary', { textContent: summary }), ...children);
 }
 
-// A wingman spawn's path (without one it stays where it is placed).
-function wingmanPathRow(it)
-{
-  const row = elem('div', { className: 'shotRow' });
+const musicNames = (names) => {
+  const list = [...names];
 
-  rom.read(selected + '/dat').then((dv) => row.append('Path ', npcPathSelect(it, dv, '', 'None (stays put)')));
+  return list.slice(0, 2).join(', ') + (list.length > 2 ? ` +${list.length - 2}` : '');
+};
+
+// Picks a mission flag or counter by what sets it; one only the mission script sets has no name, so it shows its number.
+function musicSourcePick(map, value, what, title, apply)
+{
+  const s = selectOf([
+    [0, 'None'],
+    ...[...map].sort((a, b) => a[0] - b[0]).map(([k, names]) => [k, musicNames(names)]),
+    ['other', 'Other number…']
+  ], value, { title }, (v) => `Mission script ${what} ${v}`);
+
+  s.onchange = () => {
+    if (s.value !== 'other')
+      return apply(+s.value);
+
+    const n = parseInt(prompt(`${what[0].toUpperCase() + what.slice(1)} number (1-128)`, value || 1), 10);
+
+    if (n >= 1 && n <= 128)
+      apply(n);
+    else
+      s.value = String(value);
+  };
+
+  return s;
+}
+
+// A music region's settings. With no trigger area it is a level setting that the mission script plays by number, so it shows just its songs.
+function musicPanel(region)
+{
+  const box = elem('div', { className: 'musicPanel' });
+  const dir = selected;
+  const name = region.name || 'music region';
+  const m = region.music;
+  const cues = [[0, 'Stop music'], [1, 'Keep current song'], ...parseMusicCues(romBytes).cues.map((c) => [c.cue, c.name])];
+
+  if (!m)
+    return box;
+
+  const set = (patch, label) => editItem(sel.it, (b) => musicZoneEdit(b, region, patch), `${label}: ${name}`);
+  const row = (label, title, ...controls) => elem('div', { className: 'shotRow', title }, `${label} `, ...controls);
+
+  const cue = (key, label, title) => {
+    const s = selectOf(cues, m[key], { title }, (v) => `Unknown song ${v}`);
+
+    s.onchange = () => set({ [key]: +s.value }, label);
+
+    return row(label, title, s);
+  };
+
+  const number = (value, title, apply, props) => {
+    const inp = elem('input', { type: 'number', step: 'any', value: +value.toFixed(3), title, ...props });
+
+    inp.onchange = () => {
+      const n = parseFloat(inp.value);
+
+      if (Number.isFinite(n))
+        apply(n);
+    };
+
+    return inp;
+  };
+
+  const seconds = (key, label, title) => row(label, title, number(m[key], title, (n) => set({ [key]: Math.max(n, 0) }, label), { min: 0 }));
+
+  Promise.all([rom.read(dir + '/dat'), readWaves(dir)]).then(([dv, waves]) => {
+    if (dir !== selected)
+      return;
+
+    const { flags, counters } = musicConditionSources(dv);
+
+    for (const [wave, flag] of Object.entries(waves))
+      (flags.get(flag) ?? flags.set(flag, new Set()).get(flag)).add(`Wave ${wave}`);
+
+    if (!region.musicTrigger)
+    {
+      box.append(...['enter', 'action', 'after', 'leave'].map((k, i) => cue(k, `Script song ${i + 1}`, 'The mission script plays this by number')));
+
+      return;
+    }
+
+    const onOff = (value, title, apply) => {
+      const s = selectOf([[1, 'is on'], [0, 'is off']], value, { title }, (v) => `equals ${v}`);
+
+      s.onchange = () => apply(+s.value);
+
+      return s;
+    };
+
+    const whenBelow = m.whenThreshold < 0;
+    const whenCount = Math.abs(m.whenThreshold);
+    const whenTitle = 'When the action song plays. With both set, both must hold; with neither, it never plays';
+
+    const compare = selectOf([['ge', 'at least'], ['lt', 'below']], whenBelow ? 'lt' : 'ge', { title: whenTitle });
+
+    compare.onchange = () => set({ whenThreshold: compare.value === 'lt' ? -Math.max(whenCount, 1) : whenCount }, 'Action song counter');
+
+    const playsKind = m.hold > 0 ? 'time' : (m.loops === 1 ? 'forever' : (m.loops === 0 ? 'random' : 'loops'));
+    const playsTitle = 'How long the entry song plays before the earlier song or the Then song takes over';
+
+    const plays = selectOf([
+      ['forever', 'Until the player leaves'],
+      ['time', 'For some seconds'],
+      ['loops', 'For some repeats'],
+      ['random', 'For a random number of repeats']
+    ], playsKind, { title: playsTitle });
+
+    plays.onchange = () => set({
+      forever: { hold: 0, loops: 1 },
+      time: { hold: m.hold || 10, loops: 1 },
+      loops: { hold: 0, loops: Math.max(m.loops, 2) },
+      random: { hold: 0, loops: 0, loopsMax: Math.max(m.loopsMax, 2) }
+    }[plays.value], 'Entry song length');
+
+    const playsRow = row('Entry song plays', playsTitle, plays);
+
+    if (playsKind === 'time')
+      playsRow.append(number(m.hold, 'Seconds', (n) => set({ hold: Math.max(n, 0.01) }, 'Entry song length'), { min: 0 }));
+    else if (playsKind === 'loops')
+      playsRow.append(number(m.loops, 'Repeats', (n) => set({ loops: Math.max(Math.round(n), 2) }, 'Entry song length'), { min: 2, step: 1 }));
+    else if (playsKind === 'random')
+      playsRow.append(number(m.loopsMax, 'At most this many repeats', (n) => set({ loopsMax: Math.max(Math.round(n), 1) }, 'Entry song length'), { min: 1, step: 1 }));
+
+    const more = [
+      playsRow,
+      ...(playsKind === 'loops' || playsKind === 'random' ? [cue('after', 'Then', 'Plays once the entry song has finished its repeats')] : []),
+      row(
+        'Enter fades',
+        'Seconds to fade the old song out and the new one in',
+        number(m.enterFadeOut, 'Old song out, seconds', (n) => set({ enterFadeOut: Math.max(n, 0) }, 'Entering fade'), { min: 0 }),
+        number(m.enterFadeIn, 'New song in, seconds', (n) => set({ enterFadeIn: Math.max(n, 0) }, 'Entering fade'), { min: 0 })
+      ),
+      row(
+        'Leave fades',
+        'Seconds to fade the old song out and the new one in',
+        number(m.leaveFadeOut, 'Old song out, seconds', (n) => set({ leaveFadeOut: Math.max(n, 0) }, 'Leaving fade'), { min: 0 }),
+        number(m.leaveFadeIn, 'New song in, seconds', (n) => set({ leaveFadeIn: Math.max(n, 0) }, 'Leaving fade'), { min: 0 })
+      ),
+      seconds('reenter', 'Re-entry delay', 'Seconds after leaving before the region responds again'),
+      row('Works for', 'The region removes itself after the player has left it this many times. 0 means it never does', number(m.uses, 'Times the player can leave. 0 means no limit', (n) => set({ uses: Math.max(Math.round(n), 0) }, 'Uses'), { min: 0, step: 1 }), ' leaves'),
+      elem('label', { title: 'Entering cancels a timer another region started' }, elem('input', {
+        type: 'checkbox',
+        checked: m.restart !== 0,
+        onchange: (e) => set({ restart: e.target.checked ? 1 : 0 }, 'Cancel timers')
+      }), ' Cancels running timers'),
+      row(
+        'Active when',
+        'The whole region does nothing until this holds',
+        musicSourcePick(flags, m.gateFlag, 'flag', 'The whole region does nothing until this holds', (v) => set({
+          gateFlag: v,
+          gateValue: m.gateValue || 1
+        }, 'Active when')),
+        ...(m.gateFlag ? [onOff(m.gateValue, 'The value it must have', (v) => set({ gateValue: v }, 'Active when'))] : [])
+      ),
+      row(
+        'Active when count',
+        'The whole region does nothing until this counter reaches the number',
+        musicSourcePick(counters, m.gateCounter, 'counter', 'The whole region does nothing until this counter reaches the number', (v) => set({ gateCounter: v }, 'Active when')),
+        ...(m.gateCounter ? [
+          ' at least ',
+          number(m.gateAtLeast, 'The number to reach', (n) => set({ gateAtLeast: Math.round(n) }, 'Active when'), { step: 1 })
+        ] : [])
+      )
+    ];
+
+    box.append(
+      cue('enter', 'On enter', 'What happens to the music when the player enters the inner box'),
+      cue('action', 'Action song', 'Replaces the song while the condition below holds'),
+      row(
+        'When',
+        whenTitle,
+        musicSourcePick(flags, m.whenFlag, 'flag', whenTitle, (v) => set({ whenFlag: v, whenValue: m.whenValue || 1 }, 'Action song condition')),
+        ...(m.whenFlag ? [onOff(m.whenValue, whenTitle, (v) => set({ whenValue: v }, 'Action song condition'))] : [])
+      ),
+      row(
+        'When count',
+        whenTitle,
+        musicSourcePick(counters, m.whenCounter, 'counter', whenTitle, (v) => set({ whenCounter: v }, 'Action song condition')),
+        ...(m.whenCounter ? [
+          compare,
+          number(whenCount, whenTitle, (n) => set({ whenThreshold: (whenBelow ? -1 : 1) * Math.max(Math.round(n), whenBelow ? 1 : 0) }, 'Action song counter'), { min: 0, step: 1 })
+        ] : [])
+      ),
+      seconds('linger', 'Linger', 'Seconds the action song keeps playing after the player leaves'),
+      cue('leave', 'On leave', 'Keep current song brings back the song from before the player entered'),
+      ...musicMarginRows(region),
+      musicDetails('more', 'More', ...more)
+    );
+  });
+
+  return box;
+}
+
+// The Exit margin stays as typed for the session; a side's offset is always its real gap minus the margin, so shipped regions stay exact.
+const musicMargins = new Map();
+const MUSIC_SIDES = ['-X', '+X', '-Z', '+Z'];
+
+function musicMarginRows(region)
+{
+  const trigger = region.musicTrigger;
+  const key = `${selected}/${region.index}`;
+  const margin = musicMargins.get(key) ?? musicMargin(region, trigger, ...mapSize());
+  const gaps = musicGaps(region, trigger);
+  const offsets = gaps.map((g) => g - margin);
+  const name = region.name || 'music region';
+
+  const write = (m, next, label) => {
+    const box = musicRegionBox(region, trigger, next.map((g) => Math.max(g, 0)));
+
+    musicMargins.set(key, m);
+
+    return editItem(sel.it, (b) => {
+      const dv = dvOf(b);
+
+      box.pos.concat(box.size).forEach((v, a) => dv.setFloat32(region.offset + (a < 3 ? 0x10 : 0x1C) + a * 4, v));
+    }, label);
+  };
+
+  const field = (value, title, apply) => {
+    const inp = elem('input', { type: 'number', step: 0.25, value: +value.toFixed(3), title });
+
+    inp.onchange = () => {
+      const n = parseFloat(inp.value);
+
+      if (Number.isFinite(n))
+        apply(n);
+    };
+
+    return inp;
+  };
+
+  const setMargin = (n) => {
+    const m = Math.max(n, 0);
+
+    write(m, offsets.map((o) => m + o), `Exit margin: ${name} -> ${m}`);
+  };
+
+  const sides = MUSIC_SIDES.map((s, k) => elem('label', {}, `${s} `, field(offsets[k], `Added to the exit margin on the ${s} side`, (n) => write(margin, gaps.map((g, j) => (j === k ? margin + n : g)), `Side offset: ${name} ${s} -> ${n}`))));
+  const custom = offsets.some((o) => Math.abs(o) > 0.005);
+
+  return [
+    elem('label', { title: 'How far past the inner trigger area the player must fly before the song stops' }, 'Exit margin ', field(margin, 'How far past the inner trigger area the player must fly before the song stops', setMargin)),
+    musicDetails('sides', custom ? 'Side offsets (custom)' : 'Side offsets', elem('div', { className: 'musicSides' }, ...sides))
+  ];
+}
+
+// The path a wingman spawn or path-only unit flies; noneLabel names the no-path choice, left out for units that must have a path.
+function npcPathRow(it, noneLabel)
+{
+  const dir = selected;
+  const row = elem('div', { className: 'shotRow' });
+  const set = (name) => editItem(it, (bytes) => npcSetPath(bytes, it, name), `Path: ${it.name} -> ${name}`, dir);
+
+  rom.read(dir + '/dat').then((dv) => row.append('Path ', npcPathSelect(it, dv, '', noneLabel), rulePathButton(set)));
 
   return row;
 }
@@ -3117,14 +4071,15 @@ function wingmanPathRow(it)
 // name that level's flags and splines).
 async function enemyTemplate(sub)
 {
-  const own = parseDAT(await rom.read(selected + '/dat')).items.find((x) => x.type === 0 && x.sub === sub);
+  const from = UNIT_RECORD_FROM[sub] ?? sub;
+  const own = parseDAT(await rom.read(selected + '/dat')).items.find((x) => x.type === 0 && x.sub === from);
 
   if (own)
     return { dir: selected, item: own };
 
   for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)).sort())
   {
-    const item = parseDAT(await rom.read(p)).items.find((x) => x.type === 0 && x.sub === sub);
+    const item = parseDAT(await rom.read(p)).items.find((x) => x.type === 0 && x.sub === from);
 
     if (item)
       return { dir: p.slice(0, -4), item };
@@ -3136,36 +4091,140 @@ async function enemyTemplate(sub)
 // The Add palette: what the current edit mode can place, by category, filtered by the search box. Picking one arms placement.
 const ENEMY_GROUPS = [
   ['Imperial fighters', [0x0C, 0x12, 0x13, 0x29]],
-  ['Imperial ground units', [0x1F, 0x0F, 0x47, 0x25, 0x3B]],
-  ['Imperial transports', [0x24, 0x2C, 0x3E, 0x30, 0x31, 0x2F]],
-  ['Rebels and civilians', [0x2E, 0x2B, 0x3C, 0x3D, 0x35, 0x34, 0x2D]],
-  ['Other', [0x21, 0x48]],
+  ['Imperial ground units', [0x1F, 0x0F, 0x47, 0x25, 0x3B, 0x50, 0x0E, 0x37]],
+  ['Imperial transports', [0x24, 0x2C, 0x3E, 0x4D, 0x2F]],
+  ['Turrets', [0x0D, 0x1E, 0x28, 0x41, 0x42]],
+  ['Rebels and civilians', [0x2E, 0x2B, 0x3C, 0x3D, 0x34, 0x2D]],
+  ['Structures', [0x2A, 0x32, 0x44, 0x33, 0x36]],
+  ['Other', [0x21, 0x40, 0x43, 0x46, 0x48, 0x4C]],
 ];
 
+// Stock levels use subtype 0x46 for the Sand Crawler, the record the list copies.
+const UNIT_LABELS = { 0x46: 'Sand crawler' };
+
 let addEntries = [];
+
+// Add list pictures: each enemy kind is drawn once off screen, one at a time, and kept for the session. null = no model to show, so it keeps its icon.
+const enemyThumbs = new Map();
+const THUMB_SIZE = 128;
+const ADD_THUMB_ROW = 41;
+
+// Three picture rows and the sideways scrollbar, so the bar does not change size as pictures load.
+const ADD_BAR_HEIGHT = 209;
+
+// Kinds the level view doesn't draw as models; the files are the ones load_dat_file_assets loads for them.
+const THUMB_MODELS = { 0x31: 'imp_stuff/train#tr_container', 0x33: 'imp_stuff/train_pil', 0x36: 'reb_stuff/r_tr_pil', 0x44: 'imp_stuff/lplatform' };
+let thumbQueue = Promise.resolve();
+
+const thumbImg = (url) => `<img class="addThumb" src="${url}" alt="">`;
+
+function queueEnemyThumb(key)
+{
+  enemyThumbs.set(key, null);
+
+  // Reading a picture back is only a wait on the GPU, so the next kind starts during it. One draw a frame keeps the page smooth.
+  thumbQueue = thumbQueue.then(async () => {
+    const prop = key.startsWith('prop:') ? key.slice(5) : null;
+    const drawn = await drawEnemyThumb(prop ? null : +key.slice(6), prop).catch(() => null);
+
+    drawn?.url.then((url) => {
+      enemyThumbs.set(key, url);
+      $('addList').querySelector(`[data-key="${key}"] .icon`)?.replaceWith(Object.assign(new Image(), { className: 'addThumb', src: url, alt: '' }));
+    }).catch(() => {});
+
+    await new Promise(requestAnimationFrame);
+  });
+}
+
+async function thumbFromTarget(target)
+{
+  const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, THUMB_SIZE, THUMB_SIZE);
+  const drawing = new OffscreenCanvas(THUMB_SIZE, THUMB_SIZE);
+
+  drawing.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, THUMB_SIZE * THUMB_SIZE * 4), THUMB_SIZE, THUMB_SIZE), 0, 0);
+  target.dispose();
+
+  return URL.createObjectURL(await drawing.convertToBlob());
+}
+
+async function drawEnemyThumb(sub, model0)
+{
+  const [path, tableObject] = (model0 ? null : (SUBTYPE_MODEL[sub] ?? THUMB_MODELS[sub]))?.split('#') ?? [];
+  const base = 'data/' + path;
+
+  // Kinds without a fixed file (the Sand Crawler) name a model from their level's package on the record.
+  const named = model0 || (!path && (await enemyTemplate(sub))?.item.model);
+  const id = named ? (await buildObjectIndex()).get(named) : (rom.assets.has(base + '_hi_HOB') ? base + '_hi' : base);
+  const objName = named || tableObject;
+
+  if (!id || !rom.assets.has(id + '_HOB'))
+    return null;
+
+  const model = await loadModel(id);
+  const object = (objName && model.hob.objects.find((o) => o.name === objName)) || model.hob.objects[0];
+  const mesh = buildObject(object, model, id, { tris: 0, verts: 0, parts: 0 });
+  const stage = new THREE.Scene();
+
+  stage.add(mesh);
+  mesh.updateWorldMatrix(true, true);
+
+  const sphere = new THREE.Box3().setFromObject(mesh).getBoundingSphere(new THREE.Sphere());
+
+  if (!(sphere.radius > 0))
+    return null;
+
+  const lens = new THREE.PerspectiveCamera(26, 1, sphere.radius * 0.1, sphere.radius * 20);
+
+  lens.position.copy(sphere.center).add(new THREE.Vector3(1, -0.55, 1).normalize().multiplyScalar(sphere.radius * 4.6));
+  lens.up.set(0, -1, 0);
+  lens.lookAt(sphere.center);
+
+  const target = new THREE.RenderTarget(THUMB_SIZE, THUMB_SIZE, { samples: 4 });
+  const held = renderer.getRenderTarget();
+  const clear = renderer.getClearColor(new THREE.Color());
+  const alpha = renderer.getClearAlpha();
+
+  renderer.setRenderTarget(target);
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(stage, lens);
+  renderer.setRenderTarget(held);
+  renderer.setClearColor(clear, alpha);
+
+  return { url: thumbFromTarget(target) };
+}
 
 function renderAddList()
 {
   const q = $('addSearch').value.trim().toLowerCase();
   const el = $('addList');
+  const scrolled = el.scrollLeft;
 
   el.innerHTML = '';
 
   let group = null;
+  let rows = null;
 
   for (const e of addEntries)
   {
-    if (q && !`${e.label} ${e.group}`.toLowerCase().includes(q))
+    if (q && !`${e.label} ${e.group} ${e.find ?? ''}`.toLowerCase().includes(q))
       continue;
 
-    if (e.group !== group) {
+    if (e.group !== group)
+    {
       group = e.group;
-      el.append(elem('b', { textContent: group }));
+      rows = elem('div', { className: 'addGroupRows' });
+      el.append(elem('div', { className: 'addGroup' }, elem('b', { textContent: group }), rows));
     }
 
     const row = elem('button', { className: 'addRow' + (placing === e.key ? ' active' : ''), title: e.tip ?? '' });
 
-    row.innerHTML = `${e.icon ?? ''}<span>${esc(e.label)}</span>`;
+    const thumb = enemyThumbs.get(e.key);
+
+    row.dataset.key = e.key;
+    row.innerHTML = `${thumb ? thumbImg(thumb) : e.icon ?? ''}<span>${esc(e.label)}</span>`;
+
+    if (thumb === undefined && (e.key.startsWith('enemy:') || e.key.startsWith('prop:')))
+      queueEnemyThumb(e.key);
 
     // A camera is placed at the view, looking where the view looks, so the shot shows what the modder sees.
     row.onclick = () => {
@@ -3178,11 +4237,14 @@ function renderAddList()
       renderAddList();
     };
 
-    el.append(row);
+    rows.append(row);
   }
 
   if (!el.childElementCount)
     el.append(elem('small', { className: 'shotNote', textContent: q ? 'Nothing matches.' : 'Nothing to add here.' }));
+
+  el.scrollLeft = scrolled;
+  fitAddRows();
 
   // While placing, the list is covered so the next step is clear: click the ground, or cancel.
   $('addOverlay').hidden = !placing;
@@ -3190,7 +4252,25 @@ function renderAddList()
   if (!placing)
     dropGhost();
 
-  $('addOverlayText').textContent = `Click the ground to place: ${addEntries.find((e) => e.key === placing)?.label ?? 'it'}`;
+  const hint = placingNeedsPath() ? 'Click a path to fly, or the ground for a new path' : 'Click the ground to place';
+
+  $('addOverlayText').textContent = `${hint}: ${addEntries.find((e) => e.key === placing)?.label ?? 'it'}`;
+}
+
+const placingNeedsPath = () => !!placing?.startsWith('enemy:') && UNITS_NEED_PATH.has(+placing.slice(6)) && !UNITS_OWN_PATH.has(+placing.slice(6));
+
+// The flight path under the cursor while placing a unit that must fly one.
+function placingPath(e)
+{
+  if (!placingNeedsPath())
+    return null;
+
+  let o = pick(e, visibleMarkers().filter((m) => m.userData.item && isFlightPath(m.userData.item)))?.object;
+
+  while (o && !o.userData.item)
+    o = o.parent;
+
+  return o?.userData.item ?? null;
 }
 
 // While placing, a see-through marker of the kind follows the cursor over the ground, where a click would put it.
@@ -3218,7 +4298,7 @@ function placeGhost(e, zone)
 
     const it = !t ? {
       type: 0,
-      sub: +placing.slice(6),
+      sub: placing.startsWith('prop:') ? 0x14 : +placing.slice(6),
       name: '',
       pos: [0, 0, 0],
       rot: [0, 0, 0],
@@ -3248,7 +4328,8 @@ function placeGhost(e, zone)
       return;
   }
 
-  const hit = cursorGround(e);
+  const path = placingPath(e);
+  const hit = path ? new THREE.Vector3(...path.points[1]) : cursorGround(e);
 
   ghost.visible = !!hit;
 
@@ -3260,6 +4341,14 @@ function placeGhost(e, zone)
 function cursorGround(e) {
   const markers = root?.getObjectByName('markers');
   const terrain = root?.getObjectByName('terrain');
+
+  if (markers && terrain?.visible && terrain.userData.tiles)
+  {
+    const p = terrainRay(e, terrain);
+
+    return p ? markers.worldToLocal(terrain.localToWorld(p)) : null;
+  }
+
   const hit = markers && pick(e, terrain ? [terrain] : [root]);
 
   return hit ? markers.worldToLocal(hit.point.clone()) : null;
@@ -3344,6 +4433,77 @@ canvas.addEventListener('pointerup', (e) => {
 }, true);
 $('addSearch').oninput = renderAddList;
 
+// The wheel scrolls the bar sideways, as it has nothing to scroll vertically.
+$('addList').addEventListener('wheel', (e) => {
+  const el = e.currentTarget;
+
+  if (el.scrollWidth <= el.clientWidth || e.deltaX)
+    return;
+
+  el.scrollLeft += e.deltaY;
+  e.preventDefault();
+}, { passive: false });
+
+// The bar fills the gap between the controls help and the scene panel, whose sizes change with the mode.
+function layoutAddBar()
+{
+  const bar = $('addBar');
+  const help = $('help');
+  const scene = $('scene');
+
+  bar.style.left = `${help.offsetLeft + help.offsetWidth + 10}px`;
+  bar.style.right = `${scene.offsetWidth ? bar.parentElement.clientWidth - scene.offsetLeft + 10 : 10}px`;
+}
+
+// Dragging the bar's top edge makes it taller, and each category then runs down more rows, so it gets narrower and more fit across.
+function setAddBarHeight(px)
+{
+  $('addBar').style.height = `${px || ADD_BAR_HEIGHT}px`;
+  fitAddRows();
+}
+
+function fitAddRows()
+{
+  const list = $('addList');
+  const head = list.querySelector('.addGroup > b');
+
+  if (!head)
+    return list.style.removeProperty('--add-rows');
+
+  // A picture row, whether its picture has loaded yet or not.
+  const row = addEntries[0]?.key.startsWith('enemy:') ? ADD_THUMB_ROW : list.querySelector('.addRow').offsetHeight + 1;
+
+  list.style.setProperty('--add-rows', Math.max(3, Math.floor((list.clientHeight - head.offsetHeight - 8) / row)));
+}
+
+setAddBarHeight(stored('rs64.addHeight', null));
+new ResizeObserver(fitAddRows).observe($('addList'));
+
+$('addResize').onpointerdown = (e) => {
+  const handle = $('addResize');
+  const bar = $('addBar');
+  const start = bar.offsetHeight;
+  let px = start === ADD_BAR_HEIGHT ? null : start;
+
+  handle.setPointerCapture(e.pointerId);
+
+  handle.onpointermove = (m) => {
+    const wanted = start + e.clientY - m.clientY;
+
+    px = wanted < ADD_BAR_HEIGHT + 24 ? null : Math.min(wanted, bar.parentElement.clientHeight - 20);
+    setAddBarHeight(px);
+  };
+
+  handle.onpointerup = () => {
+    handle.onpointermove = handle.onpointerup = null;
+    store('rs64.addHeight', px);
+  };
+};
+
+const addBarObserver = new ResizeObserver(layoutAddBar);
+
+[$('addBar').parentElement, $('help'), $('scene')].forEach((el) => addBarObserver.observe(el));
+
 function stopPlacing()
 {
   placing = null;
@@ -3354,12 +4514,12 @@ function stopPlacing()
 $('addCancel').onclick = stopPlacing;
 
 // Enemies keep placing until stopped; clicks wait for each add to land so two never overlap.
-async function placeEnemy(kind, at)
+async function placeEnemy(kind, at, path)
 {
   placeBusy = true;
 
   try {
-    await addEnemy(+kind.slice(6), at);
+    await (kind.startsWith('prop:') ? addProp(kind, at) : addEnemy(+kind.slice(6), at, path));
   } finally {
     placeBusy = false;
     renderAddList();
@@ -3375,16 +4535,270 @@ function fillAddEnemies()
 
   for (const [group, subs] of ENEMY_GROUPS)
   {
-    for (const s of subs.filter((x) => WAVE_FIELDS[x] && (have.has(x) || WAVE_FOREIGN.has(x))).sort((a, b) => SUBTYPES[a].localeCompare(SUBTYPES[b])))
+    for (const s of subs.filter((x) => have.has(x) || UNITS_ANY_LEVEL.has(x)).sort((a, b) => SUBTYPES[a].localeCompare(SUBTYPES[b])))
     {
-      addEntries.push({ key: 'enemy:' + s, group, label: SUBTYPES[s], foreign: !have.has(s), icon: icon(TYPES[0]) });
+      addEntries.push({ key: 'enemy:' + s, group, label: UNIT_LABELS[s] ?? SUBTYPES[s], find: SUBTYPE_MODEL[s], foreign: !have.has(s), icon: icon(TYPES[0]) });
     }
+  }
+
+  if (propCatalog)
+  {
+    for (const [key, c] of propCatalog)
+      addEntries.push({
+        key,
+        group: lvName(c.dir.split('/').pop()),
+        label: c.label,
+        find: c.model,
+        tip: c.model,
+        foreign: c.dir !== selected,
+        icon: icon(TYPES[0])
+      });
+  }
+  else
+  {
+    getPropCatalog().then(() => editMode === 'objects' && fillAddEnemies());
   }
 
   renderAddList();
 }
 
-async function addEnemy(sub, pos)
+const unitsOf = (bytes) => parseDAT(new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)).items.filter((x) => x.type === 0);
+
+// A placed unit gets a name of its own: a template's may be one a mission script looks up, which would also block deleting it.
+function nameUnit(bytes, unit, base)
+{
+  const code = romBytes.subarray(0, BLOB_START);
+  const name = uniqueName(bytes, base.replace(/[^A-Za-z0-9]+/g, '_'), { has: (n) => nameUses(code, n, 0, 0) > 0 });
+
+  return datNameItem(bytes, unit, name);
+}
+
+// A whole train from the DAT `from`, every car on the given path, or on a new one at pos.
+async function addTrain(sub, from, pos, path)
+{
+  const dat = selected + '/dat';
+  const units = async () => parseDAT(await rom.read(dat)).items.filter((x) => x.type === 0);
+  const first = (await units()).length;
+
+  await historyGroup(`Add ${SUBTYPES[sub]}`, async () => {
+    await editAsset(dat, (bytes) => {
+      let out = datAddTrain(bytes, from, sub, pos);
+
+      for (let i = first; i < unitsOf(out).length; i++)
+        out = nameUnit(out, unitsOf(out)[i], SUBTYPES[sub]);
+
+      return out;
+    });
+
+    if (!path)
+      await newPathFor((await units())[first]);
+
+    const name = path?.name ?? npcPathGet(await rom.read(dat), (await units())[first]);
+
+    await editAsset(dat, (bytes) => {
+      let out = bytes;
+      const count = parseDAT(new DataView(out.buffer)).items.filter((x) => x.type === 0).length;
+
+      for (let i = first; i < count; i++)
+        out = npcSetPath(out, parseDAT(new DataView(out.buffer)).items.find((x) => x.type === 0 && x.index === i), name);
+
+      return out;
+    });
+  });
+
+  await reselect(0, first);
+}
+
+// Buildings, capital ships and the like by model, from every level's package: 'prop:<model>' -> the first record naming it.
+let propCatalog = null;
+
+async function getPropCatalog()
+{
+  if (propCatalog)
+    return propCatalog;
+
+  const found = new Map();
+
+  for (const p of [...rom.assets.keys()].filter((p) => /^data\/level\/lv_.\/dat$/.test(p)).sort())
+  {
+    const dv = await rom.read(p);
+    const inPackage = await packageModels(p.slice(0, -4));
+
+    for (const it of parseDAT(dv).items.filter((x) => x.type === 0 && MODEL_UNITS.has(x.sub)))
+    {
+      const model = unitModelName(dv, it);
+      const key = 'prop:' + model;
+
+      // A kind the game loads by subtype (the power transmitter) names a model outside the packages and needs none of them.
+      if (!model || found.has(key) || !(inPackage.has(model) || SUBTYPE_MODEL[it.sub]))
+        continue;
+
+      const label = (it.name || model).replace(/[_\s]*\d*$/, '').replace(/_/g, ' ') || model;
+
+      found.set(key, { dir: p.slice(0, -4), item: it, model, label });
+    }
+  }
+
+  return propCatalog = found;
+}
+
+const packageCache = new Map();
+
+// Model names in a level folder's own packages.
+async function packageModels(dir)
+{
+  if (packageCache.has(dir))
+    return packageCache.get(dir);
+
+  const names = new Set();
+
+  for (const pk of ['opkg', 'opkg2'])
+    if (rom.assets.has(`${dir}/${pk}_HOB`))
+      parseHOB(await rom.read(`${dir}/${pk}_HOB`)).objects.forEach((o) => names.add(o.name));
+
+  packageCache.set(dir, names);
+
+  return names;
+}
+
+// Every level any level of this mod borrows from.
+async function borrowedPackages()
+{
+  const found = new Set();
+
+  for (const p of [...dirty].filter((x) => x.endsWith('/packages.json')))
+  {
+    try {
+      JSON.parse(await virtualText(p) || '{}').levels?.forEach((lv) => found.add(lv));
+    } catch { /* an unreadable file borrows nothing */ }
+  }
+
+  return found;
+}
+
+let textureClashes = null;
+
+// Texture names that the level packages and shared unit models use with different pixels, size or format.
+async function getTextureClashes()
+{
+  if (textureClashes)
+    return textureClashes;
+
+  const seen = new Map();
+  const clashes = new Set();
+
+  for (const p of [...rom.assets.keys()].filter((x) => /_HMT$/.test(x) && /^data\/(level\/lv_.\/opkg|imp_stuff|gnrc_stuff|reb_stuff|pl_crafts)/.test(x)))
+  {
+    let textures;
+
+    try {
+      textures = parseHMT(await rom.read(p)).textures;
+    } catch {
+      continue;
+    }
+
+    for (const t of textures)
+    {
+      const key = `${t.w}x${t.rows}.${t.type}.${t.depth}.${t.flags}.${t.rgba.reduce((h, v) => Math.imul(h ^ v, 16777619), 2166136261)}`;
+
+      if (seen.has(t.name) && seen.get(t.name) !== key)
+        clashes.add(t.name);
+
+      seen.set(t.name, key);
+    }
+  }
+
+  return textureClashes = clashes;
+}
+
+// The level's packages.json: the given level joins, and a level none of this level's objects still need leaves.
+async function syncPackages(dir, add)
+{
+  const path = PACKAGES_PATH(rulesFolderOf(dir));
+  const text = await virtualText(path);
+  let current = [];
+
+  try {
+    current = JSON.parse(text || '{}').levels ?? [];
+  } catch { /* an unreadable file starts over */ }
+
+  const dv = await rom.read(dir + '/dat');
+  const named = new Set(parseDAT(dv).items.filter((x) => x.type === 0).map((x) => unitModelName(dv, x)));
+  const own = await packageModels(dir);
+  const keep = [];
+
+  for (const lv of new Set(add ? [...current, add] : current))
+    if ([...await packageModels('data/level/' + lv)].some((m) => named.has(m) && !own.has(m)))
+      keep.push(lv);
+
+  // Level order, which is the order the Add list prefers a model that several levels have.
+  keep.sort();
+
+  const next = JSON.stringify({ version: 1, levels: keep }) + '\n';
+
+  if (keep.join() === current.join())
+    return;
+
+  await editText(path, next, 'Level packages');
+
+  const clashes = await getTextureClashes();
+  const borrowed = await borrowedPackages();
+
+  for (const lv of keep.filter((x) => !current.includes(x)))
+    await editAsset(`data/level/${lv}/opkg_HMT`, (bytes) => hmtRenameTextures(bytes, lv, clashes));
+
+  for (const lv of current.filter((x) => !borrowed.has(x)))
+    await editAsset(`data/level/${lv}/opkg_HMT`, (bytes) => hmtRestoreNames(bytes, edits.get(`data/level/${lv}/opkg_HMT`)));
+}
+
+// Borrowed packages, by size on disk. Mos Eisley ran out of memory at about 850 KB while loading them, and the mission allocates more once it runs.
+const PACKAGE_BUDGET = 500 * 1024;
+const packageSize = (lv) => ['HOB', 'HMT'].reduce((n, x) => n + (rom.assets.get(`data/level/${lv}/opkg_${x}`)?.size ?? 0), 0);
+
+async function packageFits(dir, lv, model)
+{
+  if ((await packageModels(dir)).has(model) || !(await packageModels('data/level/' + lv)).has(model))
+    return true;
+
+  let current = [];
+
+  try {
+    current = JSON.parse(await virtualText(PACKAGES_PATH(rulesFolderOf(dir))) || '{}').levels ?? [];
+  } catch { /* an unreadable file counts as empty */ }
+
+  return [...new Set([...current, lv])].reduce((n, l) => n + packageSize(l), 0) <= PACKAGE_BUDGET;
+}
+
+async function addProp(key, pos)
+{
+  const c = (await getPropCatalog()).get(key);
+
+  if (!await packageFits(selected, c.dir.split('/').pop(), c.model))
+  {
+    alert('This level already uses as many models from other levels as the game has memory for. Delete some of them first.');
+
+    return;
+  }
+
+  const dv = await rom.read(c.dir + '/dat');
+  const rec = new Uint8Array(dv.buffer, dv.byteOffset + c.item.offset, dv.getUint32(c.item.offset + 8)).slice();
+  const dat = selected + '/dat';
+
+  await historyGroup(`Add ${c.label}`, async () => {
+    await editAsset(dat, (bytes) => {
+      const out = datAddEnemy(bytes, rec, pos, undefined, c.dir !== selected);
+
+      return nameUnit(out, unitsOf(out).at(-1), c.label);
+    });
+
+    await syncPackages(selected, c.dir.split('/').pop());
+  });
+
+  await reselect(0, parseDAT(await rom.read(dat)).items.filter((x) => x.type === 0).length - 1);
+}
+
+// path: a flight path of this level for it to start on. A unit that must have a path gets a new one at pos when none is given.
+async function addEnemy(sub, pos, path)
 {
   const t = await enemyTemplate(sub);
 
@@ -3393,12 +4807,31 @@ async function addEnemy(sub, pos)
 
   const dv = await rom.read(t.dir + '/dat');
   const rec = new Uint8Array(dv.buffer, dv.byteOffset + t.item.offset, dv.getUint32(t.item.offset + 8)).slice();
+  const label = `Add ${SUBTYPES[sub]}`;
 
-  await editAsset(selected + '/dat', (bytes) => datAddEnemy(bytes, rec, pos), `Add ${SUBTYPES[sub]}`);
+  new DataView(rec.buffer).setUint16(0, sub);
 
-  const count = parseDAT(await rom.read(selected + '/dat')).items.filter((x) => x.type === 0).length;
+  if (TRAIN_UNITS.has(sub))
+    return addTrain(sub, u8(dv), path ? path.points[1] : pos, path);
 
-  await reselect(0, count - 1);
+  await historyGroup(label, async () => {
+    await editAsset(selected + '/dat', (bytes) => {
+      const out = datAddEnemy(bytes, rec, path ? path.points[1] : pos, path?.name, t.dir !== selected);
+
+      return nameUnit(out, unitsOf(out).at(-1), SUBTYPES[sub]);
+    }, label);
+
+    const added = parseDAT(await rom.read(selected + '/dat')).items.filter((x) => x.type === 0).at(-1);
+
+    // After the unit reads back, so the guns come after it in the list and it stays the one selected below.
+    if (sub === 0x37)
+      await editAsset(selected + '/dat', (bytes) => datAddDevastatorGuns(bytes, u8(dv), rec));
+
+    if (UNITS_NEED_PATH.has(sub) && !path)
+      await newPathFor(added);
+    else
+      await reselect(0, added.index);
+  });
 }
 
 function nameRow(it)
@@ -3423,8 +4856,37 @@ function nameRow(it)
   return row;
 }
 
+const HELP_TOOL_NAMES = { view: 'select', translate: 'move', rotate: 'rotate', scale: 'scale' };
+
+// The shortcut rows that only apply to the current selection.
+const HELP_WHEN = {
+  selected: () => !!sel,
+  tools: () => sel && !sel.fixed && editTools(sel).length,
+  axes: () => HELP_WHEN.tools() && !sel.it.pathEvent,
+  duplicate: () => sel && !sel.fixed && !sel.it.pathEvent,
+  remove: () => sel && canDelete(sel.it),
+  path: () => sel && sel.it.type === 3 && sel.it.sub === 3 && sel.it.points?.length >= 4 && !sel.pathNode
+};
+
+function syncHelp()
+{
+  for (const el of document.querySelectorAll('#help [data-when]'))
+    el.hidden = !el.dataset.modes.split(' ').includes(editMode ?? 'none') || !HELP_WHEN[el.dataset.when]();
+
+  if (!HELP_WHEN.tools())
+    return;
+
+  const on = ['view', ...editTools(sel)];
+  const keys = Object.entries(TOOL_KEYS).filter(([, tool]) => on.includes(tool));
+
+  $('helpToolKeys').textContent = keys.map(([code]) => code.slice(3)).join(' ');
+  $('helpToolNames').textContent = keys.map(([, tool]) => HELP_TOOL_NAMES[tool]).join(', ');
+}
+
 function syncSelPanel()
 {
+  syncHelp();
+
   const it = sel?.it;
 
   $('selInfo').textContent = !sel
@@ -3458,12 +4920,15 @@ function syncSelPanel()
 
     row.append(inp);
     f.append(row);
+
+    if (ORDER_TARGETS[it.sub])
+      f.append(orderTargetRow(it));
   }
   else if (sel && !sel.fixed)
     for (const [label, , key] of PLACE_FIELDS)
     {
       // Only placed models use their scale; the other type-0 markers ignore it.
-      if (!Array.isArray(it[key]) || (key === 'scale' && !sel.o.userData.placedItem))
+      if (!Array.isArray(it[key]) || (key === 'scale' && !sel.o.userData.placedItem) || (key === 'rot' && isMusicZone(it)))
         continue;
 
       const row = elem('label');
@@ -3502,6 +4967,9 @@ function syncSelPanel()
   if (sel && editMode === 'events' && isTriggerArea(it))
     f.append(triggerWhoRow(it), triggerRadiusRow(it));
 
+  if (sel && editMode === 'events' && markerKind(it) === 'troam')
+    f.append(roamGroundNote(it));
+
   if (sel && !sel.pathNode && (editMode === 'objects' || editMode === 'events'))
     f.append(usedByRow(it));
 
@@ -3512,7 +4980,10 @@ function syncSelPanel()
     f.append(waveEnemyRow(it));
 
   if (sel && editMode === 'events' && it.type === 0 && it.sub === 0x27)
-    f.append(wingmanPathRow(it));
+    f.append(npcPathRow(it, 'None (stays put)'));
+
+  if (sel && editMode === 'objects' && it.type === 0 && UNITS_NEED_PATH.has(it.sub) && !UNITS_OWN_PATH.has(it.sub))
+    f.append(npcPathRow(it));
 
   if (sel && editMode === 'events' && it.type === 7 && it.pathEvent)
     f.append(rulesSection({ kind: 'path', it }));
@@ -3522,8 +4993,16 @@ function syncSelPanel()
   if (sel && editMode === 'objects' && isUnit(it))
     f.append(rulesSection({ kind: 'unit', it }));
 
-  if (sel && editMode === 'events' && it.type === 6 && it.sub === 0x10)
-    f.append(musicZoneRow(it));
+  if (sel && editMode === 'events' && it.waypoint)
+    f.append(arrowPanel(it));
+
+  const musicRegion = it?.type === 6 ? it.musicRegion ?? (it.sub === 0x10 ? it : null) : null;
+
+  if (sel && editMode === 'events' && musicRegion)
+    f.append(musicPanel(musicRegion));
+
+  if (sel && editMode === 'events' && eventHelpUrl(it))
+    $('selInfo').append(' ', eventHelpLink(it));
 
   if (sel && editMode === 'events' && isFlightPath(it) && !sel.pathNode)
     f.append(pathAttackRow(it));
@@ -3547,6 +5026,8 @@ function syncSelPanel()
 
   hud();
 }
+
+const MUSIC_NEW_MARGIN = 5;
 
 // Copies an item's record with a new position and appends it as the last of its kind, so no existing index moves.
 // src is an item of this level, or { it, dv } from another level's DAT (copied inert). zone: { size, rot } written over a zone's footprint (+0x28) and rotation (+0x1C) when it was dragged out.
@@ -3587,15 +5068,23 @@ async function addItem(src, pos, zone, rot = null)
       });
     }
 
-    if (!it.name || !ruled.has(it.name))
-      return;
+    if (it.name && ruled.has(it.name))
+      await editAsset(dir + '/dat', (bytes) => datNameItem(bytes, newest(bytes), uniqueName(bytes, it.name, ruled)));
 
-    await editAsset(dir + '/dat', (bytes) => datNameItem(bytes, newest(bytes), uniqueName(bytes, it.name, ruled)));
+    // A linked music region gets its own trigger area; sharing the source's would leave the new region with no way to start its song.
+    if (it.type === 6 && it.sub === 0x10 && it.zoneLinks?.length)
+    {
+      const t = it.musicTrigger ? { it: it.musicTrigger, dv } : addTemplates.get('zmtrig') ?? (await foreignTemplates(dir)).get('zmtrig');
+      const tDv = t.dv ?? dv;
+      const tRec = new Uint8Array(tDv.buffer, tDv.byteOffset + (t.it ?? t).offset, tDv.getUint32((t.it ?? t).offset + 8)).slice();
+
+      await editAsset(dir + '/dat', (bytes) => musicAddTrigger(bytes, newest(bytes), tRec, MUSIC_NEW_MARGIN, ...mapSize()));
+    }
   });
 
   await reloadLevel(dir);
 
-  const last = editObjects().filter(([, x]) => x.type === it.type).reduce((a, b) => (a && a[1].index >= b[1].index ? a : b), null);
+  const last = editObjects().filter(([, x]) => x.type === it.type && x.sub === it.sub).reduce((a, b) => (a && a[1].index >= b[1].index ? a : b), null);
 
   if (last)
     select(last[0]);
@@ -3615,6 +5104,36 @@ function viewAsCameraPose()
   };
 }
 
+// A new sequence camera framed like the view, aiming at nothing and leading nowhere, under a name of its own.
+async function addSeqCamera(dir, base)
+{
+  const { it, dv } = (await foreignTemplates(dir)).get('cam');
+  const rec = recordInert(new Uint8Array(dv.buffer, dv.byteOffset + it.offset, dv.getUint32(it.offset + 8)).slice(), it);
+  const r = dvOf(rec);
+  const { pos, rot } = viewAsCameraPose();
+
+  pos.forEach((v, a) => r.setFloat32(0x10 + a * 4, v));
+  rot.forEach((v, a) => r.setFloat32(0x1C + a * 4, v));
+  r.setFloat32(0x60, 3);
+
+  let made = null;
+
+  await editAsset(dir + '/dat', (bytes) => {
+    const newest = (b) => parseDAT(dvOf(b)).items.filter((x) => x.type === 0).reduce((a, x) => (a.index >= x.index ? a : x));
+    let out = datAddItem(bytes, 0, rec);
+    const name = uniqueName(out, base);
+
+    out = datNameItem(out, newest(out), name);
+    out = recordSetName(out, newest(out), 0x64, '-');
+    out = recordSetName(out, newest(out), 0x68, '-');
+    made = { name, index: newest(out).index };
+
+    return out;
+  }, `New camera ${base}`);
+
+  return made;
+}
+
 async function addCameraAtView(src)
 {
   if (!src)
@@ -3625,22 +5144,18 @@ async function addCameraAtView(src)
   await addItem(src, pos, null, rot);
 }
 
-// Dragging a list row by its grip (a click on the row still opens it): a model into a cutscene being edited (a new actor) or a level in object
-// editing (a copy of an object of that model, at the drop point), an Audio row onto a cutscene's Audio lane. Esc or a drop elsewhere does nothing.
+// Dragging an Audio row by its grip (a click on the row still opens it) onto a cutscene's Audio lane. Esc or a drop elsewhere does nothing.
 let listDrag = null;
 
-function dragGrip(r) {
-  const g = elem('span', {
-    className: 'grip',
-    draggable: true,
-    title: mode === 'models' ? 'Drag into a cutscene or level you are editing' : 'Drag onto the Audio lane of a cutscene you are editing'
-  });
+function dragGrip(r)
+{
+  const g = elem('span', { className: 'grip', draggable: true, title: 'Drag onto the Audio lane of a cutscene you are editing' });
 
   setEditIcon(g, 'grip');
   g.onclick = (e) => e.stopPropagation();
 
   g.ondragstart = (e) => {
-    listDrag = mode === 'models' ? { model: r.id, obj: r.obj ?? null, label: r.label } : { audio: r.row, label: r.label };
+    listDrag = { audio: r.row, label: r.label };
     e.dataTransfer.effectAllowed = 'copy';
     e.dataTransfer.setData('text/plain', r.label);
   };
@@ -3678,31 +5193,15 @@ function listDropTarget(el, ok, onDrop) {
   };
 }
 
-const viewDropKind = () => (!listDrag?.model ? null : (cut?.file && cutEditing && !cut.seq && !cut.crawl ? 'actor' : (!cut && editMode === 'objects' && selected ? 'object' : null)));
+// A music trigger area is duplicated through its region, which makes the copy's own trigger.
+function duplicateSel()
+{
+  const it = sel.it.musicRegion ?? sel.it;
 
-listDropTarget(canvas, viewDropKind, async (e) => {
-  const d = listDrag;
+  addItem(it, [it.pos[0] + 4, it.pos[1], it.pos[2]]);
+}
 
-  if (viewDropKind() === 'actor')
-  {
-    const name = await cutActorNameFor(d.model);
-
-    return name ? cutAddActorNamed(name) : void ($('cutStatus').textContent = `${d.label}: cutscenes can't load this model`);
-  }
-
-  // A level places only models it loads: the drop copies an object that uses it.
-  const h = (root?.children ?? []).find((o) => o.userData.placedItem && o.userData.source?.id === d.model && (d.obj == null || o.userData.source.objIndex === d.obj));
-
-  if (!h)
-    return void ($('selInfo').textContent = `${d.label}: no object in this level uses this model, so it isn't loaded here`);
-
-  const at = cursorGround(e);
-  const it = h.userData.placedItem;
-
-  addItem(it, at ? at.toArray() : [it.pos[0] + 4, it.pos[1], it.pos[2]]);
-});
-
-$('btnDup').onclick = () => sel && !sel.fixed && !sel.it.pathEvent && addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
+$('btnDup').onclick = () => sel && !sel.fixed && !sel.it.pathEvent && duplicateSel();
 $('btnDel').onclick = () => sel && canDelete(sel.it) && deleteItem(sel.it);
 
 // Event kinds any level can add, copied from another level when this one has none (a blank level starts with only its player start):
@@ -3719,10 +5218,11 @@ async function foreignTemplates(dir)
   for (const p of dats) {
     const dv = await rom.read(p);
 
-    for (const it of parseDAT(dv).items) {
+    for (const it of parseDAT(dv).items)
+    {
       const k = String(markerKind(it));
 
-      if (FOREIGN_KINDS.includes(k) && !it.pathEvent && !out.has(k))
+      if (FOREIGN_KINDS.includes(k) && !it.pathEvent && !out.has(k) && (k !== 'zmus' || it.zoneLinks?.length))
         out.set(k, { it, dv });
     }
   }
@@ -3733,7 +5233,8 @@ async function foreignTemplates(dir)
 async function fillAddKinds() {
   addTemplates = new Map();
 
-  for (const m of root?.getObjectByName('markers')?.children ?? []) {
+  for (const m of root?.getObjectByName('markers')?.children ?? [])
+  {
     const it = m.userData.item;
 
     if (!it || it.pathEvent)
@@ -3741,7 +5242,7 @@ async function fillAddKinds() {
 
     const k = String(markerKind(it));
 
-    if (!addTemplates.has(k))
+    if (!addTemplates.has(k) && (k !== 'zmus' || it.zoneLinks?.length))
       addTemplates.set(k, it);
   }
 
@@ -3794,6 +5295,11 @@ function editClick(e) {
 
   if (placing)
   {
+    const path = placingPath(e);
+
+    if (path)
+      return placeEnemy(placing, null, path), true;
+
     const terrain = root.getObjectByName('terrain');
     const hit = pick(e, terrain ? [terrain] : [root]);
 
@@ -3803,12 +5309,12 @@ function editClick(e) {
     const kind = placing;
     const at = root.worldToLocal(hit.point.clone()).toArray();
 
-    if (kind.startsWith('enemy:'))
+    if (kind.startsWith('enemy:') || kind.startsWith('prop:'))
       return placeEnemy(kind, at), true;
 
     placing = null;
     renderAddList();
-    addItem(sel && String(markerKind(sel.it)) === kind ? sel.it : addTemplates.get(kind), at);
+    addItem(sel && String(markerKind(sel.it)) === kind && (kind !== 'zmus' || sel.it.musicTrigger) ? sel.it : addTemplates.get(kind), at);
 
     return true;
   }
@@ -3819,6 +5325,32 @@ function editClick(e) {
 }
 
 const EDIT_MODES = ['terrain', 'objects', 'events'];
+
+// F: frames what is selected in the level or cutscene editor from the current viewing angle. Returns whether there was something to frame.
+function focusSelected()
+{
+  const tr = cutEditing && cut?.file ? cutTrack : null;
+  const o = tr ? (tr.actor != null ? cut.nodes[tr.actor] : tr.holder ?? editProxy) : ((editMode === 'objects' || editMode === 'events') && sel?.o);
+
+  if (!o)
+    return false;
+
+  if (tr && $('cutCam').checked)
+    cutFreeView();
+
+  o.updateWorldMatrix(true, true);
+
+  const box = new THREE.Box3().setFromObject(o);
+  const sphere = box.isEmpty() ? new THREE.Sphere(o.getWorldPosition(new THREE.Vector3()), 0.5) : box.getBoundingSphere(new THREE.Sphere());
+  const away = camera.position.clone().sub(controls.target).normalize();
+  const reach = Math.max(sphere.radius, 0.3) / Math.sin(THREE.MathUtils.degToRad(camera.fov) / 2);
+
+  controls.target.copy(sphere.center);
+  camera.position.copy(sphere.center).addScaledVector(away, reach * 1.3);
+  controls.update();
+
+  return true;
+}
 
 function editKey(e)
 {
@@ -3846,7 +5378,7 @@ function editKey(e)
   else if (e.code === 'KeyD' && (e.ctrlKey || e.metaKey) && sel && !sel.fixed && !sel.it.pathEvent)
   {
     e.preventDefault();
-    addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
+    duplicateSel();
   }
   else if (e.code === 'Escape') {
     if (rulePathPick)
@@ -3868,6 +5400,7 @@ function editKey(e)
 // Zones in Scale mode also get corner handles: dragging one moves that corner over the ground while the opposite corner stays put. A zone
 // spans pos .. pos + R * size (X/Z), as makeMarker draws it.
 const cornerMat = new THREE.MeshBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+const innerCornerMat = new THREE.MeshBasicMaterial({ color: TYPES.zmtrig.color, depthTest: false, transparent: true });
 const cornerGeo = new THREE.SphereGeometry(1, 12, 8);
 const _cw = new THREE.Vector3();
 
@@ -3914,14 +5447,18 @@ function showCorners()
   if (!sel || sel.it.type !== 6 || editTool !== 'scale')
     return;
 
-  for (const [cu, cv] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
-    const h = new THREE.Mesh(cornerGeo, cornerMat);
+  for (const [target, mat] of [[sel.it, cornerMat], ...(sel.it.musicTrigger ? [[sel.it.musicTrigger, innerCornerMat]] : [])])
+  {
+    for (const [cu, cv] of [[0, 0], [1, 0], [1, 1], [0, 1]]) {
+      const h = new THREE.Mesh(cornerGeo, mat);
 
-    h.position.copy(cornerPoint(sel.it, cu, cv));
-    h.renderOrder = 10;
-    h.userData.corner = [cu, cv];
-    sel.o.parent.add(h);
-    corners.push(h);
+      h.position.copy(cornerPoint(target, cu, cv));
+      h.renderOrder = 10;
+      h.userData.corner = [cu, cv];
+      h.userData.cornerItem = target;
+      sel.o.parent.add(h);
+      corners.push(h);
+    }
   }
 }
 
@@ -3970,12 +5507,23 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  const it = sel.it;
+  const it = h.object.userData.cornerItem;
   const rot = placementRotation(it.rot);
   const [cu, cv] = h.object.userData.corner;
   const A = new THREE.Vector3((1 - cu) * it.size[0], 0, (1 - cv) * it.size[2]).applyMatrix4(rot).add(new THREE.Vector3(...it.pos));
 
-  cornerDrag = { cu, cv, A, rot, inv: rot.clone().invert(), y: h.object.position.y, pos0: new THREE.Vector3(...it.pos), size0: it.size.slice() };
+  cornerDrag = {
+    it,
+    o: it === sel.it ? sel.o : markerOf(sel.o, it),
+    cu,
+    cv,
+    A,
+    rot,
+    inv: rot.clone().invert(),
+    y: h.object.position.y,
+    pos0: new THREE.Vector3(...it.pos)
+  };
+
   controls.enabled = false;
   canvas.setPointerCapture(e.pointerId);
   e.stopImmediatePropagation();
@@ -3988,8 +5536,8 @@ canvas.addEventListener('pointermove', (e) => {
 
   const r = canvas.getBoundingClientRect();
   const c = cornerDrag;
-  const it = sel.it;
-  const o = sel.o;
+  const it = c.it ?? sel.it;
+  const o = c.o ?? sel.o;
 
   pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(pointer, camera);
@@ -4032,14 +5580,13 @@ canvas.addEventListener('pointermove', (e) => {
 
   it.pos = [p.x, c.pos0.y, p.z];
 
-  // Preview: the drawn footprint stretched along the zone's own axes; the commit rebuilds it draped on the ground.
-  const k = [it.size[0] / (c.size0[0] || 1), 1, it.size[2] / (c.size0[2] || 1)];
+  drapeZone(o, it);
 
-  o.matrixAutoUpdate = false;
-  o.matrix.makeTranslation(...it.pos).multiply(c.rot).multiply(new THREE.Matrix4().makeScale(...k)).multiply(c.inv);
-  o.matrixWorldNeedsUpdate = true;
-  corners.forEach((h) => h.position.copy(cornerPoint(it, ...h.userData.corner)));
-  boxAround(selBox, o);
+  if (it.musicRegion)
+    drapeZone(sel.o, { ...it.musicRegion, ...musicRegionBox(it.musicRegion, it, sel.base.gaps) });
+
+  corners.forEach((h) => h.position.copy(cornerPoint(h.userData.cornerItem, ...h.userData.corner)));
+  boxAround(selBox, sel.o);
   syncSelPanel();
 }, true);
 canvas.addEventListener('pointerup', (e) => {
@@ -4054,7 +5601,7 @@ canvas.addEventListener('pointerup', (e) => {
   controls.enabled = true;
 
   if (c.point === undefined)
-    return commitSel();
+    return commitSel(c.it === sel.it ? sel : { o: c.o, it: c.it, base: sel.base });
 
   const it = sel.it;
 
@@ -4123,7 +5670,10 @@ async function modFiles(id, name, keys = null)
     const now = await rom.read(path);
 
     if (path.startsWith('mod/')) {
-      files.push({ name: path.slice(4), data: u8(now).slice() });
+      // A deleted crawl's files are left empty.
+      if (now.byteLength)
+        files.push({ name: path.slice(4), data: u8(now).slice() });
+
       continue;
     }
 
@@ -4503,7 +6053,7 @@ $('btnPlay').onclick = async () => {
 // ---------- What do you want to make? ----------
 
 // Each goal opens where it starts and points at the control to use next, with its wiki guide.
-const GUIDE_URL = (page) => `https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/docs/wiki/${page}.md`;
+const GUIDE_URL = (page) => `https://github.com/MikeSemicolonD/RogueSquadron64Recomp/wiki/${page}`;
 
 const openLevel0 = async () => {
   setMode('levels');
@@ -4570,10 +6120,7 @@ function showGoals(goal = null)
 {
   const p = $('goalPanel');
 
-  const close = iconButton('close', 'Close', () => {
-    p.hidden = true;
-    store('rs64.goalsSeen', true);
-  });
+  const close = iconButton('close', 'Close', () => (p.hidden = true));
 
   p.replaceChildren(elem('div', { className: 'goalHead' }, elem('b', { textContent: goal ? goal.label : 'What do you want to make?' }), close));
 
@@ -4600,13 +6147,6 @@ function showGoals(goal = null)
       }));
 
   p.hidden = false;
-}
-
-// Shown once after the first ROM load; the flag button in the header brings it back.
-function showGoalsOnce()
-{
-  if (!stored('rs64.goalsSeen', false))
-    showGoals();
 }
 
 setEditIcon($('goalsBtn'), 'goals');

@@ -600,7 +600,7 @@ function lightsClick(e) {
   if (lightGizmo.axis)
     return true;
 
-  if ((mode !== 'models' && mode !== 'levels') || !root)
+  if ((mode !== 'models' && mode !== 'levels') || !root || placing)
     return false;
 
   const hit = pick(e, lightMarkers());
@@ -996,7 +996,7 @@ function lightFields(p, l)
       num('Falloff', d.attenuationExponent ?? 1, 0.1, (v) => (d.attenuationExponent = v), 'Exponent of (1 - distance / radius); 2 is the game\'s usual'),
       num('Flicker', d.flickerIntensity ?? 0, 0.05, (v) => (d.flickerIntensity = Math.min(Math.max(v, 0), 1)), 'How much it dims at random, 0 (steady) to 1 (flickers out)'),
       presetHead,
-      elem('label', { title: 'Frame names (spr:<texture name>), "|"-separated; the game\'s F1 Lights tab lists the ones drawn' }, 'Sprites ', elem('input', {
+      elem('label', { title: 'Frame names (spr:<texture name>), separated by "|"' }, 'Sprites ', elem('input', {
         value: p.sprite,
         onchange: (e) => { p.sprite = e.target.value.trim(); commit('Light preset sprites'); }
       })),

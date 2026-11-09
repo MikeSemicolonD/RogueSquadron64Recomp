@@ -23,7 +23,7 @@
 <body class="no-rom">
 <aside>
   <header>
-    <div class="titleRow"><h1>RS64 EXPLORER</h1><span class="titleBtns"><button id="goalsBtn" class="needs-rom" data-icon="goals" title="What do you want to make?" aria-label="What do you want to make?"></button><button id="audioBtn" hidden title="Mute the sound" aria-label="Mute the sound"></button><button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button></span></div>
+    <div class="titleRow"><h1>RS64 EXPLORER</h1><span class="titleBtns"><button id="goalsBtn" class="needs-rom" data-icon="goals" title="Where to start" aria-label="Where to start"></button><button id="audioBtn" hidden title="Mute the sound" aria-label="Mute the sound"></button><button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button></span></div>
     <a class="toolLink" id="saveEditorLink" href="save-editor/" target="_blank" rel="noopener" title="The save editor, a separate tool (opens in a new tab)">&larr; Save editor</a>
     <button id="btnBack" hidden style="width:100%;margin-bottom:8px"></button>
     <input type="file" id="romfile" accept=".z64,.v64,.n64">
@@ -37,23 +37,23 @@
     <label class="aud">Level <select id="audLevel" style="flex:1"><option value="">All</option></select></label>
     <b class="sec mdl">Model</b><b class="sec lvl">Detail</b>
     <label id="objRow" hidden>Object <select id="objSel" style="flex:1"></select></label>
-    <label id="lodRow"><span class="lvl">Model</span>LOD <input type="range" id="optLod" min="0" max="3" value="0"><output id="lodVal">0</output></label>
-    <label class="lvl">Terrain LOD <input type="range" id="optTerrainLod" min="0" max="2" value="0"><output id="terrainLodVal">0</output></label>
+    <label id="lodRow"><span class="lvl">Model</span>LOD <input type="range" id="optLod" min="0" max="3" value="0" data-steps="More detail|Less detail"><output id="lodVal">0</output></label>
+    <label class="lvl">Terrain LOD <input type="range" id="optTerrainLod" min="0" max="2" value="0" data-steps="More detail|Less detail"><output id="terrainLodVal">0</output></label>
     <label class="mdl" id="animRow" hidden>Animation <select id="optAnim" style="flex:1"></select></label>
-    <label class="mdl" id="animSpeedRow" hidden>Anim speed <input type="range" id="optAnimSpeed" min="0" max="3" step="0.05" value="1"><output id="animSpeedVal">1x</output></label>
-    <label class="mdl" id="foilsRow" hidden title="X-wing: 0% = open (normal flight, +-10 deg), 100% = closed (full boost). Shuttle: 0% = folded up (landed), 100% = lowered 110 deg (flight)"><span id="foilsLabel">S-foils closed</span> <input type="range" id="optFoils" min="0" max="1" step="0.01" value="0"><output id="foilsVal">0%</output></label>
-    <label class="mdl" id="speedRow" hidden title="Craft speed driving the engine flicker (the game's player-craft exhaust code); below the craft's low value the exhaust is still">Speed <input type="range" id="optSpeed" min="0" max="6.5" step="0.05" value="4"><output id="speedVal">4</output></label>
-    <label class="mdl" title="Degrees per second-ish; negative spins the other way, 0 is off">Auto-rotate <input type="range" id="optSpin" min="-10" max="10" step="0.5" value="0"><output id="spinVal">0</output></label>
+    <label class="mdl" id="animSpeedRow" hidden title="How fast the animation plays">Anim speed <input type="range" id="optAnimSpeed" min="0" max="3" step="0.05" value="1"><output id="animSpeedVal">1x</output></label>
+    <label class="mdl" id="foilsRow" hidden title="X-wing: 0% open, 100% closed. Shuttle: 0% folded up, 100% lowered"><span id="foilsLabel">S-foils closed</span> <input type="range" id="optFoils" min="0" max="1" step="0.01" value="0"><output id="foilsVal">0%</output></label>
+    <label class="mdl" id="speedRow" hidden title="Craft speed driving the engine flicker">Speed <input type="range" id="optSpeed" min="0" max="6.5" step="0.05" value="4"><output id="speedVal">4</output></label>
+    <label class="mdl" title="Spin speed, negative spins the other way">Auto-rotate <input type="range" id="optSpin" min="-10" max="10" step="0.5" value="0"><output id="spinVal">0</output></label>
     <b class="sec">Rendering</b>
     <div class="pair"><label><input type="checkbox" id="optTex" checked> Textures</label><label><input type="checkbox" id="optWire"> Wireframe</label></div>
     <label>Filtering <select id="optFilter" style="flex:1"><option value="nearest">Nearest (crisp)</option><option value="linear">Bilinear</option><option value="trilinear">Trilinear (mipmaps)</option><option value="aniso">Anisotropic 16x</option></select></label>
     <label title="Game: models are prelit and the terrain is baked, as on the N64. Dynamic: real-time sun with cast shadows.">Lighting <select id="optLight" style="flex:1"><option value="game">Game (prelit)</option><option value="dynamic">Dynamic sun + shadows</option></select></label>
     <button id="btnExport" title="Exports what is shown: current object, LOD and markers">Export .glb</button>
     <hr class="divider">
-    <button class="mdl" id="btnImport" title="Player crafts: replaces the model with a .glb, scaled to the craft. Meshes named after a craft node (e.g. wngrot_a) keep animating; the engines, glows and canopy stay. Each texture takes one of the craft's free texture slots, scaled to its size">Import craft model (.glb)…</button>
+    <button class="mdl" id="btnImport" title="Replace this craft's model with a .glb">Import craft model (.glb)…</button>
     <hr class="divider mdl">
-    <div class="histRow"><button id="btnOpen" data-icon="open" title="Open project (.rs64proj): your saved edits and their undo history"></button><button id="btnSave" data-icon="save" title="Save project (Ctrl+S): every edit and the undo history, as patches against your ROM (no game data), to reopen later or share"></button><button id="btnUndo" data-icon="undo" disabled title="Undo (Ctrl+Z)"></button><button id="btnRedo" data-icon="redo" disabled title="Redo (Ctrl+Y or Ctrl+Shift+Z)"></button></div>
-    <div class="histRow"><button id="btnMod" data-icon="modExport" disabled title="Saves your edits as a mod folder (zip): BPS patches against the original assets, so it holds no game data. Extract it into the game's mods folder"></button><button id="btnPlay" data-icon="modPlay" disabled title="Play in game: writes your edits as the rs64-explorer-preview mod into the game's folder (asked once) and starts the game at what is open here"></button></div>
+    <div class="histRow"><button id="btnOpen" data-icon="open" title="Open project (.rs64proj): your saved edits and their undo history"></button><button id="btnSave" data-icon="save" title="Save project (Ctrl+S): your edits and undo history"></button><button id="btnUndo" data-icon="undo" disabled title="Undo (Ctrl+Z)"></button><button id="btnRedo" data-icon="redo" disabled title="Redo (Ctrl+Y or Ctrl+Shift+Z)"></button></div>
+    <div class="histRow"><button id="btnMod" data-icon="modExport" disabled title="Save your edits as a mod (zip) to extract into the game's mods folder"></button><button id="btnPlay" data-icon="modPlay" disabled title="Play in game with your edits, starting at what is open here"></button></div>
     <div id="playStatus" hidden></div>
   </div>
 </aside>
@@ -67,45 +67,44 @@
   <div id="viewNav" class="panel needs-rom" hidden><svg id="viewAxes" viewBox="-36 -36 72 72" width="72" height="72" role="group" aria-label="View axes"></svg><button id="viewOrtho" data-icon="camPersp" title="Perspective view: click for orthographic, which flattens the view for precise placement (numpad 5)"></button></div>
   <div id="topLeft">
     <div id="editPanel" class="panel needs-rom" hidden>
-      <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><button id="editSpace" data-modes="objects events" title="Global axes"></button></div>
+      <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><button id="editSpace" data-modes="objects events" title="Global axes"></button><div class="heightBtns" data-modes="terrain"><button id="btnHeightOut" title="Save the terrain as a heightmap image">Export</button><button id="btnHeightIn" title="Load a heightmap image onto the terrain">Import</button></div></div>
       <div id="editBody">
         <div class="modes" role="group" aria-label="Edit mode"><button data-mode="terrain" data-icon="terrain" title="Terrain: sculpt, paint and heightmaps"></button><button data-mode="objects" data-icon="objects" title="Objects: select, move, rotate, scale, duplicate and delete placed objects"></button><button data-mode="events" data-icon="events" title="Events: select, move and add paths, zones and triggers"></button></div>
         <input type="checkbox" id="optSculpt" hidden>
         <div data-modes="terrain" class="rows">
-          <label>Tool <select id="sculptTool" style="flex:1"><option value="raise">Raise</option><option value="lower">Lower</option><option value="flatten">Flatten</option><option value="smooth">Smooth</option><option value="paint">Paint texture</option><option value="pick">Pick texture</option></select></label>
-          <label title="Soft brushes fade toward the edge; square ones cover whole tiles to the edge, for flat pads and straight edges">Brush <select id="sculptShape" style="flex:1"><option value="soft">Soft round</option><option value="hard">Hard round</option><option value="soft square">Soft square</option><option value="hard square">Hard square</option></select></label>
-          <label id="sculptFlatRow" title="The height Flatten levels to; empty uses the ground where the stroke starts">Height <input type="number" id="sculptFlat" step="0.5" placeholder="Where you start" style="flex:1"></label>
+          <input type="hidden" id="sculptTool" value="raise">
+          <div class="tools" role="group" aria-label="Terrain tool"><button data-sculpt="raise" data-icon="toolRaise" title="Raise (1)"></button><button data-sculpt="lower" data-icon="toolLower" title="Lower (2)"></button><button data-sculpt="flatten" data-icon="toolFlatten" title="Flatten (3)"></button><button data-sculpt="smooth" data-icon="toolSmooth" title="Smooth (4)"></button><button data-sculpt="paint" data-icon="toolPaint" title="Paint texture (5)"></button><button data-sculpt="pick" data-icon="toolPick" title="Pick texture (6)"></button></div>
+          <input type="hidden" id="sculptShape" value="round">
+          <div class="tools" role="group" aria-label="Brush shape"><button data-shape="round" data-icon="shapeRound" title="Round brush"></button><button data-shape="square" data-icon="shapeSquare" title="Square brush"></button></div>
+          <label id="sculptFlatRow" title="The height Flatten levels to, empty for where the stroke starts">Height <input type="number" id="sculptFlat" step="0.5" placeholder="Where you start" style="flex:1"></label>
           <label title="Brush radius in terrain grid steps (0.5 world units each)">Radius <input type="range" id="sculptRadius" min="1" max="40" value="8"><output id="sculptRadiusVal">8</output></label>
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
           <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
-          <div class="pair"><button id="btnHeightOut" data-icon="download" title="Heightmap PNG: grey, one pixel per terrain grid point; white is high"></button><button id="btnHeightIn" data-icon="upload" title="Import heightmap: any image, scaled to the level's grid (256 height steps). Undo with Ctrl+Z"></button></div>
           <button id="btnLook" title="The level's water, fog and clouds"></button>
           <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
-          <div class="sculptFoot"><meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0" aria-label="Ground tiles used"></meter><span id="sculptInfo"></span></div>
+          <div class="sculptFoot"><label id="sculptBudgetRow" hidden>Ground tiles <meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0"></meter></label><span id="sculptInfo"></span></div>
         </div>
         <div data-modes="objects events" class="rows">
           <div class="tools" role="group" aria-label="Transform tool"><button data-tool="view" data-icon="view" title="View: select only (Q)"></button><button data-tool="translate" data-icon="move" title="Move (W)"></button><button data-tool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-tool="scale" data-icon="scale" title="Scale (R)"></button></div>
           <span id="selInfo" class="dim"></span>
           <div id="selFields" class="rows"></div>
           <button id="btnObjectives" hidden title="Objectives: how this level is won or lost"></button>
-          <button id="btnRules" data-modes="events" title="Level events: the level-wide rules (mission start, timers, objectives, flags) and a list of every rule on the level's objects"></button>
-          <div class="pair"><button id="btnDup" data-icon="duplicate" title="Duplicate: adds a copy 4 units along X as the last item of its kind (Ctrl+D)"></button><button id="btnDel" data-icon="delete" title="Delete the selected object, spawn, zone or trigger (Delete key). Mission scripts find objects by name, so named ones are checked first; a trigger a path fires stays"></button></div>
-        </div>
-        <div data-modes="objects events" class="rows addPalette">
-          <hr><b class="addHead">Add to level</b>
-          <input id="addSearch" type="search" placeholder="Search to add…" title="Pick something to add, then click where it goes (Esc cancels). Kinds marked 'from another level' are copied from a stock level; a new copy of an event takes the selected one of that kind, or the level's first">
-          <div id="addList"></div>
-          <div id="addOverlay" hidden><span id="addOverlayText"></span><small>Esc stops</small><button id="addCancel">Stop</button></div>
+          <button id="btnRules" data-modes="events" title="Level events: every rule in this level"></button>
+          <div class="pair"><button id="btnDup" data-icon="duplicate" title="Duplicate: adds a copy 4 units along X as the last item of its kind (Ctrl+D)"></button><button id="btnDel" data-icon="delete" title="Delete the selected item (Delete key)"></button></div>
         </div>
       </div>
     </div>
     <div id="hud" class="panel needs-rom"></div>
   </div>
+  <div id="selHud" class="panel needs-rom"></div>
+  <div id="cutAddMenu" class="panel" hidden></div>
+  <div id="composeFrame" hidden><canvas id="composeFade" width="160" height="100"></canvas></div>
+  <div id="composeHint" class="panel" hidden>Frame the picture. Click or press Enter to take it, Esc to cancel</div>
   <div id="legend" class="panel" hidden><label class="master" title="Show or hide every marker kind"><input type="checkbox" id="optMarkers" checked><b>Markers</b></label><div id="legendRows"></div></div>
   <div id="crawlPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Opening crawl</b><button id="crawlClose" data-icon="close" title="Close"></button></div><div id="crawlBody"></div></div>
   <div id="rulesPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Level events</b><button id="rulesClose" data-icon="close" title="Close"></button></div><div id="rulesBody"></div></div>
   <div id="levelPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Level settings</b><button id="levelClose" data-icon="close" title="Close"></button></div><div id="levelBody"></div></div>
-  <div id="objPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Objectives</b><button id="objClose" data-icon="close" title="Close"></button></div><div id="objBody" class="crawlEdit"><div id="objList" class="objectives"></div><button id="objAdd" class="addObjective" title="Up to 4; the mission is won when every destroy, reach and survive objective is done">Add objective</button><small id="objNote" class="shotNote"></small></div></div>
+  <div id="objPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Objectives</b><button id="objClose" data-icon="close" title="Close"></button></div><div id="objBody" class="crawlEdit"><div id="objList" class="objectives"></div><button id="objAdd" class="addObjective" title="The mission is won when every destroy, reach and survive objective is done">Add objective</button><small id="objNote" class="shotNote"></small></div></div>
   <div id="lookPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Water, fog and clouds</b><button id="lookClose" data-icon="close" title="Close"></button></div><div id="lookBody"></div></div>
   <div id="audioPanel" class="panel needs-rom" hidden></div>
   <div id="fontPanel" class="panel needs-rom" hidden></div>
@@ -119,48 +118,48 @@
   </div>
   <div id="fxPanel" class="panel needs-rom" hidden>
     <b>Effect</b>
-    <label id="fxFpsRow" title="Flipbook playback rate; the game steps explosion frames from each particle's lifetime timer">Frame rate <input type="range" id="optFxFps" min="1" max="30" step="1" value="12"><output id="fxFpsVal">12</output></label>
+    <label id="fxFpsRow" title="Flipbook playback rate">Frame rate <input type="range" id="optFxFps" min="1" max="30" step="1" value="12"><output id="fxFpsVal">12</output></label>
     <label id="fxAddRow" title="Add the effect onto the background instead of alpha-blending it (how glows and fire usually draw)"><input type="checkbox" id="optFxAdd"> Additive blend</label>
-    <label id="fxCraftRow" hidden title="The craft that goes down: wingman models run npcWingmanUpdate, the rest are a viewer choice">Craft <select id="optFxCraft" style="flex:1"></select></label>
+    <label id="fxCraftRow" hidden title="The craft that goes down">Craft <select id="optFxCraft" style="flex:1"></select></label>
     <label title="Background colour behind effects">Background <input type="color" id="optFxBg" value="#0f1115" style="flex:1"></label>
-    <label id="fxSizeRow" hidden title="The owning object's size field (S or R in the tip), which the viewer cannot read from a placed object">Size <input type="range" id="optFxSize" min="0.01" max="3" step="0.005" value="1"><output id="fxSizeVal">1</output></label>
-    <label id="fxModeRow" hidden title="Particle (game): each particle follows its handler in the game code (size, growth, fade, flipbook timing)">Playback <select id="optFxMode" style="flex:1"><option value="particle">Particle (game)</option><option value="flipbook">Flipbook</option></select></label>
-    <label id="fxBurstRow" hidden title="Particles per burst and their spread are a viewer choice: the game spawns them from many callers whose counts are not traced">Burst <input type="range" id="optFxBurst" min="1" max="24" step="1" value="8"><output id="fxBurstVal">8</output></label>
-    <label id="fxChanceRow" hidden title="Chance a landing throws one more debris1 chunk (game: 2%, one rand % 100 roll shared with the plume)">Chunk % <input type="range" id="optChunkPct" min="0" max="100" step="1" value="100"><output id="chunkPctVal">100</output></label>
-    <label id="fxChanceRow2" hidden title="Chance a landing gives the 2-puff smoke plume, rolled on its own here (game: 8%, the 2..9 band of the shared roll)">Plume % <input type="range" id="optPlumePct" min="0" max="100" step="1" value="8"><output id="plumePctVal">8</output></label>
+    <label id="fxSizeRow" hidden title="The size of the object that explodes">Size <input type="range" id="optFxSize" min="0.01" max="3" step="0.005" value="1"><output id="fxSizeVal">1</output></label>
+    <label id="fxModeRow" hidden title="Particle plays each particle as the game does">Playback <select id="optFxMode" style="flex:1"><option value="particle">Particle (game)</option><option value="flipbook">Flipbook</option></select></label>
+    <label id="fxBurstRow" hidden title="Particles per burst">Burst <input type="range" id="optFxBurst" min="1" max="24" step="1" value="8"><output id="fxBurstVal">8</output></label>
+    <label id="fxChanceRow" hidden title="Chance a landing throws one more chunk (2% in the game)">Chunk % <input type="range" id="optChunkPct" min="0" max="100" step="1" value="100"><output id="chunkPctVal">100</output></label>
+    <label id="fxChanceRow2" hidden title="Chance a landing gives a smoke plume (8% in the game)">Plume % <input type="range" id="optPlumePct" min="0" max="100" step="1" value="8"><output id="plumePctVal">8</output></label>
     <b>Timeline</b>
-    <label title="Playback speed for every effect (1 = game speed); slow it down to watch a simulation">Speed <input type="range" id="optFxSpeed" min="0.05" max="2" step="0.05" value="1"><output id="fxSpeedVal">1x</output></label>
+    <label title="Playback speed for every effect (1 = game speed)">Speed <input type="range" id="optFxSpeed" min="0.05" max="2" step="0.05" value="1"><output id="fxSpeedVal">1x</output></label>
     <div class="tl"><button id="fxPlay">Pause</button><button id="fxStop" title="Stop and rewind to the start">Stop</button><label><input type="checkbox" id="optFxLoop" checked> Loop</label></div>
-    <label title="Drag to scrub; the take replays deterministically">Time <input type="range" id="fxTime" min="0" max="1" step="0.001" value="0"><output id="fxTimeVal" style="min-width:7em">0.00 s</output></label>
+    <label title="Drag to scrub">Time <input type="range" id="fxTime" min="0" max="1" step="0.001" value="0"><output id="fxTimeVal" style="min-width:7em">0.00 s</output></label>
   </div>
   <div id="scene" class="panel needs-rom" hidden>
     <button id="btnLevelSettings" hidden></button>
-    <button id="btnBlankLevel" hidden title="A new level with only a player start on flat ground and blank intro and outro cutscenes, with this level's sky, textures and music. Give it objectives with Objectives in the edit panel">New blank level</button>
+    <button id="btnBlankLevel" hidden title="A new level with only a player start on flat ground, using this level's sky, textures and music">New blank level</button>
     <b id="cutPickHead">Cutscene</b>
-    <label id="cutPickRow" title="The level's intro and extro, the ending ceremony, and its in-mission camera placements (the mission script cuts to these by name)"><select id="cutPick"></select></label>
+    <div id="cutPickRow"><select id="cutPick" title="The level's cutscenes and in-mission sequences"></select><button id="cutAdd" data-icon="add" aria-expanded="false" title="Add a cutscene to this level"></button><button id="cutDel" data-icon="delete" hidden title="Delete this cutscene"></button></div>
+    <label id="cutSeqNameRow" hidden title="Trigger areas and rules start this sequence by its name">Name <input id="cutSeqName" type="text" maxlength="47"></label>
     <b>Scene</b>
     <label><input type="checkbox" id="optSky" checked> Skybox</label>
-    <label><input type="checkbox" id="optFog"> Fog</label>
-    <label title="1x is the game's own fog range (it follows the camera)">Fog distance <input type="range" id="optFogDist" min="1" max="8" step="0.5" value="1" disabled><output id="fogVal">1x</output></label>
+    <label for="optFog" title="1x is the game's own fog range (it follows the camera)"><input type="checkbox" id="optFog"> Fog distance <input type="range" id="optFogDist" min="1" max="8" step="0.1" value="1" data-notch="5" disabled><output id="fogVal">1x</output></label>
     <b>Markers</b>
-    <label title="Lifts each spline above the splines it overlaps so stacked paths can be told apart">Spread paths <input type="range" id="optSpread" min="0" max="3" step="0.1" value="0"><output id="spreadVal">0</output></label>
+    <label title="Lifts each spline above the splines it overlaps so stacked paths can be told apart">Spread paths <input type="range" id="optSpread" min="0" max="3" step="0.1" value="0" data-notch="5"><output id="spreadVal">0</output></label>
   </div>
   <div id="cutPanel" class="panel needs-rom" hidden>
     <button id="cutPlay" title="Pause" aria-label="Pause"></button>
     <input type="range" id="cutTime" min="0" max="1" step="0.0005" value="0" hidden>
     <output id="cutTimeVal">0.0 s</output>
-    <button id="cutEdit" data-icon="edit" aria-pressed="false" title="Edit cutscene: drag clips to move them, drag their ends to trim; Export mod saves the changes"></button>
+    <button id="cutEdit" data-icon="edit" aria-pressed="false" title="Edit cutscene: drag clips to move them, drag their ends to trim"></button>
     <span id="cutEditBadge" style="visibility:hidden">EDITING CUTSCENE</span>
     <div id="cutResizeB" class="cutResize" title="Drag to make the timeline rows taller (room for each clip's description)"></div>
     <div id="cutResizeC" class="cutResize" title="Drag to resize the timeline: taller rows and a wider panel"></div>
-    <label title="Look through the cutscene's own camera (its field of view included); off = free orbit"><input type="checkbox" id="cutCam" checked> Camera</label>
+    <label title="Look through the cutscene's own camera"><input type="checkbox" id="cutCam" checked> Camera</label>
     <label title="The cutscene's voice lines, at the game's speech-queue timing"><input type="checkbox" id="cutVoice" checked> Voice</label>
     <label title="The cutscene's music cues (each song rendered on first use)"><input type="checkbox" id="cutMusic" checked> Music</label>
-    <label title="Sound effects: the cutscene's sound events (footsteps, blasts) and the crafts' engine loops, heard from the view camera"><input type="checkbox" id="cutSfx" checked> Sound</label>
+    <label title="The cutscene's sound effects, heard from the view camera"><input type="checkbox" id="cutSfx" checked> Sound</label>
     <label title="The level's fog, measured from the camera as in the game"><input type="checkbox" id="cutFog" checked> Fog</label>
-    <label title="The mission's own moving units placed in the level (fighters, walkers, transports, troops), not the cutscene's actors. Off as in the game: the cutscene brings its own; buildings, turrets and other fixed objects stay"><input type="checkbox" id="cutNpcs"> Level units</label>
+    <label title="Show the mission's own moving units during the cutscene"><input type="checkbox" id="cutNpcs"> Level units</label>
     <label title="Start over at the end instead of stopping"><input type="checkbox" id="cutLoop"> Loop</label>
-    <span style="margin-left:auto;display:flex;gap:12px"><label id="cutLengthRow" style="visibility:hidden" title="Cutscene duration in seconds: everything keeps its timing; a longer duration adds empty time at the end, a shorter one trims it">Duration <input type="number" id="cutLength" min="0.5" step="0.5" style="width:64px"></label><label id="craftRow" hidden title="The craft picked for the mission: event type 18 (processCutsceneActions at load) swaps the player's actor to its model">Player craft <select id="optCutCraft"><option value="0">X-wing</option><option value="1">Y-wing</option><option value="2">A-wing</option><option value="3">V-wing</option><option value="4">Snowspeeder</option><option value="5">Millennium Falcon</option><option value="6">TIE Interceptor</option><option value="7">T-16 Skyhopper</option><option value="8">Naboo Starfighter</option></select></label><label id="medalRow" hidden title="The lowest medal across the 16 main levels: none shows no medal and drops the announcer, bronze and silver stop early, gold plays it all">Medal tier <select id="optMedal"><option value="none">None</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold" selected>Gold</option></select></label></span>
+    <span style="margin-left:auto;display:flex;gap:12px"><label id="cutLengthRow" style="visibility:hidden" title="Cutscene length in seconds">Duration <input type="number" id="cutLength" min="0.5" step="0.5" style="width:64px"></label><label id="craftRow" hidden title="The craft picked for the mission">Player craft <select id="optCutCraft"><option value="0">X-wing</option><option value="1">Y-wing</option><option value="2">A-wing</option><option value="3">V-wing</option><option value="4">Snowspeeder</option><option value="5">Millennium Falcon</option><option value="6">TIE Interceptor</option><option value="7">T-16 Skyhopper</option><option value="8">Naboo Starfighter</option></select></label><label id="medalRow" hidden title="The lowest medal across the 16 main levels, which sets how much of the ceremony plays">Medal tier <select id="optMedal"><option value="none">None</option><option value="bronze">Bronze</option><option value="silver">Silver</option><option value="gold" selected>Gold</option></select></label></span>
     <span id="cutStatus" style="color: var(--dim)"></span>
     <div id="cutEditor">
       <div id="cutTlCol">
@@ -175,28 +174,37 @@
           <h4>Cutscene</h4>
           <div class="insRow">
             <select id="cutAddKind" title="Add an event of this kind at the playhead"><option value="">Event…</option></select>
-            <select id="cutAddActor" title="Add an actor: a model from the game's cutscene model table (or a player craft), placed where the first actor starts"><option value="">Actor…</option></select>
+            <select id="cutAddActor" title="Add an actor"><option value="">Actor…</option></select>
             <button id="cutAddCam" data-icon="camAdd" title="New shot here: cuts at the playhead to a new camera framed like your view (6 cameras at most)"></button>
-            <button id="cutBlank" data-icon="blank" title="Start from blank: removes every actor, camera move, voice, sound and music, keeping one still camera, the draw range and the ending transition (undo brings it back)"></button>
+            <button id="cutBlank" data-icon="blank" title="Start from blank: removes everything but one still camera"></button>
           </div>
           <hr class="divider insDivider">
-          <select id="cutTrack" title="Pose a camera or actor: drag the gizmo (W move, E rotate, R scale) to key it at the playhead; its keys show on the Keys row"><option value="">Pose…</option></select>
+          <select id="cutTrack" title="Pose a camera or actor: drag the gizmo to key it at the playhead"><option value="">Pose…</option></select>
         </section>
         <section id="insTrack" hidden>
           <h4 id="insTrackName"></h4>
-          <div class="insRow" id="insTools" role="group" aria-label="Pose tool"><button data-ctool="translate" data-icon="move" title="Move (W)"></button><button data-ctool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-ctool="scale" data-icon="scale" title="Scale (R)"></button><button id="cutCamView" data-icon="eye" title="Snapshot from view (V): a camera takes the free view (untick Camera and fly there first), field of view included; an actor goes ahead of the view. Snapshots at different times curve into a path"></button><button id="cutSpace" title="Local axes: the actor's own frame. Click or press X for global axes">Local</button></div>
+          <div class="insRow" id="insTools" role="group" aria-label="Pose tool"><button data-ctool="translate" data-icon="move" title="Move (W)"></button><button data-ctool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-ctool="scale" data-icon="scale" title="Scale (R)"></button><button id="cutCamView" data-icon="eye" title="Snapshot from view (V): key the picked camera or actor from where you are looking"></button><button id="cutSpace" title="Local axes: the actor's own frame. Click or press X for global axes">Local</button></div>
           <div class="insRow">
             <label id="insModel">Model <select id="cutModel" title="Model of the picked actor (from the game's cutscene model table)"><option value="">Model…</option></select></label>
             <button id="cutDelActor" data-icon="delete" title="Remove the picked actor, its children and the events that name it (Delete key)"></button>
-            <button id="cutDelCam" data-icon="delete" title="Remove the picked camera and its cuts (Delete key; the last camera stays)"></button>
+            <button id="cutDelCam" data-icon="delete" title="Remove the picked camera and its cuts (Delete key)"></button>
           </div>
           <div class="insRow" id="insMode" role="group" aria-label="Camera mode"><button data-cmode="follow" data-icon="camFollow" title="Follow: this shot chases the actor from where the camera is now"></button><button data-cmode="aim" data-icon="camAim" title="Aim: this shot stays put and turns to watch the actor"></button><button data-cmode="ride" data-icon="camRide" title="Ride: this shot looks out from the actor's cockpit"></button><select id="cutModeActor" title="The actor the camera works from"></select></div>
-          <div class="insRow" id="insShoot"><select id="cutShoot" title="Shoot at: the actor turns to the target, fires at the playhead, and the target blows up when the bolt arrives"></select><button id="cutRoute" data-icon="route" aria-pressed="false" title="Draw route: click points in the view and the actor flies them from the playhead to the end, nose first. Esc when done; drag their timing on the Keys row"></button></div>
+          <div class="insRow" id="insShoot"><select id="cutShoot" title="Shoot at: the actor turns to the target, fires at the playhead, and the target blows up when the bolt arrives"></select><button id="cutRoute" data-icon="route" aria-pressed="false" title="Draw route: click points in the view for the actor to fly, Esc when done"></button></div>
         </section>
         <section id="cutEvPanel" hidden aria-label="Selected event or key"></section>
       </aside>
   <div id="tip" class="panel" hidden></div>
   <div id="info" class="panel" hidden></div>
+  <div id="addBar" data-modes="objects events" class="panel needs-rom" hidden>
+    <div id="addResize" title="Drag to make this taller"></div>
+    <div class="addSide">
+      <b class="addHead">Add to level</b>
+      <input id="addSearch" type="search" placeholder="Search to add…" title="Pick something to add, then click where it goes (Esc cancels)">
+    </div>
+    <div id="addList"></div>
+    <div id="addOverlay" hidden><span id="addOverlayText"></span><small>Esc stops</small><button id="addCancel">Stop</button></div>
+  </div>
   <div id="help" class="panel needs-rom">
     <span>Left / right-drag</span><span>orbit (with momentum)</span>
     <span>Middle-drag</span><span>pan</span>
@@ -207,13 +215,15 @@
     <span data-modes="none terrain">R</span><span data-modes="none terrain">reset camera</span>
     <span data-modes="objects events">Right-drag + WASD / QE</span><span data-modes="objects events">fly (hold Shift to accelerate)</span>
     <span data-modes="terrain objects events">Tab / Shift+Tab</span><span data-modes="terrain objects events">next / previous edit mode</span>
-    <span data-modes="objects events">Q W E R</span><span data-modes="objects events">select, move, rotate, scale</span>
-    <span data-modes="objects events">X</span><span data-modes="objects events">global / local axes</span>
-    <span data-modes="objects events">Ctrl+D / Delete</span><span data-modes="objects events">duplicate / delete</span>
+    <span id="helpToolKeys" data-modes="objects events" data-when="tools"></span><span id="helpToolNames" data-modes="objects events" data-when="tools"></span>
+    <span data-modes="objects events" data-when="axes">X</span><span data-modes="objects events" data-when="axes">global / local axes</span>
+    <span data-modes="objects events" data-when="selected">F</span><span data-modes="objects events" data-when="selected">focus on it</span>
+    <span data-modes="objects events" data-when="duplicate">Ctrl+D</span><span data-modes="objects events" data-when="duplicate">duplicate</span>
+    <span data-modes="objects events" data-when="remove">Delete</span><span data-modes="objects events" data-when="remove">delete</span>
     <span data-modes="terrain">1 - 6 / [ ]</span><span data-modes="terrain">brush tool / smaller, bigger brush</span>
     <span data-modes="terrain">Shift / Alt+drag</span><span data-modes="terrain">raise and lower swapped / pick a texture</span>
-    <span data-modes="events">Drag / Shift+drag path point</span><span data-modes="events">move it / change its height</span>
-    <span data-modes="events">Ctrl / Alt+click path point</span><span data-modes="events">add one after it / delete it</span>
+    <span data-modes="events" data-when="path">Drag / Shift+drag</span><span data-modes="events" data-when="path">move a point / change its height</span>
+    <span data-modes="events" data-when="path">Ctrl / Alt+click</span><span data-modes="events" data-when="path">add a point after / delete a point</span>
   </div>
   <div id="busy" role="status" aria-live="polite" hidden><span class="spinner"></span><span id="busyText"></span></div>
   <div id="drop"><div class="box" role="button" tabindex="0" title="Choose a ROM file">

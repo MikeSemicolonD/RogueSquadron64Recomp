@@ -21,29 +21,29 @@ In Terrain mode, pick a **Tool** and drag:
 
 - **Raise**, **Lower**, **Flatten**, **Smooth**, with **Radius** and **Strength**.
 - **Paint texture** paints the picked swatch. **Pick texture** or **Alt+drag** picks one up.
-- **Brush**: soft or hard, round or square. Flatten's **Height** sets the level (empty: where you start).
+- The two shape buttons make the brush round or square. Flatten's **Height** sets the level (empty: where you start).
 - Keys: **1**-**6** tools, **[** **]** brush size, **Shift+drag** swaps Raise and Lower.
 - **Objects follow** keeps things on the ground. **Show tiles** outlines tiles.
 
 The download button saves a grey heightmap PNG (white is high); upload loads any image back.
 
-A level holds 8191 different ground tiles; the bar shows use. Unused tiles are dropped near the limit, and a stroke past it is undone. Smoother shapes use fewer.
+A level holds 8191 different ground tiles; a bar shows use once a level passes 80%. Unused tiles are dropped near the limit, and a stroke past it is undone. Smoother shapes use fewer.
 
 ## Move, add and remove things
 
 In Objects or Events mode:
 
 - **Click** to select; **right-click** picks from everything under the cursor.
-- **W**, **E**, **R** move, rotate, scale; **X** toggles world / local axes. The panel has exact values.
+- **W**, **E**, **R** move, rotate, scale; **X** toggles world / local axes, **F** focuses the view on it. The panel has exact values.
 - **Name** renames it; rules, camera shots and paths follow. The player start and names a stock script uses can't change.
 - **Ctrl+D** duplicates, **Delete** removes (refused, with the reason, if the mission needs it).
 - **Used by** lists the objectives and rules using it.
 
-**Add to level** (bottom of the panel): pick an item and click where it goes, or drag it in by its grip. Enemies keep placing until **Esc**. *From another level* items are copied from that mission. A **Camera** is added at your view.
+**Add to level** (the bar along the bottom, which scrolls sideways): pick an item and click where it goes, or drag it in by its grip. Enemies keep placing until **Esc**. *From another level* items are copied from that mission. A **Camera** is added at your view.
 
 ## Enemies and waves
 
-An enemy in a **wave** waits off-stage until released. Pick the wave in its panel, or **New wave…**. TIE fighters and interceptors can come from other levels.
+An enemy in a **wave** waits off-stage until released. Pick the wave in its panel, or **New wave…**. Units from other levels, including turrets and vehicles, are in **Add to level**. Turrets and structures can't join a wave.
 
 A wave is released:
 
@@ -61,8 +61,10 @@ In Events mode, drag a path's points (**Shift+drag**: height, **Ctrl+click**: ad
 In Events mode:
 
 - A **trigger area** fires when what **Set off by** names (the player or a unit) comes within its **Radius**. Copied triggers start set off by the player, radius 10 or more.
-- A **music region** changes the song when the player enters.
+- A **music region** changes the music when the player enters its inner box, can switch to an action song when an objective calls for it, and ends when they leave the outer box.
 - **Play camera shot** cuts to a level camera the first time the trigger fires. In co-op, both players see it unless set to the one who fired it.
+
+Every kind of marker is explained in the [Level reference](Level-Events), or click **?** on the item.
 
 ## Rules: "when this happens, do that"
 
@@ -113,7 +115,6 @@ Right-click the ground, **Add light here**; drag the bulb to move it.
 
 ## Not yet possible
 
-- Enemy craft other than TIE fighters and interceptors from other levels.
 - A map larger than the original.
 
 Untested in game: new and edited paths, a copied camera in a camera shot, a unit in **Set off by** and *Play recording*.

@@ -266,6 +266,17 @@ int main()
     // rules_folder: the mod level's folder, else the stock level's lv_<base-36 id>
     CHECK(rulesFolder("ice", 1) == "ice" && rulesFolder("", 1) == "lv_1" && rulesFolder("", 10) == "lv_a");
 
+    // packages.json: stock level folders only
+    {
+        std::vector<std::string> errors;
+
+        CHECK(parsePackages(R"({ "version": 1, "levels": ["lv_2", "lv_h"] })", errors) == std::vector<std::string>({ "lv_2", "lv_h" }) && errors.empty());
+        CHECK(parsePackages(R"({ "levels": ["../x", "lv_22", 5, "lv_a"] })", errors) == std::vector<std::string>({ "lv_a" }) && errors.size() == 3);
+
+        errors.clear();
+        CHECK(parsePackages("not json", errors).empty() && errors.size() == 1);
+    }
+
     std::printf("level_rules_test: ok\n");
 
     return 0;

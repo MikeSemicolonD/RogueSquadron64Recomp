@@ -20,6 +20,7 @@ The stock level it starts from, its *template*, sets the sky, ground textures an
 ![The Level settings window for a new level](images/level-settings.png)
 
 - **Title** and **description** for SELECT LEVEL.
+- **Picture**: the hologram on SELECT LEVEL. The camera button lets you frame a shot in the 3D view: fly to it, then click or press **Enter** to take it (**Esc** cancels). The folder button loads any image and crops it to fit. Without one, it shows the original level's picture.
 - **Briefing**: a game voice line, or **Import recording…** (`.wav`, `.mp3`).
 - **Approved craft**: the hangar shows every owned ship, but only approved ones launch.
 - **Medals**: time, kills, accuracy and friendlies saved per medal, kept per save slot.
@@ -77,6 +78,5 @@ To make the player land too, look at the outpost spot, add a **Reach an area** o
 
 ## Not yet possible
 
-- Enemy craft other than TIE fighters and interceptors from other levels ([list](Make-a-Level-Mod#not-yet-possible)).
 - A map bigger than its template.
 - Your own model as a **new** selectable ship.

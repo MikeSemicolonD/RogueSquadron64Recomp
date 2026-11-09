@@ -253,6 +253,38 @@ inline std::vector<uint8_t> silentMort(int seconds)
     return out;
 }
 
+// Levels whose model package another level also loads, from assets/level/<folder>/packages.json: { "version": 1, "levels": ["lv_2"] }.
+// Only stock level folders pass, since a name becomes an asset path.
+inline std::vector<std::string> parsePackages(const std::string& text, std::vector<std::string>& errors)
+{
+
+    std::vector<std::string> out;
+    const auto doc = nlohmann::json::parse(text, nullptr, false);
+
+    if (doc.is_discarded() || !doc.is_object() || !doc.contains("levels") || !doc["levels"].is_array())
+    {
+        errors.push_back("packages.json is not { \"version\": 1, \"levels\": [...] }");
+        return out;
+    }
+
+    for (const auto& level : doc["levels"])
+    {
+        const std::string name = level.is_string() ? level.get<std::string>() : "";
+        const bool stock = name.size() == 4 && name.rfind("lv_", 0) == 0 && ((name[3] >= '0' && name[3] <= '9') || (name[3] >= 'a' && name[3] <= 'z'));
+
+        if (stock)
+        {
+            out.push_back(name);
+        }
+        else
+        {
+            errors.push_back("packages.json names \"" + name + "\", which is not a stock level folder");
+        }
+    }
+
+    return out;
+}
+
 // The rules folder of a level: the mod level's folder, else the stock level's (lv_ + base-36 id).
 inline std::string rulesFolder(const std::string& modFolder, int level)
 {

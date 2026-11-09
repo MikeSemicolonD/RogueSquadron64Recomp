@@ -986,6 +986,7 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
 // ---- Level rules: assets/level/<folder>/rules.json from enabled mods, run against the level being played ----
 namespace {
 std::map<std::string, std::vector<rs64rules::Rule>> s_rules_by_folder;
+std::map<std::string, std::vector<std::string>> s_packages_by_folder;
 rs64rules::Runner s_rules;
 std::string s_rules_folder;
 std::string s_message_text;
@@ -1223,6 +1224,24 @@ extern "C" void rs64_rules_init()
                 s_env_by_folder[it->path().filename().string()] = env;
             }
 
+            std::ifstream packages(it->path() / "packages.json", std::ios::binary);
+
+            if (packages)
+            {
+                std::vector<std::string> package_errors;
+                auto& known = s_packages_by_folder[it->path().filename().string()];
+
+                for (const auto& level : rs64rules::parsePackages(std::string((std::istreambuf_iterator<char>(packages)), std::istreambuf_iterator<char>()), package_errors))
+                {
+                    if (std::find(known.begin(), known.end(), level) == known.end())
+                    {
+                        known.push_back(level);
+                    }
+                }
+
+                for (const auto& e : package_errors) fprintf(stderr, "[packages] %s %s: %s\n", d.mod_id.c_str(), it->path().filename().string().c_str(), e.c_str());
+            }
+
             std::ifstream in(it->path() / "rules.json", std::ios::binary);
 
             if (!in) continue;
@@ -1238,6 +1257,37 @@ extern "C" void rs64_rules_init()
             auto& list = s_rules_by_folder[folder];
             list.insert(list.end(), rules.begin(), rules.end());
         }
+    }
+}
+
+// loadDatFile, after the level's own packages: other levels' packages the mod asked for, so its placed objects find their models. fp = the level's asset folder.
+extern "C" void rs64_load_level_packages(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const char* mod = rs64_mod_levels_current_folder();
+    const auto found = s_packages_by_folder.find(rs64rules::rulesFolder(mod ? mod : "", (int)rw(rdram, 0x80130B70u)));
+
+    if (found == s_packages_by_folder.end())
+    {
+        return;
+    }
+
+    constexpr uint32_t kPackageName = 0x80C42300u;
+    constexpr uint32_t kModelTable = 0x80136FB0u;
+    std::string folder;
+
+    for (uint32_t a = (uint32_t)ctx->r30; rb(rdram, a) && folder.size() < 0x80; a++) folder.push_back((char)rb(rdram, a));
+
+    folder.resize(folder.rfind('/') == std::string::npos ? 0 : folder.rfind('/') + 1);
+
+    for (const auto& level : found->second)
+    {
+        const std::string path = folder + level + "/opkg";
+
+        for (size_t i = 0; i <= path.size(); i++) wb(rdram, kPackageName + (uint32_t)i, i < path.size() ? (uint8_t)path[i] : 0);
+
+        fprintf(stderr, "[packages] loading %s\n", path.c_str());
+        rs64::mips::mips_call(rdram, ctx, 0x8005645Cu, { kPackageName, kModelTable, 1u, 0u });
     }
 }
 

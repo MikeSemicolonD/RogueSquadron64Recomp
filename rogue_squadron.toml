@@ -346,6 +346,12 @@ func = "load_asset_with_malloc_flags"
 before_vram = 0x80064884   # the `jr $ra` instruction
 text = '{ rs64_th_load_asset_with_malloc_flags_80064884(rdram, ctx); }'
 
+# Loads other levels' model packages a mod's packages.json lists.
+[[patches.hook]]
+func = "loadDatFile"
+before_vram = 0x800472E8
+text = '{ rs64_th_loadDatFile_800472E8(rdram, ctx); }'
+
 # Per-frame loop counter (blocks on the VI retrace queue each iter, so its rate
 # = the real frame rate). Logs first 4 + every 64th iter.
 [[patches.hook]]

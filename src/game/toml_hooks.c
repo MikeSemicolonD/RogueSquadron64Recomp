@@ -8,6 +8,12 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+// loadDatFile, after the level's opkg and opkg2
+void rs64_th_loadDatFile_800472E8(uint8_t* rdram, recomp_context* ctx)
+{
+    rs64_load_level_packages(rdram, ctx);
+}
+
 // cinematicLoopBody entry
 void rs64_th_cinematicLoopBody_entry(uint8_t* rdram, recomp_context* ctx)
 {

@@ -6,7 +6,7 @@
 - **Chrome or Edge** on desktop. Other browsers can view and export, but not [Play in game](Saving-Testing-and-Sharing#play-in-game).
 - **[The game](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/releases)**, to play what you make.
 
-Open the [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/rs64-explorer/) and drop your ROM on it. **What do you want to make?** (the flag button) shows where to start.
+Open the [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/rs64-explorer/) and drop your ROM on it. The flag button shows where to start on each kind of mod.
 
 ## Moving around the view
 

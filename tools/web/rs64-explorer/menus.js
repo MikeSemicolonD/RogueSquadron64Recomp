@@ -168,6 +168,15 @@ async function menuLineCanvas(text, color, style, scale = 1)
   return out;
 }
 
+// The offset boxes of what is being dragged, as a function of the pointer's travel, so they follow the drag.
+function menuDragBoxes(key)
+{
+  const boxes = [...document.querySelectorAll('[data-drag-of]')].filter((n) => n.dataset.dragOf === key);
+  const start = boxes.map((n) => (n.value === '' ? +n.dataset.dragBase : +n.value));
+
+  return (dx, dy) => boxes.forEach((n, i) => (n.value = start[i] + Math.round(n.dataset.dragAxis === 'x' ? dx / +n.dataset.dragScale : dy)));
+}
+
 async function showMenu(name)
 {
   menuSel = name;
@@ -300,6 +309,7 @@ async function showMenu(name)
 
       const x0 = e.clientX;
       const y0 = e.clientY;
+      const showDrag = menuDragBoxes(`title:${page ? page.id : name}`);
       let moved = false;
 
       titleRow.setPointerCapture(e.pointerId);
@@ -308,7 +318,10 @@ async function showMenu(name)
         moved ||= Math.abs(m.clientX - x0) + Math.abs(m.clientY - y0) > 2;
 
         if (moved)
+        {
           titleRow.style.transform = `translate(calc(-50% + ${page ? 0 : m.clientX - x0}px), ${m.clientY - y0}px)`;
+          showDrag(m.clientX - x0, m.clientY - y0);
+        }
       };
 
       titleRow.onpointerup = async (u) => {
@@ -384,6 +397,7 @@ async function showMenu(name)
         const x0 = e.clientX;
         const y0 = e.clientY;
         const base = row.style.transform;
+        const showDrag = menuDragBoxes(r.id);
         let moved = false;
 
         row.setPointerCapture(e.pointerId);
@@ -395,7 +409,10 @@ async function showMenu(name)
           moved ||= Math.abs(dx) + Math.abs(dy) > 2;
 
           if (moved)
+          {
             row.style.transform = `${base} translate(${dx}px, ${dy}px)`;
+            showDrag(dx, dy);
+          }
         };
 
         row.onpointerup = async (u) => {
@@ -568,6 +585,8 @@ function menuTitlePanel(menu, doc, langMenu)
 
   const num = (k) => {
     const n = elem('input', { type: 'number', value: t[k] ?? '', placeholder: k === 'y' ? `${MENU_TITLE_Y} (the game's)` : '0' });
+
+    Object.assign(n.dataset, { dragOf: 'title:' + menu, dragAxis: k, dragBase: k === 'y' ? MENU_TITLE_Y : 0, dragScale: k === 'x' ? MENU_TITLE_X_SCALE : 1 });
 
     n.onchange = () => editMenuTitle(menu, (x) => (n.value === '' ? delete x[k] : (x[k] = +n.value)), `${menu} title ${k}`);
 
@@ -880,6 +899,8 @@ async function menuInspector(menu, doc, b, groups, langMenu)
       title: 'The page title\'s y offset in pixels (or drag the title in the page\'s preview)'
     });
 
+    Object.assign(ty.dataset, { dragOf: 'title:' + b.id, dragAxis: 'y', dragBase: 0, dragScale: 1 });
+
     ty.onchange = () => set('title_y', ty.value === '' || +ty.value === 0 ? '' : +ty.value);
     parts.push(field('Opens page', pg), field('Title Y', ty, 'The page title\'s y offset in pixels (or drag the title in the page\'s preview)'));
   }
@@ -1006,6 +1027,10 @@ async function menuInspector(menu, doc, b, groups, langMenu)
     });
 
     n.onchange = () => set(k, n.value === '' || (k === 'scale' && +n.value === 1) ? '' : (k === 'row' ? n.value : (k === 'scale' ? Math.max(0.1, +n.value) : +n.value)));
+
+    if (k === 'x' || k === 'y')
+      Object.assign(n.dataset, { dragOf: b.id, dragAxis: k, dragBase: 0, dragScale: 1 });
+
     parts.push(field(label, n, tip));
   }
 

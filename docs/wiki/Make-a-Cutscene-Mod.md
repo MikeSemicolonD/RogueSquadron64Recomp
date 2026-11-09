@@ -5,10 +5,19 @@ Edit a level's intro and ending, and a chapter's opening crawl.
 ## Open a cutscene
 
 1. In **Levels**, pick a level.
-2. Pick from **Cutscene**: intro, ending, medal ceremony, or a mission camera shot.
+2. Pick from **Cutscene**: intro, ending, medal ceremony, opening crawl or a mid-mission sequence.
 3. It plays with voices, music, sound and fog; the checkboxes under the timeline turn each off. **Camera** off lets you fly freely.
 
 **Player craft** swaps the intro's ship; **Medal tier** picks the ceremony.
+
+## Add or delete one
+
+The **plus** next to the list adds what the level can still have:
+
+- **Mid-mission sequence**: camera shots played during the mission, starting at your current view. **New shot** adds up to 6, and each cuts to the next. Give it a **Name**, then start it from a trigger area's camera shot or a rule's *Cut to camera*. A timeline cutscene can't play mid-mission, since the game would have to leave the mission.
+- **Opening crawl**: custom levels only. Stock levels have one only where a chapter opens.
+
+The **trash** next to the list asks first, then deletes a sequence or crawl. Intros and endings can't be deleted; use **Start from blank**.
 
 ## Edit it
 
@@ -43,7 +52,7 @@ With a camera picked, one click sets what this shot does; click again to turn it
 
 - **Draw route** (with an actor picked): click points in the view and it flies them from the playhead to the end, nose first and banking. Points keep the route's height; click the sky to climb toward that spot. **Esc** when done.
 - **V** adds a point where you are looking, or snaps a camera to your view.
-- For anything else, pick a camera or actor from **Pose…**, move the playhead and drag the handles (W move, E rotate, R scale) to set a *key*.
+- For anything else, pick a camera or actor from **Pose…**, move the playhead and drag the handles (W move, E rotate, R scale) to set a *key*. **F** focuses the view on what you picked.
 - Drag or delete points and keys on the **Keys** row. Closer points fly faster.
 
 **Start from blank** keeps one still camera and removes the rest (undoable).
