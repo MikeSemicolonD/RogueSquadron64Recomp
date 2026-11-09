@@ -1590,6 +1590,48 @@ static void testShadowDepthWeight() {
     CHECK(shadowDepthWeight(0.0f, 0.0f, 0.02f) == 0.0f);
 }
 
+static void testTerrainWaterLayers() {
+    const auto word = [](uint32_t layer, uint8_t kind) { return layer | (uint32_t(kind) << 16); };
+    const auto waterLayer = [](uint32_t w) { return w >> 18; };
+
+    // Open water of layer 7 around a stray open-water cell of layer 11, a shore cell and a ground cell.
+    std::vector<uint8_t> kinds(15, 1);
+    std::vector<uint32_t> cells(15, word(7, 1));
+    cells[6] = word(11, 1);
+    kinds[7] = 2;
+    cells[7] = word(20, 2);
+    kinds[8] = 0;
+    cells[8] = word(30, 0);
+    terrainWaterLayers(cells, kinds, 5, 3);
+    CHECK(waterLayer(cells[0]) == 7);
+    CHECK(waterLayer(cells[6]) == 7);
+    CHECK(waterLayer(cells[7]) == 7);
+    CHECK(waterLayer(cells[8]) == 30);
+    CHECK((cells[7] & 0xFFFFu) == 20);
+
+    // With only the stray layer in reach, both take the map's main water texture.
+    std::vector<uint8_t> farKinds(14, 1);
+    std::vector<uint32_t> farCells(14, word(7, 1));
+    for (size_t c = 9; c <= 11; ++c) {
+        farKinds[c] = 0;
+        farCells[c] = word(1, 0);
+    }
+
+    farCells[12] = word(11, 1);
+    farKinds[13] = 2;
+    farCells[13] = word(20, 2);
+    terrainWaterLayers(farCells, farKinds, 14, 1);
+    CHECK(waterLayer(farCells[12]) == 7);
+    CHECK(waterLayer(farCells[13]) == 7);
+
+    // A map with no open water keeps the shore cell's own texture.
+    std::vector<uint8_t> shoreKinds(2, 2);
+    std::vector<uint32_t> shoreCells{ word(20, 2), word(21, 2) };
+    terrainWaterLayers(shoreCells, shoreKinds, 2, 1);
+    CHECK(waterLayer(shoreCells[0]) == 20);
+    CHECK(waterLayer(shoreCells[1]) == 21);
+}
+
 int main() {
     testInverse();
     testScreenRoundTrip();
@@ -1674,6 +1716,7 @@ int main() {
     testDrawAverageColor();
     testComposeFactor();
     testPassGateAndReflectionReceiver();
+    testTerrainWaterLayers();
     std::printf("rs64_lights_test: OK\n");
     return 0;
 }

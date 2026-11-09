@@ -128,9 +128,9 @@ extern "C" int rs64_terrain_tessellation(void)
     return rs64::video::terrain_tessellation();
 }
 
-// A cutscene that keeps its own view: the map pass drops land past the fog end, where the game draws no terrain and its sky sits below the map's horizon.
+// The map pass drops land past the fog end, where the game draws no terrain and its sky sits below the map's horizon.
 extern "C" int rs64_terrain_fog_clip(void) {
-    return game_owns_view() ? 1 : 0;
+    return 1;
 }
 
 static bool terrain_pass_on() {
