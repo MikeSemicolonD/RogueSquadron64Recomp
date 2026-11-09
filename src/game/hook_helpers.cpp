@@ -27,6 +27,7 @@
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
+#include "game/mod_content/asset_overrides.h"
 #include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
 #include "util/mips_call.h"
@@ -977,4 +978,53 @@ extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj,
         t.goneAt = frame;
         fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f\n", name, obj, frame, t.nx, t.ny);
     }
+}
+
+// Adds display list chunks in free host RAM to the game's free list when a mod replaces a player craft, whose model can outgrow the game's pool.
+// Never for stock craft: effects spawn only while enough chunks are free, so more of them would change stock replays.
+extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
+{
+
+    static const bool s_on = [] {
+
+        static constexpr const char* kCrafts[] = {
+            "pl_crafts/xwing_HOB", "pl_crafts/ywing_HOB", "pl_crafts/awing_HOB", "pl_crafts/vwing_HOB", "pl_crafts/rmobil_HOB",
+            "pl_crafts/snowspeeder_HOB", "pl_crafts/falcon_HOB", "imp_stuff/tieinter_HOB", "pl_crafts/t16_HOB", "pl_crafts/koelsch_HOB"
+        };
+
+        return std::any_of(std::begin(kCrafts), std::end(kCrafts), [](const char* path) { return rs64::assets::find(path) != nullptr; });
+    }();
+
+    if (!s_on)
+    {
+        return;
+    }
+
+    constexpr uint32_t kFreeHead = 0x801163B0u;
+    constexpr uint32_t kStart = 0x80B80000u;
+    constexpr uint32_t kChunk = 0x108u;
+    constexpr uint32_t kCount = (0x80C00000u - kStart) / kChunk;
+
+    const auto rd = [&](uint32_t a) { return (uint32_t)MEM_W(0, (gpr)(int32_t)a); };
+    const auto wr = [&](uint32_t a, uint32_t v) { MEM_W(0, (gpr)(int32_t)a) = (int32_t)v; };
+
+    uint32_t head = rd(kFreeHead);
+
+    for (uint32_t i = 0; i < kCount; ++i)
+    {
+        const uint32_t c = kStart + i * kChunk;
+
+        wr(c, head);
+        wr(c + 4, 0);
+
+        if (head)
+        {
+            wr(head + 4, c);
+        }
+
+        head = c;
+    }
+
+    wr(kFreeHead, head);
+    fprintf(stderr, "[dl-pool] added %u chunks at %08X\n", kCount, kStart);
 }

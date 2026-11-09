@@ -341,6 +341,8 @@ void rs64_lang_txt_file(uint8_t* rdram, uint32_t name, int kind);
 void rs64_lang_voice_id(uint32_t id);
 void rs64_lang_voice_text(uint8_t*);
 void rs64_load_overlay(unsigned int);
+void rs64_grow_dl_pool(uint8_t* rdram);
+void rs64_th_buildAndRegisterDefaultMaterial_80018098(uint8_t* rdram, recomp_context* ctx);
 void rs64_menu_confirm_main(uint8_t* rdram);
 void rs64_menu_confirm_sound(uint8_t* rdram, recomp_context* ctx);
 void rs64_menu_hires_apply(uint8_t* rdram);

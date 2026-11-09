@@ -375,6 +375,8 @@ Host-side tables above 8 MB (keep any new one clear of all of these):
 | 0x80B00000-0x80B1FFFF | 128x128 terrain grid tables |
 | 0x80B38058-0x80B3901F, 0x80B58930-0x80B58D0F | Co-op relocated per-player ranges (mod only, `kMovedRanges` in `mp_core.h`) |
 | 0x80B40000-0x80B4015F | Co-op imposter DAT record and message scratch (mod only) |
+| 0x80B60000-0x80B7FFFF | Per-mesh face list, 16384 entries (`[[patches.instruction]]` in `rogue_squadron.toml`) |
+| 0x80B80000-0x80BFFFFF | Extra display list chunks, only when a mod replaces a player craft (`rs64_grow_dl_pool`) |
 | 0x80C00000-0x80C3FFFF | Manifests grown with mod assets, 64 KB per `gManifestTable` slot ([asset_overrides.cpp](src/game/mod_content/asset_overrides.cpp)) |
 | 0x80C40000-0x80C400FF | Camera name for a mod-linked mid-mission shot |
 | 0x80C40100-0x80C401FF | Mod level's redirected asset name |

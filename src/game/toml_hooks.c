@@ -968,6 +968,13 @@ void rs64_th_loadOverlay_80000B3C(uint8_t* rdram, recomp_context* ctx) {
     rs64_load_overlay((unsigned int)ctx->r16);
 }
 
+// buildAndRegisterDefaultMaterial 0x80018098: the free list head was just set
+void rs64_th_buildAndRegisterDefaultMaterial_80018098(uint8_t* rdram, recomp_context* ctx) {
+
+    (void)ctx;
+    rs64_grow_dl_pool(rdram);
+}
+
 // rs_malloc 0x80001C74
 void rs64_th_rs_malloc_80001C74(uint8_t* rdram, recomp_context* ctx)
 {

@@ -1294,6 +1294,42 @@ text = '{ rs64_th_initTextureMaterialPools_80022920(rdram, ctx); }'
 func = "destroyTextureLUTs"
 text = '{ rs64_th_destroyTextureLUTs_entry(rdram, ctx); }'
 
+# Per-mesh face list: 1024 entries at 0x801143B0 with no bound check, and the display list free-list head sits right after it. Moved to host RAM with room for 16384 faces.
+[[patches.instruction]]
+func = "transformSceneLights"
+vram = 0x8000F0D4
+value = 0x3C0980B6
+
+[[patches.instruction]]
+func = "transformSceneLights"
+vram = 0x8000F0D8
+value = 0x25290000
+
+[[patches.instruction]]
+func = "resetVertexCacheSlot"
+vram = 0x800121E4
+value = 0x3C0A80B6
+
+[[patches.instruction]]
+func = "resetVertexCacheSlot"
+vram = 0x800121E8
+value = 0x254A0000
+
+[[patches.instruction]]
+func = "drawSubtitleText"
+vram = 0x80015AC0
+value = 0x3C0780B6
+
+[[patches.instruction]]
+func = "drawSubtitleText"
+vram = 0x80015AC4
+value = 0x24E70000
+
+[[patches.hook]]
+func = "buildAndRegisterDefaultMaterial"
+before_vram = 0x80018098
+text = '{ rs64_th_buildAndRegisterDefaultMaterial_80018098(rdram, ctx); }'
+
 # Language mods: the HMT material slot table and its two arrays (0x8011A444, 0x801163B4, 0x801143AC) were just allocated; they move to host buffers with a bigger
 # capacity (0x8011A8B4) before the init loop clears them, and freeRenderSubsystemResources gets the game's blocks back to free.
 [[patches.hook]]
