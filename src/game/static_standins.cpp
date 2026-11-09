@@ -21,6 +21,10 @@ constexpr uint32_t kModelEntries = 0x80139020u;
 constexpr uint32_t kDifficulty = 0x80137CE4u;
 constexpr uint32_t kComposeEuler = 0x80059D78u;
 constexpr uint32_t kAddToBucket = 0x80057C8Cu;
+constexpr uint32_t kSelectLodAndSubmit = 0x80058068u;
+constexpr uint32_t kProbeLodTable = 0x8010A600u;
+constexpr uint32_t kProbeSizeBonus = 0x800A6CA8u;
+constexpr uint16_t kSubProbeDroid = 0x0Eu;
 constexpr uint32_t kRootMatrix = 0x80059C24u;
 constexpr uint32_t kUniformRootMatrix = 0x80059B50u;
 constexpr uint32_t kConditionMet = 0x80065828u;
@@ -211,10 +215,12 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
     ww(rdram, state + 0x30u, inst);
     ww(rdram, state + 0x34u, item);
 
-    // Walkers (AT-AT, AT-ST, AT-PT handlers) draw at a uniform scale of item +0x28 over the model's +0x34, about 10x the item scale.
+    // Walkers (AT-AT, AT-ST, AT-PT handlers) and shuttles draw at a uniform scale of item +0x28 over the model's +0x34, about 10x the item scale for an AT-ST.
     const uint16_t sub = rh(rdram, item);
 
-    if (sub == 0x0F || sub == 0x1F || sub == 0x47) {
+    if (sub == kSubProbeDroid) ww(rdram, inst + 4u, kProbeLodTable);
+
+    if (sub == 0x0F || sub == 0x1F || sub == 0x47 || sub == 0x24 || sub == 0x2C || sub == 0x48 || sub == 0x4D) {
         const float ws = rf(rdram, item + 0x28u) / rf(rdram, model + 0x34u);
         const float r = rf(rdram, model + 0x44u) * ws;
         uint32_t bits;
@@ -357,6 +363,14 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
         // Trigger and wave gates: isDatItemConditionMet reads only objective flags and counters.
         if (!cutscene && mips_call(rdram, ctx, kConditionMet, { s.item }).v0 == 0) continue;
+
+        // A probe droid grows with distance, so it goes through npcProbeDriod's own render call. The mark gives it the draw distance in replays too.
+        if (rh(rdram, s.item) == kSubProbeDroid) {
+            rs64_npc_draw_only_mark(1);
+            mips_call(rdram, ctx, kSelectLodAndSubmit, { view, s.inst, s.state, rw(rdram, s.item + 0x28u) }, { rw(rdram, kProbeSizeBonus) });
+            rs64_npc_draw_only_mark(0);
+            continue;
+        }
 
         mips_call(rdram, ctx, kAddToBucket, { view, s.inst, s.state, s.scale });
     }
