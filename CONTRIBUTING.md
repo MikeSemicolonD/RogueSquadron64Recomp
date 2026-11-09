@@ -21,7 +21,7 @@ An example is Frame Interpolation which had issues with objects not being identi
 
 ### Game Issues
 
-Bugs and issues that are also a part of the base game and have been around since release are filed as "**Game Issues**". These are usually deep-seated issues that can touch hundreds of different functions and affect various internal systems in the game. Systems like *LOD*, *Object Culling*, *Camera Frustum Culling*, *Terrain Rendering*, *Texture Rendering*, *Spline Path Interpolation* and *many* ***more***.
+Bugs and issues that are also a part of the base game and have been around since release are filed as "**Game Issues**". These are issues that can touch hundreds of different functions and affect various internal systems in the game. Systems like *LOD*, *Object Culling*, *Camera Frustum Culling*, *Terrain Rendering*, *Texture Rendering*, *Spline Path Interpolation* and *many* ***more***.
 
 Fixing these issues can have a knock on effect on other systems which can affect the base experience. Instead of making changes to the Recomp. codebase to fix such issues it's preferable to instead create a mod that attempts to fix the base game's issues. If a mod requires a new hook to fix the issue then it requires **Recomp. Feature**.
 
