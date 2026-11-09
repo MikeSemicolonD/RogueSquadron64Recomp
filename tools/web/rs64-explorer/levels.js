@@ -6,6 +6,7 @@
 // finished drag or field change rewrites the item's floats in place in the level DAT. Q/W/E/R pick the tool as in Unity; with the right
 // mouse button held those keys fly the camera instead.
 let rulesPanelDir = null;
+let lookPanelDir = null;
 let editMode = null;
 let lastEditMode = 'terrain';
 let editTool = 'translate';
@@ -750,7 +751,10 @@ async function newModLevel(fromDir, blank = false, named = null)
     const dir = 'data/level/' + made.folder;
 
     await editAsset(dir + '/dat', (b) => datBlank(b), `Blank level: ${title}`);
-    await editAsset(dir + '/hmp', (b) => hmpFlat(b), `Flat ground: ${title}`);
+
+    const water = datWaterGet(await rom.read(dir + '/dat'));
+
+    await editAsset(dir + '/hmp', (b) => hmpFlat(b, water?.on ? water.level : null), `Flat ground: ${title}`);
 
     // Its intro and outro start blank (3 s on the template's opening camera), not the template's scenes; templates past 15 have none.
     for (const kind of ['intro', 'extro']) {
@@ -2151,6 +2155,155 @@ $('btnRules').onclick = () => ($('rulesPanel').hidden || rulesPanelDir !== selec
 setEditIcon($('rulesClose'), 'close');
 $('rulesClose').onclick = () => ($('rulesPanel').hidden = true);
 
+// ---- Water, fog and clouds of the open level: water is on the level's own data, fog and clouds in its environment.json ----
+
+const FOG_REACH = [
+  ['auto', 'Game default'],
+  ['scale', 'Move out with the draw distance'],
+  ['thin', 'Stay, then thin out toward the view\'s edge'],
+  ['stock', 'Stay as a solid wall']
+];
+
+const rgbHex = (c) => '#' + c.map((v) => v.toString(16).padStart(2, '0')).join('');
+const hexRgb = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
+
+// A heading with its on/off box to the right.
+function lookSection(title, on, change)
+{
+  const box = elem('input', { type: 'checkbox', checked: on, title: `${title} on or off` });
+
+  box.onchange = () => change(box.checked);
+
+  return elem('div', { className: 'lookHead' }, elem('b', { textContent: title }), box);
+}
+
+function lookSlider(label, tip, value, min, max, step, change)
+{
+  const input = elem('input', { type: 'range', min, max, step, value });
+  const out = elem('output', { textContent: value });
+
+  input.oninput = () => (out.textContent = input.value);
+  input.onchange = () => change(+input.value);
+
+  return elem('label', { title: tip }, label, input, out);
+}
+
+function lookColor(label, tip, rgb, fallback, change)
+{
+  const on = elem('input', { type: 'checkbox', checked: !!rgb, title: `Use your own ${label.toLowerCase()}` });
+  const pick = elem('input', { type: 'color', value: rgbHex(rgb ?? fallback), disabled: !rgb });
+  const send = () => change(on.checked ? hexRgb(pick.value) : undefined);
+
+  on.onchange = send;
+  pick.onchange = send;
+
+  return elem('label', { title: tip }, label, on, pick);
+}
+
+function lookPanel()
+{
+  const dir = selected;
+  const box = elem('div', { className: 'levelRules look' });
+  const path = ENV_PATH(rulesFolderOf(dir));
+
+  const changeEnv = async (label, change) => {
+    const doc = envParse(await virtualText(path));
+
+    change(doc);
+    await editText(path, envWrite(doc), label);
+    await reloadLevel(dir);
+  };
+
+  // Drops a section that holds no settings, so an untouched level stays exactly the game's.
+  const setFog = (key, value) => changeEnv('Fog', (doc) => {
+    doc.fog = { ...doc.fog, [key]: value };
+
+    if (Object.values(doc.fog).every((v) => v === undefined))
+      delete doc.fog;
+  });
+
+  const setClouds = (key, value) => changeEnv('Clouds', (doc) => (doc.clouds = { ...doc.clouds, [key]: value }));
+
+  const render = async () => {
+    const [dv, doc] = await Promise.all([rom.read(dir + '/dat'), virtualText(path).then(envParse)]);
+    const water = datWaterGet(dv);
+
+    const setWater = (patch, label) => editAsset(dir + '/dat', (b) => datWaterSet(b, { ...datWaterGet(b), ...patch }), label).then(() => reloadLevel(dir));
+
+    const fogStart = doc.fog?.start ?? (levelFog?.frac ?? 0.9);
+    const clouds = doc.clouds;
+    const windX = clouds?.wind?.[0] ?? 0;
+    const windZ = clouds?.wind?.[1] ?? 0;
+    const speed = Math.round(Math.hypot(windX, windZ) * 10) / 10;
+    const heading = Math.round((Math.atan2(windZ, windX) * 180 / Math.PI + 360) % 360);
+    const setWind = (spd, deg) => setClouds('wind', [+(spd * Math.cos(deg * Math.PI / 180)).toFixed(3), +(spd * Math.sin(deg * Math.PI / 180)).toFixed(3)]);
+    const reach = selectOf(FOG_REACH, doc.fog?.reach ?? 'auto');
+
+    reach.onchange = () => setFog('reach', reach.value === 'auto' ? undefined : reach.value);
+
+    const parts = [];
+
+    if (water)
+    {
+      parts.push(lookSection('Water', water.on, (on) => setWater({ on }, 'Water')));
+
+      if (water.on)
+        parts.push(
+          lookSlider('Water level', 'How high the water comes up the terrain; anything lower becomes water', -water.level, -126, 128, 1, (v) => setWater({ level: -v }, 'Water level')),
+          lookSlider('Wave height', 'Stock levels use 2 to 4', water.waves, 0, 12, 1, (v) => setWater({ waves: v }, 'Wave height')),
+          lookSlider('Wave speed', 'Stock levels use 0.5 or 0.75', +water.speed.toFixed(2), 0.1, 2, 0.05, (v) => setWater({ speed: v }, 'Wave speed'))
+        );
+    }
+
+    parts.push(
+      elem('div', { className: 'lookHead' }, elem('b', { textContent: 'Fog' })),
+      lookSlider('Fog starts at', 'How far out the fog begins, as a share of the view distance', +fogStart.toFixed(2), 0.1, 0.95, 0.05, (v) => setFog('start', v)),
+      elem('label', { title: 'What the fog does when the player raises the draw distance' }, 'Far view', reach),
+      lookColor('Fog colour', 'Off uses the level\'s own colour', doc.fog?.color, levelFog ? hexRgb('#' + levelFog.color.getHexString()) : [128, 128, 128], (c) => setFog('color', c)),
+      lookSection('Clouds', !!clouds, (on) => changeEnv('Clouds', (d) => (on ? (d.clouds = {}) : delete d.clouds)))
+    );
+
+    if (clouds)
+    {
+      const pinned = clouds.altitude !== undefined;
+      const pin = elem('input', { type: 'checkbox', checked: pinned, title: 'Keep the clouds at one height, for levels with ground. Off, they stay around the player, as on Taloraan' });
+
+      pin.onchange = () => setClouds('altitude', pin.checked ? -20 : undefined);
+
+      parts.push(
+        lookSlider('Wind speed', 'How fast the clouds drift; 0 is still', speed, 0, 20, 0.5, (v) => setWind(v, heading)),
+        lookSlider('Wind direction', 'Degrees around the map', heading, 0, 359, 1, (v) => setWind(speed, v)),
+        elem('label', { title: pin.title }, 'Fixed height', pin)
+      );
+
+      if (pinned)
+        parts.push(lookSlider('Cloud height', 'Higher is further up', -clouds.altitude, -100, 200, 1, (v) => setClouds('altitude', -v)));
+
+      parts.push(lookColor('Cloud colour', 'Off keeps the tan Taloraan colour', clouds.tint, [182, 140, 87], (c) => setClouds('tint', c)));
+    }
+
+    box.replaceChildren(...parts);
+  };
+
+  liveRuleViews.add({ box, render });
+  render();
+
+  return box;
+}
+
+function openLookPanel() {
+  lookPanelDir = selected;
+  $('lookBody').replaceChildren(lookPanel());
+  $('lookPanel').hidden = false;
+}
+
+setEditIcon($('btnLook'), 'globe');
+$('btnLook').append('Water, fog and clouds…');
+$('btnLook').removeAttribute('aria-label');
+$('btnLook').onclick = () => ($('lookPanel').hidden || lookPanelDir !== selected ? openLookPanel() : ($('lookPanel').hidden = true));
+setEditIcon($('lookClose'), 'close');
+$('lookClose').onclick = () => ($('lookPanel').hidden = true);
+
 // ---- Opening crawls (mod/assets/crawl/<name>/crawl.json): the crawl of the level being edited. A stock chapter level's (0, 5, 10,
 // 15) is the mod's replacement for that chapter; a mod level's is the crawl its levels.json names. Until the first edit the game's (or
 // the template's) crawl shows, and that edit makes the file. Its backdrop and fly-by craft are the chapter's unless it has its own image.
@@ -2998,6 +3151,9 @@ function syncSelPanel()
 
   if (rulesPanelDir !== selected)
     $('rulesPanel').hidden = true;
+
+  if (lookPanelDir !== selected)
+    $('lookPanel').hidden = true;
 
   hud();
 }

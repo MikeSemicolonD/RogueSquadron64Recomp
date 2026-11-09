@@ -85,9 +85,9 @@ aside > * { min-width: 279px; }
 .rulesBox .obj { border-color: var(--obj-line); color: var(--obj); }
 .rulesBox .bad { border-color: var(--bad-line); color: var(--bad); }
 .rulesBox .warn { color: var(--bad); }
-#rulesPanel, #crawlPanel { top: 10px; right: 270px; width: 400px; max-height: calc(100% - 20px); overflow: auto; z-index: 5; display: grid; gap: 6px; align-content: start; }
-#rulesPanel[hidden], #crawlPanel[hidden] { display: none; }
-#rulesPanel .rulesPanelHead, #crawlPanel .rulesPanelHead { display: flex; justify-content: space-between; align-items: center; }
+#rulesPanel, #crawlPanel, #lookPanel { top: 10px; right: 270px; width: 400px; max-height: calc(100% - 20px); overflow: auto; z-index: 5; display: grid; gap: 6px; align-content: start; }
+#rulesPanel[hidden], #crawlPanel[hidden], #lookPanel[hidden] { display: none; }
+#rulesPanel .rulesPanelHead, #crawlPanel .rulesPanelHead, #lookPanel .rulesPanelHead { display: flex; justify-content: space-between; align-items: center; }
 /* The crawl window resizes from its corner; its text box takes the height. */
 #crawlPanel { resize: both; display: flex; flex-direction: column; min-width: 280px; min-height: 220px; }
 #crawlPanel[hidden] { display: none; }
@@ -95,11 +95,14 @@ aside > * { min-width: 279px; }
 .crawlEdit label.crawlText { flex: 1; min-height: 0; }
 .crawlEdit > .shotNote { flex: none; }
 #crawlPanel .crawlEdit label.crawlText > textarea { flex: 1; min-height: 6em; resize: none; }
-#btnRules { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-#btnRules[hidden] { display: none; }
+#btnRules, #btnLook { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#btnRules[hidden], #btnLook[hidden] { display: none; }
 .levelRules { display: grid; gap: 6px; min-width: 0; }
 .levelRules > b { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; margin-top: 4px; }
 .levelRules input[type=search] { flex: 1; min-width: 0; }
+.look label { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.look .lookHead { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--line); padding-top: 6px; }
+.look .lookHead b { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .levelRules .when { display: flex; gap: 6px; align-items: center; }
 .levelRules .ruleList { display: grid; gap: 2px; max-height: 40vh; overflow-y: auto; }
 .levelRules .ruleRow { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -223,8 +226,8 @@ input[type=file]::file-selector-button:hover { border-color: var(--control-hover
 #opts input[type=range] { flex: 1; padding: 0; }
 #opts output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
 #opts:not(.level) .lvl, #opts.level .mdl, #opts.fx .mdl { display: none; }
-#opts .aud, body.audio #opts > :not(.aud), body.audio #view, body.audio #hud, body.audio #legend, body.audio #fxPanel, body.audio #info, body.audio #help, body.audio #tip, body.audio #scene, body.audio #editPanel, body.audio #cutPanel, body.audio #cutInspector, body.audio #rulesPanel, body.audio #crawlPanel,
-body.fonts #opts, body.fonts #view, body.fonts #hud, body.fonts #legend, body.fonts #fxPanel, body.fonts #info, body.fonts #help, body.fonts #tip, body.fonts #scene, body.fonts #editPanel, body.fonts #cutPanel, body.fonts #cutInspector, body.fonts #rulesPanel, body.fonts #crawlPanel { display: none; }
+#opts .aud, body.audio #opts > :not(.aud), body.audio #view, body.audio #hud, body.audio #legend, body.audio #fxPanel, body.audio #info, body.audio #help, body.audio #tip, body.audio #scene, body.audio #editPanel, body.audio #cutPanel, body.audio #cutInspector, body.audio #rulesPanel, body.audio #crawlPanel, body.audio #lookPanel,
+body.fonts #opts, body.fonts #view, body.fonts #hud, body.fonts #legend, body.fonts #fxPanel, body.fonts #info, body.fonts #help, body.fonts #tip, body.fonts #scene, body.fonts #editPanel, body.fonts #cutPanel, body.fonts #cutInspector, body.fonts #rulesPanel, body.fonts #crawlPanel, body.fonts #lookPanel { display: none; }
 body.audio #opts label.aud { display: flex; }
 body.audio #opts b.aud { display: block; }
 #audioPanel { top: 16px; left: 16px; right: 16px; max-width: 640px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }

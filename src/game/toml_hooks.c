@@ -812,7 +812,25 @@ void rs64_th_loadLevelAssets_800453D8(uint8_t* rdram, recomp_context* ctx) {
 // loadLevelAssets 0x800454D0
 void rs64_th_loadLevelAssets_800454D0(uint8_t* rdram, recomp_context* ctx) {
 
-    rs64_level_fog_frac(ctx->f0.fl);
+    rs64_env_level_load(rdram, ctx->f0.fl);
+}
+
+// setViewStateBytesAndFadeScale entry
+void rs64_th_setViewStateBytesAndFadeScale_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_fog_color(ctx);
+}
+
+// cinematicSplineWalkerNpcHandler 0x8005C2F0
+void rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_clouds_load(rdram, ctx);
+}
+
+// updateWalkerParticlePositions entry
+void rs64_th_updateWalkerParticlePositions_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_clouds_tick(rdram, ctx);
 }
 
 // computeGridLayerScrollOffset 0x800456D4

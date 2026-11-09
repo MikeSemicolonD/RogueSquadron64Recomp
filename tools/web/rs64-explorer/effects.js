@@ -1958,6 +1958,20 @@ async function showLevel(dir, keepView = false, skyOverride = null)
     terrain = t.mesh;
     world.add(terrain);
     counts.tris += t.tris;
+
+    const water = datWaterGet(await rom.read(dir + '/dat'));
+
+    if (water?.on)
+    {
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(hmp.w * 2, hmp.h * 2).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x2a6fa8, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+      );
+
+      plane.position.set(hmp.w, water.level * hmp.heightScale, hmp.h);
+      plane.raycast = () => {};
+      world.add(plane);
+    }
   }
 
   // Level-local models (opkg) by object name, then shared models by subtype.
@@ -2359,9 +2373,12 @@ async function showLevel(dir, keepView = false, skyOverride = null)
   {
     const o = 0x800A05D0 - 0x80000400 + 0x1000 + lvIndex * 0x30 + 0x28;
 
+    const fog = envParse(await virtualText(ENV_PATH(rulesFolderOf(dir)))).fog;
+    const rgb = fog?.color ?? [romBytes[o], romBytes[o + 1], romBytes[o + 2]];
+
     levelFog = {
-      color: new THREE.Color().setRGB(romBytes[o] / 255, romBytes[o + 1] / 255, romBytes[o + 2] / 255, THREE.SRGBColorSpace),
-      frac: lvIndex === 2 ? 0.3 : 0.9
+      color: new THREE.Color().setRGB(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255, THREE.SRGBColorSpace),
+      frac: fog?.start ?? (lvIndex === 2 ? 0.3 : 0.9)
     };
 
     applyFog();

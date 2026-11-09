@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -29,6 +30,7 @@
 #include "game/mod_content/camera_shots.h"
 #include "game/mod_content/mod_levels.h"
 #include "game/mod_content/level_rules.h"
+#include "game/mod_content/level_environment.h"
 #include "lockstep/lockstep_core.h"
 #include "rs64/camera_shots.h"
 #include "host_api/host_api.h"
@@ -1072,7 +1074,116 @@ void rules_run(uint8_t* rdram, recomp_context* ctx)
 }
 }
 
-// Boot: every enabled mod's assets/level/<folder>/rules.json; later mods add to a level's list.
+static std::map<std::string, rs64env::Environment> s_env_by_folder;
+static const rs64env::Environment* s_env = nullptr;
+static std::atomic<bool> s_env_clouds{false};
+
+extern "C" void rs64_level_fog_frac(float frac);
+extern "C" void rs64_level_fog_reach(int reach);
+
+// Level load (loadLevelAssets, the game's fog fraction just stored): picks the level's environment and applies its fog.
+extern "C" void rs64_env_level_load(uint8_t* rdram, float game_frac)
+{
+
+    const char* mod = rs64_mod_levels_current_folder();
+    const auto it = s_env_by_folder.find(rs64rules::rulesFolder(mod ? mod : "", (int)rw(rdram, 0x80130B70u)));
+
+    s_env = (it != s_env_by_folder.end()) ? &it->second : nullptr;
+    s_env_clouds = s_env && s_env->clouds;
+
+    const float frac = (s_env && (s_env->fogStart > 0.0f)) ? s_env->fogStart : game_frac;
+
+    rs64::mips::wf(rdram, 0x80136FBCu, frac);
+    rs64_level_fog_frac(frac);
+    rs64_level_fog_reach(s_env ? (int)s_env->fogReach : (int)rs64env::FogReach::Auto);
+}
+
+extern "C" int rs64_level_has_clouds(void)
+{
+    return s_env_clouds ? 1 : 0;
+}
+
+// setFog entry: a0-a2 are the fog colour.
+extern "C" void rs64_env_fog_color(recomp_context* ctx)
+{
+
+    if (!s_env || !s_env->fogColor.set)
+    {
+        return;
+    }
+
+    ctx->r4 = s_env->fogColor.rgb[0];
+    ctx->r5 = s_env->fogColor.rgb[1];
+    ctx->r6 = s_env->fogColor.rgb[2];
+}
+
+// Where the sky object's per-level cases rejoin ($s2 = the object): loads the cloud sheets for a level that asks for them, then tints them.
+extern "C" void rs64_env_clouds_load(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!s_env || !s_env->clouds)
+    {
+        return;
+    }
+
+    constexpr uint32_t kCloudBlock = 0xF00u;
+    constexpr uint32_t kMaterials = 0x26DCu;
+    constexpr uint32_t kMaterialStride = 0x28u;
+    constexpr uint32_t kMaterialCount = 14u;
+    const uint32_t obj = (uint32_t)ctx->r18;
+
+    if (!rw(rdram, obj + kCloudBlock)) rs64::mips::mips_call(rdram, ctx, 0x8005A120u, { obj });
+
+    const uint32_t block = rw(rdram, obj + kCloudBlock);
+
+    if (!block || !s_env->cloudTint.set)
+    {
+        return;
+    }
+
+    for (uint32_t i = 0; i < kMaterialCount; i++)
+    {
+        for (uint32_t c = 0; c < 3; c++) wb(rdram, block + kMaterials + i * kMaterialStride + c, s_env->cloudTint.rgb[c]);
+    }
+}
+
+// Cloud sheet update entry ($a2 = the sky object, stack word 4 = camera position): drifts the layers on the wind and holds them around the level's altitude.
+extern "C" void rs64_env_clouds_tick(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!s_env || !s_env->clouds)
+    {
+        return;
+    }
+
+    const uint32_t block = rw(rdram, (uint32_t)ctx->r6 + 0xF00u);
+
+    if (!block)
+    {
+        return;
+    }
+
+    constexpr uint32_t kLayers = 0x2BB0u;
+    constexpr uint32_t kLayerStride = 0x38u;
+    static constexpr float kLayerY[4] = { 5.0f, -5.0f, 15.0f, -15.0f };
+
+    // shortcut: a fixed 1/30 s per update (the game's cap); read the frame dt if 60 fps logic ever lands.
+    constexpr float kFrame = 1.0f / 30.0f;
+    const uint32_t cam = rw(rdram, (uint32_t)ctx->r29 + 0x10u);
+
+    for (uint32_t i = 0; i < 4; i++)
+    {
+        const uint32_t layer = block + kLayers + i * kLayerStride;
+        const float scale = rs64::mips::rf(rdram, layer + 4);
+
+        rs64::mips::wf(rdram, layer + 0x8, rs64::mips::rf(rdram, layer + 0x8) - s_env->windX * scale * kFrame);
+        rs64::mips::wf(rdram, layer + 0xC, rs64::mips::rf(rdram, layer + 0xC) - s_env->windZ * scale * kFrame);
+
+        if (s_env->hasAltitude) rs64::mips::wf(rdram, layer, s_env->altitude + kLayerY[i] - rs64::mips::rf(rdram, cam + 4));
+    }
+}
+
+// Boot: every enabled mod's assets/level/<folder>/rules.json (later mods add to a level's list) and environment.json (the last-loaded mod's is used).
 extern "C" void rs64_rules_init()
 {
 
@@ -1085,6 +1196,18 @@ extern "C" void rs64_rules_init()
 
         for (auto it = std::filesystem::directory_iterator(levels, ec); !ec && it != std::filesystem::directory_iterator(); it.increment(ec))
         {
+            std::ifstream env_file(it->path() / "environment.json", std::ios::binary);
+
+            if (env_file)
+            {
+                std::vector<std::string> env_errors;
+                const auto env = rs64env::parseEnvironment(std::string((std::istreambuf_iterator<char>(env_file)), std::istreambuf_iterator<char>()), env_errors);
+
+                for (const auto& e : env_errors) fprintf(stderr, "[environment] %s %s: %s\n", d.mod_id.c_str(), it->path().filename().string().c_str(), e.c_str());
+
+                s_env_by_folder[it->path().filename().string()] = env;
+            }
+
             std::ifstream in(it->path() / "rules.json", std::ios::binary);
 
             if (!in) continue;

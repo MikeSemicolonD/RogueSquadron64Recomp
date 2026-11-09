@@ -894,11 +894,27 @@ func = "loadLevelAssets"
 before_vram = 0x800453D8
 text = '{ rs64_th_loadLevelAssets_800453D8(rdram, ctx); }'
 
-# Level fog fraction ($f0, just stored to 0x80136FBC): 0.9 on every level but Nonnah (0.3), whose fog keeps its stock range and thins out to the draw distance.
+# Level fog fraction ($f0, just stored to 0x80136FBC): 0.9 on every level but Nonnah (0.3), whose fog keeps its stock range and thins out to the draw distance. A level's environment.json can replace it.
 [[patches.hook]]
 func = "loadLevelAssets"
 before_vram = 0x800454D0
 text = '{ rs64_th_loadLevelAssets_800454D0(rdram, ctx); }'
+
+# setFog: a level's environment.json can replace the colour (a0-a2).
+[[patches.hook]]
+func = "setViewStateBytesAndFadeScale"
+text = '{ rs64_th_setViewStateBytesAndFadeScale_entry(rdram, ctx); }'
+
+# After the sky object's per-level jump table: a level's environment.json can add Taloraan's cloud sheets.
+[[patches.hook]]
+func = "cinematicSplineWalkerNpcHandler"
+before_vram = 0x8005C2F0
+text = '{ rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(rdram, ctx); }'
+
+# Cloud sheet update: wind and a fixed altitude from a level's environment.json.
+[[patches.hook]]
+func = "updateWalkerParticlePositions"
+text = '{ rs64_th_updateWalkerParticlePositions_entry(rdram, ctx); }'
 
 # Terrain detail radius: cells nearer than this squared distance (0x8009DEB4, from the far-range base D) get relief meshes, the rest coarse quads; scale it with the terrain reach so the coarse band stays at the fog line.
 [[patches.hook]]

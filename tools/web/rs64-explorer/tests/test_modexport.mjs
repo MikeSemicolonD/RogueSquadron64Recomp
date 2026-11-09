@@ -2741,5 +2741,27 @@ await check('every icon the explorer names has its SVG file', async () => {
   assert.deepEqual([...names].filter((n) => !existsSync(new URL(`icons/${n}.svg`, dir))), []);
 });
 
+await check('water fields read the stock levels and round-trip', async () => {
+  const u8 = (dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength).slice();
+  const corellia = u8(await rom.read('data/level/lv_3/dat'));
+  const dry = u8(await rom.read('data/level/lv_0/dat'));
+
+  assert.deepEqual(RS64.datWaterGet(corellia), { on: true, level: 122, waves: 4, speed: 0.75 });
+  assert.equal(RS64.datWaterGet(dry).on, false);
+
+  RS64.datWaterSet(dry, { on: true, level: -20, waves: 3, speed: 0.5 });
+  assert.deepEqual(RS64.datWaterGet(dry), { on: true, level: -20, waves: 3, speed: 0.5 });
+
+  RS64.datWaterSet(dry, { on: false, level: -20, waves: 3, speed: 0.5 });
+  assert.equal(RS64.datWaterGet(dry).on, false);
+});
+
+await check('a blank Calamari stays above its water', async () => {
+  const hmp = new Uint8Array((await rom.read('data/level/lv_f/hmp')).buffer).slice();
+  const heights = RS64.hmpGrid(RS64.parseHMP(new DataView(RS64.hmpFlat(hmp, 122).buffer))).hts;
+
+  assert.ok(heights.every((h) => h === 121), `flat at ${heights[0]}`);
+});
+
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');

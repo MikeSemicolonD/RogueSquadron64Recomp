@@ -141,6 +141,23 @@ An opening crawl is a mod folder `assets/crawl/<name>/` (`name` up to 15 lowerca
 
 In the RS64 Explorer, the *Cutscene* list of a chapter level (0, 5, 10, 15) or a mod level has *Opening crawl*. It opens like a cutscene, with its timeline and the game's scene, and the crawl window edits its text. The first edit makes the mod's own crawl: for a chapter level, one that replaces that chapter; for a mod level, one its `levels.json` names. Right-click the backdrop to replace it from an image. With the cutscene pencil on, the camera poses like a cutscene camera: pick *Camera* and drag the gizmo, or take the free view (V). Its keys show on the timeline's Keys row, where they can be dragged or deleted, and route points are dragged in the view.
 
+### Water, fog and clouds
+
+In the RS64 Explorer, the terrain tools' *Water, fog and clouds…* window sets these for any level.
+
+Water belongs to the level's `dat`. Everything below the water level becomes water, so shape it with the terrain tools. Paint it with one of the level's water textures; a level with none shows its ground texture on the water.
+
+Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>`. Every field is optional; with two enabled mods setting one level, the later-loaded one's file is used.
+
+```json
+{ "fog": { "start": 0.3, "reach": "thin", "color": [120, 128, 96] },
+  "clouds": { "wind": [1.5, -0.5], "altitude": -20, "tint": [230, 230, 240] } }
+```
+
+- `fog.start`: where fog begins, as a share of the view distance (stock levels use 0.9; the Nonnah 0.3).
+- `fog.reach`: at a longer draw distance, `scale` moves the fog out with it, `thin` keeps the stock fog and thins it out to the new edge, and `stock` holds a solid wall. Left out, `thin` when `start` is under 0.85, otherwise `scale`.
+- `clouds`: its presence adds Battle Above Taloraan's cloud sheets. `wind` is `[x, z]` in units per second. `altitude` holds them around one height (Y points down, so above the ground is negative); left out, they stay around the player, which suits a level with no ground. `tint` replaces their tan colour.
+
 ### Level rules
 
 Rules add "when this happens, do that" to a level without code. They live in `assets/level/<folder>/rules.json`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>` (`lv_1` is Barkhesh):

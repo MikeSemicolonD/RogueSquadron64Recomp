@@ -27,6 +27,7 @@
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
+#include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
@@ -97,6 +98,12 @@ extern "C" void rs64_level_fog_frac(float frac) {
     s_level_fog_frac = frac;
 }
 
+static std::atomic<int> s_level_fog_reach{(int)rs64env::FogReach::Auto};
+
+extern "C" void rs64_level_fog_reach(int reach) {
+    s_level_fog_reach = reach;
+}
+
 static bool game_owns_view() {
     return game_owns_view_setting() && (rs64_state_in_cinematic() || rs64_crawl_playing());
 }
@@ -162,14 +169,26 @@ static float fog_reach() {
     return terrain_pass_on() ? rs64_draw_dist() : rs64_terrain_dist();
 }
 
-// A level whose fog starts early (Nonnah, 0.3 of the far plane) keeps its stock fog past the stock view and thins it out to the draw distance instead.
-static bool fog_tail_on() {
-    return (s_level_fog_frac < 0.85f) && (fog_reach() > 1.0f);
+// A level whose fog starts early (Nonnah, 0.3 of the far plane), or one set to it, keeps its stock fog past the stock view and thins it out to the draw distance instead.
+static bool fog_tail_on()
+{
+
+    const auto reach = (rs64env::FogReach)s_level_fog_reach.load();
+    const bool thin = (reach == rs64env::FogReach::Thin) || ((reach == rs64env::FogReach::Auto) && (s_level_fog_frac < 0.85f));
+
+    return thin && (fog_reach() > 1.0f);
 }
 
-// Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map.
-extern "C" float rs64_fog_dist(void) {
-    return fog_tail_on() ? 1.0f : fog_reach();
+// Fog start/end multiplier: the terrain reach, or the whole draw distance while the terrain pass draws the map. A level set to Stock holds its fog wall.
+extern "C" float rs64_fog_dist(void)
+{
+
+    if (((rs64env::FogReach)s_level_fog_reach.load() == rs64env::FogReach::Stock) || fog_tail_on())
+    {
+        return 1.0f;
+    }
+
+    return fog_reach();
 }
 
 // The linear fog value at the scaled far plane, where the fog tail reaches full (0 = stock fog). Fog is linear in 1/depth from start f*e to end e.

@@ -2114,16 +2114,60 @@ function rs64Lib()
     return bytes;
   }
 
-  // Flat ground at the terrain's median height (cells keep their textures, so the ground still looks like the level's).
-  function hmpFlat(orig) {
+  // Flat ground at the terrain's median height (cells keep their textures, so the ground still looks like the level's), kept above any water.
+  function hmpFlat(orig, waterLevel = null)
+  {
     const hmp = parseHMP(viewOf(orig));
     const g = hmpGrid(hmp);
-    const h = [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
+    const median = [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
 
-    g.hts.fill(h);
+    g.hts.fill(waterLevel === null ? median : Math.min(median, waterLevel - 1));
 
     return writeHMP(orig, g);
   }
+
+  // The level's water lives on its player start: +0x60 is 127 minus the water level in stored heights (larger is lower; 0 = no water), +0x64 the wave height, +0x68 the wave speed.
+  const datWaterOffset = (dv) => parseDAT(dv).items.find((x) => x.name === 'player_StartPosition')?.offset ?? -1;
+
+  function datWaterGet(bytes)
+  {
+    const dv = viewOf(bytes);
+    const o = datWaterOffset(dv);
+
+    if (o < 0)
+      return null;
+
+    const raw = dv.getInt32(o + 0x60);
+
+    return { on: raw !== 0, level: raw ? 127 - raw : 0, waves: dv.getInt32(o + 0x64), speed: dv.getFloat32(o + 0x68) };
+  }
+
+  function datWaterSet(bytes, water) {
+    const dv = viewOf(bytes);
+    const o = datWaterOffset(dv);
+
+    if (o < 0)
+      return;
+
+    dv.setInt32(o + 0x60, water.on ? 127 - water.level : 0);
+    dv.setInt32(o + 0x64, water.waves);
+    dv.setFloat32(o + 0x68, water.speed);
+  }
+
+  // A level's fog and clouds (src/game/mod_content/level_environment.h).
+  const ENV_PATH = (folder) => 'mod/assets/level/' + folder + '/environment.json';
+
+  function envParse(text) {
+    try {
+      const doc = JSON.parse(text || '{}');
+
+      return doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {};
+    } catch {
+      return {};
+    }
+  }
+
+  const envWrite = (doc) => (Object.keys(doc).length ? JSON.stringify(doc, null, 1) + '\n' : '');
 
   // A record copied from another level starts inert: an area trigger's condition and enter/exit effects are cleared, a wingman's path dropped.
   function recordInert(rec, it)
@@ -7711,7 +7755,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

@@ -79,6 +79,7 @@
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
           <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
           <div class="pair"><button id="btnHeightOut" data-icon="download" title="Heightmap PNG: grey, one pixel per terrain grid point; white is high"></button><button id="btnHeightIn" data-icon="upload" title="Import heightmap: any image, scaled to the level's grid (256 height steps). Undo with Ctrl+Z"></button></div>
+          <button id="btnLook" title="The level's water, fog and clouds"></button>
           <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
           <div class="sculptFoot"><meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0" aria-label="Ground tiles used"></meter><span id="sculptInfo"></span></div>
         </div>
@@ -102,6 +103,7 @@
   <div id="legend" class="panel" hidden><label class="master" title="Show or hide every marker kind"><input type="checkbox" id="optMarkers" checked><b>Markers</b></label><div id="legendRows"></div></div>
   <div id="crawlPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Opening crawl</b><button id="crawlClose" data-icon="close" title="Close"></button></div><div id="crawlBody"></div></div>
   <div id="rulesPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Level events</b><button id="rulesClose" data-icon="close" title="Close"></button></div><div id="rulesBody"></div></div>
+  <div id="lookPanel" class="panel needs-rom" hidden><div class="rulesPanelHead"><b>Water, fog and clouds</b><button id="lookClose" data-icon="close" title="Close"></button></div><div id="lookBody"></div></div>
   <div id="audioPanel" class="panel needs-rom" hidden></div>
   <div id="fontPanel" class="panel needs-rom" hidden></div>
   <div id="menuPanel" class="panel needs-rom" hidden></div>
