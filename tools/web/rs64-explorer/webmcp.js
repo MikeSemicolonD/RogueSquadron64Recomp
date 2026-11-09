@@ -902,6 +902,8 @@ const WEBMCP_TOOLS = [
           v === null ? delete e[k] : (e[k] = v);
       }, `${l.title}: ${Object.keys(set).join(', ')}`);
       renderList();
+      syncObjectives();
+      syncLevelSettings();
 
       return { level: dir, settings: modLevelOf(dir) };
     },

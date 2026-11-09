@@ -85,9 +85,9 @@ aside > * { min-width: 279px; }
 .rulesBox .obj { border-color: var(--obj-line); color: var(--obj); }
 .rulesBox .bad { border-color: var(--bad-line); color: var(--bad); }
 .rulesBox .warn { color: var(--bad); }
-#rulesPanel, #crawlPanel, #lookPanel { top: 10px; right: 270px; width: 400px; max-height: calc(100% - 20px); overflow: auto; z-index: 5; display: grid; gap: 6px; align-content: start; }
-#rulesPanel[hidden], #crawlPanel[hidden], #lookPanel[hidden] { display: none; }
-#rulesPanel .rulesPanelHead, #crawlPanel .rulesPanelHead, #lookPanel .rulesPanelHead { display: flex; justify-content: space-between; align-items: center; }
+#rulesPanel, #crawlPanel, #lookPanel, #objPanel, #levelPanel { top: 10px; right: 270px; width: 400px; max-height: calc(100% - 20px); overflow: auto; z-index: 5; display: grid; gap: 6px; align-content: start; }
+#rulesPanel[hidden], #crawlPanel[hidden], #lookPanel[hidden], #objPanel[hidden], #levelPanel[hidden] { display: none; }
+#rulesPanel .rulesPanelHead, #crawlPanel .rulesPanelHead, #lookPanel .rulesPanelHead, #objPanel .rulesPanelHead, #levelPanel .rulesPanelHead { display: flex; justify-content: space-between; align-items: center; }
 /* The crawl window resizes from its corner; its text box takes the height. */
 #crawlPanel { resize: both; display: flex; flex-direction: column; min-width: 280px; min-height: 220px; }
 #crawlPanel[hidden] { display: none; }
@@ -108,6 +108,7 @@ aside > * { min-width: 279px; }
 .levelRules .ruleRow { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .levelRules .ruleRow b { color: var(--obj); font-weight: 600; }
 .levelRules .ruleRow.bad, .levelRules .ruleRow.bad b { color: var(--bad); border-color: var(--bad-line); }
+.rulesBox button.on { outline: 1px solid var(--accent); }
 .rulesBox .addAct { margin-left: 12px; justify-self: start; }
 .rulesBox .addRule { justify-self: start; }
 .addPalette { position: relative; }
@@ -149,16 +150,25 @@ dialog.levelDialog { max-width: min(640px, 92vw); display: grid; gap: 8px; backg
 .craftGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 8px; }
 .medalGrid td { text-align: center; }
 .medalGrid input { width: 5em; }
-.levelDialog .recRow, .levelDialog .actions { display: flex; justify-content: center; gap: 8px; }
+.levelDialog .recRow, .levelDialog .actions, #objPanel .recRow { display: flex; justify-content: center; gap: 8px; }
 .levelDialog .actions button { display: inline-flex; align-items: center; gap: 6px; }
 .levelDialog .dlgClose { position: absolute; top: 6px; right: 6px; display: inline-flex; padding: 4px; }
-.levelDialog .objectives { display: grid; gap: 10px; }
-.levelDialog .objRow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; }
-.levelDialog .objRow > :nth-child(n+4) { grid-column: 1 / -1; }
-.levelDialog .objCallout { display: grid; gap: 6px; padding-left: 12px; border-left: 2px solid var(--line); }
-.levelDialog .objRow > *, .levelDialog .objCallout > *, .levelDialog .objCallout select { min-width: 0; }
-.levelDialog .objRow [hidden] { display: none; }
-.levelDialog > .addObjective { justify-self: center; }
+#objPanel, #levelPanel { z-index: 7; background: var(--panel); opacity: 1; }
+#levelPanel .levelDialog { display: grid; gap: 8px; }
+#objBody { display: grid; gap: 8px; }
+#objPanel .objectives { display: grid; gap: 10px; }
+#objPanel .objRow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; }
+#objPanel .objRow > :nth-child(n+4) { grid-column: 1 / -1; }
+#objPanel .objCallout { padding-left: 12px; border-left: 2px solid var(--line); }
+#objPanel .objCallout[open] { display: grid; gap: 6px; }
+#objPanel .objRow > *, #objPanel .objCallout > *, #objPanel .objCallout select { min-width: 0; }
+#objPanel .objRow [hidden], #objPanel [hidden] { display: none; }
+#objPanel .addObjective { justify-self: center; }
+#objPanel button.on { outline: 1px solid var(--accent); }
+#objPanel .objTargets { display: flex; gap: 6px; align-items: center; }
+#objPanel .objTargets > select { flex: 1; min-width: 0; }
+#objPanel .objChips { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+#objPanel .objChip { padding: 1px 6px; font-size: 12px; }
 #playStatus { font-size: 11px; color: var(--dim); overflow-wrap: anywhere; }
 #playStatus code { user-select: all; }
 #editBody .pair > * { flex: 1; }
@@ -226,8 +236,8 @@ input[type=file]::file-selector-button:hover { border-color: var(--control-hover
 #opts input[type=range] { flex: 1; padding: 0; }
 #opts output { min-width: 2.5em; text-align: right; font-family: ui-monospace, monospace; color: var(--dim); }
 #opts:not(.level) .lvl, #opts.level .mdl, #opts.fx .mdl { display: none; }
-#opts .aud, body.audio #opts > :not(.aud), body.audio #view, body.audio #hud, body.audio #legend, body.audio #fxPanel, body.audio #info, body.audio #help, body.audio #tip, body.audio #scene, body.audio #editPanel, body.audio #cutPanel, body.audio #cutInspector, body.audio #rulesPanel, body.audio #crawlPanel, body.audio #lookPanel,
-body.fonts #opts, body.fonts #view, body.fonts #hud, body.fonts #legend, body.fonts #fxPanel, body.fonts #info, body.fonts #help, body.fonts #tip, body.fonts #scene, body.fonts #editPanel, body.fonts #cutPanel, body.fonts #cutInspector, body.fonts #rulesPanel, body.fonts #crawlPanel, body.fonts #lookPanel { display: none; }
+#opts .aud, body.audio #opts > :not(.aud), body.audio #view, body.audio #hud, body.audio #legend, body.audio #fxPanel, body.audio #info, body.audio #help, body.audio #tip, body.audio #scene, body.audio #editPanel, body.audio #cutPanel, body.audio #cutInspector, body.audio #rulesPanel, body.audio #crawlPanel, body.audio #lookPanel, body.audio #objPanel, body.audio #levelPanel,
+body.fonts #opts, body.fonts #view, body.fonts #hud, body.fonts #legend, body.fonts #fxPanel, body.fonts #info, body.fonts #help, body.fonts #tip, body.fonts #scene, body.fonts #editPanel, body.fonts #cutPanel, body.fonts #cutInspector, body.fonts #rulesPanel, body.fonts #crawlPanel, body.fonts #lookPanel, body.fonts #objPanel, body.fonts #levelPanel { display: none; }
 body.audio #opts label.aud { display: flex; }
 body.audio #opts b.aud { display: block; }
 #audioPanel { top: 16px; left: 16px; right: 16px; max-width: 640px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
@@ -328,8 +338,8 @@ body.audio #musicPanel:not([hidden]) ~ #audioPanel { display: none; }
 #cutInspector #cutEvDel, #cutInspector #cutKeyDel { grid-column: 1 / -1; }
 #insCut > h4 { cursor: move; user-select: none; }
 #cutInspector .insDivider { grid-column: 1 / -1; width: 100%; margin: 2px 0; }
-#cutInspector #insTools > button { flex: 1 1 0; }
-#cutInspector #insTools > button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
+#cutInspector #insTools > button, #cutInspector #insMode > button { flex: 1 1 0; }
+#cutInspector #cutRoute[aria-pressed="true"], #cutInspector #insMode > button[aria-pressed="true"], #cutInspector #insTools > button[aria-pressed="true"] { background: var(--accent); color: var(--panel); border-color: var(--accent); }
 #cutInspector button[data-icon] { display: inline-flex; align-items: center; justify-content: center; min-height: 26px; }
 #cutTimeline .tlClip { position: absolute; top: 1px; height: 12px; border-radius: 3px; color: #0f1115; font-size: 9px; line-height: 12px; padding: 0 6px; overflow: hidden; white-space: nowrap; box-sizing: border-box; cursor: grab; }
 #cutTimeline .tlClip:active { cursor: grabbing; }

@@ -6,30 +6,33 @@ A new mission, shown in SELECT LEVEL after the last unlocked level, with its own
 
 Open a stock level in **Levels** and pick:
 
-- **New level from this one…**: a full copy.
-- **New blank level…**: a player start on flat ground, blank 3-second intro and ending, and the original's sky, ground textures and music.
+- **New level from this one**: a full copy.
+- **New blank level**: a player start on flat ground, blank 3-second intro and ending, and the original's sky, ground textures and music.
+
+It opens in the editor, ready to build. Rename it in Level settings.
 
 The stock level it starts from, its *template*, sets the sky, ground textures and map size.
 
 ## 2. Level settings
+
+**Level settings…** opens beside the level and saves as you go.
 
 ![The Level settings window for a new level](images/level-settings.png)
 
 - **Title** and **description** for SELECT LEVEL.
 - **Briefing**: a game voice line, or **Import recording…** (`.wav`, `.mp3`).
 - **Approved craft**: the hangar shows every owned ship, but only approved ones launch.
-- **Objectives** (1 to 4), below.
 - **Medals**: time, kills, accuracy and friendlies saved per medal, kept per save slot.
 - **Opening crawl** and **starting song**.
 
 ### Objectives
 
-Your objectives replace the template's mission. **Add objective**, write its pause-screen line (up to 40 characters) and pick a goal:
+Your objectives (1 to 4) replace the template's mission. In the editor, click **Objectives…** to open them beside the level; they save as you go. **Add objective**, then click units in the view (**Esc** when done). Change the goal or its pause-screen line (up to 40 characters) if you like:
 
 | Goal | What it does |
 | --- | --- |
-| Destroy units | Done when every picked unit is destroyed (Ctrl+click picks several) |
-| Reach an area | Done when the player enters the picked trigger area. The add icon makes one where you look |
+| Destroy units | Done when every picked unit is destroyed |
+| Reach an area | Done when the player enters the trigger area you click in the view. The add icon makes one where you look |
 | Survive for | Done when the minutes pass |
 | Protect a unit | Fails if the unit is destroyed |
 | Finish within | Fails when the minutes run out |
@@ -38,7 +41,7 @@ The level is won when every Destroy, Reach and Survive objective is done, so it 
 
 ![An objective: destroy the relay droid](images/level-objectives.png)
 
-Under each objective:
+Under each objective's **Voice and camera**:
 
 - **When done**: a voice line or your recording, with subtitle. Protect and Finish within play it on failure.
 - **Camera**: a level camera the game cuts to then.
@@ -58,10 +61,10 @@ Under each objective:
 
 ## Example: a short hunt on Tatooine
 
-1. Open Ambush at Mos Eisley and pick **New blank level…**.
+1. Open Ambush at Mos Eisley and pick **New blank level**.
 2. **Level settings…**: title *Desert Hunt*, a description, the X-wing approved.
 3. In Objects mode, **Add to level** → *TIE fighter* (from another level), click three spots ahead of the start. They attack on their own; **New path** gives one a route.
-4. **Add objective**: *Destroy the TIE fighters*, **Destroy units**, Ctrl+click all three.
+4. **Objectives…**, **Add objective**, click all three in the view.
 5. Set the medals and **Play in game**.
 
 ![Desert Hunt in the game: the X-wing turns into the three TIE fighters over the flat desert](images/custom-level-flight.png)

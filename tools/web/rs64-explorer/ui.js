@@ -82,7 +82,11 @@ $('viewOrtho').onclick = () => root && !cut && setOrtho(!orthoView);
 $('tabModels').onclick = () => setMode('models');
 $('tabLevels').onclick = () => setMode('levels');
 $('tabEffects').onclick = () => setMode('effects');
-addEventListener('beforeunload', (e) => unsavedEdits() && e.preventDefault());
+
+// Opening the game's link counts as leaving the page, though it does not.
+let startingGame = false;
+
+addEventListener('beforeunload', (e) => unsavedEdits() && !startingGame && e.preventDefault());
 $('optFxFps').oninput = () => ($('fxFpsVal').textContent = $('optFxFps').value);
 $('optFxAdd').onchange = refresh;
 

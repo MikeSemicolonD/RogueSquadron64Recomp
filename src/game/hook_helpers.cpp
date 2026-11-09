@@ -531,6 +531,55 @@ static std::atomic<uint64_t> g_cine_iter{0};
 extern "C" unsigned long long rs64_cine_iter_get(void) { return g_cine_iter.load(std::memory_order_relaxed); }
 extern "C" void rs64_cine_iter_tick(unsigned iter) { g_cine_iter.store(iter, std::memory_order_relaxed); }
 
+// A mod cutscene's fade in borrows the ending's full-screen overlay. It starts at zero speed so the game's own ramp, which would end the cutscene, leaves it alone.
+static constexpr int kCutFadeFrames = 30;
+static bool s_cut_fade_wanted = false;
+static int s_cut_fade_left = 0;
+
+extern "C" void rs64_cut_fade_request(void) { s_cut_fade_wanted = true; }
+extern "C" int rs64_cut_fade_active(void) { return s_cut_fade_left > 0; }
+
+extern "C" void rs64_cut_fade_tick(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using namespace rs64::mips;
+
+    static constexpr uint32_t kOverlay = 0x800B0934u;
+    static constexpr uint32_t kOverlayTable = 0x800B0AFCu;
+
+    if (s_cut_fade_wanted)
+    {
+        s_cut_fade_wanted = false;
+
+        // Only the loop's frame holds the screen size at sp+0x18 that cinematicInitializer reads.
+        if (!rw(rdram, kOverlay))
+        {
+            mips_call(rdram, ctx, 0x800AF408u, { rw(rdram, kOverlayTable), (uint32_t)ctx->r29 + 0x18u, 0u });
+            s_cut_fade_left = kCutFadeFrames;
+        }
+    }
+
+    const uint32_t overlay = rw(rdram, kOverlay);
+
+    if (!s_cut_fade_left || !overlay)
+    {
+        s_cut_fade_left = 0;
+
+        return;
+    }
+
+    --s_cut_fade_left;
+
+    if (s_cut_fade_left)
+    {
+        wb(rdram, rw(rdram, overlay + 0xCu) + 0x2Fu, (uint8_t)(255 * s_cut_fade_left / kCutFadeFrames));
+
+        return;
+    }
+
+    mips_call(rdram, ctx, 0x800AF60Cu, { rw(rdram, kOverlayTable), (uint32_t)ctx->r29 + 0x18u });
+}
+
 // ---- Pacing ----
 
 // Every 16 cinematic iterations: yield and flush. A kernel call is what unsticks the loop.

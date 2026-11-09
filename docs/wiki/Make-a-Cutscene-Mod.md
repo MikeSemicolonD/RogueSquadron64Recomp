@@ -20,7 +20,7 @@ Click the **pencil** on the timeline. The inspector window opens.
 
 - Drag a clip to move it, its ends to trim it.
 - Drag voice lines, sounds and music onto it.
-- **Event…** adds an event at the playhead.
+- **Event…** adds an event at the playhead. **Fade in** comes up from black over one second.
 - **Duration** lengthens or cuts the end.
 
 ### Actors
@@ -29,13 +29,22 @@ Click the **pencil** on the timeline. The inspector window opens.
 - **Model** swaps the picked actor's model.
 - **Shoot at…** makes it turn and fire; the target blows up on hit.
 
-### Cameras and movement
+### Shots
 
-1. Pick a camera or actor from **Pose…**.
-2. Move the playhead and drag the handles (W move, E rotate, R scale) to set a *key*.
-3. Keys make a smooth path; drag or delete them on the **Keys** row.
+Drag the view to frame a shot, move the playhead and click **New shot** (camera with a plus). It cuts to a new camera there, up to 6. At the start or on an existing cut it reframes that shot.
 
-**V** snaps a camera to your view. A camera's **Mode** can follow, aim at, or ride an actor. Up to 6 cameras.
+With a camera picked, one click sets what this shot does; click again to turn it off:
+
+- **Follow** chases an actor from where the camera is.
+- **Aim** stays put and turns to watch it.
+- **Ride** looks out from its cockpit.
+
+### Movement
+
+- **Draw route** (with an actor picked): click points in the view and it flies them from the playhead to the end, nose first and banking. Points keep the route's height; click the sky to climb toward that spot. **Esc** when done.
+- **V** adds a point where you are looking, or snaps a camera to your view.
+- For anything else, pick a camera or actor from **Pose…**, move the playhead and drag the handles (W move, E rotate, R scale) to set a *key*.
+- Drag or delete points and keys on the **Keys** row. Closer points fly faster.
 
 **Start from blank** keeps one still camera and removes the rest (undoable).
 
@@ -43,15 +52,14 @@ Click the **pencil** on the timeline. The inspector window opens.
 
 1. Open the Ambush at Mos Eisley intro and click the pencil.
 2. **Actor…** → the X-wing player craft.
-3. Pick it in **Pose…**. At 0.5 s, move it to one side (W) and turn its nose along its route (E).
-4. At 1.5 s, move it to the other side. Keep the turn, or it rolls.
-5. Tick **Camera** and play. Closer keys fly faster.
+3. **Draw route**, click three points across the view, **Esc**.
+4. Tick **Camera** and play.
 
    ![The new X-wing crossing the opening shot of the Mos Eisley intro, seen through the cutscene camera](images/cutscene-flyby.png)
 
-6. Optional: drop an engine sound at 0.5 s.
+5. Optional: drop an engine sound on the timeline.
 
-To track it, set a camera's **Mode** to aim at the X-wing.
+To track it, pick the camera and click **Aim**.
 
 ## Opening crawls
 

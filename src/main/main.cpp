@@ -607,6 +607,8 @@ int main(int argc, char* argv[])
         return rc;
     }
 
+    rs64::cli::register_play_link();
+
     fprintf(stderr, "[main] Rogue Squadron 64 Recompiled %s\n", RS64_VERSION_STRING);
 
     if (const char* comboList = recomp::dbg::env_str("ROGUESQ_PRECOMPILE_D3D11"))

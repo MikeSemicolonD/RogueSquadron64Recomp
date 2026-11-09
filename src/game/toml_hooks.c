@@ -982,6 +982,24 @@ int rs64_th_saveServiceWorker_8006F2CC(uint8_t* rdram, recomp_context* ctx) {
     return 1;
 }
 
+// cinematicLoopBody 0x800A6084: $f0 is the speech volume from the overlay's strength.
+void rs64_th_cinematicLoopBody_800A6084(uint8_t* rdram, recomp_context* ctx)
+{
+    (void)rdram;
+
+    if (rs64_cut_fade_active())
+        ctx->f0.fl = 1.0f;
+}
+
+// spawnCutsceneEffectsAndCues 0x800A8AB8: $v1 is the event's type.
+void rs64_th_spawnCutsceneEffectsAndCues_800A8AB8(uint8_t* rdram, recomp_context* ctx)
+{
+    (void)rdram;
+
+    if ((uint32_t)ctx->r3 == 0x17)
+        rs64_cut_fade_request();
+}
+
 // cinematicLoopBody 0x800A6024
 void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx)
 {
@@ -990,6 +1008,7 @@ void rs64_th_cinematicLoopBody_800A6024(uint8_t* rdram, recomp_context* ctx)
     rs64_cine_iter_tick(++s_watchdog_count);
 
     rs64_cine_pause_point(rdram);
+    rs64_cut_fade_tick(rdram, ctx);
 
     // Diagnostic: iterations + gate/cineState. ROGUESQ_LOG_HOOKS=1.
     if (rs64_dbg_hooks_on()) {

@@ -16,9 +16,9 @@ Every change is one undo step, including ones in other windows such as Level set
 
 1. The first time, pick the game's folder (with `RogueSquadron64Recomp.exe`). It's remembered.
 2. Your edits are written there as the mod `rs64-explorer-preview`, replacing the last one.
-3. A command is copied that starts the game at the mission or cutscene you have open.
+3. The game starts at the mission or cutscene you have open. Your browser asks to open it the first time.
 
-Paste it in a terminal in the game's folder (in Windows: right-click the folder, *Open in Terminal*). In other browsers, use **Export mod**.
+The first time, a command is copied instead: paste it in a terminal in the game's folder (in Windows: right-click the folder, *Open in Terminal*). After that one run the button starts the game itself, on Windows. Elsewhere, keep using the command. Close the game before testing again. In other browsers, use **Export mod**.
 
 ## Exporting a mod
 

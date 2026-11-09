@@ -39,7 +39,7 @@ In Objects or Events mode:
 - **Ctrl+D** duplicates, **Delete** removes (refused, with the reason, if the mission needs it).
 - **Used by** lists the objectives and rules using it.
 
-**Add to level** (bottom of the panel): pick an item, click where it goes (Esc cancels), or drag it in by its grip. *From another level* items are copied from that mission. A **Camera** is added at your view.
+**Add to level** (bottom of the panel): pick an item and click where it goes, or drag it in by its grip. Enemies keep placing until **Esc**. *From another level* items are copied from that mission. A **Camera** is added at your view.
 
 ## Enemies and waves
 
@@ -48,7 +48,7 @@ An enemy in a **wave** waits off-stage until released. Pick the wave in its pane
 A wave is released:
 
 - **By a trigger area**: its **Start wave** box in Events mode.
-- **By a rule**: the **Spawn** action. Pick the kind, count (up to 8) and path, then **Create wave**.
+- **By a rule**: the **Spawn** action. It starts with your last kind, count (up to 8) and path; change them or click a path in the view with the pin, then **Create wave**.
 
 ## Flight paths
 
@@ -66,7 +66,7 @@ In Events mode:
 
 ## Rules: "when this happens, do that"
 
-Select a trigger area, path or unit and click **+ Add rule**, then pick **Whenâ€¦**:
+Select a trigger area, path or unit and pick from **+ Add rule**:
 
 - something enters or leaves an area
 - a unit passes a path point
@@ -74,7 +74,7 @@ Select a trigger area, path or unit and click **+ Add rule**, then pick **Whenâ€
 - the mission starts, or a time after
 - an objective is done or failed
 
-Actions run in order:
+Pick actions from **+ Add action**. They run in order:
 
 - play a voice line or recording
 - show a message
@@ -95,9 +95,9 @@ On a copy of Ambush at Mos Eisley:
 1. In Events mode, name a trigger area on the way in `bridge_entry`, set off by *The player*.
 2. **+ Add rule**: *Something enters this area*.
 3. **+ Add action**: *Show message*, `Hold the bridge!`, 4 seconds.
-4. **+ Add action**: *Spawn*, *TIE fighter*, 4, a path, **Create wave**.
+4. **+ Add action**: *Spawn*, pick a path, **Create wave**.
 5. In Objects mode, name a probe droid `relay_droid`.
-6. **+ Add rule**: *This unit is destroyed*, action *Win the mission*.
+6. **+ Add rule**: *This unit is destroyed*, **+ Add action**: *Win the mission*.
 
 ![The bridge_entry rule: a message, then a wave of four TIE fighters](images/level-rules-example.png)
 
@@ -116,4 +116,4 @@ Right-click the ground, **Add light here**; drag the bulb to move it.
 - Enemy craft other than TIE fighters and interceptors from other levels.
 - A map larger than the original.
 
-Untested in game: new and edited paths, a copied camera in a camera shot, a unit in **Set off by**, *Show message* and *Play recording*.
+Untested in game: new and edited paths, a copied camera in a camera shot, a unit in **Set off by** and *Play recording*.

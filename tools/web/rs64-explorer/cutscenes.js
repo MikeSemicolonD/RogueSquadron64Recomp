@@ -45,6 +45,86 @@ function cutAsset(name) {
 
 const cutBase = (name) => name.replace(/_\d+$/, '').replace(/^pl_crafts\//, '').replace(/^l_/, '');
 
+const CUT_ACTOR_LABELS = {
+  xwing: 'X-wing',
+  ywing: 'Y-wing',
+  awing: 'A-wing',
+  vwing: 'V-wing',
+  snowspeeder: 'Snowspeeder',
+  snowspeeder3: 'Snowspeeder',
+  falcon: 'Millennium Falcon',
+  t16: 'T-16 Skyhopper',
+  koelsch: 'Naboo starfighter',
+  tie_fighter: 'TIE fighter',
+  tie_bomber: 'TIE bomber',
+  tie_inter: 'TIE interceptor',
+  tie_d: 'TIE (D)',
+  atat: 'AT-AT',
+  atst: 'AT-ST',
+  atpt_imp: 'AT-PT',
+  wrld_dvstr: 'World Devastator',
+  imp_shuttle: 'Imperial shuttle',
+  v_hls_hi: 'Heavy shuttle',
+  raptor: 'Heavy raptor shuttle',
+  v_spd_hi: 'Speeder',
+  v_tcc_hi: 'Cloud car',
+  tr_engine: 'Imperial train engine',
+  tr_defense: 'Imperial train defense car',
+  tr_container: 'Imperial train container',
+  r_tr_engine: 'Rebel train engine',
+  r_tr_cargo: 'Rebel train cargo car',
+  r_tr_dst: 'Rebel train (wrecked)',
+  reb_transport: 'Rebel transport',
+  end_medal: 'Medal',
+  factor: 'Factor 5 logo',
+  i_gtu_hi: 'Gun turret',
+  i_mtu_hi: 'Missile turret',
+  r_tur_hi: 'Rebel turret',
+  b_ttu_hi: 'Taloraan turret',
+  megaturret: 'Mega turret',
+  probe_droid: 'Probe droid',
+  tankdroid: 'Tank droid',
+  assault_boat: 'Assault boat',
+  waveskimmer: 'Wave skimmer',
+  r_combat: 'Rebel combat vehicle',
+  cargo_v01: 'Cargo',
+  gt_civrun: 'Civilian',
+  gt_iburun: 'Imperial soldier',
+  gt_strun: 'Stormtrooper',
+  gt_rprun: 'Rebel pilot',
+  bld_a_dst: 'Destroyed building',
+  b_pwrtran_hi: 'Power generator',
+  moon: 'Moon',
+  jade_moon: 'Jade moon',
+  tat_sun: 'Tatooine sun',
+  r_logo_ref: 'Rogue Squadron logo',
+  shock_sml: 'Shockwave',
+  shield: 'Shield',
+  cable: 'Tow cable',
+  wtrspray: 'Water spray',
+  vortex: 'Vortex',
+  r_tr_pillar: 'Rebel train pillar',
+  i_tr_pillar: 'Imperial train pillar'
+};
+
+// What a modder reads for an actor; its file name stays underneath.
+function cutActorLabel(name)
+{
+  const base = cutBase(name).split('/').pop();
+  const plain = base.replace(/_hi$/, '').replace(/_/g, ' ');
+
+  return CUT_ACTOR_LABELS[base] ?? plain[0].toUpperCase() + plain.slice(1);
+}
+
+// Actors of one kind are told apart by number: X-wing, X-wing 2.
+function cutActorTitle(actors, i)
+{
+  const label = cutActorLabel(actors[i].name);
+  const nth = actors.slice(0, i + 1).filter((a) => cutActorLabel(a.name) === label).length;
+
+  return nth > 1 ? `${label} ${nth}` : label;
+}
+
 // Cutscene shadows (allocateAndInitCraftNpcContext 0x8006BD18 at spawn, 0x8006BEC8 each frame): each model actor whose asset flags (+0x5B)
 // have bit 2 gets a black shadow textured from data/pl_crafts/shadows_TM, per asset type from the table at 0x800B04AC (0x14 bytes:
 // u16 texture at +2, half width +4, half length +8, world x / z offsets +0xC / +0x10). It is a 3x3 grid draped on the terrain (one height
@@ -1039,6 +1119,9 @@ function loadCutSfx(c)
 
 // shortcut: engine falloff is an inverse curve with the game's range as its reference distance; play3DSoundEvent's own curve is not traced.
 function startCutSfx(c, T, play, srcs) {
+  if (!c.sfxCues)
+    return;
+
   for (const s of c.sfxCues) {
     if (s.at + s.buf.duration <= T)
       continue;
@@ -1993,8 +2076,10 @@ function applyCutscene(dt)
   if (cutTrack && gizmo.dragging)
     poseFromGizmo();
 
-  if (cutEditing)
+  if (cutEditing) {
     syncCutSelBox();
+    syncCutModeButtons();
+  }
 
   $('cutTimeVal').textContent = `${(cut.t * data.length).toFixed(1)} s`;
 
@@ -2015,7 +2100,7 @@ function applyCutscene(dt)
   } else
     restoreCutFar();
 
-  controls.enabled = !own && !gizmo.dragging;
+  controls.enabled = (!own || !!cutViewDrag) && !gizmo.dragging;
 
   if (cut.camNode)
     cut.camNode.visible = cut.camPath.visible = !own;
@@ -2035,7 +2120,11 @@ function applyCutscene(dt)
 
   $('cutFade').hidden = !own || cut.seq;
   $('cutBars').hidden = !own || (cut.seq && cut.t >= cut.end);
-  $('cutFade').style.opacity = cutBlack ? 1 : THREE.MathUtils.clamp((fr - endAt) / data.fps / CUT_FADE, 0, 1);
+
+  // A Fade in event comes up from black over one second.
+  const fadeIn = Math.max(0, ...data.events.filter((e) => e.type === 23 && fr >= e.frame).map((e) => 1 - (fr - e.frame) / data.fps));
+
+  $('cutFade').style.opacity = cutBlack ? 1 : Math.max(fadeIn, THREE.MathUtils.clamp((fr - endAt) / data.fps / CUT_FADE, 0, 1));
 
   if (own)
   {
@@ -2833,6 +2922,34 @@ $('cutCam').onchange = () => {
   controls.update();
 };
 
+function cutFreeView()
+{
+  $('cutCam').checked = false;
+  $('cutCam').onchange();
+  controls.enabled = true;
+}
+
+// While editing, dragging the view leaves the cutscene camera; a plain click still picks. The controls listen from the press so the drag carries over.
+let cutViewDrag = null;
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (!cutEditing || !cut || !$('cutCam').checked || gizmo.axis)
+    return;
+
+  cutViewDrag = [e.clientX, e.clientY];
+  controls.enabled = true;
+}, true);
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!cutViewDrag || Math.hypot(e.clientX - cutViewDrag[0], e.clientY - cutViewDrag[1]) < 4)
+    return;
+
+  cutViewDrag = null;
+  cutFreeView();
+}, true);
+
+addEventListener('pointerup', () => (cutViewDrag = null), true);
+
 // ---- Cutscene timeline: a ruler, a band per camera shot, and the events in lanes, under the playback controls ----
 const TL_LANES = [['camera', 'Camera'], ['audio', 'Audio'], ['action', 'Action'], ['scene', 'Scene']];
 const tlHidden = new Set();
@@ -2856,7 +2973,8 @@ const TL_KIND = {
   19: 'Smoothing',
   20: 'NPCs cleared',
   21: 'Effect flag',
-  22: 'Render pass'
+  22: 'Render pass',
+  23: 'Fade in'
 };
 
 // What each event's four parameters mean (spawnCutsceneEffectsAndCues, processCutsceneActions; see cutEventInfo): [label, tooltip].
@@ -2885,8 +3003,9 @@ const CUT_PARAM_NAMES = {
   22: [['On', 'Extra render pass on (1) or off (0)']],
 };
 
-function cutEventInfo(e, data) {
-  const actor = (i) => data.actors[i]?.name ?? 'actor ' + i;
+function cutEventInfo(e, data)
+{
+  const actor = (i) => (data.actors[i] ? cutActorTitle(data.actors, i) : 'actor ' + i);
   const p = e.p;
 
   switch (e.type)
@@ -3101,7 +3220,7 @@ function buildClipLanes(tracks)
 
     el.dataset.clip = i;
 
-    const name = c.kind === 'shot' ? `Cam ${c.startEvent?.p[0] ?? data.cameras.findIndex(Boolean)}` : (c.kind === 'actor' ? data.actors[c.actor]?.name ?? '' : '');
+    const name = c.kind === 'shot' ? `Cam ${c.startEvent?.p[0] ?? data.cameras.findIndex(Boolean)}` : (c.kind === 'actor' && data.actors[c.actor] ? cutActorTitle(data.actors, c.actor) : '');
 
     // Tall rows (the panel dragged taller) have room for each clip's description.
     el.textContent = c.end > c.start ? (cutRowH >= 20 && c.kind !== 'shot' && info ? info[2] : name) : '';
@@ -3173,6 +3292,7 @@ function buildClipLanes(tracks)
 
   buildKeyRow($('cutTimeline'));
   fillCutTrackList();
+  cutRouteShow();
 
   // Re-find the selected event by what it is (an undo or an actor removal shifts indices): same type and parameters, nearest frame.
   const sig = cutSelSig;
@@ -3689,6 +3809,9 @@ function syncCutEditUi()
 let cutTrack = null;
 let cutSelKey = null;
 let cutLastClickTimeline = false;
+let cutLastActor = null;
+let cutRouteDraw = null;
+let cutRouteViz = null;
 
 // A click on the timeline outside a clip (scrubbing, or deselecting a key) disarms Delete for the picked actor or camera.
 addEventListener('pointerdown', (e) => (cutLastClickTimeline = !!e.target.closest?.('#cutTimeline') && !e.target.closest('.tlClip')), true);
@@ -3743,7 +3866,7 @@ function fillCutTrackList()
   }
 
   f.cameras.forEach((c, k) => c && sel.append(new Option(`Camera ${k}`, `cam:${k}`)));
-  f.actors.forEach((a, i) => a.model && sel.append(new Option(`${i} ${a.name}`, `act:${i}`)));
+  f.actors.forEach((a, i) => a.model && sel.append(new Option(cutActorTitle(f.actors, i), `act:${i}`)));
   sel.value = cutTrack && !cutTrack.holder ? (cutTrack.cam != null ? `cam:${cutTrack.cam}` : `act:${cutTrack.actor}`) : '';
   fillCutStruct();
 }
@@ -3751,6 +3874,12 @@ function fillCutTrackList()
 function setCutTrack(tr) {
   cutTrack = tr;
   cutSelKey = null;
+
+  if (tr?.actor != null)
+    cutLastActor = tr.actor;
+
+  if (cutRouteDraw && tr?.actor !== cutRouteDraw.actor)
+    cutRouteDraw = null;
 
   if (!tr) {
     gizmo.detach();
@@ -3806,6 +3935,9 @@ function cutPickActor(e) {
   if (!cutEditing || !cut?.file || gizmo.dragging)
     return false;
 
+  if (cutRouteDraw)
+    return cutRouteClick(e), true;
+
   const t = cutPickTarget(e);
 
   if (t?.actor != null) {
@@ -3839,7 +3971,7 @@ function syncCutSelBox()
 // rotation and scale, cameras at their position and rotation.
 function syncTrackProxy()
 {
-  if (!cutTrackValid(cut?.file, cutTrack) || gizmo.dragging)
+  if (!cutTrackValid(cut?.file, cutTrack) || gizmo.dragging || cutRouteDraw)
     return;
 
   if (gizmo.object !== editProxy)
@@ -4222,6 +4354,9 @@ addEventListener('keydown', async (e) => {
   if (!cutEditing || !cutTrack || e.target.closest?.('input,select,textarea') || e.ctrlKey || e.metaKey || e.altKey)
     return;
 
+  if (e.code === 'Escape' && cutRouteDraw)
+    return cutStopRoute();
+
   const mode = { KeyW: 'translate', KeyE: 'rotate', KeyR: 'scale' }[e.code];
 
   if (mode && (mode !== 'scale' || cutTrack.cam == null))
@@ -4402,7 +4537,7 @@ function cutViewPose()
 {
   if ($('cutCam').checked)
   {
-    $('cutStatus').textContent = 'Untick Camera and fly the view to the shot first';
+    $('cutStatus').textContent = 'Drag the view to the shot first';
 
     return null;
   }
@@ -4477,7 +4612,7 @@ async function snapFromView()
   let snap;
 
   if (tr.cam != null)
-    snap = { t, p: v.p.clone().multiplyScalar(4).toArray(), q: v.q.toArray(), fov: v.fov };
+    snap = cutCamSnap(v, t);
   else
   {
     const a = f.actors[tr.actor];
@@ -4500,6 +4635,155 @@ async function snapFromView()
 }
 
 $('cutCamView').onclick = snapFromView;
+
+const cutCamSnap = (v, t) => ({ t, p: v.p.clone().multiplyScalar(4).toArray(), q: v.q.toArray(), fov: v.fov });
+
+// New shot at the playhead, framed like the view: a new camera and its cut as one step. A cut already at the playhead (or the very start) just reframes that shot.
+async function cutNewShot()
+{
+  const f = cut?.file;
+
+  if (!f || cut.crawl || cut.seq)
+    return;
+
+  if (cut.playing)
+    $('cutPlay').click();
+
+  if ($('cutCam').checked)
+    cutFreeView();
+
+  const v = cutViewPose();
+
+  if (!v)
+    return;
+
+  const t = cut.t;
+  const frame = Math.round(t * f.frames);
+  const here = cutClips(f, cutAudioLength).find((c) => c.lane === 'camera' && c.start === frame);
+  let k = here ? here.startEvent?.p[0] ?? f.cameras.findIndex(Boolean) : -1;
+
+  const ok = await cutAuthEdit('New shot', (doc) => {
+    const at = cutAuthTrack(doc, { cam: k });
+
+    at.snaps = cutPutSnap(at.snaps ?? [], cutCamSnap(v, t), 0.5 / f.frames);
+  }, (g) => {
+    if (here)
+      return;
+
+    const opening = g.cameras.findIndex(Boolean);
+
+    k = cutAddCamera(g);
+    cutAddEvent(g, { type: 4, frame, p: [k, 0, 0, 0] });
+
+    // The game opens on the first camera in the list, so a new one in an earlier slot must not take over the opening shot.
+    if (k < opening)
+      cutAddEvent(g, { type: 4, frame: 0, p: [opening, 0, 0, 0] });
+  });
+
+  if (ok)
+    setCutTrack({ cam: k });
+}
+
+$('cutAddCam').onclick = cutNewShot;
+
+// Draw route: each click adds a point at the route's height (the sky sends it toward the click), and the points share the time left at one speed.
+function cutStopRoute()
+{
+  cutRouteDraw = null;
+  $('cutStatus').textContent = '';
+
+  if (cutTrack)
+    setCutTrack(cutTrack);
+}
+
+async function cutRouteClick(e)
+{
+  const d = cutRouteDraw;
+  const f = cut.file;
+
+  if (d.busy)
+    return;
+
+  const half = 0.5 / f.frames;
+  const tr = { actor: d.actor };
+  const kept = d.fresh ? [] : cutSnaps(tr).filter((s) => s.t >= d.t0 - half);
+  const last = kept.at(-1) && new THREE.Vector3(...kept.at(-1).p).multiplyScalar(0.25);
+
+  pick(e, []);
+  root.updateMatrixWorld();
+
+  const ray = raycaster.ray.clone().applyMatrix4(new THREE.Matrix4().copy(root.matrixWorld).invert());
+  const height = last ? last.y : cutTrackValues(f, tr, d.t0)[1] / 4;
+  const hit = ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -height), new THREE.Vector3());
+  const far = hit ? ray.origin.distanceTo(hit) : (last ? ray.origin.distanceTo(last) : 20);
+  const pts = [...kept.map((s) => s.p), ray.at(Math.min(far, 150), new THREE.Vector3()).multiplyScalar(4).toArray()];
+  const along = pts.map((p, i) => (i ? Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1], p[2] - pts[i - 1][2]) : 0));
+
+  for (let i = 1; i < along.length; i++)
+    along[i] += along[i - 1];
+
+  const total = along.at(-1) || 1;
+
+  d.busy = true;
+  d.fresh = false;
+
+  try {
+    await cutAuthEdit('Route point', (doc) => {
+      const at = cutAuthTrack(doc, tr);
+
+      at.snaps = [...(at.snaps ?? []).filter((s) => s.t < d.t0 - half), ...pts.map((p, i) => ({ t: d.t0 + (1 - d.t0) * (along[i] / total), p }))];
+    });
+  } finally {
+    d.busy = false;
+  }
+}
+
+$('cutRoute').onclick = () => {
+  if (cutRouteDraw)
+    return cutStopRoute();
+
+  if (cut.playing)
+    $('cutPlay').click();
+
+  if ($('cutCam').checked)
+    cutFreeView();
+
+  cutRouteDraw = { actor: cutTrack.actor, t0: cut.t, fresh: true, busy: false };
+  gizmo.detach();
+  fillCutMode();
+  $('cutStatus').textContent = 'Click in the view to add route points. Esc when done';
+};
+
+// The picked actor's route, drawn over everything so it reads against the ground.
+function cutRouteShow()
+{
+  cutRouteViz?.traverse((o) => o.geometry?.dispose());
+  cutRouteViz?.removeFromParent();
+  cutRouteViz = null;
+
+  const snaps = cutEditing && cutTrack?.actor != null ? cutSnaps(cutTrack) : [];
+
+  if (!root || snaps.length < (cutRouteDraw ? 1 : 2))
+    return;
+
+  const pts = snaps.map((s) => new THREE.Vector3(...s.p).multiplyScalar(0.25));
+  const mat = new THREE.LineBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+  const dot = new THREE.MeshBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+
+  cutRouteViz = new THREE.Group();
+  cutRouteViz.renderOrder = 10;
+  cutRouteViz.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+
+  for (const p of pts)
+  {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), dot);
+
+    m.position.copy(p);
+    cutRouteViz.add(m);
+  }
+
+  root.add(cutRouteViz);
+}
 
 // Mode of the picked camera over the shot under the playhead: follow / aim / ride a root actor, offset = the camera's pose now.
 function cutShotSpan(f, t)
@@ -4529,27 +4813,56 @@ function fillCutMode()
     sel.append(new Option(first, ''));
 
     for (const [x, i] of list)
-      sel.append(new Option(`${i} ${x.name}`, i));
+      sel.append(new Option(cutActorTitle(f.actors, i), i));
   };
 
   if (k != null)
   {
-    const m = (cutAuth.tracks[`cam:${k}`]?.modes ?? []).find((x) => x.t0 <= cut.t && cut.t <= x.t1);
+    // The actor last worked with, else the one with a route, else the newest.
+    const work = roots.find(([, i]) => i === cutLastActor) ?? roots.findLast(([, i]) => cutAuth.tracks[`act:${i}`]?.snaps?.length) ?? roots.at(-1);
 
     opts($('cutModeActor'), roots, 'Actor…');
-    $('cutMode').value = m?.mode ?? '';
-    $('cutModeActor').value = m ? m.actor : roots[0]?.[1] ?? '';
+    $('cutModeActor').hidden = roots.length < 2;
+    $('cutModeActor').value = work?.[1] ?? '';
+
+    for (const b of $('insMode').querySelectorAll('[data-cmode]'))
+      b.disabled = !roots.length;
+
+    syncCutModeButtons();
   }
 
   if (a != null)
+  {
     opts($('cutShoot'), roots.filter(([, i]) => i !== a), 'Shoot at…');
+    $('cutRoute').hidden = f.actors[a]?.parent >= 0;
+    $('cutRoute').setAttribute('aria-pressed', !!cutRouteDraw);
+  }
 }
 
-async function setCutMode()
+// The buttons show the mode of the shot under the playhead.
+function syncCutModeButtons()
+{
+  const k = cutTrack?.cam;
+
+  if (k == null || !cut?.file)
+    return;
+
+  const half = 0.5 / cut.file.frames;
+  const m = (cutAuth.tracks[`cam:${k}`]?.modes ?? []).find((x) => x.t0 - half <= cut.t && cut.t <= x.t1);
+
+  for (const b of $('insMode').querySelectorAll('[data-cmode]'))
+    b.setAttribute('aria-pressed', b.dataset.cmode === m?.mode);
+
+  if (m && $('cutModeActor').value !== String(m.actor))
+    $('cutModeActor').value = m.actor;
+}
+
+const cutPressedMode = () => $('insMode').querySelector('[aria-pressed="true"]')?.dataset.cmode ?? '';
+
+async function setCutMode(mode)
 {
   const k = cutTrack?.cam;
   const f = cut?.file;
-  const mode = $('cutMode').value;
   const actor = $('cutModeActor').value;
 
   if (k == null || !f)
@@ -4568,6 +4881,16 @@ async function setCutMode()
     const inv = new THREE.Quaternion(...pose.q).invert();
 
     offset = new THREE.Vector3(...cam.map((v, i) => v - pose.p[i])).applyQuaternion(inv).toArray();
+
+    // Ride sits in the cockpit (nose +Z, up -Y) unless the camera was already placed on the craft.
+    if (mode === 'ride')
+    {
+      const a = f.actors[+actor];
+      const r = ((await cutModelRadius(a.name)) ?? 4) * cutTrackValues(f, { actor: +actor }, cut.t)[3] * 0.2222 * 4;
+
+      if (Math.hypot(...offset) > r * 1.2)
+        offset = [0, -0.12 * r, 0.3 * r];
+    }
   }
 
   await cutAuthEdit(mode ? `Camera ${mode}` : 'Camera mode off', (doc) => {
@@ -4580,8 +4903,10 @@ async function setCutMode()
   });
 }
 
-$('cutMode').onchange = setCutMode;
-$('cutModeActor').onchange = () => $('cutMode').value && setCutMode();
+for (const b of $('insMode').querySelectorAll('[data-cmode]'))
+  b.onclick = () => setCutMode(b.dataset.cmode === cutPressedMode() ? '' : b.dataset.cmode);
+
+$('cutModeActor').onchange = () => cutPressedMode() && setCutMode(cutPressedMode());
 
 $('cutShoot').onchange = async () => {
   const i = cutTrack?.actor;
@@ -4699,16 +5024,17 @@ function fillCutStruct()
     return;
 
   if ($('cutAddActor').options.length < 2)
-    for (const n of cutModelNames()) {
-      $('cutAddActor').append(new Option(n, n));
-      $('cutModel').append(new Option(n, n));
+    for (const n of cutModelNames().sort((a, b) => cutActorLabel(a).localeCompare(cutActorLabel(b))))
+    {
+      $('cutAddActor').append(new Option(cutActorLabel(n), n));
+      $('cutModel').append(new Option(cutActorLabel(n), n));
     }
 
   const a = cutTrack?.actor != null ? f.actors[cutTrack.actor] : null;
 
   $('insTrack').hidden = !cutTrack;
   syncCutTools();
-  $('insTrackName').textContent = a ? `Actor ${cutTrack.actor}: ${a.name}` : (cutTrack?.holder ? `Level object: ${cutTrack.holder.userData.placedItem.name || cutTrack.holder.userData.source.name}` : (cutTrack ? `Camera ${cutTrack.cam}` : ''));
+  $('insTrackName').textContent = a ? cutActorTitle(f.actors, cutTrack.actor) : (cutTrack?.holder ? `Level object: ${cutTrack.holder.userData.placedItem.name || cutTrack.holder.userData.source.name}` : (cutTrack ? `Camera ${cutTrack.cam}` : ''));
   $('insModel').hidden = $('cutDelActor').hidden = !a;
   $('cutDelCam').hidden = cutTrack?.cam == null;
   fillCutMode();
@@ -4868,7 +5194,7 @@ $('cutDelActor').onclick = async () => {
   const kids = gone.size - 1;
   const also = [kids && `${kids} child actor${kids > 1 ? 's' : ''}`, uses && `${uses} event${uses > 1 ? 's' : ''}`].filter(Boolean).join(' and ');
 
-  if (also && !confirm(`Removing ${f.actors[i].name} also removes ${also}.`))
+  if (also && !confirm(`Removing ${cutActorTitle(f.actors, i)} also removes ${also}.`))
     return;
 
   setCutTrack(null);
@@ -4887,18 +5213,8 @@ $('cutBlank').onclick = async () => {
     return;
   }
 
-  if (!confirm('Start this cutscene from blank? Every actor, camera move, voice, sound and music event goes (undo brings them back).'))
-    return;
-
   setCutTrack(null);
   await editCutFile('Start from blank', (f) => cutBlank(f, f.length), (doc) => (doc.tracks = {}));
-};
-
-$('cutAddCam').onclick = async () => {
-  let k = -1;
-
-  if (await editCutFile('Add camera', (f) => (k = cutAddCamera(f))))
-    setCutTrack({ cam: k });
 };
 
 $('cutDelCam').onclick = async () => {
@@ -5046,7 +5362,7 @@ function cutParamPicker(e, k)
     return opts([...Array(CUT_SFX_COUNT).keys()].map((n) => [n, cutSfxLabel(n)]));
 
   if (k === 0 && CUT_ACTOR_EVENTS.has(e.type) && e.type !== 11)
-    return opts(f.actors.map((a, n) => [n, `${n} ${a.name}`]));
+    return opts(f.actors.map((a, n) => [n, cutActorTitle(f.actors, n)]));
 
   if (k === 0 && e.type === 4)
     return opts(f.cameras.map((c, n) => c && [n, `Camera ${n}`]).filter(Boolean));
@@ -5358,13 +5674,22 @@ function nameUses(bytes, name, skipFrom, skipTo)
 async function reloadLevel(dir) {
   $('info').hidden = true;
   clearCaches();
-  await showLevel(dir, true);
+  keepPlacing = dir === selected;
+
+  try {
+    await showLevel(dir, true);
+  } finally {
+    keepPlacing = false;
+  }
 
   if (editMode === 'events')
     fillAddKinds();
 
   if (editMode === 'objects')
     fillAddEnemies();
+
+  syncObjectives();
+  syncLevelSettings();
 }
 
 async function deleteItem(it)
@@ -5385,9 +5710,32 @@ async function deleteItem(it)
   if (refs && !confirm(`Other items in this level mention "${it.name}" (${refs}x: triggers, paths or areas). Delete it anyway?`))
     return;
 
+  const goals = (modLevelOf(dir)?.objectives ?? []).filter((o) => objectiveTargets(dv, o).some((t) => t.offset === it.offset));
+  const last = goals.find((o) => o.goal !== 'protect' && objectiveTargets(dv, o).length === 1);
+
+  if (last)
+  {
+    alert(`This is the last target of the objective "${last.text}", so the mission could never be won. Remove that objective first.`);
+
+    return;
+  }
+
+  const left = new Map(goals.filter((o) => o.goal === 'destroy').map((o) => [o.counter, objectiveTargets(dv, o).length - 1]));
+
   try {
-    // Zones and triggers are referred to by index: the rest are renumbered.
-    await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveItem(b, 0, it.index) : datRemoveIndexed(b, it.type, it.index)));
+    await historyGroup(`Delete ${it.name || 'item'}`, async () => {
+      // Zones and triggers are referred to by index: the rest are renumbered.
+      await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveItem(b, 0, it.index) : datRemoveIndexed(b, it.type, it.index)));
+
+      if (!left.size)
+        return;
+
+      await editModLevels((levels) => {
+        for (const o of levels.find((x) => 'data/level/' + x.folder === dir).objectives)
+          if (o.goal === 'destroy' && left.has(o.counter))
+            o.count = Math.min(o.count ?? Infinity, left.get(o.counter));
+      }, 'Recount objective');
+    });
   } catch (e) {
     alert(`${e.message}, so it cannot be deleted. Move it away instead.`);
 

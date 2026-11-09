@@ -2262,7 +2262,10 @@ canvas.addEventListener('contextmenu', (e) => {
 function setRoot(obj) {
   endCutscene();
   select(null);
-  placing = null;
+
+  if (!keepPlacing)
+    placing = null;
+
   $('legend').hidden = true;
   $('tip').hidden = true;
   $('info').hidden = true;

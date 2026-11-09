@@ -118,7 +118,7 @@ A `levels.json` at the mod root lists them:
 
   Any objective can also carry `"voice"` (a stock voice id, played with its subtitle when it completes, or fails for `protect` and `timelimit`), `"recording"` (a file in `assets/level/<folder>/` played instead), `"camera"` (a camera position the game cuts to then), and `"pauseVoice"` / `"pauseRecording"` (what the pause screen reads aloud for the line; silent without one).
 
-The RS64 Explorer makes all of this: open a stock level and click *New level from this one…* (a copy to change) or *New blank level…* (only a player start on flat ground, blank 3-second intro and outro, and that level's sky, textures and music; give it objectives), edit it like any level, set *Level settings…* (title, description, briefing voice or recording, craft, objectives, medals, opening crawl), then *Export mod*. Camera-shot links (`camera_shots.txt`) for a new level use its folder name in place of `lv_<n>`.
+The RS64 Explorer makes all of this: open a stock level and click *New level from this one* (a copy to change) or *New blank level* (only a player start on flat ground, blank 3-second intro and outro, and that level's sky, textures and music; give it objectives), edit it like any level, set *Level settings…* (title, description, briefing voice or recording, craft, medals, opening crawl) and *Objectives…* in the edit panel, then *Export mod*. Camera-shot links (`camera_shots.txt`) for a new level use its folder name in place of `lv_<n>`.
 
 ### Opening crawls
 

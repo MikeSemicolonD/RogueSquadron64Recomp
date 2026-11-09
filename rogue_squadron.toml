@@ -1069,6 +1069,18 @@ func = "cinematicLoopBody"
 before_vram = 0x800A6024
 text = '{ rs64_th_cinematicLoopBody_800A6024(rdram, ctx); }'
 
+# The ending fade also lowers speech; a mod's fade in must not.
+[[patches.hook]]
+func = "cinematicLoopBody"
+before_vram = 0x800A6084
+text = '{ rs64_th_cinematicLoopBody_800A6084(rdram, ctx); }'
+
+# Mod cutscene event 0x17 (fade in), which the event switch below this skips.
+[[patches.hook]]
+func = "spawnCutsceneEffectsAndCues"
+before_vram = 0x800A8AB8
+text = '{ rs64_th_spawnCutsceneEffectsAndCues_800A8AB8(rdram, ctx); }'
+
 
 # Load-bearing inline-edit migration: hooks reproducing hand-edits that had no
 # hook, so regens rebuild the working build.

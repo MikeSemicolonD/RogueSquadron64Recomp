@@ -170,7 +170,9 @@ for (const shot of shots)
         if (step.log)
           console.log(`  ${step.tool}:`, JSON.stringify(r).slice(0, 400));
       }
-      else if (step.click) {
+      else if (step.eval) {
+        await page.evaluate(step.eval);
+      } else if (step.click) {
         await page.click(step.click);
       } else if (step.rightClick)
       {

@@ -12,6 +12,19 @@ let lastEditMode = 'terrain';
 let editTool = 'translate';
 let sel = null;
 let placing = null;
+let placeBusy = false;
+let keepPlacing = false;
+let objDir = null;
+let objRows = [];
+let objItems = [];
+let objPick = null;
+let levelPanelDir = null;
+let levelPanelKey = '';
+let levelSaving = Promise.resolve();
+let rulePathPick = null;
+let lastSpawn = { kind: 0x0C, count: 4 };
+let objSaving = Promise.resolve();
+const objBoxes = [];
 let rmbHeld = false;
 let addTemplates = new Map();
 const gizmo = new TransformControls(camera, canvas);
@@ -288,6 +301,12 @@ function setEditMode(m)
 
   editMode = m;
   placing = null;
+  objSetPick(null);
+  stopRulePathPick();
+
+  if (m !== 'objects' && m !== 'events')
+    closeObjectives();
+
   $('editPanel').classList.toggle('open', !!m);
   $('editTab').classList.toggle('on', !!m);
   $('editTab').setAttribute('aria-pressed', !!m);
@@ -339,7 +358,8 @@ function attachGizmo()
   for (const b of $('editBody').querySelectorAll('[data-tool]'))
     b.disabled = !!sel && b.dataset.tool !== 'view' && !tools.includes(b.dataset.tool);
 
-  if (tools.includes(editTool))
+  // No handles while placing, or a click near the last placed thing would grab them.
+  if (tools.includes(editTool) && !placing && !rulePathPick)
   {
     gizmo.setMode(editTool);
 
@@ -724,15 +744,14 @@ const TEMPLATE_NOTES = {
   17: 'X-wing only'
 };
 
-// blank: only a player start on flat ground, with this level's look (sky, textures, music); give it objectives in Level settings.
+// blank: only a player start on flat ground, with this level's look (sky, textures, music); give it objectives in the Objectives window.
 async function newModLevel(fromDir, blank = false, named = null)
 {
   const tmpl = parseInt(fromDir.split('/lv_')[1], 36);
-  const from = lvName(fromDir.split('/').pop());
-  const ask = blank
-    ? `New blank level with the look of ${from}: only a player start on flat ground. Give it objectives in Level settings.\n\nTitle:`
-    : `New level from ${from}${TEMPLATE_NOTES[tmpl] ? ` (it keeps: ${TEMPLATE_NOTES[tmpl]})` : ''}.\nIt plays this level's mission script, so keep the objects it uses.\n\nTitle:`;
-  const title = (named ?? prompt(ask, 'New level'))?.trim();
+  let title = named?.trim() ?? 'New level';
+
+  for (let n = 2; !named && modLevels.some((l) => l.title === title); n++)
+    title = `New level ${n}`;
 
   if (!title)
     return;
@@ -775,6 +794,10 @@ async function newModLevel(fromDir, blank = false, named = null)
 
   renderList();
   await showLevel('data/level/' + made.folder);
+
+  // WebMCP names its levels and manages the view itself.
+  if (!named)
+    setEditMode('objects');
 
   return made;
 }
@@ -935,13 +958,10 @@ async function modLevelDialog(dir)
   const l = modLevelOf(dir);
 
   if (!l)
-    return;
+    return void ($('levelPanel').hidden = true);
 
-  const d = elem('dialog');
-
-  d.className = 'panel levelDialog';
-
-  const title = elem('input', { value: l.title, maxLength: 40, autofocus: true });
+  const d = elem('div', { className: 'levelDialog' });
+  const title = elem('input', { value: l.title, maxLength: 40 });
   const desc = elem('textarea', { value: l.description ?? '', rows: 4 });
   const fontNote = elem('small', { className: 'shotNote' });
 
@@ -977,6 +997,7 @@ async function modLevelDialog(dir)
       desc.value = (voiceWords(+voice.value) ?? '').trim();
 
     checkFont();
+    d.dispatchEvent(new Event('change'));
   };
 
   // Its own briefing recording, played instead of the voice line.
@@ -1031,179 +1052,13 @@ async function modLevelDialog(dir)
 
   const crawlRow = fld(elem('b', { textContent: 'Opening crawl ' }), crawlMode);
 
-  // Objectives: the level's own success and failure (the template's mission script then does not run). Targets are wired into the DAT.
-  const datPath = dir + '/dat';
-  const datView = await rom.read(datPath);
-  const datItems = parseDAT(datView).items;
-  const itemName = (it) => it.name || `${it.label ?? 'item'} ${it.index}`;
-  const units = datItems.map((it, i) => [it, i]).filter(([it]) => isUnit(it));
-  const zones = datItems.map((it, i) => [it, i]).filter(([it]) => it.type === 7 && it.onEnter);
-  const cams = datItems.filter((it) => it.type === 0 && it.sub === 0x26 && it.name).map((it) => it.name);
-
-  const GOALS = [
-    ['destroy', 'Destroy units'],
-    ['reach', 'Reach an area'],
-    ['protect', 'Protect a unit'],
-    ['survive', 'Survive for'],
-    ['timelimit', 'Finish within']
-  ];
-
-  const picked = (select) => (select.value === '' ? [] : [+select.value]);
-  const objRows = [];
-  const objBox = elem('div', { className: 'objectives' });
-  const objNote = elem('small', { className: 'shotNote' });
-
-  const addObjective = (o = { goal: 'destroy', text: '' }) => {
-    const row = elem('div', { className: 'objRow' });
-    const text = elem('input', { value: o.text ?? '', placeholder: 'Shown in the pause menu', maxLength: 40 });
-    const goal = selectOf(GOALS, o.goal);
-    const unitOpts = units.map(([it, i]) => [i, itemName(it)]);
-    const pickUnits = selectOf(unitOpts, null, { multiple: true, size: 5, title: 'Ctrl-click to pick several' });
-    const pickUnit = selectOf(unitOpts);
-    const pickZone = selectOf(zones.map(([it, i]) => [i, itemName(it)]));
-
-    // A Reach an area goal can make its own area: a goal area where the view looks, set off by the player. Trigger areas are the DAT's
-    // last section, so the new one is the last item and the other objectives' picks keep their indices.
-    const newArea = iconButton('add', 'New goal area: added where you are looking, set off by the player', async (e) => {
-      e.preventDefault();
-      await fillAddKinds();
-
-      const src = addTemplates.get('tevent');
-      const r = canvas.getBoundingClientRect();
-      const at = cursorGround({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
-
-      if (!src || !at)
-        return;
-
-      await addItem(src, at.toArray());
-
-      const items = parseDAT(await rom.read(datPath)).items;
-      const k = items.length - 1;
-
-      pickZone.append(elem('option', { value: k, textContent: itemName(items[k]) }));
-      pickZone.value = String(k);
-    });
-
-    const minutes = elem('input', { type: 'number', min: 0.25, step: 0.25, value: o.seconds ? o.seconds / 60 : 5, title: 'Minutes' });
-    const targets = o.counter || o.flag ? objectiveTargets(datView, o).map((it) => String(datItems.findIndex((x) => x.offset === it.offset))) : [];
-
-    for (const opt of pickUnits.options)
-      opt.selected = targets.includes(opt.value);
-
-    if (targets[0])
-      pickUnit.value = pickZone.value = targets[0];
-
-    const minutesRow = fld('Minutes ', minutes);
-    const remove = elem('button', { title: 'Remove objective' });
-
-    setEditIcon(remove, 'delete');
-
-    const sync = () => {
-      pickUnits.hidden = goal.value !== 'destroy';
-      pickUnit.hidden = goal.value !== 'protect';
-      pickZone.hidden = newArea.hidden = goal.value !== 'reach';
-      minutesRow.hidden = goal.value !== 'survive' && goal.value !== 'timelimit';
-    };
-
-    // Callout when it completes (protect / time limit: when it fails), as the stock scripts make one: a voice line (or the mod's own
-    // recording, kept under a name of its own so removing an objective leaves the others' files alone) and a cut to a level camera.
-    const voice = elem('select', { title: 'Played (with its subtitle) when the objective completes, or fails for protect and time limit' });
-
-    fillVoiceSelect(voice).then(() => (voice.value = o.voice != null ? String(o.voice) : ''));
-
-    const camera = selectOf([
-      ['', 'None'],
-      ...cams.map((c) => [c, c])
-    ], cams.includes(o.camera) ? o.camera : '', { title: 'The game cuts to this camera position when the objective completes, or fails for protect and time limit' });
-
-    const recName = o.recording ?? `obj_${Math.random().toString(36).slice(2, 8)}`;
-    let hasRec = false;
-
-    const rec = recordingControls(`mod/assets/level/${l.folder}/${recName}`, 'objective', (has) => {
-      hasRec = has;
-      voice.disabled = has;
-    });
-
-    // The pause screen reads each line aloud with its own voice (none: it stays silent rather than reading the template's line).
-    const pauseVoice = elem('select', { title: 'Read aloud when the pause screen comes to this objective' });
-
-    fillVoiceSelect(pauseVoice).then(() => (pauseVoice.value = o.pauseVoice != null ? String(o.pauseVoice) : ''));
-
-    const pauseName = o.pauseRecording ?? `pause_${Math.random().toString(36).slice(2, 8)}`;
-    let hasPauseRec = false;
-
-    const pauseRec = recordingControls(`mod/assets/level/${l.folder}/${pauseName}`, 'pause screen line', (has) => {
-      hasPauseRec = has;
-      pauseVoice.disabled = has;
-    });
-
-    const callout = elem('div', { className: 'objCallout' });
-
-    callout.append(fld('When done ', voice), rec.row, rec.note, fld('Camera ', camera), fld('Pause screen ', pauseVoice), pauseRec.row, pauseRec.note);
-    goal.onchange = sync;
-    sync();
-
-    remove.onclick = (e) => {
-      e.preventDefault();
-      objRows.splice(objRows.indexOf(entry), 1);
-      row.remove();
-      addBtn.hidden = false;
-    };
-
-    row.append(text, goal, remove, pickUnits, pickUnit, pickZone, newArea, minutesRow, callout);
-
-    const entry = {
-      value: () => ({
-        text: text.value.trim(),
-        goal: goal.value,
-        seconds: +minutes.value * 60,
-        // An empty picker is no target (not item 0, the player start), so the save refuses it instead of wiring the wrong object.
-        targets: goal.value === 'destroy' ? [...pickUnits.selectedOptions].map((x) => +x.value) : (goal.value === 'protect' ? picked(pickUnit) : (goal.value === 'reach' ? picked(pickZone) : [])),
-        voice: !hasRec && voice.value ? +voice.value : undefined,
-        camera: camera.value || undefined,
-        recording: hasRec ? recName : undefined,
-        pauseVoice: !hasPauseRec && pauseVoice.value ? +pauseVoice.value : undefined,
-        pauseRecording: hasPauseRec ? pauseName : undefined,
-      }),
-    };
-
-    objRows.push(entry);
-    objBox.append(row);
-    addBtn.hidden = objRows.length >= 4;
-  };
-
-  const addBtn = elem('button', {
-    className: 'addObjective',
-    textContent: 'Add objective',
-    title: 'Up to 4; the mission is won when every destroy, reach and survive objective is done'
-  });
-
-  addBtn.onclick = (e) => {
-    e.preventDefault();
-    addObjective();
-  };
-
-  for (const o of l.objectives ?? [])
-    addObjective(o);
-
-  objNote.textContent = l.objectives?.length ? '' : "Without objectives the level keeps its template's mission script.";
-
-  const save = elem('button', { title: 'Save' });
   const del = elem('button', { title: 'Removes the level from the mod (its edited files stay in the project history)' });
-  const shut = elem('button', { className: 'dlgClose', title: 'Close without saving' });
 
-  setEditIcon(save, 'save');
   setEditIcon(del, 'delete');
-  setEditIcon(shut, 'close');
-  save.append('Save');
   del.append('Delete level');
-  save.removeAttribute('aria-label');
   del.removeAttribute('aria-label');
 
-  const close = () => d.remove();
-
-  shut.onclick = close;
-  d.addEventListener('close', close);
+  const close = () => ($('levelPanel').hidden = true);
 
   del.onclick = async () => {
     if (!confirm(`Delete ${l.title}?`))
@@ -1215,93 +1070,510 @@ async function modLevelDialog(dir)
     await showLevel(stockDir('data/level/lv_' + l.template.toString(36)));
   };
 
-  save.onclick = async () => {
-    const m = Object.fromEntries(cells.map(([t, ins]) => [t, Object.fromEntries(ins.filter(([, i]) => i.value !== '').map(([k, i]) => [k, +i.value]))]));
+  const saveSettings = async () => {
+    const m =Object.fromEntries(cells.map(([t, ins]) => [t, Object.fromEntries(ins.filter(([, i]) => i.value !== '').map(([k, i]) => [k, +i.value]))]));
     const hasMedals = tiers.every((t) => Object.keys(m[t]).length);
-    const objs = objRows.map((r) => r.value());
-    const bad = objs.find((o) => !o.text || (['destroy', 'protect', 'reach'].includes(o.goal) && !o.targets.length));
+    const renamed = (title.value.trim() || l.title) !== modLevelOf(dir)?.title;
 
-    if (objs.length && (bad || !objs.some((o) => ['destroy', 'reach', 'survive'].includes(o.goal))))
-    {
-      objNote.textContent = bad ? `"${bad.text || 'An objective'}" needs text and a target.` : 'At least one objective must be destroy, reach or survive, or the mission cannot be won.';
+    await editModLevels((levels) => {
+      const x = levels.find((y) => y.folder === l.folder);
 
-      return;
-    }
+      x.title = title.value.trim() || x.title;
+      x.description = desc.value.trim();
 
-    close();
+      if (voice.value)
+        x.voice = +voice.value;
+      else
+        delete x.voice;
 
-    let objectives = [];
+      const craft = crafts.filter(([, c]) => c.checked).map(([k]) => k);
 
-    await historyGroup(`Level settings: ${title.value.trim()}`, async () => {
-      if (objs.length || l.objectives?.length) {
-        await editAsset(datPath, (b) => {
-          const r = objectivesApply(b, l.objectives, objs);
+      if (craft.length)
+        x.craft = craft;
+      else
+        delete x.craft;
 
-          objectives = r.objectives;
-          b.set(r.bytes);
-        }, `Objectives: ${l.title}`);
-      }
+      if (hasMedals)
+        x.medals = m;
+      else
+        delete x.medals;
 
-      await editModLevels((levels) => {
-        const x = levels.find((y) => y.folder === l.folder);
+      if (crawlMode.value === 'none' && tmplCrawl)
+        x.crawl = false;
+      else if (crawlMode.value !== 'own')
+        delete x.crawl;
 
-        x.title = title.value.trim() || x.title;
-        x.description = desc.value.trim();
+      if (music.value)
+        x.music = +music.value;
+      else
+        delete x.music;
+    }, `Level settings: ${title.value.trim()}`);
 
-        if (voice.value)
-          x.voice = +voice.value;
-        else
-          delete x.voice;
+    levelPanelKey = levelSettingsKey(modLevelOf(dir));
 
-        const craft = crafts.filter(([, c]) => c.checked).map(([k]) => k);
-
-        if (craft.length)
-          x.craft = craft;
-        else
-          delete x.craft;
-
-        if (hasMedals)
-          x.medals = m;
-        else
-          delete x.medals;
-
-        if (crawlMode.value === 'none' && tmplCrawl)
-          x.crawl = false;
-        else if (crawlMode.value !== 'own')
-          delete x.crawl;
-
-        if (music.value)
-          x.music = +music.value;
-        else
-          delete x.music;
-
-        if (objectives.length)
-          x.objectives = objectives;
-        else
-          delete x.objectives;
-      }, `Level settings: ${title.value.trim()}`);
-    });
-
-    renderList();
+    if (renamed)
+      renderList();
   };
+
+  // Every field saves when it changes, one save at a time.
+  d.addEventListener('change', () => (levelSaving = levelSaving.then(saveSettings)));
 
   const tmplNote = TEMPLATE_NOTES[l.template];
   const hr = () => elem('hr');
 
-  d.append(shut, elem('b', { textContent: l.title }),
-    ...(tmplNote ? [elem('small', { className: 'shotNote', textContent: 'From its template it keeps: ' + tmplNote })] : []),
+  d.append(...(tmplNote ? [elem('small', { className: 'shotNote', textContent: 'From its template it keeps: ' + tmplNote })] : []),
     stacked(fld('Title', title)), fontNote, stacked(fld('Description', desc, 'The SELECT LEVEL briefing text')), fld('Briefing voice ', voice, 'Played when the level is highlighted in SELECT LEVEL'), useSub, recRow, recNote, hr(),
     elem('b', { textContent: 'Approved craft' }), craftBox, hr(),
-    elem('b', { textContent: 'Objectives' }), objBox, addBtn, objNote, hr(),
     elem('b', { textContent: 'Medals' }), medals, hr(),
     crawlRow,
     hr(), fld(elem('b', { textContent: 'Starting song ' }), music),
     hr(), elem('div', { className: 'actions' }));
 
-  d.lastChild.append(save, del);
-  document.body.append(d);
-  d.showModal();
+  d.lastChild.append(del);
+  closeObjectives();
+  levelPanelDir = dir;
+  levelPanelKey = levelSettingsKey(l);
+  $('goalPanel').hidden = true;
+  $('levelBody').replaceChildren(d);
+  $('levelPanel').hidden = false;
 }
+
+const levelSettingsKey = (l) => JSON.stringify([l?.title, l?.description, l?.voice, l?.craft, l?.medals, l?.crawl, l?.music]);
+
+// An undo or another tool changed the settings: rebuild, so a field can't save a stale value back.
+function syncLevelSettings()
+{
+  if (!$('levelPanel').hidden && levelPanelDir === selected && levelSettingsKey(modLevelOf(selected)) !== levelPanelKey)
+    modLevelDialog(selected);
+}
+
+setEditIcon($('levelClose'), 'close');
+$('levelClose').onclick = () => ($('levelPanel').hidden = true);
+
+// ---- Objectives of a mod level: a window beside the level that saves as things change; units are picked by clicking them in the view ----
+
+const OBJ_GOALS = [
+  ['destroy', 'Destroy units', 'Destroy the enemies'],
+  ['reach', 'Reach an area', 'Reach the area'],
+  ['protect', 'Protect a unit', 'Protect the unit'],
+  ['survive', 'Survive for', 'Survive'],
+  ['timelimit', 'Finish within', 'Finish in time']
+];
+
+const objDefaultText = (goal) => OBJ_GOALS.find(([k]) => k === goal)[2];
+const objPicksUnits = (o) => o.goal === 'destroy' || o.goal === 'protect';
+const objTargeted = (o) => objPicksUnits(o) || o.goal === 'reach';
+const objWins = (o) => ['destroy', 'reach', 'survive'].includes(o.goal);
+const objDone = (o) => o.text && (!objTargeted(o) || o.targets.length);
+const objItemName = (it) => it.name || `${it.label ?? 'item'} ${it.index}`;
+
+const objKeys = (rows) => JSON.stringify(rows.map((o) => [
+  o.text,
+  o.goal,
+  objTargeted(o) ? [...o.targets].sort((a, b) => a - b) : o.seconds,
+  o.voice,
+  o.camera,
+  o.recording,
+  o.pauseVoice,
+  o.pauseRecording
+]));
+
+// The level's saved objectives with their targets as DAT item indices. The kill count is left out so it is recounted from the targets.
+async function readObjectives(dir)
+{
+  const dv = await rom.read(dir + '/dat');
+
+  objItems = parseDAT(dv).items;
+
+  return (modLevelOf(dir)?.objectives ?? []).map((o) => ({
+    ...o,
+    count: undefined,
+    targets: objectiveTargets(dv, o).map((it) => objItems.findIndex((x) => x.offset === it.offset))
+  }));
+}
+
+function syncObjNote()
+{
+  const done = objRows.filter(objDone);
+  const bad = objRows.find((o) => !objDone(o) && o !== objPick?.row);
+  let note = '';
+
+  if (objPick?.row.goal === 'reach')
+    note = 'Click a trigger area in the view, or make one with the add button. Esc cancels.';
+  else if (objPick)
+    note = 'Click units in the view to add or remove them. Esc when done.';
+  else if (bad)
+    note = `"${bad.text || 'An objective'}" isn't saved until it has ${bad.text ? 'a target' : 'text'}.`;
+  else if (done.length && !done.some(objWins))
+    note = 'Add a destroy, reach or survive objective too, or the mission cannot be won.';
+  else if (!done.length)
+    note = "Without objectives the level keeps its template's mission script.";
+
+  $('objNote').textContent = note;
+}
+
+async function writeObjectives(dir)
+{
+  const l = modLevelOf(dir);
+  const ready = objRows.filter(objDone);
+
+  if (!l || dir !== objDir || (ready.length && !ready.some(objWins)))
+    return;
+
+  if (objKeys(await readObjectives(dir)) === objKeys(ready))
+    return;
+
+  let objectives = [];
+
+  await historyGroup(`Objectives: ${l.title}`, async () => {
+    await editAsset(dir + '/dat', (b) => {
+      const r = objectivesApply(b, l.objectives, ready);
+
+      objectives = r.objectives;
+      b.set(r.bytes);
+    });
+
+    await editModLevels((levels) => {
+      const x = levels.find((y) => y.folder === l.folder);
+
+      if (objectives.length)
+        x.objectives = objectives;
+      else
+        delete x.objectives;
+    }, `Objectives: ${l.title}`);
+  });
+
+  rulesChanged();
+}
+
+// Saves run one at a time, each from the rows as they are by then.
+function saveObjectives()
+{
+  const dir = objDir;
+
+  syncObjNote();
+  objSaving = objSaving.then(() => writeObjectives(dir)).catch((e) => ($('objNote').textContent = e.message));
+}
+
+// Gold boxes around the units the row being picked already has.
+function showObjPicks()
+{
+  const picks = objPick ? editObjects().filter(([, x]) => objPick.row.targets.includes(objItems.findIndex((y) => y.offset === x.offset))) : [];
+
+  picks.forEach(([o], k) => {
+    if (!objBoxes[k])
+    {
+      objBoxes[k] = new THREE.BoxHelper(new THREE.Object3D(), 0xe8b84a);
+      scene.add(objBoxes[k]);
+    }
+
+    boxAround(objBoxes[k], o);
+  });
+
+  for (const b of objBoxes.slice(picks.length))
+    b.visible = false;
+}
+
+function objSetPick(p)
+{
+  const old = objPick;
+
+  objPick = p;
+  old?.draw();
+
+  if (p) {
+    stopPlacing();
+    select(null);
+    p.draw();
+  }
+
+  showObjPicks();
+  syncObjNote();
+}
+
+function objToggleUnit(hit)
+{
+  const it = hit && editItemOf(hit);
+
+  if (!it || !isUnit(it))
+    return;
+
+  const { row, draw } = objPick;
+  const i = objItems.findIndex((x) => x.offset === it.offset);
+
+  if (row.goal === 'protect')
+    row.targets = row.targets[0] === i ? [] : [i];
+  else
+    row.targets = row.targets.includes(i) ? row.targets.filter((x) => x !== i) : [...row.targets, i];
+
+  draw();
+  showObjPicks();
+  saveObjectives();
+}
+
+function objPickArea(e)
+{
+  let hit = pick(e, visibleMarkers())?.object;
+
+  while (hit && !hit.userData.item)
+    hit = hit.parent;
+
+  const it = hit?.userData.item;
+
+  if (it?.type !== 7 || !it.onEnter || it.pathEvent)
+    return;
+
+  const p = objPick;
+
+  p.row.targets = [objItems.findIndex((x) => x.offset === it.offset)];
+  objSetPick(null);
+  p.refresh();
+  saveObjectives();
+}
+
+function objectiveRow(o, pickNow = false)
+{
+  const l = modLevelOf(objDir);
+  const row = elem('div', { className: 'objRow' });
+  const text = elem('input', { value: o.text, placeholder: 'Shown in the pause menu', maxLength: 40 });
+  const goal = selectOf(OBJ_GOALS, o.goal);
+  const chips = elem('div', { className: 'objChips' });
+  const pickZone = elem('select', { title: 'The area the player has to reach' });
+  const camera = elem('select', { title: 'The game cuts to this camera position when the objective completes, or fails for protect and time limit' });
+  const minutes = elem('input', { type: 'number', min: 0.25, step: 0.25, value: o.seconds ? o.seconds / 60 : 5, title: 'Minutes' });
+  const minutesRow = fld('Minutes ', minutes);
+
+  const fillZones = () => {
+    const zones = objItems.map((it, i) => [i, objItemName(it), it]).filter(([, , it]) => it.type === 7 && it.onEnter);
+
+    pickZone.replaceChildren(...selectOf([['', 'Pick an area…'], ...zones]).options);
+    pickZone.value = o.goal === 'reach' ? String(o.targets[0] ?? '') : '';
+  };
+
+  const fillCameras = () => {
+    const cams = objItems.filter((it) => it.type === 0 && it.sub === 0x26 && it.name).map((it) => [it.name, it.name]);
+
+    camera.replaceChildren(...selectOf([['', 'None'], ...cams]).options);
+    camera.value = cams.some(([c]) => c === o.camera) ? o.camera : '';
+  };
+
+  const pickBtn = iconButton('place', 'Pick in the view: click units to add or remove them', () => (objPick?.row === o ? objSetPick(null) : startPick()));
+  const areaBtn = iconButton('place', 'Pick in the view: click the trigger area', () => (objPick?.row === o ? objSetPick(null) : startPick()));
+
+  const draw = () => {
+    const picked = objPicksUnits(o) ? o.targets.filter((i) => objItems[i]) : [];
+
+    chips.replaceChildren(...picked.map((i) => {
+      const chip = elem('button', { className: 'objChip', textContent: objItemName(objItems[i]), title: 'Remove from this objective' });
+
+      chip.onclick = () => {
+        o.targets = o.targets.filter((x) => x !== i);
+        draw();
+        showObjPicks();
+        saveObjectives();
+      };
+
+      return chip;
+    }));
+
+    pickBtn.classList.toggle('on', objPick?.row === o);
+    areaBtn.classList.toggle('on', objPick?.row === o);
+  };
+
+  const startPick = () => {
+    if (objPicksUnits(o) && editMode !== 'objects')
+      setEditMode('objects');
+
+    objSetPick({ row: o, draw, refresh: () => row.refresh() });
+  };
+
+  // A Reach an area goal can make its own area where the view looks, set off by the player. It is the DAT's last item, so other picks keep their indices.
+  const newArea = iconButton('add', 'New goal area: added where you are looking, set off by the player', async () => {
+    objSetPick(null);
+    await fillAddKinds();
+
+    const src = addTemplates.get('tevent');
+    const r = canvas.getBoundingClientRect();
+    const at = cursorGround({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+
+    if (!src || !at)
+      return;
+
+    await addItem(src, at.toArray());
+    objItems = parseDAT(await rom.read(objDir + '/dat')).items;
+    o.targets = [objItems.length - 1];
+    fillZones();
+    saveObjectives();
+  });
+
+  const unitBox = elem('div', { className: 'objTargets' }, pickBtn, chips);
+  const zoneBox = elem('div', { className: 'objTargets' }, areaBtn, pickZone, newArea);
+
+  const syncGoal = () => {
+    unitBox.hidden = !objPicksUnits(o);
+    zoneBox.hidden = o.goal !== 'reach';
+    minutesRow.hidden = o.goal !== 'survive' && o.goal !== 'timelimit';
+  };
+
+  // A voice line, or the mod's own recording under a name of its own so removing an objective leaves the others' files alone.
+  const speech = (voiceKey, recKey, prefix, what, tip, label) => {
+    const voice = elem('select', { title: tip });
+    const name = o[recKey] ?? `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+
+    fillVoiceSelect(voice).then(() => (voice.value = o[voiceKey] != null ? String(o[voiceKey]) : ''));
+
+    voice.onchange = () => {
+      o[voiceKey] = voice.value ? +voice.value : undefined;
+      saveObjectives();
+    };
+
+    const rec = recordingControls(`mod/assets/level/${l.folder}/${name}`, what, (has) => {
+      voice.disabled = has;
+
+      if (has === !!o[recKey])
+        return;
+
+      o[recKey] = has ? name : undefined;
+      o[voiceKey] = has || !voice.value ? undefined : +voice.value;
+      saveObjectives();
+    });
+
+    return [fld(label, voice), rec.row, rec.note];
+  };
+
+  const remove = iconButton('delete', 'Remove objective', () => {
+    if (objPick?.row === o)
+      objSetPick(null);
+
+    objRows.splice(objRows.indexOf(o), 1);
+    row.remove();
+    $('objAdd').hidden = false;
+    saveObjectives();
+  });
+
+  text.onchange = () => {
+    o.text = text.value.trim();
+    saveObjectives();
+  };
+
+  // The line follows the goal until the modder writes their own.
+  goal.onchange = () => {
+    if (text.value === objDefaultText(o.goal))
+      text.value = o.text = objDefaultText(goal.value);
+
+    o.goal = goal.value;
+    o.targets = [];
+    o.seconds = +minutes.value * 60;
+    syncGoal();
+    fillZones();
+    draw();
+
+    if (objTargeted(o))
+      startPick();
+    else
+      objSetPick(null);
+
+    saveObjectives();
+  };
+
+  pickZone.onchange = () => {
+    o.targets = pickZone.value === '' ? [] : [+pickZone.value];
+    saveObjectives();
+  };
+
+  minutes.onchange = () => {
+    o.seconds = +minutes.value * 60;
+    saveObjectives();
+  };
+
+  camera.onchange = () => {
+    o.camera = camera.value || undefined;
+    saveObjectives();
+  };
+
+  row.refresh = () => {
+    fillZones();
+    fillCameras();
+    draw();
+  };
+
+  const callout = elem('details', { className: 'objCallout' }, elem('summary', { textContent: 'Voice and camera' }),
+    ...speech('voice', 'recording', 'obj', 'objective', 'Played (with its subtitle) when the objective completes, or fails for protect and time limit', 'When done '),
+    fld('Camera ', camera),
+    ...speech('pauseVoice', 'pauseRecording', 'pause', 'pause screen line', 'Read aloud when the pause screen comes to this objective', 'Pause screen '));
+
+  row.append(text, goal, remove, unitBox, zoneBox, minutesRow, callout);
+  row.refresh();
+  syncGoal();
+
+  if (pickNow)
+    startPick();
+
+  return row;
+}
+
+// Follows the level after a reload or undo. Unfinished rows have no saved form, so they carry over without targets, whose indices may have moved.
+async function syncObjectives(force = false)
+{
+  const dir = selected;
+
+  if (!force && (objDir !== dir || $('objPanel').hidden))
+    return;
+
+  const saved = await readObjectives(dir);
+  const done = objRows.filter(objDone);
+
+  if (force || objKeys(saved) !== objKeys(done))
+  {
+    const unfinished = objRows.filter((o) => !objDone(o) || !done.some(objWins)).map((o) => ({ ...o, targets: [] }));
+
+    objSetPick(null);
+    objRows = [...saved, ...unfinished];
+    $('objList').replaceChildren(...objRows.map((o) => objectiveRow(o)));
+    $('objAdd').hidden = objRows.length >= 4;
+    syncObjNote();
+
+    return;
+  }
+
+  for (const row of $('objList').children)
+    row.refresh();
+
+  showObjPicks();
+}
+
+async function openObjectives(dir = selected)
+{
+  if (objDir !== dir)
+    objRows = [];
+
+  objDir = dir;
+  $('levelPanel').hidden = true;
+  $('goalPanel').hidden = true;
+  $('objPanel').hidden = false;
+  await syncObjectives(true);
+}
+
+function closeObjectives()
+{
+  $('objPanel').hidden = true;
+  objSetPick(null);
+}
+
+$('objAdd').onclick = () => {
+  const o = { goal: 'destroy', text: objDefaultText('destroy'), seconds: 300, targets: [] };
+
+  objRows.push(o);
+  $('objList').append(objectiveRow(o, true));
+  $('objAdd').hidden = objRows.length >= 4;
+};
+
+setEditIcon($('btnObjectives'), 'goals');
+$('btnObjectives').append('Objectives…');
+$('btnObjectives').removeAttribute('aria-label');
+$('btnObjectives').onclick = () => ($('objPanel').hidden || objDir !== selected ? openObjectives() : closeObjectives());
+setEditIcon($('objClose'), 'close');
+$('objClose').onclick = closeObjectives;
 
 // The marker legend stops above the scene panel, whatever height its buttons give it.
 new ResizeObserver(() => document.documentElement.style.setProperty('--scene-h', $('scene').offsetHeight + 'px')).observe($('scene'));
@@ -1317,15 +1589,22 @@ function fillLevelButton()
   if (b.hidden)
     return;
 
-  if (modLevelOf(dir))
+  const keeps = TEMPLATE_NOTES[parseInt(dir.split('/lv_')[1], 36)];
+
+  if (modLevelOf(dir)) {
     b.textContent = 'Level settings…';
-  else {
+    b.title = '';
+  } else
+  {
     setEditIcon(b, 'duplicate');
-    b.append('New level from this one…');
+    b.append('New level from this one');
     b.removeAttribute('aria-label');
+    b.title = `A full copy that plays this level's mission script, so keep the objects it uses${keeps ? `. It keeps: ${keeps}` : ''}`;
   }
 
-  b.onclick = () => (modLevelOf(dir) ? modLevelDialog(dir) : newModLevel(dir));
+  const levelOpen = () => !$('levelPanel').hidden && levelPanelDir === dir;
+
+  b.onclick = () => (modLevelOf(dir) ? (levelOpen() ? ($('levelPanel').hidden = true) : modLevelDialog(dir)) : newModLevel(dir));
 
   const blank = $('btnBlankLevel');
 
@@ -1333,7 +1612,7 @@ function fillLevelButton()
 
   if (!blank.firstChild?.tagName) {
     setEditIcon(blank, 'blank');
-    blank.append('New blank level…');
+    blank.append('New blank level');
     blank.removeAttribute('aria-label');
   }
 
@@ -1923,8 +2202,69 @@ async function loadRuleExt(ask)
 const liveRuleViews = new Set();
 
 function rulesChanged() {
+  stopRulePathPick();
+
   for (const v of liveRuleViews)
     (v.box.isConnected ? v.render() : liveRuleViews.delete(v));
+}
+
+function stopRulePathPick()
+{
+  if (!rulePathPick)
+    return;
+
+  $('selInfo').textContent = rulePathPick.info;
+  rulePathPick.button.classList.remove('on');
+  rulePathPick = null;
+  attachGizmo();
+}
+
+// Picks a Spawn action's path by clicking its line in the view. The move handles go away meanwhile, or a click near them would grab them.
+function rulePathButton(set)
+{
+  const button = iconButton('place', 'Pick the path by clicking it in the view', () => {
+    if (rulePathPick?.button === button)
+      return stopRulePathPick();
+
+    objSetPick(null);
+    stopPlacing();
+    stopRulePathPick();
+    rulePathPick = { set, button, info: $('selInfo').textContent };
+    button.classList.add('on');
+    gizmo.detach();
+    $('selInfo').textContent = 'Click a flight path in the view. Esc cancels';
+  });
+
+  return button;
+}
+
+function rulePathClick(e)
+{
+  let o = pick(e, visibleMarkers())?.object;
+
+  while (o && !o.userData.item)
+    o = o.parent;
+
+  const it = o?.userData.item;
+
+  if (it?.type !== 3 || !it.name)
+    return;
+
+  const { set } = rulePathPick;
+
+  stopRulePathPick();
+  set(it.name);
+}
+
+// A new action of that kind; Spawn starts from the last one made, on a flight path of this level.
+function newRuleAction(type, items)
+{
+  if (type !== 'spawn')
+    return { do: type };
+
+  const paths = items.filter((x) => isFlightPath(x) && x.name);
+
+  return { do: 'spawn', ...lastSpawn, path: paths.some((x) => x.name === lastSpawn.path) ? lastSpawn.path : paths.at(-1)?.name };
 }
 
 // owner: { kind: 'area' | 'path' | 'unit', it } on a selected object, or { kind: 'level' } in the Level events window.
@@ -1945,6 +2285,18 @@ function rulesSection(owner) {
     const custom = owner.kind === 'level' ? ruleExt.filter((e) => e.kind === 'event') : [];
     const mine = doc.rules.map((r, i) => [r, i]).filter(([r, i]) => orphan(i) || (owner.kind === 'level' && r.when === 'custom') || (whens.some((w) => w.when === r.when) && (owner.kind === 'level' || r.object === owner.it.name)));
     const save = (label) => writeRules(dir, doc, label).then(rulesChanged);
+    const fromMods = custom.length ? [optGroup('From mods', custom.map((e) => [`custom:${e.name}`, `${e.label} (${e.mod})`]))] : [];
+
+    const setWhen = (r, value) => {
+      const c = value.startsWith('custom:');
+
+      r.when = c ? 'custom' : value;
+
+      if (c)
+        r.custom = value.slice(7);
+      else
+        delete r.custom;
+    };
 
     box.replaceChildren(elem('b', { className: 'rulesHead', textContent: 'When…' }));
 
@@ -1954,19 +2306,10 @@ function rulesSection(owner) {
       const head = elem('div', { className: 'when' });
       const on = RULE_WHENS.find((x) => x.when === r.when)?.on;
       const whenPairs = (orphan(i) ? RULE_WHENS.filter((x) => x.on === on) : whens).map((x) => [x.when, x.label]);
-      const fromMods = custom.length ? [optGroup('From mods', custom.map((e) => [`custom:${e.name}`, `${e.label} (${e.mod})`]))] : [];
       const w = selectOf([...whenPairs, ...fromMods], r.when === 'custom' ? `custom:${r.custom}` : r.when, null, () => `${r.custom} (needs a mod)`);
 
       w.onchange = () => {
-        const c = w.value.startsWith('custom:');
-
-        r.when = c ? 'custom' : w.value;
-
-        if (c)
-          r.custom = w.value.slice(7);
-        else
-          delete r.custom;
-
+        setWhen(r, w.value);
         save('Rule: when');
       };
 
@@ -1993,17 +2336,19 @@ function rulesSection(owner) {
       if (broken.has(`${i}:object`))
         rule.append(elem('small', { className: 'warn', textContent: `"${r.object}" is gone: pick another or remove the rule.` }));
 
+      const extActs = ruleExt.filter((e) => e.kind === 'action');
+
+      const actChoices = [
+        ...RULE_ACTIONS.filter((x) => own || !x.objectives).map((x) => [x.do, x.label]),
+        ...(extActs.length ? [optGroup('From mods', extActs.map((e) => [e.name, `${e.label} (${e.mod})`]))] : [])
+      ];
+
       for (const [k, a] of (r.actions ?? []).entries())
       {
         const row = elem('div', { className: 'act' });
-        const extActs = ruleExt.filter((e) => e.kind === 'action');
-        const actPairs = RULE_ACTIONS.filter((x) => own || !x.objectives).map((x) => [x.do, x.label]);
-        const kind = selectOf([
-          ...actPairs,
-          ...(extActs.length ? [optGroup('From mods', extActs.map((e) => [e.name, `${e.label} (${e.mod})`]))] : [])
-        ], a.do, null, '(needs a mod)');
+        const kind = selectOf(actChoices, a.do, null, '(needs a mod)');
 
-        kind.onchange = () => ((r.actions[k] = { do: kind.value }), save('Rule: action'));
+        kind.onchange = () => ((r.actions[k] = newRuleAction(kind.value, items)), save('Rule: action'));
 
         const rm = iconButton('delete', 'Remove action', () => (r.actions.splice(k, 1), save('Remove action')));
 
@@ -2011,12 +2356,26 @@ function rulesSection(owner) {
 
         for (const p of RULE_ACTIONS.find((x) => x.do === a.do)?.params ?? extActs.find((e) => e.name === a.do)?.params ?? [])
         {
-          const el = await rulePicker(p, a[p.key], (v) => ((a[p.key] = v), save('Rule: ' + p.key)), ctx);
+          const set = (v) => {
+            a[p.key] = v;
+
+            if (a.do === 'spawn')
+              lastSpawn[p.key] = v;
+
+            save('Rule: ' + p.key);
+          };
+
+          const el = await rulePicker(p, a[p.key], set, ctx);
 
           if (broken.has(`${i}:actions.${k}.${p.key}`))
             el.classList.add('bad');
 
+          // A created wave is already in the level, so changing these would do nothing.
+          el.disabled = a.do === 'spawn' && !!a.flag;
           row.append(el);
+
+          if (p.picker === 'path' && !el.disabled)
+            row.append(rulePathButton(set));
         }
 
         if (a.do === 'spawn')
@@ -2026,17 +2385,19 @@ function rulesSection(owner) {
         rule.append(row);
       }
 
-      const addAct = elem('button', { className: 'addAct', textContent: '+ Add action' });
+      const addAct = selectOf([['', '+ Add action'], ...actChoices], '', { className: 'addAct' });
 
-      addAct.onclick = () => ((r.actions ??= []).push({ do: 'voice' }), save('Add action'));
+      addAct.onchange = () => ((r.actions ??= []).push(newRuleAction(addAct.value, items)), save('Add action'));
       rule.append(addAct);
       box.append(rule);
     }
 
-    const add = elem('button', { className: 'addRule', textContent: '+ Add rule' });
+    const add = selectOf([['', '+ Add rule'], ...whens.map((x) => [x.when, x.label]), ...fromMods], '', { className: 'addRule' });
 
-    add.onclick = async () => {
-      const r = { when: whens[0].when, actions: [] };
+    add.onchange = async () => {
+      const r = { actions: [] };
+
+      setWhen(r, add.value);
 
       if (owner.kind !== 'level') {
         const name = await ensureRuleName(dir, owner.it);
@@ -2604,7 +2965,7 @@ function selectNamed(name)
 function spawnWaveButton(a, dir, done) {
   const b = elem('button', {
     textContent: a.flag ? 'Wave ready' : 'Create wave',
-    title: 'Adds the enemies to the level, waiting off-stage until this action brings them in'
+    title: a.path || a.flag ? 'Adds the enemies to the level, waiting off-stage until this action brings them in' : 'Pick a flight path first'
   });
 
   b.disabled = !!a.flag || !a.kind || !a.count || !a.path;
@@ -2643,7 +3004,10 @@ function spawnWaveButton(a, dir, done) {
       await done();
     });
 
-    await reloadLevel(dir);
+    if (sel)
+      await reselect(sel.it.type, sel.it.index);
+    else
+      await reloadLevel(dir);
   };
 
   return b;
@@ -2695,7 +3059,7 @@ function usedByRow(it)
     row.append(`Used by ${parts.join(', ')}`);
 
     if (goals.length)
-      row.append(iconButton('edit', 'Level settings…', () => modLevelDialog(dir)));
+      row.append(iconButton('edit', 'Objectives', () => openObjectives(dir)));
 
     row.hidden = false;
   });
@@ -2808,6 +3172,7 @@ function renderAddList()
       if (e.key === 'cam')
         return addCameraAtView(addTemplates.get('cam'));
 
+      objSetPick(null);
       placing = placing === e.key ? null : e.key;
       select(null);
       renderAddList();
@@ -2979,10 +3344,27 @@ canvas.addEventListener('pointerup', (e) => {
 }, true);
 $('addSearch').oninput = renderAddList;
 
-$('addCancel').onclick = () => {
+function stopPlacing()
+{
   placing = null;
   renderAddList();
-};
+  attachGizmo();
+}
+
+$('addCancel').onclick = stopPlacing;
+
+// Enemies keep placing until stopped; clicks wait for each add to land so two never overlap.
+async function placeEnemy(kind, at)
+{
+  placeBusy = true;
+
+  try {
+    await addEnemy(+kind.slice(6), at);
+  } finally {
+    placeBusy = false;
+    renderAddList();
+  }
+}
 
 function fillAddEnemies()
 {
@@ -3148,6 +3530,14 @@ function syncSelPanel()
 
   $('btnDup').disabled = !sel || !!sel.fixed || !!it.pathEvent;
   $('btnDel').disabled = !sel || !canDelete(it);
+
+  $('btnObjectives').hidden = !modLevelOf(selected);
+
+  if (objDir && objDir !== selected)
+    closeObjectives();
+
+  if (levelPanelDir !== selected)
+    $('levelPanel').hidden = true;
 
   if (rulesPanelDir !== selected)
     $('rulesPanel').hidden = true;
@@ -3382,8 +3772,25 @@ function editClick(e) {
   if (editMode !== 'objects' && editMode !== 'events')
     return false;
 
-  if (gizmo.axis)
+  if (gizmo.axis || placeBusy)
     return true;
+
+  if (rulePathPick)
+  {
+    rulePathClick(e);
+
+    return true;
+  }
+
+  if (objPick)
+  {
+    if (objPick.row.goal === 'reach')
+      objPickArea(e);
+    else
+      objToggleUnit(editHit(e));
+
+    return true;
+  }
 
   if (placing)
   {
@@ -3396,12 +3803,11 @@ function editClick(e) {
     const kind = placing;
     const at = root.worldToLocal(hit.point.clone()).toArray();
 
+    if (kind.startsWith('enemy:'))
+      return placeEnemy(kind, at), true;
+
     placing = null;
     renderAddList();
-
-    if (kind.startsWith('enemy:'))
-      return addEnemy(+kind.slice(6), at), true;
-
     addItem(sel && String(markerKind(sel.it)) === kind ? sel.it : addTemplates.get(kind), at);
 
     return true;
@@ -3443,9 +3849,16 @@ function editKey(e)
     addItem(sel.it, [sel.it.pos[0] + 4, sel.it.pos[1], sel.it.pos[2]]);
   }
   else if (e.code === 'Escape') {
-    placing = null;
-    renderAddList();
-    select(null);
+    if (rulePathPick)
+      return stopRulePathPick(), true;
+
+    if (objPick)
+      return objSetPick(null), true;
+
+    if (!placing)
+      select(null);
+
+    stopPlacing();
   } else
     return false;
 
@@ -3974,6 +4387,7 @@ function idbKv(mode, fn) {
 
 const GAME_EXE = 'RogueSquadron64Recomp.exe';
 const PREVIEW_MOD = 'rs64-explorer-preview';
+const PLAY_LINK_FILE = 'explorer-link.txt';
 
 async function gameFolder()
 {
@@ -4061,12 +4475,25 @@ $('btnPlay').onclick = async () => {
 
     const target = bootTarget();
     const cmd = `.\\${GAME_EXE}` + (target ? ` --boot-target=${target}` : '');
+    const count = modDirty().length;
+    const wrote = `${count ? `${count} edited asset${count > 1 ? 's' : ''} written to` : 'No edits; removed'} ${esc(dir.name)}\\mods\\${PREVIEW_MOD}.`;
+
+    // The game writes "ready" in this file once it has registered its link. Until then the file asks it to.
+    const link = await dir.getFileHandle(PLAY_LINK_FILE, { create: true });
+
+    if ((await (await link.getFile()).text()).trim() === 'ready')
+    {
+      startingGame = true;
+      location.href = `rs64recomp:${target}`;
+      setTimeout(() => (startingGame = false), 1000);
+      st.innerHTML = `${wrote}<br>Starting the game. If nothing opens, run this in ${esc(dir.name)}:<br><code>${esc(cmd)}</code>`;
+
+      return;
+    }
 
     await navigator.clipboard.writeText(cmd).catch(() => {});
 
-    const n = modDirty().length;
-
-    st.innerHTML = `${n ? `${n} edited asset${n > 1 ? 's' : ''} written to` : 'No edits; removed'} ${esc(dir.name)}\\mods\\${PREVIEW_MOD}.<br>To play it, run this in ${esc(dir.name)} (copied):<br><code>${esc(cmd)}</code>`;
+    st.innerHTML = `${wrote}<br>Run this once in ${esc(dir.name)} (copied). After that, Play in game starts the game for you:<br><code>${esc(cmd)}</code>`;
   } catch (e) {
     st.textContent = e.name === 'AbortError' ? '' : e.message;
     st.hidden = e.name === 'AbortError';
@@ -4087,7 +4514,7 @@ const GOALS = [
   {
     label: 'Make a new level',
     page: 'Make-a-Custom-Level',
-    next: 'Pick New blank level… (or New level from this one…) under the list, then open Level settings… for its title, craft and objectives.',
+    next: 'Pick New blank level (or New level from this one) under the list, then open Level settings… for its title and craft, and Objectives… in the edit panel for how it is won.',
     go: async () => (await openLevel0(), 'btnBlankLevel')
   },
   {
