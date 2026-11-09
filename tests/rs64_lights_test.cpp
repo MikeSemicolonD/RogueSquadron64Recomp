@@ -543,6 +543,13 @@ static void testMenuSun() {
     CHECK(!introScene(true, 0u, MenuSceneNone));
     CHECK(!introScene(false, 0x8025CAC0u, MenuSceneNone));
     CHECK(!introScene(false, 0u, MenuSceneHangar));
+    // After a pause the light list is gone and the root is 0: the mission keeps its sun, the boot sequence does not.
+    CHECK(keepMissionSun(false, 0u, true, MenuSceneNone, true));
+    CHECK(keepMissionSun(false, 0x803677ECu, false, MenuSceneNone, true));
+    CHECK(!keepMissionSun(false, 0u, false, MenuSceneNone, true));
+    CHECK(!keepMissionSun(false, 0u, true, MenuSceneNone, false));
+    CHECK(!keepMissionSun(false, 0u, true, MenuSceneHangar, true));
+    CHECK(!keepMissionSun(true, 0u, true, MenuSceneNone, true));
     const float* h = hangarSunDir();
     CHECK(h[1] > 0.5f * std::sqrt(h[0] * h[0] + h[1] * h[1] + h[2] * h[2]));
 }
