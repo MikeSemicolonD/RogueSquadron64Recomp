@@ -10,6 +10,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 > [!IMPORTANT]
 > **Heavily AI-assisted.**
+>
 > Most of the debugging, architectural decisions, and code here were produced with Claude.
 
 ---
@@ -206,13 +207,16 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 > [!IMPORTANT]
 > **Recomp. Issues** are bugs involving rendering, input, hooks and added features like Frame Interpolation and Ray Tracing.
-> All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3Arecomp).
+>
+> All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3A"Recomp.+Issue").
 
 ### Game specific Issues
 
 > [!IMPORTANT]
-> **Game Issues** are deep-seated issues that have been in the game since release.
+> **Game Issues** are issues that have been in the game since release.
+>
 > Game Issues are less of a priority since fixing them might take away the charm that those rough edges bring.
+>
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'.
