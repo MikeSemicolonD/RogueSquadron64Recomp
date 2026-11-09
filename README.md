@@ -69,7 +69,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
-- **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Control Settings Mod](#mods). See [Controls](#controls).
+- **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Controls Menu Mod](#mods). See [Controls](#controls).
 - **Touch controls on Android:** tap menu and in-game buttons and fly with an on-screen stick. You can move and resize the buttons, and turn on 'gyro steering' to help fine-tune your aim.
 
 #### Languages
@@ -81,7 +81,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu.
   - Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
   - Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
-  - The **Multiplayer** is shipped as a `multiplayer-native` mod.
+  - **Multiplayer** is shipped as a `multiplayer-native` mod.
 - **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
   - **Steam Relay OFF by default:** press F6 in the game, turn on **Steam Relay** in the Mods window OR toggle the mod in the in-game mod menu.
@@ -99,7 +99,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - See [docs/guides/modding.md for modding info](docs/guides/modding.md).
 - **Included mods:**
   - **Display Settings:** 'Display Settings' UI in the main menu under 'Options' -> 'Game Settings' and in the pause menu. Also contains the Ray Tracing and Fullscreen toggle.
-  - **Control Settings:** new Controls UI allowing the adjustment of sensitivity, acceleration, deadzone, rumble and Input Bindings. *All while using in-game UI.*
+  - **Controls Menu:** new Controls UI allowing the adjustment of sensitivity, acceleration, deadzone, rumble and Input Bindings. *All while using in-game UI.*
   - **Multiplayer:** online co-op (see above).
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
@@ -113,7 +113,7 @@ Put `rogue_squadron.z64` (or `rogue_squadron.v64` / `rogue_squadron.n64`) in the
 
 ### Controls
 
-Keyboard, mouse, gamepad, and flight sticks / HOTAS all work; no controller is required. The keyboard and joystick defaults *for the most part* follow the PC version (*Rogue Squadron 3D*).
+Keyboard, mouse, gamepad, and flight sticks / H.O.T.A.S. all work; no controller is required. The keyboard and joystick defaults *for the most part* follow the PC version (*Rogue Squadron 3D*).
 
 Actions are for the game's default **Luke** controller setting. The other controller presets in Options rearrange them.
 
@@ -156,7 +156,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
   - The throttle sets your speed by position: *full back* is the craft's slowest, *full forward* is fastest, and *middle* is normal speed.
   - Other axes can be bound from the Controls window (**F6**)
   
-- **Lightbar support via DualShock 4 & DualSense:** light bar color will change depending on the state of the game.
+- **Lightbar support via DualShock 4 & DualSense:** lightbar color will change depending on the state of the game.
   - Colors configurable from the `lightbar` section in `roguesq_input.json`
 
 > [!TIP]
@@ -204,27 +204,28 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Recomp. specific Issues
 
-- Ray Tracing is implemented but has some issues:
-  - Stray shadows
+> [!IMPORTANT]
+> **Recomp. Issues** are bugs involving rendering, input, hooks and added features like Frame Interpolation and Ray Tracing.
+> All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3Arecomp).
 
 ### Game specific Issues
 
 > [!IMPORTANT]
-> **Game Issues** are deep-seated issues that can touch hundreds of different functions and affect various internal systems in the game.
-> Game Issues are less of a priority since they exist in the base game and fixing some of them might take away the charm that those rough edges bring.
+> **Game Issues** are deep-seated issues that have been in the game since release.
+> Game Issues are less of a priority since fixing them might take away the charm that those rough edges bring.
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'.
 
-- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations look choppy for a few ms) due to things like glyphs, graphics and music loading in on the fly when menus load.
+- Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations look choppy for a few ms) due to glyphs, graphics and sounds loading in on the fly when menus load.
 
-- Cutscenes have screen sizes of varying widths, which could genuinely be an issue with the game itself. (Some cutscenes have black bars on the sides or additional padding, but some don't)
+- Cutscenes have screen sizes of varying widths with *some* cutscenes having black bars on the sides or additional padding.
 
 - Some enemies pop in at a distance because the game spawns them in view whereas the original fog + draw distance would hide most of this.
 
 - Shooting at the lava or colliding against the ground in Raid on Sullust produces fireballs that look dim/muted compared to the other bigger lava explosion effects in the level
 
-- Terrain tile and normal textures don't align perfectly and seem to have a slight cut off.
+- Terrain tile textures don't align perfectly and seem to have a slight cutoff.
 
 - The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
 
@@ -234,9 +235,12 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 #### Ray Tracing Caveats
 
-- Initial Calamari cutscene doesn't reflect the explosion: physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
+- Stray/odd shadows in places mostly due to terrain or its edge geometry
+
+- Shadows popping in and out because of geometry being culled when outside the camera's frustum. It has been increased/offset to alleviate this.
 
 - Reflections might not look completely accurate because of the nature of Screen Space Reflections
+  - Initial Calamari cutscene doesn't reflect the explosion: physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
 
 #### Draw distance Caveats
 
@@ -405,7 +409,7 @@ adb install -r app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk
 
 - **Use the Release APK.** The Debug APK compiles the recompiled game code at `-O0` and it stutters a lot. Release is signed with the debug key, so it installs over a Debug build and keeps your data. The VS Code tasks `Build (Android): APK (Release)` and `Install + Run (Android, Release)` wrap the commands above.
 - **ROM:** on first launch the system file picker asks for `rogue_squadron.z64` (`.v64` and `.n64` also work); the ROM is checked and imported once. (Pushing it to `/sdcard/Android/data/com.rs64recomp.app/files/` with `adb push` also works.)
-- **Touch Controls:** on by default, tap menu buttons directly, swipe carousels, and fly with virtual joystick stick and N64-style buttons. A paired gamepad will hide the touch overlay.
+- **Touch Controls:** on by default, tap menu buttons directly, swipe carousels, and fly with a virtual stick and N64-style buttons. A paired gamepad will hide the touch overlay.
   - Move and resize the touch buttons by using the gear button in the bottom left corner of the screen when navigating menus or by selecting **TOUCH LAYOUT** (Requires [touch-layout](mods/touch-layout) mod) in the pause menu.
   - **GYRO STEERING** (Requires [gyro-toggle](mods/gyro-toggle) mod) in Game Settings turns on tilt steering to allow for fine mouse-like aiming.
   - Touch settings live in `roguesq_touch.json`.
@@ -469,9 +473,9 @@ A save editor also exists in *`tools/web/save-editor`* as an HTML page, allowing
 
 ## 'Proper' AI Agent Usage
 
-Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.MD** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.MD)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
+Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.md** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.md)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
 
-This repo already provides **AGENTS.MD** and **skill** files. **MCP** servers are configured and set up by the user themselves and are something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
+This repo already provides **AGENTS.md** and **skill** files. **MCP** servers are configured and set up by the user themselves and are something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
 
 Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
 
@@ -479,7 +483,7 @@ Here's a list of MCPs that could be useful for this project:
 
 - [rs64-mcp](docs/engine/rt64-mcp.md) (in this repo, `tools/debug/mcp/rs64_mcp.py`, set up in the local `.mcp.json`) lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and screenshots. The game side is built into Debug by default. For Release, configure with `-DRS64_MCP=ON` (or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)")
 - [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
-- [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [go 1.25.2](https://go.dev/dl/))
+- [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [Go 1.25.2](https://go.dev/dl/))
 
 > [!CAUTION]
 > `windows-screenshot-mcp-server` usage can be finicky.
