@@ -350,7 +350,7 @@ void rs64_mod_levels_brief_rate(recomp_context*);
 void rs64_mod_levels_brief_stream(uint8_t*, recomp_context*);
 void rs64_mod_levels_debrief_begin(uint8_t*, uint32_t);
 void rs64_mod_levels_debrief_end(uint8_t*);
-void rs64_mod_levels_entry_level(uint32_t*);
+void rs64_mod_levels_preview(uint8_t*, recomp_context*, int);
 void rs64_mod_levels_medal_earned(int);
 void rs64_mod_levels_menu(int);
 void rs64_mod_levels_music(uint8_t*);

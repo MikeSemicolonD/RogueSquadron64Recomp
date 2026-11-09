@@ -459,12 +459,14 @@ extern "C" void rs64_asset_overrides_init()
         }
     }
 
-    // A crawl's own files are also served inside the crawl scene's directories, where its lookups find them.
+    // A crawl's own files and a level's picture are also served inside the directories where their lookups find them.
     std::vector<std::pair<std::string, AssetOverride>> served;
 
     for (const auto& [path, ov] : s_asset_overrides)
     {
         if (const std::string s = rs64levels::crawlServedPath(path); !s.empty()) served.emplace_back(s, ov);
+
+        if (const std::string s = rs64levels::previewServedPath(path); !s.empty()) served.emplace_back(s, ov);
     }
 
     for (const auto& [path, ov] : served) s_asset_overrides[path] = ov;

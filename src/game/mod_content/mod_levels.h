@@ -4,6 +4,7 @@
 #include "json/json.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <optional>
@@ -247,6 +248,24 @@ inline std::string crawlServedPath(const std::string& key) {
     if (key.rfind("crawl/", 0) != 0 || slash == std::string::npos) return std::string();
     const std::string name = key.substr(6, slash - 6), file = key.substr(slash + 1);
     return file == "backdrop" ? "backdrop/" + name : file == "dat" ? "frontend/starwars/" + name : std::string();
+}
+
+// The short name a level's own SELECT LEVEL picture is served under: with the game's "alpha" suffix it has to fit a 15-character manifest name.
+inline std::string previewName(const std::string& folder) {
+    uint32_t h = 2166136261u;
+    for (const unsigned char c : folder) h = (h ^ c) * 16777619u;
+    char name[10];
+    snprintf(name, sizeof name, "p%08x", h);
+    return name;
+}
+
+// level/<folder>/preview[alpha] -> backdrop/<short name>[alpha], where the picture's lookups find it.
+inline std::string previewServedPath(const std::string& key) {
+    const size_t slash = key.find('/', 6);
+    if (key.rfind("level/", 0) != 0 || slash == std::string::npos) return std::string();
+    const std::string file = key.substr(slash + 1);
+    if (file != "preview" && file != "previewalpha") return std::string();
+    return "backdrop/" + previewName(key.substr(6, slash - 6)) + file.substr(7);
 }
 
 // The name a lookup uses while crawl c plays: its own backdrop (with planet "own") and its own scene DAT when it ships them (have).

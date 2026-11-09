@@ -1723,15 +1723,11 @@ void rs64_th_handleCraftSelectInput_800AFB58(uint8_t* rdram, recomp_context* ctx
 // initCraftSelectScreen 0x800AF270 / handleCraftSelectInput 0x800AF878: a2 = the preview image's level number.
 void rs64_th_initCraftSelectScreen_800AF270(uint8_t* rdram, recomp_context* ctx) {
 
-    uint32_t v = (uint32_t)ctx->r6;
-    rs64_mod_levels_entry_level(&v);
-    ctx->r6 = v;
+    rs64_mod_levels_preview(rdram, ctx, 0x58BC);
 }
 void rs64_th_handleCraftSelectInput_800AF878(uint8_t* rdram, recomp_context* ctx) {
 
-    uint32_t v = (uint32_t)ctx->r6;
-    rs64_mod_levels_entry_level(&v);
-    ctx->r6 = v;
+    rs64_mod_levels_preview(rdram, ctx, 0);
 }
 
 // getAvailablePlayerCraftFlags{Consider,Ignore}Unlocks entry: a0 = level; a mod level's approved craft are returned in v0.

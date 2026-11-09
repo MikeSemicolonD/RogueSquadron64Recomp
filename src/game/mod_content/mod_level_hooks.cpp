@@ -413,15 +413,30 @@ extern "C" void rs64_mod_levels_text(uint8_t* rdram, recomp_context* ctx, int de
     if (const uint32_t p = level_str(rdram, s.empty() ? " " : rs64levels::menuText(s))) ctx->r2 = (gpr)(int32_t)p;
 }
 
-// A per-level lookup made for a mod entry while SELECT LEVEL is open (preview image, craft icons) uses its template.
-extern "C" void rs64_mod_levels_entry_level(uint32_t* level)
+// The preview's sprintf of "level%d" (a1) with a2 = the level: a mod entry shows its own picture if it ships one, else its template's.
+// a1_delay: what the call's delay slot still adds to a1 after this hook.
+extern "C" void rs64_mod_levels_preview(uint8_t* rdram, recomp_context* ctx, int a1_delay)
 {
 
     if (!s_level_select_open) return;
 
-    const int i = (int)*level - s_level_entries.base;
+    const int i = (int)(uint32_t)ctx->r6 - s_level_entries.base;
 
-    if (i >= 0 && i < s_level_entries.count) *level = (uint32_t)s_mod_levels[i].tmpl;
+    if (i < 0 || i >= s_level_entries.count) return;
+
+    const auto& l = s_mod_levels[i];
+
+    if (rs64::assets::find("level/" + l.folder + "/preview"))
+    {
+        if (const uint32_t p = level_str(rdram, rs64levels::previewName(l.folder)))
+        {
+            ctx->r5 = (gpr)(int32_t)(p - a1_delay);
+
+            return;
+        }
+    }
+
+    ctx->r6 = (gpr)l.tmpl;
 }
 
 // Available craft for level: a mod level's approved craft mask (a SELECT LEVEL mod entry, or the template id while one plays), else -1

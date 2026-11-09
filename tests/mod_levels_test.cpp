@@ -275,6 +275,11 @@ int main() {
         CHECK(crawlServedPath("crawl/shadows/backdrop") == "backdrop/shadows");
         CHECK(crawlServedPath("crawl/shadows/dat") == "frontend/starwars/shadows");
         CHECK(crawlServedPath("crawl/shadows/crawl.json").empty() && crawlServedPath("level/x/dat").empty());
+        CHECK(previewName("a_folder_name_much_longer_than_the_limit").size() + 5 <= 15);
+        CHECK(previewName("a") != previewName("b"));
+        CHECK(previewServedPath("level/desert/preview") == "backdrop/" + previewName("desert"));
+        CHECK(previewServedPath("level/desert/previewalpha") == "backdrop/" + previewName("desert") + "alpha");
+        CHECK(previewServedPath("level/desert/brief").empty() && previewServedPath("crawl/x/backdrop").empty());
 
         // own_planet_redirects: the stock backdrop the crawl looks up maps to its own
         const std::set<std::string> both = { "crawl/shadows/backdrop", "crawl/shadows/dat" };
