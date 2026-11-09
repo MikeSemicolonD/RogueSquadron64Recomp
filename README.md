@@ -252,6 +252,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
+- RS64 Improvments/Fixes
+
 - Removing system/frame limits while maintaining others for playability
 - VR Support via OpenXR (Dependent on removing system/frame limits)
 
