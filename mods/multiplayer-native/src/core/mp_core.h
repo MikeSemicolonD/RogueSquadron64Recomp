@@ -138,6 +138,7 @@ public:
 
     // One full pulse went in.
     bool pulsed(double now_s) const { return pressing_since_s_ >= 0.0 && now_s - pressing_since_s_ >= kPulseS; }
+
     // The skip took: stop pressing.
     void landed() {
 

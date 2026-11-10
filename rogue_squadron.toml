@@ -2396,3 +2396,9 @@ func = "computeRandomizedOrientationFrame"
 before_vram = 0x800F3B84
 text = '{ rs64_th_computeRandomizedOrientationFrame_800F3B84(rdram, ctx); }'
 
+
+# Co-op shares only a crawl skip the game took: a press it ignored does not end the crawl.
+[[patches.hook]]
+func = "runModelViewerLoop"
+before_vram = 0x800CA51C
+text = '{ rs64_th_runModelViewerLoop_800CA51C(rdram, ctx); }'

@@ -2724,3 +2724,11 @@ void rs64_th_updateHangarBayScene_800ABAA0(uint8_t* rdram, recomp_context* ctx) 
 
     ctx->f2.fl *= rs64_rate_scale();
 }
+
+// runModelViewerLoop 0x800CA51C, where the crawl ends: $s0 holds the A/START that ended it early (0 when it ran out).
+void rs64_th_runModelViewerLoop_800CA51C(uint8_t* rdram, recomp_context* ctx) {
+
+    if ((ctx->r16 & 0xFF) != 0 && rs64_crawl_playing()) {
+        rs64_scene_skipped("crawl_skips");
+    }
+}

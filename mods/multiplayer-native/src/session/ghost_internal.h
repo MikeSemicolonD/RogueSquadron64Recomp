@@ -192,6 +192,7 @@ struct Ghost {
     bool brief_sent = false;
     uint32_t skips_seen = 0;
     uint16_t skip_prev_buttons = 0;
+    int crawl_skips_seen = 0;
 
     // 0 none, 1 hangar launch, 2 cutscene timeline, 3 opening crawl.
     int skip_scene = 0;
@@ -261,11 +262,6 @@ struct Ghost {
     // The other player went down: frames left before their shot-down puppet is removed (-1 none). Spectating: this side's craft already took their death.
     int puppet_dying = -1;
     bool spectate_hit = false;
-
-    // Mission end. Host: its end landed and the client was told. Client: the host's end landed; frames this side's end has waited on it or on a spectated death (kEndWaitFrames at most).
-    bool landed_sent = false;
-    bool host_landed = false;
-    int end_wait = 0;
 
     // Tow cables. Sent: the local cable's phase and head index last sent (-1 none). Received: the other player's cable state and the mirror segment pool the game's tow-cable code draws (0 = not loaded).
     uint8_t tow_sent_phase = 0;
@@ -349,9 +345,6 @@ uint8_t mission_tag();
 
 // Frames into a mission before the other player's damage, triggers and trips are applied.
 constexpr uint32_t kDamageSettleFrames = 30;
-
-// The longest a mission end waits for the host's end cue or a spectated death before it lands anyway.
-constexpr int kEndWaitFrames = 300;
 
 // world_sync.cpp: the host's objective state, the level's DAT items (health, mirrored damage), shared power-ups, the client's trigger volumes.
 void read_objectives(const uint8_t* rdram, rs64::net::ObjSnapshot* s);

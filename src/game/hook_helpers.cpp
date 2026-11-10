@@ -1161,3 +1161,9 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
 
     return dt;
 }
+
+// A player's A/START ended the crawl (the toml hook at the game's skip branch): the host flag counts them, which co-op reads.
+extern "C" void rs64_scene_skipped(const char* flag)
+{
+    rs64::host::set_flag(flag, rs64::host::flag(flag) + 1);
+}

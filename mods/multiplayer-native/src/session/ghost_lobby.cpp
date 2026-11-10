@@ -443,6 +443,12 @@ static void skip_filter(uint16_t* buttons)
     const bool skipped = skips != s.skips_seen;
     s.skips_seen = skips;
 
+    // A crawl the game itself ended on A/START (a press it ignored does not end it).
+    const int crawl_skips = rs64::mp::flag("crawl_skips");
+    const bool crawl_took = crawl_skips != s.crawl_skips_seen;
+
+    s.crawl_skips_seen = crawl_skips;
+
     if (!s.started || !s.lobby.ready()) {
         rs64::mp::set_flag("hangar_launch", 0);
         return;
@@ -464,7 +470,8 @@ static void skip_filter(uint16_t* buttons)
 
     s_crawl_polls = crawl ? s_crawl_polls + 1 : 0;
 
-    if (s_test_crawl && s_crawl_polls == 60) {
+    // Held for a few polls as a player's press is: the crawl reads input once per frame and misses a one-poll press.
+    if (s_test_crawl && s_crawl_polls >= 60 && s_crawl_polls < 66) {
         *buttons |= kStart;
     }
 
@@ -488,6 +495,9 @@ static void skip_filter(uint16_t* buttons)
             s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) | ((s.skip_tag + 1u) & 0xFFu));
         }
 
+        static const char* const kSceneNames[] = {"none", "launch", "cutscene", "crawl"};
+
+        fprintf(stderr, "[ghost] scene %04X %s at %.2f s\n", s.skip_tag, kSceneNames[scene], now_s());
         s.skip_scene = scene;
     }
 
@@ -502,15 +512,17 @@ static void skip_filter(uint16_t* buttons)
     if (s.player == 0)
     {
         const bool launch_skipped = launching && (*buttons & kStart) && !(s.skip_prev_buttons & kStart);
-        const bool crawl_skipped = crawl && (*buttons & 0x9000u & ~s.skip_prev_buttons) != 0;
 
         s.skip_prev_buttons = *buttons;
 
-        if (skipped || launch_skipped || crawl_skipped)
-        {
-            s.link.send(rs64::net::encode_skip(launch_skipped || crawl_skipped ? s.skip_tag : prev_tag), true);
+        // The crawl's flag stays on through the loading after it, so its skip is this poll's scene; a timeline's skip ended the last poll's.
+        const uint16_t tag = (crawl_took && scene == 3) || launch_skipped ? s.skip_tag : prev_tag;
 
-            fprintf(stderr, "[ghost] cutscene %04X skipped here; telling the other player\n", launch_skipped || crawl_skipped ? s.skip_tag : prev_tag);
+        if (skipped || crawl_took || launch_skipped)
+        {
+            s.link.send(rs64::net::encode_skip(tag), true);
+
+            fprintf(stderr, "[ghost] cutscene %04X skipped here at %.2f s; telling the other player\n", tag, now_s());
         }
 
         return;
@@ -521,13 +533,13 @@ static void skip_filter(uint16_t* buttons)
         *buttons &= (uint16_t)~0x9000u;
     }
 
-    // The skip took: the game counted it (a timeline), or one pulse went in (the crawl and launch count nothing), so nothing carries into the next scene.
-    if (skipped || (scene != 2 && s.skip.pulsed(now_s()))) {
+    // The skip took once the game counted it (a timeline or the crawl; until then START keeps pulsing, since a press early in the crawl is ignored), or after one pulse for the launch, which counts nothing.
+    if (skipped || crawl_took || (scene == 1 && s.skip.pulsed(now_s()))) {
         s.skip.landed();
     }
 
-    if (skipped) {
-        fprintf(stderr, "[ghost] cutscene skipped by the host's skip\n");
+    if (skipped || crawl_took) {
+        fprintf(stderr, "[ghost] cutscene skipped by the host's skip at %.2f s\n", now_s());
     }
 
     // Test: ROGUESQ_MP_TEST_NO_SKIP_SHARE=1 ignores the host's skips (a late joiner).

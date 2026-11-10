@@ -411,7 +411,7 @@ void send_game_over() {
         s.link.send(rs64::net::encode_result(s.epoch, 3), true);
         s.result_sent = true;
 
-        fprintf(stderr, "[ghost] host result 3 sent early\n");
+        fprintf(stderr, "[ghost] host result 3 sent at %.2f s\n", now_s());
     }
 }
 
@@ -598,18 +598,14 @@ void drain()
         case rs64::net::Msg::Result: {
             uint8_t e = 0, r = 0;
 
-            // One result per mission: the host repeats it when its end lands and at its mission end, and applying it again mid-transition re-raises the end request.
+            // One result per mission: the host repeats it at its mission end, and applying it again mid-transition re-raises the end request.
             if (rs64::net::decode_result(m.data(), m.size(), &e, &r) && s.player == 1 && s.in_session && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch))
             {
                 if (s.host_result < 0) {
                     s.pending_result = r;
                     s.host_result = r;
 
-                    fprintf(stderr, "[ghost] host result %u received\n", r);
-                } else if (r == s.host_result && !s.host_landed) {
-                    s.host_landed = true;
-
-                    fprintf(stderr, "[ghost] host result %u landed\n", r);
+                    fprintf(stderr, "[ghost] host result %u received at %.2f s\n", r, now_s());
                 }
             }
 
@@ -780,7 +776,7 @@ void drain()
             {
                 s.skip.on_remote(scene);
 
-                fprintf(stderr, "[ghost] the host skipped cutscene %04X (here %04X)\n", scene, s.skip_tag);
+                fprintf(stderr, "[ghost] the host skipped cutscene %04X (here %04X) at %.2f s\n", scene, s.skip_tag, now_s());
             }
 
             break;
@@ -1017,8 +1013,6 @@ void apply_pending_result(uint8_t* rdram) {
         // The bit is raised directly: the request functions also reset speech playback (initSpeechPlaybackState), which would cut off the end cue the client's own level script has just started.
         ww(rdram, 0x8010C9E0u, (req & ~other) | bit);
         done = rw(rdram, 0x8010CA20u) == end_mode;
-    } else if (r == 3 && s.out && ++s.end_wait < kEndWaitFrames) {
-        // Spectating: this craft shows the survivor's death (or is still finishing its own), and its end (rs64_ghost_block_transition) closes the mission once it has exploded.
     } else if (rw(rdram, 0x8010CA20u) != 5) {
         // Abort / game over: not while the pause menu is open (its own close-down would be skipped).
         wb(rdram, 0x80130B14u, (uint8_t)r);
@@ -1027,7 +1021,7 @@ void apply_pending_result(uint8_t* rdram) {
     }
 
     if (done) {
-        fprintf(stderr, "[ghost] applied host result %d\n", r);
+        fprintf(stderr, "[ghost] applied host result %d at %.2f s\n", r, now_s());
         s.pending_result = -1;
     }
 }
@@ -1152,13 +1146,7 @@ extern "C" uint32_t rs64_ghost_block_transition(uint8_t* rdram, uint32_t arg)
     if (arg == 1 && rw(rdram, 0x8010CA20u) == 0) {
         uint8_t& lives = rdram[(kLives - 0x80000000u) ^ 3];
 
-        if (s.out && s.pending_result == 3) {
-            // The survivor's death shown here is the last one: the game's own decrement to 0 ends the mission with result 3.
-            lives = 1;
-            s.pending_result = -1;
-
-            fprintf(stderr, "[ghost] game over after the spectated death\n");
-        } else if (s.out) {
+        if (s.out) {
             s.restore_lives = lives;
             lives = 2;
         } else if (s.player == 1) {
@@ -1209,7 +1197,7 @@ extern "C" uint32_t rs64_ghost_block_transition(uint8_t* rdram, uint32_t arg)
             s.link.send(rs64::net::encode_result(s.epoch, result), true);
             s.result_sent = true;
 
-            fprintf(stderr, "[ghost] host result %u sent early\n", result);
+            fprintf(stderr, "[ghost] host result %u sent at %.2f s\n", result, now_s());
         }
 
         return 0u;
@@ -1229,15 +1217,9 @@ extern "C" uint32_t rs64_ghost_gate_response(uint32_t result, uint32_t ready)
         return ready;
     }
 
-    // The host's end cue (a voiceline) plays before its result lands: the client is told when it does, and lands with it.
-    if (s.player == 0) {
-        if (ready && !s.landed_sent) {
-            s.link.send(rs64::net::encode_result(s.epoch, (uint8_t)result), true);
-            s.landed_sent = true;
-
-            fprintf(stderr, "[ghost] result %u landed at %.2f s\n", result, now_s());
-        }
-
+    // Each side lands after its own end cue (a voiceline), without waiting for the other.
+    if (s.player == 0)
+    {
         return ready;
     }
 
@@ -1246,13 +1228,8 @@ extern "C" uint32_t rs64_ghost_gate_response(uint32_t result, uint32_t ready)
         return 0u;
     }
 
-    if (!s.host_landed && ++s.end_wait < kEndWaitFrames)
-    {
-        return 0u;
-    }
-
     if (ready) {
-        fprintf(stderr, "[ghost] result %u landed at %.2f s (%s)\n", result, now_s(), s.host_landed ? "with the host" : "host end not heard");
+        fprintf(stderr, "[ghost] result %u landed at %.2f s\n", result, now_s());
     }
 
     return ready;
@@ -1330,11 +1307,14 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
 
         // Start together: a client that arrives late gets the host's objective state copied over steps its level script never ran, and faults on them (trigger 21 on level 0). The wait is capped; a slower client still catches up as before.
         constexpr uint32_t kStartWaitMs = 10000;
+        const double wait_from = now_s();
 
         if (!wait_for(rdram, ctx, kStartWaitMs, [&]() { return s.peer_arrived || s.peer_left; }))
         {
             fprintf(stderr, "[ghost] the other player is still loading; starting without waiting\n");
         }
+
+        fprintf(stderr, "[ghost] waited %.2f s at mission start for the other player\n", now_s() - wait_from);
     } else {
         SessionHeader h;
 
@@ -1374,9 +1354,6 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.despawned = true;
     s.puppet_dying = -1;
     s.spectate_hit = false;
-    s.landed_sent = false;
-    s.host_landed = false;
-    s.end_wait = 0;
     s.tow_sent_phase = 0;
     s.tow_sent_head = -1;
     s.tow_remote = rs64::net::TowSeg{};

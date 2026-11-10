@@ -491,14 +491,15 @@ static void test_play_clock_steps_evenly_through_uneven_frames() {
 }
 
 static void test_skip_share_stops_once_the_skip_took() {
-    // One full pulse, then landed (the crawl and launch count no skip): nothing carries into the loading or the next scene.
+    // START keeps pulsing until the skip lands (the game counted it, or one pulse for the launch), then nothing carries into the loading or the next scene.
     SkipShare k;
     k.on_remote(0x0101);
     CHECK(k.press(1.0, true, 0x0101));
     CHECK(!k.pulsed(1.0 + SkipShare::kPulseS * 0.5));
     CHECK(k.pulsed(1.0 + SkipShare::kPulseS * 1.5));
+    CHECK(k.press(1.0 + SkipShare::kPulseS * 4.5, true, 0x0101));
     k.landed();
-    CHECK(!k.press(1.0 + SkipShare::kPulseS * 2.5, true, 0x0101));
+    CHECK(!k.press(1.0 + SkipShare::kPulseS * 6.5, true, 0x0101));
     CHECK(!k.pulsed(2.0));
 }
 
