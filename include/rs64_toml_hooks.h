@@ -242,6 +242,8 @@ void rs64_th_npcPowerUpUpdate_800EBD20(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_npcPowerUpUpdate_800EBD34(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_applyDatObjectiveTriggerEffect_80065980(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_drawTextGlyphRect_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_drawTextGlyphRect_80015984(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_updatePlayerAtStBehavior_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updatePlayerAtStBehavior_800D1AE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_mainGameLoop_8003E10C(uint8_t* rdram, recomp_context* ctx);

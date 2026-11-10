@@ -9,6 +9,7 @@
     "larger_object_pool.nrm",
     "invincibility.nrm",
     "long_tow_cable.nrm",
+    "atst_crosshair.nrm",
     "lang-ja"
   ],
   "android": [
@@ -17,6 +18,7 @@
     "display-settings",
     "controls-menu",
     "multiplayer-native",
+    "atst_crosshair.nrm",
     "lang-ja"
   ]
 }

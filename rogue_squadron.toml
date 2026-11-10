@@ -1896,6 +1896,16 @@ func = "npcAtAtUpdate"
 before_vram = 0x800CED7C
 text = '{ rs64_th_npcAtAtUpdate_800CED7C(rdram, ctx); }'
 
+# Crosshair rings: this routine cuts rects at the 4:3 frame edge and drops those past it; keep them whole so the renderer can draw them at their real position.
+[[patches.hook]]
+func = "drawTextGlyphRect"
+text = '{ rs64_th_drawTextGlyphRect_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "drawTextGlyphRect"
+before_vram = 0x80015984
+text = '{ rs64_th_drawTextGlyphRect_80015984(rdram, ctx); }'
+
 # Player AT-ST (CHICKEN) tick: sets the atst_active flag for the mouse remap; mods may rewrite its input or replace the step.
 # hook: RS64_HOOK_ATST_TICK
 [[patches.hook]]

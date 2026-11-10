@@ -197,6 +197,17 @@ force = { slot = "boot_level", params = { level = 0, craft = -1 } }
 reachable_from = ["menu", "cinematic"]
 focus = ["gMissionState", "gGameSettings", "gNpcSlotList..free"]
 
+# CHICKEN (level 20) sets no objectives. Top level so a resident menu or cinematic, listed earlier, wins the tie; the id keeps it on the "mission" pause clock.
+[[state]]
+id = "mission.atst"
+name = "In-mission (player AT-ST)"
+parent = ""
+classify = [
+  { addr = 0x80130B17, mask = 0xFF000000, op = "eq", value = 0x00000000 },   # numMissionObjectives == 0
+  { addr = 0x80130B70, mask = 0xFFFFFFFF, op = "eq", value = 0x00000014 },   # gCurrentLevel == CHICKEN
+]
+focus = ["gMissionState", "gGameSettings"]
+
 [[state]]
 id = "attract.demo"
 name = "Attract demo"

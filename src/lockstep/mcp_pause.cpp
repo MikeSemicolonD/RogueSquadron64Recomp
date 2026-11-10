@@ -307,12 +307,16 @@ static PauseTarget mcp_step_target(const std::string& clock, uint32_t frames)
         return { clock, (uint32_t)s_mcp_picture["dl_seq"].get<uint64_t>() + frames };
     }
 
-    if (!clocks.contains(clock))
+    // A parent clock (mission) reads the child state the picture is in (mission.atst).
+    const std::string picture_clock = s_mcp_picture["clock"].get<std::string>();
+    const std::string key = (!clocks.contains(clock) && pause_clock_matches(clock, picture_clock)) ? picture_clock : clock;
+
+    if (!clocks.contains(key))
     {
         throw std::runtime_error("clock " + clock + " is not running; frozen clocks: " + clocks.dump());
     }
 
-    return { clock, clocks[clock].get<uint32_t>() + frames };
+    return { clock, clocks[key].get<uint32_t>() + frames };
 }
 
 // Pauses RT64 unless the client that asked has gone; under the lock so a disconnect's unpause always lands after it.

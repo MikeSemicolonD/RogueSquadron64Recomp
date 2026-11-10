@@ -2047,6 +2047,65 @@ void rs64_th_npcAtAtUpdate_800CED7C(uint8_t* rdram, recomp_context* ctx) {
     rs64_hook(RS64_HOOK_WALKER_TRIPPED, rdram, ctx);
 }
 
+static int16_t s_ring_move_x = 0;
+static int16_t s_ring_move_y = 0;
+
+static int16_t clamp_s16(int32_t v)
+{
+
+    const int32_t top = (v < 32767) ? v : 32767;
+
+    return (int16_t)((top > -32768) ? top : -32768);
+}
+
+static int32_t pin_rect_edge(int32_t ul, int32_t size, int32_t limit)
+{
+
+    const int32_t highest = limit - size;
+    const int32_t below = (ul < highest) ? ul : highest;
+
+    return (below > 0) ? below : 0;
+}
+
+// drawTextGlyphRect entry ($s3 is still the caller's HUD element; a1-a3 and sp+0x10 are ulx, uly, lrx, lry in 10.2)
+void rs64_th_drawTextGlyphRect_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const uint32_t element = (uint32_t)ctx->r19;
+
+    if ((element != 0x8010CA58u) && (element != 0x8010CA88u) && (element != 0x8010CAB8u))
+    {
+        return;
+    }
+
+    const int32_t ulx = (int32_t)ctx->r5;
+    const int32_t uly = (int32_t)ctx->r6;
+    const int32_t width = (int32_t)ctx->r7 - ulx;
+    const int32_t height = MEM_W(0x10, ctx->r29) - uly;
+    const int32_t px = pin_rect_edge(ulx, width, MEM_W(0, (gpr)(int32_t)0x8011A838) * 4);
+    const int32_t py = pin_rect_edge(uly, height, MEM_W(0, (gpr)(int32_t)0x8011A83C) * 4);
+
+    s_ring_move_x = clamp_s16(ulx - px);
+    s_ring_move_y = clamp_s16(uly - py);
+    ctx->r5 = (gpr)px;
+    ctx->r6 = (gpr)py;
+    ctx->r7 = (gpr)(px + width);
+    MEM_W(0x10, ctx->r29) = py + height;
+}
+
+// drawTextGlyphRect 0x80015984: a moved ring's S and T (always 0 for a whole ring) carry the move, so the renderer never has to read the position from RDRAM, which the game may have overwritten.
+void rs64_th_drawTextGlyphRect_80015984(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if ((s_ring_move_x != 0) || (s_ring_move_y != 0))
+    {
+        MEM_W(-8, (gpr)MEM_W(0, (gpr)(int32_t)0x8011DC58)) = (int32_t)(((uint32_t)(uint16_t)s_ring_move_x << 16) | (uint16_t)s_ring_move_y);
+    }
+
+    s_ring_move_x = 0;
+    s_ring_move_y = 0;
+}
+
 // updatePlayerAtStBehavior entry
 int rs64_th_updatePlayerAtStBehavior_entry(uint8_t* rdram, recomp_context* ctx) {
 
