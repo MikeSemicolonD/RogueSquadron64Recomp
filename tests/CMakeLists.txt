@@ -81,6 +81,7 @@ add_executable(level_rules_test EXCLUDE_FROM_ALL
 )
 set_target_properties(level_rules_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(level_rules_test PRIVATE ${RS64_ROOT}/src ${RS64_ROOT}/lib/rt64/src/contrib)
+target_compile_definitions(level_rules_test PRIVATE RS64_RULES_CASES="${RS64_ROOT}/tests/level_rules_script_cases.json")
 
 add_executable(level_environment_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/level_environment_test.cpp

@@ -6,6 +6,7 @@ The explorer is for modders who don't write code. Every feature is judged by whe
 
 - Speak the modder's language. No addresses, offsets, byte sizes, flag or counter numbers, internal ids or code names in labels, tooltips, errors or dialogs. Show one only when the modder needs it, such as a real limit (a name length, a size cap).
 - Pick, don't type. Things are chosen from named lists (songs by name, voice lines by their text, paths by what flies them) or done in the view; the explorer picks the bookkeeping (free flags, counters, unique names) for the modder.
+- Where the modder does type (rule conditions, the rules script), names come from the level as they type: a list opens after `(` or in a slot that takes an object, a pick-in-view button puts a clicked object in, and whatever the game would skip is underlined red with the reason shown under the box while they type.
 - When the explorer refuses something, say why in plain words (for example, the mission script needs that object).
 
 ## Controls

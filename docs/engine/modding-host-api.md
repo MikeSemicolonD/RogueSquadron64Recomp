@@ -80,7 +80,7 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `add_hash_part(name, gate_flag, fn, user)` | v4. Adds a column to the lockstep hash log (`ROGUESQ_LS_HASH`): `fn(rdram, user)` returns a 64-bit hash of the mod's state, counted only while the flag `gate_flag` is non-zero. Parts follow the base parts in registration order. Returns 0, or -1 for a null argument or a sealed registry |
 | `add_valid_ram(addr, size)` | v4. Declares a host-RAM range above the game's 8 MB (KSEG0 address) that holds game records the mod built, so base guards such as the NPC health patch accept pointers into it. Returns 0, or -1 for size 0 or a sealed registry |
 | `add_moved_range(lo, hi, delta)` | v5. Declares game data `[lo, hi)` the mod moved to `lo + delta` (its `instruction_patches.json` repoints the game's code), so host code that reads it (lockstep hashes, `rs64_relocated`) follows. Returns 0, or -1 for an empty range, a zero delta, an overlap with a registered range, or a sealed registry |
-| `add_rule_action(name, fn, user)` | v6. Adds a level rules action that a level's `rules.json` names with `"do": name` (see Level rules actions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
+| `add_rule_action(name, fn, user)` | v6. Adds a level rules action that a line of a level's `rules.txt` names (`name key=value ...`, see Level rules actions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
 | `fire_rule_event(name, object)` | v6. Raises the level rules "when" `custom` named `name` for `object` (may be `""`). Works any time and from any thread; the rules see it on the next mission frame, and events fired outside a mission are dropped. Returns 0, or -1 for a null name |
 | `terrain_get_cell(rdram, col, row, heights, tex)` | v7. Reads the level map's cell (`col`, `row`): its 25 heights (`int8_t`, the HMP's units; larger is lower, 16 record units a step) and, when `tex` is non-null, its texture id (an `lv_X_TEX` index). Returns 0, -1 with no map loaded, or -2 for a cell outside the map |
 | `terrain_set_cell(rdram, col, row, heights, tex)` | v7. Writes the cell's 25 heights and, when `tex` >= 0, its texture id into the game's own map, so its height queries (collision) and the renderer (the whole-map terrain pass and its ray-traced mesh) follow. Cells share tiles, so the map's first edit moves its tile table to host RAM (0x80A10000) and an edited cell that shares its tile gets its own copy. Neighbouring cells share their edge heights (a cell's last row and column of 5 are the next cell's first): keep them equal, or the legacy terrain renderer shows cracks between the cells. The legacy renderer shows height edits at once and a texture change when the cell next streams in. From the game thread (a hook). Returns 0, -1 / -2 as above, or -3 when the map has 8192 tiles already |
@@ -199,8 +199,8 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 
 A native mod can add actions and "when"s to the [level rules](../guides/modding.md#level-rules) a level author builds in the explorer.
 
-- `add_rule_action("shake", fn, user)` registers `void fn(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user)`. A rule action `{ "do": "shake", "seconds": 2 }` calls it on the game thread with the action's other fields as `count` key/value strings (`"seconds"`, `"2"`). Call game functions from it only through `call`. A built-in action of the same name runs instead of yours.
-- `fire_rule_event("mod.tripped", "gate")` raises a `custom` when. A rule `{ "when": "custom", "custom": "mod.tripped" }` fires for any object; one that also names `"object": "gate"` fires only for that object.
+- `add_rule_action("shake", fn, user)` registers `void fn(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user)`. A rule action `shake seconds=2` calls it on the game thread with the action's fields as `count` key/value strings (`"seconds"`, `"2"`). Call game functions from it only through `call`. A built-in action of the same name runs instead of yours.
+- `fire_rule_event("mod.tripped", "gate")` raises a `custom` when. A rule `when custom mod.tripped` fires for any object; `when custom mod.tripped for gate` fires only for that object.
 - A rule that names an action no loaded mod registered is skipped, and the log says `no action <name>; skipped`.
 
 [native-demo](../../mods/native-demo/) has a working example: its `demo_log` action logs the rule's fields and then fires `demo.ping`, and its `rules_ext.json` describes both for the explorer.
@@ -214,7 +214,7 @@ The explorer offers a mod's actions and events once it knows them: put a `rules_
 }
 ```
 
-A parameter's `picker` is one of `area`, `path`, `pathPoint`, `unit`, `camera`, `song`, `enemyKind`, `objective`, `voice`, `recording`, `text`, `number`, `seconds` or `flag`; any other value becomes a text box.
+A parameter's `picker` is one of `area`, `path`, `pathPoint`, `unit`, `camera`, `song`, `enemyKind`, `objective`, `voice`, `recording`, `text`, `number`, `seconds`, `flag` or `variable`; any other value becomes a text box.
 
 ## Text sources
 

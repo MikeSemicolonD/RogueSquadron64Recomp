@@ -73,8 +73,8 @@ static int demo_menu_frame(uint32_t, uint8_t*, void*, void*) {
     return RS64_HOOK_CONTINUE;
 }
 
-// Level rules (host API v6): a rule action { "do": "demo_log", ... } logs its fields, then raises the custom when "demo.ping",
-// which a rule { "when": "custom", "custom": "demo.ping" } in a level's rules.json can answer.
+// Level rules (host API v6): a rule action "demo_log key=value ..." logs its fields, then raises the custom when "demo.ping",
+// which a rule "when custom demo.ping" in a level's rules.txt can answer.
 static void demo_log(uint8_t*, void*, const char* const* keys, const char* const* values, int count, void*) {
     std::string line = "[native-demo] rule action demo_log";
     for (int i = 0; i < count; i++) line += std::string(" ") + keys[i] + "=" + values[i];

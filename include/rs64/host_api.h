@@ -120,7 +120,7 @@ typedef struct rs64_host_api {
     int (*add_valid_ram)(uint32_t addr, uint32_t size);
     // v5: game data [lo, hi) the mod moved to lo + delta (its instruction_patches.json repoints the game's code), so host code that reads it (lockstep hashes, rs64_relocated for .nrm mods) follows; only before the registry seals, no overlaps.
     int (*add_moved_range)(uint32_t lo, uint32_t hi, uint32_t delta);
-    // v6: a level rules action named in rules.json ("do": name), only before the registry seals; fire_rule_event raises a rule "custom" when (name, object) any time.
+    // v6: a level rules action a rules.txt line names ("<name> key=value ..."), only before the registry seals; fire_rule_event raises a rule "custom" when (name, object) any time.
     int (*add_rule_action)(const char* name, rs64_rule_action_fn fn, void* user);
     int (*fire_rule_event)(const char* name, const char* object);
     // v7: the level map's cell (col, row): its 25 heights (s8, the HMP's units) and texture id (an lv_X_TEX index). terrain_set_cell writes the game's own map, so

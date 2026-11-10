@@ -175,7 +175,7 @@ function rs64Lib()
     return { assets, read, write, alias, unalias, aliases };
   }
 
-  // ---- Level rules: a mod's assets/level/<folder>/rules.json (see src/game/mod_content/level_rules.h) ----
+  // ---- Level rules: a mod's assets/level/<folder>/rules.txt, or an older rules.json (see src/game/mod_content/level_rules.h) ----
   // on: what the "when" attaches to (area = area trigger, path = path event, unit = destroyable unit, level = Level settings).
   const RULE_WHENS = [
     { when: 'enter', on: 'area', label: 'Something enters this area' },
@@ -187,6 +187,7 @@ function rs64Lib()
     { when: 'after', on: 'level', label: 'Seconds after the start', params: [{ key: 'seconds', picker: 'seconds' }] },
     { when: 'objectiveDone', on: 'level', label: 'An objective is completed', objectives: true, params: [{ key: 'value', picker: 'objective' }] },
     { when: 'objectiveFailed', on: 'level', label: 'An objective fails', objectives: true, params: [{ key: 'value', picker: 'objective' }] },
+    { when: 'true', on: 'level', label: 'Conditions become true' },
     { when: 'flagIs', on: 'level', label: 'Flag is set (advanced)', params: [{ key: 'value', picker: 'flag' }] },
     {
       when: 'counterAtLeast',
@@ -210,6 +211,8 @@ function rs64Lib()
     { do: 'win', label: 'Win the mission' },
     { do: 'fail', label: 'Fail the mission' },
     { do: 'wait', label: 'Wait', params: [{ key: 'seconds', picker: 'seconds' }] },
+    { do: 'set', label: 'Set variable', params: [{ key: 'variable', picker: 'variable' }, { key: 'value', picker: 'number' }] },
+    { do: 'add', label: 'Add to variable', params: [{ key: 'variable', picker: 'variable' }, { key: 'value', picker: 'number' }] },
     { do: 'flag', label: 'Set flag (advanced)', params: [{ key: 'flag', picker: 'flag' }, { key: 'value', picker: 'number' }] },
     { do: 'counter', label: 'Add to counter (advanced)', params: [{ key: 'counter', picker: 'flag' }, { key: 'add', picker: 'number' }] },
   ];
@@ -227,7 +230,8 @@ function rs64Lib()
     'text',
     'number',
     'seconds',
-    'flag'
+    'flag',
+    'variable'
   ]);
 
   // A native mod's mods/<id>/rules_ext.json: the actions it registers with add_rule_action and the custom whens it fires; unknown pickers become text.
@@ -254,7 +258,8 @@ function rs64Lib()
     ];
   }
 
-  const RULES_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.json';
+  const RULES_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.txt';
+  const RULES_JSON_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.json';
 
   function rulesParse(text) {
     try {
@@ -280,6 +285,10 @@ function rs64Lib()
     if (rule.who && rule.who !== 'player')
       out.push({ field: 'who', name: rule.who });
 
+    for (const a of condScan(rule.if ?? '').atoms)
+      if (a.kind)
+        out.push({ field: 'if', name: a.name });
+
     (rule.actions ?? []).forEach((a, k) => {
       const params = RULE_ACTIONS.find((x) => x.do === a.do)?.params ?? ext.find((e) => e.kind === 'action' && e.name === a.do)?.params ?? [];
 
@@ -303,6 +312,8 @@ function rs64Lib()
 
         if (head === 'actions')
           r.actions[+k][key] = to;
+        else if (head === 'if')
+          r.if = condRename(r.if, from, to);
         else
           r[head] = to;
 
@@ -321,6 +332,844 @@ function rs64Lib()
     doc.rules.forEach((r, i) => ruleRefs(r, ext).forEach((ref) => names.has(ref.name) || out.push({ rule: i, field: ref.field, name: ref.name })));
 
     return out;
+  }
+
+  // ---- Level rules script: rules.txt, read by parseScript in src/game/mod_content/level_rules.h. tests/level_rules_script_cases.json keeps
+  // the two parsers in step. The explorer's reader is lenient (half-made rules and unreadable text survive a save); rulesScriptCheck marks
+  // what the game would drop. ----
+  const COND_CHECKS = {
+    destroyed: { kind: 'unit' },
+    entered: { kind: 'area' },
+    health: { kind: 'unit', needsOp: true },
+    objective_done: { hi: 4, objectives: true },
+    objective_failed: { hi: 4, objectives: true },
+    flag: { hi: 128 },
+    counter: { hi: 128, needsOp: true }
+  };
+
+  const COND_RESERVED = ['and', 'or', 'not', 'true', 'false'];
+  const COND_WORDS = [...Object.keys(COND_CHECKS).map((w) => w + '('), 'time', ...COND_RESERVED];
+  const KIND_WORDS = { area: 'an area', path: 'a path point', unit: 'a unit', camera: 'a camera' };
+  const RULE_OBJECT_KIND = { enter: 'area', leave: 'area', pathPoint: 'path', destroyed: 'unit', healthBelow: 'unit' };
+  const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  // A condition's checks with their offsets, and its first error ({ from, to, reason }) or null. Mirrors CondParser.
+  function condScan(text)
+  {
+    let pos = 0;
+    let checks = 0;
+    let error = null;
+    const atoms = [];
+
+    const fail = (from, to, reason) => {
+      error ??= { from, to: Math.max(to, from + 1), reason };
+    };
+
+    const skip = () => {
+      while (text[pos] === ' ' || text[pos] === '\t')
+        pos++;
+    };
+
+    const peekWord = () => {
+      skip();
+
+      return /^[A-Za-z0-9_]*/.exec(text.slice(pos))[0];
+    };
+
+    const takeWord = (w) => {
+      if (peekWord() !== w)
+        return false;
+
+      pos += w.length;
+
+      return true;
+    };
+
+    const takeChar = (c) => {
+      skip();
+
+      if (text[pos] !== c)
+        return false;
+
+      pos++;
+
+      return true;
+    };
+
+    const taken = (re) => {
+      skip();
+
+      const m = re.exec(text.slice(pos));
+
+      if (m)
+        pos += m[0].length;
+
+      return !!m;
+    };
+
+    const test = () => {
+      const w = peekWord();
+      const at = pos;
+
+      if (!w || /^[0-9]/.test(w))
+        return fail(at, at + w.length, pos < text.length ? `expected a check at "${text.slice(pos, pos + 24)}"` : 'the condition ends too soon');
+
+      if (COND_RESERVED.includes(w))
+        return fail(at, at + w.length, `"${w}" is not a check`);
+
+      pos += w.length;
+
+      if (++checks > 64)
+        return fail(at, pos, 'more than 64 checks');
+
+      const spec = COND_CHECKS[w];
+      const atom = { check: w === 'time' || spec ? w : 'variable', word: { from: at, to: pos }, from: at, to: pos };
+
+      if (atom.check === 'variable')
+        atom.name = w;
+      else if (spec)
+      {
+        if (!takeChar('('))
+          return fail(at, pos, 'expected "(" after the check');
+
+        let close = pos;
+
+        for (let open = 1; close < text.length; close++)
+        {
+          if (text[close] === '(')
+            open++;
+          else if (text[close] === ')' && --open === 0)
+            break;
+        }
+
+        if (close >= text.length)
+          return fail(at, text.length, 'a "(" is never closed');
+
+        const inner = text.slice(pos, close);
+        const name = inner.trim();
+        const from = pos + inner.length - inner.trimStart().length;
+
+        pos = close + 1;
+
+        if (!name)
+          return fail(at, pos, 'nothing inside "()"');
+
+        if (spec.hi && !(/^\d+$/.test(name) && +name >= 1 && +name <= spec.hi))
+          return fail(from, from + name.length, `"${name}" is not a number from 1 to ${spec.hi}`);
+
+        if (spec.hi)
+          atom.index = +name;
+        else
+          Object.assign(atom, { name, kind: spec.kind, from, to: from + name.length });
+      }
+
+      const op = taken(/^(<=|>=|==|!=|<|>)/);
+
+      if (!op && (w === 'time' || spec?.needsOp))
+        return fail(at, pos, `"${w}" needs a comparison, like ${w}${w === 'time' ? '' : '(...)'} > 10`);
+
+      if (op && !taken(/^(true|false)\b|^-?[0-9.]+/))
+        return fail(pos, pos + 1, 'expected a number after the comparison');
+
+      atoms.push(atom);
+    };
+
+    const unary = (depth) => {
+      if (depth > 16)
+        return fail(pos, pos + 1, 'nested more than 16 deep');
+
+      if (takeWord('not'))
+        return unary(depth + 1);
+
+      skip();
+
+      const open = pos;
+
+      if (!takeChar('('))
+        return test();
+
+      either(depth + 1);
+
+      if (!error && !takeChar(')'))
+        fail(open, open + 1, 'a "(" is never closed');
+    };
+
+    const both = (depth) => {
+      unary(depth);
+
+      while (!error && takeWord('and'))
+        unary(depth);
+    };
+
+    const either = (depth) => {
+      both(depth);
+
+      while (!error && takeWord('or'))
+        both(depth);
+    };
+
+    either(0);
+    skip();
+
+    if (!error && pos < text.length)
+      fail(pos, text.length, `unexpected "${text.slice(pos, pos + 24)}"`);
+
+    return { atoms, error };
+  }
+
+  // Marks for one condition. ctx: { objects: Map<name, kind> | null, objectives: boolean, variables: Set | null, strictVariables }.
+  function condCheck(text, ctx = {})
+  {
+    const { atoms, error } = condScan(text);
+    const marks = error ? [error] : [];
+
+    for (const a of atoms)
+    {
+      const has = ctx.objects?.get(a.name);
+
+      if (a.kind && ctx.objects && has !== a.kind)
+        marks.push({
+          from: a.from,
+          to: a.to,
+          reason: has ? `"${a.name}" is ${KIND_WORDS[has]}, not ${KIND_WORDS[a.kind]}` : `no ${a.kind} "${a.name}" in this level`
+        });
+
+      if (COND_CHECKS[a.check]?.objectives && ctx.objectives === false)
+        marks.push({ from: a.word.from, to: a.word.to, reason: 'this level has no objectives of its own' });
+
+      if (a.check === 'variable' && ctx.variables && ctx.strictVariables !== false && !ctx.variables.has(a.name))
+        marks.push({ from: a.from, to: a.to, reason: `no rule sets "${a.name}"` });
+    }
+
+    return marks;
+  }
+
+  // Renames an object inside a condition's checks, leaving variables and other text alone.
+  function condRename(text, from, to)
+  {
+    let out = text;
+
+    for (const a of condScan(text).atoms.filter((x) => x.kind && x.name === from).reverse())
+      out = out.slice(0, a.from) + to + out.slice(a.to);
+
+    return out;
+  }
+
+  // Lines with their normalized text (tabs as spaces, trimmed) and its offset in the file; a leading BOM is skipped.
+  function rulesLines(text)
+  {
+    const out = [];
+    let at = text.startsWith('﻿') ? 1 : 0;
+
+    for (const part of text.slice(at).split('\n'))
+    {
+      const raw = part.endsWith('\r') ? part.slice(0, -1) : part;
+      const spaced = raw.replace(/\t/g, ' ');
+      const lead = spaced.length - spaced.replace(/^ +/, '').length;
+
+      out.push({ at: at + lead, raw, text: spaced.trim() === '' ? '' : spaced.slice(lead).replace(/ +$/, '') });
+      at += part.length + 1;
+    }
+
+    return out;
+  }
+
+  // Rules (header, body, end line indices, comment lines just above) and stray lines, as the game walks them.
+  function rulesBlocks(lines)
+  {
+    const blocks = [];
+    let cur = null;
+    let junk = null;
+    let comment = [];
+
+    lines.forEach(({ text: t }, i) => {
+      if (!t)
+      {
+        if (!cur)
+          comment = [];
+
+        return;
+      }
+
+      if (t[0] === '#')
+      {
+        if (!cur)
+          comment.push(i);
+
+        return;
+      }
+
+      if (/^(when|every)( |$)/.test(t))
+      {
+        if (cur)
+          cur.noEnd = true;
+
+        cur = { header: i, body: [], end: null, comment };
+        junk = null;
+        comment = [];
+        blocks.push(cur);
+
+        return;
+      }
+
+      comment = [];
+
+      if (t === 'end' && cur)
+      {
+        cur.end = i;
+        cur = null;
+      }
+      else if (cur)
+        cur.body.push(i);
+      else if (junk)
+      {
+        junk.lines.push(i);
+
+        if (t === 'end')
+          junk = null;
+      }
+      else
+      {
+        junk = { lines: [i], strayEnd: t === 'end' };
+        blocks.push(junk);
+
+        if (t === 'end')
+          junk = null;
+      }
+    });
+
+    if (cur)
+      cur.noEnd = true;
+
+    return blocks;
+  }
+
+  const ruleValue = (s) => (/^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s);
+  const collapse = (s) => s.replace(/ +/g, ' ').trim();
+
+  // A header as the explorer's rule object, keeping what it can (null when it names no known event).
+  function headerParse(line)
+  {
+    const r = {};
+    let s = line;
+
+    if (/ every time$/.test(s))
+    {
+      r.every = true;
+      s = s.slice(0, -11).trim();
+    }
+
+    if (s.startsWith('when true:'))
+    {
+      const c = s.slice(10).trim();
+
+      r.when = 'true';
+
+      if (c)
+        r.if = c;
+
+      return r;
+    }
+
+    const ifAt = s.indexOf(' if ');
+
+    if (ifAt >= 0)
+    {
+      r.if = s.slice(ifAt + 4).trim();
+      s = s.slice(0, ifAt).trim();
+    }
+
+    const w = s.split(/ +/);
+    const rest = w.slice(2).join(' ');
+    const set = (key, v) => v !== '' && v !== undefined && (r[key] = ruleValue(v));
+
+    if (w[0] === 'every')
+    {
+      if (r.every || w.length > 3 || (w[2] ?? 'seconds') !== 'seconds')
+        return null;
+
+      r.when = 'after';
+      r.every = true;
+      set('seconds', w[1] === 'seconds' ? undefined : w[1]);
+
+      return r;
+    }
+
+    if (w[0] !== 'when')
+      return null;
+
+    const kind = w[1];
+    const named = { enter: 'enter', leave: 'leave', point: 'pathPoint', destroyed: 'destroyed' };
+
+    if (named[kind])
+    {
+      r.when = named[kind];
+
+      if (rest)
+        r.object = rest;
+    }
+    else if (kind === 'health')
+    {
+      const m = /^(.*?) ?\bbelow\b ?(.*)$/.exec(rest);
+
+      r.when = 'healthBelow';
+
+      if (m?.[1] || (!m && rest))
+        r.object = m ? m[1] : rest;
+
+      set('value', m?.[2]);
+    }
+    else if (kind === 'start' && !rest)
+      r.when = 'start';
+    else if (kind === 'after')
+    {
+      r.when = 'after';
+      set('seconds', rest);
+    }
+    else if (kind === 'objective')
+    {
+      const ws = rest.split(' ').filter(Boolean);
+      const state = ws.find((x) => x === 'done' || x === 'failed');
+
+      if (!state)
+        return null;
+
+      r.when = state === 'done' ? 'objectiveDone' : 'objectiveFailed';
+      set('value', ws.filter((x) => x !== state).join(' '));
+    }
+    else if (kind === 'flag')
+    {
+      r.when = 'flagIs';
+      set('value', rest);
+    }
+    else if (kind === 'counter')
+    {
+      const m = /^(.*?) ?\breaches\b ?(.*)$/.exec(rest);
+
+      r.when = 'counterAtLeast';
+      set('value', m ? m[1] : rest);
+      set('count', m?.[2]);
+    }
+    else if (kind === 'custom')
+    {
+      const forAt = rest.indexOf(' for ');
+
+      r.when = 'custom';
+      set('custom', forAt < 0 ? rest : rest.slice(0, forAt));
+
+      if (forAt >= 0)
+        r.object = rest.slice(forAt + 5).trim();
+    }
+    else
+      return null;
+
+    return r;
+  }
+
+  function headerWrite(r)
+  {
+    const v = (x) => (x === undefined ? '' : String(x));
+    const named = { enter: 'enter', leave: 'leave', pathPoint: 'point', destroyed: 'destroyed' };
+    let s;
+
+    if (r.when === 'true')
+      s = `when true: ${v(r.if)}`;
+    else if (r.when === 'after')
+      s = r.every ? `every ${v(r.seconds)} seconds` : `when after ${v(r.seconds)}`;
+    else if (named[r.when])
+      s = `when ${named[r.when]} ${v(r.object)}`;
+    else if (r.when === 'healthBelow')
+      s = `when health ${v(r.object)} below ${v(r.value)}`;
+    else if (r.when === 'objectiveDone' || r.when === 'objectiveFailed')
+      s = `when objective ${v(r.value)} ${r.when === 'objectiveDone' ? 'done' : 'failed'}`;
+    else if (r.when === 'flagIs')
+      s = `when flag ${v(r.value)}`;
+    else if (r.when === 'counterAtLeast')
+      s = `when counter ${v(r.value)} reaches ${v(r.count)}`;
+    else if (r.when === 'custom')
+      s = `when custom ${v(r.custom)}${r.object ? ' for ' + r.object : ''}`;
+    else
+      s = `when ${r.when ?? 'start'}`;
+
+    s = collapse(s);
+
+    if (r.if && r.when !== 'true')
+      s += ` if ${r.if}`;
+
+    if (r.every && r.when !== 'after')
+      s += ' every time';
+
+    return s;
+  }
+
+  // Actions with fixed positions: the last key marked * takes the rest of the line.
+  const ACTION_FORMS = {
+    voice: ['id'],
+    music: ['song'],
+    wait: ['seconds'],
+    recording: ['file*'],
+    camera: ['camera*'],
+    destroy: ['unit*'],
+    flag: ['flag', 'value'],
+    counter: ['counter', 'add'],
+    set: ['variable', 'value'],
+    add: ['variable', 'value']
+  };
+
+  // An action line as the explorer's action object, or null when it is not one.
+  function actionParse(line)
+  {
+    const w = line.split(/ +/);
+    const k = w[0];
+    const rest = w.slice(1).join(' ');
+
+    if ((k === 'win' || k === 'fail') && w.length === 1)
+      return { do: k };
+
+    if ((k === 'complete' || k === 'fail') && w[1] === 'objective' && w.length <= 3)
+    {
+      const a = { do: k === 'complete' ? 'objectiveDone' : 'objectiveFail' };
+
+      if (w[2] !== undefined)
+        a.objective = ruleValue(w[2]);
+
+      return a;
+    }
+
+    if (k === 'message')
+    {
+      const a = { do: 'message' };
+      const timed = w[1] !== undefined && /^-?\d+(\.\d+)?$/.test(w[1]);
+      const text = timed ? w.slice(2).join(' ') : rest;
+
+      if (timed)
+        a.seconds = Number(w[1]);
+
+      if (text)
+        a.text = text;
+
+      return a;
+    }
+
+    const form = ACTION_FORMS[k];
+
+    if (form)
+    {
+      const a = { do: k };
+
+      form.forEach((key, i) => {
+        const tail = key.endsWith('*');
+        const value = tail ? w.slice(i + 1).join(' ') : w[i + 1];
+
+        if (value !== undefined && value !== '')
+          a[tail ? key.slice(0, -1) : key] = k === 'set' && i === 1 && (value === 'true' || value === 'false') ? value === 'true' : ruleValue(value);
+      });
+
+      return a;
+    }
+
+    if (!/^[A-Za-z0-9_.]+$/.test(k) || (rest && !/^[A-Za-z0-9_]+=/.test(rest)))
+      return null;
+
+    const a = { do: k };
+    const keys = [...rest.matchAll(/(?:^| )([A-Za-z0-9_]+)=/g)];
+
+    keys.forEach((m, i) => {
+      const from = m.index + m[0].length;
+      const end = i + 1 < keys.length ? keys[i + 1].index : rest.length;
+
+      a[m[1]] = ruleValue(rest.slice(from, end).trim());
+    });
+
+    return a;
+  }
+
+  function actionWrite(a)
+  {
+    if (a.raw !== undefined)
+      return a.raw;
+
+    const v = (x) => (x === undefined ? '' : String(x));
+
+    if (a.do === 'objectiveDone' || a.do === 'objectiveFail')
+      return collapse(`${a.do === 'objectiveDone' ? 'complete' : 'fail'} objective ${v(a.objective)}`);
+
+    if (a.do === 'message')
+      return collapse(`message ${v(a.seconds)} ${v(a.text)}`);
+
+    const form = ACTION_FORMS[a.do];
+
+    if (form)
+    {
+      const parts = [a.do];
+
+      for (const key of form.map((x) => x.replace('*', '')))
+      {
+        if (a[key] === undefined || a[key] === '')
+          break;
+
+        parts.push(String(a[key]));
+      }
+
+      return parts.join(' ');
+    }
+
+    return [a.do, ...Object.entries(a).filter(([k]) => k !== 'do').map(([k, x]) => `${k}=${x}`)].join(' ');
+  }
+
+  // The level's rules from rules.txt text, in the shape the rule panels edit. Unreadable blocks and actions come back as { raw }.
+  function rulesScriptParse(text)
+  {
+    const lines = rulesLines(text || '');
+    const rawOf = (from, to) => lines.slice(from, to + 1).map((l) => l.raw).join('\n');
+    const rules = [];
+
+    for (const b of rulesBlocks(lines))
+    {
+      const comment = b.comment?.length ? { comment: b.comment.map((i) => lines[i].text).join('\n') } : {};
+
+      if (b.lines)
+      {
+        rules.push({ raw: rawOf(b.lines[0], b.lines.at(-1)), line: b.lines[0] + 1 });
+        continue;
+      }
+
+      const last = b.end ?? b.body.at(-1) ?? b.header;
+      const head = lines[b.header].text;
+      const r = headerParse(head);
+
+      if (!r || collapse(headerWrite(r)) !== collapse(head))
+      {
+        rules.push({ ...comment, raw: rawOf(b.header, last), line: b.header + 1 });
+        continue;
+      }
+
+      r.actions = b.body.map((i) => {
+        const a = actionParse(lines[i].text);
+
+        return a && collapse(actionWrite(a)) === collapse(lines[i].text) ? a : { raw: lines[i].text };
+      });
+
+      rules.push({ ...comment, ...r, line: b.header + 1 });
+    }
+
+    return { version: 1, rules };
+  }
+
+  function rulesScriptWrite(doc)
+  {
+    const one = (r) => {
+      const comment = r.comment ? r.comment + '\n' : '';
+
+      if (r.raw !== undefined)
+        return comment + r.raw;
+
+      return comment + [headerWrite(r), ...(r.actions ?? []).map((a) => '    ' + actionWrite(a)), 'end'].join('\n');
+    };
+
+    return doc.rules.length ? doc.rules.map(one).join('\n\n') + '\n' : '';
+  }
+
+  // Variables some rule sets or adds to.
+  const rulesVariables = (text) => [...new Set([...(text || '').matchAll(/^[ \t]*(?:set|add)[ \t]+([A-Za-z_][A-Za-z0-9_]*)/gm)].map((m) => m[1]))];
+
+  const isNumber = (x, lo, hi, whole = true) => typeof x === 'number' && (!whole || Number.isInteger(x)) && x >= lo && x <= hi;
+
+  // Marks ({ from, to, reason }, file offsets) on everything the game would drop. ctx: { objects: Map<name, kind> | null, objectives,
+  // strictVariables, ext } (ext: rulesExtParse entries; mod actions are only checked when given).
+  function rulesScriptCheck(text, ctx = {})
+  {
+    const lines = rulesLines(text || '');
+    const marks = [];
+    const vctx = { ...ctx, variables: new Set(rulesVariables(text)) };
+
+    const mark = (l, from, to, reason) => {
+      marks.push({ from: lines[l].at + from, to: lines[l].at + Math.max(to, from + 1), reason });
+    };
+
+    const whole = (l, reason) => mark(l, 0, lines[l].text.length, reason);
+
+    const object = (l, name, kind, at) => {
+      const has = ctx.objects?.get(name);
+
+      if (ctx.objects && name && has !== kind)
+        mark(l, at, at + name.length, has ? `"${name}" is ${KIND_WORDS[has]}, not ${KIND_WORDS[kind]}` : `no ${kind} "${name}" in this level`);
+    };
+
+    const cond = (l, c, at) => {
+      for (const m of condCheck(c, vctx))
+        mark(l, at + m.from, at + m.to, m.reason);
+    };
+
+    const header = (l) => {
+      const t = lines[l].text;
+      const r = headerParse(t);
+      const w = t.split(' ');
+
+      if (!r)
+        return whole(l, /^every /.test(t) && / every time$/.test(t) ? '"every N seconds" already repeats; drop "every time"' : `"${w[1] ?? w[0]}" is not something a rule can wait for`);
+
+      if (r.when === 'true')
+      {
+        const ifWord = / if( |$)/.exec(t);
+
+        if (ifWord)
+          return mark(l, ifWord.index + 1, ifWord.index + 3, '"when true:" is its own condition; it takes no "if"');
+
+        const at = 10 + (t.slice(10).length - t.slice(10).trimStart().length);
+
+        return cond(l, r.if ?? '', at);
+      }
+
+      const kind = RULE_OBJECT_KIND[r.when];
+      const bad = {
+        after: () => !isNumber(r.seconds, r.every ? 0.001 : 0, 86400, false) && (r.every ? 'expected "every <seconds> seconds"' : 'expected "when after <seconds>"'),
+        healthBelow: () => (!r.object || !isNumber(r.value, 0, 100)) && 'expected "when health <unit> below <percent>"',
+        objectiveDone: () => !isNumber(r.value, 1, 4) && 'expected "when objective <1-4> done"',
+        objectiveFailed: () => !isNumber(r.value, 1, 4) && 'expected "when objective <1-4> failed"',
+        flagIs: () => !isNumber(r.value, 1, 128) && 'expected "when flag <1-128>"',
+        counterAtLeast: () => (!isNumber(r.value, 1, 128) || !isNumber(r.count, -2147483647, 2147483647)) && 'expected "when counter <1-128> reaches <count>"',
+        custom: () => (!r.custom || / /.test(String(r.custom))) && 'expected "when custom <event> [for <object>]"'
+      }[r.when]?.();
+
+      if (bad)
+        whole(l, bad);
+      else if (kind && !r.object)
+        whole(l, `"${w.slice(0, 2).join(' ')}" needs a name`);
+      else if (kind)
+        object(l, r.object, kind, t.indexOf(r.object, w[0].length + w[1].length + 1));
+
+      if ((r.when === 'objectiveDone' || r.when === 'objectiveFailed') && ctx.objectives === false)
+        whole(l, 'this level has no objectives of its own');
+
+      if (r.if !== undefined)
+      {
+        const at = t.indexOf(' if ') + 4;
+
+        cond(l, r.if, at + (t.slice(at).length - t.slice(at).trimStart().length));
+      }
+    };
+
+    const action = (l) => {
+      const t = lines[l].text;
+      const a = actionParse(t);
+      const k = t.split(' ')[0];
+
+      if (!a || collapse(actionWrite(a)) !== collapse(t))
+        return mark(l, 0, k.length, `"${k}" is not an action`);
+
+      const expected = {
+        voice: () => !isNumber(a.id, 0, 65535) && 'voice <id>',
+        music: () => !isNumber(a.song, 0, 255) && 'music <song>',
+        wait: () => !isNumber(a.seconds, 0, 86400, false) && 'wait <seconds>',
+        recording: () => !a.file && 'recording <file>',
+        camera: () => !a.camera && 'camera <name>',
+        destroy: () => !a.unit && 'destroy <unit>',
+        message: () => (!isNumber(a.seconds, 1, 10) || !a.text) && 'message <1-10 seconds> <text>',
+        flag: () => (!isNumber(a.flag, 1, 128) || !(a.value === undefined || isNumber(a.value, -2147483647, 2147483647))) && 'flag <1-128> [value]',
+        counter: () => (!isNumber(a.counter, 1, 128) || !(a.add === undefined || isNumber(a.add, -2147483647, 2147483647))) && 'counter <1-128> [add]',
+        set: () => (!VARIABLE_NAME.test(a.variable ?? '') || COND_RESERVED.includes(a.variable) || a.variable === 'time' || !(typeof a.value === 'boolean' || isNumber(a.value, -2147483647, 2147483647))) && 'set <variable> <number, true or false>',
+        add: () => (!VARIABLE_NAME.test(a.variable ?? '') || COND_RESERVED.includes(a.variable) || a.variable === 'time' || !isNumber(a.value, -2147483647, 2147483647)) && 'add <variable> <number>',
+        objectiveDone: () => !isNumber(a.objective, 1, 4) && 'complete objective <1-4>',
+        objectiveFail: () => !isNumber(a.objective, 1, 4) && 'fail objective <1-4>'
+      }[a.do]?.();
+
+      if (expected)
+        return whole(l, `expected "${expected}"`);
+
+      const known = ['win', 'fail', 'spawn', 'wave', ...Object.keys(ACTION_FORMS), 'message', 'objectiveDone', 'objectiveFail'];
+
+      if (ctx.ext && !known.includes(a.do) && !ctx.ext.some((e) => e.kind === 'action' && e.name === a.do))
+        mark(l, 0, k.length, `"${k}" needs a mod that adds it`);
+
+      if (a.do === 'destroy')
+        object(l, a.unit, 'unit', t.indexOf(a.unit, k.length));
+
+      if (a.do === 'camera')
+        object(l, a.camera, 'camera', t.indexOf(a.camera, k.length));
+
+      if ((a.do === 'objectiveDone' || a.do === 'objectiveFail') && ctx.objectives === false)
+        whole(l, 'this level has no objectives of its own');
+    };
+
+    if ((text || '').length > 256 * 1024)
+    {
+      whole(0, 'the file is over 256 KB, so the game does not read it');
+
+      return marks;
+    }
+
+    let count = 0;
+
+    for (const b of rulesBlocks(lines))
+    {
+      if (b.lines)
+      {
+        whole(b.lines[0], b.strayEnd ? '"end" without a rule' : 'expected "when" or "every" to start a rule');
+        continue;
+      }
+
+      const before = marks.length;
+
+      for (const l of [b.header, ...b.body].filter((i) => lines[i].text.length > 1024))
+        whole(l, 'the line is over 1024 characters');
+
+      header(b.header);
+      b.body.forEach(action);
+
+      if (b.noEnd)
+        whole(b.header, 'no "end" for this rule');
+
+      if (marks.length === before && ++count > 512)
+        whole(b.header, 'more than 512 rules; the game stops reading here');
+    }
+
+    return marks;
+  }
+
+  // What fits at the cursor: object names in an object slot, else variables and check words inside a condition.
+  // ctx: { objects: Map<name, kind> }. Returns { from, to, items: [{ label, kind }] } (from/to: the word being typed).
+  function rulesComplete(text, cursor, ctx = {})
+  {
+    const start = text.lastIndexOf('\n', cursor - 1) + 1;
+    const t = text.slice(start, cursor).replace(/\t/g, ' ').replace(/^ +/, '');
+    const tail = /^[^\s()]*/.exec(text.slice(cursor))[0];
+    const names = (kind) => [...(ctx.objects ?? new Map())].filter(([, k]) => k === kind).map(([label]) => ({ label, kind }));
+    const variables = rulesVariables(text).map((label) => ({ label, kind: 'variable' }));
+
+    const result = (prefix, items) => ({
+      from: cursor - prefix.length,
+      to: cursor + tail.length,
+      items: items.filter((i) => i.label.toLowerCase().startsWith(prefix.toLowerCase())).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+    });
+
+    let m = /(destroyed|entered|health)\( *([^()]*)$/.exec(t);
+
+    if (m)
+      return result(m[2], names(COND_CHECKS[m[1]].kind));
+
+    if (!/^when true:/.test(t) && !/ if /.test(t))
+    {
+      const slots = [
+        [/^when (?:enter|leave) (.*)$/, 'area'],
+        [/^when point (.*)$/, 'path'],
+        [/^when (?:destroyed|health) ((?:(?! below).)*)$/, 'unit'],
+        [/^destroy (.*)$/, 'unit'],
+        [/^camera (.*)$/, 'camera']
+      ];
+
+      for (const [re, kind] of slots)
+        if ((m = re.exec(t)))
+          return result(m[1], names(kind));
+
+      m = /^(?:set|add) ([A-Za-z0-9_]*)$/.exec(t);
+
+      return m ? result(m[1], variables) : result('', []);
+    }
+
+    const prefix = /[A-Za-z_][A-Za-z0-9_]*$/.exec(t)?.[0] ?? '';
+
+    return result(prefix, [...variables, ...COND_WORDS.map((label) => ({ label, kind: 'word' }))]);
   }
 
   // ---- Split export: what kind of change a project path is (the export dialog's starting groups); null for explorer/ sidecars ----
@@ -8649,7 +9498,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

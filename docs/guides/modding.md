@@ -165,43 +165,75 @@ Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>`
 
 ### Level rules
 
-Rules add "when this happens, do that" to a level without code. They live in `assets/level/<folder>/rules.json`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>` (`lv_1` is Barkhesh):
+Rules add "when this happens, do that" to a level without code. They live in `assets/level/<folder>/rules.txt`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>` (`lv_1` is Barkhesh):
 
-```json
-{ "version": 1, "rules": [
-  { "when": "enter", "object": "bridge_zone", "actions": [ { "do": "message", "text": "Hold the bridge", "seconds": 6 }, { "do": "wait", "seconds": 4 }, { "do": "music", "song": 92 } ] },
-  { "when": "destroyed", "object": "shield_gen", "actions": [ { "do": "win" } ] },
-  { "when": "after", "seconds": 120, "every": true, "actions": [ { "do": "voice", "id": 627 } ] }
-] }
+```text
+# Hold the bridge once the gate is down
+when enter bridge_zone if destroyed(gate) and not objective_done(2)
+    message 6 Hold the bridge
+    wait 4
+    music 92
+end
+
+when destroyed tie_wave_1 every time
+    add kills 1
+end
+
+when true: kills >= 3 and entered(bridge_zone)
+    win
+end
+
+every 120 seconds
+    voice 627
+end
 ```
 
-A rule fires once unless `"every": true`. Its actions run in order, and `wait` holds the ones after it. Objects are found by name: a rule whose object the level lacks is skipped with a log line, and the others still run.
+A rule is a `when` line, one action a line, then `end`; `#` starts a comment and indentation is free. Nothing is quoted: object names (which may have spaces, or parentheses as in `CIV_Hut_(NEW)_01`) are written as they are. A rule fires once unless its `when` line ends with `every time`, and its actions run in order with `wait` holding the ones after it.
 
-| `when` | Fires |
+| `when` line | Fires |
 | --- | --- |
-| `enter` / `leave` | something enters or leaves the trigger area `object` |
-| `pathPoint` | an NPC passes the path event `object` |
-| `destroyed` / `healthBelow` | the unit `object` is destroyed / its health drops below `value` % |
-| `start` / `after` | the mission starts / `seconds` after it started |
-| `objectiveDone` / `objectiveFailed` | objective `value` (1-4) of a level with its own `objectives` completes or fails |
-| `flagIs` / `counterAtLeast` | objective flag `value` is set / objective counter `value` reaches `count` |
-| `custom` | a native mod fires event `custom` (for `object`, when given) |
+| `when enter <area>` / `when leave <area>` | something enters or leaves the trigger area |
+| `when point <path event>` | an NPC passes the path event |
+| `when destroyed <unit>` / `when health <unit> below <percent>` | the unit is destroyed / its health drops below that |
+| `when start` / `when after <seconds>` / `every <seconds> seconds` | the mission starts / that long after it started / that often |
+| `when objective <1-4> done` / `failed` | that objective of a level with its own `objectives` completes or fails |
+| `when true: <condition>` | the condition becomes true |
+| `when flag <1-128>` / `when counter <1-128> reaches <count>` | an objective flag is set / an objective counter reaches the count |
+| `when custom <event> [for <object>]` | a native mod fires that event (for that object, when given) |
 
-| `do` | Fields |
+| Action | Does |
 | --- | --- |
-| `voice` / `recording` | `id`, a stock voice line / `file`, a MORT recording in the level's folder |
-| `message` | `text` shown as a subtitle for `seconds` (1-10) |
-| `music` | `song`, a song id from the in-mission cue table |
-| `spawn` | raises `flag`, the gate of an enemy wave the explorer adds to the level (waiting off-stage until then) |
-| `camera` / `destroy` | cut to the camera position `camera` / destroy the unit `unit` |
+| `voice <id>` / `recording <file>` | play a stock voice line / a MORT recording in the level's folder |
+| `message <1-10> <text>` | show the text as a subtitle for that many seconds |
+| `music <song>` | play a song id |
+| `camera <name>` / `destroy <unit>` | cut to a camera position / destroy a unit |
 | `win` / `fail` | end the mission |
-| `objectiveDone` / `objectiveFail` | mark objective `objective` (levels with their own objectives) |
-| `wait` | `seconds` before the next action |
-| `flag` / `counter` | set objective flag `flag` to `value` (default 1) / add `add` (default 1) to objective counter `counter` |
+| `complete objective <1-4>` / `fail objective <1-4>` | mark an objective (levels with their own objectives) |
+| `wait <seconds>` | hold the next actions |
+| `set <variable> <number, true or false>` / `add <variable> <number>` | change a variable |
+| `flag <1-128> [value]` / `counter <1-128> [add]` | set an objective flag (default 1) / add to an objective counter (default 1) |
+| `<name> key=value ...` | a native mod's action; `spawn` (a wave the explorer adds) uses this form too |
 
-In the explorer, rules are attached to the object they are about: select an area or path event in Events mode, or a unit in Objects mode, and use *+ Add rule* in its panel (the object is given a unique name if it needs one). *Level events…* in Events mode opens a window with the level-wide rules and a list of every rule in the level; a rule whose object was deleted shows red there, and *Export mod* warns about it.
+Any `when` line except `when true:` can end in `if <condition>`: the rule only fires while it holds, and one that fails stays ready for next time.
 
-Rules are not a scripting language: there are no variables or loops beyond flags, counters and `every`. Anything more goes in a native mod, which can add its own actions and `custom` whens ([Level rules actions](../engine/modding-host-api.md#level-rules-actions)).
+| Check | True when |
+| --- | --- |
+| `destroyed(<unit>)` / `entered(<area>)` | the unit was destroyed / the area was entered this mission |
+| `health(<unit>) < 50` | the unit's health compares true (0 once destroyed) |
+| `objective_done(<1-4>)` / `objective_failed(<1-4>)` | that objective is done / failed |
+| `time > 120` | that many seconds have passed |
+| `<variable>` / `<variable> >= 3` | the variable is not 0 / compares true |
+| `flag(<1-128>)` / `counter(<1-128>) >= 2` | an objective flag is set / a counter compares true |
+
+Combine checks with `and`, `or`, `not` and parentheses; comparisons are `<`, `<=`, `>`, `>=`, `==`, `!=`. Variables are whole numbers that start at 0 each mission (`true` is 1, `false` 0), and every enabled mod's rules for a level share them.
+
+The game skips a rule with a log line (`[rules] lv_1: line 7: ...`) when it does not read, names an object the level lacks, reads a variable no rule sets, or uses objectives on a level without its own; the others still run. In co-op, rules run on each player's game separately, and the second player's game does not see areas being entered.
+
+An older `rules.json` still loads; when one mod folder has both files, `rules.txt` is used.
+
+In the explorer, rules are attached to the object they are about: select an area or path event in Events mode, or a unit in Objects mode, and use *+ Add rule* in its panel (the object is given a unique name if it needs one). Each rule has an *Only if* box for its condition. *Level events…* in Events mode opens a window with the level-wide rules and a list of every rule in the level, and its script button shows the whole `rules.txt` to edit as text. Both boxes suggest names from the level as you type and underline in red whatever the game would skip, with the reason below; *Export mod* warns about rules whose object was deleted.
+
+Anything the rules cannot say goes in a native mod, which can add its own actions and `custom` events ([Level rules actions](../engine/modding-host-api.md#level-rules-actions)).
 
 The [exhaust-color](../../mods/exhaust-color/) mod is a different approach: it recolors every craft's exhaust from the player's ROM at startup, driven by a config option.
 

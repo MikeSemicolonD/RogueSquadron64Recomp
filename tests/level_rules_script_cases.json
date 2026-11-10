@@ -1,0 +1,50 @@
+[
+  {
+    "name": "full_example (stock names have no spaces; 12 have parentheses, read to the matching \")\")",
+    "text": "# Hold the bridge once the gate is down\nwhen enter bridge_zone if destroyed(gate) and not objective_done(2)\n    message 6 Hold the bridge\n    wait 4\n    music 92\nend\n\nwhen destroyed shield_gen\n    win\nend\n\nevery 120 seconds\n    voice 627\nend\n\nwhen true: health(shield_gen) < 50 and entered(bridge_zone)\n    flag 12\nend\n",
+    "rules": 4,
+    "errorLines": []
+  },
+  {
+    "name": "every_header",
+    "text": "when enter a\nend\nwhen leave a every time\nend\nwhen point p\nend\nwhen destroyed u if x\nend\nwhen health u below 40\nend\nwhen start\nend\nwhen after 10\nend\nevery 5 seconds\nend\nwhen objective 1 done\nend\nwhen objective 2 failed\nend\nwhen flag 5\nend\nwhen counter 6 reaches 3\nend\nwhen custom mod.tripped\nend\nwhen custom mod.tripped for gate every time\nend\nwhen true: x and time > 3\nend\n",
+    "rules": 15,
+    "errorLines": []
+  },
+  {
+    "name": "every_action",
+    "text": "when start\n    voice 627\n    recording brief2\n    message 6 Hold the bridge\n    music 92\n    camera cam_1\n    destroy CIV_Hut_(NEW)_01\n    win\n    fail\n    complete objective 1\n    fail objective 2\n    wait 2.5\n    flag 12\n    flag 13 0\n    counter 4\n    counter 5 -2\n    set held true\n    set kills 3\n    add kills -1\n    spawn flag=40 kind=12 count=3 path=tie_path\n    shake seconds=2 text=big boom\nend\n",
+    "rules": 1,
+    "errorLines": []
+  },
+  {
+    "name": "script_whitespace_variants",
+    "text": "﻿when start\r\n\twin  \r\nend\r\n\r\nwhen   start\n  win\nend",
+    "rules": 2,
+    "errorLines": []
+  },
+  {
+    "name": "script_names_with_spaces",
+    "text": "when destroyed shield gen\n    destroy shield gen\nend\nwhen enter bridge zone if destroyed(shield gen) every time\n    win\nend\nwhen health shield gen below 50\n    win\nend\n",
+    "rules": 3,
+    "errorLines": []
+  },
+  {
+    "name": "bad_rules_dropped",
+    "text": "when start\n    win\n    wiat 4\nend\nwhen start\n    win\nend\nwhen true: x if y\nend\nevery 5 seconds every time\nend\nwhen start\n    set x maybe\nend\nwhen destroyed\nend\nwhen explode x\nend\nwhen start\n    win\n",
+    "rules": 1,
+    "errorLines": [3, 8, 10, 13, 15, 17, 19]
+  },
+  {
+    "name": "comments_and_blanks",
+    "text": "# a\n\n   # b\nwhen start\n  # inside\n  win\nend\n#end",
+    "rules": 1,
+    "errorLines": []
+  },
+  {
+    "name": "junk",
+    "text": "\u0000\u0001when start\nwin\nend\nÿþ garbage\nwhen start\nwin\nend\n",
+    "rules": 1,
+    "errorLines": [1, 4]
+  }
+]

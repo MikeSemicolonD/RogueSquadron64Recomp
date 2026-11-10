@@ -122,6 +122,26 @@ body.nav-drag { transition: none; cursor: ew-resize; }
 .levelRules .ruleRow b { color: var(--obj); font-weight: 600; }
 .levelRules .ruleRow.bad, .levelRules .ruleRow.bad b { color: var(--bad); border-color: var(--bad-line); }
 .rulesBox button.on { outline: 1px solid var(--accent); }
+/* Rules script boxes: a transparent-text layer under the textarea draws the red marks, so both share font, padding and line height. */
+.codeBox { display: grid; gap: 2px; min-width: 0; }
+.codeField { position: relative; min-width: 0; }
+.codeField .codeText, .codeField .codeMarks { font: 12px/18px ui-monospace, Consolas, monospace; padding: 4px 6px; margin: 0; box-sizing: border-box; width: 100%; white-space: pre; overflow: auto; tab-size: 4; }
+.codeField .codeText { position: relative; background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 3px; resize: vertical; display: block; }
+.codeBox.one .codeText { resize: none; overflow: hidden; height: 28px; }
+.codeField .codeMarks { position: absolute; inset: 0; color: transparent; border: 1px solid transparent; pointer-events: none; overflow: hidden; background: var(--bg); border-radius: 3px; }
+.codeField .codeMarks mark { color: transparent; background: none; text-decoration: underline wavy var(--bad-line); text-underline-offset: 3px; }
+.codeBox.bad .codeText { border-color: var(--bad-line); }
+.codeNote { color: var(--bad); min-height: 0; }
+.codeNote:empty { display: none; }
+.codeMenu { position: absolute; z-index: 10; min-width: 120px; max-width: 260px; max-height: 180px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; font: 12px/18px ui-monospace, Consolas, monospace; box-shadow: 0 2px 8px rgba(0, 0, 0, .35); }
+.codeMenu[hidden] { display: none; }
+.codeMenu .codeItem { color: var(--text); padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.codeMenu .codeItem.on, .codeMenu .codeItem:hover { background: var(--sel); color: var(--strong); }
+.rulesBox .cond { display: flex; gap: 6px; align-items: start; margin-left: 12px; }
+.rulesBox .cond .codeBox { flex: 1; }
+.levelRules .ruleScript .codeText { min-height: 280px; }
+.levelRules[hidden], .levelRules .ruleScript[hidden] { display: none; }
+.levelRules > .when:first-child { justify-content: flex-end; }
 .rulesBox .addAct { margin-left: 12px; justify-self: start; }
 .rulesBox .addRule { justify-self: start; }
 #addOverlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center; background: color-mix(in srgb, var(--panel) 55%, transparent); backdrop-filter: blur(4px); border-radius: 6px; }

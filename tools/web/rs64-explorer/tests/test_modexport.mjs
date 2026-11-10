@@ -2315,6 +2315,15 @@ await check('rules round-trip and list their references', () => {
   assert.deepEqual(RS64.ruleRefs(doc.rules[0]).map((r) => r.name), ['bridge', 'player', 'tie_path', 'cam1'].filter((n) => n !== 'player'));
   assert.deepEqual(RS64.ruleRefs(doc.rules[1]).map((r) => r.name), ['shuttle']);
   assert.deepEqual(RS64.rulesParse('not json'), { version: 1, rules: [] });
+
+  // The same rules as rules.txt; "who" has no script form, so a rule with one does not convert.
+  const strip = (d) => d.rules.map(({ line, ...r }) => r);
+  const plain = { version: 1, rules: [{ ...doc.rules[0], who: undefined }, doc.rules[1]].map(({ who, ...r }) => r) };
+  const text = RS64.rulesScriptWrite(plain);
+
+  assert.match(text, /^when enter bridge\n {4}spawn kind=TIE fighter count=3 path=tie_path\n {4}camera cam1\nend\n/);
+  assert.deepEqual(strip(RS64.rulesScriptParse(text)), plain.rules);
+  assert.notDeepEqual(strip(RS64.rulesScriptParse(RS64.rulesScriptWrite(doc))), doc.rules);
 });
 
 await check('renaming an object rewrites every rule that names it', () => {
@@ -2435,7 +2444,8 @@ await check('RULE_WHENS offer only kinds that fit', () => {
   assert.deepEqual(on('unit'), ['destroyed', 'healthBelow']);
   assert.deepEqual(on('path'), ['pathPoint']);
   assert.ok(on('level').includes('start') && on('level').includes('after'));
-  assert.equal(RS64.RULES_PATH('ice'), 'mod/assets/level/ice/rules.json');
+  assert.equal(RS64.RULES_PATH('ice'), 'mod/assets/level/ice/rules.txt');
+  assert.equal(RS64.RULES_JSON_PATH('ice'), 'mod/assets/level/ice/rules.json');
   assert.ok(RS64.RULE_ACTIONS.find((a) => a.do === 'spawn').params.some((p) => p.key === 'path' && p.picker === 'path'));
 });
 

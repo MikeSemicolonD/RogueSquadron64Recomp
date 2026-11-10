@@ -502,7 +502,7 @@ async function editAsset(path, change, label)
   updateModButton();
 }
 
-// Text assets (camera_shots.txt, levels.json, rules.json, the explorer's JSON sidecars) read as "" when missing.
+// Text assets (camera_shots.txt, levels.json, rules.txt, the explorer's JSON sidecars) read as "" when missing.
 const virtualText = async (path) => new TextDecoder().decode(await rom.read(path).then(u8, () => new Uint8Array(0)));
 const editText = (path, text, label) => editAsset(path, () => new TextEncoder().encode(text), label);
 
@@ -518,6 +518,190 @@ async function readJson(path, fallback) {
 }
 
 const writeJson = (path, value, label, indent) => editText(path, JSON.stringify(value, null, indent), label);
+
+// Line height of a code box, in px (style.css .codeField).
+const CODE_LINE = 18;
+
+// A text box for the rules script. check(text) gives red marks ([{ from, to, reason }]), shown under the text with the reason at the caret
+// below the box; complete(text, cursor) gives a list ({ from, to, items: [{ label, kind }] }) that opens under the caret. onChange(text)
+// runs when the box loses focus (or on Enter in a one-line box), so saving never rebuilds the box under the typing.
+function codeBox({ value = '', rows = 1, placeholder = '', title = '', check = () => [], complete = null, onChange })
+{
+  const one = rows === 1;
+  const area = elem('textarea', { value, rows, placeholder, title, spellcheck: false, className: 'codeText' });
+  const layer = elem('pre', { className: 'codeMarks' });
+  const menu = elem('div', { className: 'codeMenu', hidden: true, role: 'listbox' });
+  const note = elem('small', { className: 'codeNote' });
+  const field = elem('div', { className: 'codeField' }, layer, area, menu);
+  const wrap = elem('div', { className: 'codeBox' + (one ? ' one' : '') }, field, note);
+  let marks = [];
+  let open = null;
+  let active = 0;
+  let saved = value;
+
+  area.setAttribute('wrap', 'off');
+  area.setAttribute('aria-label', title || placeholder);
+
+  const paint = () => {
+    const text = area.value;
+    const parts = [];
+    let at = 0;
+
+    marks = check(text).sort((a, b) => a.from - b.from);
+
+    for (const m of marks)
+    {
+      const from = Math.max(m.from, at);
+      const to = Math.min(Math.max(m.to, from), text.length);
+
+      if (from > text.length)
+        continue;
+
+      parts.push(text.slice(at, from), elem('mark', { textContent: text.slice(from, to) || ' ' }));
+      at = Math.max(at, to);
+    }
+
+    parts.push(text.slice(at), '\n');
+    layer.replaceChildren(...parts);
+    layer.scrollTop = area.scrollTop;
+    layer.scrollLeft = area.scrollLeft;
+
+    const caret = area.selectionStart;
+    const here = marks.find((m) => caret >= m.from && caret <= m.to) ?? marks[0];
+
+    note.textContent = here?.reason ?? '';
+    wrap.classList.toggle('bad', marks.length > 0);
+  };
+
+  const close = () => {
+    open = null;
+    menu.hidden = true;
+  };
+
+  const highlight = () => [...menu.children].forEach((c, i) => c.classList.toggle('on', i === active));
+
+  const accept = (i) => {
+    const label = open.items[i].label;
+    const inCheck = area.value[open.from - 1] === '(' && area.value[open.to] !== ')';
+
+    // A name picked inside a check closes it, so "destroyed(ga" becomes "destroyed(gate)".
+    area.setRangeText(inCheck ? label + ')' : label, open.from, open.to, 'end');
+    close();
+    paint();
+
+    if (label.endsWith('('))
+      show();
+  };
+
+  // Opens after "(", while a name is being typed, or in a slot that takes an object.
+  const show = () => {
+    const cursor = area.selectionStart;
+    const c = complete?.(area.value, cursor);
+    const objects = c?.items.length && c.items.every((i) => i.kind !== 'word' && i.kind !== 'variable');
+    const typing = c && (c.from < cursor || area.value[cursor - 1] === '(');
+    const done = c?.items.length === 1 && c.items[0].label === area.value.slice(c.from, c.to);
+
+    if (!c?.items.length || (!typing && !objects) || done)
+      return close();
+
+    open = c;
+    active = 0;
+
+    menu.replaceChildren(...c.items.slice(0, 50).map((it, i) => elem('div', {
+      className: 'codeItem',
+      role: 'option',
+      textContent: it.label,
+      title: it.kind === 'word' ? 'Check' : it.kind[0].toUpperCase() + it.kind.slice(1),
+      onmousedown: (e) => {
+        e.preventDefault();
+        accept(i);
+      }
+    })));
+
+    const before = area.value.slice(0, c.from).split('\n');
+
+    menu.style.left = `calc(${before.at(-1).length}ch + 7px - ${area.scrollLeft}px)`;
+    menu.style.top = `${before.length * CODE_LINE + 6 - area.scrollTop}px`;
+    menu.hidden = false;
+
+    // Kept inside the box, so a long line never pushes the list past the window's edge.
+    if (menu.offsetLeft + menu.offsetWidth > field.clientWidth)
+      menu.style.left = `${Math.max(0, field.clientWidth - menu.offsetWidth)}px`;
+
+    highlight();
+  };
+
+  const commit = () => {
+    close();
+
+    if (area.value !== saved)
+    {
+      saved = area.value;
+      onChange(area.value);
+    }
+  };
+
+  area.oninput = () => {
+    paint();
+    show();
+  };
+
+  area.onscroll = paint;
+  area.onclick = paint;
+  area.onkeyup = (e) => e.key.startsWith('Arrow') && !open && paint();
+  area.onblur = commit;
+
+  area.onkeydown = (e) => {
+    e.stopPropagation();
+
+    const n = open?.items.length ?? 0;
+
+    if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp'))
+    {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : n - 1)) % Math.min(n, 50);
+      highlight();
+    }
+    else if (open && (e.key === 'Enter' || e.key === 'Tab'))
+    {
+      e.preventDefault();
+      accept(active);
+    }
+    else if (open && e.key === 'Escape')
+    {
+      e.preventDefault();
+      close();
+    }
+    else if (one && e.key === 'Enter')
+    {
+      e.preventDefault();
+      area.blur();
+    }
+  };
+
+  // Outside changes land only while nobody is typing in the box.
+  wrap.setValue = (text) => {
+    if (document.activeElement === area)
+      return;
+
+    area.value = saved = text;
+    paint();
+  };
+
+  // Puts text at the caret (or the end) and saves, for the pick-in-view button.
+  wrap.insert = (text) => {
+    const at = area.selectionStart ?? area.value.length;
+
+    area.setRangeText(text, at, area.selectionEnd ?? at, 'end');
+    paint();
+    commit();
+  };
+
+  wrap.text = () => area.value;
+  paint();
+
+  return wrap;
+}
 
 let historyDepth = 0;
 

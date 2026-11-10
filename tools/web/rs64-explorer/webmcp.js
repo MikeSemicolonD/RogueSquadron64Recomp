@@ -922,7 +922,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_rules_get',
     edit: false,
-    description: 'A level\'s rules ("when X do Y", rules.json), plus the whens and actions a rule can use (with their parameters; mods\' own included). Defaults to the open level.',
+    description: 'A level\'s rules ("when X [if condition] do Y", saved as rules.txt), plus the whens and actions a rule can use (with their parameters; mods\' own included). Defaults to the open level.',
     inputSchema: { type: 'object', properties: { level: { type: 'string' } } },
     run: async ({ level }) => {
       mcpNeedRom();
@@ -942,7 +942,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_rules_set',
     edit: true,
-    description: 'Replaces a level\'s rules with the given list (the shape rs64_rules_get returns: { when, object?, who?, actions: [{ do, ...params }] }). Whens and actions must be ones rs64_rules_get lists. Defaults to the open level.',
+    description: 'Replaces a level\'s rules with the given list (the shape rs64_rules_get returns: { when, object?, if?, every?, actions: [{ do, ...params }] }). "if" is a condition such as "destroyed(gate) and kills >= 3"; when "true" fires once its "if" holds; set/add actions take { variable, value }. Whens and actions must be ones rs64_rules_get lists. Defaults to the open level.',
     inputSchema: { type: 'object', properties: { level: { type: 'string' }, rules: { type: 'array', items: { type: 'object' } } }, required: ['rules'] },
     run: async ({ level, rules }) => {
       mcpNeedRom();
@@ -954,6 +954,11 @@ const WEBMCP_TOOLS = [
       rules.forEach((r, i) => {
         if (!whens.has(r.when))
           throw new Error(`Rule ${i}: unknown when "${r.when}"`);
+
+        const bad = r.if ? condCheck(r.if, {})[0] : null;
+
+        if (bad)
+          throw new Error(`Rule ${i}: ${bad.reason}`);
 
         for (const a of r.actions ?? [])
           if (!acts.has(a.do))

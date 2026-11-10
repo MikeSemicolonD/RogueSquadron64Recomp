@@ -985,7 +985,7 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
     if (voice >= 0) ctx->r4 = (gpr)(int32_t)(voice - 0x2C0);
 }
 
-// ---- Level rules: assets/level/<folder>/rules.json from enabled mods, run against the level being played ----
+// ---- Level rules: assets/level/<folder>/rules.txt (or rules.json) from enabled mods, run against the level being played ----
 namespace {
 std::map<std::string, std::vector<rs64rules::Rule>> s_rules_by_folder;
 std::map<std::string, std::vector<std::string>> s_packages_by_folder;
@@ -1006,6 +1006,21 @@ int rule_int(const rs64rules::Action& a, const char* key, int fallback = 0)
 std::string rule_str(const rs64rules::Action& a, const char* key)
 {
     return rs64rules::paramText(a, key);
+}
+
+// Voice ids the speech table has (mod_level_voice_carrier scans the same range).
+constexpr uint32_t kVoiceIds = 0x2F4;
+
+// A song id from the game's song table (D_main_8009FCD4: {u32 id, char* name} until id -1).
+bool song_known(uint8_t* rdram, int song)
+{
+
+    for (uint32_t at = 0x8009FCD4u, n = 0; n < 512 && rw(rdram, at) != 0xFFFFFFFFu; at += 8, n++)
+    {
+        if ((int)rw(rdram, at) == song) return true;
+    }
+
+    return false;
 }
 
 // An action a native mod registered with add_rule_action, given the rule's parameters as strings.
@@ -1037,7 +1052,15 @@ void rules_run(uint8_t* rdram, recomp_context* ctx)
 
         fprintf(stderr, "%s: %s\n", tag.c_str(), k.c_str());
 
-        if (k == "voice" || k == "recording")
+        if (k == "voice" && (rule_int(a, "id", -1) < 0 || rule_int(a, "id", -1) >= (int)kVoiceIds))
+        {
+            fprintf(stderr, "%s: voice %s out of range; skipped\n", tag.c_str(), rule_str(a, "id").c_str());
+        }
+        else if (k == "music" && !song_known(rdram, rule_int(a, "song", -1)))
+        {
+            fprintf(stderr, "%s: music %s is not a song id; skipped\n", tag.c_str(), rule_str(a, "song").c_str());
+        }
+        else if (k == "voice" || k == "recording")
         {
             const int voice = s_current_mod_level >= 0 ? mod_level_voice(rdram, rule_int(a, "id", -1), rule_str(a, "file")) : rule_int(a, "id", -1);
 
@@ -1201,7 +1224,7 @@ extern "C" void rs64_env_clouds_tick(uint8_t* rdram, recomp_context* ctx)
     }
 }
 
-// Boot: every enabled mod's assets/level/<folder>/rules.json (later mods add to a level's list) and environment.json (the last-loaded mod's is used).
+// Boot: every enabled mod's assets/level/<folder>/rules.txt or rules.json (later mods add to a level's list) and environment.json (the last-loaded mod's is used).
 extern "C" void rs64_rules_init()
 {
 
@@ -1244,13 +1267,19 @@ extern "C" void rs64_rules_init()
                 for (const auto& e : package_errors) fprintf(stderr, "[packages] %s %s: %s\n", d.mod_id.c_str(), it->path().filename().string().c_str(), e.c_str());
             }
 
-            std::ifstream in(it->path() / "rules.json", std::ios::binary);
-
-            if (!in) continue;
-
-            std::vector<std::string> errors;
-            auto rules = rs64rules::parseRules(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()), errors);
+            // rules.txt is the script form; a mod folder that has both uses it.
             const std::string folder = it->path().filename().string();
+            std::ifstream script(it->path() / "rules.txt", std::ios::binary);
+            std::ifstream json(it->path() / "rules.json", std::ios::binary);
+
+            if (!script && !json) continue;
+
+            if (script && json) fprintf(stderr, "[rules] %s %s: rules.txt used, rules.json ignored\n", d.mod_id.c_str(), folder.c_str());
+
+            std::ifstream& in = script ? script : json;
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::vector<std::string> errors;
+            auto rules = script ? rs64rules::parseScript(text, errors) : rs64rules::parseRules(text, errors);
 
             for (const auto& e : errors) fprintf(stderr, "[rules] %s %s: %s\n", d.mod_id.c_str(), folder.c_str(), e.c_str());
 
@@ -1320,35 +1349,38 @@ extern "C" void rs64_rules_frame(uint8_t* rdram, recomp_context* ctx)
     {
         s_rules_pending = false;
 
-        for (const auto& e : s_rules.reset(s_rules_by_folder[s_rules_folder], [&](const std::string& n) { return level_object(rdram, ctx, n) != 0; })) {
+        const auto known = [&](const std::string& n) { return level_object(rdram, ctx, n) != 0; };
+
+        for (const auto& e : s_rules.reset(s_rules_by_folder[s_rules_folder], known, own_objectives() != nullptr)) {
             fprintf(stderr, "[rules] %s: %s; skipped\n", s_rules_folder.c_str(), e.c_str());
         }
     }
 
-    // shortcut: a fixed 1/30 s per mission frame (the game's cap); read the frame dt if 60 fps logic ever lands.
-    constexpr float kFrame = 1.0f / 30.0f;
+    // This frame's share of a 30 Hz step, so timers keep game time with 60 FPS Gameplay on.
+    const float dt = rs64_rate_scale() / 30.0f;
 
-    s_rules_elapsed += kFrame;
+    s_rules_elapsed += dt;
 
-    if (s_message_left > 0 && (s_message_left -= kFrame) <= 0) s_message_text.clear();
+    if (s_message_left > 0 && (s_message_left -= dt) <= 0) s_message_text.clear();
 
-    const auto condition = [&](const rs64rules::Rule& r) {
+    const uint32_t flags = rs64::ls::relocated(0x801388A0u);
+    const uint32_t counts = rs64::ls::relocated(0x80138060u);
+    rs64rules::Facts facts;
 
-        const uint32_t f = rs64::ls::relocated(0x801388A0u), c = rs64::ls::relocated(0x80138060u);
+    facts.flag = [&](int i) { return i >= 1 && i <= 128 && rb(rdram, flags + (uint32_t)(i - 1)) != 0; };
+    facts.counter = [&](int i) { return i >= 1 && i <= 128 ? (int32_t)rw(rdram, counts + (uint32_t)(i - 1) * 4u) : 0; };
 
-        if (r.when == rs64rules::When::FlagIs) return r.value >= 1 && r.value <= 128 && rb(rdram, f + (uint32_t)(r.value - 1)) != 0;
+    // getDatItemHealthPercentage 0x800C7C28 returns a 0-100 float in f0 (100 when the name is missing or the unit has no NPC).
+    facts.health = [&](const std::string& name) {
 
-        if (r.when == rs64rules::When::CounterAtLeast) return r.value >= 1 && r.value <= 128 && (int32_t)rw(rdram, c + (uint32_t)(r.value - 1) * 4u) >= r.count;
+        wstr(rdram, kRuleName, name.substr(0, 0x3F));
 
-        // getDatItemHealthPercentage 0x800C7C28 (100 when the name is missing).
-        wstr(rdram, kRuleName, r.object.substr(0, 0x3F));
-
-        return (int32_t)rs64::mips::mips_call(rdram, ctx, 0x800C7C28u, { kRuleName }).v0 < r.value;
+        return (int)rs64::mips::mips_call(rdram, ctx, 0x800C7C28u, { kRuleName }).f0;
     };
 
     for (const auto& [name, object] : rs64::host::take_rule_events()) s_rules.event({ rs64rules::When::Custom, object, "", name });
 
-    s_rules.tick(kFrame, s_rules_elapsed, condition);
+    s_rules.tick(dt, s_rules_elapsed, facts);
     rules_run(rdram, ctx);
 }
 

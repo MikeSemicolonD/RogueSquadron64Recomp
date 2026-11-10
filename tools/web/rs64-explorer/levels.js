@@ -2355,17 +2355,46 @@ function npcPathSelect(it, dv, none, noneLabel)
 // ---- Level rules (layout A): "When…" boxes on the selected area, path point or unit, and level-wide ones in Level settings ----
 const rulesFolderOf = (dir) => modLevelOf(dir)?.folder ?? dir.split('/').pop();
 
+// rules.txt, or an older mod's rules.json until the first save converts it.
 async function readRules(dir)
 {
-  return rulesParse(await virtualText(RULES_PATH(rulesFolderOf(dir))));
+  const folder = rulesFolderOf(dir);
+  const text = await virtualText(RULES_PATH(folder));
+
+  return text ? rulesScriptParse(text) : rulesParse(await virtualText(RULES_JSON_PATH(folder)));
 }
+
+// Key order and the reader's line numbers aside, the same rules.
+const rulesKey = (doc) => JSON.stringify(doc.rules.map(({ line, ...r }) => r), (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((key) => [key, v[key]])) : v));
+
+const rulesStayJson = new Set();
 
 // Every level object name the level's rules refer to, present or not.
 const ruleNames = async (dir) => new Set((await readRules(dir)).rules.flatMap((r) => ruleRefs(r, ruleExt).map((x) => x.name)));
 
+// Saves as rules.txt and empties an older rules.json. Rules with something the script cannot say (a "who") stay in rules.json.
 async function writeRules(dir, doc, label)
 {
-  await editText(RULES_PATH(rulesFolderOf(dir)), rulesWrite(doc), label);
+  const folder = rulesFolderOf(dir);
+  const text = rulesScriptWrite(doc);
+  const json = await virtualText(RULES_JSON_PATH(folder));
+
+  if (rulesKey(rulesScriptParse(text)) !== rulesKey(doc))
+  {
+    if (!rulesStayJson.has(folder))
+      alert(`Some of ${folder}'s rules came from an older rules.json and use fields the rules script cannot hold, so they stay in rules.json.`);
+
+    rulesStayJson.add(folder);
+
+    return editText(RULES_JSON_PATH(folder), rulesWrite(doc), label);
+  }
+
+  await historyGroup(label, async () => {
+    await editText(RULES_PATH(folder), text, label);
+
+    if (json)
+      await editText(RULES_JSON_PATH(folder), '', label);
+  });
 }
 
 // The stock mission scripts (and the names they look up) are in the mission overlay; a mod level with its own objectives runs none of them,
@@ -2765,6 +2794,19 @@ async function rulePicker(p, value, set, ctx)
     return elem('div', null, rec.row, rec.note);
   }
 
+  // A variable name, suggesting the ones the level's rules already set.
+  if (p.picker === 'variable')
+  {
+    const list = elem('datalist', { id: 'ruleVars' + Math.random().toString(36).slice(2, 8) });
+    const inp = elem('input', { value: value ?? '', placeholder: 'variable', title: 'A name the rules can check, like bridge_held' });
+
+    list.append(...(ctx.variables ?? []).map((v) => new Option(v)));
+    inp.setAttribute('list', list.id);
+    inp.onchange = () => set(inp.value.trim() || undefined);
+
+    return elem('span', null, inp, list);
+  }
+
   const kind = p.picker === 'text' ? 'text' : 'number';
   const inp = elem('input', { type: kind, value: value ?? '', placeholder: p.label ?? p.key, min: 0, step: p.picker === 'seconds' ? 0.5 : 1 });
 
@@ -2827,7 +2869,7 @@ async function loadRuleExt(ask)
   return true;
 }
 
-// Every shown rules view re-renders after any rules.json write, so none edits a stale copy of the file.
+// Every shown rules view re-renders after any rules write, so none edits a stale copy of the file.
 const liveRuleViews = new Set();
 
 function rulesChanged() {
@@ -2938,6 +2980,75 @@ function orderTargetRow(it)
   return row;
 }
 
+const PICK_COND = {
+  tip: 'Add a check on an object by clicking it in the view',
+  prompt: 'Click a unit or trigger area in the view. Esc cancels',
+  targets: () => [...PICK_UNIT.targets(), ...visibleMarkers().filter((m) => m.userData.item && isTriggerArea(m.userData.item))],
+  accepts: (it) => isUnit(it) || (it.type === 7 && it.onEnter && !it.pathEvent)
+};
+
+// What each named object of the level is, for the rules script's checks and completion.
+function ruleObjectKinds(items)
+{
+  const out = new Map();
+
+  for (const it of items.filter((x) => x.name))
+  {
+    if (it.pathEvent)
+      out.set(it.name, 'path');
+    else if (it.type === 7 && it.onEnter)
+      out.set(it.name, 'area');
+    else if (it.type === 0 && it.sub === 0x26)
+      out.set(it.name, 'camera');
+    else if (isUnit(it))
+      out.set(it.name, 'unit');
+  }
+
+  return out;
+}
+
+// The "only if" box of a rule (or the condition of a "Conditions become true" rule), with a pick-in-view button that adds a check.
+function ruleCondRow(r, kinds, ctx, save)
+{
+  const prefix = ctx.variables.size ? [...ctx.variables].map((v) => `set ${v} 1`).join('\n') + '\n' : '';
+  const head = prefix + 'when true: ';
+  const own = r.when === 'true';
+
+  const box = codeBox({
+    value: r.if ?? '',
+    placeholder: own ? 'destroyed(gate) and kills >= 3' : 'Only if… (optional)',
+    title: own ? 'The rule fires as soon as this is true' : 'The rule only fires while this is true',
+    check: (t) => (t.trim() || own ? condCheck(t, ctx) : []),
+
+    complete: (t, c) => {
+      const out = rulesComplete(head + t, head.length + c, { objects: kinds });
+
+      return { ...out, from: out.from - head.length, to: out.to - head.length };
+    },
+
+    onChange: (t) => {
+      if (t.trim())
+        r.if = t.trim();
+      else
+        delete r.if;
+
+      save('Rule: only if');
+    }
+  });
+
+  const pick = rulePathButton((name) => {
+    const t = box.text().trimEnd();
+    const check = kinds.get(name) === 'area' ? `entered(${name})` : `destroyed(${name})`;
+
+    if (t.endsWith('('))
+      box.insert(name);
+    else
+      box.insert((t && !/\b(and|or|not)$/.test(t) ? ' and ' : (t ? ' ' : '')) + check);
+  }, PICK_COND);
+
+  return elem('div', { className: 'cond' }, box, pick);
+}
+
 // A new action of that kind; Spawn starts from the last one made, on a flight path of this level.
 function newRuleAction(type, items)
 {
@@ -2955,10 +3066,17 @@ function rulesSection(owner) {
   const box = elem('div', { className: 'rulesBox' });
 
   const render = async () => {
+    // A rebuild would take the caret out of a condition being typed; it runs once the box loses focus.
+    if (document.activeElement?.classList.contains('codeText') && box.contains(document.activeElement))
+      return box.addEventListener('focusout', () => setTimeout(render), { once: true });
+
     const [doc, dv] = await Promise.all([readRules(dir), rom.read(dir + '/dat')]);
     const items = parseDAT(dv).items;
-    const ctx = { dir, items };
+    const variables = [...new Set(doc.rules.flatMap((r) => (r.actions ?? []).filter((a) => (a.do === 'set' || a.do === 'add') && a.variable).map((a) => a.variable)))];
+    const ctx = { dir, items, variables };
     const own = !!modLevelOf(dir)?.objectives?.length;
+    const kinds = ruleObjectKinds(items);
+    const condCtx = { objects: kinds, objectives: own, variables: new Set(variables) };
     const whens = RULE_WHENS.filter((w) => w.on === owner.kind && (own || !w.objectives));
     const broken = new Set(rulesBroken(doc, items, ruleExt).map((b) => `${b.rule}:${b.field}`));
 
@@ -3013,7 +3131,7 @@ function rulesSection(owner) {
 
       ev.append(every, ' every time');
       head.append(ev, del);
-      rule.append(head);
+      rule.append(head, ruleCondRow(r, kinds, condCtx, save));
 
       if (broken.has(`${i}:object`))
         rule.append(elem('small', { className: 'warn', textContent: `"${r.object}" is gone: pick another or remove the rule.` }));
@@ -3175,8 +3293,65 @@ function levelRulesPanel()
   fromMods.append('Mod actions…');
   fromMods.hidden = !window.showDirectoryPicker;
   fromMods.onclick = () => loadRuleExt(true).then((ok) => ok || alert('No mods folder found in the game folder'));
-  box.append(elem('b', { textContent: 'Level-wide' }), rulesSection({ kind: 'level' }), fromMods, elem('b', { textContent: 'Rules on objects' }), tools, list);
+
+  const panels = elem('div', { className: 'levelRules' }, elem('b', { textContent: 'Level-wide' }), rulesSection({ kind: 'level' }), fromMods, elem('b', { textContent: 'Rules on objects' }), tools, list);
+  const script = elem('div', { className: 'ruleScript' });
+  const scriptBtn = iconButton('script', 'Edit the rules as text', () => showScript(!scriptBtn.classList.contains('on')));
+  let code = null;
+
+  // The whole rules.txt in one box; an older rules.json shows as script and becomes rules.txt on the first save.
+  const renderScript = async () => {
+    const folder = rulesFolderOf(dir);
+    const [text, doc, dv] = await Promise.all([virtualText(RULES_PATH(folder)), readRules(dir), rom.read(dir + '/dat')]);
+    const value = text || rulesScriptWrite(doc);
+
+    Object.assign(scriptCtx, {
+      objects: ruleObjectKinds(parseDAT(dv).items),
+      objectives: !!modLevelOf(dir)?.objectives?.length,
+      ext: ruleExt.length ? ruleExt : null
+    });
+
+    if (code)
+      return code.setValue(value);
+
+    code = codeBox({
+      value,
+      rows: 18,
+      title: 'The level\'s rules as text: when … [if …], one action a line, end',
+      check: (t) => rulesScriptCheck(t, scriptCtx),
+      complete: (t, c) => rulesComplete(t, c, scriptCtx),
+
+      onChange: async (t) => {
+        await historyGroup('Rules script', async () => {
+          await editText(RULES_PATH(folder), t, 'Rules script');
+
+          if (await virtualText(RULES_JSON_PATH(folder)))
+            await editText(RULES_JSON_PATH(folder), '', 'Rules script');
+        });
+
+        rulesChanged();
+      }
+    });
+
+    script.replaceChildren(code);
+  };
+
+  const scriptCtx = {};
+
+  const showScript = (on) => {
+    scriptBtn.classList.toggle('on', on);
+    store('rs64.rulesScript', on);
+    panels.hidden = on;
+    script.hidden = !on;
+
+    if (on)
+      renderScript();
+  };
+
+  box.append(elem('div', { className: 'when' }, scriptBtn), panels, script);
   liveRuleViews.add({ box: list, render });
+  liveRuleViews.add({ box: script, render: () => !script.hidden && renderScript() });
+  showScript(!!stored('rs64.rulesScript', false));
   render();
 
   return box;
@@ -5615,13 +5790,14 @@ async function brokenRuleLines()
 {
   const out = [];
 
-  for (const p of modDirty().filter((p) => /^mod\/assets\/level\/[^/]+\/rules\.json$/.test(p)))
+  for (const p of modDirty().filter((p) => /^mod\/assets\/level\/[^/]+\/rules\.(txt|json)$/.test(p)))
   {
     const folder = p.split('/')[3];
     const dir = 'data/level/' + folder;
     const items = parseDAT(await rom.read(dir + '/dat')).items;
+    const text = await virtualText(p);
 
-    for (const b of rulesBroken(rulesParse(await virtualText(p)), items, ruleExt))
+    for (const b of rulesBroken(p.endsWith('.txt') ? rulesScriptParse(text) : rulesParse(text), items, ruleExt))
       out.push(`${folder}: ${b.name}`);
   }
 
