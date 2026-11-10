@@ -21,6 +21,7 @@
 #endif
 
 #include "librecomp/game.hpp"
+#include "ultramodern/ultramodern.hpp"
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
 #include "video/video_config.h"
@@ -1059,6 +1060,24 @@ extern "C" void rs64_rate_reset(uint8_t* rdram) {
 
     g_rate = rs64::rate::State{};
     rs64::mips::wb(rdram, 0x80128EAFu, 2);
+    ultramodern::set_vi_rate(60);
+}
+
+extern "C" uint32_t rs64_vi_rate(void) {
+    return ultramodern::get_vi_rate();
+}
+
+static bool g_rate_frame_seen = false;
+
+// Each submitted frame: a screen whose loop doesn't run the rate (menus, the pause menu) gets the game's own 30 fps back.
+extern "C" void rs64_rate_submit(uint8_t* rdram) {
+
+    if (!g_rate_frame_seen && (rs64::mips::rb(rdram, 0x80128EAFu) != 2 || ultramodern::get_vi_rate() != 60))
+    {
+        rs64_rate_reset(rdram);
+    }
+
+    g_rate_frame_seen = false;
 }
 
 // ROGUESQ_LOG_RATE: one line per game second with the mission frames in it and the wall time it took.
@@ -1093,20 +1112,52 @@ static void rate_log(float dt)
     s_wall = now;
 }
 
-// Each mission frame, once its dt is final. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps, 1 = 60.
-extern "C" void rs64_rate_frame(uint8_t* rdram, float dt)
+// Each mission frame, once its dt is final; returns the dt the frame uses. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps.
+// Above 30 the video clock ticks several times per frame, so a late frame waits a fraction of a frame for its swap instead of a whole one.
+extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
 {
 
-    static const int s_env = env_int("ROGUESQ_GAME_60FPS", -1);
+    static const int s_env = env_int("ROGUESQ_GAME_HZ", 0);
+    static const int s_sub = std::clamp(env_int("ROGUESQ_VI_SUBTICKS", 4), 1, 8);
     static const bool s_log = env_on("ROGUESQ_LOG_RATE");
+    static auto s_last = std::chrono::steady_clock::now();
 
-    const bool want = s_env >= 0 ? s_env != 0 : rs64::video::game_60fps();
-    const bool on = want && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
+    g_rate_frame_seen = true;
+
+    const int display_hz = (int)ultramodern::get_display_refresh_rate();
+    const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz));
+    const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
+    const int sub = on ? s_sub : 1;
+    const auto now = std::chrono::steady_clock::now();
+    const float real = std::chrono::duration<float>(now - s_last).count();
+
+    s_last = now;
+
+    // With several ticks per frame the game's dt mispredicts the swap tick and makes it up a frame later, and the wall-clock interval jitters: both judder fast motion.
+    // A smoothed interval plus the time it still owes keeps steps even and game time on real time.
+    static float s_smooth = 0.0f;
+    static float s_debt = 0.0f;
+
+    if (sub > 1 && real > 0.0f && real <= 0.1f)
+    {
+        s_smooth = s_smooth > 0.0f ? s_smooth + (real - s_smooth) * 0.1f : real;
+        s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);
+        dt = std::clamp(s_smooth + (s_debt - s_smooth) * 0.05f, 0.25f * s_smooth, 4.0f * s_smooth);
+        s_debt -= dt;
+    }
+    else
+    {
+        s_smooth = 0.0f;
+        s_debt = 0.0f;
+    }
 
     rs64::rate::update(g_rate, dt, on);
-    rs64::mips::wb(rdram, 0x80128EAFu, on ? 1 : 2);
+    rs64::mips::wb(rdram, 0x80128EAFu, on ? (uint8_t)sub : 2);
+    ultramodern::set_vi_rate(on ? (uint32_t)(hz * sub) : 60u);
 
     if (s_log) {
         rate_log(dt);
     }
+
+    return dt;
 }

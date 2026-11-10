@@ -62,7 +62,18 @@ int main() {
     // zero_dt
     State z;
     update(z, 0.0f, true);
-    CHECK(z.scale == 0.25f);
+    CHECK(z.scale == 0.125f);
+
+    // logic_hz
+    CHECK(logic_hz(false, 30) == 30);
+    CHECK(logic_hz(false, 60) == 60);
+    CHECK(logic_hz(false, 120) == 120);
+    CHECK(logic_hz(false, 500) == 240);
+    CHECK(logic_hz(true, 30) == 30);
+    CHECK(logic_hz(true, 60) == 30);
+    CHECK(logic_hz(true, 61) == 60);
+    CHECK(logic_hz(true, 144) == 60);
+
     CHECK(!z.tick);
 
     // toggle_resets_accumulator

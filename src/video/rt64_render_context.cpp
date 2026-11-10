@@ -554,8 +554,13 @@ public:
         app->userConfig.refreshRate = UC::RefreshRate::Original;
         app->userConfig.refreshRateTarget = 60;
 
+#if defined(__ANDROID__)
+        app->userConfig.refreshRateTarget = 30;
+#endif
+
         // A Raspberry Pi's GPU can't keep up above the N64's own resolution, and RT64's framebuffer write-back costs it about half its frame time.
         if (is_raspberry_pi()) {
+            app->userConfig.refreshRateTarget = 30;
             app->userConfig.resolution = UC::Resolution::Original;
             rs64::video::set_framebuffer_writeback(false);
         }

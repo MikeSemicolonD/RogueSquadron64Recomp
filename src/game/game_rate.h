@@ -28,13 +28,22 @@ inline void update(State& s, float dt, bool on)
     const float steps = dt * 30.0f;
 
     s.was_on = true;
-    s.scale = std::clamp(steps, 0.25f, 3.0f);
+    s.scale = std::clamp(steps, 0.125f, 3.0f);
     s.acc = std::min(s.acc + steps, 2.0f);
     s.tick = s.acc >= 1.0f - 1e-4f;
 
     if (s.tick) {
         s.acc -= 1.0f;
     }
+}
+
+// Mission logic rate for the TARGET FPS setting. With interpolation the game stays at 30 unless the target is above 60, then 60 and RT64 fills up to the target. Without it every frame is real.
+inline int logic_hz(bool interpolation, int target) {
+    if (interpolation) {
+        return target > 60 ? 60 : 30;
+    }
+
+    return std::clamp(target, 30, 240);
 }
 
 // A per-frame multiplier k applied over `scale` 30 Hz steps.

@@ -51,9 +51,8 @@ void set_terrain_tessellation(int quads);
 float hud_placement();
 void set_hud_placement(float placement);
 
-// Missions run at 60 game frames a second instead of the game's 30 ("game60fps", default off; ROGUESQ_GAME_60FPS overrides). Applies from the next mission frame.
-bool game_60fps();
-void set_game_60fps(bool on);
+// The TARGET FPS setting in frames a second; display_hz when it is set to DISPLAY.
+int target_fps(int display_hz);
 
 // Cutscenes keep the view distance the game sets per shot ("keepCutsceneDrawDistance", default on); ROGUESQ_CINE_DRAW_DIST overrides.
 bool keep_cutscene_draw_distance();

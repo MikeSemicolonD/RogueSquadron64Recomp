@@ -1081,6 +1081,56 @@ func = "cinematicLoopBody"
 before_vram = 0x800A6084
 text = '{ rs64_th_cinematicLoopBody_800A6084(rdram, ctx); }'
 
+# Above 30 fps: the small smoke puffs (minimalRandomNpcHandler) grow by x1.1 per frame while they fade on a timer.
+[[patches.hook]]
+func = "minimalRandomNpcHandler"
+before_vram = 0x80060F38
+text = '{ rs64_th_minimalRandomNpcHandler_80060F38(rdram, ctx); }'
+
+# Menus follow TARGET FPS too: every menu loop (main menus, pause, hangar, craft select) takes its frame time from advanceWrappingPhaseAccumulator, which feeds the rate core; the S-foil swing decays by x0.8 per frame.
+[[patches.hook]]
+func = "advanceWrappingPhaseAccumulator"
+before_vram = 0x800C6710
+text = '{ rs64_th_advanceWrappingPhaseAccumulator_800C6710(rdram, ctx); }'
+
+# The craft-select bay moves between points with speeds that step toward their target by 0.004 / 0.007 per frame.
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AB8F4
+text = '{ rs64_th_updateHangarBayScene_800AB8F4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800ABAA0
+text = '{ rs64_th_updateHangarBayScene_800ABAA0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateShipPartAnimation"
+before_vram = 0x800B82A8
+text = '{ rs64_th_updateShipPartAnimation_800B82A8(rdram, ctx); }'
+
+# Above 30 fps: the World Devastator's leg vortex (npcVortexUpdate) turns 2 degrees per frame.
+[[patches.hook]]
+func = "npcVortexUpdate"
+before_vram = 0x80081E04
+text = '{ rs64_th_npcVortexUpdate_80081E04(rdram, ctx); }'
+
+# Cutscenes follow TARGET FPS like missions: the frame time feeds the rate core, and the ending fade's hold and the black frames after a camera cut count 30 Hz ticks.
+[[patches.hook]]
+func = "cinematicLoopBody"
+before_vram = 0x800A602C
+text = '{ rs64_th_cinematicLoopBody_800A602C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "cinematicStageAdvancer"
+before_vram = 0x800AF5A8
+text = '{ rs64_th_cinematicStageAdvancer_800AF5A8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "slotEffectHandlerDispatch"
+before_vram = 0x800A7228
+text = '{ rs64_th_slotEffectHandlerDispatch_800A7228(rdram, ctx); }'
+
 # Mod cutscene event 0x17 (fade in), which the event switch below this skips.
 [[patches.hook]]
 func = "spawnCutsceneEffectsAndCues"
@@ -2324,6 +2374,11 @@ text = '{ rs64_th_executeActorType4Effect_800F90FC(rdram, ctx); }'
 func = "npcTieVariantSteerToward"
 before_vram = 0x800DA8CC
 text = '{ rs64_th_npcTieVariantSteerToward_800DA8CC(rdram, ctx); }'
+
+# Above 60 fps the video clock runs faster during missions, so the game's frame timing uses the shorter period.
+[[patches.hook]]
+func = "getViModePeriod"
+text = '{ if (rs64_th_getViModePeriod_entry(rdram, ctx)) return; }'
 
 # 60 fps missions: the weave of path-following flyers advances its two transitions by a fixed step per frame and picks a new target as each ends, and turns toward its heading by a fixed fraction per frame.
 [[patches.hook]]

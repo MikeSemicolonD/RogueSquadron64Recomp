@@ -103,6 +103,7 @@ void rs64_th_submitGfxFrame_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
     rs64_pause_frame_point();
+    rs64_rate_submit(rdram);
 }
 
 // runMenuModelViewerScreen 0x800C29F8
@@ -1589,7 +1590,7 @@ int rs64_th_runInMissionFrame_800FA7D0(uint8_t* rdram, recomp_context* ctx) {
 
     if (rs64_hook(RS64_HOOK_MISSION_FRAME_DT, rdram, ctx)) return 1;
 
-    rs64_rate_frame(rdram, ctx->f20.fl);
+    ctx->f20.fl = rs64_rate_frame(rdram, ctx->f20.fl);
 
     return 0;
 }
@@ -2655,3 +2656,71 @@ void rs64_th_computeRandomizedOrientationFrame_800F3B84(uint8_t* rdram, recomp_c
     ctx->f0.fl *= rs64_rate_scale();
 }
 
+
+// getViModePeriod entry: milliseconds per video tick, while a mission runs the video clock away from 60 Hz.
+int rs64_th_getViModePeriod_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    const uint32_t hz = rs64_vi_rate();
+
+    if (hz == 60)
+    {
+        return 0;
+    }
+
+    ctx->f0.fl = 1000.0f / (float)hz;
+
+    return 1;
+}
+
+// cinematicLoopBody 0x800A602C: the cutscene frame's dt, from cinematicComputeDt.
+void rs64_th_cinematicLoopBody_800A602C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl = rs64_rate_frame(rdram, ctx->f0.fl);
+}
+
+// cinematicStageAdvancer 0x800AF5A8: frames held at full black after the ending fade.
+void rs64_th_cinematicStageAdvancer_800AF5A8(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// slotEffectHandlerDispatch 0x800A7228: black frames left after a camera cut.
+void rs64_th_slotEffectHandlerDispatch_800A7228(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 += 1;
+}
+
+// minimalRandomNpcHandler 0x80060F38: the puff's per-frame growth factor ($f0 = 1.1).
+void rs64_th_minimalRandomNpcHandler_80060F38(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl = rs64_rate_drag(ctx->f0.fl);
+}
+
+// npcVortexUpdate 0x80081E04: the per-frame turn in degrees ($f12 = 2) added to the vortex angle.
+void rs64_th_npcVortexUpdate_80081E04(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f12.fl *= rs64_rate_scale();
+}
+
+// advanceWrappingPhaseAccumulator 0x800C6710: a menu frame's dt, returned in $f0.
+void rs64_th_advanceWrappingPhaseAccumulator_800C6710(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl = rs64_rate_frame(rdram, ctx->f0.fl);
+}
+
+// updateShipPartAnimation 0x800B82A8: the S-foil swing's per-frame decay ($f2 = 0.8).
+void rs64_th_updateShipPartAnimation_800B82A8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl = rs64_rate_drag(ctx->f2.fl);
+}
+
+// updateHangarBayScene 0x800AB8F4 / 0x800ABAA0: the bay's two speeds step toward their target by $f2 per frame.
+void rs64_th_updateHangarBayScene_800AB8F4(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+void rs64_th_updateHangarBayScene_800ABAA0(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}

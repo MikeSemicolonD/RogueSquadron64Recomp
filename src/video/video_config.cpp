@@ -30,7 +30,6 @@ std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
 
 std::atomic<bool> g_legacy_terrain{false};
-std::atomic<bool> g_game_60fps{false};
 
 #if defined(__ANDROID__)
 std::atomic<int> g_terrain_tessellation{2};
@@ -80,6 +79,11 @@ std::vector<int> target_choices(const UC& uc)
 {
 
     std::vector<int> v = g_refresh_rates;
+
+    if (std::find(v.begin(), v.end(), 30) == v.end())
+    {
+        v.insert(std::upper_bound(v.begin(), v.end(), 30), 30);
+    }
 
     if (!g_target_display.load(std::memory_order_relaxed) && std::find(v.begin(), v.end(), uc.refreshRateTarget) == v.end())
     {
@@ -261,13 +265,7 @@ void set_legacy_terrain(bool on)
     set_draw_distance(draw_distance());
 }
 
-bool game_60fps() {
-    return g_game_60fps.load(std::memory_order_relaxed);
-}
 
-void set_game_60fps(bool on) {
-    g_game_60fps.store(on, std::memory_order_relaxed);
-}
 
 int terrain_tessellation() {
     return g_terrain_tessellation.load(std::memory_order_relaxed);
@@ -406,6 +404,14 @@ std::string display_label(Display d, int choice)
     const std::vector<int> v = target_choices(g_desired);
 
     return choice < (int)v.size() ? std::to_string(v[choice]) : "DISPLAY";
+}
+
+int target_fps(int display_hz)
+{
+
+    std::lock_guard<std::mutex> lock(g_display_mutex);
+
+    return g_target_display.load(std::memory_order_relaxed) ? display_hz : g_desired.refreshRateTarget;
 }
 
 bool frame_interpolation_on()
@@ -551,9 +557,6 @@ void apply_friendly(UC& uc, const json& j)
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
 
-    if (has("game60fps") && j["game60fps"].is_boolean()) {
-        set_game_60fps(j["game60fps"].get<bool>());
-    }
 
     if (has("terrainTessellation") && j["terrainTessellation"].is_number()) {
         set_terrain_tessellation(j["terrainTessellation"].get<int>());
@@ -716,7 +719,6 @@ json to_friendly(const UC& uc)
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["legacyTerrain"] = legacy_terrain();
-    j["game60fps"] = game_60fps();
     j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);

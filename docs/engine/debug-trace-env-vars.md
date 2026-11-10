@@ -160,7 +160,8 @@ Mid-mission cutscenes are not cutscene files: they play in-engine inside the run
 | `ROGUESQ_AI_CONSUMPTION_PACED` | on | Fire the AI event at the consumption cadence of the last queued buffer. `0` restores one per VI. |
 | `ROGUESQ_AI_FIXED_CLOCK` | on | Free-running AI consumption clock (no per-buffer drift). `0` resyncs to now every buffer. |
 | `ROGUESQ_SPEED` | 1 | Game clock multiplier (1-16): VI clock and CPU counter run N times faster. For replays under the fixed-timestep harness; 4 replays about 3.5x faster with identical hashes, 8 is too fast for `BOOT_TARGET` navigation. |
-| `ROGUESQ_GAME_60FPS` | `game60fps` in `roguesq_video.json` (default off) | `1`/`0` overrides it. On: missions run at 60 game frames a second (the game's 2-VI frame minimum at 0x80128EAF becomes 1). Always off during replays, recordings, attract demos and co-op. |
+| `ROGUESQ_GAME_HZ` | from TARGET FPS | `<30-240>` forces the mission logic rate. Otherwise: frame interpolation off runs real frames at the target (`30` or below = the original game); on runs 30 logic up to a target of 60 and 60 logic above it. Missions and cutscenes alike. Always 30 during replays, recordings, attract demos and co-op. |
+| `ROGUESQ_VI_SUBTICKS` | 4 | `<1-8>` video clock ticks per frame above 30: the clock runs at the rate times this, so a late frame waits a fraction of a frame for its swap, and frames take a smoothed measured time as dt. `1` = one tick per frame and the game's own dt. |
 | `ROGUESQ_LOG_RATE` | unset | `1`: one `[rate]` line per game second: mission frames in it, how many took one VI, wall milliseconds, step scale. |
 | `ROGUESQ_FB_GUARDS` | 4 | Bitmask: 1 = CIMG neutralizer (rewrites DL payload words, opt-in), 4 = RT64 framebuffer-registry sanitizer. `0` disables both for A/B against goldens. |
 

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -1260,8 +1261,30 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     float smooth_dt = s_last_ms ? (float)(smooth_now - s_last_ms) : 16.0f;
     s_last_ms = smooth_now;
 
-    // Pixels since the last poll grow with the frame time and the game scales turning by it too, so convert to pixels per 30 fps frame; the floor guards a double poll.
-    const float per_frame = (1000.0f / 30.0f) / std::max(smooth_dt, 1000.0f / 60.0f);
+    // The controller is read every video tick, which above 60 fps is several times a frame, so take the motion over the last 1/60 s or more rather than since
+    // the last read: a few pixels per read gave the stick a fraction of its deflection.
+    struct MouseSample { std::chrono::steady_clock::time_point t; double x; double y; };
+    static std::deque<MouseSample> s_trail;
+    static double s_cum_x = 0.0, s_cum_y = 0.0;
+    const auto mouse_now = std::chrono::steady_clock::now();
+    const auto window = std::chrono::microseconds(16667);
+
+    s_cum_x += raw_dx;
+    s_cum_y += raw_dy;
+    s_trail.push_back({ mouse_now, s_cum_x, s_cum_y });
+
+    while (s_trail.size() > 2 && (mouse_now - s_trail[1].t) >= window) {
+        s_trail.pop_front();
+    }
+
+    const MouseSample& from = (s_trail.size() > 1) ? s_trail.front() : s_trail.back();
+    const float window_ms = std::max(std::chrono::duration<float, std::milli>(mouse_now - from.t).count(), 1000.0f / 60.0f);
+
+    raw_dx = (float)(s_cum_x - from.x);
+    raw_dy = (float)(s_cum_y - from.y);
+
+    // Pixels over that window grow with the frame time and the game scales turning by it too, so convert to pixels per 30 fps frame.
+    const float per_frame = (1000.0f / 30.0f) / window_ms;
 
     raw_dx *= per_frame;
     raw_dy *= per_frame;
