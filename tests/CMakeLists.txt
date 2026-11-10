@@ -132,6 +132,13 @@ add_executable(hud_placement_test EXCLUDE_FROM_ALL
 )
 set_target_properties(hud_placement_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
+# Standalone unit test for the mission frame rate core.
+add_executable(game_rate_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/game_rate_test.cpp
+)
+set_target_properties(game_rate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(game_rate_test PRIVATE ${RS64_ROOT}/src)
+
 # Standalone unit test for the dynamic point-light helpers.
 add_executable(rs64_lights_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/rs64_lights_test.cpp
@@ -163,7 +170,7 @@ add_executable(style_check EXCLUDE_FROM_ALL
 )
 set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
-set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test level_environment_test crosshair_match_test hud_placement_test rs64_lights_test menu_layout_test mods_page_test lang_test terrain_edit_test mcp_framing_test)
+set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test level_environment_test crosshair_match_test hud_placement_test game_rate_test rs64_lights_test menu_layout_test mods_page_test lang_test terrain_edit_test mcp_framing_test)
 set(RS64_TESTS ${RS64_BASE_TESTS} mp_core_test net_core_test net_link_test relay_core_test relay_client_test)
 
 if (MSVC)

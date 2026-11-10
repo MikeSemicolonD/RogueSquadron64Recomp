@@ -210,6 +210,9 @@ static uint32_t s_npc_view_args[4];
 static float s_view_nx, s_view_ny;
 static int s_view_seen;
 
+// The render view test's edge slopes (|x| / z, |y| / z), 0 until one has run.
+static float s_view_slope_x, s_view_slope_y;
+
 void rs64_npc_draw_only_mark(int on) {
     s_npc_draw_only_pass = on;
 }
@@ -326,7 +329,23 @@ static int shadow_keep(uint8_t* rdram, recomp_context* ctx, float r)
     y.u = (uint32_t)MEM_W(0x14, ctx->r29);
     z.u = (uint32_t)MEM_W(0x18, ctx->r29);
 
-    return (x.f * x.f + y.f * y.f + z.f * z.f) < (d + r) * (d + r);
+    if (!((x.f * x.f + y.f * y.f + z.f * z.f) < (d + r) * (d + r)))
+    {
+        return 0;
+    }
+
+    // The margins cover the view slopes and the object having moved since they were read.
+    const float p[3] = { x.f, y.f, z.f };
+    float view[9];
+
+    for (int i = 0; i < 9; ++i)
+    {
+        union { uint32_t u; float f; } m;
+        m.u = (uint32_t)MEM_W(i * 4, ctx->r16);
+        view[i] = m.f;
+    }
+
+    return rs64_shadow_caster_reaches_view(p, r * 1.25f, view, s_view_slope_x * 1.1f, s_view_slope_y * 1.1f);
 }
 
 // Moves a kept object to the screen centre at the near plane (sp+0x10/0x14/0x18), so the rest of the test passes; the caller's depth out was already written.
@@ -376,10 +395,21 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_co
 
     if (s_render_view_test) {
         const float m = rs64_shadow_cull_margin();
+        union { uint32_t u; float f; } z;
 
         ctx->f10.fl /= m;
         ctx->f12.fl /= m;
         ctx->f22.fl /= m;
+
+        // $f20 is the projection scale over depth, so this is the view's edge slope as this test applies it.
+        z.u = (uint32_t)MEM_W(0x18, ctx->r29);
+        const float scale = ctx->f20.fl * z.f;
+
+        if (scale > 1e-4f)
+        {
+            s_view_slope_x = ctx->f0.fl * ctx->f2.fl * m / scale;
+            s_view_slope_y = m / scale;
+        }
     }
 }
 
@@ -973,6 +1003,7 @@ void rs64_th_musyxSynthFrame_80091798(uint8_t* rdram, recomp_context* ctx) {
 void rs64_th_loadOverlay_80000B3C(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_load_overlay((unsigned int)ctx->r16);
+    rs64_rate_reset(rdram);
 }
 
 // buildAndRegisterDefaultMaterial 0x80018098: the free list head was just set
@@ -1558,6 +1589,8 @@ int rs64_th_runInMissionFrame_800FA7D0(uint8_t* rdram, recomp_context* ctx) {
 
     if (rs64_hook(RS64_HOOK_MISSION_FRAME_DT, rdram, ctx)) return 1;
 
+    rs64_rate_frame(rdram, ctx->f20.fl);
+
     return 0;
 }
 
@@ -2142,3 +2175,424 @@ void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_con
 
     s_render_view_test_next = 1;
 }
+
+// ---- Mission frame rate: per-frame steps scaled to the frame's share of a 30 Hz step ----
+
+static int s_rate_jolt_reset;
+
+// updateXwingFlightControls 0x800B48F4: speed-up step
+void rs64_th_updateXwingFlightControls_800B48F4(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateXwingFlightControls 0x800B4924: slow-down step
+void rs64_th_updateXwingFlightControls_800B4924(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateAwingFlightControls 0x800B5D5C: speed-up step
+void rs64_th_updateAwingFlightControls_800B5D5C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateAwingFlightControls 0x800B5D8C: slow-down step
+void rs64_th_updateAwingFlightControls_800B5D8C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateYwingFlightControls 0x800B798C: speed-up step
+void rs64_th_updateYwingFlightControls_800B798C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateYwingFlightControls 0x800B79BC: slow-down step
+void rs64_th_updateYwingFlightControls_800B79BC(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateVwingFlightControls 0x800B9288: speed-up step
+void rs64_th_updateVwingFlightControls_800B9288(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateVwingFlightControls 0x800B92B8: slow-down step
+void rs64_th_updateVwingFlightControls_800B92B8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateFalconFlightControls 0x800BA8FC: speed-up step
+void rs64_th_updateFalconFlightControls_800BA8FC(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateFalconFlightControls 0x800BA92C: slow-down step
+void rs64_th_updateFalconFlightControls_800BA92C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateTieInterceptorFlightControls 0x800BC198: speed-up step
+void rs64_th_updateTieInterceptorFlightControls_800BC198(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateTieInterceptorFlightControls 0x800BC1C8: slow-down step
+void rs64_th_updateTieInterceptorFlightControls_800BC1C8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateT16FlightControls 0x800BD150: speed-up step
+void rs64_th_updateT16FlightControls_800BD150(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateT16FlightControls 0x800BD180: slow-down step
+void rs64_th_updateT16FlightControls_800BD180(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateNabooStarfighterFlightControls 0x800BDEB8: speed-up step
+void rs64_th_updateNabooStarfighterFlightControls_800BDEB8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateNabooStarfighterFlightControls 0x800BDEE8: slow-down step
+void rs64_th_updateNabooStarfighterFlightControls_800BDEE8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updateSnowSpeederFlightControls 0x800ABDA8: speed-up step
+void rs64_th_updateSnowSpeederFlightControls_800ABDA8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updateSnowSpeederFlightControls 0x800ABDD8: slow-down step
+void rs64_th_updateSnowSpeederFlightControls_800ABDD8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl *= rs64_rate_scale();
+}
+
+// updatePlayerCraftPhysics 0x800B2358: jolt impulse added to the angle at 0xD4
+void rs64_th_updatePlayerCraftPhysics_800B2358(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// updatePlayerCraftPhysics 0x800B2374: jolt decay step
+void rs64_th_updatePlayerCraftPhysics_800B2374(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updatePlayerCraftPhysics 0x800B2388: jolt decay step
+void rs64_th_updatePlayerCraftPhysics_800B2388(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updatePlayerCraftPhysics 0x800B23AC: jolt impulse already added to the angle at 0xD0
+void rs64_th_updatePlayerCraftPhysics_800B23AC(uint8_t* rdram, recomp_context* ctx) {
+
+    if (rs64_rate_scale() != 1.0f) ctx->f2.fl -= ctx->f0.fl * (1.0f - rs64_rate_scale());
+}
+
+// updatePlayerCraftPhysics 0x800B23C8: jolt decay step
+void rs64_th_updatePlayerCraftPhysics_800B23C8(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updatePlayerCraftPhysics 0x800B23DC: jolt decay step
+void rs64_th_updatePlayerCraftPhysics_800B23DC(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updatePlayerCraftPhysics 0x800B27F0: the offsets at 0xDC / 0xE0 are being reset, so this frame's impulse is their whole value
+void rs64_th_updatePlayerCraftPhysics_800B27F0(uint8_t* rdram, recomp_context* ctx) {
+
+    s_rate_jolt_reset = 1;
+}
+
+// updatePlayerCraftPhysics 0x800B2824: jolt impulses already added to the offsets at 0xDC ($f4) and 0xE0 ($f2)
+void rs64_th_updatePlayerCraftPhysics_800B2824(uint8_t* rdram, recomp_context* ctx) {
+
+    const float keep = s_rate_jolt_reset ? 0.0f : 1.0f - rs64_rate_scale();
+    fpr side;
+
+    side.u32l = (uint32_t)MEM_W(0x14C, ctx->r19);
+
+    if (keep != 0.0f) {
+        ctx->f4.fl -= side.fl * keep;
+        ctx->f2.fl -= ctx->f0.fl * keep;
+    }
+
+    s_rate_jolt_reset = 0;
+}
+
+// updatePlayerDeathSpiral 0x800B0EF4: roll rate ramp
+void rs64_th_updatePlayerDeathSpiral_800B0EF4(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updatePlayerDeathSpiral 0x800B0F14: roll rate ramp
+void rs64_th_updatePlayerDeathSpiral_800B0F14(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updatePlayerVehicleByControlMode 0x8004D738: follow-speed dead zone; $f20 is the camera's own step (its shortest frame so far), not always this frame's dt
+void rs64_th_updatePlayerVehicleByControlMode_8004D738(uint8_t* rdram, recomp_context* ctx) {
+
+    if (rs64_rate_scale() != 1.0f) ctx->f8.fl *= ctx->f20.fl * 30.0f;
+}
+
+// npcTurretUpdate 0x800C96BC: fire cooldown
+void rs64_th_npcTurretUpdate_800C96BC(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 += 1;
+}
+
+// steerOrientationTowardTarget 0x8005F3D4: acceleration step
+void rs64_th_steerOrientationTowardTarget_8005F3D4(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// steerOrientationTowardTarget 0x8005F3E4: acceleration already added to the speed
+void rs64_th_steerOrientationTowardTarget_8005F3E4(uint8_t* rdram, recomp_context* ctx) {
+
+    if (rs64_rate_scale() != 1.0f) ctx->f2.fl -= ctx->f0.fl * (1.0f - rs64_rate_scale());
+}
+
+// npcWingmanSteerToward 0x800D9010: 0.9 drag
+void rs64_th_npcWingmanSteerToward_800D9010(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl = rs64_rate_drag(ctx->f0.fl);
+}
+
+// npcWingmanSteerToward 0x800D9038: 0.96 drag
+void rs64_th_npcWingmanSteerToward_800D9038(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f4.fl = rs64_rate_drag(ctx->f4.fl);
+}
+
+// updateProbeDroidHopState 0x800CA8B4: velocity drag
+void rs64_th_updateProbeDroidHopState_800CA8B4(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl = rs64_rate_drag(ctx->f0.fl);
+}
+
+// updateProbeDroidHopState 0x800CA99C: 0.98 decay of the hop multiplier
+void rs64_th_updateProbeDroidHopState_800CA99C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl = rs64_rate_drag(ctx->f2.fl);
+}
+
+// updateProbeDroidHopState 0x800CA9C4: hop multiplier
+void rs64_th_updateProbeDroidHopState_800CA9C4(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl = rs64_rate_drag(ctx->f2.fl);
+}
+
+// npcPowerUpUpdate 0x800EBEA0: shrink step
+void rs64_th_npcPowerUpUpdate_800EBEA0(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// npcTurretUpdate 0x800C9A64: out-of-range frame count
+void rs64_th_npcTurretUpdate_800C9A64(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcProbeDriod 0x800CB51C: out-of-range frame count
+void rs64_th_npcProbeDriod_800CB51C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcAtAtUpdate 0x800CE688: out-of-range frame count
+void rs64_th_npcAtAtUpdate_800CE688(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcAtStUpdate 0x800D096C: out-of-range frame count
+void rs64_th_npcAtStUpdate_800D096C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcShuttleUpdate 0x800D4640: out-of-range frame count
+void rs64_th_npcShuttleUpdate_800D4640(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcDebrisFieldUpdate 0x800D5930: out-of-range frame count
+void rs64_th_npcDebrisFieldUpdate_800D5930(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcTankDroidUpdate 0x800D7214: out-of-range frame count
+void rs64_th_npcTankDroidUpdate_800D7214(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcWingmanUpdate 0x800D9A38: out-of-range frame count
+void rs64_th_npcWingmanUpdate_800D9A38(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcTieVariantUpdate 0x800DBC3C: out-of-range frame count
+void rs64_th_npcTieVariantUpdate_800DBC3C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcRadarDishUpdate 0x800DCD98: out-of-range frame count
+void rs64_th_npcRadarDishUpdate_800DCD98(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcGroundTransportUpdate 0x800DF690: out-of-range frame count
+void rs64_th_npcGroundTransportUpdate_800DF690(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// handleRayShieldedNpcDestroy 0x800E42BC: out-of-range frame count
+void rs64_th_handleRayShieldedNpcDestroy_800E42BC(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcWaterCraftUpdate 0x800E6D88: out-of-range frame count
+void rs64_th_npcWaterCraftUpdate_800E6D88(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcGroundTroopUpdate 0x800E843C: out-of-range frame count
+void rs64_th_npcGroundTroopUpdate_800E843C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// tickCraftWithPhasedDestruction 0x800E96C4: out-of-range frame count
+void rs64_th_tickCraftWithPhasedDestruction_800E96C4(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcAtPtUpdate 0x800EB2AC: out-of-range frame count
+void rs64_th_npcAtPtUpdate_800EB2AC(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcPowerUpUpdate 0x800EBF34: out-of-range frame count
+void rs64_th_npcPowerUpUpdate_800EBF34(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// datItemActorNpcHandler 0x800ED104: out-of-range frame count
+void rs64_th_datItemActorNpcHandler_800ED104(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// updateDestructionDebrisNpc 0x8006CEE8: out-of-range frame count
+void rs64_th_updateDestructionDebrisNpc_8006CEE8(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcPowerGeneratorUpdate 0x80078264: out-of-range frame count
+void rs64_th_npcPowerGeneratorUpdate_80078264(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// npcShieldUpdate 0x8007B2B0: out-of-range frame count
+void rs64_th_npcShieldUpdate_8007B2B0(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// executeActorType4Effect 0x800F8694: frames spent in the timed state
+void rs64_th_executeActorType4Effect_800F8694(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// executeActorType4Effect 0x800F870C: 20-frame manoeuvre hold
+void rs64_th_executeActorType4Effect_800F870C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
+}
+
+// executeActorType4Effect 0x800F90FC: random heading wobble: $f4 = turn rate * dt, $v0 = rand; a full 30 Hz step on tick frames, none in between
+void rs64_th_executeActorType4Effect_800F90FC(uint8_t* rdram, recomp_context* ctx) {
+
+    if (rs64_rate_tick()) {
+        ctx->f4.fl /= rs64_rate_scale();
+    } else {
+        ctx->r2 = 64;
+    }
+}
+
+// npcTieVariantSteerToward 0x800DA8CC: death spin angle
+void rs64_th_npcTieVariantSteerToward_800DA8CC(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// computeRandomizedOrientationFrame 0x800F3730: the height weave's transition step.
+void rs64_th_computeRandomizedOrientationFrame_800F3730(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// computeRandomizedOrientationFrame 0x800F3914: the roll weave's transition step.
+void rs64_th_computeRandomizedOrientationFrame_800F3914(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// computeRandomizedOrientationFrame 0x800F3B84: the fraction of the heading error turned per frame; can exceed 1 on fast craft.
+void rs64_th_computeRandomizedOrientationFrame_800F3B84(uint8_t* rdram, recomp_context* ctx) {
+
+    if (ctx->f0.fl < 1.0f)
+    {
+        ctx->f0.fl = 1.0f - rs64_rate_drag(1.0f - ctx->f0.fl);
+        return;
+    }
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+

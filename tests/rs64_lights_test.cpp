@@ -1410,6 +1410,27 @@ static void testTmemAverage() {
     CHECK(tmemAverage(tmem.data(), 2, 0, 0, 1, 8, 2, 1, rgb, cov));
     CHECK(near(rgb[0], 1.0f, 1e-3f) && near(rgb[1], 0.0f, 1e-3f) && near(rgb[2], 0.0f, 1e-3f));
     CHECK(near(cov, 0.5f, 1e-3f));
+    const float behind[3] = { 0.0f, 0.0f, -50.0f };
+    const float side[3] = { 200.0f, 0.0f, 10.0f };
+    const float seen[3] = { 0.0f, 0.0f, 50.0f };
+    const float forward[3] = { 0.0f, 0.0f, 1.0f };
+    const float backward[3] = { 0.0f, 0.0f, -1.0f };
+    const float right[3] = { 1.0f, 0.0f, 0.0f };
+    const float left[3] = { -1.0f, 0.0f, 0.0f };
+    CHECK(casterReachesView(behind, 5.0f, forward, 1.0f, 1.0f));
+    CHECK(!casterReachesView(behind, 5.0f, backward, 1.0f, 1.0f));
+    CHECK(!casterReachesView(side, 5.0f, right, 1.0f, 1.0f));
+    CHECK(casterReachesView(side, 5.0f, left, 1.0f, 1.0f));
+    CHECK(casterReachesView(seen, 5.0f, backward, 1.0f, 1.0f));
+    std::vector<uint8_t> fbA(1000, 7);
+    std::vector<uint8_t> fbB = fbA;
+    CHECK(changedPixels(fbA.data(), fbB.data(), 1000, 2) == 0);
+    fbB[0] = 9;
+    fbB[1] = 9;
+    fbB[501] = 9;
+    fbB[999] = 9;
+    CHECK(changedPixels(fbA.data(), fbB.data(), 1000, 2) == 3);
+    CHECK(changedPixels(fbA.data(), fbB.data(), 1000, 4) == 3);
     // RGBA16 solid opaque green 4x1.
     std::fill(tmem.begin(), tmem.end(), 0);
     for (int i = 0; i < 4; ++i) {

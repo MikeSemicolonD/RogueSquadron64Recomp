@@ -440,6 +440,8 @@ The game is double-buffered (`0x80128EAD` = 2) with a minimum of 2 VIs per frame
 
 Game time is variable-timestep, not frame-counted: `timeSnapshotFiller` (0x8000BC00) measures the interval from `osGetTime` plus the VIs still owed before the swap, and `runInMissionFrame` rounds it to whole VI periods (`getViModePeriod` 0x80002710: 16.667 ms NTSC / 20 ms PAL; `floatModulo` 0x8001E20C), uses 1/30 s if it is <= 0, clamps to 0.1 s, and passes it as `$f12` to the per-frame ticks (`slotDispatcherIter`, `updateGridLayerScroll`, audio listeners). The lockstep/replay path uses fixed 1/30 s steps instead (`rs64_ls_frame_dt`).
 
+The 60 FPS GAMEPLAY setting (`game60fps`, missions only) writes 1 to `0x80128EAF` each mission frame (`rs64_rate_frame`); any overlay load puts 2 back. Game logic that counts frames is patched by hooks that read `rs64_rate_scale()` (this frame's share of a 30 Hz step, 1 when off) or `rs64_rate_tick()` (true 30 times a second, always true when off): a fixed per-frame step is multiplied by the scale, a per-frame multiplier goes through `rs64_rate_drag`, a frame counter only advances on tick frames. New per-frame logic found at 60 fps gets the same treatment.
+
 ### Exception handling pipeline
 
 - **C++ exceptions** (SEH `0xE06D7363`): the `__except` filter in [librecomp/src/recomp.cpp](lib/N64ModernRuntime/librecomp/src/recomp.cpp) **must** let these propagate (`EXCEPTION_CONTINUE_SEARCH`). Catching them with `std::exit(1)` kills the game on any throw; the outer `try/catch` in [ultramodern/src/threads.cpp](lib/N64ModernRuntime/ultramodern/src/threads.cpp) recovers.

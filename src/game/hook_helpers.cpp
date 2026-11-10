@@ -8,6 +8,7 @@
 #include <cstring>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <string>
 #include <vector>
@@ -27,6 +28,9 @@
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
+#include "game/game_rate.h"
+#include "host_api/host_api.h"
+#include "lockstep/lockstep_core.h"
 #include "game/mod_content/asset_overrides.h"
 #include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
@@ -1028,4 +1032,81 @@ extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
 
     wr(kFreeHead, head);
     fprintf(stderr, "[dl-pool] added %u chunks at %08X\n", kCount, kStart);
+}
+
+// ---- Mission frame rate ----
+
+namespace {
+rs64::rate::State g_rate;
+}
+
+extern "C" int rs64_ls_session(void);
+
+extern "C" float rs64_rate_scale(void) {
+    return g_rate.scale;
+}
+
+extern "C" int rs64_rate_tick(void) {
+    return g_rate.tick ? 1 : 0;
+}
+
+extern "C" float rs64_rate_drag(float k) {
+    return rs64::rate::drag(k, g_rate.scale);
+}
+
+// An overlay load starts or ends a mission: back to the game's own 2 VIs per frame.
+extern "C" void rs64_rate_reset(uint8_t* rdram) {
+
+    g_rate = rs64::rate::State{};
+    rs64::mips::wb(rdram, 0x80128EAFu, 2);
+}
+
+// ROGUESQ_LOG_RATE: one line per game second with the mission frames in it and the wall time it took.
+static void rate_log(float dt)
+{
+
+    static float s_total = 0.0f;
+    static float s_sec = 0.0f;
+    static int s_frames = 0;
+    static int s_one_vi = 0;
+    static auto s_wall = std::chrono::steady_clock::now();
+
+    s_sec += dt;
+    s_frames++;
+    s_one_vi += dt < 0.02f ? 1 : 0;
+
+    if (s_sec < 1.0f)
+    {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const int ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(now - s_wall).count();
+
+    s_total += s_sec;
+
+    fprintf(stderr, "[rate] t=%.1f frames=%d one_vi=%d wall_ms=%d scale=%.2f\n", s_total, s_frames, s_one_vi, ms, g_rate.scale);
+
+    s_sec = 0.0f;
+    s_frames = 0;
+    s_one_vi = 0;
+    s_wall = now;
+}
+
+// Each mission frame, once its dt is final. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps, 1 = 60.
+extern "C" void rs64_rate_frame(uint8_t* rdram, float dt)
+{
+
+    static const int s_env = env_int("ROGUESQ_GAME_60FPS", -1);
+    static const bool s_log = env_on("ROGUESQ_LOG_RATE");
+
+    const bool want = s_env >= 0 ? s_env != 0 : rs64::video::game_60fps();
+    const bool on = want && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
+
+    rs64::rate::update(g_rate, dt, on);
+    rs64::mips::wb(rdram, 0x80128EAFu, on ? 1 : 2);
+
+    if (s_log) {
+        rate_log(dt);
+    }
 }

@@ -337,6 +337,29 @@ extern "C" float rs64_shadow_keep_dist(void)
     return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_dist : 0.0f;
 }
 
+// Whether an off-screen object within the keep distance can shadow anything on screen. view is the rotation of the matrix that made p, so the sun lands in p's space.
+extern "C" int rs64_shadow_caster_reaches_view(const float p[3], float r, const float view[9], float slopeX, float slopeY)
+{
+
+    if (!(slopeX > 0.0f) || !(slopeY > 0.0f))
+    {
+        return 1;
+    }
+
+    const rs64lights::Sun sun = rs64lights::publishedSun();
+    const float minTan = std::tan(rs64lights::config().sunMinElevationDeg * 3.14159265f / 180.0f);
+    float toSun[3];
+
+    if (!sun.levelWorld || !rs64lights::sunCameraDir(sun.world, view, toSun, minTan))
+    {
+        return 1;
+    }
+
+    const float away[3] = { -toSun[0], -toSun[1], -toSun[2] };
+
+    return rs64lights::casterReachesView(p, r, away, slopeX, slopeY) ? 1 : 0;
+}
+
 // Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
 extern "C" float rs64_res_scale(void)
 {

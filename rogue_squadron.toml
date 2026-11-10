@@ -1979,3 +1979,355 @@ text = '{ rs64_th_updateNpcEffectIntensity_entry(rdram, ctx); }'
 func = "selectMeshLodAndSubmitForRender"
 before_vram = 0x80058104
 text = '{ rs64_th_selectMeshLodAndSubmitForRender_80058104(rdram, ctx); }'
+
+# 60 fps missions: each craft's speed steps toward its target by a fixed amount per frame (up $f2, down $f4); scale both to the frame's length.
+[[patches.hook]]
+func = "updateXwingFlightControls"
+before_vram = 0x800B48F4
+text = '{ rs64_th_updateXwingFlightControls_800B48F4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateXwingFlightControls"
+before_vram = 0x800B4924
+text = '{ rs64_th_updateXwingFlightControls_800B4924(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateAwingFlightControls"
+before_vram = 0x800B5D5C
+text = '{ rs64_th_updateAwingFlightControls_800B5D5C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateAwingFlightControls"
+before_vram = 0x800B5D8C
+text = '{ rs64_th_updateAwingFlightControls_800B5D8C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateYwingFlightControls"
+before_vram = 0x800B798C
+text = '{ rs64_th_updateYwingFlightControls_800B798C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateYwingFlightControls"
+before_vram = 0x800B79BC
+text = '{ rs64_th_updateYwingFlightControls_800B79BC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateVwingFlightControls"
+before_vram = 0x800B9288
+text = '{ rs64_th_updateVwingFlightControls_800B9288(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateVwingFlightControls"
+before_vram = 0x800B92B8
+text = '{ rs64_th_updateVwingFlightControls_800B92B8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateFalconFlightControls"
+before_vram = 0x800BA8FC
+text = '{ rs64_th_updateFalconFlightControls_800BA8FC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateFalconFlightControls"
+before_vram = 0x800BA92C
+text = '{ rs64_th_updateFalconFlightControls_800BA92C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateTieInterceptorFlightControls"
+before_vram = 0x800BC198
+text = '{ rs64_th_updateTieInterceptorFlightControls_800BC198(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateTieInterceptorFlightControls"
+before_vram = 0x800BC1C8
+text = '{ rs64_th_updateTieInterceptorFlightControls_800BC1C8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BD150
+text = '{ rs64_th_updateT16FlightControls_800BD150(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BD180
+text = '{ rs64_th_updateT16FlightControls_800BD180(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDEB8
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDEB8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDEE8
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDEE8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateSnowSpeederFlightControls"
+before_vram = 0x800ABDA8
+text = '{ rs64_th_updateSnowSpeederFlightControls_800ABDA8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateSnowSpeederFlightControls"
+before_vram = 0x800ABDD8
+text = '{ rs64_th_updateSnowSpeederFlightControls_800ABDD8(rdram, ctx); }'
+
+
+# 60 fps missions: the hit jolt adds its impulse to the craft angles and decays it by a fixed amount once per frame.
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B2358
+text = '{ rs64_th_updatePlayerCraftPhysics_800B2358(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B2374
+text = '{ rs64_th_updatePlayerCraftPhysics_800B2374(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B2388
+text = '{ rs64_th_updatePlayerCraftPhysics_800B2388(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B23AC
+text = '{ rs64_th_updatePlayerCraftPhysics_800B23AC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B23C8
+text = '{ rs64_th_updatePlayerCraftPhysics_800B23C8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B23DC
+text = '{ rs64_th_updatePlayerCraftPhysics_800B23DC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B27F0
+text = '{ rs64_th_updatePlayerCraftPhysics_800B27F0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerCraftPhysics"
+before_vram = 0x800B2824
+text = '{ rs64_th_updatePlayerCraftPhysics_800B2824(rdram, ctx); }'
+
+
+# 60 fps missions: the death spiral's roll rate ramps by a fixed amount per frame.
+[[patches.hook]]
+func = "updatePlayerDeathSpiral"
+before_vram = 0x800B0EF4
+text = '{ rs64_th_updatePlayerDeathSpiral_800B0EF4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerDeathSpiral"
+before_vram = 0x800B0F14
+text = '{ rs64_th_updatePlayerDeathSpiral_800B0F14(rdram, ctx); }'
+
+
+# 60 fps missions: the chase camera drops a follow-speed change under 0.01 ($f8), a cutoff on a value already scaled by dt; without this the camera falls behind as frames get shorter.
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004D738
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D738(rdram, ctx); }'
+
+
+# 60 fps missions: turret fire cooldown counts frames.
+[[patches.hook]]
+func = "npcTurretUpdate"
+before_vram = 0x800C96BC
+text = '{ rs64_th_npcTurretUpdate_800C96BC(rdram, ctx); }'
+
+
+# 60 fps missions: homing missiles add a fixed acceleration per frame, then add that to their speed.
+[[patches.hook]]
+func = "steerOrientationTowardTarget"
+before_vram = 0x8005F3D4
+text = '{ rs64_th_steerOrientationTowardTarget_8005F3D4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "steerOrientationTowardTarget"
+before_vram = 0x8005F3E4
+text = '{ rs64_th_steerOrientationTowardTarget_8005F3E4(rdram, ctx); }'
+
+
+# 60 fps missions: per-frame velocity multipliers (wingman steering, probe droid hover).
+[[patches.hook]]
+func = "npcWingmanSteerToward"
+before_vram = 0x800D9010
+text = '{ rs64_th_npcWingmanSteerToward_800D9010(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcWingmanSteerToward"
+before_vram = 0x800D9038
+text = '{ rs64_th_npcWingmanSteerToward_800D9038(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateProbeDroidHopState"
+before_vram = 0x800CA8B4
+text = '{ rs64_th_updateProbeDroidHopState_800CA8B4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateProbeDroidHopState"
+before_vram = 0x800CA99C
+text = '{ rs64_th_updateProbeDroidHopState_800CA99C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateProbeDroidHopState"
+before_vram = 0x800CA9C4
+text = '{ rs64_th_updateProbeDroidHopState_800CA9C4(rdram, ctx); }'
+
+
+# 60 fps missions: a collected power-up shrinks by a fixed step per frame.
+[[patches.hook]]
+func = "npcPowerUpUpdate"
+before_vram = 0x800EBEA0
+text = '{ rs64_th_npcPowerUpUpdate_800EBEA0(rdram, ctx); }'
+
+
+# 60 fps missions: units count 21 frames out of range before they despawn.
+[[patches.hook]]
+func = "npcTurretUpdate"
+before_vram = 0x800C9A64
+text = '{ rs64_th_npcTurretUpdate_800C9A64(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcProbeDriod"
+before_vram = 0x800CB51C
+text = '{ rs64_th_npcProbeDriod_800CB51C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcAtAtUpdate"
+before_vram = 0x800CE688
+text = '{ rs64_th_npcAtAtUpdate_800CE688(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcAtStUpdate"
+before_vram = 0x800D096C
+text = '{ rs64_th_npcAtStUpdate_800D096C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcShuttleUpdate"
+before_vram = 0x800D4640
+text = '{ rs64_th_npcShuttleUpdate_800D4640(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcDebrisFieldUpdate"
+before_vram = 0x800D5930
+text = '{ rs64_th_npcDebrisFieldUpdate_800D5930(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcTankDroidUpdate"
+before_vram = 0x800D7214
+text = '{ rs64_th_npcTankDroidUpdate_800D7214(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcWingmanUpdate"
+before_vram = 0x800D9A38
+text = '{ rs64_th_npcWingmanUpdate_800D9A38(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcTieVariantUpdate"
+before_vram = 0x800DBC3C
+text = '{ rs64_th_npcTieVariantUpdate_800DBC3C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcRadarDishUpdate"
+before_vram = 0x800DCD98
+text = '{ rs64_th_npcRadarDishUpdate_800DCD98(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcGroundTransportUpdate"
+before_vram = 0x800DF690
+text = '{ rs64_th_npcGroundTransportUpdate_800DF690(rdram, ctx); }'
+
+[[patches.hook]]
+func = "handleRayShieldedNpcDestroy"
+before_vram = 0x800E42BC
+text = '{ rs64_th_handleRayShieldedNpcDestroy_800E42BC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcWaterCraftUpdate"
+before_vram = 0x800E6D88
+text = '{ rs64_th_npcWaterCraftUpdate_800E6D88(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcGroundTroopUpdate"
+before_vram = 0x800E843C
+text = '{ rs64_th_npcGroundTroopUpdate_800E843C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickCraftWithPhasedDestruction"
+before_vram = 0x800E96C4
+text = '{ rs64_th_tickCraftWithPhasedDestruction_800E96C4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcAtPtUpdate"
+before_vram = 0x800EB2AC
+text = '{ rs64_th_npcAtPtUpdate_800EB2AC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcPowerUpUpdate"
+before_vram = 0x800EBF34
+text = '{ rs64_th_npcPowerUpUpdate_800EBF34(rdram, ctx); }'
+
+[[patches.hook]]
+func = "datItemActorNpcHandler"
+before_vram = 0x800ED104
+text = '{ rs64_th_datItemActorNpcHandler_800ED104(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateDestructionDebrisNpc"
+before_vram = 0x8006CEE8
+text = '{ rs64_th_updateDestructionDebrisNpc_8006CEE8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcPowerGeneratorUpdate"
+before_vram = 0x80078264
+text = '{ rs64_th_npcPowerGeneratorUpdate_80078264(rdram, ctx); }'
+
+[[patches.hook]]
+func = "npcShieldUpdate"
+before_vram = 0x8007B2B0
+text = '{ rs64_th_npcShieldUpdate_8007B2B0(rdram, ctx); }'
+
+# 60 fps missions: flying units (type 4 actors) roll a random heading wobble every frame and count frames in a manoeuvre; keep both at 30 a second.
+[[patches.hook]]
+func = "executeActorType4Effect"
+before_vram = 0x800F8694
+text = '{ rs64_th_executeActorType4Effect_800F8694(rdram, ctx); }'
+
+[[patches.hook]]
+func = "executeActorType4Effect"
+before_vram = 0x800F870C
+text = '{ rs64_th_executeActorType4Effect_800F870C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "executeActorType4Effect"
+before_vram = 0x800F90FC
+text = '{ rs64_th_executeActorType4Effect_800F90FC(rdram, ctx); }'
+
+
+# 60 fps missions: a shot-down TIE spins by a fixed angle per frame as it falls.
+[[patches.hook]]
+func = "npcTieVariantSteerToward"
+before_vram = 0x800DA8CC
+text = '{ rs64_th_npcTieVariantSteerToward_800DA8CC(rdram, ctx); }'
+
+# 60 fps missions: the weave of path-following flyers advances its two transitions by a fixed step per frame and picks a new target as each ends, and turns toward its heading by a fixed fraction per frame.
+[[patches.hook]]
+func = "computeRandomizedOrientationFrame"
+before_vram = 0x800F3730
+text = '{ rs64_th_computeRandomizedOrientationFrame_800F3730(rdram, ctx); }'
+
+[[patches.hook]]
+func = "computeRandomizedOrientationFrame"
+before_vram = 0x800F3914
+text = '{ rs64_th_computeRandomizedOrientationFrame_800F3914(rdram, ctx); }'
+
+[[patches.hook]]
+func = "computeRandomizedOrientationFrame"
+before_vram = 0x800F3B84
+text = '{ rs64_th_computeRandomizedOrientationFrame_800F3B84(rdram, ctx); }'
+

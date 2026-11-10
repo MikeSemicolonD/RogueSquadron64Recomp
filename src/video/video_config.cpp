@@ -30,6 +30,7 @@ std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
 
 std::atomic<bool> g_legacy_terrain{false};
+std::atomic<bool> g_game_60fps{false};
 
 #if defined(__ANDROID__)
 std::atomic<int> g_terrain_tessellation{2};
@@ -258,6 +259,14 @@ void set_legacy_terrain(bool on)
 
     g_legacy_terrain.store(on, std::memory_order_relaxed);
     set_draw_distance(draw_distance());
+}
+
+bool game_60fps() {
+    return g_game_60fps.load(std::memory_order_relaxed);
+}
+
+void set_game_60fps(bool on) {
+    g_game_60fps.store(on, std::memory_order_relaxed);
 }
 
 int terrain_tessellation() {
@@ -542,6 +551,10 @@ void apply_friendly(UC& uc, const json& j)
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
 
+    if (has("game60fps") && j["game60fps"].is_boolean()) {
+        set_game_60fps(j["game60fps"].get<bool>());
+    }
+
     if (has("terrainTessellation") && j["terrainTessellation"].is_number()) {
         set_terrain_tessellation(j["terrainTessellation"].get<int>());
     }
@@ -703,6 +716,7 @@ json to_friendly(const UC& uc)
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["legacyTerrain"] = legacy_terrain();
+    j["game60fps"] = game_60fps();
     j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();
     j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);

@@ -633,6 +633,8 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
         // The game's own terrain (caps the draw distance at 1.3X); takes effect at the next frame.
         { "legacy_terrain", { [] { return rs64::video::legacy_terrain(); },
                               [] { rs64::video::set_legacy_terrain(!rs64::video::legacy_terrain()); } } },
+        { "game_60fps", { [] { return rs64::video::game_60fps(); },
+                          [] { rs64::video::set_game_60fps(!rs64::video::game_60fps()); } } },
         { "framebuffer_writeback", { [] { return rs64::video::framebuffer_writeback(); },
                                      [] { rs64::video::set_framebuffer_writeback(!rs64::video::framebuffer_writeback()); } } },
         { "rt_lights", rt_toggle(rs64lights::Feature::Lights) },

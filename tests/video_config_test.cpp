@@ -206,6 +206,20 @@ static void test_keep_cutscene_default_and_roundtrip() {
     rs64::video::set_draw_distance(1.0f);
 }
 
+static void test_game_60fps_default_and_roundtrip() {
+    rs64::video::set_game_60fps(false);
+    UC uc; uc.validate();
+    CHECK(rs64::video::to_friendly(uc).value("game60fps", true) == false);
+    json absent = { {"schema", 2}, {"drawDistance", 1.0} };
+    rs64::video::apply_friendly(uc, absent);
+    CHECK(rs64::video::game_60fps() == false);
+    json in = { {"schema", 2}, {"drawDistance", 1.0}, {"game60fps", true} };
+    rs64::video::apply_friendly(uc, in);
+    CHECK(rs64::video::game_60fps() == true);
+    CHECK(rs64::video::to_friendly(uc).value("game60fps", false) == true);
+    rs64::video::set_game_60fps(false);
+}
+
 static void test_legacy_terrain_default_and_roundtrip() {
     rs64::video::set_legacy_terrain(false);
     UC uc; uc.validate();
@@ -446,6 +460,7 @@ int main() {
     test_keep_cutscene_default_and_roundtrip();
     test_keep_cutscene_absent_key_not_migrated();
     test_legacy_terrain_default_and_roundtrip();
+    test_game_60fps_default_and_roundtrip();
     test_terrain_tessellation_default_clamp_and_roundtrip();
     test_legacy_terrain_caps_draw_distance();
     test_fullscreen_roundtrip_and_peek();
