@@ -938,12 +938,17 @@ void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ct
 }
 
 // menuOverlayInit entry
-void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx)
+int rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
     rs64_dbg_log4("menuOverlayInit", (unsigned)ctx->r5, (unsigned)ctx->r6, 0, 0);
     g_current_scene = (int)(unsigned)ctx->r5;
+
+    if (rs64_nav_skip_front_end(rdram)) return 1;
+
     rs64_mod_levels_menu((int)ctx->r5);
+
+    return 0;
 }
 
 // musyxKeyOnVoice entry
@@ -1832,6 +1837,7 @@ void rs64_th_npcWingmanUpdate_800D9A90(uint8_t* rdram, recomp_context* ctx) {
 void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_hook(RS64_HOOK_FRONT_END, rdram, ctx);
+    rs64_nav_front_end_next();
 }
 
 // runMenuRandomBackdropScreen 0x800BFC4C: the debrief's continue check

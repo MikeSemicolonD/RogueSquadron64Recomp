@@ -3,7 +3,7 @@
 # Mission recordings boot straight into the level (ROGUESQ_BOOT_TARGET) and write <name>.rec plus the <name>.rec.hash baseline. They play mortal unless -Invincible.
 # Session recordings start at launch; drive the menus yourself and close the window to stop.
 param(
-    [Parameter(Mandatory = $true)][ValidateRange(0, 18)][int]$Level,
+    [Parameter(Mandatory = $true)][ValidateScript({ $_ -in ((0..18) + 20) })][int]$Level,
     [string]$Craft = "",
     [string]$Name = "",
     [ValidateSet("mission", "session")][string]$Kind = "mission",
@@ -17,8 +17,13 @@ $missions = @(
     "liberation-of-gerrard-v", "the-jade-moon", "imperial-construction-yards", "assault-on-kile-ii",
     "rescue-on-kessel", "prisons-of-kessel", "battle-above-taloraan", "escape-from-fest",
     "blockade-on-chandrila", "raid-on-sullust", "moff-seerdons-revenge", "the-battle-of-calamari",
-    "beggars-canyon", "the-death-star-trench-run", "the-battle-of-hoth"
+    "beggars-canyon", "the-death-star-trench-run", "the-battle-of-hoth", "", "chicken"
 )
+
+if ($Level -eq 20 -and $Kind -eq "session") {
+    Write-Error "CHICKEN (level 20) has no session recording: it boots straight into the mission, so use -Kind mission."
+    exit 1
+}
 
 $root = $PSScriptRoot
 $prefix = "{0:D2}-" -f $Level

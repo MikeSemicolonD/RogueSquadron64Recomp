@@ -79,6 +79,7 @@ param(
     [switch]$HostSkipCrawl
 )
 $ErrorActionPreference = "Stop"
+if ($Level -eq 20) { throw "CHICKEN (level 20) is solo only: the co-op menus cannot start it." }
 $root = (Resolve-Path "$PSScriptRoot\..\..\..").Path
 $exe = (Resolve-Path (Join-Path $root $Binary)).Path
 $exeDir = Split-Path $exe

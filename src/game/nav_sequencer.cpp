@@ -923,6 +923,40 @@ extern "C" void rs64_nav_boot_cutscene_done(void)
     rs64_menu_request_quit();
 }
 
+// level:20 (CHICKEN) starts as the passcode does: mainGameLoop 0x8003E250 launches the AT-ST mission when the bit is set and the front end has returned, so the first front end is skipped. The menus' level path crashes in the hangar for this level.
+static bool nav_is_chicken(const RsNavTarget& t)
+{
+    return t.kind == NAV_LEVEL && t.a == 0x14 && t.c != 1;
+}
+
+static bool s_front_end_next = false;
+
+// mainGameLoop 0x8003E138, the only menuOverlayInit call that opens the front end at boot.
+extern "C" void rs64_nav_front_end_next(void)
+{
+    s_front_end_next = true;
+}
+
+extern "C" int rs64_nav_skip_front_end(uint8_t* rdram)
+{
+
+    static bool s_done = false;
+    static const bool s_chicken = nav_is_chicken(rs64_nav_parse(recomp::dbg::env_str("ROGUESQ_BOOT_TARGET")));
+    const bool front_end = s_front_end_next;
+
+    s_front_end_next = false;
+
+    if (s_done || !s_chicken || !front_end) return 0;
+
+    s_done = true;
+    nav_write_u32(rdram, 0x130B58, nav_word(rdram, 0x130B58) | 0x02000000u);
+
+    fprintf(stderr, "[nav] level 20: front end skipped, CHICKEN bit set\n");
+    fflush(stderr);
+
+    return 1;
+}
+
 // Demo target: the custom menu is auto-disabled so the attract-idle path runs and the demo fires on the natural idle timeout.
 static void nav_demo(uint8_t* rdram, const char* st)
 {
@@ -991,6 +1025,7 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
     force_tick(rdram);
 
     if (g_target.kind == NAV_NONE || !rdram) return;
+    if (nav_is_chicken(g_target)) s_disabled = true;
     if (s_disabled) { g_driving.store(false, std::memory_order_release); return; }
 
     // Do NOT drive before the first action: the boot START pulse must advance the title ->

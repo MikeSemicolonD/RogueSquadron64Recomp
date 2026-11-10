@@ -36,6 +36,7 @@ A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, th
 | 16 | Beggar's Canyon (bonus) | | none yet |
 | 17 | The Death Star Trench Run (bonus) | | none yet |
 | 18 | The Battle of Hoth (bonus) | | none yet |
+| 20 | CHICKEN (AT-ST passcode level) | | none yet |
 
 Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, `construction_yards_bonus` and both `assault_on_kile_ii` recordings were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
 

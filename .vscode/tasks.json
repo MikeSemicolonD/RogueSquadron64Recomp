@@ -1061,7 +1061,8 @@
                 { "label": "15 The Battle of Calamari", "value": "15" },
                 { "label": "16 Beggar's Canyon (bonus)", "value": "16" },
                 { "label": "17 The Death Star Trench Run (bonus)", "value": "17" },
-                { "label": "18 The Battle of Hoth (bonus)", "value": "18" }
+                { "label": "18 The Battle of Hoth (bonus)", "value": "18" },
+                { "label": "20 CHICKEN (AT-ST, mission recordings only)", "value": "20" }
             ],
             "default": "0"
         },

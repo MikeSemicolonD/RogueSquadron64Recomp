@@ -108,7 +108,7 @@ void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_con
 int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args);
 void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj, uint32_t pos, int drawn, int seen, float nx, float ny);
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
+int rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_musyxKeyOnVoice_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_musyxSynthFrame_80091798(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_loadOverlay_80000B3C(uint8_t* rdram, recomp_context* ctx);
@@ -367,6 +367,8 @@ void rs64_mod_levels_title(uint8_t*, recomp_context*);
 void rs64_mod_levels_voice(uint8_t*, recomp_context*);
 void rs64_nav_boot_cutscene(uint8_t*, uint32_t*, uint32_t*);
 void rs64_nav_boot_cutscene_done(void);
+void rs64_nav_front_end_next(void);
+int rs64_nav_skip_front_end(uint8_t* rdram);
 void rs64_passcode_row(uint8_t* rdram, recomp_context* ctx);
 void rs64_pause_back_begin(uint8_t* rdram, unsigned hud);
 void rs64_pause_back_end(uint8_t* rdram, unsigned hud);

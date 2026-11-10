@@ -1001,7 +1001,7 @@ text = '{ rs64_th_runMenuShipSelectScreen_800C14A8(rdram, ctx); }'
 # g_current_scene tracking (drives the attribution VI redirect).
 [[patches.hook]]
 func = "menuOverlayInit"
-text = '{ rs64_th_menuOverlayInit_entry(rdram, ctx); }'
+text = '{ if (rs64_th_menuOverlayInit_entry(rdram, ctx)) return; }'
 
 # musyxKeyOnVoice (builds per-voice RSP rate/envelope ramps) runs by default.
 # Entry guard: a period-0 voice is skipped (all envelope divisions use the +0x60
