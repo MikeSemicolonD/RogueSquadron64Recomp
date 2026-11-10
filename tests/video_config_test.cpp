@@ -1,5 +1,7 @@
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <string>
 
 #include "video/video_config.h"
 
@@ -12,6 +14,23 @@ std::atomic<float> g_rs64_hud_placement{ 0.0f };
 static int g_fail = 0;
 #define CHECK(cond) do { if (!(cond)) { ++g_fail; \
     std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); } } while (0)
+
+// Sets an environment variable, or removes it when value is null.
+static void set_env(const char* name, const char* value)
+{
+
+#ifdef _WIN32
+    _putenv((std::string(name) + "=" + (value ? value : "")).c_str());
+#else
+
+    if (value) {
+        setenv(name, value, 1);
+    } else {
+        unsetenv(name);
+    }
+
+#endif
+}
 
 static std::string uc_dump(const UC& uc) {
     json j = uc;                 // RT64 to_json
@@ -153,7 +172,7 @@ static void test_load_missing() {
 static void test_load_friendly() {
     UC uc; uc.validate();
     std::string p = write_tmp("tmp_friendly_video.json",
-        R"({"schema":2,"drawDistance":1.0,"hudPlacement":0.0,"widescreen":true,"resolutionScale":"auto"})");
+        R"({"schema":2,"drawDistance":1.0,"hudPlacement":0.0,"terrainTessellation":4,"widescreen":true,"resolutionScale":"auto"})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
@@ -250,7 +269,7 @@ static void test_legacy_terrain_caps_draw_distance() {
 static void test_keep_cutscene_absent_key_not_migrated() {
     rs64::video::set_keep_cutscene_draw_distance(true);
     UC uc; uc.validate();
-    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3,"hudPlacement":0.0})");
+    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3,"hudPlacement":0.0,"terrainTessellation":4})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
@@ -330,7 +349,7 @@ static void test_effective_draw_distance() {
 // rayTracing: the file round-trips the player's setting; an env var pins the live switch but never leaks into the file.
 static void test_ray_tracing_settings() {
     using rs64lights::Feature;
-    _putenv("ROGUESQ_RT_FOG_SHAFTS=1");
+    set_env("ROGUESQ_RT_FOG_SHAFTS", "1");
     UC uc; uc.validate();
     json j = rs64::video::to_friendly(uc);
     CHECK(j.contains("rayTracing"));
@@ -346,7 +365,7 @@ static void test_ray_tracing_settings() {
     CHECK(j["rayTracing"]["ambientOcclusion"] == false && j["rayTracing"]["globalIllumination"] == false && j["rayTracing"]["reflections"] == false);
     rs64::video::apply_friendly(uc, json{{"rayTracing", {{"ambientOcclusion", true}}}});
     CHECK(rs64lights::feature(Feature::AmbientOcclusion));
-    _putenv("ROGUESQ_RT_FOG_SHAFTS=");
+    set_env("ROGUESQ_RT_FOG_SHAFTS", nullptr);
     CHECK(j["rayTracing"]["lightLimits"]["engines"] == 12 && j["rayTracing"]["lightLimits"]["lasersMax"] == 8);
     rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lightLimits", {{"effects", 20}, {"lasersMax", 2}, {"models", 999}}}}}});
     CHECK(rs64lights::priorityShare(5) == 20 && rs64lights::config().maxProjectileLights == 2);
