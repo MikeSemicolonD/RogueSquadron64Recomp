@@ -1,4 +1,5 @@
 #include "input/input_bindings.h"
+#include "util/settings_file.h"
 
 #include <algorithm>
 #include <cctype>
@@ -1096,12 +1097,6 @@ bool save_bindings(const Bindings& b, const std::string& path)
 
     j["binds"] = binds;
 
-    std::ofstream f(path, std::ios::trunc);
-
-    if (!f.is_open()) return false;
-
-    f << j.dump(2) << "\n";
-
-    return f.good();
+    return rs64::settings::write_file(path, j.dump(2) + "\n");
 }
 } // namespace rs64::input

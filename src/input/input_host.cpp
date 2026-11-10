@@ -348,8 +348,15 @@ static void open_raw_joystick(int device_index)
     oj.joy = j;
     oj.id = SDL_JoystickInstanceID(j);
 
-    for (const OpenJoy& o : g_open_joys) {
-        if (o.id == oj.id) return;
+    // Already open: give back the extra reference SDL_JoystickOpen took.
+    for (const OpenJoy& o : g_open_joys)
+    {
+        if (o.id == oj.id)
+        {
+            SDL_JoystickClose(j);
+
+            return;
+        }
     }
 
     char guid[64] = {};

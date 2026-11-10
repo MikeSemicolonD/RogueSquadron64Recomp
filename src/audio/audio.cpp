@@ -266,16 +266,13 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr)
     // Writes <PATH>.bin (plain big-endian image, file[i]=rdram[i^3]) + <PATH>.task (OSTask, 0x40 BE bytes).
     static int s_tgt = -2;
 
-    if (s_tgt == -2) {
-        const char* e = recomp::os::getenv("ROGUESQ_DUMP_SYNTH_FRAME");
-        s_tgt = e ? atoi(e) : -1;
-    }
+    if (s_tgt == -2) s_tgt = env_int("ROGUESQ_DUMP_SYNTH_FRAME", -1);
 
     if (s_tgt >= 0 && s_n == s_tgt)
     {
-        const char* base = recomp::os::getenv("ROGUESQ_DUMP_SYNTH_PATH");
+        const char* base = recomp::dbg::env_str("ROGUESQ_DUMP_SYNTH_PATH");
 
-        if (!base || !base[0]) base = "dumps/synth_frame";
+        if (!base) base = "dumps/synth_frame";
 
         char pb[512];
         snprintf(pb, sizeof(pb), "%s.bin", base);
@@ -714,8 +711,8 @@ void queue_samples(int16_t* samples, size_t num_samples)
         static uint32_t s_wav_bytes = 0;
 
         if (s_wav_init < 0) {
-            const char* e = recomp::os::getenv("ROGUESQ_DUMP_PCM");
-            s_wav_init = (e && e[0] && e[0] != '0') ? 1 : 0;
+            const char* e = recomp::dbg::env_str("ROGUESQ_DUMP_PCM");
+            s_wav_init = (e && e[0] != '0') ? 1 : 0;
 
             if (s_wav_init)
             {
@@ -760,12 +757,12 @@ void queue_samples(int16_t* samples, size_t num_samples)
 
         // Speaker-safety master gain: the MusyX mix clips hard (peaks slam the int16 rail)
         // during busy cinematic SFX. Scale down before SDL so it doesn't blast/distort.
-        // Tunable via ROGUESQ_AUDIO_GAIN (0.0-1.0); default 0.5. Applied after the raw WAV dump.
+        // Tunable via ROGUESQ_AUDIO_GAIN (0.0-1.0); default 0.35. Applied after the raw WAV dump.
         static float s_gain = -1.0f;
 
         if (s_gain < 0.0f) {
-            const char* e = recomp::os::getenv("ROGUESQ_AUDIO_GAIN");
-            s_gain = (e && e[0]) ? (float)atof(e) : 0.35f;
+            const char* e = recomp::dbg::env_str("ROGUESQ_AUDIO_GAIN");
+            s_gain = e ? (float)atof(e) : 0.35f;
 
             if (s_gain < 0.0f || s_gain > 1.0f) s_gain = 0.35f;
         }

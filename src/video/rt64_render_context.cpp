@@ -32,6 +32,7 @@ extern SDL_Window* g_sdl_window;
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
 #include "util/debug_logs.h"
+#include "util/settings_file.h"
 #include "rs64_toml_hooks.h"
 #include "game/upstream_compat.h"      // rs64_fb_guards_mask, g_active_overlay, g_last_swap_fb
 #include "game/hook_helpers.h"         // g_boot_pulse_start, g_current_scene, rs64_cine_iter_get, rs64_neutralize_matpool_cimg
@@ -547,11 +548,12 @@ public:
         }
 
         if (!lr.loaded || lr.migrated) {
-            std::ofstream out{cfgPath, std::ios::trunc};
+            if (!lr.loaded)
+            {
+                rs64::settings::keep_bad_file(cfgPath);
+            }
 
-            if (out) {
-                out << rs64::video::to_friendly(app->userConfig).dump(2) << "\n";
-
+            if (rs64::settings::write_file(cfgPath, rs64::video::to_friendly(app->userConfig).dump(2) + "\n")) {
                 fprintf(stderr, "[RT64] wrote %s %s\n", cfgPath.c_str(),
                         lr.migrated ? "(migrated)" : "(default)");
             }
@@ -882,12 +884,12 @@ private:
 
         video_cfg_snapshot_ = cur;
 
-        std::ofstream out(video_cfg_path_, std::ios::trunc);
+        std::string text;
 
-        if (out.is_open())
+        try { text = json::parse(cur).dump(2) + "\n"; } catch (...) { return; }
+
+        if (rs64::settings::write_file(video_cfg_path_, text))
         {
-            try { out << json::parse(cur).dump(2) << "\n"; } catch (...) {}
-
             fprintf(stderr, "[RT64] saved %s (menu change)\n", video_cfg_path_.c_str());
         }
     }

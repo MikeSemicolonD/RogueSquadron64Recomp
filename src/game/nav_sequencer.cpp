@@ -1028,6 +1028,18 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
         return;
     }
 
+    // An id outside the game's levels, written to gCurrentLevel, crashes the level load.
+    const bool to_level = g_target.kind == NAV_LEVEL || g_target.kind == NAV_ABORT;
+
+    if (to_level && (g_target.a < 0 || g_target.a > 0x14))
+    {
+        fprintf(stderr, "[nav] level %d is not a level (0-20); target ignored\n", g_target.a);
+        fflush(stderr);
+        s_disabled = true;
+
+        return;
+    }
+
     switch (g_target.kind) {
         case NAV_LEVEL:    nav_level(rdram, st); break;
         case NAV_CUTSCENE: s_disabled = true; break;

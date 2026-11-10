@@ -291,8 +291,7 @@ static void draw_controls_ui()
     if (!open) g_show_controls.store(false);
 }
 
-extern "C" void rs64_menu_config_mark_dirty(void);   // menu_config.cpp
-extern "C" void rs64_menu_config_init(void);         // menu_config.cpp
+extern "C" void rs64_menu_config_init(void);        // menu_config.cpp
 
 // Render one mod config-schema option as an ImGui widget and persist edits.
 static void draw_mod_config_option(const std::string& mod_id, const recomp::mods::ConfigOption& opt)
@@ -300,7 +299,6 @@ static void draw_mod_config_option(const std::string& mod_id, const recomp::mods
 
     using namespace recomp::mods;
     ConfigValueVariant v = get_mod_config_value(mod_id, opt.id);
-    bool changed = false;
 
     switch (opt.type) {
         case ConfigOptionType::Enum: {
@@ -313,7 +311,6 @@ static void draw_mod_config_option(const std::string& mod_id, const recomp::mods
 
             if (ImGui::Combo(opt.name.c_str(), &cur, items.data(), (int)items.size())) {
                 set_mod_config_value(mod_id, opt.id, (uint32_t)cur);
-                changed = true;
             }
             break;
         }
@@ -324,7 +321,6 @@ static void draw_mod_config_option(const std::string& mod_id, const recomp::mods
 
             if (ImGui::SliderFloat(opt.name.c_str(), &f, (float)n.min, (float)n.max)) {
                 set_mod_config_value(mod_id, opt.id, (double)f);
-                changed = true;
             }
             break;
         }
@@ -336,7 +332,6 @@ static void draw_mod_config_option(const std::string& mod_id, const recomp::mods
 
             if (ImGui::InputText(opt.name.c_str(), buf, sizeof buf)) {
                 set_mod_config_value(mod_id, opt.id, std::string(buf));
-                changed = true;
             }
             break;
         }
@@ -344,7 +339,6 @@ static void draw_mod_config_option(const std::string& mod_id, const recomp::mods
     }
 
     if (!opt.description.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", opt.description.c_str());
-    if (changed) rs64_menu_config_mark_dirty();
 }
 
 // A "Mods" panel: lists loaded mods, an enable toggle, and each mod's
@@ -375,7 +369,6 @@ static void draw_mods_ui() {
 
             if (ImGui::Checkbox("##enabled", &enabled)) {
                 recomp::mods::enable_mod(d.mod_id, enabled);
-                rs64_menu_config_mark_dirty();
             }
 
             ImGui::SameLine();

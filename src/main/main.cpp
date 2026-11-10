@@ -35,6 +35,7 @@
 #include "input/touch_config.h"
 #include "game/game_state.h"           // rs64_state_current_id
 #include "util/debug_logs.h"
+#include "util/settings_file.h"
 #include "host_api/host_api.h"
 #include "main/main.h"                 // this file's own exports (fullscreen/quit hooks)
 #include "game/hook_helpers.h"         // g_vi_tick, g_boot_pulse_start
@@ -656,11 +657,15 @@ int main(int argc, char* argv[])
     // defaults as an editable template if it's absent. ROGUESQ_INPUT_RESET=1
     // overwrites it with defaults.
     std::string cfg = rs64::input::default_config_path();
-    const char* reset = recomp::os::getenv("ROGUESQ_INPUT_RESET");
-    bool force = reset && reset[0] && reset[0] != '0';
+    const bool force = recomp::dbg::env_on("ROGUESQ_INPUT_RESET");
 
     if (force || !rs64::input::load_bindings(g_bindings, cfg))
     {
+        if (!force)
+        {
+            rs64::settings::keep_bad_file(cfg);
+        }
+
         g_bindings = rs64::input::default_bindings();
         rs64::input::save_bindings(g_bindings, cfg);
 

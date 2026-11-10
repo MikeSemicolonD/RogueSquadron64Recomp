@@ -32,6 +32,7 @@
 #include "hle/rt64_rs64_lights.h"
 #include "ultramodern/ultramodern.hpp"
 #include "util/debug_logs.h"
+#include "util/host_ram_map.h"
 #include "game/upstream_compat.h"   // declares the exports defined below (rs64_fb_guards_mask, g_active_overlay, …)
 
 using recomp::dbg::env_str;
@@ -109,9 +110,9 @@ extern "C" void osDpGetCounters_recomp(uint8_t* rdram, recomp_context* ctx)
     // struct's +0x14/+0x18/+0x1C fields submitGfxFrame scales into the HUD.
     static int ts = -1, ds = -1, xs = -1;
 
-    if (ts < 0) { const char* s = recomp::os::getenv("ROGUESQ_TRIS_SCALE"); ts = (s && *s) ? atoi(s) : 64; }
-    if (ds < 0) { const char* s = recomp::os::getenv("ROGUESQ_DRAW_SCALE"); ds = (s && *s) ? atoi(s) : 256; }
-    if (xs < 0) { const char* s = recomp::os::getenv("ROGUESQ_TEX_SCALE");  xs = (s && *s) ? atoi(s) : 256; }
+    if (ts < 0) ts = env_int("ROGUESQ_TRIS_SCALE", 64);
+    if (ds < 0) ds = env_int("ROGUESQ_DRAW_SCALE", 256);
+    if (xs < 0) xs = env_int("ROGUESQ_TEX_SCALE", 256);
 
     uint32_t tris     = g_rs64_frame_tris.exchange(0, std::memory_order_relaxed);
     uint32_t draws    = g_rs64_frame_draws.exchange(0, std::memory_order_relaxed);
@@ -690,6 +691,13 @@ extern "C" void rs64_wait_gfx_parse_yield(uint8_t* rdram, recomp_context* ctx)
 
     g_rs64_pw_timeouts = g_rs64_pw_timeouts + 1;
     g_rs64_pw_ms = g_rs64_pw_ms + ms_since();
+
+    // The game goes on to rebuild chunks RT64 may still be reading: a frame can draw wrong.
+    if (g_rs64_pw_timeouts <= 5 || (g_rs64_pw_timeouts % 100) == 0)
+    {
+        fprintf(stderr, "[parse-wait] gave up after %u ms with a graphics parse still running (%u times)\n", ms_since(), g_rs64_pw_timeouts);
+        fflush(stderr);
+    }
 }
 
 extern "C" void osRecvMesg_recomp(uint8_t* rdram, recomp_context* ctx)
@@ -771,16 +779,25 @@ static void rs64_check_chunk_freelist(uint8_t* rdram)
 
     if (!s_chk || s_dumped) return;
 
-    auto rw = [&](uint32_t off) { return *reinterpret_cast<const uint32_t*>(rdram + (off & 0x7FFFFCu)); };
+    auto rw = [&](uint32_t off) { return *reinterpret_cast<const uint32_t*>(rdram + (off & 0xFFFFFCu)); };
     uint32_t node = rw(0x1163B0), prev = 0;
     int steps = 0;
     const char* why = nullptr;
+
+    // The game's pool, or the chunks rs64_grow_dl_pool adds in host RAM.
+    auto is_chunk = [](uint32_t a) {
+
+        const bool game = a >= 0x80400000u && a + 0x108u <= 0x80800000u;
+        const bool host = a >= RS64_HR_DL_CHUNKS && a + 0x108u <= RS64_HR_DL_CHUNKS_END;
+
+        return game || host;
+    };
 
     while (node != 0 && steps < 8192)
     {
         const uint32_t off = node & 0x00FFFFFFu;
 
-        if ((node >> 24) != 0x80u || off < 0x400000u || off + 0x108u > 0x800000u) { why = "node outside RDRAM chunk range"; break; }
+        if (!is_chunk(node)) { why = "node outside RDRAM chunk range"; break; }
         if (steps > 0 && rw(off + 4) != prev) { why = "prev link mismatch"; break; }
 
         prev = node;

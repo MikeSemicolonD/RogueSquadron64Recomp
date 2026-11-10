@@ -1,5 +1,6 @@
 #include "main/crash.h"
 
+#include <atomic>
 #include <cstdio>
 #include <csignal>
 #include <cstdlib>
@@ -73,7 +74,14 @@ void print_stack_with_symbols(void** frames, USHORT count) {
 
 #endif
 
+// librecomp's counts of the calls and faults it stubbed or caught.
+extern "C" unsigned recomp_null_call_count(void);
+extern "C" unsigned recomp_fault_caught_count(void);
+
 namespace rs64::crash {
+
+static std::atomic<unsigned> s_crt_reports{0};
+
 #ifdef _WIN32
 
 static char s_last_dump[MAX_PATH] = {};
@@ -276,6 +284,7 @@ void install_handlers()
     _CrtSetReportHook([](int reportType, char* message, int*) -> int
     {
 
+        s_crt_reports.fetch_add(1, std::memory_order_relaxed);
         fprintf(stderr, "[CRT_REPORT type=%d] %s\n", reportType,
             message ? message : "(null)");
         void* frames[48];
@@ -338,4 +347,11 @@ void install_exception_filter() {}
 void install_handlers() {}
 
 #endif
+
+void log_suppressed()
+{
+
+    fprintf(stderr, "[suppressed] bounds_reports=%u null_calls=%u faults=%u\n", s_crt_reports.load(), recomp_null_call_count(), recomp_fault_caught_count());
+    fflush(stderr);
+}
 }

@@ -446,6 +446,7 @@ Game time is variable-timestep, not frame-counted: `timeSnapshotFiller` (0x8000B
 - **Hardware SEH** (AVs, illegal instructions): caught, the thread terminates, the process continues.
 - **STL bounds checks** ("vector subscript out of range"): the `_CrtSetReportHook` in [crash.cpp](src/main/crash.cpp) returns 1 to suppress the abort. Trade-off: occasional visual glitch over a hard crash.
 - **`get_function` on an unmapped address** (NULL or stray fn-ptr call): stubbed to a no-op in [librecomp/src/overlays.cpp](lib/N64ModernRuntime/librecomp/src/overlays.cpp) so the recompiled MIPS continues; logs `[null-call] addr=...` with the calling MIPS function (MSVC builds) or `Failed to find function at 0x...` (other compilers).
+- A replay's log ends with `[suppressed] bounds_reports=N null_calls=N faults=N`, the count of each of the three above. A clean run shows zeros.
 
 ### RT64 interpreter safety
 

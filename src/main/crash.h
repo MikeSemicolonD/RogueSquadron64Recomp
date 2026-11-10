@@ -17,4 +17,6 @@ namespace rs64::crash {
     void install_exception_filter();
     // The filter plus the terminate, SIGABRT, CRT report and invalid-parameter handlers.
     void install_handlers();
+    // One line counting what the run survived by suppressing it: CRT bounds reports, calls to unmapped addresses and guest faults. All zero on a clean run.
+    void log_suppressed();
 }

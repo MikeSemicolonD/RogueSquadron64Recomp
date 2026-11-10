@@ -82,9 +82,7 @@ constexpr int16_t YESNO_X = -0x40;
 
 bool env_disabled(const char* name) {
 
-    const char* v = recomp::os::getenv(name);
-
-    return v && *v && *v != '0';
+    return recomp::dbg::env_on(name);
 }
 
 // The custom front-end menu is off when ROGUESQ_NO_MENU_BUTTONS is set or for the demo boot target, which needs the stock front end (the custom menu displaces the attract-idle path).
@@ -94,7 +92,7 @@ bool menu_buttons_off() {
 
         if (env_disabled("ROGUESQ_NO_MENU_BUTTONS")) return true;
 
-        const char* bt = recomp::os::getenv("ROGUESQ_BOOT_TARGET");
+        const char* bt = recomp::dbg::env_str("ROGUESQ_BOOT_TARGET");
 
         return bt && std::strncmp(bt, "demo", 4) == 0;
     }();
@@ -2148,7 +2146,6 @@ using namespace rs64::menucfg;
 
 // ---- Front-end hook entry points ----
 
-extern "C" void rs64_menu_config_mark_dirty(void) {}
 extern "C" void rs64_menu_config_init(void) { (void)config(); }
 
 extern "C" void rs64_menu_text_language(int lang) {

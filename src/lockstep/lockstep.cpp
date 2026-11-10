@@ -6,6 +6,7 @@
 #include "util/debug_logs.h"
 #include "host_api/host_api.h"
 #include "main/main.h"
+#include "main/crash.h"
 #include "main/renderdoc_capture.h"
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
@@ -158,6 +159,7 @@ void end_session(const char* why)
     State& s = st();
 
     fprintf(stderr, "[ls] session ended at frame %u: %s\n", s.frame, why);
+    rs64::crash::log_suppressed();
     close_files();
     s.active = false;
     static const bool keep_running = recomp::dbg::env_on("ROGUESQ_LS_KEEP_RUNNING");

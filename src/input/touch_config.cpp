@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <fstream>
 #include "json/json.hpp"
+#include "util/settings_file.h"
 
 using nlohmann::json;
 
@@ -75,16 +76,8 @@ namespace rs64::touch {
         }
 
         j["layout"] = layout;
-        std::ofstream f(path);
 
-        if (!f.is_open())
-        {
-            return false;
-        }
-
-        f << j.dump(2) << "\n";
-
-        return true;
+        return rs64::settings::write_file(path, j.dump(2) + "\n");
     }
 
     Config& shared_config() {

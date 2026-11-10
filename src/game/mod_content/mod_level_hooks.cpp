@@ -38,6 +38,7 @@
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
+#include "util/settings_file.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -194,7 +195,7 @@ extern "C" void rs64_camera_shots_frame(uint8_t* rdram, recomp_context* ctx)
 
     const auto put_name = [&](const std::string& name) {
 
-        wstr(rdram, kShotName, name);
+        wstr(rdram, kShotName, name.substr(0, 255));
 
         return rs64::mips::mips_call(rdram, ctx, 0x80047B48u, { kShotName }).v0;
     };
@@ -782,7 +783,7 @@ extern "C" void rs64_mod_levels_debrief_end(uint8_t* rdram)
 
     if (s_earned_medal > 0 && mod_medals().record(medal_key(current_profile(rdram), l), s_earned_medal))
     {
-        std::ofstream(kModMedalsFile, std::ios::binary) << mod_medals().save();
+        rs64::settings::write_file(kModMedalsFile, mod_medals().save());
     }
 }
 
