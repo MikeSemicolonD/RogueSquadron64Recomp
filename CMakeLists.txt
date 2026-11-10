@@ -280,6 +280,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/audio/audio.cpp
     ${CMAKE_SOURCE_DIR}/src/main/cli.cpp
     ${CMAKE_SOURCE_DIR}/src/main/crash.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/discord_presence.cpp
     ${CMAKE_SOURCE_DIR}/src/input/input_host.cpp
     ${CMAKE_SOURCE_DIR}/src/input/touch_host.cpp
     ${CMAKE_SOURCE_DIR}/src/main/ui_panels.cpp

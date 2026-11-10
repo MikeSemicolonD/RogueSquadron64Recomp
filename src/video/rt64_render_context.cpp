@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include "main/renderdoc_capture.h"
+#include "main/discord_presence.h"
 #include "SDL.h"
 #ifdef __ANDROID__
 #include "SDL_syswm.h"
@@ -1268,6 +1269,7 @@ private:
 
         // Every present: the nav sequencer needs fresh state to catch fast menu screens.
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
+        rs64::discord::poll((const uint8_t*)app->core.RDRAM);
 
         diag().log_gamestate();
 
