@@ -250,7 +250,7 @@ The host's skip is sent as SKIP, tagged with the scene it was made in: a phase (
 
 ## Menu font period
 
-The italic menu font ("italic35") has no `.`, no period-wide blank and no caret. `ensure_menu_period` in menu_config.cpp builds them at runtime from the font's own `:` and `!` glyphs into the `&`, `"` and `/` slots (no language's menu text uses them; German needs the umlauts), so address and status lines use them.
+The italic menu font ("italic35") has no `.`, no period-wide blank and no caret. `ensure_menu_period` in menu_font.cpp builds them at runtime from the font's own `:` and `!` glyphs into the `&`, `"` and `/` slots (no language's menu text uses them; German needs the umlauts), so address and status lines use them.
 
 ## The imposter
 

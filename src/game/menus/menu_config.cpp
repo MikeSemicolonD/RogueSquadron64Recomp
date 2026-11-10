@@ -48,43 +48,14 @@
 
 namespace rs64::menucfg {
 
-constexpr uint32_t GCMD = 0x800CE730u;
-constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;   // byte offset into rdram
-constexpr int MAX_ENTRIES = 8;                      // menu_entries[8]
-constexpr const char* kModsPage = "mods";
 constexpr const char* kLanguagesPage = "languages";
 constexpr int STR_CAP = 63;
-
-// Front-end menu ids (gCurrentMenuData +0x04).
-enum FrontMenu : uint8_t {
-    MENU_MAIN                = 0,
-    MENU_ACCOUNT             = 1,
-    MENU_OPTIONS             = 2,
-    MENU_GAME_SETTINGS       = 3,
-    MENU_ELITE_ROGUES        = 4,
-    MENU_CONTROLLER_SETTINGS = 5,
-    MENU_SOUND_SETTINGS      = 6,
-    MENU_PASSCODES           = 7,
-    MENU_BIOGRAPHIES         = 8,
-    MENU_LANGUAGE            = 9,
-    // Ids 0-12 are native (setupMenuData range-checks < 13); an id >= 13 bails to the shared tail with 0 entries, so our install hook fully builds it as a custom page.
-    MENU_MOD_PAGE            = 13,
-    MENU_NONE                = 0xFF,
-};
-
-// Entry sub-types. 1 = submenu transition (self-targeting = re-run setupMenuData, the only way to re-commit labels); 4 = in-range no-op on confirm (intercept owns the action).
-constexpr uint8_t SUBTYPE_SUBMENU = 1;
-constexpr uint8_t SUBTYPE_HOST    = 4;
 
 // The LANGUAGE page's pick: menuControllerInput frees the text, stores the entry's param to gGameSettings+6 and reloads front_TXT (0x800B57F8).
 constexpr uint8_t SUBTYPE_LANGUAGE = 24;
 
 constexpr uint8_t SUBTYPE_TOGGLE = 5;
 constexpr uint8_t SUBTYPE_BACK   = 25;
-
-
-// The sounds menuControllerInput plays, at its volumes.
-constexpr MenuSfx kSfxBack{ 0x6D, 0x64 };
 
 // The game's text languages, by gGameSettings+6; a button label can map these codes to text.
 constexpr const char* kTextLanguages[] = { "en", "de", "fr", "it", "es" };
@@ -186,6 +157,15 @@ std::string text_field(const nlohmann::json& e, const char* key, int lang)
         if (k != "key" && t.is_string()) return to_latin1(t.get<std::string>());
 
     return {};
+}
+
+std::string mods_text(const char* key, const char* en, const char* de, const char* fr)
+{
+
+    const nlohmann::json j = { { "t", { { "en", en }, { "de", de }, { "fr", fr }, { "key", std::string("mods.") + key } } } };
+    const int lang = rs64::lang::active() ? kModLanguage : std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1);
+
+    return text_field(j, "t", lang);
 }
 
 // "sound": a name below or a raw SFX id (0-127); absent keeps the game's sound.
@@ -298,8 +278,16 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
 
 void apply_json_text(MenuConfig& m, const std::string& text, const std::string& mod_id, int lang) {
 
+    const char* file = mod_id.empty() ? "roguesq_menu.json" : mod_id.c_str();
     nlohmann::json j;
-    try { j = nlohmann::json::parse(text); } catch (...) { return; }
+
+    try { j = nlohmann::json::parse(text); } catch (const std::exception& e)
+    {
+        fprintf(stderr, "[menu] %s: menu file not read: %s\n", file, e.what());
+
+        return;
+    }
+
     try {
         if (j.contains("buttons") && j["buttons"].is_array())
         {
@@ -312,7 +300,11 @@ void apply_json_text(MenuConfig& m, const std::string& text, const std::string& 
 
                 auto& v = m.hides[it.key()];
 
-                for (const auto& a : it.value()) v.push_back(a.get<std::string>());
+                for (const auto& a : it.value())
+                {
+                    if (a.is_string()) v.push_back(a.get<std::string>());
+                    else fprintf(stderr, "[menu] %s: hide entry %s under %s is not a name; skipped\n", file, a.dump().c_str(), it.key().c_str());
+                }
             }
         }
 
@@ -331,7 +323,10 @@ void apply_json_text(MenuConfig& m, const std::string& text, const std::string& 
                 m.titles[it.key()] = t;
             }
         }
-    } catch (...) {}
+    } catch (const std::exception& e)
+    {
+        fprintf(stderr, "[menu] %s: menu file read in part: %s\n", file, e.what());
+    }
 }
 
 // Built-in defaults: LANGUAGE in OPTIONS, the QUIT action on the main menu and QUIT TO DESKTOP in the
@@ -1000,8 +995,6 @@ uint32_t alloc_str(uint8_t* rdram, const std::string& s)
 
 // ---- Front-end menu entry slots ----
 
-struct Slot { int32_t label; uint8_t sub; int32_t param; int16_t x, y; int32_t scaler; };
-
 Slot read_slot(uint8_t* r, int i)
 {
 
@@ -1062,36 +1055,6 @@ const NativeAlias* native_alias_of(uint8_t menu_id, const std::string& name)
 }
 
 // ---- Per-slot binding, read by the confirm intercept ----
-
-struct SlotBinding {
-    bool set = false;
-    BType type = BType::Action;
-    std::string key, confirm;
-
-    // toggle_get_fn/toggle_set_fn double as the slider getter/setter @exports.
-    recomp_func_t* action_fn = nullptr, * toggle_get_fn = nullptr, * toggle_set_fn = nullptr;
-    int smin = 0, smax = 100, sstep = 10;   // slider range
-    std::string label_on, label_off;        // toggle labels (for in-place relabel)
-
-    // Submenu opener: action fired when the page opens.
-    std::string open_action;
-
-    // Left / right actions of an action entry.
-    std::string left_action, right_action;
-
-    // Action with transition "account": the page shown after the pilot is chosen, and its exit condition.
-    std::string pilot_page, exit_when;
-
-    // Live label: the entry points at its own RDRAM buffer (never an alloc_str cache entry, which other labels share).
-    std::string label_src, live_text;
-    uint32_t live_buf = 0;
-
-    // Text slider bar layout, for click-to-position.
-    std::string bar_label, bar_filled, bar_empty;
-    int bar_width = 10;
-
-    MenuSfx sound;
-};
 
 SlotBinding s_slot[MAX_ENTRIES];
 
@@ -1224,8 +1187,11 @@ bool inplace_slot(const std::string& alias, int& param, unsigned& off_tid, unsig
     return false;
 }
 
+// A confirm prompt: Pending from the entry's press, on the menu it was pressed on; shown once that menu is rebuilt as YES / NO.
 enum class ConfirmState { None, Pending };
 ConfirmState s_confirm_state = ConfirmState::None;
+uint8_t s_confirm_menu = 0;
+bool s_confirm_shown = false;
 std::string s_confirm_action, s_confirm_prompt;
 recomp_func_t* s_confirm_fn = nullptr;
 
@@ -1309,7 +1275,7 @@ int slider_value(uint8_t* rdram, const std::string& key, recomp_func_t* get_fn)
 void slider_apply(uint8_t* rdram, const std::string& key, recomp_func_t* set_fn, int v)
 {
 
-    if (set_fn) { recomp_context c = export_ctx(rdram); c.r4 = (gpr)(uint32_t)v; set_fn(rdram, &c); return; }
+    if (set_fn) { recomp_context c = export_ctx(rdram); c.r4 = (gpr)(int32_t)v; set_fn(rdram, &c); return; }
 
     std::string mod, opt;
 
@@ -1726,7 +1692,21 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
 
     apply_indices(items);
 
-    if ((int)items.size() > MAX_ENTRIES) items.resize(MAX_ENTRIES);
+    if ((int)items.size() > MAX_ENTRIES)
+    {
+        std::string dropped;
+
+        for (size_t i = MAX_ENTRIES; i < items.size(); ++i)
+        {
+            const Item& it = items[i];
+            const std::string& name = it.id.empty() ? it.binding.key : it.id;
+
+            dropped += " " + (it.is_native ? std::string("(the game's)") : name);
+        }
+
+        fprintf(stderr, "[menu] %s holds %d entries; dropped:%s\n", mname, MAX_ENTRIES, dropped.c_str());
+        items.resize(MAX_ENTRIES);
+    }
 
     // write back
     for (int i = 0; i < MAX_ENTRIES; ++i) s_slot[i] = {};
@@ -1902,7 +1882,18 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
         }
 
     // Reserve a slot for Back.
-    if ((int)lines.size() > MAX_ENTRIES - 1) lines.resize(MAX_ENTRIES - 1);
+    if ((int)lines.size() > MAX_ENTRIES - 1)
+    {
+        std::string dropped;
+
+        for (size_t i = MAX_ENTRIES - 1; i < lines.size(); ++i)
+        {
+            dropped += " " + (lines[i]->id.empty() ? lines[i]->label : lines[i]->id);
+        }
+
+        fprintf(stderr, "[menu] page %s holds %d entries and BACK; dropped:%s\n", page.c_str(), MAX_ENTRIES - 1, dropped.c_str());
+        lines.resize(MAX_ENTRIES - 1);
+    }
 
     // Selectable lines take the first slots with BACK after them (a leading non-selectable entry hangs the menu navigation); labels take the slots after BACK.
     // Every line is then moved (its y offset; slot i is drawn 36 * i down) to the place its JSON order gives it, BACK last.
@@ -2030,394 +2021,6 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
     return (int)lines.size() + 1;
 }
 
-// ---- Controls menu (mod controls-menu): CONTROLLER SETTINGS becomes a scrolling list of rebindable actions ----
-
-namespace ri = rs64::input;
-
-constexpr const char* kControlsMod = "controls-menu";
-constexpr const char* kControlsPage = "controls";
-
-// Visible list rows, then RESET TO DEFAULTS and BACK in the last two slots.
-constexpr int kCtlRows = MAX_ENTRIES - 2;
-constexpr int kCtlResetSlot = kCtlRows, kCtlBackSlot = kCtlRows + 1;
-constexpr uint32_t PAD_PRESSED = 0x0013A960u;
-constexpr uint32_t kNavUp = 0x00200800u, kNavDown = 0x00100400u, kNavLeft = 0x00800200u, kNavRight = 0x00400100u;
-constexpr float kCtlScale = 1.0f;
-constexpr int kCtlTopY = -158, kCtlPitch = 36, kCtlBackGap = 10, kCtlX = 15;
-constexpr uint16_t kCtlTabStop = 200, kCtlEndStop = 350;
-constexpr uint32_t kCtlFlashMs = 2000, kCtlQuietMs = 250;
-constexpr const char* kCtlReset = "RESET TO DEFAULTS";
-
-// Rows are centred on their last glyph: ending each at the end stop with the font's blank glyph ('`', ensure_menu_period) gives them one width, so the binding column lines up.
-constexpr const char* kCtlRowEnd = "\t`";
-
-struct ControlsScreen {
-    bool shown = false;
-    bool tabs = false;
-    ri::Device dev = ri::Device::Keyboard;
-    std::vector<ri::ControlRow> rows;
-    rs64::menu::ScrollPos pos{ 0, 0 };
-    uint32_t bufs[kCtlRows] = {};
-    uint32_t dirty = 0;
-    int capturing = -1;
-    int back_from = 0;
-    uint32_t quiet_until = 0;
-    int flash_row = -1;
-    std::string flash;
-    uint32_t flash_until = 0;
-};
-
-ControlsScreen s_ctl;
-
-// Mouse wheel notches from the SDL thread (up positive), taken by the next menu pass as up/down steps.
-std::atomic<int> s_ctl_wheel{0};
-
-bool controls_enabled() {
-    return recomp::mods::is_mod_enabled(kControlsMod);
-}
-
-// List rows (the actions); pos.sel == ctl_total() is RESET TO DEFAULTS and ctl_total() + 1 is BACK, below the list.
-int ctl_total() {
-    return (int)s_ctl.rows.size();
-}
-
-int ctl_slot_of(int sel) {
-    return sel < ctl_total() ? sel - s_ctl.pos.top : sel == ctl_total() ? kCtlResetSlot : kCtlBackSlot;
-}
-
-std::string ctl_action_name(ri::Target t)
-{
-
-    for (const auto& r : s_ctl.rows) {
-        if (r.target == t) return r.action;
-    }
-
-    return ri::target_label(t);
-}
-
-std::string ctl_row_text(int r)
-{
-
-    if (r >= (int)s_ctl.rows.size()) return kCtlReset;
-
-    const ri::ControlRow& row = s_ctl.rows[r];
-
-    if (r == s_ctl.flash_row && SDL_GetTicks() < s_ctl.flash_until) return s_ctl.flash;
-
-    // A whole-row prompt, so the binding column only has to fit binding names.
-    if (r == s_ctl.capturing) return std::string(row.action) + ": " + (s_ctl.dev == ri::Device::Keyboard ? "PRESS A KEY" : "PRESS A BUTTON");
-
-    std::lock_guard<std::mutex> lk(rs64::app::g_bindings_mtx);
-    const int k = ri::shown_source(rs64::app::g_bindings, row.target, s_ctl.dev);
-    const ri::Source none{};
-
-    return std::string(row.action) + "\t" + ri::menu_source_name(k >= 0 ? rs64::app::g_bindings.targets[(int)row.target][k] : none) + kCtlRowEnd;
-}
-
-// The controller model's mesh (loadControllerModel); the controls mod's keyboard and gamepad models load beside it, swapped in on entry.
-constexpr uint32_t kControllerMesh = 0x000CF0ECu;
-uint32_t s_ctl_mesh_orig = 0;
-uint32_t s_ctl_mesh[3] = {};
-
-void controls_show_model(uint8_t* rdram, bool on)
-{
-
-    if (!s_ctl_mesh_orig) return;
-
-    const uint32_t m = on ? s_ctl_mesh[(int)s_ctl.dev] : 0;
-
-    wr_w(rdram, kControllerMesh, (int32_t)(m ? m : s_ctl_mesh_orig));
-}
-
-// Visible slot i: the top row's end blank becomes '^' with rows above it, the bottom row's '#' with rows below (the scroll arrows ensure_menu_period draws).
-std::string ctl_slot_text(int i)
-{
-
-    std::string t = ctl_row_text(s_ctl.pos.top + i);
-    const bool more_above = i == 0 && s_ctl.pos.top > 0;
-    const bool more_below = i == kCtlRows - 1 && s_ctl.pos.top + kCtlRows < ctl_total();
-
-    if (!t.empty() && t.back() == '`' && (more_above || more_below)) t.back() = more_above ? '^' : '#';
-
-    return t;
-}
-
-// Entry offset for a row drawn at absolute y: the game places entry i at list_base + 36*i - 18*count + offset.
-int16_t ctl_offset_y(int16_t base, int i, int y) {
-    return (int16_t)(y - base - 36 * i + 18 * MAX_ENTRIES);
-}
-
-// setupMenuData tail on CONTROLLER SETTINGS (natively just BACK): the list rows (live buffers the frame hook relabels), RESET TO DEFAULTS and BACK.
-int controls_install(uint8_t* rdram)
-{
-
-    Slot back = read_slot(rdram, 0);
-    const int16_t base = rd_h(rdram, GCMD_OFF + 0x96);
-    int32_t scale_bits = 0;
-
-    std::memcpy(&scale_bits, &kCtlScale, 4);
-
-    s_ctl = ControlsScreen{};
-    s_ctl.shown = true;
-    s_ctl.dev = rs64::app::last_device();
-    s_ctl.rows = ri::control_rows(s_ctl.dev);
-
-    for (int i = 0; i < kCtlRows; ++i)
-    {
-        s_ctl.bufs[i] = live_buffer(rdram, "controls#" + std::to_string(i));
-
-        if (!s_ctl.bufs[i]) return -1;
-
-        write_live(rdram, s_ctl.bufs[i], ctl_slot_text(i));
-        write_slot(rdram, i, Slot{ (int32_t)s_ctl.bufs[i], SUBTYPE_HOST, 0, (int16_t)kCtlX, ctl_offset_y(base, i, kCtlTopY + kCtlPitch * i), scale_bits });
-        s_slot[i] = {};
-    }
-
-    const int reset_y = kCtlTopY + kCtlPitch * kCtlRows + kCtlBackGap;
-
-    write_slot(rdram, kCtlResetSlot, Slot{ (int32_t)alloc_str(rdram, kCtlReset), SUBTYPE_HOST, 0, 0, ctl_offset_y(base, kCtlResetSlot, reset_y), scale_bits });
-    s_slot[kCtlResetSlot] = {};
-    back.y = ctl_offset_y(base, kCtlBackSlot, reset_y + kCtlPitch + kCtlBackGap);
-    write_slot(rdram, kCtlBackSlot, back);
-    s_slot[kCtlBackSlot] = {};
-    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)MAX_ENTRIES);
-    wr_b(rdram, GCMD_OFF + 0x94, 0);
-    controls_show_model(rdram, true);
-
-    // Opened from the mod's CONTROLS page (BINDINGS), so BACK and B return there rather than to OPTIONS.
-    if (const uint8_t page = page_id(kControlsPage); page != 0xFF) wr_b(rdram, GCMD_OFF + 0x05, page);
-
-    fprintf(stderr, "[controls] list for device %d, %d rows\n", (int)s_ctl.dev, ctl_total());
-
-    return MAX_ENTRIES;
-}
-
-bool controls_on_screen(uint8_t* rdram) {
-    return s_ctl.shown && rd_b(rdram, GCMD_OFF + 0x04) == MENU_CONTROLLER_SETTINGS;
-}
-
-// A on a list row: start a capture for the screen's device, or reset that device's bindings.
-bool controls_confirm(uint8_t* rdram, int e)
-{
-
-    if (!controls_on_screen(rdram) || e > kCtlResetSlot || s_ctl.capturing >= 0) return false;
-
-    const int r = s_ctl.pos.top + e;
-
-    if (e == kCtlResetSlot)
-    {
-        rs64::app::reset_device_bindings(s_ctl.dev);
-        s_ctl.dirty = (1u << kCtlRows) - 1;
-
-        return true;
-    }
-
-    if (!rs64::app::capture_device_present(s_ctl.dev)) return true;
-
-    s_ctl.capturing = r;
-    s_ctl.flash_row = -1;
-    rs64::app::capture_begin({ false, s_ctl.dev });
-    s_ctl.dirty |= 1u << e;
-
-    return true;
-}
-
-// The capture: the menu sees no presses until it ends; a taken input swaps with the action that held it.
-void controls_poll_capture(uint8_t* rdram)
-{
-
-    wr_w(rdram, PAD_PRESSED, 0);
-
-    ri::Source got;
-    const int c = rs64::app::capture_poll(&got);
-
-    if (c == 0) return;
-
-    // The input just bound is still held, and the game would read it as a fresh press of its new N64 button (A = confirm restarts the capture).
-    const int r = s_ctl.capturing;
-    s_ctl.capturing = -1;
-    s_ctl.quiet_until = SDL_GetTicks() + kCtlQuietMs;
-    s_ctl.dirty = (1u << kCtlRows) - 1;
-
-    if (c < 0) return;
-
-    std::unique_lock<std::mutex> lk(rs64::app::g_bindings_mtx);
-    const ri::Target gave = ri::rebind(rs64::app::g_bindings, s_ctl.rows[r].target, s_ctl.dev, got);
-
-    ri::save_bindings(rs64::app::g_bindings, ri::default_config_path());
-    lk.unlock();
-
-    if (gave == ri::Target::Count) return;
-
-    s_ctl.flash_row = r;
-    s_ctl.flash = "SWAPPED WITH " + ctl_action_name(gave);
-    s_ctl.flash_until = SDL_GetTicks() + kCtlFlashMs;
-}
-
-bool mods_on_screen(uint8_t* rdram);
-bool langs_on_screen(uint8_t* rdram);
-
-// Each front-end pass before the menu reads the pad: tab stops on entry/exit, the capture, and up/down scrolling the window (left/right would cycle presets).
-void controls_pass(uint8_t* rdram, recomp_context* ctx)
-{
-
-    if (!controls_on_screen(rdram))
-    {
-        if (s_ctl.tabs) rs64::mips::mips_call(rdram, ctx, 0x80063EC0u, {5u});
-
-        if (s_ctl.capturing >= 0) rs64::app::capture_end();
-
-        if (s_ctl.shown) controls_show_model(rdram, false);
-
-        // The MODS and LANGUAGE pages read the wheel too (their passes run after this one).
-        if (!mods_on_screen(rdram) && !langs_on_screen(rdram)) s_ctl_wheel.store(0);
-
-        s_ctl.shown = false;
-        s_ctl.tabs = false;
-        s_ctl.capturing = -1;
-
-        return;
-    }
-
-    if (!s_ctl.tabs)
-    {
-        static uint32_t s_stops = 0;
-
-        if (!s_stops) {
-            void* p = recomp::alloc(rdram, 4);
-
-            if (!p) return;
-
-            s_stops = (uint32_t)((uint8_t*)p - rdram) + 0x80000000u;
-        }
-
-        wr_h(rdram, s_stops - 0x80000000u, (int16_t)kCtlTabStop);
-        wr_h(rdram, s_stops - 0x80000000u + 2, (int16_t)kCtlEndStop);
-        rs64::mips::mips_call(rdram, ctx, 0x80063E98u, {5u, s_stops, 2u});
-        s_ctl.tabs = true;
-        s_ctl.dirty = (1u << kCtlRows) - 1;
-    }
-
-    if (s_ctl.flash_row >= 0 && SDL_GetTicks() >= s_ctl.flash_until)
-    {
-        s_ctl.flash_row = -1;
-        s_ctl.dirty = (1u << kCtlRows) - 1;
-    }
-
-    // Wheel notches while waiting for an input are dropped.
-    if (s_ctl.capturing >= 0)
-    {
-        s_ctl_wheel.store(0);
-        controls_poll_capture(rdram);
-
-        return;
-    }
-
-    if (SDL_GetTicks() < s_ctl.quiet_until)
-    {
-        wr_w(rdram, PAD_PRESSED, 0);
-
-        return;
-    }
-
-    uint32_t p = (uint32_t)rd_w(rdram, PAD_PRESSED);
-    const int wheel = s_ctl_wheel.exchange(0);
-
-    if (wheel) p |= wheel > 0 ? kNavUp : kNavDown;
-
-    if (!(p & (kNavUp | kNavDown | kNavLeft | kNavRight))) return;
-
-    wr_w(rdram, PAD_PRESSED, (int32_t)(p & ~(kNavUp | kNavDown | kNavLeft | kNavRight)));
-
-    // A mouse or touch hover may have moved the highlight since the last step.
-    const int slot = rd_b(rdram, GCMD_OFF + 0x94);
-    const int n = ctl_total(), reset = n, back = n + 1;
-    int& sel = s_ctl.pos.sel;
-
-    sel = slot == kCtlResetSlot ? reset : slot >= kCtlBackSlot ? back : std::min(s_ctl.pos.top + slot, n - 1);
-
-    const int top = s_ctl.pos.top;
-
-    // Left/right leave the list for RESET TO DEFAULTS and return to the row left from (the window keeps its place).
-    if (!(p & (kNavUp | kNavDown))) {
-        if (sel < n) {
-            s_ctl.back_from = sel;
-            sel = reset;
-        } else {
-            sel = std::clamp(s_ctl.back_from, s_ctl.pos.top, s_ctl.pos.top + kCtlRows - 1);
-        }
-    } else if (p & kNavDown) {
-        if (sel == back) s_ctl.pos = { 0, 0 };
-        else if (sel >= n - 1) ++sel;
-        else s_ctl.pos = rs64::menu::scroll_step(s_ctl.pos, 1, n, kCtlRows);
-    } else {
-        if (sel == 0) sel = back;
-        else if (sel == back) sel = reset;
-        else if (sel == reset) s_ctl.pos = { n - 1, std::max(0, n - kCtlRows) };
-        else s_ctl.pos = rs64::menu::scroll_step(s_ctl.pos, -1, n, kCtlRows);
-    }
-
-    if (s_ctl.pos.top != top) s_ctl.dirty = (1u << kCtlRows) - 1;
-
-    wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)ctl_slot_of(s_ctl.pos.sel));
-    rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, {0x17u, 0x7Fu, 0x40u});
-}
-
-// The front-end photo behind every menu (element *0x800CF15C, its draw object at +0xC): with flag 2 in +0x14 its prim colour +0x2C tints the
-// texture (drawSubtitleText 0x80016010), so the list's page sets half grey each frame and gives the shared object back on leaving.
-constexpr uint32_t kBgElem = 0x000CF15Cu;
-constexpr int32_t kBgDim = 0x808080FF;
-uint32_t s_bg_obj = 0;
-int32_t s_bg_flags = 0, s_bg_rgba = 0;
-
-void controls_dim_background(uint8_t* rdram, bool on)
-{
-
-    const uint32_t elem = (uint32_t)rd_w(rdram, kBgElem);
-    const uint32_t obj = elem >= 0x80000000u && elem < 0x80800000u ? (uint32_t)rd_w(rdram, elem - 0x80000000u + 0x0C) : 0;
-    const bool valid = obj >= 0x80000000u && obj < 0x80800000u;
-
-    if (!on || !valid)
-    {
-        if (s_bg_obj && s_bg_obj == obj) {
-            wr_w(rdram, obj - 0x80000000u + 0x14, s_bg_flags);
-            wr_w(rdram, obj - 0x80000000u + 0x2C, s_bg_rgba);
-        }
-
-        s_bg_obj = 0;
-
-        return;
-    }
-
-    const uint32_t o = obj - 0x80000000u;
-
-    if (s_bg_obj != obj) {
-        s_bg_obj = obj;
-        s_bg_flags = rd_w(rdram, o + 0x14);
-        s_bg_rgba = rd_w(rdram, o + 0x2C);
-    }
-
-    wr_w(rdram, o + 0x14, s_bg_flags | 2);
-    wr_w(rdram, o + 0x2C, kBgDim);
-}
-
-// Each front-end frame: dim the photo behind the list, rewrite changed rows and relay them out in place.
-void controls_frame(uint8_t* rdram, recomp_context* ctx)
-{
-
-    controls_dim_background(rdram, controls_on_screen(rdram));
-
-    if (!controls_on_screen(rdram) || !s_ctl.dirty) return;
-
-    for (int i = 0; i < kCtlRows; ++i)
-    {
-        if (s_ctl.dirty & (1u << i)) write_live(rdram, s_ctl.bufs[i], ctl_slot_text(i));
-    }
-
-    rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, s_ctl.dirty, 0u});
-    s_ctl.dirty = 0;
-}
-
 // ---- LANGUAGE page with more languages than it has rows: the language slots scroll through every language ----
 
 constexpr int kLangRows = MAX_ENTRIES - 1;
@@ -2539,666 +2142,9 @@ void languages_frame(uint8_t* rdram, recomp_context* ctx)
     s_lang.dirty = false;
 }
 
-// ---- MODS page (main menu > MODS): every installed mod in load order, ON/OFF on the right, A carries a mod to a new place ----
-
-namespace mp = rs64::mods_page;
-
-// Slots: the mod rows, OPEN MODS FOLDER (desktop), BACK, then the description line (text-only entries go after the selectable ones).
-#ifdef __ANDROID__
-constexpr int kModsRows = 6;
-constexpr bool kModsFolder = false;
-#else
-constexpr int kModsRows = 5;
-constexpr bool kModsFolder = true;
-#endif
-
-constexpr uint32_t kModsPadB = 0x00004000u;
-
-// Rows sit below the page title, a little smaller than the menu text so a 16-letter name clears the ON/OFF column.
-constexpr int kModsTopY = -136;
-constexpr int kModsTitleY = 2;
-
-// The description sits under the title, the rows below it.
-constexpr int kModsRowsY = kModsTopY + 54;
-constexpr float kModsRowScale = 0.8f;
-
-// The description is white text in the front end's small font (hatten13, text group 8), in the slot the volume slider uses for OFF (the front
-// end draws it on every menu page; SELECT GAME and the slider lay their own text in it): up to kModsDescLines lines of kModsDescWidth font pixels.
-constexpr uint32_t kModsDescFont = 8, kModsDescFontSlot = 1;
-constexpr int kModsDescLines = 3, kModsDescWidth = 340, kModsDescGap = 5;
-constexpr uint16_t kModsTabStop = 250, kModsEndStop = 340;
-
-// A click or tap this far across a mod row (or further) lands on its ON/OFF part.
-constexpr float kModsToggleFrom = 0.6f;
-
-// A MODS page string in the shown language: English, German and French built in, and a text key ("mods.<key>") that language mods
-// and menu_text.json can translate, as any button label (text_field).
-std::string mods_text(const char* key, const char* en, const char* de, const char* fr)
-{
-
-    const nlohmann::json j = { { "t", { { "en", en }, { "de", de }, { "fr", fr }, { "key", std::string("mods.") + key } } } };
-    const int lang = rs64::lang::active() ? kModLanguage : std::clamp(s_text_language.load(std::memory_order_relaxed), 0, kTextLanguageCount - 1);
-
-    return text_field(j, "t", lang);
-}
-
-mp::Words mods_words()
-{
-
-    mp::Words w;
-
-    w.on = mods_text("on", "ON", "AN", "OUI");
-    w.off = mods_text("off", "OFF", "AUS", "NON");
-    w.failed = mods_text("failed", "FAILED", "FEHLER", "ERREUR");
-    w.none = mods_text("none", "NO MODS INSTALLED", "KEINE MODS INSTALLIERT", "AUCUN MOD INSTALLE");
-
-    return w;
-}
-
-struct ModsScreen {
-    bool shown = false;
-    bool tabs = false;
-    mp::List list;
-    int rows = 0;
-    int folder_slot = -1;
-    int back_slot = -1;
-    uint32_t bufs[kModsRows] = {};
-    uint32_t back_buf = 0;
-    uint32_t dirty = 0;
-    bool desc_dirty = true;
-    int last_slot = -1;
-    bool restart_shown = false;
-    mp::Words words;
-};
-
-ModsScreen s_mods;
-
-// The mod rows on screen (0 off the page), and drag steps from the SDL thread (mods_drag_event): { op, slot }, applied by the next pass.
-std::atomic<int> s_mods_rows_shown{0};
-std::mutex s_mods_drag_mtx;
-std::vector<std::pair<int, int>> s_mods_drag_ops;
-uint32_t s_mods_edge_ms = 0;
-constexpr uint32_t kModsEdgeStepMs = 150;
-
-// The order and on/off states when the game started: a page that differs from them shows RESTART REQUIRED.
-bool s_mods_start_taken = false;
-mp::Start s_mods_start;
-
-bool mods_on_screen(uint8_t* rdram) {
-    return s_mods.shown && rd_b(rdram, GCMD_OFF + 0x04) == page_id(kModsPage);
-}
-
-void mods_mark_all() {
-
-    s_mods.dirty = (1u << MAX_ENTRIES) - 1;
-    s_mods.desc_dirty = true;
-}
-
-std::string mods_slot_text(int i)
-{
-
-    const mp::Window w = mp::window(s_mods.list, s_mods.rows);
-    const int k = w.first + i;
-    std::string t = mp::row_text(s_mods.list.mods[k], s_mods.words);
-
-    // The carried mod sits between an up and a down triangle ('^' and '#', ensure_menu_period) while it moves.
-    if (k == s_mods.list.carrying)
-    {
-        t.insert(t.find('\t'), " #");
-        t = "^ " + t;
-    }
-
-    t += kCtlRowEnd;
-
-    const bool more_above = i == 0 && w.more_above;
-    const bool more_below = i == s_mods.rows - 1 && w.more_below;
-
-    if (more_above || more_below) t.back() = more_above ? '^' : '#';
-
-    return t;
-}
-
-// A text group's charset (its record in the table at 0x8009FC10: charset at +0x0C, a width per charset slot at +0x18): the slot of c,
-// or -1 when the font lacks it.
-int font_glyph(uint8_t* rdram, uint32_t font, char c)
-{
-
-    const uint32_t obj = (uint32_t)rd_w(rdram, 0x9FC10u + font * 4) - 0x80000000u;
-    const uint32_t charset = (uint32_t)rd_w(rdram, obj + 0x0C) - 0x80000000u;
-
-    for (int slot = 0; slot < 255 && rd_b(rdram, charset + slot); ++slot)
-    {
-        if (rd_b(rdram, charset + slot) == (uint8_t)c) return slot;
-    }
-
-    return -1;
-}
-
-// Width of s in a text group's font, in font pixels; a character the font lacks (the space) counts gap.
-int font_width(uint8_t* rdram, uint32_t font, const std::string& s, int gap)
-{
-
-    const uint32_t widths = (uint32_t)rd_w(rdram, (uint32_t)rd_w(rdram, 0x9FC10u + font * 4) - 0x80000000u + 0x18) - 0x80000000u;
-    int w = 0;
-
-    for (const char c : s)
-    {
-        const int slot = font_glyph(rdram, font, c);
-
-        w += slot >= 0 ? rd_b(rdram, widths + slot) : gap;
-    }
-
-    return w;
-}
-
-// The description wrapped to the description lines, keeping only the characters hatten13 has.
-std::string mods_desc_text(uint8_t* rdram)
-{
-
-    std::string t;
-
-    for (const char c : mp::description_text(s_mods.list, s_mods.words))
-    {
-        if (c == ' ' || font_glyph(rdram, kModsDescFont, c) >= 0) t += c;
-    }
-
-    auto width = [rdram](const std::string& x) { return font_width(rdram, kModsDescFont, x, kModsDescGap); };
-
-    return mp::wrap_text(t, width, kModsDescWidth, kModsDescLines);
-}
-
-// The laid-out description element while it is shown, else 0 (mods_frame keeps its alpha up while set).
-uint32_t s_mods_desc_elem = 0;
-
-// Lays the description out in its text group slot (setFontTextSlot 0x80063CFC, x -0x100 centres each line) in white at y; empty text, as on leaving
-// the page, stops it being drawn. A page's note label uses the same slot.
-void mods_draw_desc(uint8_t* rdram, recomp_context* ctx, const std::string& text, int y = kModsTopY)
-{
-
-    static uint32_t s_str = 0, s_white = 0;
-
-    if (!s_str)
-    {
-        void* p = recomp::alloc(rdram, 260);
-        void* c = recomp::alloc(rdram, 4);
-
-        if (!p || !c) return;
-
-        s_str = (uint32_t)((uint8_t*)p - rdram) + 0x80000000u;
-        s_white = (uint32_t)((uint8_t*)c - rdram) + 0x80000000u;
-        wr_w(rdram, s_white - 0x80000000u, (int32_t)0xFFFFFFFFu);
-    }
-
-    const size_t n = std::min<size_t>(text.size(), 259);
-
-    for (size_t i = 0; i <= n; ++i) rdram[(s_str - 0x80000000u + (uint32_t)i) ^ 3] = i < n ? (uint8_t)text[i] : 0;
-
-    rs64::mips::mips_call(rdram, ctx, 0x80063CFCu, {kModsDescFont, s_str, kModsDescFontSlot, (uint32_t)-0x100}, {(uint32_t)y});
-
-    rs64::mips::mips_call(rdram, ctx, 0x80063E54u, {kModsDescFont, kModsDescFontSlot, s_white});
-    rs64::mips::mips_call(rdram, ctx, 0x80061F34u, {kModsDescFont, kModsDescFontSlot, 0x3F800000u});
-
-    s_mods_desc_elem = text.empty() ? 0u : rs64::mips::mips_call(rdram, ctx, 0x80063C3Cu, {kModsDescFont, kModsDescFontSlot}).v0;
-}
-
-// The BACK line: BACK, then " - RESTART REQUIRED" once the order or a mod that loads once changed. It is an entry, so it updates in place
-// (the game draws the title as it was when the page opened).
-std::string mods_back_text()
-{
-
-    std::string t = back_text();
-
-    if (s_mods.restart_shown) t += " - " + mods_text("restart", "RESTART REQUIRED", "NEUSTART ERFORDERLICH", "REDEMARRAGE REQUIS");
-
-    return t;
-}
-
-int mods_install(uint8_t* rdram, uint8_t parent)
-{
-
-    for (int i = 0; i < MAX_ENTRIES; ++i) s_slot[i] = {};
-
-    s_mods = ModsScreen{};
-    s_mods.shown = true;
-
-    // The rows are one entry each: a shared-row layout left from another page must not steer this one (page_row_nav).
-    s_page_rows = false;
-
-    std::unique_lock<std::mutex> lk(s_mods_drag_mtx);
-
-    s_mods_drag_ops.clear();
-    lk.unlock();
-
-    s_mods.words = mods_words();
-
-    for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
-    {
-        s_mods.list.mods.push_back({ d.mod_id, d.display_name.empty() ? d.mod_id : d.display_name, d.description,
-                                     recomp::mods::is_mod_enabled(d.mod_id), d.runtime_toggleable });
-    }
-
-    // Mods the start-up scan could not open list last, by file name, with the reason as their description.
-    for (const auto& e : recomp::mods::get_mod_open_errors())
-    {
-        const std::string file = e.mod_path.filename().string();
-        const std::string why = recomp::mods::error_to_string(e.error) + (e.error_param.empty() ? "" : ": " + e.error_param);
-
-        s_mods.list.mods.push_back({ file, file, "", false, false, why });
-    }
-
-    if (!s_mods_start_taken)
-    {
-        s_mods_start = mp::snapshot(s_mods.list);
-        s_mods_start_taken = true;
-    }
-
-    s_mods.restart_shown = mp::needs_restart(s_mods_start, s_mods.list);
-
-    s_mods.rows = std::min(kModsRows, (int)s_mods.list.mods.size());
-    s_mods.folder_slot = kModsFolder ? s_mods.rows : -1;
-    s_mods.back_slot = s_mods.rows + (kModsFolder ? 1 : 0);
-
-    const int count = s_mods.back_slot + 1;
-    const int16_t base = rd_h(rdram, GCMD_OFF + 0x96);
-    const int32_t sc = 0x3F800000;
-    int32_t row_sc = 0;
-
-    std::memcpy(&row_sc, &kModsRowScale, 4);
-
-    // Slot i at absolute y: the game places entry i at list_base + 36 i - 18 count + offset.
-    auto offset = [&](int i, int y) { return (int16_t)(y - base - 36 * i + 18 * count); };
-
-    // The game titles sit at y 10 on an 8-entry page and move 18 per entry fewer; MODS sits 8 higher, at any entry count. A mod's own title override still wins.
-    wr_w(rdram, GCMD_OFF + 0x00, (int32_t)alloc_str(rdram, mods_text("title", "MODS", "MODS", "MODS")));
-    wr_h(rdram, GCMD_OFF + 0x52, (int16_t)(kModsTitleY + 18 * (count - MAX_ENTRIES)));
-    apply_title(rdram, kModsPage);
-
-    for (int i = 0; i < s_mods.rows; ++i)
-    {
-        s_mods.bufs[i] = live_buffer(rdram, "mods#" + std::to_string(i));
-
-        if (!s_mods.bufs[i]) return -1;
-
-        write_live(rdram, s_mods.bufs[i], mods_slot_text(i));
-        write_slot(rdram, i, Slot{ (int32_t)s_mods.bufs[i], SUBTYPE_HOST, 0, (int16_t)kCtlX, offset(i, kModsRowsY + kCtlPitch * i), row_sc });
-    }
-
-    int y = kModsRowsY + kCtlPitch * kModsRows + 2 * kCtlBackGap;
-
-    if (kModsFolder)
-    {
-        const std::string folder = mods_text("folder", "OPEN MODS FOLDER", "MOD-ORDNER \303\226FFNEN", "OUVRIR LE DOSSIER DES MODS");
-
-        write_slot(rdram, s_mods.folder_slot, Slot{ (int32_t)alloc_str(rdram, folder), SUBTYPE_HOST, 0, 0, offset(s_mods.folder_slot, y), sc });
-        y += kCtlPitch + 2 * kCtlBackGap;
-    }
-
-    s_mods.back_buf = live_buffer(rdram, "mods#back");
-
-    if (!s_mods.back_buf) return -1;
-
-    write_live(rdram, s_mods.back_buf, mods_back_text());
-    write_slot(rdram, s_mods.back_slot, Slot{ (int32_t)s_mods.back_buf, SUBTYPE_SUBMENU, parent, 0, offset(s_mods.back_slot, y), sc });
-    s_slot[s_mods.back_slot].sound = kSfxBack;
-    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)count);
-    wr_b(rdram, GCMD_OFF + 0x94, 0);
-    wr_b(rdram, GCMD_OFF + 0x05, parent);
-
-    fprintf(stderr, "[mods] page: %zu mods, %d rows\n", s_mods.list.mods.size(), s_mods.rows);
-
-    return count;
-}
-
-// The cursor as one position in [mods..., folder, back]: up / down step it, wrapping.
-int mods_cursor(uint8_t* rdram)
-{
-
-    const int slot = rd_b(rdram, GCMD_OFF + 0x94), n = (int)s_mods.list.mods.size();
-
-    if (slot < s_mods.rows) return std::min(s_mods.list.pos.top + slot, n - 1);
-    if (slot == s_mods.folder_slot) return n;
-
-    return n + (kModsFolder ? 1 : 0);
-}
-
-void mods_set_cursor(uint8_t* rdram, int v)
-{
-
-    const int n = (int)s_mods.list.mods.size(), top = s_mods.list.pos.top;
-    int slot = s_mods.back_slot;
-
-    if (v < n)
-    {
-        s_mods.list.pos.sel = v;
-        mp::fit_window(s_mods.list, s_mods.rows);
-        slot = v - s_mods.list.pos.top;
-    } else if (kModsFolder && v == n) {
-        slot = s_mods.folder_slot;
-    }
-
-    if (s_mods.list.pos.top != top) mods_mark_all();
-
-    wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)slot);
-}
-
-void mods_toggle(int k)
-{
-
-    mp::Mod& m = s_mods.list.mods[k];
-
-    if (!m.failed.empty())
-    {
-        return;
-    }
-
-    m.enabled = !m.enabled;
-    recomp::mods::enable_mod(m.id, m.enabled);
-    mods_mark_all();
-
-    fprintf(stderr, "[mods] %s %s\n", m.id.c_str(), m.enabled ? "on" : "off");
-}
-
-// Drag steps: 0 picks up the row's mod, 1 carries it to a row (-1 / 99: past the top / bottom row, one scroll step per kModsEdgeStepMs),
-// 2 drops it (its new place saved), 3 puts it back.
-void mods_drop(mp::List& l)
-{
-
-    const mp::Drop d = mp::carry_drop(l);
-
-    if (d.from != d.to) recomp::mods::set_mod_index("rs64", l.mods[d.to].id, (size_t)d.to);
-
-    fprintf(stderr, "[mods] moved %s from %d to %d\n", l.mods[d.to].id.c_str(), d.from, d.to);
-}
-
-void mods_apply_drags(uint8_t* rdram)
-{
-
-    std::unique_lock<std::mutex> lk(s_mods_drag_mtx);
-    const std::vector<std::pair<int, int>> ops = std::exchange(s_mods_drag_ops, {});
-
-    lk.unlock();
-
-    mp::List& l = s_mods.list;
-
-    for (const auto& [op, slot] : ops)
-    {
-        if (op == 0 && slot >= 0 && slot < s_mods.rows && l.carrying < 0) {
-            l.pos.sel = l.pos.top + slot;
-            mp::carry_begin(l);
-        } else if (op == 1 && l.carrying >= 0) {
-            const bool edge = slot < 0 || slot >= s_mods.rows;
-
-            if (!edge) mp::carry_to(l, l.pos.top + slot, s_mods.rows);
-            else if (SDL_GetTicks() - s_mods_edge_ms >= kModsEdgeStepMs) {
-                s_mods_edge_ms = SDL_GetTicks();
-                mp::carry_step(l, slot < 0 ? -1 : 1, s_mods.rows);
-            }
-        } else if (op == 2 && l.carrying >= 0) {
-            mods_drop(l);
-        } else if (op == 3) {
-            mp::carry_cancel(l);
-        } else {
-            continue;
-        }
-
-        mods_set_cursor(rdram, l.pos.sel);
-        mods_mark_all();
-    }
-}
-
-// Each front-end pass before the menu reads the pad: tab stops on entry / exit, up / down through the list (or carrying a mod), left / right
-// flipping ON/OFF, and B putting a carried mod back.
-void mods_pass(uint8_t* rdram, recomp_context* ctx)
-{
-
-    if (!mods_on_screen(rdram))
-    {
-        if (s_mods.tabs && !controls_on_screen(rdram)) rs64::mips::mips_call(rdram, ctx, 0x80063EC0u, {5u});
-
-        if (s_mods.shown) mods_draw_desc(rdram, ctx, "");
-
-        s_mods.shown = false;
-        s_mods.tabs = false;
-        s_mods_rows_shown.store(0);
-
-        return;
-    }
-
-    s_mods_rows_shown.store(s_mods.rows);
-    mods_apply_drags(rdram);
-
-    if (!s_mods.tabs)
-    {
-        static uint32_t s_stops = 0;
-
-        if (!s_stops) {
-            void* p = recomp::alloc(rdram, 4);
-
-            if (!p) return;
-
-            s_stops = (uint32_t)((uint8_t*)p - rdram) + 0x80000000u;
-        }
-
-        wr_h(rdram, s_stops - 0x80000000u, (int16_t)kModsTabStop);
-        wr_h(rdram, s_stops - 0x80000000u + 2, (int16_t)kModsEndStop);
-        rs64::mips::mips_call(rdram, ctx, 0x80063E98u, {5u, s_stops, 2u});
-        s_mods.tabs = true;
-        mods_mark_all();
-    }
-
-    uint32_t p = (uint32_t)rd_w(rdram, PAD_PRESSED);
-    mp::List& l = s_mods.list;
-
-    // Mouse wheel notches step the cursor (or carry a mod) like up / down.
-    const int wheel = s_ctl_wheel.exchange(0);
-
-    if (wheel) p |= wheel > 0 ? kNavUp : kNavDown;
-
-    if (l.carrying >= 0 && (p & kModsPadB))
-    {
-        mp::carry_cancel(l);
-        mods_set_cursor(rdram, l.pos.sel);
-        mods_mark_all();
-        wr_w(rdram, PAD_PRESSED, (int32_t)(p & ~kModsPadB));
-
-        return;
-    }
-
-    if (!(p & (kNavUp | kNavDown | kNavLeft | kNavRight))) return;
-
-    wr_w(rdram, PAD_PRESSED, (int32_t)(p & ~(kNavUp | kNavDown | kNavLeft | kNavRight)));
-
-    const int n = (int)l.mods.size(), total = n + (kModsFolder ? 2 : 1), v = mods_cursor(rdram);
-
-    if (l.carrying >= 0)
-    {
-        if (p & (kNavUp | kNavDown)) mp::carry_step(l, (p & kNavUp) ? -1 : 1, s_mods.rows);
-
-        mods_set_cursor(rdram, l.pos.sel);
-        mods_mark_all();
-    } else if (!(p & (kNavUp | kNavDown))) {
-        if (v < n) mods_toggle(v);
-    } else {
-        mods_set_cursor(rdram, (v + ((p & kNavUp) ? total - 1 : 1)) % total);
-        s_mods.desc_dirty = true;
-    }
-
-    rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, {0x17u, 0x7Fu, 0x40u});
-}
-
-// A on the page: a mod row picks the mod up (or drops the carried one; the new place is saved), or flips ON/OFF when the click or tap
-// landed on that part; OPEN MODS FOLDER opens it. BACK is the game's own.
-bool mods_confirm(uint8_t* rdram, int e)
-{
-
-    if (!mods_on_screen(rdram)) return false;
-
-    mp::List& l = s_mods.list;
-
-    if (e == s_mods.folder_slot)
-    {
-        fire_action("open_mods_folder");
-
-        return true;
-    }
-
-    if (e < 0 || e >= s_mods.rows) return false;
-
-    const int k = std::min(l.pos.top + e, (int)l.mods.size() - 1);
-    const bool fresh = SDL_GetTicks() - s_click_ms.load() < 1000;
-
-    // A click or tap: on ON/OFF it flips it; on the name it does nothing (mouse and touch carry by dragging, mods_drag_event), so only
-    // A on a controller or keyboard picks a mod up.
-    if (l.carrying < 0 && fresh && s_click_key.load() == e)
-    {
-        s_click_key.store(-1);
-
-        if (s_click_frac.load() >= kModsToggleFrom) mods_toggle(k);
-
-        return true;
-    }
-
-    if (l.carrying >= 0)
-    {
-        mods_drop(l);
-    } else {
-        l.pos.sel = k;
-        mp::carry_begin(l);
-    }
-
-    mods_mark_all();
-
-    return true;
-}
-
-// Each front-end frame: rewrite changed rows and the description line, relaid out in place.
-void mods_frame(uint8_t* rdram, recomp_context* ctx)
-{
-
-    if (!mods_on_screen(rdram)) return;
-
-    // A mouse or touch hover moves the highlight without a pass: the description follows it.
-    const int slot = rd_b(rdram, GCMD_OFF + 0x94);
-
-    if (slot != s_mods.last_slot)
-    {
-        s_mods.last_slot = slot;
-
-        if (slot < s_mods.rows && s_mods.list.carrying < 0) s_mods.list.pos.sel = s_mods.list.pos.top + slot;
-
-        s_mods.desc_dirty = true;
-    }
-
-    // The description belongs to the mod under the cursor: OPEN MODS FOLDER and BACK show none (an empty list still says so).
-    if (s_mods.desc_dirty)
-    {
-        s_mods.desc_dirty = false;
-        mods_draw_desc(rdram, ctx, slot < s_mods.rows || s_mods.list.mods.empty() ? mods_desc_text(rdram) : std::string{});
-    }
-
-    // The slot's alpha, set each frame as the volume slider does its OFF / MAX labels (0xFF would swap the slot's glyph set instead).
-    if (s_mods_desc_elem) rs64::mips::mips_call(rdram, ctx, 0x80061C74u, {kModsDescFont, kModsDescFontSlot, 0xFEu});
-
-    if (!s_mods.dirty) return;
-
-    for (int i = 0; i < s_mods.rows; ++i)
-    {
-        if (s_mods.dirty & (1u << i)) write_live(rdram, s_mods.bufs[i], mods_slot_text(i));
-    }
-
-    const bool restart = mp::needs_restart(s_mods_start, s_mods.list);
-
-    if (restart != s_mods.restart_shown)
-    {
-        s_mods.restart_shown = restart;
-        s_mods.dirty |= 1u << s_mods.back_slot;
-        write_live(rdram, s_mods.back_buf, mods_back_text());
-    }
-
-    rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, s_mods.dirty, 0u});
-    s_mods.dirty = 0;
-}
 } // namespace rs64::menucfg
 
 using namespace rs64::menucfg;
-
-// The MODS page for mods_drag_event (input_host.cpp), any thread: whether a front-end entry is a mod row (its slot, else -1), where a
-// row's ON/OFF part starts, and a drag step to queue (mods_apply_drags).
-extern "C" int rs64_mods_page_row(int entry) {
-    return entry >= 0 && entry < s_mods_rows_shown.load() ? entry : -1;
-}
-
-extern "C" float rs64_mods_toggle_from(void) {
-    return kModsToggleFrom;
-}
-
-extern "C" void rs64_mods_drag(int op, int entry)
-{
-
-    std::lock_guard<std::mutex> lk(s_mods_drag_mtx);
-
-    s_mods_drag_ops.emplace_back(op, entry);
-}
-
-// Mission start (initAllPlayersHudTracking copies D_80109AD0[preset] per player): with the controls mod on, every preset slot points at Luke's
-// table, so gameplay matches the list while the saved preset byte stays the player's. Replays keep their recorded preset.
-extern "C" int rs64_ls_replaying(void);
-
-// loadControllerModel, after the N64 controller is set up (0x800C4BD8): the keyboard and gamepad models load the same way
-// (load_hmt_and_hob, walkMeshdef0List by object name, 0x8005955C), from the mod's frontend/controller/<name> assets.
-extern "C" void rs64_controls_load_models(uint8_t* rdram, recomp_context* ctx)
-{
-
-    s_ctl_mesh_orig = (uint32_t)rd_w(rdram, kControllerMesh);
-    std::fill(std::begin(s_ctl_mesh), std::end(s_ctl_mesh), 0u);
-
-    if (!controls_enabled()) return;
-
-    for (const auto& [dev, name] : { std::pair{ ri::Device::Keyboard, "keyboard" }, std::pair{ ri::Device::Gamepad, "gamepad" }, std::pair{ ri::Device::Joystick, "joystick" } })
-    {
-        rs64::mips::mips_call(rdram, ctx, 0x8005645Cu, {alloc_str(rdram, std::string("frontend/controller/") + name), 0u, 0u, 0u});
-
-        const uint32_t mesh = rs64::mips::mips_call(rdram, ctx, 0x80056EB0u, {alloc_str(rdram, name)}).v0;
-
-        if (!mesh) {
-            fprintf(stderr, "[controls] %s model not found\n", name);
-            continue;
-        }
-
-        rs64::mips::mips_call(rdram, ctx, 0x8005955Cu, {mesh, 0u, 0x01060000u, 0u});
-        s_ctl_mesh[(int)dev] = mesh;
-    }
-
-    fprintf(stderr, "[controls] models: controller %08X keyboard %08X gamepad %08X joystick %08X\n", s_ctl_mesh_orig, s_ctl_mesh[0], s_ctl_mesh[1], s_ctl_mesh[2]);
-}
-
-extern "C" void rs64_controls_wheel(int steps) {
-    s_ctl_wheel.fetch_add(steps);
-}
-
-extern "C" int rs64_controls_menu_active(void) {
-    return controls_enabled() ? 1 : 0;
-}
-
-extern "C" void rs64_controls_force_luke(uint8_t* rdram)
-{
-
-    constexpr uint32_t kMissionPresets = 0x00109AD0u, kLuke = 0x8009DE18u;
-
-    if (!controls_enabled() || rs64_ls_replaying()) return;
-
-    static bool s_logged = false;
-
-    if (!s_logged)
-    {
-        s_logged = true;
-
-        fprintf(stderr, "[controls] mission presets %08X %08X %08X %08X -> Luke %08X\n", (uint32_t)rd_w(rdram, kMissionPresets), (uint32_t)rd_w(rdram, kMissionPresets + 4),
-                (uint32_t)rd_w(rdram, kMissionPresets + 8), (uint32_t)rd_w(rdram, kMissionPresets + 12), kLuke);
-    }
-
-    for (uint32_t k = 0; k < 4; ++k) wr_w(rdram, kMissionPresets + 4 * k, (int32_t)kLuke);
-}
 
 // ---- Front-end hook entry points ----
 
@@ -3224,19 +2170,34 @@ extern "C" int rs64_menu_install_main(uint8_t* rdram)
 
     const uint8_t menu = rd_b(rdram, GCMD_OFF + 0x04);
 
-    // YES/NO confirm screen (MAIN_MENU-scoped), rides the engine's transitions.
-    if (menu == MENU_MAIN && s_confirm_state == ConfirmState::Pending)
+    // YES/NO confirm screen in place of the menu the entry is on, riding the engine's transitions; YES and NO lead back to that menu.
+    if (s_confirm_state == ConfirmState::Pending && menu == s_confirm_menu && !s_confirm_shown)
     {
+        const bool page = page_name(menu) != nullptr;
+        const int16_t x = menu == MENU_MAIN ? YESNO_X : 0;
+        const int32_t sc = 0x3F800000;
+
         wr_w(rdram, GCMD_OFF + 0x00, (int32_t)alloc_str(rdram, s_confirm_prompt));
-        Slot yes{ (int32_t)alloc_str(rdram, "YES"), SUBTYPE_SUBMENU, 0, YESNO_X, 0, rd_w(rdram, GCMD_OFF + 0x54) };
-        Slot no { (int32_t)alloc_str(rdram, "NO"),  SUBTYPE_SUBMENU, 0, YESNO_X, 0, rd_w(rdram, GCMD_OFF + 0x54 + 4) };
+        Slot yes{ (int32_t)alloc_str(rdram, "YES"), SUBTYPE_SUBMENU, menu, x, 0, page ? sc : rd_w(rdram, GCMD_OFF + 0x54) };
+        Slot no { (int32_t)alloc_str(rdram, "NO"),  SUBTYPE_SUBMENU, menu, x, 0, page ? sc : rd_w(rdram, GCMD_OFF + 0x54 + 4) };
         write_slot(rdram, 0, yes);
         write_slot(rdram, 1, no);
         s_slot[1].sound = kSfxBack;
         wr_b(rdram, GCMD_OFF + 0x95, 2);
 
-        return -1;
+        // B on a page's prompt returns to the page, as NO does.
+        if (page) wr_b(rdram, GCMD_OFF + 0x05, menu);
+
+        s_confirm_shown = true;
+        s_page_rows = false;
+        s_note.reset();
+        s_snd_sliders.clear();
+
+        return page ? 2 : -1;
     }
+
+    // Any other build while a prompt is pending (B left it): the prompt is over.
+    s_confirm_state = ConfirmState::None;
 
     // Back at the main menu (B from the profile select or the page): a pilot-first page is no longer armed.
     if (menu == MENU_MAIN) {
@@ -3333,7 +2294,7 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram)
 
     if (s_confirm_state == ConfirmState::Pending)
     {
-        if (rd_b(rdram, GCMD_OFF + 0x04) != 0) { s_confirm_state = ConfirmState::None; return; }
+        if (rd_b(rdram, GCMD_OFF + 0x04) != s_confirm_menu || !s_confirm_shown) { s_confirm_state = ConfirmState::None; return; }
 
         if (e == 0)
         {
@@ -3370,6 +2331,8 @@ extern "C" void rs64_menu_confirm_main(uint8_t* rdram)
                                                                            b.bar_width, b.bar_filled, b.bar_empty));
     } else if (!b.confirm.empty()) {
         s_confirm_state = ConfirmState::Pending;
+        s_confirm_menu = rd_b(rdram, GCMD_OFF + 0x04);
+        s_confirm_shown = false;
         s_confirm_action = b.key;
         s_confirm_prompt = b.confirm;
         s_confirm_fn = b.action_fn;
@@ -3609,169 +2572,11 @@ static bool take_hover_sound(int kind) {
     return s_hover_sound.compare_exchange_strong(want, 0);
 }
 
-// Keyboard typing on the letter wheels (ENTER NAME, PASSCODES): text queued on the SDL thread, entered by the wheel hooks through the game's own A/B path.
-static std::mutex s_typed_mtx;
-static std::string s_typed;
-// 0 = no wheel, 1 = ENTER NAME, 2 = PASSCODES (Enter submits the code).
-static std::atomic<int> s_typing{0};
-static int s_wheel_seen = 0;
-
-extern "C" int rs64_menu_typing(void) {
-    return s_typing.load();
-}
-
-extern "C" int rs64_menu_type(const char* utf8, int key)
-{
-
-    const int typing = s_typing.load();
-
-    if (!typing || (!utf8 && key != '\b' && !(key == '\r' && typing == 2)))
-    {
-        return 0;
-    }
-
-    std::lock_guard<std::mutex> lk(s_typed_mtx);
-
-    if (!utf8) {
-        s_typed.push_back((char)key);
-        return 1;
-    }
-
-    for (const char* p = utf8; *p && s_typed.size() < 16; ++p) {
-        s_typed.push_back((char)std::toupper((unsigned char)*p));
-    }
-
-    return 1;
-}
-
-static bool typed_pending() {
-
-    std::lock_guard<std::mutex> lk(s_typed_mtx);
-
-    return !s_typed.empty();
-}
-
-// Next typed key: its index in the wheel's alphabet (0x800CCBF0 -> "ABC...Z!?&"), -2 for Backspace, -1 for none; other characters are dropped.
-static int pop_typed(uint8_t* rdram)
-{
-
-    const uint32_t abc = (uint32_t)rd_w(rdram, 0x800CCBF0u - 0x80000000u) - 0x80000000u;
-    std::lock_guard<std::mutex> lk(s_typed_mtx);
-
-    while (!s_typed.empty()) {
-        const char c = s_typed.front();
-
-        // Enter stays queued for rs64_passcode_row.
-        if (c == '\r')
-        {
-            return -1;
-        }
-
-        s_typed.erase(0, 1);
-
-        if (c == '\b')
-        {
-            return -2;
-        }
-
-        for (int i = 0; abc < 0x800000u && i < 32 && rd_b(rdram, abc + i); ++i) {
-            if (rd_b(rdram, abc + i) == (uint8_t)c)
-            {
-                return i;
-            }
-        }
-    }
-
-    return -1;
-}
-
-// Right after the wheel call ($v0 = highlighted letter, $fp = port): a typed letter replaces $v0 and presses A; Backspace presses B.
-extern "C" void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx)
-{
-
-    s_wheel_seen = std::max(s_wheel_seen, 1);
-
-    const uint32_t wheel =(uint32_t)rd_w(rdram, 0x800CF258u - 0x80000000u) - 0x80000000u;
-    const int32_t spin = rd_w(rdram, wheel + 0x14EC);
-
-    // The game enters a letter only with the wheel at rest (spin speed 0.0f); the key waits.
-    if (wheel >= 0x800000u || (spin & 0x7FFFFFFF) != 0) return;
-
-    const int c = pop_typed(rdram);
-
-    if (c == -1)
-    {
-        return;
-    }
-
-    const uint32_t pressed = 0x8013A960u - 0x80000000u + (uint32_t)(ctx->r30 & 0xFF) * 4;
-
-    if (c >= 0) {
-        ctx->r2 = c;
-    }
-
-    wr_w(rdram, pressed, rd_w(rdram, pressed) | (c >= 0 ? 0x8000 : 0x4000));
-}
-
-// PASSCODES row check ($s4 = menu, +0x94 = cursor, the wheel is row 0, ENTER CODE row 1): a typed key moves the cursor to the wheel, as an up/down move would; Enter, once the letters before it are in, selects ENTER CODE and presses A.
-extern "C" void rs64_passcode_row(uint8_t* rdram, recomp_context* ctx)
-{
-
-    s_wheel_seen = 2;
-
-    const uint32_t menu = (uint32_t)ctx->r20 - 0x80000000u;
-    bool submit = false;
-    std::unique_lock<std::mutex> lk(s_typed_mtx);
-
-    if (!s_typed.empty() && s_typed.front() == '\r') {
-        s_typed.erase(0, 1);
-        submit = true;
-    }
-
-    const bool pending = !s_typed.empty();
-
-    lk.unlock();
-
-    if (submit) {
-        const uint32_t pressed = 0x8013A960u - 0x80000000u + (uint32_t)(ctx->r30 & 0xFF) * 4;
-
-        wr_b(rdram, menu + 0x94, 1);
-        wr_w(rdram, pressed, rd_w(rdram, pressed) | 0x8000);
-
-        return;
-    }
-
-    if (!pending || rd_b(rdram, menu + 0x94) == 0) return;
-
-    wr_b(rdram, menu + 0x94, 0);
-    rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, { 0x17, 0x7F, 0x40 });
-    wr_w(rdram, menu + 0x9C, 0);
-    wr_w(rdram, menu + 0xA0, rd_w(rdram, 0x800A66F0u - 0x80000000u));
-}
-
 extern "C" void rs64_menu_input_state(uint8_t* rdram, recomp_context* ctx)
 {
 
     s_slider_editing.store(ctx->r22 == 0x11 && (rd_b(rdram, GCMD_OFF + 0x04) == MENU_SOUND_SETTINGS || snd_sliders_here(rdram)));
-    // A wheel hook ran on the previous pass: typing stays on (on a phone this raises the keyboard).
-    const int typing = s_wheel_seen;
-
-    s_wheel_seen = 0;
-
-    if (typing != s_typing.load()) {
-        s_typing.store(typing);
-
-        if (typing) {
-            SDL_StartTextInput();
-        } else {
-            SDL_StopTextInput();
-        }
-
-        if (!typing) {
-            std::lock_guard<std::mutex> lk(s_typed_mtx);
-            s_typed.clear();
-        }
-    }
+    typing_pass();
 
     // As menuControllerInput does on a move (0x800B5108): sfx 0x17, then restart the highlight pulse.
     if (take_hover_sound(1)) {
@@ -3843,195 +2648,6 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId)
     if (textId == 0xB8) return alloc_str(rdram, ss->on_label);
 
     return 0;
-}
-
-// The padlock takes the brace '}' slot, which is also the level select's right arrow (the string "}" at 0x800A5BCC): the slot shows the padlock only on
-// a page whose live labels hold a '$' (co-op's locked games), the brace everywhere else.
-static struct { uint32_t dst = 0; std::vector<uint8_t> brace, lock; bool shown = true; } s_lock_glyph;
-
-// Image and charset entry of the shared slot (50) for this frame; runs after ensure_menu_period, which renames the slot to '$' every frame.
-static void show_menu_lock(uint8_t* rdram, bool lock)
-{
-
-    if (!s_lock_glyph.dst) return;
-
-    for (const uint32_t id : { 0u, 5u })
-    {
-        const uint32_t obj = (uint32_t)rd_w(rdram, 0x9FC10u + id * 4) - 0x80000000u;
-        const uint32_t charset = (uint32_t)rd_w(rdram, obj + 0x0C) - 0x80000000u;
-
-        wr_b(rdram, charset + 50, lock ? '$' : '}');
-    }
-
-    if (lock == s_lock_glyph.shown) return;
-
-    const std::vector<uint8_t>& img = lock ? s_lock_glyph.lock : s_lock_glyph.brace;
-
-    for (size_t i = 0; i < img.size(); ++i) wr_b(rdram, s_lock_glyph.dst + (uint32_t)i, img[i]);
-
-    s_lock_glyph.shown = lock;
-}
-
-// The italic menu font ("italic35") lacks '.', a period-wide blank ('`', status_dots padding) and a caret ('|'): the '&', '"' and '/' slots (no language's text uses them; German needs the umlauts) become them, cut from the font's own
-// ':' (lower dot; blank) and '!' (its stem). Glyphs are D_80128F08 entries (0x24: W @8, size @0xC, data @0x10, name @0x14 = "F" char "A"); the font's charset and widths share the index.
-static void ensure_menu_period(uint8_t* rdram)
-{
-
-    enum Rows { kLastRun, kNone, kAllButLastRun, kUpArrow, kDownArrow, kLock };
-    struct Glyph { int slot; uint8_t from; uint8_t to; uint8_t src; int src_slot; Rows rows; };
-
-    // ';' and '_' (not in the letter wheels' alphabet) become the Controls list's scroll arrows '^' and '#', blank-wide so a row keeps its width; '}' becomes a padlock '$' in its own box (multiplayer's locked games).
-    static const Glyph kGlyphs[] = {{40, '&', '.', ':', 36, kLastRun}, {41, '"', '`', ':', 36, kNone}, {39, '/', '|', '!', 44, kAllButLastRun},
-                                    {35, ';', '^', ':', 36, kUpArrow}, {37, '_', '#', ':', 36, kDownArrow}, {50, '}', '$', '}', 50, kLock}};
-    constexpr int kCount = (int)(sizeof(kGlyphs) / sizeof(kGlyphs[0]));
-
-    // italic35 is font ids 0 and 5 (table 0x8009FC10); its object holds the charset (+0x0C), widths (+0x18) and the char -> glyph map built at load (+0x20), which language mods may move to host copies.
-    for (const uint32_t id : { 0u, 5u })
-    {
-        const uint32_t obj = (uint32_t)rd_w(rdram, 0x9FC10u + id * 4) - 0x80000000u;
-        const uint32_t charset = (uint32_t)rd_w(rdram, obj + 0x0C) - 0x80000000u;
-        const uint32_t widths = (uint32_t)rd_w(rdram, obj + 0x18) - 0x80000000u;
-
-        for (const Glyph& g : kGlyphs) {
-            if (rd_b(rdram, charset + g.slot) == g.from) {
-                wr_b(rdram, charset + g.slot, g.to);
-                wr_b(rdram, widths + g.slot, rd_b(rdram, widths + g.src_slot));
-            }
-        }
-
-        const uint32_t map = (uint32_t)rd_w(rdram, obj + 0x20);
-
-        if (map < 0x80000000u || map >= 0x80800000u || rd_b(rdram, (map & 0x7FFFFFu) + ':') != 36) continue;
-
-        for (const Glyph& g : kGlyphs)
-            wr_b(rdram, (map & 0x7FFFFFu) + g.to, (uint8_t)g.slot);
-    }
-
-    const uint32_t table = (uint32_t)rd_w(rdram, 0x128F08u);
-
-    if (table < 0x80000000u || table >= 0x81000000u) return;
-
-    // A reloaded font gets fresh records while the old converted ones stay in the table, so scan every frame; converted records are renamed and never match again.
-    uint32_t rec[kCount] = {}, src_rec[kCount] = {};
-
-    for (uint32_t e = table - 0x80000000u, n = 0; n < 4096 && e + 0x24 <= 0x1000000u; e += 0x24, ++n)
-    {
-        if (rd_b(rdram, e + 0x14) != 'F' || rd_b(rdram, e + 0x16) != 'A' || rd_b(rdram, e + 0x17) != 0) continue;
-
-        const uint8_t c = rd_b(rdram, e + 0x15);
-
-        for (int k = 0; k < kCount; ++k) {
-            if (c == kGlyphs[k].from) rec[k] = e;
-            if (c == kGlyphs[k].src) src_rec[k] = e;
-        }
-    }
-
-    for (int k = 0; k < kCount; ++k)
-        if (!rec[k] || !src_rec[k] || (uint16_t)rd_h(rdram, rec[k] + 0x0C) < (uint16_t)rd_h(rdram, src_rec[k] + 0x0C)) return;
-
-    // I4 glyphs 33 rows high, loaded at the record's width rounded up; each new glyph takes its source's layout, size and width (a target buffer smaller than its source skips the conversion).
-    // Rows keep their bytes (the odd-row word swap stays inside a row), so a row copies as-is.
-    constexpr int kRows = 33;
-
-    for (int k = 0; k < kCount; ++k)
-    {
-        const uint32_t src = (uint32_t)rd_w(rdram, src_rec[k] + 0x10) - 0x80000000u;
-        const uint16_t size = (uint16_t)rd_h(rdram, src_rec[k] + 0x0C);
-        const uint32_t stride = size / kRows;
-
-        auto row_lit = [&](int y) {
-
-            for (uint32_t i = 0; i < stride; ++i)
-                if (rd_b(rdram, src + y * stride + i)) return true;
-
-            return false;
-        };
-
-        // The last run of lit rows: the colon's lower dot, the exclamation mark's dot.
-        int last = kRows - 1;
-
-        while (last >= 0 && !row_lit(last)) --last;
-
-        int first = last;
-
-        while (first > 0 && row_lit(first - 1)) --first;
-        if (stride == 0 || last < 0) return;
-
-        const uint32_t dst = (uint32_t)rd_w(rdram, rec[k] + 0x10) - 0x80000000u;
-        const Rows mode = kGlyphs[k].rows;
-
-        // A filled triangle in the source's box, apex on the colon's dot rows' span: I4 nibbles, high = left pixel; odd rows have their two words swapped.
-        if (mode == kUpArrow || mode == kDownArrow)
-        {
-            const int w = rd_h(rdram, src_rec[k] + 0x08);
-            const int h = last - first + 8, top = last - h + 1, cx2 = w - 1;
-            auto lit = [&](int x, int y) {
-
-                const int r = mode == kUpArrow ? y - top : top + h - 1 - y;
-
-                return r >= 0 && r < h && std::abs(2 * x - cx2) <= r * cx2 / (h - 1);
-            };
-
-            for (uint32_t i = 0; i < size; ++i)
-            {
-                const int y = (int)(i / stride), j = (int)(i % stride);
-                const uint8_t v = (uint8_t)((lit(2 * j, y) ? 0xF0 : 0) | (lit(2 * j + 1, y) ? 0x0F : 0));
-                wr_b(rdram, dst + y * stride + ((y & 1) && stride >= 8 ? (j ^ 4) : j), v);
-            }
-        }
-
-        // A padlock over the brace's lit rows: a shackle (an inverted U of stroke t) on the top 45%, a solid body with a keyhole below.
-        if (mode == kLock)
-        {
-            const int w = rd_h(rdram, src_rec[k] + 0x08);
-            int top = 0;
-
-            while (top < last && !row_lit(top)) ++top;
-
-            const int h = last - top + 1, body = top + h * 9 / 20, t = std::max(2, w / 6), inset = w / 5;
-            const int hole_top = body + (last - body) / 3, hole_bottom = last - (last - body) / 4;
-
-            s_lock_glyph.brace.resize(size);
-
-            for (uint32_t i = 0; i < size; ++i) s_lock_glyph.brace[i] = rd_b(rdram, dst + i);
-
-            auto lit = [&](int x, int y) {
-
-                if (x < 1 || x >= w - 1 || y < top || y > last) return false;
-                if (y >= body) return !(std::abs(2 * x - (w - 1)) <= 2 && y >= hole_top && y <= hole_bottom);
-
-                const bool side = (x >= inset && x < inset + t) || (x > w - 1 - inset - t && x <= w - 1 - inset);
-                return side || (y < top + t && x >= inset && x <= w - 1 - inset);
-            };
-
-            for (uint32_t i = 0; i < size; ++i)
-            {
-                const int y = (int)(i / stride), j = (int)(i % stride);
-                const uint8_t v = (uint8_t)((lit(2 * j, y) ? 0xF0 : 0) | (lit(2 * j + 1, y) ? 0x0F : 0));
-                wr_b(rdram, dst + y * stride + ((y & 1) && stride >= 8 ? (j ^ 4) : j), v);
-            }
-
-            s_lock_glyph.lock.resize(size);
-
-            for (uint32_t i = 0; i < size; ++i) s_lock_glyph.lock[i] = rd_b(rdram, dst + i);
-
-            s_lock_glyph.dst = dst;
-            s_lock_glyph.shown = true;
-        }
-
-        for (uint32_t i = 0; i < size && mode != kUpArrow && mode != kDownArrow && mode != kLock; ++i)
-        {
-            const int y = (int)(i / stride);
-            const bool keep = kGlyphs[k].rows == kLastRun ? (y >= first && y <= last) : kGlyphs[k].rows == kAllButLastRun ? (y < first) : false;
-            wr_b(rdram, dst + i, keep ? rd_b(rdram, src + i) : 0);
-        }
-
-        wr_h(rdram, rec[k] + 0x08, rd_h(rdram, src_rec[k] + 0x08));
-        wr_h(rdram, rec[k] + 0x0C, (int16_t)size);
-        wr_b(rdram, rec[k] + 0x15, kGlyphs[k].to);
-    }
-
-    fprintf(stderr, "[menu] italic font: period, period-wide blank, caret, arrows and lock made\n");
 }
 
 // The note label while its page is up: relaid out when its text changes, cleared on leaving, and its alpha set each frame after the pilot-first page hides the medals in the same slot.

@@ -300,7 +300,7 @@ Sub-type 1 (handler `0x800B521C`) stores `unk74[entry]`'s low byte as the target
 
 Because labels are measured once per build, the confirm prompt rides the game's own menu transition:
 
-- A `confirm` entry is a self-targeting sub-type-1 submenu. Selecting it sets `ConfirmState::Pending`; the fade re-runs `setupMenuData`, and the install hook sees Pending and builds a two-entry YES/NO menu.
+- A `confirm` entry is a self-targeting sub-type-1 submenu. Selecting it sets `ConfirmState::Pending`; the fade re-runs `setupMenuData`, and the install hook sees Pending and builds a two-entry YES/NO menu in place of the menu or page the entry is on. B leaves the prompt like NO.
 - YES and NO are also self-targeting submenus: YES runs the action and clears the state, NO just clears it. Each transition back redraws the normal labels.
 
 This is why a confirm shows the menu-swipe animation between steps. Live labels (`label_src`) avoid a rebuild by relaying out one entry with `0x800C4C8C(&gCurrentMenuData, 1 << entry, 0)` from the `updateMenuPerFrame` hook (`rs64_menu_frame`).
@@ -321,7 +321,7 @@ The native volume slider is tied to the three audio channels, so a mod slider re
 
 `menu_entries[i]` is a null-terminated `char*` in RDRAM. The vanilla arms fill it from `getGameOrFrontText(textId)` (`0x8005589C`), which returns a pointer into a loaded `.txt` bank (`0xA2` = "START/NEW GAME", `0xA3` = "OPTIONS"). The glyph builder (`buildScaledFormatTextElement`, `0x800B3AFC`) emits one TEXRECT per character.
 
-The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_config.cpp`) turns the `&` glyph (no language's menu text uses it; German needs the umlauts) into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14). It makes `` ` `` (a period-wide blank), `|` (caret), `^` and `#` (scroll arrows) and `$` (a padlock, drawn in the `}` slot) the same way.
+The front-end font is `italic35` (charset at `0x8003B450`: `A`-`Y`, `0`-`9`, then `;:_'/&"Z,!?-<>{}ÄÖÜ`). It has no period, so `ensure_menu_period` (`menu_font.cpp`) turns the `&` glyph (no language's menu text uses it; German needs the umlauts) into one at runtime from the colon's lower dot, and maps `.` to that slot in the font's char-to-glyph table (pointer at the loaded font's charset pointer + 0x14). It makes `` ` `` (a period-wide blank), `|` (caret), `^` and `#` (scroll arrows) and `$` (a padlock, drawn in the `}` slot) the same way.
 
 ### Fonts
 

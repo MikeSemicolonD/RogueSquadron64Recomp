@@ -51,7 +51,7 @@ The host glue lives in `src/`:
 | `src/game/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
 | `src/game/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
 | `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks (draw distance, HUD placement, pacing, DL walkers) |
-| `src/game/menus/` | Front-end menus and mod pages (`menu_config.cpp`) and the pause menu (`pause_menu.cpp`) |
+| `src/game/menus/` | Front-end menus and mod pages (`menu_config.cpp`), the Controls list (`controls_menu.cpp`), the MODS page (`mods_menu.cpp`), menu font and typing helpers (`menu_font.cpp`, `menu_typing.cpp`) and the pause menu (`pause_menu.cpp`) |
 | `src/game/mod_content/` | Mod asset overrides and mod level content: camera shots, levels, crawls, medals, objectives, level rules |
 | `src/game/lang/` | Language mods |
 | `src/game/builtin_hooks.cpp` | Built-in hooks registered through the host API |

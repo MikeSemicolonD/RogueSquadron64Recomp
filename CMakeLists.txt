@@ -286,6 +286,10 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
     ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
     ${CMAKE_SOURCE_DIR}/src/game/menus/menu_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/controls_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/mods_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/menu_font.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/menu_typing.cpp
     ${CMAKE_SOURCE_DIR}/src/game/menus/pause_menu.cpp
     ${CMAKE_SOURCE_DIR}/src/game/lang/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp

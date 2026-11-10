@@ -261,7 +261,7 @@ src/                                    Host code; the include root, so includes
   ├── input/                            input_host (gamepads, joysticks, keyboard/mouse, sensors; the SDL event loop and N64 pad polling), touch_host (touch and mouse on the menus), input_bindings, rumble (motor mapping and the rumble/lightbar thread), touch_input / touch_menu / touch_config
   ├── video/                            rt64_render_context (RT64 host context; HLE send_dl, present-side fixes, boot-target driver), render_diag (env-gated traces and RDRAM dumps), video_config (settings and the ROGUESQ_* display overrides)
   ├── game/                             Code that hooks the recompiled game: hook_helpers (entry points for rogue_squadron.toml hooks), toml_hooks.c, upstream_compat (libultra shims, scheduler overrides, rs64_load_overlay), register_overlays / register_patches, game_state + nav_sequencer (state classifier, BOOT_TARGET driver), builtin_hooks, static_standins
-  │   ├── menus/                        menu_config (front-end menus and mod pages), pause_menu, menu_layout.h, mods_page.h
+  │   ├── menus/                        menu_config (front-end menus and mod pages), controls_menu, mods_menu, menu_font, menu_typing, pause_menu, menu_layout.h, mods_page.h
   │   ├── mod_content/                  asset_overrides (mod files appended past the ROM), mod_level_hooks (camera shots, mod levels, crawls, medals, objectives, level rules), their pure-logic headers, terrain_edit.h
   │   └── lang/                         Language mods (lang, lang_core.h)
   ├── host_api/                         Mod host API (public header include/rs64/host_api.h)

@@ -1,5 +1,6 @@
 #pragma once
-// Menu button config internals shared by the front-end menus (menu_config.cpp) and the pause menu (pause_menu.cpp).
+// Menu button config internals shared by the front-end menus (menu_config.cpp), their host-built screens (controls_menu.cpp, mods_menu.cpp), the font and typing helpers, and the pause menu (pause_menu.cpp).
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -180,5 +181,142 @@ uint8_t page_id(const std::string& page);
 const std::string* page_name(uint8_t id);
 int byte_from_value(int v, int lo, int hi, int top = VOL_MAX);
 int value_from_byte(int b, int lo, int hi, int top = VOL_MAX);
+
+// ---- The front-end menu (gCurrentMenuData) and its entry slots ----
+
+constexpr uint32_t GCMD = 0x800CE730u;
+constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;
+constexpr int MAX_ENTRIES = 8;
+
+// Front-end menu ids (gCurrentMenuData +0x04).
+enum FrontMenu : uint8_t {
+    MENU_MAIN                = 0,
+    MENU_ACCOUNT             = 1,
+    MENU_OPTIONS             = 2,
+    MENU_GAME_SETTINGS       = 3,
+    MENU_ELITE_ROGUES        = 4,
+    MENU_CONTROLLER_SETTINGS = 5,
+    MENU_SOUND_SETTINGS      = 6,
+    MENU_PASSCODES           = 7,
+    MENU_BIOGRAPHIES         = 8,
+    MENU_LANGUAGE            = 9,
+    // Ids 0-12 are native (setupMenuData range-checks < 13); an id >= 13 bails to the shared tail with 0 entries, so our install hook fully builds it as a custom page.
+    MENU_MOD_PAGE            = 13,
+    MENU_NONE                = 0xFF,
+};
+
+// Entry sub-types. 1 = submenu transition (self-targeting = re-run setupMenuData, the only way to re-commit labels); 4 = in-range no-op on confirm (intercept owns the action).
+constexpr uint8_t SUBTYPE_SUBMENU = 1;
+constexpr uint8_t SUBTYPE_HOST    = 4;
+
+// The sound menuControllerInput plays for BACK, at its volume.
+constexpr MenuSfx kSfxBack{ 0x6D, 0x64 };
+
+// The pressed-buttons word of port 0 and its direction bits (stick and d-pad).
+constexpr uint32_t PAD_PRESSED = 0x0013A960u;
+constexpr uint32_t kNavUp = 0x00200800u, kNavDown = 0x00100400u, kNavLeft = 0x00800200u, kNavRight = 0x00400100u;
+
+struct Slot { int32_t label; uint8_t sub; int32_t param; int16_t x, y; int32_t scaler; };
+
+Slot read_slot(uint8_t* r, int i);
+void write_slot(uint8_t* r, int i, const Slot& s);
+
+// Per-slot binding, read by the confirm intercept.
+struct SlotBinding {
+    bool set = false;
+    BType type = BType::Action;
+    std::string key, confirm;
+
+    // toggle_get_fn/toggle_set_fn double as the slider getter/setter @exports.
+    recomp_func_t* action_fn = nullptr, * toggle_get_fn = nullptr, * toggle_set_fn = nullptr;
+
+    // Slider range.
+    int smin = 0, smax = 100, sstep = 10;
+
+    // Toggle labels, for the in-place relabel.
+    std::string label_on, label_off;
+
+    // Submenu opener: action fired when the page opens.
+    std::string open_action;
+
+    // Left / right actions of an action entry.
+    std::string left_action, right_action;
+
+    // Action with transition "account": the page shown after the pilot is chosen, and its exit condition.
+    std::string pilot_page, exit_when;
+
+    // Live label: the entry points at its own RDRAM buffer (never an alloc_str cache entry, which other labels share).
+    std::string label_src, live_text;
+    uint32_t live_buf = 0;
+
+    // Text slider bar layout, for click-to-position.
+    std::string bar_label, bar_filled, bar_empty;
+    int bar_width = 10;
+
+    MenuSfx sound;
+};
+
+extern SlotBinding s_slot[MAX_ENTRIES];
+
+// Whether the page last built has entries sharing a line (page_row_nav steers by line then).
+extern bool s_page_rows;
+
+// One RDRAM text buffer per id, kept for the session, and its rewrite.
+uint32_t live_buffer(uint8_t* rdram, const std::string& id);
+void write_live(uint8_t* rdram, uint32_t vaddr, const std::string& s);
+
+void apply_title(uint8_t* rdram, const std::string& menu);
+const char* back_text();
+
+// A host page's string in the shown language: English, German and French built in, and a text key ("mods.<key>") language mods and menu_text.json can translate.
+std::string mods_text(const char* key, const char* en, const char* de, const char* fr);
+
+// Last tap/click on a menu entry (rs64_menu_slider_click).
+extern std::atomic<int> s_click_key;
+extern std::atomic<float> s_click_frac;
+extern std::atomic<uint32_t> s_click_ms;
+
+// ---- Host-built list screens ----
+
+// Row layout the Controls list and the MODS page share; rows end at the end stop with the font's blank glyph so they have one width.
+constexpr int kCtlPitch = 36, kCtlBackGap = 10, kCtlX = 15;
+constexpr const char* kCtlRowEnd = "\t`";
+
+// Mouse wheel notches from the SDL thread (up positive), taken by the list screens' passes as up/down steps.
+extern std::atomic<int> s_ctl_wheel;
+
+bool controls_enabled();
+bool controls_on_screen(uint8_t* rdram);
+int controls_install(uint8_t* rdram);
+bool controls_confirm(uint8_t* rdram, int e);
+void controls_pass(uint8_t* rdram, recomp_context* ctx);
+void controls_frame(uint8_t* rdram, recomp_context* ctx);
+
+constexpr const char* kModsPage = "mods";
+constexpr int kModsTopY = -136;
+
+// The small white text line under a page title (the MODS description, a page's note): hatten13, text group 8, slot 1.
+constexpr uint32_t kModsDescFont = 8, kModsDescFontSlot = 1;
+
+bool mods_on_screen(uint8_t* rdram);
+int mods_install(uint8_t* rdram, uint8_t parent);
+bool mods_confirm(uint8_t* rdram, int e);
+void mods_pass(uint8_t* rdram, recomp_context* ctx);
+void mods_frame(uint8_t* rdram, recomp_context* ctx);
+void mods_draw_desc(uint8_t* rdram, recomp_context* ctx, const std::string& text, int y = kModsTopY);
+
+bool langs_on_screen(uint8_t* rdram);
+
+// ---- menu_font.cpp ----
+
+int font_glyph(uint8_t* rdram, uint32_t font, char c);
+int font_width(uint8_t* rdram, uint32_t font, const std::string& s, int gap);
+void ensure_menu_period(uint8_t* rdram);
+void show_menu_lock(uint8_t* rdram, bool lock);
+
+// ---- menu_typing.cpp ----
+
+// Each menu pass: text input follows whether a letter wheel ran on the previous pass.
+void typing_pass();
 
 }
