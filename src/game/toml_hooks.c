@@ -2732,3 +2732,36 @@ void rs64_th_runModelViewerLoop_800CA51C(uint8_t* rdram, recomp_context* ctx) {
         rs64_scene_skipped("crawl_skips");
     }
 }
+
+// load_level_hmp entry: $a1 is the level's folder, which its Soft paint file is named after.
+void rs64_th_load_level_hmp_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_paint_level_dir(rdram, (uint32_t)ctx->r5);
+}
+
+// loadLevelTextureCache 0x800483A8, just after level/tex is opened.
+void rs64_th_loadLevelTextureCache_800483A8(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_paint_open(rdram, ctx);
+}
+
+void rs64_th_teardownGridLayerWorker_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_paint_close(rdram, ctx);
+}
+
+// The terrain texture worker's read (setupAssetDma 0x80049688): $v1 is the _TEX field, $a2 the level/tex file, $a3 field * 65 (the delay slot makes it x 2080).
+// A painted field reads its entry from the level's paint file; one that can't be loaded falls back to the bank's first texture.
+void rs64_th_hudDisplayUpdateWorker_80049688(uint8_t* rdram, recomp_context* ctx) {
+
+    uint32_t handle = 0;
+    uint32_t index = 0;
+    const int painted = rs64_paint_dma((uint32_t)ctx->r3 & 0xFFFFu, &handle, &index);
+
+    if (painted > 0) {
+        ctx->r6 = (gpr)(int32_t)handle;
+        ctx->r7 = (gpr)(int32_t)(index * 65u);
+    } else if (painted < 0) {
+        ctx->r7 = 0;
+    }
+}

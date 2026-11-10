@@ -3760,6 +3760,241 @@ function rs64Lib()
     return out;
   }
 
+  const TERRAIN_TEX_BYTES = 2080;
+
+  // The inverse of decodeTerrainTex: up to 16 colours by median cut over RGB555 (alpha is ignored), nearest-colour indices, TMEM-swizzled rows.
+  function encodeTerrainTex(rgba)
+  {
+    const counts = new Map();
+
+    for (let i = 0; i < 4096; i++)
+    {
+      const k = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
+
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+
+    const chan = (k, ch) => (k >> (10 - ch * 5)) & 31;
+    const boxes = [[...counts.keys()]];
+
+    const spread = (box) => {
+      let best = { ch: 0, range: -1 };
+
+      for (let ch = 0; ch < 3; ch++)
+      {
+        const vals = box.map((k) => chan(k, ch));
+        const range = Math.max(...vals) - Math.min(...vals);
+
+        if (range > best.range)
+          best = { ch, range };
+      }
+
+      return best;
+    };
+
+    while (boxes.length < 16)
+    {
+      let pick = -1;
+      let score = 0;
+
+      boxes.forEach((box, i) => {
+        const s = spread(box).range * box.reduce((n, k) => n + counts.get(k), 0);
+
+        if (box.length > 1 && s > score) {
+          pick = i;
+          score = s;
+        }
+      });
+
+      if (pick < 0)
+        break;
+
+      const box = boxes[pick];
+      const { ch } = spread(box);
+
+      box.sort((a, b) => chan(a, ch) - chan(b, ch));
+
+      const total = box.reduce((n, k) => n + counts.get(k), 0);
+      let acc = 0;
+      let cut = 1;
+
+      for (; cut < box.length - 1; cut++)
+      {
+        acc += counts.get(box[cut - 1]);
+
+        if (acc * 2 >= total)
+          break;
+      }
+
+      boxes.splice(pick, 1, box.slice(0, cut), box.slice(cut));
+    }
+
+    const palette = boxes.map((box) => {
+      const total = box.reduce((n, k) => n + counts.get(k), 0);
+
+      return [0, 1, 2].map((ch) => Math.round(box.reduce((s, k) => s + chan(k, ch) * counts.get(k), 0) / total));
+    });
+
+    const out = new Uint8Array(TERRAIN_TEX_BYTES);
+    const dv = new DataView(out.buffer);
+
+    palette.forEach(([r, g, b], i) => dv.setUint16(2048 + i * 2, (r << 11) | (g << 6) | (b << 1) | 1));
+
+    const rgb = palette.map((p) => p.map(c5));
+
+    for (let i = 0; i < 4096; i++)
+    {
+      let best = 0;
+      let bestD = Infinity;
+
+      for (let p = 0; p < rgb.length; p++)
+      {
+        const d = (rgb[p][0] - rgba[i * 4]) ** 2 + (rgb[p][1] - rgba[i * 4 + 1]) ** 2 + (rgb[p][2] - rgba[i * 4 + 2]) ** 2;
+
+        if (d < bestD) {
+          best = p;
+          bestD = d;
+        }
+      }
+
+      const src = (i >> 6) & 1 ? i ^ 8 : i;
+
+      out[src >> 1] |= src & 1 ? best : best << 4;
+    }
+
+    return out;
+  }
+
+  // Painted cells live in a per-level file of bank-layout entries; a _TEX bank field 0x2000 + i is its entry i. The game itself uses the top
+  // two bits (0x8000 + id borrows another id's texture, 0x4000 is set while loaded), so painted fields keep them clear.
+  const PAINT_MARK = 0x2000;
+  const paintPath = (dir) => dir + '_PAINT';
+  const isPainted = (bankField) => (bankField & 0xE000) === PAINT_MARK;
+
+  const terrainTexRGBA = (bank, paint, bankField) => (isPainted(bankField) ? decodeTerrainTex(paint, bankField & 0x1FFF) : decodeTerrainTex(bank, bankField));
+
+  // Bakes cells (Map cell -> 64x64 RGBA) into the level: a result that decodes like one of the level's textures reuses it, else a new paint
+  // entry and a new plain _TEX id inserted at the HMP's plain count (+0x1A), ahead of the animated blocks. Inputs are left as they were on error.
+  function paintApply({ hmp, tex, paint, grid, bank, cells })
+  {
+    const hv = viewOf(hmp);
+    const tv = viewOf(tex);
+    const plain = hv.getUint16(0x1A);
+    const pv = new DataView(paint.buffer, paint.byteOffset, paint.byteLength);
+    const paintCount = paint.length / TERRAIN_TEX_BYTES;
+    const keyOf = (rgba) => crc32(rgba) + ':' + rgba.length;
+    const idOf = new Map();
+
+    for (let id = 0; id < plain; id++)
+    {
+      const f = tv.getUint16(id * 4);
+
+      if (isPainted(f) ? (f & 0x1FFF) < paintCount : f < PAINT_MARK && (f + 1) * TERRAIN_TEX_BYTES <= bank.byteLength)
+      {
+        const key = keyOf(terrainTexRGBA(bank, pv, f));
+
+        if (!idOf.has(key))
+          idOf.set(key, id);
+      }
+    }
+
+    // Cells whose texture the level already has take it; the rest wait (NEW) until the painted ids nothing uses any more are known.
+    const NEW = 0xFFFF;
+    const added = [];
+    const recycled = [];
+    const ids = grid.tex.slice();
+    const pending = [];
+
+    for (const [cell, rgba] of cells)
+    {
+      const enc = encodeTerrainTex(rgba);
+      const key = keyOf(decodeTerrainTex(new DataView(enc.buffer), 0));
+
+      ids[cell] = idOf.get(key) ?? NEW;
+      pending.push([cell, key, enc]);
+    }
+
+    const used = new Set(ids);
+    const free = [];
+
+    for (let id = 0; id < plain; id++)
+    {
+      const f = tv.getUint16(id * 4);
+
+      if (isPainted(f) && (f & 0x1FFF) < paintCount && !used.has(id))
+        free.push(id);
+    }
+
+    for (const [cell, key, enc] of pending)
+    {
+      if (ids[cell] !== NEW)
+        continue;
+
+      if (!idOf.has(key) && free.length) {
+        const id = free.shift();
+
+        recycled.push([tv.getUint16(id * 4) & 0x1FFF, enc]);
+        idOf.set(key, id);
+      } else if (!idOf.has(key))
+      {
+        if (paintCount + added.length >= PAINT_MARK)
+          throw new Error(`This level holds ${PAINT_MARK} painted textures`);
+
+        idOf.set(key, plain + added.length);
+        added.push(enc);
+      }
+
+      ids[cell] = idOf.get(key);
+    }
+
+    const outTex = new Uint8Array(tex.length + added.length * 4);
+    const ov = new DataView(outTex.buffer);
+
+    outTex.set(tex.subarray(0, plain * 4));
+    added.forEach((_, i) => ov.setUint16((plain + i) * 4, PAINT_MARK | (paintCount + i)));
+    outTex.set(tex.subarray(plain * 4), (plain + added.length) * 4);
+
+    const outPaint = new Uint8Array(paint.length + added.length * TERRAIN_TEX_BYTES);
+
+    outPaint.set(paint);
+    recycled.forEach(([i, e]) => outPaint.set(e, i * TERRAIN_TEX_BYTES));
+    added.forEach((e, i) => outPaint.set(e, paint.length + i * TERRAIN_TEX_BYTES));
+
+    const outHmp = writeHMP(hmp, { ...grid, tex: ids });
+
+    new DataView(outHmp.buffer).setUint16(0x1A, plain + added.length);
+    grid.tex.set(ids);
+
+    return { hmp: outHmp, tex: outTex, paint: outPaint };
+  }
+
+  // One edited asset in an exported mod: a BPS patch of the original, or the whole file when the asset is new (original null).
+  const modAssetFile = (path, original, now) => {
+    const name = 'assets/' + path.replace(/^data\//, '');
+
+    return original ? { name: name + '.bps', data: encodeBPS(original, now) } : { name, data: now.slice() };
+  };
+
+  // The most distinct textures within r cells (a square) of any cell: what the game's texture cache must hold around the camera.
+  function paintBudget(keys, w, h, r = 10)
+  {
+    let best = 0;
+
+    for (let cy = 0; cy < h; cy++)
+      for (let cx = 0; cx < w; cx++)
+      {
+        const seen = new Set();
+
+        for (let y = Math.max(0, cy - r); y <= Math.min(h - 1, cy + r); y++)
+          for (let x = Math.max(0, cx - r); x <= Math.min(w - 1, cx + r); x++)
+            seen.add(keys[y * w + x]);
+
+        best = Math.max(best, seen.size);
+      }
+
+    return best;
+  }
+
   // ---- DAT: level items (only the common header is understood) ----
 
   const DAT_TYPES = { 0: 0x04, 2: 0x14, 3: 0x1C, 6: 0x34, 7: 0x3C };
@@ -9498,7 +9733,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

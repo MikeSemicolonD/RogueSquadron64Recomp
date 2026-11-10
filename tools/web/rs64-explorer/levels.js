@@ -5853,7 +5853,8 @@ async function modFiles(id, name, keys = null)
       continue;
     }
 
-    files.push({ name: `assets/${path.replace(/^data\//, '')}.bps`, data: encodeBPS(edits.get(path), u8(now)) });
+    // A level's painted textures are a new file, not a patch of one in the game.
+    files.push(modAssetFile(path, path.endsWith('_PAINT') ? null : edits.get(path), u8(now)));
   }
 
   if (menuKeys.size)
@@ -5923,6 +5924,11 @@ async function exportLinks(items)
 
   if (items.some((p) => /^(menu|page):/.test(p)))
     out.push(...menuLinks(menuParse(await virtualText(MENU_FILE)).doc));
+
+  // Soft paint: a level's painted textures, its _TEX and its map only work together.
+  for (const p of items.filter((x) => x.endsWith('_PAINT')))
+    for (const other of [p.replace(/_PAINT$/, '_TEX'), p.replace(/_PAINT$/, '/hmp')].filter((x) => set.has(x)))
+      out.push([p, other]);
 
   return [...new Map(out.map((l) => [l.join('\n'), l])).values()];
 }

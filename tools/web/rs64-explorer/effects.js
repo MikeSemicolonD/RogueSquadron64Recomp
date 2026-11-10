@@ -1588,6 +1588,11 @@ async function showModel(id, objIndex = -1, keepView = false)
   renderList();
 
   const model = await loadModel(id);
+
+  // Something else was opened while this model loaded (a level opened right after the ROM, say): leave the view to it.
+  if (selected !== id)
+    return;
+
   const { hob, hmt } = model;
   const sel = $('objSel');
 
@@ -1630,6 +1635,10 @@ async function showModel(id, objIndex = -1, keepView = false)
   pivot.add(group);
   setRoot(pivot);
   await setupAnimations(id, group.children[0]);
+
+  if (selected !== id)
+    return;
+
   setupFoils(id, group.children[0]);
   setupExhaust(group.children[0]);
   await lightsShow(group);
@@ -1665,7 +1674,9 @@ const TERRAIN_PAD = 20;
 // Where a craft on this path starts: the game's route runs from the second point, the first only shapes the curve.
 const pathStart = (path) => path.points[1] ?? path.points[0];
 
-function buildTerrain(hmp, texIds, bank)
+// paint: the level's painted textures (paintPath), for _TEX fields with PAINT_MARK. spare: extra atlas slots that paintCell(cell, rgba) fills to show a cell image
+// during a Soft paint stroke; it returns false once they run out.
+function buildTerrain(hmp, texIds, bank, paint = null, spare = 0)
 {
   const P = TERRAIN_PAD;
   const TW = hmp.w + 2 * P;
@@ -1698,18 +1709,19 @@ function buildTerrain(hmp, texIds, bank)
 
   const cols = 16;
   const AW = cols * 64;
-  const AH = Math.max(1, Math.ceil(slots.size / cols)) * 64;
+  const AH = Math.max(1, Math.ceil((slots.size + spare) / cols)) * 64;
   const atlas = new Uint8Array(AW * AH * 4).fill(255);
 
-  for (const [bankId, slot] of slots)
-  {
-    const px = decodeTerrainTex(bank, bankId);
+  const putSlot = (slot, px) => {
     const ox = (slot % cols) * 64;
     const oy = ((slot / cols) | 0) * 64;
 
     for (let y = 0; y < 64; y++)
       atlas.set(px.subarray(y * 256, y * 256 + 256), ((oy + y) * AW + ox) * 4);
-  }
+  };
+
+  for (const [bankId, slot] of slots)
+    putSlot(slot, terrainTexRGBA(bank, paint, bankId));
 
   for (let i = 3; i < atlas.length; i += 4)
     atlas[i] = 255;
@@ -1745,8 +1757,12 @@ function buildTerrain(hmp, texIds, bank)
         writeTile(hm, tx, ty);
   };
 
+  // Soft paint previews: map cell -> atlas slot past the level's own textures.
+  const cellSlot = new Map();
+
   const writeTile = (hm, tx, ty) => {
-    const slot = slots.get(texIds[tileOf(hm, tx, ty)?.tex]) ?? 0;
+    const cell = Math.min(hm.h - 1, Math.max(0, ty)) * hm.w + Math.min(hm.w - 1, Math.max(0, tx));
+    const slot = cellSlot.get(cell) ?? slots.get(texIds[tileOf(hm, tx, ty)?.tex]) ?? 0;
     const u0 = (slot % cols) * 64 + 0.5;
     const v0 = ((slot / cols) | 0) * 64 + 0.5;
     const base = ((ty + P) * TW + tx + P) * n * n;
@@ -1827,18 +1843,47 @@ function buildTerrain(hmp, texIds, bank)
     return true;
   };
 
-  return { g, map, tris: idx.length / 3, update };
+  const paintCell = (cell, rgba) => {
+    let slot = cellSlot.get(cell);
+
+    if (slot === undefined) {
+      if (cellSlot.size >= spare)
+        return false;
+
+      slot = slots.size + cellSlot.size;
+      cellSlot.set(cell, slot);
+    }
+
+    const px = rgba.slice();
+
+    for (let i = 3; i < px.length; i += 4)
+      px[i] = 255;
+
+    putSlot(slot, px);
+    map.needsUpdate = true;
+
+    const tx = cell % hmp.w;
+    const ty = Math.floor(cell / hmp.w);
+
+    // Border tiles past the map edge repeat the edge cells, so an edge cell redraws its share of the border too.
+    writeTiles(hmp, tx === 0 ? -P : tx, ty === 0 ? -P : ty, tx === hmp.w - 1 ? hmp.w + P - 1 : tx, ty === hmp.h - 1 ? hmp.h + P - 1 : ty);
+    g.attributes.uv.needsUpdate = true;
+
+    return true;
+  };
+
+  return { g, map, tris: idx.length / 3, update, paintCell };
 }
 
 // Terrain geometry and atlas are cached per level and terrain LOD (cleared with the other caches); the mesh and material are rebuilt.
 const terrainCache = new Map();
 
-function terrainMesh(hmp, texIds, bank, key)
+function terrainMesh(hmp, texIds, bank, key, paint = null)
 {
   if (!terrainCache.has(key))
-    terrainCache.set(key, buildTerrain(hmp, texIds, bank));
+    terrainCache.set(key, buildTerrain(hmp, texIds, bank, paint));
 
-  const { g, map, tris, update } = terrainCache.get(key);
+  const { g, map, tris, update, paintCell } = terrainCache.get(key);
 
   texCache.set('terrain', { map });
 
@@ -1850,6 +1895,7 @@ function terrainMesh(hmp, texIds, bank, key)
   m.userData.terrain = map;
   m.userData.tiles = { hmp, texIds };
   m.userData.update = update;
+  m.userData.paintCell = paintCell;
 
   return { mesh: m, tris };
 }
@@ -1939,8 +1985,13 @@ async function showLevel(dir, keepView = false, skyOverride = null)
   {
     hmp = parseHMP(await rom.read(dir + '/hmp'));
 
-    const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
-    const t = terrainMesh(hmp, texIds, bank, dir + '|' + $('optTerrainLod').value);
+    const [texIds, bank, paint] = await Promise.all([
+      rom.read(stockDir(dir) + '_TEX').then(parseTexTable),
+      rom.read('data/level/tex'),
+      rom.read(paintPath(dir)).catch(() => null)
+    ]);
+
+    const t = terrainMesh(hmp, texIds, bank, dir + '|' + $('optTerrainLod').value, paint);
 
     // Bilinear ground height on the 0.5-unit vertex grid (4x4 quads per 2-unit tile).
     const gw = hmp.w * 4;

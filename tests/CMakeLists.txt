@@ -110,6 +110,13 @@ add_executable(terrain_edit_test EXCLUDE_FROM_ALL
 set_target_properties(terrain_edit_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(terrain_edit_test PRIVATE ${RS64_ROOT}/src)
 
+# Standalone unit test for Soft paint textures (merging a level's painted textures into its bank).
+add_executable(terrain_paint_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/terrain_paint_test.cpp
+)
+set_target_properties(terrain_paint_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(terrain_paint_test PRIVATE ${RS64_ROOT}/src)
+
 # Standalone unit test for language mods (parsing, code page, glyph packs).
 add_executable(lang_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/lang_test.cpp
@@ -171,7 +178,7 @@ add_executable(style_check EXCLUDE_FROM_ALL
 )
 set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
-set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test level_environment_test crosshair_match_test hud_placement_test game_rate_test rs64_lights_test menu_layout_test mods_page_test lang_test terrain_edit_test mcp_framing_test)
+set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test level_environment_test crosshair_match_test hud_placement_test game_rate_test rs64_lights_test menu_layout_test mods_page_test lang_test terrain_edit_test terrain_paint_test mcp_framing_test)
 set(RS64_TESTS ${RS64_BASE_TESTS} mp_core_test net_core_test net_link_test relay_core_test relay_client_test)
 
 if (MSVC)

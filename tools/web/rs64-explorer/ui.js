@@ -454,7 +454,7 @@ const dirty = new Set();
 
 // The edited game assets a mod exports (the explorer/ authoring sidecars stay in the project).
 const modDirty = () => [...dirty].filter((p) => !p.startsWith('explorer/'));
-const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/');
+const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/') || p.endsWith('_PAINT');
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 let history = createHistory();
 
@@ -1263,13 +1263,36 @@ async function loadSculpt()
   const dv = await rom.read(dir + '/hmp');
   const base = u8(dv).slice();
   const hmp = parseHMP(dv);
-  const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
 
-  sculpt = { dir, base, grid: hmpGrid(hmp), texIds, bank, undo: [], tex: null, bytes: null, scale: dv.getFloat32(0x10) };
+  const [texDv, bank, paintDv] = await Promise.all([
+    rom.read(stockDir(dir) + '_TEX'),
+    rom.read('data/level/tex'),
+    rom.read(paintPath(dir)).catch(() => new DataView(new ArrayBuffer(0)))
+  ]);
+
+  const texIds = parseTexTable(texDv);
+
+  // Soft paint: texBytes / paintBytes are the level's _TEX and painted textures, cells the stroke's working 64x64 images (cell -> RGBA).
+  sculpt = {
+    dir,
+    base,
+    grid: hmpGrid(hmp),
+    texIds,
+    bank,
+    texBytes: u8(texDv).slice(),
+    paintBytes: u8(paintDv).slice(),
+    cells: new Map(),
+    undo: [],
+    tex: null,
+    bytes: null,
+    scale: dv.getFloat32(0x10)
+  };
+
   sculpt.committed = sculpt.grid.hts.slice();
   controls.mouseButtons.LEFT = null;
   fillSculptPalette();
   sculptBudget(hmp.tiles.length);
+  paintBudgetShow();
   sculptStatus('');
   showTileGrid();
 
@@ -1286,6 +1309,24 @@ function sculptStatus(text)
 {
   if (sculpt)
     $('sculptInfo').textContent = [text, sculpt.notice].filter(Boolean).join(' · ');
+}
+
+// How many different textures the busiest stretch of ground uses (the game keeps about 300 loaded around the player); shown once the level has Soft paint.
+const PAINT_BUDGET = 300;
+
+function paintBudgetShow()
+{
+  const row = $('paintBudgetRow');
+
+  row.hidden = !sculpt?.paintBytes.length;
+
+  if (row.hidden)
+    return;
+
+  const n = paintBudget(Array.from(sculpt.grid.tex, (id) => sculpt.texIds[id]), sculpt.grid.w, sculpt.grid.h);
+
+  $('paintBudget').value = n;
+  row.title = n > PAINT_BUDGET ? `${n} textures: over ${PAINT_BUDGET}, the game may not load every painted texture nearby` : `${n} of ${PAINT_BUDGET} textures near the busiest spot`;
 }
 
 function sculptBudget(tiles)
@@ -1306,7 +1347,7 @@ function fillSculptPalette() {
   pal.textContent = '';
 
   sculpt.texIds.forEach((id, k) => {
-    if (id === undefined)
+    if (id === undefined || id >= PAINT_MARK)
       return;
 
     const c = elem('canvas', { width: 64, height: 64, title: 'Paint with this texture', role: 'option' });
@@ -1315,7 +1356,9 @@ function fillSculptPalette() {
     c.dataset.tex = k;
 
     c.onclick = () => {
-      $('sculptTool').value = 'paint';
+      if ($('sculptTool').value !== 'blend')
+        $('sculptTool').value = 'paint';
+
       setSculptTex(k);
       sculptToolChanged();
     };
@@ -1433,7 +1476,7 @@ function terrainRay(e, terrain)
 const inMap = (h) => h.gx >= 0 && h.gy >= 0 && h.gx <= sculpt.grid.W - 1 && h.gy <= sculpt.grid.H - 1;
 
 // The brush outline draped on the ground under the cursor, coloured by tool.
-const SCULPT_RING_COLORS = { raise: 0x6fdc6f, lower: 0xff7a5c, flatten: 0xe8d04a, smooth: 0x6fb8ff, paint: 0xd08cff, pick: 0xffffff };
+const SCULPT_RING_COLORS = { raise: 0x6fdc6f, lower: 0xff7a5c, flatten: 0xe8d04a, smooth: 0x6fb8ff, paint: 0xd08cff, pick: 0xffffff, blend: 0xff9ad8 };
 const sculptRing = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(65 * 3), 3)), new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
 
 // A faint disc under the 1-pixel outline, so the brush reads on any ground: a fan from the centre (vertex 65) over the ring's points.
@@ -1517,7 +1560,7 @@ function sculptHover(e)
 canvas.addEventListener('pointermove', sculptHover);
 const brushTool = (h) => (h.pick ? 'pick' : (h.swap ? { raise: 'lower', lower: 'raise' }[$('sculptTool').value] ?? $('sculptTool').value : $('sculptTool').value));
 
-// Terrain-mode keys: 1-6 pick the tool, [ and ] shrink and grow the brush.
+// Terrain-mode keys: 1-7 pick the tool, [ and ] shrink and grow the brush.
 function sculptKey(e)
 {
   const tools = [...document.querySelectorAll('[data-sculpt]')].map((b) => b.dataset.sculpt);
@@ -1545,8 +1588,23 @@ function sculptKey(e)
 // The palette shows only for the texture tools, keeping the panel short.
 function sculptToolChanged()
 {
-  $('sculptPalette').hidden = !['paint', 'pick'].includes($('sculptTool').value);
+  const blend = $('sculptTool').value === 'blend';
+
+  $('sculptPalette').hidden = !['paint', 'pick', 'blend'].includes($('sculptTool').value);
   $('sculptFlatRow').hidden = $('sculptTool').value !== 'flatten';
+  $('btnTriplanar').hidden = !blend;
+  $('btnTriplanar').classList.toggle('on', sculptTriplanar);
+  $('sculptStrength').closest('label').title = blend ? 'How much each brush step covers the ground with the texture' : "Height change per brush step, in the level's stored height units";
+
+  // Soft paint keeps the level's own texture list, which a mod level shares with the level it is built on.
+  const modLevel = !!sculpt && stockDir(sculpt.dir) !== sculpt.dir;
+  const b = document.querySelector('[data-sculpt=blend]');
+
+  b.disabled = modLevel;
+  b.title = modLevel ? 'Soft paint works on stock levels' : 'Soft paint (7)';
+
+  if (modLevel && blend)
+    $('sculptTool').value = 'paint';
 
   for (const b of document.querySelectorAll('[data-sculpt]'))
     b.classList.toggle('on', b.dataset.sculpt === $('sculptTool').value);
@@ -1554,6 +1612,14 @@ function sculptToolChanged()
   for (const b of document.querySelectorAll('[data-shape]'))
     b.classList.toggle('on', b.dataset.shape === $('sculptShape').value);
 }
+
+// Soft paint follows the slope (triplanar) instead of laying the texture flat from above, so cliffs don't stretch it.
+let sculptTriplanar = false;
+
+$('btnTriplanar').onclick = () => {
+  sculptTriplanar = !sculptTriplanar;
+  sculptToolChanged();
+};
 
 for (const [attr, input] of [['sculpt', 'sculptTool'], ['shape', 'sculptShape']])
   for (const b of document.querySelectorAll(`[data-${attr}]`))
@@ -1624,6 +1690,95 @@ function brushPaint(g, gx, gy, r, texture, square = false) {
   return brushBox(g, gx, gy, r);
 }
 
+// A cell's working image for Soft paint (floats, so faint strokes add up): its current texture until a stroke changes it.
+function cellImage(cell)
+{
+  if (!sculpt.cells.has(cell))
+  {
+    const paint = new DataView(sculpt.paintBytes.buffer, sculpt.paintBytes.byteOffset, sculpt.paintBytes.byteLength);
+
+    sculpt.cells.set(cell, Float32Array.from(terrainTexRGBA(sculpt.bank, paint, sculpt.texIds[sculpt.grid.tex[cell]] ?? 0)));
+  }
+
+  return sculpt.cells.get(cell);
+}
+
+const imageBytes = (img) => Uint8Array.from(img, (v) => Math.max(0, Math.min(255, Math.round(v))));
+
+// Soft paint: blends texture src (64x64 RGBA) into every cell image the brush covers, per texel, with the height brush's falloff times opacity.
+// Texel (x, y) of a cell sits at grid point (cx * 4 + x / 16, cy * 4 + 4 - y / 16) (texture rows run opposite to z, as buildTerrain maps them).
+// triplanar samples src by world position along the surface normal (top, X and Z projections, sharpness 4) so it follows cliffs and lines up
+// across cells; otherwise it lies flat, one copy per cell. Returns the cells touched, or false.
+function brushBlend(g, gx, gy, r, src, { opacity, square = false, hard = false, triplanar = false })
+{
+  const box = brushBox(g, gx, gy, r);
+  const touched = [];
+
+  const sample = (u, v) => {
+    const x = ((Math.floor(u * 64) % 64) + 64) % 64;
+    const y = ((Math.floor(v * 64) % 64) + 64) % 64;
+
+    return (y * 64 + x) * 4;
+  };
+
+  for (let cy = box.y0; cy <= box.y1; cy++)
+    for (let cx = box.x0; cx <= box.x1; cx++)
+    {
+      const cell = cy * g.w + cx;
+      let img = null;
+
+      for (let y = 0; y < 64; y++)
+        for (let x = 0; x < 64; x++)
+        {
+          const px = cx * 4 + (x + 0.5) / 16;
+          const py = cy * 4 + 4 - (y + 0.5) / 16;
+          const d = brushDist(px - gx, py - gy, square);
+
+          if (d > r)
+            continue;
+
+          let w = hard ? 1 : 1 - d / r;
+
+          w = w * w * (3 - 2 * w) * opacity;
+          img ??= cellImage(cell);
+
+          const o = (y * 64 + x) * 4;
+
+          if (!triplanar)
+          {
+            for (let k = 0; k < 3; k++)
+              img[o + k] += (src[o + k] - img[o + k]) * w;
+
+            continue;
+          }
+
+          // World units: a grid step is 0.5, a cell (one texture repeat) is 2.
+          const wx = px / 2;
+          const wz = py / 2;
+          const h = groundAt(g.hts, g, sculpt.scale, wx, wz);
+          const nx = groundAt(g.hts, g, sculpt.scale, wx - 0.25, wz) - groundAt(g.hts, g, sculpt.scale, wx + 0.25, wz);
+          const nz = groundAt(g.hts, g, sculpt.scale, wx, wz - 0.25) - groundAt(g.hts, g, sculpt.scale, wx, wz + 0.25);
+          const a = [Math.abs(nx) ** 4, 0.5 ** 4, Math.abs(nz) ** 4];
+          const sum = a[0] + a[1] + a[2];
+          const top = sample(wx / 2, 1 - wz / 2);
+          const side = sample(wz / 2, h / 2);
+          const front = sample(wx / 2, h / 2);
+
+          for (let k = 0; k < 3; k++)
+          {
+            const c = (a[0] * src[side + k] + a[1] * src[top + k] + a[2] * src[front + k]) / sum;
+
+            img[o + k] += (c - img[o + k]) * w;
+          }
+        }
+
+      if (img)
+        touched.push(cell);
+    }
+
+  return touched.length ? touched : false;
+}
+
 const brushShape = () => ({ square: $('sculptShape').value === 'square' });
 
 // Applies the panel's brush at grid point (gx, gy); returns the map tiles it may have changed ({ x0, y0, x1, y1 }) or false.
@@ -1647,6 +1802,9 @@ function brush(h)
 
   return brushHeights(g, gx, gy, r, tool, { amount: s, flat: sculpt.flat, mix: s * 0.1, ...brushShape() });
 }
+
+// Atlas slots a sculpt mesh keeps free for Soft paint previews; a stroke that fills them rebuilds with twice as many.
+const SOFT_PAINT_SPARE = 1024;
 
 // Re-tiles the grid and updates the terrain mesh, in place for the tiles in box when the sculpt mesh allows it, else as a new mesh;
 // returns the new HMP bytes (null when it does not fit).
@@ -1677,16 +1835,18 @@ function rebuildTerrain(box = null)
   }
 
   // A new mesh rather than a geometry swap: the WebGPU renderer keeps drawing a mesh's first geometry.
-  const t = buildTerrain(hmp, sculpt.texIds, sculpt.bank);
+  const paint = new DataView(sculpt.paintBytes.buffer, sculpt.paintBytes.byteOffset, sculpt.paintBytes.byteLength);
+  const t = buildTerrain(hmp, sculpt.texIds, sculpt.bank, paint, sculpt.spare ?? SOFT_PAINT_SPARE);
+
+  // A node material's clone drops its map, so the atlas is set again here.
   const material = terrain.material.clone();
 
-  if (material.map)
-    material.map = t.map;
+  material.map = $('optTex').checked ? t.map : null;
 
   const mesh = new THREE.Mesh(t.g, material);
 
   mesh.name = 'terrain';
-  mesh.userData = { ...terrain.userData, terrain: t.map, tiles: { hmp, texIds: sculpt.texIds }, update: t.update };
+  mesh.userData = { ...terrain.userData, terrain: t.map, tiles: { hmp, texIds: sculpt.texIds }, update: t.update, paintCell: t.paintCell };
   mesh.position.copy(terrain.position);
   mesh.quaternion.copy(terrain.quaternion);
   mesh.scale.copy(terrain.scale);
@@ -1783,6 +1943,7 @@ async function commitTerrain(bytes) {
 
   sculpt.committed = sculpt.grid.hts.slice();
   showTileGrid();
+  paintBudgetShow();
 }
 
 // Heightmap as an 8-bit grey PNG, one pixel per grid point (the 256 stored height steps); white is high (game Y is down).
@@ -1878,9 +2039,104 @@ canvas.addEventListener('pointerdown', (e) => {
   strokeStep(h);
 });
 
+// Shows the stroke's cell images on the terrain; a mesh without room for them (the level view's, or one whose spare slots ran out) is rebuilt with more.
+function previewCells(cells)
+{
+  const show = (list) => {
+    const terrain = root?.getObjectByName('terrain');
+
+    return !terrain || list.every((c) => terrain.userData.paintCell?.(c, imageBytes(sculpt.cells.get(c))));
+  };
+
+  if (show(cells))
+    return;
+
+  if (root.getObjectByName('terrain').userData.paintCell)
+    sculpt.spare = Math.max(SOFT_PAINT_SPARE, (sculpt.spare ?? 0) * 2, sculpt.cells.size * 2);
+
+  rebuildTerrain();
+  show([...sculpt.cells.keys()]);
+}
+
+function softPaintStep(h)
+{
+  if (sculpt.tex == null)
+    return;
+
+  const g = sculpt.grid;
+  const id = sculpt.texIds[sculpt.tex];
+
+  if (sculpt.srcId !== id) {
+    sculpt.src = decodeTerrainTex(sculpt.bank, id);
+    sculpt.srcId = id;
+  }
+
+  const touched = brushBlend(g, h.gx, h.gy, +$('sculptRadius').value, sculpt.src, {
+    opacity: +$('sculptStrength').value / 20,
+    triplanar: sculptTriplanar,
+    ...brushShape()
+  });
+
+  if (!touched)
+    return;
+
+  stroke.cells ??= new Set();
+  touched.forEach((c) => stroke.cells.add(c));
+  stroke.dirty = true;
+  previewCells(touched);
+}
+
+// Bakes a Soft paint stroke into the level (HMP, _TEX and the painted textures) as one undo step; a stroke the level can't hold is dropped
+// (false, the reason in sculpt.notice).
+async function commitSoftPaint(cells)
+{
+  const dir = sculpt.dir;
+  const images = new Map([...cells].map((c) => [c, imageBytes(sculpt.cells.get(c))]));
+  let out;
+
+  try {
+    out = paintApply({ hmp: sculpt.base, tex: sculpt.texBytes, paint: sculpt.paintBytes, grid: sculpt.grid, bank: sculpt.bank, cells: images });
+  } catch (err) {
+    sculpt.notice = err.message;
+  }
+
+  sculpt.cells.clear();
+
+  if (!out)
+  {
+    rebuildTerrain();
+    sculptStatus('');
+
+    return false;
+  }
+
+  sculpt.base = out.hmp;
+  sculpt.texBytes = out.tex;
+  sculpt.paintBytes = out.paint;
+  sculpt.texIds = parseTexTable(new DataView(out.tex.buffer));
+
+  await historyGroup('Soft paint', async () => {
+    await editAsset(dir + '/hmp', () => out.hmp);
+    await editAsset(dir + '_TEX', () => out.tex);
+    await editAsset(paintPath(dir), () => out.paint);
+
+    for (const k of [...terrainCache.keys()])
+      if (k.startsWith(dir + '|'))
+        terrainCache.delete(k);
+  });
+
+  rebuildTerrain();
+  paintBudgetShow();
+
+  return true;
+}
+
 // The stroke's tiles so far: a step over the tile limit leaves the mesh behind, so the next one updates everything since the stroke began.
 function strokeStep(h)
 {
+  if (brushTool(h) === 'blend')
+    return softPaintStep(h);
+
   const b = brush(h);
 
   if (!b)
@@ -1924,6 +2180,9 @@ canvas.addEventListener('pointerup', async (e) => {
 
   if (!s.dirty)
     return;
+
+  if (s.cells)
+    return commitSoftPaint(s.cells);
 
   if (!s.bytes)
   {

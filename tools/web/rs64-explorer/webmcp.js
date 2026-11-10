@@ -1743,13 +1743,13 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_terrain_brush',
     edit: true,
-    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius. square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
+    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius; "blend" soft-paints texture over the ground with the same falloff, strength 0-1 its opacity at the centre, not tied to tiles (stock levels only; triplanar: true wraps it along slopes instead of stretching it down cliffs). square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
     inputSchema: {
       type: 'object',
       properties: {
         tool: {
           type: 'string',
-          enum: ['raise', 'lower', 'flatten', 'smooth', 'paint']
+          enum: ['raise', 'lower', 'flatten', 'smooth', 'paint', 'blend']
         },
         x: { type: 'number' },
         z: { type: 'number' },
@@ -1769,11 +1769,12 @@ const WEBMCP_TOOLS = [
         texture: { type: 'integer' },
         square: { type: 'boolean' },
         hard: { type: 'boolean' },
+        triplanar: { type: 'boolean' },
         followObjects: { type: 'boolean' }
       },
       required: ['tool', 'x', 'z', 'radius']
     },
-    run: async ({ tool, x, z, radius, amount, height, strength = 1, passes = 1, texture, square = false, hard = false, followObjects = true }) => {
+    run: async ({ tool, x, z, radius, amount, height, strength = 1, passes = 1, texture, square = false, hard = false, triplanar = false, followObjects = true }) => {
       const s = await mcpSculptLoad();
       const g = s.grid;
       const scale = mcpTerrainScale(s);
@@ -1782,6 +1783,29 @@ const WEBMCP_TOOLS = [
       const r = radius * 2;
       const hts = g.hts.slice();
       const texs = g.tex.slice();
+
+      if (tool === 'blend')
+      {
+        const id = s.texIds[texture];
+
+        if (stockDir(s.dir) !== s.dir)
+          throw new Error('Soft paint works on stock levels');
+
+        if (id === undefined || id >= PAINT_MARK)
+          throw new Error('Give texture (a tile texture id of one of the level\'s own textures, as rs64_terrain_get reports one)');
+
+        const touched = brushBlend(g, gx, gy, r, decodeTerrainTex(s.bank, id), { opacity: strength, square, hard, triplanar });
+
+        if (touched && !(await commitSoftPaint(new Set(touched))))
+          throw new Error(`${sculpt.notice}; nothing changed`);
+
+        return {
+          tool,
+          at: { x, z, y: +groundAt(g.hts, g, scale, x, z).toFixed(3) },
+          cells: touched ? touched.length : 0,
+          texturesNearby: $('paintBudget').value
+        };
+      }
 
       if (tool === 'paint')
       {

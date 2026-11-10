@@ -2,7 +2,7 @@
 
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
-const { parseShadowTextures, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
+const { parseShadowTextures, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, terrainTexRGBA, paintApply, paintPath, paintBudget, PAINT_MARK, modAssetFile, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
   orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
@@ -641,7 +641,10 @@ let skyColor = null;
 const skyPos = new THREE.Vector3();
 const SKY_DROP = 38;
 
-ready.then(() => renderer.setAnimationLoop(() => {
+// The frame loop calls into every script, so it waits for the last one to load (index.html loads them in order).
+const scriptsLoaded = new Promise((ok) => addEventListener('rs64-scripts-loaded', ok, { once: true }));
+
+Promise.all([ready, scriptsLoaded]).then(() => renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.1);
 
   fly(dt);

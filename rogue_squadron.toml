@@ -2402,3 +2402,22 @@ text = '{ rs64_th_computeRandomizedOrientationFrame_800F3B84(rdram, ctx); }'
 func = "runModelViewerLoop"
 before_vram = 0x800CA51C
 text = '{ rs64_th_runModelViewerLoop_800CA51C(rdram, ctx); }'
+
+# Soft paint: a level's painted terrain textures (level/lv_<id>_PAINT) are opened and closed with level/tex, and the texture worker reads marked _TEX entries from them.
+[[patches.hook]]
+func = "load_level_hmp"
+text = '{ rs64_th_load_level_hmp_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "loadLevelTextureCache"
+before_vram = 0x800483A8
+text = '{ rs64_th_loadLevelTextureCache_800483A8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "teardownGridLayerWorker"
+text = '{ rs64_th_teardownGridLayerWorker_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hudDisplayUpdateWorker"
+before_vram = 0x80049688
+text = '{ rs64_th_hudDisplayUpdateWorker_80049688(rdram, ctx); }'

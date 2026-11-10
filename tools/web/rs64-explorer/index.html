@@ -73,16 +73,16 @@
         <input type="checkbox" id="optSculpt" hidden>
         <div data-modes="terrain" class="rows">
           <input type="hidden" id="sculptTool" value="raise">
-          <div class="tools" role="group" aria-label="Terrain tool"><button data-sculpt="raise" data-icon="toolRaise" title="Raise (1)"></button><button data-sculpt="lower" data-icon="toolLower" title="Lower (2)"></button><button data-sculpt="flatten" data-icon="toolFlatten" title="Flatten (3)"></button><button data-sculpt="smooth" data-icon="toolSmooth" title="Smooth (4)"></button><button data-sculpt="paint" data-icon="toolPaint" title="Paint texture (5)"></button><button data-sculpt="pick" data-icon="toolPick" title="Pick texture (6)"></button></div>
+          <div class="tools" role="group" aria-label="Terrain tool"><button data-sculpt="raise" data-icon="toolRaise" title="Raise (1)"></button><button data-sculpt="lower" data-icon="toolLower" title="Lower (2)"></button><button data-sculpt="flatten" data-icon="toolFlatten" title="Flatten (3)"></button><button data-sculpt="smooth" data-icon="toolSmooth" title="Smooth (4)"></button><button data-sculpt="paint" data-icon="toolPaint" title="Paint texture (5)"></button><button data-sculpt="pick" data-icon="toolPick" title="Pick texture (6)"></button><button data-sculpt="blend" data-icon="toolBlend" title="Soft paint (7)"></button></div>
           <input type="hidden" id="sculptShape" value="round">
-          <div class="tools" role="group" aria-label="Brush shape"><button data-shape="round" data-icon="shapeRound" title="Round brush"></button><button data-shape="square" data-icon="shapeSquare" title="Square brush"></button></div>
+          <div class="tools" role="group" aria-label="Brush shape"><button data-shape="round" data-icon="shapeRound" title="Round brush"></button><button data-shape="square" data-icon="shapeSquare" title="Square brush"></button><button id="btnTriplanar" data-icon="triplanar" title="Wrap slopes: the texture follows cliffs instead of stretching down them" hidden></button></div>
           <label id="sculptFlatRow" title="The height Flatten levels to, empty for where the stroke starts">Height <input type="number" id="sculptFlat" step="0.5" placeholder="Where you start" style="flex:1"></label>
           <label title="Brush radius in terrain grid steps (0.5 world units each)">Radius <input type="range" id="sculptRadius" min="1" max="40" value="8"><output id="sculptRadiusVal">8</output></label>
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
           <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
           <button id="btnLook" title="The level's water, fog and clouds"></button>
           <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
-          <div class="sculptFoot"><label id="sculptBudgetRow" hidden>Ground tiles <meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0"></meter></label><span id="sculptInfo"></span></div>
+          <div class="sculptFoot"><label id="sculptBudgetRow" hidden>Ground tiles <meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0"></meter></label><label id="paintBudgetRow" hidden>Textures near any spot <meter id="paintBudget" min="0" max="360" low="240" high="300" optimum="0"></meter></label><span id="sculptInfo"></span></div>
         </div>
         <div data-modes="objects events" class="rows">
           <div class="tools" role="group" aria-label="Transform tool"><button data-tool="view" data-icon="view" title="View: select only (Q)"></button><button data-tool="translate" data-icon="move" title="Move (W)"></button><button data-tool="rotate" data-icon="rotate" title="Rotate (E)"></button><button data-tool="scale" data-icon="scale" title="Scale (R)"></button></div>
@@ -220,7 +220,7 @@
     <span data-modes="objects events" data-when="selected">F</span><span data-modes="objects events" data-when="selected">focus on it</span>
     <span data-modes="objects events" data-when="duplicate">Ctrl+D</span><span data-modes="objects events" data-when="duplicate">duplicate</span>
     <span data-modes="objects events" data-when="remove">Delete</span><span data-modes="objects events" data-when="remove">delete</span>
-    <span data-modes="terrain">1 - 6 / [ ]</span><span data-modes="terrain">brush tool / smaller, bigger brush</span>
+    <span data-modes="terrain">1 - 7 / [ ]</span><span data-modes="terrain">brush tool / smaller, bigger brush</span>
     <span data-modes="terrain">Shift / Alt+drag</span><span data-modes="terrain">raise and lower swapped / pick a texture</span>
     <span data-modes="events" data-when="path">Drag / Shift+drag</span><span data-modes="events" data-when="path">move a point / change its height</span>
     <span data-modes="events" data-when="path">Ctrl / Alt+click</span><span data-modes="events" data-when="path">add a point after / delete a point</span>
@@ -241,6 +241,7 @@ import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
 window.RS64_THREE = { THREE, OrbitControls, TransformControls, GLTFExporter };
 for (const src of ['core.js', 'audio.js', 'effects.js', 'ui.js', 'cutscenes.js', 'levels.js', 'fonts.js', 'menus.js', 'lights.js', 'webmcp.js']) await new Promise((ok, fail) => document.body.append(Object.assign(document.createElement('script'), { src: `${src}?v=${Date.now()}`, onload: ok, onerror: fail })));
+dispatchEvent(new Event('rs64-scripts-loaded'));
 </script>
 </body>
 </html>

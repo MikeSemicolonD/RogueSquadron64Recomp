@@ -3050,5 +3050,46 @@ await check('a blank Calamari stays above its water', async () => {
   assert.ok(heights.every((h) => h === 121), `flat at ${heights[0]}`);
 });
 
+await check('painted levels export their paint files raw and their HMP and _TEX as patches', async () => {
+  const bytesOf2 = async (p) => new Uint8Array((await rom.read(p)).buffer.slice(0));
+  const red = new Uint8Array(64 * 64 * 4);
+
+  for (let i = 0; i < 4096; i++)
+    red.set([248, 0, 0, 255], i * 4);
+
+  const files = [];
+
+  for (const id of ['1', '3'])
+  {
+    const dir = `data/level/lv_${id}`;
+    const hmp = await bytesOf2(dir + '/hmp');
+    const tex = await bytesOf2(dir + '_TEX');
+    const bank = await rom.read('data/level/tex');
+
+    const out = RS64.paintApply({
+      hmp,
+      tex,
+      paint: new Uint8Array(0),
+      grid: RS64.hmpGrid(RS64.parseHMP(new DataView(hmp.buffer))),
+      bank,
+      cells: new Map([[7, red]])
+    });
+
+    const paintFile = RS64.modAssetFile(RS64.paintPath(dir), null, out.paint);
+    const hmpFile = RS64.modAssetFile(dir + '/hmp', hmp, out.hmp);
+    const texFile = RS64.modAssetFile(dir + '_TEX', tex, out.tex);
+
+    assert.equal(paintFile.name, `assets/level/lv_${id}_PAINT`);
+    assert.deepEqual(paintFile.data, out.paint);
+    assert.equal(hmpFile.name, `assets/level/lv_${id}/hmp.bps`);
+    assert.deepEqual(applyBPS(hmp, hmpFile.data), out.hmp);
+    assert.equal(texFile.name, `assets/level/lv_${id}_TEX.bps`);
+    assert.deepEqual(applyBPS(tex, texFile.data), out.tex);
+    files.push(paintFile.name, hmpFile.name, texFile.name);
+  }
+
+  assert.equal(new Set(files).size, 6);
+});
+
 if (failed) { console.log(`${failed} failed`); process.exit(1); }
 console.log('all passed');
