@@ -1,5 +1,6 @@
 #include "main/discord_presence.h"
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -11,8 +12,11 @@
 #include <string>
 #include <thread>
 #include "game/game_state.h"
+#include "game/nav_sequencer.h"
+#include "game/upstream_compat.h"
 #include "host_api/host_api.h"
 #include "librecomp/mods.hpp"
+#include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
 
 #if defined(_WIN32)
@@ -47,6 +51,13 @@ static constexpr int kMaxPlayers = 2;
 // The multiplayer mod's mp_lobby_state flag (LobbyState in net_core.h).
 static constexpr int kLobbyHosting = 1;
 static constexpr int kLobbyConnected = 3;
+
+// g_active_overlay ids.
+static constexpr int kOverlayMission = 0;
+static constexpr int kOverlayCinematic = 2;
+
+// The hangar counts as up while its frame counter moved within this many presents.
+static constexpr int kHangarPresents = 30;
 
 // The AT-ST level the CHICKEN passcode starts.
 static constexpr uint32_t kChickenLevel = 20;
@@ -393,27 +404,57 @@ int co_op_players()
     return lobby == kLobbyHosting ? 1 : 0;
 }
 
-Activity describe(const std::string& st, uint32_t level, uint8_t craft)
+// A mod level plays as a stock level id, so its own title wins.
+const char* level_name(uint32_t level)
+{
+
+    if (const char* title = rs64_mod_levels_current_title())
+    {
+        return title;
+    }
+
+    if (level == kChickenLevel)
+    {
+        return "CHICKEN";
+    }
+
+    return level < std::size(kLevelNames) ? kLevelNames[level] : "Custom level";
+}
+
+// The loaded overlay decides mission / cutscene / front end: the menu classifier also matches stale menu data inside missions and cutscenes.
+Activity describe(const uint8_t* rdram, bool hangar)
 {
 
     Activity a;
+    const int overlay = g_active_overlay;
+    const uint32_t level = rs64_state_level();
+    const uint8_t craft = rdram[0x130B41 ^ 3];
+    const bool demo = (*reinterpret_cast<const uint32_t*>(rdram + 0x130B50) & 0x20u) != 0;
+    const std::string st = rs64_state_current_id();
 
-    if (st.rfind("mission", 0) == 0) {
-        a.details = level < std::size(kLevelNames) ? kLevelNames[level] : "Custom level";
+    if (hangar) {
+        a.details = "In the hangar";
+        a.state = level_name(level);
+    } else if (overlay == kOverlayMission && demo) {
+        a.details = "Watching a demo";
+    } else if (overlay == kOverlayMission) {
+        a.details = level_name(level);
 
-        if (st == "mission.atst") {
+        if (level == kChickenLevel) {
             a.state = "AT-ST";
-
-            if (level == kChickenLevel) {
-                a.details = "CHICKEN";
-            }
         } else if (craft < std::size(kCraftNames)) {
             a.state = kCraftNames[craft];
         }
-    } else if (st == "cinematic") {
+    } else if (overlay == kOverlayCinematic && level < std::size(kLevelNames)) {
+        a.details = level_name(level);
+        a.state = "Cutscene";
+    } else if (overlay == kOverlayCinematic) {
         a.details = "Watching a cutscene";
-    } else if (st == "attract.demo") {
-        a.details = "Watching a demo";
+    } else if (st == "menu.account.level_select") {
+        a.details = "Selecting a level";
+    } else if (st == "menu.account.craft_select") {
+        a.details = "Choosing a craft";
+        a.state = level_name(level);
     } else {
         a.details = "In the menus";
     }
@@ -431,48 +472,40 @@ void poll(const uint8_t* rdram)
 #endif
 
     static std::once_flag s_start;
-    static int s_state = -2;
-    static uint32_t s_level = ~0u;
-    static uint8_t s_craft = 0xFF;
-    static bool s_enabled = false;
-    static int s_players = 0;
-    static std::string s_details;
-    static int64_t s_start_time = 0;
+    static Activity s_last;
+    static uint32_t s_hangar_count = 0;
+    static int s_hangar_age = kHangarPresents;
     static const std::string kModId = "discord-status";
 
-    const int state = rs64_state_current();
-    const uint32_t level = rs64_state_level();
-    const uint8_t craft = rdram[0x130B41 ^ 3];
-    const bool enabled = recomp::mods::is_mod_enabled(kModId);
-    const int players = co_op_players();
+    const uint32_t hangar_count = rs64_nav_hangar_frame_count();
 
-    if (state == s_state && level == s_level && craft == s_craft && enabled == s_enabled && players == s_players)
+    s_hangar_age = (hangar_count != s_hangar_count) ? 0 : std::min(s_hangar_age + 1, kHangarPresents);
+    s_hangar_count = hangar_count;
+
+    Activity a = describe(rdram, s_hangar_age < kHangarPresents);
+
+    a.enabled = recomp::mods::is_mod_enabled(kModId);
+    a.players = co_op_players();
+
+    if (a.players > 0 && a.state.empty()) {
+        a.state = "Co-op";
+    }
+
+    // The timer runs while the top line stays the same: a level's cutscenes, pauses and co-op changes keep it.
+    a.start = (a.details == s_last.details) ? s_last.start : (int64_t)time(nullptr);
+
+    if (a == s_last)
     {
         return;
     }
 
-    s_state = state;
-    s_level = level;
-    s_craft = craft;
-    s_enabled = enabled;
-    s_players = players;
+    s_last = a;
 
-    Activity a = describe(rs64_state_current_id(), level, craft);
+    static const bool s_log = recomp::dbg::env_on("ROGUESQ_LOG_DISCORD");
 
-    a.players = players;
-
-    if (players > 0 && a.state.empty()) {
-        a.state = "Co-op";
+    if (s_log) {
+        fprintf(stderr, "[discord] overlay=%d state=%s players=%d -> \"%s\" / \"%s\" start=%lld\n", (int)g_active_overlay, rs64_state_current_id(), a.players, a.details.c_str(), a.state.c_str(), (long long)a.start);
     }
-
-    // The timer restarts on a new mission or screen type, not on each menu page.
-    if (a.details != s_details) {
-        s_details = a.details;
-        s_start_time = (int64_t)time(nullptr);
-    }
-
-    a.start = s_start_time;
-    a.enabled = enabled;
 
     std::call_once(s_start, [] { std::thread(run).detach(); });
 

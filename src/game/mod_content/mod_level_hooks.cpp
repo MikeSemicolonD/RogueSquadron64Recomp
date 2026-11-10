@@ -688,6 +688,11 @@ extern "C" const char* rs64_mod_levels_current_folder()
     return s_current_mod_level >= 0 ? s_mod_levels[s_current_mod_level].folder.c_str() : nullptr;
 }
 
+extern "C" const char* rs64_mod_levels_current_title()
+{
+    return s_current_mod_level >= 0 ? s_mod_levels[s_current_mod_level].title.c_str() : nullptr;
+}
+
 // ---- Mod level medals: their own thresholds and their own record (roguesq_mod_medals.json), never the game's medals ----
 namespace {
 rs64levels::MedalStore s_mod_medals;

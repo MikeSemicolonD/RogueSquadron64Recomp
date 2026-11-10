@@ -282,6 +282,7 @@ int rs64_hook(uint32_t, uint8_t*, recomp_context*);
 int rs64_language(void);
 int rs64_menu_install_main(uint8_t* rdram);
 int rs64_menu_sfx_swap(recomp_context* ctx);
+const char* rs64_mod_levels_current_title(void);
 int rs64_mod_levels_craft(uint32_t*);
 int rs64_mod_levels_crawl_id(int);
 int rs64_mod_levels_debriefing(void);

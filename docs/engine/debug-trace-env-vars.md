@@ -418,6 +418,7 @@ One-shot dumps in MIPS byte order (same layout as a PJ64 dump) for `tools/debug/
 | `ROGUESQ_LOG_ZPRIM` | off | zSource=PRIM states | Each distinct PRIM-depth draw state once (and at 1000 / 100000 hits): otherMode, Z bits, cull bits, the game's primDepth and the value sent. |
 | `ROGUESQ_LOG_TERRAIN_CRACKS` | off | `[tcrack]` | Terrain tile-edge height mismatches every 5 s; expect 0 (thousands with `F5_TERRAIN_SEAMS=0`). |
 | `ROGUESQ_LOG_GAMESTATE` | off | engine globals | Level, craft, cinematic stage, screen, menu id on change and every 512 presents; `gateCtr` vs `cuts44` shows whether a cinematic is advancing. |
+| `ROGUESQ_LOG_DISCORD` | off | `[discord]` | Each Discord status change with the overlay and game state it came from: the two lines, the timer start and the co-op player count. |
 | `ROGUESQ_LOG_GPU_MEM` | off | GPU allocator | `[gpu-mem]` on every game-state change: per heap (local = VRAM, system = shared), the allocator's blocks and the allocations in them (count/MB), and the driver's usage and budget for the process. Growth in `blocks` with flat `allocs` is the allocator keeping freed blocks; growth in both across repeats of one level is leftover resources. |
 | `ROGUESQ_LOG_HOOKS` | off | `[hook t=...]` | Debug only: stderr from hook code (`rs64_dbg_log4`). |
 | `ROGUESQ_LOG_THROTTLE` | off | throttle | Positional HOTAS throttle about once a second: lever position, the craft's speed range, game vs. applied target. |

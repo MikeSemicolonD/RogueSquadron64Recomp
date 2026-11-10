@@ -174,10 +174,16 @@ static void nav_advance() { s_step++; s_watchdog = 0; s_since_press = 9999; }
 
 // Frames of the craft-select hangar (runHangarSelectionFrame) seen; the menu classifier can't tell it from SELECT GAME.
 static int s_hangar_frames = 0;
+static std::atomic<uint32_t> s_hangar_total{0};
 
 extern "C" void rs64_nav_hangar_frame()
 {
     ++s_hangar_frames;
+    s_hangar_total.fetch_add(1, std::memory_order_relaxed);
+}
+
+extern "C" uint32_t rs64_nav_hangar_frame_count(void) {
+    return s_hangar_total.load(std::memory_order_relaxed);
 }
 
 static void nav_write_u8(uint8_t* rdram, uint32_t phys, uint8_t val) { rdram[phys ^ 3] = val; }
