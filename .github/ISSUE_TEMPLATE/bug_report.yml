@@ -12,6 +12,7 @@ body:
     attributes:
       label: Issue type
       description: See [CONTRIBUTING.md](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/CONTRIBUTING.md#fixing-bugsissues) if you're unsure.
+      multiple: true
       options:
         - Recomp. Issue (this port, its rendering, input, hooks or features)
         - Game Issue (also happens on a real N64 or in an emulator)
@@ -60,6 +61,17 @@ body:
         - Other
     validations:
       required: true
+
+  - type: dropdown
+    id: arch
+    attributes:
+      label: Architecture
+      description: Leave blank if you're not sure.
+      options:
+        - x64 (most Windows and Linux PCs, Steam Deck, Intel Macs)
+        - x86 / i386 (32-bit Windows or Linux build)
+        - arm64 (Android, Apple Silicon Macs, 64-bit Raspberry Pi)
+        - armhf (32-bit Raspberry Pi)
 
   - type: input
     id: hardware

@@ -14,15 +14,23 @@ jobs:
       - uses: actions/github-script@v7
         with:
           script: |
-            // Issue forms render each dropdown as "### <label>\n\n<choice>"; a choice that starts with a repo label's name gets that label.
+            // Issue forms render each dropdown as "### <label>\n\n<choices joined by ', '>"; a choice that starts with a repo label's name gets that label.
             const body = context.payload.issue.body || '';
             const m = body.match(/^### (?:Issue type|Kind)\s+(.+)$/m);
-            const choice = m ? m[1].trim().toLowerCase() : '';
+
+            // The parentheticals in the options contain commas of their own.
+            const choices = m ? m[1].replace(/\([^)]*\)/g, '').split(',').map(c => c.trim().toLowerCase()) : [];
             const labels = await github.paginate(github.rest.issues.listLabelsForRepo, context.repo);
-            const hit = labels
-              .filter(l => choice.startsWith(l.name.toLowerCase()))
-              .sort((a, b) => b.name.length - a.name.length)[0];
-            const add = hit ? [hit.name] : [];
+            const add = [];
+
+            for (const choice of choices) {
+              const hit = labels
+                .filter(l => choice.startsWith(l.name.toLowerCase()))
+                .sort((a, b) => b.name.length - a.name.length)[0];
+
+              if (hit && !add.includes(hit.name))
+                add.push(hit.name);
+            }
 
             // The question form's labels field is skipped if the label is missing; addLabels creates it.
             if (/^### Question\s/m.test(body))
