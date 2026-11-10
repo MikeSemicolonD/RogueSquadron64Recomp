@@ -11,6 +11,7 @@
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 #include "video/video_config.h"
 
 
@@ -58,7 +59,7 @@ int s_bank = 0;
 uint32_t s_voice_id = 0;
 
 // Extended font objects and their tables live in host RAM below 0x81000000 (the game checks some pointers for top byte 0x80), in this reserved 64 KB.
-constexpr uint32_t kTablesStart = 0x80C44000u, kTablesEnd = 0x80C54000u;
+constexpr uint32_t kTablesStart = RS64_HR_LANG, kTablesEnd = kTablesStart + 0x10000u;
 
 // The texture record table (0x24 bytes per record) and its two word arrays for kRecords records follow, ending where the first texture pool region starts.
 constexpr uint32_t kRecords = 4096;
@@ -72,6 +73,7 @@ constexpr uint32_t kSlotsEnd = kHostSlotArrayB + kSlots * 16;
 
 // Encoded mod-language strings (one byte per character, so a re-encode always fits in place); the first texture pool region starts after it.
 constexpr uint32_t kTextStart = kSlotsEnd, kTextEnd = kTextStart + 0x40000u;
+static_assert(kTextEnd <= RS64_HR_LANG_END, "language tables outgrew their host RAM range");
 
 // Strings are placed per language: a language change (seen at the next text load) starts the area over.
 uint32_t s_text_next = kTextStart;
@@ -372,8 +374,7 @@ extern "C" void rs64_lang_texture_pool(uint8_t* rdram)
 
     constexpr uint32_t kPoolStart = 0x8011A850u, kPoolEnd = 0x8011A854u, kMinExtra = 0x40000u;
 
-    // The second region starts past librecomp's cart PI handle (0x80800000) and the patches ELF's data (0x80801000).
-    static const std::pair<uint32_t, uint32_t> kRegions[] = { { kTextEnd, 0x81000000u }, { 0x80810000u, 0x80A00000u } };
+    static const std::pair<uint32_t, uint32_t> kRegions[] = { { RS64_HR_TEX_POOL_A, RS64_HR_TEX_POOL_A_END }, { RS64_HR_TEX_POOL_B, RS64_HR_TEX_POOL_B_END } };
     static uint32_t s_start[2] = {};
     static int s_last = 1;
 

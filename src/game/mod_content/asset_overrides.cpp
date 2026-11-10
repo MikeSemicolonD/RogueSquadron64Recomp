@@ -33,6 +33,7 @@
 #include "host_api/host_api.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -177,8 +178,9 @@ uint32_t exhaust_choice()
 }
 
 // Manifests grown with mod-added files live in host RAM above the game's 8 MB, one 64 KB block per gManifestTable slot: {copy, game's buffer}.
-constexpr uint32_t kManifestCopies = 0x80C00000u, kManifestCopySize = 0x10000u;
+constexpr uint32_t kManifestCopies = RS64_HR_MANIFESTS, kManifestCopySize = 0x10000u;
 std::pair<uint32_t, uint32_t> s_manifest_copies[4];
+static_assert(kManifestCopies + std::size(s_manifest_copies) * kManifestCopySize <= RS64_HR_MANIFESTS_END, "manifest copies outgrew their host RAM range");
 
 // A manifest entry (0x20 bytes, 8 words): +0 offset in block, +4 size, +8 stored size (-1 raw), +0xC flags (0x80 directory) and, for a
 // directory, its own entry plus everything inside in bytes at +0xE; +0x10 name[16].

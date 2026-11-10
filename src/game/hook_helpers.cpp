@@ -32,6 +32,7 @@
 #include "game/lang/lang.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 #include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_transition.h"
 
@@ -306,8 +307,7 @@ extern "C" void rs64_terrain_grid_log(int32_t minX, int32_t width, int32_t minZ,
 }
 
 // Terrain grid tables relocated into host-only RDRAM above the game's 8 MB, sized for the 128-stride patches (not optional).
-// 0x80A00000-0x80A01FFF is the F5 renderer's vertex/viewport scratch, so the tables start at 0x80B00000.
-static constexpr uint32_t RS64_TGRID_BASE = 0x80B00000u;
+static constexpr uint32_t RS64_TGRID_BASE = RS64_HR_TGRID;
 extern "C" uint32_t rs64_tgrid_base(uint32_t original) {
 
     switch (original) {
@@ -322,7 +322,7 @@ extern "C" uint32_t rs64_tgrid_base(uint32_t original) {
 
 // Zeroes the relocated terrain grid tables at level load, as a fresh level would find the originals.
 extern "C" void rs64_tgrid_clear(uint8_t* rdram) {
-    std::memset(rdram + (RS64_TGRID_BASE - 0x80000000u), 0, 0x20000);
+    std::memset(rdram + (RS64_TGRID_BASE - 0x80000000u), 0, RS64_HR_TGRID_END - RS64_HR_TGRID);
 }
 
 // Keeps the terrain view box inside the 128-cell grid (far corners within 62 cells of the camera). ROGUESQ_TGRID_MAP_CLAMP=1 also clamps to the map bounds; off by default, since vanilla draws past the map edge by repeating edge tiles.
@@ -612,7 +612,8 @@ extern "C" uint32_t rs64_format_reply_slot(uint8_t* rdram, recomp_context* ctx, 
 {
 
     (void)ctx;
-    constexpr uint32_t kSlots = 32, kSlotSize = 0x30, kRing = 0x80B20000u;
+    constexpr uint32_t kSlots = 32, kSlotSize = 0x30, kRing = RS64_HR_REPLY_RING;
+    static_assert(kRing + kSlots * kSlotSize <= RS64_HR_REPLY_RING_END, "reply ring outgrew its host RAM range");
     static uint32_t s_next = 0;
 
     if ((src & 3u) != 0 || (src & 0xFF800000u) != 0x80000000u) return src;
@@ -1001,9 +1002,9 @@ extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
     }
 
     constexpr uint32_t kFreeHead = 0x801163B0u;
-    constexpr uint32_t kStart = 0x80B80000u;
+    constexpr uint32_t kStart = RS64_HR_DL_CHUNKS;
     constexpr uint32_t kChunk = 0x108u;
-    constexpr uint32_t kCount = (0x80C00000u - kStart) / kChunk;
+    constexpr uint32_t kCount = (RS64_HR_DL_CHUNKS_END - kStart) / kChunk;
 
     const auto rd = [&](uint32_t a) { return (uint32_t)MEM_W(0, (gpr)(int32_t)a); };
     const auto wr = [&](uint32_t a, uint32_t v) { MEM_W(0, (gpr)(int32_t)a) = (int32_t)v; };

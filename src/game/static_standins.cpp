@@ -2,6 +2,7 @@
 // block in host RAM, built as the prop handler (0x8006CBB0) spawns one, go through the game's visibility bucket. Nothing the game reads is written.
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
 
@@ -30,8 +31,8 @@ constexpr uint32_t kUniformRootMatrix = 0x80059B50u;
 constexpr uint32_t kConditionMet = 0x80065828u;
 constexpr uint32_t kGridEntries = 0x80136FCCu;
 constexpr uint32_t kCutsceneFlag = 0x80130B39u;
-constexpr uint32_t kRegion = 0x80A5C000u;
-constexpr uint32_t kRegionEnd = 0x80B00000u;
+constexpr uint32_t kRegion = RS64_HR_STANDINS;
+constexpr uint32_t kRegionEnd = RS64_HR_STANDINS_END;
 constexpr uint32_t kStateSize = 0x50u;
 
 struct Standin {

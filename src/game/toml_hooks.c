@@ -5,6 +5,7 @@
 #include "../../RecompiledFuncs/funcs.h"
 #include "rs64_toml_hooks.h"
 #include "rs64/host_api.h"
+#include "../util/host_ram_map.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -493,8 +494,9 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E034(uint8_t* rdram, recomp_co
 
 // Camera-space translations an N64 matrix can't hold (t * 2^24 must fit 32 bits, so |t| < 128), 16 bytes per slot by matrix address:
 // address, x, y, z. RT64's op_01_matrix takes the translation from a slot whose address matches.
-#define RS64_FAR_MTX_TABLE 0x80A4C000u
+#define RS64_FAR_MTX_TABLE RS64_HR_FAR_MTX
 #define RS64_FAR_MTX_SLOTS 0x1000u
+_Static_assert(RS64_FAR_MTX_TABLE + RS64_FAR_MTX_SLOTS * 16 <= RS64_HR_FAR_MTX_END, "far matrix table outgrew its host RAM range");
 
 // convertMat3x4ToN64Mtx 0x80018DEC: translation in $f4/$f6/$f8, destination in $a0. Out of range: saved to the table and clamped for the pack.
 void rs64_th_convertMat3x4ToN64Mtx_80018DEC(uint8_t* rdram, recomp_context* ctx)

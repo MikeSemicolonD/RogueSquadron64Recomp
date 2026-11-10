@@ -362,17 +362,19 @@ librecomp's section table covers all three `.ovl.*` overlays (mission / menu / c
 
 The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to host RDRAM above the game's 8 MB, and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`.
 
-Host-side tables above 8 MB (keep any new one clear of all of these):
+Host-side tables above 8 MB. Each is a named range in [src/util/host_ram_map.h](src/util/host_ram_map.h), which fails the build if two overlap: add a new one there and here, and give a mod its memory through the host API's `alloc` instead.
 
 | Range | Contents |
 | --- | --- |
 | 0x80800000-0x8080FFFF | librecomp's cart PI handle; patches ELF data at 0x80801000 |
 | 0x80810000-0x809FFFFF | Scene texture pool (language mod only) |
 | 0x80A00000-0x80A01FFF | F5 renderer vertex scratch |
+| 0x80A02000-0x80A02FFF | Counters written by the probe mods under `tests/mods` |
 | 0x80A10000-0x80A4BFFF | Terrain edit API tile table (host API v7, `src/game/mod_content/terrain_edit.h`) |
 | 0x80A4C000-0x80A5BFFF | Far camera-space matrix translations for RT64 (`convertMat3x4ToN64Mtx` hook in [toml_hooks.c](src/game/toml_hooks.c)) |
 | 0x80A5C000-0x80AFFFFF | Draw-only stand-ins for unspawned static objects: prop state blocks and model instances ([static_standins.cpp](src/game/static_standins.cpp)) |
 | 0x80B00000-0x80B1FFFF | 128x128 terrain grid tables |
+| 0x80B20000-0x80B205FF | `tickFormatMessageWorker` reply ring |
 | 0x80B38058-0x80B3901F, 0x80B58930-0x80B58D0F | Co-op relocated per-player ranges (mod only, `kMovedRanges` in `mp_core.h`) |
 | 0x80B40000-0x80B4015F | Co-op imposter DAT record and message scratch (mod only) |
 | 0x80B60000-0x80B7FFFF | Per-mesh face list, 16384 entries (`[[patches.instruction]]` in `rogue_squadron.toml`) |

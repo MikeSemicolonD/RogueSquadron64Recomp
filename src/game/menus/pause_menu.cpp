@@ -38,6 +38,7 @@
 #include "input/input_host.h"
 #include "input/touch_config.h"
 #include "util/mips_call.h"
+#include "util/host_ram_map.h"
 #include "host_api/host_api.h"
 #include "util/debug_logs.h"
 
@@ -55,8 +56,8 @@ constexpr uint16_t PAUSE_BACK_TID  = 0x0039;
 constexpr uint32_t PAUSE_ROOT      = 0x109DD4;
 constexpr uint32_t PAUSE_GS        = 0x109E24;
 constexpr uint32_t PAUSE_GS_SPACER = 0x109E54;
-constexpr uint32_t PAUSE_HOST      = 0xC43000;
-constexpr uint32_t PAUSE_HOST_END  = 0xC44000;
+constexpr uint32_t PAUSE_HOST      = RS64_HR_PAUSE_MENU - 0x80000000u;
+constexpr uint32_t PAUSE_HOST_END  = RS64_HR_PAUSE_MENU_END - 0x80000000u;
 constexpr uint32_t PAUSE_STRIDE    = 0x80;
 constexpr uint8_t  PAUSE_GS_ID     = 1;
 constexpr uint8_t  PAUSE_FIRST_PAGE = 4;

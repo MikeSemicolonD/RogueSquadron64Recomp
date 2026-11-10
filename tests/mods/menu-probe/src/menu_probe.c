@@ -1,14 +1,14 @@
-// Exports the menu file's @ behaviors: each writes to spare host RDRAM (0x80C00100..) after calling into the runtime, so a run shows they ran on a usable stack.
+// Exports the menu file's @ behaviors: each writes to spare host RDRAM (0x80A02100..) after calling into the runtime, so a run shows they ran on a usable stack.
 #include "rs64_api.h"
 
 #include "recompconfig.h"
 #include "recomputils.h"
 
-#define ACTION_RUNS (*(volatile unsigned int*)0x80C00100)
-#define ACTION_MODE (*(volatile unsigned int*)0x80C00104)
-#define ACTION_LEVEL (*(volatile unsigned int*)0x80C00108)
-#define TOGGLE_STATE (*(volatile unsigned int*)0x80C0010C)
-#define ACTION_SPEED (*(volatile unsigned int*)0x80C00110)
+#define ACTION_RUNS (*(volatile unsigned int*)0x80A02100)
+#define ACTION_MODE (*(volatile unsigned int*)0x80A02104)
+#define ACTION_LEVEL (*(volatile unsigned int*)0x80A02108)
+#define TOGGLE_STATE (*(volatile unsigned int*)0x80A0210C)
+#define ACTION_SPEED (*(volatile unsigned int*)0x80A02110)
 
 RECOMP_EXPORT void probe_action(void) {
     ACTION_RUNS++;

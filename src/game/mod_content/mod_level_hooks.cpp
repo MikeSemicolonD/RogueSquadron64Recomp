@@ -37,6 +37,7 @@
 #include <deque>
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -55,7 +56,7 @@ rs64_shot_fn s_shot_listener = nullptr;
 void* s_shot_listener_user = nullptr;
 
 // Host RAM for the camera name the game's shot starter reads (above the manifest copies).
-constexpr uint32_t kShotName = 0x80C40000u;
+constexpr uint32_t kShotName = RS64_HR_SHOT_NAME;
 }
 
 extern "C" const char* rs64_mod_levels_current_folder();
@@ -253,7 +254,7 @@ int s_current_mod_level = -1;
 std::set<std::string> s_mod_level_files;
 
 // Host RAM for a redirected asset name (after the mid-mission shot name).
-constexpr uint32_t kLookupName = 0x80C40100u;
+constexpr uint32_t kLookupName = RS64_HR_LOOKUP_NAME;
 
 // The SELECT LEVEL cursor (menu overlay, u8 at 0x800CDAC1).
 const rs64levels::ModLevel* entry_at_cursor(uint8_t* rdram)
@@ -607,11 +608,11 @@ extern "C" int rs64_mod_levels_crawl_id(int level)
     return crawl;
 }
 
-// The crawl's text, written to host RAM (0x80C41000-0x80C41FFF); 0 when the game's own plays.
+// The crawl's text, written to host RAM; 0 when the game's own plays.
 extern "C" uint32_t rs64_mod_levels_crawl_text(uint8_t* rdram)
 {
 
-    constexpr uint32_t kCrawlText = 0x80C41000u;
+    constexpr uint32_t kCrawlText = RS64_HR_CRAWL_TEXT;
 
     if (s_playing_crawl)
     {
@@ -693,7 +694,7 @@ uint32_t s_debrief_level = 0, s_saved_medal_info = 0;
 uint8_t s_saved_medal = 0, s_saved_rank = 0;
 
 // Host RAM for a mod level's three medal_info records (after the redirected asset name).
-constexpr uint32_t kModMedals = 0x80C40200u;
+constexpr uint32_t kModMedals = RS64_HR_MOD_MEDALS;
 constexpr const char* kModMedalsFile = "roguesq_mod_medals.json";
 
 // Per profile: the account (0-2) the game plays with is the byte at 0x80130B44, the same number as its SELECT GAME slot.
@@ -801,7 +802,7 @@ extern "C" void rs64_mod_levels_select_game(uint8_t* rdram, recomp_context* ctx)
 
     for (const auto& l : s_mod_levels) count[mod_medals().best(medal_key(profile, l)) & 3]++;
 
-    constexpr uint32_t kIcons = 0x80C40300u, kCounts = 0x80C40320u, kColour = 0x80C40360u;
+    constexpr uint32_t kIcons = RS64_HR_MEDAL_TEXT, kCounts = kIcons + 0x20u, kColour = kIcons + 0x60u;
     wstr(rdram, kIcons, rstr(rdram, 0x800A6964u, 31));
     char counts[64];
     snprintf(counts, sizeof(counts), "~%d\n\n~~~~~~~~~%d\n\n~~~~~~~~%d", count[3], count[2], count[1]);
@@ -928,7 +929,7 @@ static void objective_callout(uint8_t* rdram, recomp_context* ctx, uint32_t i)
 
     if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, kHalfSecond });
 
-    if (!o.camera.empty()) cut_to_camera(rdram, ctx, o.camera, 0x80C42100u + i * 0x20u);
+    if (!o.camera.empty()) cut_to_camera(rdram, ctx, o.camera, RS64_HR_OBJECTIVE_CAMS + i * 0x20u);
 }
 
 // The per-level song table (0x8010B2EC, the song id per level startLevelBackgroundMusic plays); the original byte comes back at
@@ -994,7 +995,7 @@ float s_message_left = 0;
 uint32_t s_message_text_id = 0xFFFFFFFFu;
 bool s_rules_pending = false;
 float s_rules_elapsed = 0;
-constexpr uint32_t kRuleName = 0x80C42200u;
+constexpr uint32_t kRuleName = RS64_HR_RULE_NAME;
 
 int rule_int(const rs64rules::Action& a, const char* key, int fallback = 0)
 {
@@ -1272,7 +1273,7 @@ extern "C" void rs64_load_level_packages(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    constexpr uint32_t kPackageName = 0x80C42300u;
+    constexpr uint32_t kPackageName = RS64_HR_PACKAGE_NAME;
     constexpr uint32_t kModelTable = 0x80136FB0u;
     std::string folder;
 
@@ -1282,7 +1283,7 @@ extern "C" void rs64_load_level_packages(uint8_t* rdram, recomp_context* ctx)
 
     for (const auto& level : found->second)
     {
-        const std::string path = folder + level + "/opkg";
+        const std::string path = (folder + level + "/opkg").substr(0, 0xFF);
 
         for (size_t i = 0; i <= path.size(); i++) wb(rdram, kPackageName + (uint32_t)i, i < path.size() ? (uint8_t)path[i] : 0);
 
@@ -1492,7 +1493,7 @@ extern "C" void rs64_mod_levels_objective_text(uint8_t* rdram, recomp_context* c
 
     if (i >= objs->size()) return;
 
-    constexpr uint32_t kObjectiveText = 0x80C42000u;
+    constexpr uint32_t kObjectiveText = RS64_HR_OBJECTIVE_TEXT;
     wstr(rdram, kObjectiveText + i * 0x40u, rs64levels::menuText((*objs)[i].text).substr(0, 0x3F));
     ctx->r2 = (gpr)(int32_t)(kObjectiveText + i * 0x40u);
 }
@@ -1521,7 +1522,7 @@ extern "C" uint32_t rs64_mod_levels_lookup(uint8_t* rdram, uint32_t name)
     {
         if (const auto own = rs64levels::crawlAsset(*s_playing_crawl, cur, s_mod_level_files))
         {
-            wstr(rdram, kLookupName, rs64levels::manifestPath(*own));
+            wstr(rdram, kLookupName, rs64levels::manifestPath(*own).substr(0, 0xFF));
 
             fprintf(stderr, "[crawl] %s -> %s\n", cur.c_str(), own->c_str());
 
@@ -1535,7 +1536,7 @@ extern "C" uint32_t rs64_mod_levels_lookup(uint8_t* rdram, uint32_t name)
 
     if (mod.empty()) return name;
 
-    wstr(rdram, kLookupName, rs64levels::manifestPath(mod));
+    wstr(rdram, kLookupName, rs64levels::manifestPath(mod).substr(0, 0xFF));
 
     fprintf(stderr, "[levels] %s -> %s\n", cur.c_str(), mod.c_str());
 
