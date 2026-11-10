@@ -53,6 +53,9 @@ uint32_t s_shot_frame = 0;
 
 // Shots queued through the camera.shots service (another player's, in co-op); they never call the listener back.
 std::deque<rs64shots::Shot> s_remote_shots;
+
+// A level links a handful of shots; the other player cannot queue without limit.
+constexpr size_t kMaxRemoteShots = 64;
 rs64_shot_fn s_shot_listener = nullptr;
 void* s_shot_listener_user = nullptr;
 
@@ -1582,7 +1585,7 @@ extern "C" void rs64_camera_shots_register_service() {
     static const rs64_camera_shots svc = {
         RS64_CAMERA_SHOTS_VERSION, (uint32_t)sizeof(rs64_camera_shots),
         [](const char* camera, const char* trigger) {
-            if (!camera || !*camera || !trigger) return;
+            if (!camera || !*camera || !trigger || s_remote_shots.size() >= kMaxRemoteShots) return;
 
             if (!s_shot_queue.remote(s_shot_links, trigger))
             {

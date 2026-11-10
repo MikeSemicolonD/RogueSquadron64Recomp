@@ -214,7 +214,7 @@ void RelayClient::pump()
         switch ((relay::Type)relay::message_type(m.data(), m.size()))
         {
         case relay::Type::Data:
-            if (relay::decode_data(m.data(), m.size(), &bytes, &len)) {
+            if (inbox_.size() < kMaxInbox && relay::decode_data(m.data(), m.size(), &bytes, &len)) {
                 inbox_.emplace_back(bytes, bytes + len);
             }
 
@@ -304,6 +304,13 @@ void RelayClient::set_info(const std::string& name, bool locked) {
 
     if (role_ == RS64_MP_ROLE_HOST && game_) {
         link_.send(relay::encode_update(locked_, name_), true);
+    }
+}
+
+void RelayClient::kick() {
+
+    if (role_ == RS64_MP_ROLE_HOST && connected_) {
+        link_.send(relay::encode_kick(), true);
     }
 }
 
@@ -417,6 +424,7 @@ const rs64_mp_transport* RelayClient::table()
         [](void* u, int i) -> const char* { return C(u).game_peer(i); },
         [](void* u, int i) -> int { return C(u).game(i) && C(u).game(i)->locked ? 1 : 0; },
         [](void* u, const char* name, int locked) { C(u).set_info(name ? name : "", locked != 0); },
+        [](void* u) { C(u).kick(); },
     };
     table_.user = this;
     return &table_;

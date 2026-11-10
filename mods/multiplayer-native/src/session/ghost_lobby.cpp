@@ -261,7 +261,7 @@ extern "C" void rs64_lobby_host(void)
     }
 
     info.build = s.lobby.local_build();
-    const bool answering = s.started && s.responder.start(cfg.port, info);
+    const bool answering = s.started && s.responder.start(cfg.port, info, cfg.bind_v4);
 
     fprintf(stderr, "[lobby] LAN discovery %s on port %u\n", answering ? "answering" : "unavailable", (unsigned)(cfg.port + rs64::net::kDiscoveryPortOffset));
 
@@ -275,6 +275,43 @@ extern "C" void rs64_lobby_host(void)
 }
 
 constexpr uint32_t kSearchMs = 2000;
+
+// A password row once it closes: six digits set the password (true), an emptied field means none, anything else keeps what was set. Call every frame the row is up.
+struct PinWatch {
+    bool open = false;
+    std::string typed;
+};
+
+static bool pin_watch(const rs64::net::CodeEditor& e, PinWatch& w, bool* set)
+{
+
+    if (e.editing || e.typing)
+    {
+        w.open = true;
+        w.typed = e.typed;
+        return false;
+    }
+
+    if (!w.open)
+    {
+        return false;
+    }
+
+    w.open = false;
+
+    if (rs64::net::CodeEditor::valid(w.typed) && e.code() == w.typed) {
+        *set = true;
+        return true;
+    }
+
+    if (w.typed.empty()) {
+        *set = false;
+    }
+
+    return false;
+}
+
+static PinWatch s_join_pin_watch;
 constexpr uint32_t kQueryEveryMs = 250;
 
 // Leaving the lobby (cancel, or the page without a ready session): LAN discovery stops and the router mapping goes.
@@ -314,6 +351,7 @@ extern "C" void rs64_lobby_join(void)
     }
 
     s.join_pin.editing = false;
+    pin_watch(s.join_pin, s_join_pin_watch, &s.join_pin_set);
     s.pin_mode = false;
     load_net_config();
     save_net_config();
@@ -335,8 +373,8 @@ extern "C" void rs64_lobby_join(void)
 
     set_from_menu(true);
 
-    // A scripted address skips the search; the pair runner shares one machine and port.
-    if (recomp::dbg::env_str("ROGUESQ_MP_ADDR") || !s.finder.start(cfg.port))
+    // A scripted address skips the search (the pair runner shares one machine and port), and so does one the player set: a stranger on the LAN must not be able to answer in the host's place.
+    if (recomp::dbg::env_str("ROGUESQ_MP_ADDR") || s.editor.entry() != rs64::net::AddressEditor{}.entry() || !s.finder.start(cfg.port))
     {
         join_typed(cfg);
         return;
@@ -374,17 +412,15 @@ static void discovery_tick() {
     }
 
     const std::vector<rs64::net::FoundHost> found = s.finder.poll();
+    const auto host = std::find_if(found.begin(), found.end(), [&s](const rs64::net::FoundHost& f) { return f.info.build == s.lobby.local_build(); });
     rs64::net::LinkConfig cfg = s.search_cfg;
 
-    if (!found.empty())
+    if (host != found.end())
     {
-        cfg.addr = found[0].addr;
-        cfg.port = found[0].info.port;
-        s.editor.load(cfg.addr);
-        s.editor.port = cfg.port == link_config().port ? 0 : cfg.port;
-        save_net_config();
+        cfg.addr = host->addr;
+        cfg.port = host->info.port;
 
-        fprintf(stderr, "[lobby] found %.3s at %s:%u\n", found[0].info.name, cfg.addr.c_str(), cfg.port);
+        fprintf(stderr, "[lobby] found %.3s at %s:%u\n", host->info.name, cfg.addr.c_str(), cfg.port);
         stop_discovery();
         lobby_start(cfg);
         return;
@@ -687,6 +723,13 @@ static void list_open() {
 // The address row is checked as a relay server whenever it changes (typing ends) and on JOIN GAME: a game list back within kProbeMs makes it the saved server, so HOST GAME hosts there and JOIN GAME lists its games.
 // With no answer, a JOIN GAME that asked (s_probe_join) joins the row as a host (rs64_lobby_join).
 constexpr uint32_t kProbeMs = 2500;
+
+// A direct join from this page (the address row, not a listed game) that fails shows why for kFailBackMs, then goes back to MULTIPLAYER, whose address row takes a password after a refusal.
+constexpr uint32_t kFailBackMs = 2000;
+static bool s_on_games = false;
+static bool s_direct_join = false;
+static bool s_back_armed = false;
+static uint32_t s_back_at_ms = 0;
 static rs64::net::RelayClient s_probe;
 static std::string s_probe_addr;
 static std::string s_checked_addr;
@@ -728,6 +771,9 @@ static void join_open()
     Ghost& s = g();
 
     list_open();
+    s_on_games = true;
+    s_direct_join = false;
+    s_back_armed = false;
 
     if (s.editor.typing) {
         s.editor.end_typing();
@@ -802,6 +848,7 @@ static void join_probe_update()
     }
 
     fprintf(stderr, "[lobby] %s is not a relay server; joining it as a host\n", s_probe_addr.c_str());
+    s_direct_join = true;
     rs64_lobby_join();
 }
 
@@ -809,6 +856,9 @@ static void join_probe_update()
 static void join_leave() {
 
     join_probe_stop();
+    s_on_games = false;
+    s_direct_join = false;
+    s_back_armed = false;
 
     if (g().started && !g().lobby.ready() && !rs64_lobby_hosting()) {
         lobby_stop(false);
@@ -838,6 +888,7 @@ static void list_join(const Listed& game)
 
     join_probe_stop();
     s_list_joined = true;
+    s_direct_join = false;
 
     if (g().started) {
         lobby_stop(false);
@@ -861,8 +912,10 @@ static void list_pick(int row)
         return;
     }
 
-    if (!s_listed[i].locked) {
-        s.join_pin_set = false;
+    static const char* test_pin = recomp::dbg::env_str("ROGUESQ_MP_TEST_JOIN_PIN");
+
+    if (!s_listed[i].locked || (test_pin && rs64::net::CodeEditor::valid(test_pin))) {
+        s.join_pin_set = s_listed[i].locked;
         list_join(s_listed[i]);
         return;
     }
@@ -943,7 +996,7 @@ static std::string list_status_line()
         return rs64::net::status_dots("CONNECTING", now_ms32());
     }
 
-    if (g().started || (s_list_joined && g().lobby.state() == rs64::net::LobbyState::Failed))
+    if (g().started || ((s_list_joined || s_direct_join) && g().lobby.state() == rs64::net::LobbyState::Failed))
     {
         return rs64_lobby_status();
     }
@@ -976,22 +1029,9 @@ static void sync_host_settings()
     // Read before the first compare, so the file is never rewritten from defaults.
     load_net_config();
 
-    // The password row once it closes: six digits set the password, an emptied field means none, anything else keeps what was set.
-    static std::string s_pin_typed;
-    static bool s_pin_open = false;
+    static PinWatch s_host_pin_watch;
 
-    if (s.host_pin.editing || s.host_pin.typing) {
-        s_pin_open = true;
-        s_pin_typed = s.host_pin.typed;
-    } else if (s_pin_open) {
-        s_pin_open = false;
-
-        if (rs64::net::CodeEditor::valid(s_pin_typed) && s.host_pin.code() == s_pin_typed) {
-            s.host_pin_set = true;
-        } else if (s_pin_typed.empty()) {
-            s.host_pin_set = false;
-        }
-    }
+    pin_watch(s.host_pin, s_host_pin_watch, &s.host_pin_set);
 
     const std::string pin = s.host_pin_set ? s.host_pin.code() : std::string{};
     const std::string saved = s.host_name.name + "|" + pin;
@@ -1144,10 +1184,14 @@ extern "C" void rs64_lobby_edit_toggle(void)
 
     Ghost& s = g();
 
-    // A host asked for a password: the row is the password until the next JOIN.
+    // A host asked for a password: the row is the password until the next JOIN. It opens empty; closing it decides (pin_watch).
     if (s.pin_mode) {
-        s.join_pin_set = true;
         toggle_edit(s.join_pin);
+
+        if (s.join_pin.typing) {
+            s.join_pin.typed.clear();
+        }
+
         return;
     }
 
@@ -1680,6 +1724,24 @@ extern "C" void rs64_lobby_input(uint8_t* rdram)
 
     g().rdram = rdram;
 
+    // A failed direct join backs out of JOIN GAME with a B press once its reason has been up for kFailBackMs.
+    if (s_on_games && s_direct_join && g().lobby.state() == rs64::net::LobbyState::Failed)
+    {
+        const uint32_t now = now_ms32();
+
+        if (!s_back_armed)
+        {
+            s_back_armed = true;
+            s_back_at_ms = now + kFailBackMs;
+        } else if ((int32_t)(now - s_back_at_ms) >= 0) {
+            s_direct_join = false;
+            s_back_armed = false;
+            ww(rdram, 0x8013A960u, rw(rdram, 0x8013A960u) | 0x4000u);
+
+            fprintf(stderr, "[lobby] join failed: back to MULTIPLAYER\n");
+        }
+    }
+
     // The row being edited takes the pad; with none, the address editor's frame still runs (it turns the keyboard off).
     const bool any = each_editor([&](auto& e) {
         if (e.editing || e.typing) {
@@ -1809,9 +1871,15 @@ extern "C" void rs64_ghost_register_host(void)
             s.editor.cancel_typing();
         }
 
+        // A host asked for a password: entering six digits joins it again from this page.
+        if (s.pin_mode && pin_watch(s.join_pin, s_join_pin_watch, &s.join_pin_set) && !rs64_lobby_hosting())
+        {
+            rs64_lobby_join();
+        }
+
         if (s.pin_mode)
         {
-            return mp_text(b, pin_label(s.join_pin, s.join_pin_set, "------"));
+            return mp_text(b, pin_label(s.join_pin, s.join_pin_set, "NONE"));
         }
 
         return mp_text(b, std::string(rs64_lobby_address_label()));

@@ -68,6 +68,7 @@ const std::vector<LimitDef>& limits()
         {"max_clients", &Settings::max_clients, 1, kPeerCeiling, "Connections at once (hosts, joiners and browsers)"},
         {"max_games", &Settings::max_games, 1, 2000, "Registered games"},
         {"max_per_ip", &Settings::max_per_ip, 1, kPeerCeiling, "Connections from one address"},
+        {"games_per_ip", &Settings::games_per_ip, 1, 2000, "Games hosted from one address"},
         {"rate", &Settings::rate, 10, 10000, "Packets per second per client before it is dropped"},
         {"idle_timeout", &Settings::idle_timeout, 5, 3600, "Seconds before a connection outside a game is closed"},
     };

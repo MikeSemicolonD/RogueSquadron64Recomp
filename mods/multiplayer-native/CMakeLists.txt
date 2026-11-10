@@ -43,7 +43,7 @@ target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
-target_link_libraries(multiplayer_native PRIVATE enet6 libminiupnpc-static)
+target_link_libraries(multiplayer_native PRIVATE enet6 libminiupnpc-static monocypher)
 # Linux: every symbol resolves inside the library (nothing from the exe), its own calls bind to itself, and only the two mod entry points are exported (no ENet / miniupnpc or libstdc++ template symbols).
 if (UNIX AND NOT APPLE)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/exports.map" "{ global: recomp_api_version; rs64_mod_init; local: *; };\n")

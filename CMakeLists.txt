@@ -89,6 +89,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # ---- RT64 renderer ----
+if (MSVC)
+    # Control Flow Guard: a corrupted native indirect call can only reach a real function entry.
+    add_compile_options(/guard:cf)
+    add_link_options(/guard:cf)
+endif()
+
 set(RT64_STATIC TRUE)
 set(RT64_SDL_WINDOW_VULKAN TRUE)
 add_compile_definitions(HLSL_CPU)

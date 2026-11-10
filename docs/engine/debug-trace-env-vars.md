@@ -466,6 +466,7 @@ Test knobs used by `tools/debug/lockstep/run-mp.ps1` (flag in brackets):
   - `upgrade:<bits>` [-TestUpgrade f:hex] — OR power-up bits (mask 0x1FE00) into the settings word, as a pickup does (`0x` prefix for hex).
   - `pickup` [-TestPickup] — collect the first power-up that ticks from that frame on (needs one spawned near the flown path).
 - `ROGUESQ_MP_TEST_VERSION=<n>` [-TestVersion] — send and compare build id n.
+- `ROGUESQ_MP_TEST_JOIN_PIN=<6 digits>` [-ClientPassword] — the password a joining client sends.
 - `ROGUESQ_MP_TEST_UNLOCK=<n>` [-TestUnlock] — host mission select shows levels up to n.
 - `ROGUESQ_MP_TEST_ALLCRAFT=1` [-TestAllCraft] — set the all-crafts unlock bit (gGameSettings+0xC 0x80000).
 - `ROGUESQ_MP_TEST_LIVES=<n>` [-TestLives] — start the shared lives pool at n.

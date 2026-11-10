@@ -2,6 +2,8 @@
 #include "net/net_core.h"
 #include "net/wire.h"
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 namespace rs64::net {
 
@@ -66,12 +68,29 @@ uint8_t message_type(const uint8_t* data, size_t n)
         return data[1];
     }
 
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::TowSeg)
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Name)
     {
         return 0;
     }
 
     return data[1];
+}
+
+bool handshake_message(uint8_t type)
+{
+
+    switch ((Msg)type) {
+    case Msg::Hello:
+    case Msg::Auth:
+    case Msg::Accept:
+    case Msg::Bye:
+    case Msg::Pake1:
+    case Msg::Pake2:
+    case Msg::Pake3:
+        return true;
+    default:
+        return false;
+    }
 }
 
 // HELLO leads with the sender's protocol, not ours, so a mismatch decodes and can be reported.
@@ -85,8 +104,9 @@ std::vector<uint8_t> encode_hello(const Hello& h)
     w.u16(h.protocol);
     w.u32(h.build);
     w.u8(h.role);
+    w.u8(h.locked);
 
-    for (char c : h.name) w.u8((uint8_t)c);
+    for (uint8_t c : h.nonce) w.u8(c);
 
     return w.b;
 }
@@ -113,16 +133,128 @@ bool decode_hello(const uint8_t* data, size_t n, Hello* out)
     h.protocol = r.u16();
     h.build = r.u32();
     h.role = r.u8();
+    h.locked = r.u8();
 
-    for (char& c : h.name) c = (char)r.u8();
+    for (uint8_t& c : h.nonce) c = r.u8();
 
-    if (!r.done() || h.role > 1)
+    if (!r.done() || h.role > 1 || h.locked > 1)
     {
         return false;
     }
 
     *out = h;
     return true;
+}
+
+std::vector<uint8_t> encode_name(const char name[3])
+{
+
+    Writer w;
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Name);
+
+    for (int i = 0; i < 3; ++i) w.u8((uint8_t)name[i]);
+
+    return w.b;
+}
+
+bool decode_name(const uint8_t* data, size_t n, char name[3])
+{
+
+    Reader r{data, n};
+    char c[3];
+
+    if (!header(r, Msg::Name))
+    {
+        return false;
+    }
+
+    for (char& x : c) x = (char)r.u8();
+
+    if (!r.done())
+    {
+        return false;
+    }
+
+    memcpy(name, c, 3);
+    return true;
+}
+
+std::vector<uint8_t> encode_pake(Msg type, const uint8_t* point, const uint8_t* tag)
+{
+
+    Writer w;
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)type);
+
+    if (type != Msg::Pake3) {
+        for (size_t i = 0; i < kPakePoint; ++i) w.u8(point[i]);
+    }
+
+    if (type != Msg::Pake1) {
+        for (size_t i = 0; i < kPakeTag; ++i) w.u8(tag[i]);
+    }
+
+    return w.b;
+}
+
+bool decode_pake(const uint8_t* data, size_t n, Msg type, uint8_t* point, uint8_t* tag)
+{
+
+    Reader r{data, n};
+    uint8_t p[kPakePoint] = {};
+    uint8_t t[kPakeTag] = {};
+
+    if (!header(r, type) || (type != Msg::Pake1 && type != Msg::Pake2 && type != Msg::Pake3))
+    {
+        return false;
+    }
+
+    if (type != Msg::Pake3) {
+        for (uint8_t& c : p) c = r.u8();
+    }
+
+    if (type != Msg::Pake1) {
+        for (uint8_t& c : t) c = r.u8();
+    }
+
+    if (!r.done())
+    {
+        return false;
+    }
+
+    if (point) {
+        memcpy(point, p, sizeof(p));
+    }
+
+    if (tag) {
+        memcpy(tag, t, sizeof(t));
+    }
+
+    return true;
+}
+
+std::string pilot_name(const char name[3])
+{
+
+    std::string out;
+
+    for (int i = 0; i < 3; ++i) {
+        const char c = name[i];
+
+        if (!c)
+        {
+            break;
+        }
+
+        if (c >= 0x20 && c < '~') {
+            out += c;
+        }
+    }
+
+    return out;
 }
 
 std::vector<uint8_t> encode_launch(const std::string& header_text)
@@ -132,7 +264,7 @@ std::vector<uint8_t> encode_launch(const std::string& header_text)
 
     w.u8(kProtocol);
     w.u8((uint8_t)Msg::Launch);
-    put_string<uint16_t>(w, header_text, kMaxPacket - 4);
+    put_string<uint16_t>(w, header_text, kMaxPacket - 4 - kSealOverhead);
     return w.b;
 }
 
@@ -148,37 +280,6 @@ bool decode_launch(const uint8_t* data, size_t n, std::string* header_text)
     }
 
     *header_text = std::move(s);
-    return true;
-}
-
-std::vector<uint8_t> encode_auth(const std::string& pin)
-{
-
-    Writer w;
-
-    w.u8(kProtocol);
-    w.u8((uint8_t)Msg::Auth);
-    put_string<uint8_t>(w, pin, 255);
-    return w.b;
-}
-
-bool decode_auth(const uint8_t* data, size_t n, std::string* pin)
-{
-
-    Reader r{data, n};
-    std::string p;
-
-    if (!header(r, Msg::Auth) || !take_string<uint8_t>(r, &p, 255) || !r.done())
-    {
-        return false;
-    }
-
-    if (!p.empty() && (p.size() != (size_t)CodeEditor::kDigits || !CodeEditor::valid(p)))
-    {
-        return false;
-    }
-
-    *pin = p;
     return true;
 }
 
@@ -345,6 +446,39 @@ bool decode_tow_seg(const uint8_t* data, size_t n, TowSeg* out)
     return true;
 }
 
+bool tow_seg_ok(const TowSeg& t, uint32_t ring)
+{
+
+    if (t.head >= ring)
+    {
+        return false;
+    }
+
+    if (t.index == TowSeg::kNoSegment)
+    {
+        return true;
+    }
+
+    for (int i = 0; i < 16; ++i)
+    {
+        // +0xC sits between the start position and the transform and is not a coordinate.
+        if (i == 3) {
+            continue;
+        }
+
+        float v;
+
+        std::memcpy(&v, &t.words[i], 4);
+
+        if (!std::isfinite(v) || std::fabs(v) > 1e6f)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 std::vector<uint8_t> encode_bye(ByeReason reason, uint32_t frame) { return encode_fields(Msg::Bye, (uint8_t)reason, frame); }
 
 bool decode_bye(const uint8_t* data, size_t n, ByeReason* reason, uint32_t* frame)
@@ -497,6 +631,8 @@ bool decode_skip(const uint8_t* data, size_t n, uint16_t* scene)
 
 std::vector<uint8_t> encode_briefing_done() { return encode_fields(Msg::BriefingDone); }
 bool decode_briefing_done(const uint8_t* data, size_t n) { return decode_fields(data, n, Msg::BriefingDone); }
+std::vector<uint8_t> encode_auth() { return encode_fields(Msg::Auth); }
+bool decode_auth(const uint8_t* data, size_t n) { return decode_fields(data, n, Msg::Auth); }
 std::vector<uint8_t> encode_accept() { return encode_fields(Msg::Accept); }
 bool decode_accept(const uint8_t* data, size_t n) { return decode_fields(data, n, Msg::Accept); }
 std::vector<uint8_t> encode_continue() { return encode_fields(Msg::Continue); }

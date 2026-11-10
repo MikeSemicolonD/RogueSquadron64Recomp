@@ -244,7 +244,7 @@ int receive_bytes(ENetSocket s, ENetAddress* from, uint8_t* buf, size_t cap)
 }
 }
 
-bool DiscoveryResponder::start(uint16_t game_port, const DiscoveryReply& info)
+bool DiscoveryResponder::start(uint16_t game_port, const DiscoveryReply& info, uint32_t bind_v4)
 {
 
     stop();
@@ -262,6 +262,7 @@ bool DiscoveryResponder::start(uint16_t game_port, const DiscoveryReply& info)
     }
 
     sock_ = (intptr_t)s;
+    bind_v4_ = bind_v4;
     info_ = info;
     info_.port = game_port;
     return true;
@@ -285,7 +286,9 @@ void DiscoveryResponder::poll() {
             break;
         }
 
-        if (is_discovery_query(buf, (size_t)n)) {
+        const uint32_t ip = ((uint32_t)from.host.v4[0] << 24) | ((uint32_t)from.host.v4[1] << 16) | ((uint32_t)from.host.v4[2] << 8) | from.host.v4[3];
+
+        if (is_discovery_query(buf, (size_t)n) && from.type == ENET_ADDRESS_TYPE_IPV4 && discovery_allowed(ip, bind_v4_)) {
             send_bytes(s, from, encode_discovery_reply(info_));
         }
     }
@@ -515,16 +518,10 @@ void PortMapper::run(std::shared_ptr<Job> job, std::shared_ptr<Job> prev, uint16
     char ext[40] = {};
     UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, ext);
     const std::string port_s = std::to_string(port);
+
+    // A timed lease only, so a crash cannot leave the port open: a router that takes only permanent leases counts as refused.
     auto add = [&]() {
-        int r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype, port_s.c_str(), port_s.c_str(), lanaddr, "Rogue Squadron 64", "UDP", nullptr, "3600");
-
-        // 725 OnlyPermanentLeasesSupported: such routers take only lease 0.
-        if (r == 725)
-        {
-            r = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype, port_s.c_str(), port_s.c_str(), lanaddr, "Rogue Squadron 64", "UDP", nullptr, "0");
-        }
-
-        return r;
+        return UPNP_AddPortMapping(urls.controlURL, data.first.servicetype, port_s.c_str(), port_s.c_str(), lanaddr, "Rogue Squadron 64", "UDP", nullptr, "3600");
     };
     const int r = add();
 
@@ -594,6 +591,8 @@ bool Link::start(const LinkConfig& cfg) {
         return false;
     }
 
+    clear_cipher();
+
     if (cfg.external)
     {
         cfg_ = cfg;
@@ -637,6 +636,8 @@ void Link::stop() {
         thread_.join();
     }
 
+    clear_cipher();
+
     std::lock_guard<std::mutex> lock(mu_);
     in_.clear();
     out_.clear();
@@ -650,8 +651,54 @@ bool Link::connected() const { return ext_ ? ext_->connected(ext_->user) != 0 : 
 bool Link::lost() const { return ext_ ? ext_->lost(ext_->user) != 0 : lost_.load(); }
 uint32_t Link::connect_count() const { return ext_ ? ext_->connect_count(ext_->user) : connects_.load(); }
 
+void Link::set_cipher(const SessionKeys& k)
+{
+
+    std::lock_guard<std::mutex> lock(cmu_);
+
+    cipher_.install(k);
+}
+
+void Link::clear_cipher()
+{
+
+    std::lock_guard<std::mutex> lock(cmu_);
+
+    cipher_.clear();
+}
+
+Cipher::Open Link::open(std::vector<uint8_t>& in, std::vector<uint8_t>* out)
+{
+
+    std::lock_guard<std::mutex> lock(cmu_);
+
+    if (!cipher_.active())
+    {
+        *out = std::move(in);
+        return Cipher::Open::Ok;
+    }
+
+    return cipher_.open(in.data(), in.size(), out);
+}
+
 void Link::send(std::vector<uint8_t> bytes, bool reliable)
 {
+
+    if (!bytes.empty()) {
+        std::lock_guard<std::mutex> lock(cmu_);
+        const size_t wire = bytes.size() + (cipher_.active() ? kSealOverhead : 0);
+
+        // Checked before sealing: a sealed message that never went out would break the peer's reliable count.
+        if (wire > kMaxPacket)
+        {
+            fprintf(stderr, "[mp] dropped a %zu-byte message over the packet limit\n", wire);
+            return;
+        }
+
+        if (cipher_.active()) {
+            bytes = cipher_.seal(bytes, reliable);
+        }
+    }
 
     if (ext_)
     {
@@ -676,6 +723,16 @@ void Link::send(std::vector<uint8_t> bytes, bool reliable)
 
     out_.push_back(Out{at, std::move(bytes), reliable});
     ++queued_;
+}
+
+void Link::kick()
+{
+
+    if (!ext_) {
+        send({}, true);
+    } else if (RS64_MP_TRANSPORT_HAS_KICK(ext_)) {
+        ext_->kick(ext_->user);
+    }
 }
 
 bool Link::flush(int timeout_ms) {
@@ -755,6 +812,9 @@ void Link::run() {
         return;
     }
 
+    // The game's largest message plus the relay's Data header.
+    host->maximumPacketSize = kMaxPacket + 2;
+
     while (!quit_)
     {
         ENetEvent ev;
@@ -775,7 +835,10 @@ void Link::run() {
                 last_rx_ms_ = now_ms();
                 {
                     std::lock_guard<std::mutex> lock(mu_);
-                    in_.emplace_back(ev.packet->data, ev.packet->data + ev.packet->dataLength);
+
+                    if (in_.size() < kMaxInbox) {
+                        in_.emplace_back(ev.packet->data, ev.packet->data + ev.packet->dataLength);
+                    }
                 }
                 enet_packet_destroy(ev.packet);
                 break;
@@ -818,8 +881,17 @@ void Link::run() {
         if (peer && connected_ && !due.empty()) {
             for (Out& o : due)
             {
+                if (o.bytes.empty()) {
+                    enet_peer_disconnect_later(peer, 0);
+                    continue;
+                }
+
                 ENetPacket* p = enet_packet_create(o.bytes.data(), o.bytes.size(), o.reliable ? ENET_PACKET_FLAG_RELIABLE : 0);
-                enet_peer_send(peer, o.reliable ? 1 : 0, p);
+
+                // Refused once a kicked peer is closing, or past the size limit.
+                if (enet_peer_send(peer, o.reliable ? 1 : 0, p) < 0) {
+                    enet_packet_destroy(p);
+                }
             }
 
             enet_host_flush(host);

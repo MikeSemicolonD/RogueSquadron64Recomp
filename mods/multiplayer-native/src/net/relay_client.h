@@ -35,6 +35,7 @@ public:
     // The game's join code: what start() takes as its peer.
     const char* game_peer(int i) const { return game(i) ? codes_[i].c_str() : ""; }
     void set_info(const std::string& name, bool locked);
+    void kick();
 
     // The mp.transport table over this client (name "server").
     const rs64_mp_transport* table();

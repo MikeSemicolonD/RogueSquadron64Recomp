@@ -18,6 +18,9 @@ namespace rs64::net {
 
 enum class Role { None, Host, Client };
 
+// Received messages waiting for the game thread, at most; a peer flooding one that is not reading loses the excess.
+constexpr size_t kMaxInbox = 16384;
+
 // This machine's IPv4 addresses (host byte order) on every adapter that is up.
 std::vector<uint32_t> local_ipv4s();
 
@@ -35,11 +38,13 @@ std::vector<uint32_t> discovery_targets(const std::vector<uint32_t>& local);
 class DiscoveryResponder {
 public:
     ~DiscoveryResponder() { stop(); }
-    bool start(uint16_t game_port, const DiscoveryReply& info);
+    // bind_v4: the address the host listens on, 0 = every address (discovery_allowed).
+    bool start(uint16_t game_port, const DiscoveryReply& info, uint32_t bind_v4 = 0);
     void poll();
     void stop();
 private:
     intptr_t sock_ = -1;
+    uint32_t bind_v4_ = 0;
     DiscoveryReply info_;
 };
 
@@ -128,12 +133,24 @@ public:
     uint32_t close_data() const { return close_data_.load(); }
     void send(std::vector<uint8_t> bytes, bool reliable);
 
+    // Host: disconnects the current peer once everything already sent to it has gone out, so the next player can connect.
+    void kick();
+
     // Waits up to timeout_ms for everything queued so far to reach ENet's socket; false on timeout.
     bool flush(int timeout_ms);
     std::vector<std::vector<uint8_t>> receive();
+
+    // A password game's keys: from here every send is sealed and open() refuses anything not sealed. Cleared by start, stop and clear_cipher (a new connection).
+    void set_cipher(const SessionKeys& k);
+    void clear_cipher();
+
+    // One received message as plaintext (as-is without a cipher); Drop and Fail leave out untouched.
+    Cipher::Open open(std::vector<uint8_t>& in, std::vector<uint8_t>* out);
 private:
     struct Out {
         std::chrono::steady_clock::time_point at;
+
+        // Empty: a kick, queued so it follows what was sent before it.
         std::vector<uint8_t> bytes;
         bool reliable;
     };
@@ -153,5 +170,7 @@ private:
     std::deque<Out> out_;
     std::vector<std::vector<uint8_t>> in_;
     std::mt19937 rng_{1234};
+    std::mutex cmu_;
+    Cipher cipher_;
 };
 }

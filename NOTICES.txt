@@ -105,6 +105,8 @@ ENet6                                        MIT                     licenses/en
   https://github.com/SirLynix/enet6          Copyright (c) 2002-2024 Lee Salzman
 MiniUPnP (miniupnpc)                         BSD 3-Clause            licenses/miniupnp.txt
   https://github.com/miniupnp/miniupnp       Copyright (c) 2005-2025 Thomas Bernard
+Monocypher                                   BSD 2-Clause            licenses/monocypher.txt
+  https://github.com/LoupVaillant/Monocypher Copyright (c) 2017-2023 Loup Vaillant, Michael Savage, Fabio Scotoni
 Steamworks SDK (steam-relay mod)             Steamworks SDK Access Agreement
   https://partner.steamgames.com/            Copyright Valve Corporation
 

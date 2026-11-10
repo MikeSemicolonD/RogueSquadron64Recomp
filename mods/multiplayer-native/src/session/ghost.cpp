@@ -222,6 +222,14 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
         s.lobby.set_password(s.host_pin_set ? s.host_pin.code() : std::string{});
         s.lobby.host();
     } else {
+        static const char* test_pin = recomp::dbg::env_str("ROGUESQ_MP_TEST_JOIN_PIN");
+
+        if (test_pin && rs64::net::CodeEditor::valid(test_pin)) {
+            s.join_pin.load(test_pin);
+            s.join_pin_set = true;
+        }
+
+        s.lobby.set_password(s.join_pin_set ? s.join_pin.code() : std::string{});
         s.lobby.join();
     }
 
@@ -241,6 +249,25 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
         fprintf(stderr, "[lobby] hosting on port %u latency %d ms loss %d%%%s\n", cfg.port, cfg.latency_ms, cfg.loss_pct, s.started ? "" : " (network start failed)");
     } else {
         fprintf(stderr, "[lobby] joining %s:%u latency %d ms loss %d%%%s\n", cfg.addr.c_str(), cfg.port, cfg.latency_ms, cfg.loss_pct, s.started ? "" : " (network start failed)");
+    }
+}
+
+// The lobby's handshake messages go out before its keys are installed: the client's PAKE3 is the last plaintext message.
+void lobby_flush()
+{
+
+    Ghost& s = g();
+    rs64::net::SessionKeys k;
+
+    for (auto& b : s.lobby.take_sends()) {
+        s.link.send(std::move(b), true);
+    }
+
+    if (s.lobby.take_keys(&k)) {
+        s.link.set_cipher(k);
+        rs64::net::wipe_keys(&k);
+
+        fprintf(stderr, "[lobby] password checked, session sealed\n");
     }
 }
 
@@ -269,25 +296,8 @@ void lobby_poll()
 
     if (edges.connected)
     {
+        s.link.clear_cipher();
         s.lobby.on_connected(now);
-        rs64::net::Hello h;
-        h.build = s.lobby.local_build();
-        h.role = s.player;
-
-        // The pilot name (gGameSettings+7), for the label over this player's ship on the other screen.
-        if (s.rdram) {
-            for (int i = 0; i < 3; ++i) {
-                h.name[i] = (char)rb(s.rdram, 0x80130B47u + (uint32_t)i);
-            }
-        }
-
-        s.link.send(rs64::net::encode_hello(h), true);
-
-        // The client's password for this game (none: empty); the host answers ACCEPT or BYE WrongPassword.
-        if (s.player == 1)
-        {
-            s.link.send(rs64::net::encode_auth(s.join_pin_set ? s.join_pin.code() : std::string{}), true);
-        }
     }
 
     s.was_connected = c;
@@ -300,6 +310,24 @@ void lobby_poll()
     }
 
     s.lobby.tick(now);
+    lobby_flush();
+
+    if (s.lobby.password_failed()) {
+        s.pin_mode = true;
+    }
+
+    // A password kept from an earlier game, refused by an open one: the next JOIN goes without it.
+    if (s.player == 1 && s.lobby.status() == "GAME HAS NO PASSWORD") {
+        s.join_pin_set = false;
+    }
+
+    if (s.lobby.take_kick())
+    {
+        s.link.kick();
+
+        fprintf(stderr, "[lobby] closed a connection that failed the handshake\n");
+    }
+
     const bool ready = s.lobby.ready();
 
     if (ready && !s.was_ready)
@@ -307,6 +335,17 @@ void lobby_poll()
         if (s.player == 0) {
             s.link.send(rs64::net::encode_accept(), true);
         }
+
+        // The pilot name (gGameSettings+7), for the label over this player's ship on the other screen.
+        char name[3] = {0, 0, 0};
+
+        if (s.rdram) {
+            for (int i = 0; i < 3; ++i) {
+                name[i] = (char)rb(s.rdram, 0x80130B47u + (uint32_t)i);
+            }
+        }
+
+        s.link.send(rs64::net::encode_name(name), true);
 
         s.lobby_session = true;
         s.peer_left = false;
@@ -439,6 +478,10 @@ const rs64_camera_shots* camera_shots()
     return svc;
 }
 
+// Peak backlogs a peer can leave waiting for the mission to settle: four full resyncs of the largest DAT list, and far more trigger edges than a level has.
+constexpr size_t kMaxDatApply = 4 * 4096;
+constexpr size_t kMaxTriggerIn = 1024;
+
 void drain()
 {
 
@@ -447,9 +490,41 @@ void drain()
     // The connect edge first: the peer's HELLO can arrive in the same batch as the connection, and the lobby ignores a HELLO before it knows it is connected.
     lobby_poll();
 
-    for (const auto& m : s.link.receive())
+    for (auto& raw : s.link.receive())
     {
-        switch ((rs64::net::Msg)rs64::net::message_type(m.data(), m.size())) {
+        // The previous message's handshake replies and keys first: the next message may already be sealed.
+        lobby_flush();
+
+        std::vector<uint8_t> m;
+        const rs64::net::Cipher::Open opened = s.link.open(raw, &m);
+
+        if (opened == rs64::net::Cipher::Open::Fail)
+        {
+            fprintf(stderr, "[lobby] a sealed message did not open; closing the session\n");
+
+            s.link.clear_cipher();
+            s.lobby.on_lost();
+
+            if (s.player == 0) {
+                s.link.kick();
+            }
+
+            continue;
+        }
+
+        if (opened != rs64::net::Cipher::Open::Ok)
+        {
+            continue;
+        }
+
+        const uint8_t type = rs64::net::message_type(m.data(), m.size());
+
+        // A connection that has not passed the handshake (and the password) only gets to attempt it.
+        if (!s.lobby.ready() && !rs64::net::handshake_message(type)) {
+            continue;
+        }
+
+        switch ((rs64::net::Msg)type) {
         case rs64::net::Msg::State: {
             rs64::net::StatePacket p;
 
@@ -602,7 +677,7 @@ void drain()
             uint8_t e = 0;
             std::vector<std::pair<uint16_t, int32_t>> items;
 
-            if (s.in_session && rs64::net::decode_damage(m.data(), m.size(), &e, &items) && e == mission_tag())
+            if (s.in_session && s.dat_apply.size() < kMaxDatApply && rs64::net::decode_damage(m.data(), m.size(), &e, &items) && e == mission_tag())
             {
                 s.dat_apply.insert(s.dat_apply.end(), items.begin(), items.end());
             }
@@ -643,7 +718,7 @@ void drain()
             uint16_t idx = 0;
             bool enter = false;
 
-            if (s.player == 0 && s.in_session && rs64::net::decode_trigger(m.data(), m.size(), &e, &idx, &enter) && e == mission_tag())
+            if (s.player == 0 && s.in_session && s.trigger_in.size() < kMaxTriggerIn && rs64::net::decode_trigger(m.data(), m.size(), &e, &idx, &enter) && e == mission_tag())
             {
                 s.trigger_in.emplace_back(idx, enter);
             }
@@ -687,7 +762,6 @@ void drain()
 
             if (rs64::net::decode_hello(m.data(), m.size(), &h))
             {
-                s.remote_name.assign(h.name, strnlen(h.name, 3));
                 s.lobby.on_hello(h);
 
                 if (!s.lobby.ready() && s.lobby.state() == rs64::net::LobbyState::Failed)
@@ -784,15 +858,46 @@ void drain()
         case rs64::net::Msg::Launch:
             rs64::net::decode_launch(m.data(), m.size(), &s.launch);
             break;
-        case rs64::net::Msg::Auth: {
-            std::string pin;
-
-            if (s.player == 0 && rs64::net::decode_auth(m.data(), m.size(), &pin) && !s.lobby.on_auth(pin))
+        case rs64::net::Msg::Auth:
+            if (s.player == 0 && rs64::net::decode_auth(m.data(), m.size()) && !s.lobby.on_auth())
             {
-                // shortcut: the refused player is trusted to leave on this BYE; a modified client could hold the host's one slot until it does.
-                s.link.send(rs64::net::encode_bye(rs64::net::ByeReason::WrongPassword, 0), true);
+                fprintf(stderr, "[lobby] refused a player: no password\n");
+            }
 
-                fprintf(stderr, "[lobby] refused a player: %s password\n", pin.empty() ? "no" : "wrong");
+            break;
+        case rs64::net::Msg::Pake1:
+        case rs64::net::Msg::Pake2:
+        case rs64::net::Msg::Pake3: {
+            uint8_t point[rs64::net::kPakePoint];
+            uint8_t tag[rs64::net::kPakeTag];
+            const rs64::net::Msg t = (rs64::net::Msg)type;
+
+            if (!rs64::net::decode_pake(m.data(), m.size(), t, point, tag))
+            {
+                break;
+            }
+
+            if (t == rs64::net::Msg::Pake1) {
+                s.lobby.on_pake1(point);
+            } else if (t == rs64::net::Msg::Pake2) {
+                s.lobby.on_pake2(point, tag);
+            } else {
+                s.lobby.on_pake3(tag);
+            }
+
+            if (s.lobby.password_failed())
+            {
+                fprintf(stderr, "[lobby] the host has another password\n");
+            }
+
+            break;
+        }
+        case rs64::net::Msg::Name: {
+            char name[3];
+
+            if (rs64::net::decode_name(m.data(), m.size(), name))
+            {
+                s.remote_name = rs64::net::pilot_name(name);
             }
 
             break;
@@ -812,7 +917,7 @@ void drain()
                 s.lobby.on_refused(s.join_pin_set);
                 s.pin_mode = true;
 
-                fprintf(stderr, "[lobby] the host wants a password (%s)\n", s.join_pin_set ? "wrong one sent" : "none sent");
+                fprintf(stderr, "[lobby] the host refused this player (%s)\n", s.join_pin_set ? "password" : "no password");
                 break;
             }
 

@@ -1,5 +1,7 @@
 #include "net/net_core.h"
+#include "net/crypto_session.h"
 #include "check.h"
+#include <algorithm>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
@@ -107,14 +109,19 @@ static void test_life_lost() {
 }
 
 static void test_hello_roundtrip() {
-    Hello h{kProtocol, 0xC0FFEE01u, 1};
-    memcpy(h.name, "WED", 3);
+    Hello h{kProtocol, 0xC0FFEE01u, 1, 1};
+    for (size_t i = 0; i < kPakeNonce; ++i) h.nonce[i] = (uint8_t)(i * 7);
     const std::vector<uint8_t> b = encode_hello(h);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Hello);
     Hello out{};
-    CHECK(decode_hello(b.data(), b.size(), &out) && out.protocol == kProtocol && out.build == 0xC0FFEE01u && out.role == 1);
-    CHECK(memcmp(out.name, "WED", 3) == 0);
+    CHECK(decode_hello(b.data(), b.size(), &out) && out.protocol == kProtocol && out.build == 0xC0FFEE01u && out.role == 1 && out.locked == 1);
+    CHECK(memcmp(out.nonce, h.nonce, kPakeNonce) == 0);
     CHECK(!decode_hello(b.data(), b.size() - 1, &out));
+    const char name[3] = {'W', 'E', 'D'};
+    const std::vector<uint8_t> nb = encode_name(name);
+    char got[3] = {};
+    CHECK(message_type(nb.data(), nb.size()) == (uint8_t)Msg::Name && decode_name(nb.data(), nb.size(), got) && memcmp(got, "WED", 3) == 0);
+    CHECK(!decode_name(nb.data(), nb.size() - 1, got));
     // A peer on another protocol still reads as a HELLO, so the lobby can say VERSION MISMATCH.
     std::vector<uint8_t> other = encode_hello(Hello{(uint16_t)(kProtocol + 1), 7u, 0});
     other[0] = (uint8_t)(kProtocol + 1);
@@ -197,48 +204,114 @@ static void test_lobby_join_connects_and_checks_version() {
     CHECK(l.ready() && l.state() == LobbyState::Connected && l.status() == "CONNECTED");
 }
 
-static void test_lobby_password() {
-    // No password: any AUTH is accepted once HELLO matched.
-    Lobby h;
-    h.host();
-    h.on_connected(0);
-    CHECK(h.on_auth("123456") && !h.ready());
-    h.on_hello(Hello{kProtocol, kBuildId, 1});
-    CHECK(h.ready());
+// What ghost.cpp's drain() does with a handshake message: decode it into the lobby. A BYE WrongPassword reaches a client as on_refused.
+static void deliver(Lobby& to, const std::vector<uint8_t>& m, bool sent_pin) {
+    const uint8_t t = message_type(m.data(), m.size());
+    uint8_t point[kPakePoint], tag[kPakeTag];
+    Hello h;
+    ByeReason why;
+    uint32_t frame;
+    if (t == (uint8_t)Msg::Hello && decode_hello(m.data(), m.size(), &h)) to.on_hello(h);
+    else if (t == (uint8_t)Msg::Auth && decode_auth(m.data(), m.size())) to.on_auth();
+    else if (t == (uint8_t)Msg::Accept && decode_accept(m.data(), m.size())) to.on_accept();
+    else if (t == (uint8_t)Msg::Pake1 && decode_pake(m.data(), m.size(), Msg::Pake1, point, tag)) to.on_pake1(point);
+    else if (t == (uint8_t)Msg::Pake2 && decode_pake(m.data(), m.size(), Msg::Pake2, point, tag)) to.on_pake2(point, tag);
+    else if (t == (uint8_t)Msg::Pake3 && decode_pake(m.data(), m.size(), Msg::Pake3, point, tag)) to.on_pake3(tag);
+    else if (t == (uint8_t)Msg::Bye && decode_bye(m.data(), m.size(), &why, &frame) && why == ByeReason::WrongPassword && !to.hosting()) to.on_refused(sent_pin);
+}
 
-    // A password: a wrong or missing PIN sends the host back to waiting; the right one connects.
+struct Session {
+    Lobby host, client;
+    SessionKeys hk, ck;
+    bool host_keys = false, client_keys = false;
+    std::vector<std::vector<uint8_t>> wire;
+
+    // Runs the handshake to the end (as ghost.cpp's lobby_poll would, the host's ACCEPT once it is ready).
+    void run(uint32_t now, const std::string& host_pin, const std::string& client_pin) {
+        host.set_password(host_pin);
+        client.set_password(client_pin);
+        if (host.state() != LobbyState::Hosting) host.host();
+        client.join();
+        host.on_connected(now);
+        client.on_connected(now);
+        host_keys = client_keys = false;
+        bool accepted = false;
+        for (int round = 0; round < 10; ++round) {
+            for (auto& m : host.take_sends()) {
+                wire.push_back(m);
+                deliver(client, m, !client_pin.empty());
+            }
+            host_keys |= host.take_keys(&hk);
+            for (auto& m : client.take_sends()) {
+                wire.push_back(m);
+                deliver(host, m, false);
+            }
+            client_keys |= client.take_keys(&ck);
+            if (host.ready() && !accepted) {
+                accepted = true;
+                client.on_accept();
+            }
+        }
+    }
+};
+
+static void test_lobby_password() {
+    // No password: HELLO, AUTH, ACCEPT; no keys.
+    Session open;
+    open.run(0, "", "");
+    CHECK(open.host.ready() && open.client.ready() && !open.host_keys && !open.client_keys);
+
+    // The right password: both sides end with matching keys, and the password never crosses the wire.
+    Session ok;
+    ok.run(0, "424242", "424242");
+    CHECK(ok.host.ready() && ok.client.ready() && ok.host_keys && ok.client_keys);
+    CHECK(memcmp(ok.hk.send, ok.ck.recv, 32) == 0 && memcmp(ok.hk.recv, ok.ck.send, 32) == 0);
+    for (auto& m : ok.wire) CHECK(std::search(m.begin(), m.end(), std::begin("424242"), std::end("424242") - 1) == m.end());
+
+    // A wrong password: the client says so, the host goes back to waiting and closes the connection.
+    Session bad;
+    bad.run(0, "424242", "111111");
+    CHECK(bad.client.state() == LobbyState::Failed && bad.client.status() == "WRONG PASSWORD" && bad.client.password_failed());
+    CHECK(bad.host.state() == LobbyState::Hosting && !bad.host_keys && !bad.client_keys);
+
+    // No downgrade: no password typed for a locked game, or one typed for an open game.
+    Session none;
+    none.run(0, "424242", "");
+    CHECK(none.client.status() == "PASSWORD NEEDED" && none.client.password_failed() && !none.host.ready());
+    Session extra;
+    extra.run(0, "", "424242");
+    CHECK(extra.client.status() == "GAME HAS NO PASSWORD" && !extra.client.password_failed() && !extra.host.ready());
+
+    // A locked host refuses a plain AUTH and a client that skips the exchange; an open host refuses PAKE1.
     Lobby p;
     p.set_password("424242");
     p.host();
     p.on_connected(0);
     p.on_hello(Hello{kProtocol, kBuildId, 1});
-    CHECK(!p.on_auth("") && p.state() == LobbyState::Hosting && p.status() == "WAITING FOR PLAYER");
-    p.on_connected(10);
-    p.on_hello(Hello{kProtocol, kBuildId, 1});
-    CHECK(!p.on_auth("111111") && !p.ready());
-    p.on_connected(20);
-    p.on_hello(Hello{kProtocol, kBuildId, 1});
-    CHECK(p.on_auth("424242") && p.ready());
+    CHECK(!p.on_auth() && p.state() == LobbyState::Hosting && p.take_kick());
+    Lobby o;
+    o.host();
+    o.on_connected(0);
+    o.on_hello(Hello{kProtocol, kBuildId, 1});
+    uint8_t pt[kPakePoint] = {9};
+    o.on_pake1(pt);
+    CHECK(!o.ready() && o.take_kick());
 
-    // The client: refused with or without a typed PIN.
+    // A client in a password game ignores an ACCEPT before the host's tag checked (a plaintext one injected by a relay).
     Lobby c;
+    c.set_password("424242");
     c.join();
     c.on_connected(0);
-    c.on_hello(Hello{kProtocol, kBuildId, 0});
-    c.on_refused(false);
-    CHECK(c.state() == LobbyState::Failed && c.status() == "PASSWORD NEEDED" && c.password_failed());
-    c.join();
-    CHECK(!c.password_failed());
-    c.on_connected(0);
-    c.on_refused(true);
-    CHECK(c.status() == "WRONG PASSWORD");
+    c.on_hello(Hello{kProtocol, kBuildId, 0, 1});
+    c.on_accept();
+    CHECK(!c.ready());
 
     // A client never takes AUTH, a host never takes ACCEPT.
     Lobby x;
     x.join();
     x.on_connected(0);
     x.on_hello(Hello{kProtocol, kBuildId, 0});
-    CHECK(x.on_auth("") && !x.ready());
+    CHECK(x.on_auth() && !x.ready());
     Lobby y;
     y.host();
     y.on_connected(0);
@@ -248,16 +321,19 @@ static void test_lobby_password() {
 }
 
 static void test_auth_accept_roundtrip() {
-    std::string pin = "x";
-    const std::vector<uint8_t> a = encode_auth("123456");
-    CHECK(message_type(a.data(), a.size()) == (uint8_t)Msg::Auth);
-    CHECK(decode_auth(a.data(), a.size(), &pin) && pin == "123456");
-    const std::vector<uint8_t> e = encode_auth("");
-    CHECK(decode_auth(e.data(), e.size(), &pin) && pin.empty());
-    const std::vector<uint8_t> bad = encode_auth("12a456");
-    CHECK(!decode_auth(bad.data(), bad.size(), &pin));
-    const std::vector<uint8_t> shortpin = encode_auth("123");
-    CHECK(!decode_auth(shortpin.data(), shortpin.size(), &pin));
+    const std::vector<uint8_t> a = encode_auth();
+    CHECK(message_type(a.data(), a.size()) == (uint8_t)Msg::Auth && decode_auth(a.data(), a.size()));
+    CHECK(!decode_auth(a.data(), a.size() - 1));
+    uint8_t p[kPakePoint], t[kPakeTag], q[kPakePoint], u[kPakeTag];
+    for (size_t i = 0; i < kPakePoint; ++i) p[i] = (uint8_t)i;
+    for (size_t i = 0; i < kPakeTag; ++i) t[i] = (uint8_t)(200 - i);
+    const std::vector<uint8_t> p2 = encode_pake(Msg::Pake2, p, t);
+    CHECK(p2.size() == 2 + kPakePoint + kPakeTag && decode_pake(p2.data(), p2.size(), Msg::Pake2, q, u) && memcmp(p, q, kPakePoint) == 0 && memcmp(t, u, kPakeTag) == 0);
+    CHECK(!decode_pake(p2.data(), p2.size(), Msg::Pake1, q, u) && !decode_pake(p2.data(), p2.size() - 1, Msg::Pake2, q, u));
+    const std::vector<uint8_t> p1 = encode_pake(Msg::Pake1, p, nullptr);
+    const std::vector<uint8_t> p3 = encode_pake(Msg::Pake3, nullptr, t);
+    CHECK(p1.size() == 2 + kPakePoint && decode_pake(p1.data(), p1.size(), Msg::Pake1, q, u));
+    CHECK(p3.size() == 2 + kPakeTag && decode_pake(p3.data(), p3.size(), Msg::Pake3, q, u));
     const std::vector<uint8_t> ok = encode_accept();
     CHECK(message_type(ok.data(), ok.size()) == (uint8_t)Msg::Accept && decode_accept(ok.data(), ok.size()));
     const std::vector<uint8_t> bye = encode_bye(ByeReason::WrongPassword, 0);
@@ -326,15 +402,86 @@ static void test_lobby_no_hello_after_connect() {
     l.on_connected(100);
     l.tick(5200);
     CHECK(l.state() == LobbyState::Failed && l.status() == "NO HELLO");
+    // A host closes the silent peer and keeps waiting.
+    Lobby h;
+    h.host();
+    h.tick(0);
+    h.on_connected(100);
+    h.tick(5200);
+    CHECK(h.state() == LobbyState::Hosting && h.status() == "WAITING FOR PLAYER");
+    CHECK(h.take_kick() && !h.take_kick());
 }
 
-static void test_lobby_version_mismatch_fails_both() {
+static void test_lobby_password_guess_delay() {
+    Session s;
+    s.host.host();
+    // A client that finds the wrong tag leaves: the host sees the connection go.
+    auto guess = [&s](uint32_t now, const char* pin) {
+        s.run(now, "424242", pin);
+        const bool ok = s.host.ready();
+        if (!ok) s.host.on_lost();
+        s.host.take_kick();
+        return ok;
+    };
+    for (int i = 0; i < 4; ++i) CHECK(!guess(0, "111111"));
+    // The fourth wrong guess starts a 1 s wait: even the right password is refused during it.
+    CHECK(!guess(500, "424242") && s.client.status() == "WRONG PASSWORD");
+    CHECK(guess(1000, "424242") && s.client.ready());
+
+    // A client that takes PAKE2 and leaves before PAKE3 still used up a guess.
+    Lobby h;
+    h.set_password("424242");
+    h.host();
+    for (int i = 0; i < 4; ++i) {
+        h.on_connected(0);
+        h.on_hello(Hello{kProtocol, kBuildId, 1});
+        Cpace c;
+        uint8_t nonce[kPakeNonce] = {};
+        c.begin(true, "000000", {}, std::vector<uint8_t>(nonce, nonce + kPakeNonce));
+        h.on_pake1(c.point());
+        h.on_lost();
+    }
+    h.take_sends();
+    h.on_connected(500);
+    h.on_hello(Hello{kProtocol, kBuildId, 1});
+    uint8_t pt[kPakePoint] = {9};
+    h.on_pake1(pt);
+    const auto replies = h.take_sends();
+    ByeReason why = ByeReason::Finished;
+    uint32_t f = 0;
+    CHECK(replies.size() == 2 && decode_bye(replies[1].data(), replies[1].size(), &why, &f) && why == ByeReason::WrongPassword);
+}
+
+static void test_handshake_gate() {
+    for (Msg m : {Msg::Hello, Msg::Auth, Msg::Accept, Msg::Bye, Msg::Pake1, Msg::Pake2, Msg::Pake3}) CHECK(handshake_message((uint8_t)m));
+    for (Msg m : {Msg::State, Msg::Damage, Msg::Pickup, Msg::Trigger, Msg::Upgrades, Msg::TowTrip, Msg::TowSeg, Msg::Launch, Msg::Ready, Msg::Name}) CHECK(!handshake_message((uint8_t)m));
+    CHECK(!handshake_message(0));
+}
+
+static void test_tow_seg_ok() {
+    TowSeg t;
+    t.head = 59;
+    CHECK(tow_seg_ok(t, 60));
+    t.head = 60;
+    CHECK(!tow_seg_ok(t, 60));
+    t.head = 0;
+    t.index = 1;
+    CHECK(tow_seg_ok(t, 60));
+    t.words[3] = 0x7FC00000u;
+    CHECK(tow_seg_ok(t, 60));
+    t.words[4] = 0x7FC00000u;
+    CHECK(!tow_seg_ok(t, 60));
+    t.words[4] = 0x7F000000u;
+    CHECK(!tow_seg_ok(t, 60));
+}
+
+static void test_lobby_version_mismatch() {
     Lobby h;
     h.host();
     CHECK(h.status() == "WAITING FOR PLAYER");
     h.on_connected(0);
     h.on_hello(Hello{kProtocol, kBuildId + 1, 1});
-    CHECK(h.state() == LobbyState::Failed && h.status() == "VERSION MISMATCH" && !h.ready());
+    CHECK(h.state() == LobbyState::Hosting && h.take_kick() && !h.ready());
     Lobby c;
     c.join();
     c.on_connected(0);
@@ -366,7 +513,7 @@ static void test_lobby_lost_after_connect() {
     h.host();
     h.on_connected(0);
     h.on_hello(Hello{kProtocol, kBuildId, 1});
-    h.on_auth("");
+    h.on_auth();
     CHECK(h.ready());
     h.on_lost();
     CHECK(h.state() == LobbyState::Hosting && h.status() == "PLAYER LEFT");
@@ -709,6 +856,29 @@ static void test_public_ipv4() {
     CHECK(!public_ipv4(0xA9FE0101u) && !public_ipv4(0x7F000001u) && !public_ipv4(0u));
 }
 
+static void test_discovery_allowed() {
+    // Any private address when hosting on every address; never a public one.
+    CHECK(discovery_allowed(0xC0A80105u, 0) && discovery_allowed(0x7F000001u, 0) && !discovery_allowed(0x490C2238u, 0));
+    // Bound to one address: only its /24.
+    CHECK(discovery_allowed(0xC0A80105u, 0xC0A80102u) && !discovery_allowed(0xC0A80205u, 0xC0A80102u));
+    CHECK(!discovery_allowed(0x490C2238u, 0x490C2201u));
+}
+
+static void test_pilot_name() {
+    char name[3];
+    name[0] = 'L';
+    name[1] = 'U';
+    name[2] = 'K';
+    CHECK(pilot_name(name) == "LUK");
+    name[1] = 0;
+    CHECK(pilot_name(name) == "L");
+    name[1] = '~';
+    name[2] = (char)0xFF;
+    CHECK(pilot_name(name) == "L");
+    name[0] = 7;
+    CHECK(pilot_name(name).empty());
+}
+
 static void test_address_editor_port() {
     AddressEditor a;
     CHECK(AddressEditor::parse("10.0.0.5:28000", &a));
@@ -841,12 +1011,139 @@ static void test_link_poll_edges() {
     CHECK(!e.connected && !e.lost);
 }
 
+static std::vector<uint8_t> hex(const char* s) {
+    std::vector<uint8_t> v;
+    for (; s[0] && s[1]; s += 2) v.push_back((uint8_t)std::strtoul(std::string(s, 2).c_str(), nullptr, 16));
+    return v;
+}
+
+// draft-irtf-cfrg-cpace-21 B.1 (X25519, SHA-512). Its generator hash has bit 254 set, the case canonical_field handles.
+static void test_cpace_vectors() {
+    const std::string prs = "Password";
+    const std::vector<uint8_t> ci = hex("0b415f696e69746961746f720b425f726573706f6e646572");
+    const std::vector<uint8_t> sid = hex("7e4b4791d6a8ef019b936c79fb7f2c57");
+    uint8_t g[32];
+    Cpace::generator(g, prs, ci, sid);
+    CHECK(std::vector<uint8_t>(g, g + 32) == hex("d04bf6d41f6a289632a2e929fa29bebd51092512a7829fdde7d314b62f05a73f"));
+
+    // The draft's vectors use ADa = "ADa", ADb = "ADb"; ours are empty, so only Ya, Yb and the shared key's agreement are checked here.
+    const std::vector<uint8_t> ya = hex("21b4f4bd9e64ed355c3eb676a28ebedaf6d8f17bdc365995b319097153044080");
+    const std::vector<uint8_t> yb = hex("848b0779ff415f0af4ea14df9dd1d3c29ac41d836c7808896c4eba19c51ac40a");
+    Cpace a, b;
+    CHECK(a.begin(true, prs, ci, sid, ya.data()));
+    CHECK(b.begin(false, prs, ci, sid, yb.data()));
+    CHECK(std::vector<uint8_t>(a.point(), a.point() + 32) == hex("1d13c89278cdadd826f6d8d7f887701430f8380ddc17611cdd6dc989ce0c9f32"));
+    CHECK(std::vector<uint8_t>(b.point(), b.point() + 32) == hex("248cccf6d5cdc3646f0ad593f9e6cef4e69d4945f8372e623512ecea32185623"));
+    uint8_t pa[32], pb[32];
+    memcpy(pa, a.point(), 32);
+    memcpy(pb, b.point(), 32);
+    CHECK(a.finish(pb) && b.finish(pa));
+    CHECK(memcmp(a.isk(), b.isk(), 64) == 0);
+    CHECK(a.check(b.tag()) && b.check(a.tag()));
+    const SessionKeys ka = a.keys(), kb = b.keys();
+    CHECK(memcmp(ka.send, kb.recv, 32) == 0 && memcmp(ka.recv, kb.send, 32) == 0 && memcmp(ka.send, ka.recv, 32) != 0);
+
+    // B.1.5: the ISK with the draft's own ADa = "ADa", ADb = "ADb".
+    const std::vector<uint8_t> ada = {'A', 'D', 'a'}, adb = {'A', 'D', 'b'};
+    Cpace va, vb;
+    CHECK(va.begin(true, prs, ci, sid, ya.data(), ada) && vb.begin(false, prs, ci, sid, yb.data(), adb));
+    CHECK(va.finish(pb, adb) && vb.finish(pa, ada));
+    const std::vector<uint8_t> isk = hex("6e19b875f7a561d6b3ca3dbb9ef42ac55de3e717881018204b8922b4d5e53bb2aa82c300bea7b65d2b671da71922ddf6472301b79bc270adfa8bf413285f2263");
+    CHECK(std::vector<uint8_t>(va.isk(), va.isk() + 64) == isk && std::vector<uint8_t>(vb.isk(), vb.isk() + 64) == isk);
+    CHECK(va.check(vb.tag()) && vb.check(va.tag()));
+
+    // B.1.10: low-order points must abort.
+    for (const char* u : {"0000000000000000000000000000000000000000000000000000000000000000", "0100000000000000000000000000000000000000000000000000000000000000",
+                          "ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f", "e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800",
+                          "5f9c95bca3508c24b1d0b1559c83ef5b04445cc4581c8e86d8224eddd09f1157", "edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+                          "eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"}) {
+        Cpace c;
+        CHECK(c.begin(false, prs, ci, sid, yb.data()));
+        CHECK(!c.finish(hex(u).data()));
+    }
+
+    // A wrong password: both sides finish, neither tag checks.
+    Cpace c, d;
+    CHECK(c.begin(true, "123456", ci, sid) && d.begin(false, "123457", ci, sid));
+    memcpy(pa, c.point(), 32);
+    memcpy(pb, d.point(), 32);
+    CHECK(c.finish(pb) && d.finish(pa));
+    CHECK(!c.check(d.tag()) && !d.check(c.tag()));
+}
+
+static void test_cipher() {
+    SessionKeys a, b;
+    for (int i = 0; i < 32; ++i) {
+        a.send[i] = (uint8_t)i;
+        a.recv[i] = (uint8_t)(100 + i);
+    }
+    memcpy(b.send, a.recv, 32);
+    memcpy(b.recv, a.send, 32);
+    Cipher x, y;
+    x.install(a);
+    y.install(b);
+    const std::vector<uint8_t> msg = encode_launch("hello");
+    std::vector<uint8_t> out;
+
+    // Round trip both classes.
+    std::vector<uint8_t> r0 = x.seal(msg, true);
+    CHECK(r0.size() == msg.size() + kSealOverhead);
+    CHECK(y.open(r0.data(), r0.size(), &out) == Cipher::Open::Ok && out == msg);
+    std::vector<uint8_t> u0 = x.seal(msg, false);
+    std::vector<uint8_t> u1 = x.seal(msg, false);
+    std::vector<uint8_t> u2 = x.seal(msg, false);
+
+    // Unreliable: out of order is fine, a replay is dropped.
+    CHECK(y.open(u2.data(), u2.size(), &out) == Cipher::Open::Ok);
+    CHECK(y.open(u0.data(), u0.size(), &out) == Cipher::Open::Ok);
+    CHECK(y.open(u0.data(), u0.size(), &out) == Cipher::Open::Drop);
+    CHECK(y.open(u2.data(), u2.size(), &out) == Cipher::Open::Drop);
+
+    // Tampered header, tag or body: an unreliable one is dropped.
+    for (size_t at : {(size_t)2, (size_t)12, u1.size() - 1}) {
+        std::vector<uint8_t> t = u1;
+        t[at] ^= 1;
+        CHECK(y.open(t.data(), t.size(), &out) == Cipher::Open::Drop);
+    }
+    CHECK(y.open(u1.data(), u1.size(), &out) == Cipher::Open::Ok);
+
+    // Far behind the window: dropped.
+    std::vector<uint8_t> old = x.seal(msg, false);
+    for (int i = 0; i < 70; ++i) {
+        std::vector<uint8_t> n = x.seal(msg, false);
+        CHECK(y.open(n.data(), n.size(), &out) == Cipher::Open::Ok);
+    }
+    CHECK(y.open(old.data(), old.size(), &out) == Cipher::Open::Drop);
+
+    // Reliable: a replay, a skipped one or a tampered one ends the session.
+    CHECK(y.open(r0.data(), r0.size(), &out) == Cipher::Open::Fail);
+    std::vector<uint8_t> r1 = x.seal(msg, true);
+    std::vector<uint8_t> r2 = x.seal(msg, true);
+    CHECK(y.open(r2.data(), r2.size(), &out) == Cipher::Open::Fail);
+    std::vector<uint8_t> t = r1;
+    t.back() ^= 1;
+    CHECK(y.open(t.data(), t.size(), &out) == Cipher::Open::Fail);
+    CHECK(y.open(r1.data(), r1.size(), &out) == Cipher::Open::Ok);
+
+    // Plaintext is refused once sealed; the wrong direction's key does not open.
+    CHECK(y.open(msg.data(), msg.size(), &out) == Cipher::Open::Drop);
+    std::vector<uint8_t> back = y.seal(msg, false);
+    CHECK(y.open(back.data(), back.size(), &out) == Cipher::Open::Drop);
+    CHECK(x.open(back.data(), back.size(), &out) == Cipher::Open::Ok && out == msg);
+
+    // Nothing opens without a key.
+    Cipher z;
+    CHECK(z.open(u1.data(), u1.size(), &out) == Cipher::Open::Drop);
+}
+
 int main() {
 #ifdef _WIN32
     // Report failed checks on stderr instead of the Debug CRT's modal dialog.
     _set_error_mode(_OUT_TO_STDERR);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
+    test_cpace_vectors();
+    test_cipher();
     test_link_poll_edges();
     test_launch_and_bye_roundtrip();
     test_state_roundtrip_and_bounds();
@@ -862,7 +1159,10 @@ int main() {
     test_lobby_join_connects_and_checks_version();
     test_lobby_join_times_out();
     test_lobby_no_hello_after_connect();
-    test_lobby_version_mismatch_fails_both();
+    test_lobby_version_mismatch();
+    test_lobby_password_guess_delay();
+    test_handshake_gate();
+    test_tow_seg_ok();
     test_lobby_lost_after_connect();
     test_lobby_cancel_from_anywhere();
     test_lobby_local_build_override();
@@ -882,6 +1182,8 @@ int main() {
     test_lobby_idle_status();
     test_status_dots();
     test_public_ipv4();
+    test_discovery_allowed();
+    test_pilot_name();
     test_host_address_label();
     test_address_editor_port();
     test_choose_host_address();

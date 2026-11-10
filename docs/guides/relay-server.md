@@ -41,7 +41,8 @@ Every setting is a command-line flag, a line in the config file, and (limits onl
 | `--name` | `name` | RS64 RELAY | Server name shown in the game's list (A-Z, 0-9, space; at most 16) |
 | `--max-clients` | `max_clients` | 64 | Connections at once: hosts, joiners and players browsing the list (1-4000) |
 | `--max-games` | `max_games` | 32 | Registered games (1-2000) |
-| `--max-per-ip` | `max_per_ip` | 4 | Connections from one address (1-4000) |
+| `--max-per-ip` | `max_per_ip` | 4 | Connections from one address, or one IPv6 /64 (1-4000) |
+| `--games-per-ip` | `games_per_ip` | 2 | Games hosted from one address, or one IPv6 /64 (1-2000) |
 | `--rate` | `rate` | 120 | Packets per second per connection before it is dropped (10-10000); a game sends about 35 |
 | `--idle-timeout` | `idle_timeout` | 60 | Seconds before a connection outside a game is closed (5-3600) |
 | `--config` | | rs64_relay.cfg | Config file, relative to the current directory |
@@ -98,8 +99,8 @@ The log goes to the journal (`journalctl -u rs64_relay`). Change settings in `rs
 
 - Each game is two players: the host and one joiner. A full game drops out of the list until the joiner leaves.
 - The list shows only games from the same game build, so players on different versions never meet.
-- A game's password is checked by the host's game, never by the server; the server only knows that a game is locked.
-- The server forwards game packets without reading them, so it does not need updating when the game's protocol changes. Traffic is not encrypted.
+- A game's password is checked by the two players' games and never reaches the server. A game with a password is encrypted end to end, so the server cannot read or change its traffic. A game without one is not encrypted.
+- The server forwards game packets without reading them, so it does not need updating when the game's protocol changes.
 
 ## Building from source
 

@@ -1,6 +1,7 @@
 #include "relay_host.h"
 #include <enet6/enet.h>
 #include <chrono>
+#include <cstdio>
 
 namespace rs64::relay {
 
@@ -13,6 +14,23 @@ std::string peer_ip(const ENetPeer* peer)
 
     enet_address_get_host_ip(&peer->address, ip, sizeof ip);
     return ip;
+}
+
+// One home has a whole /64 of IPv6 addresses, so the per-address limits count the /64. IPv4 peers on the dual-stack socket and loopback have a zero prefix.
+std::string peer_group(const ENetPeer* peer)
+{
+
+    const auto& v6 = peer->address.host.v6;
+
+    if (peer->address.type != ENET_ADDRESS_TYPE_IPV6 || (!v6[0] && !v6[1] && !v6[2] && !v6[3]))
+    {
+        return peer_ip(peer);
+    }
+
+    char group[32];
+
+    snprintf(group, sizeof group, "%04x:%04x:%04x:%04x::/64", v6[0], v6[1], v6[2], v6[3]);
+    return group;
 }
 
 }
@@ -58,7 +76,7 @@ void Host::service(Relay& relay, int timeout_ms)
         case ENET_EVENT_TYPE_CONNECT:
             ev.peer->data = (void*)(uintptr_t)next_peer_;
             peers_[next_peer_] = ev.peer;
-            relay.on_connect(next_peer_++, peer_ip(ev.peer), now_ms());
+            relay.on_connect(next_peer_++, peer_ip(ev.peer), now_ms(), peer_group(ev.peer));
             break;
 
         case ENET_EVENT_TYPE_RECEIVE: {

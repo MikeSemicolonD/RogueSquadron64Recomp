@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "net/crypto_session.h"
 
 namespace rs64::net {
 
@@ -13,7 +14,7 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31 };
 enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3, WrongPassword = 4 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
@@ -144,8 +145,11 @@ struct TowSeg {
 std::vector<uint8_t> encode_tow_seg(const TowSeg& t);
 bool decode_tow_seg(const uint8_t* data, size_t n, TowSeg* out);
 
+// A received cable the renderer can use: its head inside the receiver's ring of segments, the segment's position and transform finite and in range.
+bool tow_seg_ok(const TowSeg& t, uint32_t ring);
+
 // Network compatibility of this build: bump it whenever two builds can no longer play together. The lobby's HELLO carries it.
-constexpr uint32_t kBuildId = 0x5253000Bu;
+constexpr uint32_t kBuildId = 0x5253000Cu;
 
 // Lobby handshake, sent once by each side on connect. It decodes whatever the sender's protocol byte, so a mismatch can be reported.
 struct Hello {
@@ -155,17 +159,31 @@ struct Hello {
     // 0 host, 1 client.
     uint8_t role = 0;
 
-    // The pilot name (3 letters, gGameSettings+7), shown over the other player's ship.
-    char name[3] = {0, 0, 0};
+    // Host: the game has a password (the client must run the key exchange).
+    uint8_t locked = 0;
+
+    // This connection's random half of the key exchange's session id.
+    uint8_t nonce[kPakeNonce] = {};
 };
 std::vector<uint8_t> encode_hello(const Hello& h);
 bool decode_hello(const uint8_t* data, size_t n, Hello* out);
 
-// Client to host, right after HELLO: the password typed for this game (empty, or kDigits digits). The host answers ACCEPT, or BYE WrongPassword.
-std::vector<uint8_t> encode_auth(const std::string& pin);
-bool decode_auth(const uint8_t* data, size_t n, std::string* pin);
+// Sent by each side once connected (sealed in a password game): the pilot name (3 letters, gGameSettings+7), shown over this player's ship.
+std::vector<uint8_t> encode_name(const char name[3]);
+bool decode_name(const uint8_t* data, size_t n, char name[3]);
+
+// The peer's pilot name as text to draw: up to its first NUL, printable characters only ('~' is the game font's line break).
+std::string pilot_name(const char name[3]);
+
+// Client to host after HELLO in a game without a password. The host answers ACCEPT, or BYE WrongPassword when it has one.
+std::vector<uint8_t> encode_auth();
+bool decode_auth(const uint8_t* data, size_t n);
 std::vector<uint8_t> encode_accept();
 bool decode_accept(const uint8_t* data, size_t n);
+
+// The key exchange of a password game (net/crypto_session.h): PAKE1 client point, PAKE2 host point and tag, PAKE3 client tag.
+std::vector<uint8_t> encode_pake(Msg type, const uint8_t* point, const uint8_t* tag);
+bool decode_pake(const uint8_t* data, size_t n, Msg type, uint8_t* point, uint8_t* tag);
 
 // This player pressed continue on the debrief; both leave it once each side has.
 std::vector<uint8_t> encode_continue();
@@ -186,6 +204,9 @@ std::vector<uint8_t> encode_discovery_query();
 bool is_discovery_query(const uint8_t* data, size_t n);
 std::vector<uint8_t> encode_discovery_reply(const DiscoveryReply& r);
 bool decode_discovery_reply(const uint8_t* data, size_t n, DiscoveryReply* out);
+
+// Whether a host answers a search from this address: private addresses only, and for a host bound to one address (bind != 0) only its /24. Host byte order.
+bool discovery_allowed(uint32_t from, uint32_t bind);
 
 // Lobby lines that mean "still trying" get dots appearing one at a time (kDotPeriodMs each, back to none after three), padded to a fixed width so the centred line stays put.
 constexpr uint32_t kDotPeriodMs = 600;
@@ -315,8 +336,8 @@ struct NameEditor {
     static std::string clean(const std::string& s);
 };
 
-// Lobby progress for one side: join gives up after kJoinTimeoutMs, a connected peer must say HELLO within kHelloTimeoutMs, and a HELLO from another build fails both sides. A host whose player leaves goes back to waiting.
-// A client is Connected once it has the host's HELLO and ACCEPT; the host accepts after the client's HELLO and an AUTH with its password (any, when it has none).
+// Lobby progress for one side: join gives up after kJoinTimeoutMs, a connected peer must finish the handshake within kHelloTimeoutMs, and a HELLO from another build fails a client. A host closes such a peer and keeps waiting, as it does when its player leaves.
+// Without a password the client answers the host's HELLO with AUTH and is Connected on ACCEPT; with one they run CPace (PAKE1-3) and ACCEPT comes sealed. Messages queue in take_sends, the caller sends them before installing take_keys.
 enum class LobbyState { Idle, Hosting, Joining, Connected, Failed };
 class Lobby {
 public:
@@ -332,10 +353,28 @@ public:
     void on_connected(uint32_t now_ms);
     void on_hello(const Hello& h);
 
-    // Host: the password a joining player must send (empty: none).
+    // Host: the game's password. Client: the one typed for this game. Empty: none.
     void set_password(const std::string& pin) { password_ = pin; }
-    // Host: the client's AUTH. False = a wrong password: the caller says BYE WrongPassword and this side waits for the next player.
-    bool on_auth(const std::string& pin);
+
+    // Host: the client's AUTH. False = refused because this game has a password (BYE WrongPassword is queued).
+    bool on_auth();
+
+    // The key exchange's messages. Host: PAKE1 counts a password guess, and during the wait after repeated wrong ones it is refused unanswered.
+    void on_pake1(const uint8_t point[kPakePoint]);
+    void on_pake2(const uint8_t point[kPakePoint], const uint8_t tag[kPakeTag]);
+    void on_pake3(const uint8_t tag[kPakeTag]);
+    std::vector<std::vector<uint8_t>> take_sends();
+    bool take_keys(SessionKeys* out);
+
+    // Host: whether the peer just refused must be disconnected; reading it clears it.
+    bool take_kick()
+    {
+
+        const bool k = kick_;
+
+        kick_ = false;
+        return k;
+    }
 
     // Client: the host accepted this player, or refused its password (sent: whether one was typed).
     void on_accept();
@@ -361,7 +400,11 @@ public:
     uint32_t local_build() const { return build_; }
 private:
     void reset(LobbyState s, bool host);
+    void refuse();
     void connect_if_done();
+    void queue(std::vector<uint8_t> b) { sends_.push_back(std::move(b)); }
+    void client_fail(const char* why, bool password);
+    std::vector<uint8_t> sid(const uint8_t* client, const uint8_t* host) const;
     LobbyState state_ = LobbyState::Idle;
     bool host_ = false;
     bool peer_ = false;
@@ -371,6 +414,21 @@ private:
     bool auth_ = false;
     bool pw_fail_ = false;
     std::string password_;
+    bool kick_ = false;
+    uint8_t nonce_[kPakeNonce] = {};
+    uint8_t peer_nonce_[kPakeNonce] = {};
+
+    // The key exchange: started (client: PAKE1 sent, host: PAKE2 sent), and the keys once both tags checked.
+    Cpace pake_;
+    bool pake_started_ = false;
+    bool confirmed_ = false;
+    bool has_keys_ = false;
+    SessionKeys keys_;
+    std::vector<std::vector<uint8_t>> sends_;
+
+    // Guesses since this host last accepted a password (each PAKE1 is one), and when it will next take one. since this host last accepted one, and when it will next check one.
+    uint32_t wrong_ = 0;
+    int64_t retry_ms_ = 0;
     int64_t started_ms_ = -1;
     int64_t connected_ms_ = -1;
     bool left_ = false;
@@ -382,4 +440,7 @@ private:
 
 // The Msg of a packet with our protocol byte (any protocol byte for a HELLO), or 0.
 uint8_t message_type(const uint8_t* data, size_t n);
+
+// Whether a message of this type is read before the lobby handshake has finished.
+bool handshake_message(uint8_t type);
 }

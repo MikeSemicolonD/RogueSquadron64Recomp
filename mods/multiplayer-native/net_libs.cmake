@@ -5,5 +5,9 @@ set(UPNPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(UPNPC_BUILD_SAMPLE OFF CACHE BOOL "" FORCE)
 set(UPNPC_NO_INSTALL ON CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/lib/miniupnp/miniupnpc ${CMAKE_BINARY_DIR}/miniupnpc EXCLUDE_FROM_ALL)
+# Monocypher (password games' key exchange and sealing), its core plus the optional SHA-512.
+set(MONOCYPHER_DIR ${CMAKE_CURRENT_LIST_DIR}/lib/monocypher/src)
+add_library(monocypher STATIC EXCLUDE_FROM_ALL ${MONOCYPHER_DIR}/monocypher.c ${MONOCYPHER_DIR}/optional/monocypher-ed25519.c)
+target_include_directories(monocypher PUBLIC ${MONOCYPHER_DIR} ${MONOCYPHER_DIR}/optional)
 # Linked into a shared library, which needs position-independent code on Linux.
-set_target_properties(enet6 libminiupnpc-static PROPERTIES POSITION_INDEPENDENT_CODE ON)
+set_target_properties(enet6 libminiupnpc-static monocypher PROPERTIES POSITION_INDEPENDENT_CODE ON)

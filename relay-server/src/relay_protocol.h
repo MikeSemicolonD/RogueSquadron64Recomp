@@ -7,7 +7,7 @@
 // The relay server's own protocol (relay-server/, and later the client transport in multiplayer-native). Game messages ride inside Data packets and are never parsed.
 namespace rs64::relay {
 
-constexpr uint8_t kVersion = 2;
+constexpr uint8_t kVersion = 3;
 constexpr uint16_t kDefaultPort = 27070;
 // The game's largest message (rs64::net::kMaxPacket) plus the Data header.
 constexpr size_t kMaxGamePacket = 1200;
@@ -27,6 +27,7 @@ enum class Type : uint8_t {
     List = 3,
     Join = 4,
     Data = 5,
+    Kick = 6,
     Registered = 16,
     ListReply = 17,
     Joined = 18,
@@ -82,6 +83,10 @@ bool decode_join(const uint8_t* data, size_t n, uint32_t* id, uint32_t* build);
 // A game message for the paired player; the server forwards the packet unchanged.
 std::vector<uint8_t> encode_data(const uint8_t* bytes, size_t n);
 bool decode_data(const uint8_t* data, size_t n, const uint8_t** bytes, size_t* len);
+
+// A host removes its game's joiner; the game stays open for the next one.
+std::vector<uint8_t> encode_kick();
+bool decode_kick(const uint8_t* data, size_t n);
 
 // The game's id and the name it is listed under (made unique on the server); sent again after an Update.
 std::vector<uint8_t> encode_registered(uint32_t id, const std::string& name);

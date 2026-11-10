@@ -17,10 +17,11 @@ Relay::Relay(Settings s, std::string config_path)
 {
 }
 
-void Relay::on_connect(uint32_t peer, const std::string& ip, int64_t now_ms)
+void Relay::on_connect(uint32_t peer, const std::string& ip, int64_t now_ms, const std::string& group)
 {
 
-    const int from_ip = (int)std::count_if(clients_.begin(), clients_.end(), [&](const auto& kv) { return kv.second.ip == ip; });
+    const std::string& where = group.empty() ? ip : group;
+    const int from_ip = (int)std::count_if(clients_.begin(), clients_.end(), [&](const auto& kv) { return kv.second.group == where; });
     Reason refuse = Reason::None;
 
     if ((int)clients_.size() >= s_.max_clients) {
@@ -35,7 +36,7 @@ void Relay::on_connect(uint32_t peer, const std::string& ip, int64_t now_ms)
         return;
     }
 
-    clients_[peer] = Client{ip, 0, now_ms, now_ms, 0};
+    clients_[peer] = Client{ip, 0, now_ms, now_ms, 0, where};
 }
 
 void Relay::on_disconnect(uint32_t peer)
@@ -100,6 +101,23 @@ void Relay::handle(uint32_t peer, Client& c, bool reliable, const uint8_t* data,
         return;
     }
 
+    case Type::Kick: {
+        if (!decode_kick(data, n))
+        {
+            return drop(peer, Reason::BadRequest);
+        }
+
+        auto g = games_.find(c.game);
+
+        if (g != games_.end() && g->second.host == peer && g->second.guest)
+        {
+            log("game " + std::to_string(g->first) + " '" + g->second.name + "': its host removed the joiner");
+            drop(g->second.guest, Reason::Kicked);
+        }
+
+        return;
+    }
+
     case Type::Register: {
         Game g;
         std::string name;
@@ -117,6 +135,16 @@ void Relay::handle(uint32_t peer, Client& c, bool reliable, const uint8_t* data,
         if ((int)games_.size() >= s_.max_games)
         {
             return send(peer, encode_refused(Type::Register, Reason::GamesFull));
+        }
+
+        const auto from_here = std::count_if(games_.begin(), games_.end(), [&](const auto& kv) {
+            const auto host = clients_.find(kv.second.host);
+            return host != clients_.end() && host->second.group == c.group;
+        });
+
+        if ((int)from_here >= s_.games_per_ip)
+        {
+            return send(peer, encode_refused(Type::Register, Reason::TooManyFromAddress));
         }
 
         // A random 6-digit id: it is the game's join code in the game's menus.

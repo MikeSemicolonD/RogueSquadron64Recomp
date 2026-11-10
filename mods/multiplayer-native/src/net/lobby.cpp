@@ -165,6 +165,11 @@ bool decode_discovery_reply(const uint8_t* data, size_t n, DiscoveryReply* out)
     return true;
 }
 
+bool discovery_allowed(uint32_t from, uint32_t bind)
+{
+    return !public_ipv4(from) && (!bind || (from >> 8) == (bind >> 8));
+}
+
 LinkEdges link_poll_edges(bool up, bool was_up, uint32_t connects, uint32_t seen_connects)
 {
 
@@ -176,6 +181,9 @@ LinkEdges link_poll_edges(bool up, bool was_up, uint32_t connects, uint32_t seen
 
 void Lobby::reset(LobbyState s, bool host) {
 
+    pake_.wipe();
+    pake_started_ = false;
+    confirmed_ = false;
     state_ = s;
     host_ = host;
     peer_ = false;
@@ -190,15 +198,33 @@ void Lobby::reset(LobbyState s, bool host) {
 }
 
 void Lobby::host() {
+
     reset(LobbyState::Hosting, true);
+    sends_.clear();
+    has_keys_ = false;
+    kick_ = false;
+    wrong_ = 0;
+    retry_ms_ = 0;
+}
+
+void Lobby::refuse() {
+
+    reset(LobbyState::Hosting, true);
+    kick_ = true;
 }
 
 void Lobby::join() {
+
     reset(LobbyState::Joining, false);
+    sends_.clear();
+    has_keys_ = false;
 }
 
 void Lobby::cancel() {
+
     reset(LobbyState::Idle, false);
+    sends_.clear();
+    has_keys_ = false;
 }
 
 void Lobby::on_start_failed() {
@@ -217,24 +243,119 @@ void Lobby::on_connected(uint32_t now_ms) {
     peer_ = true;
     connected_ms_ = now_ms;
     left_ = false;
+    has_keys_ = false;
+
+    Hello h;
+
+    h.build = build_;
+    h.role = host_ ? 0 : 1;
+    h.locked = host_ && !password_.empty() ? 1 : 0;
+
+    if (!secure_random(nonce_, sizeof(nonce_)) && !password_.empty())
+    {
+        if (host_)
+        {
+            refuse();
+            return;
+        }
+
+        client_fail("NETWORK ERROR", false);
+        return;
+    }
+
+    memcpy(h.nonce, nonce_, sizeof(nonce_));
+    queue(encode_hello(h));
+}
+
+void Lobby::client_fail(const char* why, bool password)
+{
+
+    state_ = LobbyState::Failed;
+    fail_ = why;
+    pw_fail_ = password;
+    pake_.wipe();
+}
+
+std::vector<uint8_t> Lobby::sid(const uint8_t* client, const uint8_t* host) const
+{
+
+    std::vector<uint8_t> s(client, client + kPakeNonce);
+
+    s.insert(s.end(), host, host + kPakeNonce);
+    return s;
+}
+
+// The key exchange's channel identifier: this game and its network build, never sent.
+static std::vector<uint8_t> pake_ci(uint32_t build)
+{
+
+    std::vector<uint8_t> ci = {'r', 's', '6', '4', '-', 'c', 'o', 'o', 'p'};
+
+    for (int i = 0; i < 4; ++i)
+    {
+        ci.push_back((uint8_t)(build >> (8 * i)));
+    }
+
+    return ci;
 }
 
 void Lobby::on_hello(const Hello& h)
 {
 
-    if (!peer_ || (state_ != LobbyState::Hosting && state_ != LobbyState::Joining))
+    if (!peer_ || hello_ || (state_ != LobbyState::Hosting && state_ != LobbyState::Joining))
     {
         return;
     }
 
     if (h.protocol != kProtocol || h.build != build_) {
+
+        if (host_)
+        {
+            refuse();
+            return;
+        }
+
         state_ = LobbyState::Failed;
         fail_ = "VERSION MISMATCH";
         return;
     }
 
     hello_ = true;
-    connect_if_done();
+    memcpy(peer_nonce_, h.nonce, sizeof(peer_nonce_));
+
+    if (host_)
+    {
+        connect_if_done();
+        return;
+    }
+
+    // No downgrade: a typed password is never given up for an open game, and a locked game is never joined without the exchange.
+    if (h.locked && password_.empty())
+    {
+        client_fail("PASSWORD NEEDED", true);
+        return;
+    }
+
+    if (!h.locked && !password_.empty())
+    {
+        client_fail("GAME HAS NO PASSWORD", false);
+        return;
+    }
+
+    if (!h.locked)
+    {
+        queue(encode_auth());
+        return;
+    }
+
+    if (!pake_.begin(true, password_, pake_ci(build_), sid(nonce_, peer_nonce_)))
+    {
+        client_fail("NETWORK ERROR", false);
+        return;
+    }
+
+    pake_started_ = true;
+    queue(encode_pake(Msg::Pake1, pake_.point(), nullptr));
 }
 
 void Lobby::connect_if_done() {
@@ -244,15 +365,29 @@ void Lobby::connect_if_done() {
     }
 }
 
-bool Lobby::on_auth(const std::string& pin) {
+// The wait before a host checks another password: three wrong guesses are free, then 1 s doubling to 30 s.
+static int64_t guess_delay_ms(uint32_t wrong)
+{
+
+    if (wrong <= 3)
+    {
+        return 0;
+    }
+
+    return wrong >= 9 ? 30000 : 1000LL << (wrong - 4);
+}
+
+bool Lobby::on_auth() {
 
     if (!host_ || !peer_ || state_ != LobbyState::Hosting)
     {
         return true;
     }
 
-    if (!password_.empty() && pin != password_) {
-        reset(LobbyState::Hosting, true);
+    if (!password_.empty())
+    {
+        queue(encode_bye(ByeReason::WrongPassword, 0));
+        refuse();
         return false;
     }
 
@@ -261,9 +396,108 @@ bool Lobby::on_auth(const std::string& pin) {
     return true;
 }
 
+void Lobby::on_pake1(const uint8_t point[kPakePoint])
+{
+
+    if (!host_ || !peer_ || !hello_ || pake_started_ || state_ != LobbyState::Hosting)
+    {
+        return;
+    }
+
+    // PAKE2's tag lets the client test one password, so the guess counts now. Each guess needs its own connection, so its connect time is the guess's time.
+    if (password_.empty() || connected_ms_ < retry_ms_)
+    {
+        queue(encode_bye(ByeReason::WrongPassword, 0));
+        refuse();
+        return;
+    }
+
+    ++wrong_;
+    retry_ms_ = connected_ms_ + guess_delay_ms(wrong_);
+
+    if (!pake_.begin(false, password_, pake_ci(build_), sid(peer_nonce_, nonce_)) || !pake_.finish(point))
+    {
+        refuse();
+        return;
+    }
+
+    pake_started_ = true;
+    queue(encode_pake(Msg::Pake2, pake_.point(), pake_.tag()));
+}
+
+void Lobby::on_pake2(const uint8_t point[kPakePoint], const uint8_t tag[kPakeTag])
+{
+
+    if (host_ || !peer_ || !pake_started_ || confirmed_ || state_ != LobbyState::Joining)
+    {
+        return;
+    }
+
+    if (!pake_.finish(point) || !pake_.check(tag))
+    {
+        queue(encode_bye(ByeReason::WrongPassword, 0));
+        client_fail("WRONG PASSWORD", true);
+        return;
+    }
+
+    confirmed_ = true;
+    queue(encode_pake(Msg::Pake3, nullptr, pake_.tag()));
+    keys_ = pake_.keys();
+    has_keys_ = true;
+    pake_.wipe();
+}
+
+void Lobby::on_pake3(const uint8_t tag[kPakeTag])
+{
+
+    if (!host_ || !peer_ || !pake_started_ || confirmed_ || state_ != LobbyState::Hosting)
+    {
+        return;
+    }
+
+    if (!pake_.check(tag))
+    {
+        refuse();
+        return;
+    }
+
+    confirmed_ = true;
+    wrong_ = 0;
+    retry_ms_ = 0;
+    keys_ = pake_.keys();
+    has_keys_ = true;
+    pake_.wipe();
+    auth_ = true;
+    connect_if_done();
+}
+
+std::vector<std::vector<uint8_t>> Lobby::take_sends()
+{
+
+    std::vector<std::vector<uint8_t>> out;
+
+    out.swap(sends_);
+    return out;
+}
+
+bool Lobby::take_keys(SessionKeys* out)
+{
+
+    if (!has_keys_)
+    {
+        return false;
+    }
+
+    *out = keys_;
+    has_keys_ = false;
+    keys_ = SessionKeys{};
+    return true;
+}
+
 void Lobby::on_accept() {
 
-    if (host_ || !peer_ || state_ != LobbyState::Joining)
+    // In a password game ACCEPT counts only once the host's tag checked (it then comes sealed).
+    if (host_ || !peer_ || !hello_ || state_ != LobbyState::Joining || (pake_started_ && !confirmed_))
     {
         return;
     }
@@ -346,6 +580,12 @@ void Lobby::tick(uint32_t now_ms)
 
     if ((state_ == LobbyState::Joining || state_ == LobbyState::Hosting) && peer_ && (int64_t)now_ms - connected_ms_ > kHelloTimeoutMs)
     {
+        if (host_)
+        {
+            refuse();
+            return;
+        }
+
         state_ = LobbyState::Failed;
         fail_ = "NO HELLO";
     }

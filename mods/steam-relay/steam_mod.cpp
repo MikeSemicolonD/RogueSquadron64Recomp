@@ -49,6 +49,9 @@ std::string accessor(const char* prefix, const char* version, const char* suffix
 
 constexpr int kRetryMs = 3000;
 constexpr int kPumpMs = 4;
+// The game's largest message (rs64::net::kMaxPacket), and how many may wait for the game thread (rs64::net::kMaxInbox).
+constexpr int kMaxMessage = 1200;
+constexpr size_t kMaxInbox = 16384;
 
 const rs64_host_api* g_api = nullptr;
 
@@ -158,6 +161,7 @@ public:
     int game_count();
     const Game* game(int i) const { return i >= 0 && i < (int)games_.size() ? &games_[i] : nullptr; }
     void set_info(const char* name, bool locked);
+    void kick();
 
 private:
     bool load();
@@ -593,7 +597,9 @@ void Steam::pump() {
         while ((n = f_.Receive(sockets_, conn_, msgs, 32)) > 0) {
             for (int i = 0; i < n; ++i) {
                 const uint8_t* d = (const uint8_t*)msgs[i]->m_pData;
-                inbox_.emplace_back(d, d + msgs[i]->m_cbSize);
+                if (msgs[i]->m_cbSize <= kMaxMessage && inbox_.size() < kMaxInbox) {
+                    inbox_.emplace_back(d, d + msgs[i]->m_cbSize);
+                }
                 f_.Release(msgs[i]);
             }
         }
@@ -759,6 +765,21 @@ void Steam::receive(rs64_mp_recv_fn fn, void* fn_user) {
     }
 }
 
+void Steam::kick() {
+    if (role_ != RS64_MP_ROLE_HOST || conn_ == k_HSteamNetConnection_Invalid) {
+        return;
+    }
+    // Linger: what was already sent to the peer (the BYE) still goes out.
+    f_.Close(sockets_, conn_, 0, "refused", true);
+    conn_ = k_HSteamNetConnection_Invalid;
+    lost_ = connected_;
+    connected_ = false;
+    set_status("SHARE THE JOIN CODE");
+    if (lobby_) {
+        f_.SetJoinable(mm_, lobby_, true);
+    }
+}
+
 const char* Steam::pending_join() {
     pump();
     if (pending_.empty()) {
@@ -795,6 +816,7 @@ const rs64_mp_transport kTransport = {
     [](void* u, int i) -> const char* { return S(u).game(i) ? S(u).game(i)->peer.c_str() : ""; },
     [](void* u, int i) -> int { return S(u).game(i) && S(u).game(i)->locked ? 1 : 0; },
     [](void* u, const char* name, int locked) { S(u).set_info(name, locked != 0); },
+    [](void* u) { S(u).kick(); },
 };
 
 }
