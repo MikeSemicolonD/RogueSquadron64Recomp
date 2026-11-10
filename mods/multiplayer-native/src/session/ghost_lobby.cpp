@@ -434,6 +434,9 @@ static void discovery_tick() {
     }
 }
 
+// Craft select: 0 until the hangar takes the confirmed pick, then set for its launch (until the next craft select).
+constexpr uint32_t kHangarTook = 0x800CD6F8u;
+
 static void skip_filter(uint16_t* buttons)
 {
 
@@ -480,9 +483,9 @@ static void skip_filter(uint16_t* buttons)
         s.in_hangar = false;
     }
 
-    // The launch starts once the hangar took the pick (result 0x800CD6D4 = the craft; 0 before, 0xFFFFFE = left); the START that confirms is not a skip.
-    const uint32_t hangar_result = s.rdram ? rw(s.rdram, 0x800CD6D4u) : 0u;
-    const bool launching = !timeline && !crawl && s.in_hangar && s.craft.released() && hangar_result != 0u && hangar_result != 0xFFFFFEu;
+    // The launch starts once the hangar took the pick (kHangarTook set; the hangar result 0x800CD6D4 only gets the craft once the mission loads); the A that confirms is not a skip.
+    const bool took = s.rdram && rw(s.rdram, kHangarTook) != 0;
+    const bool launching = !timeline && !crawl && s.in_hangar && s.craft.released() && took;
     rs64::mp::set_flag("hangar_launch", launching ? 1 : 0);
     const int scene = timeline ? 2 : crawl ? 3 : launching ? 1 : 0;
 
@@ -511,7 +514,7 @@ static void skip_filter(uint16_t* buttons)
     // The host dictates skips: its skip of a scene goes to the client, which skips that scene when it gets there.
     if (s.player == 0)
     {
-        const bool launch_skipped = launching && (*buttons & kStart) && !(s.skip_prev_buttons & kStart);
+        const bool launch_skipped = launching && (*buttons & 0x9000u & ~s.skip_prev_buttons) != 0;
 
         s.skip_prev_buttons = *buttons;
 
@@ -1612,9 +1615,9 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
         p &= 0x4000u;
     }
 
-    // Released: the player's own presses pass (START skips the launch that follows); the A pulse confirms the pick the barrier held back.
+    // Released: the player's own presses pass (A or START skips the launch that follows); the A pulse confirms the pick the barrier held back, and stops once the hangar took it (0x800CD6F8 set), or it would skip the launch too.
     if (s.craft.released()) {
-        if (--s.release_cool <= 0) {
+        if (rw(rdram, kHangarTook) == 0 && --s.release_cool <= 0) {
             p |= 0x8000u;
             s.release_cool = 30;
         }

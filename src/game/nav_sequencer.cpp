@@ -842,10 +842,19 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
                     // The host walks the cursor (u8 0x800CDAC1; screen state 0x800CDAC4) to its level; the client's own follow code picks the host's.
                     if (g_target.b != 0) break;
 
-                    const int step = rs64::ls::follow_step(rdram[0xCDAC1u ^ 3], rdram[0xCDAC4u ^ 3], g_target.a, 3, true);
-                    const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : 0;
+                    // Test: ROGUESQ_NAV_BROWSE=<n> first walks the cursor n levels past the target, then back to pick it, a press as soon as the last one ends (a host browsing fast).
+                    static const long s_browse = recomp::dbg::env_int("ROGUESQ_NAV_BROWSE", 0);
+                    static bool s_browsed = s_browse <= 0;
+                    const int cursor = rdram[0xCDAC1u ^ 3];
+                    const int state = rdram[0xCDAC4u ^ 3];
 
-                    if (btn) nav_repress(btn);
+                    if (!s_browsed && cursor == g_target.a + (int)s_browse && state == 2) s_browsed = true;
+
+                    const int step = s_browsed ? rs64::ls::follow_step(cursor, state, g_target.a, 3, true) : rs64::ls::follow_step(cursor, state, g_target.a + (int)s_browse, 2, false);
+                    const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : step == rs64::ls::kFollowBack ? N64_B_BUTTON : 0;
+
+                    if (btn && s_browse > 0 && step != rs64::ls::kFollowConfirm) begin_pulse(btn);
+                    else if (btn) nav_repress(btn);
                 } else if (screen == 0) {
                     // Picked in a co-op lobby (flag from the multiplayer mod): the pick waits for the partner and the hangar then launches, which presses here hold back.
                     if (rs64::host::flag("craft_picked"))

@@ -1630,6 +1630,17 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         fprintf(stderr, "[ghost] test end: result %ld at frame %u\n", t->arg, s.frame);
     }
 
+    // An end the game writes directly (request bit 1: an abort, a scripted end) skips requestMissionTransitionMode, so the host tells the client the frame it is raised.
+    if (s.player == 0 && !s.result_sent && !s.peer_left && (rw(rdram, 0x8010C9E0u) & 1u))
+    {
+        const uint8_t result = rb(rdram, 0x80130B14u);
+
+        s.link.send(rs64::net::encode_result(s.epoch, result), true);
+        s.result_sent = true;
+
+        fprintf(stderr, "[ghost] host result %u sent at %.2f s\n", result, now_s());
+    }
+
     // The other player went down: their puppet takes a lethal hit so the game plays its death, and is removed kPuppetDeathFrames later (or at once when the hit could not land, or they are back up).
     constexpr int kPuppetDeathFrames = 60;
     const bool gone = !s.remote_in || s.peer_left || s.out;
