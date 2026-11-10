@@ -833,7 +833,7 @@ def serve():
 
     @tool()
     def pause_at(clock: str, frame: int, timeout_s: float = 120) -> dict:
-        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot). The same frame number shows the same picture on every launch, so a frame seen once is reached again by relaunching and pausing at that number; a frame already passed cannot be paused at without relaunching. To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
         info = game.call("frame_info")
         now = info.get("clocks", {}).get(clock)
 
@@ -872,7 +872,7 @@ def serve():
 
     @tool()
     def step(frames: int = 1, clock: str = "dl", timeout_s: float = 30) -> dict:
-        """From a frozen frame, run `frames` more frames of `clock` and freeze again. Light edits show after a step."""
+        """From a frozen frame, run `frames` more frames of `clock` and freeze again; the frames in between are never seen, so search for a short camera shot in steps of 15 or less with a screenshot each. Light edits show after a step."""
         return game.call("step", {"frames": frames, "clock": clock, "timeout_s": timeout_s}, timeout_s + 15)
 
     @tool()
