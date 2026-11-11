@@ -5,6 +5,7 @@ Pick the section that matches what you want to do.
 ## I want to build it, run it, or make a simple mod
 
 - [building-all-platforms.md](guides/building-all-platforms.md): building for Windows, Linux, Android and macOS, and what players need installed.
+- [video-presets/](../video-presets/README.md): ready-made graphics settings from Raspberry Pi to ray-traced ultra.
 - [modding.md](guides/modding.md): the kinds of mod, where mods go, asset mods, and an introduction to code mods.
 - [adding-menus-and-buttons.md](guides/adding-menus-and-buttons.md): adding buttons, toggles, sliders and pages to the menus with a JSON file.
 - [modding-languages.md](guides/modding-languages.md): adding a language (text, subtitles and glyphs for any script) as a mod.

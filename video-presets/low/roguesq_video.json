@@ -1,0 +1,21 @@
+{
+  "schema": 2,
+  "resolutionScale": 1,
+  "antialiasing": 0,
+  "ssaa": 1,
+  "fxaa": true,
+  "frameInterpolation": false,
+  "targetFramerate": 30,
+  "drawDistance": 1.0,
+  "terrainTessellation": 2,
+  "framebufferWriteback": false,
+  "rayTracing": {
+    "lights": false,
+    "shadows": false,
+    "softShadows": false,
+    "fogShafts": false,
+    "ambientOcclusion": false,
+    "globalIllumination": false,
+    "reflections": false
+  }
+}
