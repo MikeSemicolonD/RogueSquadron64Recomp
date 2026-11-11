@@ -136,3 +136,18 @@ The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac archi
 **Touchscreens** (Windows, Linux): set `"enabled": true` in `roguesq_touch.json` (written next to the saves on first launch) to get the Android touch controls. The mouse pointer then acts as a finger and its game bindings are off, since many desktops deliver touches as mouse input (Raspberry Pi OS does for every touchscreen).
 
 **D3D11** is for GPUs with a D3D11 driver but no D3D12 or Vulkan one (NVIDIA GTX 400/500, AMD HD 5000/6000, Intel Ivy Bridge). Select it with `--gfx-api d3d11` or `"graphicsAPI": "d3d11"` in `roguesq_video.json`; automatic mode uses it only when neither D3D12 nor Vulkan starts. It needs `d3dcompiler_47.dll` (part of Windows 10), and ray-traced effects are off. MSAA isn't available on D3D11 (RT64 needs programmable sample positions); use SSAA or FXAA instead. D3D10-class GPUs (feature level 10_0/10_1: NVIDIA GeForce 8/9/200, AMD HD 2000-4000) get the same backend at feature level 10, with vertex processing on the CPU and without SSAA; `--gfx-api d3d10` or `"graphicsAPI": "d3d10"` forces that path on any GPU; this is tested only on a modern GPU capped at feature level 10, not on real hardware. Its shaders ship precompiled in `d3d11_shader_cache/` next to the exe; keep that folder. A render state the shipped list doesn't cover compiles the first time it appears (the affected objects are missing until then, up to about 18 s for some texture modes, and a "Compiling shaders" progress panel shows in the bottom-right corner meanwhile) and is cached for later runs.
+
+### Frame rate
+
+TARGET FPS (Display Settings, Advanced) sets how many frames a second the game runs. Ray tracing is the main cost, so pick a row by what matters most to you:
+
+| Goal | Ray tracing | Frame interpolation | TARGET FPS | Result |
+| --- | --- | --- | --- | --- |
+| Most responsive | Off | Off | Display rate | Every frame is a real game frame: about 107 fps at 120 |
+| Smoothest with ray tracing | On | On | Display rate | 60 game frames a second, interpolated up to about 98 shown |
+| Ray tracing, lowest input lag | On | Off | 60 | About 60 real frames a second |
+| Original game | On/Off | Off | 30 | The N64's 30 fps |
+
+- With frame interpolation off, the game runs real frames at the target.
+- With frame interpolation on, the game runs 30 real frames a second up to a target of 60, and 60 above that, and fills in the rest. Interpolation adds about one frame of input lag.
+- Above 60 fps, ray tracing limits the frame rate on most GPUs. Turn it off for the highest frame rate.

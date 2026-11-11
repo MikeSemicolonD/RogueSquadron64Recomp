@@ -674,7 +674,8 @@ int main(int argc, char* argv[])
         fprintf(stderr, "[input] loaded bindings from %s\n", cfg.c_str());
     }
 
-    g_report_rumble_pak.store(g_bindings.rumble.enabled);
+    // Headless test runs (fake controller) must not drive the motors of a real pad that happens to be connected.
+    g_report_rumble_pak.store(g_bindings.rumble.enabled && !recomp::dbg::env_on("ROGUESQ_FAKE_CONTROLLER"));
     fflush(stderr);
 
     // Touch controls: roguesq_touch.json (on by default on Android); ROGUESQ_TOUCH_DEBUG draws the menu tap boxes.

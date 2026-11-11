@@ -2418,10 +2418,20 @@ void rs64_th_updatePlayerDeathSpiral_800B0F14(uint8_t* rdram, recomp_context* ct
     ctx->f0.fl *= rs64_rate_scale();
 }
 
-// updatePlayerVehicleByControlMode 0x8004D738: follow-speed dead zone; $f20 is the camera's own step (its shortest frame so far), not always this frame's dt
+// updatePlayerVehicleByControlMode 0x8004D738: follow-speed dead zone; $f20 is the camera's step time
 void rs64_th_updatePlayerVehicleByControlMode_8004D738(uint8_t* rdram, recomp_context* ctx) {
 
     if (rs64_rate_scale() != 1.0f) ctx->f8.fl *= ctx->f20.fl * 30.0f;
+}
+
+// updatePlayerVehicleByControlMode 0x8004D5A4: +0xA4 keeps the shortest frame time seen; reset it to this frame's, capped at 1/30 s as on the N64.
+void rs64_th_updatePlayerVehicleByControlMode_8004D5A4(uint8_t* rdram, recomp_context* ctx) {
+
+    const float step = fminf(ctx->f20.fl, 1.0f / 30.0f);
+    uint32_t bits;
+
+    memcpy(&bits, &step, 4);
+    MEM_W(0xA4, ctx->r18) = bits;
 }
 
 // npcTurretUpdate 0x800C96BC: fire cooldown
@@ -2708,10 +2718,15 @@ void rs64_th_advanceWrappingPhaseAccumulator_800C6710(uint8_t* rdram, recomp_con
     ctx->f0.fl = rs64_rate_frame(rdram, ctx->f0.fl);
 }
 
-// updateShipPartAnimation 0x800B82A8: the S-foil swing's per-frame decay ($f2 = 0.8).
-void rs64_th_updateShipPartAnimation_800B82A8(uint8_t* rdram, recomp_context* ctx) {
+// menuControllerInput 0x800B7900 / 0x800B793C: a held volume key has just stepped the level ($v0) by one; only 30 Hz ticks keep it.
+void rs64_th_menuControllerInput_800B7900(uint8_t* rdram, recomp_context* ctx) {
 
-    ctx->f2.fl = rs64_rate_drag(ctx->f2.fl);
+    if (!rs64_rate_tick()) ctx->r2 += 1;
+}
+
+void rs64_th_menuControllerInput_800B793C(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r2 -= 1;
 }
 
 // updateHangarBayScene 0x800AB8F4 / 0x800ABAA0: the bay's two speeds step toward their target by $f2 per frame.
