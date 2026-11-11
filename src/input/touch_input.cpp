@@ -458,6 +458,17 @@ namespace rs64::touch {
         return total > 0.0f && in_plane >= kWheelMinPlane * total;
     }
 
+    float gyro_stick(float rate, const Config& c) {
+
+        if (std::fabs(rate) < kRateFloor) {
+            return 0.0f;
+        }
+
+        const float out = std::min(c.pitch_min + c.pitch_gain * std::fabs(rate), 1.0f);
+
+        return (rate < 0.0f) ? -out : out;
+    }
+
     void Engine::set_menu_tap(MenuTapFn fn) {
         menu_tap_ = std::move(fn);
     }
@@ -569,17 +580,10 @@ namespace rs64::touch {
                 gx += roll_rate_ * cfg_.rate_assist;
             }
 
-            // Up/down is mouse-like: the stick follows pitch motion and centers when the phone stops, so a held angle never overshoots.
-            float gy = 0.0f;
-
-            if (std::fabs(pitch_rate_) >= kRateFloor)
-            {
-                const float out = cfg_.pitch_min + cfg_.pitch_gain * std::fabs(pitch_rate_);
-                gy = (pitch_rate_ < 0.0f) ? -out : out;
-            }
+            // Up/down is mouse-like so a held angle never overshoots.
+            const float gy = gyro_stick(pitch_rate_, cfg_);
 
             gx = std::clamp(gx, -1.0f, 1.0f);
-            gy = std::clamp(gy, -1.0f, 1.0f);
 
             if ((gx * gx + gy * gy) > (p.x * p.x + p.y * p.y)) {
                 p.x = gx;

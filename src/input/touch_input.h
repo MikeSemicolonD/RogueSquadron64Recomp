@@ -151,6 +151,9 @@ namespace rs64::touch {
     // Returns false when the phone lies too flat to read it.
     bool tilt_angles(float ax, float ay, float az, bool flipped, float* roll);
 
+    // Mouse-like gyro axis: stick follows the turn rate (rad/s) past the noise floor, starting at pitch_min, and centers when motion stops.
+    float gyro_stick(float rate, const Config& c);
+
     // Merges touch into a physical result: buttons OR, stick = larger magnitude.
     void merge(const Pad& touch, uint16_t* buttons, float* x, float* y);
 

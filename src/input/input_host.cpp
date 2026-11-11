@@ -695,6 +695,7 @@ extern "C" void rs64_toggle_fullscreen(void)  { rs64::video::set_fullscreen(!rs6
 
 static SDL_Sensor* g_accel_sensor = nullptr;
 static SDL_Sensor* g_gyro_sensor = nullptr;
+static std::atomic<bool> g_pad_gyro{false};
 
 // Tilt steering: screen roll from gravity, low-passed so hand shake and linear acceleration don't jitter the turn.
 static void accel_event(const SDL_Event& e)
@@ -757,6 +758,24 @@ static void update_gyro_sensor() {
             g_gyro_sensor = nullptr;
         }
     }
+
+    // Gamepad gyro (Steam Deck, DualSense, Switch Pro): only the active pad's is on. A pad left behind is either closed or harmlessly still reporting.
+    static SDL_GameController* s_gyro_pad = nullptr;
+    SDL_GameController* pad = (want && controller && SDL_GameControllerHasSensor(controller, SDL_SENSOR_GYRO)) ? controller : nullptr;
+
+    if (pad != s_gyro_pad) {
+        if (s_gyro_pad && s_gyro_pad == controller) {
+            SDL_GameControllerSetSensorEnabled(s_gyro_pad, SDL_SENSOR_GYRO, SDL_FALSE);
+        }
+
+        if (pad) {
+            SDL_GameControllerSetSensorEnabled(pad, SDL_SENSOR_GYRO, SDL_TRUE);
+        }
+
+        s_gyro_pad = pad;
+    }
+
+    g_pad_gyro.store(pad != nullptr);
 
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     rs64::touch::Config tc = g_touch.config();
@@ -1111,6 +1130,33 @@ static rs64::touch::Pad poll_touch()
     return pad;
 }
 
+// Gamepad gyro flies like the mouse: turning the pad left/right (yaw) and tipping its top away/toward (pitch) move the stick while in motion. Wins when it
+// deflects further than the sticks. SDL controller axes: +x right, +y up, +z toward the player, rates counter-clockwise positive.
+static void pad_gyro_steer(float* x, float* y)
+{
+
+    float g[3] = {};
+
+    if (!g_pad_gyro.load() || !controller || touch_context() != rs64::touch::Context::Flight)
+    {
+        return;
+    }
+
+    if (SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO, g, 3) != 0)
+    {
+        return;
+    }
+
+    const rs64::touch::Config& c = rs64::touch::shared_config();
+    const float gx = rs64::touch::gyro_stick(-g[1], c);
+    const float gy = rs64::touch::gyro_stick(-g[0], c);
+
+    if ((gx * gx + gy * gy) > (*x * *x + *y * *y)) {
+        *x = gx;
+        *y = gy;
+    }
+}
+
 static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, float* y)
 {
 
@@ -1372,6 +1418,7 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
 
     btn |= boot_start_pulse();
     rs64::touch::merge(poll_touch(), &btn, x, y);
+    pad_gyro_steer(x, y);
     *buttons = btn;
 
     return true;

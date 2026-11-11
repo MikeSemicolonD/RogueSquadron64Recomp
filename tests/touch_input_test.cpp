@@ -761,6 +761,17 @@ static void test_disabled_does_nothing() {
     CHECK(!p.has_input && p.buttons == 0);
 }
 
+// The gamepad gyro uses the same mouse-like curve: zero under the noise floor, pitch_min + gain past it, capped at full.
+static void test_gyro_stick_curve() {
+
+    const Config c;
+
+    CHECK(gyro_stick(0.01f, c) == 0.0f);
+    CHECK(NEAR(gyro_stick(0.5f, c), c.pitch_min + c.pitch_gain * 0.5f));
+    CHECK(NEAR(gyro_stick(-0.5f, c), -(c.pitch_min + c.pitch_gain * 0.5f)));
+    CHECK(gyro_stick(10.0f, c) == 1.0f);
+}
+
 static void test_gyro_off_is_neutral() {
     Engine e = make_engine();
     e.tilt(0.5f, true);
@@ -1331,6 +1342,7 @@ int main() {
     test_pause_slider_value();
     test_sound_slider_bar();
     test_gyro_off_is_neutral();
+    test_gyro_stick_curve();
     test_gyro_only_in_flight();
     test_stick_center_deflect_release();
     test_stick_defaults();

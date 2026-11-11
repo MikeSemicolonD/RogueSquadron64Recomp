@@ -3,6 +3,7 @@
   "desktop": [
     "display-settings",
     "controls-menu",
+    "gyro-toggle",
     "quit-prompt",
     "multiplayer-native",
     "steam-relay",

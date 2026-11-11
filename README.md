@@ -68,6 +68,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Keyboard and mouse:** fly with the mouse and fire with the mouse buttons.
   - **Menu navigation with the Mouse:** ability to seamlessly select and control menu navigation exclusively with the mouse via cursor placement, LMB (Start) & RMB (Back)
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
+  - **Gyro aiming:** turn on **GYRO STEERING** in Game Settings to aim by moving the controller. Tested on a DualSense; Steam Deck and Switch Pro are untested.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
 - **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Controls Menu Mod](#mods). See [Controls](#controls).
