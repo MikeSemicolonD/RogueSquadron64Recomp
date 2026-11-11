@@ -9,6 +9,7 @@ extern "C" void rs64_menu_request_quit() {}
 extern "C" unsigned rs64_pause_array_for(uint8_t*, unsigned, unsigned native) { return native; }
 extern "C" void rs64_lang_original(const char* shown, char* out, size_t cap) { snprintf(out, cap, "%s", shown); }
 extern "C" int rs64_mod_levels_boot_entry() { return -1; }
+extern "C" uint32_t rs64_vi_rate() { return 60; }
 
 int main() {
     RsNavTarget t;
