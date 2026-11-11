@@ -140,7 +140,7 @@ static int s_since_press = 9999;
 static bool s_disabled = false;
 static const char* s_last_state = "";
 
-// Presents per step before bailing (~20s at 60fps); ROGUESQ_NAV_STEP_BUDGET raises it for slow builds (Linux Debug, fast-clock replays).
+// 60 Hz ticks per step before bailing (~20 s); ROGUESQ_NAV_STEP_BUDGET raises it for slow builds (Linux Debug, fast-clock replays).
 static int step_budget()
 {
 
@@ -1040,6 +1040,17 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
     force_tick(rdram);
 
     if (g_target.kind == NAV_NONE || !rdram) return;
+
+    // Step timings and the watchdog count 60 Hz ticks; above 30 fps the VI clock runs at TARGET FPS times its subticks (960 Hz at 240).
+    static uint32_t s_vi_phase = 0;
+    const uint32_t vi_hz = rs64_vi_rate();
+
+    s_vi_phase += 60;
+
+    if (s_vi_phase < vi_hz) return;
+
+    s_vi_phase -= vi_hz;
+
     if (nav_is_chicken(g_target)) s_disabled = true;
     if (s_disabled) { g_driving.store(false, std::memory_order_release); return; }
 
