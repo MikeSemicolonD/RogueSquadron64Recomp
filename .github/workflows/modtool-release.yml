@@ -48,8 +48,8 @@ jobs:
             (cd stage && 7z a "../$pkg" *)
           else
             cp build-modtool/RecompModTool stage/
-            pkg="RecompModTool-${{ matrix.name }}-$ver.tar.gz"
-            tar -czf "$pkg" -C stage .
+            pkg="RecompModTool-${{ matrix.name }}-$ver.tar.xz"
+            tar -cJf "$pkg" -C stage .
           fi
           echo "PKG=$pkg" >> "$GITHUB_ENV"
 

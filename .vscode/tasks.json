@@ -188,7 +188,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Builds RecompModTool from the N64Recomp fork (Windows x64 here, Linux x64 through WSL) and writes RecompModTool-<platform>-modtool-<commit>.zip/.tar.gz plus SHA256SUMS.txt to <folder>/modtool-<commit>/."
+            "detail": "Builds RecompModTool from the N64Recomp fork (Windows x64 here, Linux x64 through WSL) and writes RecompModTool-<platform>-modtool-<commit>.zip/.tar.xz plus SHA256SUMS.txt to <folder>/modtool-<commit>/."
         },
         {
             "label": "Run: Game (pick level / craft)",

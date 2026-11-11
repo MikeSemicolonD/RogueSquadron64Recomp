@@ -21,7 +21,7 @@ Each game release on GitHub has these downloads alongside the game's own:
 | Package | Contents |
 | --- | --- |
 | `rs64_relay-windows-x64-<ver>.zip` | `rs64_relay.exe`, this README, licenses. No runtime to install. |
-| `rs64_relay-linux-x64-<ver>.tar.gz` | `rs64_relay`, this README, licenses. Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12 and later). |
+| `rs64_relay-linux-x64-<ver>.tar.xz` | `rs64_relay`, this README, licenses. Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12 and later). |
 
 Unpack it anywhere and run it from a terminal:
 
