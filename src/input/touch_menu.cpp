@@ -1,5 +1,6 @@
 #include "input/touch_menu.h"
 #include "rs64_toml_hooks.h"
+#include "game/menus/menu_layout.h"
 
 #include <algorithm>
 #include <cmath>
@@ -242,7 +243,7 @@ namespace rs64::touch {
         const uint32_t ptr = rw(r, kGcmd);
         const uint8_t count = rb(r, kGcmd + 0x95);
 
-        if (!in_label_mem(ptr) || count < 1 || count > 8 || w <= 0.0f || h <= 0.0f)
+        if (!in_label_mem(ptr) || count < 1 || count > rs64::menu::kMenuRows || w <= 0.0f || h <= 0.0f)
         {
             return false;
         }
@@ -260,26 +261,26 @@ namespace rs64::touch {
         {
             int len = 0;
 
-            if (!str_len(r, rw(r, kGcmd + 0x08 + 4 * i), &len))
+            if (!str_len(r, rw(r, kGcmd + rs64::menu::kRowLabel + 4 * i), &len))
             {
                 return false;
             }
 
-            if (len == 0 || !(snap->active & (1u << i)) || rb(r, kGcmd + 0x28 + i) == kSubtypeLabel)
+            if (len == 0 || !(snap->active & (1u << i)) || rb(r, kGcmd + rs64::menu::kRowType + i) == kSubtypeLabel)
             {
                 continue;
             }
 
             float scale;
-            const uint32_t bits = rw(r, kGcmd + 0x54 + 4 * i);
+            const uint32_t bits = rw(r, kGcmd + rs64::menu::kRowScale + 4 * i);
             std::memcpy(&scale, &bits, 4);
 
             if (!(scale > 0.1f && scale < 4.0f)) {
                 scale = 1.0f;
             }
 
-            const float xo = (int16_t)rh(r, kGcmd + 0x30 + 4 * i);
-            const float yo = (int16_t)rh(r, kGcmd + 0x32 + 4 * i);
+            const float xo = (int16_t)rh(r, kGcmd + rs64::menu::kRowPos + 4 * i);
+            const float yo = (int16_t)rh(r, kGcmd + rs64::menu::kRowPos + 2 + 4 * i);
             const float half_w = len * L.glyph_w * scale / 2.0f;
             const float th = L.line_h * scale;
             const float pad = th * 0.2f;
@@ -443,7 +444,7 @@ namespace rs64::touch {
             return AccountScreen::Craft;
         }
 
-        if (screen == 2 && rb(r, kGcmd + 0x04) == kMenuAccount && rb(r, kGcmd + 0x28) == kTypeSaveSlot)
+        if (screen == 2 && rb(r, kGcmd + 0x04) == kMenuAccount && rb(r, kGcmd + rs64::menu::kRowType) == kTypeSaveSlot)
         {
             return AccountScreen::SelectGame;
         }
@@ -463,7 +464,7 @@ namespace rs64::touch {
             return false;
         }
 
-        const uint8_t sub = rb(r, kGcmd + 0x28 + entry);
+        const uint8_t sub = rb(r, kGcmd + rs64::menu::kRowType + entry);
 
         if (sub < 21 || sub > 23)
         {
@@ -472,7 +473,7 @@ namespace rs64::touch {
 
         // Bar sprite: 128 game units wide centered on x 0 (320x240: 120..200), y = entry_y + 7, about 9 units tall.
         const int list_base = (int16_t)rh(r, kGcmd + 0x96);
-        const float entry_y = (float)(int16_t)(list_base + 36 * entry - 18 * count) + (int16_t)rh(r, kGcmd + 0x32 + 4 * entry);
+        const float entry_y = (float)(int16_t)(list_base + 36 * entry - 18 * count) + (int16_t)rh(r, kGcmd + rs64::menu::kRowPos + 2 + 4 * entry);
         const float top = g_menu_layout.y_origin + (entry_y + 7.0f) * g_menu_layout.y_scale;
         bar->channel = sub - 21;
         to_window(120.0f, top - 12.0f, w, h, &bar->x0, &bar->y0);
@@ -946,11 +947,11 @@ namespace rs64::touch {
         for (int i = 0; i < count; ++i)
         {
             int len = 0;
-            str_len(r, rw(r, kGcmd + 0x08 + 4 * i), &len);
+            str_len(r, rw(r, kGcmd + rs64::menu::kRowLabel + 4 * i), &len);
             float scale;
-            const uint32_t bits = rw(r, kGcmd + 0x54 + 4 * i);
+            const uint32_t bits = rw(r, kGcmd + rs64::menu::kRowScale + 4 * i);
             std::memcpy(&scale, &bits, 4);
-            std::snprintf(buf, sizeof(buf), " [%d len=%d x=%d y=%d s=%.3f]", i, len, (int16_t)rh(r, kGcmd + 0x30 + 4 * i), (int16_t)rh(r, kGcmd + 0x32 + 4 * i), scale);
+            std::snprintf(buf, sizeof(buf), " [%d len=%d x=%d y=%d s=%.3f]", i, len, (int16_t)rh(r, kGcmd + rs64::menu::kRowPos + 4 * i), (int16_t)rh(r, kGcmd + rs64::menu::kRowPos + 2 + 4 * i), scale);
             s += buf;
         }
 

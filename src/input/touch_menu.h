@@ -53,7 +53,7 @@ namespace rs64::touch {
     TapAction craft_select_tap(float x, float y);
 
     // Pilot-flow screens, from the menu overlay's screen u16 @0x800CFF50 (2 menu tree, 1 SELECT LEVEL, 0 SELECT YOUR CRAFT);
-    // SELECT GAME is the menu tree with menu id 1 and entry 0 typed as a save slot (0x800CE758 == 3). Menu overlay only.
+    // SELECT GAME is the menu tree with menu id 1 and entry 0 typed as a save slot (row type byte gCurrentMenuData+0x188 == 3). Menu overlay only.
     enum class AccountScreen { NotAccount, SelectGame, Levels, Craft };
     AccountScreen account_screen(const uint8_t* rdram);
 

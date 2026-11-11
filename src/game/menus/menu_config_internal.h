@@ -8,8 +8,15 @@
 #include <vector>
 #include "recomp.h"
 #include "input/input_bindings.h"
+#include "game/menus/menu_layout.h"
 
 namespace rs64::menucfg {
+
+using rs64::menu::kRowLabel;
+using rs64::menu::kRowType;
+using rs64::menu::kRowPos;
+using rs64::menu::kRowScale;
+using rs64::menu::kRowParam;
 
 // A menu SFX for 0x80087EE8 (id, volume); id -1 keeps the game's sound, -2 plays none.
 struct MenuSfx {
@@ -186,7 +193,10 @@ int value_from_byte(int b, int lo, int hi, int top = VOL_MAX);
 
 constexpr uint32_t GCMD = 0x800CE730u;
 constexpr uint32_t GCMD_OFF = GCMD - 0x80000000u;
-constexpr int MAX_ENTRIES = 8;
+constexpr int MAX_ENTRIES = rs64::menu::kMenuRows;
+
+// Rows a scrolling list page (controls, languages, mods) shows at once.
+constexpr int PAGE_ROWS = 8;
 
 // Front-end menu ids (gCurrentMenuData +0x04).
 enum FrontMenu : uint8_t {

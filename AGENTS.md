@@ -390,6 +390,7 @@ Host-side tables above 8 MB. Each is a named range in [src/util/host_ram_map.h](
 | 0x80C42200-0x80C4223F | Level rules object names |
 | 0x80C42300-0x80C423FF | Extra level package path (`packages.json`) |
 | 0x80C42400-0x80C4243F | Asset name of the level's Soft paint textures (`lv_<id>_PAINT`) |
+| 0x80C42800-0x80C429FF | Front-end menu snapshot, moved from `D_800CE830` so `gCurrentMenuData` holds 12 rows (`menu_rows.toml`) |
 | 0x80C43000-0x80C43FFF | Pause menu GAME SETTINGS, mod-page and root arrays |
 | 0x80C44000-0x80CE3FFF | Language mod: extended fonts, enlarged texture/material tables, encoded text ([src/game/lang/lang.cpp](src/game/lang/lang.cpp)) |
 | 0x80CE4000-0x80FFFFFF | Scene texture pool (language mod only) |

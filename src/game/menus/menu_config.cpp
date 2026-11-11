@@ -996,18 +996,18 @@ uint32_t alloc_str(uint8_t* rdram, const std::string& s)
 Slot read_slot(uint8_t* r, int i)
 {
 
-    return { rd_w(r, GCMD_OFF + 0x08 + i * 4), rd_b(r, GCMD_OFF + 0x28 + i),
-             rd_w(r, GCMD_OFF + 0x74 + i * 4), rd_h(r, GCMD_OFF + 0x30 + i * 4),
-             rd_h(r, GCMD_OFF + 0x32 + i * 4), rd_w(r, GCMD_OFF + 0x54 + i * 4) };
+    return { rd_w(r, GCMD_OFF + kRowLabel + i * 4), rd_b(r, GCMD_OFF + kRowType + i),
+             rd_w(r, GCMD_OFF + kRowParam + i * 4), rd_h(r, GCMD_OFF + kRowPos + i * 4),
+             rd_h(r, GCMD_OFF + kRowPos + 2 + i * 4), rd_w(r, GCMD_OFF + kRowScale + i * 4) };
 }
 void write_slot(uint8_t* r, int i, const Slot& s) {
 
-    wr_w(r, GCMD_OFF + 0x08 + i * 4, s.label);
-    wr_b(r, GCMD_OFF + 0x28 + i,     s.sub);
-    wr_w(r, GCMD_OFF + 0x74 + i * 4, s.param);
-    wr_h(r, GCMD_OFF + 0x30 + i * 4, s.x);
-    wr_h(r, GCMD_OFF + 0x32 + i * 4, s.y);
-    wr_w(r, GCMD_OFF + 0x54 + i * 4, s.scaler);
+    wr_w(r, GCMD_OFF + kRowLabel + i * 4, s.label);
+    wr_b(r, GCMD_OFF + kRowType + i,      s.sub);
+    wr_w(r, GCMD_OFF + kRowParam + i * 4, s.param);
+    wr_h(r, GCMD_OFF + kRowPos + i * 4,   s.x);
+    wr_h(r, GCMD_OFF + kRowPos + 2 + i * 4, s.y);
+    wr_w(r, GCMD_OFF + kRowScale + i * 4, s.scaler);
 }
 bool label_is_empty(uint8_t* r, uint32_t label_vaddr)
 {
@@ -1706,6 +1706,14 @@ void rebuild_frontend_menu(uint8_t* rdram, uint8_t menu_id)
         items.resize(MAX_ENTRIES);
     }
 
+    // The game opens OPTIONS' gap with a y offset on every native below it; a mod entry there with no y of its own (a replacement, an appended one) takes the offset of the native above, or it lands a row up on that native.
+    int16_t native_y = 0;
+
+    for (auto& it : items) {
+        if (it.is_native) native_y = it.slot.y;
+        else if (it.slot.y == 0) it.slot.y = native_y;
+    }
+
     // write back
     for (int i = 0; i < MAX_ENTRIES; ++i) s_slot[i] = {};
 
@@ -2021,7 +2029,7 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
 
 // ---- LANGUAGE page with more languages than it has rows: the language slots scroll through every language ----
 
-constexpr int kLangRows = MAX_ENTRIES - 1;
+constexpr int kLangRows = PAGE_ROWS - 1;
 
 struct LangScreen {
     bool shown = false;
@@ -2120,7 +2128,7 @@ void languages_pass(uint8_t* rdram, recomp_context* ctx)
         for (int i = 0; i < kLangRows; ++i)
         {
             write_live(rdram, s_lang.bufs[i], lang_slot_text(i));
-            wr_w(rdram, GCMD_OFF + 0x74 + i * 4, s_lang.rows[s_lang.pos.top + i].second);
+            wr_w(rdram, GCMD_OFF + kRowParam + i * 4, s_lang.rows[s_lang.pos.top + i].second);
         }
 
         s_lang.dirty = true;
@@ -2252,7 +2260,7 @@ extern "C" void rs64_menu_confirm_sound(uint8_t* rdram, recomp_context* ctx)
     if (e >= MAX_ENTRIES || s_slot[e].sound.id == -1) return;
 
     const MenuSfx s = s_slot[e].sound;
-    const uint8_t sub = rd_b(rdram, GCMD_OFF + 0x28 + e);
+    const uint8_t sub = rd_b(rdram, GCMD_OFF + kRowType + e);
 
     if (sub == SUBTYPE_SUBMENU || sub == SUBTYPE_TOGGLE || sub == SUBTYPE_LANGUAGE || sub == SUBTYPE_BACK)
     {

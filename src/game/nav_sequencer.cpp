@@ -7,6 +7,7 @@
 #include "host_api/host_api.h"
 #include "rs64_toml_hooks.h"
 #include "game/menus/menu_config.h"
+#include "game/menus/menu_layout.h"
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
 #include <chrono>
@@ -655,7 +656,7 @@ static int nav_find_entry(uint8_t* rdram, const char* label) {
     const size_t len = std::strlen(label);
     const bool prefix = len && label[len - 1] == '*';
 
-    for (int i = 0; i < n && i < 8; ++i)
+    for (int i = 0; i < n && i < rs64::menu::kMenuRows; ++i)
     {
         const std::string text = nav_original(nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)));
 
@@ -1080,7 +1081,7 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
         fprintf(stderr, "[nav] stuck step=%d state=%s -- aborting sequence\n", s_step, st);
         std::string entries;
 
-        for (int i = 0; i < 8; ++i) entries += " [" + nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)) + "]";
+        for (int i = 0; i < rs64::menu::kMenuRows; ++i) entries += " [" + nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)) + "]";
 
         fprintf(stderr, "[nav] menu %u title [%s] count %u cursor %u:%s\n", rdram[(0xCE730u + 0x04) ^ 3], nav_str(rdram, nav_word(rdram, 0xCE730u)).c_str(), rdram[(0xCE730u + 0x95) ^ 3], rdram[(0xCE730u + 0x94) ^ 3], entries.c_str());
         fflush(stderr);

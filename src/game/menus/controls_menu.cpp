@@ -34,7 +34,7 @@ constexpr const char* kControlsMod = "controls-menu";
 constexpr const char* kControlsPage = "controls";
 
 // Visible list rows, then RESET TO DEFAULTS and BACK in the last two slots.
-constexpr int kCtlRows = MAX_ENTRIES - 2;
+constexpr int kCtlRows = PAGE_ROWS - 2;
 constexpr int kCtlResetSlot = kCtlRows, kCtlBackSlot = kCtlRows + 1;
 constexpr float kCtlScale = 1.0f;
 constexpr int kCtlTopY = -158;
@@ -135,7 +135,7 @@ std::string ctl_slot_text(int i)
 
 // Entry offset for a row drawn at absolute y: the game places entry i at list_base + 36*i - 18*count + offset.
 int16_t ctl_offset_y(int16_t base, int i, int y) {
-    return (int16_t)(y - base - 36 * i + 18 * MAX_ENTRIES);
+    return (int16_t)(y - base - 36 * i + 18 * PAGE_ROWS);
 }
 
 // setupMenuData tail on CONTROLLER SETTINGS (natively just BACK): the list rows (live buffers the frame hook relabels), RESET TO DEFAULTS and BACK.
@@ -171,7 +171,7 @@ int controls_install(uint8_t* rdram)
     back.y = ctl_offset_y(base, kCtlBackSlot, reset_y + kCtlPitch + kCtlBackGap);
     write_slot(rdram, kCtlBackSlot, back);
     s_slot[kCtlBackSlot] = {};
-    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)MAX_ENTRIES);
+    wr_b(rdram, GCMD_OFF + 0x95, (uint8_t)PAGE_ROWS);
     wr_b(rdram, GCMD_OFF + 0x94, 0);
     controls_show_model(rdram, true);
 
@@ -180,7 +180,7 @@ int controls_install(uint8_t* rdram)
 
     fprintf(stderr, "[controls] list for device %d, %d rows\n", (int)s_ctl.dev, ctl_total());
 
-    return MAX_ENTRIES;
+    return PAGE_ROWS;
 }
 
 bool controls_on_screen(uint8_t* rdram) {

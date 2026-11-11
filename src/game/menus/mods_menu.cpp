@@ -104,7 +104,7 @@ bool mods_on_screen(uint8_t* rdram) {
 
 void mods_mark_all() {
 
-    s_mods.dirty = (1u << MAX_ENTRIES) - 1;
+    s_mods.dirty = (1u << PAGE_ROWS) - 1;
     s_mods.desc_dirty = true;
 }
 
@@ -251,7 +251,7 @@ int mods_install(uint8_t* rdram, uint8_t parent)
 
     // The game titles sit at y 10 on an 8-entry page and move 18 per entry fewer; MODS sits 8 higher, at any entry count. A mod's own title override still wins.
     wr_w(rdram, GCMD_OFF + 0x00, (int32_t)alloc_str(rdram, mods_text("title", "MODS", "MODS", "MODS")));
-    wr_h(rdram, GCMD_OFF + 0x52, (int16_t)(kModsTitleY + 18 * (count - MAX_ENTRIES)));
+    wr_h(rdram, GCMD_OFF + 0x52, (int16_t)(kModsTitleY + 18 * (count - PAGE_ROWS)));
     apply_title(rdram, kModsPage);
 
     for (int i = 0; i < s_mods.rows; ++i)
