@@ -2212,6 +2212,17 @@ before_vram = 0x800C96BC
 text = '{ rs64_th_npcTurretUpdate_800C96BC(rdram, ctx); }'
 
 
+# Above 30 fps: laser bolts lose 0.2 lifetime and count +0xFC down once per frame (their range shrank with the frame rate); movement is already dt-scaled.
+[[patches.hook]]
+func = "audioCueDispatcherNpcHandler"
+before_vram = 0x8005CE14
+text = '{ rs64_th_audioCueDispatcherNpcHandler_8005CE14(rdram, ctx); }'
+
+[[patches.hook]]
+func = "audioCueDispatcherNpcHandler"
+before_vram = 0x8005CE24
+text = '{ rs64_th_audioCueDispatcherNpcHandler_8005CE24(rdram, ctx); }'
+
 # 60 fps missions: homing missiles add a fixed acceleration per frame, then add that to their speed.
 [[patches.hook]]
 func = "steerOrientationTowardTarget"

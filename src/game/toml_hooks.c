@@ -2440,6 +2440,18 @@ void rs64_th_npcTurretUpdate_800C96BC(uint8_t* rdram, recomp_context* ctx) {
     if (!rs64_rate_tick()) ctx->r2 += 1;
 }
 
+// audioCueDispatcherNpcHandler 0x8005CE14: a laser bolt's per-frame lifetime step ($f2 = 0.2)
+void rs64_th_audioCueDispatcherNpcHandler_8005CE14(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// audioCueDispatcherNpcHandler 0x8005CE24: the bolt's +0xFC frame countdown ($v1 - 1)
+void rs64_th_audioCueDispatcherNpcHandler_8005CE24(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_rate_tick()) ctx->r3 += 1;
+}
+
 // steerOrientationTowardTarget 0x8005F3D4: acceleration step
 void rs64_th_steerOrientationTowardTarget_8005F3D4(uint8_t* rdram, recomp_context* ctx) {
 
