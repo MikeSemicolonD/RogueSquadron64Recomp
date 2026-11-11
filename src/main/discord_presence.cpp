@@ -4,12 +4,13 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include "game/game_state.h"
 #include "game/nav_sequencer.h"
@@ -18,6 +19,7 @@
 #include "librecomp/mods.hpp"
 #include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
+#include "util/rdram_words.h"
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -38,12 +40,20 @@ static constexpr const char* kClientId = "1569823955684954132";
 // Opcodes of Discord's IPC frames: an 8-byte little-endian header (opcode, length), then JSON.
 enum Op : uint32_t { kHandshake = 0, kFrame = 1 };
 
+// Discord tries discord-ipc-0 through discord-ipc-9.
+static constexpr int kPipeSlots = 10;
+
 static constexpr const char* kLevelNames[] = {
     "Ambush at Mos Eisley", "Rendezvous on Barkhesh", "The Search for the Nonnah", "Defection at Corellia",
     "Liberation of Gerrard V", "The Jade Moon", "Imperial Construction Yards", "Assault on Kile II",
     "Rescue on Kessel", "Prisons of Kessel", "Battle Above Taloraan", "Escape from Fest",
     "Blockade on Chandrila", "Raid on Sullust", "Moff Seerdon's Revenge", "The Battle of Calamari",
     "Beggar's Canyon", "The Death Star Trench Run", "The Battle of Hoth"
+};
+
+// enum PlayerCraft order (the craft byte gGameSettings+1).
+static constexpr const char* kCraftNames[] = {
+    "X-wing", "Y-wing", "A-wing", "V-wing", "Snowspeeder", "Millennium Falcon", "TIE Interceptor", "T-16 Skyhopper", "Naboo Starfighter"
 };
 
 static constexpr int kMaxPlayers = 2;
@@ -62,11 +72,6 @@ static constexpr int kHangarPresents = 30;
 // The AT-ST level the CHICKEN passcode starts.
 static constexpr uint32_t kChickenLevel = 20;
 
-// enum PlayerCraft order (the craft byte gGameSettings+1).
-static constexpr const char* kCraftNames[] = {
-    "X-wing", "Y-wing", "A-wing", "V-wing", "Snowspeeder", "Millennium Falcon", "TIE Interceptor", "T-16 Skyhopper", "Naboo Starfighter"
-};
-
 struct Activity
 {
     bool enabled = false;
@@ -75,10 +80,7 @@ struct Activity
     int64_t start = 0;
     int players = 0;
 
-    bool operator==(const Activity& o) const
-    {
-        return enabled == o.enabled && details == o.details && state == o.state && start == o.start && players == o.players;
-    }
+    bool operator==(const Activity&) const = default;
 };
 
 std::mutex g_mtx;
@@ -92,64 +94,13 @@ public:
     bool open()
     {
 
-#if defined(_WIN32)
-
-        for (int i = 0; i < 10; ++i) {
-            const std::string path = "\\\\.\\pipe\\discord-ipc-" + std::to_string(i);
-
-            h_ = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
-
-            if (h_ != INVALID_HANDLE_VALUE) {
+        for (int i = 0; i < kPipeSlots; ++i) {
+            if (try_open(i)) {
                 return true;
             }
         }
 
         return false;
-
-#else
-
-        // shortcut: Flatpak and Snap Discord put the socket in a subfolder (app/com.discordapp.Discord, snap.discord); add those if players ask.
-        const char* dir = nullptr;
-
-        for (const char* var : { "XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP" }) {
-            dir = recomp::dbg::env_str(var);
-
-            if (dir) {
-                break;
-            }
-        }
-
-        const std::string base = std::string(dir ? dir : "/tmp") + "/discord-ipc-";
-
-        for (int i = 0; i < 10; ++i) {
-            fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
-
-            if (fd_ < 0)
-            {
-                return false;
-            }
-
-#if defined(SO_NOSIGPIPE)
-            int one = 1;
-            setsockopt(fd_, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-#endif
-
-            sockaddr_un addr{};
-            addr.sun_family = AF_UNIX;
-            snprintf(addr.sun_path, sizeof(addr.sun_path), "%s%d", base.c_str(), i);
-
-            if (connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
-                return true;
-            }
-
-            ::close(fd_);
-            fd_ = -1;
-        }
-
-        return false;
-
-#endif
-
     }
 
     void close()
@@ -186,36 +137,89 @@ public:
 
     }
 
-    bool send_frame(uint32_t op, const std::string& body)
+    // One frame out, Discord's reply frame back; false when the pipe broke or the reply is not a frame.
+    bool request(uint32_t op, const json& body, std::string& reply)
     {
 
-        std::string buf(8 + body.size(), '\0');
-        const uint32_t len = (uint32_t)body.size();
+        const std::string text = body.dump();
+        const uint32_t len = (uint32_t)text.size();
+        std::string buf(8 + text.size(), '\0');
 
         memcpy(&buf[0], &op, 4);
         memcpy(&buf[4], &len, 4);
-        memcpy(&buf[8], body.data(), body.size());
-
-        return io(&buf[0], buf.size(), true);
-    }
-
-    bool read_frame(uint32_t& op, std::string& body)
-    {
+        memcpy(&buf[8], text.data(), text.size());
 
         uint32_t hdr[2];
 
-        if (!io(hdr, sizeof(hdr), false) || hdr[1] > 0x10000)
+        if (!io(&buf[0], buf.size(), true) || !io(hdr, sizeof(hdr), false) || hdr[1] > 0x10000)
         {
             return false;
         }
 
-        op = hdr[0];
-        body.assign(hdr[1], '\0');
+        reply.assign(hdr[1], '\0');
 
-        return hdr[1] == 0 || io(&body[0], hdr[1], false);
+        if (hdr[1] > 0 && !io(&reply[0], hdr[1], false))
+        {
+            return false;
+        }
+
+        return hdr[0] == kFrame;
     }
 
 private:
+    bool try_open(int slot)
+    {
+
+#if defined(_WIN32)
+
+        const std::string path = "\\\\.\\pipe\\discord-ipc-" + std::to_string(slot);
+
+        h_ = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+
+        return h_ != INVALID_HANDLE_VALUE;
+
+#else
+
+        // shortcut: Flatpak and Snap Discord put the socket in a subfolder (app/com.discordapp.Discord, snap.discord); add those if players ask.
+        static const std::string s_base = [] {
+
+            for (const char* var : { "XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP" }) {
+                if (const char* dir = recomp::dbg::env_str(var)) {
+                    return std::string(dir) + "/discord-ipc-";
+                }
+            }
+
+            return std::string("/tmp/discord-ipc-");
+        }();
+
+        fd_ = socket(AF_UNIX, SOCK_STREAM, 0);
+
+        if (fd_ < 0)
+        {
+            return false;
+        }
+
+#if defined(SO_NOSIGPIPE)
+        int one = 1;
+        setsockopt(fd_, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+
+        sockaddr_un addr{};
+        addr.sun_family = AF_UNIX;
+        snprintf(addr.sun_path, sizeof(addr.sun_path), "%s%d", s_base.c_str(), slot);
+
+        if (connect(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+            return true;
+        }
+
+        close();
+
+        return false;
+
+#endif
+
+    }
+
     bool io(void* data, size_t size, bool write)
     {
 
@@ -276,7 +280,7 @@ int process_id()
 
 }
 
-// Handshake, then Discord's READY. A CLOSE reply (a bad client id, an old client) is logged once.
+// Handshake, then Discord's READY. A refusal (a bad client id, an old client) is logged once.
 bool connect_discord(Pipe& pipe)
 {
 
@@ -285,11 +289,9 @@ bool connect_discord(Pipe& pipe)
         return false;
     }
 
-    uint32_t op = 0;
     std::string reply;
-    const json hello = { { "v", 1 }, { "client_id", kClientId } };
 
-    if (pipe.send_frame(kHandshake, hello.dump()) && pipe.read_frame(op, reply) && op == kFrame) {
+    if (pipe.request(kHandshake, { { "v", 1 }, { "client_id", kClientId } }, reply)) {
         fprintf(stderr, "[discord] connected\n");
 
         return true;
@@ -314,27 +316,27 @@ bool send_activity(Pipe& pipe, const Activity& a)
     json args = { { "pid", process_id() } };
 
     if (a.enabled) {
-        args["activity"] = {
+        json& act = args["activity"];
+
+        act = {
             { "details", a.details },
             { "timestamps", { { "start", a.start } } },
             { "assets", { { "large_image", "icon_art" }, { "large_text", "Rogue Squadron 64 Recompiled" } } }
         };
 
         if (!a.state.empty()) {
-            args["activity"]["state"] = a.state;
+            act["state"] = a.state;
         }
 
         // Discord shows the party as "(1 of 2)" after the state line.
         if (a.players > 0) {
-            args["activity"]["party"] = { { "id", "rs64-coop-" + std::to_string(process_id()) }, { "size", { a.players, kMaxPlayers } } };
+            act["party"] = { { "id", "rs64-coop-" + std::to_string(process_id()) }, { "size", { a.players, kMaxPlayers } } };
         }
     }
 
-    const json msg = { { "cmd", "SET_ACTIVITY" }, { "args", args }, { "nonce", std::to_string(++s_nonce) } };
-    uint32_t op = 0;
     std::string reply;
 
-    if (!pipe.send_frame(kFrame, msg.dump()) || !pipe.read_frame(op, reply) || op != kFrame)
+    if (!pipe.request(kFrame, { { "cmd", "SET_ACTIVITY" }, { "args", args }, { "nonce", std::to_string(++s_nonce) } }, reply))
     {
         return false;
     }
@@ -346,13 +348,12 @@ bool send_activity(Pipe& pipe, const Activity& a)
     return true;
 }
 
-// Sends each change; with Discord closed, retries every 15 s. Disabling the discord-status mod clears the status but keeps the connection.
+// The IPC thread: sleeps until a change, sends it, and with Discord closed retries every 15 s. Disabling the discord-status mod clears the status and disconnects.
 void run()
 {
 
     Pipe pipe;
-    Activity sent;
-    bool have_sent = false;
+    std::optional<Activity> sent;
 
     for (;;) {
         std::unique_lock<std::mutex> lk(g_mtx);
@@ -365,14 +366,14 @@ void run()
         lk.unlock();
 
         if (!pipe.is_open()) {
-            have_sent = false;
+            sent.reset();
 
             if (!want.enabled || !connect_discord(pipe)) {
                 continue;
             }
         }
 
-        if (have_sent && want == sent) {
+        if (sent == want) {
             continue;
         }
 
@@ -386,7 +387,11 @@ void run()
         }
 
         sent = want;
-        have_sent = true;
+
+        // Off: the status is cleared above, then the connection goes too.
+        if (!want.enabled) {
+            pipe.close();
+        }
     }
 }
 
@@ -422,44 +427,67 @@ const char* level_name(uint32_t level)
 }
 
 // The loaded overlay decides mission / cutscene / front end: the menu classifier also matches stale menu data inside missions and cutscenes.
+// Every screen of a level (crawl, cutscenes, mission) has the level as its top line, so they share one timer.
 Activity describe(const uint8_t* rdram, bool hangar)
 {
 
-    Activity a;
     const int overlay = g_active_overlay;
     const uint32_t level = rs64_state_level();
-    const uint8_t craft = rdram[0x130B41 ^ 3];
-    const bool demo = (*reinterpret_cast<const uint32_t*>(rdram + 0x130B50) & 0x20u) != 0;
-    const std::string st = rs64_state_current_id();
+    const uint8_t craft = rs64::mips::rb(rdram, 0x80130B41u);
+    const bool demo = (rs64::mips::rw(rdram, 0x80130B50u) & 0x20u) != 0;
+    const std::string_view st = rs64_state_current_id();
 
-    if (hangar) {
-        a.details = "In the hangar";
-        a.state = level_name(level);
-    } else if (overlay == kOverlayMission && demo) {
-        a.details = "Watching a demo";
-    } else if (overlay == kOverlayMission) {
-        a.details = level_name(level);
+    const auto screen = [](std::string details, std::string state = {}) {
 
-        if (level == kChickenLevel) {
-            a.state = "AT-ST";
-        } else if (craft < std::size(kCraftNames)) {
-            a.state = kCraftNames[craft];
-        }
-    } else if (overlay == kOverlayCinematic && level < std::size(kLevelNames)) {
-        a.details = level_name(level);
-        a.state = "Cutscene";
-    } else if (overlay == kOverlayCinematic) {
-        a.details = "Watching a cutscene";
-    } else if (st == "menu.account.level_select") {
-        a.details = "Selecting a level";
-    } else if (st == "menu.account.craft_select") {
-        a.details = "Choosing a craft";
-        a.state = level_name(level);
-    } else {
-        a.details = "In the menus";
+        Activity a;
+
+        a.details = std::move(details);
+        a.state = std::move(state);
+
+        return a;
+    };
+
+    if (rs64_crawl_playing())
+    {
+        return screen(level_name(level), "Opening crawl");
     }
 
-    return a;
+    if (hangar)
+    {
+        return screen("In the hangar", level_name(level));
+    }
+
+    if (overlay == kOverlayMission && demo)
+    {
+        return screen("Watching a demo");
+    }
+
+    if (overlay == kOverlayMission && level == kChickenLevel)
+    {
+        return screen(level_name(level), "AT-ST");
+    }
+
+    if (overlay == kOverlayMission)
+    {
+        return screen(level_name(level), craft < std::size(kCraftNames) ? kCraftNames[craft] : "");
+    }
+
+    if (overlay == kOverlayCinematic)
+    {
+        return level < std::size(kLevelNames) ? screen(level_name(level), "Cutscene") : screen("Watching a cutscene");
+    }
+
+    if (st == "menu.account.level_select")
+    {
+        return screen("Selecting a level");
+    }
+
+    if (st == "menu.account.craft_select")
+    {
+        return screen("Choosing a craft", level_name(level));
+    }
+
+    return screen("In the menus");
 }
 
 }
@@ -491,7 +519,6 @@ void poll(const uint8_t* rdram)
         a.state = "Co-op";
     }
 
-    // The timer runs while the top line stays the same: a level's cutscenes, pauses and co-op changes keep it.
     a.start = (a.details == s_last.details) ? s_last.start : (int64_t)time(nullptr);
 
     if (a == s_last)
@@ -507,7 +534,10 @@ void poll(const uint8_t* rdram)
         fprintf(stderr, "[discord] overlay=%d state=%s players=%d -> \"%s\" / \"%s\" start=%lld\n", (int)g_active_overlay, rs64_state_current_id(), a.players, a.details.c_str(), a.state.c_str(), (long long)a.start);
     }
 
-    std::call_once(s_start, [] { std::thread(run).detach(); });
+    // The thread starts the first time the mod is on, so a game with it off never talks to Discord.
+    if (a.enabled) {
+        std::call_once(s_start, [] { std::thread(run).detach(); });
+    }
 
     std::lock_guard<std::mutex> lk(g_mtx);
 
