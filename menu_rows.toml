@@ -1411,6 +1411,12 @@ func = "menuSubtype02Handler"
 vram = 0x800C3908
 value = 0xE6200158
 
+# text slot table 24 entries
+[[patches.instruction]]
+func = "initInteractiveSceneContext"
+vram = 0x800C4078
+value = 0x24040018
+
 # text group 5 elements 17
 [[patches.instruction]]
 func = "initInteractiveSceneContext"

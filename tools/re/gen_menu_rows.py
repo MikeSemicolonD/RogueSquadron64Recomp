@@ -26,6 +26,8 @@ SNAPSHOT_NEW = 0x80C42800
 SNAPSHOT_SITES = [(0x800BBF8C, 0x800BBF90), (0x800BC118, 0x800BC140)]
 # Fixed 8-row loops: setupMenuData's pos/sc reset and updateTieInterceptorAnimFlag's label refresh. The --report BOUND-8 list shows every compare with 8.
 ROW_LOOP_BOUNDS = [0x800BA168, 0x800BC434]
+# Slot tables loadCharTextureSet registers group 5's elements in, (allocateSlotTable count site, old, new): the showroom scene's held 13 elements plus 3 entries, so 17 overran it.
+SLOT_TABLES = [(0x800C4078, 0x10, 0x18)]
 # Old array base, element size, new base. Arrays not listed keep their offsets.
 MOVED = {
     "type": (0x28, 1, 0x188),
@@ -593,6 +595,9 @@ def main(argv=None):
 
     for vram in ROW_LOOP_BOUNDS:
         set_imm(vram, 8, ROWS, "row loop bound %d" % ROWS)
+
+    for vram, old, new in SLOT_TABLES:
+        set_imm(vram, old, new, "text slot table %d entries" % new)
 
     bounds = []
 
