@@ -233,8 +233,21 @@ class Game:
         return self.proc is not None and self.proc.poll() is None
 
     def status(self):
+        state = None
+        held = None
+
+        if self.alive():
+            try:
+                info = self.call("frame_info", timeout_s=2)
+                state = info.get("state")
+                held = info.get("held")
+            except GameError:
+                pass
+
         return {
             "running": self.alive(),
+            "state": state,
+            "held": held,
             "pid": self.proc.pid if self.proc else 0,
             "port": self.port,
             "exit_code": None if (self.proc is None or self.alive()) else self.proc.returncode,
@@ -823,7 +836,7 @@ def serve():
 
     @tool()
     def status() -> dict:
-        """Game process status: running, pid, port, exit_code, log_path (stdout+stderr) and session_dir (outputs)."""
+        """Game process status: running, state (menu.main, cutscene, attract.demo, mission, ...), held, pid, port, exit_code, log_path (stdout+stderr) and session_dir (outputs)."""
         return game.status()
 
     @tool()

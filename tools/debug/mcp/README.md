@@ -21,7 +21,7 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `launch` | Start the game (cwd `build/<config>`, RenderDoc injected, muted, dev mode) and connect. `env` adds `ROGUESQ_*` variables. Refuses while its game is still running. |
 | `attach` | Connect to a game the user started (a Debug build serves the bridge on port 47064). Everything but `wait_log` works; `close` only disconnects. |
 | `close` | Kill the game (an attached one is only disconnected). |
-| `status` | `running`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
+| `status` | `running`, `state` (the game state, e.g. `menu.main`, `cutscene`, `attract.demo`), `held`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
 | `call` | Send any bridge method directly. |
 | `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). Errors at once if the shown state's clock is already past `frame`. |
 | `pause_now` | Freeze on the next frame, whatever is on screen. |
