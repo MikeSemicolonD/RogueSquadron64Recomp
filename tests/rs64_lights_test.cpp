@@ -471,12 +471,11 @@ static void testSceneCaptureEnabled() {
 }
 
 static void testSceneWanted() {
-    CHECK(sceneWanted(true, false, false, false, false));
-    CHECK(sceneWanted(false, true, true, true, false));
-    CHECK(!sceneWanted(false, true, false, true, false));
-    CHECK(!sceneWanted(false, true, true, false, false));
-    CHECK(!sceneWanted(false, true, true, true, true));
-    CHECK(!sceneWanted(false, false, true, true, false));
+    CHECK(sceneWanted(true, false, false, false));
+    CHECK(sceneWanted(false, true, true, true));
+    CHECK(!sceneWanted(false, true, false, true));
+    CHECK(!sceneWanted(false, true, true, false));
+    CHECK(!sceneWanted(false, false, true, true));
 }
 
 static void testLightRaySpan() {
