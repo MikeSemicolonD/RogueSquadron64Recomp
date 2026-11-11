@@ -80,7 +80,7 @@ static void controls_menu_checks()
     assert(b.targets[(int)Target::A][0].code == SDL_SCANCODE_G);
     assert(holds(b, Target::A, key(SDL_SCANCODE_RETURN)) && !holds(b, Target::A, key(SDL_SCANCODE_W)));
     assert(b.targets[(int)Target::A][shown_source(b, Target::A, Device::Keyboard)].code == SDL_SCANCODE_G);
-    assert(holds(b, Target::A, Source{ SourceKind::PadButton, SDL_CONTROLLER_BUTTON_A, 0 }));
+    assert(holds(b, Target::A, Source{ SourceKind::PadAxis, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 1 }));
 
     // rebind_swaps_matched_source_in_place
     b = default_bindings();

@@ -305,21 +305,21 @@ Bindings default_bindings()
     add(Target::CLeft, mb(SDL_BUTTON_RIGHT));       // fire secondary
     add(Target::A,     mb(SDL_BUTTON_MIDDLE));      // menu confirm
 
-    // --- Gamepad (mirrors the prior hardcoded map) ---
-    add(Target::A,     pb(SDL_CONTROLLER_BUTTON_A));
-    add(Target::B,     pb(SDL_CONTROLLER_BUTTON_X));
+    // --- Gamepad (menus read pad A/B as confirm/back through menu_fixed_mask) ---
+    add(Target::B,     pb(SDL_CONTROLLER_BUTTON_A));
+    add(Target::CLeft, pb(SDL_CONTROLLER_BUTTON_B));
+    add(Target::CDown, pb(SDL_CONTROLLER_BUTTON_Y));
+    add(Target::CRight,pb(SDL_CONTROLLER_BUTTON_X));
+    add(Target::A,     pax(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, +1));
+    add(Target::Z,     pax(SDL_CONTROLLER_AXIS_TRIGGERLEFT, +1));
+    add(Target::RTrig, pb(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
+    add(Target::CUp,   pb(SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
+    add(Target::LTrig, pb(SDL_CONTROLLER_BUTTON_BACK));
     add(Target::Start, pb(SDL_CONTROLLER_BUTTON_START));
     add(Target::DpadUp,   pb(SDL_CONTROLLER_BUTTON_DPAD_UP));
     add(Target::DpadDown, pb(SDL_CONTROLLER_BUTTON_DPAD_DOWN));
     add(Target::DpadLeft, pb(SDL_CONTROLLER_BUTTON_DPAD_LEFT));
     add(Target::DpadRight,pb(SDL_CONTROLLER_BUTTON_DPAD_RIGHT));
-    add(Target::LTrig, pb(SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
-    add(Target::RTrig, pb(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
-    add(Target::CUp,   pb(SDL_CONTROLLER_BUTTON_Y));
-    add(Target::CDown, pb(SDL_CONTROLLER_BUTTON_B));
-    add(Target::CLeft, pb(SDL_CONTROLLER_BUTTON_BACK));
-    add(Target::CRight,pb(SDL_CONTROLLER_BUTTON_GUIDE));
-    add(Target::Z,     pax(SDL_CONTROLLER_AXIS_TRIGGERLEFT, +1));
     add(Target::StickRight, pax(SDL_CONTROLLER_AXIS_LEFTX, +1));
     add(Target::StickLeft,  pax(SDL_CONTROLLER_AXIS_LEFTX, -1));
     add(Target::StickUp,    pax(SDL_CONTROLLER_AXIS_LEFTY, -1));
