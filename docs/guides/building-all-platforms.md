@@ -140,15 +140,15 @@ The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac archi
 
 ### Frame rate
 
-TARGET FPS (Display Settings, Advanced) sets how many frames a second the game runs. Ray tracing is the main cost, so pick a row by what matters most to you:
+TARGET FPS (Display Settings, Advanced) sets how many frames a second the game runs. Pick a row by what matters most to you:
 
 | Goal | Ray tracing | Frame interpolation | TARGET FPS | Result |
 | --- | --- | --- | --- | --- |
-| Most responsive | Off | Off | Display rate | Every frame is a real game frame: about 107 fps at 120 |
-| Smoothest with ray tracing | On | On | Display rate | 60 game frames a second, interpolated up to about 98 shown |
-| Ray tracing, lowest input lag | On | Off | 60 | About 60 real frames a second |
+| Most responsive | On/Off | Off | Display rate | Every frame is a real game frame: about 210-220 fps at 240 |
+| Smoothest | On/Off | On | Display rate | 60 game frames a second, interpolated up to about 238 shown at 240 |
+| Lowest input lag at 60 | On/Off | Off | 60 | A steady 60 real frames a second |
 | Original game | On/Off | Off | 30 | The N64's 30 fps |
 
 - With frame interpolation off, the game runs real frames at the target.
 - With frame interpolation on, the game runs 30 real frames a second up to a target of 60, and 60 above that, and fills in the rest. Interpolation adds about one frame of input lag.
-- Above 60 fps, ray tracing limits the frame rate on most GPUs. Turn it off for the highest frame rate.
+- Busy levels run fewer real frames: Battle of Calamari reaches about 110 at 240.
