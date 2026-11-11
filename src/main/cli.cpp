@@ -125,6 +125,7 @@ static const CliFlag kCliFlags[] = {
     {"language",         "ROGUESQ_LANGUAGE",         CliFlag::Value, "",  "",  "game text language for this run: en | de | fr or a language mod's code (the saved setting is unchanged)"},
     {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
     {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
+    {"vr",               "ROGUESQ_VR",               CliFlag::Bool,  "1", "0", "play in a VR headset (OpenXR builds)"},
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
     {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},

@@ -250,6 +250,16 @@ std::mutex            g_bindings_mtx;
 std::atomic<bool>     g_show_controls{false};
 std::atomic<bool>     g_show_fps{false};
 std::atomic<bool>     g_mouse_capture{false};
+std::atomic<bool>     g_vr_mouse_look{false};
+static std::atomic<float> g_vr_look_x{0.0f};
+static std::atomic<float> g_vr_look_y{0.0f};
+
+void take_vr_mouse_look(float* dx, float* dy)
+{
+
+    *dx = g_vr_look_x.exchange(0.0f);
+    *dy = g_vr_look_y.exchange(0.0f);
+}
 static float                 g_mouse_ax = 0.0f;   // accumulated relative motion this frame
 static float                 g_mouse_ay = 0.0f;
 static uint32_t              g_mouse_btn = 0;
@@ -940,6 +950,13 @@ void poll_input()
                     case SDL_SCANCODE_F7:
                         g_show_fps.store(!g_show_fps.load());
                         break;
+                    case SDL_SCANCODE_F8:
+                        if (recomp::dbg::env_str("ROGUESQ_VR_FAKE_YAW")) {
+                            g_vr_mouse_look.store(!g_vr_mouse_look.load());
+                            rs64::app::notify("vrlook", g_vr_mouse_look.load() ? "Mouse turns the VR head (F8)" : "Mouse steers (F8)", 2.0f);
+                        }
+
+                        break;
                     case SDL_SCANCODE_F5: {
                         // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
                         if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
@@ -1052,7 +1069,11 @@ void poll_input()
     int rdx = 0, rdy = 0;
     uint32_t rbtn = SDL_GetRelativeMouseState(&rdx, &rdy);
 
-    if (g_mouse_capture.load()) {
+    if (g_vr_mouse_look.load()) {
+        g_vr_look_x.store(g_vr_look_x.load() + (float)rdx);
+        g_vr_look_y.store(g_vr_look_y.load() + (float)rdy);
+        g_mouse_ax = g_mouse_ay = 0.0f;
+    } else if (g_mouse_capture.load()) {
         g_mouse_ax += (float)rdx;
         g_mouse_ay += (float)rdy;
     } else {

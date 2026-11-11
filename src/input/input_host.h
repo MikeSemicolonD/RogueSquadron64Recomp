@@ -36,6 +36,10 @@ namespace rs64::app {
     extern std::atomic<bool> g_show_controls;
     extern std::atomic<bool> g_show_fps;
     extern std::atomic<bool> g_mouse_capture;
+    // F8 with the fake VR head on: mouse motion turns the head instead of steering.
+    extern std::atomic<bool> g_vr_mouse_look;
+    // Mouse motion in pixels since the last call, while g_vr_mouse_look is on.
+    void take_vr_mouse_look(float* dx, float* dy);
     extern std::vector<OpenJoy> g_open_joys;
     extern std::vector<SDL_Joystick*> g_joy_by_dev;
     extern std::atomic<float> g_throttle;

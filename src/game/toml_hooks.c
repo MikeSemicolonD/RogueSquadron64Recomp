@@ -315,10 +315,16 @@ void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_conte
 }
 
 // Render-path view test, RT shadows on: true when the object (camera space at sp+0x10, radius r) is within the shadow keep distance in any direction.
+// In VR the keep distance is the far plane and every direction counts, since the head can look anywhere; menus and cutscenes drive no gameplay, so there every test counts.
 static int shadow_keep(uint8_t* rdram, recomp_context* ctx, float r)
 {
 
-    const float d = s_render_view_test ? rs64_shadow_keep_dist() : 0.0f;
+    const int vr = (s_render_view_test || (g_active_overlay > 0)) && rs64_vr_active();
+    union { uint32_t u; float f; } far_plane;
+
+    far_plane.u = (uint32_t)MEM_W(0x28, ctx->r17);
+
+    const float d = vr ? far_plane.f * rs64_draw_dist() : (s_render_view_test ? rs64_shadow_keep_dist() : 0.0f);
     union { uint32_t u; float f; } x, y, z;
 
     if (!(d > 0.0f))
@@ -333,6 +339,11 @@ static int shadow_keep(uint8_t* rdram, recomp_context* ctx, float r)
     if (!((x.f * x.f + y.f * y.f + z.f * z.f) < (d + r) * (d + r)))
     {
         return 0;
+    }
+
+    if (vr)
+    {
+        return 1;
     }
 
     // The margins cover the view slopes and the object having moved since they were read.
@@ -669,7 +680,7 @@ void rs64_th_addNpcToVisibilityBucket_80057C90(uint8_t* rdram, recomp_context* c
 static void lod_depth(recomp_context* ctx)
 {
 
-    if ((ctx->f2.fl < 0.0f) && (rs64_shadow_keep_dist() > 0.0f)) ctx->f2.fl = -ctx->f2.fl;
+    if ((ctx->f2.fl < 0.0f) && ((rs64_shadow_keep_dist() > 0.0f) || rs64_vr_active())) ctx->f2.fl = -ctx->f2.fl;
 
     ctx->f2.fl /= rs64_draw_dist();
 }
@@ -926,7 +937,7 @@ void rs64_th_cutsceneActorNpcHandler_80044924(uint8_t* rdram, recomp_context* ct
 // linkDirectionalTrailSegments 0x8005B418
 void rs64_th_linkDirectionalTrailSegments_8005B418(uint8_t* rdram, recomp_context* ctx)
 {
-    if (rs64_cull_widen() > 1.0f) {
+    if ((rs64_cull_widen() > 1.0f) || rs64_vr_active()) {
         ctx->r7 = 0;
         ctx->r6 = 7;
     }
@@ -959,6 +970,100 @@ void rs64_th_projectModelBoundsToScreen_80065FE4(uint8_t* rdram, recomp_context*
     x.u = (uint32_t)MEM_W(0, ctx->r16);
     x.f /= rs64_cull_widen();
     MEM_W(0, ctx->r16) = (int32_t)x.u;
+}
+
+// projectModelBoundsToScreen entry: returns 1 (visible) in VR.
+int rs64_th_projectModelBoundsToScreen_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!rs64_vr_active())
+    {
+        return 0;
+    }
+
+    ctx->r2 = 1;
+    return 1;
+}
+
+// timeSnapshotFiller 0x8000BF40: the snapshot ($s0) holds the time since the last frame (+0x20) and the VI period (+0x1C). A fixed step sets one paced frame:
+// the period times the VIs a frame waits for (0x80128EAF), which every caller's rounding keeps as is.
+void rs64_th_timeSnapshotFiller_8000BF40(uint8_t* rdram, recomp_context* ctx)
+{
+
+    union { uint32_t u; float f; } period, step;
+
+    if (!rs64_fixed_step())
+    {
+        return;
+    }
+
+    period.u = (uint32_t)MEM_W(0x1C, ctx->r16);
+    step.f = period.f * (float)MEM_BU(0, 0x80128EAF);
+
+    MEM_W(0x20, ctx->r16) = (int32_t)step.u;
+}
+
+// updateHangarBayScene 0x800AD68C: the camera's roll (a1), which banks it into each swing; VR keeps the horizon level.
+void rs64_th_updateHangarBayScene_800AD68C(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (rs64_vr_active())
+    {
+        ctx->r5 = 0;
+    }
+}
+
+// updateHangarBayScene 0x800AD72C: the camera position (a1-a3) with the idle bob on x and z; VR uses the eye at 0x800CD810 without it.
+void rs64_th_updateHangarBayScene_800AD72C(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!rs64_vr_active())
+    {
+        return;
+    }
+
+    ctx->r5 = MEM_W(0, 0x800CD810);
+    ctx->r7 = MEM_W(8, 0x800CD810);
+}
+
+// refreshEffectObjectCamerasAndState 0x80053090: the cockpit root ($v0, camera entry $s1 +0x6C) about to be drawn. Its model (the root's first child,
+// world position at +0x40) slides with the stick while the cockpit camera stays fixed to the craft; VR puts both back on the craft (active view node
+// +0x70 is the craft matrix, position +0x24).
+void rs64_th_refreshEffectObjectCamerasAndState_80053090(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!rs64_vr_active())
+    {
+        return;
+    }
+
+    const uint32_t cockpit = (uint32_t)ctx->r2;
+    const uint32_t model = (uint32_t)MEM_W(0, cockpit);
+    const uint32_t view = (uint32_t)MEM_W(4, ctx->r17);
+    const uint32_t craft = view ? (uint32_t)MEM_W(0x70, view) : 0;
+
+    if (!craft)
+    {
+        return;
+    }
+
+    MEM_W(0x40, cockpit) = MEM_W(0x24, craft);
+    MEM_W(0x44, cockpit) = MEM_W(0x28, craft);
+    MEM_W(0x48, cockpit) = MEM_W(0x2C, craft);
+
+    if (model)
+    {
+        MEM_W(0x40, model) = MEM_W(0x24, craft);
+        MEM_W(0x44, model) = MEM_W(0x28, craft);
+        MEM_W(0x48, model) = MEM_W(0x2C, craft);
+    }
+}
+
+// spawnScatteredDebrisParticles 0x80052074: the spin-out camera is set (or the cockpit kept); VR swaps in the crash camera.
+void rs64_th_spawnScatteredDebrisParticles_80052074(uint8_t* rdram, recomp_context* ctx)
+{
+
+    rs64_vr_death_camera(rdram, ctx);
 }
 
 // runMenuShipSelectScreen 0x800C14A8

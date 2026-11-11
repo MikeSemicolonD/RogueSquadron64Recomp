@@ -482,10 +482,50 @@ static std::vector<PauseTarget>& pause_targets()
     return v;
 }
 
+// The latest frame of every clock and when it was reached, so a capture can be named by game time instead of RenderDoc's present count.
+static std::mutex s_clock_mtx;
+static std::map<std::string, std::pair<uint32_t, std::chrono::steady_clock::time_point>> s_clock_seen;
+
+static void note_clock(const char* clock, uint32_t frame)
+{
+
+    std::lock_guard<std::mutex> lock(s_clock_mtx);
+
+    s_clock_seen[clock] = { frame, std::chrono::steady_clock::now() };
+}
+
+std::string rs64_clock_label()
+{
+
+    using namespace std::chrono;
+
+    std::lock_guard<std::mutex> lock(s_clock_mtx);
+    steady_clock::time_point newest{};
+
+    for (const auto& [name, seen] : s_clock_seen) {
+        newest = std::max(newest, seen.second);
+    }
+
+    std::string label;
+
+    // Clocks reached within a few frames of the newest pause point are the ones running now.
+    for (const auto& [name, seen] : s_clock_seen) {
+        if (newest - seen.second > milliseconds(100)) {
+            continue;
+        }
+
+        label += (label.empty() ? "" : "_") + name + "-" + std::to_string(seen.first);
+    }
+
+    return label;
+}
+
 extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
 {
 
     static const char* base = recomp::dbg::env_str("ROGUESQ_PAUSE_FILE");
+
+    note_clock(clock, frame);
 
 #ifdef RS64_MCP
 

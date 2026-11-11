@@ -633,6 +633,9 @@ std::unordered_map<std::string, ToggleImpl>& toggles() {
         // The game's own terrain (caps the draw distance at 1.3X); takes effect at the next frame.
         { "legacy_terrain", { [] { return rs64::video::legacy_terrain(); },
                               [] { rs64::video::set_legacy_terrain(!rs64::video::legacy_terrain()); } } },
+        // Read once at launch, so it takes effect at the next start.
+        { "vr_mode", { [] { return rs64::video::vr_mode(); },
+                       [] { rs64::video::set_vr_mode(!rs64::video::vr_mode()); } } },
         { "framebuffer_writeback", { [] { return rs64::video::framebuffer_writeback(); },
                                      [] { rs64::video::set_framebuffer_writeback(!rs64::video::framebuffer_writeback()); } } },
         { "rt_lights", rt_toggle(rs64lights::Feature::Lights) },
@@ -1400,6 +1403,10 @@ bool condition_holds(uint8_t* rdram, const std::string& c, bool pause)
     if (c == "expansion_pak") return rd_b(rdram, 0x130B63) != 0;
     if (c == "frame_interpolation") return rs64::video::frame_interpolation_on();
     if (c == "widescreen") return rs64::video::display_value(rs64::video::Display::Widescreen) == 1;
+
+#if defined(RS64_OPENXR)
+    if (c == "openxr") return true;
+#endif
 
     return rs64::host::condition(c.c_str()) > 0;
 }

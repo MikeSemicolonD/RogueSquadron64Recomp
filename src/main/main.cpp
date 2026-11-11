@@ -448,11 +448,13 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
 
     // Capture the mouse for steering while focused, unless the F6 controls window, the F1 inspector or a clickable menu is up.
     // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
-    bool want = (SDL_GetKeyboardFocus() != nullptr)
+    bool want = (SDL_GetKeyboardFocus() != nullptr) && g_vr_mouse_look.load();
+
+    want = want || ((SDL_GetKeyboardFocus() != nullptr)
              && !rs64::touch::shared_config().enabled
              && !g_show_controls.load()
              && !rs64_rt64_inspector_open()
-             && !mouse_menu_context(touch_context());
+             && !mouse_menu_context(touch_context()));
     g_mouse_capture.store(want);
     static bool s_rel = false;
 

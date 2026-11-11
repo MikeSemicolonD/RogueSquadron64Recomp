@@ -990,6 +990,40 @@ func = "projectModelBoundsToScreen"
 before_vram = 0x80065FE4
 text = '{ rs64_th_projectModelBoundsToScreen_80065FE4(rdram, ctx); }'
 
+# VR: the head can face any way, so every hangar piece is drawn.
+[[patches.hook]]
+func = "projectModelBoundsToScreen"
+text = '{ if (rs64_th_projectModelBoundsToScreen_entry(rdram, ctx)) return; }'
+
+# ROGUESQ_FIXED_STEP: every frame measures exactly one paced frame, so cutscene, menu and mission frame numbers name the same picture on every run.
+[[patches.hook]]
+func = "timeSnapshotFiller"
+before_vram = 0x8000BF40
+text = '{ rs64_th_timeSnapshotFiller_8000BF40(rdram, ctx); }'
+
+# VR: the craft-select camera keeps a level horizon and no idle bob.
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD68C
+text = '{ rs64_th_updateHangarBayScene_800AD68C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD72C
+text = '{ rs64_th_updateHangarBayScene_800AD72C(rdram, ctx); }'
+
+# VR: the cockpit model stays on the craft instead of sliding with the stick.
+[[patches.hook]]
+func = "refreshEffectObjectCamerasAndState"
+before_vram = 0x80053090
+text = '{ rs64_th_refreshEffectObjectCamerasAndState_80053090(rdram, ctx); }'
+
+# VR: a spin-out gets the crash camera (fixed, looking at the craft) instead of an orbit or the spinning cockpit.
+[[patches.hook]]
+func = "spawnScatteredDebrisParticles"
+before_vram = 0x80052074
+text = '{ rs64_th_spawnScatteredDebrisParticles_80052074(rdram, ctx); }'
+
 # Credits pacing (0x800c14a8 = loop top of runMenuShipSelectScreen, the credits
 # sequence — misnamed in the ELF syms). Same race as the attribution screen: the
 # un-paced fade loop free-runs and starves the VI-driven glyph-layout producer, so

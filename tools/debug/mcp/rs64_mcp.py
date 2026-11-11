@@ -252,7 +252,11 @@ class Game:
         self.lock = threading.Lock()
 
     def alive(self):
-        return self.proc is not None and self.proc.poll() is None
+        """True while the game runs. Once its process is gone (closed by the user, crashed) the bridge connection is dropped, so it needs no close()."""
+        running = self.proc is not None and self.proc.poll() is None
+        if not running and self.sock is not None:
+            self.disconnect()
+        return running
 
     def status(self):
         state = None
@@ -305,6 +309,8 @@ class Game:
         full_env = dict(os.environ)
         full_env["ROGUESQ_HLE_DEV_MODE"] = "1"
         full_env["ROGUESQ_VIDEO_CONFIG"] = video_cfg
+        # Game time steps one frame per frame, so a cutscene, menu or mission frame number is the same picture on every launch; env ROGUESQ_FIXED_STEP=0 plays on real time.
+        full_env["ROGUESQ_FIXED_STEP"] = "1"
         if os.path.isfile(RENDERDOC_DLL):
             full_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
             full_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
@@ -378,6 +384,8 @@ class Game:
             pass
 
     def call(self, method, params=None, timeout_s=30):
+        if not self.alive() and self.proc is not None and not self.attached:
+            raise GameError(f"game exited (code {self.proc.returncode}); launch it again")
         if self.sock is None:
             raise GameError("game not launched")
 

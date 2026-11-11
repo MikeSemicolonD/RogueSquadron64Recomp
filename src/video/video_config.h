@@ -58,6 +58,10 @@ int target_fps(int display_hz);
 bool keep_cutscene_draw_distance();
 void set_keep_cutscene_draw_distance(bool on);
 
+// Start in a VR headset ("vrMode", default off; ROGUESQ_VR / --vr force it on). Read once at launch: VR picks the GPU before RT64 starts.
+bool vr_mode();
+void set_vr_mode(bool on);
+
 // RT64 copies each rendered frame back to RDRAM ("framebufferWriteback", default on; off by default on a Raspberry Pi). This game never reads them
 // back, and the copy plus the GPU wait it needs cost slow GPUs about half their frame time. Applies live.
 bool framebuffer_writeback();

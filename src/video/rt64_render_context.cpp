@@ -28,6 +28,7 @@ extern SDL_Window* g_sdl_window;
 #include "hle/rt64_present_queue.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
+#include "hle/rt64_rs64_vr.h"
 #include "librecomp/mods.hpp"
 
 #include "ultramodern/ultramodern.hpp"
@@ -43,6 +44,8 @@ extern SDL_Window* g_sdl_window;
 #include "lockstep/lockstep_core.h"    // load_replay: the recording's display settings
 #include "video/rt64_render_context.h"
 #include "video/render_diag.h"
+#include "video/vr_openxr.h"
+#include "input/input_host.h"
 #include "default_lights.h"
 #ifdef __ANDROID__
 #include "main/android_host.h"
@@ -317,6 +320,122 @@ extern "C" float rs64_cull_widen(void)
 
     return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
 }
+
+// ROGUESQ_VR_FAKE_YAW=<degrees>: a fake head with no headset, starting turned that far left, to test VR. Numpad 4/6 turn, 8/2 look up/down,
+// 7/9 move left/right, 1/3 down/up, +/- forward/back (in the starting frame), 5 recenters. Called only from RT64's workload thread.
+extern "C" int rs64_vr_fake_head(rs64vr::Pose* pose)
+{
+
+    static const char* s_env = env_str("ROGUESQ_VR_FAKE_YAW");
+
+    if (!s_env)
+    {
+        return 0;
+    }
+
+    constexpr float kDegreesPerSecond = 90.0f;
+    constexpr float kMetersPerSecond = 0.5f;
+    static const float s_start = float(std::atof(s_env));
+    static float s_yaw = s_start;
+    static float s_pitch = 0.0f;
+    static float s_pos[3] = {};
+    static auto s_last = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    const float dt = std::min(std::chrono::duration<float>(now - s_last).count(), 0.1f);
+    const Uint8* keys = SDL_GetKeyboardState(nullptr);
+
+    s_last = now;
+
+    if (keys) {
+        auto axis = [&](SDL_Scancode plus, SDL_Scancode minus) { return (keys[plus] ? 1.0f : 0.0f) - (keys[minus] ? 1.0f : 0.0f); };
+
+        s_yaw += axis(SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_6) * kDegreesPerSecond * dt;
+        s_pitch += axis(SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_2) * kDegreesPerSecond * dt;
+        // Sideways and forward moves follow the facing, as a walking player's would.
+        const float right = axis(SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_7) * kMetersPerSecond * dt;
+        const float back = axis(SDL_SCANCODE_KP_MINUS, SDL_SCANCODE_KP_PLUS) * kMetersPerSecond * dt;
+        const float yaw = s_yaw * 3.14159265f / 180.0f;
+
+        s_pos[0] += right * std::cos(yaw) + back * std::sin(yaw);
+        s_pos[1] += axis(SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_1) * kMetersPerSecond * dt;
+        s_pos[2] += back * std::cos(yaw) - right * std::sin(yaw);
+
+        constexpr float kDegreesPerPixel = 0.15f;
+        float mx = 0.0f;
+        float my = 0.0f;
+
+        rs64::app::take_vr_mouse_look(&mx, &my);
+        s_yaw -= mx * kDegreesPerPixel;
+        s_pitch -= my * kDegreesPerPixel;
+
+        if (keys[SDL_SCANCODE_KP_5]) {
+            s_yaw = s_start;
+            s_pitch = 0.0f;
+            s_pos[0] = s_pos[1] = s_pos[2] = 0.0f;
+        }
+    }
+
+    s_pitch = std::clamp(s_pitch, -89.0f, 89.0f);
+    *pose = rs64vr::headPose(s_yaw, s_pitch, s_pos[0], s_pos[1], s_pos[2]);
+
+    return 1;
+}
+
+extern "C" float rs64_vr_units_per_meter(void)
+{
+
+    // The menu overlay's 3D scenes (the craft-select hangar) draw the same craft 16 times larger than missions do.
+    constexpr float kMenuSceneScale = 16.0f;
+    static const char* s_env = env_str("ROGUESQ_VR_UNITS_PER_METER");
+    static const float s_env_units = s_env ? float(std::atof(s_env)) : 1.0f;
+    const float units = (s_env_units > 0.0f) ? s_env_units : 1.0f;
+
+    return (g_active_overlay == 1) ? units * kMenuSceneScale : units;
+}
+
+extern "C" int rs64_vr_hud_quads(void)
+{
+
+    return (g_active_overlay == 0) ? 1 : 0;
+}
+
+// 1 when culls must cover every direction: a fake head turn is set or a VR session is running.
+extern "C" int rs64_vr_active(void)
+{
+
+    static const bool s_fake = env_str("ROGUESQ_VR_FAKE_YAW") != nullptr;
+
+    return (s_fake || rs64_vr_session()) ? 1 : 0;
+}
+
+#if !defined(RS64_OPENXR)
+
+// Flat builds: no OpenXR, so there is never a session.
+extern "C" int rs64_vr_session(void) { return 0; }
+extern "C" uint32_t rs64_vr_target_rate(void) { return 0; }
+extern "C" int rs64_vr_game_hz(void) { return 0; }
+
+extern "C" void rs64_vr_eye_size(uint32_t* width, uint32_t* height)
+{
+
+    *width = 0;
+    *height = 0;
+}
+
+extern "C" int rs64_vr_locate(uint32_t, rs64vr::EyeViews* out)
+{
+
+    out->valid = false;
+
+    return 0;
+}
+
+extern "C" int rs64_vr_begin_frame(void) { return -1; }
+extern "C" plume::RenderTexture* rs64_vr_acquire_eye(int, uint32_t*, uint32_t*) { return nullptr; }
+extern "C" void rs64_vr_end_frame(const rs64vr::EyeViews*) {}
+
+#endif
+
 
 // Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
 // this frame's shadow (moving craft never enter the shadow history). Gameplay view tests are untouched. ROGUESQ_RT_SHADOWS_CULL_MARGIN overrides.
@@ -611,7 +730,27 @@ public:
         thread_id = window_handle.thread_id;
 #endif
 
+#if defined(RS64_OPENXR)
+
+        // VR needs Vulkan, and 8-bit targets so a raw copy fills the headset's sRGB images.
+        const bool vr = rs64::vr::requested() && rs64::vr::init_before_device();
+
+        if (vr) {
+            app->userConfig.graphicsAPI = UC::GraphicsAPI::Vulkan;
+            app->userConfig.internalColorFormat = UC::InternalColorFormat::Standard;
+        }
+
+#endif
+
         setup_result = map_result(app->setup(thread_id));
+
+#if defined(RS64_OPENXR)
+
+        if (vr && (setup_result == ultramodern::renderer::SetupResult::Success)) {
+            rs64::vr::start_session(*app);
+        }
+
+#endif
 
 #ifdef __ANDROID__
 

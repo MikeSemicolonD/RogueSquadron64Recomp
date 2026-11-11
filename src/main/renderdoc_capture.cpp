@@ -2,6 +2,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <mutex>
 #include <string>
 
 #include "util/debug_logs.h"
@@ -85,26 +87,78 @@ void rs64_renderdoc_trigger(uint32_t frames) {
     fprintf(stderr, "[renderdoc] capturing %u presents\n", frames);
 }
 
+// The newest capture as renamed after the game clocks, the capture count it belongs to, and the clocks noted when that capture started.
+// The present thread (poll) and the MCP bridge both ask for it, so whichever comes first renames the file.
+static std::mutex s_capture_mtx;
+static std::string s_renamed;
+static uint32_t s_renamed_count = 0;
+static std::string s_label;
+
+static std::string capture_path(uint32_t index)
+{
+
+    uint32_t length = 0;
+
+    g_rdoc->GetCapture(index, nullptr, &length, nullptr);
+    std::string file(length, '\0');
+
+    if (length > 0) {
+        g_rdoc->GetCapture(index, file.data(), &length, nullptr);
+        file.resize(std::strlen(file.c_str()));
+    }
+
+    return file;
+}
+
+// RenderDoc numbers a capture by its own present count, which drifts with wall time; the game clocks name the same moment on every run.
+static std::string rename_after_clocks(const std::string& file)
+{
+
+    const std::string label = s_label.empty() ? rs64_clock_label() : s_label;
+    const std::filesystem::path saved = file;
+    std::string stem = saved.stem().string();
+    const size_t frame_at = stem.rfind("_frame");
+
+    s_label.clear();
+
+    if (label.empty() || file.empty())
+    {
+        return file;
+    }
+
+    if (frame_at != std::string::npos) {
+        stem.resize(frame_at);
+    }
+
+    std::filesystem::path renamed = saved.parent_path() / (stem + "_" + label + saved.extension().string());
+    std::error_code ec;
+
+    for (int n = 2; std::filesystem::exists(renamed, ec); ++n) {
+        renamed = saved.parent_path() / (stem + "_" + label + "_" + std::to_string(n) + saved.extension().string());
+    }
+
+    std::filesystem::rename(saved, renamed, ec);
+
+    return ec ? file : renamed.string();
+}
+
 std::string rs64_renderdoc_last_capture()
 {
 
     const uint32_t count = (g_rdoc != nullptr) ? g_rdoc->GetNumCaptures() : 0;
-    uint32_t length = 0;
+    std::lock_guard<std::mutex> lock(s_capture_mtx);
 
     if (count == 0)
     {
         return {};
     }
 
-    g_rdoc->GetCapture(count - 1, nullptr, &length, nullptr);
-    std::string file(length, '\0');
-
-    if (length > 0) {
-        g_rdoc->GetCapture(count - 1, file.data(), &length, nullptr);
-        file.resize(std::strlen(file.c_str()));
+    if (count != s_renamed_count) {
+        s_renamed = rename_after_clocks(capture_path(count - 1));
+        s_renamed_count = count;
     }
 
-    return file;
+    return s_renamed;
 }
 
 void rs64_renderdoc_poll()
@@ -126,6 +180,10 @@ void rs64_renderdoc_poll()
     }
 
     if (capturing && !s_capturing) {
+        const std::string label = rs64_clock_label();
+        std::lock_guard<std::mutex> lock(s_capture_mtx);
+
+        s_label = label;
         rs64::app::notify("renderdoc", "RenderDoc: capturing a frame. The game freezes while it saves.", 60.0f);
     }
 
@@ -137,7 +195,11 @@ void rs64_renderdoc_poll()
     }
 
     s_seen = count;
-    rs64::app::notify("renderdoc", "RenderDoc capture saved: " + rs64_renderdoc_last_capture(), 8.0f);
+
+    const std::string file = rs64_renderdoc_last_capture();
+
+    fprintf(stderr, "[renderdoc] capture saved: %s\n", file.c_str());
+    rs64::app::notify("renderdoc", "RenderDoc capture saved: " + file, 8.0f);
 }
 
 #else

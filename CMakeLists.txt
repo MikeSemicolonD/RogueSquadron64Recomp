@@ -222,13 +222,16 @@ add_custom_command(OUTPUT ${PATCHES_DIR}/patches.elf
     DEPENDS ${PATCH_OBJS} "${PATCHES_DIR}/patches.ld" "${PATCHES_DIR}/syms.ld"
     VERBATIM)
 set(PATCHES_RECOMP_DEPS "")
+set(PATCHES_N64RECOMP "${N64RECOMP_EXE}")
+# The recompiler of the config being built, so a fresh Release-only build doesn't look for a Debug one.
 if (TARGET N64RecompCLI AND N64RECOMP_EXE STREQUAL RS64_N64RECOMP_DEFAULT)
     set(PATCHES_RECOMP_DEPS N64RecompCLI)
+    set(PATCHES_N64RECOMP "$<TARGET_FILE:N64RecompCLI>")
 endif()
 add_custom_command(OUTPUT ${PATCHES_OUT}/patches.c ${PATCHES_OUT}/recomp_overlays.inl ${PATCHES_OUT}/funcs.h ${PATCHES_DIR}/patches.bin
-    COMMAND "${N64RECOMP_EXE}" "${CMAKE_SOURCE_DIR}/patches.toml"
+    COMMAND "${PATCHES_N64RECOMP}" "${CMAKE_SOURCE_DIR}/patches.toml"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml ${PATCHES_RECOMP_DEPS} "${N64RECOMP_EXE}"
+    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml ${PATCHES_RECOMP_DEPS} "${PATCHES_N64RECOMP}"
     COMMENT "Recompiling patches.elf"
     VERBATIM)
 add_custom_command(OUTPUT ${PATCHES_BUILD}/patches_bin.c ${PATCHES_BUILD}/patches_bin.h
@@ -354,6 +357,17 @@ if (MSVC)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
 target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}" $<${RS64_MCP_GENEX}:RS64_MCP>)
+
+# OpenXR VR (Vulkan only), from the Khronos OpenXR-SDK submodule at lib/OpenXR-SDK; the loader is linked statically.
+option(RS64_OPENXR "Build OpenXR VR support" OFF)
+if (RS64_OPENXR)
+    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/lib/OpenXR-SDK EXCLUDE_FROM_ALL)
+    target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/src/video/vr_openxr.cpp)
+    target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/lib/OpenXR-SDK/include)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE openxr_loader)
+    target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_OPENXR=1)
+endif()
 # The shader combos warmed at startup without an ubershader are compiled into the exe.
 set(RS64_SHADER_COMBOS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/tools/d3d11/shader_combos.txt")
 file(READ "${RS64_SHADER_COMBOS_FILE}" RS64_SHADER_COMBOS)

@@ -330,6 +330,56 @@ extern "C" void rs64_tgrid_clear(uint8_t* rdram) {
     std::memset(rdram + (RS64_TGRID_BASE - 0x80000000u), 0, RS64_HR_TGRID_END - RS64_HR_TGRID);
 }
 
+// VR: a spin-out sets up the crash camera (spawnRandomizedEffectBurst: holds the current camera pose, looks at the craft) instead of a random orbit
+// or the cockpit spinning with the craft. a0 of the hooked function ($s4) is the player.
+extern "C" void rs64_vr_death_camera(uint8_t* rdram, recomp_context* ctx)
+{
+
+    constexpr uint32_t kCrashCamera = 0x800514A0u;
+
+    if (!rs64_vr_active())
+    {
+        return;
+    }
+
+    mips_call(rdram, ctx, kCrashCamera, { (uint32_t)ctx->r20 });
+}
+
+// VR: the head can look anywhere, so the forward view trapezoid becomes a square around the camera cell (cx, cz) reaching as far as the trapezoid did.
+// The corners keep the trapezoid's winding.
+static void vr_terrain_square(uint8_t* rdram, float cx, float cz)
+{
+
+    float px[4], pz[4];
+    float reach = 0.0f;
+    float area = 0.0f;
+
+    for (uint32_t i = 0; i < 4; i++) {
+        const uint32_t p = 0x80130C10u + (i + 1) * 0xCu;
+
+        px[i] = rf(rdram, p);
+        pz[i] = rf(rdram, p + 8);
+        reach = std::max(reach, std::max(std::fabs(px[i] - cx), std::fabs(pz[i] - cz)));
+    }
+
+    for (uint32_t i = 0; i < 4; i++) {
+        const uint32_t j = (i + 1) % 4;
+
+        area += px[i] * pz[j] - px[j] * pz[i];
+    }
+
+    const float sx[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
+    const float sz[4] = { -1.0f, -1.0f, 1.0f, 1.0f };
+
+    for (uint32_t i = 0; i < 4; i++) {
+        const uint32_t k = (area < 0.0f) ? 3 - i : i;
+        const uint32_t p = 0x80130C10u + (i + 1) * 0xCu;
+
+        wf(rdram, p, cx + sx[k] * reach);
+        wf(rdram, p + 8, cz + sz[k] * reach);
+    }
+}
+
 // Keeps the terrain view box inside the 128-cell grid (far corners within 62 cells of the camera). ROGUESQ_TGRID_MAP_CLAMP=1 also clamps to the map bounds; off by default, since vanilla draws past the map edge by repeating edge tiles.
 extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram)
 {
@@ -338,6 +388,11 @@ extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram)
     static const bool s_map_clamp = env_on("ROGUESQ_TGRID_MAP_CLAMP", false);
     const float mapW = s_map_clamp ? (float)rh(rdram, 0x80136DF8u) : 0.0f, mapH = s_map_clamp ? (float)rh(rdram, 0x80136DFAu) : 0.0f;
     const float cx = rf(rdram, 0x80130C10u), cz = rf(rdram, 0x80130C18u);
+
+    if (rs64_vr_active())
+    {
+        vr_terrain_square(rdram, cx, cz);
+    }
 
     for (uint32_t i = 1; i <= 4; i++) {
         const uint32_t p = 0x80130C10u + i * 0xCu;
@@ -375,11 +430,13 @@ extern "C" void rs64_hud_mark_element(uint8_t* rdram, recomp_context* ctx)
 
 
     const float width = (float)(int32_t)rw(rdram, (uint32_t)ctx->r17 + 0x10u);
+    const bool shifted = hud_shift(rdram, width) > 0.0f;
 
-    if (hud_shift(rdram, width) <= 0.0f) return;
+    // VR needs the marker in every display mode: it is how RT64 knows a texrect is HUD.
+    if (!shifted && !rs64_vr_active()) return;
 
     const uint32_t item = (uint32_t)ctx->r19;
-    const rs64hud::Side side = rs64hud::classify(item, rf(rdram, item + 0x18u), rw(rdram, item + 0x14u), width);
+    const rs64hud::Side side = shifted ? rs64hud::classify(item, rf(rdram, item + 0x18u), rw(rdram, item + 0x14u), width) : rs64hud::None;
     const uint32_t p = rw(rdram, 0x8011DC58u);
 
     ww(rdram, p, rs64hud::markerW0(side));
@@ -1112,6 +1169,15 @@ static void rate_log(float dt)
     s_wall = now;
 }
 
+// ROGUESQ_FIXED_STEP=1: game time advances one paced frame per frame instead of following real time (timeSnapshotFiller hook), so frame numbers repeat run to run.
+extern "C" int rs64_fixed_step(void)
+{
+
+    static const bool s_on = env_on("ROGUESQ_FIXED_STEP");
+
+    return s_on ? 1 : 0;
+}
+
 // Each mission frame, once its dt is final; returns the dt the frame uses. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps.
 // Above 30 the video clock ticks several times per frame, so a late frame waits a fraction of a frame for its swap instead of a whole one.
 extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
@@ -1125,7 +1191,8 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     g_rate_frame_seen = true;
 
     const int display_hz = (int)ultramodern::get_display_refresh_rate();
-    const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz));
+    const int vr_hz = rs64_vr_game_hz();
+    const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
     const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
     const int sub = on ? s_sub : 1;
     const auto now = std::chrono::steady_clock::now();
@@ -1138,7 +1205,7 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     static float s_smooth = 0.0f;
     static float s_debt = 0.0f;
 
-    if (sub > 1 && real > 0.0f && real <= 0.1f)
+    if (sub > 1 && real > 0.0f && real <= 0.1f && !rs64_fixed_step())
     {
         s_smooth = s_smooth > 0.0f ? s_smooth + (real - s_smooth) * 0.1f : real;
         s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);

@@ -16,3 +16,6 @@
 [submodule "mods/multiplayer-native/lib/monocypher"]
 	path = mods/multiplayer-native/lib/monocypher
 	url = https://github.com/LoupVaillant/Monocypher.git
+[submodule "lib/OpenXR-SDK"]
+	path = lib/OpenXR-SDK
+	url = https://github.com/KhronosGroup/OpenXR-SDK

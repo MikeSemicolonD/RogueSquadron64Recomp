@@ -28,6 +28,7 @@ void adv_get(const json& a, const char* key, T& out)
 
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+std::atomic<bool> g_vr_mode{false};
 
 std::atomic<bool> g_legacy_terrain{false};
 
@@ -279,6 +280,14 @@ void set_terrain_tessellation(int quads)
 
 void set_keep_cutscene_draw_distance(bool on) {
     g_keep_cutscene.store(on, std::memory_order_relaxed);
+}
+
+bool vr_mode() {
+    return g_vr_mode.load(std::memory_order_relaxed);
+}
+
+void set_vr_mode(bool on) {
+    g_vr_mode.store(on, std::memory_order_relaxed);
 }
 
 bool framebuffer_writeback() {
@@ -561,6 +570,10 @@ void apply_friendly(UC& uc, const json& j)
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
     }
 
+    if (has("vrMode") && j["vrMode"].is_boolean()) {
+        set_vr_mode(j["vrMode"].get<bool>());
+    }
+
     if (has("legacyTerrain") && j["legacyTerrain"].is_boolean()) {
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
@@ -726,6 +739,7 @@ json to_friendly(const UC& uc)
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
+    j["vrMode"] = vr_mode();
     j["legacyTerrain"] = legacy_terrain();
     j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();
