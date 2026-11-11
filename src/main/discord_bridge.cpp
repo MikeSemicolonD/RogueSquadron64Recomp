@@ -1,6 +1,7 @@
 // libdiscord_bridge.so: Android only, built only when the closed Discord Social SDK is found. The game loads it by name (discord_presence.cpp), so the SDK never links into the game.
 #include <cstdio>
 #include <memory>
+#include <mutex>
 #include "main/discord_presence.h"
 
 #define DISCORDPP_IMPLEMENTATION
@@ -8,6 +9,8 @@
 
 namespace {
 
+// The game calls in from its render thread and, to clear the status as the app backgrounds, from SDL's Java thread.
+std::mutex g_mtx;
 std::shared_ptr<discordpp::Client> g_client;
 
 }
@@ -15,6 +18,8 @@ std::shared_ptr<discordpp::Client> g_client;
 // No account linking: with an application id and no Connect, the SDK hands the activity to the Discord app on the phone.
 extern "C" __attribute__((visibility("default"))) void rs64_discord_set(const Rs64DiscordStatus* s)
 {
+
+    std::lock_guard<std::mutex> lk(g_mtx);
 
     if (!s && !g_client)
     {
@@ -28,8 +33,10 @@ extern "C" __attribute__((visibility("default"))) void rs64_discord_set(const Rs
         fprintf(stderr, "[discord] SDK %d.%d.%d app=%llu\n", discordpp::Client::GetVersionMajor(), discordpp::Client::GetVersionMinor(), discordpp::Client::GetVersionPatch(), (unsigned long long)g_client->GetApplicationId());
     }
 
+    // ClearRichPresence does not undo a status set without account linking; like closing the desktop pipe, dropping the client ends it.
     if (!s) {
         g_client->ClearRichPresence();
+        g_client.reset();
 
         return;
     }
@@ -72,6 +79,8 @@ extern "C" __attribute__((visibility("default"))) void rs64_discord_set(const Rs
 // The SDK delivers its replies only from RunCallbacks.
 extern "C" __attribute__((visibility("default"))) void rs64_discord_pump()
 {
+
+    std::lock_guard<std::mutex> lk(g_mtx);
 
     if (g_client) {
         discordpp::RunCallbacks();

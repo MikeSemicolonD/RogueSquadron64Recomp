@@ -8,6 +8,13 @@ namespace rs64::discord {
 // Each present, after the game-state poll; starts the IPC thread or loads the bridge the first time the mod is on.
 void poll(const uint8_t* rdram);
 
+#if defined(__ANDROID__)
+
+// From SDL's background / foreground events: clears the status while the app is away, sends it again on return.
+void set_foreground(bool on);
+
+#endif
+
 }
 
 // What the game hands libdiscord_bridge.so: rs64_discord_set(status), or rs64_discord_set(nullptr) to clear; rs64_discord_pump() every present.

@@ -1,6 +1,7 @@
 #include "main/discord_presence.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdio>
@@ -87,6 +88,9 @@ struct Activity
     bool operator==(const Activity&) const = default;
 };
 
+// Set when the app returns to the foreground: the next poll sends the status even though it did not change.
+std::atomic<bool> g_resend{ false };
+
 #if defined(__ANDROID__)
 
 // The icon_art asset by URL: the Android SDK sends the activity without the app looked up, so an asset key shows nothing there.
@@ -95,14 +99,17 @@ static constexpr const char* kLargeImageUrl = "https://cdn.discordapp.com/app-as
 using SetFn = void (*)(const Rs64DiscordStatus*);
 using PumpFn = void (*)();
 
-SetFn g_set = nullptr;
-PumpFn g_pump = nullptr;
+std::atomic<SetFn> g_set{ nullptr };
+std::atomic<PumpFn> g_pump{ nullptr };
+
+// True while the app is in the background: the status is cleared and nothing is sent.
+std::atomic<bool> g_background{ false };
 
 void pump()
 {
 
-    if (g_pump) {
-        g_pump();
+    if (const PumpFn p = g_pump.load()) {
+        p();
     }
 }
 
@@ -116,25 +123,27 @@ void publish(const Activity& a)
         s_tried = true;
 
         if (void* lib = dlopen("libdiscord_bridge.so", RTLD_NOW)) {
-            g_set = reinterpret_cast<SetFn>(dlsym(lib, "rs64_discord_set"));
             g_pump = reinterpret_cast<PumpFn>(dlsym(lib, "rs64_discord_pump"));
+            g_set = reinterpret_cast<SetFn>(dlsym(lib, "rs64_discord_set"));
         }
     }
 
-    if (!g_set)
+    const SetFn set = g_set.load();
+
+    if (!set || g_background)
     {
         return;
     }
 
     if (!a.enabled) {
-        g_set(nullptr);
+        set(nullptr);
 
         return;
     }
 
     const Rs64DiscordStatus s = { kAppId, kAppName, a.details.c_str(), a.state.c_str(), kLargeImageUrl, kAppName, a.start, a.players, kMaxPlayers };
 
-    g_set(&s);
+    set(&s);
 }
 
 #else
@@ -571,6 +580,28 @@ Activity describe(const uint8_t* rdram, bool hangar)
 
 }
 
+#if defined(__ANDROID__)
+
+// The Discord app keeps a status until told otherwise, and a swiped-away game gets no shutdown, so leaving the foreground clears it.
+void set_foreground(bool on)
+{
+
+    g_background = !on;
+
+    if (on) {
+        g_resend = true;
+
+        return;
+    }
+
+    if (const SetFn set = g_set.load()) {
+        set(nullptr);
+        pump();
+    }
+}
+
+#endif
+
 void poll(const uint8_t* rdram)
 {
 
@@ -597,7 +628,7 @@ void poll(const uint8_t* rdram)
 
     a.start = (a.details == s_last.details) ? s_last.start : (int64_t)time(nullptr);
 
-    if (a == s_last)
+    if (a == s_last && !g_resend.exchange(false))
     {
         return;
     }

@@ -26,6 +26,7 @@
 #include "audio/audio.h"
 #include "main/cli.h"
 #include "main/crash.h"
+#include "main/discord_presence.h"
 #include "input/input_host.h"
 #include "main/ui_panels.h"
 #include "input/input_bindings.h"
@@ -191,9 +192,11 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx()
 
         if (ev->type == SDL_APP_WILLENTERBACKGROUND) {
             rs64::audio::set_foreground(false);
+            rs64::discord::set_foreground(false);
             rs64_render_suspend_surface();
         } else if (ev->type == SDL_APP_DIDENTERFOREGROUND) {
             rs64::audio::set_foreground(true);
+            rs64::discord::set_foreground(true);
         }
 
         return 0;
