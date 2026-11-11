@@ -30,6 +30,12 @@ public class MainActivity extends SDLActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // The Discord Social SDK is only in APKs built with its .aar, so it is reached by name.
+        try {
+            Class.forName("com.discord.socialsdk.DiscordSocialSdkInit").getMethod("setEngineActivity", android.app.Activity.class).invoke(null, this);
+        } catch (ReflectiveOperationException e) {
+            // Built without the SDK: no Discord status.
+        }
         WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
         if (wifi != null) {
             mMulticastLock = wifi.createMulticastLock("rs64-lobby");

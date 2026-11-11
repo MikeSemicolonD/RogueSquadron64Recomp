@@ -29,6 +29,7 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 | Python 3.11+ | Producing the decomp ELF, `ci/stage_inputs.py`, validation tools (not used by the build itself) |
 | A MIPS GCC: `mips64-elf-gcc` on Windows ([gcc-toolchain-mips64](https://github.com/n64-tools/gcc-toolchain-mips64/releases)), `gcc-mips-linux-gnu` on Ubuntu | Patches ELF (`patches/`) and `.nrm` code mods |
 | Steamworks SDK in `lib/steamworks/sdk` (optional) | The `steam-relay` mod; skipped with a warning without it |
+| Discord Social SDK 1.10+ `discord_partner_sdk.aar` in `android/app/libs/` (optional, from the Discord developer portal) | Discord status on Android and its `discord-status` mod in the APK; desktop needs nothing |
 
 ## Windows host
 

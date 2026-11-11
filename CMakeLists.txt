@@ -332,6 +332,17 @@ if (ANDROID)
     set_target_properties(RogueSquadron64Recomp PROPERTIES OUTPUT_NAME main)
     target_link_libraries(RogueSquadron64Recomp PRIVATE android log)
     target_link_options(RogueSquadron64Recomp PRIVATE -Wl,-z,max-page-size=16384)
+
+    # Discord status on Android needs the closed Discord Social SDK, found through Prefab when android/app/libs/discord_partner_sdk.aar exists.
+    # It links only into libdiscord_bridge.so, which the game opens by name, never into the game.
+    find_package(discord_partner_sdk CONFIG QUIET)
+
+    if (discord_partner_sdk_FOUND)
+        add_library(discord_bridge SHARED ${CMAKE_SOURCE_DIR}/src/main/discord_bridge.cpp)
+        target_include_directories(discord_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(discord_bridge PRIVATE discord_partner_sdk::discord_partner_sdk)
+        target_link_options(discord_bridge PRIVATE -Wl,-z,max-page-size=16384)
+    endif()
 else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
 endif()

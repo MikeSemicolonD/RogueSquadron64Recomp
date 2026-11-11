@@ -147,6 +147,7 @@ libsteam_api.dylib
 android/.gradle/
 android/app/.cxx/
 android/local.properties
+android/app/libs/discord_partner_sdk.aar
 
 # CI runner secrets
 ci/linux/runner.env

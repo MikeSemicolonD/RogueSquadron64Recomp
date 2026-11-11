@@ -21,7 +21,9 @@
 #include "util/debug_logs.h"
 #include "util/rdram_words.h"
 
-#if defined(_WIN32)
+#if defined(__ANDROID__)
+#include <dlfcn.h>
+#elif defined(_WIN32)
 #include <windows.h>
 #else
 #include <sys/socket.h>
@@ -35,7 +37,9 @@ namespace {
 
 using json = nlohmann::json;
 
-static constexpr const char* kClientId = "1569823955684954132";
+static constexpr uint64_t kAppId = 1569823955684954132ull;
+static constexpr const char* kLargeImage = "icon_art";
+static constexpr const char* kAppName = "Rogue Squadron 64 Recompiled";
 
 // Opcodes of Discord's IPC frames: an 8-byte little-endian header (opcode, length), then JSON.
 enum Op : uint32_t { kHandshake = 0, kFrame = 1 };
@@ -82,6 +86,58 @@ struct Activity
 
     bool operator==(const Activity&) const = default;
 };
+
+#if defined(__ANDROID__)
+
+// The icon_art asset by URL: the Android SDK sends the activity without the app looked up, so an asset key shows nothing there.
+static constexpr const char* kLargeImageUrl = "https://cdn.discordapp.com/app-assets/1569823955684954132/1569825505103061042.png";
+
+using SetFn = void (*)(const Rs64DiscordStatus*);
+using PumpFn = void (*)();
+
+SetFn g_set = nullptr;
+PumpFn g_pump = nullptr;
+
+void pump()
+{
+
+    if (g_pump) {
+        g_pump();
+    }
+}
+
+// The bridge is opened the first time the mod is on; an APK built without the SDK has none and stays silent.
+void publish(const Activity& a)
+{
+
+    static bool s_tried = false;
+
+    if (a.enabled && !s_tried) {
+        s_tried = true;
+
+        if (void* lib = dlopen("libdiscord_bridge.so", RTLD_NOW)) {
+            g_set = reinterpret_cast<SetFn>(dlsym(lib, "rs64_discord_set"));
+            g_pump = reinterpret_cast<PumpFn>(dlsym(lib, "rs64_discord_pump"));
+        }
+    }
+
+    if (!g_set)
+    {
+        return;
+    }
+
+    if (!a.enabled) {
+        g_set(nullptr);
+
+        return;
+    }
+
+    const Rs64DiscordStatus s = { kAppId, kAppName, a.details.c_str(), a.state.c_str(), kLargeImageUrl, kAppName, a.start, a.players, kMaxPlayers };
+
+    g_set(&s);
+}
+
+#else
 
 std::mutex g_mtx;
 std::condition_variable g_cv;
@@ -291,7 +347,7 @@ bool connect_discord(Pipe& pipe)
 
     std::string reply;
 
-    if (pipe.request(kHandshake, { { "v", 1 }, { "client_id", kClientId } }, reply)) {
+    if (pipe.request(kHandshake, { { "v", 1 }, { "client_id", std::to_string(kAppId) } }, reply)) {
         fprintf(stderr, "[discord] connected\n");
 
         return true;
@@ -321,7 +377,7 @@ bool send_activity(Pipe& pipe, const Activity& a)
         act = {
             { "details", a.details },
             { "timestamps", { { "start", a.start } } },
-            { "assets", { { "large_image", "icon_art" }, { "large_text", "Rogue Squadron 64 Recompiled" } } }
+            { "assets", { { "large_image", kLargeImage }, { "large_text", kAppName } } }
         };
 
         if (!a.state.empty()) {
@@ -394,6 +450,29 @@ void run()
         }
     }
 }
+
+void pump()
+{
+}
+
+// The thread starts the first time the mod is on, so a game with it off never talks to Discord.
+void publish(const Activity& a)
+{
+
+    static std::once_flag s_start;
+
+    if (a.enabled) {
+        std::call_once(s_start, [] { std::thread(run).detach(); });
+    }
+
+    std::lock_guard<std::mutex> lk(g_mtx);
+
+    g_want = a;
+    g_dirty = true;
+    g_cv.notify_one();
+}
+
+#endif
 
 // 0 outside co-op; 1 while hosting with the slot open; 2 once the other player is in.
 int co_op_players()
@@ -495,11 +574,8 @@ Activity describe(const uint8_t* rdram, bool hangar)
 void poll(const uint8_t* rdram)
 {
 
-#if defined(__ANDROID__)
-    return;
-#endif
+    pump();
 
-    static std::once_flag s_start;
     static Activity s_last;
     static uint32_t s_hangar_count = 0;
     static int s_hangar_age = kHangarPresents;
@@ -534,16 +610,7 @@ void poll(const uint8_t* rdram)
         fprintf(stderr, "[discord] overlay=%d state=%s players=%d -> \"%s\" / \"%s\" start=%lld\n", (int)g_active_overlay, rs64_state_current_id(), a.players, a.details.c_str(), a.state.c_str(), (long long)a.start);
     }
 
-    // The thread starts the first time the mod is on, so a game with it off never talks to Discord.
-    if (a.enabled) {
-        std::call_once(s_start, [] { std::thread(run).detach(); });
-    }
-
-    std::lock_guard<std::mutex> lk(g_mtx);
-
-    g_want = a;
-    g_dirty = true;
-    g_cv.notify_one();
+    publish(a);
 }
 
 }
