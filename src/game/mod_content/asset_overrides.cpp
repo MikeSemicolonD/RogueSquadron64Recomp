@@ -530,7 +530,10 @@ extern "C" void rs64_asset_overrides_init()
     // Silent voice streams of 1-10 s for level-rule messages (a subtitle stays up while its line plays).
     for (int s = 1; s <= 10; s++) s_silence_rom[s - 1] = append(rs64rules::silentMort(s)).rom_off;
 
-    if (!rom.empty()) recomp::set_rom_contents(std::move(rom));
+    if (!rom.empty()) {
+        rom.shrink_to_fit();
+        recomp::set_rom_contents(std::move(rom));
+    }
 }
 
 // findManifestEntryByName exit: slot idx of gManifestTable (0x80110A80, 0x50 each) has just had its manifest loaded.
