@@ -45,7 +45,59 @@ int font_width(uint8_t* rdram, uint32_t font, const std::string& s, int gap)
 
 // The padlock takes the brace '}' slot, which is also the level select's right arrow (the string "}" at 0x800A5BCC): the slot shows the padlock only on
 // a page whose live labels hold a '$' (co-op's locked games), the brace everywhere else.
-static struct { uint32_t dst = 0; std::vector<uint8_t> brace, lock; bool shown = true; } s_lock_glyph;
+static struct { uint32_t rec = 0, dst = 0; std::vector<uint8_t> brace, lock; bool shown = true; } s_lock_glyph;
+
+// The made glyphs' records (renamed to their new char) and finished images. A scene change (an attract demo, a mission) reloads the font's
+// pixels in place while the renamed records stay, so the scan never matches again: the images are put back whenever they differ.
+struct MadeGlyph { uint32_t rec; uint8_t to; std::vector<uint8_t> img; };
+static std::vector<MadeGlyph> s_made;
+
+static bool image_at(uint8_t* rdram, uint32_t rec, uint8_t to, size_t size, uint32_t* dst)
+{
+
+    if (rd_b(rdram, rec + 0x14) != 'F' || rd_b(rdram, rec + 0x15) != to || rd_b(rdram, rec + 0x16) != 'A') return false;
+
+    *dst = (uint32_t)rd_w(rdram, rec + 0x10) - 0x80000000u;
+
+    return *dst + size <= 0x1000000u;
+}
+
+// Writes img at dst only when it differs, so an unchanged glyph leaves its page clean for the renderer's RDRAM snapshot.
+static void put_image(uint8_t* rdram, uint32_t dst, const std::vector<uint8_t>& img)
+{
+
+    for (size_t i = 0; i < img.size(); ++i)
+    {
+        if (rd_b(rdram, dst + (uint32_t)i) == img[i]) continue;
+
+        for (size_t j = 0; j < img.size(); ++j)
+        {
+            wr_b(rdram, dst + (uint32_t)j, img[j]);
+        }
+
+        return;
+    }
+}
+
+static void restore_made_glyphs(uint8_t* rdram)
+{
+
+    uint32_t dst = 0;
+
+    for (const MadeGlyph& g : s_made)
+    {
+        if (image_at(rdram, g.rec, g.to, g.img.size(), &dst)) put_image(rdram, dst, g.img);
+    }
+
+    // The padlock slot shows either image; a reload brings back the brace.
+    const std::vector<uint8_t>& shown = s_lock_glyph.shown ? s_lock_glyph.lock : s_lock_glyph.brace;
+
+    if (s_lock_glyph.rec && image_at(rdram, s_lock_glyph.rec, '$', shown.size(), &dst))
+    {
+        s_lock_glyph.dst = dst;
+        put_image(rdram, dst, shown);
+    }
+}
 
 // Image and charset entry of the shared slot (50) for this frame; runs after ensure_menu_period, which renames the slot to '$' every frame.
 void show_menu_lock(uint8_t* rdram, bool lock)
@@ -74,6 +126,8 @@ void show_menu_lock(uint8_t* rdram, bool lock)
 // ':' (lower dot; blank) and '!' (its stem). Glyphs are D_80128F08 entries (0x24: W @8, size @0xC, data @0x10, name @0x14 = "F" char "A"); the font's charset and widths share the index.
 void ensure_menu_period(uint8_t* rdram)
 {
+
+    restore_made_glyphs(rdram);
 
     enum Rows { kLastRun, kNone, kAllButLastRun, kUpArrow, kDownArrow, kLock };
     struct Glyph { int slot; uint8_t from; uint8_t to; uint8_t src; int src_slot; Rows rows; };
@@ -126,6 +180,8 @@ void ensure_menu_period(uint8_t* rdram)
 
     for (int k = 0; k < kCount; ++k)
         if (!rec[k] || !src_rec[k] || (uint16_t)rd_h(rdram, rec[k] + 0x0C) < (uint16_t)rd_h(rdram, src_rec[k] + 0x0C)) return;
+
+    s_made.clear();
 
     // I4 glyphs 33 rows high, loaded at the record's width rounded up; each new glyph takes its source's layout, size and width (a target buffer smaller than its source skips the conversion).
     // Rows keep their bytes (the odd-row word swap stays inside a row), so a row copies as-is.
@@ -227,6 +283,21 @@ void ensure_menu_period(uint8_t* rdram)
         wr_h(rdram, rec[k] + 0x08, rd_h(rdram, src_rec[k] + 0x08));
         wr_h(rdram, rec[k] + 0x0C, (int16_t)size);
         wr_b(rdram, rec[k] + 0x15, kGlyphs[k].to);
+
+        if (mode == kLock)
+        {
+            s_lock_glyph.rec = rec[k];
+            continue;
+        }
+
+        MadeGlyph made{ rec[k], kGlyphs[k].to, std::vector<uint8_t>(size) };
+
+        for (uint32_t i = 0; i < size; ++i)
+        {
+            made.img[i] = rd_b(rdram, dst + i);
+        }
+
+        s_made.push_back(std::move(made));
     }
 
     fprintf(stderr, "[menu] italic font: period, period-wide blank, caret, arrows and lock made\n");
