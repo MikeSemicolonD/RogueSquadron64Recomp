@@ -17,7 +17,8 @@ What each tool does: [tools/debug/mcp/README.md](../../../tools/debug/mcp/README
   - `ROGUESQ_BOOT_TARGET=level:<id>[,craft]` drives the real menus into a mission. `menu:...`, `hangar:<id>`, `pause:<id>`, `cutscene:<level>,<kind>`: [debug-trace-env-vars.md](../../../docs/engine/debug-trace-env-vars.md).
   - `hangar:<lvl>[,craft]` reaches the 3D craft-select hangar in ~35 s through the saved pilot; `pause_at` / `step` work there too.
   - `ROGUESQ_DRAW_DIST=<x>` overrides the draw distance setting (1-8 with the terrain pass).
-  - `ROGUESQ_WIDESCREEN=1` for widescreen. Don't flip display settings with `set_config`: it writes the user's `roguesq_video.json` even with `save=false`.
+  - `ROGUESQ_WIDESCREEN=1` for widescreen.
+- Display settings for one run go in `launch`'s `settings` (`roguesq_video.json` keys over the user's file, e.g. `{"antialiasing": 4, "graphicsAPI": "vulkan"}`). The game uses a copy in the session folder, so `set_config` is safe on a launched game; on an attached one it still writes the user's file.
   - Level ids seen so far: 3 = Corellia (78x78 map, water). The boot loads a 32x32 map (level 19) for the front end; ignore it.
 
 ## The core loop

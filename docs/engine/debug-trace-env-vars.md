@@ -51,6 +51,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_AUTO_START` | `--auto-start` | 0 | Once past the no-controller gate, pulse START every `<ms>`. |
 | `ROGUESQ_HIDE_WINDOW` | `--[no-]hide-window` | off | Create the window hidden. RT64 still renders and presents; window screenshots are lost. |
 | `ROGUESQ_MAXIMIZED` / `ROGUESQ_WINDOW_SIZE=WxH` | `--maximized`, `--window-size` | off | Start maximized / initial client size. |
+| `ROGUESQ_VIDEO_CONFIG=<path>` | | `roguesq_video.json` | Display settings file to load and save instead of the one in the working directory. The MCP's `launch` points it at a session copy. |
 | `ROGUESQ_FULLSCREEN` | `--fullscreen` | `fullscreen` in `roguesq_video.json` | Start in borderless fullscreen without changing the saved setting; Alt+Enter toggles and saves. |
 | `ROGUESQ_LANGUAGE=<code>` | `--language` | `language` in `roguesq_video.json` (unset) | Game text language (menus, mission text, subtitles) for this run without changing the saved setting: `en`, `de`, `fr` or an installed language mod's code. Unset and no saved setting leaves the game's own choice (English); OPTIONS > LANGUAGE picks one and saves it. |
 | `ROGUESQ_UNFOCUSED` | `--unfocused` | off | Open the window behind other windows without taking focus (test runs; input still works through `tools/debug/drive-input.ps1`). |

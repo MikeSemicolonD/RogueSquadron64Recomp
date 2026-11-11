@@ -75,6 +75,9 @@ void pin_fullscreen(bool on);
 // Reads only the "fullscreen" key, so the window can be created fullscreen before the full config loads.
 bool peek_fullscreen(const std::string& path);
 
+// The display settings file: roguesq_video.json in the working directory, or ROGUESQ_VIDEO_CONFIG (test runs keep their changes out of the player's file).
+std::string config_path();
+
 // Game text language code ("language" in roguesq_video.json: a built-in "en" / "de" / "fr" or a language mod's code; "" = unset, the game's own choice). OPTIONS > LANGUAGE saves it.
 std::string language();
 void set_language(const std::string& code);

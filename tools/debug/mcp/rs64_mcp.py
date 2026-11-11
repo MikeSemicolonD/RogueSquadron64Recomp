@@ -29,6 +29,28 @@ class GameError(Exception):
     pass
 
 
+def merge_settings(base, over):
+    """over merged into base: nested objects key by key, anything else replaced."""
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = merge_settings(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def session_video_config(exe_dir, session_dir, settings):
+    """The player's roguesq_video.json with settings merged over it, copied into the session so nothing the run changes reaches the player's file."""
+    base = {}
+    try:
+        with open(os.path.join(exe_dir, "roguesq_video.json"), encoding="utf-8") as f:
+            base = json.load(f)
+    except (OSError, ValueError):
+        pass
+    path = os.path.join(session_dir, "roguesq_video.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(merge_settings(base, settings or {}), f, indent=2)
+    return path
+
+
 _symbols = None
 
 
@@ -262,7 +284,7 @@ class Game:
         except OSError:
             return ""
 
-    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None):
+    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None):
         if self.alive():
             raise GameError(f"game already running (pid {self.proc.pid}); close it first")
 
@@ -274,6 +296,7 @@ class Game:
         self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
         os.makedirs(self.session_dir, exist_ok=True)
         self.log_path = os.path.join(self.session_dir, "game.log")
+        video_cfg = session_video_config(exe_dir, self.session_dir, settings)
 
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
@@ -281,6 +304,7 @@ class Game:
 
         full_env = dict(os.environ)
         full_env["ROGUESQ_HLE_DEV_MODE"] = "1"
+        full_env["ROGUESQ_VIDEO_CONFIG"] = video_cfg
         if os.path.isfile(RENDERDOC_DLL):
             full_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
             full_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
@@ -820,9 +844,9 @@ def serve():
         return register
 
     @tool()
-    def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None) -> dict:
-        """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target)."""
-        return game.launch(config, env, args, timeout_s, record)
+    def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None, settings: dict | None = None) -> dict:
+        """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target). settings are roguesq_video.json keys merged over the player's file for this run only, e.g. {"antialiasing": 4, "graphicsAPI": "vulkan", "rayTracing": {"lights": false}}; the game reads and saves a copy in the session folder, so set_config and in-game changes never reach the player's file."""
+        return game.launch(config, env, args, timeout_s, record, settings)
 
     @tool()
     def attach(port: int = DEFAULT_BRIDGE_PORT) -> dict:
@@ -1017,7 +1041,7 @@ def serve():
 
     @tool()
     def set_config(user: dict | None = None, enhancement: dict | None = None, save: bool = False) -> dict:
-        """Change Configuration-tab settings live (keys as get_config returns them). Not written to RT64's config file unless save=true."""
+        """Change Configuration-tab settings live (keys as get_config returns them). A launched game saves them only to its session copy of roguesq_video.json; on an attached game they reach the player's file."""
         params = {"save": save}
         if user is not None:
             params["user"] = user

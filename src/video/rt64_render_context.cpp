@@ -567,7 +567,7 @@ public:
         }
 
         // roguesq_video.json in the working directory overrides the baseline above (a default is written on first run); the ROGUESQ_* env vars below override the file.
-        std::string cfgPath = "roguesq_video.json";
+        std::string cfgPath = rs64::video::config_path();
         video_cfg_path_ = cfgPath;                           // enables F1-menu save-back
         rs64::video::LoadResult lr = rs64::video::load(app->userConfig, cfgPath);
 

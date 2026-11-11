@@ -272,7 +272,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     if (!hide_window) {
         if (recomp::dbg::env_str("ROGUESQ_FULLSCREEN")) {
             rs64::video::pin_fullscreen(env_on("ROGUESQ_FULLSCREEN"));
-        } else if (rs64::video::peek_fullscreen("roguesq_video.json")) {
+        } else if (rs64::video::peek_fullscreen(rs64::video::config_path())) {
             rs64::video::set_fullscreen(true);
         }
 

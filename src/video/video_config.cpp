@@ -518,6 +518,14 @@ void pin_language(const std::string& code)
     g_language_pin = code;
 }
 
+std::string config_path()
+{
+
+    const char* path = env_str("ROGUESQ_VIDEO_CONFIG");
+
+    return path ? path : "roguesq_video.json";
+}
+
 bool peek_fullscreen(const std::string& path)
 {
 
