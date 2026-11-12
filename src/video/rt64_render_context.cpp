@@ -850,6 +850,8 @@ public:
         rs64_mcp_note_dl();
 #endif
 
+        rs64_nav_frame();
+
         if (!app) return;
 
         rebuild_renderer_if_lost();

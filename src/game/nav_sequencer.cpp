@@ -8,14 +8,11 @@
 #include "rs64_toml_hooks.h"
 #include "game/menus/menu_config.h"
 #include "game/menus/menu_layout.h"
-#include <chrono>
 #include <cstdlib>
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
 #include <chrono>
 #include <cstring>
-#include <chrono>
-#include <cstdlib>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -162,10 +159,17 @@ static int s_since_press = 9999;
 static bool s_disabled = false;
 static const char* s_last_state = "";
 
-// A step is stuck only past both budgets: 60 Hz ticks (~20 s of game time) and 20 s of wall time. Ticks alone ran out during loads at ROGUESQ_SPEED > 1, where
-// the clock ticks faster but loading still takes real seconds; wall time alone would cut off slow builds. ROGUESQ_NAV_STEP_BUDGET raises the tick budget.
+// A step is stuck only past both budgets: game frames drawn (graphics tasks) and 20 s of wall time. Video ticks ran out at ROGUESQ_SPEED > 1 during loads and on
+// slow devices (the Android emulator) during a menu's sweep, since they come at a fixed real rate while the game runs slower. ROGUESQ_NAV_STEP_BUDGET raises the frame budget.
 static std::chrono::steady_clock::time_point s_step_since;
 constexpr std::chrono::seconds kStepWallBudget{ 20 };
+static std::atomic<uint32_t> s_frames{ 0 };
+static uint32_t s_frames_seen = 0;
+
+extern "C" void rs64_nav_frame()
+{
+    s_frames.fetch_add(1, std::memory_order_relaxed);
+}
 
 static int step_budget()
 {
@@ -1314,9 +1318,21 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
 
     const auto now = std::chrono::steady_clock::now();
 
+    // Time the game spends on its own is not a stuck step: the boot before the first menu (longer than either budget on the Android emulator), any cutscene,
+    // which plays on wall time at any speed (the hangar's take-off runs 12 s after its load), and a level's opening crawl.
+    if ((s_step == 0 && (is(st, "unknown") || is(st, "cinematic"))) || rs64_state_in_cinematic() || rs64::host::flag("crawl")) s_watchdog = 0;
+
     if (s_watchdog == 0) s_step_since = now;
 
-    if (++s_watchdog > step_budget() && now - s_step_since > kStepWallBudget)
+    const uint32_t frames = s_frames.load(std::memory_order_relaxed);
+
+    if (frames != s_frames_seen)
+    {
+        s_frames_seen = frames;
+        ++s_watchdog;
+    }
+
+    if (s_watchdog > step_budget() && now - s_step_since > kStepWallBudget)
     {
         fprintf(stderr, "[nav] stuck step=%d state=%s -- aborting sequence\n", s_step, st);
         nav_log_menu(rdram);

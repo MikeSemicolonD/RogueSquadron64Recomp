@@ -14,6 +14,8 @@ extern "C" {
     bool rs64_nav_consume(uint16_t* buttons, float* x, float* y);  // get_n64_input drains it
     // overlay: g_active_overlay (0 mission, 1 menu, 2 cinematic, -1 none).
     void rs64_nav_tick(uint8_t* rdram, int overlay);  // called each present; advances the step machine
+    // Called per graphics task: the step watchdog counts game frames.
+    void rs64_nav_frame();
 
     // ROGUESQ_NAV_CHAIN=1 (smoke tests): an abort target holds each mission until this names the next level, then aborts to SELECT LEVEL and starts it.
     void rs64_nav_chain_next(int level);
