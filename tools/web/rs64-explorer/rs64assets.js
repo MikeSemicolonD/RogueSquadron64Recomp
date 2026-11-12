@@ -258,6 +258,53 @@ function rs64Lib()
     ];
   }
 
+  // What an installed mod offers other menu mods: the setting keys and conditions its roguesq_menu.json uses, and its mod.json config options
+  // as config:<mod id>:<option id> conditions. Its own @exports and config:<option id> keys only work inside that mod, so they are left out.
+  function menuExtParse(menuText, manifestText, folder)
+  {
+    let manifest = {};
+
+    try {
+      manifest = JSON.parse(manifestText || '{}') ?? {};
+    } catch {}
+
+    const mod = String(manifest.id || folder);
+    const out = [];
+    const seen = new Set();
+    const text = (v) => (typeof v === 'string' ? v : v?.en);
+
+    const add = (kind, name, label) => {
+      if (seen.has(kind + ' ' + name))
+        return;
+
+      seen.add(kind + ' ' + name);
+      out.push({ kind, name, label: label || name, mod });
+    };
+
+    for (const b of menuParse(menuText || '').doc?.buttons ?? [])
+    {
+      const kind = b?.type ?? 'action';
+      const key = kind !== 'submenu' && kind !== 'label' && b?.[kind];
+
+      if (typeof key === 'string' && key && !key.startsWith('@') && !key.startsWith('config:'))
+        add(kind, key, text(b.label) || text(b.label_on));
+
+      for (const c of [b?.requires ?? []].flat())
+      {
+        const name = typeof c === 'string' ? c.replace(/^!/, '') : '';
+
+        if (name && (!name.startsWith('config:') || name.indexOf(':', 7) > 0))
+          add('condition', name);
+      }
+    }
+
+    for (const o of Array.isArray(manifest.config_schema?.options) ? manifest.config_schema.options : [])
+      if (o?.id)
+        add('condition', `config:${mod}:${o.id}`, o.name);
+
+    return out;
+  }
+
   const RULES_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.txt';
   const RULES_JSON_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.json';
 
@@ -9535,11 +9582,44 @@ function rs64Lib()
     return out;
   }
 
-  // Reads a stored (uncompressed) zip such as zipStore writes, by its central directory.
+  // Reads a stored (uncompressed) zip such as zipStore writes.
   function zipRead(bytes) {
+    const out = new Map();
+
+    for (const e of zipEntries(bytes))
+    {
+      if (e.method !== 0)
+        throw new Error('Compressed zip entries are not supported');
+
+      out.set(e.name, e.data);
+    }
+
+    return out;
+  }
+
+  // Reads a stored or deflated zip, such as a .nrm code mod.
+  async function zipUnpack(bytes)
+  {
+    const out = new Map();
+
+    for (const e of zipEntries(bytes))
+    {
+      if (e.method !== 0 && e.method !== 8)
+        throw new Error('Unsupported zip compression');
+
+      const raw = e.method === 8 && new Blob([e.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+
+      out.set(e.name, raw ? new Uint8Array(await new Response(raw).arrayBuffer()) : e.data);
+    }
+
+    return out;
+  }
+
+  // A zip's entries by its central directory: name, compression method and the stored bytes.
+  function zipEntries(bytes) {
     const dv = viewOf(bytes);
     const dec = new TextDecoder();
-    const out = new Map();
+    const out = [];
     let end = bytes.length - 22;
 
     while (end >= 0 && dv.getUint32(end, true) !== 0x06054b50)
@@ -9555,9 +9635,7 @@ function rs64Lib()
       if (dv.getUint32(at, true) !== 0x02014b50)
         throw new Error('Bad zip directory');
 
-      if (dv.getUint16(at + 10, true) !== 0)
-        throw new Error('Compressed zip entries are not supported');
-
+      const method = dv.getUint16(at + 10, true);
       const size = dv.getUint32(at + 20, true);
       const nameLen = dv.getUint16(at + 28, true);
       const local = dv.getUint32(at + 42, true);
@@ -9567,7 +9645,7 @@ function rs64Lib()
       if (data + size > bytes.length)
         throw new Error('Truncated zip');
 
-      out.set(name, bytes.subarray(data, data + size));
+      out.push({ name, method, data: bytes.subarray(data, data + size) });
       at += 46 + nameLen + dv.getUint16(at + 30, true) + dv.getUint16(at + 32, true);
     }
 
@@ -9733,7 +9811,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

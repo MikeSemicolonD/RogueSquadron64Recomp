@@ -21,7 +21,7 @@ The first half of this page is the guide for mod authors. The second half, [Inte
 
 3. Launch the game and enable the mod in the Mods window (**F6**).
 
-That is a complete menu mod. The RS64 Explorer's *Menus* tab edits these files on a preview of the game's menus: pick a menu, click an entry to hide or replace it or add buttons beside it, drag buttons and titles to move them, and set every field below; *Import* opens an existing menu mod. Working examples:
+That is a complete menu mod. The RS64 Explorer's *Menus* tab edits these files on a preview of the game's menus: pick a menu, click an entry to hide or replace it or add buttons beside it, drag buttons and titles to move them, and set every field below; *Import* opens an existing menu mod, and the upload icon offers the settings, actions and conditions of the mods in your game folder, folders and `.nrm` files alike (from their `roguesq_menu.json` and `mod.json` config options). Working examples:
 
 - [mods/quit-prompt/](../../mods/quit-prompt/): adds a YES/NO confirm to the built-in QUIT by reusing its id.
 - [mods/menu-example/](../../mods/menu-example/): a custom page whose entries call the mod's own native library.

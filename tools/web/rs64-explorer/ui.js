@@ -79,7 +79,14 @@ const setMode = (m) => {
 };
 
 $('tabFonts').onclick = () => setMode('fonts');
-$('tabMenus').onclick = () => menuRefreshPages().then(() => setMode('menus'));
+
+$('tabMenus').onclick = () => {
+  menuRefreshPages().then(() => setMode('menus'));
+
+  if (window.showDirectoryPicker)
+    loadRuleExt(false);
+};
+
 $('tabAudio').onclick = () => setMode('audio');
 $('audCat').onchange = $('audLevel').onchange = renderList;
 $('viewOrtho').onclick = () => root && !cut && setOrtho(!orthoView);

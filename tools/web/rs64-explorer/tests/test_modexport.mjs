@@ -2472,6 +2472,56 @@ await check('rulesExtParse reads a mod\'s actions and events, skipping nameless 
   assert.deepEqual(RS64.rulesExtParse('not json', 'x'), []);
 });
 
+await check('menuExtParse offers a mod\'s menu keys, conditions and config options, not its own exports', () => {
+  const menu = JSON.stringify({ buttons: [
+    { id: 'host', type: 'action', action: 'mp_host', label: { en: 'HOST GAME' }, requires: ['!mp_connected', 'config:own_opt', 'config:other:opt'] },
+    { id: 'again', type: 'action', action: 'mp_host' },
+    { id: 'own', type: 'toggle', toggle: '@demo_toggle' },
+    { id: 'cfg', type: 'toggle', toggle: 'config:hard' },
+    { id: 'page', type: 'submenu', page: 'p' }
+  ] });
+
+  const manifest = JSON.stringify({ id: 'mp_mod', config_schema: { options: [{ id: 'hard', name: 'Hard mode', type: 'Enum' }, { name: 'no id' }] } });
+
+  assert.deepEqual(RS64.menuExtParse(menu, manifest, 'folder'), [
+    { kind: 'action', name: 'mp_host', label: 'HOST GAME', mod: 'mp_mod' },
+    { kind: 'condition', name: 'mp_connected', label: 'mp_connected', mod: 'mp_mod' },
+    { kind: 'condition', name: 'config:other:opt', label: 'config:other:opt', mod: 'mp_mod' },
+    { kind: 'condition', name: 'config:mp_mod:hard', label: 'Hard mode', mod: 'mp_mod' }
+  ]);
+
+  assert.deepEqual(RS64.menuExtParse('not json', null, 'x'), []);
+  assert.deepEqual(RS64.menuExtParse(null, null, 'x'), []);
+});
+
+await check('zipUnpack reads a deflated zip like a .nrm, and zipRead still refuses it', async () => {
+  const { deflateRawSync } = await import('node:zlib');
+  const name = Buffer.from('mod.json');
+  const body = Buffer.from(JSON.stringify({ id: 'packed' }));
+  const packed = deflateRawSync(body);
+  const local = Buffer.alloc(30);
+  const dir = Buffer.alloc(46);
+  const end = Buffer.alloc(22);
+
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(8, 8);
+  local.writeUInt16LE(name.length, 26);
+  dir.writeUInt32LE(0x02014b50, 0);
+  dir.writeUInt16LE(8, 10);
+  dir.writeUInt32LE(packed.length, 20);
+  dir.writeUInt32LE(body.length, 24);
+  dir.writeUInt16LE(name.length, 28);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(30 + name.length + packed.length, 16);
+
+  const zip = new Uint8Array(Buffer.concat([local, name, packed, dir, name, end]));
+  const files = await RS64.zipUnpack(zip);
+
+  assert.equal(new TextDecoder().decode(files.get('mod.json')), body.toString());
+  assert.throws(() => RS64.zipRead(zip), /Compressed/);
+});
+
 await check('a mod action\'s object parameters are references too', () => {
   const ext = RS64.rulesExtParse(JSON.stringify({ actions: [{
     do: 'tow',

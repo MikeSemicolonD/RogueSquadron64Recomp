@@ -2838,8 +2838,10 @@ function namedByKind(items, f)
 // The in-mission cue table's songs as [song id, name], one each.
 const songChoices = () => [...new Map(parseMusicCues(romBytes).cues.map((c) => [c.song, c.name])).entries()];
 
-// Actions and custom whens native mods offer (mods/<id>/rules_ext.json in the game folder); ask = pick the folder if none is granted.
+// What the mods in the game folder offer: rule actions and custom whens (mods/<id>/rules_ext.json), and menu keys and conditions (menuExtParse over
+// mods/<id>/roguesq_menu.json and mod.json); ask = pick the folder if none is granted.
 let ruleExt = [];
+let menuExt = [];
 
 async function loadRuleExt(ask)
 {
@@ -2854,17 +2856,38 @@ async function loadRuleExt(ask)
     return false;
 
   const out = [];
+  const menus = [];
 
-  for await (const [id, h] of mods.entries())
+  // A folder mod keeps its files in its folder, a .nrm code mod in its zip; one that does not read is skipped.
+  for await (const [name, h] of mods.entries())
   {
-    const f = h.kind === 'directory' && (await h.getFileHandle('rules_ext.json').then((x) => x.getFile(), () => null));
+    const nrm = h.kind === 'file' && name.toLowerCase().endsWith('.nrm');
 
-    if (f)
-      out.push(...rulesExtParse(await f.text(), id));
+    if (h.kind !== 'directory' && !nrm)
+      continue;
+
+    const id = nrm ? name.slice(0, -4) : name;
+    const zip = nrm && (await h.getFile().then((f) => f.arrayBuffer()).then((b) => zipUnpack(new Uint8Array(b)), () => null));
+
+    if (nrm && !zip)
+      continue;
+
+    const dec = new TextDecoder();
+    const text = (file) => (zip ? Promise.resolve(zip.has(file) ? dec.decode(zip.get(file)) : null) : h.getFileHandle(file).then((x) => x.getFile()).then((f) => f.text(), () => null));
+    const [rules, menu, manifest] = await Promise.all([text('rules_ext.json'), text('roguesq_menu.json'), text('mod.json')]);
+
+    if (rules)
+      out.push(...rulesExtParse(rules, id));
+
+    menus.push(...menuExtParse(menu, manifest, id));
   }
 
   ruleExt = out;
+  menuExt = menus;
   rulesChanged();
+
+  if (mode === 'menus' && menuSel)
+    showMenu(menuSel);
 
   return true;
 }

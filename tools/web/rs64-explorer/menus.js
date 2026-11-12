@@ -238,6 +238,9 @@ async function showMenu(name)
   const tools = elem('div', { className: 'fontTools' }, iconButton('open', 'Import menu files: any menu JSON (and menu_text.json), added on top of this mod\'s menu as the game layers mods', importMenuFile),
     elem('label', null, 'Language ', lang), elem('label', null, 'Mod for new buttons ', group));
 
+  if (window.showDirectoryPicker)
+    tools.append(iconButton('upload', 'Offer the settings and conditions of the mods in your game folder', () => loadRuleExt(true).then((ok) => ok || alert('No mods folder found in the game folder'))));
+
   if (!native?.locked && !native?.limit)
     tools.append(iconButton('add', 'Add a button at the end of this menu', () => addMenuButton(name, {})));
 
@@ -850,9 +853,11 @@ async function menuInspector(menu, doc, b, groups, langMenu)
     // The built-in keys for its type, or Custom: @name (a function the mod's own code exports) or config:<option id>, typed in.
     const tip = 'What it runs or changes: a built-in key, @name for a function your own code mod exports, or config:<option id> for one of your mod\'s config options';
     const builtins = MENU_KEYS[b.type ?? 'action'] ?? [];
+    const fromMods = menuExt.filter((e) => e.kind === (b.type ?? 'action') && !builtins.includes(e.name));
     const cur = b[kf] ?? '';
-    const custom = cur !== '' && !builtins.includes(cur);
-    const pick = elem('select', { title: tip }, new Option('(none chosen)', ''), ...builtins.map((k) => new Option(k, k)), new Option('Custom...', '+'));
+    const custom = cur !== '' && !builtins.includes(cur) && !fromMods.some((e) => e.name === cur);
+    const modOpts = fromMods.length ? [elem('optgroup', { label: 'From installed mods' }, ...fromMods.map((e) => new Option(`${e.label} (${e.mod})`, e.name)))] : [];
+    const pick = elem('select', { title: tip }, new Option('(none chosen)', ''), ...builtins.map((k) => new Option(k, k)), ...modOpts, new Option('Custom...', '+'));
 
     pick.value = custom ? '+' : cur;
 
@@ -974,11 +979,18 @@ async function menuInspector(menu, doc, b, groups, langMenu)
   // the other. It stays listed where a button already has it, so it can be cleared.
   const onPage = !NATIVE_MENUS[b.menu ?? 'main_menu'];
   const had = [b.requires ?? []].flat();
-  const conds = Object.entries(MENU_CONDITIONS).filter(([c]) => c !== 'front_end' || onPage || had.includes(c));
+  const modConds = menuExt.filter((e) => e.kind === 'condition' && !(e.name in MENU_CONDITIONS));
+  const condLabel = (c) => MENU_CONDITION_LABEL[c] ?? modConds.find((e) => e.name === c)?.label ?? c;
+
+  const conds = [
+    ...Object.entries(MENU_CONDITIONS).filter(([c]) => c !== 'front_end' || onPage || had.includes(c)),
+    ...modConds.map((e) => [e.name, `Only when ${e.label} holds (from the ${e.mod} mod, which must be installed)`])
+  ];
+
   const putConds = (next) => set('requires', next.length ? (next.length === 1 ? next[0] : next) : '', `${b.id}: shows if`);
 
   // Conditions the list doesn't name (a mod config option, a native mod's own, a negated one) show as typed, ticked, so they can be cleared.
-  const extra = had.filter((c) => !(c in MENU_CONDITIONS)).map((c) => [
+  const extra = had.filter((c) => !conds.some(([x]) => x === c)).map((c) => [
     c,
     c.startsWith('!') ? `Only when ${c.slice(1)} does not hold` : 'Only when this holds'
   ]);
@@ -988,7 +1000,7 @@ async function menuInspector(menu, doc, b, groups, langMenu)
 
     box.onchange = () => putConds(box.checked ? [...had, c] : had.filter((x) => x !== c));
 
-    return elem('label', { title: tip }, box, ' ' + (MENU_CONDITION_LABEL[c] ?? c));
+    return elem('label', { title: tip }, box, ' ' + condLabel(c));
   }));
 
   const typedTip = 'config:<mod id>:<option id> holds while that mod config option is set (not its first choice, or non-zero); a native mod\'s condition by name; ! in front for the opposite';
