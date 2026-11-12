@@ -43,6 +43,17 @@
             "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
+            "label": "Build: Browser (web)",
+            "type": "shell",
+            "command": "cmake --build build --config Debug --target regen_funcs_web; if ($?) { cmake --build build-web --parallel --target RogueSquadron64Recomp }",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$gcc",
+            "detail": "Browser build in build-web/ (set up once: docs/guides/building-all-platforms.md). Serve build-web/ on localhost and open it in Chrome or Edge."
+        },
+        {
             "label": "Configure: MCP bridge in every config",
             "type": "shell",
             "command": "cmake",
