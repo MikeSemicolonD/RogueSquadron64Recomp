@@ -76,6 +76,20 @@ The last kill ends the mission:
 
 To make the player land too, look at the outpost spot, add a **Reach an area** objective and click its add icon. Set the area's **Radius** in Events mode.
 
+## Try the example
+
+[desert-hunt.zip](files/desert-hunt.zip) is Desert Hunt as exported, plus `desert_hunt.rec`, a recorded run that downs the three TIEs.
+
+1. Unzip it into the game's `mods` folder and check it's on in the **Mods** window (**F6**).
+2. Play it from **SELECT LEVEL**, or open the Explorer's export next to yours to compare.
+3. To watch the recorded run, start the game from its folder with:
+
+   ```sh
+   RogueSquadron64Recomp.exe --boot-target level:desert_hunt --replay mods/desert-hunt/desert_hunt.rec --keep-running
+   ```
+
+   It flies the run and stays on the medal screen. Your own runs record the same way with `--record <file.rec>`.
+
 ## Not yet possible
 
 - A map bigger than its template.

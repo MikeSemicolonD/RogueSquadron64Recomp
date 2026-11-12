@@ -136,6 +136,8 @@ static const CliFlag kCliFlags[] = {
 
     {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]; N can be a mod level's id"},
     {"record",           "ROGUESQ_LS_RECORD",        CliFlag::Value, "",  "",  "record the next mission's input to <path.rec>, to replay it later"},
+    {"replay",           "ROGUESQ_LS_REPLAY",        CliFlag::Value, "",  "",  "play a recording made with --record (start its level with --boot-target)"},
+    {"keep-running",     "ROGUESQ_LS_KEEP_RUNNING",  CliFlag::Bool,  "1", "0", "stay on the last screen when a replay ends instead of quitting"},
 };
 
 static void print_cli_usage()
