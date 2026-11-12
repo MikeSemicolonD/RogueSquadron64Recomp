@@ -280,6 +280,7 @@ Probes:
 | `ROGUESQ_F5_CREDITS_QUAD` | on | While the end credits run, their intensity-texture glyph texrects draw as camera-space quads with ids `0x81xxxxxx`, each paired with the previous frame's glyph of the same texture and x, so the scroll interpolates; each glyph is smoothed off the game's half-pixel grid by up to a pixel. `=0` draws the texrects. |
 | `ROGUESQ_INTERP_AUTO_MAX_SCREEN` | 0.2 | Auto-matched transforms further apart than this (NDC) are not paired. `0` disables. |
 | `ROGUESQ_INTERP_ID_MAXJUMP` | 0 (off) | Skip id-matched pairs that moved more than frac x camera distance in one frame. |
+| `ROGUESQ_INTERP_CROSS_GUARD` | 1 | An id-matched pair whose two positions sit on opposite sides of the camera plane and whose blend passes near the eye is drawn without blending at any distance (the pass-by check otherwise skips anything within 1 game unit): laser bolts kept for RT shadows streaked across the screen on in-between frames. `0` turns it off. |
 | `ROGUESQ_INTERP_TELEPORT` | 1 | An id-matched pair that lands farther from its predicted position (last frame's motion) than both that motion and a quarter of its camera distance is drawn without blending: a recycled scene node (Taloraan's cloud wisps wrapping around the camera) otherwise swept across the screen for an in-between frame. Counted in `[pair]`'s `jumpRej`. `0` turns it off. |
 
 Probes: `ROGUESQ_LOG_INTERP_PAIR` — per-frame `[pair]`, `[jumprej]`, `[facesprite]`, `[flatten]` stats.
