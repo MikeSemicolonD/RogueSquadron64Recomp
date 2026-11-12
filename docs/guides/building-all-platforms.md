@@ -113,7 +113,7 @@ sudo apt install flatpak flatpak-builder
 
 ## Browser (Windows host, untested)
 
-Plays with WebGPU graphics and sound in Chrome or Edge; data-only mods ship with it; code mods, co-op and ray tracing are still to come. It reuses `RecompiledFuncs/`, `src/game/state_table.inl`, `build/factor5_ucode/*.c` and the host tools from a Windows Release build.
+Plays with WebGPU graphics and sound in Chrome or Edge; data-only mods ship with it; code mods, co-op and ray tracing are still to come. It reuses `src/game/state_table.inl`, `build/factor5_ucode/*.c` and the host tools from a Windows Release build, and compiles `RecompiledFuncsWeb/` (the co-op relocation recompiled in), which the Windows build makes with `cmake --build build --config Debug --target regen_funcs_web`.
 
 Install [emsdk](https://github.com/emscripten-core/emsdk) and activate Emscripten 6.0.13 (`emsdk install 6.0.13`, `emsdk activate 6.0.13`), then from an `emsdk_env` shell:
 

@@ -25,6 +25,7 @@ crash_*.dmp
 
 # Recompiler outputs
 RecompiledFuncs/
+RecompiledFuncsWeb/
 RecompiledPatches/
 
 # Build directories

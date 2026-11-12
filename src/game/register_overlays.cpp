@@ -2,16 +2,16 @@
 // Redefine it here so recomp_overlays.inl compiles correctly.
 #define main rs_main
 
-#include "../../RecompiledFuncs/recomp_overlays.inl"
+#include "recomp_overlays.inl"
 
 static recomp_func_t* const s_statically_patched[] = {
 #define RECOMP_PATCHED_FUNC(f, kinds) f,
-#include "../../RecompiledFuncs/patched_funcs.inl"
+#include "patched_funcs.inl"
 #undef RECOMP_PATCHED_FUNC
 };
 static const int s_statically_patched_kinds[] = {
 #define RECOMP_PATCHED_FUNC(f, kinds) kinds,
-#include "../../RecompiledFuncs/patched_funcs.inl"
+#include "patched_funcs.inl"
 #undef RECOMP_PATCHED_FUNC
 };
 

@@ -165,6 +165,20 @@ void init_once(uint8_t* rdram) {
     rs64_register_builtin_hooks();
     rs64_camera_shots_register_service();
     init_mods(rdram);
+
+#ifdef __EMSCRIPTEN__
+
+    // The browser build has the co-op relocation recompiled in, so its ranges hold even when the mod is off.
+    if (rs64::host::moved_ranges().empty()) {
+        static constexpr rs64::ls::MovedRange kBaked[] = {
+#include "moved_ranges.inl"
+        };
+
+        for (const rs64::ls::MovedRange& r : kBaked) rs64::host::add_moved_range(r.lo, r.hi, r.delta);
+    }
+
+#endif
+
     rs64::ls::set_moved_ranges(rs64::host::moved_ranges());
 
     // The renderer parses an RDRAM snapshot that holds only the game's 8 MB unless told otherwise; moved data must be in it too.

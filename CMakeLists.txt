@@ -133,6 +133,15 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N6
 # N64Recomp output; gitignored (derived from the ROM). Regenerate with the regen_funcs target.
 set(RECOMP_FUNCS_DIR "${CMAKE_SOURCE_DIR}/RecompiledFuncs")
 
+# The browser build compiles RecompiledFuncsWeb, which has the co-op relocation recompiled in (regen_funcs_web in the desktop build).
+if (EMSCRIPTEN)
+    set(RECOMP_FUNCS_DIR "${CMAKE_SOURCE_DIR}/RecompiledFuncsWeb")
+
+    if (NOT EXISTS "${RECOMP_FUNCS_DIR}/moved_ranges.inl")
+        message(FATAL_ERROR "The browser build needs RecompiledFuncsWeb; run: cmake --build build --config Debug --target regen_funcs_web")
+    endif()
+endif()
+
 add_library(RecompiledFuncs STATIC)
 
 if (MSVC)
@@ -205,6 +214,26 @@ add_custom_target(dump_syms
     COMMENT "Dumping syms/ from the decomp ELF"
     VERBATIM
 )
+# RecompiledFuncsWeb for the browser build: regen_funcs plus the co-op mod's relocation, which a browser can't apply at runtime. cmake --build build --config Debug --target regen_funcs_web
+if (NOT EMSCRIPTEN)
+    set(RS64_WEB_REGEN_DIR "${CMAKE_BINARY_DIR}/web_regen")
+    add_custom_target(regen_funcs_web
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DPATCHES=${CMAKE_BINARY_DIR}/multiplayer-native/modtool/instruction_patches.json -DOUT=${RS64_WEB_REGEN_DIR}
+            -P "${CMAKE_SOURCE_DIR}/tools/mods/web_regen.cmake"
+        COMMAND ${N64RECOMP_EXE} "${RS64_WEB_REGEN_DIR}/rogue_squadron.web.toml"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Regenerating RecompiledFuncsWeb (rogue_squadron.toml plus the co-op relocation)"
+        VERBATIM
+    )
+
+    # The co-op mod's subdirectory comes later in this file; the name resolves at generate time.
+    add_dependencies(regen_funcs_web multiplayer_native_manifest)
+
+    if (TARGET N64RecompCLI)
+        add_dependencies(regen_funcs_web N64RecompCLI)
+    endif()
+endif()
+
 # Build the recompiler first so a stale exe can't silently truncate the output.
 if (TARGET N64RecompCLI)
     add_dependencies(regen_funcs N64RecompCLI)
@@ -444,6 +473,8 @@ file(READ "${RS64_SHADER_COMBOS_FILE}" RS64_SHADER_COMBOS)
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/generated/rs64_shader_combos.inl" CONTENT "R\"RS64(@RS64_SHADER_COMBOS@)RS64\"\n" @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RS64_SHADER_COMBOS_FILE}")
 target_include_directories(RogueSquadron64Recomp PRIVATE "${CMAKE_BINARY_DIR}/generated")
+# The generated tables register_overlays.cpp (and the browser host's moved_ranges.inl) include by name, from the funcs folder this build compiles.
+target_include_directories(RogueSquadron64Recomp BEFORE PRIVATE "${RECOMP_FUNCS_DIR}")
 # The built-in RT light presets (engine exhausts, lasers, pickups, the briefing room) are compiled into the exe; mods and the exe-dir copy override them by name.
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE_BINARY_DIR}/generated/default_lights.h
     COMMAND file_to_c ${CMAKE_SOURCE_DIR}/src/video/default_lights.json rs64_default_lights ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE_BINARY_DIR}/generated/default_lights.h
