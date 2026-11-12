@@ -172,13 +172,23 @@ var Module = {
   // The game download is the slow part of a first visit; fetching it here shows its progress (the service worker caches it after).
   instantiateWasm: (imports, ready) => {
     fetch('RogueSquadron64Recomp.wasm')
+      .then(r => {
+        if (!r.ok)
+          throw new Error(`the game file answered ${r.status}`);
+
+        return r;
+      })
       .then(r => readAll(r.body, Number(r.headers.get('Content-Length')) || 0, 'Downloading the game'))
       .then(bytes => {
         say('Starting');
         progress(0, 0);
         return WebAssembly.instantiate(bytes, imports);
       })
-      .then(r => ready(r.instance, r.module));
+      .then(r => ready(r.instance, r.module))
+      .catch(e => {
+        progress(null);
+        say(`The game failed to load (${e.message}). Reload the page to try again.`, true);
+      });
     return {};
   },
   romRejected,
@@ -192,6 +202,7 @@ const unsupported = 'This browser can\'t run the game here. Try a current Chrome
 if (!window.crossOriginIsolated && navigator.serviceWorker && !sessionStorage.getItem('rs64IsolationReload')) {
   sessionStorage.setItem('rs64IsolationReload', '1');
   navigator.serviceWorker.ready.then(() => location.reload());
+  setTimeout(() => say(unsupported, true), 10000);
 } else if (!window.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
   say(unsupported, true);
 } else {

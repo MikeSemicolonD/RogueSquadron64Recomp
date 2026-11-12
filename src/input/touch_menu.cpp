@@ -49,7 +49,14 @@ namespace rs64::touch {
         constexpr uint8_t kTypeSaveSlot = 3;
         constexpr uint32_t kRamSize = 0x800000u;
         constexpr uint32_t kModHeap = 0x81000000u;
+        // librecomp's mem_size (the RDRAM buffer): 64 MB in the browser build.
+
+#if defined(__EMSCRIPTEN__)
+        constexpr uint32_t kLabelMemSize = 0x04000000u;
+#else
         constexpr uint32_t kLabelMemSize = 0x20000000u;
+#endif
+
 
         uint8_t rb(const uint8_t* r, uint32_t off) {
             return r[off ^ 3];
