@@ -84,15 +84,27 @@ extern "C" void rs64_mcp_note_dl()
     if (mcp_log()) fprintf(stderr, "[mcp] dl %llu\n", (unsigned long long)s_mcp_dl_seq);
 }
 
+// Times each clock started over; a pause_at with next=true waits for the count to pass the one it was armed at.
+static std::map<std::string, uint64_t> s_mcp_restarts;
+static std::optional<uint64_t> s_mcp_target_after;
+
 void mcp_note_clock(const std::string& clock, uint32_t frame)
 {
 
     std::lock_guard<std::mutex> g(s_mcp_lock);
+    const auto prev = s_mcp_clocks.find(clock);
+
+    // A clock that starts over (the next cutscene, a chained mission's session, a state entered again) drops its old frame, which would satisfy a pause meant for the new run.
+    if (prev != s_mcp_clocks.end() && frame < prev->second) {
+        s_mcp_dl_clocks.erase(clock);
+        s_mcp_restarts[clock]++;
+    }
 
     s_mcp_clocks[clock] = frame;
 
     if (mcp_log()) fprintf(stderr, "[mcp] point %s %u dl %llu\n", clock.c_str(), frame, (unsigned long long)s_mcp_dl_seq);
 }
+
 
 // Unpauses RT64 and waits for it to apply, so display lists sent after a release are drawn, not dropped.
 static void mcp_unpause_rt64()
@@ -168,7 +180,7 @@ void mcp_pause_point(const std::string& clock)
 
     const auto it = s_mcp_dl_clocks.find(clock);
     const uint32_t clock_frame = (it != s_mcp_dl_clocks.end()) ? it->second : 0;
-    nlohmann::json picture = { { "clock", clock }, { "frame", clock_frame }, { "dl_seq", s_mcp_dl_seq }, { "clocks", s_mcp_dl_clocks } };
+    nlohmann::json picture = { { "clock", clock }, { "frame", clock_frame }, { "dl_seq", s_mcp_dl_seq }, { "clocks", s_mcp_dl_clocks }, { "restarts", s_mcp_restarts } };
     bool hit = false;
 
     if (s_mcp_target)
@@ -176,6 +188,7 @@ void mcp_pause_point(const std::string& clock)
         const PauseTarget& t = *s_mcp_target;
 
         hit = (t.clock == "dl") ? (s_mcp_dl_seq >= t.frame) : (pause_clock_matches(t.clock, clock) && it != s_mcp_dl_clocks.end() && it->second >= t.frame);
+        hit = hit && (!s_mcp_target_after || s_mcp_restarts[clock] > *s_mcp_target_after);
 
         if (hit && t.clock == "dl") {
             picture["clock"] = "dl";
@@ -260,19 +273,26 @@ static nlohmann::json mcp_frame_info()
 
     const nlohmann::json input = mcp_input_live() ? nlohmann::json{ { "buttons", s_mcp_input->names }, { "stick", { s_mcp_input->x, s_mcp_input->y } }, { "until_dl", s_mcp_input->until_dl } } : nlohmann::json();
 
-    return { { "state", rs64_state_current_id() }, { "clocks", clocks }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input } };
+    return { { "state", rs64_state_current_id() }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input } };
 }
 
 struct McpWait { uint64_t gen; uint64_t epoch; };
 
 // Sets (or clears) the MCP target and, when releasing, lets the held game thread go; returns the hold generation to wait past and the client epoch.
-static McpWait mcp_set_target(std::optional<PauseTarget> target, bool release = false)
+// next: hold only after the target's clock has started over (the next cutscene, the next chained mission); after: only once it has started over more than that many times.
+static McpWait mcp_set_target(std::optional<PauseTarget> target, bool release = false, bool after_restart = false, std::optional<uint64_t> after = std::nullopt)
 {
 
     std::lock_guard<std::mutex> g(s_mcp_lock);
 
     if (!target) {
         mcp_clear_watch();
+    }
+
+    s_mcp_target_after = after;
+
+    if (target && after_restart && !after) {
+        s_mcp_target_after = s_mcp_restarts[target->clock];
     }
 
     s_mcp_target = std::move(target);
@@ -384,7 +404,11 @@ static nlohmann::json mcp_pause_at(const nlohmann::json& p)
         throw std::runtime_error("already paused; use step or resume");
     }
 
-    const McpWait w = mcp_set_target(PauseTarget{ p["clock"].get<std::string>(), p["frame"].get<uint32_t>() });
+    std::optional<uint64_t> after;
+
+    if (p.contains("after")) after = p["after"].get<uint64_t>();
+
+    const McpWait w = mcp_set_target(PauseTarget{ p["clock"].get<std::string>(), p["frame"].get<uint32_t>() }, false, p.value("next", false), after);
 
     return mcp_wait_frozen(w, p.value("timeout_s", 120.0));
 }

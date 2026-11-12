@@ -761,6 +761,9 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         return;
     }
 
+    // The "ls" clock: frames since this session's mission started, which restarts with every chained mission (the state clock may not).
+    rs64_pause_point("ls", s.frame);
+
     if (s.mode == Mode::Replay) {
         ls_renderdoc_point(s);
         ls_pause_point(s);

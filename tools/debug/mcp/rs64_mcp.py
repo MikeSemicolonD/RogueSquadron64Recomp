@@ -877,16 +877,19 @@ def serve():
         return game.call(method, params, timeout_s)
 
     @tool()
-    def pause_at(clock: str, frame: int, timeout_s: float = 120) -> dict:
-        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot). The same frame number shows the same picture on every launch, so a frame seen once is reached again by relaunching and pausing at that number; a frame already passed cannot be paused at without relaunching. To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+    def pause_at(clock: str, frame: int, timeout_s: float = 120, next: bool = False) -> dict:
+        """Hold the game so the picture is `frame` of `clock`, then freeze RT64 on it. Clocks: cutscene (the cutscene's own frames; the boot logos, attract cutscenes and mission cutscenes), crawl, ls (a replay's lockstep frame), or a game state id (mission, menu.main, ...; frames since entered). Use the clock the moment belongs to: a RenderDoc capture is named after the clocks running when it was taken (cap_cutscene-412_...), and those are the numbers to pass here. Launches run with ROGUESQ_FIXED_STEP=1, so game time advances one frame per frame and each of these frame numbers is the same picture on every launch. dl (display lists since boot) still depends on load times and is refused here (pause_now and step use it within a run). A frame already passed needs a relaunch, or next=true to wait for the clock to start over (the next cutscene, or the next mission for ls). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        if clock == "dl":
+            raise RuntimeError("dl frames drift between launches: pause on the cutscene/crawl/ls/state clock the moment belongs to (a capture's name lists them), or pause_now and step")
+
         info = game.call("frame_info")
         now = info.get("clocks", {}).get(clock)
 
         # A clock already past frame (the state being shown, or dl) would only time out: say so instead of waiting.
-        if now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
+        if not next and now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
             raise RuntimeError(f"{clock} is already at frame {now} (past {frame}): use pause_now, or step from a pause")
 
-        return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s}, timeout_s + 15)
+        return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s, "next": next}, timeout_s + 15)
 
     @tool()
     def pause_now(timeout_s: float = 30) -> dict:
