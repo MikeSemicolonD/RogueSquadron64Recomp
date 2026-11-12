@@ -1,7 +1,9 @@
 #include "net/net_link.h"
 #include <enet6/enet.h>
 
-#ifndef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
+#include "../web/web_net.h"
+#else
 #include <miniupnpc.h>
 #include <upnpcommands.h>
 #include <upnperrors.h>
@@ -820,6 +822,12 @@ void Link::run() {
             host = enet_host_create(addr.type, nullptr, 1, 2, 0, 0);
 
             if (host) {
+
+#ifdef __EMSCRIPTEN__
+                // Browser datagrams are smaller than ENet's default MTU; the connect command carries this one.
+                host->mtu = RS64_WEB_ENET_MTU;
+#endif
+
                 peer = enet_host_connect(host, &addr, 2, 0);
 
                 if (peer) {

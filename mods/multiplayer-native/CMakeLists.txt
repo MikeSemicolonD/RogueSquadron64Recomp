@@ -74,6 +74,17 @@ if (EMSCRIPTEN)
         VERBATIM)
     target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/web/register_static.cpp)
     target_link_libraries(RogueSquadron64Recomp PRIVATE multiplayer_native)
+    target_link_options(RogueSquadron64Recomp PRIVATE "--pre-js=${CMAKE_CURRENT_SOURCE_DIR}/web/rs64net.js")
+
+    # Browser test of ENet over WebTransport through a relay (tests/enet_web_test.cpp says how to run it).
+    add_executable(enet_web_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/enet_web_test.cpp ${MP_RELAY_FILES})
+    target_include_directories(enet_web_test PRIVATE ${CMAKE_SOURCE_DIR}/relay-server/src ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(enet_web_test PRIVATE enet6)
+    set_target_properties(enet_web_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    target_link_options(enet_web_test PRIVATE -sPROXY_TO_PTHREAD -sEXPORTED_FUNCTIONS=_main,_malloc,_free -sEXPORTED_RUNTIME_METHODS=UTF8ToString,HEAPU8 "--pre-js=${CMAKE_CURRENT_SOURCE_DIR}/web/rs64net.js")
+    add_custom_command(TARGET enet_web_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/tests/enet_web_test.html $<TARGET_FILE_DIR:enet_web_test>
+        VERBATIM)
     return()
 endif()
 
