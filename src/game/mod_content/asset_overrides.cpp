@@ -38,6 +38,8 @@
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
+#include "rs64_mod_image_HOB_bps.h"
+#include "rs64_mod_image_HMT.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -57,6 +59,8 @@ uint32_t s_silence_rom[10] = {};
 // Craft HOBs with recoloured exhaust, one per exhaust-color option (index 0 = default, unused).
 std::unordered_map<std::string, std::vector<AssetOverride>> s_exhaust_variants;
 constexpr const char* kExhaustMod = "exhaust-color";
+constexpr const char* kModImageHob = "frontend/controller/mod_image_HOB";
+constexpr const char* kModImageHmt = "frontend/controller/mod_image_HMT";
 constexpr uint32_t kExhaustTints[] = { 0, 0xFF2000, 0xFF8000, 0xFFE000, 0x20FF20, 0x20FFFF, 0x2060FF, 0xA040FF, 0xFF40C0, 0xFFFFFF };
 
 uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
@@ -366,6 +370,11 @@ extern "C" void rs64_asset_overrides_init()
         fprintf(stderr, "[assets] %s: %s can't be read: %s\n", mod_id.c_str(), path.c_str(), problem.c_str());
         dat_problems += "\n" + mod_names[mod_id] + " (" + path + "): " + problem + ".";
     };
+
+    // Built in: the MODS page's image model (src/game/menus/mod_image), made from the controller's HOB with its own HMT. A mod's file of the same path wins.
+    derived[kModImageHob] = { "base", "frontend/controller/controller_HOB" };
+    patches[kModImageHob] = { "base", std::vector<uint8_t>(rs64_mod_image_HOB_bps, rs64_mod_image_HOB_bps + rs64_mod_image_HOB_bps_size) };
+    s_asset_overrides[kModImageHmt] = append(std::vector<uint8_t>(rs64_mod_image_HMT, rs64_mod_image_HMT + rs64_mod_image_HMT_size));
 
     for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
     {

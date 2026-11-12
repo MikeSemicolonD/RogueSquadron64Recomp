@@ -1184,6 +1184,11 @@ const std::vector<std::string>& page_names()
         for (const auto& b : config().buttons)
             if (!b.page.empty() && frontend_menu_id(b.page) == MENU_NONE && std::find(v.begin(), v.end(), b.page) == v.end()) v.push_back(b.page);
 
+        // A mod's own pages have no button: its MODS row opens them.
+        v.push_back(kModPage);
+        v.push_back(kModSettingsPage);
+        v.push_back(kModTextPage);
+
         return v;
     }();
 
@@ -2171,11 +2176,45 @@ int languages_install(uint8_t* rdram, uint8_t parent)
     return count;
 }
 
+// The slots relabeled for the rows from pos.top, each slot's param its language's index.
+void lang_show_rows(uint8_t* rdram)
+{
+
+    for (int i = 0; i < kLangRows; ++i)
+    {
+        write_live(rdram, s_lang.bufs[i], lang_slot_text(i));
+        wr_w(rdram, GCMD_OFF + kRowParam + i * 4, s_lang.rows[s_lang.pos.top + i].second);
+    }
+
+    s_lang.dirty = true;
+}
+
+// A scrollbar drag: the rows move under the highlight, which keeps its place on screen.
+void languages_scroll_to(uint8_t* rdram, int top)
+{
+
+    top = std::clamp(top, 0, std::max(0, (int)s_lang.rows.size() - kLangRows));
+
+    if (top == s_lang.pos.top) return;
+
+    const int slot = rd_b(rdram, GCMD_OFF + 0x94);
+
+    s_lang.pos.top = top;
+
+    if (slot < kLangRows) s_lang.pos.sel = top + slot;
+
+    lang_show_rows(rdram);
+}
+
 // Each front-end pass before the menu reads the pad: up / down (and the wheel) step the cursor, scrolling the rows at their edges; BACK sits below them.
 void languages_pass(uint8_t* rdram, recomp_context* ctx)
 {
 
     if (!langs_on_screen(rdram)) return;
+
+    const int want_top = s_list_scroll_req.exchange(-1);
+
+    if (want_top >= 0) languages_scroll_to(rdram, want_top);
 
     uint32_t p = (uint32_t)rd_w(rdram, PAD_PRESSED);
     const int wheel = s_ctl_wheel.exchange(0);
@@ -2198,16 +2237,7 @@ void languages_pass(uint8_t* rdram, recomp_context* ctx)
 
     s_lang.pos = rs64::menu::scroll_step(s_lang.pos, dir, n, kLangRows);
 
-    if (s_lang.pos.top != top)
-    {
-        for (int i = 0; i < kLangRows; ++i)
-        {
-            write_live(rdram, s_lang.bufs[i], lang_slot_text(i));
-            wr_w(rdram, GCMD_OFF + kRowParam + i * 4, s_lang.rows[s_lang.pos.top + i].second);
-        }
-
-        s_lang.dirty = true;
-    }
+    if (s_lang.pos.top != top) lang_show_rows(rdram);
 
     wr_b(rdram, GCMD_OFF + 0x94, (uint8_t)(s_lang.pos.sel == n ? kLangRows : s_lang.pos.sel - s_lang.pos.top));
     rs64::mips::mips_call(rdram, ctx, 0x80087EE8u, {0x17u, 0x7Fu, 0x40u});
@@ -2221,6 +2251,29 @@ void languages_frame(uint8_t* rdram, recomp_context* ctx)
 
     rs64::mips::mips_call(rdram, ctx, 0x800C4C8Cu, {GCMD, (1u << kLangRows) - 1, 0u});
     s_lang.dirty = false;
+}
+
+// The scrolling list on screen, packed for other threads: menu id << 56 | y0 << 48 | y1 << 40 | total << 24 | visible << 16 | top (0 when none).
+std::atomic<uint64_t> s_list_view{0};
+std::atomic<int> s_list_scroll_req{-1};
+
+void publish_list_view(uint8_t* rdram)
+{
+
+    ListView v{};
+    bool shown = controls_view(rdram, &v) || mods_view(rdram, &v);
+
+    if (!shown && langs_on_screen(rdram))
+    {
+        v = { (int)s_lang.rows.size(), kLangRows, s_lang.pos.top };
+        shown = true;
+    }
+
+    const uint64_t menu = rd_b(rdram, GCMD_OFF + 0x04);
+
+    const uint64_t ys = (uint64_t)(v.y0 & 0xFF) << 48 | (uint64_t)(v.y1 & 0xFF) << 40;
+
+    s_list_view.store(shown ? menu << 56 | ys | (uint64_t)(v.total & 0xFFFF) << 24 | (uint64_t)(v.visible & 0xFF) << 16 | (uint64_t)(v.top & 0xFFFF) : 0);
 }
 
 } // namespace rs64::menucfg
@@ -2302,6 +2355,9 @@ extern "C" int rs64_menu_install_main(uint8_t* rdram)
     if (const std::string* page = page_name(menu))
     {
         if (*page == kModsPage) return mods_install(rdram, page_parent(menu));
+        if (*page == kModPage) return mod_page_install(rdram, page_id(kModsPage));
+        if (*page == kModTextPage) return mod_text_install(rdram, page_id(kModPage));
+        if (*page == kModSettingsPage) return mod_settings_install(rdram, page_id(kModPage));
         if (*page == kLanguagesPage) return languages_install(rdram, page_parent(menu));
 
         return build_mod_page(rdram, *page, page_parent(menu));
@@ -2581,6 +2637,25 @@ extern "C" int rs64_menu_page_shown(void) {
     return s_page_shown.load() ? 1 : 0;
 }
 
+extern "C" int rs64_list_view(int* menu, int* total, int* visible, int* top, int* y0, int* y1)
+{
+
+    const uint64_t v = s_list_view.load();
+
+    *menu = (int)(v >> 56);
+    *y0 = (int)(v >> 48 & 0xFF);
+    *y1 = (int)(v >> 40 & 0xFF);
+    *total = (int)(v >> 24 & 0xFFFF);
+    *visible = (int)(v >> 16 & 0xFF);
+    *top = (int)(v & 0xFFFF);
+
+    return v != 0;
+}
+
+extern "C" void rs64_list_scroll_to(int top) {
+    s_list_scroll_req.store(top);
+}
+
 extern "C" void rs64_menu_pass(uint8_t* rdram, recomp_context* ctx)
 {
 
@@ -2761,6 +2836,7 @@ extern "C" void rs64_menu_frame(uint8_t* rdram, recomp_context* ctx)
     controls_frame(rdram, ctx);
     mods_frame(rdram, ctx);
     languages_frame(rdram, ctx);
+    publish_list_view(rdram);
     note_frame(rdram, ctx);
 
     bool lock_shown = false;

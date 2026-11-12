@@ -561,6 +561,16 @@ static void draw_touch_overlay()
         }
     }
 
+    ListBar bar{};
+
+    if (!ds.editing && list_scrollbar(W, H, &bar))
+    {
+        const float round = (bar.x1 - bar.x0) * W / 2.0f;
+
+        dl->AddRectFilled({ bar.x0 * W, bar.y0 * H }, { bar.x1 * W, bar.y1 * H }, IM_COL32(255, 255, 255, 50), round);
+        dl->AddRectFilled({ bar.x0 * W, bar.t0 * H }, { bar.x1 * W, bar.t1 * H }, IM_COL32(255, 255, 255, 200), round);
+    }
+
     if (!ds.visible)
     {
         return;

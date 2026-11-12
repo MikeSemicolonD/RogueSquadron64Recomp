@@ -300,7 +300,14 @@ constexpr const char* kCtlRowEnd = "\t`";
 // Mouse wheel notches from the SDL thread (up positive), taken by the list screens' passes as up/down steps.
 extern std::atomic<int> s_ctl_wheel;
 
+// The first row a scrollbar drag asks for (-1 when none), taken by the shown list page's pass.
+extern std::atomic<int> s_list_scroll_req;
+
+// y0 / y1: the scrolled area on the 320x240 screen for a page whose lines are not menu entries (a mod's text), else 0 (the track spans the rows).
+struct ListView { int total; int visible; int top; int y0 = 0; int y1 = 0; };
+
 bool controls_enabled();
+bool controls_view(uint8_t* rdram, ListView* v);
 bool controls_on_screen(uint8_t* rdram);
 int controls_install(uint8_t* rdram);
 bool controls_confirm(uint8_t* rdram, int e);
@@ -308,13 +315,24 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx);
 void controls_frame(uint8_t* rdram, recomp_context* ctx);
 
 constexpr const char* kModsPage = "mods";
+
+// One mod's page, opened from its MODS row: its details, ENABLED and PRIORITY; its SETTINGS (config options); its CREDITS or LICENSE text.
+constexpr const char* kModPage = "mod";
+constexpr const char* kModSettingsPage = "mod_settings";
+constexpr const char* kModTextPage = "mod_text";
 constexpr int kModsTopY = -136;
 
 // The small white text line under a page title (the MODS description, a page's note): hatten13, text group 8, slot 1.
 constexpr uint32_t kModsDescFont = 8, kModsDescFontSlot = 1;
 
 bool mods_on_screen(uint8_t* rdram);
+bool mod_text_on_screen(uint8_t* rdram);
+bool mods_view(uint8_t* rdram, ListView* v);
 int mods_install(uint8_t* rdram, uint8_t parent);
+int mod_page_install(uint8_t* rdram, uint8_t parent);
+int mod_text_install(uint8_t* rdram, uint8_t parent);
+int mod_settings_install(uint8_t* rdram, uint8_t parent);
+void mods_image_load(uint8_t* rdram, recomp_context* ctx);
 bool mods_confirm(uint8_t* rdram, int e);
 void mods_pass(uint8_t* rdram, recomp_context* ctx);
 void mods_frame(uint8_t* rdram, recomp_context* ctx);

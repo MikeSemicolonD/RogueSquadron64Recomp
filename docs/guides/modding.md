@@ -43,7 +43,9 @@ A folder without a `mod.json` is not loaded.
 
 Players turn mods on and off in the **Mods** window, which opens with **F6** alongside the Controls window (in Debug builds press **F1** first, since the RT64 inspector owns the overlay). The choice is saved in `mods.json` in the game's config folder. The first time a player has a mod, it is on unless its manifest sets `enabled_by_default` to `false` (cheats such as `invincibility` do). After that, `mods.json` decides. Mods are loaded at startup, so changes take effect on the next launch.
 
-A mod can declare config options (`config_schema` in `mod.json`, or `[[manifest.config_options]]` in a code mod's `mod.toml`). They appear in the Mods window, and a menu button can show them too (see `config:` in [adding-menus-and-buttons.md](adding-menus-and-buttons.md#behavior-keys)).
+A mod can declare config options (`config_schema` in `mod.json`, or `[[manifest.config_options]]` in a code mod's `mod.toml`). They appear in the Mods window and on the mod's SETTINGS page in the in-game MODS list, and a menu button can show them too (see `config:` in [adding-menus-and-buttons.md](adding-menus-and-buttons.md#behavior-keys)).
+
+The in-game MODS list opens a page per mod with its name, `version`, `authors` and `description` from the manifest. A `thumb.png` at the mod's root is shown on that page, over the menu's photo (drawn at 128x96, 4:3, cropped to fill). A `CREDITS.txt` or `LICENSE.txt` adds a CREDITS or LICENSE entry there that shows the file; a `.nrm` packs these files with `additional_files` under `[inputs]` in `mod.toml`.
 
 ### Shipping a mod with the game
 

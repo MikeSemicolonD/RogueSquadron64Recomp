@@ -42,7 +42,7 @@ The host glue lives in `src/`:
 | --- | --- |
 | `src/main/main.cpp` | Entry point; SDL2 window, gfx and VI callbacks |
 | `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, sensors, the SDL event loop |
-| `src/input/touch_host.cpp` | Touch and mouse on the menus (taps, slider and MODS-page drags, hover) |
+| `src/input/touch_host.cpp` | Touch and mouse on the menus (taps, slider and list scrollbar drags, hover) |
 | `src/main/ui_panels.cpp` | ImGui panels: controls/rebind, mods, touch overlay |
 | `src/main/crash.cpp` | Crash handlers and minidumps (Windows) |
 | `src/audio/audio.cpp` | `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); SDL2 audio output |

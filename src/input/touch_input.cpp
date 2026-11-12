@@ -300,7 +300,7 @@ namespace rs64::touch {
                 }
             } else if (f.role == Finger::Role::Gesture && (ctx == Context::ListMenu || ctx == Context::PauseMenu))
             {
-                // Horizontal: fine, two-way slider nudges (one step per kFineStep of drag). Vertical: coarse steps between entries.
+                // Horizontal: fine, two-way slider nudges (one step per kFineStep of drag). Vertical: coarse steps between pause entries; list pages scroll by their scrollbar.
                 const float dx = (x - f.x0) * aspect_;
                 const float dy = y - f.y0;
                 const bool hover = ctx == Context::PauseMenu && menu_hover_;
@@ -310,7 +310,7 @@ namespace rs64::touch {
                     if (std::fabs(dx) > kTapMove && std::fabs(dx) >= 2.0f * std::fabs(dy))
                     {
                         f.axis = 1;
-                    } else if (!hover && std::fabs(dy) > kTapMove && std::fabs(dy) >= 2.0f * std::fabs(dx))
+                    } else if (ctx == Context::PauseMenu && !hover && std::fabs(dy) > kTapMove && std::fabs(dy) >= 2.0f * std::fabs(dx))
                     {
                         f.axis = 2;
                     }

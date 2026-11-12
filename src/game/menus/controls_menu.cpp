@@ -187,6 +187,33 @@ bool controls_on_screen(uint8_t* rdram) {
     return s_ctl.shown && rd_b(rdram, GCMD_OFF + 0x04) == MENU_CONTROLLER_SETTINGS;
 }
 
+bool controls_view(uint8_t* rdram, ListView* v)
+{
+
+    if (!controls_on_screen(rdram)) return false;
+
+    *v = { ctl_total(), kCtlRows, s_ctl.pos.top };
+
+    return true;
+}
+
+// A scrollbar drag: the rows move under the highlight, which keeps its place on screen.
+void controls_scroll_to(uint8_t* rdram, int top)
+{
+
+    top = std::clamp(top, 0, std::max(0, ctl_total() - kCtlRows));
+
+    if (top == s_ctl.pos.top) return;
+
+    const int slot = rd_b(rdram, GCMD_OFF + 0x94);
+
+    s_ctl.pos.top = top;
+
+    if (slot < kCtlRows) s_ctl.pos.sel = top + slot;
+
+    s_ctl.dirty = (1u << kCtlRows) - 1;
+}
+
 // A on a list row: start a capture for the screen's device, or reset that device's bindings.
 bool controls_confirm(uint8_t* rdram, int e)
 {
@@ -257,8 +284,12 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx)
 
         if (s_ctl.shown) controls_show_model(rdram, false);
 
-        // The MODS and LANGUAGE pages read the wheel too (their passes run after this one).
-        if (!mods_on_screen(rdram) && !langs_on_screen(rdram)) s_ctl_wheel.store(0);
+        // The MODS, mod text and LANGUAGE pages read the wheel too (their passes run after this one).
+        if (!mods_on_screen(rdram) && !mod_text_on_screen(rdram) && !langs_on_screen(rdram))
+        {
+            s_ctl_wheel.store(0);
+            s_list_scroll_req.store(-1);
+        }
 
         s_ctl.shown = false;
         s_ctl.tabs = false;
@@ -291,6 +322,10 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx)
         s_ctl.flash_row = -1;
         s_ctl.dirty = (1u << kCtlRows) - 1;
     }
+
+    const int want_top = s_list_scroll_req.exchange(-1);
+
+    if (want_top >= 0 && s_ctl.capturing < 0) controls_scroll_to(rdram, want_top);
 
     // Wheel notches while waiting for an input are dropped.
     if (s_ctl.capturing >= 0)
@@ -335,12 +370,15 @@ void controls_pass(uint8_t* rdram, recomp_context* ctx)
             sel = std::clamp(s_ctl.back_from, s_ctl.pos.top, s_ctl.pos.top + kCtlRows - 1);
         }
     } else if (p & kNavDown) {
-        if (sel == back) s_ctl.pos = { 0, 0 };
-        else if (sel >= n - 1) ++sel;
+        // The list stops at its ends: wrapping would jump a long list back to the top.
+        if (sel == back) return;
+
+        if (sel >= n - 1) ++sel;
         else s_ctl.pos = rs64::menu::scroll_step(s_ctl.pos, 1, n, kCtlRows);
     } else {
-        if (sel == 0) sel = back;
-        else if (sel == back) sel = reset;
+        if (sel == 0) return;
+
+        if (sel == back) sel = reset;
         else if (sel == reset) s_ctl.pos = { n - 1, std::max(0, n - kCtlRows) };
         else s_ctl.pos = rs64::menu::scroll_step(s_ctl.pos, -1, n, kCtlRows);
     }
@@ -420,6 +458,7 @@ extern "C" void rs64_controls_load_models(uint8_t* rdram, recomp_context* ctx)
 
     s_ctl_mesh_orig = (uint32_t)rd_w(rdram, kControllerMesh);
     std::fill(std::begin(s_ctl_mesh), std::end(s_ctl_mesh), 0u);
+    mods_image_load(rdram, ctx);
 
     if (!controls_enabled()) return;
 

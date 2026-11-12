@@ -1,4 +1,4 @@
-// Touch and mouse input on the menus: the touch engine's game context, menu taps, slider and MODS-page drags, and mouse hover/clicks.
+// Touch and mouse input on the menus: the touch engine's game context, menu taps, slider and list scrollbar drags, and mouse hover/clicks.
 
 #include "input/input_host.h"
 #include "game/menus/menu_config.h"
@@ -159,50 +159,108 @@ void window_size(float* w, float* h) {
     *h = (float)ih;
 }
 
-// MODS page: pressing a mod's name and dragging carries the mod (the game thread applies each step); a press that never moved stays a tap.
-struct ModsDrag {
-    int64_t finger = -1;
-    int slot = -1;
-    float y = 0.0f;
-    bool carrying = false;
-};
+// The track's left edge on the 320x240 game screen, right of the rows' scroll arrows (of the wider text lines on a text page); its width, reach
+// and the thumb's least height are in window heights.
+constexpr float kBarGameX = 268.0f, kTextBarGameX = 300.0f, kBarWidth = 0.012f, kBarReach = 0.04f, kBarMinThumb = 0.05f;
 
-static ModsDrag g_mods_drag;
-
-static bool mods_drag_event(rs64::touch::FingerEvent ev, int64_t finger, float x, float y)
+bool list_scrollbar(float w, float h, ListBar* out)
 {
 
-    using rs64::touch::FingerEvent;
-    ModsDrag& d = g_mods_drag;
+    int menu = 0, total = 0, visible = 0, top = 0, area0 = 0, area1 = 0;
     uint8_t* r = touch_rdram();
-    float w, h;
-    window_size(&w, &h);
-    rs64::touch::MenuSnapshot snap{};
-    std::vector<rs64::touch::Box> boxes;
 
-    if (!r || !rs64::touch::read_menu(r, &snap, &boxes, w, h))
+    if (!r || g_active_overlay != 1 || !rs64_list_view(&menu, &total, &visible, &top, &area0, &area1) || total <= visible || visible < 1)
     {
-        d = ModsDrag{};
-
         return false;
     }
 
+    rs64::touch::MenuSnapshot snap{};
+    std::vector<rs64::touch::Box> boxes;
+
+    if (!rs64::touch::read_menu(r, &snap, &boxes, w, h) || snap.menu_id != menu)
+    {
+        return false;
+    }
+
+    float y0 = 2.0f, y1 = -1.0f, x0 = 0.0f, unused = 0.0f;
+
+    if (area1 > area0)
+    {
+        rs64::touch::n64_to_window(0.0f, (float)area0, w, h, &unused, &y0);
+        rs64::touch::n64_to_window(0.0f, (float)area1, w, h, &unused, &y1);
+    }
+
+    for (const rs64::touch::Box& b : boxes)
+    {
+        if (b.entry >= visible || area1 > area0) continue;
+
+        y0 = std::min(y0, b.y0);
+        y1 = std::max(y1, b.y1);
+    }
+
+    if (y1 <= y0)
+    {
+        return false;
+    }
+
+    rs64::touch::n64_to_window(area1 > area0 ? kTextBarGameX : kBarGameX, 0.0f, w, h, &x0, &unused);
+
+    const float th = std::min(y1 - y0, std::max(kBarMinThumb, (y1 - y0) * visible / total));
+    const float t0 = y0 + (y1 - y0 - th) * top / (total - visible);
+
+    out->x0 = x0;
+    out->x1 = x0 + kBarWidth * h / w;
+    out->y0 = y0;
+    out->y1 = y1;
+    out->t0 = t0;
+    out->t1 = t0 + th;
+    out->total = total;
+    out->visible = visible;
+
+    return true;
+}
+
+// A press on the scrollbar (or near it) owns that finger: the thumb follows it, keeping where it was grabbed (its middle for a press on the track).
+struct ListBarDrag {
+    int64_t finger = -1;
+    float grab = 0.0f;
+};
+
+static ListBarDrag g_list_bar;
+
+static void list_bar_move(const ListBar& b, float thumb_top)
+{
+
+    const float span = (b.y1 - b.y0) - (b.t1 - b.t0);
+    const float f = span > 0.0f ? std::clamp((thumb_top - b.y0) / span, 0.0f, 1.0f) : 0.0f;
+
+    rs64_list_scroll_to((int)std::lround(f * (b.total - b.visible)));
+}
+
+static bool list_bar_event(rs64::touch::FingerEvent ev, int64_t finger, float x, float y)
+{
+
+    using rs64::touch::FingerEvent;
+    ListBarDrag& d = g_list_bar;
+    float w, h;
+    window_size(&w, &h);
+    ListBar b{};
+    const bool shown = w > 0.0f && h > 0.0f && list_scrollbar(w, h, &b);
+
     if (ev == FingerEvent::Down)
     {
-        d = ModsDrag{};
+        const float reach = kBarReach * h / w;
 
-        for (const rs64::touch::Box& b : boxes)
+        if (!shown || x < b.x0 - reach || x > b.x1 + reach || y < b.y0 || y > b.y1)
         {
-            const bool on_name = b.x1 > b.x0 && (x - b.x0) / (b.x1 - b.x0) < rs64_mods_toggle_from();
-
-            if (x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1 && on_name && rs64_mods_page_row(b.entry) >= 0) {
-                d.finger = finger;
-                d.slot = b.entry;
-                d.y = y;
-            }
+            return false;
         }
 
-        return false;
+        d.finger = finger;
+        d.grab = (y >= b.t0 && y <= b.t1) ? y - b.t0 : (b.t1 - b.t0) / 2.0f;
+        list_bar_move(b, y - d.grab);
+
+        return true;
     }
 
     if (d.finger != finger)
@@ -212,40 +270,12 @@ static bool mods_drag_event(rs64::touch::FingerEvent ev, int64_t finger, float x
 
     if (ev == FingerEvent::Up)
     {
-        const bool carried = d.carrying;
+        d = ListBarDrag{};
 
-        d = ModsDrag{};
-
-        if (carried) rs64_mods_drag(2, -1);
-
-        return carried;
+        return true;
     }
 
-    if (!d.carrying)
-    {
-        if (std::fabs(y - d.y) < 0.02f) return false;
-
-        d.carrying = true;
-        rs64_mods_drag(0, d.slot);
-    }
-
-    // The row under the point, or above the first row (-1) / below the last (99), which scroll the list.
-    int to = -2;
-    float top = 2.0f, bottom = -1.0f;
-
-    for (const rs64::touch::Box& b : boxes)
-    {
-        if (rs64_mods_page_row(b.entry) < 0) continue;
-
-        top = std::min(top, b.y0);
-        bottom = std::max(bottom, b.y1);
-
-        if (y >= b.y0 && y <= b.y1) to = b.entry;
-    }
-
-    if (to == -2) to = y < top ? -1 : y > bottom ? 99 : -2;
-
-    if (to != -2) rs64_mods_drag(1, to);
+    if (shown) list_bar_move(b, y - d.grab);
 
     return true;
 }
@@ -694,7 +724,7 @@ void menu_mouse_event(const SDL_Event& e)
         constexpr int64_t kMouseFinger = -2;
         const FingerEvent ev = (e.type == SDL_MOUSEBUTTONDOWN) ? FingerEvent::Down : (e.type == SDL_MOUSEBUTTONUP) ? FingerEvent::Up : FingerEvent::Move;
 
-        if (touch_slider_event(ev, kMouseFinger, fx, fy) || touch_pause_slider_event(ev, kMouseFinger, fx, fy) || mods_drag_event(ev, kMouseFinger, fx, fy))
+        if (touch_slider_event(ev, kMouseFinger, fx, fy) || touch_pause_slider_event(ev, kMouseFinger, fx, fy) || list_bar_event(ev, kMouseFinger, fx, fy))
         {
             return;
         }
@@ -777,7 +807,7 @@ void touch_event(const SDL_Event& e)
         return;
     }
 
-    if (mods_drag_event(ev, (int64_t)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y))
+    if (list_bar_event(ev, (int64_t)e.tfinger.fingerId, e.tfinger.x, e.tfinger.y))
     {
         return;
     }

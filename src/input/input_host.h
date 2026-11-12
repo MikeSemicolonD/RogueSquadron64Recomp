@@ -80,6 +80,11 @@ namespace rs64::app {
     bool mouse_menu_context(rs64::touch::Context ctx);
     void window_size(float* w, float* h);
 
+    // A scrolling list page's scrollbar in normalized window coords: the track beside its rows and the thumb over the rows shown.
+    struct ListBar { float x0, x1, y0, y1, t0, t1; int total, visible; };
+
+    bool list_scrollbar(float w, float h, ListBar* out);
+
     // touch_host.cpp, called from poll_input: finger and mouse events on the menus, and the touch state poll_input resets.
     void touch_event(const SDL_Event& e);
     void menu_mouse_event(const SDL_Event& e);

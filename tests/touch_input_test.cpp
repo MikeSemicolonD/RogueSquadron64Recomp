@@ -504,20 +504,37 @@ static void test_list_horizontal_fine_drag() {
     e.finger(1, FingerEvent::Up, 0.30f + 0.016f / 2.0f, 0.50f, 1100);
 }
 
-// Vertical drags in lists move between entries: one step at 0.08, then one per 0.05.
+// Vertical drags in the pause menu move between entries: one step at 0.08, then one per 0.05.
 static void test_list_vertical_drag_steps() {
-    Engine e = make_engine(Context::ListMenu);
+    Engine e = make_engine(Context::PauseMenu);
     e.finger(1, FingerEvent::Down, 0.30f, 0.30f, 0);
     e.finger(1, FingerEvent::Move, 0.30f, 0.30f + 0.19f, 900);
     int presses = 0;
     bool was = false;
     for (int i = 0; i < 40; ++i) {
-        const bool now = e.poll(Context::ListMenu, 901 + i).y < -0.9f;
+        const bool now = e.poll(Context::PauseMenu, 901 + i).y < -0.9f;
         if (now && !was) ++presses;
         was = now;
     }
     CHECK(presses == 3);
     e.finger(1, FingerEvent::Up, 0.30f, 0.49f, 1000);
+}
+
+// Vertical drags on list pages do nothing (their scrollbar scrolls them) and never count as a tap.
+static void test_list_vertical_drag_inert() {
+    Engine e = make_engine(Context::ListMenu);
+    e.finger(1, FingerEvent::Down, 0.30f, 0.30f, 0);
+    e.finger(1, FingerEvent::Move, 0.30f, 0.30f + 0.19f, 100);
+    bool any = false;
+    for (int i = 0; i < 40; ++i) {
+        const Pad o = e.poll(Context::ListMenu, 101 + i);
+        any = any || o.y != 0.0f || o.buttons != 0;
+    }
+    e.finger(1, FingerEvent::Up, 0.30f, 0.49f, 200);
+    for (int i = 0; i < 10; ++i) {
+        any = any || e.poll(Context::ListMenu, 201 + i).buttons != 0;
+    }
+    CHECK(!any);
 }
 
 static void test_pause_drag_scrubs_and_tap_confirms() {
@@ -1358,6 +1375,7 @@ int main() {
     test_wheel_side_hold();
     test_list_horizontal_fine_drag();
     test_list_vertical_drag_steps();
+    test_list_vertical_drag_inert();
     test_pause_drag_scrubs_and_tap_confirms();
     test_pause_touch_highlights_directly();
     test_list_tap_calls_menu_and_pulses_a();

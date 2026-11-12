@@ -485,6 +485,15 @@ add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE
     DEPENDS ${CMAKE_SOURCE_DIR}/src/video/default_lights.json file_to_c
     VERBATIM)
 target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/generated/default_lights.c)
+# The MODS page's image model (src/game/menus/mod_image/build_model.mjs): a patch to the controller HOB and its own HMT, served as built-in assets.
+foreach(part mod_image_HOB.bps mod_image_HMT)
+    string(REPLACE "." "_" sym "rs64_${part}")
+    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/${sym}.c ${CMAKE_BINARY_DIR}/generated/${sym}.h
+        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/src/game/menus/mod_image/${part} ${sym} ${CMAKE_BINARY_DIR}/generated/${sym}.c ${CMAKE_BINARY_DIR}/generated/${sym}.h
+        DEPENDS ${CMAKE_SOURCE_DIR}/src/game/menus/mod_image/${part} file_to_c
+        VERBATIM)
+    target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/generated/${sym}.c)
+endforeach()
 if (ANDROID)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE SSE2NEON_SUPPRESS_WARNINGS)
     target_compile_options(RogueSquadron64Recomp PRIVATE -Wno-deprecated-literal-operator)

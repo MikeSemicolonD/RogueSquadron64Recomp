@@ -81,6 +81,76 @@ int main() {
         CHECK(l.mods[0].id == "m0" && l.mods[7].id == "m7" && l.pos.sel == 0 && l.pos.top == 0 && l.carrying == -1);
     }
 
+    // move_mod_steps_one_place_and_stops_at_failed
+    {
+        List l = make(4);
+
+        l.mods[3].failed = "bad";
+        CHECK(move_mod(l, 1, 1) == 2 && l.mods[2].id == "m1" && l.carrying == -1);
+        CHECK(move_mod(l, 2, 1) == 2 && l.mods[2].id == "m1");
+        CHECK(move_mod(l, 0, -1) == 0 && l.mods[0].id == "m0");
+        CHECK(move_mod(l, 3, -1) == 3 && l.mods[3].id == "m3");
+    }
+
+    // number_options_step_and_print
+    {
+        CHECK(step_number(0.5, 0.0, 1.0, 0.25, 1) == 0.75);
+        CHECK(step_number(0.9, 0.0, 1.0, 0.25, 1) == 1.0);
+        CHECK(step_number(0.1, 0.0, 1.0, 0.25, -1) == 0.0);
+        CHECK(step_number(5.0, 0.0, 10.0, 0.0, -1) == 4.0);
+        CHECK(number_text(1.5, 2) == "1.50");
+        CHECK(number_text(3.0, 0) == "3");
+    }
+
+    // rgba5551_tiles_cover_and_order
+    {
+        // A 2x1 image, red then blue, covering 4x2 in 2x2 tiles: the left tile all red, the right all blue.
+        const uint8_t px[] = { 255, 0, 0, 255, 0, 0, 255, 255 };
+        const std::vector<uint16_t> t = rgba5551_tiles(px, 2, 1, 4, 2, 2, 2);
+        const uint16_t red = 0xF801, blue = 0x003F;
+        const std::vector<uint16_t> want = { red, red, red, red, blue, blue, blue, blue };
+
+        CHECK(t == want);
+        CHECK(rgba5551_tiles(nullptr, 2, 1, 4, 2, 2, 2).empty());
+
+        // Shrinking averages: a 2x2 of black and white columns into one pixel is mid grey (128 >> 3 = 16 per channel).
+        const uint8_t bw[] = { 0, 0, 0, 255, 255, 255, 255, 255, 0, 0, 0, 255, 255, 255, 255, 255 };
+        const std::vector<uint16_t> g = rgba5551_tiles(bw, 2, 2, 1, 1, 1, 1);
+
+        CHECK(g.size() == 1 && g[0] == (uint16_t)(16 << 11 | 16 << 6 | 16 << 1 | 1));
+    }
+
+    // info_line_parts
+    {
+        Mod m{ "x", "X", "", true, false };
+
+        CHECK(info_line(m, "BY").empty());
+        m.version = "1.2.0";
+        CHECK(info_line(m, "BY") == "V1.2.0");
+        m.authors = { "Ann", "Bo" };
+        CHECK(info_line(m, "BY") == "V1.2.0 - BY ANN, BO");
+        m.version.clear();
+        CHECK(info_line(m, "VON") == "VON ANN, BO");
+    }
+
+    // text_lines_wraps_and_squeezes_blanks
+    {
+        auto chars = [](const std::string& s) { return (int)s.size(); };
+        auto all = [](char) { return true; };
+        const std::vector<std::string> v = text_lines("\nHello world\n\n\n\tSecond  para\r\n", chars, 6, all);
+        const std::vector<std::string> want = { "HELLO", "WORLD", "", "SECOND", "PARA" };
+
+        CHECK(v == want);
+        CHECK(text_lines("", chars, 6, all).empty());
+
+        // A hard-wrapped long line joins the next; short lines (names) stay apart.
+        const std::string prose = std::string(60, 'a') + "\nbb\nAnn\nBo";
+        const std::vector<std::string> p = text_lines(prose, chars, 70, all);
+        const std::vector<std::string> pw = { std::string(60, 'A') + " BB", "ANN", "BO" };
+
+        CHECK(p == pw);
+    }
+
     // row_text_trims_and_uppercases
     {
         Mod m{ "x", "a very long mod name indeed, really", "", false, false };
