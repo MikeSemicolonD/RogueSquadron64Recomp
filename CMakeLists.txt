@@ -396,7 +396,7 @@ if (EMSCRIPTEN)
         VERBATIM)
 
     # Browser test, run like web_shader_convert_test: plume's WebGPU backend with RT64 shaders.
-    set(RS64_PLUME_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/IdleCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/FullScreenVS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c)
+    set(RS64_PLUME_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/IdleCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/FullScreenVS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/TextureCopyPS.hlsl.spirv.c)
     set_source_files_properties(${RS64_PLUME_TEST_SPIRV} PROPERTIES GENERATED TRUE)
     add_executable(plume_webgpu_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_PLUME_TEST_SPIRV})
     target_include_directories(plume_webgpu_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)

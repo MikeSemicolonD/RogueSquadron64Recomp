@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 extern "C" {
@@ -15,6 +16,8 @@ extern "C" {
     extern const size_t FullScreenVSBlobSPIRV_size;
     extern const char ComposePSBlobSPIRV[];
     extern const size_t ComposePSBlobSPIRV_size;
+    extern const char TextureCopyPSBlobSPIRV[];
+    extern const size_t TextureCopyPSBlobSPIRV_size;
 }
 
 namespace {
@@ -244,6 +247,231 @@ namespace {
         return webPipeline->error.empty() ? "no error text" : "";
     }
 
+    constexpr uint32_t kTarget = 4;
+    constexpr uint32_t kRowTexels = 64;
+
+    // Reads a 4x4 RGBA8 texture back; rows are padded to 256 bytes, as WebGPU copies need.
+    std::vector<uint32_t> read_target(RenderTexture* texture)
+    {
+
+        std::unique_ptr<RenderBuffer> readback = gDevice->createBuffer(RenderBufferDesc::ReadbackBuffer(kRowTexels * 4 * kTarget));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        list->begin();
+        list->copyTextureRegion(RenderTextureCopyLocation::PlacedFootprint(readback.get(), RenderFormat::R8G8B8A8_UNORM, kTarget, kTarget, 1, kRowTexels), RenderTextureCopyLocation::Subresource(texture));
+        list->end();
+        submit_and_wait(list.get());
+
+        const uint32_t* rows = static_cast<const uint32_t*>(readback->map());
+        std::vector<uint32_t> texels;
+
+        for (uint32_t y = 0; y < kTarget; y++) {
+            texels.insert(texels.end(), rows + y * kRowTexels, rows + y * kRowTexels + kTarget);
+        }
+
+        readback->unmap();
+        return texels;
+    }
+
+    std::string expect_texels(const std::vector<uint32_t>& texels, uint32_t (*expected)(uint32_t x, uint32_t y))
+    {
+
+        char message[96];
+
+        for (uint32_t y = 0; y < kTarget; y++) {
+            for (uint32_t x = 0; x < kTarget; x++) {
+                if (texels[y * kTarget + x] != expected(x, y))
+                {
+                    std::snprintf(message, sizeof(message), "texel %u,%u is %08X, expected %08X", x, y, texels[y * kTarget + x], expected(x, y));
+                    return message;
+                }
+            }
+        }
+
+        return "";
+    }
+
+    constexpr uint32_t kRed = 0xFF0000FFu;
+    constexpr uint32_t kBlue = 0xFFFF0000u;
+
+    std::string render_pass_clear()
+    {
+
+        std::unique_ptr<RenderTexture> target = gDevice->createTexture(RenderTextureDesc::ColorTarget(kTarget, kTarget, RenderFormat::R8G8B8A8_UNORM));
+        const RenderTexture* attachment = target.get();
+        std::unique_ptr<RenderFramebuffer> framebuffer = gDevice->createFramebuffer(RenderFramebufferDesc(&attachment, 1));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        list->begin();
+        list->setFramebuffer(framebuffer.get());
+        list->clearColor(0, RenderColor(1.0f, 0.0f, 0.0f, 1.0f));
+        list->end();
+        submit_and_wait(list.get());
+        return expect_texels(read_target(target.get()), [](uint32_t, uint32_t) { return kRed; });
+    }
+
+    std::string partial_clear()
+    {
+
+        std::unique_ptr<RenderTexture> target = gDevice->createTexture(RenderTextureDesc::ColorTarget(kTarget, kTarget, RenderFormat::R8G8B8A8_UNORM));
+        const RenderTexture* attachment = target.get();
+        std::unique_ptr<RenderFramebuffer> framebuffer = gDevice->createFramebuffer(RenderFramebufferDesc(&attachment, 1));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+        const RenderRect corner(0, 0, 2, 2);
+
+        list->begin();
+        list->setFramebuffer(framebuffer.get());
+        list->clearColor(0, RenderColor(0.0f, 0.0f, 1.0f, 1.0f));
+        list->clearColor(0, RenderColor(1.0f, 0.0f, 0.0f, 1.0f), &corner, 1);
+        list->end();
+        submit_and_wait(list.get());
+        return expect_texels(read_target(target.get()), [](uint32_t x, uint32_t y) { return ((x < 2) && (y < 2)) ? kRed : kBlue; });
+    }
+
+    uint32_t source_texel(uint32_t x, uint32_t y)
+    {
+        return 0xFF000000u | (y * 0x40u << 8) | (x * 0x40u);
+    }
+
+    std::string draw_texture_copy()
+    {
+
+        // TextureCopyPS reads gInput at uvScroll + uv * uvScale through push constants, so a 4x4 scale copies the texture.
+        std::unique_ptr<RenderBuffer> upload = gDevice->createBuffer(RenderBufferDesc::UploadBuffer(kRowTexels * 4 * kTarget));
+        std::unique_ptr<RenderTexture> source = gDevice->createTexture(RenderTextureDesc::Texture2D(kTarget, kTarget, 1, RenderFormat::R8G8B8A8_UNORM));
+        std::unique_ptr<RenderTexture> target = gDevice->createTexture(RenderTextureDesc::ColorTarget(kTarget, kTarget, RenderFormat::R8G8B8A8_UNORM));
+        uint32_t* rows = static_cast<uint32_t*>(upload->map());
+
+        for (uint32_t y = 0; y < kTarget; y++) {
+            for (uint32_t x = 0; x < kTarget; x++) {
+                rows[y * kRowTexels + x] = source_texel(x, y);
+            }
+        }
+
+        upload->unmap();
+
+        RenderDescriptorSetBuilder setBuilder;
+
+        setBuilder.begin();
+        setBuilder.addTexture(1);
+        setBuilder.end();
+
+        RenderPipelineLayoutBuilder layoutBuilder;
+
+        layoutBuilder.begin();
+        layoutBuilder.addPushConstant(0, 0, 16, RenderShaderStageFlag::PIXEL);
+        layoutBuilder.addDescriptorSet(setBuilder);
+        layoutBuilder.end();
+
+        std::unique_ptr<RenderPipelineLayout> layout = layoutBuilder.create(gDevice.get());
+        std::unique_ptr<RenderDescriptorSet> set = setBuilder.create(gDevice.get());
+        std::unique_ptr<RenderShader> vertex = gDevice->createShader(FullScreenVSBlobSPIRV, FullScreenVSBlobSPIRV_size, "VSMain", RenderShaderFormat::SPIRV);
+        std::unique_ptr<RenderShader> pixel = gDevice->createShader(TextureCopyPSBlobSPIRV, TextureCopyPSBlobSPIRV_size, "PSMain", RenderShaderFormat::SPIRV);
+        RenderGraphicsPipelineDesc desc;
+
+        desc.pipelineLayout = layout.get();
+        desc.vertexShader = vertex.get();
+        desc.pixelShader = pixel.get();
+        desc.renderTargetCount = 1;
+        desc.renderTargetFormat[0] = RenderFormat::R8G8B8A8_UNORM;
+        desc.renderTargetBlend[0] = RenderBlendDesc::Copy();
+
+        std::unique_ptr<RenderPipeline> pipeline = gDevice->createGraphicsPipeline(desc);
+        const auto* webPipeline = static_cast<const WebGPUPipeline*>(pipeline.get());
+
+        if (!webPipeline->valid)
+        {
+            return "pipeline invalid: " + webPipeline->error;
+        }
+
+        set->setTexture(0, source.get(), RenderTextureLayout::SHADER_READ);
+
+        const RenderTexture* attachment = target.get();
+        std::unique_ptr<RenderFramebuffer> framebuffer = gDevice->createFramebuffer(RenderFramebufferDesc(&attachment, 1));
+        const float constants[4] = { 0.0f, 0.0f, float(kTarget), float(kTarget) };
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        list->begin();
+        list->copyTextureRegion(RenderTextureCopyLocation::Subresource(source.get()), RenderTextureCopyLocation::PlacedFootprint(upload.get(), RenderFormat::R8G8B8A8_UNORM, kTarget, kTarget, 1, kRowTexels));
+        list->setFramebuffer(framebuffer.get());
+        list->setViewports(RenderViewport(0.0f, 0.0f, float(kTarget), float(kTarget)));
+        list->setScissors(RenderRect(0, 0, kTarget, kTarget));
+        list->setGraphicsPipelineLayout(layout.get());
+        list->setPipeline(pipeline.get());
+        list->setGraphicsDescriptorSet(set.get(), 0);
+        list->setGraphicsPushConstants(0, constants);
+        list->drawInstanced(3, 1, 0, 0);
+        list->end();
+        submit_and_wait(list.get());
+
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        if (!error.empty())
+        {
+            return "device error: " + error;
+        }
+
+        return expect_texels(read_target(target.get()), source_texel);
+    }
+
+    std::string fence_from_worker()
+    {
+
+        std::unique_ptr<RenderCommandFence> fence = gDevice->createCommandFence();
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        list->begin();
+        list->end();
+        gQueue->executeCommandLists(list.get(), fence.get());
+
+        std::thread waiter([&] { gQueue->waitForCommandFence(fence.get()); });
+
+        waiter.join();
+        return static_cast<WebGPUCommandFence*>(fence.get())->pending.load() == 0 ? "" : "fence still pending";
+    }
+
+    // Kept alive so the presented frame stays on the page; destroying it unconfigures and clears the canvas.
+    std::unique_ptr<RenderSwapChain> gSwapChain;
+
+    std::string swap_chain_clear()
+    {
+
+        gSwapChain = gQueue->createSwapChain(RenderSwapChainDesc(nullptr, RenderFormat::B8G8R8A8_UNORM, 2));
+
+        RenderSwapChain* swapChain = gSwapChain.get();
+
+        if (!swapChain || (swapChain->getWidth() != 8) || (swapChain->getHeight() != 8))
+        {
+            return "no 8x8 swap chain for the page's canvas";
+        }
+
+        uint32_t index = 0;
+
+        if (!swapChain->acquireTexture(nullptr, &index))
+        {
+            return "acquire failed";
+        }
+
+        const RenderTexture* attachment = swapChain->getTexture(index);
+        std::unique_ptr<RenderFramebuffer> framebuffer = gDevice->createFramebuffer(RenderFramebufferDesc(&attachment, 1));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        list->begin();
+        list->setFramebuffer(framebuffer.get());
+        list->clearColor(0, RenderColor(0.0f, 1.0f, 0.0f, 1.0f));
+        list->end();
+        submit_and_wait(list.get());
+
+        if (!swapChain->present(index, nullptr, 0))
+        {
+            return "present failed";
+        }
+
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        return error.empty() ? "" : "device error: " + error;
+    }
+
 }
 
 int main()
@@ -260,7 +488,12 @@ int main()
         { "texture_upload", texture_upload },
         { "compute_pipeline_runs", compute_pipeline_runs },
         { "graphics_pipeline_from_rt64_shaders", graphics_pipeline_from_rt64_shaders },
-        { "bad_pipeline_fails_loudly", bad_pipeline_fails_loudly }
+        { "bad_pipeline_fails_loudly", bad_pipeline_fails_loudly },
+        { "render_pass_clear", render_pass_clear },
+        { "partial_clear", partial_clear },
+        { "draw_texture_copy", draw_texture_copy },
+        { "fence_from_worker", fence_from_worker },
+        { "swap_chain_clear", swap_chain_clear }
     };
 
     int failed = 0;
