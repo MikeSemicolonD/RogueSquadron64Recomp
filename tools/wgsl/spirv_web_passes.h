@@ -139,12 +139,66 @@ namespace rs64::wgsl {
         return changed;
     }
 
+    // Push constants become a uniform buffer at (set, binding): the web renderer binds a ring buffer there, since WebGPU immediates aren't in every browser.
+    inline uint32_t push_constants_to_uniform(std::vector<uint32_t>& words, uint32_t set, uint32_t binding)
+    {
+
+        constexpr uint32_t kOpTypePointer = 32;
+        constexpr uint32_t kOpVariable = 59;
+        constexpr uint32_t kOpDecorate = 71;
+        constexpr uint32_t kOpMemberDecorate = 72;
+        constexpr uint32_t kPushConstant = 9;
+        constexpr uint32_t kUniform = 2;
+        constexpr uint32_t kDescriptorSet = 34;
+        constexpr uint32_t kBinding = 33;
+
+        std::vector<uint32_t> variables;
+        size_t annotationsEnd = 0;
+
+        for (size_t i = kHeaderWords; i < words.size();) {
+            const uint32_t n = word_count(words[i]);
+
+            if (n == 0)
+            {
+                return 0;
+            }
+
+            const uint32_t op = opcode(words[i]);
+
+            if (op == kOpDecorate || op == kOpMemberDecorate) {
+                annotationsEnd = i + n;
+            }
+            else if (op == kOpTypePointer && words[i + 2] == kPushConstant) {
+                words[i + 2] = kUniform;
+            }
+            else if (op == kOpVariable && words[i + 3] == kPushConstant) {
+                words[i + 3] = kUniform;
+                variables.push_back(words[i + 2]);
+            }
+
+            i += n;
+        }
+
+        std::vector<uint32_t> decorations;
+
+        for (uint32_t id : variables) {
+            decorations.insert(decorations.end(), { (4u << 16) | kOpDecorate, id, kDescriptorSet, set, (4u << 16) | kOpDecorate, id, kBinding, binding });
+        }
+
+        words.insert(words.begin() + (annotationsEnd ? annotationsEnd : kHeaderWords), decorations.begin(), decorations.end());
+        return uint32_t(variables.size());
+    }
+
+    constexpr uint32_t kPushConstantSet = 0;
+    constexpr uint32_t kPushConstantBinding = 999;
+
     inline void apply_all(std::vector<uint32_t>& words)
     {
 
         strip_capability(words, 55);
         retarget_switch_chains(words);
         workgroup_barrier_scope(words);
+        push_constants_to_uniform(words, kPushConstantSet, kPushConstantBinding);
     }
 
 }
