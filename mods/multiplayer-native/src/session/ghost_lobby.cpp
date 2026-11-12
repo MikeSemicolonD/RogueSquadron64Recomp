@@ -83,7 +83,7 @@ const rs64_mp_transport* server_relay()
     const Ghost& s = g();
     const std::string row = s.row_hosting ? s.join_entry : s.editor.entry();
     const bool in_use = s.relay_session && s.relay_t == s_client.table();
-    const std::string saved = in_use || row == s.relay_server ? s.relay_server : std::string{};
+    const std::string saved = in_use || row == rs64::net::relay_address(s.relay_server) ? s.relay_server : std::string{};
 
     s_client.set_server(env ? env : saved);
     return s_client.configured() ? s_client.table() : nullptr;
@@ -750,6 +750,8 @@ static std::string s_probe_addr;
 static std::string s_checked_addr;
 static bool s_probing = false;
 static bool s_probe_join = false;
+// A browser was given an address without a relay's join link (web only).
+static bool s_needs_link = false;
 static uint32_t s_probe_until_ms = 0;
 
 // The relay server in use: ROGUESQ_MP_RELAY for scripted runs, else roguesq_net.json's relay_server.
@@ -788,6 +790,7 @@ static void join_open()
     list_open();
     s_on_games = true;
     s_direct_join = false;
+    s_needs_link = false;
     s_back_armed = false;
 
     if (s.editor.typing) {
@@ -798,7 +801,7 @@ static void join_open()
 
     const std::string addr = s.editor.entry();
 
-    if (rs64_lobby_hosting() || s.lobby.ready() || addr == saved_server())
+    if (rs64_lobby_hosting() || s.lobby.ready() || addr == rs64::net::relay_address(saved_server()))
     {
         return;
     }
@@ -826,7 +829,7 @@ static void join_probe_update()
     if (!s_probing && !s.editor.editing && !s.editor.typing && s.editor.entry() != s_checked_addr) {
         s_checked_addr = s.editor.entry();
 
-        if (s_checked_addr != saved_server() && !s.started) {
+        if (s_checked_addr != rs64::net::relay_address(saved_server()) && !s.started) {
             join_probe_start(s_checked_addr);
         }
     }
@@ -862,6 +865,16 @@ static void join_probe_update()
         return;
     }
 
+#ifdef __EMSCRIPTEN__
+
+    // A browser can't reach a host directly, nor a relay without the certificate hash its join link carries.
+    s_needs_link = true;
+
+    fprintf(stderr, "[lobby] %s: a browser joins through a relay server's browser link\n", s_probe_addr.c_str());
+    return;
+
+#endif
+
     fprintf(stderr, "[lobby] %s is not a relay server; joining it as a host\n", s_probe_addr.c_str());
     s_direct_join = true;
     rs64_lobby_join();
@@ -873,6 +886,7 @@ static void join_leave() {
     join_probe_stop();
     s_on_games = false;
     s_direct_join = false;
+    s_needs_link = false;
     s_back_armed = false;
 
     if (g().started && !g().lobby.ready() && !rs64_lobby_hosting()) {
@@ -904,6 +918,7 @@ static void list_join(const Listed& game)
     join_probe_stop();
     s_list_joined = true;
     s_direct_join = false;
+    s_needs_link = false;
 
     if (g().started) {
         lobby_stop(false);
@@ -1009,6 +1024,11 @@ static std::string list_status_line()
     if (s_probing && s_probe_join)
     {
         return rs64::net::status_dots("CONNECTING", now_ms32());
+    }
+
+    if (s_needs_link)
+    {
+        return "NEEDS A RELAY SERVER LINK";
     }
 
     if (g().started || ((s_list_joined || s_direct_join) && g().lobby.state() == rs64::net::LobbyState::Failed))

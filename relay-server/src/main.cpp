@@ -20,6 +20,9 @@ using namespace rs64::relay;
 
 namespace {
 
+// The browser build's play page on the project site.
+static constexpr const char* kBrowserPlayUrl = "https://mikesemicolond.github.io/RogueSquadron64Recomp/play/";
+
 std::atomic<bool> g_stop{false};
 std::mutex g_lines_mu;
 std::deque<std::string> g_lines;
@@ -116,8 +119,13 @@ int main(int argc, char** argv)
     std::thread bridge_thread([&] {
         while (bridge_run) bridge.pump(5);
     });
+    // The play page saves the relay from this link; the operator puts the PC's public IP in it and shares it.
     const auto browser_line = [&] {
-        print_log("browser players: join with <this PC's public IP>:" + std::to_string(o.settings.browser_port) + "#" + browsers.hash() + " (UDP port " + std::to_string(o.settings.browser_port) + " forwarded too)");
+
+        const std::string port = std::to_string(o.settings.browser_port);
+
+        print_log("browser players: share " + std::string(kBrowserPlayUrl) + "?relay=PUBLIC-IP:" + port + "&hash=" + browsers.hash());
+        print_log("  (PUBLIC-IP: this PC's internet address; forward UDP port " + port + " too)");
     };
 
     host.set_bridge(&bridge);

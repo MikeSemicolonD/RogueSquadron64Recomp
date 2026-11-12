@@ -233,6 +233,11 @@ bool public_ipv4(uint32_t ip);
 // The host's address line: the internet address once the router opened the port, else the LAN one (lan_ip empty: no network). Addresses are dotted (the menu font's period is added at runtime, ensure_menu_period).
 std::string host_address_label(PortMapState state, const std::string& lan_ip, const std::string& ext_ip, uint16_t port = 0);
 
+// A relay's browser address, "ip:port#sha256" (the certificate hash a browser pins): the address and the hash (empty unless 64 hex digits).
+void split_relay_hash(const std::string& s, std::string* addr, std::string* hash);
+// The address part, as the address row shows it.
+std::string relay_address(const std::string& s);
+
 // HOST GAME's address: the row's IPv4 when it is one of this machine's or loopback (bind = shown = row), else bind any (0.0.0.0 asks for that) and show the fallback (0: none).
 struct HostAddress {
     uint32_t bind = 0;

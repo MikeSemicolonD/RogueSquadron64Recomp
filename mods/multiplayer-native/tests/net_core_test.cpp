@@ -342,6 +342,25 @@ static void test_auth_accept_roundtrip() {
     CHECK(decode_bye(bye.data(), bye.size(), &r, &f) && r == ByeReason::WrongPassword);
 }
 
+// A relay's browser address is ip:port#sha256 (the page's join link saves it); the address row shows the part before '#'.
+static void test_split_relay_hash() {
+
+    const std::string hash(64, 'a');
+    std::string addr;
+    std::string got;
+
+    split_relay_hash("1.2.3.4:27071#" + hash, &addr, &got);
+    CHECK(addr == "1.2.3.4:27071" && got == hash);
+
+    split_relay_hash("1.2.3.4:27070", &addr, &got);
+    CHECK(addr == "1.2.3.4:27070" && got.empty());
+
+    split_relay_hash("1.2.3.4:27071#nothex", &addr, &got);
+    CHECK(addr == "1.2.3.4:27071" && got.empty());
+
+    CHECK(relay_address("relay.example:27071#" + hash) == "relay.example:27071");
+}
+
 static void test_name_editor() {
     NameEditor n;
     CHECK(NameEditor::clean("  luke's  game!! ") == "LUKES GAME");
@@ -1196,6 +1215,7 @@ int main() {
     test_lobby_password();
     test_auth_accept_roundtrip();
     test_name_editor();
+    test_split_relay_hash();
     printf("net_core_test OK\n");
     return 0;
 }

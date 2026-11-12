@@ -1,4 +1,10 @@
 #include "net/relay_client.h"
+#include "net/net_core.h"
+
+#ifdef __EMSCRIPTEN__
+#include "../web/web_net.h"
+#endif
+
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -56,8 +62,13 @@ std::string relay_reason_text(relay::Reason r) {
     }
 }
 
-void RelayClient::set_server(const std::string& server)
+void RelayClient::set_server(const std::string& with_hash)
 {
+
+    std::string server;
+    std::string hash;
+
+    split_relay_hash(with_hash, &server, &hash);
 
     std::string host = server;
     uint16_t port = relay::kDefaultPort;
@@ -70,6 +81,13 @@ void RelayClient::set_server(const std::string& server)
         host = server.substr(0, colon);
         port = (p > 0 && p < 65536) ? (uint16_t)p : relay::kDefaultPort;
     }
+
+#ifdef __EMSCRIPTEN__
+
+    // A browser reaches the relay's WebTransport port, pinning the certificate its join link carries.
+    if (!hash.empty()) rs64_web_net_set_hash(host.c_str(), port, hash.c_str());
+
+#endif
 
     if (host == host_ && port == port_)
     {

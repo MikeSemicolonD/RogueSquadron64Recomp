@@ -140,6 +140,35 @@ function fitCanvas()
   c.height = Math.max(1, Math.round(c.clientHeight * dpr));
 }
 
+// A relay's join link (?relay=ip:port&hash=sha256, printed by a relay that takes browser players) saves that relay as the game's
+// server, with the certificate hash a browser pins; MULTIPLAYER > JOIN GAME then lists its games.
+function applyRelayLink()
+{
+  const query = new URLSearchParams(location.search);
+  const relay = query.get('relay');
+  const hash = (query.get('hash') || '').toLowerCase();
+  const path = '/persist/roguesq_net.json';
+
+  if (!relay || !/^[0-9a-f]{64}$/.test(hash))
+    return;
+
+  let net = {};
+
+  try {
+    net = JSON.parse(Module.FS.readFile(path, { encoding: 'utf8' }));
+  } catch (e) {
+    net = {};
+  }
+
+  net.relay_server = `${relay}#${hash}`;
+  net.last_address = relay;
+  Module.FS.writeFile(path, JSON.stringify(net, null, 2));
+
+  query.delete('relay');
+  query.delete('hash');
+  history.replaceState(null, '', location.pathname + (query.size ? `?${query}` : ''));
+}
+
 async function start()
 {
   fitCanvas();
@@ -157,6 +186,7 @@ async function start()
 
   progress(null);
   panel.hidden = true;
+  applyRelayLink();
   mainRan = true;
   Module.callMain([]);
 

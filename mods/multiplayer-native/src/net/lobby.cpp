@@ -65,6 +65,30 @@ std::string host_address_label(PortMapState state, const std::string& lan_ip, co
     return lan_ip.empty() ? "NO NETWORK ADDRESS" : "YOUR LAN ADDRESS " + lan_ip + suffix;
 }
 
+void split_relay_hash(const std::string& s, std::string* addr, std::string* hash)
+{
+
+    const size_t mark = s.find('#');
+
+    *addr = s.substr(0, mark);
+    hash->clear();
+
+    if (mark == std::string::npos)
+    {
+        return;
+    }
+
+    const std::string h = s.substr(mark + 1);
+    const bool hex = h.size() == 64 && std::all_of(h.begin(), h.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'); });
+
+    if (hex) *hash = h;
+}
+
+std::string relay_address(const std::string& s)
+{
+    return s.substr(0, s.find('#'));
+}
+
 HostAddress choose_host_address(std::optional<uint32_t> row, const std::vector<uint32_t>& local, std::optional<uint32_t> fallback)
 {
 
