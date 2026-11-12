@@ -8,6 +8,7 @@ import http.client
 import json
 import os
 import re
+import shlex
 import socket
 import subprocess
 import sys
@@ -26,6 +27,8 @@ WAIT_LOG_FROZEN_S = 10
 # Debug builds serve the bridge here unless ROGUESQ_MCP_PORT says otherwise (src/main/main.cpp).
 DEFAULT_BRIDGE_PORT = 47064
 WAIT_LOG_MAX_S = 120
+# A long bridge call gives up after this long with no display list and the game not held (a load can pause drawing for a few seconds).
+CALL_STALL_S = 20
 
 
 class GameError(Exception):
@@ -206,6 +209,54 @@ def capture_window(pid):
     return bytes(rgba), w, h
 
 
+ADB = os.path.join(os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk"), "platform-tools", "adb.exe")
+ANDROID_PACKAGE = "com.rs64recomp.app"
+ANDROID_FILES = f"/sdcard/Android/data/{ANDROID_PACKAGE}/files"
+# The session video settings on the device: read-only to the game, as the shell pushed it.
+ANDROID_VIDEO = ANDROID_FILES + "/roguesq_mcp_video.json"
+
+
+def adb(serial, *args, **kw):
+    return subprocess.run([ADB, "-s", serial, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, **kw)
+
+
+class AndroidProcess:
+    """The game on an Android device: enough of Popen for Game, by the app's pid (checked at most once a second, since each check is an adb round trip)."""
+
+    def __init__(self, serial):
+        self.serial = serial
+        self.returncode = None
+        self.pid = 0
+        self.checked = 0.0
+
+    def poll(self):
+        if self.returncode is not None or time.time() - self.checked < 1.0:
+            return self.returncode
+        self.checked = time.time()
+        out = adb(self.serial, "shell", "pidof", ANDROID_PACKAGE).stdout.strip()
+        if out:
+            self.pid = int(out.split()[0])
+            return None
+        self.returncode = 0
+        return 0
+
+    def wait(self, timeout=None):
+        deadline = time.time() + (timeout or 0)
+        while self.poll() is None and (timeout is None or time.time() < deadline):
+            time.sleep(0.5)
+        return self.returncode
+
+
+def android_serial():
+    """ANDROID_SERIAL, else the one device adb sees."""
+    if os.environ.get("ANDROID_SERIAL"):
+        return os.environ["ANDROID_SERIAL"]
+    devices = [line.split()[0] for line in subprocess.run([ADB, "devices"], capture_output=True, text=True).stdout.splitlines()[1:] if line.endswith("\tdevice")]
+    if len(devices) != 1:
+        raise GameError(f"set ANDROID_SERIAL: adb sees {len(devices)} devices ({', '.join(devices) or 'none'})")
+    return devices[0]
+
+
 class ExternalProcess:
     """A game started by someone else, found by its bridge port: just enough of Popen (pid, poll, returncode, wait) for Game."""
 
@@ -253,6 +304,35 @@ class Game:
         self.next_id = 1
         self.pending = {}
         self.lock = threading.Lock()
+        self.platform = "windows"
+        self.linux_pid_file = None
+        self.serial = None
+        self.logcat = None
+
+    def game_path(self, path):
+        """A path on this machine as the game sees it: a Linux build under WSL reads drive E: at /mnt/e; on Android it is the same place under the app's files
+        folder (pushed before launch, pulled after the game writes it)."""
+        path = os.path.abspath(path)
+        if self.platform == "android":
+            return ANDROID_FILES + "/mcp/" + os.path.relpath(path, REPO).replace("\\", "/")
+        if self.platform != "linux":
+            return path
+        drive, rest = os.path.splitdrive(path)
+        return "/mnt/" + drive[0].lower() + rest.replace("\\", "/")
+
+    def android_sync(self, stage_dir, video_cfg, env_file):
+        """Mirror a staged folder's mods, mods.json and empty saves onto the device, with the session's video settings and env file; the ROM is pushed once."""
+        files = ANDROID_FILES
+        adb(self.serial, "shell", "am", "force-stop", ANDROID_PACKAGE)
+        # Folders the shell makes here are not writable by the app (Android 11+ storage), so the game makes saves/ and mcp/ itself.
+        adb(self.serial, "shell", f"rm -rf {files}/mods {files}/saves {files}/mod_config {files}/mods.json {files}/mcp {ANDROID_VIDEO}")
+        for name in ("mods", "mods.json"):
+            if os.path.exists(os.path.join(stage_dir, name)):
+                adb(self.serial, "push", os.path.join(stage_dir, name), f"{files}/", timeout=300)
+        if not adb(self.serial, "shell", f"ls {files}/rogue_squadron.z64").stdout.strip().endswith(".z64"):
+            adb(self.serial, "push", os.path.join(stage_dir, "rogue_squadron.z64"), f"{files}/rogue_squadron.z64", timeout=300)
+        adb(self.serial, "push", video_cfg, ANDROID_VIDEO)
+        adb(self.serial, "push", env_file, f"{files}/roguesq_env.txt")
 
     def alive(self):
         """True while the game runs. Once its process is gone (closed by the user, crashed) the bridge connection is dropped, so it needs no close()."""
@@ -291,13 +371,17 @@ class Game:
         except OSError:
             return ""
 
-    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None):
+    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None, platform="windows"):
+        """platform="linux" runs build/<config>/RogueSquadron64Recomp (a Linux build) under WSL on the GPU through Mesa Dozen, as tools/release/run-wsl-gpu.sh does."""
         if self.alive():
             raise GameError(f"game already running (pid {self.proc.pid}); close it first")
 
+        self.platform = platform
         exe_dir = os.path.join(REPO, "build", config)
-        exe = os.path.join(exe_dir, "RogueSquadron64Recomp.exe")
-        if not os.path.isfile(exe):
+        exe = os.path.join(exe_dir, "RogueSquadron64Recomp" if platform == "linux" else "RogueSquadron64Recomp.exe")
+        if platform == "android":
+            self.serial = android_serial()
+        elif not os.path.isfile(exe):
             raise GameError(f"no build at {exe}")
 
         self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
@@ -309,21 +393,48 @@ class Game:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
 
-        full_env = dict(os.environ)
-        full_env["ROGUESQ_HLE_DEV_MODE"] = "1"
-        full_env["ROGUESQ_VIDEO_CONFIG"] = video_cfg
+        game_env = {"ROGUESQ_HLE_DEV_MODE": "1", "ROGUESQ_VIDEO_CONFIG": self.game_path(video_cfg)}
         # Game time steps one frame per frame, so a cutscene, menu or mission frame number is the same picture on every launch; env ROGUESQ_FIXED_STEP=0 plays on real time.
-        full_env["ROGUESQ_FIXED_STEP"] = "1"
-        if os.path.isfile(RENDERDOC_DLL):
-            full_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
-            full_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
+        game_env["ROGUESQ_FIXED_STEP"] = "1"
+        if platform == "windows" and os.path.isfile(RENDERDOC_DLL):
+            game_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
+            game_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
         if record:
-            full_env["ROGUESQ_LS_RECORD"] = os.path.abspath(record)
-        full_env.update({k: str(v) for k, v in (env or {}).items()})
+            # The game makes no folder for a recording, and on Android one the shell makes is not the app's to write, so it goes in the files folder there.
+            game_env["ROGUESQ_LS_RECORD"] = f"{ANDROID_FILES}/mcp_{os.path.basename(record)}" if platform == "android" else self.game_path(record)
+        game_env.update({k: str(v) for k, v in (env or {}).items()})
 
-        cmd = [exe, "--mcp-port", str(self.port), "--mute", "--unfocused"] + list(args or [])
+        game_args = ["--mcp-port", str(self.port), "--mute", "--unfocused"] + list(args or [])
         log = open(self.log_path, "wb")
-        self.proc = subprocess.Popen(cmd, cwd=exe_dir, env=full_env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+
+        if platform == "linux":
+            # wsl.exe passes no Windows environment, so the game's variables are exported in the script; its Linux pid goes to a file for close().
+            self.linux_pid_file = os.path.join(self.session_dir, "linux.pid")
+            exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in game_env.items())
+            script = (f"echo $$ > {shlex.quote(self.game_path(self.linux_pid_file))}; {exports}"
+                      "export VK_ICD_FILENAMES=$HOME/mesa-dzn/share/vulkan/icd.d/dzn_icd.x86_64.json; "
+                      "export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$HOME/mesa-dzn/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH; "
+                      f"cd {shlex.quote(self.game_path(exe_dir))} && exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args))
+            self.proc = subprocess.Popen(["wsl.exe", "-e", "bash", "-lc", script], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        elif platform == "android":
+            # No command line on Android: the variables (the bridge port included) go in roguesq_env.txt, and --mute becomes gain 0.
+            game_env["ROGUESQ_MCP_PORT"] = str(self.port)
+            game_env["ROGUESQ_VIDEO_CONFIG"] = ANDROID_VIDEO
+            game_env["ROGUESQ_AUDIO_GAIN"] = "0"
+            env_file = os.path.join(self.session_dir, "roguesq_env.txt")
+            with open(env_file, "w", encoding="utf-8", newline="\n") as f:
+                f.write("".join(f"{k}={v}\n" for k, v in game_env.items()))
+            self.android_sync(exe_dir, video_cfg, env_file)
+            adb(self.serial, "forward", f"tcp:{self.port}", f"tcp:{self.port}")
+            adb(self.serial, "logcat", "-c")
+            adb(self.serial, "shell", "am", "start", "-W", "-n", f"{ANDROID_PACKAGE}/.MainActivity", timeout=60)
+            self.logcat = subprocess.Popen([ADB, "-s", self.serial, "logcat", "-v", "raw", "-s", "RS64:*"], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            self.proc = AndroidProcess(self.serial)
+        else:
+            full_env = dict(os.environ)
+            full_env.update(game_env)
+            self.proc = subprocess.Popen([exe] + game_args, cwd=exe_dir, env=full_env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+
         log.close()
 
         deadline = time.time() + timeout_s
@@ -406,12 +517,37 @@ class Game:
                 pass
 
             deadline = time.time() + timeout_s
+            # A long call (pause_at, step, a capture) ends early on a crash or stuck line in the log, or when the game stops drawing without being held:
+            # the bridge answers frame_info on its own thread while this call waits.
+            watch = timeout_s > 10 and method != "frame_info"
+            log_at = os.path.getsize(self.log_path) if watch and self.log_path and os.path.exists(self.log_path) else 0
+            fail = re.compile(WAIT_LOG_FAIL)
+            last_dl, moved_at, checked_at = None, time.time(), time.time()
             while not slot["event"].wait(0.05):
                 if not self.alive():
                     code = self.proc.returncode if self.proc else None
                     raise GameError(f"game exited (code {code}):\n{self.log_tail()}")
                 if time.time() > deadline:
                     raise GameError(f"{method}: no reply within {timeout_s}s")
+                if watch and time.time() - checked_at >= 2:
+                    checked_at = time.time()
+                    with open(self.log_path, "rb") as f:
+                        f.seek(log_at)
+                        chunk = f.read()
+                    done = chunk.rfind(b"\n") + 1
+                    log_at += done
+                    for text in chunk[:done].decode("utf-8", errors="replace").splitlines():
+                        if fail.search(text):
+                            raise GameError(f"{method}: stopped, the log says: {text}")
+                    try:
+                        info = self.call("frame_info", timeout_s=5)
+                    except GameError:
+                        continue
+                    dl = info.get("clocks", {}).get("dl")
+                    if info.get("held") or dl != last_dl:
+                        last_dl, moved_at = dl, checked_at
+                    elif checked_at - moved_at >= CALL_STALL_S:
+                        raise GameError(f"{method}: no progress for {CALL_STALL_S}s (no display list at dl {dl}, state {info.get('state')}, not held)")
         finally:
             with self.lock:
                 self.pending.pop(rid, None)
@@ -429,9 +565,9 @@ class Game:
             raise GameError(f"tile must be in [0, {len(tiles)})")
         name = tiles[tile].get("tmem_hash") or tiles[tile].get("tile_copy_id", "tile")
         path = os.path.join(self.session_dir, "tex", f"{name}.tmem")
-        r = self.call("dump_tmem", {"fb": fb, "proj": proj, "call": call, "tile": tile, "path": path})
-        png = tmem_decode.decode_file(r["path"])
-        return {"tmem_path": r["path"], "json_path": r["json_path"], "png_path": png, "meta": r["meta"]}
+        r = self.call("dump_tmem", {"fb": fb, "proj": proj, "call": call, "tile": tile, "path": self.game_path(path)})
+        png = tmem_decode.decode_file(path)
+        return {"tmem_path": path, "json_path": path + ".json", "png_path": png, "meta": r["meta"]}
 
     def screenshot(self, path=None):
         """PNG of the game window's client area, found by this server's own PID; returns path, size and distinct colour count."""
@@ -446,10 +582,13 @@ class Game:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         # The game saves its own color buffer; window capture is the fallback (it reads black when the swapchain bypasses DWM).
         try:
-            r = self.call("capture_frame", {"path": os.path.abspath(path)}, timeout_s=4)
+            r = self.call("capture_frame", {"path": self.game_path(path)}, timeout_s=4)
+            if self.platform == "android":
+                adb(self.serial, "pull", self.game_path(path), path)
             return {"path": path, "width": r["width"], "height": r["height"], "colours": r["colours"]}
         except GameError:
-            pass
+            if self.platform != "windows":
+                raise
         rgba, w, h = capture_window(self.proc.pid)
         tmem_decode.write_png(path, rgba, w, h)
         colours = len(set(rgba[i:i + 4] for i in range(0, min(len(rgba), 4 * 65536), 4)))
@@ -483,7 +622,7 @@ class Game:
         """Dump RDRAM and walk a display list offline with tools/debug/validate/f5_dl_walk.py (default: the current gfx task)."""
         dl = self.call("frame_info")["clocks"]["dl"]
         dump = os.path.join(self.session_dir, f"rdram_dl{dl}.bin")
-        self.call("rdram_dump", {"path": dump}, 60)
+        self.call("rdram_dump", {"path": self.game_path(dump)}, 60)
         out = os.path.join(self.session_dir, f"dl_walk_{dl}_{addr}.txt")
         walker = os.path.join(REPO, "tools", "debug", "validate", "f5_dl_walk.py")
         # A child Python inheriting the MCP stdin pipe blocks at startup while FastMCP has a read pending on it.
@@ -566,7 +705,20 @@ class Game:
             self.attached = False
             return status
 
+        if self.platform == "android" and self.proc is not None:
+            adb(self.serial, "shell", "am", "force-stop", ANDROID_PACKAGE)
+            adb(self.serial, "forward", "--remove", f"tcp:{self.port}")
+            self.logcat.kill()
+            self.proc.returncode = 0
+            return self.status()
+
         if self.alive():
+            # Killing wsl.exe leaves the Linux game running, so it is killed inside WSL by the pid its script wrote.
+            if self.platform == "linux" and self.linux_pid_file and os.path.isfile(self.linux_pid_file):
+                with open(self.linux_pid_file) as f:
+                    pid = f.read().strip()
+                if pid.isdigit():
+                    subprocess.run(["wsl.exe", "-e", "kill", "-9", pid], capture_output=True)
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)], capture_output=True)
             try:
                 self.proc.wait(10)

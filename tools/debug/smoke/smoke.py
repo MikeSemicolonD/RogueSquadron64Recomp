@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import struct
+import subprocess
 import sys
 import time
 import tomllib
@@ -36,9 +37,13 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
 SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf"]
-# The launch config each platform runs (rs64_mcp Game.launch); None = no launcher yet.
-PLATFORMS = {"windows": "Smoke", "linux": None, "android": None}
+# The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
+# (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
+# or the one device adb sees.
+PLATFORMS = {"windows": "Smoke", "linux": "SmokeLinux", "android": "SmokeAndroid"}
+LINUX_BUILD = "rs64-build-release"
 config = PLATFORMS["windows"]
+platform = "windows"
 
 PLAYER0 = 0x80137DB8
 NPC_SLOTS = 0x80130BB0
@@ -54,6 +59,11 @@ NAV_STUCK = r"\[nav\] stuck"
 
 
 def stage(build):
+    """Copies the platform's game and the Windows build's ROM and mods (data and .nrm mods are the same on every platform) into STAGE."""
+
+    global STAGE
+
+    STAGE = os.path.join(BUILDS, config)
 
     if os.path.isdir(STAGE):
         shutil.rmtree(STAGE)
@@ -63,8 +73,12 @@ def stage(build):
     src_dir = os.path.join(BUILDS, build)
 
     for name in os.listdir(src_dir):
-        if name.endswith((".dll", ".z64")) or name in ("RogueSquadron64Recomp.exe", "RogueSquadron64Recomp.pdb"):
+        if name.endswith(".z64") or (platform == "windows" and (name.endswith(".dll") or name in ("RogueSquadron64Recomp.exe", "RogueSquadron64Recomp.pdb"))):
             shutil.copy2(os.path.join(src_dir, name), STAGE)
+
+    if platform == "linux":
+        linux_dir = subprocess.run(["wsl.exe", "-e", "bash", "-lc", f"wslpath -w ~/{LINUX_BUILD}"], capture_output=True).stdout.decode("utf-8", "replace").replace("\0", "").strip()
+        shutil.copy2(os.path.join(linux_dir, "RogueSquadron64Recomp"), STAGE)
 
     for mod in MODS:
         src = os.path.join(src_dir, "mods", mod)
@@ -192,7 +206,7 @@ def session(out, env, body, speed, record=None, settings=None):
     os.makedirs(out, exist_ok=True)
 
     try:
-        game.launch(config, full_env, record=record, settings=settings)
+        game.launch(config, full_env, record=record, settings=settings, platform=platform)
         body(game)
     except Exception:
         error = traceback.format_exc()
@@ -218,11 +232,11 @@ def session(out, env, body, speed, record=None, settings=None):
         bad.append(line)
 
     if bad:
-        with open(os.path.join(game.target_dir, "faults.txt"), "a") as f:
+        with open(os.path.join(game.target_dir, "faults.txt"), "a", encoding="utf-8") as f:
             f.write("\n".join(bad) + "\n")
 
     if error:
-        with open(os.path.join(game.target_dir, "error.txt"), "a") as f:
+        with open(os.path.join(game.target_dir, "error.txt"), "a", encoding="utf-8") as f:
             f.write(error + "\n" + game.log_tail(60) + "\n")
 
     for leftover in (record, record and record + ".hash"):
@@ -472,6 +486,11 @@ def hold_nav(game, frames, after):
     game.call("resume")
 
 
+def menu_folder(path):
+
+    return "menu_" + path.lower().replace("/", "__").replace(" ", "_").replace("*", "")
+
+
 def menu_chain(out, paths, frames, speed, cheats=""):
     """Every menu path in one launch: back to the main menu between paths, and any setting a path pressed put back first.
     Shots count from the final A press, and ROGUESQ_MENU_FIXED pins the backdrop and the animation timing, so menu shots repeat exactly. A failed path is skipped and the chain relaunched."""
@@ -486,7 +505,7 @@ def menu_chain(out, paths, frames, speed, cheats=""):
             snapshot = game.call("setting", {})
 
             for i, path in enumerate(todo):
-                enter(game, os.path.join(out, "menu_" + path.lower().replace("/", "__").replace(" ", "_").replace("*", "")))
+                enter(game, os.path.join(out, menu_folder(path)))
 
                 if i == 0:
                     hold_nav(game, frames, None)
@@ -572,9 +591,10 @@ def run(args):
     with open(os.path.join(HERE, "manifest.toml"), "rb") as f:
         m = tomllib.load(f)
 
-    global config
+    global config, platform
 
     config = PLATFORMS[args.platform]
+    platform = args.platform
     stage(args.build)
     out = os.path.join(OUT, args.tag, args.platform)
     sections = args.sections.split(",")
@@ -610,7 +630,7 @@ def run(args):
                 one_level(level, change_chain(specs, c["at"]))
 
     if "menus" in sections:
-        paths = [p for p in m["menus"]["paths"] if wanted("menu_" + p.lower())]
+        paths = [p for p in m["menus"]["paths"] if wanted(menu_folder(p))]
 
         if paths:
             menu_chain(out, paths, m["menus"]["frames"], args.speed, m["menus"].get("cheats", ""))
