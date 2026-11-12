@@ -130,6 +130,8 @@ typedef struct rs64_host_api {
     int (*terrain_set_cell)(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex);
     // v8: puts text on the system clipboard (a key handler's copy, key 3). Any thread.
     void (*set_clipboard)(const char* utf8);
+    // v8: the game time one mission frame covers, in seconds: 1/30 at the game's own rate, 1/60 when TARGET FPS runs 60 logic frames a second.
+    float (*frame_seconds)(void);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

@@ -334,6 +334,20 @@ static void test_set_clipboard() {
     bind_services(Services{});
 }
 
+static float sixty_hz() { return 1.0f / 60.0f; }
+
+// v8: a mission frame's game time comes from the game (60 logic frames a second halves it); with nothing bound it is the game's own 1/30.
+static void test_frame_seconds() {
+    reset_for_tests();
+    bind_services(Services{});
+    CHECK(api()->frame_seconds() == 1.0f / 30.0f);
+    Services s;
+    s.frame_seconds = sixty_hz;
+    bind_services(s);
+    CHECK(api()->frame_seconds() == 1.0f / 60.0f);
+    bind_services(Services{});
+}
+
 static void test_services() {
     reset_for_tests();
     static const int first = 1, second = 2;
@@ -432,6 +446,7 @@ int main() {
     test_rollback_drops_refused_registrations();
     test_services();
     test_set_clipboard();
+    test_frame_seconds();
     test_hash_parts_and_valid_ram();
     test_moved_ranges();
     test_rule_actions_and_events();

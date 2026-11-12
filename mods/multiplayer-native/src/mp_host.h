@@ -34,6 +34,8 @@ inline bool any_key_held() { return api()->any_key_held() != 0; }
 inline const char* base_path() { return api()->base_path(); }
 // A v8 host's clipboard; an older host's table has no entry for it, so the copy does nothing there.
 inline void set_clipboard(const char* s) { if (api()->size > offsetof(rs64_host_api, set_clipboard)) api()->set_clipboard(s); }
+// Game time per mission frame; 1/30 on a host older than v8 (which only runs 30 logic frames a second).
+inline float frame_seconds() { return api()->size > offsetof(rs64_host_api, frame_seconds) ? api()->frame_seconds() : 1.0f / 30.0f; }
 inline void log(const char* line) { api()->log(line); }
 inline const void* service(const char* name) { return api()->get_service(name); }
 

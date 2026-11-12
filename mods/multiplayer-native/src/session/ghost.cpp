@@ -1689,7 +1689,8 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         }
     }
 
-    const float dt = 1.0f / 30.0f;
+    // A mission frame's game time: 1/60 when this side runs 60 logic frames a second, so the play clock and sent velocity match the other side's at any rate.
+    const float dt = rs64::mp::frame_seconds();
 
     // Spectating: the craft takes the survivor's pose before the tick pass (player block 0x80137DC0: pos, fwd +0xC, up +0x18, vel +0x24), so the camera follows them; health stays full and the pad keeps START plus the survivor's fire.
     if (s.out && rw(rdram, 0x8010CA20u) != 5)

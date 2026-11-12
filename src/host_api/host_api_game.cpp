@@ -183,6 +183,7 @@ void init_once(uint8_t* rdram) {
     s.any_key_held = svc_any_key_held;
     s.base_path = svc_base_path;
     s.set_clipboard = svc_set_clipboard;
+    s.frame_seconds = [] { return rs64_rate_scale() / 30.0f; };
     rs64::host::bind_services(s);
     rs64_register_builtin_hooks();
     rs64_camera_shots_register_service();

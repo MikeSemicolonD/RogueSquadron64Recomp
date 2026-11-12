@@ -76,6 +76,7 @@ struct Services {
     int (*any_key_held)() = nullptr;
     const char* (*base_path)() = nullptr;
     void (*set_clipboard)(const char*) = nullptr;
+    float (*frame_seconds)() = nullptr;
 };
 void bind_services(const Services& s);
 const rs64_host_api* api();
