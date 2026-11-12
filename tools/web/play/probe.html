@@ -142,6 +142,10 @@ async function probeGpu()
   row('Sampled textures per stage', l.maxSampledTexturesPerShaderStage);
   row('Storage textures per stage', l.maxStorageTexturesPerShaderStage);
   row('Dual-source blending', adapter.features.has('dual-source-blending'), adapter.features.has('dual-source-blending'));
+  row('Immediate data size', l.maxImmediateSize ?? 'none', (l.maxImmediateSize ?? 0) >= 64);
+  row('Core features', adapter.features.has('core-features-and-limits'), adapter.features.has('core-features-and-limits'));
+  row('Format tiers', ['texture-formats-tier1', 'texture-formats-tier2'].filter(f => adapter.features.has(f)).join(', ') || 'none');
+  row('WGSL features', [...navigator.gpu.wgslLanguageFeatures].sort().join(', '));
 }
 
 async function testRelay(addr, cell)
