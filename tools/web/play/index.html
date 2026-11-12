@@ -18,28 +18,10 @@
   input[type=file] { display: none; }
   #bar { width: min(320px, 80vw); accent-color: #e8b84a; }
   #bar[hidden] { display: none; }
-  #gear { position: fixed; top: 8px; right: 8px; width: 32px; height: 32px; padding: 6px; border: 0; border-radius: 6px; background: rgba(0, 0, 0, 0.45); color: var(--fg); opacity: 0.5; cursor: pointer; }
-  #gear:hover, #gear[aria-expanded=true] { opacity: 1; }
-  #gear[hidden], #settings[hidden] { display: none; }
-  #settings { position: fixed; top: 48px; right: 8px; display: grid; grid-template-columns: auto auto; gap: 8px 12px; align-items: center; padding: 12px; border: 1px solid #444; border-radius: 6px; background: rgba(10, 10, 12, 0.92); }
-  #settings select, #settings button { font: inherit; color: var(--fg); background: #1c1d21; border: 1px solid #444; border-radius: 4px; padding: 3px 6px; }
-  #settings button { grid-column: 1 / 3; cursor: pointer; }
 </style>
 </head>
 <body>
 <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
-<button id="gear" title="Settings" aria-expanded="false" hidden>
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-</button>
-<div id="settings" hidden>
-  <label for="res">Resolution</label>
-  <select id="res"><option value="1">Original</option><option value="2">2x</option><option value="auto">Window</option></select>
-  <label for="terrain">Terrain detail</label>
-  <select id="terrain"><option value="1">Low</option><option value="2">Medium</option><option value="4">High</option></select>
-  <label for="fps">Frame rate</label>
-  <select id="fps"><option value="30">30</option><option value="60">60</option></select>
-  <button id="apply">Apply and restart</button>
-</div>
 <div id="panel">
   <div id="status">Loading</div>
   <progress id="bar" hidden></progress>
@@ -175,7 +157,6 @@ async function start()
 
   progress(null);
   panel.hidden = true;
-  gear.hidden = false;
   mainRan = true;
   Module.callMain([]);
 
@@ -211,51 +192,6 @@ for (const type of ['pointerdown', 'keydown'])
 document.addEventListener('pointerlockchange', () => {
   if (Module._rs64_web_pointer_lock_changed)
     Module._rs64_web_pointer_lock_changed(document.pointerLockElement === canvas ? 1 : 0);
-});
-
-const VIDEO_PATH = '/persist/roguesq_video.json';
-const gear = document.getElementById('gear');
-const settings = document.getElementById('settings');
-const settingFields = {
-  resolutionScale: document.getElementById('res'),
-  terrainTessellation: document.getElementById('terrain'),
-  targetFramerate: document.getElementById('fps')
-};
-
-function readVideo()
-{
-  try {
-    return JSON.parse(Module.FS.readFile(VIDEO_PATH, { encoding: 'utf8' }));
-  } catch (e) {
-    return {};
-  }
-}
-
-gear.addEventListener('click', () => {
-  const open = settings.hidden;
-
-  if (open)
-  {
-    const video = readVideo();
-
-    for (const [key, field] of Object.entries(settingFields))
-      field.value = String(video[key] ?? field.value);
-  }
-
-  settings.hidden = !open;
-  gear.setAttribute('aria-expanded', String(open));
-});
-
-// The game reads its video settings at start, so a change saves them and restarts the page.
-document.getElementById('apply').addEventListener('click', async () => {
-  const video = readVideo();
-
-  for (const [key, field] of Object.entries(settingFields))
-    video[key] = field.value === 'auto' ? 'auto' : Number(field.value);
-
-  Module.FS.writeFile(VIDEO_PATH, JSON.stringify(video, null, 2));
-  await sync(false);
-  location.reload();
 });
 
 // Called by the game when the stored file isn't the ROM: it has deleted the file and returned from main.
