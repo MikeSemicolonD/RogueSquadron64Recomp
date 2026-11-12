@@ -383,6 +383,17 @@ if (EMSCRIPTEN)
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tools/web/play/index.html ${CMAKE_SOURCE_DIR}/tools/web/play/coi-serviceworker.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm ${CMAKE_SOURCE_DIR}/favicon.ico $<TARGET_FILE_DIR:RogueSquadron64Recomp>
         VERBATIM)
+
+    # Browser test: cmake --build build-web --target web_shader_convert_test, then open web_shader_convert_test.html from build-web.
+    set(RS64_WEB_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c)
+    set_source_files_properties(${RS64_WEB_TEST_SPIRV} PROPERTIES GENERATED TRUE)
+    add_executable(web_shader_convert_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_WEB_TEST_SPIRV})
+    target_include_directories(web_shader_convert_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)
+    add_dependencies(web_shader_convert_test rt64)
+    target_link_options(web_shader_convert_test PRIVATE -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
+    add_custom_command(TARGET web_shader_convert_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.html ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm $<TARGET_FILE_DIR:web_shader_convert_test>
+        VERBATIM)
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
 if (TARGET ucode_fixup)
