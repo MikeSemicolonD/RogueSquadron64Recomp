@@ -108,6 +108,11 @@ if (TARGET sdl_headers_copy)
     add_dependencies(plume sdl_headers_copy)
 endif()
 
+set(RS64_DAWN_DIR "" CACHE PATH "Dawn release package with Tint, for the browser build's WGSL shaders (rs64_web_shaders)")
+if (RS64_DAWN_DIR)
+    include(${CMAKE_SOURCE_DIR}/tools/wgsl/web_shaders.cmake)
+endif()
+
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N64ModernRuntime)
 
