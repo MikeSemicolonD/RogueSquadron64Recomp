@@ -31,7 +31,7 @@ target_compile_definitions(spirv_to_wgsl PRIVATE _ITERATOR_DEBUG_LEVEL=0 _HAS_IT
     NDEBUG DAWN_HAVE_UTILS_BUILD_CONFIG TINT_BUILD_SPV_READER=1 TINT_BUILD_WGSL_READER=1 TINT_BUILD_WGSL_WRITER=1)
 target_link_libraries(spirv_to_wgsl PRIVATE ${RS64_TINT_LIBS} ${RS64_DAWN_DIR}/lib/webgpu_dawn.lib)
 
-# Every SPIR-V shader the web build uses. Left out: the debug overlay (Im3D, DebugPS), bindless raster and terrain-pack variants, RayQuery shaders, and the typed-buffer shaders the WebGPU renderer rewrites.
+# Every SPIR-V shader the web build uses. Left out: the debug overlay (Im3D, DebugPS), bindless raster and terrain-pack variants, RayQuery shaders, and the typed-buffer shaders, whose WebGPU variants (RT64_WEBGPU) only the web build compiles.
 set(RS64_WEB_SHADERS
     RasterVSDynamic RasterVSSpecConstant RasterVSSpecConstantFlat
     FbChangesClearCS FbChangesDrawColorPS FbChangesDrawDepthPS FbReinterpretCS
