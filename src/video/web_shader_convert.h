@@ -16,4 +16,7 @@ namespace rs64::wgsl {
     // Runs on the main browser thread (where the page loaded rs64tint), waiting there when called from another thread.
     ConvertResult convert_on_main(std::vector<uint32_t> words);
 
+    // Runs on the calling thread; a worker loads its own rs64tint on first use, so conversions don't hold up the main thread.
+    ConvertResult convert_here(std::vector<uint32_t> words);
+
 }

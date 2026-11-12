@@ -323,7 +323,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/game/lang/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/video/render_diag.cpp
-    $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/video/null_render_context.cpp>
+    $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp>
     $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/audio/audio_web.cpp>
     ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
@@ -377,7 +377,9 @@ if (EMSCRIPTEN)
         -sPROXY_TO_PTHREAD -sPTHREAD_POOL_SIZE=32 -sDEFAULT_PTHREAD_STACK_SIZE=1MB -sSTACK_SIZE=1MB
         -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=512MB -sALLOW_MEMORY_GROWTH=0
         -sEXIT_RUNTIME=0 -sINVOKE_RUN=0 -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,IDBFS -lidbfs.js
+        -sEXPORTED_FUNCTIONS=_main,_malloc,_free
         $<$<CONFIG:Debug>:-sSTACK_OVERFLOW_CHECK=1>)
+    target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/tools/wgsl)
 
     # The play page, its service worker, the shader converter (rs64tint) and the game icon sit next to the .js/.wasm, so the build folder can be served as is.
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD

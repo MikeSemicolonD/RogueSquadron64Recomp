@@ -47,6 +47,12 @@ extern SDL_Window* g_sdl_window;
 #include "video/vr_openxr.h"
 #include "input/input_host.h"
 #include "default_lights.h"
+
+#if defined(__EMSCRIPTEN__)
+#include "plume_webgpu.h"
+#include "video/web_shader_convert.h"
+#endif
+
 #ifdef __ANDROID__
 #include "main/android_host.h"
 #endif
@@ -603,7 +609,7 @@ public:
         appCore.window = wm.info.android.window;
         rs64::android::set_window_frame_rate(wm.info.android.window);
 
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__EMSCRIPTEN__)
         appCore.window = window_handle;
 #elif defined(__APPLE__)
 
@@ -1437,6 +1443,27 @@ private:
 std::unique_ptr<ultramodern::renderer::RendererContext>
 create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window, bool developer_mode)
 {
+
+#if defined(__EMSCRIPTEN__)
+
+    // RT64 specializes its raster shaders before handing them over, so constants left here are a bug.
+    plume::webgpuSetShaderConverter([](const std::vector<uint32_t>& spirv, const plume::RenderSpecConstant*, uint32_t specConstantsCount, std::string& wgsl, std::string& error) {
+
+        if (specConstantsCount > 0)
+        {
+            error = "the browser build can't convert unspecialized shaders";
+            return false;
+        }
+
+        rs64::wgsl::ConvertResult result = rs64::wgsl::convert_here(spirv);
+
+        wgsl = std::move(result.wgsl);
+        error = std::move(result.error);
+        return result.ok;
+    });
+
+#endif
+
     return std::make_unique<RT64Context>(rdram, window, developer_mode);
 }
 } // namespace recomp

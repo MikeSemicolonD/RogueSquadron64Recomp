@@ -48,7 +48,6 @@
 #include "game/nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
 
 #include "video/rt64_render_context.h"  // recomp::create_render_context
-#include "video/null_render_context.h"
 #include "video/video_config.h"
 #include "main/renderdoc_capture.h"
 #include <mutex>
@@ -937,11 +936,7 @@ int main(int argc, char* argv[])
             .get_rsp_microcode = rs64::audio::get_rsp_microcode,
         },
         .renderer_callbacks = {
-#if defined(__EMSCRIPTEN__)
-            .create_render_context = recomp::create_null_render_context,
-#else
             .create_render_context = recomp::create_render_context,
-#endif
         },
         .audio_callbacks = {
             .queue_samples        = rs64::audio::queue_samples,
