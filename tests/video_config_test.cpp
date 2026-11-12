@@ -483,7 +483,30 @@ static void test_custom_aa_steps_to_fxaa() {
     CHECK(rs64::video::aa_preset(uc) == 1);
 }
 
+static void test_graphics_api_cycle() {
+    using rs64::video::Display;
+    UC uc; uc.validate();
+    rs64::video::apply_friendly(uc, json{{"graphicsAPI", "d3d10"}});
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::display_label(Display::GraphicsApi, rs64::video::display_value(Display::GraphicsApi)) == "D3D11");
+
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::apply_pending(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::Automatic);
+    CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "auto");
+
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "vulkan");
+
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "d3d11");
+}
+
 int main() {
+    test_graphics_api_cycle();
     test_custom_aa_steps_to_fxaa();
     test_aa_presets();
     test_resolution_and_upscale_choices();

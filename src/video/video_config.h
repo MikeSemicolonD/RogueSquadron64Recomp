@@ -98,7 +98,7 @@ bool ray_query_supported();
 void set_ray_query_supported(bool on);
 
 // Menu-driven display settings. The menu reads and steps a desired copy of the RT64 fields it owns; the renderer applies it at present (apply_pending).
-enum class Display { Resolution, Widescreen, AntiAliasing, FrameInterpolation, TargetFps, TextureFilter, UpscaleFilter };
+enum class Display { Resolution, Widescreen, AntiAliasing, FrameInterpolation, TargetFps, TextureFilter, UpscaleFilter, GraphicsApi };
 
 // Current choice index; -1 = CUSTOM (an anti-aliasing combination matching no preset).
 int display_value(Display d);

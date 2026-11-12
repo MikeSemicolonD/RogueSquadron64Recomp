@@ -88,6 +88,22 @@ const char* const kUpscaleNames[] = { "NEAREST", "LINEAR", "AA PIXEL" };
 const char* const kTextureNames[] = { "BILINEAR", "3-POINT" };
 const char* const kOnOff[] = { "OFF", "ON" };
 
+// RENDERER choices (Windows only); takes effect at the next start. A saved "d3d10" shows as D3D11.
+const UC::GraphicsAPI kApiChoices[] = { UC::GraphicsAPI::Automatic, UC::GraphicsAPI::Vulkan, UC::GraphicsAPI::D3D12, UC::GraphicsAPI::D3D11 };
+const char* const kApiNames[] = { "AUTO", "VULKAN", "D3D12", "D3D11" };
+constexpr int kApiCount = 4;
+
+int api_choice(const UC& uc)
+{
+
+    for (int i = 0; i < kApiCount; i++)
+    {
+        if (kApiChoices[i] == uc.graphicsAPI) return i;
+    }
+
+    return -1;
+}
+
 // TARGET FPS choices: 0 = DISPLAY, then the monitor's rates, with a saved rate it doesn't list kept in order.
 std::vector<int> target_choices(const UC& uc)
 {
@@ -119,6 +135,7 @@ int choice_of(const UC& uc, Display d)
         case Display::FrameInterpolation: return uc.refreshRate != UC::RefreshRate::Original ? 1 : 0;
         case Display::TextureFilter:      return uc.threePointFiltering ? 1 : 0;
         case Display::UpscaleFilter:      return upscale_choice(uc);
+        case Display::GraphicsApi:        return api_choice(uc);
         case Display::TargetFps:          break;
     }
 
@@ -136,6 +153,7 @@ int count_of(const UC& uc, Display d)
         case Display::Resolution:    return 5;
         case Display::AntiAliasing:  return kAaPresetCount;
         case Display::UpscaleFilter: return 3;
+        case Display::GraphicsApi:   return kApiCount;
         case Display::TargetFps:     return (int)target_choices(uc).size();
         default:                     return 2;
     }
@@ -175,6 +193,10 @@ void step_in(UC& uc, Display d)
             break;
         case Display::UpscaleFilter:
             apply_upscale_choice(uc, next);
+            break;
+        case Display::GraphicsApi:
+            uc.graphicsAPI = kApiChoices[next];
+            g_d3d10.store(false, std::memory_order_relaxed);
             break;
         case Display::FrameInterpolation:
             uc.refreshRate = next ? interp_rate() : UC::RefreshRate::Original;
@@ -440,6 +462,7 @@ std::string display_label(Display d, int choice)
         case Display::AntiAliasing:  return kAaPresets[std::min(choice, kAaPresetCount - 1)].name;
         case Display::UpscaleFilter: return kUpscaleNames[std::min(choice, 2)];
         case Display::TextureFilter: return kTextureNames[choice ? 1 : 0];
+        case Display::GraphicsApi:   return kApiNames[std::min(choice, kApiCount - 1)];
         case Display::TargetFps:     break;
         default:                     return kOnOff[choice ? 1 : 0];
     }
@@ -497,6 +520,7 @@ ApplyResult apply_pending(UC& uc)
     uc.refreshRateTarget = d.refreshRateTarget;
     uc.threePointFiltering = d.threePointFiltering;
     uc.filtering = d.filtering;
+    uc.graphicsAPI = d.graphicsAPI;
     g_pending = false;
 
     return r;

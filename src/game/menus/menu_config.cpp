@@ -771,6 +771,7 @@ std::unordered_map<std::string, CycleImpl>& cycles() {
         { "target_fps", display_cycle(rs64::video::Display::TargetFps) },
         { "texture_filter", display_cycle(rs64::video::Display::TextureFilter) },
         { "upscale_filter", display_cycle(rs64::video::Display::UpscaleFilter) },
+        { "graphics_api", display_cycle(rs64::video::Display::GraphicsApi) },
     };
 
     return r;
@@ -1469,6 +1470,12 @@ bool condition_holds(uint8_t* rdram, const std::string& c, bool pause)
     if (c == "desktop") return false;
 #else
     if (c == "desktop") return true;
+#endif
+
+#ifdef _WIN32
+    if (c == "windows") return true;
+#else
+    if (c == "windows") return false;
 #endif
 
     if (c == "front_end") return !pause;
