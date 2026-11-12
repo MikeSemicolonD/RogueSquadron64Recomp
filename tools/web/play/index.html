@@ -219,6 +219,20 @@ for (const type of ['pointerdown', 'keydown'])
       Module.rs64AudioContext.resume();
   });
 
+// The browser's clipboard is readable only in a paste event; the game puts the text in whichever field is typing.
+document.addEventListener('paste', e => {
+  const text = e.clipboardData ? e.clipboardData.getData('text') : '';
+
+  if (!text || !mainRan || !Module._rs64_web_paste)
+    return;
+
+  const p = Module.stringToNewUTF8(text);
+
+  Module._rs64_web_paste(p);
+  Module._free(p);
+  e.preventDefault();
+});
+
 document.addEventListener('pointerlockchange', () => {
   if (Module._rs64_web_pointer_lock_changed)
     Module._rs64_web_pointer_lock_changed(document.pointerLockElement === canvas ? 1 : 0);

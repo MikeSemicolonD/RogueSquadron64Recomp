@@ -150,7 +150,7 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 7 && RS64_HOST_API_VERSION == 7);
+    CHECK(a->version == 8 && RS64_HOST_API_VERSION == 8);
     CHECK(a->terrain_get_cell == terrain_get_cell && a->terrain_set_cell == terrain_set_cell);
     CHECK(a->add_rule_action == add_rule_action && a->fire_rule_event == fire_rule_event);
     CHECK(a->add_service == add_service && a->get_service == get_service);
@@ -189,7 +189,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && !accept_mod_init(0, 8));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && accept_mod_init(0, 8) && !accept_mod_init(0, 9));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }
@@ -315,6 +315,25 @@ static void test_call_marshals_stack_and_f14() {
     bind_services(Services{});
 }
 
+static std::string g_clipboard;
+
+static void fake_clipboard(const char* s) { g_clipboard = s; }
+
+// v8: a mod's copy reaches the game's clipboard service; with none bound (or a null text) nothing happens.
+static void test_set_clipboard() {
+    reset_for_tests();
+    bind_services(Services{});
+    api()->set_clipboard("unbound");
+    CHECK(g_clipboard.empty());
+    Services s;
+    s.set_clipboard = fake_clipboard;
+    bind_services(s);
+    api()->set_clipboard("1.2.3.4:27070");
+    api()->set_clipboard(nullptr);
+    CHECK(g_clipboard == "1.2.3.4:27070");
+    bind_services(Services{});
+}
+
 static void test_services() {
     reset_for_tests();
     static const int first = 1, second = 2;
@@ -412,6 +431,7 @@ int main() {
     test_call_marshals_stack_and_f14();
     test_rollback_drops_refused_registrations();
     test_services();
+    test_set_clipboard();
     test_hash_parts_and_valid_ram();
     test_moved_ranges();
     test_rule_actions_and_events();

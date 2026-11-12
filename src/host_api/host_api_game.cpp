@@ -20,6 +20,10 @@
 #include <string>
 #include <vector>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 extern "C" void rs64_register_builtin_hooks();
 extern "C" void rs64_camera_shots_register_service();
 extern "C" void rs64_register_builtin_late_hooks();
@@ -69,11 +73,28 @@ int svc_any_key_held() {
     return 0;
 }
 
+// The browser's clipboard belongs to the page's main thread; SDL's web clipboard is only its own copy.
+void svc_set_clipboard(const char* utf8) {
+
+#ifdef __EMSCRIPTEN__
+    MAIN_THREAD_ASYNC_EM_ASM({ const s = UTF8ToString($0); Module._free($0); navigator.clipboard.writeText(s).catch(() => {}); }, strdup(utf8));
+#else
+    SDL_SetClipboardText(utf8);
+#endif
+}
+
 const char* svc_base_path() {
 
     static const std::string s = [] {
 
         std::string d;
+
+#ifdef __EMSCRIPTEN__
+
+        // The browser build's folder is the page's stored files (SDL's base path, "/", is lost on reload).
+        return std::string("/persist/");
+
+#endif
 
         if (char* b = SDL_GetBasePath()) {
             d = b;
@@ -161,6 +182,7 @@ void init_once(uint8_t* rdram) {
     s.screen_keyboard_shown = svc_screen_keyboard_shown;
     s.any_key_held = svc_any_key_held;
     s.base_path = svc_base_path;
+    s.set_clipboard = svc_set_clipboard;
     rs64::host::bind_services(s);
     rs64_register_builtin_hooks();
     rs64_camera_shots_register_service();

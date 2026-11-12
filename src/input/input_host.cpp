@@ -28,6 +28,11 @@
 #include "game/upstream_compat.h"
 #include "game/hook_helpers.h"
 #include "game/nav_sequencer.h"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "video/rt64_render_context.h"
 #include "video/video_config.h"
 #include "main/crash.h"
@@ -841,8 +846,58 @@ static void update_keyboard_shift() {
 #endif
 }
 
+// Pasted text goes where typed text goes, one line of it; true when a typing field took it.
+static bool paste_text(const char* text)
+{
+
+    std::string line;
+
+    for (const char* p = text; p && *p && *p != '\r' && *p != '\n'; ++p) line += *p;
+
+    if (line.empty())
+    {
+        return false;
+    }
+
+    return rs64::host::run_key_handlers(line.c_str(), 0) || rs64_menu_type(line.c_str(), 0);
+}
+
+#ifdef __EMSCRIPTEN__
+
+static std::mutex g_paste_mtx;
+static std::string g_pasted;
+
+// The page's paste event (the browser's clipboard is only readable there); poll_input hands it to the typing field.
+extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_paste(const char* text)
+{
+
+    std::lock_guard<std::mutex> lk(g_paste_mtx);
+
+    g_pasted = text ? text : "";
+}
+
+static std::string take_pasted()
+{
+
+    std::lock_guard<std::mutex> lk(g_paste_mtx);
+    std::string out;
+
+    out.swap(g_pasted);
+    return out;
+}
+
+#endif
+
 void poll_input()
 {
+
+#ifdef __EMSCRIPTEN__
+
+    const std::string pasted = take_pasted();
+
+    if (!pasted.empty()) paste_text(pasted.c_str());
+
+#endif
 
     apply_fullscreen_if_requested();
     update_keyboard_shift();
@@ -917,6 +972,26 @@ void poll_input()
             break;
         case SDL_KEYDOWN: {
             const SDL_Keycode sym = e.key.keysym.sym;
+            const bool command = (e.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
+
+            // Ctrl/Cmd+C copies the typing field's text; the key goes on to the game when no field takes it.
+            if (e.key.repeat == 0 && command && sym == SDLK_c && rs64::host::run_key_handlers(nullptr, 3)) break;
+
+#ifndef __EMSCRIPTEN__
+
+            // Ctrl/Cmd+V or Shift+Insert pastes into the typing field (the browser pastes through the page, rs64_web_paste).
+            const bool paste = (command && sym == SDLK_v) || ((e.key.keysym.mod & KMOD_SHIFT) && sym == SDLK_INSERT);
+
+            if (e.key.repeat == 0 && paste && SDL_HasClipboardText()) {
+                char* clip = SDL_GetClipboardText();
+                const bool taken = paste_text(clip);
+
+                SDL_free(clip);
+
+                if (taken) break;
+            }
+
+#endif
 
             if (sym == SDLK_BACKSPACE || sym == SDLK_RETURN || sym == SDLK_KP_ENTER)
             {

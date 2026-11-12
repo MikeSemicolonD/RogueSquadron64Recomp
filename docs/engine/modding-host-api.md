@@ -84,6 +84,7 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `fire_rule_event(name, object)` | v6. Raises the level rules "when" `custom` named `name` for `object` (may be `""`). Works any time and from any thread; the rules see it on the next mission frame, and events fired outside a mission are dropped. Returns 0, or -1 for a null name |
 | `terrain_get_cell(rdram, col, row, heights, tex)` | v7. Reads the level map's cell (`col`, `row`): its 25 heights (`int8_t`, the HMP's units; larger is lower, 16 record units a step) and, when `tex` is non-null, its texture id (an `lv_X_TEX` index). Returns 0, -1 with no map loaded, or -2 for a cell outside the map |
 | `terrain_set_cell(rdram, col, row, heights, tex)` | v7. Writes the cell's 25 heights and, when `tex` >= 0, its texture id into the game's own map, so its height queries (collision) and the renderer (the whole-map terrain pass and its ray-traced mesh) follow. Cells share tiles, so the map's first edit moves its tile table to host RAM (0x80A10000) and an edited cell that shares its tile gets its own copy. Neighbouring cells share their edge heights (a cell's last row and column of 5 are the next cell's first): keep them equal, or the legacy terrain renderer shows cracks between the cells. The legacy renderer shows height edits at once and a texture change when the cell next streams in. From the game thread (a hook). Returns 0, -1 / -2 as above, or -3 when the map has 8192 tiles already |
+| `set_clipboard(utf8)` | v8. Puts text on the system clipboard (in the browser, the page's). For a key handler's copy (key 3, Ctrl+C). Any thread |
 
 ## Services
 
@@ -192,7 +193,7 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 - `add_action("name", fn, user)` registers `void fn(void* user)`, run by a menu `action` or `leave_action` of that name in `roguesq_menu.json`.
 - `add_condition("name", fn, user)` registers `int fn(void* user)`; a menu `exit_when` of that name is met while it returns non-zero.
 - Names are first-wins for both: a later registration of the same name is refused and logged, and the first stays.
-- `add_key_handler(fn, user)` registers `int fn(const char* utf8, int key, void* user)`. Typed text arrives as `utf8` non-NULL with `key` 0; Backspace and Enter arrive as `utf8` NULL with `key` `'\b'` / `'\r'`. Handlers run in registration order and the first that returns 1 takes the event; later ones and the game do not see it.
+- `add_key_handler(fn, user)` registers `int fn(const char* utf8, int key, void* user)`. Typed and pasted text (Ctrl+V, Cmd+V, Shift+Insert) arrives as `utf8` non-NULL with `key` 0; Backspace and Enter arrive as `utf8` NULL with `key` `'\b'` / `'\r'`, and Ctrl+C as `key` 3 (copy the field's text with `set_clipboard`). Handlers run in registration order and the first that returns 1 takes the event; later ones and the game do not see it.
 - `add_quit_handler(fn, user)` registers `void fn(void* user)`. Quit handlers run in registration order before `_Exit`, on window close or the menu QUIT.
 
 ## Level rules actions

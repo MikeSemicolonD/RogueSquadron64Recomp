@@ -2,6 +2,7 @@
 #pragma once
 #include "rs64/host_api.h"
 #include "recomp.h"
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 
@@ -31,6 +32,8 @@ inline void text_input(bool on) { api()->text_input(on ? 1 : 0); }
 inline int screen_keyboard_shown() { return api()->screen_keyboard_shown(); }
 inline bool any_key_held() { return api()->any_key_held() != 0; }
 inline const char* base_path() { return api()->base_path(); }
+// A v8 host's clipboard; an older host's table has no entry for it, so the copy does nothing there.
+inline void set_clipboard(const char* s) { if (api()->size > offsetof(rs64_host_api, set_clipboard)) api()->set_clipboard(s); }
 inline void log(const char* line) { api()->log(line); }
 inline const void* service(const char* name) { return api()->get_service(name); }
 

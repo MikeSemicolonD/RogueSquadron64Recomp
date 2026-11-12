@@ -1192,6 +1192,18 @@ extern "C" void rs64_lobby_type_text(const char* utf8) {
     });
 }
 
+// Ctrl+C while a field is typed: its text goes to the clipboard.
+static void copy_typed() {
+
+    each_editor([](auto& e) {
+        if (e.typing) {
+            rs64::mp::set_clipboard(e.typed.c_str());
+        }
+
+        return e.typing;
+    });
+}
+
 // key: '\b' deletes the last character, '\r' finishes (applies valid text and hides the keyboard, never confirms).
 extern "C" void rs64_lobby_type_key(int key) {
 
@@ -2030,6 +2042,8 @@ extern "C" void rs64_ghost_register_host(void)
 
         if (utf8) {
             rs64_lobby_type_text(utf8);
+        } else if (key == 3) {
+            copy_typed();
         } else {
             rs64_lobby_type_key(key);
         }

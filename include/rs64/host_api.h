@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 7
+#define RS64_HOST_API_VERSION 8
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -71,7 +71,7 @@ typedef void (*rs64_input_fn)(int port, uint16_t* buttons, float* x, float* y, v
 typedef void (*rs64_action_fn)(void* user);
 // A menu exit_when condition: non-zero = met.
 typedef int (*rs64_condition_fn)(void* user);
-// Typed text (utf8 non-NULL, key 0) or Backspace / Enter (utf8 NULL, key '\b' / '\r'); return 1 to take the event from the game.
+// Typed or pasted text (utf8 non-NULL, key 0), or Backspace / Enter / copy (utf8 NULL, key '\b' / '\r' / 3: Ctrl+C, the field's text goes to set_clipboard); return 1 to take the event from the game.
 typedef int (*rs64_key_fn)(const char* utf8, int key, void* user);
 typedef void (*rs64_event_fn)(void* user);
 typedef uint64_t (*rs64_hash_fn)(const uint8_t* rdram, void* user);
@@ -128,6 +128,8 @@ typedef struct rs64_host_api {
     // Game thread (a hook). 0 = ok, -1 no map, -2 out of range, -3 too many tiles.
     int (*terrain_get_cell)(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex);
     int (*terrain_set_cell)(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex);
+    // v8: puts text on the system clipboard (a key handler's copy, key 3). Any thread.
+    void (*set_clipboard)(const char* utf8);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

@@ -89,6 +89,7 @@ void text_fwd(int on) {
 int kb_fwd() { return g_services.screen_keyboard_shown ? g_services.screen_keyboard_shown() : -1; }
 int held_fwd() { return g_services.any_key_held ? g_services.any_key_held() : 0; }
 const char* base_fwd() { return g_services.base_path ? g_services.base_path() : ""; }
+void clip_fwd(const char* s) { if (g_services.set_clipboard && s) g_services.set_clipboard(s); }
 uint32_t call_fwd(uint8_t* r, void* c, uint32_t v, const uint32_t* a, uint32_t n, const uint32_t* st, uint32_t ns, float f12, float f14, float* f0)
 {
     return g_services.call ? g_services.call(r, c, v, a, n, st, ns, f12, f14, f0) : 0u;
@@ -591,6 +592,7 @@ const rs64_host_api* api() {
         add_moved_range,
         add_rule_action, fire_rule_event,
         terrain_get_cell, terrain_set_cell,
+        clip_fwd,
     };
 
     return &table;
