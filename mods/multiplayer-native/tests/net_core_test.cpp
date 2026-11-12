@@ -739,6 +739,23 @@ static void test_tow_trip_message() {
     CHECK(!decode_tow_trip(p.data(), p.size(), &e, &item));
 }
 
+static void test_hit_and_rules_messages() {
+    const std::vector<uint8_t> h = encode_hit(4, 39);
+    CHECK(message_type(h.data(), h.size()) == (uint8_t)Msg::Hit);
+    uint8_t e = 0;
+    uint16_t damage = 0;
+    CHECK(decode_hit(h.data(), h.size(), &e, &damage) && e == 4 && damage == 39);
+    CHECK(!decode_hit(h.data(), h.size() - 1, &e, &damage));
+    const std::vector<uint8_t> r = encode_rules(true);
+    CHECK(message_type(r.data(), r.size()) == (uint8_t)Msg::Rules);
+    bool ff = false;
+    CHECK(decode_rules(r.data(), r.size(), &ff) && ff);
+    const std::vector<uint8_t> off = encode_rules(false);
+    CHECK(decode_rules(off.data(), off.size(), &ff) && !ff);
+    CHECK(!decode_rules(h.data(), h.size(), &ff));
+    CHECK(!handshake_message((uint8_t)Msg::Hit) && !handshake_message((uint8_t)Msg::Rules));
+}
+
 static void test_upgrades_message() {
     const std::vector<uint8_t> b = encode_upgrades(7, 0x800u | 0x10000u);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Upgrades);
@@ -1197,6 +1214,7 @@ int main() {
     test_trigger_message();
     test_shot_message();
     test_tow_trip_message();
+    test_hit_and_rules_messages();
     test_address_editor_typing();
     test_lobby_idle_status();
     test_status_dots();

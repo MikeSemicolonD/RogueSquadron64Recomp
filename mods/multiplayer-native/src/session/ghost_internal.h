@@ -61,6 +61,8 @@ void rs64_ghost_tow_load(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_tow_release(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_mission_init(uint8_t*, recomp_context*);
 void rs64_ghost_frame(uint8_t*, recomp_context*);
+void rs64_ghost_solo_frame(uint8_t*, recomp_context*);
+void rs64_ghost_npc_hit(uint8_t*, recomp_context*);
 void rs64_ghost_powerup_touch(uint8_t*, recomp_context*);
 void rs64_ghost_powerup_collect(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_gate_response(uint32_t, uint32_t);
@@ -175,6 +177,11 @@ struct Ghost {
     rs64::net::NameEditor host_name;
     rs64::net::CodeEditor host_pin;
     bool host_pin_set = false;
+
+    // HOST SETTINGS' friendly fire (roguesq_net.json friendly_fire); session_ff: the rule this session plays by (a client's comes from the host's RULES); ff_damage: the other player's hits not applied yet.
+    bool friendly_fire = false;
+    bool session_ff = false;
+    uint32_t ff_damage = 0;
 
     // The password this player sends when joining (join_pin_set false: none); pin_mode: a host refused it, so the MULTIPLAYER page's address row edits it until the next JOIN.
     rs64::net::CodeEditor join_pin;
@@ -373,6 +380,8 @@ constexpr uint32_t kLives = 0x80130B10u;
 constexpr uint32_t kPlayerHealth = 0x80137E7Cu;
 // Shoots player 1's craft down through the game's own damage path (applyPlayerCraftDamage 0x800B13E0, which runs the death at 0 health), after clearing its spawn shield (+0xC8, 1.0 after a spawn: no damage).
 void kill_player(uint8_t* rdram, recomp_context* ctx);
+// The other player's friendly-fire hits (ff_damage) onto player 1's craft through applyPlayerCraftDamage.
+void apply_friendly_fire(uint8_t* rdram, recomp_context* ctx);
 
 // ROGUESQ_MP_TEST=<op>@<frame>[:<arg>],...: scripted test steps on mission frames, e.g. die@150,quit@900:1 (run-mp.ps1 builds each instance's list).
 struct TestStep {

@@ -58,6 +58,7 @@ typedef enum rs64_hook_id {
     RS64_HOOK_DEBRIEF_PAD = 39,          // runMenuRandomBackdropScreen 0x800BFC4C (menu overlay debrief): v0 = the pressed buttons its continue check reads (A/START 0x9000 leave the screen); may be edited. Never RETURN (mid-function)
     RS64_HOOK_FRONT_END = 40,            // mainGameLoop 0x8003E138: the front end is about to start, a1 = menu overlay state (1 mission select, 2 menus), a2 = the menu state 2 opens (4 = ELITE ROGUES after a game over); may be edited. Never RETURN (mid-function)
     RS64_HOOK_WINGMAN_DRAW = 41,         // npcWingmanUpdate 0x800D9A90: a wingman just added its model to the render list; s3 = the NPC, s1 = the render info (what the tow-cable renderer 0x800ADD5C takes as a0). Never RETURN (mid-function)
+    RS64_HOOK_NPC_HIT = 42,              // v8. slotDispatcherIter 0x8003E8DC entry, a HIT (action 5) only: a0 = the target NPC slot, a2 = the message (+2 u16 the shooter's slot, player 1 = u16 0x80137DBA; +4 weapon category; +6 damage). Observe only, never RETURN
     RS64_HOOK_COUNT
 } rs64_hook_id;
 

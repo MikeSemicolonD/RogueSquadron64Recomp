@@ -1,5 +1,5 @@
 # Two-instance ghost co-op run on localhost: the host flies $HostPad, the client $ClientPad.
-# Usage: .\tools\debug\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientPage] [-HostPage] [-Sound] [-HostPassword 123456] [-ClientPassword 123456] [-Split] [-ClientRecord <rec>] [-KeepOpen] [-NavBudget n] [-Relay port [-RelayArgs flags]] [-ClientInput seq [-ClientInputDelay ms]] [-HostContinue n] [-ClientContinue n] [-HostSkipCrawl] [-HostBrowse n] [-HostDie f,f] [-ClientDie f,f]
+# Usage: .\tools\debug\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientPage] [-HostPage] [-Sound] [-HostPassword 123456] [-ClientPassword 123456] [-Split] [-ClientRecord <rec>] [-KeepOpen] [-NavBudget n] [-Relay port [-RelayArgs flags]] [-ClientInput seq [-ClientInputDelay ms]] [-HostContinue n] [-ClientContinue n] [-HostSkipCrawl] [-HostBrowse n] [-HostDie f,f] [-ClientDie f,f] [-ClientEnd f:r] [-FriendlyFire] [-ClientSteps op@f[:arg],...]
 # Both windows come up windowed with ray tracing off; a boot stall (log silent 15 s before the lobby) is dumped (dump-game.ps1) into the run folder and stops the pair.
 # Each instance gets its own working dir (ROM, configs and saves live in the working dir), so the pair never shares a save.
 param(
@@ -77,6 +77,12 @@ param(
     # Each side's craft takes a lethal hit on these mission frames (e.g. "300,450").
     [string]$HostDie = "",
     [string]$ClientDie = "",
+    # The client ends its mission (frame:result), e.g. after the host has quit.
+    [string]$ClientEnd = "",
+    # Lobby runs: the host turns on friendly fire in HOST SETTINGS.
+    [switch]$FriendlyFire,
+    # More ROGUESQ_MP_TEST steps for the client, e.g. "hurt@600:40".
+    [string]$ClientSteps = "",
     # Lobby runs: the host skips the opening crawl (START 60 polls in); the client follows its skip.
     [switch]$HostSkipCrawl,
     # Lobby runs: the host's mission select first walks this many levels past -Level as fast as presses register, then back to pick it.
@@ -145,6 +151,8 @@ try {
         $steps = @()
         $die = if ($role -eq "client") { $ClientDie } else { $HostDie }
         if ($die) { $steps += $die -split "," | ForEach-Object { "die@$_" } }
+        if ($role -eq "client" -and $ClientEnd) { $steps += "end@$ClientEnd" }
+        if ($role -eq "client" -and $ClientSteps) { $steps += $ClientSteps -split "," }
         if ($role -eq "host") {
             if ($TestEnd) { $steps += "end@$TestEnd" }
             if ($TestPause -ge 0) { $steps += "pause@$TestPause" }
@@ -193,6 +201,7 @@ try {
         $env:ROGUESQ_BOOT_TARGET = if (-not $Lobby) { $target } elseif ($role -eq "host") { if ($HostPage) { "lobby:page" } else { "lobby:host,$Level,$HostCraft" } } elseif ($ClientPage) { "lobby:page" } else { "lobby:join,$Level,$ClientCraft" }
         $env:ROGUESQ_NET_CONFIG = if ($Lobby) { Join-Path $dir "roguesq_net.json" } else { $null }
         $pinField = if ($HostPassword -and $role -eq "host") { ", `"host_password`": `"$HostPassword`"" } else { "" }
+        if ($FriendlyFire -and $role -eq "host") { $pinField += ", `"friendly_fire`": true" }
         # A relay run's client joins from the relay's game list, so its address row holds the relay.
         $rowAddr = if ($Discover) { '' } elseif ($Relay -gt 0 -and $role -eq "client") { "127.0.0.1:$Relay" } else { '127.0.0.1' }
         if ($Lobby) { Set-Content -Encoding ascii -Path $env:ROGUESQ_NET_CONFIG -Value "{ `"last_address`": `"$rowAddr`", `"port`": $Port$pinField }" }

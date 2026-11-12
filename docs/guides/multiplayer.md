@@ -7,7 +7,7 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 ## What players see
 
 - With Steam running (the steam-relay mod) or a relay server set up ([relay-server.md](relay-server.md)), JOIN GAME lists open games of the same version; picking one joins it, no code needed. The address box on the MULTIPLAYER page takes a friend's address or a relay server's: JOIN GAME shows a server's games, and connects to a friend directly.
-- HOST SETTINGS names your game in that list and can give it a password; joining a game with one asks for it.
+- HOST SETTINGS names your game in that list and can give it a password; joining a game with one asks for it. FRIENDLY FIRE there lets the two players' lasers damage each other.
 - The host drives mission select and picks the mission; the client's screen follows. Each player then picks their own craft, and nobody launches until both have picked. A craft the hangar refuses (locked, or not allowed on the level) does not count as picked.
 - If the other player leaves during mission select or craft select, HOST LEFT (or PLAYER LEFT) shows there and the game backs out to the main menu.
 - Both start the mission together: the host waits at mission start, up to 10 s, for the client to finish loading.
@@ -84,7 +84,7 @@ Hooks the registration takes (sites and contracts in [modding-host-api.md](../en
 | Front end | `MENU_FRAME`, `MENU_PAD`, `MAIN_MENU`, `MISSION_SELECT_INIT`, `MISSION_CONFIRMED`, `MISSION_SELECT_FONTS`, `MISSION_SELECT_TICK`, `CRAFT_SELECT_INIT`, `CRAFT_SELECT_TICK`, `DEBRIEF_PAD`, `FRONT_END` |
 | Mission frame | `MISSION_INIT`, `MISSION_FRAME_DT`, `MISSION_FRAME_PADS`, `MISSION_FRAME_NPCS`, `MISSION_END`, `CRAFT_ASSETS` |
 | Imposter and streaming | `WINGMAN_TICK`, `WINGMAN_DRAW`, `NPC_ACTIVATION`, `GRID_STREAM` |
-| Shared state | `TRANSITION_REQUEST`, `FREEZE_CHECK_A`, `FREEZE_CHECK_B`, `CUTSCENE_FREEZE_CHECK`, `OBJECTIVE_COUNT`, `RESULT_FAIL`, `RESULT_SUCCESS`, `SPEECH_RESPONSE_1`, `SPEECH_RESPONSE_2`, `TRIGGER_EFFECT`, `WALKER_TRIPPED` |
+| Shared state | `TRANSITION_REQUEST`, `FREEZE_CHECK_A`, `FREEZE_CHECK_B`, `CUTSCENE_FREEZE_CHECK`, `OBJECTIVE_COUNT`, `RESULT_FAIL`, `RESULT_SUCCESS`, `SPEECH_RESPONSE_1`, `SPEECH_RESPONSE_2`, `TRIGGER_EFFECT`, `WALKER_TRIPPED`, `NPC_HIT` |
 | HUD | `HUD_FONTS`, `HUD_DRAW`, `RADAR` |
 
 A new base-side need is a flag or a table entry, never a direct call.
@@ -151,7 +151,7 @@ With `relay_server` in `roguesq_net.json` (`"host"` or `"host:port"`, default po
 
 ## HOST SETTINGS and passwords
 
-HOST SETTINGS (a page off MULTIPLAYER) holds SERVER NAME (`NameEditor`: typed, or the pad's up/down per character; empty = the pilot's name), PASSWORD (`CodeEditor`, 6 digits; NONE until set, and emptying the field when it closes removes it). Both are saved to `roguesq_net.json` (`host_name`, `host_password`) and, while hosting, apply at once: the password to `Lobby::set_password`, the name and lock to the relay (`sync_host_settings` in `ghost_lobby.cpp`).
+HOST SETTINGS (a page off MULTIPLAYER) holds SERVER NAME (`NameEditor`: typed, or the pad's up/down per character; empty = the pilot's name), PASSWORD (`CodeEditor`, 6 digits; NONE until set, and emptying the field when it closes removes it) and FRIENDLY FIRE (`friendly_fire`, A toggles it). The host sends friendly fire in a RULES message on connect and on every change; with it on, a HIT player 1 lands on the other player's ship (`RS64_HOOK_NPC_HIT`, shooter = u16 0x80137DBA) goes to them as a HIT message and lands through `applyPlayerCraftDamage`, so their spawn shield and death work as for enemy fire. The name and password are saved to `roguesq_net.json` (`host_name`, `host_password`) and, while hosting, apply at once: the password to `Lobby::set_password`, the name and lock to the relay (`sync_host_settings` in `ghost_lobby.cpp`).
 
 A password never crosses the network. The two sides run CPace (`draft-irtf-cfrg-cpace-21`, X25519 and SHA-512, with key confirmation; `net/crypto_session.cpp` on [Monocypher](https://monocypher.org/)) to turn it into session keys, and every message after that is sealed with XChaCha20-Poly1305. A relay operator or anyone else on the path cannot read the password or the game's messages, change them or add their own, and each connection allows one password guess. Games without a password are not encrypted.
 

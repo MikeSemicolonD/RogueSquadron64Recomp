@@ -1972,6 +1972,23 @@ extern "C" void rs64_ghost_register_host(void)
         static std::string b;
         return mp_text(b, pin_label(g().host_pin, g().host_pin_set, "NONE"));
     }, nullptr);
+    add_text_source("mp_ff_label", [](void*) -> const char* {
+        return g().friendly_fire ? "FRIENDLY FIRE ON" : "FRIENDLY FIRE OFF";
+    }, nullptr);
+
+    // A change while a player is connected reaches them at once.
+    rs64::mp::add_action("mp_ff_toggle", [](void*) {
+
+        Ghost& s = g();
+
+        s.friendly_fire = !s.friendly_fire;
+        save_net_config();
+
+        if (s.player == 0 && s.lobby.ready()) {
+            s.session_ff = s.friendly_fire;
+            s.link.send(rs64::net::encode_rules(s.friendly_fire), true);
+        }
+    });
     rs64::mp::add_action("mp_name_edit", [](void*) {
         toggle_edit(g().host_name);
     });

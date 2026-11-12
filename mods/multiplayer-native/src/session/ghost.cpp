@@ -167,6 +167,7 @@ void load_net_config() {
         const std::string pin = j.value("host_password", std::string{});
         g().host_pin_set = rs64::net::CodeEditor::valid(pin);
         g().host_pin.load(pin);
+        g().friendly_fire = j.value("friendly_fire", false);
         const int port = j.value("port", 27064);
         config_port() = (port > 0 && port < 65536) ? port : 27064;
     } catch (...) {
@@ -190,6 +191,7 @@ void save_net_config()
 
     j["host_name"] = s.host_name.name;
     j["host_password"] = s.host_pin_set ? s.host_pin.code() : std::string{};
+    j["friendly_fire"] = s.friendly_fire;
     j["port"] = config_port();
     std::ofstream f(net_config_path());
 
@@ -299,6 +301,7 @@ void lobby_poll()
     {
         s.link.clear_cipher();
         s.lobby.on_connected(now);
+        s.session_ff = s.player == 0 && s.friendly_fire;
     }
 
     s.was_connected = c;
@@ -335,6 +338,7 @@ void lobby_poll()
     {
         if (s.player == 0) {
             s.link.send(rs64::net::encode_accept(), true);
+            s.link.send(rs64::net::encode_rules(s.friendly_fire), true);
         }
 
         // The pilot name (gGameSettings+7), for the label over this player's ship on the other screen.
@@ -740,6 +744,28 @@ void drain()
             if (s.in_session && s.rdram && rs64::net::decode_tow_trip(m.data(), m.size(), &e, &i) && e == mission_tag() && i < dat_count(s.rdram) && std::find(s.tow_in.begin(), s.tow_in.end(), i) == s.tow_in.end())
             {
                 s.tow_in.push_back(i);
+            }
+
+            break;
+        }
+        case rs64::net::Msg::Hit: {
+            uint8_t e = 0;
+            uint16_t damage = 0;
+
+            if (s.in_session && s.session_ff && rs64::net::decode_hit(m.data(), m.size(), &e, &damage) && e == mission_tag()) {
+                s.ff_damage += damage;
+            }
+
+            break;
+        }
+        case rs64::net::Msg::Rules: {
+            bool ff = false;
+
+            if (s.player == 1 && rs64::net::decode_rules(m.data(), m.size(), &ff))
+            {
+                s.session_ff = ff;
+
+                fprintf(stderr, "[lobby] host rules: friendly fire %s\n", ff ? "on" : "off");
             }
 
             break;
@@ -1391,6 +1417,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.trigger_applying = false;
     s.tows_mine.clear();
     s.tow_in.clear();
+    s.ff_damage = 0;
     s.tow_retry.clear();
     s.tow_injecting = false;
 
@@ -1437,6 +1464,46 @@ extern "C" void rs64_ghost_mission_end(uint8_t* rdram)
     s.in_session = false;
 }
 
+// Scripted mission ends: die (a lethal hit) and end (the abort's direct result write).
+static void test_ends(uint8_t* rdram, recomp_context* ctx, long frame)
+{
+
+    if (test_step("die", frame)) {
+        kill_player(rdram, ctx);
+
+        fprintf(stderr, "[ghost] test die at frame %ld\n", frame);
+    }
+
+    if (const TestStep* t = test_step("end", frame)) {
+        wb(rdram, 0x80130B14u, (uint8_t)t->arg);
+        ww(rdram, 0x8010C9E0u, rw(rdram, 0x8010C9E0u) | 1u);
+
+        fprintf(stderr, "[ghost] test end: result %ld at frame %ld\n", t->arg, frame);
+    }
+}
+
+// The partner left mid-mission and the session ended: scripted ends still fire, to test finishing alone.
+extern "C" void rs64_ghost_solo_frame(uint8_t* rdram, recomp_context* ctx)
+{
+
+    Ghost& s = g();
+
+    if (!s.in_session || s.started)
+    {
+        return;
+    }
+
+    static uint32_t s_logged_epoch = 0;
+
+    if (s_logged_epoch != (uint32_t)s.epoch + 1u) {
+        s_logged_epoch = (uint32_t)s.epoch + 1u;
+
+        fprintf(stderr, "[ghost] mission continues alone from frame %u\n", s.frame);
+    }
+
+    test_ends(rdram, ctx, (long)s.frame++);
+}
+
 // Frame start (after the pad poll): remote messages in, the host's result applied, local input from a recording if one is set, local state out, remote pad onto port 1.
 extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
 {
@@ -1445,6 +1512,7 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
 
     if (!s.started)
     {
+        rs64_ghost_solo_frame(rdram, ctx);
         return;
     }
 
@@ -1609,12 +1677,6 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         fprintf(stderr, "[ghost] test lives: shared pool set to %ld\n", test_lives);
     }
 
-    if (test_step("die", frame)) {
-        kill_player(rdram, ctx);
-
-        fprintf(stderr, "[ghost] test die at frame %u\n", s.frame);
-    }
-
     // Test upgrade: OR power-up bits into the settings word, the way a pickup does.
     if (const TestStep* t = test_step("upgrade", frame)) {
         const uint32_t bits = (uint32_t)t->arg & rs64::net::kUpgradeMask;
@@ -1623,13 +1685,14 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         fprintf(stderr, "[ghost] test upgrade: %05X at frame %u\n", bits, s.frame);
     }
 
-    // Test end: this result, the way the game's abort ends a mission.
-    if (const TestStep* t = test_step("end", frame)) {
-        wb(rdram, 0x80130B14u, (uint8_t)t->arg);
-        ww(rdram, 0x8010C9E0u, rw(rdram, 0x8010C9E0u) | 1u);
+    test_ends(rdram, ctx, frame);
 
-        fprintf(stderr, "[ghost] test end: result %ld at frame %u\n", t->arg, s.frame);
+    // Test hurt: friendly-fire damage, as if the other player's shot had landed.
+    if (const TestStep* t = test_step("hurt", frame)) {
+        s.ff_damage += (uint32_t)t->arg;
     }
+
+    apply_friendly_fire(rdram, ctx);
 
     // An end the game writes directly (request bit 1: an abort, a scripted end) skips requestMissionTransitionMode, so the host tells the client the frame it is raised.
     if (s.player == 0 && !s.result_sent && !s.peer_left && (rw(rdram, 0x8010C9E0u) & 1u))

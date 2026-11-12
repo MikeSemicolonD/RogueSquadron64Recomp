@@ -85,7 +85,7 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `terrain_get_cell(rdram, col, row, heights, tex)` | v7. Reads the level map's cell (`col`, `row`): its 25 heights (`int8_t`, the HMP's units; larger is lower, 16 record units a step) and, when `tex` is non-null, its texture id (an `lv_X_TEX` index). Returns 0, -1 with no map loaded, or -2 for a cell outside the map |
 | `terrain_set_cell(rdram, col, row, heights, tex)` | v7. Writes the cell's 25 heights and, when `tex` >= 0, its texture id into the game's own map, so its height queries (collision) and the renderer (the whole-map terrain pass and its ray-traced mesh) follow. Cells share tiles, so the map's first edit moves its tile table to host RAM (0x80A10000) and an edited cell that shares its tile gets its own copy. Neighbouring cells share their edge heights (a cell's last row and column of 5 are the next cell's first): keep them equal, or the legacy terrain renderer shows cracks between the cells. The legacy renderer shows height edits at once and a texture change when the cell next streams in. From the game thread (a hook). Returns 0, -1 / -2 as above, or -3 when the map has 8192 tiles already |
 | `set_clipboard(utf8)` | v8. Puts text on the system clipboard (in the browser, the page's). For a key handler's copy (key 3, Ctrl+C). Any thread |
-| `frame_seconds()` | v8. The game time one mission frame covers, in seconds: 1/30 at the game's own rate, 1/60 when TARGET FPS runs 60 logic frames a second. For per-frame motion a mod measures or sends 
+| `frame_seconds()` | v8. The game time one mission frame covers, in seconds: 1/30 at the game's own rate, 1/60 when TARGET FPS runs 60 logic frames a second. For per-frame motion a mod measures or sends |
 
 ## Services
 
@@ -159,6 +159,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 | `RS64_HOOK_DEBRIEF_PAD` (39) | `runMenuRandomBackdropScreen` 0x800BFC4C (menu overlay) | The debrief's continue check: `v0` = the pressed buttons it reads (A/START, `0x9000`, leave the screen) and may be edited. Never RETURN (mid-function). Co-op holds it until both players pressed |
 | `RS64_HOOK_FRONT_END` (40) | `mainGameLoop` 0x8003E138 | The front end is about to start after a mission: `a1` = menu overlay state (1 mission select, 2 menus), `a2` = the menu state 2 opens (4 = ELITE ROGUES, after a game over). May be edited. Never RETURN (mid-function). Co-op sends a game over back to mission select, since ELITE ROGUES leads to the main menu, which ends the session |
 | `RS64_HOOK_WINGMAN_DRAW` (41) | `npcWingmanUpdate` 0x800D9A90 | A wingman just added its model to the render list: `s3` = the NPC, `s1` = the render info (what the tow-cable renderer 0x800ADD5C takes as `a0`). Never RETURN (mid-function). Co-op draws the other player's tow cable here |
+| `RS64_HOOK_NPC_HIT` (42) | `slotDispatcherIter` entry | v8. A HIT (action 5) is about to reach an NPC: `a0` = the target slot, `a2` = the message (`+2` u16 the shooter's slot, player 1's is u16 0x80137DBA; `+4` weapon category; `+6` damage). Observe only, never RETURN. Co-op friendly fire sends player 1's hits on the other player's ship |
 
 ### Host-dispatched
 

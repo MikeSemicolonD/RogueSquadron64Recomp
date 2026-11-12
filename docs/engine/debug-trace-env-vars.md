@@ -484,6 +484,9 @@ Test knobs used by `tools/debug/lockstep/run-mp.ps1` (flag in brackets):
   - `pause` [-TestPause] — press START; the world and camera keep running.
   - `upgrade:<bits>` [-TestUpgrade f:hex] — OR power-up bits (mask 0x1FE00) into the settings word, as a pickup does (`0x` prefix for hex).
   - `pickup` [-TestPickup] — collect the first power-up that ticks from that frame on (needs one spawned near the flown path).
+  - `hurt:<damage>` [-ClientSteps] — friendly-fire damage on this side's craft, as if the other player's shot had landed. `-FriendlyFire` turns the real setting on for the host.
+  - `die` and `end` also run after the other player left mid-mission [-ClientEnd f:r].
+  - `-ClientSteps` passes any steps to the client, e.g. `hurt@600:40`.
 - `ROGUESQ_MP_TEST_VERSION=<n>` [-TestVersion] — send and compare build id n.
 - `ROGUESQ_MP_TEST_JOIN_PIN=<6 digits>` [-ClientPassword] — the password a joining client sends.
 - `ROGUESQ_MP_TEST_UNLOCK=<n>` [-TestUnlock] — host mission select shows levels up to n.

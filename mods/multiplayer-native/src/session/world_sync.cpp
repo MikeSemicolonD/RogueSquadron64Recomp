@@ -175,6 +175,37 @@ void kill_player(uint8_t* rdram, recomp_context* ctx)
     rs64::mp::call(rdram, ctx, 0x800B13E0u, {0x80137DBCu, bits});
 }
 
+// Friendly fire: the other player's hits on this craft, through the game's own damage path (its spawn shield and death included). A spectator takes none.
+void apply_friendly_fire(uint8_t* rdram, recomp_context* ctx)
+{
+
+    Ghost& s = g();
+
+    if (s.ff_damage == 0)
+    {
+        return;
+    }
+
+    const float damage = (float)s.ff_damage;
+    uint32_t bits;
+
+    s.ff_damage = 0;
+
+    if (s.out)
+    {
+        return;
+    }
+
+    memcpy(&bits, &damage, 4);
+
+    const float before = rf(rdram, kPlayerHealth);
+    const float shield = rf(rdram, 0x80137DBCu + 0xC8u);
+
+    rs64::mp::call(rdram, ctx, 0x800B13E0u, {0x80137DBCu, bits});
+
+    fprintf(stderr, "[ghost] friendly fire: took %.0f from the other player (health %.1f -> %.1f, shield %.2f, god %u)\n", damage, before, rf(rdram, kPlayerHealth), shield, (rw(rdram, 0x80130B4Cu) >> 23) & 1u);
+}
+
 // Shared deaths: the peer's health drops go in through the game's own damage path (dealDamagetoDatItem 0x800C7390: a HIT for a spawned item, a stored-health cut for an unspawned one); then our own drops go out.
 void sync_dat(uint8_t* rdram, recomp_context* ctx)
 {
@@ -354,6 +385,28 @@ void sync_upgrades(uint8_t* rdram)
         s.upgrades_shared |= gained;
 
         fprintf(stderr, "[ghost] upgrades %05X picked up; sent to the other player\n", gained);
+    }
+}
+
+// RS64_HOOK_NPC_HIT (a0 = the target slot, a2 = the HIT: +2 the shooter's slot, +6 damage): with friendly fire on, this player's hits on the other player's ship go to them.
+extern "C" void rs64_ghost_npc_hit(uint8_t* rdram, recomp_context* ctx)
+{
+
+    using rs64::mips::rh;
+    Ghost& s = g();
+
+    if (!s.session_ff || !s.in_session || s.peer_left || rs64_imposter_npc() == 0)
+    {
+        return;
+    }
+
+    const uint32_t msg = (uint32_t)ctx->r6;
+    const bool on_partner = ((uint32_t)ctx->r4 & 0xFFFFu) == rh(rdram, kImposterRec + 0x6);
+
+    if (on_partner && rh(rdram, msg + 2) == rh(rdram, 0x80137DBAu)) {
+        s.link.send(rs64::net::encode_hit(mission_tag(), rh(rdram, msg + 6)), true);
+
+        fprintf(stderr, "[ghost] friendly fire: hit the other player for %u\n", rh(rdram, msg + 6));
     }
 }
 

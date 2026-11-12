@@ -68,7 +68,7 @@ uint8_t message_type(const uint8_t* data, size_t n)
         return data[1];
     }
 
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Name)
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Rules)
     {
         return 0;
     }
@@ -668,6 +668,29 @@ std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item) { return enco
 bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item)
 {
     return decode_fields(data, n, Msg::TowTrip, epoch, item);
+}
+
+std::vector<uint8_t> encode_hit(uint8_t epoch, uint16_t damage) { return encode_fields(Msg::Hit, epoch, damage); }
+
+bool decode_hit(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* damage)
+{
+    return decode_fields(data, n, Msg::Hit, epoch, damage);
+}
+
+std::vector<uint8_t> encode_rules(bool friendly_fire) { return encode_fields(Msg::Rules, (uint8_t)(friendly_fire ? 1 : 0)); }
+
+bool decode_rules(const uint8_t* data, size_t n, bool* friendly_fire)
+{
+
+    uint8_t ff = 0;
+
+    if (!decode_fields(data, n, Msg::Rules, &ff))
+    {
+        return false;
+    }
+
+    *friendly_fire = ff != 0;
+    return true;
 }
 
 std::vector<uint8_t> encode_trigger(uint8_t epoch, uint16_t event, bool enter)

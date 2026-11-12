@@ -1848,6 +1848,12 @@ func = "npcWingmanUpdate"
 before_vram = 0x800D9A90
 text = '{ rs64_th_npcWingmanUpdate_800D9A90(rdram, ctx); }'
 
+# A HIT (action 5) dispatched to an NPC slot (a0 = the slot, a2 = the message): co-op friendly fire sends the hits player 1 lands on the other player's ship.
+# hook: RS64_HOOK_NPC_HIT
+[[patches.hook]]
+func = "slotDispatcherIter"
+text = '{ rs64_th_slotDispatcherIter_entry(rdram, ctx); }'
+
 # Front end start (a1 = overlay state, a2 = the menu it opens; 4 = ELITE ROGUES after a game over): co-op goes back to mission select instead.
 # hook: RS64_HOOK_FRONT_END
 [[patches.hook]]
