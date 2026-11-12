@@ -1,4 +1,6 @@
 #include "relay_core.h"
+#include "relay_bridge.h"
+#include <enet6/enet.h>
 #include "check.h"
 #include <cstdio>
 #include <cstdlib>
@@ -422,7 +424,83 @@ void test_args_and_config_order()
     const char* help[] = {"rs64_relay", "--help"};
 
     CHECK(parse_args(2, help).help && !usage().empty());
+
+    const char* browser[] = {"rs64_relay", "--config", path.c_str(), "--browser-port", "0"};
+    const char* browser_bad[] = {"rs64_relay", "--config", path.c_str(), "--browser-port", "70000"};
+    Settings defaults;
+
+    CHECK(defaults.browser_port == kDefaultPort + 1);
+    CHECK(parse_args(5, browser).settings.browser_port == 0);
+    CHECK(parse_args(5, browser_bad).errors.size() == 1);
+    CHECK(config_text(defaults).find("browser_port = 27071") != std::string::npos);
     std::filesystem::remove(cfg);
+}
+
+// A browser session's datagrams reach the ENet port from the session's own loopback socket, and replies to that socket come back to the session.
+void test_bridge()
+{
+
+    CHECK(enet_initialize() == 0);
+
+    ENetAddress any;
+
+    enet_address_build_loopback(&any, ENET_ADDRESS_TYPE_IPV6);
+    any.port = 0;
+
+    const ENetSocket enet_port = enet_socket_create(ENET_ADDRESS_TYPE_IPV6, ENET_SOCKET_TYPE_DATAGRAM);
+
+    CHECK(enet_socket_bind(enet_port, &any) == 0);
+
+    ENetAddress bound;
+
+    CHECK(enet_socket_get_address(enet_port, &bound) == 0 && bound.port != 0);
+
+    std::vector<std::vector<uint8_t>> to_browser;
+    Bridge bridge(bound.port);
+    const uint32_t id = bridge.open("203.0.113.7", [&](const uint8_t* d, size_t n) { to_browser.emplace_back(d, d + n); });
+
+    CHECK(id != 0 && bridge.sessions() == 1);
+
+    const uint8_t hello[] = { 'h', 'i' };
+
+    bridge.from_browser(id, hello, sizeof hello);
+
+    uint8_t buf[64];
+    ENetBuffer b;
+    ENetAddress from;
+    ENetSocketSet set;
+
+    b.data = buf;
+    b.dataLength = sizeof buf;
+    ENET_SOCKETSET_EMPTY(set);
+    ENET_SOCKETSET_ADD(set, enet_port);
+    CHECK(enet_socketset_select(enet_port, &set, nullptr, 1000) > 0);
+    CHECK(enet_socket_receive(enet_port, &from, &b, 1) == 2 && buf[0] == 'h');
+    CHECK(bridge.remote_of(from.port) == "203.0.113.7");
+    CHECK(bridge.remote_of((uint16_t)(from.port + 1)).empty());
+
+    const uint8_t reply[] = { 'o', 'k', '!' };
+    ENetBuffer rb;
+
+    rb.data = (void*)reply;
+    rb.dataLength = sizeof reply;
+
+    CHECK(enet_socket_send(enet_port, &from, &rb, 1) == 3);
+
+    for (int i = 0; i < 20 && to_browser.empty(); ++i) bridge.pump(50);
+
+    CHECK(to_browser.size() == 1 && to_browser[0].size() == 3 && to_browser[0][2] == '!');
+
+    CHECK(address_group("203.0.113.7") == "203.0.113.7");
+    CHECK(address_group("2001:db8::1:2") == "2001:0db8:0000:0000::/64");
+    CHECK(address_group("::ffff:198.51.100.4") == "::ffff:198.51.100.4");
+
+    bridge.from_browser(id + 99, hello, sizeof hello);
+    bridge.close(id);
+    CHECK(bridge.sessions() == 0 && bridge.remote_of(from.port).empty());
+
+    enet_socket_destroy(enet_port);
+    enet_deinitialize();
 }
 
 }
@@ -444,6 +522,7 @@ int main()
     test_address_groups();
     test_console();
     test_args_and_config_order();
+    test_bridge();
     std::printf("relay_core_test: all passed\n");
     return 0;
 }

@@ -12,6 +12,10 @@
 #include "relay_core.h"
 #include "relay_host.h"
 
+#ifdef RS64_RELAY_WEBTRANSPORT
+#include "relay_webtransport.h"
+#endif
+
 using namespace rs64::relay;
 
 namespace {
@@ -102,11 +106,52 @@ int main(int argc, char** argv)
     std::thread(read_console).detach();
 
     print_log("'" + o.settings.name + "' listening on UDP port " + std::to_string(o.settings.port) + (o.config_found ? ", settings from " : ", no config file at ") + o.config);
+
+#ifdef RS64_RELAY_WEBTRANSPORT
+
+    // Browser players reach the ENet port through the bridge; its sockets are serviced on their own thread.
+    Bridge bridge(o.settings.port);
+    BrowserListener browsers(bridge);
+    std::atomic<bool> bridge_run{true};
+    std::thread bridge_thread([&] {
+        while (bridge_run) bridge.pump(5);
+    });
+    const auto browser_line = [&] {
+        print_log("browser players: join with <this PC's public IP>:" + std::to_string(o.settings.browser_port) + "#" + browsers.hash() + " (UDP port " + std::to_string(o.settings.browser_port) + " forwarded too)");
+    };
+
+    host.set_bridge(&bridge);
+
+    if (o.settings.browser_port) {
+        std::string error;
+
+        if (browsers.start(o.settings.browser_port, now_ms(), &error)) {
+            browser_line();
+        } else {
+            print_log("browser players can't join: " + error);
+        }
+    }
+
+#endif
+
     print_log("type help for commands");
 
     while (!relay.quitting()) {
         host.service(relay, 10);
         relay.tick(now_ms());
+
+#ifdef RS64_RELAY_WEBTRANSPORT
+
+        std::string renew_error;
+
+        if (browsers.tick(now_ms(), &renew_error)) {
+            print_log("new certificate: browser players use the new address");
+            browser_line();
+        } else if (!renew_error.empty()) {
+            print_log("browser players can't join: " + renew_error);
+        }
+
+#endif
 
         std::deque<std::string> lines = take_lines();
 
@@ -118,6 +163,15 @@ int main(int argc, char** argv)
 
         for (const std::string& l : relay.take_log()) print_log(l);
     }
+
+#ifdef RS64_RELAY_WEBTRANSPORT
+
+    browsers.stop();
+    bridge_run = false;
+    bridge_thread.join();
+    host.set_bridge(nullptr);
+
+#endif
 
     // Lets the disconnects reach the players before the socket closes.
     host.close();

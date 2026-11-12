@@ -15,6 +15,8 @@ constexpr const char* kDefaultConfig = "rs64_relay.cfg";
 
 struct Settings {
     uint16_t port = kDefaultPort;
+    // WebTransport (UDP) port browser players connect to; 0 = off. Used only by a relay built with RELAY_WEBTRANSPORT.
+    uint16_t browser_port = kDefaultPort + 1;
     std::string name = "RS64 RELAY";
     int max_clients = 64;
     int max_games = 32;

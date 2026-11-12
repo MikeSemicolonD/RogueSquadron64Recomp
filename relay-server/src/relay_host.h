@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <map>
+#include "relay_bridge.h"
 #include "relay_core.h"
 
 struct _ENetHost;
@@ -21,8 +22,11 @@ public:
     void apply(Relay& relay);
     // Lets queued disconnects reach the players (up to wait_ms), then closes.
     void close(int wait_ms = 500);
+    // Peers arriving from this bridge's sockets are reported with their browser address.
+    void set_bridge(const Bridge* bridge) { bridge_ = bridge; }
 
 private:
+    const Bridge* bridge_ = nullptr;
     _ENetHost* host_ = nullptr;
     std::map<uint32_t, _ENetPeer*> peers_;
     uint32_t next_peer_ = 1;

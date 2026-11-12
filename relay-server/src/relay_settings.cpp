@@ -91,6 +91,16 @@ bool set_value(Settings* s, const std::string& key, const std::string& value, st
         return true;
     }
 
+    if (key == "browser_port") {
+        if (!parse_int(value, &v) || v < 0 || v > 65535) {
+            *error = "browser_port must be 0-65535 (0 = off)";
+            return false;
+        }
+
+        s->browser_port = (uint16_t)v;
+        return true;
+    }
+
     if (key == "name") {
         const std::string name = sanitize_name(value, "");
 
@@ -151,6 +161,7 @@ std::string config_text(const Settings& s)
     std::string out = "# RS64 relay server settings ('save' in the server console rewrites this file)\n";
 
     out += "# UDP port, 1-65535\nport = " + std::to_string(s.port) + "\n";
+    out += "# UDP port browser players connect to, 0 = off\nbrowser_port = " + std::to_string(s.browser_port) + "\n";
     out += "# Server name shown in the game's list (A-Z, 0-9, space)\nname = " + s.name + "\n";
 
     for (const LimitDef& d : limits()) {
@@ -250,6 +261,7 @@ std::string usage()
 
     out += "  --config <path>       Config file (default " + std::string(kDefaultConfig) + "); flags override it\n";
     out += "  --port <n>            UDP port (default " + std::to_string(d.port) + ")\n";
+    out += "  --browser-port <n>    UDP port for browser players (default " + std::to_string(d.browser_port) + ", 0 = off)\n";
     out += "  --name <text>         Server name shown in the game's list (default " + d.name + ")\n";
 
     for (const LimitDef& l : limits()) {

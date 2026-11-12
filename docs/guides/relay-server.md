@@ -38,6 +38,7 @@ Every setting is a command-line flag, a line in the config file, and (limits onl
 | Flag | Config key | Default | Meaning |
 | --- | --- | --- | --- |
 | `--port` | `port` | 27070 | UDP port (1-65535) |
+| `--browser-port` | `browser_port` | 27071 | UDP port browser players connect to (0 = off). Only a relay built with `RELAY_WEBTRANSPORT` (below) listens on it |
 | `--name` | `name` | RS64 RELAY | Server name shown in the game's list (A-Z, 0-9, space; at most 16) |
 | `--max-clients` | `max_clients` | 64 | Connections at once: hosts, joiners and players browsing the list (1-4000) |
 | `--max-games` | `max_games` | 32 | Registered games (1-2000) |
@@ -111,5 +112,7 @@ git submodule update --init mods/multiplayer-native/lib/enet6
 cmake -S relay-server -B build-relay
 cmake --build build-relay --config Release --target rs64_relay
 ```
+
+Add `-DRELAY_WEBTRANSPORT=ON` to the first `cmake` line for a relay browser players can join (Windows only for now). It downloads libwtf and Microsoft's MsQuic package, and `msquic.dll` and `wtf.dll` must stay next to `rs64_relay.exe`.
 
 `relay_core_test` (also run by `rs64_unit_tests`) tests the protocol, limits, console and config handling.

@@ -2,6 +2,7 @@
 #include <enet6/enet.h>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 
 namespace rs64::relay {
 
@@ -16,21 +17,13 @@ std::string peer_ip(const ENetPeer* peer)
     return ip;
 }
 
-// One home has a whole /64 of IPv6 addresses, so the per-address limits count the /64. IPv4 peers on the dual-stack socket and loopback have a zero prefix.
-std::string peer_group(const ENetPeer* peer)
+bool is_ipv6_loopback(const ENetAddress& a)
 {
 
-    const auto& v6 = peer->address.host.v6;
+    ENetAddress one;
 
-    if (peer->address.type != ENET_ADDRESS_TYPE_IPV6 || (!v6[0] && !v6[1] && !v6[2] && !v6[3]))
-    {
-        return peer_ip(peer);
-    }
-
-    char group[32];
-
-    snprintf(group, sizeof group, "%04x:%04x:%04x:%04x::/64", v6[0], v6[1], v6[2], v6[3]);
-    return group;
+    enet_address_build_loopback(&one, ENET_ADDRESS_TYPE_IPV6);
+    return a.type == ENET_ADDRESS_TYPE_IPV6 && std::memcmp(a.host.v6, one.host.v6, sizeof one.host.v6) == 0;
 }
 
 }
@@ -73,11 +66,16 @@ void Host::service(Relay& relay, int timeout_ms)
         const uint32_t id = (uint32_t)(uintptr_t)ev.peer->data;
 
         switch (ev.type) {
-        case ENET_EVENT_TYPE_CONNECT:
+        case ENET_EVENT_TYPE_CONNECT: {
+            // A browser player arrives from its bridge socket on ::1; it counts as its own address.
+            const std::string bridged = (bridge_ && is_ipv6_loopback(ev.peer->address)) ? bridge_->remote_of(ev.peer->address.port) : std::string();
+            const std::string ip = bridged.empty() ? peer_ip(ev.peer) : bridged;
+
             ev.peer->data = (void*)(uintptr_t)next_peer_;
             peers_[next_peer_] = ev.peer;
-            relay.on_connect(next_peer_++, peer_ip(ev.peer), now_ms(), peer_group(ev.peer));
+            relay.on_connect(next_peer_++, ip, now_ms(), address_group(ip));
             break;
+        }
 
         case ENET_EVENT_TYPE_RECEIVE: {
             const bool reliable = (ev.packet->flags & ENET_PACKET_FLAG_RELIABLE) != 0;
