@@ -392,8 +392,8 @@ MenuConfig default_config(int lang) {
     mods.x = -163;
     m.buttons.push_back(std::move(mods));
 
-    // No quitting to desktop on Android; the system handles app exit.
-#ifndef __ANDROID__
+    // No quitting to desktop on Android (the system handles app exit) or in the browser (the tab does).
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 
     Button quit;
     quit.id = "quit";
@@ -545,7 +545,7 @@ struct SliderImpl { std::function<int()> get; std::function<void(int)> set; };
 static void open_mods_folder()
 {
 
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(__EMSCRIPTEN__)
 
     std::string url = "file://";
     const std::string dir = recomp::mods::get_mods_directory().generic_string();
