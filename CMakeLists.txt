@@ -394,6 +394,18 @@ if (EMSCRIPTEN)
     add_custom_command(TARGET web_shader_convert_test POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.html ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm $<TARGET_FILE_DIR:web_shader_convert_test>
         VERBATIM)
+
+    # Browser test, run like web_shader_convert_test: plume's WebGPU backend with RT64 shaders.
+    set(RS64_PLUME_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/IdleCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/FullScreenVS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c)
+    set_source_files_properties(${RS64_PLUME_TEST_SPIRV} PROPERTIES GENERATED TRUE)
+    add_executable(plume_webgpu_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_PLUME_TEST_SPIRV})
+    target_include_directories(plume_webgpu_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)
+    target_link_libraries(plume_webgpu_test PRIVATE plume)
+    add_dependencies(plume_webgpu_test rt64)
+    target_link_options(plume_webgpu_test PRIVATE -sPROXY_TO_PTHREAD -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
+    add_custom_command(TARGET plume_webgpu_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.html ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm $<TARGET_FILE_DIR:plume_webgpu_test>
+        VERBATIM)
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
 if (TARGET ucode_fixup)

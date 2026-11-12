@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>plume_webgpu_test</title>
+<script src="rs64tint.js"></script>
+</head>
+<body>
+<pre id="out">running</pre>
+<script>
+const outEl = document.getElementById('out');
+
+function log(text)
+{
+  outEl.textContent += '\n' + text;
+}
+
+rs64Tint().then(tint => {
+  window.Module = {
+    rs64Tint: tint,
+    print: log,
+    printErr: log,
+    onAbort: reason => log('ABORT ' + reason)
+  };
+
+  const s = document.createElement('script');
+
+  s.src = 'plume_webgpu_test.js';
+  document.body.append(s);
+});
+</script>
+</body>
+</html>
