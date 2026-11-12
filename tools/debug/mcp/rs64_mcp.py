@@ -18,8 +18,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tmem_decode  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-RENDERDOC_DLL = r"E:\Projects\renderdoc\x64\Release\renderdoc.dll"
-WAIT_LOG_FAIL = r"SEH caught|null-call|Assertion failed|Failed to find function"
+# ROGUESQ_RENDERDOC, else a renderdoc checkout next to the repo (the build the renderdoc MCP replays with), else the installed RenderDoc.
+RENDERDOC_DLL = os.environ.get("ROGUESQ_RENDERDOC") or next((p for p in (os.path.join(REPO, "..", "renderdoc", "x64", "Release", "renderdoc.dll"), os.path.join(os.environ.get("ProgramFiles", ""), "RenderDoc", "renderdoc.dll")) if os.path.isfile(p)), "")
+WAIT_LOG_FAIL = r"SEH caught|null-call|Assertion failed|Failed to find function|\[nav\] stuck"
+# wait_log gives up on a game that is neither held nor sending display lists for this long (a hang logs nothing).
+WAIT_LOG_FROZEN_S = 10
 # Debug builds serve the bridge here unless ROGUESQ_MCP_PORT says otherwise (src/main/main.cpp).
 DEFAULT_BRIDGE_PORT = 47064
 WAIT_LOG_MAX_S = 120
@@ -497,7 +500,19 @@ class Game:
         timeout_s = min(timeout_s, WAIT_LOG_MAX_S)
         offset = 0 if from_start else os.path.getsize(self.log_path)
         deadline = time.time() + timeout_s
+        last_dl, moved_at, checked_at = None, time.time(), 0.0
         while True:
+            if self.sock is not None and time.time() - checked_at >= 2:
+                checked_at = time.time()
+                try:
+                    info = self.call("frame_info", timeout_s=5)
+                except Exception:
+                    info = None
+                dl = info and info.get("clocks", {}).get("dl")
+                if info is None or info.get("held") or not dl or dl != last_dl:
+                    last_dl, moved_at = dl, checked_at
+                elif checked_at - moved_at >= WAIT_LOG_FROZEN_S:
+                    raise GameError(f"game frozen before {pattern!r}: no display list for {WAIT_LOG_FROZEN_S}s at dl {dl}, state {info.get('state')} (hang_dump captures it)")
             with open(self.log_path, "rb") as f:
                 f.seek(offset)
                 chunk = f.read()

@@ -26,6 +26,8 @@ void rs64_th_cinematicLoopBody_entry(uint8_t* rdram, recomp_context* ctx)
     // Periodic yield to break the cinematic thread-starvation stall.
     rs64_cine_yield();
 
+    rs64_nav_menu_seed(rdram);
+
     if (rs64_dbg_hooks_on()) {
         static int s_count = 0;
         ++s_count;
@@ -1278,6 +1280,7 @@ void rs64_th_menuControllerInput_800B51B8(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_menu_confirm_sound(rdram, ctx);
     rs64_menu_confirm_main(rdram);
+    rs64_nav_menu_page(rdram);
 }
 
 // bsearchFactor5TableByU16Key entry
@@ -1370,6 +1373,20 @@ void rs64_th_menuControllerInput_800B4E64(uint8_t* rdram, recomp_context* ctx)
 {
 
     rs64_menu_input_state(rdram, ctx);
+}
+
+// menuControllerInput entry: the front end's rand calls pick the backdrops.
+void rs64_th_menuControllerInput_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    rs64_nav_menu_seed(rdram);
+}
+
+// menuControllerInput 0x800B5274: the rand that steps the backdrop on a page change.
+void rs64_th_menuControllerInput_800B5274(uint8_t* rdram, recomp_context* ctx)
+{
+
+    rs64_nav_menu_seed(rdram);
 }
 
 // menuControllerInput 0x800B6700
@@ -2802,7 +2819,7 @@ int rs64_th_getViModePeriod_entry(uint8_t* rdram, recomp_context* ctx) {
 // cinematicLoopBody 0x800A602C: the cutscene frame's dt, from cinematicComputeDt.
 void rs64_th_cinematicLoopBody_800A602C(uint8_t* rdram, recomp_context* ctx) {
 
-    ctx->f0.fl = rs64_rate_frame(rdram, ctx->f0.fl);
+    ctx->f0.fl = rs64_nav_menu_dt(rs64_rate_frame(rdram, ctx->f0.fl));
 }
 
 // cinematicStageAdvancer 0x800AF5A8: frames held at full black after the ending fade.
@@ -2832,7 +2849,7 @@ void rs64_th_npcVortexUpdate_80081E04(uint8_t* rdram, recomp_context* ctx) {
 // advanceWrappingPhaseAccumulator 0x800C6710: a menu frame's dt, returned in $f0.
 void rs64_th_advanceWrappingPhaseAccumulator_800C6710(uint8_t* rdram, recomp_context* ctx) {
 
-    ctx->f0.fl = rs64_rate_frame(rdram, ctx->f0.fl);
+    ctx->f0.fl = rs64_nav_menu_dt(rs64_rate_frame(rdram, ctx->f0.fl));
 }
 
 // menuControllerInput 0x800B7900 / 0x800B793C: a held volume key has just stepped the level ($v0) by one; only 30 Hz ticks keep it.

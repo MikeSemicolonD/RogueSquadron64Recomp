@@ -1,0 +1,86 @@
+# What tools/debug/smoke/smoke.py captures. Levels run in one launch (abort to SELECT LEVEL between them; a failed one is skipped and the chain relaunched),
+# each changes group in one launch per level, menus in one launch. Frames are on the entry's clock: mission frames for levels, display lists after the
+# menu path is done for menus, the cutscene clock for cutscenes.
+
+[levels]
+# 19 is the front end's map, not a mission.
+ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20]
+frames = [30, 150, 300]
+# After the shots, each level pauses and steps every setting row of these pause pages through all its values, a shot per value (FULLSCREEN resizes the window).
+pause_pages = ["1/display", "1/display/advanced", "1/display/ray_tracing"]
+pause_skip = ["fullscreen"]
+
+# Setting changes mid-level, all of a group in one mission: change i at `at` + 60i, shot 30 frames later, changed back, shot again. A control run shoots the same frames unchanged. Keys are the menu buttons' setting keys (the MCP bridge's `setting` method with no key lists them); + changes several together.
+# visual = must not move anything in the game (player, camera, wingmen and NPCs must match the unchanged run); sim = may, so it's only compared with its own baseline.
+[changes]
+levels = [0, 15]
+at = 150
+visual = [
+  "widescreen",
+  "widescreen+hud_placement",
+  "resolution",
+  "antialiasing",
+  "texture_filter",
+  "upscale_filter",
+  "frame_interpolation",
+  "rt_lights",
+  "rt_lights+rt_shadows",
+  "rt_lights+rt_soft_shadows",
+  "rt_fog_shafts",
+  "rt_ao",
+  "rt_gi",
+  "rt_reflections",
+]
+sim = ["draw_distance", "legacy_terrain", "target_fps"]
+
+# A menu path selects each entry by label (a prefix ending in * for a live label like "WIDESCREEN: OFF"); the last one may be a setting, which the nav presses once.
+# wait: the log line that says the path is done. Shots are taken that many display lists after it.
+[menus]
+frames = [20, 60, 200]
+paths = [
+  "OPTIONS",
+  "OPTIONS/GAME SETTINGS",
+  "OPTIONS/SOUND SETTINGS",
+  "OPTIONS/CONTROLLER SETTINGS",
+  "OPTIONS/ELITE ROGUES",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/WIDESCREEN*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/RESOLUTION*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ANTI-ALIASING*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/DRAW DISTANCE*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/RAY TRACING",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/RAY TRACING/LIGHTS*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/RAY TRACING/SHADOWS*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ADVANCED",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ADVANCED/FRAME INTERPOLATION*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ADVANCED/TARGET FPS*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ADVANCED/LEGACY TERRAIN*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ADVANCED/TEXTURE FILTER*",
+  "OPTIONS/GAME SETTINGS/DISPLAY SETTINGS/ADVANCED/UPSCALE FILTER*",
+  "OPTIONS/SHOWROOM",
+  "OPTIONS/SHOWROOM/#0",
+  # Last: BIOGRAPHIES leaves the menus and B does not leave PASSCODES (the wheel takes it).
+  "OPTIONS/BIOGRAPHIES",
+  "OPTIONS/PASSCODES",
+]
+
+# The in-mission pause menu, one fixed-step mission: paused on lockstep frame `at`, then each page opened from the root. A page path names one page per level:
+# 0 root, 1 GAME SETTINGS, 2 SOUND SETTINGS, or a mod page name.
+[pause]
+level = 0
+at = 150
+pages = [0, 1, 2, "1/display", "1/display/ray_tracing", "1/display/advanced", "1/controls"]
+frames = [20, 60]
+
+# With cheats, one launch sets those unlock bits (ROGUESQ_CHEATS; 0x100000 = DIRECTOR, which adds SHOWROOM to OPTIONS), opens viewer_path (AT THE MOVIES,
+# row 1 of the hub, whose labels the nav can't read, plays them all in a row) and shoots each cutscene, named cutscene_seq_NN by their order; ids are then unused. Without cheats, each id (<level>,<kind>: kind 0
+# intro, 1 outro for levels 0-15; 3,2 epilogue; 19,2 boot intro) gets one launch per frame.
+[cutscenes]
+cheats = "0x100000"
+viewer_path = "OPTIONS/SHOWROOM/#1"
+frames = [60, 300]
+ids = [
+  "0,0", "0,1", "1,0", "1,1", "2,0", "2,1", "3,0", "3,1", "4,0", "4,1", "5,0", "5,1", "6,0", "6,1", "7,0", "7,1",
+  "8,0", "8,1", "9,0", "9,1", "10,0", "10,1", "11,0", "11,1", "12,0", "12,1", "13,0", "13,1", "14,0", "14,1", "15,0", "15,1",
+  "3,2", "19,2",
+]

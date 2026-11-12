@@ -1,7 +1,10 @@
 #include "lockstep/mcp_pause.h"
 #include "lockstep/lockstep_core.h"
 #include "game/game_state.h"
+#include "game/menus/menu_config_internal.h"
+#include "game/nav_sequencer.h"
 #include "host_api/host_api.h"
+#include "input/touch_menu.h"
 #include "main/mcp_bridge.h"
 #include "hle/rt64_rs64_mcp.h"
 #include "util/debug_logs.h"
@@ -564,6 +567,69 @@ static nlohmann::json mcp_release(const nlohmann::json&)
     return { { "released", true } };
 }
 
+// {next_level}: with ROGUESQ_NAV_CHAIN=1, abort the held mission and start that level; {menu}: back out to the main menu and select that path.
+static nlohmann::json mcp_nav(const nlohmann::json& p)
+{
+
+    if (p.contains("next_level")) {
+        rs64_nav_chain_next(p["next_level"].get<int>());
+
+        return { { "next_level", p["next_level"] } };
+    }
+
+    if (p.contains("menu")) {
+        rs64_nav_menu_next(p["menu"].get<std::string>().c_str());
+
+        return { { "menu", p["menu"] } };
+    }
+
+    throw std::runtime_error("pass next_level or menu");
+}
+
+// The in-mission pause menu: {} reports its page (0 root, 1 GAME SETTINGS, 2 SOUND SETTINGS, 3 abort confirm, 4+ mod pages; -1 closed), cursor and rows;
+// {page: n or a mod page name} moves the open page's cursor onto the entry that opens it, {entry: k} onto row k. Called on a held frame, the press and step after it land on the same frame every run.
+static nlohmann::json mcp_pause_menu(const nlohmann::json& p)
+{
+
+    uint8_t* rdram = (uint8_t*)g_recomp_rdram_for_wp_raw;
+
+    if (!rdram)
+    {
+        throw std::runtime_error("no rdram");
+    }
+
+    if (p.contains("page"))
+    {
+        const auto& page = p["page"];
+        const int want = page.is_string() ? rs64::menucfg::pause_page_id(page.get<std::string>()) : page.get<int>();
+        const int open = rs64::touch::read_paused(rdram) ? rs64::touch::pause_submenu(rdram) : -1;
+        const int k = open < 0 || want == 0xFF ? -1 : rs64::touch::pause_find_entry(rdram, open, (uint16_t)want);
+
+        if (k < 0 || !rs64::touch::pause_set_entry(rdram, k)) throw std::runtime_error("no entry on the open pause page opens that page");
+    }
+
+    if (p.contains("entry") && !rs64::touch::pause_set_entry(rdram, p["entry"].get<int>())) throw std::runtime_error("the pause menu is not open");
+
+    // Each selectable row: what it opens or marks (a page id, or 0xF010 + button index for a mod row, whose setting key is given).
+    const int open = rs64::touch::read_paused(rdram) ? rs64::touch::pause_submenu(rdram) : -1;
+    const auto& buttons = rs64::menucfg::config().buttons;
+    nlohmann::json rows = nlohmann::json::array();
+
+    for (int k = 0; open >= 0 && k < 64; ++k)
+    {
+        const int next = rs64::touch::pause_entry_next(rdram, open, k);
+
+        if (next < 0) break;
+
+        const size_t button = (size_t)(next - 0xF010);
+        const bool mod_row = next >= 0xF010 && button < buttons.size();
+
+        rows.push_back({ { "next", next }, { "key", mod_row ? buttons[button].behavior : std::string{} } });
+    }
+
+    return { { "page", open }, { "entry", rs64::touch::pause_entry(rdram) }, { "rows", rows } };
+}
+
 extern "C" void rs64_mcp_register_pause_methods()
 {
 
@@ -576,4 +642,7 @@ extern "C" void rs64_mcp_register_pause_methods()
     rs64_mcp_register("step", mcp_step);
     rs64_mcp_register("resume", mcp_resume);
     rs64_mcp_register("frame_info", [](const nlohmann::json&) { return mcp_frame_info(); });
+    rs64_mcp_register("setting", rs64::menucfg::setting_rpc);
+    rs64_mcp_register("nav", mcp_nav);
+    rs64_mcp_register("pause_menu", mcp_pause_menu);
 }

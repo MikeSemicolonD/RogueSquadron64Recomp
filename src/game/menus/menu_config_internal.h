@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 #include "recomp.h"
+#include "json/json.hpp"
 #include "input/input_bindings.h"
 #include "game/menus/menu_layout.h"
 
@@ -175,6 +176,7 @@ uint32_t alloc_str(uint8_t* rdram, const std::string& s);
 void call_export(uint8_t* rdram, recomp_func_t* fn);
 void fire_action(const std::string& key);
 void toggle_flip(const std::string& key);
+nlohmann::json setting_rpc(const nlohmann::json& p);
 void input_set(const std::function<void(rs64::input::Bindings&)>& set);
 void reset_controls();
 BehaviorFns resolve_behavior(const std::string& mod_id, BType type, const std::string& behavior);
@@ -186,6 +188,9 @@ int confirmed_slider_value(int key, int value, int vmin, int vmax, int step, con
 bool button_visible(uint8_t* rdram, const Button& b, bool pause = false);
 uint8_t page_id(const std::string& page);
 const std::string* page_name(uint8_t id);
+
+// Pause menu id of a mod page (0xFF if none), as its root and GAME SETTINGS entries link to it.
+uint8_t pause_page_id(const std::string& page);
 int byte_from_value(int v, int lo, int hi, int top = VOL_MAX);
 int value_from_byte(int b, int lo, int hi, int top = VOL_MAX);
 

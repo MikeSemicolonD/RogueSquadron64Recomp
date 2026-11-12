@@ -1206,16 +1206,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     uint16_t nav_buttons = 0;
     float nav_x = 0.f, nav_y = 0.f;
 
-    if (rs64_nav_consume(&nav_buttons, &nav_x, &nav_y)) {
-        *buttons = nav_buttons;
-        *x = nav_x;
-        *y = nav_y;
-
-        return true;
-    }
-
 #ifdef RS64_MCP
 
+    // An MCP press wins over the menu driver, which keeps reporting idle input while a chained run waits for its next level.
     if (rs64_mcp_consume_input(&nav_buttons, &nav_x, &nav_y)) {
         *buttons = nav_buttons;
         *x = nav_x;
@@ -1225,6 +1218,14 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     }
 
 #endif
+
+    if (rs64_nav_consume(&nav_buttons, &nav_x, &nav_y)) {
+        *buttons = nav_buttons;
+        *x = nav_x;
+        *y = nav_y;
+
+        return true;
+    }
 
     if (fake_controller_enabled()) {
         uint16_t sb = 0;

@@ -14,6 +14,12 @@ extern "C" {
     bool rs64_nav_consume(uint16_t* buttons, float* x, float* y);  // get_n64_input drains it
     // overlay: g_active_overlay (0 mission, 1 menu, 2 cinematic, -1 none).
     void rs64_nav_tick(uint8_t* rdram, int overlay);  // called each present; advances the step machine
+
+    // ROGUESQ_NAV_CHAIN=1 (smoke tests): an abort target holds each mission until this names the next level, then aborts to SELECT LEVEL and starts it.
+    void rs64_nav_chain_next(int level);
+
+    // Back out to the main menu, then select this menu path (labels joined by /), as a menu: boot target does.
+    void rs64_nav_menu_next(const char* path);
     // Craft-select hangar frames run since boot; it advances only while the hangar is up.
     uint32_t rs64_nav_hangar_frame_count(void);
 }

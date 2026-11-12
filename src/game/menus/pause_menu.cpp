@@ -101,13 +101,17 @@ uint8_t s_back_from = 0;
 int16_t s_back_cursor = 0;
 bool s_back_wait = false;
 
-uint8_t pause_page_id(const std::string& page)
+} // namespace
+
+uint8_t rs64::menucfg::pause_page_id(const std::string& page)
 {
 
     const uint8_t id = page_id(page);
 
     return id == 0xFF ? 0xFF : (uint8_t)(PAUSE_FIRST_PAGE + (id - FIRST_PAGE_ID));
 }
+
+namespace {
 
 const std::string* pause_page_name(uint8_t id)
 {

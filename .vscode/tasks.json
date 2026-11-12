@@ -241,7 +241,7 @@
         {
             "label": "Run: Game with RenderDoc",
             "type": "shell",
-            "command": "$dll = @('E:\\Projects\\renderdoc\\x64\\Release\\renderdoc.dll', \"$env:ProgramFiles\\RenderDoc\\renderdoc.dll\") | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $dll) { Write-Error 'renderdoc.dll not found (install RenderDoc)'; exit 1 }; $out = '${workspaceFolder}\\dumps\\renderdoc'; New-Item -ItemType Directory -Force $out | Out-Null; $env:ROGUESQ_RENDERDOC = $dll; $env:ROGUESQ_RENDERDOC_OUT = \"$out\\rs64\"; Write-Host \"Print Screen captures a frame to $out\"; & .\\RogueSquadron64Recomp.exe",
+            "command": "$dll = @('${workspaceFolder}\\..\\renderdoc\\x64\\Release\\renderdoc.dll',\"$env:ProgramFiles\\RenderDoc\\renderdoc.dll\") | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $dll) { Write-Error 'renderdoc.dll not found (install RenderDoc)'; exit 1 }; $out = '${workspaceFolder}\\dumps\\renderdoc'; New-Item -ItemType Directory -Force $out | Out-Null; $env:ROGUESQ_RENDERDOC = $dll; $env:ROGUESQ_RENDERDOC_OUT = \"$out\\rs64\"; Write-Host \"Print Screen captures a frame to $out\"; & .\\RogueSquadron64Recomp.exe",
             "options": {
                 "cwd": "${workspaceFolder}/build/${input:rsConfig}",
                 "shell": {
@@ -337,6 +337,36 @@
             },
             "problemMatcher": [],
             "detail": "Full-memory dump (RDRAM included) of every running RogueSquadron64Recomp.exe, even a frozen one, into dumps/crash-dumps/crash_<time>_pid<pid>_external.dmp. F12 writes a small dump without RDRAM; this one lets tools/debug/reconstruct-freeze.py rebuild the game threads and queues."
+        },
+        {
+            "label": "Test: Smoke test",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run; python tools/debug/smoke/smoke.py compare",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Plays every level, menu and cutscene in tools/debug/smoke/manifest.toml with the Release build and compares them with the baseline. Opens nothing; the report is dumps/smoke/current/report.html."
+        },
+        {
+            "label": "Test: Smoke test baseline",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run --tag baseline",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Captures a new smoke test baseline with the Release build, replacing nothing else. Look it over before comparing against it."
+        },
+        {
+            "label": "Test: Clean smoke test output",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py clean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Deletes dumps/smoke (smoke test screenshots and stats)."
         },
         {
             "label": "Record: Input recording (pick level / craft)",

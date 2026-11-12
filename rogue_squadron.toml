@@ -440,7 +440,6 @@ text = '{ rs64_th_freeManifestSegmentAssets_80004A80(rdram, ctx); }'
 func = "tickFormatMessageWorker"
 before_vram = 0x800B380C
 text = '{ rs64_th_tickFormatMessageWorker_800B380C(rdram, ctx); }'
-
 # initVideoSubsystem zeroes the new mode's first buffer on the CPU ($s1 = fb, $s0 = bytes); RT64 never sees it, so tell the present side.
 [[patches.hook]]
 func = "initVideoSubsystem"
@@ -1117,7 +1116,6 @@ text = '{ rs64_th_cinematicLoopBody_800A6024(rdram, ctx); }'
 func = "cinematicLoopBody"
 before_vram = 0x800A6084
 text = '{ rs64_th_cinematicLoopBody_800A6084(rdram, ctx); }'
-
 # Above 30 fps: the small smoke puffs (minimalRandomNpcHandler) grow by x1.1 per frame while they fade on a timer.
 [[patches.hook]]
 func = "minimalRandomNpcHandler"
@@ -1131,6 +1129,15 @@ before_vram = 0x800C6710
 text = '{ rs64_th_advanceWrappingPhaseAccumulator_800C6710(rdram, ctx); }'
 
 # Holding left / right on a volume slider steps it by 1 per frame.
+[[patches.hook]]
+func = "menuControllerInput"
+text = '{ rs64_th_menuControllerInput_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "menuControllerInput"
+before_vram = 0x800B5274
+text = '{ rs64_th_menuControllerInput_800B5274(rdram, ctx); }'
+
 [[patches.hook]]
 func = "menuControllerInput"
 before_vram = 0x800B7900

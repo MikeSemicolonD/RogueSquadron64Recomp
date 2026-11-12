@@ -1,0 +1,49 @@
+{
+  "advanced": {
+    "extAspectRatio": "Original",
+    "extAspectTarget": 1.7777777910232544,
+    "hardwareResolve": "Automatic",
+    "idleWorkActive": true,
+    "upscale2D": "ScaledOnly"
+  },
+  "antialiasing": 0,
+  "developerMode": false,
+  "drawDistance": 1.0,
+  "frameInterpolation": false,
+  "framebufferWriteback": true,
+  "fullscreen": false,
+  "fxaa": false,
+  "graphicsAPI": "auto",
+  "hdr": false,
+  "hudPlacement": 0.0,
+  "keepCutsceneDrawDistance": true,
+  "legacyTerrain": false,
+  "rayTracing": {
+    "ambientOcclusion": false,
+    "fogShafts": false,
+    "globalIllumination": false,
+    "lightLimits": {
+      "effects": 10,
+      "engines": 12,
+      "lasers": 4,
+      "lasersMax": 8,
+      "level": 4,
+      "models": 6,
+      "pickups": 4,
+      "torpedoes": 2
+    },
+    "lights": false,
+    "reflections": false,
+    "shadows": false,
+    "softShadows": true
+  },
+  "resolutionScale": 3,
+  "schema": 2,
+  "smoothTextures": true,
+  "smoothUpscale": true,
+  "ssaa": 1,
+  "targetFramerate": 60,
+  "terrainTessellation": 4,
+  "tripleBuffering": true,
+  "widescreen": false
+}

@@ -794,7 +794,8 @@ namespace rs64::touch {
             }
 
             if (f & 0x0001) {
-                if (rh(r, recs + 6u * i + 4) == next)
+                // Below the root only links (0x20) open a page; the game's own settings entries keep a value in that field.
+                if (rh(r, recs + 6u * i + 4) == next && (menu == 0 || (f & 0x0020)))
                 {
                     return k;
                 }

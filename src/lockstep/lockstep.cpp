@@ -219,13 +219,22 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
     s.missions++;
 
+    // ROGUESQ_LS_EACH_MISSION=1 (smoke tests chaining levels in one launch): every mission starts a new session, rewriting the recording.
+    static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION");
+
     if (s.missions > 1) {
         if (s.active)
         {
-            end_session("second initMission (one recording = one mission attempt)");
+            end_session(each ? "next mission" : "second initMission (one recording = one mission attempt)");
         }
 
-        return;
+        if (!each) return;
+
+        const int missions = s.missions;
+
+        s = State{};
+        s.mode = mode();
+        s.missions = missions;
     }
 
     s.frame = 0;
@@ -569,6 +578,7 @@ static void state_tick()
     frames = id == last ? frames + 1 : 0;
     last = id;
     rs64_pause_point(id.c_str(), frames);
+    rs64_nav_clock_point();
 }
 
 // The game state's clock: frames since the classifier last changed state, from the per-frame menu and mission hooks.

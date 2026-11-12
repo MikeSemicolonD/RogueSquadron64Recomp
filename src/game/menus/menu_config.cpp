@@ -16,6 +16,7 @@
 #include <iterator>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -862,6 +863,73 @@ void toggle_flip(const std::string& key) {
     auto it = toggles().find(key);
 
     if (it != toggles().end() && it->second.toggle) it->second.toggle();
+}
+
+nlohmann::json setting_value(const std::string& key)
+{
+
+    if (auto c = cycles().find(key); c != cycles().end()) {
+        const int v = c->second.get();
+
+        return { { "value", v }, { "text", c->second.text(v) } };
+    }
+
+    if (auto s = sliders().find(key); s != sliders().end())
+    {
+        return { { "value", s->second.get() } };
+    }
+
+    return { { "value", toggle_state(key) } };
+}
+
+// The MCP "setting" method: {} lists every built-in toggle, cycle and slider; {key[, steps]} steps a toggle or cycle as its menu button does; {key, value} sets a slider.
+nlohmann::json setting_rpc(const nlohmann::json& p)
+{
+
+    if (!p.contains("key")) {
+        nlohmann::json all = nlohmann::json::object();
+
+        for (const auto& [k, _] : toggles()) {
+            all[k] = setting_value(k);
+        }
+
+        for (const auto& [k, _] : cycles()) {
+            all[k] = setting_value(k);
+        }
+
+        for (const auto& [k, _] : sliders()) {
+            all[k] = setting_value(k);
+        }
+
+        return all;
+    }
+
+    const std::string key = p["key"].get<std::string>();
+    const bool known = toggles().count(key) || cycles().count(key) || sliders().count(key);
+
+    if (!known) {
+        throw std::runtime_error("unknown setting: " + key);
+    }
+
+    // draw_distance is both: the DISPLAY SETTINGS button steps it as a cycle, mod pages set it as a slider.
+    if (auto s = sliders().find(key); s != sliders().end() && (p.contains("value") || !cycles().count(key)))
+    {
+        if (!p.contains("value")) {
+            throw std::runtime_error(key + " is a slider: pass value");
+        }
+
+        s->second.set(p["value"].get<int>());
+
+        return setting_value(key);
+    }
+
+    const int steps = p.value("steps", 1);
+
+    for (int i = 0; i < steps; i++) {
+        toggle_flip(key);
+    }
+
+    return setting_value(key);
 }
 
 // A zeroed ctx on a stack of its own, so a .nrm export (recompiled MIPS) can call game functions as safely as a native one; marshaling via r2 (bool/int return) and r4 (int arg).
