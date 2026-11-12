@@ -9,9 +9,9 @@
     "steam-relay",
     "discord-status",
     "larger_object_pool.nrm",
-    "invincibility.nrm",
-    "long_tow_cable.nrm",
     "long_lasers.nrm",
+    "long_tow_cable.nrm",
+    "invincibility.nrm",
     "atst_crosshair.nrm",
     "lang-ja"
   ],
@@ -21,6 +21,10 @@
     "display-settings",
     "controls-menu",
     "multiplayer-native",
+    "larger_object_pool.nrm",
+    "long_lasers.nrm",
+    "long_tow_cable.nrm",
+    "invincibility.nrm",
     "atst_crosshair.nrm",
     "lang-ja"
   ]
