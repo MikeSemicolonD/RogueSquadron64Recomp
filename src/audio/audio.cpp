@@ -811,8 +811,15 @@ size_t get_frames_remaining()
     // audibly late against the picture (2026-09-08); the synth now runs on the retrace thread each VI.
     static int ms = -1;
 
+    // The browser's threads stall longer than a desktop's (shader compiles, main-thread waits), so it keeps a deeper queue.
+#if defined(__EMSCRIPTEN__)
+    static constexpr int kDefaultLatencyMs = 150;
+#else
+    static constexpr int kDefaultLatencyMs = 60;
+#endif
+
     if (ms < 0) {
-        ms = env_int("ROGUESQ_AUDIO_LATENCY_MS", 60);
+        ms = env_int("ROGUESQ_AUDIO_LATENCY_MS", kDefaultLatencyMs);
 
         if (ms < 0) ms = 0;
     }

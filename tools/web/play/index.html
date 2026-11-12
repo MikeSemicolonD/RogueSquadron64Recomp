@@ -201,6 +201,13 @@ canvas.addEventListener('click', () => {
     canvas.requestPointerLock();
 });
 
+// Browsers start audio only after a click or key press.
+for (const type of ['pointerdown', 'keydown'])
+  document.addEventListener(type, () => {
+    if (Module.rs64AudioContext && Module.rs64AudioContext.state !== 'running')
+      Module.rs64AudioContext.resume();
+  });
+
 document.addEventListener('pointerlockchange', () => {
   if (Module._rs64_web_pointer_lock_changed)
     Module._rs64_web_pointer_lock_changed(document.pointerLockElement === canvas ? 1 : 0);
