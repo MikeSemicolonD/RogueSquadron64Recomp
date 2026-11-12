@@ -10,7 +10,7 @@
 #include <bcrypt.h>
 #pragma comment(lib, "bcrypt")
 
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__EMSCRIPTEN__)
 
 #include <sys/types.h>
 #include <sys/random.h>
@@ -29,7 +29,7 @@ bool secure_random(uint8_t* out, size_t n)
 
 #if defined(_WIN32)
     return BCryptGenRandom(nullptr, out, (ULONG)n, BCRYPT_USE_SYSTEM_PREFERRED_RNG) >= 0;
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__EMSCRIPTEN__)
 
     while (n > 0) {
         const size_t chunk = n < 256 ? n : 256;

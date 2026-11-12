@@ -400,6 +400,9 @@ else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
 endif()
 
+# Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
+set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
+
 # main runs on a worker so the page's thread never blocks; memory is fixed (growth slows JS heap access with threads) at a size mobile Safari accepted in 2025 reports.
 if (EMSCRIPTEN)
     target_link_options(RogueSquadron64Recomp PRIVATE
@@ -414,9 +417,10 @@ if (EMSCRIPTEN)
     # shortcut: editing a mod's files alone doesn't relink, so the pack updates on the next link; add a stamp to LINK_DEPENDS if that bites.
     set(RS64_WEB_MODS_DIR ${CMAKE_BINARY_DIR}/web_mods)
     add_custom_target(web_mods
-        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=${RS64_WEB_MODS_DIR} -DPLATFORM=web -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=${RS64_WEB_MODS_DIR} -DPLATFORM=web -DBUILT=${RS64_BUILT_MODS_DIR}/web -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
         VERBATIM)
     add_dependencies(RogueSquadron64Recomp web_mods)
+    add_dependencies(web_mods multiplayer_native_web_folder)
     target_link_options(RogueSquadron64Recomp PRIVATE "--preload-file=${RS64_WEB_MODS_DIR}@/bundle/mods")
     set_property(TARGET RogueSquadron64Recomp APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/mods/platforms.json)
 
@@ -638,10 +642,8 @@ endif()
 if (WIN32)
     set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
 endif()
-# Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
-set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
 add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
-# The browser build links native mods statically instead (not yet).
+# The browser build links native mods statically instead (their CMake adds them to the game).
 if (NOT EMSCRIPTEN)
     add_dependencies(RogueSquadron64Recomp multiplayer_native)
 endif()

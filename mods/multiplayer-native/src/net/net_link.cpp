@@ -1,8 +1,12 @@
 #include "net/net_link.h"
 #include <enet6/enet.h>
+
+#ifndef __EMSCRIPTEN__
 #include <miniupnpc.h>
 #include <upnpcommands.h>
 #include <upnperrors.h>
+#endif
+
 #include <algorithm>
 #include <cstdio>
 #include <utility>
@@ -244,12 +248,19 @@ int receive_bytes(ENetSocket s, ENetAddress* from, uint8_t* buf, size_t cap)
 }
 }
 
+// A browser can't send or take UDP broadcasts; its games come from a relay.
+#ifdef __EMSCRIPTEN__
+constexpr bool kLanDiscovery = false;
+#else
+constexpr bool kLanDiscovery = true;
+#endif
+
 bool DiscoveryResponder::start(uint16_t game_port, const DiscoveryReply& info, uint32_t bind_v4)
 {
 
     stop();
 
-    if (!enet_ready())
+    if (!kLanDiscovery || !enet_ready())
     {
         return false;
     }
@@ -307,7 +318,7 @@ bool DiscoveryFinder::start(uint16_t game_port, std::vector<uint32_t> targets)
 
     stop();
 
-    if (!enet_ready())
+    if (!kLanDiscovery || !enet_ready())
     {
         return false;
     }
@@ -462,6 +473,17 @@ void PortMapper::run(std::shared_ptr<Job> job, std::shared_ptr<Job> prev, uint16
         }
     } done{*job};
 
+#ifdef __EMSCRIPTEN__
+
+    // A browser can't reach the router: hosting there goes through a relay.
+    (void)prev;
+    (void)port;
+    (void)iface;
+    (void)quitting;
+    set(PortMapState::NoRouter, "");
+
+#else
+
     // The previous run removes its mapping of the same port first, or its delete would undo this run's add.
     if (prev) {
         std::unique_lock<std::mutex> lk(prev->mu);
@@ -562,6 +584,8 @@ void PortMapper::run(std::shared_ptr<Job> job, std::shared_ptr<Job> prev, uint16
     FreeUPNPUrls(&urls);
 
     fprintf(stderr, "[upnp] UDP %u mapping removed\n", port);
+
+#endif
 }
 
 namespace {
