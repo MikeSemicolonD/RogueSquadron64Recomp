@@ -198,7 +198,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
 - **No env var, `--set` key or config field may pick an external identity** (Steam app id, store or account ids). Use a constant.
 - **Hardware detection only seeds first-run defaults.** Never cap or override a saved setting because of detected hardware.
 - **Remove a debug env var once the fix or feature it served is done** — the gate, the code behind it, its row in [docs/engine/debug-trace-env-vars.md](docs/engine/debug-trace-env-vars.md), and any comment naming it. Keep one only if it can test, validate or probe for other bugs (a trace category, a dump, an address watch, an A/B toggle for a still-heuristic path). A probe for one frame, one address or one already-verified fix does not qualify.
-- **Web JS** (`tools/web`, checked by `style_check` too; `voice_cats.js` is generated and skipped) keeps the comment, one-statement and no-bare-block rules, with its own layout. `node tools/web/rs64-explorer/tests/jsfmt.mjs --write` applies it to every file (or the ones named) and `--check` lists the files that differ; both need `npm install` in that folder.
+- **Web JS** (`tools/web`, checked by `style_check` too; `voice_cats.js` (generated) and the vendored `tools/web/play/coi-serviceworker.js` are skipped) keeps the comment, one-statement and no-bare-block rules, with its own layout. `node tools/web/rs64-explorer/tests/jsfmt.mjs --write` applies it to every file (or the ones named) and `--check` lists the files that differ; both need `npm install` in that folder.
 
   ```js
   function inspect(hit)

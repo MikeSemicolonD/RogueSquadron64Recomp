@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RS64 Browser Probe</title>
+<script src="coi-serviceworker.js"></script>
+<style>
+  :root { color-scheme: dark; --bg: #101418; --fg: #e8e4d8; --dim: #8a8f96; --ok: #7fc97f; --bad: #e06c5f; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  table { border-collapse: collapse; width: 100%; max-width: 720px; }
+  td { padding: 6px 8px; border-bottom: 1px solid #2a3038; vertical-align: top; word-break: break-word; }
+  td:first-child { color: var(--dim); width: 45%; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  form { margin-top: 16px; display: flex; gap: 8px; max-width: 720px; }
+  input { flex: 1; min-width: 0; padding: 6px; background: #1b2128; color: var(--fg); border: 1px solid #2a3038; }
+  button { padding: 6px 12px; }
+</style>
+</head>
+<body>
+<h1>Browser check</h1>
+<table><tbody id="rows"></tbody></table>
+<form id="wt">
+  <input id="wtAddr" placeholder="host:port#sha256" aria-label="Relay address">
+  <button type="submit">Test relay</button>
+</form>
+<script>
+const rows = document.getElementById('rows');
+
+function row(name, value, good)
+{
+  const tr = document.createElement('tr');
+  const a = document.createElement('td');
+  const b = document.createElement('td');
+
+  a.textContent = name;
+  b.textContent = String(value);
+
+  if (good !== undefined)
+    b.className = good ? 'ok' : 'bad';
+
+  tr.append(a, b);
+  rows.append(tr);
+  return b;
+}
+
+function largestSharedMemory()
+{
+  let best = 0;
+
+  for (const pages of [4096, 8192, 16384]) {
+    try {
+      new WebAssembly.Memory({ initial: 1024, maximum: pages, shared: true });
+      best = pages;
+    } catch (e) {
+      break;
+    }
+  }
+
+  return best ? `${best / 16} MB` : 'none';
+}
+
+function leb(n)
+{
+  const out = [];
+
+  do {
+    let b = n & 0x7f;
+    n >>>= 7;
+
+    if (n)
+      b |= 0x80;
+
+    out.push(b);
+  } while (n);
+
+  return out;
+}
+
+function testModule(funcCount, nopsPerFunc)
+{
+  const body = [...leb(nopsPerFunc + 2), 0, ...new Array(nopsPerFunc).fill(0x01), 0x0b];
+  const funcs = [...leb(funcCount), ...new Array(funcCount).fill(0)];
+  const codeLen = leb(funcCount).length + funcCount * body.length;
+  const bytes = new Uint8Array(8 + 6 + 1 + leb(funcs.length).length + funcs.length + 1 + leb(codeLen).length + codeLen);
+  let o = 0;
+
+  for (const b of [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0, 1, 4, 1, 0x60, 0, 0, 3])
+    bytes[o++] = b;
+
+  for (const b of [...leb(funcs.length), ...funcs])
+    bytes[o++] = b;
+
+  bytes[o++] = 10;
+
+  for (const b of [...leb(codeLen), ...leb(funcCount)])
+    bytes[o++] = b;
+
+  for (let i = 0; i < funcCount; i++) {
+    bytes.set(body, o);
+    o += body.length;
+  }
+
+  return bytes;
+}
+
+async function probeCompile(cell)
+{
+  const bytes = testModule(100000, 300);
+  const t0 = performance.now();
+
+  try {
+    await WebAssembly.compile(bytes);
+    cell.textContent = `${(bytes.length / 1048576).toFixed(0)} MB in ${Math.round(performance.now() - t0)} ms`;
+  } catch (e) {
+    cell.textContent = `failed: ${e.message}`;
+    cell.className = 'bad';
+  }
+}
+
+async function probeGpu()
+{
+  if (!navigator.gpu) {
+    row('WebGPU', 'missing', false);
+    return;
+  }
+
+  const adapter = await navigator.gpu.requestAdapter();
+
+  if (!adapter) {
+    row('WebGPU', 'no adapter', false);
+    return;
+  }
+
+  const l = adapter.limits;
+
+  row('WebGPU', 'yes', true);
+  row('Storage buffers per stage', l.maxStorageBuffersPerShaderStage, l.maxStorageBuffersPerShaderStage >= 21);
+  row('Samplers per stage', l.maxSamplersPerShaderStage);
+  row('Sampled textures per stage', l.maxSampledTexturesPerShaderStage);
+  row('Storage textures per stage', l.maxStorageTexturesPerShaderStage);
+  row('Dual-source blending', adapter.features.has('dual-source-blending'), adapter.features.has('dual-source-blending'));
+}
+
+async function testRelay(addr, cell)
+{
+  const hash = addr.indexOf('#');
+
+  if (hash < 0) {
+    cell.textContent = 'address needs #sha256';
+    return;
+  }
+
+  const hex = addr.slice(hash + 1);
+  const value = new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16)));
+
+  try {
+    const wt = new WebTransport(`https://${addr.slice(0, hash)}`, { serverCertificateHashes: [{ algorithm: 'sha-256', value }] });
+
+    await wt.ready;
+    cell.textContent = 'ready';
+    cell.className = 'ok';
+    wt.close();
+  } catch (e) {
+    cell.textContent = `failed: ${e.message || e}`;
+    cell.className = 'bad';
+  }
+}
+
+async function main()
+{
+  row('Browser', navigator.userAgent);
+  row('Cross-origin isolated', crossOriginIsolated, crossOriginIsolated);
+  row('Largest shared memory', largestSharedMemory());
+  await probeGpu();
+  row('WebTransport', typeof WebTransport !== 'undefined', typeof WebTransport !== 'undefined');
+  row('Motion permission prompt', typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function');
+  row('Audio session', 'audioSession' in navigator);
+  row('Wake lock', 'wakeLock' in navigator);
+  await probeCompile(row('Compile test module', 'running'));
+}
+
+document.getElementById('wt').addEventListener('submit', e => {
+  e.preventDefault();
+  testRelay(document.getElementById('wtAddr').value.trim(), row('Relay test', 'connecting'));
+});
+
+main();
+</script>
+</body>
+</html>
