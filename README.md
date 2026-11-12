@@ -245,6 +245,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - During the end sequence a few firework effects (After 4 go off in sequence and are visible on screen) don't display.
 
+- Camera jitter after the player dies, spirals out and hits the ground while the camera is over a sharp incline.
+
 #### Ray Tracing Caveats
 
 - Stray/odd shadows in places mostly due to terrain or its edge geometry
