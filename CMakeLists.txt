@@ -19,6 +19,12 @@ if (WIN32)
     add_compile_definitions(NOMINMAX _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
+# The browser build: every object needs threads (shared memory) and wasm exceptions, which librecomp's thread recovery uses.
+if (EMSCRIPTEN)
+    add_compile_options(-pthread -fwasm-exceptions)
+    add_link_options(-pthread -fwasm-exceptions)
+endif()
+
 # MSBuild compiles a project's sources one at a time under ClangCL without the multi-tool task.
 if (CMAKE_GENERATOR MATCHES "Visual Studio")
     set(CMAKE_VS_GLOBALS "UseMultiToolTask=true" "EnforceProcessCountAcrossBuilds=true")
@@ -83,6 +89,12 @@ if (ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_library(SDL2::SDL2 ALIAS SDL2-static)
     endif()
 endif()
+# The browser build uses Emscripten's SDL2 port.
+if (EMSCRIPTEN)
+    add_library(SDL2::SDL2 INTERFACE IMPORTED)
+    set_target_properties(SDL2::SDL2 PROPERTIES INTERFACE_COMPILE_OPTIONS "-sUSE_SDL=2" INTERFACE_LINK_OPTIONS "-sUSE_SDL=2"
+        INTERFACE_INCLUDE_DIRECTORIES "${EMSCRIPTEN_SYSROOT}/include/SDL2")
+endif()
 # RT64's file dialogs (inspector only) go through xdg-desktop-portal over D-Bus instead of linking GTK.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
@@ -134,7 +146,8 @@ if (MSVC)
     target_compile_definitions(RecompiledFuncs PRIVATE _CRT_SECURE_NO_WARNINGS)
     # mem_wu.h adds the unsigned-word MEM_WU macro that upstream recomp.h lacks.
     target_compile_options(RecompiledFuncs PRIVATE
-        /FI${CMAKE_SOURCE_DIR}/include/mem_wu.h)
+        /FI${CMAKE_SOURCE_DIR}/include/mem_wu.h
+        /FI${CMAKE_SOURCE_DIR}/include/recomp_imports.h)
     # The recompiled code type-puns RDRAM through MEM_*; strict aliasing miscompiles it at -O2.
     target_compile_options(RecompiledFuncs PRIVATE -fno-strict-aliasing)
     target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
@@ -144,7 +157,8 @@ else()
         -fno-strict-aliasing
         -Wno-unused-variable
         $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>
-        -include "${CMAKE_SOURCE_DIR}/include/mem_wu.h"
+        "SHELL:-include ${CMAKE_SOURCE_DIR}/include/mem_wu.h"
+        "SHELL:-include ${CMAKE_SOURCE_DIR}/include/recomp_imports.h"
     )
 endif()
 
@@ -253,8 +267,8 @@ target_include_directories(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,
 # Graphics are HLE through RT64; only the audio RSP ucodes (shared boot + MusyX synth, from rsp/*.toml) are recompiled.
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
 set(MUSYX_AUDIO_C   ${CMAKE_SOURCE_DIR}/build/factor5_ucode/musyx_audio_recompiled.c)
-# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android and the macOS cross-build reuse the host-fixed files.
-if (ANDROID OR (APPLE AND CMAKE_CROSSCOMPILING))
+# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android, the macOS cross-build and the browser build reuse the host-fixed files.
+if (ANDROID OR EMSCRIPTEN OR (APPLE AND CMAKE_CROSSCOMPILING))
     foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
         file(READ ${ucode_c} ucode_text)
         string(FIND "${ucode_text}" "/* fixup:" ucode_fixed)
@@ -309,6 +323,8 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/game/lang/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/video/render_diag.cpp
+    $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/video/null_render_context.cpp>
+    $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/audio/audio_web.cpp>
     ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/game/upstream_compat.cpp
@@ -353,6 +369,20 @@ if (ANDROID)
     endif()
 else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
+endif()
+
+# main runs on a worker so the page's thread never blocks; memory is fixed (growth slows JS heap access with threads) at a size mobile Safari accepted in 2025 reports.
+if (EMSCRIPTEN)
+    target_link_options(RogueSquadron64Recomp PRIVATE
+        -sPROXY_TO_PTHREAD -sPTHREAD_POOL_SIZE=32 -sDEFAULT_PTHREAD_STACK_SIZE=1MB -sSTACK_SIZE=1MB
+        -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=512MB -sALLOW_MEMORY_GROWTH=0
+        -sEXIT_RUNTIME=0 -sINVOKE_RUN=0 -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,IDBFS -lidbfs.js
+        $<$<CONFIG:Debug>:-sSTACK_OVERFLOW_CHECK=1>)
+
+    # The play page, its service worker and the game icon sit next to the .js/.wasm, so the build folder can be served as is.
+    add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tools/web/play/index.html ${CMAKE_SOURCE_DIR}/tools/web/play/coi-serviceworker.js ${CMAKE_SOURCE_DIR}/favicon.ico $<TARGET_FILE_DIR:RogueSquadron64Recomp>
+        VERBATIM)
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
 if (TARGET ucode_fixup)
@@ -545,23 +575,26 @@ endif()
 # Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
 set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
 add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
-add_dependencies(RogueSquadron64Recomp multiplayer_native)
+# The browser build links native mods statically instead (not yet).
+if (NOT EMSCRIPTEN)
+    add_dependencies(RogueSquadron64Recomp multiplayer_native)
+endif()
 # The co-op relay server (rs64_relay, built on request); after multiplayer-native so it reuses ENet6.
 add_subdirectory(${CMAKE_SOURCE_DIR}/relay-server ${CMAKE_BINARY_DIR}/relay-server)
 # After multiplayer-native, so the tests reuse its ENet6 and miniupnpc targets.
 add_subdirectory(${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
 # The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.
 set(STEAMWORKS_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/steamworks/sdk" CACHE PATH "Steamworks SDK folder (holds public/steam/steam_api_flat.h)")
-if (NOT ANDROID AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")
+if (NOT ANDROID AND NOT EMSCRIPTEN AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")
     add_subdirectory(${CMAKE_SOURCE_DIR}/mods/steam-relay ${CMAKE_BINARY_DIR}/steam-relay EXCLUDE_FROM_ALL)
     add_dependencies(RogueSquadron64Recomp steam_relay)
-elseif (NOT ANDROID)
+elseif (NOT ANDROID AND NOT EMSCRIPTEN)
     message(STATUS "steam-relay mod not built: no Steamworks SDK at ${STEAMWORKS_SDK_DIR}")
 endif()
 
 # Stage the desktop mods listed in mods/platforms.json next to the exe. The user's own mod folders there are left alone.
 # Native mods built by this CMake (multiplayer-native) are staged from build/built_mods/<Config>; a relink restages here, a rebuild of the library alone restages from its own POST_BUILD.
-if (NOT ANDROID)
+if (NOT ANDROID AND NOT EMSCRIPTEN)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods -DPLATFORM=desktop
         -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG>

@@ -111,6 +111,19 @@ sudo apt install flatpak flatpak-builder
 
 `tools/release/linux/make-flatpak.sh` adds Flathub for the current user and installs `org.freedesktop.Platform` and `org.freedesktop.Sdk` 26.08 for the target architecture on first use, a few hundred MB each. aarch64 bundles also need `sudo apt install qemu-user-static`: its emulator registrations carry the `F` (fix-binary) flag, without which the arm64 SDK's `/bin/sh` can't start inside Flatpak's sandbox (`bwrap: execvp /bin/sh: No such file or directory`).
 
+## Browser (Windows host, untested)
+
+Boots to the menus with no picture: the WebGPU renderer, sound and mods are still to come. It reuses `RecompiledFuncs/`, `src/game/state_table.inl`, `build/factor5_ucode/*.c` and the host tools from a Windows Release build.
+
+Install [emsdk](https://github.com/emscripten-core/emsdk) and activate Emscripten 6.0.13 (`emsdk install 6.0.13`, `emsdk activate 6.0.13`), then from an `emsdk_env` shell:
+
+```bat
+emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release -DRT64_HOST_FILE_TO_C=build/Release/file_to_c.exe -DN64RECOMP_EXE=build/Release/N64Recomp.exe -DRECOMP_MOD_TOOL=build/Release/RecompModTool.exe -DMIPS_TOOLCHAIN_DIR=<mips toolchain>
+cmake --build build-web --target RogueSquadron64Recomp
+```
+
+`build-web/` then holds the page (`index.html`), so serve that folder over HTTPS or `localhost` and open it in Chrome or Edge. The `-DRS64_DAWN_DIR=<Dawn release package>` option on the Windows build adds `rs64_web_shaders`, which converts the renderer's shaders to WGSL.
+
 ## What players need
 
 | Platform | Requirement |

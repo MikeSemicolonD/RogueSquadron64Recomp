@@ -16,6 +16,10 @@
 #include "SDL2/SDL.h"
 #endif
 
+#if defined(__EMSCRIPTEN__)
+#include "audio/audio_web.h"
+#endif
+
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 
@@ -522,6 +526,18 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
 // ---------------------------------------------------------------------------
 // Audio (SDL2)
 // ---------------------------------------------------------------------------
+
+#if defined(__EMSCRIPTEN__)
+
+// The browser build sends the same calls to its own output: SDL2's web audio reads its AudioContext from the calling thread, and the game runs on a worker.
+#define SDL_OpenAudioDevice(device, capture, desired, obtained, changes) ::rs64::audio::web::open((desired)->freq)
+#define SDL_CloseAudioDevice(id) ::rs64::audio::web::close()
+#define SDL_PauseAudioDevice(id, paused) ((void)0)
+#define SDL_QueueAudio(id, data, bytes) ::rs64::audio::web::queue((data), (bytes))
+#define SDL_GetQueuedAudioSize(id) ::rs64::audio::web::queued_bytes()
+
+#endif
+
 static SDL_AudioDeviceID audio_device = 0;
 
 #ifdef __ANDROID__

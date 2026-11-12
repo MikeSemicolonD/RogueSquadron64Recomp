@@ -10,6 +10,11 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #include <exception>
 #include <typeinfo>
 
@@ -43,6 +48,7 @@
 #include "game/nav_sequencer.h"        // rs64_nav_consume, rs64_nav_tick
 
 #include "video/rt64_render_context.h"  // recomp::create_render_context
+#include "video/null_render_context.h"
 #include "video/video_config.h"
 #include "main/renderdoc_capture.h"
 #include <mutex>
@@ -263,7 +269,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 #if defined(__APPLE__)
     window_flags |= SDL_WINDOW_METAL;
-#elif !defined(_WIN32)
+#elif !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     window_flags |= SDL_WINDOW_VULKAN;
 #endif
 
@@ -604,6 +610,11 @@ int main(int argc, char* argv[])
 
 #endif
 
+#ifdef __EMSCRIPTEN__
+    // The play page mounts the browser's storage at /persist and puts the ROM there before calling main.
+    std::filesystem::current_path("/persist");
+#endif
+
 #ifdef __APPLE__
     enter_app_bundle_data_dir();
 #endif
@@ -858,6 +869,20 @@ int main(int argc, char* argv[])
         rom_problem.clear();
     }
 
+#elif defined(__EMSCRIPTEN__)
+
+    // The play page put the player's file at /persist; if it isn't the ROM, the page shows why and its picker again.
+    if (!recomp::is_rom_valid(rs_game_id))
+    {
+        const std::filesystem::path placed = "/persist/rogue_squadron.z64";
+        const std::string problem = rom_problem_text(recomp::select_rom(placed, rs_game_id));
+        std::error_code ec;
+
+        std::filesystem::remove(placed, ec);
+        MAIN_THREAD_EM_ASM({ Module.romRejected(UTF8ToString($0)); }, problem.c_str());
+        return 0;
+    }
+
 #else
 
     // No ROM found: say where it goes and offer a file picker, instead of starting to a silent black window.
@@ -912,7 +937,11 @@ int main(int argc, char* argv[])
             .get_rsp_microcode = rs64::audio::get_rsp_microcode,
         },
         .renderer_callbacks = {
+#if defined(__EMSCRIPTEN__)
+            .create_render_context = recomp::create_null_render_context,
+#else
             .create_render_context = recomp::create_render_context,
+#endif
         },
         .audio_callbacks = {
             .queue_samples        = rs64::audio::queue_samples,
