@@ -88,7 +88,7 @@ static std::vector<std::string> findings(const fs::path& root) {
         auto ext = it->path().extension();
         const auto name = it->path().filename();
 
-        if (it->is_regular_file() && (ext == ".js" || ext == ".mjs") && name != "voice_cats.js" && name != "coi-serviceworker.js") js.push_back(it->path());
+        if (it->is_regular_file() && (ext == ".js" || ext == ".mjs") && name != "voice_cats.js" && name != "coi-serviceworker.js" && name != "rs64tint.js") js.push_back(it->path());
     }
     std::sort(js.begin(), js.end());
     for (auto& f : js) {

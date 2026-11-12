@@ -379,9 +379,9 @@ if (EMSCRIPTEN)
         -sEXIT_RUNTIME=0 -sINVOKE_RUN=0 -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,IDBFS -lidbfs.js
         $<$<CONFIG:Debug>:-sSTACK_OVERFLOW_CHECK=1>)
 
-    # The play page, its service worker and the game icon sit next to the .js/.wasm, so the build folder can be served as is.
+    # The play page, its service worker, the shader converter (rs64tint) and the game icon sit next to the .js/.wasm, so the build folder can be served as is.
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tools/web/play/index.html ${CMAKE_SOURCE_DIR}/tools/web/play/coi-serviceworker.js ${CMAKE_SOURCE_DIR}/favicon.ico $<TARGET_FILE_DIR:RogueSquadron64Recomp>
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tools/web/play/index.html ${CMAKE_SOURCE_DIR}/tools/web/play/coi-serviceworker.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm ${CMAKE_SOURCE_DIR}/favicon.ico $<TARGET_FILE_DIR:RogueSquadron64Recomp>
         VERBATIM)
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
