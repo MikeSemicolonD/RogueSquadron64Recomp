@@ -1,13 +1,13 @@
 """Visual + stat smoke test: every target in manifest.toml captured on exact frames, then compared with a baseline run.
 
-  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes] [--filter level00] [--speed 16] [--platforms windows]
+  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
   python tools/debug/smoke/smoke.py compare [--baseline baseline] [--tag current] [--platforms windows]
   python tools/debug/smoke/smoke.py clean
 
 Runs the Release exe from a staged copy in build/Smoke with the pinned profile in tools/debug/smoke/profile, never the user's own settings or save;
 the profile and save are reset before every launch. Output goes to dumps/smoke/<tag>/<platform>/<target>/<clock>-<frame:06>[_<change>].png plus a .json with
 the game state, draw counts, frame times and (in missions) player, camera, wingmen and NPC positions. A target that fails to run leaves error.txt.
-Make a baseline with `run --tag baseline`. Frame times only mean something at --speed 1.
+Make a baseline with `run --tag baseline`. Frame times in the other sections run at --speed; the perf section measures each repo video preset at real speed.
 """
 import argparse
 import html
@@ -17,6 +17,7 @@ import re
 import shutil
 import struct
 import sys
+import time
 import tomllib
 import traceback
 
@@ -34,7 +35,7 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 # invincibility: an unflown craft would otherwise crash (the Trench Run walls) and stop the chain on a game over.
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
-SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes"]
+SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf"]
 # The launch config each platform runs (rs64_mcp Game.launch); None = no launcher yet.
 PLATFORMS = {"windows": "Smoke", "linux": None, "android": None}
 config = PLATFORMS["windows"]
@@ -175,7 +176,7 @@ def shot(game, out_dir, name, mission):
         json.dump(record, f, indent=1)
 
 
-def session(out, env, body, speed, record=None):
+def session(out, env, body, speed, record=None, settings=None):
     """One launch: body(game) moves game.target_dir along as it shoots. A failure, or faults in the log, is written into the target it was on; returns False on failure."""
 
     reset_profile()
@@ -191,7 +192,7 @@ def session(out, env, body, speed, record=None):
     os.makedirs(out, exist_ok=True)
 
     try:
-        game.launch(config, full_env, record=record)
+        game.launch(config, full_env, record=record, settings=settings)
         body(game)
     except Exception:
         error = traceback.format_exc()
@@ -201,7 +202,20 @@ def session(out, env, body, speed, record=None):
     os.makedirs(game.target_dir, exist_ok=True)
 
     with open(game.log_path, "rb") as f:
-        bad = [line for line in f.read().decode("utf-8", "replace").splitlines() if any(k in line for k in FAULTS)]
+        lines = f.read().decode("utf-8", "replace").splitlines()
+
+    # A fault line and the stack frames ("  [ n] ...") printed under it.
+    bad = []
+    in_stack = False
+
+    for line in lines:
+        if any(k in line for k in FAULTS):
+            in_stack = True
+        elif not (in_stack and line.startswith("  [")):
+            in_stack = False
+            continue
+
+        bad.append(line)
 
     if bad:
         with open(os.path.join(game.target_dir, "faults.txt"), "a") as f:
@@ -458,7 +472,7 @@ def hold_nav(game, frames, after):
     game.call("resume")
 
 
-def menu_chain(out, paths, frames, speed):
+def menu_chain(out, paths, frames, speed, cheats=""):
     """Every menu path in one launch: back to the main menu between paths, and any setting a path pressed put back first.
     Shots count from the final A press, and ROGUESQ_MENU_FIXED pins the backdrop and the animation timing, so menu shots repeat exactly. A failed path is skipped and the chain relaunched."""
 
@@ -489,7 +503,7 @@ def menu_chain(out, paths, frames, speed):
 
                 done.append(path)
 
-        session(out, {"ROGUESQ_BOOT_TARGET": f"menu:{remaining[0]}"}, body, speed)
+        session(out, {"ROGUESQ_BOOT_TARGET": f"menu:{remaining[0]}", "ROGUESQ_CHEATS": cheats}, body, speed)
         remaining = remaining[len(done) + 1:]
 
 
@@ -599,7 +613,7 @@ def run(args):
         paths = [p for p in m["menus"]["paths"] if wanted("menu_" + p.lower())]
 
         if paths:
-            menu_chain(out, paths, m["menus"]["frames"], args.speed)
+            menu_chain(out, paths, m["menus"]["frames"], args.speed, m["menus"].get("cheats", ""))
 
     if "pause" in sections:
         p = m["pause"]
@@ -625,6 +639,39 @@ def run(args):
                         hold(game, "cutscene", [(frame, "", None)], False)
 
                     session(out, {"ROGUESQ_BOOT_TARGET": f"cutscene:{scene}"}, cutscene_body, args.speed)
+
+    if "perf" in sections:
+        p = m["perf"]
+
+        for level in p["levels"]:
+            for preset in p["presets"]:
+                if wanted(f"perf_level{level:02d}_{preset}"):
+                    perf_run(out, level, preset, p["at"], p["seconds"])
+
+
+def perf_run(out, level, preset, at, seconds):
+    """One real-speed launch with a repo video preset merged over the pinned profile: held on mission frame `at` to line the runs up, then run `seconds` and RT64's last
+    120 frame times read into perf_level<id>_<preset>/perf.json."""
+
+    with open(os.path.join(REPO, "video-presets", preset, "roguesq_video.json"), encoding="utf-8") as f:
+        settings = json.load(f)
+
+    def body(game):
+
+        enter(game, os.path.join(out, f"perf_level{level:02d}_{preset}"))
+        game.call("pause_at", {"clock": "mission", "frame": at, "timeout_s": 240}, 255)
+        shot(game, game.target_dir, f"mission-{at:06d}", True)
+        game.call("resume")
+
+        # A wall-clock wait is right here: the frame times are of the real-speed run, not of any one frame.
+        time.sleep(seconds)
+
+        times = game.call("frame_times")
+
+        with open(os.path.join(game.target_dir, "perf.json"), "w") as f:
+            json.dump({k: times[k] for k in ("present", "renderer_cpu", "renderer_gpu") if k in times}, f, indent=1)
+
+    session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}", "ROGUESQ_FIXED_STEP": "0"}, body, 1, settings=settings)
 
 
 def image_diff(a, b, diff_path=None):
@@ -655,8 +702,12 @@ RULES = {
     "cutscene": (20, ["state"]),
     "menu": (0.05, ["state"]),
     "pause": (0.05, ["state"]),
+    # Real-speed runs: the picture follows the wall clock, only perf.json is compared (PERF_SLOWER).
+    "perf": (None, ["state"]),
 }
 STAT_FIELDS = ["player", "camera", "wingmen", "npcs"]
+# A preset whose average frame time grew by more than this fraction fails.
+PERF_SLOWER = 0.15
 
 
 def load_json(path):
@@ -738,6 +789,21 @@ def compare(args):
         for name in ("error.txt", "faults.txt"):
             if name in files:
                 rows.append((os.path.relpath(os.path.join(root, name), cur), None, [name[:-4]]))
+
+    for root, _, files in os.walk(base):
+        if "perf.json" not in files:
+            continue
+
+        rel = os.path.relpath(os.path.join(root, "perf.json"), base)
+        before = load_json(os.path.join(base, rel)).get("present", {}).get("avg")
+        after = load_json(os.path.join(cur, rel)).get("present", {}).get("avg") if os.path.exists(os.path.join(cur, rel)) else None
+
+        if not before or not after:
+            rows.append((rel, None, ["missing"]))
+            continue
+
+        slower = after > before * (1 + PERF_SLOWER)
+        rows.append((f"{rel} ({1000 / before:.0f} -> {1000 / after:.0f} fps)", None, [f"frame time +{after / before - 1:.0%}"] if slower else []))
 
     failed = 0
 

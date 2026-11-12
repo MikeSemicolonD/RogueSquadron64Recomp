@@ -831,6 +831,14 @@ static void nav_menu(uint8_t* rdram, const char* st)
         if (title_word != s_title_word || menu_id != s_menu_id || rs64_menu_confirms() != s_confirms || cutscene)
         {
             fprintf(stderr, "[nav] menu: selected %s\n", path[s_step].c_str());
+
+            // Screens with their own input handler (the SHOWROOM hub) never reach rs64_nav_menu_page, so the clock starts when the change shows.
+            if (s_final_read.exchange(false))
+            {
+                s_nav_clock_on = true;
+                s_nav_clock = 0;
+            }
+
             s_pressed_at = -1;
             nav_advance();
 

@@ -37,6 +37,8 @@ sim = ["draw_distance", "legacy_terrain", "target_fps"]
 # wait: the log line that says the path is done. Shots are taken that many display lists after it.
 [menus]
 frames = [20, 60, 200]
+# DIRECTOR (OPTIONS shows SHOWROOM) and MAESTRO (its CONCERT HALL opens).
+cheats = "0x180000"
 paths = [
   "OPTIONS",
   "OPTIONS/GAME SETTINGS",
@@ -71,6 +73,15 @@ level = 0
 at = 150
 pages = [0, 1, 2, "1/display", "1/display/ray_tracing", "1/display/advanced", "1/controls"]
 frames = [20, 60]
+
+# Frame rate per repo video preset (video-presets/<name>, merged over the pinned profile), one real-speed launch each: held on mission frame `at` so the runs line
+# up, then run `seconds` and RT64's last 120 frame times kept in perf.json. Compare fails a preset whose average frame time grew more than PERF_SLOWER.
+# The first seconds after the hold are shader and ray-tracing warm-up (ultra read 4 fps at 4 s, ~15 at 12-22 s), so the wait has to outlast them.
+[perf]
+levels = [3, 15]
+presets = ["low", "medium", "high", "ultra", "original"]
+at = 300
+seconds = 15
 
 # With cheats, one launch sets those unlock bits (ROGUESQ_CHEATS; 0x100000 = DIRECTOR, which adds SHOWROOM to OPTIONS), opens viewer_path (AT THE MOVIES,
 # row 1 of the hub, whose labels the nav can't read, plays them all in a row) and shoots each cutscene, named cutscene_seq_NN by their order; ids are then unused. Without cheats, each id (<level>,<kind>: kind 0
