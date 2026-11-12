@@ -1185,16 +1185,7 @@ void poll_input()
 // BOOT_TARGET: while the FrontEnd attract-title is up, the present hook sets this
 // so we inject the native START title-skip. Pulsed (~120ms on / off) because the
 // game's skip reads NEW button presses -- a held START would register only once.
-static std::atomic<uint32_t> g_start_press_until{0};
-
-void rs64::app::press_start_once()
-{
-    g_start_press_until.store(SDL_GetTicks() + 120u);
-}
-
 static inline uint16_t boot_start_pulse() {
-
-    if (!SDL_TICKS_PASSED(SDL_GetTicks(), g_start_press_until.load())) return N64_START_BUTTON;
 
     if (!g_boot_pulse_start) return 0;
 

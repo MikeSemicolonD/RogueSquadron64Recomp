@@ -198,7 +198,7 @@ async function start()
 const canvas = document.getElementById('canvas');
 
 // Browsers lock the mouse only for a click: a click locks it while the game steers with it (not on menus); Escape or Alt+Tab
-// gives it back and the game pauses a mission. Phones go fullscreen on the first tap instead.
+// gives it back until the next click. Phones go fullscreen on the first tap instead.
 canvas.addEventListener('click', () => {
   if (matchMedia('(pointer: coarse)').matches)
   {

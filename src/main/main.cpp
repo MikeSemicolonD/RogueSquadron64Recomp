@@ -415,7 +415,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_pointer_lock_changed(int locked)
     g_web_pointer_locked.store(locked != 0);
 }
 
-// Tells the page whether a click should lock the mouse, steers only while it's locked, and pauses a mission when the browser takes the mouse back.
+// Tells the page whether a click should lock the mouse, and steers only while it's locked.
 static bool web_pointer_lock_follow(bool want)
 {
 
@@ -431,15 +431,7 @@ static bool web_pointer_lock_follow(bool want)
         }, want);
     }
 
-    const bool locked = g_web_pointer_locked.load();
-    static bool s_locked = false;
-
-    if (s_locked && !locked && g_mouse_capture.load() && (std::strcmp(rs64_state_current_id(), "mission") == 0)) {
-        rs64::app::press_start_once();
-    }
-
-    s_locked = locked;
-    return want && locked;
+    return want && g_web_pointer_locked.load();
 }
 
 #endif

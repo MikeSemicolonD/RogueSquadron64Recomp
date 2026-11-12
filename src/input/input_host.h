@@ -53,9 +53,6 @@ namespace rs64::app {
 
     void poll_input();
     bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y);
-
-    // Holds Start on controller 1 long enough for the game to read one press (the browser pauses a mission when it takes the mouse back).
-    void press_start_once();
     void set_rumble(int controller_num, bool on);
     ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num);
     void rumble_thread_main();
