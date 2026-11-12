@@ -485,4 +485,45 @@ inline Entries layout(int stock_max, size_t n) {
     return { stock_max + 1, (int)std::min<size_t>(n, (size_t)std::max(0, kMaxEntry - stock_max)) };
 }
 
+// A level DAT as the game reads it: for each listed type, a count at type*8 and a list at type*8+4 of offsets to records, and each record holds its own index in
+// its type at +0x04, which the game indexes the type's table with. Empty when it holds, else what is wrong, for the player.
+inline std::string datProblem(const uint8_t* d, size_t n) {
+
+    const auto be32 = [&](size_t o) { return o + 4 <= n ? (uint32_t(d[o]) << 24) | (uint32_t(d[o + 1]) << 16) | (uint32_t(d[o + 2]) << 8) | d[o + 3] : 0xFFFFFFFFu; };
+    char msg[160];
+
+    if (n < 0x48) return "the file is too short to be a level";
+
+    for (const int type : { 0, 2, 3, 6, 7 }) {
+        const uint32_t count = be32(type * 8);
+        const uint32_t list = be32(type * 8 + 4);
+
+        if (count != 0 && (uint64_t(list) + uint64_t(count) * 4 > n))
+        {
+            snprintf(msg, sizeof msg, "its list of type %d objects runs past the end of the file", type);
+            return msg;
+        }
+
+        for (uint32_t i = 0; i < count; i++) {
+            const uint64_t rec = uint64_t(list) + be32(list + i * 4);
+
+            if (rec + 8 > n)
+            {
+                snprintf(msg, sizeof msg, "type %d object %u starts past the end of the file", type, i);
+                return msg;
+            }
+
+            const uint32_t index = (uint32_t(d[rec + 4]) << 8) | d[rec + 5];
+
+            if (index != i)
+            {
+                snprintf(msg, sizeof msg, "it was saved by an older RS64 Explorer (type %d object %u is numbered %u)", type, i, index);
+                return msg;
+            }
+        }
+    }
+
+    return {};
+}
+
 }

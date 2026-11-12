@@ -16,6 +16,7 @@
 #include <array>
 #include <atomic>
 #include <span>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -28,6 +29,7 @@
 #include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
 #include "game/game_state.h"
+#include "ultramodern/error_handling.hpp"
 #include "game/mod_content/mod_levels.h"
 #include "game/mod_content/terrain_paint.h"
 #include "game/lang/lang.h"
@@ -349,9 +351,27 @@ extern "C" void rs64_asset_overrides_init()
     std::unordered_map<std::string, std::pair<std::string, std::vector<uint8_t>>> patches;
     std::unordered_map<std::string, std::pair<std::string, std::string>> derived;
 
+    // A level DAT the game can't read stops the game thread at its mission start with no picture, so the player is told which mod and why.
+    std::string dat_problems;
+    std::unordered_map<std::string, std::string> mod_names;
+
+    auto check_dat = [&dat_problems, &mod_names](const std::string& mod_id, const std::string& path, const std::vector<uint8_t>& data) {
+
+        if (path.rfind("level/", 0) != 0 || path.size() < 4 || path.compare(path.size() - 4, 4, "/dat") != 0) return;
+
+        const std::string problem = rs64levels::datProblem(data.data(), data.size());
+
+        if (problem.empty()) return;
+
+        fprintf(stderr, "[assets] %s: %s can't be read: %s\n", mod_id.c_str(), path.c_str(), problem.c_str());
+        dat_problems += "\n" + mod_names[mod_id] + " (" + path + "): " + problem + ".";
+    };
+
     for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
     {
         if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+
+        mod_names[d.mod_id] = d.display_name.empty() ? d.mod_id : d.display_name;
 
         const std::filesystem::path dir = recomp::mods::get_mod_filename(d.mod_id) / "assets";
         std::error_code ec;
@@ -390,6 +410,7 @@ extern "C" void rs64_asset_overrides_init()
             }
 
             patches.erase(key);
+            check_dat(d.mod_id, key, data);
             s_asset_overrides[key] = append(data);
 
             fprintf(stderr, "[assets] %s overrides %s (%zu bytes)\n", d.mod_id.c_str(), key.c_str(), data.size());
@@ -437,6 +458,7 @@ extern "C" void rs64_asset_overrides_init()
                 patches.erase(p);
             }
 
+            check_dat(mod_id, path, out);
             s_asset_overrides[path] = append(out);
 
             fprintf(stderr, "[assets] %s adds %s from %s (%zu bytes)\n", mod_id.c_str(), path.c_str(), src_path.c_str(), out.size());
@@ -457,10 +479,20 @@ extern "C" void rs64_asset_overrides_init()
                 continue;
             }
 
+            check_dat(mod_id, path, out);
             s_asset_overrides[path] = append(out);
 
             fprintf(stderr, "[assets] %s patches %s (%zu bytes)\n", mod_id.c_str(), path.c_str(), out.size());
         }
+    }
+
+    // From another thread, so the game never waits on the dialog.
+    if (!dat_problems.empty())
+    {
+        const std::string text = "A mod level can't be played because the game can't read its level data:\n" + dat_problems +
+                                 "\n\nIts mission would start to a black screen. Export the level again from the RS64 Explorer, or turn the mod off.";
+
+        std::thread([text] { ultramodern::error_handling::message_box(text.c_str()); }).detach();
     }
 
     // A crawl's own files and a level's picture are also served inside the directories where their lookups find them.

@@ -328,6 +328,29 @@ int main() {
         CHECK(crawlCameraAt(keys, 120, pos, rot) && pos[1] == 5 && rot[0] == 40);
         CHECK(!crawlCameraAt({}, 1, pos, rot));
     }
+    {
+        // Two type 0 records listed at 0x48 (offsets from the list), each numbered at +4 as the game reads them.
+        std::vector<uint8_t> dat(0x80, 0);
+        const auto put32 = [&](size_t o, uint32_t v) { dat[o] = uint8_t(v >> 24); dat[o + 1] = uint8_t(v >> 16); dat[o + 2] = uint8_t(v >> 8); dat[o + 3] = uint8_t(v); };
+        put32(0x00, 2);
+        put32(0x04, 0x48);
+        put32(0x48, 0x10);
+        put32(0x4C, 0x20);
+        dat[0x58 + 5] = 0;
+        dat[0x68 + 5] = 1;
+        CHECK(datProblem(dat.data(), dat.size()).empty());
+
+        dat[0x68 + 5] = 0xB3;
+        CHECK(datProblem(dat.data(), dat.size()).find("numbered 179") != std::string::npos);
+
+        dat[0x68 + 5] = 1;
+        put32(0x4C, 0x100);
+        CHECK(datProblem(dat.data(), dat.size()).find("past the end") != std::string::npos);
+
+        put32(0x00, 0x1000);
+        CHECK(datProblem(dat.data(), dat.size()).find("runs past") != std::string::npos);
+        CHECK(!datProblem(dat.data(), 0x20).empty());
+    }
     std::printf("mod_levels_test: ok\n");
     return 0;
 }
