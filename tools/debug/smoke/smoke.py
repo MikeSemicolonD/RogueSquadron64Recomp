@@ -183,8 +183,8 @@ def session(out, env, body, speed, record=None, settings=None):
     game = Game()
     game.target_dir = out
 
-    # A 16:9 window, so WIDESCREEN has room to widen the picture. The nav budget counts presents, and at 16x the boot alone uses up the default.
-    full_env = {"ROGUESQ_SPEED": str(speed), "ROGUESQ_FAKE_CONTROLLER": "1", "ROGUESQ_NAV_STEP_BUDGET": "100000", "ROGUESQ_WINDOW_SIZE": "1280x720", "ROGUESQ_MENU_FIXED": "1", "ROGUESQ_SUBTITLES": "1"}
+    # A 16:9 window, so WIDESCREEN has room to widen the picture.
+    full_env = {"ROGUESQ_SPEED": str(speed), "ROGUESQ_FAKE_CONTROLLER": "1", "ROGUESQ_WINDOW_SIZE": "1280x720", "ROGUESQ_MENU_FIXED": "1", "ROGUESQ_SUBTITLES": "1"}
     full_env.update(env)
     error = None
 

@@ -8,11 +8,13 @@
 #include "rs64_toml_hooks.h"
 #include "game/menus/menu_config.h"
 #include "game/menus/menu_layout.h"
+#include <chrono>
 #include <cstdlib>
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <mutex>
@@ -160,7 +162,11 @@ static int s_since_press = 9999;
 static bool s_disabled = false;
 static const char* s_last_state = "";
 
-// 60 Hz ticks per step before bailing (~20 s); ROGUESQ_NAV_STEP_BUDGET raises it for slow builds (Linux Debug, fast-clock replays).
+// A step is stuck only past both budgets: 60 Hz ticks (~20 s of game time) and 20 s of wall time. Ticks alone ran out during loads at ROGUESQ_SPEED > 1, where
+// the clock ticks faster but loading still takes real seconds; wall time alone would cut off slow builds. ROGUESQ_NAV_STEP_BUDGET raises the tick budget.
+static std::chrono::steady_clock::time_point s_step_since;
+constexpr std::chrono::seconds kStepWallBudget{ 20 };
+
 static int step_budget()
 {
 
@@ -1306,7 +1312,11 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
         s_step = LOBBY_FIRST_STEP;
     }
 
-    if (++s_watchdog > step_budget())
+    const auto now = std::chrono::steady_clock::now();
+
+    if (s_watchdog == 0) s_step_since = now;
+
+    if (++s_watchdog > step_budget() && now - s_step_since > kStepWallBudget)
     {
         fprintf(stderr, "[nav] stuck step=%d state=%s -- aborting sequence\n", s_step, st);
         nav_log_menu(rdram);

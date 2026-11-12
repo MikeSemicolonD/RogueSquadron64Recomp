@@ -47,7 +47,7 @@ if ($Cutscene) {
 }
 else {
     $vars += @{
-        ROGUESQ_BOOT_TARGET = "level:$level,$craft"; ROGUESQ_NAV_STEP_BUDGET = "$(1200 * [Math]::Max(1, $Speed))"
+        ROGUESQ_BOOT_TARGET = "level:$level,$craft"
         ROGUESQ_LS_REPLAY = $rec; ROGUESQ_LS_HASH_OUT = $hashOut; ROGUESQ_LS_PAUSE_AT = ($sorted -join ',')
     }
 }

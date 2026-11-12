@@ -17,7 +17,7 @@ $exe = (Resolve-Path $Binary).Path
 $outDir = Join-Path (Get-Location) "logs\lockstep\$Tag"
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $compare = Join-Path $PSScriptRoot "compare_hashes.py"
-$vars = "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_HASH_OUT", "ROGUESQ_SPEED", "ROGUESQ_NAV_STEP_BUDGET"
+$vars = "ROGUESQ_BOOT_TARGET", "ROGUESQ_FAKE_CONTROLLER", "ROGUESQ_AUDIO_GAIN", "ROGUESQ_LS_REPLAY", "ROGUESQ_LS_HASH_OUT", "ROGUESQ_SPEED"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v) }
 
@@ -40,8 +40,6 @@ foreach ($rec in Get-ChildItem -Path $Recordings -Filter *.rec -Recurse) {
     $env:ROGUESQ_FAKE_CONTROLLER = "1"
     $env:ROGUESQ_AUDIO_GAIN = "0"
     $env:ROGUESQ_SPEED = "$Speed"
-    # The menu driver's watchdog counts presents, which run Speed times faster.
-    $env:ROGUESQ_NAV_STEP_BUDGET = "$(1200 * [Math]::Max(1, $Speed))"
     $env:ROGUESQ_LS_REPLAY = $rec.FullName
     $env:ROGUESQ_LS_HASH_OUT = $hashOut
     Write-Host "[$name] level $level craft $craft ..." -NoNewline
