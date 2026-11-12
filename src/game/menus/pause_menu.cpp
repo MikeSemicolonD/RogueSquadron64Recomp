@@ -214,9 +214,10 @@ void add_pause_button(PauseWriter& w, const Button& b, uint8_t self)
     const uint16_t mark = (uint16_t)(PAUSE_MARK_BASE + (&b - config().buttons.data()));
     BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
 
-    // A slider is the native four-row widget (title, endpoints, two bar halves) while a channel byte is free and the rows fit, else a text bar.
+    // A slider is the native four-row widget (title, endpoints, two bar halves) plus the spacer the game's AUDIO page puts after each, while a channel byte
+    // is free and the rows fit, else a text bar.
     const int k = (int)s_pause_sliders.size();
-    const bool fits = w.lines + 4 + w.line_reserve() <= PAUSE_MAX_LINES && w.off + 6u * (4u + (uint32_t)w.reserve) + 2u <= w.limit;
+    const bool fits = w.lines + 4 + w.line_reserve() <= PAUSE_MAX_LINES && w.off + 6u * (5u + (uint32_t)w.reserve) + 2u <= w.limit;
 
     if (b.type == BType::Slider && b.confirm.empty() && SND_CH_FIRST + k <= SND_CH_LAST && fits)
     {
@@ -230,6 +231,7 @@ void add_pause_button(PauseWriter& w, const Button& b, uint8_t self)
         w.add(0x4400, PAUSE_TEXTID, (uint16_t)(PAUSE_SLIDER_MARK + k), std::string{});
         w.add(0x4800, (uint16_t)(PAUSE_BAR_TID + k), 0, std::string{});
         w.add(0x4800, (uint16_t)(PAUSE_BAR_TID + k), 1, std::string{});
+        w.add(0x1000, 0x0001, 0, std::string{});
 
         return;
     }
