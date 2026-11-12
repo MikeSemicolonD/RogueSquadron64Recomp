@@ -663,6 +663,14 @@ int main(int argc, char* argv[])
 #ifdef __EMSCRIPTEN__
     // The play page mounts the browser's storage at /persist and puts the ROM there before calling main.
     std::filesystem::current_path("/persist");
+
+    // The build's mods replace /persist/mods each start (a page can't add its own), so a dropped mod doesn't linger.
+    std::error_code mods_ec;
+
+    std::filesystem::remove_all("/persist/mods", mods_ec);
+    std::filesystem::copy("/bundle/mods", "/persist/mods", std::filesystem::copy_options::recursive, mods_ec);
+
+    fprintf(stderr, "[mods] bundled mods%s\n", mods_ec ? " not copied" : " copied");
 #endif
 
 #ifdef __APPLE__

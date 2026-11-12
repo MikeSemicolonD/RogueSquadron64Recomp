@@ -381,6 +381,16 @@ if (EMSCRIPTEN)
         $<$<CONFIG:Debug>:-sSTACK_OVERFLOW_CHECK=1>)
     target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/tools/wgsl)
 
+    # The web mods in mods/platforms.json are packed into RogueSquadron64Recomp.data at /bundle/mods.
+    # shortcut: editing a mod's files alone doesn't relink, so the pack updates on the next link; add a stamp to LINK_DEPENDS if that bites.
+    set(RS64_WEB_MODS_DIR ${CMAKE_BINARY_DIR}/web_mods)
+    add_custom_target(web_mods
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=${RS64_WEB_MODS_DIR} -DPLATFORM=web -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
+        VERBATIM)
+    add_dependencies(RogueSquadron64Recomp web_mods)
+    target_link_options(RogueSquadron64Recomp PRIVATE "--preload-file=${RS64_WEB_MODS_DIR}@/bundle/mods")
+    set_property(TARGET RogueSquadron64Recomp APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/mods/platforms.json)
+
     # The play page, its service worker, the shader converter (rs64tint) and the game icon sit next to the .js/.wasm, so the build folder can be served as is.
     add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tools/web/play/index.html ${CMAKE_SOURCE_DIR}/tools/web/play/coi-serviceworker.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm ${CMAKE_SOURCE_DIR}/favicon.ico $<TARGET_FILE_DIR:RogueSquadron64Recomp>

@@ -65,7 +65,7 @@ N64Recomp is `build/Debug/N64Recomp.exe` (override `N64RECOMP_EXE`), built from 
 
 Build a new gameplay mod as an `.nrm` unless a patch can't express it. Self-contained gameplay mods are `.nrm` code mods built with RecompModTool and loaded by librecomp; see `mods/infinite-secondary/` and [docs/guides/modding.md](docs/guides/modding.md). Native-library mods that hook game code through the host API: [docs/engine/modding-host-api.md](docs/engine/modding-host-api.md).
 
-`mods/platforms.json` decides which mods ship per platform: a mod not listed there ships nowhere. `desktop` entries (data-only folders and `.nrm` files) are staged next to the exe by `tools/mods/stage_mods.cmake`; `android` entries are packed into the APK. Release CI builds every `.nrm` listed under `desktop` via `tools/mods/build_code_mods.cmake`, matching each entry to the `mods/*/mod.toml` whose `mod_filename` equals the `.nrm` name, so a new code mod must be added to that list to ship ([docs/engine/release-ci.md](docs/engine/release-ci.md#code-mods)).
+`mods/platforms.json` decides which mods ship per platform: a mod not listed there ships nowhere. `desktop` entries (data-only folders and `.nrm` files) are staged next to the exe by `tools/mods/stage_mods.cmake`; `android` entries are packed into the APK; `web` entries (data-only, code mods don't load in the browser) are packed into the browser build's `.data`. Release CI builds every `.nrm` listed under `desktop` via `tools/mods/build_code_mods.cmake`, matching each entry to the `mods/*/mod.toml` whose `mod_filename` equals the `.nrm` name, so a new code mod must be added to that list to ship ([docs/engine/release-ci.md](docs/engine/release-ci.md#code-mods)).
 
 ## When investigating a new crash
 

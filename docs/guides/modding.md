@@ -47,7 +47,7 @@ A mod can declare config options (`config_schema` in `mod.json`, or `[[manifest.
 
 ### Shipping a mod with the game
 
-[mods/platforms.json](../../mods/platforms.json) lists which mods in this repo ship with each build. The `desktop` list is copied next to the exe (and into `dist/` for Release) by `tools/mods/stage_mods.cmake`. The `android` list is packed into the APK. A mod not listed there ships nowhere. For a code mod, list the built `.nrm` (for example `long_tow_cable.nrm`), not its source folder. Your own mod folders in a build's `mods/` folder are never overwritten.
+[mods/platforms.json](../../mods/platforms.json) lists which mods in this repo ship with each build. The `desktop` list is copied next to the exe (and into `dist/` for Release) by `tools/mods/stage_mods.cmake`. The `android` list is packed into the APK. The `web` list is packed into the browser build and holds data-only mods, since the browser can't load code mods yet. A mod not listed there ships nowhere. For a code mod, list the built `.nrm` (for example `long_tow_cable.nrm`), not its source folder. Your own mod folders in a build's `mods/` folder are never overwritten.
 
 ## Asset mods
 
