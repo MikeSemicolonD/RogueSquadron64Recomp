@@ -887,6 +887,12 @@ public:
         }
 
         apply_vi_overrides();
+
+        if (app->presentQueue)
+        {
+            rs64::video::set_ssaa_base(app->presentQueue->ext.sharedResources->ssaaBaseScale.load(std::memory_order_relaxed));
+        }
+
         diag().log_transition_lum();
         drive_boot_target();
         poll_gamestate();

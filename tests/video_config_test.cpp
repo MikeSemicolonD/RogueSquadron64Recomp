@@ -112,6 +112,51 @@ static void test_apply_basic() {
     CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D12);
 }
 
+static void test_single_aa() {
+    UC uc; uc.validate();
+    rs64::video::apply_friendly(uc, json{{"antialiasing", 4}, {"ssaa", 2}, {"fxaa", true}});
+    CHECK(uc.antialiasing == UC::Antialiasing::MSAA4X);
+    CHECK(uc.downsampleMultiplier == 1);
+    CHECK(uc.fxaa == false);
+    rs64::video::apply_friendly(uc, json{{"antialiasing", 0}, {"ssaa", 2}, {"fxaa", true}});
+    CHECK(uc.downsampleMultiplier == 2);
+    CHECK(uc.fxaa == false);
+    rs64::video::apply_friendly(uc, json{{"advanced", {{"downsampleMultiplier", 2}}}, {"antialiasing", 2}});
+    CHECK(uc.downsampleMultiplier == 1);
+}
+
+static std::string aa_shown() {
+    using rs64::video::Display;
+    return rs64::video::display_label(Display::AntiAliasing, rs64::video::display_value(Display::AntiAliasing));
+}
+
+static void test_ssaa_cap_menu() {
+    using rs64::video::Display;
+    UC uc; uc.validate();
+    rs64::video::apply_aa_preset(uc, 6);                   // SSAA 4X saved
+    rs64::video::apply_pending(uc);                        // menu copy mirrors it
+
+    rs64::video::set_ssaa_base(3.0f);                      // 3 x 4 > 10: renders 2X
+    CHECK(aa_shown() == "SSAA 2X");
+
+    std::vector<std::string> seen;
+    for (int i = 0; i < 7; ++i) {
+        rs64::video::step_display(Display::AntiAliasing);
+        seen.push_back(aa_shown());
+    }
+    CHECK(std::find(seen.begin(), seen.end(), "SSAA 4X") == seen.end());
+    CHECK(std::find(seen.begin(), seen.end(), "MSAA 8X") != seen.end());
+
+    rs64::video::set_ssaa_base(6.0f);                      // 6 x 2 > 10: no SSAA step at all
+    seen.clear();
+    for (int i = 0; i < 7; ++i) {
+        rs64::video::step_display(Display::AntiAliasing);
+        seen.push_back(aa_shown());
+    }
+    CHECK(std::find(seen.begin(), seen.end(), "SSAA 2X") == seen.end());
+    rs64::video::set_ssaa_base(1.0f);
+}
+
 static void test_apply_resolution_number() {
     UC uc; uc.validate();
     rs64::video::apply_friendly(uc, json{{"resolutionScale", 2.0}});
@@ -457,6 +502,8 @@ int main() {
     test_to_friendly_mapping();
     test_to_friendly_thirdstate_to_advanced();
     test_apply_basic();
+    test_single_aa();
+    test_ssaa_cap_menu();
     test_d3d10_roundtrip();
     test_apply_resolution_number();
     test_advanced_wins();

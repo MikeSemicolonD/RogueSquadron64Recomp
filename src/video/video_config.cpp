@@ -40,6 +40,7 @@ std::atomic<int> g_terrain_tessellation{4};
 
 std::atomic<bool> g_fb_writeback{true};
 std::atomic<bool> g_d3d10{false};
+std::atomic<float> g_ssaa_base{1.0f};
 std::atomic<bool> g_fullscreen{false};
 std::atomic<bool> g_ray_query{false};
 
@@ -70,6 +71,18 @@ const AaPreset kAaPresets[] = {
 };
 
 constexpr int kAaPresetCount = (int)(sizeof(kAaPresets) / sizeof(kAaPresets[0]));
+
+// The ANTI-ALIASING choice that renders: a saved SSAA above what the cap allows at this resolution shows as the step RT64 lowers it to.
+int shown_aa_preset(const UC& uc)
+{
+
+    UC shown = uc;
+
+    shown.downsampleMultiplier = RT64::rs64CappedSsaa(uc.downsampleMultiplier, g_ssaa_base.load(std::memory_order_relaxed));
+
+    return aa_preset(shown);
+}
+
 const char* const kResolutionNames[] = { "AUTO", "1X", "2X", "3X", "4X" };
 const char* const kUpscaleNames[] = { "NEAREST", "LINEAR", "AA PIXEL" };
 const char* const kTextureNames[] = { "BILINEAR", "3-POINT" };
@@ -102,7 +115,7 @@ int choice_of(const UC& uc, Display d)
     switch (d) {
         case Display::Resolution:         return resolution_choice(uc);
         case Display::Widescreen:         return uc.aspectRatio == UC::AspectRatio::Expand ? 1 : 0;
-        case Display::AntiAliasing:       return aa_preset(uc);
+        case Display::AntiAliasing:       return shown_aa_preset(uc);
         case Display::FrameInterpolation: return uc.refreshRate != UC::RefreshRate::Original ? 1 : 0;
         case Display::TextureFilter:      return uc.threePointFiltering ? 1 : 0;
         case Display::UpscaleFilter:      return upscale_choice(uc);
@@ -143,8 +156,20 @@ void step_in(UC& uc, Display d)
             uc.aspectRatio = next ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
             break;
         case Display::AntiAliasing:
-            apply_aa_preset(uc, next);
+        {
+
+            // SSAA steps the cap would lower at this resolution are skipped, so the row never names one that doesn't render.
+            const float base = g_ssaa_base.load(std::memory_order_relaxed);
+            int pick = next;
+
+            for (int i = 0; i < kAaPresetCount && RT64::rs64CappedSsaa(kAaPresets[pick].ssaa, base) != kAaPresets[pick].ssaa; ++i)
+            {
+                pick = (pick + 1) % kAaPresetCount;
+            }
+
+            apply_aa_preset(uc, pick);
             break;
+        }
         case Display::TextureFilter:
             uc.threePointFiltering = next != 0;
             break;
@@ -329,6 +354,18 @@ void apply_aa_preset(UC& uc, int preset)
     uc.fxaa = p.fxaa;
 }
 
+// One anti-aliasing method at a time, as the menu offers them: SSAA under MSAA multiplies the multisampled target (SSAA 2X + MSAA 4X ran at 2 fps where
+// either alone ran at 57 and 221), so MSAA wins over SSAA and either over FXAA.
+static void single_aa(UC& uc)
+{
+
+    const bool msaa = uc.antialiasing != UC::Antialiasing::None;
+    const bool ssaa = uc.downsampleMultiplier > 1;
+
+    if (msaa && ssaa) uc.downsampleMultiplier = 1;
+    if ((msaa || ssaa) && uc.fxaa) uc.fxaa = false;
+}
+
 int resolution_choice(const UC& uc)
 {
 
@@ -474,6 +511,11 @@ void set_refresh_rates(std::vector<int> hz)
     std::lock_guard<std::mutex> lock(g_display_mutex);
 
     g_refresh_rates = std::move(hz);
+}
+
+void set_ssaa_base(float scale)
+{
+    g_ssaa_base.store(scale, std::memory_order_relaxed);
 }
 
 bool d3d10() {
@@ -728,6 +770,7 @@ void apply_friendly(UC& uc, const json& j)
 
     if (uc.refreshRate == UC::RefreshRate::Display) g_target_display.store(true, std::memory_order_relaxed);
 
+    single_aa(uc);
     uc.validate();
 }
 
@@ -926,6 +969,8 @@ void apply_env_overrides(UC& uc)
 
         fprintf(stderr, "[RT64] fxaa=%d\n", uc.fxaa ? 1 : 0);
     }
+
+    single_aa(uc);
 
     // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1 expands to the window.
     if (const char* v = env_str("ROGUESQ_ASPECT")) {

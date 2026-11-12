@@ -123,6 +123,9 @@ ApplyResult apply_pending(RT64::UserConfiguration& uc);
 // Refresh rates the window's display supports (ascending, distinct), for TARGET FPS.
 void set_refresh_rates(std::vector<int> hz);
 
+// RT64's resolution multiplier before SSAA; the ANTI-ALIASING choice shows and offers only the SSAA steps its cap renders (RT64::rs64CappedSsaa).
+void set_ssaa_base(float scale);
+
 // The draw distance multiplier; 1.0 while the game owns the view. Taloraan's cloud floor keeps the stock fog in the renderer (f5_cloud_floor_fog).
 float effective_draw_distance(float setting, bool game_view);
 

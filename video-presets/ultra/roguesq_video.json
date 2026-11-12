@@ -3,7 +3,7 @@
   "widescreen": true,
   "resolutionScale": "auto",
   "antialiasing": 4,
-  "ssaa": 2,
+  "ssaa": 1,
   "fxaa": false,
   "frameInterpolation": true,
   "targetFramerate": "display",
