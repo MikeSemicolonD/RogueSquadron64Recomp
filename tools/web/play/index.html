@@ -184,6 +184,28 @@ async function start()
   window.addEventListener('pagehide', () => sync(false));
 }
 
+const canvas = document.getElementById('canvas');
+
+// Browsers lock the mouse only for a click: a click locks it while the game steers with it (not on menus); Escape or Alt+Tab
+// gives it back and the game pauses a mission. Phones go fullscreen on the first tap instead.
+canvas.addEventListener('click', () => {
+  if (matchMedia('(pointer: coarse)').matches)
+  {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen)
+      document.documentElement.requestFullscreen().catch(() => {});
+
+    return;
+  }
+
+  if (Module.rs64WantsMouse && document.pointerLockElement !== canvas)
+    canvas.requestPointerLock();
+});
+
+document.addEventListener('pointerlockchange', () => {
+  if (Module._rs64_web_pointer_lock_changed)
+    Module._rs64_web_pointer_lock_changed(document.pointerLockElement === canvas ? 1 : 0);
+});
+
 const VIDEO_PATH = '/persist/roguesq_video.json';
 const gear = document.getElementById('gear');
 const settings = document.getElementById('settings');

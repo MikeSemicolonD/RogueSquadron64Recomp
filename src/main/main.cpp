@@ -405,6 +405,45 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 #endif
 }
 
+#if defined(__EMSCRIPTEN__)
+
+// Browsers lock the pointer only for a click, so the page asks for it and reports changes here.
+static std::atomic<bool> g_web_pointer_locked{false};
+
+extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_pointer_lock_changed(int locked)
+{
+    g_web_pointer_locked.store(locked != 0);
+}
+
+// Tells the page whether a click should lock the mouse, steers only while it's locked, and pauses a mission when the browser takes the mouse back.
+static bool web_pointer_lock_follow(bool want)
+{
+
+    static int s_wanted = -1;
+
+    if (int(want) != s_wanted) {
+        s_wanted = int(want);
+        MAIN_THREAD_ASYNC_EM_ASM({
+            Module.rs64WantsMouse = !!$0;
+
+            if (!$0 && document.pointerLockElement)
+              document.exitPointerLock();
+        }, want);
+    }
+
+    const bool locked = g_web_pointer_locked.load();
+    static bool s_locked = false;
+
+    if (s_locked && !locked && g_mouse_capture.load() && (std::strcmp(rs64_state_current_id(), "mission") == 0)) {
+        rs64::app::press_start_once();
+    }
+
+    s_locked = locked;
+    return want && locked;
+}
+
+#endif
+
 void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
 {
     // Window messages only dispatch on the thread that owns the window, so events (and RT64's F1-F4 filter) must be pumped here.
@@ -453,13 +492,25 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
 
     // Capture the mouse for steering while focused, unless the F6 controls window, the F1 inspector or a clickable menu is up.
     // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
-    bool want = (SDL_GetKeyboardFocus() != nullptr) && g_vr_mouse_look.load();
+#if defined(__EMSCRIPTEN__)
+    // SDL's Emscripten port learns of focus only from a focus change, so a page focused at load reads as unfocused; the pointer lock stands in.
+    const bool focused = true;
+#else
+    const bool focused = SDL_GetKeyboardFocus() != nullptr;
+#endif
 
-    want = want || ((SDL_GetKeyboardFocus() != nullptr)
+    bool want = focused && g_vr_mouse_look.load();
+
+    want = want || (focused
              && !rs64::touch::shared_config().enabled
              && !g_show_controls.load()
              && !rs64_rt64_inspector_open()
              && !mouse_menu_context(touch_context()));
+
+#if defined(__EMSCRIPTEN__)
+    want = web_pointer_lock_follow(want);
+#endif
+
     g_mouse_capture.store(want);
     static bool s_rel = false;
 
