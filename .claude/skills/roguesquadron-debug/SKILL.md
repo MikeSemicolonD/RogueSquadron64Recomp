@@ -79,7 +79,7 @@ Grep the log for the SEH line:
 ```bash
 echo 0xNNNNNN | "C:/Program Files/LLVM/bin/llvm-symbolizer.exe" \
    --obj=build/Debug/RogueSquadron64Recomp.exe --relative-address
-# -> functionName  E:\Projects\N64Recomp\RecompiledFuncs\funcs_NN.c:LINE:0
+# -> functionName  RecompiledFuncs\funcs_NN.c:LINE:0
 ```
 `llvm-nm` on the exe returns nothing (symbols live in the PDB, not the COFF table); the symbolizer uses
 the PDB. Do this for EVERY distinct `av_rva` in the run (`grep -oE "av_rva=0x[0-9A-Fa-f]+" | sort -u`).
@@ -98,7 +98,7 @@ Read it before instrumenting.
 
 ## Where and how to apply fixes
 
-### NEVER hand-edit `E:/Projects/N64Recomp/RecompiledFuncs/funcs_*.c` for logic/guards.
+### NEVER hand-edit `RecompiledFuncs/funcs_*.c` for logic/guards.
 Those files are auto-generated; the next regen silently strips inline edits. This has burned the project
 repeatedly. Diagnostic `fprintf` probes there are fine (rate-limit them), but every load-bearing
 override belongs in a `[[patches.hook]]` in `rogue_squadron.toml`.

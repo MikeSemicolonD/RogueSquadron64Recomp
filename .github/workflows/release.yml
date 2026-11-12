@@ -87,7 +87,7 @@ jobs:
       run:
         shell: powershell
     env:
-      MIPS_DIR: ${{ vars.RS64_MIPS_TOOLCHAIN_DIR || 'E:/mips-toolchain' }}
+      MIPS_DIR: ${{ vars.RS64_MIPS_TOOLCHAIN_DIR }}
     steps:
       - uses: actions/checkout@v4
         with:

@@ -20,7 +20,7 @@ def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
 // Host tools come from the Windows Debug build unless -Prs64FileToC / -Prs64N64Recomp / -Prs64RecompModTool name them (release CI builds Release).
 // file_to_c embeds RT64's SPIR-V shaders when cross-compiling.
 def hostFileToC = findProperty('rs64FileToC') ?: rootProject.file("../build/Debug/file_to_c.exe").absolutePath
-// N64Recomp recompiles the patches ELF (MIPS GCC from MIPS_TOOLCHAIN_DIR's default, or -Prs64MipsDir).
+// N64Recomp recompiles the patches ELF (MIPS GCC from the MIPS_TOOLCHAIN_DIR environment variable or PATH, or -Prs64MipsDir).
 def hostN64Recomp = findProperty('rs64N64Recomp') ?: rootProject.file("../build/Debug/N64Recomp.exe").absolutePath
 // RecompModTool writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
 def hostRecompModTool = findProperty('rs64RecompModTool') ?: rootProject.file("../build/Debug/RecompModTool.exe").absolutePath

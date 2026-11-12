@@ -10,9 +10,13 @@ if (CMAKE_HOST_WIN32)
 else()
     set(RS64_MOD_TOOL_DEFAULT "${CMAKE_CURRENT_LIST_DIR}/../../build/RecompModTool")
 endif()
-set(MIPS_TOOLCHAIN_DIR "E:/mips-toolchain" CACHE PATH "MIPS GCC toolchain root")
-# Without a toolchain folder, Linux and macOS use whichever MIPS GCC is on PATH (Ubuntu: gcc-mips-linux-gnu binutils-mips-linux-gnu).
-if (NOT CMAKE_HOST_WIN32 AND NOT EXISTS "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc")
+set(MIPS_TOOLCHAIN_DIR "$ENV{MIPS_TOOLCHAIN_DIR}" CACHE PATH "MIPS GCC toolchain root (default: the MIPS_TOOLCHAIN_DIR environment variable)")
+if (NOT MIPS_TOOLCHAIN_DIR)
+    set(MIPS_TOOLCHAIN_DIR "$ENV{MIPS_TOOLCHAIN_DIR}")
+endif()
+
+# Without a toolchain folder, use whichever MIPS GCC is on PATH (Ubuntu: gcc-mips-linux-gnu binutils-mips-linux-gnu).
+if (NOT EXISTS "${MIPS_TOOLCHAIN_DIR}/bin/mips64-elf-gcc${RS64_HOST_EXE_SUFFIX}")
     find_program(MIPS_GCC NAMES mips64-elf-gcc mips-linux-gnu-gcc DOC "MIPS C compiler")
     find_program(MIPS_LD NAMES mips64-elf-ld mips-linux-gnu-ld DOC "MIPS linker")
 else()

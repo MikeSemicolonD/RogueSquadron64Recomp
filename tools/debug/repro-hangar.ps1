@@ -10,13 +10,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$root = "E:\Projects\RogueSquadron64Recomp"
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $stamp = Get-Date -Format "HHmmss"
 $log = "$root\dumps\hangar-session\repro_$stamp.txt"
 "latest=$log" | Set-Content "$root\dumps\hangar-session\latest.txt"
-
-Get-Process RogueSquadron64Recomp -ErrorAction SilentlyContinue | Stop-Process -Force
-Start-Sleep -Milliseconds 600
 
 # Build the child launcher (env + redirected log) as a scriptblock string.
 $envLines = "`$env:ROGUESQ_LOG_GAMESTATE='1'; `$env:ROGUESQ_LOG_MENU_FIX='1';"

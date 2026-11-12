@@ -16,7 +16,7 @@ from collections import defaultdict
 
 SYM_DIR = os.environ.get(
     "RSR_SYM_DIR",
-    "E:/Projects/rogue_squadron64/symbol_files",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rogue_squadron64", "symbol_files"),
 )
 
 total_removed = 0

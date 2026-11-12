@@ -5,7 +5,7 @@
 > *port* (how it bridges to RT64 + ultramodern). Current status is in
 > [Current status & known blockers](#current-status--known-blockers).
 >
-> Symbol-name source of truth: `E:/Projects/rogue_squadron64/symbol_files/`
+> Symbol-name source of truth: `../rogue_squadron64/symbol_files/`
 > (per-overlay `.txt`); unnamed globals use the splat `D_<ADDR>` convention.
 > Hardware truth comes from Project64 RDRAM goldens and message-order traces
 > (`tools/debug/validate/`), and the graphics ucode grammar from its IMEM listing
@@ -688,7 +688,7 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
    ```
 3. **Rebuild** (Debug is the dev/debug target; Release for perf):
    ```
-   cd E:/Projects/RogueSquadron64Recomp && cmake --build build --config Debug -j 4
+   cmake --build build --config Debug -j 4
    ```
    Check the executable's timestamp afterwards: a failed build leaves the previous binary in place and the run scripts will happily launch it.
 4. **Smoke test**: `tools/debug/validate/capture_menu_rdram.ps1 -Screen "menu,400" -Timeout 420 -FastFwd 0` boots headless to the menu and dumps RDRAM there; `tools/debug/validate/rdram_golden_diff.py` compares it with a Project64 golden. `./tools/debug/run-stability.ps1 -Runs 1 -Timeout 30` is the shorter check.
@@ -706,13 +706,13 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
 1. When renaming a function: add it to the matching subsystem table.
 2. When discovering a new subsystem: add a numbered section under "Subsystems".
 3. When mapping a global address: add to the "Memory map" table, using the recomp symbol (or `D_<ADDR>` if unnamed).
-4. Keep entries terse — one line each; link out to `E:/Projects/rogue_squadron64/docs/` for deeper specs.
+4. Keep entries terse — one line each; link out to `../rogue_squadron64/docs/` for deeper specs.
 
 ## See also
 
 - [docs/reference/data-structures.md](data-structures.md) — field-offset layouts for the entity/gameplay objects, global game state, HUD/menu, and cinematic/scene-graph structs.
-- `E:/Projects/rogue_squadron64/symbol_files/` — authoritative symbol names (per-overlay).
-- `E:/Projects/rogue_squadron64/docs/` — per-subsystem detail (HOB/HMT/SND/DAT/save/menus + partial m2c decomp).
+- `../rogue_squadron64/symbol_files/` — authoritative symbol names (per-overlay).
+- `../rogue_squadron64/docs/` — per-subsystem detail (HOB/HMT/SND/DAT/save/menus + partial m2c decomp).
 - [docs/reference/f5-model-dl-spec.md](f5-model-dl-spec.md) — display-list grammar; §7 is the ucode-derived truth (chunk fetch, opcodes, terrain records).
 - [docs/reference/factor5-gbi.md](factor5-gbi.md) — Factor 5 graphics microcode docs (older runtime priors).
 - [docs/reference/factor5-ucode-dispatch.md](factor5-ucode-dispatch.md) — dispatch-table notes; its handler readings are offset by 0x80 (see the spec §7).

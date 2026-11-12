@@ -32,7 +32,7 @@ cmake --build build --config Debug --target RogueSquadron64Recomp
 
 # Run with stdout/stderr capture (PowerShell — bash redirects don't flush before SIGTERM)
 $job = Start-Job -ScriptBlock {
-    Set-Location E:\Projects\RogueSquadron64Recomp\build\Debug
+    Set-Location "$using:PWD\build\Debug"
     & ".\RogueSquadron64Recomp.exe" *>&1
 }
 Start-Sleep -Seconds 30

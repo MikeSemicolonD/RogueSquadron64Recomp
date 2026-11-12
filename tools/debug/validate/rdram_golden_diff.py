@@ -11,7 +11,7 @@ by region with the decomp symbols that fall inside them, (3) .text/.rodata
 differences, which mean code/overlay corruption rather than game state.
 
   python tools/debug/validate/rdram_golden_diff.py dumps/MainMenu/output.bin dumps/rdram_screen_1.bin
-  ... [--symbols E:/Projects/rogue_squadron64/symbol_files] [--top 40] [--page 4096]
+  ... [--symbols ../rogue_squadron64/symbol_files] [--top 40] [--page 4096]
       [--focus 0x80130B40:0x30] [--json out.json]
 """
 import argparse

@@ -19,11 +19,11 @@ import re, glob, os
 
 SYM_DIR = os.environ.get(
     "RSR_SYM_DIR",
-    "E:/Projects/rogue_squadron64/symbol_files",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rogue_squadron64", "symbol_files"),
 )
 RODATA_ROOT = os.environ.get(
     "RSR_ASM_DATA_DIR",
-    "E:/Projects/rogue_squadron64/asm/data",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rogue_squadron64", "asm", "data"),
 )
 
 asciz_re = re.compile(r'^\s+/\* [\w]+ ([0-9A-F]{8}) \*/\s+\.asciz "(.*)"$')

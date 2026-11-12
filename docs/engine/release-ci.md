@@ -61,11 +61,11 @@ The token stays in root-owned processes. The runner and every job run as the unp
 Windows containers would need Hyper-V isolation and a multi-GB image with the Visual Studio Build Tools, so the runner runs directly on the dev machine and reuses its toolchain.
 
 1. In the repo: **Settings > Actions > Runners > New self-hosted runner > Windows**. Follow the download and `config.cmd` steps and add the labels `rs64,windows`.
-2. Install it as a service running as **your own account** (not NETWORK SERVICE), so it finds `cmake`, `python`, `mingw32-make`, Visual Studio 2022 with ClangCL, and `E:/mips-toolchain`.
+2. Install it as a service running as **your own account** (not NETWORK SERVICE), so it finds `cmake`, `python`, `mingw32-make`, Visual Studio 2022 with ClangCL, and the MIPS GCC (its folder in the account's `MIPS_TOOLCHAIN_DIR`, or its `bin` on `PATH`).
 3. Set these environment variables for that account, then restart the service:
-   - `RS64_ELF=E:\Projects\rogue_squadron64\build\roguesquadron.elf` (the live decomp build, so symbol renames reach CI)
-   - `RS64_UCODE_DIR=E:\Projects\RogueSquadron64Recomp\build\factor5_ucode`
-4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides the `E:/mips-toolchain` default for both the code mods and the game's patches ELF.
+   - `RS64_ELF=<decomp checkout>\build\roguesquadron.elf` (the live decomp build, so symbol renames reach CI)
+   - `RS64_UCODE_DIR=<this repo>\build\factor5_ucode`
+4. Optional: the repo variable `RS64_MIPS_TOOLCHAIN_DIR` overrides `MIPS_TOOLCHAIN_DIR` for both the code mods and the game's patches ELF.
 5. For the macOS package: the account's default WSL distro needs the osxcross setup from the README's [macOS](../../README.md#macos) section (`~/osxcross`, `cmake`, `ninja`, `zip`, `mips-linux-gnu-gcc`), and Windows needs Apple's Metal Developer Tools for Windows in `C:\Program Files\Metal Developer Tools`. The job builds a Linux N64Recomp into `~/rs64-ci-tools`, then runs `tools/release/macos/cross-build.sh` for arm64 and x86_64 (Release, into `~/rs64-ci-macos-<arch>`) and merges them with `tools/release/macos/package.sh`.
 6. For the APK: Android Studio's SDK with NDK 29.0.14206865, found through the account's `ANDROID_HOME` (a CI checkout has no `local.properties`). `gradlew assembleRelease` gets the Release host tools through `-Prs64FileToC`, `-Prs64N64Recomp`, `-Prs64RecompModTool` and `-Prs64MipsDir`, and signs with the account's `~/.android/debug.keystore`, the same key as local builds, so CI APKs install over them.
 

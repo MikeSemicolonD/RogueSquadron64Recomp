@@ -13,7 +13,7 @@ import os, re, glob, sys
 
 FUNCS_DIR = os.environ.get(
     "RSR_FUNCS_DIR",
-    "E:/Projects/N64Recomp/RecompiledFuncs",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "RecompiledFuncs"),
 )
 
 if len(sys.argv) < 2:

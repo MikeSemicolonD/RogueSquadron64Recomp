@@ -10,8 +10,8 @@ param(
     [string[]]$Set = @(),
     [int]$TimeoutS = 900,
     [string]$Apk = "$PSScriptRoot\..\..\android\app\build\outputs\apk\release\RogueSquadron64Recomp-release.apk",
-    [string]$Sdk = $(if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { 'A:\Android\Sdk' }),
-    [string]$AvdHome = $(if ($env:ANDROID_AVD_HOME) { $env:ANDROID_AVD_HOME } else { 'A:\Android' })
+    [string]$Sdk = $(if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } elseif ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }),
+    [string]$AvdHome = $(if ($env:ANDROID_AVD_HOME) { $env:ANDROID_AVD_HOME } else { "$env:USERPROFILE\.android\avd" })
 )
 
 # Not Stop: Windows PowerShell turns adb's stderr progress lines into errors.

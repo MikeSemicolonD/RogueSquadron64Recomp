@@ -2,7 +2,7 @@
 
 > Field-offset tables derived from the recompiled C (`RecompiledFuncs/funcs_*.c`,
 > literal MIPS→C with `MEM_W`/`MEM_BU`/`MEM_HU` accesses) cross-referenced with the
-> sister decomp repo `E:/Projects/rogue_squadron64/docs/` + `symbol_files/`. Companion
+> sister decomp repo `../rogue_squadron64/docs/` + `symbol_files/`. Companion
 > to [game-architecture.md](game-architecture.md), which holds the subsystem/control-flow
 > map; this doc holds the struct *memory layouts*.
 >
@@ -823,6 +823,6 @@ not nibbles; the concrete `G_SETTIMG` opcode per format index is emitted in the 
 ## See also
 
 - [game-architecture.md](game-architecture.md) — subsystem + control-flow map.
-- `E:/Projects/rogue_squadron64/docs/` — per-subsystem decomp notes (the field-name source).
-- `E:/Projects/rogue_squadron64/docs/mips_to_c/ctx.c` — m2c struct definitions (`player_struct`, etc).
-- `E:/Projects/rogue_squadron64/symbol_files/` — authoritative symbol names.
+- `../rogue_squadron64/docs/` — per-subsystem decomp notes (the field-name source).
+- `../rogue_squadron64/docs/mips_to_c/ctx.c` — m2c struct definitions (`player_struct`, etc).
+- `../rogue_squadron64/symbol_files/` — authoritative symbol names.

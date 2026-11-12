@@ -17,7 +17,7 @@ param(
     # Time for the renderer to present the paused frame before the capture.
     [int]$SettleMs = 250,
     [switch]$RenderDoc,
-    # renderdoc.dll to load; default: the local 1.47 build the renderdoc MCP replays with, else the installed RenderDoc.
+    # renderdoc.dll to load; default: a renderdoc checkout next to the repo (the build the renderdoc MCP replays with), else the installed RenderDoc.
     [string]$RenderDocDll = ""
 )
 
@@ -53,7 +53,7 @@ else {
 }
 if ($RenderDoc) {
     if (-not $RenderDocDll) {
-        $RenderDocDll = @("E:\Projects\renderdoc\x64\Release\renderdoc.dll", "$env:ProgramFiles\RenderDoc\renderdoc.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
+        $RenderDocDll = @("$PSScriptRoot\..\..\..\..\renderdoc\x64\Release\renderdoc.dll","$env:ProgramFiles\RenderDoc\renderdoc.dll") | Where-Object { Test-Path $_ } | Select-Object -First 1
     }
     if (-not $RenderDocDll) { Write-Error "renderdoc.dll not found; pass -RenderDocDll"; exit 1 }
     $rdcDir = Join-Path $outDir "rdc"

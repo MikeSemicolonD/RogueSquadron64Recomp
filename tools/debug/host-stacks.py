@@ -19,7 +19,7 @@ from pathlib import Path
 from minidump.minidumpfile import MinidumpFile
 
 LLVM = r"C:\Program Files\LLVM\bin\llvm-symbolizer.exe"
-EXE = r"E:\Projects\RogueSquadron64Recomp\build\Debug\RogueSquadron64Recomp.exe"
+EXE = str(Path(__file__).resolve().parents[2] / "build" / "Debug" / "RogueSquadron64Recomp.exe")
 # functions worth flagging on a stack (substring match, post-symbolization)
 INTEREST = ("waitForPostSwapAck", "viRetrace", "musyx", "SynthFrame", "submitGfx",
             "spTaskScheduler", "AiAudio", "drainAudio", "present", "Present",

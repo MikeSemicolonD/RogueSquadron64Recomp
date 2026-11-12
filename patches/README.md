@@ -1,6 +1,6 @@
 # Patches
 
-Base-game C patches, built the Zelda64Recomp way: every build compiles `src/**/*.c` to MIPS with the code-mod toolchain, links `patches.elf` with [patches.ld](patches.ld), recompiles it with N64Recomp ([../patches.toml](../patches.toml)) into `RecompiledPatches/`, embeds `patches.bin`, and registers it with librecomp at boot ([src/game/register_patches.cpp](../src/game/register_patches.cpp)). The build needs MIPS GCC: set `MIPS_TOOLCHAIN_DIR` (default `E:/mips-toolchain`) or `MIPS_GCC` and `MIPS_LD`.
+Base-game C patches, built the Zelda64Recomp way: every build compiles `src/**/*.c` to MIPS with the code-mod toolchain, links `patches.elf` with [patches.ld](patches.ld), recompiles it with N64Recomp ([../patches.toml](../patches.toml)) into `RecompiledPatches/`, embeds `patches.bin`, and registers it with librecomp at boot ([src/game/register_patches.cpp](../src/game/register_patches.cpp)). The build needs MIPS GCC: set `MIPS_TOOLCHAIN_DIR` (CMake or environment), put its `bin` on `PATH`, or set `MIPS_GCC` and `MIPS_LD`.
 
 Patch sources include `rs64_api.h` ([syms/include/](../syms/include/rs64_api.h)), the same header code mods use:
 
