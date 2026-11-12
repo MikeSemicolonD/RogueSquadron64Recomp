@@ -25,6 +25,8 @@ def hostN64Recomp = findProperty('rs64N64Recomp') ?: rootProject.file("../build/
 // RecompModTool writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
 def hostRecompModTool = findProperty('rs64RecompModTool') ?: rootProject.file("../build/Debug/RecompModTool.exe").absolutePath
 def mipsDirArgs = findProperty('rs64MipsDir') ? ["-DMIPS_TOOLCHAIN_DIR=${findProperty('rs64MipsDir')}"] : []
+// -Prs64Mcp=ON builds the MCP bridge into every variant (tools/debug/mcp, the smoke test); ROGUESQ_MCP_PORT in roguesq_env.txt starts it.
+def mcpArgs = findProperty('rs64Mcp') ? ["-DRS64_MCP=${findProperty('rs64Mcp')}"] : []
 // ccache on PATH caches native objects; base_dir and hash_dir=false let a new .cxx/<hash> folder reuse them.
 def ccacheExe = providers.environmentVariable('PATH').getOrElse('').tokenize(File.pathSeparator).collectMany { [new File(it, 'ccache.exe'), new File(it, 'ccache')] }.find { it.isFile() }
 def ccacheLauncher = ccacheExe ? "${ccacheExe.absolutePath.replace('\\', '/')};base_dir=${rootProject.file('..').absolutePath.replace('\\', '/')};hash_dir=false" : null
@@ -153,7 +155,7 @@ android {
         externalNativeBuild {
             cmake {
                 // Multiplayer ships as the multiplayer-native mod, as on desktop: libmultiplayer_native.so is packed with the game's libraries.
-                arguments('-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs, *ccacheArgs)
+                arguments('-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs, *mcpArgs, *ccacheArgs)
                 targets(*(['RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'] + (discordAar.exists() ? ['discord_bridge'] : [])))
             }
         }
