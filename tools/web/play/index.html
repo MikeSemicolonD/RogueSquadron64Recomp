@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rogue Squadron 64 Recompiled</title>
+<link rel="icon" href="favicon.ico">
+<script src="coi-serviceworker.js"></script>
+<style>
+  :root { color-scheme: dark; --bg: #000; --fg: #e8e4d8; --dim: #8a8f96; --bad: #e06c5f; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; }
+  #canvas { display: block; width: 100%; height: 100%; }
+  #panel { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; text-align: center; }
+  #panel[hidden] { display: none; }
+  #status { color: var(--dim); max-width: 36em; white-space: pre-line; }
+  #status.bad { color: var(--bad); }
+  label.pick { padding: 10px 18px; border: 1px solid #444; border-radius: 6px; cursor: pointer; }
+  input[type=file] { display: none; }
+  #bar { width: min(320px, 80vw); accent-color: #e8b84a; }
+  #bar[hidden] { display: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+<div id="panel">
+  <div id="status">Loading</div>
+  <progress id="bar" hidden></progress>
+  <label class="pick" id="pick" hidden>Choose your ROM<input type="file" id="rom" accept=".z64,.n64,.v64"></label>
+</div>
+<script>
+const ROM_PATH = '/persist/rogue_squadron.z64';
+const panel = document.getElementById('panel');
+const status = document.getElementById('status');
+const pick = document.getElementById('pick');
+const bar = document.getElementById('bar');
+
+function say(text, bad)
+{
+  status.textContent = text;
+  status.className = bad ? 'bad' : '';
+}
+
+// A determinate bar when the total is known, an indeterminate one otherwise; null hides it.
+function progress(done, total)
+{
+  bar.hidden = done === null;
+
+  if (total) {
+    bar.max = total;
+    bar.value = done;
+  } else {
+    bar.removeAttribute('value');
+  }
+}
+
+function mb(bytes)
+{
+  return (bytes / 1048576).toFixed(1);
+}
+
+// Reads a stream in chunks so the bar can follow it. total is a guess when the server compresses (Content-Length is then the compressed size).
+async function readAll(stream, total, label)
+{
+  const reader = stream.getReader();
+  const chunks = [];
+  let done = 0;
+
+  for (;;) {
+    const { value, done: end } = await reader.read();
+
+    if (end)
+      break;
+
+    chunks.push(value);
+    done += value.length;
+    say(`${label} ${mb(done)} MB`);
+    progress(Math.min(done, total), total);
+  }
+
+  const out = new Uint8Array(done);
+  let at = 0;
+
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.length;
+  }
+
+  return out;
+}
+
+function envFromQuery()
+{
+  const env = {};
+  const q = new URLSearchParams(location.search).get('env');
+
+  if (!q)
+    return env;
+
+  for (const pair of q.split(';')) {
+    const i = pair.indexOf('=');
+
+    if (i > 0)
+      env[pair.slice(0, i)] = pair.slice(i + 1);
+  }
+
+  return env;
+}
+
+function sync(populate)
+{
+  return new Promise(resolve => Module.FS.syncfs(populate, () => resolve()));
+}
+
+let mainRan = false;
+
+function start()
+{
+  progress(null);
+  panel.hidden = true;
+  mainRan = true;
+  Module.callMain([]);
+}
+
+// Called by the game when the stored file isn't the ROM: it has deleted the file and returned from main.
+async function romRejected(text)
+{
+  await sync(false);
+  say(text + 'Choose your Star Wars: Rogue Squadron (USA v1.0) N64 ROM.', true);
+  panel.hidden = false;
+  pick.hidden = false;
+}
+
+async function onRuntimeReady()
+{
+  Module.FS.mkdir('/persist');
+  Module.FS.mount(Module.IDBFS, {}, '/persist');
+  await sync(true);
+
+  if (Module.FS.analyzePath(ROM_PATH).exists) {
+    start();
+    return;
+  }
+
+  progress(null);
+  say('This needs your Star Wars: Rogue Squadron (USA v1.0) N64 ROM.\nIt stays in this browser.');
+  pick.hidden = false;
+}
+
+document.getElementById('rom').addEventListener('change', async e => {
+  const file = e.target.files[0];
+
+  if (!file)
+    return;
+
+  pick.hidden = true;
+  Module.FS.writeFile(ROM_PATH, await readAll(file.stream(), file.size, 'Reading your ROM'));
+  say('Saving it in this browser');
+  progress(0, 0);
+  await sync(false);
+
+  // main runs once per page load, so a second pick starts over from the stored file.
+  if (mainRan)
+    location.reload();
+  else
+    start();
+});
+
+var Module = {
+  canvas: document.getElementById('canvas'),
+  preRun: [() => Object.assign(Module.ENV, envFromQuery())],
+  onRuntimeInitialized: onRuntimeReady,
+  // The game download is the slow part of a first visit; fetching it here shows its progress (the service worker caches it after).
+  instantiateWasm: (imports, ready) => {
+    fetch('RogueSquadron64Recomp.wasm')
+      .then(r => readAll(r.body, Number(r.headers.get('Content-Length')) || 0, 'Downloading the game'))
+      .then(bytes => {
+        say('Starting');
+        progress(0, 0);
+        return WebAssembly.instantiate(bytes, imports);
+      })
+      .then(r => ready(r.instance, r.module));
+    return {};
+  },
+  romRejected,
+  print: text => console.log(text),
+  printErr: text => console.warn(text)
+};
+
+const unsupported = 'This browser can\'t run the game here. Try a current Chrome, Edge or Safari.';
+
+// A first visit isn't isolated until the service worker controls the page; coi-serviceworker can miss its own reload, so reload once here.
+if (!window.crossOriginIsolated && navigator.serviceWorker && !sessionStorage.getItem('rs64IsolationReload')) {
+  sessionStorage.setItem('rs64IsolationReload', '1');
+  navigator.serviceWorker.ready.then(() => location.reload());
+} else if (!window.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+  say(unsupported, true);
+} else {
+  sessionStorage.removeItem('rs64IsolationReload');
+  const s = document.createElement('script');
+
+  s.src = 'RogueSquadron64Recomp.js';
+  document.body.append(s);
+}
+</script>
+</body>
+</html>
