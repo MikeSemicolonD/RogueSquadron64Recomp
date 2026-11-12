@@ -117,7 +117,8 @@ bool epoch_newer(uint8_t e, int current) {
 }
 
 uint32_t now_ms32() {
-    return (uint32_t)(now_s() * 1000.0);
+    // Wraps; a browser steady clock is past 2^32 ms, where a direct cast saturates.
+    return (uint32_t)(uint64_t)(now_s() * 1000.0);
 }
 
 // roguesq_net.json next to the exe: { "last_address": "10.0.0.189", "last_host": "10.0.0.5", "port": 27064 }. The last JOIN address seeds the editor; either may end in ":port".
