@@ -1026,7 +1026,7 @@ void poll_input()
                         g_show_fps.store(!g_show_fps.load());
                         break;
                     case SDL_SCANCODE_F8:
-                        if (recomp::dbg::env_str("ROGUESQ_VR_FAKE_YAW")) {
+                        if (rs64_vr_active()) {
                             g_vr_mouse_look.store(!g_vr_mouse_look.load());
                             rs64::app::notify("vrlook", g_vr_mouse_look.load() ? "Mouse turns the VR head (F8)" : "Mouse steers (F8)", 2.0f);
                         }
@@ -1143,6 +1143,11 @@ void poll_input()
     // in dev mode. Only feed the resolver while capture is engaged.
     int rdx = 0, rdy = 0;
     uint32_t rbtn = SDL_GetRelativeMouseState(&rdx, &rdy);
+
+    // Mouse look ends with the VR session, or the mouse would steer nothing.
+    if (!rs64_vr_active()) {
+        g_vr_mouse_look.store(false);
+    }
 
     if (g_vr_mouse_look.load()) {
         g_vr_look_x.store(g_vr_look_x.load() + (float)rdx);
