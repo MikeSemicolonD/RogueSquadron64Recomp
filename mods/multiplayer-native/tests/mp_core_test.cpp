@@ -81,6 +81,16 @@ static void test_interp_puppet_midpoint_and_extrapolation() {
     CHECK(std::fabs(p.sample(0.1).pos.x - 0.0f) < 1e-4f);
 }
 
+static void test_interp_puppet_extrapolates_the_sent_track_not_the_sent_velocity() {
+    // A sender at 20 fps reporting velocity as if at 30 (15 units/s for a real 10): the coast follows the samples' own slope.
+    Puppet p;
+    p.set_interp(0.05);
+    p.on_state(at_x(0.0f, 15.0f), 0.05, 0.0);
+    p.on_state(at_x(0.5f, 15.0f), 0.10, 0.05);
+    // now 0.2 -> render time 0.2 - 0.05 - 0.05 = 0.1: 0.05 s past the newest.
+    CHECK(std::fabs(p.sample(0.2).pos.x - 1.0f) < 1e-3f);
+}
+
 static void test_interp_puppet_ignores_jitter() {
     // Constant motion (1 unit/s) sent at 30 Hz, arriving 50 ms plus 0..40 ms of jitter; sampled at 60 Hz with a 100 ms buffer.
     Puppet p;
@@ -776,6 +786,7 @@ int main() {
     test_browse_report();
     test_hud_message();
     test_interp_puppet_midpoint_and_extrapolation();
+    test_interp_puppet_extrapolates_the_sent_track_not_the_sent_velocity();
     test_interp_puppet_ignores_jitter();
     test_puppet_model();
     test_team_triggers_first_enter_last_exit();

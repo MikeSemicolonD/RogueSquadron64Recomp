@@ -781,6 +781,18 @@ PuppetState Puppet::sample(double now_s) const {
         double ahead = t - buf_.back().sent;
         ahead = ahead > kPuppetCoastS ? kPuppetCoastS : ahead;
         PuppetState r = buf_.back().s;
+
+        // The last segment's slope on the send timeline, not the sent velocity: that assumes the sender's frame time, and overshoots when the sender runs slower.
+        if (buf_.size() >= 2)
+        {
+            const Sample& a = buf_[buf_.size() - 2];
+            const double span = buf_.back().sent - a.sent;
+
+            if (span > 0.004 && span < 0.25) {
+                r.vel = v_scale(v_add(r.pos, v_scale(a.s.pos, -1.0f)), (float)(1.0 / span));
+            }
+        }
+
         r.pos = v_add(r.pos, v_scale(r.vel, (float)ahead));
         return r;
     }
