@@ -1,7 +1,7 @@
 {
   "advanced": {
     "extAspectRatio": "Original",
-    "extAspectTarget": 1.7777777910232544,
+    "extAspectTarget": "16:9",
     "hardwareResolve": "Automatic",
     "idleWorkActive": true,
     "upscale2D": "ScaledOnly"
