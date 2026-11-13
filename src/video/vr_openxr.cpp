@@ -255,7 +255,7 @@ namespace rs64::vr {
 bool requested()
 {
 
-    return env_on("ROGUESQ_VR") || rs64::video::vr_mode();
+    return env_str("ROGUESQ_VR") ? env_on("ROGUESQ_VR") : rs64::video::vr_mode();
 }
 
 bool init_before_device()

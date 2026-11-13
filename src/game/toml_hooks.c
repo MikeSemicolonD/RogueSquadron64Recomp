@@ -405,7 +405,10 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_co
     s_view_ny = ctx->f12.fl / ctx->f6.fl;
     s_view_seen = 1;
 
-    if (s_render_view_test || s_effect_view_test || !rs64_ls_session()) ctx->f2.fl *= rs64_cull_widen();
+    if (s_render_view_test || s_effect_view_test || !rs64_ls_session()) {
+        ctx->f2.fl *= rs64_cull_widen();
+        ctx->f12.fl /= rs64_cull_widen_y();
+    }
 
     if (s_render_view_test) {
         const float m = rs64_shadow_cull_margin();
@@ -430,7 +433,10 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_co
 // transformVec3ToNpcLocalWithScale 0x8001E168: the point test's projected x ($f8) and the scale its y is projected with next ($f20).
 void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_context* ctx) {
 
-    if (s_render_view_test || s_effect_view_test || !rs64_ls_session()) ctx->f2.fl *= rs64_cull_widen();
+    if (s_render_view_test || s_effect_view_test || !rs64_ls_session()) {
+        ctx->f2.fl *= rs64_cull_widen();
+        ctx->f20.fl /= rs64_cull_widen_y();
+    }
 
     if (s_render_view_test) {
         const float m = rs64_shadow_cull_margin();

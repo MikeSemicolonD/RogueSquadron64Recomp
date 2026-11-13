@@ -279,6 +279,7 @@ void rs64_th_updateNpcEffectIntensity_entry(uint8_t* rdram, recomp_context* ctx)
 // Host functions the hook bodies call, defined in src/ (the rs64_f5_* in lib/rt64, rs64_snapshot_add_range in ultramodern); the defining files include this header so a prototype cannot drift from its definition.
 extern volatile int g_current_scene;
 float rs64_cull_widen(void);
+float rs64_cull_widen_y(void);
 float rs64_draw_dist(void);
 float rs64_fog_dist(void);
 float rs64_res_scale(void);

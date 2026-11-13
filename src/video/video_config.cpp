@@ -1059,7 +1059,7 @@ void apply_env_overrides(UC& uc)
 
     single_aa(uc);
 
-    // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1 expands to the window.
+    // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1|0 expands to the window or keeps 4:3, over the saved setting.
     if (const char* v = env_str("ROGUESQ_ASPECT")) {
         double a = std::atof(v);
 
@@ -1069,17 +1069,26 @@ void apply_env_overrides(UC& uc)
 
             fprintf(stderr, "[RT64] aspect=Manual %.4f\n", a);
         }
-    } else if (env_on("ROGUESQ_WIDESCREEN")) {
-        uc.aspectRatio = UC::AspectRatio::Expand;
+    } else if (env_str("ROGUESQ_WIDESCREEN")) {
+        const bool wide = env_on("ROGUESQ_WIDESCREEN");
 
-        fprintf(stderr, "[RT64] aspect=Expand\n");
+        uc.aspectRatio = wide ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
+
+        fprintf(stderr, "[RT64] aspect=%s\n", wide ? "Expand" : "Original");
     }
 
-    // ROGUESQ_HDR=1: high internal color format.
-    if (env_on("ROGUESQ_HDR")) {
-        uc.internalColorFormat = UC::InternalColorFormat::High;
+    // ROGUESQ_HDR=1|0: high or standard internal color format.
+    if (env_str("ROGUESQ_HDR")) {
+        const bool hdr = env_on("ROGUESQ_HDR");
 
-        fprintf(stderr, "[RT64] HDR internal color format\n");
+        uc.internalColorFormat = hdr ? UC::InternalColorFormat::High : UC::InternalColorFormat::Automatic;
+
+        fprintf(stderr, "[RT64] HDR=%d\n", hdr ? 1 : 0);
+    }
+
+    // ROGUESQ_HLE_DEV_MODE=1|0: the F1 inspector.
+    if (env_str("ROGUESQ_HLE_DEV_MODE")) {
+        uc.developerMode = env_on("ROGUESQ_HLE_DEV_MODE");
     }
 
     // ROGUESQ_TEX_FILTER=nearest|linear|aa drives both the VI upscale filter (filtering) and the per-texture sampler (threePointFiltering).

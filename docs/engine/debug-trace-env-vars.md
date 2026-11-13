@@ -40,7 +40,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | Env var | Flag | Default | Effect |
 | --- | --- | --- | --- |
 | `ROGUESQ_GFX_API` | `--gfx-api` | auto | `vulkan`, `d3d12`, `d3d11` or `d3d10` forces the backend (`d3d10` = D3D11 capped at feature level 10). |
-| `ROGUESQ_HLE_DEV_MODE` | `--[no-]hle-dev-mode` | on in Debug, off in Release | RT64 ImGui inspector on F1 (F6 = Controls window). |
+| `ROGUESQ_HLE_DEV_MODE` | `--[no-]hle-dev-mode` | on in Debug, off in Release | RT64 ImGui inspector on F1 (F6 = Controls window); wins over `developerMode` in `roguesq_video.json`. |
 | `ROGUESQ_MCP_PORT` | `--mcp-port` | 47064 in Debug, unset otherwise | Dev: serve the RT64 MCP bridge on `127.0.0.1:<port>` for [tools/debug/mcp](../../tools/debug/mcp/README.md) ([rt64-mcp.md](rt64-mcp.md)). A Debug build serves 47064 so the server's `attach` can reach a game started by hand; `0` turns it off. Other builds open no port without it. Debug builds only, unless configured with `-DRS64_MCP=ON`. |
 | `ROGUESQ_F5_NATIVE` | `--[no-]f5-native` | on | Emit Factor 5 geometry. `0` parses display lists without drawing. |
 | `ROGUESQ_NO_AUDIO_UCODE` | `--no-audio-ucode` | off | `1` replaces the MusyX synth with the silent stub. |
@@ -55,8 +55,8 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_FULLSCREEN` | `--fullscreen` | `fullscreen` in `roguesq_video.json` | Start in borderless fullscreen without changing the saved setting; Alt+Enter toggles and saves. |
 | `ROGUESQ_LANGUAGE=<code>` | `--language` | `language` in `roguesq_video.json` (unset) | Game text language (menus, mission text, subtitles) for this run without changing the saved setting: `en`, `de`, `fr` or an installed language mod's code. Unset and no saved setting leaves the game's own choice (English); OPTIONS > LANGUAGE picks one and saves it. |
 | `ROGUESQ_UNFOCUSED` | `--unfocused` | off | Open the window behind other windows without taking focus (test runs; input still works through `tools/debug/drive-input.ps1`). |
-| `ROGUESQ_WIDESCREEN` | `--[no-]widescreen` | off | `aspectRatio=Expand` (fill the window aspect). |
-| `ROGUESQ_VR` | `--[no-]vr` | `vrMode` in `roguesq_video.json` (off) | Start in a VR headset through OpenXR (`RS64_OPENXR` builds, Vulkan). No headset or runtime: starts flat. |
+| `ROGUESQ_WIDESCREEN` | `--[no-]widescreen` | `widescreen` in `roguesq_video.json` | `1` fills the window aspect, `0` keeps 4:3, over the saved setting. |
+| `ROGUESQ_VR` | `--[no-]vr` | `vrMode` in `roguesq_video.json` (off) | `1` or `0` over the saved setting. `1` starts in a VR headset through OpenXR (`RS64_OPENXR` builds, Vulkan). No headset or runtime: starts flat. |
 | `ROGUESQ_DRAW_DIST=<mult>` | `--draw-distance` | `drawDistance` in `roguesq_video.json` (1.0) | Accepts 0.25-8 (outside that = unset). Camera far plane, object far cull and fog. With legacy terrain it is capped at 1.3 and terrain reach follows it through `ROGUESQ_TERRAIN_DIST`. |
 | `ROGUESQ_F5_STATIC_TERRAIN=<0\|1\|2>` | | `legacyTerrain` in `roguesq_video.json` (false = 1) | Terrain renderer. 1: RT64 draws the whole HMP map in one GPU pass at the first terrain record (ported game lighting, ROM tile textures) and drops the game's tiles. 0: the game's own terrain (legacy). 2: each record draws its own cell from the map (validation). |
 | `ROGUESQ_FORCE_LEVEL` / `ROGUESQ_FORCE_CRAFT` | `--force-level`, `--force-craft` | unset | Level id (0-18) / craft id (0-8) pinned while you navigate the menus yourself (no injected input, unlike `BOOT_TARGET`): from SELECT LEVEL, AVAILABLE CRAFT or the end of ENTER NAME (a new pilot auto-launches level 0) until the mission starts. Writes the same fields as `level:<id>,<craft>` (0x130B40, 0x130B70 u32, 0x130B41, plus the matching secondary weapon at 0x130B43). |
@@ -94,7 +94,7 @@ Applied by `apply_env_overrides` (`src/video/video_config.cpp`) after `roguesq_v
 | `ROGUESQ_SSAA` | file | SSAA factor (`ssaa` in `roguesq_video.json`); `>=2` renders at that multiple of the window and downsamples. |
 | `ROGUESQ_FXAA` | file | `1` runs FXAA on the presented image (`fxaa` in `roguesq_video.json`); works on every backend. |
 | `ROGUESQ_ASPECT` | unset | Force aspect `w/h` as a decimal (e.g. `1.7777`); `aspectRatio=Manual`. Wins over `ROGUESQ_WIDESCREEN`. |
-| `ROGUESQ_HDR` | off | `1` -> `internalColorFormat=High`. |
+| `ROGUESQ_HDR` | `hdr` in `roguesq_video.json` | `1` or `0` over the saved setting (`internalColorFormat=High` or `Automatic`). |
 | `ROGUESQ_TEX_FILTER` | file | `nearest` / `linear` / `aa` (AntiAliasedPixelScaling) for the VI upscale. `nearest` also turns three-point texture filtering on and `linear` turns it off (GPU bilinear on every tile, including G_TF_POINT sprites); `aa` leaves it. |
 | `ROGUESQ_THREE_POINT` | file | `1` = N64 three-point filtering per texture (point on G_TF_POINT tiles); `0` = GPU bilinear on all. Applied after `TEX_FILTER`. |
 | `ROGUESQ_RT_INTERP` | file | Frame interpolation: `0` off (`refreshRate=Original`), `<hz>` on at that target (`<20` = 60). |

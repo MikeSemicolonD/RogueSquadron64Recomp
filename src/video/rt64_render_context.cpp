@@ -327,6 +327,13 @@ extern "C" float rs64_cull_widen(void)
     return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
 }
 
+// The same slack on the vertical edges, where a banked or rolled craft's wings reach past its bounding sphere too.
+extern "C" float rs64_cull_widen_y(void)
+{
+
+    return (rs64_cull_widen() > 1.0f) ? kCullEdgeSlack : 1.0f;
+}
+
 // ROGUESQ_VR_FAKE_YAW=<degrees>: a fake head with no headset, starting turned that far left, to test VR. Numpad 4/6 turn, 8/2 look up/down,
 // 7/9 move left/right, 1/3 down/up, +/- forward/back (in the starting frame), 5 recenters. Called only from RT64's workload thread.
 extern "C" int rs64_vr_fake_head(rs64vr::Pose* pose)
@@ -713,8 +720,23 @@ public:
             }
         }
 
+        json saved;
+
+        try { saved = rs64::video::to_friendly(app->userConfig); } catch (...) {}
+
         apply_replay_display();
         rs64::video::apply_env_overrides(app->userConfig);
+
+        // Keys a replay or ROGUESQ_* var changed: a save writes the player's value back unless the player changes the key in game.
+        try {
+            const json live = rs64::video::to_friendly(app->userConfig);
+
+            for (auto it = live.begin(); it != live.end(); ++it) {
+                if (saved.contains(it.key()) && saved[it.key()] != it.value()) {
+                    video_cfg_pins_[it.key()] = { it.value(), saved[it.key()] };
+                }
+            }
+        } catch (...) {}
 
         // PresentEarly (default on): the cinematic stays on one VI fb address, so RT64's
         // updateScreen never sees a VI change and would never present. ROGUESQ_HLE_PRESENT_EARLY=0 opts out.
@@ -973,6 +995,13 @@ private:
     std::string video_cfg_path_;      // roguesq_video.json next to the exe ("" = disabled)
     std::string video_cfg_snapshot_;  // last-persisted userConfig json; F1-menu edits rewrite the file
 
+    struct VideoCfgPin {
+        json live;
+        json saved;
+    };
+
+    std::map<std::string, VideoCfgPin> video_cfg_pins_;
+
     // A lost GPU device never recovers; rebuild RT64 on the same window. Rebuilds back off (1 s, doubling to 16 s) while losses keep recurring so a persistent fault can't spin.
     // ROGUESQ_NO_DEVICE_LOST_RECOVERY=1 disables. Runs on the gfx thread, which is the only caller of send_dl/update_screen.
     bool rebuild_renderer_if_lost()
@@ -1068,7 +1097,22 @@ private:
 
         std::string text;
 
-        try { text = json::parse(cur).dump(2) + "\n"; } catch (...) { return; }
+        try {
+            json j = json::parse(cur);
+
+            for (auto it = video_cfg_pins_.begin(); it != video_cfg_pins_.end();) {
+                if (j[it->first] == it->second.live) {
+                    j[it->first] = it->second.saved;
+                    ++it;
+                } else {
+                    it = video_cfg_pins_.erase(it);
+                }
+            }
+
+            text = j.dump(2) + "\n";
+        } catch (...) {
+            return;
+        }
 
         if (rs64::settings::write_file(video_cfg_path_, text))
         {
