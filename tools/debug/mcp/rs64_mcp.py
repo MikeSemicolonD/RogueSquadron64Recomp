@@ -399,6 +399,9 @@ class Game:
         if platform == "windows" and os.path.isfile(RENDERDOC_DLL):
             game_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
             game_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
+            # Vulkan loads RenderDoc as a layer from its manifest; the installed one is a second copy the capture trigger never reaches.
+            if os.path.isfile(os.path.join(os.path.dirname(RENDERDOC_DLL), "renderdoc.json")):
+                game_env["VK_IMPLICIT_LAYER_PATH"] = os.path.dirname(RENDERDOC_DLL)
         if record:
             # The game makes no folder for a recording, and on Android one the shell makes is not the app's to write, so it goes in the files folder there.
             game_env["ROGUESQ_LS_RECORD"] = f"{ANDROID_FILES}/mcp_{os.path.basename(record)}" if platform == "android" else self.game_path(record)
