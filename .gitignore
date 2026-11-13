@@ -31,11 +31,13 @@ RecompiledPatches/
 # Build directories
 build*/
 build-*
-!tools/release/build-mods.ps1
+!tools/release/**/build-*
 cmake-build-*
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
+!/tools/debug/
+!/tools/release/
 [Rr]eleases/
 x64/
 x86/
