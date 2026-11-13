@@ -57,6 +57,7 @@ focus = ["gCurrentMenuData", "gGameSettings"]
 
 # Account sub-screens share menuId=1 and the menu ptr; bridgeMenuState (u8 0x800CDAC4) tells them apart: 4 SELECT GAME, 2 SELECT LEVEL, 3 AVAILABLE CRAFT.
 # enter_name covers SELECT GAME and ENTER NAME (0x800CE626 looked like a sub-step but is a frame counter's high byte).
+# After a mission the menu data is zero (menuId 0), so SELECT LEVEL and AVAILABLE CRAFT key on the loaded overlay (u32 0x800375B0: 0 mission, 1 menu, 2 cinematic) instead of the menu ptr.
 
 [[state]]
 id = "menu.account.enter_name"
@@ -67,6 +68,7 @@ classify = [
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x02000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x03000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x00000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -75,8 +77,8 @@ id = "menu.account.level_select"
 name = "Select level"
 parent = "menu.account"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
-  { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
+  { addr = 0x800CE734, mask = 0xFF000000, op = "range", value = 0x00000000, value_hi = 0x01000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x02000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
@@ -86,9 +88,22 @@ id = "menu.account.craft_select"
 name = "Available craft"
 parent = "menu.account"
 classify = [
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
-  { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
+  { addr = 0x800CE734, mask = 0xFF000000, op = "range", value = 0x00000000, value_hi = 0x01000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x03000000 },
+]
+focus = ["gCurrentMenuData", "gGameSettings"]
+
+# The 3D SELECT YOUR CRAFT hangar keeps SELECT GAME's bridgeMenuState 4; the menu overlay's screen u16 (0x800CFF50: 2 menu tree, 1 SELECT LEVEL, 0 hangar) tells it apart.
+[[state]]
+id = "menu.account.hangar"
+name = "Craft-select hangar"
+parent = "menu.account"
+classify = [
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
+  { addr = 0x800CE734, mask = 0xFF000000, op = "range", value = 0x00000000, value_hi = 0x01000000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x04000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -190,8 +205,9 @@ id = "mission"
 name = "In-mission (player)"
 parent = ""
 classify = [
-  { addr = 0x80130B17, mask = 0xFF000000, op = "ne",   value = 0x00000000 },   # numMissionObjectives != 0
+  { addr = 0x80130B17, mask = 0xFF000000, op = "ne",   value = 0x00000000 },   # numMissionObjectives != 0 (stale after a mission ends)
   { addr = 0x80130B50, mask = 0x00000020, op = "flag", value = 0x00000000 },   # gGameSettings+0x10 bit0x20 (demo) clear
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq",   value = 0x00000000 },   # mission overlay loaded
 ]
 force = { slot = "boot_level", params = { level = 0, craft = -1 } }
 reachable_from = ["menu", "cinematic"]
@@ -205,6 +221,7 @@ parent = ""
 classify = [
   { addr = 0x80130B17, mask = 0xFF000000, op = "eq", value = 0x00000000 },   # numMissionObjectives == 0
   { addr = 0x80130B70, mask = 0xFFFFFFFF, op = "eq", value = 0x00000014 },   # gCurrentLevel == CHICKEN
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000000 },   # mission overlay loaded
 ]
 focus = ["gMissionState", "gGameSettings"]
 
@@ -215,6 +232,7 @@ parent = ""
 classify = [
   { addr = 0x80130B17, mask = 0xFF000000, op = "ne",   value = 0x00000000 },   # gameplay active (objectives set)
   { addr = 0x80130B50, mask = 0x00000020, op = "flag", value = 0x00000020 },   # demo bit set
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq",   value = 0x00000000 },   # mission overlay loaded
 ]
 force = { slot = "demo", params = { demo = 0 } }
 reachable_from = ["menu"]

@@ -24,4 +24,6 @@ extern "C" {
     void rs64_nav_menu_next(const char* path);
     // Craft-select hangar frames run since boot; it advances only while the hangar is up.
     uint32_t rs64_nav_hangar_frame_count(void);
+    // True while a boot target is still driving the game.
+    bool rs64_nav_active(void);
 }

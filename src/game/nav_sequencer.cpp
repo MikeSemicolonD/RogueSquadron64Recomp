@@ -45,6 +45,13 @@ static std::atomic<bool> s_final_read{false};
 static bool s_nav_clock_on = false;
 static uint32_t s_nav_clock = 0;
 
+static bool nav_running();
+
+extern "C" bool rs64_nav_active(void)
+{
+    return nav_running();
+}
+
 extern "C" bool rs64_nav_consume(uint16_t* buttons, float* x, float* y) {
 
     if (!g_driving.load(std::memory_order_acquire)) return false;
@@ -157,6 +164,11 @@ static int s_overlay = -1;
 static int s_watchdog = 0;
 static int s_since_press = 9999;
 static bool s_disabled = false;
+
+static bool nav_running()
+{
+    return g_target.kind != NAV_NONE && !s_disabled;
+}
 static const char* s_last_state = "";
 
 // A step is stuck only past both budgets: game frames drawn (graphics tasks) and 20 s of wall time. Video ticks ran out at ROGUESQ_SPEED > 1 during loads and on
@@ -320,14 +332,6 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
     return false;
 }
 
-// An account screen (bridgeMenuState 0x800CDAC4: 2 SELECT LEVEL, 3 AVAILABLE CRAFT). After an abort the menu data is zero and the state still reads
-// "mission", so the screen byte under the menu overlay counts as well as the classified state.
-static bool on_account_screen(uint8_t* rdram, const char* st, const char* id, uint8_t screen)
-{
-
-    return is(st, id) || (s_overlay == 1 && rdram[0x0CDAC4 ^ 3] == screen);
-}
-
 // The bonus levels (Beggar's Canyon, the Trench Run, Hoth) are picked with the SELECT LEVEL cursor after their passcodes, as a player does: forcing currentLevel
 // there sends Beggar's Canyon, which has no hangar, into one built for the cursor's level.
 static bool bonus_level(int level)
@@ -387,7 +391,7 @@ static void nav_level(uint8_t* rdram, const char* st)
             if (!is(st, "cinematic")) nav_repress(N64_A_BUTTON);
             break;
         case 3:  // SELECT LEVEL: write target level, confirm, until AVAILABLE CRAFT
-            if (on_account_screen(rdram, st, "menu.account.level_select", 2)) {
+            if (is(st, "menu.account.level_select")) {
 
                 // A mod or bonus level is walked to with the D-pad (cursor u8 0x800CDAC1 = level id, screen state 0x800CDAC4) and picked as a player would, so
                 // its confirm (briefing, medals, craft) runs; a stock level is written: gGameSettings currentLevel (u8), gCurrentLevel (u32).
@@ -406,13 +410,13 @@ static void nav_level(uint8_t* rdram, const char* st)
                 nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
                 nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
                 nav_repress(N64_A_BUTTON);
-            } else if (on_account_screen(rdram, st, "menu.account.craft_select", 3)) {
+            } else if (is(st, "menu.account.craft_select")) {
                 nav_advance();
             }
             break;
         case 4:  // AVAILABLE CRAFT (the bridge hologram): A opens the craft-select hangar
             if (s_hangar_frames > 0) { nav_advance(); return; }
-            if (on_account_screen(rdram, st, "menu.account.craft_select", 3)) nav_repress(N64_A_BUTTON);
+            if (is(st, "menu.account.craft_select")) nav_repress(N64_A_BUTTON);
             break;
         case 5:  // the hangar: turn the bays to the target craft, confirm, until mission
             if (nav_step_craft(rdram, g_target.b, "level"))

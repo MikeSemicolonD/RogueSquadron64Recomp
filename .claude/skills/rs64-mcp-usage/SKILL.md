@@ -35,7 +35,7 @@ close()
 
 - `pause_at` only works when running. Once frozen, move with `step`, or `resume` and then `pause_at` again; calling `pause_at` while paused errors with "already paused".
 - `pause_at` waits for a frame that is still to come. To hold what is on screen now (the game is already at the screen you want), use `pause_now`. Don't pick a big frame on a clock that is already counting, and don't pause just to read memory: `rdram_read` works while the game runs.
-- Before a `pause_at` on a state clock, check `frame_info().state`: the 3D craft-select hangar classifies as `menu.account.enter_name` (bridgeMenuState 4, as SELECT GAME), so `pause_at("menu.account.craft_select", ...)` never fires there.
+- Before a `pause_at` on a state clock, check `frame_info().state`. The 3D craft-select hangar is `menu.account.hangar`; `menu.account.craft_select` is the 2D AVAILABLE CRAFT list. A clock already counting needs `next=false` and a frame still ahead; `next=true` waits for the state to be entered again.
 - Use `clock="mission"` (or the state you are in) for `step`, so frame numbers match `pause_at`. The default `dl` counts display lists since boot.
 - `press` with `frames=N` then `step N` plays exactly N frames of that input. `frames=0` holds until `release`.
 - A mission's first ~200 frames are the opening fly-in. Steer after that.

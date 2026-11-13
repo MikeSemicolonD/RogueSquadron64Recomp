@@ -276,7 +276,7 @@ static nlohmann::json mcp_frame_info()
 
     const nlohmann::json input = mcp_input_live() ? nlohmann::json{ { "buttons", s_mcp_input->names }, { "stick", { s_mcp_input->x, s_mcp_input->y } }, { "until_dl", s_mcp_input->until_dl } } : nlohmann::json();
 
-    return { { "state", rs64_state_current_id() }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input } };
+    return { { "state", rs64_state_current_id() }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input }, { "nav", rs64_nav_active() } };
 }
 
 struct McpWait { uint64_t gen; uint64_t epoch; };

@@ -570,7 +570,7 @@ Activity describe(const uint8_t* rdram, bool hangar)
         return screen("Selecting a level");
     }
 
-    if (st == "menu.account.craft_select")
+    if (st == "menu.account.craft_select" || st == "menu.account.hangar")
     {
         return screen("Choosing a craft", level_name(level));
     }

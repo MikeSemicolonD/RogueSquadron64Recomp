@@ -29,6 +29,23 @@ DEFAULT_BRIDGE_PORT = 47064
 WAIT_LOG_MAX_S = 120
 # A long bridge call gives up after this long with no display list and the game not held (a load can pause drawing for a few seconds).
 CALL_STALL_S = 20
+# A menu screen that nothing drives (no boot target, no held input) never changes; a wait there gives up after this long. The main menu is left out: idling there starts the attract demo.
+MENU_IDLE_S = 20
+
+
+class MenuIdle:
+    """Raises once the game has sat on one undriven menu screen for MENU_IDLE_S."""
+
+    def __init__(self):
+        self.state, self.since = None, time.time()
+
+    def check(self, info, what):
+        st = info.get("state") or ""
+        driven = info.get("held") or info.get("input") or info.get("nav")
+        if driven or st != self.state or not st.startswith("menu") or st == "menu.main":
+            self.state, self.since = st, time.time()
+        elif time.time() - self.since >= MENU_IDLE_S:
+            raise GameError(f"{what}: stopped, the game has sat on {st} for {MENU_IDLE_S}s with nothing driving it (no boot target running, no press); it will not change on its own")
 
 
 class GameError(Exception):
@@ -526,6 +543,7 @@ class Game:
             log_at = os.path.getsize(self.log_path) if watch and self.log_path and os.path.exists(self.log_path) else 0
             fail = re.compile(WAIT_LOG_FAIL)
             last_dl, moved_at, checked_at = None, time.time(), time.time()
+            idle = MenuIdle()
             while not slot["event"].wait(0.05):
                 if not self.alive():
                     code = self.proc.returncode if self.proc else None
@@ -546,6 +564,8 @@ class Game:
                         info = self.call("frame_info", timeout_s=5)
                     except GameError:
                         continue
+                    if not self.attached:
+                        idle.check(info, method)
                     dl = info.get("clocks", {}).get("dl")
                     if info.get("held") or dl != last_dl:
                         last_dl, moved_at = dl, checked_at
@@ -634,15 +654,23 @@ class Game:
             f.write(r.stdout + r.stderr)
         return {"walk_path": out, "dump_path": dump, "exit_code": r.returncode, "tail": (r.stdout + r.stderr)[-3000:]}
 
-    def wait_log(self, pattern, timeout_s=30, from_start=False, fail_pattern=WAIT_LOG_FAIL):
+    def wait_log(self, pattern, timeout_s=30, from_start=False, fail_pattern=WAIT_LOG_FAIL, repeat=False):
         """Wait for a regex to appear in the game's log (stdout+stderr): new lines only unless from_start. A fail_pattern line ends the wait
-        with an error at once; timeout_s is capped at WAIT_LOG_MAX_S."""
+        with an error at once; timeout_s is capped at WAIT_LOG_MAX_S. Without repeat, a pattern already printed errors at once."""
         regex = re.compile(pattern)
         fail = re.compile(fail_pattern) if fail_pattern else None
         timeout_s = min(timeout_s, WAIT_LOG_MAX_S)
         offset = 0 if from_start else os.path.getsize(self.log_path)
+
+        if offset and not repeat:
+            with open(self.log_path, "rb") as f:
+                seen = [line for line in f.read(offset).decode("utf-8", errors="replace").splitlines() if regex.search(line)]
+            if seen:
+                raise GameError(f"{pattern!r} already printed before this wait: {seen[-1]} (from_start=true takes it, repeat=true waits for another)")
+
         deadline = time.time() + timeout_s
         last_dl, moved_at, checked_at = None, time.time(), 0.0
+        idle = MenuIdle()
         while True:
             if self.sock is not None and time.time() - checked_at >= 2:
                 checked_at = time.time()
@@ -650,6 +678,8 @@ class Game:
                     info = self.call("frame_info", timeout_s=5)
                 except Exception:
                     info = None
+                if info and not self.attached:
+                    idle.check(info, f"wait_log {pattern!r}")
                 dl = info and info.get("clocks", {}).get("dl")
                 if info is None or info.get("held") or not dl or dl != last_dl:
                     last_dl, moved_at = dl, checked_at
@@ -1059,6 +1089,13 @@ def serve():
         if not next and now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
             raise RuntimeError(f"{clock} is already at frame {now} (past {frame}): use pause_now, or step from a pause")
 
+        # next=true on the state being shown waits for it to be left and entered again, which only happens if something drives the game there.
+        if next and now is not None and clock == info.get("state"):
+            if now < frame:
+                next = False
+            else:
+                raise RuntimeError(f"{clock} is on screen at frame {now} (past {frame}); next=true would wait for it to be left and entered again: use pause_now, or drive the game out and back first")
+
         return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s, "next": next}, timeout_s + 15)
 
     @tool()
@@ -1082,11 +1119,12 @@ def serve():
         return game.call("pause_when_drawn", {"key": key, "timeout_s": timeout_s}, timeout_s + 15)
 
     @tool()
-    def wait_log(pattern: str, timeout_s: float = 30, from_start: bool = False, fail_pattern: str = WAIT_LOG_FAIL) -> dict:
+    def wait_log(pattern: str, timeout_s: float = 30, from_start: bool = False, fail_pattern: str = WAIT_LOG_FAIL, repeat: bool = False) -> dict:
         """Wait until a regex appears in the game's log; new lines only unless from_start. Ends early with an error when the game exits or
         a fail_pattern line appears (default: crash markers; pass a line that proves the awaited one will not come, or "" for none).
+        A pattern already in the log errors at once with that line (most events print once); repeat=true waits for another one.
         timeout_s is capped at 120: drive the game toward the event (press, step) and wait again rather than waiting long."""
-        return game.wait_log(pattern, timeout_s, from_start, fail_pattern)
+        return game.wait_log(pattern, timeout_s, from_start, fail_pattern, repeat)
 
     @tool()
     def step(frames: int = 1, clock: str = "dl", timeout_s: float = 30) -> dict:
