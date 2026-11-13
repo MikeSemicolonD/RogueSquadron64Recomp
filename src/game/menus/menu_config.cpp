@@ -1483,6 +1483,7 @@ bool condition_holds(uint8_t* rdram, const std::string& c, bool pause)
     if (c == "expansion_pak") return rd_b(rdram, 0x130B63) != 0;
     if (c == "frame_interpolation") return rs64::video::frame_interpolation_on();
     if (c == "widescreen") return rs64::video::display_value(rs64::video::Display::Widescreen) == 1;
+    if (c == "restart_required") return rs64::video::restart_required();
 
 #if defined(RS64_OPENXR)
     if (c == "openxr") return true;
@@ -1960,10 +1961,12 @@ int build_mod_page(uint8_t* rdram, const std::string& page, uint8_t parent)
     s_note.reset();
     s_note_menu = self_id;
 
+    // The note's `requires` is checked each frame (note_frame), so it is kept even when hidden now.
     for (const auto& b : config().buttons)
-        if (b.menu == page && button_visible(rdram, b)) {
-            if (!b.note) lines.push_back(&b);
-            else if (!s_note) s_note = b;
+        if (b.menu == page && b.note) {
+            if (!s_note) s_note = b;
+        } else if (b.menu == page && button_visible(rdram, b)) {
+            lines.push_back(&b);
         }
 
     for (const auto& b : config().buttons)
@@ -2816,7 +2819,7 @@ extern "C" unsigned rs64_gof_override(uint8_t* rdram, unsigned textId)
 static void note_frame(uint8_t* rdram, recomp_context* ctx)
 {
 
-    const bool here = s_note.has_value() && rd_b(rdram, GCMD_OFF + 0x04) == s_note_menu;
+    const bool here = s_note.has_value() && rd_b(rdram, GCMD_OFF + 0x04) == s_note_menu && button_visible(rdram, *s_note);
     std::string t;
 
     if (here)

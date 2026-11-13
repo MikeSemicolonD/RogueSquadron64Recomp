@@ -5,6 +5,7 @@
 #include <cmath>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -57,6 +58,16 @@ std::mutex g_display_mutex;
 UC g_desired;
 bool g_pending = false;
 std::vector<int> g_refresh_rates;
+
+// The settings read only at launch, as they were when the renderer started (first apply_pending). A new one adds a field here, in restart_snapshot and in restart_required.
+struct RestartSettings
+{
+    UC::GraphicsAPI api{};
+    bool d3d10 = false;
+    bool vr = false;
+};
+
+std::optional<RestartSettings> g_started;
 
 struct AaPreset { UC::Antialiasing msaa; int ssaa; bool fxaa; const char* name; };
 
@@ -491,11 +502,28 @@ bool frame_interpolation_on()
     return g_desired.refreshRate != UC::RefreshRate::Original;
 }
 
+RestartSettings restart_snapshot(const UC& uc)
+{
+    return { uc.graphicsAPI, d3d10(), vr_mode() };
+}
+
+bool restart_required()
+{
+
+    std::lock_guard<std::mutex> lock(g_display_mutex);
+
+    const RestartSettings now = restart_snapshot(g_desired);
+
+    return g_started && (now.api != g_started->api || now.d3d10 != g_started->d3d10 || now.vr != g_started->vr);
+}
+
 ApplyResult apply_pending(UC& uc)
 {
 
     std::lock_guard<std::mutex> lock(g_display_mutex);
     ApplyResult r;
+
+    if (!g_started) g_started = restart_snapshot(uc);
 
     // No menu change waiting: mirror the live config (the F1 inspector and env overrides edit it directly).
     if (!g_pending)

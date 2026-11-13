@@ -108,6 +108,9 @@ int display_choice_count(Display d);
 std::string display_label(Display d, int choice);
 bool frame_interpolation_on();
 
+// A setting read only at launch (renderer backend, VR mode) differs from the one running now.
+bool restart_required();
+
 // Choice <-> RT64 field mapping. Resolution: AUTO, 1X..4X. Anti-aliasing: OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X (-1 = CUSTOM). Upscale: NEAREST, LINEAR, AA PIXEL.
 int aa_preset(const RT64::UserConfiguration& uc);
 void apply_aa_preset(RT64::UserConfiguration& uc, int preset);
