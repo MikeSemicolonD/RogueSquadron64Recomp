@@ -79,6 +79,11 @@ static void test_to_friendly_thirdstate_to_advanced() {
     CHECK(j["advanced"].value("filtering", std::string()) == "Linear");
     CHECK(!j.contains("widescreen"));
     CHECK(j["advanced"].value("aspectRatio", std::string()) == "Manual");
+    CHECK(j["advanced"]["aspectTarget"] == 2.35);
+    CHECK(j["advanced"].value("extAspectTarget", std::string()) == "16:9");
+
+    rs64::video::apply_friendly(uc, json{{"advanced", {{"aspectTarget", "21:9"}}}});
+    CHECK(uc.aspectTarget == 21.0 / 9.0);
 }
 
 static void test_d3d10_roundtrip() {

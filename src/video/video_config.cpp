@@ -27,6 +27,41 @@ void adv_get(const json& a, const char* key, T& out)
     if (a.contains(key) && !a.at(key).is_null()) out = a.at(key).get<T>();
 }
 
+constexpr std::pair<int, int> kAspects[] = { {4, 3}, {5, 4}, {3, 2}, {16, 10}, {16, 9}, {21, 9}, {32, 9} };
+
+json aspect_to_json(double a)
+{
+
+    for (const auto& [w, h] : kAspects) {
+        if (std::fabs(a - double(w) / h) < 1e-4) {
+            return std::to_string(w) + ":" + std::to_string(h);
+        }
+    }
+
+    return std::round(a * 10000.0) / 10000.0;
+}
+
+// Accepts "16:9" or a plain width/height number.
+void aspect_get(const json& a, const char* key, double& out)
+{
+
+    if (!a.contains(key)) return;
+
+    const json& v = a.at(key);
+
+    if (v.is_number()) {
+        out = v.get<double>();
+        return;
+    }
+
+    int w = 0;
+    int h = 0;
+
+    if (v.is_string() && std::sscanf(v.get<std::string>().c_str(), "%d:%d", &w, &h) == 2 && w > 0 && h > 0) {
+        out = double(w) / h;
+    }
+}
+
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
 std::atomic<bool> g_vr_mode{false};
@@ -813,8 +848,8 @@ void apply_friendly(UC& uc, const json& j)
         adv_get(a, "hardwareResolve", uc.hardwareResolve);
         adv_get(a, "resolutionMultiplier", uc.resolutionMultiplier);
         adv_get(a, "downsampleMultiplier", uc.downsampleMultiplier);
-        adv_get(a, "aspectTarget", uc.aspectTarget);
-        adv_get(a, "extAspectTarget", uc.extAspectTarget);
+        aspect_get(a, "aspectTarget", uc.aspectTarget);
+        aspect_get(a, "extAspectTarget", uc.extAspectTarget);
         adv_get(a, "refreshRateTarget", uc.refreshRateTarget);
         adv_get(a, "idleWorkActive", uc.idleWorkActive);
         adv_get(a, "developerMode", uc.developerMode);
@@ -871,7 +906,7 @@ json to_friendly(const UC& uc)
         j["widescreen"] = false;
     } else {
         adv["aspectRatio"] = uc.aspectRatio;
-        adv["aspectTarget"] = uc.aspectTarget;
+        adv["aspectTarget"] = aspect_to_json(uc.aspectTarget);
     }
 
     // resolutionScale <-> resolution + resolutionMultiplier
@@ -940,7 +975,7 @@ json to_friendly(const UC& uc)
     adv["hardwareResolve"] = uc.hardwareResolve;
     adv["idleWorkActive"] = uc.idleWorkActive;
     adv["extAspectRatio"] = uc.extAspectRatio;
-    adv["extAspectTarget"] = uc.extAspectTarget;
+    adv["extAspectTarget"] = aspect_to_json(uc.extAspectTarget);
 
     j["advanced"] = adv;
 
