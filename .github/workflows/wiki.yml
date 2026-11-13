@@ -30,8 +30,20 @@ jobs:
           path: wiki
 
       - name: Mirror docs/wiki into the wiki
+        env:
+          # true puts _Notice.md under the title of every page
+          WIP_NOTICE: true
         run: |
-          rsync -a --delete --exclude .git docs/wiki/ wiki/
+          rsync -a --delete --exclude .git --exclude _Notice.md docs/wiki/ wiki/
+
+          if [ "$WIP_NOTICE" = true ]; then
+            for f in wiki/*.md; do
+              case "$(basename "$f")" in _*) continue ;; esac
+              awk -v notice=docs/wiki/_Notice.md 'NR == 1 && /^# / { print; print ""; while ((getline l < notice) > 0) print l; next } { print }' "$f" > "$f.tmp"
+              mv "$f.tmp" "$f"
+            done
+          fi
+
           cd wiki
           git config user.name "github-actions[bot]"
           git config user.email "41898299+github-actions[bot]@users.noreply.github.com"
