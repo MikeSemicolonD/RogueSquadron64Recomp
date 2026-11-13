@@ -89,6 +89,8 @@ extern "C" volatile unsigned long long g_most_drawn_fb_ms;
 extern "C" volatile uint32_t g_rs64_clear_seq;          // mode-change clear count and size (hook_helpers.cpp)
 extern "C" volatile uint32_t g_rs64_clear_bytes;
 
+extern "C" int rs64_crawl_playing(void);
+
 // Defined below
 extern "C" void rs64_sanitize_fb_registry(void);
 
@@ -1467,6 +1469,9 @@ private:
         // Every present: the nav sequencer needs fresh state to catch fast menu screens.
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
         rs64::discord::poll((const uint8_t*)app->core.RDRAM);
+
+        // Without widescreen, cutscenes keep the TV's 4:3 box and bars; letterboxed menus (level select, hangar) fit the window.
+        RT64::letterboxInBox.store(rs64_state_in_cinematic() || rs64_crawl_playing(), std::memory_order_relaxed);
 
         diag().log_gamestate();
 
