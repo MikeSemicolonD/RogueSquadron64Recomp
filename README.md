@@ -62,6 +62,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
 - **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [Has some caveats](#ray-tracing-caveats).
+- **60+ FPS:** run the game beyond the original's *near* 30 FPS limitations and use Vulkan to take it even higher.
+- **VR Support:** completely immerse yourself in the game, viewing it like never before using OpenXR.
 
 #### Input
 
@@ -89,7 +91,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - **Setup notes:**
   - **Windows Firewall asks to allow the game** the first time it runs. For co-op, tick **Private networks** (for home and LAN play) and press **Allow access**. If you press Cancel, co-op can't take incoming connections until you allow `RogueSquadron64Recomp.exe` under Windows Security > Firewall > Allow an app through firewall.
-  - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
+  - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, MULTIPLAYER defaults to direct connections.
   - **Steam Relay OFF by default:** press F6 in the game, turn on **Steam Relay** in the Mods window OR toggle the mod in the in-game mod menu.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
 
@@ -214,6 +216,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3A"Recomp.+Issue").
 
+- Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain render. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
+
 ### Game specific Issues
 
 > [!IMPORTANT]
@@ -235,7 +239,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Terrain tile textures don't align perfectly and seem to have a slight cutoff.
 
-- The select craft text and description font changes when it fades in/out making the text look a little more aliased then the text that displays normally.
+- The select craft text and description font changes when it fades in/out making the text look a little more aliased than the text that displays normally.
 
 - Button doesn't respond to input during the first few frames when it is highlighted.
 
@@ -266,7 +270,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- RS64 Improvments/Fixes
+- RS64 Improvements/Fixes
 
 - Removing system/frame limits while maintaining others for playability
 - VR Support via OpenXR (Dependent on removing system/frame limits)
