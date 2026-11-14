@@ -43,6 +43,17 @@
             "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
+            "label": "Build: VR (Release)",
+            "type": "shell",
+            "command": "cmake -B build-vr -G 'Visual Studio 17 2022' -T ClangCL -DRS64_OPENXR=ON -DRS64_MCP=ON; if ($?) { cmake --build build-vr --parallel --config Release --target RogueSquadron64Recomp }",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "detail": "OpenXR build in build-vr/dist/. Run it with --vr while the headset's runtime (Meta Horizon Link or SteamVR) is the active OpenXR runtime."
+        },
+        {
             "label": "Build: Browser (web)",
             "type": "shell",
             "command": "cmake --build build --config Debug --target regen_funcs_web; if ($?) { cmake --build build-web --parallel --target RogueSquadron64Recomp }",
