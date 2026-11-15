@@ -101,7 +101,7 @@ Applied by `apply_env_overrides` (`src/video/video_config.cpp`) after `roguesq_v
 | `ROGUESQ_VI_PIXEL_ASPECT` | on | Present hi-res (512-wide) framebuffers at the VI's displayed aspect instead of square pixels; also sets the widescreen expansion factor. `0` restores square pixels. |
 | `ROGUESQ_CULL_WIDEN` | on | Widescreen: scale the game's object and terrain frustum culls by RT64's horizontal expansion. `0` disables. |
 | `ROGUESQ_VR_HALF_RATE` | off | VR: run the game at half the headset rate; the runtime fills the other frames by reprojection. |
-| `ROGUESQ_VR_UNITS_PER_METER=<n>` | 1 | VR: game camera-space units per meter in missions, which sets the eye spacing and head movement. The craft-select hangar uses 16 times this. |
+| `ROGUESQ_VR_UNITS_PER_METER=<n>` | 12 | VR: game camera-space units per meter in missions, which sets the eye spacing and head movement. The craft-select hangar uses 16 times this. |
 | `ROGUESQ_VR_FAKE_YAW=<degrees>` | off | Fake head turn with no headset, starting turned left by that angle (`0` = straight ahead), with the culls and mission HUD in VR mode. Numpad 4/6 turn, 8/2 look up/down, 7/9 move left/right, 1/3 down/up, +/- forward/back (relative to facing), 5 recenters. F8 toggles mouse look. Tests VR without a headset. |
 | `ROGUESQ_VI_FILTER` | 0 | VI-style soften radius in color-target texels in the present pass; 0 = off. |
 | `ROGUESQ_VI_GAMMA` | 0 (VI gamma) | Override the present gamma (`pow(color, g)`); `< 1` brightens. |

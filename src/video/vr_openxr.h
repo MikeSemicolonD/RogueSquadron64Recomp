@@ -17,5 +17,17 @@ bool init_before_device();
 // After RT64's setup: the session on RT64's present queue, the eye swapchains and the LOCAL space. False = run flat.
 bool start_session(RT64::Application& app);
 
-void shutdown();
+// On quit: ends the VR session and, once one was started, the process (Windows). No-op when running flat.
+void quit();
+
+enum PadButton { kPadA, kPadB, kPadX, kPadMenu, kPadStickClickL, kPadStickClickR, kPadTriggerL, kPadTriggerR, kPadButtons };
+
+// Touch controllers: held is a PadButton bitmask, the stick is the left thumbstick. False without input focus.
+struct Pad {
+    unsigned held = 0;
+    float stick_x = 0.0f;
+    float stick_y = 0.0f;
+};
+
+bool poll_pad(Pad* out);
 }

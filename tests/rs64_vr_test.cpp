@@ -93,8 +93,13 @@ static void testAsymmetricFovKeepsDepth() {
     rs64lights::transform(leftEdge, eye, clip);
     CHECK(near(clip[0] / clip[3], -1.0f, 1e-5f));
 
-    const float topEdge[4] = { 0.0f, std::tan(fov.up), 1.0f, 1.0f };
+    // Game camera space has y down and so does its NDC: the fov's upper edge is at -tan(up) and lands at the top, -1.
+    const float topEdge[4] = { 0.0f, -std::tan(fov.up), 1.0f, 1.0f };
     rs64lights::transform(topEdge, eye, clip);
+    CHECK(near(clip[1] / clip[3], -1.0f, 1e-5f));
+
+    const float bottomEdge[4] = { 0.0f, -std::tan(fov.down), 1.0f, 1.0f };
+    rs64lights::transform(bottomEdge, eye, clip);
     CHECK(near(clip[1] / clip[3], 1.0f, 1e-5f));
 }
 

@@ -1029,6 +1029,10 @@ void apply_env_overrides(UC& uc)
         fprintf(stderr, "[RT64] MSAA=%ux\n", UC::msaaSampleCount(uc.antialiasing));
     }
 
+    if (env_str("ROGUESQ_VR")) {
+        set_vr_mode(env_on("ROGUESQ_VR"));
+    }
+
     // ROGUESQ_RES_SCALE=<mult>: internal render-resolution multiplier (Manual).
     if (const char* v = env_str("ROGUESQ_RES_SCALE")) {
         double m = std::atof(v);

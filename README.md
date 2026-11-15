@@ -126,27 +126,27 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 <div align="center">
 
-| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. |
-| --- | --- | --- | --- | --- | --- |
-| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Mouse X/Y | Analog stick | Left stick | Stick X/Y |
-| Fire blasters | <kbd>Space</kbd> | <kbd>LMB</kbd> | B | A (South) | Button 1 (trigger) |
-| Fire secondary | <kbd>Alt</kbd> | <kbd>RMB</kbd> | C-Left | B (East) | Button 2 |
-| Fire mode | <kbd>X</kbd> | — | C-Down | Y (North) | Button 6 |
-| Thrust | <kbd>W</kbd> | — | A | Right trigger | Button 3 |
-| Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 |
-| Speed (positional) | — | — | — | — | Throttle lever |
-| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick |
-| Special | <kbd>F</kbd> | — | C-Right | X (West) | Button 5 |
-| Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad Up | — |
-| Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad Down | — |
-| Close view | <kbd>B</kbd> | — | D-Pad Right | D-Pad Right | — |
-| Switch view | <kbd>N</kbd> | — | L | Back | Button 8 |
-| In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — |
-| Look around | <kbd>Q</kbd> | — | C-Up | Left shoulder | Hat |
-| Drop camera | <kbd>Z</kbd> | — | D-Pad Left | D-Pad Left | — |
-| Confirm (Menu) | <kbd>Enter</kbd> | — | A | A | Button 3 |
-| Back | <kbd>Backspace</kbd> | — | B | B | Button 1 |
-| Pause | <kbd>Esc</kbd> | — | Start | Start | — |
+| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. | Quest HMD (VR) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Mouse X/Y | Analog stick | Left stick | Stick X/Y | LS |
+| Fire blasters | <kbd>Space</kbd> | <kbd>LMB</kbd> | B | A (South) | Button 1 (trigger) | A |
+| Fire secondary | <kbd>Alt</kbd> | <kbd>RMB</kbd> | C-Left | B (East) | Button 2 | B |
+| Fire mode | <kbd>X</kbd> | — | C-Down | Y (North) | Button 6 | R1 (Click down) |
+| Thrust | <kbd>W</kbd> | — | A | Right trigger | Button 3 | R2 |
+| Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 | L2 |
+| Speed (positional) | — | — | — | — | Throttle lever | — |
+| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | — |
+| Special | <kbd>F</kbd> | — | C-Right | X (West) | Button 5 | X |
+| Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad Up | — | — |
+| Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad Down | — | — |
+| Close view | <kbd>B</kbd> | — | D-Pad Right | D-Pad Right | — | — |
+| Switch view | <kbd>N</kbd> | — | L | Back | Button 8 | L1 (Click down) |
+| In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — | — |
+| Look around | <kbd>Q</kbd> | — | C-Up | Left shoulder | Hat | — |
+| Drop camera | <kbd>Z</kbd> | — | D-Pad Left | D-Pad Left | — | — |
+| Confirm (Menu) | <kbd>Enter</kbd> | — | A | A | Button 3 | A |
+| Back | <kbd>Backspace</kbd> | — | B | B | Button 1 | B |
+| Pause | <kbd>Esc</kbd> | — | Start | Start | — | Menu |
 
 </div>
 
@@ -184,6 +184,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | <kbd>F5</kbd> | In-game profiler HUD | All |
 | <kbd>F6</kbd> | Controls window (rebinding, joysticks, rumble, mouse) | All |
 | <kbd>F7</kbd> | FPS counter | All |
+| <kbd>F8</kbd> | VR camera controls via Numpad + Mouse | All (with VR Mode ON) |
 | <kbd>F9</kbd> / <kbd>Shift</kbd>+<kbd>F9</kbd> | Step forward / back through the ray tracing debug views | All |
 | <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
 | <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |

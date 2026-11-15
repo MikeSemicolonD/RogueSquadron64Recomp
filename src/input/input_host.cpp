@@ -41,6 +41,10 @@
 #include "main/android_host.h"
 #endif
 
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
+#endif
+
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 
@@ -1118,6 +1122,10 @@ void poll_input()
             fflush(stderr);
             rs64::host::run_quit_handlers();
 
+#if defined(RS64_OPENXR)
+            rs64::vr::quit();
+#endif
+
             // _Exit, not exit: the recomp game threads and RT64 are still live, so
             // running the C++/atexit static-destructor table here throws (-> terminate,
             // the Release crash-on-close) or deadlocks (the hang). Terminate now; the OS
@@ -1262,6 +1270,39 @@ static void pad_gyro_steer(float* x, float* y)
         *y = gy;
     }
 }
+
+#if defined(RS64_OPENXR)
+
+// Touch controllers on the default Luke layout; in menus A, B and Menu confirm, go back and pause.
+static bool merge_vr_pad(bool menu, uint16_t* buttons, float* x, float* y)
+{
+
+    rs64::vr::Pad pad;
+
+    if (!rs64::vr::poll_pad(&pad))
+    {
+        return false;
+    }
+
+    static constexpr uint16_t kFlight[rs64::vr::kPadButtons] = { N64_B_BUTTON, N64_L_CBUTTONS, N64_R_CBUTTONS, N64_START_BUTTON, N64_L_TRIG, N64_D_CBUTTONS, N64_Z_TRIG, N64_A_BUTTON };
+    static constexpr uint16_t kMenu[rs64::vr::kPadButtons] = { N64_A_BUTTON, N64_B_BUTTON, 0, N64_START_BUTTON, 0, 0, 0, 0 };
+    const uint16_t* map = menu ? kMenu : kFlight;
+
+    for (int i = 0; i < rs64::vr::kPadButtons; i++) {
+        if (pad.held & (1u << i)) {
+            *buttons |= map[i];
+        }
+    }
+
+    if ((pad.stick_x * pad.stick_x + pad.stick_y * pad.stick_y) > (*x * *x + *y * *y)) {
+        *x = pad.stick_x;
+        *y = pad.stick_y;
+    }
+
+    return true;
+}
+
+#endif
 
 static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, float* y)
 {
@@ -1477,6 +1518,14 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
             btn &= (uint16_t)~brake;
         }
     }
+
+#if defined(RS64_OPENXR)
+
+    if (merge_vr_pad(mouse_menu_context(menu_ctx), &btn, x, y)) {
+        active = true;
+    }
+
+#endif
 
     if (!active)
     {

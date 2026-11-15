@@ -6,11 +6,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
 
+#include "SDL.h"
 #include "plume_vulkan.h"
 
 #define XR_USE_GRAPHICS_API_VULKAN
@@ -40,11 +42,34 @@ struct EyeSwapchain {
     bool released = false;
 };
 
+struct PadAction {
+    const char* name;
+    const char* path;
+};
+
+// Indexed by rs64::vr::PadButton, then the stick.
+static constexpr PadAction kPadActions[] = {
+    { "a", "/user/hand/right/input/a/click" },
+    { "b", "/user/hand/right/input/b/click" },
+    { "x", "/user/hand/left/input/x/click" },
+    { "menu", "/user/hand/left/input/menu/click" },
+    { "stick-click-left", "/user/hand/left/input/thumbstick/click" },
+    { "stick-click-right", "/user/hand/right/input/thumbstick/click" },
+    { "trigger-left", "/user/hand/left/input/trigger/value" },
+    { "trigger-right", "/user/hand/right/input/trigger/value" },
+    { "stick", "/user/hand/left/input/thumbstick" },
+};
+static constexpr int kPadStick = rs64::vr::kPadButtons;
+static_assert(std::size(kPadActions) == kPadStick + 1);
+
 struct State {
     XrInstance instance = XR_NULL_HANDLE;
     XrSystemId system = XR_NULL_SYSTEM_ID;
     XrSession session = XR_NULL_HANDLE;
     XrSpace space = XR_NULL_HANDLE;
+    XrActionSet actionSet = XR_NULL_HANDLE;
+    XrAction pad[std::size(kPadActions)] = {};
+    bool padReady = false;
     EyeSwapchain eyes[2];
     std::mutex* queueMutex = nullptr;
     bool frameBegun = false;
@@ -123,6 +148,13 @@ void destroy_all()
     if (g.space != XR_NULL_HANDLE) {
         xrDestroySpace(g.space);
     }
+
+    if (g.actionSet != XR_NULL_HANDLE) {
+        xrDestroyActionSet(g.actionSet);
+    }
+
+    g.actionSet = XR_NULL_HANDLE;
+    g.padReady = false;
 
     if (g.session != XR_NULL_HANDLE) {
         xrDestroySession(g.session);
@@ -208,9 +240,67 @@ bool create_eye_swapchains(RT64::Application& app)
     return true;
 }
 
-// Session state changes drive xrBeginSession / xrEndSession; called once per headset frame.
+// Touch controller actions, suggested for the Oculus Touch profile; other controllers get the runtime's remap of it.
+bool create_pad_actions()
+{
+
+    XrActionSetCreateInfo set{ XR_TYPE_ACTION_SET_CREATE_INFO };
+
+    std::strncpy(set.actionSetName, "flight", XR_MAX_ACTION_SET_NAME_SIZE - 1);
+    std::strncpy(set.localizedActionSetName, "Flight", XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
+
+    if (XR_FAILED(xrCreateActionSet(g.instance, &set, &g.actionSet)))
+    {
+        return false;
+    }
+
+    std::vector<XrActionSuggestedBinding> suggested;
+
+    for (size_t i = 0; i < std::size(kPadActions); i++) {
+        XrActionCreateInfo action{ XR_TYPE_ACTION_CREATE_INFO };
+        XrPath path = XR_NULL_PATH;
+
+        action.actionType = (int(i) == kPadStick) ? XR_ACTION_TYPE_VECTOR2F_INPUT : XR_ACTION_TYPE_BOOLEAN_INPUT;
+        std::strncpy(action.actionName, kPadActions[i].name, XR_MAX_ACTION_NAME_SIZE - 1);
+        std::strncpy(action.localizedActionName, kPadActions[i].name, XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+
+        if (XR_FAILED(xrCreateAction(g.actionSet, &action, &g.pad[i])) || XR_FAILED(xrStringToPath(g.instance, kPadActions[i].path, &path)))
+        {
+            return false;
+        }
+
+        suggested.push_back({ g.pad[i], path });
+    }
+
+    XrInteractionProfileSuggestedBinding profile{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
+
+    profile.countSuggestedBindings = uint32_t(suggested.size());
+    profile.suggestedBindings = suggested.data();
+
+    if (XR_FAILED(xrStringToPath(g.instance, "/interaction_profiles/oculus/touch_controller", &profile.interactionProfile)) || XR_FAILED(xrSuggestInteractionProfileBindings(g.instance, &profile)))
+    {
+        return false;
+    }
+
+    XrSessionActionSetsAttachInfo attach{ XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO };
+
+    attach.countActionSets = 1;
+    attach.actionSets = &g.actionSet;
+
+    return XR_SUCCEEDED(xrAttachSessionActionSets(g.session, &attach));
+}
+
+// Session state changes drive xrBeginSession / xrEndSession; called once per headset frame, and until the session runs from rs64_vr_session.
 void poll_events()
 {
+
+    static std::mutex s_poll;
+    std::unique_lock<std::mutex> lock(s_poll, std::try_to_lock);
+
+    if (!lock.owns_lock())
+    {
+        return;
+    }
 
     XrEventDataBuffer event{ XR_TYPE_EVENT_DATA_BUFFER };
 
@@ -222,15 +312,26 @@ void poll_events()
                 XrSessionBeginInfo begin{ XR_TYPE_SESSION_BEGIN_INFO };
 
                 begin.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-                g.running.store(XR_SUCCEEDED(xrBeginSession(g.session, &begin)) ? 1 : 0);
+                const XrResult began = xrBeginSession(g.session, &begin);
+
+                g.running.store(XR_SUCCEEDED(began) ? 1 : 0);
+                fprintf(stderr, "[vr] xrBeginSession %d\n", int(began));
             }
             else if (changed->state == XR_SESSION_STATE_STOPPING) {
                 xrEndSession(g.session);
                 g.running.store(0);
             }
-            else if ((changed->state == XR_SESSION_STATE_EXITING) || (changed->state == XR_SESSION_STATE_LOSS_PENDING)) {
+            else if (changed->state == XR_SESSION_STATE_EXITING) {
+                SDL_Event quit{};
+
                 g.running.store(0);
-                fprintf(stderr, "[vr] session ended by the runtime; running flat\n");
+                quit.type = SDL_QUIT;
+                SDL_PushEvent(&quit);
+                fprintf(stderr, "[vr] quit from the headset\n");
+            }
+            else if (changed->state == XR_SESSION_STATE_LOSS_PENDING) {
+                g.running.store(0);
+                fprintf(stderr, "[vr] session lost; running flat\n");
             }
         }
 
@@ -255,7 +356,7 @@ namespace rs64::vr {
 bool requested()
 {
 
-    return env_str("ROGUESQ_VR") ? env_on("ROGUESQ_VR") : rs64::video::vr_mode();
+    return rs64::video::vr_mode();
 }
 
 bool init_before_device()
@@ -372,18 +473,96 @@ bool start_session(RT64::Application& app)
         return false;
     }
 
+    g.padReady = create_pad_actions();
+
+    if (!g.padReady) {
+        fprintf(stderr, "[vr] controller actions failed; no VR controller input\n");
+    }
+
     return true;
 }
 
-void shutdown()
+void quit()
 {
 
-    destroy_all();
+    if (g.instance == XR_NULL_HANDLE)
+    {
+        return;
+    }
+
+    g.running.store(0);
+
+    if (g.queueMutex) {
+        std::lock_guard<std::mutex> lock(*g.queueMutex);
+
+        destroy_all();
+    } else {
+        destroy_all();
+    }
+
+#if defined(_WIN32)
+
+    // _Exit left a windowless process holding the headset; ending the process here skips the VR runtime's own DLL shutdown.
+    fflush(stderr);
+    TerminateProcess(GetCurrentProcess(), EXIT_SUCCESS);
+
+#endif
+}
+
+bool poll_pad(Pad* out)
+{
+
+    *out = Pad{};
+
+    if (!g.padReady || !g.running.load())
+    {
+        return false;
+    }
+
+    const XrActiveActionSet active{ g.actionSet, XR_NULL_PATH };
+    XrActionsSyncInfo sync{ XR_TYPE_ACTIONS_SYNC_INFO };
+
+    sync.countActiveActionSets = 1;
+    sync.activeActionSets = &active;
+
+    // XR_SESSION_NOT_FOCUSED is a success code: the headset menu or another app has the input.
+    if (xrSyncActions(g.session, &sync) != XR_SUCCESS)
+    {
+        return false;
+    }
+
+    XrActionStateGetInfo info{ XR_TYPE_ACTION_STATE_GET_INFO };
+
+    for (int i = 0; i < kPadStick; i++) {
+        XrActionStateBoolean state{ XR_TYPE_ACTION_STATE_BOOLEAN };
+
+        info.action = g.pad[i];
+
+        if (XR_SUCCEEDED(xrGetActionStateBoolean(g.session, &info, &state)) && state.isActive && state.currentState) {
+            out->held |= 1u << i;
+        }
+    }
+
+    XrActionStateVector2f stick{ XR_TYPE_ACTION_STATE_VECTOR2F };
+
+    info.action = g.pad[kPadStick];
+
+    if (XR_SUCCEEDED(xrGetActionStateVector2f(g.session, &info, &stick)) && stick.isActive) {
+        out->stick_x = stick.currentState.x;
+        out->stick_y = stick.currentState.y;
+    }
+
+    return true;
 }
 }
 
 extern "C" int rs64_vr_session(void)
 {
+
+    // Frames only start once the session runs, so the READY event that starts it is polled here.
+    if (!g.running.load() && (g.session != XR_NULL_HANDLE)) {
+        poll_events();
+    }
 
     return g.running.load();
 }
@@ -449,6 +628,19 @@ extern "C" int rs64_vr_locate(uint32_t framesAhead, rs64vr::EyeViews* out)
     }
 
     out->valid = (state.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) != 0;
+
+    static bool s_logged = false;
+
+    if (out->valid && !s_logged) {
+        s_logged = true;
+
+        for (int e = 0; e < 2; e++) {
+            const rs64vr::Pose& p = out->eye[e];
+            const rs64vr::Fov& f = out->fov[e];
+
+            fprintf(stderr, "[vr] eye %d pos %.4f %.4f %.4f rot %.4f %.4f %.4f %.4f fov L %.4f R %.4f U %.4f D %.4f\n", e, p.px, p.py, p.pz, p.qx, p.qy, p.qz, p.qw, f.left, f.right, f.up, f.down);
+        }
+    }
 
     return out->valid ? 1 : 0;
 }

@@ -399,11 +399,12 @@ extern "C" int rs64_vr_fake_head(rs64vr::Pose* pose)
 extern "C" float rs64_vr_units_per_meter(void)
 {
 
-    // The menu overlay's 3D scenes (the craft-select hangar) draw the same craft 16 times larger than missions do.
+    // Missions: a snowspeeder (5.3 m) spans about 62 camera units. The menu overlay's 3D scenes (the craft-select hangar) draw the same craft 16 times larger.
+    constexpr float kMissionUnitsPerMeter = 12.0f;
     constexpr float kMenuSceneScale = 16.0f;
     static const char* s_env = env_str("ROGUESQ_VR_UNITS_PER_METER");
-    static const float s_env_units = s_env ? float(std::atof(s_env)) : 1.0f;
-    const float units = (s_env_units > 0.0f) ? s_env_units : 1.0f;
+    static const float s_env_units = s_env ? float(std::atof(s_env)) : kMissionUnitsPerMeter;
+    const float units = (s_env_units > 0.0f) ? s_env_units : kMissionUnitsPerMeter;
 
     return (g_active_overlay == 1) ? units * kMenuSceneScale : units;
 }

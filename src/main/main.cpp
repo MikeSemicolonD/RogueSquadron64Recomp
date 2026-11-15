@@ -52,6 +52,10 @@
 #include "main/renderdoc_capture.h"
 #include <mutex>
 
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
+#endif
+
 #ifdef RS64_MCP
 #include "main/mcp_bridge.h"
 
@@ -455,6 +459,11 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
         fprintf(stderr, "[main] close requested while the game thread is held: exiting\n");
         fflush(stderr);
         rs64::host::run_quit_handlers();
+
+#if defined(RS64_OPENXR)
+        rs64::vr::quit();
+#endif
+
         _Exit(EXIT_SUCCESS);
     }
 
