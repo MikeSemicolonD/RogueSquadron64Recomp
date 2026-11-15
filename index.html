@@ -489,6 +489,14 @@ footer a { color: var(--gold); }
       <h3>Multiplayer Co-op <span class="pill">Experimental</span></h3>
       <p>Online co-op. Same mission, shared victory.</p>
     </div>
+    <div class="card">
+      <h3>60+ FPS</h3>
+      <p>Run the game beyond the original's 30 FPS limit. Vulkan takes it even higher.</p>
+    </div>
+    <div class="card">
+      <h3>VR Support</h3>
+      <p>See the game like never before in VR with OpenXR.</p>
+    </div>
   </div>
   </section>
 
@@ -519,19 +527,24 @@ footer a { color: var(--gold); }
     <button type="button"><img src="screenshots/Capture8.png" alt="Rogue Squadron recomp screenshot" loading="lazy"></button>
   </div>
   </section>
-</main>
 
-<dialog class="lightbox" aria-label="Screenshot"><img alt="Rogue Squadron recomp screenshot"></dialog>
-
-<footer id="credits">
+  <section id="credits">
   <h2>Credits</h2>
   <ul class="credits">
     <li><a href="https://github.com/Tmcg2/rogue_squadron64">Tmcg2</a>: the companion decomp project</li>
     <li><a href="https://github.com/terminalcommand">terminalcommand</a>: Wayland fixes</li>
+    <li><a href="https://github.com/gpeter12">gpeter12</a>: play testing on Linux Mint and the setup script</li>
     <li><a href="https://github.com/dpethes/rerogue">Dávid Pethes</a>: rerogue and the <a href="https://satd.sk/pages/rs/">PC format write-up</a></li>
     <li><a href="https://github.com/jrra/rerogue">jrra</a>: a community fork of rerogue</li>
     <li><a href="https://github.com/N64Recomp/N64Recomp">N64Recomp</a> and <a href="https://github.com/N64Recomp/N64ModernRuntime">N64ModernRuntime</a>: the static recompiler and the runtime it runs on, <a href="https://github.com/MikeSemicolonD/N64ModernRuntime">forked</a> with both in one repo</li>
-    <li><a href="https://github.com/rt64/rt64">RT64</a>: the renderer, <a href="https://github.com/MikeSemicolonD/rt64">forked</a> to read Factor 5's display lists</li>  </ul>
+    <li><a href="https://github.com/rt64/rt64">RT64</a>: the renderer, <a href="https://github.com/MikeSemicolonD/rt64">forked</a> to read Factor 5's display lists</li>
+  </ul>
+  </section>
+</main>
+
+<dialog class="lightbox" aria-label="Screenshot"><img alt="Rogue Squadron recomp screenshot"></dialog>
+
+<footer>
   <p class="fine">Heavily AI-assisted: most of the debugging, design and code was produced with Claude.<br>
   Star Wars and Rogue Squadron are trademarks of Lucasfilm Ltd. This is an unofficial fan project, not affiliated with or endorsed by Nintendo, Disney, Lucasfilm or Factor 5.<br>
   No ROM data or game assets are hosted here or shipped in releases; you need your own legally obtained copy of the game. Code under <a href="https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/LICENSE">GPL-3.0</a>.</p>
