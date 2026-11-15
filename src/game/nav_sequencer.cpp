@@ -508,13 +508,33 @@ static void nav_abort(uint8_t* rdram, const char* st) {
             static const int hold = recomp::dbg::env_int("ROGUESQ_NAV_ABORT_HOLD", 0);
             static auto s_t0 = std::chrono::steady_clock::now();
 
+            // A mission that ended on its own (won or lost) has the front end back up: no pause to open, so walk its results to SELECT LEVEL.
+            if (s_overlay == 1)
+            {
+                s_watchdog = 0;
+
+                if (!nav_chain() || s_chain_next.load() >= 0)
+                {
+                    fprintf(stderr, "[nav] abort: mission ended on its own (state=%s), walking its results\n", st);
+                    fflush(stderr);
+                    s_step = 14;
+                }
+
+                break;
+            }
+
+            // A chain waits here, paused or not, while the harness shoots the level and cycles its pause pages, until it names the next level.
+            if (nav_chain() && s_chain_next.load() < 0)
+            {
+                s_watchdog = 0;
+                break;
+            }
+
             if (!is(st, "mission") || paused) break;
 
             if (s_settle++ == 0) s_t0 = std::chrono::steady_clock::now();
 
             s_watchdog = 0;
-
-            if (nav_chain() && s_chain_next.load() < 0) break;
 
             if (s_settle >= 180 && std::chrono::steady_clock::now() - s_t0 >= std::chrono::seconds(hold)) nav_advance();
 
