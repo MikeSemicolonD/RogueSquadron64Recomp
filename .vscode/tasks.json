@@ -45,7 +45,7 @@
         {
             "label": "Build: VR (Release)",
             "type": "shell",
-            "command": "cmake -B build-vr -G 'Visual Studio 17 2022' -T ClangCL -DRS64_OPENXR=ON -DRS64_MCP=ON; if ($?) { cmake --build build-vr --parallel --config Release --target RogueSquadron64Recomp }",
+            "command": "cmake -B build-vr -G 'Visual Studio 17 2022' -T ClangCL -DRS64_OPENXR=ON -DRS64_MCP=${input:vrMcp}; if ($?) { cmake --build build-vr --parallel --config Release --target RogueSquadron64Recomp }",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -1044,6 +1044,16 @@
         }
     ],
     "inputs": [
+        {
+            "id": "vrMcp",
+            "type": "pickString",
+            "description": "Include the RS64 MCP bridge?",
+            "options": [
+                { "label": "With MCP", "value": "ON" },
+                { "label": "Without MCP", "value": "OFF" }
+            ],
+            "default": "ON"
+        },
         {
             "id": "versionPart",
             "type": "pickString",
