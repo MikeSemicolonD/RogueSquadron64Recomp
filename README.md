@@ -135,7 +135,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | Thrust | <kbd>W</kbd> | — | A | Right trigger | Button 3 | R2 |
 | Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 | L2 |
 | Speed (positional) | — | — | — | — | Throttle lever | — |
-| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | — |
+| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | Both grips |
 | Special | <kbd>F</kbd> | — | C-Right | X (West) | Button 5 | X |
 | Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad Up | — | — |
 | Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad Down | — | — |
@@ -272,9 +272,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 ### Roadmap
 
 - RS64 Improvements/Fixes
-
-- Removing system/frame limits while maintaining others for playability
-- VR Support via OpenXR (Dependent on removing system/frame limits)
 
 ## Building
 
@@ -468,6 +465,29 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 6. Package with `tools/release/macos/package.sh <out.zip> <arm64-build-dir> [x86_64-build-dir]`, or the `Package (macOS .app, WSL/osxcross)` VS Code task: two build dirs make a universal `.app`.
 
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
+
+### VR
+
+> [!IMPORTANT]
+> Tested on a Quest 2 over Meta Horizon Link.
+
+- **Build:** configure with `-DRS64_OPENXR=ON`. VR needs the Vulkan renderer.
+- **Start:** launch with `--vr`, or copy the [vr video preset](video-presets/vr/roguesq_video.json), which starts in the headset with settings that hold the headset's frame rate. Without a headset or runtime the game starts flat.
+- **Your size:** push the right thumbstick up to grow or down to shrink until the cockpit feels right. It is saved as `vrScale`.
+- Missions, cutscenes and SELECT LEVEL are in stereoscopic 3D while the menus and results screens show on a virtual screen in front of you.
+
+### Developing VR without a headset
+
+The [Meta VR CLI](https://github.com/meta-quest/agentic-tools) (`metavr`) was instrumental in fixing and debugging VR. Its `metavr xrsim` commands drive the **Meta XR Simulator**, a headset stand-in that runs the real OpenXR path on the desktop. An agent can start the simulator, pick a device and refresh rate, and launch the game against it, then capture frames and read logs without anyone wearing a headset.
+
+```powershell
+metavr xrsim app ensure-running
+metavr xrsim device set --name "Meta Quest 2"
+$env:XR_RUNTIME_JSON = "$env:APPDATA\metavr\tools\xrsim\meta_openxr_simulator.json"
+.\RogueSquadron64Recomp.exe --vr
+```
+
+`ROGUESQ_LOG_VR=1` logs how each headset frame was filled every 2 seconds. Real-headset runs still matter: the simulator lacks some runtime extensions, and only a person in the headset can judge comfort and scale.
 
 ## Architecture
 
