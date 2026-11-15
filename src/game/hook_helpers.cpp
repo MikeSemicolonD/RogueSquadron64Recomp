@@ -1191,7 +1191,8 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     g_rate_frame_seen = true;
 
     const int display_hz = (int)ultramodern::get_display_refresh_rate();
-    const int vr_hz = rs64_vr_game_hz();
+    // VR menus run at the game's own 30: they fell far short of the headset rate, so frame-counted menu animation crawled. RT64 still renders every headset frame.
+    const int vr_hz = (g_active_overlay == 1) ? std::min(rs64_vr_game_hz(), 30) : rs64_vr_game_hz();
     const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
     const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
     const int sub = on ? s_sub : 1;

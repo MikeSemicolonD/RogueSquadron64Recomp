@@ -65,6 +65,10 @@ void aspect_get(const json& a, const char* key, double& out)
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
 std::atomic<bool> g_vr_mode{false};
+constexpr float kVrScaleMin = 0.25f;
+constexpr float kVrScaleMax = 16.0f;
+// The size that felt right in an X-wing cockpit on a Quest 2.
+std::atomic<float> g_vr_scale{8.0f};
 
 std::atomic<bool> g_legacy_terrain{false};
 
@@ -381,6 +385,14 @@ bool vr_mode() {
 
 void set_vr_mode(bool on) {
     g_vr_mode.store(on, std::memory_order_relaxed);
+}
+
+float vr_scale() {
+    return g_vr_scale.load(std::memory_order_relaxed);
+}
+
+void set_vr_scale(float scale) {
+    g_vr_scale.store(std::clamp(scale, kVrScaleMin, kVrScaleMax), std::memory_order_relaxed);
 }
 
 bool framebuffer_writeback() {
@@ -703,6 +715,10 @@ void apply_friendly(UC& uc, const json& j)
         set_vr_mode(j["vrMode"].get<bool>());
     }
 
+    if (has("vrScale") && j["vrScale"].is_number()) {
+        set_vr_scale(j["vrScale"].get<float>());
+    }
+
     if (has("legacyTerrain") && j["legacyTerrain"].is_boolean()) {
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
@@ -870,6 +886,7 @@ json to_friendly(const UC& uc)
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["vrMode"] = vr_mode();
+    j["vrScale"] = std::round(vr_scale() * 100.0f) / 100.0f;
     j["legacyTerrain"] = legacy_terrain();
     j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();

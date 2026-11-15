@@ -6,10 +6,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 #include "os_compat.h"
 #include "ultramodern/ultra64.h"
 #include "util/debug_logs.h"
+#include "video/video_config.h"
 #ifdef _WIN32
 #include "SDL.h"
 #else
@@ -561,6 +563,42 @@ void set_frequency(uint32_t freq)
     open_audio_device(freq);
 }
 
+// VR: the headset's playback device instead of the PC default; null (the default) without VR or such a device.
+// shortcut: matches Meta's Link device names only, add other headsets' names once someone tests them.
+static const char* vr_audio_device()
+{
+
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+    return nullptr;
+#else
+
+    static constexpr const char* kHeadsetNames[] = { "Oculus", "Rift" };
+    static std::string s_name;
+
+    if (!rs64::video::vr_mode())
+    {
+        return nullptr;
+    }
+
+    const int count = SDL_GetNumAudioDevices(0);
+
+    for (int i = 0; i < count; i++) {
+        const char* name = SDL_GetAudioDeviceName(i, 0);
+
+        for (const char* headset : kHeadsetNames) {
+            if ((name != nullptr) && (std::strstr(name, headset) != nullptr)) {
+                s_name = name;
+
+                return s_name.c_str();
+            }
+        }
+    }
+
+    return nullptr;
+
+#endif
+}
+
 static void open_audio_device(uint32_t freq)
 {
 
@@ -577,7 +615,13 @@ static void open_audio_device(uint32_t freq)
     desired.channels = 2;
     desired.samples  = 1024;
 
-    audio_device = SDL_OpenAudioDevice(nullptr, 0, &desired, nullptr, 0);
+    const char* device = vr_audio_device();
+
+    audio_device = SDL_OpenAudioDevice(device, 0, &desired, nullptr, 0);
+
+    if (!audio_device && (device != nullptr)) {
+        audio_device = SDL_OpenAudioDevice(nullptr, 0, &desired, nullptr, 0);
+    }
 
     if (!audio_device)
     {
@@ -588,7 +632,7 @@ static void open_audio_device(uint32_t freq)
 
     SDL_PauseAudioDevice(audio_device, 0);
 
-    fprintf(stderr, "[Audio] device OPENED freq=%u (output path live)\n", freq);
+    fprintf(stderr, "[Audio] device OPENED freq=%u on %s (output path live)\n", freq, (device != nullptr) ? device : "the default output");
     fflush(stderr);
 }
 

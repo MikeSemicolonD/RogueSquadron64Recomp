@@ -405,7 +405,7 @@ extern "C" float rs64_vr_units_per_meter(void)
     constexpr float kMenuSceneScale = 16.0f;
     static const char* s_env = env_str("ROGUESQ_VR_UNITS_PER_METER");
     static const float s_env_units = s_env ? float(std::atof(s_env)) : kMissionUnitsPerMeter;
-    const float units = (s_env_units > 0.0f) ? s_env_units : kMissionUnitsPerMeter;
+    const float units = ((s_env_units > 0.0f) ? s_env_units : kMissionUnitsPerMeter) * rs64::video::vr_scale();
 
     return (g_active_overlay == 1) ? units * kMenuSceneScale : units;
 }
@@ -474,6 +474,9 @@ extern "C" plume::RenderTexture* rs64_vr_acquire_screen(uint32_t*, uint32_t*) { 
 extern "C" int rs64_vr_has_screen(void) { return 0; }
 extern "C" void rs64_vr_end_frame_screen(void) {}
 extern "C" void rs64_vr_set_brightness(float) {}
+extern "C" int rs64_vr_hands_frame(rs64vr::EyeViews*, rs64vr::Pose*, int*) { return 0; }
+extern "C" plume::RenderTexture* rs64_vr_acquire_hands(int, uint32_t*, uint32_t*) { return nullptr; }
+extern "C" int rs64_vr_hand_model(int, const float**, uint32_t*) { return 0; }
 
 #endif
 

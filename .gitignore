@@ -23,6 +23,9 @@ crash_*.dmp
 *.z64
 *.n64
 
+# VR controller models saved from the player's OpenXR runtime (Meta's files)
+roguesq_controller_*.glb
+
 # Recompiler outputs
 RecompiledFuncs/
 RecompiledFuncsWeb/

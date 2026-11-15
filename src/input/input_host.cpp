@@ -1325,14 +1325,20 @@ static bool merge_vr_pad(bool menu, uint16_t* buttons, float* x, float* y)
         return false;
     }
 
-    static constexpr uint16_t kFlight[rs64::vr::kPadButtons] = { N64_B_BUTTON, N64_L_CBUTTONS, N64_R_CBUTTONS, N64_START_BUTTON, N64_L_TRIG, N64_D_CBUTTONS, N64_Z_TRIG, N64_A_BUTTON };
-    static constexpr uint16_t kMenu[rs64::vr::kPadButtons] = { N64_A_BUTTON, N64_B_BUTTON, 0, N64_START_BUTTON, 0, 0, 0, 0 };
+    static constexpr uint16_t kFlight[rs64::vr::kPadButtons] = { N64_B_BUTTON, N64_L_CBUTTONS, N64_R_CBUTTONS, N64_START_BUTTON, N64_L_TRIG, N64_D_CBUTTONS, N64_Z_TRIG, N64_A_BUTTON, 0, 0 };
+    static constexpr uint16_t kMenu[rs64::vr::kPadButtons] = { N64_A_BUTTON, N64_B_BUTTON, 0, N64_START_BUTTON, 0, 0, 0, 0, 0, 0 };
+    constexpr uint32_t kBothGrips = (1u << rs64::vr::kPadGripL) | (1u << rs64::vr::kPadGripR);
     const uint16_t* map = menu ? kMenu : kFlight;
 
     for (int i = 0; i < rs64::vr::kPadButtons; i++) {
         if (pad.held & (1u << i)) {
             *buttons |= map[i];
         }
+    }
+
+    // Both grips held is the roll button.
+    if (!menu && ((pad.held & kBothGrips) == kBothGrips)) {
+        *buttons |= N64_R_TRIG;
     }
 
     if ((pad.stick_x * pad.stick_x + pad.stick_y * pad.stick_y) > (*x * *x + *y * *y)) {

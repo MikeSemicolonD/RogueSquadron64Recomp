@@ -62,6 +62,10 @@ void set_keep_cutscene_draw_distance(bool on);
 bool vr_mode();
 void set_vr_mode(bool on);
 
+// The player's size in VR ("vrScale", default 8; bigger makes the world look smaller), set in the headset with the right thumbstick.
+float vr_scale();
+void set_vr_scale(float scale);
+
 // RT64 copies each rendered frame back to RDRAM ("framebufferWriteback", default on; off by default on a Raspberry Pi). This game never reads them
 // back, and the copy plus the GPU wait it needs cost slow GPUs about half their frame time. Applies live.
 bool framebuffer_writeback();
