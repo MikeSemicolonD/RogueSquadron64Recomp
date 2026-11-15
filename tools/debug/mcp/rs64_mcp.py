@@ -52,6 +52,11 @@ class GameError(Exception):
     pass
 
 
+class MissionEnded(GameError):
+    """The mission ended (won or lost) while a call waited on its lockstep clock, which then never reaches the frame."""
+    pass
+
+
 def merge_settings(base, over):
     """over merged into base: nested objects key by key, anything else replaced."""
     out = dict(base)
@@ -540,6 +545,8 @@ class Game:
             # A long call (pause_at, step, a capture) ends early on a crash or stuck line in the log, or when the game stops drawing without being held:
             # the bridge answers frame_info on its own thread while this call waits.
             watch = timeout_s > 10 and method != "frame_info"
+            # A wait for the next mission (next, after) outlives the current one on purpose.
+            on_ls = (params or {}).get("clock") == "ls" and not (params or {}).get("next") and "after" not in (params or {})
             log_at = os.path.getsize(self.log_path) if watch and self.log_path and os.path.exists(self.log_path) else 0
             fail = re.compile(WAIT_LOG_FAIL)
             last_dl, moved_at, checked_at = None, time.time(), time.time()
@@ -560,16 +567,23 @@ class Game:
                     for text in chunk[:done].decode("utf-8", errors="replace").splitlines():
                         if fail.search(text):
                             raise GameError(f"{method}: stopped, the log says: {text}")
+                        if on_ls and "[ls] session ended" in text:
+                            raise MissionEnded(f"{method}: {text}")
                     try:
                         info = self.call("frame_info", timeout_s=5)
                     except GameError:
                         continue
                     if not self.attached:
                         idle.check(info, method)
-                    dl = info.get("clocks", {}).get("dl")
+                    # On the lockstep clock, progress is that clock: it stops at a game over while the game keeps drawing.
+                    dl = info.get("clocks", {}).get("ls" if on_ls else "dl")
                     if info.get("held") or dl != last_dl:
                         last_dl, moved_at = dl, checked_at
+                    elif on_ls and dl is None:
+                        moved_at = checked_at
                     elif checked_at - moved_at >= CALL_STALL_S:
+                        if on_ls:
+                            raise MissionEnded(f"{method}: the lockstep clock stopped at {dl} for {CALL_STALL_S}s (state {info.get('state')}): the mission ended")
                         raise GameError(f"{method}: no progress for {CALL_STALL_S}s (no display list at dl {dl}, state {info.get('state')}, not held)")
         finally:
             with self.lock:

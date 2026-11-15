@@ -27,7 +27,7 @@ from PIL import Image, ImageChops
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "mcp"))
 
-from rs64_mcp import REPO, Game, symbol_table  # noqa: E402
+from rs64_mcp import REPO, Game, MissionEnded, symbol_table  # noqa: E402
 
 BUILDS = os.path.join(REPO, "build")
 STAGE = os.path.join(REPO, "build", "Smoke")
@@ -198,7 +198,8 @@ def session(out, env, body, speed, record=None, settings=None):
     game.target_dir = out
 
     # A 16:9 window, so WIDESCREEN has room to widen the picture.
-    full_env = {"ROGUESQ_SPEED": str(speed), "ROGUESQ_FAKE_CONTROLLER": "1", "ROGUESQ_WINDOW_SIZE": "1280x720", "ROGUESQ_MENU_FIXED": "1", "ROGUESQ_SUBTITLES": "1"}
+    full_env = {"ROGUESQ_SPEED": str(speed), "ROGUESQ_FAKE_CONTROLLER": "1", "ROGUESQ_WINDOW_SIZE": "1280x720", "ROGUESQ_MENU_FIXED": "1", "ROGUESQ_SUBTITLES": "1",
+                "ROGUESQ_LS_GOD": "1"}
     full_env.update(env)
     error = None
 
@@ -328,12 +329,18 @@ def pause_settings_cycle(game, at, pages, skip):
             start = game.call("setting", {}).get(key, {}).get("value")
             game.call("pause_menu", {"entry": k})
 
+            # Done once the value has moved and come back; a press the menu dropped (still the start value) is pressed again.
+            moved = False
+
             for n in range(24):
                 tap(game, ["a"], PAUSE_SETTLE)
                 shot(game, game.target_dir, f"pause-{str(page).replace('/', '-')}-{key}-{n:02d}", False)
+                value = game.call("setting", {}).get(key, {}).get("value")
 
-                if game.call("setting", {}).get(key, {}).get("value") == start:
+                if value == start and moved:
                     break
+
+                moved = moved or value != start
 
         for _ in range(len(path) + 4):
             if game.call("pause_menu", {})["page"] == 0:
@@ -453,10 +460,16 @@ def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
 
             for i, level in enumerate(levels):
                 enter(game, os.path.join(out, f"level{level:02d}"))
-                hold(game, "ls", [(f, "", None) for f in frames], True, after_restart=i > 0)
 
-                if pause_pages:
-                    pause_settings_cycle(game, frames[-1] + 30, pause_pages, pause_skip)
+                # A mission that ends on its own (won or lost) before its shots are done is not a failure: the nav walks its results to the next level.
+                try:
+                    hold(game, "ls", [(f, "", None) for f in frames], True, after_restart=i > 0)
+
+                    if pause_pages:
+                        pause_settings_cycle(game, frames[-1] + 30, pause_pages, pause_skip)
+                except MissionEnded as e:
+                    with open(os.path.join(game.target_dir, "ended.txt"), "w", encoding="utf-8") as f:
+                        f.write(str(e) + "\n")
 
                 done.append(level)
 
@@ -600,11 +613,11 @@ def run(args):
     sections = args.sections.split(",")
     wanted = (lambda name: any(f in name for f in args.filter.split(",")))
 
-    def one_level(level, shots, pause_pages=()):
+    def one_level(level, shots, pause_pages=(), folder="level"):
 
         def body(game):
 
-            enter(game, os.path.join(out, f"level{level:02d}"))
+            enter(game, os.path.join(out, f"{folder}{level:02d}"))
             hold(game, "ls", shots, True)
 
             if pause_pages:
@@ -627,7 +640,7 @@ def run(args):
 
         for level in [i for i in c["levels"] if wanted(f"level{i:02d}")]:
             for specs in ([CONTROL] * n, c["visual"], c["sim"]):
-                one_level(level, change_chain(specs, c["at"]))
+                one_level(level, change_chain(specs, c["at"]), folder="changes_level")
 
     if "menus" in sections:
         paths = [p for p in m["menus"]["paths"] if wanted(menu_folder(p))]
@@ -719,6 +732,7 @@ def image_diff(a, b, diff_path=None):
 # ground textures and subtitles, which follow the voice stream (measured up to 15%), so their limit only catches a wrong camera, scene or model.
 RULES = {
     "level": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),
+    "changes": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),
     "cutscene": (20, ["state"]),
     "menu": (0.05, ["state"]),
     "pause": (0.05, ["state"]),
