@@ -50,6 +50,7 @@ void rs64_lobby_input(uint8_t* rdram);
 int rs64_ghost_puppet(const float seed[9], float dt, float out[12]);
 void rs64_ghost_mission_end(uint8_t* rdram);
 uint32_t rs64_ghost_block_result(void);
+void rs64_ghost_speech_clip(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_take_start_offset(void);
 uint32_t rs64_ghost_want_puppet(float out_pos[3]);
 void rs64_ghost_puppet_spawned(void);
@@ -249,6 +250,12 @@ struct Ghost {
     int pending_result = -1;
     int host_result = -1;
     int allow_transition = -1;
+
+    // End-of-mission voice lines: the host forwards the clips it starts from its end request until its result lands; the client plays them once the host's result applied, skipping any it just played itself.
+    bool end_clips_open = false;
+    int end_clips_sent = 0;
+    std::vector<rs64::net::EndClip> end_clips;
+    std::vector<std::pair<uint32_t, uint32_t>> own_clips;
     std::vector<FrameInput> frames;
     uint32_t frame = 0;
     int missions = 0;

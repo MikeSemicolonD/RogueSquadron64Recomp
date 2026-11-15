@@ -1,5 +1,5 @@
 # Two-instance ghost co-op run on localhost: the host flies $HostPad, the client $ClientPad.
-# Usage: .\tools\debug\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientPage] [-HostPage] [-Sound] [-HostPassword 123456] [-ClientPassword 123456] [-Split] [-ClientRecord <rec>] [-KeepOpen] [-NavBudget n] [-Relay port [-RelayArgs flags]] [-ClientInput seq [-ClientInputDelay ms]] [-HostContinue n] [-ClientContinue n] [-HostSkipCrawl] [-HostBrowse n] [-HostDie f,f] [-ClientDie f,f] [-ClientEnd f:r] [-FriendlyFire] [-ClientSteps op@f[:arg],...]
+# Usage: .\tools\debug\lockstep\run-mp.ps1 -Tag mp-a [-HostPad <rec>] [-ClientPad <rec>] [-Latency 0] [-Loss 0] [-Jitter 0] [-Speed 4] [-Timeout 900] [-TestEnd f:r] [-TestFail f] [-TestPause f] [-TestLives n] [-TestVersion n] [-TestQuit f] [-TestUnlock n] [-TestUpgrade f:hex] [-TestPickup f] [-TestTriggerSolo] [-Lobby [-Level n]] [-ClientLive] [-ClientPage] [-HostPage] [-Sound] [-HostPassword 123456] [-ClientPassword 123456] [-Split] [-ClientRecord <rec>] [-KeepOpen] [-NavBudget n] [-Relay port [-RelayArgs flags]] [-ClientInput seq [-ClientInputDelay ms]] [-HostContinue n] [-ClientContinue n] [-HostSkipCrawl] [-HostBrowse n] [-HostDie f,f] [-ClientDie f,f] [-ClientEnd f:r] [-FriendlyFire] [-ClientSteps op@f[:arg],...]
 # Both windows come up windowed with ray tracing off; a boot stall (log silent 15 s before the lobby) is dumped (dump-game.ps1) into the run folder and stops the pair.
 # Each instance gets its own working dir (ROM, configs and saves live in the working dir), so the pair never shares a save.
 param(
@@ -17,6 +17,8 @@ param(
     [int]$Timeout = 900,
     [double]$P95 = 1.0,
     [string]$TestEnd = "",
+    # Host fails the mission the way a level script does (fail request plus its voice line) on that mission frame.
+    [int]$TestFail = -1,
     [int]$TestPause = -1,
     [int]$TestLives = -1,
     [int]$TestVersion = -1,
@@ -155,6 +157,7 @@ try {
         if ($role -eq "client" -and $ClientSteps) { $steps += $ClientSteps -split "," }
         if ($role -eq "host") {
             if ($TestEnd) { $steps += "end@$TestEnd" }
+            if ($TestFail -ge 0) { $steps += "fail@$TestFail" }
             if ($TestPause -ge 0) { $steps += "pause@$TestPause" }
             if ($TestQuit -ge 0) { $steps += "quit@$TestQuit$(if ($TestQuitClean) { ':1' })" }
             if ($TestUpgrade) { $f, $b = $TestUpgrade -split ":"; $steps += "upgrade@${f}:0x$b" }

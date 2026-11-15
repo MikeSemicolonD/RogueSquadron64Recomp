@@ -14,7 +14,7 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31, Hit = 32, Rules = 33 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31, Hit = 32, Rules = 33, EndClip = 34 };
 enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3, WrongPassword = 4 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
@@ -57,6 +57,15 @@ std::vector<uint8_t> encode_result(uint8_t epoch, uint8_t result);
 bool decode_result(const uint8_t* data, size_t n, uint8_t* epoch, uint8_t* result);
 std::vector<uint8_t> encode_presence(uint8_t epoch, uint8_t in_mission);
 bool decode_presence(const uint8_t* data, size_t n, uint8_t* epoch, uint8_t* in_mission);
+
+// Ghost co-op, reliable: a voice clip the host started between its end request and its result landing (playSpeechClip a0-a3), for the client to play too.
+struct EndClip {
+    uint8_t epoch = 0;
+    uint32_t args[4] = {};
+};
+
+std::vector<uint8_t> encode_end_clip(const EndClip& c);
+bool decode_end_clip(const uint8_t* data, size_t n, EndClip* out);
 
 // Ghost co-op objectives: the host's objective booleans, counts, timers and lives (unreliable, newest seq wins).
 struct ObjSnapshot {
@@ -157,7 +166,7 @@ bool decode_tow_seg(const uint8_t* data, size_t n, TowSeg* out);
 bool tow_seg_ok(const TowSeg& t, uint32_t ring);
 
 // Network compatibility of this build: bump it whenever two builds can no longer play together. The lobby's HELLO carries it.
-constexpr uint32_t kBuildId = 0x5253000Cu;
+constexpr uint32_t kBuildId = 0x5253000Du;
 
 // Lobby handshake, sent once by each side on connect. It decodes whatever the sender's protocol byte, so a mismatch can be reported.
 struct Hello {

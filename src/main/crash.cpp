@@ -155,6 +155,14 @@ bool write_minidump_safe(EXCEPTION_POINTERS* ep)
     return ok != FALSE;
 }
 
+// After a crash, DLL detach (which _Exit still runs) can block for good, e.g. Windows.Devices.WiFiDirect with a group up; TerminateProcess skips it.
+[[noreturn]] static void die(UINT code)
+{
+
+    TerminateProcess(GetCurrentProcess(), code);
+    _Exit((int)code);
+}
+
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep)
 {
 
@@ -257,7 +265,7 @@ void install_handlers()
 
         print_stack_with_symbols(frames, count);  // symbolized to stderr when a PDB exists
         write_minidump_safe(nullptr);
-        _Exit(3);
+        die(3);
     });
 
     signal(SIGABRT, [](int){
@@ -270,7 +278,7 @@ void install_handlers()
         // No EXCEPTION_POINTERS on the abort path — passing nullptr makes
         // VS open the dump without the "unhandled exception" dialog.
         write_minidump_safe(nullptr);
-        _Exit(3);
+        die(3);
     });
 
     // Route CRT debug asserts to stderr instead of the blocking dialog.
@@ -334,7 +342,7 @@ void install_handlers()
         }
 
         fflush(stderr);
-        _Exit(4);
+        die(4);
     });
 }
 

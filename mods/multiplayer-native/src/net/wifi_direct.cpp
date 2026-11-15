@@ -14,6 +14,12 @@
 #include <winrt/Windows.Devices.WiFiDirect.h>
 #include <winrt/Windows.Security.Credentials.h>
 
+#else
+
+#include <dlfcn.h>
+#include <type_traits>
+#include <utility>
+
 #endif
 
 #include <algorithm>
@@ -344,64 +350,532 @@ private:
 
 #else
 
-constexpr char kHostCon[] = "'RS64 co-op host'";
-constexpr char kJoinCon[] = "'RS64 co-op'";
-constexpr char kSecurity[] = " ssid DIRECT-RS-RogueSquadron64 wifi-sec.key-mgmt wpa-psk wifi-sec.psk rs64coop";
+// NetworkManager over D-Bus, through libdbus loaded at run time (no build dependency); the Flatpak reaches it with --system-talk-name=org.freedesktop.NetworkManager.
+// The hotspot and join connections are volatile: never saved, and NetworkManager deletes them once they deactivate.
+constexpr const char* kNm = "org.freedesktop.NetworkManager";
+constexpr const char* kNmPath = "/org/freedesktop/NetworkManager";
+constexpr const char* kProps = "org.freedesktop.DBus.Properties";
+constexpr int kScanPolls = 8;
+constexpr int kActivatePolls = 30;
+constexpr uint32_t kDeviceWifi = 2;
+constexpr uint32_t kDeviceDisconnected = 30;
+constexpr uint32_t kActivated = 2;
+constexpr uint32_t kDeactivated = 4;
 
-// Runs a shell command; returns its exit status and, when asked, its output (stderr included, so a refusal's reason reaches the log).
-int run(const std::string& cmd, std::string* out = nullptr)
+// libdbus's iterator and error structs, sized past their real layouts (an iterator is 72 bytes on 64-bit).
+struct DIter {
+    alignas(void*) unsigned char b[128];
+};
+
+struct DError {
+    const char* name;
+    const char* message;
+    alignas(void*) unsigned char rest[48];
+};
+
+struct Dbus {
+    void* (*bus_get)(int, DError*);
+    void (*error_init)(DError*);
+    void (*error_free)(DError*);
+    void (*exit_on_disconnect)(void*, unsigned);
+    void* (*new_call)(const char*, const char*, const char*, const char*);
+    void* (*send)(void*, void*, int, DError*);
+    void (*unref)(void*);
+    void (*init_append)(void*, DIter*);
+    unsigned (*open)(DIter*, int, const char*, DIter*);
+    unsigned (*close)(DIter*, DIter*);
+    unsigned (*append)(DIter*, int, const void*);
+    unsigned (*append_fixed)(DIter*, int, const void*, int);
+    unsigned (*init)(void*, DIter*);
+    int (*type)(DIter*);
+    void (*get)(DIter*, void*);
+    void (*recurse)(DIter*, DIter*);
+    unsigned (*next)(DIter*);
+    void (*get_fixed)(DIter*, void*, int*);
+};
+
+// One setting value: 's' string, 'b' boolean, 'y' bytes (from s), 'l' string list.
+struct Setting {
+    const char* key;
+    char type;
+    std::string s;
+    std::vector<std::string> list;
+};
+
+using SettingGroup = std::pair<const char*, std::vector<Setting>>;
+
+std::vector<SettingGroup> wifi_settings(bool host)
 {
 
-    FILE* p = popen((cmd + " 2>&1").c_str(), "r");
-    char buf[256];
-    std::string text;
+    std::vector<SettingGroup> g = {
+        {"connection", {{"id", 's', host ? "RS64 co-op host" : "RS64 co-op", {}}, {"type", 's', "802-11-wireless", {}}, {"autoconnect", 'b', "", {}}}},
+        {"802-11-wireless", {{"ssid", 'y', kSsid, {}}, {"mode", 's', host ? "ap" : "infrastructure", {}}}},
+        {"802-11-wireless-security", {{"key-mgmt", 's', "wpa-psk", {}}, {"psk", 's', "rs64coop", {}}}},
+    };
 
-    if (!p)
+    if (host) {
+        g[1].second.push_back({"band", 's', "bg", {}});
+        g[2].second.push_back({"proto", 'l', "", {"rsn"}});
+        g[2].second.push_back({"pairwise", 'l', "", {"ccmp"}});
+        g[2].second.push_back({"group", 'l', "", {"ccmp"}});
+        g.push_back({"ipv4", {{"method", 's', "shared", {}}}});
+    }
+
+    return g;
+}
+
+// The system bus and the calls the pairing needs; used from the worker thread only.
+class Nm {
+public:
+    bool open()
     {
-        return -1;
+
+        void* lib = dlopen("libdbus-1.so.3", RTLD_NOW | RTLD_LOCAL);
+        DError err;
+
+        if (!lib)
+        {
+            return false;
+        }
+
+        const auto sym = [lib](const char* name, auto& fn) {
+            fn = reinterpret_cast<std::remove_reference_t<decltype(fn)>>(dlsym(lib, name));
+            return fn != nullptr;
+        };
+
+        const bool all = sym("dbus_bus_get", d_.bus_get) && sym("dbus_error_init", d_.error_init) && sym("dbus_error_free", d_.error_free)
+            && sym("dbus_connection_set_exit_on_disconnect", d_.exit_on_disconnect) && sym("dbus_message_new_method_call", d_.new_call)
+            && sym("dbus_connection_send_with_reply_and_block", d_.send) && sym("dbus_message_unref", d_.unref)
+            && sym("dbus_message_iter_init_append", d_.init_append) && sym("dbus_message_iter_open_container", d_.open)
+            && sym("dbus_message_iter_close_container", d_.close) && sym("dbus_message_iter_append_basic", d_.append)
+            && sym("dbus_message_iter_append_fixed_array", d_.append_fixed) && sym("dbus_message_iter_init", d_.init)
+            && sym("dbus_message_iter_get_arg_type", d_.type) && sym("dbus_message_iter_get_basic", d_.get)
+            && sym("dbus_message_iter_recurse", d_.recurse) && sym("dbus_message_iter_next", d_.next)
+            && sym("dbus_message_iter_get_fixed_array", d_.get_fixed);
+
+        if (!all)
+        {
+            return false;
+        }
+
+        d_.error_init(&err);
+        bus_ = d_.bus_get(1, &err);
+
+        if (!bus_) {
+            fprintf(stderr, "[net] no system bus: %s\n", err.message ? err.message : "?");
+            d_.error_free(&err);
+            return false;
+        }
+
+        // libdbus exits the process on a lost bus unless told not to.
+        d_.exit_on_disconnect(bus_, 0);
+        return true;
     }
 
-    while (fgets(buf, sizeof buf, p)) {
-        text += buf;
+    // The Wi-Fi device's object path and state, or "" when there is none.
+    std::string wifi_device(uint32_t* state)
+    {
+
+        std::string found;
+
+        for (const std::string& dev : paths(kNmPath, kNm, "GetDevices")) {
+            if (found.empty() && prop_u(dev, "org.freedesktop.NetworkManager.Device", "DeviceType") == kDeviceWifi) {
+                found = dev;
+            }
+        }
+
+        if (!found.empty() && state) {
+            *state = prop_u(found, "org.freedesktop.NetworkManager.Device", "State");
+        }
+
+        return found;
     }
 
-    if (out) {
-        *out = text;
+    bool ssid_visible(const std::string& dev)
+    {
+
+        for (const std::string& ap : paths(dev, "org.freedesktop.NetworkManager.Device.Wireless", "GetAllAccessPoints")) {
+            if (prop_bytes(ap, "org.freedesktop.NetworkManager.AccessPoint", "Ssid") == kSsid) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    return pclose(p);
-}
+    void request_scan(const std::string& dev)
+    {
 
-// run() that logs nmcli's own message when the command fails.
-bool run_logged(const std::string& cmd)
+        void* reply = call(dev.c_str(), "org.freedesktop.NetworkManager.Device.Wireless", "RequestScan", [this](DIter* it) { empty_dict(it); }, false);
+
+        if (reply) {
+            d_.unref(reply);
+        }
+    }
+
+    // A volatile connection made and activated on dev; returns its active-connection path, or "".
+    std::string add_and_activate(const std::vector<SettingGroup>& settings, const std::string& dev)
+    {
+
+        void* reply = call(kNmPath, kNm, "AddAndActivateConnection2", [&](DIter* it) {
+            append_settings(it, settings);
+            append_path(it, dev.c_str());
+            append_path(it, "/");
+            append_options(it);
+        }, true);
+
+        return second_path(reply);
+    }
+
+    void activate(const std::string& conn, const std::string& dev)
+    {
+
+        void* reply = call(kNmPath, kNm, "ActivateConnection", [&](DIter* it) {
+            append_path(it, conn.c_str());
+            append_path(it, dev.c_str());
+            append_path(it, "/");
+        }, true);
+
+        if (reply) {
+            d_.unref(reply);
+        }
+    }
+
+    void deactivate(const std::string& active)
+    {
+
+        void* reply = call(kNmPath, kNm, "DeactivateConnection", [&](DIter* it) { append_path(it, active.c_str()); }, false);
+
+        if (reply) {
+            d_.unref(reply);
+        }
+    }
+
+    uint32_t active_state(const std::string& active) {
+        return prop_u(active, "org.freedesktop.NetworkManager.Connection.Active", "State");
+    }
+
+    // The saved connection behind the device's active one ("" when it has none), to bring back afterwards.
+    std::string current_connection(const std::string& dev)
+    {
+
+        const std::string active = prop_path(dev, "org.freedesktop.NetworkManager.Device", "ActiveConnection");
+
+        if (active.empty() || active == "/")
+        {
+            return {};
+        }
+
+        const std::string conn = prop_path(active, "org.freedesktop.NetworkManager.Connection.Active", "Connection");
+        return conn == "/" ? std::string{} : conn;
+    }
+
+private:
+    template <typename Args>
+    void* call(const char* path, const char* iface, const char* method, const Args& args, bool log_error)
+    {
+
+        void* msg = d_.new_call(kNm, path, iface, method);
+        DIter it;
+        DError err;
+
+        if (!msg)
+        {
+            return nullptr;
+        }
+
+        d_.init_append(msg, &it);
+        args(&it);
+        d_.error_init(&err);
+
+        void* reply = d_.send(bus_, msg, 5000, &err);
+
+        d_.unref(msg);
+
+        if (!reply) {
+            if (log_error) {
+                fprintf(stderr, "[net] NetworkManager %s: %s\n", method, err.message ? err.message : "failed");
+            }
+
+            d_.error_free(&err);
+        }
+
+        return reply;
+    }
+
+    std::vector<std::string> paths(const std::string& path, const char* iface, const char* method)
+    {
+
+        void* reply = call(path.c_str(), iface, method, [](DIter*) {}, false);
+        std::vector<std::string> out;
+        DIter it;
+        DIter arr;
+
+        if (!reply)
+        {
+            return out;
+        }
+
+        if (d_.init(reply, &it) && d_.type(&it) == 'a') {
+            d_.recurse(&it, &arr);
+
+            while (d_.type(&arr) == 'o') {
+                const char* p = nullptr;
+
+                d_.get(&arr, &p);
+                out.emplace_back(p ? p : "");
+                d_.next(&arr);
+            }
+        }
+
+        d_.unref(reply);
+        return out;
+    }
+
+    // Properties.Get: the reply and an iterator on the value inside its variant.
+    void* get_prop(const std::string& path, const char* iface, const char* name, DIter* value)
+    {
+
+        void* reply = call(path.c_str(), kProps, "Get", [&](DIter* it) {
+            append_string(it, iface);
+            append_string(it, name);
+        }, false);
+        DIter it;
+
+        if (!reply)
+        {
+            return nullptr;
+        }
+
+        if (!d_.init(reply, &it) || d_.type(&it) != 'v') {
+            d_.unref(reply);
+            return nullptr;
+        }
+
+        d_.recurse(&it, value);
+        return reply;
+    }
+
+    uint32_t prop_u(const std::string& path, const char* iface, const char* name)
+    {
+
+        DIter v;
+        uint32_t out = 0;
+        void* reply = get_prop(path, iface, name, &v);
+
+        if (!reply)
+        {
+            return 0;
+        }
+
+        if (d_.type(&v) == 'u') {
+            d_.get(&v, &out);
+        }
+
+        d_.unref(reply);
+        return out;
+    }
+
+    std::string prop_path(const std::string& path, const char* iface, const char* name)
+    {
+
+        DIter v;
+        std::string out;
+        void* reply = get_prop(path, iface, name, &v);
+
+        if (!reply)
+        {
+            return out;
+        }
+
+        if (d_.type(&v) == 'o') {
+            const char* p = nullptr;
+
+            d_.get(&v, &p);
+            out = p ? p : "";
+        }
+
+        d_.unref(reply);
+        return out;
+    }
+
+    std::string prop_bytes(const std::string& path, const char* iface, const char* name)
+    {
+
+        DIter v;
+        DIter arr;
+        std::string out;
+        void* reply = get_prop(path, iface, name, &v);
+
+        if (!reply)
+        {
+            return out;
+        }
+
+        if (d_.type(&v) == 'a') {
+            const char* bytes = nullptr;
+            int n = 0;
+
+            d_.recurse(&v, &arr);
+            d_.get_fixed(&arr, &bytes, &n);
+            out.assign(bytes ? bytes : "", bytes ? (size_t)n : 0);
+        }
+
+        d_.unref(reply);
+        return out;
+    }
+
+    // AddAndActivateConnection2 answers (o path, o active_connection, a{sv}).
+    std::string second_path(void* reply)
+    {
+
+        DIter it;
+        std::string out;
+
+        if (!reply)
+        {
+            return out;
+        }
+
+        if (d_.init(reply, &it) && d_.next(&it) && d_.type(&it) == 'o') {
+            const char* p = nullptr;
+
+            d_.get(&it, &p);
+            out = p ? p : "";
+        }
+
+        d_.unref(reply);
+        return out;
+    }
+
+    void append_string(DIter* it, const char* s) {
+        d_.append(it, 's', &s);
+    }
+
+    void append_path(DIter* it, const char* s) {
+        d_.append(it, 'o', &s);
+    }
+
+    void empty_dict(DIter* it)
+    {
+
+        DIter dict;
+
+        d_.open(it, 'a', "{sv}", &dict);
+        d_.close(it, &dict);
+    }
+
+    // a{sv} {"persist": "volatile"}: the connection lives in memory only and goes away when it deactivates.
+    void append_options(DIter* it)
+    {
+
+        DIter dict;
+        DIter entry;
+        DIter var;
+        const char* key = "persist";
+        const char* val = "volatile";
+
+        d_.open(it, 'a', "{sv}", &dict);
+        d_.open(&dict, 'e', nullptr, &entry);
+        d_.append(&entry, 's', &key);
+        d_.open(&entry, 'v', "s", &var);
+        d_.append(&var, 's', &val);
+        d_.close(&entry, &var);
+        d_.close(&dict, &entry);
+        d_.close(it, &dict);
+    }
+
+    // a{sa{sv}}: the connection's setting groups.
+    void append_settings(DIter* it, const std::vector<SettingGroup>& groups)
+    {
+
+        DIter outer;
+
+        d_.open(it, 'a', "{sa{sv}}", &outer);
+
+        for (const SettingGroup& g : groups) {
+            DIter entry;
+            DIter inner;
+
+            d_.open(&outer, 'e', nullptr, &entry);
+            d_.append(&entry, 's', &g.first);
+            d_.open(&entry, 'a', "{sv}", &inner);
+
+            for (const Setting& s : g.second) {
+                append_setting(&inner, s);
+            }
+
+            d_.close(&entry, &inner);
+            d_.close(&outer, &entry);
+        }
+
+        d_.close(it, &outer);
+    }
+
+    void append_setting(DIter* dict, const Setting& s)
+    {
+
+        static const char* const kSig[] = {"s", "b", "ay", "as"};
+        const int sig = s.type == 's' ? 0 : s.type == 'b' ? 1 : s.type == 'y' ? 2 : 3;
+        DIter entry;
+        DIter var;
+        DIter arr;
+
+        d_.open(dict, 'e', nullptr, &entry);
+        d_.append(&entry, 's', &s.key);
+        d_.open(&entry, 'v', kSig[sig], &var);
+
+        if (s.type == 's') {
+            const char* v = s.s.c_str();
+
+            d_.append(&var, 's', &v);
+        } else if (s.type == 'b') {
+            const uint32_t v = 0;
+
+            d_.append(&var, 'b', &v);
+        } else if (s.type == 'y') {
+            const char* v = s.s.data();
+
+            d_.open(&var, 'a', "y", &arr);
+            d_.append_fixed(&arr, 'y', &v, (int)s.s.size());
+            d_.close(&var, &arr);
+        } else {
+            d_.open(&var, 'a', "s", &arr);
+
+            for (const std::string& item : s.list) {
+                const char* v = item.c_str();
+
+                d_.append(&arr, 's', &v);
+            }
+
+            d_.close(&var, &arr);
+        }
+
+        d_.close(&entry, &var);
+        d_.close(dict, &entry);
+    }
+
+    Dbus d_{};
+    void* bus_ = nullptr;
+};
+
+Nm* nm()
 {
 
-    std::string out;
-    const bool ok = run(cmd, &out) == 0;
+    static Nm* s = [] {
 
-    if (!ok) {
-        fprintf(stderr, "[net] %s: %s", cmd.c_str(), out.empty() ? "failed\n" : out.c_str());
-    }
+        Nm* n = new Nm;
 
-    return ok;
-}
+        if (!n->open()) {
+            fprintf(stderr, "[net] no NetworkManager; no Wi-Fi Direct\n");
+            delete n;
+            return (Nm*)nullptr;
+        }
 
-std::string shell_quoted(const std::string& s)
-{
+        return n;
+    }();
 
-    std::string q = "'";
-
-    for (char c : s) {
-        q += c == '\'' ? std::string("'\\''") : std::string(1, c);
-    }
-
-    return q + "'";
-}
-
-bool has_line(const std::string& text, const std::string& line)
-{
-
-    return ("\n" + text + "\n").find("\n" + line + "\n") != std::string::npos;
+    return s;
 }
 
 // Hosting takes the Wi-Fi radio, so a PC already on a Wi-Fi network (where LAN play works) does not start one.
@@ -410,82 +884,77 @@ public:
     void start()
     {
 
-        std::string devices;
+        uint32_t state = 0;
+        std::string dev;
 
-        if (on_)
+        if (!active_.empty() || !nm())
         {
             return;
         }
 
-        run("nmcli -t -f TYPE,STATE device", &devices);
+        dev = nm()->wifi_device(&state);
 
-        if (("\n" + devices).find("\nwifi:disconnected") == std::string::npos)
+        if (dev.empty() || state != kDeviceDisconnected)
         {
             fprintf(stderr, "[net] Wi-Fi is busy or missing; no Wi-Fi Direct game\n");
             return;
         }
 
-        const std::string add = std::string("nmcli con add type wifi ifname '*' autoconnect no con-name ") + kHostCon + kSecurity
-            + " mode ap wifi.band bg ipv4.method shared wifi-sec.proto rsn wifi-sec.pairwise ccmp wifi-sec.group ccmp";
+        active_ = nm()->add_and_activate(wifi_settings(true), dev);
 
-        on_ = run_logged(add);
-
-        if (on_ && run_logged(std::string("nmcli --wait 15 con up ") + kHostCon)) {
+        if (!active_.empty()) {
             fprintf(stderr, "[net] Wi-Fi Direct game started (hotspot)\n");
-        } else {
-            fprintf(stderr, "[net] Wi-Fi Direct hotspot failed\n");
         }
     }
 
     void stop()
     {
 
-        if (!on_)
+        if (active_.empty())
         {
             return;
         }
 
-        on_ = false;
-        run(std::string("nmcli con delete ") + kHostCon);
+        nm()->deactivate(active_);
+        active_.clear();
         fprintf(stderr, "[net] Wi-Fi Direct hotspot stopped\n");
     }
 
 private:
-    bool on_ = false;
+    std::string active_;
 };
 
 class Wlan {
 public:
-    // Connections left over from a run that crashed while hosting or joined.
-    Wlan()
-    {
+    bool joined() const { return !active_.empty(); }
 
-        ok_ = run("nmcli -v") == 0;
-
-        if (ok_) {
-            run(std::string("nmcli con delete ") + kHostCon);
-            run(std::string("nmcli con delete ") + kJoinCon);
-        } else {
-            fprintf(stderr, "[net] no NetworkManager; no Wi-Fi Direct\n");
-        }
-    }
-
-    bool joined() const { return joined_; }
-
-    // shortcut: nmcli blocks up to its own timeouts (scan, 15 s connect), so a quit during a join waits for it; move to NetworkManager's D-Bus API if that matters.
+    // Scans for the group and joins it while the lobby still searches; returns the link value to report.
     int join()
     {
 
-        std::string list;
-
-        if (!ok_)
+        if (!nm())
         {
             return 0;
         }
 
-        run("nmcli -t -f SSID device wifi list --rescan yes", &list);
+        dev_ = nm()->wifi_device(nullptr);
 
-        const bool seen = has_line(list, kSsid);
+        if (dev_.empty())
+        {
+            return 0;
+        }
+
+        nm()->request_scan(dev_);
+        bool seen = nm()->ssid_visible(dev_);
+
+        for (int i = 0; i < kScanPolls && !seen; ++i) {
+            if (!hold(2, kPollMs))
+            {
+                return 0;
+            }
+
+            seen = nm()->ssid_visible(dev_);
+        }
 
         if (!seen) {
             fprintf(stderr, "[net] no Wi-Fi Direct game in range\n");
@@ -496,88 +965,62 @@ public:
             return 0;
         }
 
-        prev_ = active_wifi();
+        prev_ = nm()->current_connection(dev_);
+        active_ = nm()->add_and_activate(wifi_settings(false), dev_);
 
-        if (!run_logged(std::string("nmcli con add type wifi ifname '*' autoconnect no con-name ") + kJoinCon + kSecurity))
+        if (active_.empty())
         {
             return 0;
         }
 
-        joined_ = true;
         fprintf(stderr, "[net] joining the Wi-Fi Direct game\n");
 
-        if (!run_logged(std::string("nmcli --wait 15 con up ") + kJoinCon))
-        {
-            fprintf(stderr, "[net] Wi-Fi Direct join timed out\n");
-            return 0;
+        // NetworkManager reports the connection activated once it has its address.
+        for (int i = 0; i < kActivatePolls; ++i) {
+            if (!hold(2, kPollMs))
+            {
+                return 1;
+            }
+
+            const uint32_t state = nm()->active_state(active_);
+
+            if (state == kActivated)
+            {
+                fprintf(stderr, "[net] Wi-Fi Direct linked\n");
+                return 2;
+            }
+
+            if (state == kDeactivated || state == 0) {
+                break;
+            }
         }
 
-        fprintf(stderr, "[net] Wi-Fi Direct linked\n");
-        return 2;
+        fprintf(stderr, "[net] Wi-Fi Direct join failed\n");
+        return 0;
     }
 
+    // Leaves the group and reconnects the network the PC was on.
     void restore()
     {
 
-        if (!joined_)
+        if (active_.empty())
         {
             return;
         }
 
-        joined_ = false;
-        run(std::string("nmcli con delete ") + kJoinCon);
+        nm()->deactivate(active_);
+        active_.clear();
 
         if (!prev_.empty()) {
-            run("nmcli --wait 0 con up id " + shell_quoted(prev_));
+            nm()->activate(prev_, dev_);
         }
 
         fprintf(stderr, "[net] left the Wi-Fi Direct game\n");
     }
 
 private:
-    // The active Wi-Fi connection's name; nmcli -t escapes ':' and '\' in it.
-    static std::string active_wifi()
-    {
-
-        constexpr char kType[] = ":802-11-wireless";
-        std::string text;
-        size_t start = 0;
-
-        run("nmcli -t -f NAME,TYPE con show --active", &text);
-
-        while (start < text.size()) {
-            size_t end = text.find('\n', start);
-
-            if (end == std::string::npos) {
-                end = text.size();
-            }
-
-            const std::string line = text.substr(start, end - start);
-            const size_t n = sizeof(kType) - 1;
-
-            start = end + 1;
-
-            if (line.size() > n && line.compare(line.size() - n, n, kType) == 0)
-            {
-                std::string name;
-
-                for (size_t i = 0; i < line.size() - n; ++i) {
-                    if (line[i] == '\\' && i + 1 < line.size() - n) {
-                        ++i;
-                    }
-
-                    name += line[i];
-                }
-
-                return name;
-            }
-        }
-
-        return {};
-    }
-
-    bool ok_ = false;
-    bool joined_ = false;
+    std::string dev_;
+    std::string active_;
     std::string prev_;
 };
 

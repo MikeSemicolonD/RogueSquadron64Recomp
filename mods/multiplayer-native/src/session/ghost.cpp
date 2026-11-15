@@ -616,6 +616,16 @@ void drain()
 
             break;
         }
+        case rs64::net::Msg::EndClip: {
+            rs64::net::EndClip c;
+
+            if (rs64::net::decode_end_clip(m.data(), m.size(), &c) && s.player == 1 && s.in_session && (s.remote_epoch < 0 || c.epoch == (uint8_t)s.remote_epoch))
+            {
+                s.end_clips.push_back(c);
+            }
+
+            break;
+        }
         case rs64::net::Msg::Obj: {
             rs64::net::ObjSnapshot o;
 
@@ -1157,8 +1167,49 @@ extern "C" uint32_t rs64_ghost_unfreeze(uint8_t* rdram)
 
 extern "C" uint32_t rs64_ghost_block_result(void) {
 
-    const Ghost& s = g();
+    Ghost& s = g();
+
+    // The host's end request: the voice lines its level script starts next are the end cue, forwarded until its result lands.
+    if (s.in_session && s.player == 0 && !s.peer_left) {
+        s.end_clips_open = true;
+    }
+
     return (s.in_session && s.player == 1 && !s.peer_left) ? 1u : 0u;
+}
+
+// playSpeechClip entry (a0 = the clip, a1-a3 its playback arguments): the host forwards its end cue; the client remembers its own recent clips.
+extern "C" void rs64_ghost_speech_clip(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)rdram;
+    constexpr int kMaxEndClips = 4;
+    constexpr size_t kOwnClips = 8;
+    Ghost& s = g();
+
+    if (!s.in_session || s.peer_left)
+    {
+        return;
+    }
+
+    if (s.player == 0 && s.end_clips_open && s.end_clips_sent < kMaxEndClips) {
+        rs64::net::EndClip c;
+
+        c.epoch = s.epoch;
+        c.args[0] = (uint32_t)ctx->r4;
+        c.args[1] = (uint32_t)ctx->r5;
+        c.args[2] = (uint32_t)ctx->r6;
+        c.args[3] = (uint32_t)ctx->r7;
+        s.link.send(rs64::net::encode_end_clip(c), true);
+        ++s.end_clips_sent;
+
+        fprintf(stderr, "[ghost] end clip 0x%X sent at %.2f s\n", c.args[0], now_s());
+    } else if (s.player == 1) {
+        if (s.own_clips.size() >= kOwnClips) {
+            s.own_clips.erase(s.own_clips.begin());
+        }
+
+        s.own_clips.emplace_back((uint32_t)ctx->r4, now_ms32());
+    }
 }
 
 // requestMissionTransitionMode(a0): arg 3 = success end mode, 2 = failure. A client in session enters them only for the host's result; the host announces its result as soon as it enters one (mode 0 = the transition will be accepted).
@@ -1251,10 +1302,17 @@ extern "C" uint32_t rs64_ghost_gate_response(uint32_t result, uint32_t ready)
     // Each side lands after its own end cue (a voiceline), without waiting for the other.
     if (s.player == 0)
     {
+        if (ready && s.end_clips_open) {
+            s.end_clips_open = false;
+
+            fprintf(stderr, "[ghost] result %u landed at %.2f s\n", result, now_s());
+        }
+
         return ready;
     }
 
-    if (s.host_result != (int)result)
+    // Not before the host's end cue is playing here, or nothing holds the landing until the line ends (the host sends its clips before its result).
+    if (s.host_result != (int)result || !s.end_clips.empty())
     {
         return 0u;
     }
@@ -1276,6 +1334,10 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.pending_result = -1;
     s.host_result = -1;
     s.allow_transition = -1;
+    s.end_clips_open = false;
+    s.end_clips_sent = 0;
+    s.end_clips.clear();
+    s.own_clips.clear();
 
     // The menus' round state ends here on every path (a mission played alone included): a late PICK or READY belongs to the round that just ended.
     s.craft = rs64::ls::CraftBarrier{};
@@ -1478,6 +1540,14 @@ static void test_ends(uint8_t* rdram, recomp_context* ctx, long frame)
         fprintf(stderr, "[ghost] test die at frame %ld\n", frame);
     }
 
+    // Test fail: what level 0's objective check does on a failure (setHudEnableBit4, then playObjectiveVoiceLine2(0x229, 0.3)).
+    if (test_step("fail", frame)) {
+        rs64::mp::call(rdram, ctx, 0x800C7738u, {});
+        rs64::mp::call(rdram, ctx, 0x800C7D1Cu, {0x229u, 0x3E99999Au});
+
+        fprintf(stderr, "[ghost] test fail at frame %ld\n", frame);
+    }
+
     if (const TestStep* t = test_step("end", frame)) {
         wb(rdram, 0x80130B14u, (uint8_t)t->arg);
         ww(rdram, 0x8010C9E0u, rw(rdram, 0x8010C9E0u) | 1u);
@@ -1657,6 +1727,26 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         apply_pending_result(rdram);
     }
 
+    // The host's end cue, once its result applied here (the end request before it resets speech playback): a clip this side played itself in the last kOwnClipMs is not played twice.
+    if (s.player == 1 && s.host_result >= 0 && s.pending_result < 0 && !s.end_clips.empty())
+    {
+        constexpr uint32_t kOwnClipMs = 10000;
+        constexpr uint32_t kPlaySpeechClip = 0x80066EE4u;
+        const uint32_t now = now_ms32();
+
+        for (const rs64::net::EndClip& c : s.end_clips) {
+            const bool heard = std::any_of(s.own_clips.begin(), s.own_clips.end(), [&](const std::pair<uint32_t, uint32_t>& o) { return o.first == c.args[0] && now - o.second < kOwnClipMs; });
+
+            if (!heard) {
+                rs64::mp::call(rdram, ctx, kPlaySpeechClip, {c.args[0], c.args[1], c.args[2], c.args[3]});
+
+                fprintf(stderr, "[ghost] host end clip 0x%X played\n", c.args[0]);
+            }
+        }
+
+        s.end_clips.clear();
+    }
+
     const long frame = (long)s.frame;
 
     // Test quit: arg 1 takes the menu QUIT path (sends BYE), otherwise the process dies with no goodbye.
@@ -1667,6 +1757,12 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         if (t->arg == 1) {
             rs64::mp::request_quit();
         } else {
+
+#if RS64_WIFI_DIRECT
+            // A Wi-Fi Direct group still up hangs the exit in Windows' DLL detach.
+            rs64::net::wifi_direct_shutdown();
+#endif
+
             std::_Exit(3);
         }
     }

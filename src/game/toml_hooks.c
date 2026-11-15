@@ -2003,6 +2003,12 @@ void rs64_th_slotDispatcherIter_entry(uint8_t* rdram, recomp_context* ctx) {
     }
 }
 
+// playSpeechClip entry: a voice clip starts
+void rs64_th_playSpeechClip_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_hook(RS64_HOOK_SPEECH_CLIP, rdram, ctx);
+}
+
 // mainGameLoop 0x8003E138: the front end is about to start
 void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx) {
 

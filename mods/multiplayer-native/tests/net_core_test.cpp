@@ -62,6 +62,15 @@ static void test_result_presence_and_state_epoch() {
     std::vector<uint8_t> badp = p;
     badp[3] = 2;
     CHECK(!decode_presence(badp.data(), badp.size(), &e, &v));
+    EndClip clip;
+    clip.epoch = 7;
+    clip.args[0] = 0x229;
+    clip.args[2] = 0x3E99999Au;
+    const std::vector<uint8_t> ec = encode_end_clip(clip);
+    EndClip clip_back;
+    CHECK(message_type(ec.data(), ec.size()) == (uint8_t)Msg::EndClip);
+    CHECK(decode_end_clip(ec.data(), ec.size(), &clip_back) && clip_back.epoch == 7 && clip_back.args[0] == 0x229 && clip_back.args[2] == 0x3E99999Au);
+    CHECK(!decode_end_clip(ec.data(), ec.size() - 1, &clip_back));
     StatePacket s;
     s.seq = 5;
     s.flags = rs64::net::kStateDown;

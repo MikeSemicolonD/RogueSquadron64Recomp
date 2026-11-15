@@ -60,6 +60,8 @@ finish-args:
   - --device=all
   - --socket=pulseaudio
   - --share=network
+  # Wi-Fi Direct co-op: the hotspot a host runs and the network a joiner switches to.
+  - --system-talk-name=org.freedesktop.NetworkManager
 modules:
   - name: rs64recomp
     buildsystem: simple

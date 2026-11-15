@@ -160,6 +160,7 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 | `RS64_HOOK_FRONT_END` (40) | `mainGameLoop` 0x8003E138 | The front end is about to start after a mission: `a1` = menu overlay state (1 mission select, 2 menus), `a2` = the menu state 2 opens (4 = ELITE ROGUES, after a game over). May be edited. Never RETURN (mid-function). Co-op sends a game over back to mission select, since ELITE ROGUES leads to the main menu, which ends the session |
 | `RS64_HOOK_WINGMAN_DRAW` (41) | `npcWingmanUpdate` 0x800D9A90 | A wingman just added its model to the render list: `s3` = the NPC, `s1` = the render info (what the tow-cable renderer 0x800ADD5C takes as `a0`). Never RETURN (mid-function). Co-op draws the other player's tow cable here |
 | `RS64_HOOK_NPC_HIT` (42) | `slotDispatcherIter` entry | v8. A HIT (action 5) is about to reach an NPC: `a0` = the target slot, `a2` = the message (`+2` u16 the shooter's slot, player 1's is u16 0x80137DBA; `+4` weapon category; `+6` damage). Observe only, never RETURN. Co-op friendly fire sends player 1's hits on the other player's ship |
+| `RS64_HOOK_SPEECH_CLIP` (43) | `playSpeechClip` entry | A voice clip starts: `a0` = the clip, `a1`-`a3` its playback arguments (`a2` = the volume as float bits). Observe only, never RETURN. Co-op forwards the host's end-of-mission lines to the client |
 
 ### Host-dispatched
 

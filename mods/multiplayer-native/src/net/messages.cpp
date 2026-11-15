@@ -68,7 +68,7 @@ uint8_t message_type(const uint8_t* data, size_t n)
         return data[1];
     }
 
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Rules)
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::EndClip)
     {
         return 0;
     }
@@ -528,6 +528,24 @@ bool decode_presence(const uint8_t* data, size_t n, uint8_t* epoch, uint8_t* in_
 
     *epoch = e;
     *in_mission = v;
+    return true;
+}
+
+std::vector<uint8_t> encode_end_clip(const EndClip& c) {
+    return encode_fields(Msg::EndClip, c.epoch, c.args);
+}
+
+bool decode_end_clip(const uint8_t* data, size_t n, EndClip* out)
+{
+
+    EndClip c;
+
+    if (!read_fields(data, n, Msg::EndClip, &c.epoch, &c.args))
+    {
+        return false;
+    }
+
+    *out = c;
     return true;
 }
 

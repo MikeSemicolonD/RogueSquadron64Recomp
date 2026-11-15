@@ -1854,6 +1854,12 @@ text = '{ rs64_th_npcWingmanUpdate_800D9A90(rdram, ctx); }'
 func = "slotDispatcherIter"
 text = '{ rs64_th_slotDispatcherIter_entry(rdram, ctx); }'
 
+# A voice clip starting: co-op forwards the host's end-of-mission lines to the client, whose own level script may not have reached the same end.
+# hook: RS64_HOOK_SPEECH_CLIP
+[[patches.hook]]
+func = "playSpeechClip"
+text = '{ rs64_th_playSpeechClip_entry(rdram, ctx); }'
+
 # Front end start (a1 = overlay state, a2 = the menu it opens; 4 = ELITE ROGUES after a game over): co-op goes back to mission select instead.
 # hook: RS64_HOOK_FRONT_END
 [[patches.hook]]

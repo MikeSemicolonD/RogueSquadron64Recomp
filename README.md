@@ -83,11 +83,11 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 #### Multiplayer (experimental)
 
 - **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result.
-  - Multiplayer is shipped as a `multiplayer-native` mod. Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6). 
+  - Multiplayer is shipped as a `multiplayer-native` mod. Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
   - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 - **Ways to connect:**
   - **Direct:** works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
-  - **Wi-Fi Direct (Android ONLY):** enable Wi-Fi Direct on your android devices to connect P2P with another android device without using a router.
+  - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi direct (macOS uses 'Network Sharing').
   - **Steam, using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
   - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - **Setup notes:**
@@ -95,7 +95,6 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, MULTIPLAYER defaults to direct connections.
   - **Steam Relay OFF by default:** press F6 in the game, turn on **Steam Relay** in the Mods window OR toggle the mod in the in-game mod menu.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
-
 
 > [!NOTE]
 > Steam-Relay mod on Linux, Steam Deck and macOS is untested.

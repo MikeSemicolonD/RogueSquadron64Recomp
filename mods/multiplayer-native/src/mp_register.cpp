@@ -234,6 +234,7 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_ghost_tow_release);
     add_hook(RS64_HOOK_WINGMAN_DRAW, forward, (void*)rs64_ghost_tow_draw);
     add_hook(RS64_HOOK_NPC_HIT, forward, (void*)rs64_ghost_npc_hit);
+    add_hook(RS64_HOOK_SPEECH_CLIP, forward, (void*)rs64_ghost_speech_clip);
     add_hook(RS64_HOOK_TRANSITION_REQUEST, transition_request);
     add_hook(RS64_HOOK_FREEZE_CHECK_A, unfreeze);
     add_hook(RS64_HOOK_FREEZE_CHECK_B, unfreeze);
