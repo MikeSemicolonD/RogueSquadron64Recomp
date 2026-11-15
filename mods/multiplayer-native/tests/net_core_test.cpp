@@ -878,7 +878,7 @@ static void test_status_dots() {
     CHECK(status_dots("CONNECTING", 2 * kDotPeriodMs) == "CONNECTING.." + pad);
     CHECK(status_dots("CONNECTING", 3 * kDotPeriodMs) == "CONNECTING...");
     CHECK(status_dots("CONNECTING", 4 * kDotPeriodMs) == "CONNECTING" + pad + pad + pad);
-    CHECK(waiting_status("SEARCHING") && waiting_status("CONNECTING") && waiting_status("PLAYER JOINING") && waiting_status("WAITING FOR PLAYER"));
+    CHECK(waiting_status("SEARCHING") && waiting_status("CONNECTING") && waiting_status("JOINING NEARBY GAME") && waiting_status("PLAYER JOINING") && waiting_status("WAITING FOR PLAYER"));
     CHECK(!waiting_status("CONNECTED") && !waiting_status("HOST OR JOIN A GAME") && !waiting_status("VERSION MISMATCH"));
 }
 

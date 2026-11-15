@@ -174,4 +174,21 @@ private:
     std::mutex cmu_;
     Cipher cipher_;
 };
+
+// Android pairs in the host (MainActivity), the desktop builds in the mod.
+#if defined(_WIN32) || (defined(__linux__) && !defined(__ANDROID__))
+#define RS64_WIFI_DIRECT 1
+#else
+#define RS64_WIFI_DIRECT 0
+#endif
+
+#if RS64_WIFI_DIRECT
+
+// Desktop Wi-Fi Direct pairing (wifi_direct.cpp), driven by the lobby's wifi_direct mode (0 off, 1 host, 2 join, 3 joined) and whether a LAN search runs. Returns the wifi_direct_link value (0 none, 1 connecting, 2 linked).
+int wifi_direct_tick(int mode, bool searching);
+// Ends hosting and puts the PC back on its own network before exit.
+void wifi_direct_shutdown();
+
+#endif
+
 }

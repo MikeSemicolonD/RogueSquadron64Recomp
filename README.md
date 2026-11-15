@@ -87,6 +87,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 - **Ways to connect:**
   - **Direct:** works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
+  - **Wi-Fi Direct (Android ONLY):** enable Wi-Fi Direct on your android devices to connect P2P with another android device without using a router.
   - **Steam, using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
   - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - **Setup notes:**

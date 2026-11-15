@@ -51,6 +51,10 @@ target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 target_link_libraries(multiplayer_native PRIVATE enet6 monocypher)
 
+# Wi-Fi Direct pairing (src/net/wifi_direct.cpp).
+if (WIN32)
+    target_link_libraries(multiplayer_native PRIVATE wlanapi windowsapp)
+endif()
 # A browser can't reach the router, so the web build has no UPnP.
 if (NOT EMSCRIPTEN)
     target_link_libraries(multiplayer_native PRIVATE libminiupnpc-static)

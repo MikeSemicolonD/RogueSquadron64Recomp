@@ -8,7 +8,7 @@ namespace rs64::net {
 
 bool waiting_status(const std::string& status)
 {
-    return status == "SEARCHING" || status == "CONNECTING" || status == "PLAYER JOINING" || status == "WAITING FOR PLAYER";
+    return status == "SEARCHING" || status == "CONNECTING" || status == "JOINING NEARBY GAME" || status == "PLAYER JOINING" || status == "WAITING FOR PLAYER";
 }
 
 std::string status_dots(const std::string& status, uint32_t now_ms) {

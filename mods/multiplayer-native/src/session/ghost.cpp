@@ -1086,6 +1086,10 @@ extern "C" void rs64_ghost_quit(void) {
     // After the BYE: the relay carries it.
     s.link.stop();
     relay_shutdown();
+
+#if RS64_WIFI_DIRECT
+    rs64::net::wifi_direct_shutdown();
+#endif
 }
 
 // Recording-driven test runs keep the harness's fixed 1/30 s step so a recording replays at its own pace; live play keeps the game's dt.

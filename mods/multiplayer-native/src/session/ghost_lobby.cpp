@@ -275,7 +275,7 @@ extern "C" void rs64_lobby_host(void)
 }
 
 constexpr uint32_t kSearchMs = 2000;
-constexpr uint32_t kWifiDirectMs = 15000;
+constexpr uint32_t kWifiDirectMs = 30000;
 
 // A password row once it closes: six digits set the password (true), an emptied field means none, anything else keeps what was set. Call every frame the row is up.
 struct PinWatch {
@@ -406,6 +406,17 @@ static void discovery_tick() {
     }
 
     const uint32_t now = now_ms32();
+    static int s_last_link = 0;
+    const int link = rs64::mp::flag("wifi_direct_link");
+
+    // Android puts a socket on the network it was made on, so the search reopens once a Wi-Fi Direct link comes up, with a fresh kSearchMs for the host to answer on it.
+    if (link == 2 && s_last_link != 2) {
+        s.finder.start(s.search_cfg.port);
+        s.search_until_ms = now + kSearchMs;
+        s.next_query_ms = 0;
+    }
+
+    s_last_link = link;
 
     if ((int32_t)(now - s.next_query_ms) >= 0) {
         s.finder.query();
@@ -416,7 +427,11 @@ static void discovery_tick() {
     const auto host = std::find_if(found.begin(), found.end(), [&s](const rs64::net::FoundHost& f) { return f.info.build == s.lobby.local_build(); });
     rs64::net::LinkConfig cfg = s.search_cfg;
 
-    if (host != found.end())
+    // Test only: a joiner still on the host's Wi-Fi network waits for its Wi-Fi Direct link instead of taking the host it found over that network.
+    static const bool s_wifi_direct_test = recomp::dbg::env_on("ROGUESQ_MP_WIFI_DIRECT_TEST");
+    const bool wait_for_link = s_wifi_direct_test && link != 2;
+
+    if (host != found.end() && !wait_for_link)
     {
         cfg.addr = host->addr;
         cfg.port = host->info.port;
@@ -428,7 +443,7 @@ static void discovery_tick() {
     }
 
     // A Wi-Fi Direct link still forming (wifi_direct_link 1) holds the search open up to kWifiDirectMs.
-    const bool linking = rs64::mp::flag("wifi_direct_link") == 1 && (int32_t)(now - (s.search_until_ms - kSearchMs + kWifiDirectMs)) < 0;
+    const bool linking = link == 1 && (int32_t)(now - (s.search_until_ms - kSearchMs + kWifiDirectMs)) < 0;
 
     if ((int32_t)(now - s.search_until_ms) >= 0 && !linking)
     {
@@ -1131,7 +1146,7 @@ extern "C" void rs64_lobby_tick(void)
         }
     }
 
-    // Android pairs phones over Wi-Fi Direct while this lobby hosts or joins without a relay (1 host, 2 join, 3 joined); the host side reports the link as wifi_direct_link.
+    // Wi-Fi Direct pairing while this lobby hosts or joins without a relay (1 host, 2 join, 3 joined); Android's host side or the mod's Windows worker reports the link as wifi_direct_link.
     int wifi_direct = 0;
 
     if (!s.relay_session && rs64_lobby_hosting()) {
@@ -1143,6 +1158,11 @@ extern "C" void rs64_lobby_tick(void)
     }
 
     rs64::mp::set_flag("wifi_direct", wifi_direct);
+
+#if RS64_WIFI_DIRECT
+    rs64::mp::set_flag("wifi_direct_link", rs64::net::wifi_direct_tick(wifi_direct, s.searching));
+#endif
+
     discovery_tick();
 
     if (g().started) {
@@ -1154,7 +1174,10 @@ extern "C" const char* rs64_lobby_status(void) {
 
     Ghost& s = g();
     rs64::mp::set_flag("mp_lobby_state", (int)s.lobby.state());
-    s.status_text = s.searching ? "SEARCHING" : s.lobby.status();
+    // Past the plain LAN search, a search still open is waiting on a Wi-Fi Direct link (scan, connect, address).
+    const bool wifi_wait = s.searching && rs64::mp::flag("wifi_direct_link") == 1 && (int32_t)(now_ms32() - s.search_until_ms) >= 0;
+
+    s.status_text = wifi_wait ? "JOINING NEARBY GAME" : (s.searching ? "SEARCHING" : s.lobby.status());
 
     if (rs64::net::waiting_status(s.status_text)) {
         s.status_text = rs64::net::status_dots(s.status_text, now_ms32());
@@ -1674,6 +1697,8 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
     } else if (s.craft.local >= 0) {
         p &= ~0x9000u;
         show_status(rdram, ctx, 2, 3, -0x70, "WAITING ON PARTNER", &shown);
+    } else if (s.craft.remote >= 0) {
+        show_status(rdram, ctx, 2, 3, -0x70, "PARTNER IS READY", &shown);
     } else {
         show_status(rdram, ctx, 2, 3, -0x70, "", &shown);
     }

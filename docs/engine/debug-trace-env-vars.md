@@ -472,6 +472,7 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_MP_ADDR` / `ROGUESQ_MP_PORT` | 127.0.0.1 / 27064 | Host address for `join`, and the UDP port. |
 | `ROGUESQ_MP_UPNP` | 1 | `0`: hosting does not request a UPnP port mapping. |
 | `ROGUESQ_MP_TRANSPORT` | unset | `enet`: ignore the relay transports (the steam-relay mod and a relay server) and host / join over ENet. |
+| `ROGUESQ_MP_WIFI_DIRECT_TEST` | unset | `1`: a joining search ignores the hosts it finds until its Wi-Fi Direct link is up (`wifi_direct_link` 2), so the Wi-Fi Direct join can be tested on a device still on the host's Wi-Fi network. |
 | `ROGUESQ_MP_RELAY` | unset | `host[:port]` of an `rs64_relay` to use instead of `roguesq_net.json`'s `relay_server` (scripted runs; never saved). |
 | `ROGUESQ_MP_PAD` | unset | `<path.rec>`: this instance's port-0 input comes from a recording. |
 | `ROGUESQ_MP_SIM_LATENCY_MS` / `ROGUESQ_MP_SIM_LOSS_PCT` / `ROGUESQ_MP_SIM_JITTER_MS` | 0 / 0 / 0 | Simulated one-way latency, unreliable-send loss, and 0..N ms jitter (order kept). |

@@ -8,8 +8,13 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.net.wifi.WifiManager;
+import android.net.wifi.WifiNetworkSpecifier;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
@@ -74,6 +79,10 @@ public class MainActivity extends SDLActivity {
     private static final String P2P_PASS = "rs64coop";
     private static final int P2P_PERMISSION = 0x5254;
     private static final long P2P_RETRY_MS = 10000;
+    // A Linux host runs a plain hotspot, which a Wi-Fi Direct connect does not find; past this the joiner also asks for it as an ordinary Wi-Fi network.
+    private static final long WIFI_FALLBACK_MS = 6000;
+    private ConnectivityManager.NetworkCallback mWifiJoin;
+    private boolean mWifiLinked;
     private WifiP2pManager mP2p;
     private WifiP2pManager.Channel mP2pChannel;
     private final Handler mP2pHandler = new Handler(Looper.getMainLooper());
@@ -85,7 +94,7 @@ public class MainActivity extends SDLActivity {
         @Override
         public void onReceive(Context context, Intent intent) {
             final WifiP2pInfo info = intent.getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_INFO);
-            if (mP2pMode != 0) {
+            if (mP2pMode != 0 && !mWifiLinked) {
                 sP2pState = (info != null && info.groupFormed) ? 2 : 1;
             }
         }
@@ -164,18 +173,85 @@ public class MainActivity extends SDLActivity {
         } else {
             mP2p.cancelConnect(mP2pChannel, p2pThen(request));
             mP2pHandler.postDelayed(this::p2pRetry, P2P_RETRY_MS);
+            mP2pHandler.postDelayed(this::wifiJoin, WIFI_FALLBACK_MS);
         }
     }
 
-    // A joiner keeps trying until a host's group is up.
+    // Android shows its own "connect to DIRECT-RS-..." prompt; the game's sockets then go out on that network.
+    private void wifiJoin() {
+        if (mP2pMode != 2 || sP2pState == 2 || mWifiJoin != null) {
+            return;
+        }
+        final ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        final WifiNetworkSpecifier spec = new WifiNetworkSpecifier.Builder().setSsid(P2P_NAME).setWpa2Passphrase(P2P_PASS).build();
+        final NetworkRequest request = new NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .setNetworkSpecifier(spec)
+            .build();
+        mWifiJoin = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                cm.bindProcessToNetwork(network);
+                mWifiLinked = true;
+                sP2pState = 2;
+            }
+
+            @Override
+            public void onLost(Network network) {
+                cm.bindProcessToNetwork(null);
+                mWifiLinked = false;
+                if (mP2pMode != 0) {
+                    sP2pState = 1;
+                }
+            }
+
+            // Not found, or the player declined the prompt: the Wi-Fi Direct retries carry on.
+            @Override
+            public void onUnavailable() {
+                mWifiJoin = null;
+                p2pRetry();
+            }
+        };
+        final ConnectivityManager.NetworkCallback callback = mWifiJoin;
+        final Runnable ask = () -> {
+            if (mWifiJoin == callback) {
+                cm.requestNetwork(request, callback, mP2pHandler);
+            }
+        };
+        if (mP2p == null) {
+            ask.run();
+            return;
+        }
+        // Android fails the request's first scan as busy, then waits ~18 s to rescan, unless the Wi-Fi Direct connect and peer search have stopped first.
+        mP2p.cancelConnect(mP2pChannel, p2pThen(() -> mP2p.stopPeerDiscovery(mP2pChannel, p2pThen(ask))));
+    }
+
+    private void wifiLeave() {
+        if (mWifiJoin == null) {
+            return;
+        }
+        final ConnectivityManager cm = getSystemService(ConnectivityManager.class);
+        try {
+            cm.unregisterNetworkCallback(mWifiJoin);
+        } catch (IllegalArgumentException e) {
+            // Left before the request went out (it waits on the Wi-Fi Direct cancel).
+        }
+        cm.bindProcessToNetwork(null);
+        mWifiJoin = null;
+        mWifiLinked = false;
+    }
+
+    // A joiner keeps trying until a host's group is up; paused while the plain Wi-Fi request runs, since a connect in progress fails its scans as busy.
     private void p2pRetry() {
-        if (mP2pMode == 2 && sP2pState != 2) {
+        if (mP2pMode == 2 && sP2pState != 2 && mWifiJoin == null) {
             p2pStart();
         }
     }
 
     private void p2pStop() {
         sP2pState = 0;
+        wifiLeave();
         if (mP2p != null) {
             mP2p.cancelConnect(mP2pChannel, null);
             mP2p.removeGroup(mP2pChannel, null);
