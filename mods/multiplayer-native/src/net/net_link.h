@@ -57,7 +57,7 @@ struct FoundHost {
 class DiscoveryFinder {
 public:
     ~DiscoveryFinder() { stop(); }
-    // targets empty = discovery_targets(local_ipv4s()).
+    // targets empty = discovery_targets(local_ipv4s()), re-read on each query so a network that comes up mid-search (a Wi-Fi Direct group) is searched too.
     bool start(uint16_t game_port, std::vector<uint32_t> targets = {});
     void query();
     std::vector<FoundHost> poll();
@@ -66,6 +66,7 @@ private:
     intptr_t sock_ = -1;
     uint16_t port_ = 0;
     std::vector<uint32_t> targets_;
+    bool local_targets_ = false;
     std::vector<FoundHost> found_;
 };
 

@@ -334,7 +334,8 @@ bool DiscoveryFinder::start(uint16_t game_port, std::vector<uint32_t> targets)
 
     sock_ = (intptr_t)s;
     port_ = (uint16_t)(game_port + kDiscoveryPortOffset);
-    targets_ = targets.empty() ? discovery_targets(local_ipv4s()) : std::move(targets);
+    local_targets_ = targets.empty();
+    targets_ = std::move(targets);
     found_.clear();
     return true;
 }
@@ -344,6 +345,10 @@ void DiscoveryFinder::query() {
     if (sock_ == (intptr_t)ENET_SOCKET_NULL)
     {
         return;
+    }
+
+    if (local_targets_) {
+        targets_ = discovery_targets(local_ipv4s());
     }
 
     const std::vector<uint8_t> q = encode_discovery_query();

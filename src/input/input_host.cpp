@@ -901,6 +901,11 @@ void poll_input()
 
     apply_fullscreen_if_requested();
     update_keyboard_shift();
+
+#ifdef __ANDROID__
+    rs64::android::update_wifi_direct();
+#endif
+
     static bool s_scanned = false;
 
     if (!s_scanned) {

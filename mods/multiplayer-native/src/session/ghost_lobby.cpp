@@ -275,6 +275,7 @@ extern "C" void rs64_lobby_host(void)
 }
 
 constexpr uint32_t kSearchMs = 2000;
+constexpr uint32_t kWifiDirectMs = 15000;
 
 // A password row once it closes: six digits set the password (true), an emptied field means none, anything else keeps what was set. Call every frame the row is up.
 struct PinWatch {
@@ -426,7 +427,10 @@ static void discovery_tick() {
         return;
     }
 
-    if ((int32_t)(now - s.search_until_ms) >= 0)
+    // A Wi-Fi Direct link still forming (wifi_direct_link 1) holds the search open up to kWifiDirectMs.
+    const bool linking = rs64::mp::flag("wifi_direct_link") == 1 && (int32_t)(now - (s.search_until_ms - kSearchMs + kWifiDirectMs)) < 0;
+
+    if ((int32_t)(now - s.search_until_ms) >= 0 && !linking)
     {
         fprintf(stderr, "[lobby] no host answered on the LAN; trying the typed address\n");
         stop_discovery();
@@ -1127,6 +1131,18 @@ extern "C" void rs64_lobby_tick(void)
         }
     }
 
+    // Android pairs phones over Wi-Fi Direct while this lobby hosts or joins without a relay (1 host, 2 join, 3 joined); the host side reports the link as wifi_direct_link.
+    int wifi_direct = 0;
+
+    if (!s.relay_session && rs64_lobby_hosting()) {
+        wifi_direct = 1;
+    } else if (!s.relay_session && s.lobby.ready()) {
+        wifi_direct = 3;
+    } else if (!s.relay_session && (s_on_games || s.started)) {
+        wifi_direct = 2;
+    }
+
+    rs64::mp::set_flag("wifi_direct", wifi_direct);
     discovery_tick();
 
     if (g().started) {
