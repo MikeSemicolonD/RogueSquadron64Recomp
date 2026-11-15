@@ -6,8 +6,8 @@ IDI_APPICON ICON "../../favicon.ico"
 
 // The name Windows and VR runtimes show for the exe; without it they split the file name.
 1 VERSIONINFO
-FILEVERSION 1,0,0,0
-PRODUCTVERSION 1,0,0,0
+FILEVERSION RS64_VERSION_RC
+PRODUCTVERSION RS64_VERSION_RC
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS 0x40004L
@@ -20,6 +20,8 @@ BEGIN
         BEGIN
             VALUE "FileDescription", "Rogue Squadron 64 Recompiled"
             VALUE "ProductName", "Rogue Squadron 64 Recompiled"
+            VALUE "FileVersion", RS64_VERSION_STRING
+            VALUE "ProductVersion", RS64_VERSION_STRING
             VALUE "OriginalFilename", "RogueSquadron64Recomp.exe"
         END
     END

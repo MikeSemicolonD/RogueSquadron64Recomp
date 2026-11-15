@@ -1,5 +1,6 @@
 # Online co-op as a native mod: multiplayer_native.dll / .so, which reaches the game only through the host API table.
 # Added by the game's CMake; one folder per config, staged by tools/mods/stage_mods.cmake and by the POST_BUILD below.
+cmake_minimum_required(VERSION 3.20)
 include(${CMAKE_CURRENT_SOURCE_DIR}/net_libs.cmake)
 
 set(MP_OUT "${RS64_BUILT_MODS_DIR}/$<CONFIG>/multiplayer-native")

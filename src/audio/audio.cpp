@@ -27,13 +27,6 @@ static inline uint32_t rdram_be32(const uint8_t* rdram, uint32_t off)
 {
     return (uint32_t(rdram[(off + 0) ^ 3]) << 24) | (uint32_t(rdram[(off + 1) ^ 3]) << 16) | (uint32_t(rdram[(off + 2) ^ 3]) << 8) | uint32_t(rdram[(off + 3) ^ 3]);
 }
-static inline void rdram_wr32(uint8_t* rdram, uint32_t off, uint32_t v) {
-
-    rdram[(off + 0) ^ 3] = (uint8_t)(v >> 24);
-    rdram[(off + 1) ^ 3] = (uint8_t)(v >> 16);
-    rdram[(off + 2) ^ 3] = (uint8_t)(v >> 8);
-    rdram[(off + 3) ^ 3] = (uint8_t)v;
-}
 
 static unsigned g_rs64_audio_underruns = 0;
 

@@ -459,7 +459,7 @@ endif()
 if (MSVC)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
-target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}" $<${RS64_MCP_GENEX}:RS64_MCP>)
+target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}" RS64_VERSION_RC=${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0 $<${RS64_MCP_GENEX}:RS64_MCP>)
 
 # OpenXR VR (Vulkan only), from the Khronos OpenXR-SDK submodule at lib/OpenXR-SDK; the loader is linked statically.
 option(RS64_OPENXR "Build OpenXR VR support" OFF)

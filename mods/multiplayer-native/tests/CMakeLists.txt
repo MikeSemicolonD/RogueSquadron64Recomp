@@ -1,4 +1,5 @@
 # The multiplayer mod's unit tests, added by tests/CMakeLists.txt and run by its rs64_unit_tests target.
+cmake_minimum_required(VERSION 3.20)
 get_filename_component(MP_DIR ${CMAKE_CURRENT_SOURCE_DIR}/.. ABSOLUTE)
 get_filename_component(RS64_ROOT ${MP_DIR}/../.. ABSOLUTE)
 
