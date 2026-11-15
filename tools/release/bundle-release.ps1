@@ -57,6 +57,7 @@ function Build-Windows([string]$arch, [string]$buildDir, [string]$cmakeArch) {
     Copy-Item LICENSE "$stage\LICENSE.txt"
     Copy-Item NOTICES.txt "$stage\NOTICES.txt"
     Copy-Item -Recurse licenses "$stage\licenses"
+    Copy-Item -Recurse video-presets "$stage\video-presets"
     $zip = Join-Path $out "RogueSquadron64Recomp-windows-$arch-$Version.zip"
     Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
     Remove-Item -Recurse -Force $stage

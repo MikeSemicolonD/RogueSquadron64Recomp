@@ -100,6 +100,7 @@ cp "$repo/ci/release-readme.txt" "$stage/README.txt"
 cp "$repo/LICENSE" "$stage/LICENSE.txt"
 cp "$repo/NOTICES.txt" "$stage/NOTICES.txt"
 cp -r "$repo/licenses" "$stage/licenses"
+cp -r "$repo/video-presets" "$stage/video-presets"
 if [ -d "$BUILD_DIR/mods" ]; then
   cp -r "$BUILD_DIR/mods" "$stage/mods"
   find "$stage/mods" -name '*.so' -exec "$STRIP" --strip-unneeded {} +

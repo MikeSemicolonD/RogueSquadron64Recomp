@@ -2,7 +2,12 @@
 
 Ready-made graphics settings. Pick the folder that fits your PC and copy its `roguesq_video.json` next to the game, replacing the old file. Close the game first. Settings a preset leaves out (fullscreen, language, graphics API) go back to their defaults.
 
-On Windows the file sits next to `RogueSquadron64Recomp.exe`. On Linux and macOS it is in the saves folder listed in [building-all-platforms.md](../docs/guides/building-all-platforms.md#what-players-need).
+Where the file goes:
+
+- Windows and the Linux tarball: the game folder (next to `RogueSquadron64Recomp.exe` or `run.sh`).
+- macOS: `~/Library/Application Support/RogueSquadron64Recomp`.
+- Linux AppImage: `~/.local/share/RogueSquadron64Recomp`.
+- Flatpak: `~/.var/app/io.github.MikeSemicolonD.RogueSquadron64Recomp/data`.
 
 | Preset | For | What you get |
 | --- | --- | --- |
