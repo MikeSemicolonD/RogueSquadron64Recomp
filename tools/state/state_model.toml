@@ -73,12 +73,12 @@ classify = [
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 [[state]]
+# Level select, craft select and the hangar run in the mission-select overlay (0x800375B0 = 1), where the menu id byte keeps the last menu page shown (MULTIPLAYER in co-op), so it is not checked.
 id = "menu.account.level_select"
 name = "Select level"
 parent = "menu.account"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
-  { addr = 0x800CE734, mask = 0xFF000000, op = "range", value = 0x00000000, value_hi = 0x01000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x02000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
@@ -89,7 +89,6 @@ name = "Available craft"
 parent = "menu.account"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
-  { addr = 0x800CE734, mask = 0xFF000000, op = "range", value = 0x00000000, value_hi = 0x01000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x03000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
@@ -101,7 +100,6 @@ name = "Craft-select hangar"
 parent = "menu.account"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
-  { addr = 0x800CE734, mask = 0xFF000000, op = "range", value = 0x00000000, value_hi = 0x01000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x04000000 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00000000 },
 ]

@@ -70,7 +70,7 @@ Other user options without flags:
 
 | Env var | Default | Effect |
 | --- | --- | --- |
-| `ROGUESQ_INPUT_SEQ` / `ROGUESQ_INPUT_DELAY` | unset / 12000 | Scripted virtual controller injected at `get_n64_input` (no window focus needed): `name:holdMs:afterMs,...` with names `start a b z l r dup ddown dleft dright cup cdown cleft cright up down left right wait` (`up`..`right` = analog stick). `INPUT_DELAY` waits that many ms before the first step. |
+| `ROGUESQ_INPUT_SEQ` / `ROGUESQ_INPUT_DELAY` | unset / 12000 | Scripted virtual controller injected at `get_n64_input` (no window focus needed): `name:holdMs:afterMs,...` with names `start a b z l r dup ddown dleft dright cup cdown cleft cright up down left right wait` (`up`..`right` = analog stick). `@<state id>` waits until the game-state classifier reports that state (prefix match, e.g. `@menu.account.level_select`) and times the steps after it from there. `INPUT_DELAY` waits that many ms before the first step. |
 | `ROGUESQ_NO_MENU_BUTTONS` | off | Disables the custom front-end menu (also off for a `demo:` boot target). |
 | `ROGUESQ_NO_PAUSE_BUTTONS` | off | Disables the custom pause-menu buttons. |
 | `ROGUESQ_INPUT_RESET` | off | `1` overwrites `roguesq_input.json` with the default bindings at startup. |

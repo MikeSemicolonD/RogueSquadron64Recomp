@@ -109,7 +109,7 @@ static bool fake_controller_enabled() {
 // ROGUESQ_INPUT_SEQ="name:holdMs:afterMs,..." — a scripted virtual-controller
 // timeline injected at get_n64_input (no window focus needed, unlike SendInput).
 // ROGUESQ_INPUT_DELAY=<ms> waits before the first step (default 12000, to clear boot).
-// Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright
+// Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright; @<state id> waits for that game state.
 //        up down left right (analog stick)  wait (neutral hold).
 // Used for headless front-end navigation + state calibration. Default OFF.
 
@@ -149,7 +149,16 @@ extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, flo
     return false;
 }
 
-struct InputStep { uint16_t mask; float sx, sy; uint32_t hold, after; };
+// gate: a game state id prefix the sequence waits for before the next step ("@menu.account.level_select"); its timing starts from there.
+// True from a passed state gate until the sequence ends: the sequence then steers instead of the menu driver.
+static bool s_seq_steering = false;
+
+struct InputStep {
+    uint16_t mask;
+    float sx, sy;
+    uint32_t hold, after;
+    std::string gate;
+};
 
 static bool scripted_input(uint16_t* buttons, float* x, float* y)
 {
@@ -170,8 +179,14 @@ static bool scripted_input(uint16_t* buttons, float* x, float* y)
 
             auto tok = [](const std::string& n) -> InputStep {
 
-                InputStep s{0, 0.f, 0.f, 90, 400};
+                InputStep s{0, 0.f, 0.f, 90, 400, {}};
                 std::string name = n;
+
+                if (!name.empty() && name[0] == '@')
+                {
+                    s.gate = name.substr(1);
+                    return s;
+                }
                 size_t c1 = name.find(':');
                 std::string hold, after;
 
@@ -214,23 +229,49 @@ static bool scripted_input(uint16_t* buttons, float* x, float* y)
 
     if (elapsed < s_delay) { *buttons = 0; *x = 0.f; *y = 0.f; return true; }
 
-    uint32_t t = elapsed - s_delay;
-    uint32_t acc = 0;
+    static size_t s_idx = 0;
+    static uint32_t s_step_t0 = 0;
 
-    for (const InputStep& st : s_steps) {
-        uint32_t span = st.hold + st.after;
+    if (s_step_t0 == 0) {
+        s_step_t0 = now;
+    }
 
-        if (t < acc + span) {
-            bool holding = (t - acc) < st.hold;
+    while (s_idx < s_steps.size()) {
+        const InputStep& st = s_steps[s_idx];
+
+        if (!st.gate.empty())
+        {
+            if (std::strncmp(rs64_state_current_id(), st.gate.c_str(), st.gate.size()) != 0) {
+                *buttons = 0;
+                *x = 0.f;
+                *y = 0.f;
+                return true;
+            }
+
+            fprintf(stderr, "[input-seq] reached %s at t=%ums\n", st.gate.c_str(), now - s_t0);
+            s_seq_steering = true;
+            ++s_idx;
+            s_step_t0 = now;
+            continue;
+        }
+
+        const uint32_t t = now - s_step_t0;
+
+        if (t < st.hold + st.after)
+        {
+            const bool holding = t < st.hold;
+
             *buttons = holding ? st.mask : 0;
             *x = holding ? st.sx : 0.f;
             *y = holding ? st.sy : 0.f;
-
             return true;
         }
 
-        acc += span;
+        ++s_idx;
+        s_step_t0 += st.hold + st.after;
     }
+
+    s_seq_steering = false;
 
     if (!s_done_logged) { s_done_logged = true; fprintf(stderr, "[input-seq] sequence complete at t=%ums\n", elapsed); fflush(stderr); }
 
@@ -1344,6 +1385,15 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     }
 
 #endif
+
+    // A scripted sequence past a state gate steers instead of the menu driver until it ends.
+    if (fake_controller_enabled() && scripted_input(&nav_buttons, &nav_x, &nav_y) && s_seq_steering) {
+        *buttons = nav_buttons;
+        *x = nav_x;
+        *y = nav_y;
+
+        return true;
+    }
 
     if (rs64_nav_consume(&nav_buttons, &nav_x, &nav_y)) {
         *buttons = nav_buttons;

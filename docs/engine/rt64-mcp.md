@@ -10,6 +10,7 @@ An MCP server ([tools/debug/mcp/rs64_mcp.py](../../tools/debug/mcp/rs64_mcp.py))
 - RT64 methods are queued to [lib/rt64/src/hle/rt64_rs64_mcp.cpp](../../lib/rt64/src/hle/rt64_rs64_mcp.cpp) and run on the gfx thread at the top of `State::updateScreen`, which runs every VI, paused or not, with F1 open or closed.
 - The server owns the process: `launch` runs from `build/<config>` with RenderDoc injected, audio muted and dev mode on; `close` kills it. Output lands in `dumps/mcp/<session>/`.
 - `attach(port)` connects to a game the user started instead; every tool works on it except `wait_log` (its console is not captured), and `close` only disconnects.
+- Co-op pairs: `tools/debug/lockstep/run-mp.ps1` serves the host's bridge on 47065 and the client's on 47066 (Debug builds), so `attach(47066)` drives the client with the same state-keyed `pause_at`, `press` and `step` as a launched game.
 
 ## The pause model
 

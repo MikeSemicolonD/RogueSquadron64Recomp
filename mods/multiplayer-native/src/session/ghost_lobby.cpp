@@ -1370,6 +1370,7 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
 
     s.in_hangar = false;
     s.follow_out = false;
+    s.leaving = false;
 
     if (s.player == 0) {
         s.sent_browse = -1;
@@ -1504,6 +1505,17 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         fprintf(stderr, "[lobby] briefing ended here; telling the host\n");
     }
 
+    // The client's B always leaves (back to the main menu, which ends the session), so a host that stopped answering cannot hold it here.
+    if (own & 0x4000u) {
+        s.leaving = true;
+    }
+
+    if (s.leaving)
+    {
+        ww(rdram, pressed, own & 0x4000u);
+        return;
+    }
+
     if (s.host_pick < 0 && s.host_cursor < 0) {
         ww(rdram, pressed, own & ~0x9000u);
         show_status(rdram, ctx, 2, 2, -0x7C, "WAITING FOR HOST", &shown);
@@ -1527,11 +1539,6 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         if (edge) {
             s.follow_cool = 8;
         }
-    }
-
-    // The client can still leave (B, back to the main menu, which ends the session) while the host browses.
-    if (state == 2 && !picked) {
-        edge |= own & 0x4000u;
     }
 
     ww(rdram, pressed, edge);

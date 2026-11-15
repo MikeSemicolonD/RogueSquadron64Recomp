@@ -149,6 +149,9 @@ struct Ghost {
     // The other player's S-foils from their STATE, 0 closed .. 250 open.
     int remote_foil = 250;
     int follow_cool = 0;
+
+    // Client: B pressed on mission select, so it stops following the host and its own B takes it out to the main menu.
+    bool leaving = false;
     uint32_t status_buf = 0;
 
     // A handshake completed (menus or ROGUESQ_MP): ghost mode stays on for later missions. from_menu: the menus started it, so ghost mode is on without ROGUESQ_MP.
