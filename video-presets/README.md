@@ -11,5 +11,6 @@ On Windows the file sits next to `RogueSquadron64Recomp.exe`. On Linux and macOS
 | [high](high/roguesq_video.json) | Mid-range graphics cards | Monitor refresh rate, 4x MSAA, 4x draw distance, ray-traced lights and shadows |
 | [ultra](ultra/roguesq_video.json) | High-end graphics cards with ray tracing | 4x MSAA, max draw distance and terrain detail, every ray-traced effect |
 | [original](original/roguesq_video.json) | The N64 look | 4:3, native resolution, 30 fps, original terrain and draw distance |
+| [vr](vr/roguesq_video.json) | VR headsets (VR builds) | Starts in the headset, 2x MSAA, 4x draw distance, no ray tracing; set the headset to 72 or 90 Hz |
 
 Every setting can still be changed in OPTIONS afterwards. If a preset runs below its frame rate, try the one below it, or lower `antialiasing` first since it costs the most. The game uses one anti-aliasing method: with `antialiasing` set, `ssaa` and `fxaa` are ignored.

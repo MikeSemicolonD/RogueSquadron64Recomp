@@ -1,5 +1,6 @@
 #include "video/vr_openxr.h"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
@@ -31,6 +32,12 @@ namespace {
 
 static constexpr const char* kAppName = "Rogue Squadron 64 Recompiled";
 static constexpr int64_t kVkFormatR8G8B8A8Srgb = 43;
+static constexpr int64_t kVkFormatB8G8R8A8Srgb = 50;
+// The virtual screen for 2D screens: a 4:3 image on a quad straight ahead of where the session started.
+static constexpr uint32_t kScreenWidth = 1280;
+static constexpr uint32_t kScreenHeight = 960;
+static constexpr float kScreenMeters = 1.8f;
+static constexpr float kScreenDistance = 2.0f;
 static constexpr uint32_t kNotAcquired = UINT32_MAX;
 
 struct EyeSwapchain {
@@ -71,10 +78,18 @@ struct State {
     XrAction pad[std::size(kPadActions)] = {};
     bool padReady = false;
     EyeSwapchain eyes[2];
+    EyeSwapchain screen;
     std::mutex* queueMutex = nullptr;
     bool frameBegun = false;
     XrTime displayTime = 0;
     std::atomic<int> running{ 0 };
+    bool sessionBegun = false;
+    bool colorScale = false;
+    // Brightness of the next submitted frame (fade between the virtual screen and the 3D view), 1 = full.
+    float brightness = 1.0f;
+    // Set by quit; while it waits, the calls other threads have in progress (a whole headset frame counts as one) drain to zero.
+    std::atomic<int> quitting{ 0 };
+    std::atomic<int> inUse{ 0 };
     std::atomic<int64_t> predictedTime{ 0 };
     std::atomic<int64_t> predictedPeriod{ 0 };
     PFN_xrGetVulkanInstanceExtensionsKHR getInstanceExtensions = nullptr;
@@ -84,6 +99,23 @@ struct State {
 };
 
 State g;
+
+// Marks an OpenXR call from a thread other than the one that quits; false once quit has started, and the call must not go ahead.
+struct XrUse {
+    bool ok;
+
+    XrUse()
+    {
+
+        g.inUse.fetch_add(1);
+        ok = (g.quitting.load() == 0);
+    }
+
+    ~XrUse()
+    {
+        g.inUse.fetch_sub(1);
+    }
+};
 
 template <typename T>
 bool load_function(const char* name, T& fn)
@@ -135,14 +167,14 @@ std::vector<std::string> extension_list(Fn fn)
 void destroy_all()
 {
 
-    for (EyeSwapchain& eye : g.eyes) {
-        eye.images.clear();
+    for (EyeSwapchain* eye : { &g.eyes[0], &g.eyes[1], &g.screen }) {
+        eye->images.clear();
 
-        if (eye.handle != XR_NULL_HANDLE) {
-            xrDestroySwapchain(eye.handle);
+        if (eye->handle != XR_NULL_HANDLE) {
+            xrDestroySwapchain(eye->handle);
         }
 
-        eye = EyeSwapchain{};
+        *eye = EyeSwapchain{};
     }
 
     if (g.space != XR_NULL_HANDLE) {
@@ -202,37 +234,57 @@ bool create_eye_swapchains(RT64::Application& app)
         return false;
     }
 
-    for (uint32_t e = 0; e < 2; e++) {
-        EyeSwapchain& eye = g.eyes[e];
+    const auto create = [&](EyeSwapchain& out, int64_t format, plume::RenderFormat wrapFormat, uint32_t width, uint32_t height) {
+
         XrSwapchainCreateInfo info{ XR_TYPE_SWAPCHAIN_CREATE_INFO };
 
         info.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-        info.format = kVkFormatR8G8B8A8Srgb;
+        info.format = format;
         info.sampleCount = 1;
-        info.width = views[e].recommendedImageRectWidth;
-        info.height = views[e].recommendedImageRectHeight;
+        info.width = width;
+        info.height = height;
         info.faceCount = 1;
         info.arraySize = 1;
         info.mipCount = 1;
 
-        if (XR_FAILED(xrCreateSwapchain(g.session, &info, &eye.handle))) {
+        if (XR_FAILED(xrCreateSwapchain(g.session, &info, &out.handle))) {
             return false;
         }
 
-        eye.width = info.width;
-        eye.height = info.height;
+        out.width = width;
+        out.height = height;
 
         uint32_t imageCount = 0;
 
-        xrEnumerateSwapchainImages(eye.handle, 0, &imageCount, nullptr);
+        xrEnumerateSwapchainImages(out.handle, 0, &imageCount, nullptr);
 
         std::vector<XrSwapchainImageVulkanKHR> images(imageCount, { XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR });
 
-        xrEnumerateSwapchainImages(eye.handle, imageCount, &imageCount, reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data()));
+        xrEnumerateSwapchainImages(out.handle, imageCount, &imageCount, reinterpret_cast<XrSwapchainImageBaseHeader*>(images.data()));
 
         for (const XrSwapchainImageVulkanKHR& image : images) {
-            eye.images.push_back(plume::WrapVulkanImage(app.device.get(), image.image, plume::RenderFormat::R8G8B8A8_UNORM, eye.width, eye.height));
+            out.images.push_back(plume::WrapVulkanImage(app.device.get(), image.image, wrapFormat, width, height));
         }
+
+        return true;
+    };
+
+    for (uint32_t e = 0; e < 2; e++) {
+        if (!create(g.eyes[e], kVkFormatR8G8B8A8Srgb, plume::RenderFormat::R8G8B8A8_UNORM, views[e].recommendedImageRectWidth, views[e].recommendedImageRectHeight)) {
+            return false;
+        }
+    }
+
+    // The window's VI pass draws BGRA8, so the virtual screen is BGRA8 too and takes the same raw copy as the eyes.
+    bool bgraSrgb = false;
+
+    for (int64_t f : formats) {
+        bgraSrgb = bgraSrgb || (f == kVkFormatB8G8R8A8Srgb);
+    }
+
+    if (!bgraSrgb || !create(g.screen, kVkFormatB8G8R8A8Srgb, plume::RenderFormat::B8G8R8A8_UNORM, kScreenWidth, kScreenHeight)) {
+        g.screen = EyeSwapchain{};
+        fprintf(stderr, "[vr] no B8G8R8A8 sRGB swapchain; menus stay in the 3D view\n");
     }
 
     fprintf(stderr, "[vr] session ready, eye swapchain %ux%u\n", g.eyes[0].width, g.eyes[0].height);
@@ -314,14 +366,16 @@ void poll_events()
                 begin.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
                 const XrResult began = xrBeginSession(g.session, &begin);
 
-                g.running.store(XR_SUCCEEDED(began) ? 1 : 0);
+                g.sessionBegun = XR_SUCCEEDED(began);
+                g.running.store(g.sessionBegun ? 1 : 0);
                 fprintf(stderr, "[vr] xrBeginSession %d\n", int(began));
             }
             else if (changed->state == XR_SESSION_STATE_STOPPING) {
-                xrEndSession(g.session);
                 g.running.store(0);
+                xrEndSession(g.session);
+                g.sessionBegun = false;
             }
-            else if (changed->state == XR_SESSION_STATE_EXITING) {
+            else if ((changed->state == XR_SESSION_STATE_EXITING) && (g.quitting.load() == 0)) {
                 SDL_Event quit{};
 
                 g.running.store(0);
@@ -362,12 +416,27 @@ bool requested()
 bool init_before_device()
 {
 
-    const char* extensions[] = { XR_KHR_VULKAN_ENABLE_EXTENSION_NAME };
+    // Color scale dims the layers for the fade between the virtual screen and the 3D view; without it the fade's dark half is black frames.
+    uint32_t available = 0;
+
+    xrEnumerateInstanceExtensionProperties(nullptr, 0, &available, nullptr);
+
+    std::vector<XrExtensionProperties> properties(available, { XR_TYPE_EXTENSION_PROPERTIES });
+
+    xrEnumerateInstanceExtensionProperties(nullptr, available, &available, properties.data());
+
+    for (const XrExtensionProperties& p : properties) {
+        g.colorScale = g.colorScale || (std::strcmp(p.extensionName, XR_KHR_COMPOSITION_LAYER_COLOR_SCALE_BIAS_EXTENSION_NAME) == 0);
+    }
+
+    fprintf(stderr, "[vr] view changes fade %s\n", g.colorScale ? "through black" : "with black frames (no color scale)");
+
+    const char* extensions[] = { XR_KHR_VULKAN_ENABLE_EXTENSION_NAME, XR_KHR_COMPOSITION_LAYER_COLOR_SCALE_BIAS_EXTENSION_NAME };
     XrInstanceCreateInfo info{ XR_TYPE_INSTANCE_CREATE_INFO };
 
     std::strncpy(info.applicationInfo.applicationName, kAppName, XR_MAX_APPLICATION_NAME_SIZE - 1);
     info.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);
-    info.enabledExtensionCount = 1;
+    info.enabledExtensionCount = g.colorScale ? 2 : 1;
     info.enabledExtensionNames = extensions;
 
     const XrResult created = xrCreateInstance(&info, &g.instance);
@@ -490,6 +559,35 @@ void quit()
         return;
     }
 
+    // Destroying the session under a frame another thread is still in, without ending it first, left a process the driver never let exit.
+    g.quitting.store(1);
+
+    const Uint32 start = SDL_GetTicks();
+
+    while ((g.inUse.load() != 0) && (SDL_GetTicks() - start < 1000)) {
+        SDL_Delay(1);
+    }
+
+    if (g.inUse.load() != 0) {
+        fprintf(stderr, "[vr] quit: a headset call is still in progress\n");
+    }
+
+    if (g.sessionBegun) {
+        xrRequestExitSession(g.session);
+
+        const Uint32 requested = SDL_GetTicks();
+
+        while (g.sessionBegun && (SDL_GetTicks() - requested < 1000)) {
+            poll_events();
+            SDL_Delay(1);
+        }
+
+        if (g.sessionBegun) {
+            xrEndSession(g.session);
+            g.sessionBegun = false;
+        }
+    }
+
     g.running.store(0);
 
     if (g.queueMutex) {
@@ -499,6 +597,8 @@ void quit()
     } else {
         destroy_all();
     }
+
+    fprintf(stderr, "[vr] session closed\n");
 
 #if defined(_WIN32)
 
@@ -514,7 +614,9 @@ bool poll_pad(Pad* out)
 
     *out = Pad{};
 
-    if (!g.padReady || !g.running.load())
+    const XrUse use;
+
+    if (!use.ok || !g.padReady || !g.running.load())
     {
         return false;
     }
@@ -559,6 +661,11 @@ bool poll_pad(Pad* out)
 extern "C" int rs64_vr_session(void)
 {
 
+    if (g.quitting.load() != 0)
+    {
+        return 0;
+    }
+
     // Frames only start once the session runs, so the READY event that starts it is polled here.
     if (!g.running.load() && (g.session != XR_NULL_HANDLE)) {
         poll_events();
@@ -592,15 +699,15 @@ extern "C" void rs64_vr_eye_size(uint32_t* width, uint32_t* height)
     *height = g.eyes[0].height;
 }
 
-// ROGUESQ_VR_UNITS_PER_METER: game camera-space units per meter (default 1 until the world scale is measured).
 extern "C" int rs64_vr_locate(uint32_t framesAhead, rs64vr::EyeViews* out)
 {
 
     const int64_t time = g.predictedTime.load();
+    const XrUse use;
 
     out->valid = false;
 
-    if (!g.running.load() || (time <= 0))
+    if (!use.ok || !g.running.load() || (time <= 0))
     {
         return 0;
     }
@@ -648,23 +755,32 @@ extern "C" int rs64_vr_locate(uint32_t framesAhead, rs64vr::EyeViews* out)
 extern "C" int rs64_vr_begin_frame(void)
 {
 
-    if (g.session == XR_NULL_HANDLE)
-    {
+    // The frame counts as in use from here until rs64_vr_end_frame, or until this returns -1.
+    g.inUse.fetch_add(1);
+
+    const auto fail = []() {
+
+        g.inUse.fetch_sub(1);
         return -1;
+    };
+
+    if ((g.quitting.load() != 0) || (g.session == XR_NULL_HANDLE))
+    {
+        return fail();
     }
 
     poll_events();
 
     if (!g.running.load())
     {
-        return -1;
+        return fail();
     }
 
     XrFrameState frame{ XR_TYPE_FRAME_STATE };
 
     if (XR_FAILED(xrWaitFrame(g.session, nullptr, &frame)))
     {
-        return -1;
+        return fail();
     }
 
     g.displayTime = frame.predictedDisplayTime;
@@ -678,16 +794,15 @@ extern "C" int rs64_vr_begin_frame(void)
 
     if (!g.frameBegun)
     {
-        return -1;
+        return fail();
     }
 
     return frame.shouldRender ? 1 : 0;
 }
 
-extern "C" plume::RenderTexture* rs64_vr_acquire_eye(int eye, uint32_t* width, uint32_t* height)
+static plume::RenderTexture* acquire(EyeSwapchain& swapchain, uint32_t* width, uint32_t* height)
 {
 
-    EyeSwapchain& swapchain = g.eyes[eye];
     uint32_t index = 0;
 
     if (!g.frameBegun || (swapchain.handle == XR_NULL_HANDLE))
@@ -716,6 +831,96 @@ extern "C" plume::RenderTexture* rs64_vr_acquire_eye(int eye, uint32_t* width, u
     return swapchain.images[index].get();
 }
 
+extern "C" plume::RenderTexture* rs64_vr_acquire_eye(int eye, uint32_t* width, uint32_t* height)
+{
+    return acquire(g.eyes[eye], width, height);
+}
+
+extern "C" plume::RenderTexture* rs64_vr_acquire_screen(uint32_t* width, uint32_t* height)
+{
+    return acquire(g.screen, width, height);
+}
+
+extern "C" int rs64_vr_has_screen(void)
+{
+    return (g.screen.handle != XR_NULL_HANDLE) ? 1 : 0;
+}
+
+extern "C" void rs64_vr_set_brightness(float brightness)
+{
+    g.brightness = brightness;
+}
+
+// Caller holds the queue mutex.
+static void release_acquired()
+{
+
+    for (EyeSwapchain* eye : { &g.eyes[0], &g.eyes[1], &g.screen }) {
+        if (eye->acquired != kNotAcquired) {
+            XrSwapchainImageReleaseInfo release{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+
+            xrReleaseSwapchainImage(eye->handle, &release);
+            eye->acquired = kNotAcquired;
+            eye->released = true;
+        }
+    }
+}
+
+// Caller holds the queue mutex. A brightness under 1 dims the layer, or below half drops it (black) when the runtime has no color scale.
+static void end_with(XrCompositionLayerBaseHeader* layer)
+{
+
+    XrCompositionLayerColorScaleBiasKHR scale{ XR_TYPE_COMPOSITION_LAYER_COLOR_SCALE_BIAS_KHR };
+    const float b = std::clamp(g.brightness, 0.0f, 1.0f);
+
+    if ((layer != nullptr) && (b < 1.0f)) {
+        if (g.colorScale) {
+            scale.colorScale = { b, b, b, 1.0f };
+            scale.colorBias = { 0.0f, 0.0f, 0.0f, 0.0f };
+            layer->next = &scale;
+        }
+        else if (b < 0.5f) {
+            layer = nullptr;
+        }
+    }
+
+    XrFrameEndInfo end{ XR_TYPE_FRAME_END_INFO };
+
+    end.displayTime = g.displayTime;
+    end.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    end.layerCount = (layer != nullptr) ? 1 : 0;
+    end.layers = (layer != nullptr) ? &layer : nullptr;
+    xrEndFrame(g.session, &end);
+    g.frameBegun = false;
+    g.inUse.fetch_sub(1);
+}
+
+extern "C" void rs64_vr_end_frame_screen(void)
+{
+
+    if (!g.frameBegun)
+    {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(*g.queueMutex);
+
+    release_acquired();
+
+    XrCompositionLayerQuad quad{ XR_TYPE_COMPOSITION_LAYER_QUAD };
+    const bool show = g.screen.released;
+
+    quad.space = g.space;
+    quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+    quad.subImage.swapchain = g.screen.handle;
+    quad.subImage.imageRect = { { 0, 0 }, { int32_t(g.screen.width), int32_t(g.screen.height) } };
+    quad.pose.orientation.w = 1.0f;
+    quad.pose.position = { 0.0f, 0.0f, -kScreenDistance };
+    quad.size = { kScreenMeters, kScreenMeters * float(kScreenHeight) / float(kScreenWidth) };
+
+    end_with(show ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&quad) : nullptr);
+}
+
 extern "C" void rs64_vr_end_frame(const rs64vr::EyeViews* views)
 {
 
@@ -726,20 +931,11 @@ extern "C" void rs64_vr_end_frame(const rs64vr::EyeViews* views)
 
     std::lock_guard<std::mutex> lock(*g.queueMutex);
 
-    for (EyeSwapchain& eye : g.eyes) {
-        if (eye.acquired != kNotAcquired) {
-            XrSwapchainImageReleaseInfo release{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
-
-            xrReleaseSwapchainImage(eye.handle, &release);
-            eye.acquired = kNotAcquired;
-            eye.released = true;
-        }
-    }
+    release_acquired();
 
     // A layer shows each swapchain's last released image, so a repeated frame needs no new copy (OpenXR 10.4).
     XrCompositionLayerProjectionView projection[2] = { { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW }, { XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW } };
     XrCompositionLayerProjection layer{ XR_TYPE_COMPOSITION_LAYER_PROJECTION };
-    const XrCompositionLayerBaseHeader* layers[] = { reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer) };
     const bool show = (views != nullptr) && views->valid && g.eyes[0].released && g.eyes[1].released;
 
     for (int e = 0; show && (e < 2); e++) {
@@ -753,12 +949,5 @@ extern "C" void rs64_vr_end_frame(const rs64vr::EyeViews* views)
     layer.viewCount = 2;
     layer.views = projection;
 
-    XrFrameEndInfo end{ XR_TYPE_FRAME_END_INFO };
-
-    end.displayTime = g.displayTime;
-    end.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
-    end.layerCount = show ? 1 : 0;
-    end.layers = show ? layers : nullptr;
-    xrEndFrame(g.session, &end);
-    g.frameBegun = false;
+    end_with(show ? reinterpret_cast<XrCompositionLayerBaseHeader*>(&layer) : nullptr);
 }

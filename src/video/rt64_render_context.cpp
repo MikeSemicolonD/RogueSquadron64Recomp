@@ -34,6 +34,7 @@ extern SDL_Window* g_sdl_window;
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
 #include "util/debug_logs.h"
+#include "util/rdram_words.h"
 #include "util/settings_file.h"
 #include "rs64_toml_hooks.h"
 #include "game/upstream_compat.h"      // rs64_fb_guards_mask, g_active_overlay, g_last_swap_fb
@@ -415,6 +416,26 @@ extern "C" int rs64_vr_hud_quads(void)
     return (g_active_overlay == 0) ? 1 : 0;
 }
 
+// The menu overlay's screen (u16 0x800CFF50: 0 hangar, 1 SELECT LEVEL, 2 menu tree, 3 results) for the VR view: 1 = virtual screen (menu tree, results, even with models on them),
+// 0 = 3D view (SELECT LEVEL's briefing room), -1 = no say (other overlays, and the hangar's 0, which the boot screens also read).
+extern "C" int rs64_vr_menu_tree(void)
+{
+
+    if ((g_active_overlay != 1) || (g_rs64_parse_rdram == nullptr))
+    {
+        return -1;
+    }
+
+    const uint16_t screen = rs64::mips::rh(g_rs64_parse_rdram, 0x800CFF50u);
+
+    if ((screen == 2) || (screen == 3))
+    {
+        return 1;
+    }
+
+    return (screen == 1) ? 0 : -1;
+}
+
 // 1 when culls must cover every direction: a fake head turn is set or a VR session is running.
 extern "C" int rs64_vr_active(void)
 {
@@ -449,6 +470,10 @@ extern "C" int rs64_vr_locate(uint32_t, rs64vr::EyeViews* out)
 extern "C" int rs64_vr_begin_frame(void) { return -1; }
 extern "C" plume::RenderTexture* rs64_vr_acquire_eye(int, uint32_t*, uint32_t*) { return nullptr; }
 extern "C" void rs64_vr_end_frame(const rs64vr::EyeViews*) {}
+extern "C" plume::RenderTexture* rs64_vr_acquire_screen(uint32_t*, uint32_t*) { return nullptr; }
+extern "C" int rs64_vr_has_screen(void) { return 0; }
+extern "C" void rs64_vr_end_frame_screen(void) {}
+extern "C" void rs64_vr_set_brightness(float) {}
 
 #endif
 

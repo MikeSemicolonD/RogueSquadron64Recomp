@@ -103,6 +103,7 @@ Applied by `apply_env_overrides` (`src/video/video_config.cpp`) after `roguesq_v
 | `ROGUESQ_VR_HALF_RATE` | off | VR: run the game at half the headset rate; the runtime fills the other frames by reprojection. |
 | `ROGUESQ_VR_UNITS_PER_METER=<n>` | 12 | VR: game camera-space units per meter in missions, which sets the eye spacing and head movement. The craft-select hangar uses 16 times this. |
 | `ROGUESQ_VR_FAKE_YAW=<degrees>` | off | Fake head turn with no headset, starting turned left by that angle (`0` = straight ahead), with the culls and mission HUD in VR mode. Numpad 4/6 turn, 8/2 look up/down, 7/9 move left/right, 1/3 down/up, +/- forward/back (relative to facing), 5 recenters. F8 toggles mouse look. Tests VR without a headset. |
+| `ROGUESQ_LOG_VR` | off | VR: every 2 s, how headset frames were filled (fresh eyes, repeats and why, kept alive during loads) and why workloads rendered no eyes; the eye target size when it changes. |
 | `ROGUESQ_VI_FILTER` | 0 | VI-style soften radius in color-target texels in the present pass; 0 = off. |
 | `ROGUESQ_VI_GAMMA` | 0 (VI gamma) | Override the present gamma (`pow(color, g)`); `< 1` brightens. |
 | `ROGUESQ_VI_OVERSCAN` | 1 | Pull the sampled right and bottom edges in by N native pixels so the composite never samples a pooled target's stale last column or row. `0` disables. |
