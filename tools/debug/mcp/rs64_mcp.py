@@ -233,6 +233,8 @@ def capture_window(pid):
 
 ADB = os.path.join(os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk"), "platform-tools", "adb.exe")
 ANDROID_PACKAGE = "com.rs64recomp.app"
+SSH_EXE = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "OpenSSH", "ssh.exe")
+SCP_EXE = os.path.join(os.path.dirname(SSH_EXE), "scp.exe")
 ANDROID_FILES = f"/sdcard/Android/data/{ANDROID_PACKAGE}/files"
 # The session video settings on the device: read-only to the game, as the shell pushed it.
 ANDROID_VIDEO = ANDROID_FILES + "/roguesq_mcp_video.json"
@@ -267,6 +269,12 @@ class AndroidProcess:
         while self.poll() is None and (timeout is None or time.time() < deadline):
             time.sleep(0.5)
         return self.returncode
+
+
+def wsl_path(path):
+    """A Windows path as WSL sees it (E:\\x -> /mnt/e/x)."""
+    drive, rest = os.path.splitdrive(os.path.abspath(path))
+    return "/mnt/" + drive[0].lower() + rest.replace("\\", "/")
 
 
 def android_serial():
@@ -330,6 +338,8 @@ class Game:
         self.linux_pid_file = None
         self.serial = None
         self.logcat = None
+        self.ssh_target = ""
+        self.remote_dir = ""
 
     def game_path(self, path):
         """A path on this machine as the game sees it: a Linux build under WSL reads drive E: at /mnt/e; on Android it is the same place under the app's files
@@ -337,10 +347,30 @@ class Game:
         path = os.path.abspath(path)
         if self.platform == "android":
             return ANDROID_FILES + "/mcp/" + os.path.relpath(path, REPO).replace("\\", "/")
+        if self.platform == "ssh":
+            return self.remote_dir + "/mcp/" + os.path.relpath(path, REPO).replace("\\", "/")
         if self.platform != "linux":
             return path
-        drive, rest = os.path.splitdrive(path)
-        return "/mnt/" + drive[0].lower() + rest.replace("\\", "/")
+        return wsl_path(path)
+
+    def ssh(self, command, stdin=subprocess.DEVNULL, **kw):
+        """Run a command on the RS64_SSH_TARGET machine with Windows' OpenSSH (key in ~/.ssh)."""
+        return subprocess.run([SSH_EXE, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", self.ssh_target, command], capture_output=True, stdin=stdin, **kw)
+
+    def ssh_sync(self, stage_dir, video_cfg):
+        """Stream the staged folder (game, mods, mods.json, ROM) into the remote folder, its saves and outputs cleared, and the session's video settings."""
+        self.ssh(f"rm -rf {self.remote_dir}/saves {self.remote_dir}/mod_config {self.remote_dir}/mcp {self.remote_dir}/mods; mkdir -p {self.remote_dir}/saves")
+        pack = subprocess.Popen(["tar", "-C", stage_dir, "-cf", "-", "."], stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
+        self.ssh(f"tar -xf - -C {self.remote_dir}", stdin=pack.stdout, timeout=600)
+        pack.wait()
+        remote_cfg = self.game_path(video_cfg)
+        with open(video_cfg, "rb") as f:
+            self.ssh(f"mkdir -p {os.path.dirname(remote_cfg)} && cat > {remote_cfg}", stdin=f)
+
+    def ssh_pull(self, path):
+        """Copy a file the remote game wrote back to the same place here."""
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        subprocess.run([SCP_EXE, "-o", "BatchMode=yes", f"{self.ssh_target}:{self.game_path(path)}", os.path.abspath(path)], capture_output=True, stdin=subprocess.DEVNULL)
 
     def android_sync(self, stage_dir, video_cfg, env_file):
         """Mirror a staged folder's mods, mods.json and empty saves onto the device, with the session's video settings and env file; the ROM is pushed once."""
@@ -400,11 +430,21 @@ class Game:
 
         self.platform = platform
         exe_dir = os.path.join(REPO, "build", config)
-        exe = os.path.join(exe_dir, "RogueSquadron64Recomp" if platform == "linux" else "RogueSquadron64Recomp.exe")
+        exe = os.path.join(exe_dir, "RogueSquadron64Recomp" if platform in ("linux", "ssh") else "RogueSquadron64Recomp.exe")
         if platform == "android":
             self.serial = android_serial()
         elif not os.path.isfile(exe):
             raise GameError(f"no build at {exe}")
+
+        # platform="ssh": a Linux machine (RS64_SSH_TARGET, user@host) runs the game in RS64_SSH_DIR under its home, on its logged-in desktop.
+        if platform == "ssh":
+            self.ssh_target = os.environ.get("RS64_SSH_TARGET", "")
+            if not self.ssh_target:
+                raise GameError("set RS64_SSH_TARGET to user@host")
+            home = self.ssh("echo $HOME").stdout.decode("utf-8", "replace").strip()
+            if not home:
+                raise GameError(f"no answer from {self.ssh_target} over ssh")
+            self.remote_dir = home + "/" + os.environ.get("RS64_SSH_DIR", "rs64-smoke")
 
         self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
         os.makedirs(self.session_dir, exist_ok=True)
@@ -426,7 +466,12 @@ class Game:
                 game_env["VK_IMPLICIT_LAYER_PATH"] = os.path.dirname(RENDERDOC_DLL)
         if record:
             # The game makes no folder for a recording, and on Android one the shell makes is not the app's to write, so it goes in the files folder there.
-            game_env["ROGUESQ_LS_RECORD"] = f"{ANDROID_FILES}/mcp_{os.path.basename(record)}" if platform == "android" else self.game_path(record)
+            if platform == "android":
+                game_env["ROGUESQ_LS_RECORD"] = f"{ANDROID_FILES}/mcp_{os.path.basename(record)}"
+            elif platform == "ssh":
+                game_env["ROGUESQ_LS_RECORD"] = f"{self.remote_dir}/mcp_{os.path.basename(record)}"
+            else:
+                game_env["ROGUESQ_LS_RECORD"] = self.game_path(record)
         game_env.update({k: str(v) for k, v in (env or {}).items()})
 
         game_args = ["--mcp-port", str(self.port), "--mute", "--unfocused"] + list(args or [])
@@ -441,6 +486,17 @@ class Game:
                       "export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$HOME/mesa-dzn/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH; "
                       f"cd {shlex.quote(self.game_path(exe_dir))} && exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args))
             self.proc = subprocess.Popen(["wsl.exe", "-e", "bash", "-lc", script], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        elif platform == "ssh":
+            # The desktop session's display, as tools/release/linux/test-remote.sh finds it, and the bundle's libraries from the machine's install (RS64_SSH_LIBS).
+            self.ssh_sync(exe_dir, video_cfg)
+            libs = os.environ.get("RS64_SSH_LIBS", "$HOME/rs64/lib")
+            exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in game_env.items())
+            script = ("uid=$(id -u); w=$(ls /run/user/$uid 2>/dev/null | grep -m1 '^wayland-[0-9]*$'); x=$(ls /tmp/.X11-unix 2>/dev/null | head -1 | sed 's/^X/:/'); "
+                      "export XDG_RUNTIME_DIR=/run/user/$uid DISPLAY=${x:-:0}; [ -n \"$w\" ] && export WAYLAND_DISPLAY=$w; "
+                      f"export LD_LIBRARY_PATH={libs}:$LD_LIBRARY_PATH; echo $$ > {self.remote_dir}/mcp.pid; {exports}"
+                      f"cd {self.remote_dir} && chmod +x RogueSquadron64Recomp && exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args))
+            self.proc = subprocess.Popen([SSH_EXE, "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-L", f"{self.port}:127.0.0.1:{self.port}",
+                                          self.ssh_target, script], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         elif platform == "android":
             # No command line on Android: the variables (the bridge port included) go in roguesq_env.txt, and --mute becomes gain 0.
             game_env["ROGUESQ_MCP_PORT"] = str(self.port)
@@ -469,6 +525,10 @@ class Game:
                 if "unknown option '--mcp-port'" in tail:
                     raise GameError(f"the {config} build has no MCP bridge; configure with -DRS64_MCP=ON (or use Debug) and rebuild")
                 raise GameError(f"game exited (code {self.proc.returncode}) during launch:\n{tail}")
+            # An ssh forward accepts the connection before the remote bridge listens, then drops it, so wait for the game to say it listens.
+            if platform == "ssh" and "[mcp] listening" not in self.log_tail(200):
+                time.sleep(0.25)
+                continue
             try:
                 self.sock = socket.create_connection(("127.0.0.1", self.port), timeout=1)
                 break
@@ -622,6 +682,8 @@ class Game:
             r = self.call("capture_frame", {"path": self.game_path(path)}, timeout_s=4)
             if self.platform == "android":
                 adb(self.serial, "pull", self.game_path(path), path)
+            elif self.platform == "ssh":
+                self.ssh_pull(path)
             return {"path": path, "width": r["width"], "height": r["height"], "colours": r["colours"]}
         except GameError:
             if self.platform != "windows":
@@ -766,6 +828,9 @@ class Game:
                     pid = f.read().strip()
                 if pid.isdigit():
                     subprocess.run(["wsl.exe", "-e", "kill", "-9", pid], capture_output=True)
+            # Ending the ssh session can leave the remote game running, so it is killed there by the pid its script wrote.
+            if self.platform == "ssh":
+                self.ssh(f"kill -9 $(cat {self.remote_dir}/mcp.pid) 2>/dev/null")
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)], capture_output=True)
             try:
                 self.proc.wait(10)

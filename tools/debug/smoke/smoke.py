@@ -40,8 +40,10 @@ SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf"]
 # The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
 # (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
 # or the one device adb sees.
-PLATFORMS = {"windows": "Smoke", "linux": "SmokeLinux", "android": "SmokeAndroid"}
+PLATFORMS = {"windows": "Smoke", "linux": "SmokeLinux", "android": "SmokeAndroid", "pi": "SmokePi"}
 LINUX_BUILD = "rs64-build-release"
+# The Pi (or any arm64 Linux machine) runs this WSL cross build, configured with -DRS64_MCP=ON, over ssh at RS64_SSH_TARGET (rs64_mcp platform "ssh").
+PI_BUILD = "rs64-build-arm64-mcp"
 config = PLATFORMS["windows"]
 platform = "windows"
 
@@ -76,8 +78,8 @@ def stage(build):
         if name.endswith(".z64") or (platform == "windows" and (name.endswith(".dll") or name in ("RogueSquadron64Recomp.exe", "RogueSquadron64Recomp.pdb"))):
             shutil.copy2(os.path.join(src_dir, name), STAGE)
 
-    if platform == "linux":
-        linux_dir = subprocess.run(["wsl.exe", "-e", "bash", "-lc", f"wslpath -w ~/{LINUX_BUILD}"], capture_output=True).stdout.decode("utf-8", "replace").replace("\0", "").strip()
+    if platform in ("linux", "pi"):
+        linux_dir = subprocess.run(["wsl.exe", "-e", "bash", "-lc", f"wslpath -w ~/{PI_BUILD if platform == 'pi' else LINUX_BUILD}"], capture_output=True).stdout.decode("utf-8", "replace").replace("\0", "").strip()
         shutil.copy2(os.path.join(linux_dir, "RogueSquadron64Recomp"), STAGE)
 
     for mod in MODS:
@@ -203,11 +205,16 @@ def session(out, env, body, speed, record=None, settings=None):
     full_env.update(env)
     error = None
 
+    # A Pi 4 crawls through the boot at the pinned profile's 3X, so it runs the low video preset (native resolution, 30 fps).
+    if platform == "pi" and settings is None:
+        with open(os.path.join(REPO, "video-presets", "low", "roguesq_video.json"), encoding="utf-8") as f:
+            settings = json.load(f)
+
     # The game can't create the recording in a missing folder, and then runs without the fixed step.
     os.makedirs(out, exist_ok=True)
 
     try:
-        game.launch(config, full_env, record=record, settings=settings, platform=platform)
+        game.launch(config, full_env, record=record, settings=settings, platform="ssh" if platform == "pi" else platform)
         body(game)
     except Exception:
         error = traceback.format_exc()
