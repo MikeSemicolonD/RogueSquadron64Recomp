@@ -167,7 +167,8 @@ Mid-mission cutscenes are not cutscene files: they play in-engine inside the run
 | --- | --- | --- |
 | `ROGUESQ_PARSE_SNAPSHOT` | on | Parse each graphics task from a copy of RDRAM taken at task start, so the game recycling DL chunks cannot change what RT64 walks. `0` parses live RDRAM. |
 | `ROGUESQ_VI_WAIT_PARSE` | on only without the snapshot | VI waits for an in-flight parse. `1`/`0` overrides. |
-| `ROGUESQ_SP_COMPLETE_AFTER_PARSE` | on | Deliver SP-done only after the list is parsed, as the RSP would. `0` sends it before the parse. |
+| `ROGUESQ_SP_COMPLETE_AFTER_PARSE` | off with `ROGUESQ_PARSE_SNAPSHOT`, else on | `1` delivers SP-done only after the list is parsed, as the RSP would. `0` sends it before the parse, so audio tasks run during it. |
+| `ROGUESQ_DP_COMPLETE_EARLY` | on with `ROGUESQ_PARSE_SNAPSHOT` | With framebuffer write-back off, deliver DP-done once the task's last GPU work is submitted, so the game builds its next frame during RT64's GPU wait. `0` waits for the GPU. |
 | `ROGUESQ_HLE_PRESENT_EARLY` | on | RT64 PresentEarly mode (the cinematic stays on one VI address, so a VI-change present would never fire). `0` opts out. |
 | `ROGUESQ_HLE_AUTO_FULLSYNC` | on | Flush uncommitted RT64 work after each task (F5's mid-DL full sync leaves the trailing workload growing). `0` disables. |
 | `ROGUESQ_AI_CONSUMPTION_PACED` | on | Fire the AI event at the consumption cadence of the last queued buffer. `0` restores one per VI. |
@@ -376,6 +377,7 @@ Probes:
 | `ROGUESQ_VK_QUEUE_PRIORITY` | `high` on Android, none elsewhere | Vulkan global queue priority: `low` / `medium` / `high` / `realtime`. |
 | `ROGUESQ_NO_DEVICE_LOST_RECOVERY` | off | `1` disables rebuilding RT64 after a lost device (rebuilds back off 1 s doubling to 16 s). |
 | `ROGUESQ_NO_ACQUIRE_BARRIER_FIX` | off | A/B: drop the swapchain acquire-barrier stage fix in plume Vulkan. |
+| `ROGUESQ_UMA_UPLOADS` | on | `0` A/B: on shared-memory GPUs (Raspberry Pi, integrated, Apple Silicon), stage RT64's per-frame buffer uploads and copy them again instead of writing the GPU buffers directly. |
 | `ROGUESQ_D3D12_DEBUG` / `ROGUESQ_D3D12_GPUVAL` | off | Enable the D3D12 debug layer / plus GPU-based validation (presence only). Heavy CPU cost. |
 
 Probes: `ROGUESQ_TEST_DEVICE_LOST_AT_SUBMIT=<n>` (plume_vulkan.cpp) — report device lost on the n-th submit once; `ROGUESQ_LOG_SWAPCHAIN` (plume_vulkan.cpp, rt64_present_queue.cpp) — acquire/present results, swapchain recreation, suspend/resume; `ROGUESQ_DESC_DIAG` (plume_d3d12.cpp, rt64_framebuffer_renderer.cpp) — descriptor-set counts; `ROGUESQ_DIAG_CAP` (rt64_diag_bounds.h) — capacity of bounded diagnostic sets and maps (5000).
