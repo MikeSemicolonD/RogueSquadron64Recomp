@@ -1039,7 +1039,7 @@ extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj,
 
     if (t.lastDrawn && !t.goneAt && ((frame - t.lastDrawn) <= 2u) && (edge < kInsideScreen) && !terrain_hides(rdram, ctx, pos)) {
         t.goneAt = frame;
-        fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f\n", name, obj, frame, t.nx, t.ny);
+        fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f by %s\n", name, obj, frame, t.nx, t.ny, seen ? "frustum" : "box/far/behind");
     }
 }
 
