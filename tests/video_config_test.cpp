@@ -201,6 +201,7 @@ static void test_roundtrip() {
     { UC u; u.aspectRatio = UC::AspectRatio::Manual; u.aspectTarget = 2.35; rt(u); }
     { UC u; u.internalColorFormat = UC::InternalColorFormat::Standard; rt(u); }
     { UC u; u.refreshRate = UC::RefreshRate::Display; rt(u); }
+    { UC u; u.vsync = false; rt(u); }
     { UC u; u.upscale2D = UC::Upscale2D::All; u.hardwareResolve = UC::HardwareResolve::Enabled; rt(u); }
 }
 

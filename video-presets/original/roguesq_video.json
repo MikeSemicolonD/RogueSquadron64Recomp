@@ -5,6 +5,7 @@
   "antialiasing": 0,
   "ssaa": 1,
   "fxaa": false,
+  "vsync": true,
   "smoothUpscale": false,
   "frameInterpolation": false,
   "targetFramerate": 30,

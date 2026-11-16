@@ -205,7 +205,7 @@ def session(out, env, body, speed, record=None, settings=None):
     full_env.update(env)
     error = None
 
-    # A Pi 4 crawls through the boot at the pinned profile's 3X, so it runs the low video preset (native resolution, 30 fps).
+    # A Pi 4 crawls through the boot at the pinned profile's 3X, so it runs the low video preset (native resolution, 30 fps, vsync off).
     if platform == "pi" and settings is None:
         with open(os.path.join(REPO, "video-presets", "low", "roguesq_video.json"), encoding="utf-8") as f:
             settings = json.load(f)

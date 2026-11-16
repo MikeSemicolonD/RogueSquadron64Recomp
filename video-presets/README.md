@@ -18,4 +18,4 @@ Where the file goes:
 | [original](original/roguesq_video.json) | The N64 look | 4:3, native resolution, 30 fps, original terrain and draw distance |
 | [vr](vr/roguesq_video.json) | VR headsets (VR builds) | Starts in the headset, 2x MSAA, 4x draw distance, no ray tracing; set the headset to 72 or 90 Hz |
 
-Every setting can still be changed in OPTIONS afterwards. If a preset runs below its frame rate, try the one below it, or lower `antialiasing` first since it costs the most. The game uses one anti-aliasing method: with `antialiasing` set, `ssaa` and `fxaa` are ignored.
+Every setting can still be changed in OPTIONS afterwards. If a preset runs below its frame rate, try the one below it, or lower `antialiasing` first since it costs the most. The game uses one anti-aliasing method: with `antialiasing` set, `ssaa` and `fxaa` are ignored. With no monitor attached (a headless Raspberry Pi), keep `vsync` at `false` (as in low) or the game runs at one frame a second.

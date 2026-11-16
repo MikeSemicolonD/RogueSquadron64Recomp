@@ -800,6 +800,7 @@ void apply_friendly(UC& uc, const json& j)
     if (has("supersampling")) uc.downsampleMultiplier = j["supersampling"].get<int>();
     if (has("ssaa")) uc.downsampleMultiplier = j["ssaa"].get<int>();
     if (has("fxaa")) uc.fxaa = j["fxaa"].get<bool>();
+    if (has("vsync")) uc.vsync = j["vsync"].get<bool>();
 
     if (has("smoothUpscale"))
     {
@@ -943,6 +944,7 @@ json to_friendly(const UC& uc)
 
     j["ssaa"] = uc.downsampleMultiplier;
     j["fxaa"] = uc.fxaa;
+    j["vsync"] = uc.vsync;
 
     if (uc.filtering == UC::Filtering::AntiAliasedPixelScaling) {
         j["smoothUpscale"] = true;

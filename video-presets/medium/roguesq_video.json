@@ -5,6 +5,7 @@
   "antialiasing": 0,
   "ssaa": 1,
   "fxaa": true,
+  "vsync": true,
   "frameInterpolation": true,
   "targetFramerate": 60,
   "drawDistance": 2.0,
