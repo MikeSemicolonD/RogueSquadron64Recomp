@@ -3,7 +3,7 @@
   "resolutionScale": 1,
   "antialiasing": 0,
   "ssaa": 1,
-  "fxaa": true,
+  "fxaa": false,
   "frameInterpolation": false,
   "targetFramerate": 30,
   "drawDistance": 1.0,
