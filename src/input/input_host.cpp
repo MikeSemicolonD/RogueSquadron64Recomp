@@ -1262,9 +1262,15 @@ static rs64::touch::Pad poll_touch()
     const rs64::touch::Context ctx = touch_context();
     float px0 = 0.0f, px1 = 1.0f;
     rs64::touch::picture_extent(touch_rdram(), g_active_overlay, w, h, &px0, &px1);
+    uint8_t* r = touch_rdram();
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     g_touch.set_screen(w, h);
     g_touch.set_picture(px0, px1);
+
+    // 0x80128EAF is the game's video ticks per frame (2 at its own 30 fps).
+    if (r) {
+        g_touch.set_poll_scale(rs64::mips::rb(r, 0x80128EAFu) / 2);
+    }
 
     if (take_touch_edit_request() && g_touch.config().enabled) {
         touch_slider_cancel();

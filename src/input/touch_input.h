@@ -85,6 +85,8 @@ namespace rs64::touch {
         void set_menu_hover(MenuHoverFn fn);
         // Queues a host-driven press lasting `polls` game polls, after any pending presses.
         void inject(uint16_t buttons, float x, float y, int polls, int gap = 1);
+        // Polls per poll at the game's own 2 video ticks a frame: the host polls every tick, and above 30 fps a frame spans more ticks.
+        void set_poll_scale(int scale);
         // A finger tap's per-context menu action at (x, y); also used for mouse clicks, so it works with touch disabled.
         void tap(Context ctx, float x, float y);
         Pad poll(Context ctx, uint32_t ms);
@@ -129,6 +131,7 @@ namespace rs64::touch {
         float pic_x0_ = 0.0f;
         float pic_x1_ = 1.0f;
         bool active_ = false;
+        int poll_scale_ = 1;
         Context last_ctx_ = Context::None;
         std::unordered_map<int64_t, Finger> fingers_;
         std::vector<Pulse> pulses_;

@@ -184,7 +184,11 @@ namespace rs64::touch {
             busy = std::max(busy, q.delay + q.polls);
         }
 
-        pulses_.push_back({ buttons, x, y, polls, busy ? busy + gap : 0 });
+        pulses_.push_back({ buttons, x, y, polls * poll_scale_, busy ? busy + gap * poll_scale_ : 0 });
+    }
+
+    void Engine::set_poll_scale(int scale) {
+        poll_scale_ = std::max(1, scale);
     }
 
     void Engine::inject(uint16_t buttons, float x, float y, int polls, int gap) {
