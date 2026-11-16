@@ -1499,8 +1499,8 @@ private:
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
         rs64::discord::poll((const uint8_t*)app->core.RDRAM);
 
-        // Without widescreen, cutscenes keep the TV's 4:3 box and bars; letterboxed menus (level select, hangar) fit the window.
-        RT64::letterboxInBox.store(rs64_state_in_cinematic() || rs64_crawl_playing(), std::memory_order_relaxed);
+        // Without widescreen, the crawl keeps the TV's 4:3 box and bars; cutscenes and letterboxed menus (level select, hangar) fill the window's width.
+        RT64::letterboxInBox.store(rs64_crawl_playing(), std::memory_order_relaxed);
 
         diag().log_gamestate();
 
