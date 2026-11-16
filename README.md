@@ -144,7 +144,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — | — |
 | Look around | <kbd>Q</kbd> | — | C-Up | Left shoulder | Hat | — |
 | Drop camera | <kbd>Z</kbd> | — | D-Pad Left | D-Pad Left | — | — |
-| Confirm (Menu) | <kbd>Enter</kbd> | — | A | A | Button 3 | A |
+| Confirm (Menu) | <kbd>Enter</kbd> / <kbd>Space</kbd> | — | A | A | Button 3 | A |
 | Back | <kbd>Backspace</kbd> | — | B | B | Button 1 | B |
 | Pause | <kbd>Esc</kbd> | — | Start | Start | — | Menu |
 

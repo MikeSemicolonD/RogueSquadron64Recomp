@@ -187,7 +187,7 @@ Target rebind(Bindings& b, Target t, Device d, const Source& got);
 // Upper-case, menu-font-safe name ("LEFT SHIFT", "PAD A", "J1 AXIS 2 <"); "--" for no source.
 std::string menu_source_name(const Source& s);
 
-// N64 buttons from inputs that always work in menus, whatever the bindings say: Return/Enter, Backspace, Esc, arrows; pad A, B, Start, D-pad. Esc is B (back), or START on the pause menu so it resumes.
+// N64 buttons from inputs that always work in menus, whatever the bindings say: Return/Enter, Space, Backspace, Esc, arrows; pad A, B, Start, D-pad. Esc is B (back), or START on the pause menu so it resumes.
 uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start = false);
 
 // A menu's buttons: while a fixed menu input is held, its button replaces the menu buttons the bindings add (Return bound to fire is only A).

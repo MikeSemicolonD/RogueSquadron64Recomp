@@ -878,7 +878,7 @@ uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
 {
 
     static const std::pair<int, uint16_t> keys[] = {
-        { SDL_SCANCODE_RETURN, N64_A_BUTTON }, { SDL_SCANCODE_KP_ENTER, N64_A_BUTTON }, { SDL_SCANCODE_BACKSPACE, N64_B_BUTTON },
+        { SDL_SCANCODE_RETURN, N64_A_BUTTON }, { SDL_SCANCODE_KP_ENTER, N64_A_BUTTON }, { SDL_SCANCODE_SPACE, N64_A_BUTTON }, { SDL_SCANCODE_BACKSPACE, N64_B_BUTTON },
         { SDL_SCANCODE_UP, N64_U_JPAD }, { SDL_SCANCODE_DOWN, N64_D_JPAD }, { SDL_SCANCODE_LEFT, N64_L_JPAD }, { SDL_SCANCODE_RIGHT, N64_R_JPAD },
     };
     static const std::pair<SDL_GameControllerButton, uint16_t> pad[] = {
