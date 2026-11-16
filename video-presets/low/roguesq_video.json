@@ -9,6 +9,7 @@
   "targetFramerate": 30,
   "drawDistance": 1.0,
   "terrainTessellation": 2,
+  "legacyTerrain": true,
   "framebufferWriteback": false,
   "rayTracing": {
     "lights": false,

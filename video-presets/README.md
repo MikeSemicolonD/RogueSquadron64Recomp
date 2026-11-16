@@ -11,7 +11,7 @@ Where the file goes:
 
 | Preset | For | What you get |
 | --- | --- | --- |
-| [low](low/roguesq_video.json) | Raspberry Pi, phones, old laptops | Native N64 resolution, 30 fps, no ray tracing |
+| [low](low/roguesq_video.json) | Raspberry Pi, phones, old laptops | Native N64 resolution, original terrain, 30 fps, no ray tracing |
 | [medium](medium/roguesq_video.json) | Integrated graphics | Window resolution, 60 fps, 2x draw distance, no ray tracing |
 | [high](high/roguesq_video.json) | Mid-range graphics cards | Monitor refresh rate, 4x MSAA, 4x draw distance, ray-traced lights and shadows |
 | [ultra](ultra/roguesq_video.json) | High-end graphics cards with ray tracing | 4x MSAA, max draw distance and terrain detail, every ray-traced effect |
