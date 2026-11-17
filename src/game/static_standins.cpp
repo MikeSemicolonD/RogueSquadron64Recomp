@@ -31,6 +31,8 @@ constexpr uint32_t kUniformRootMatrix = 0x80059B50u;
 constexpr uint32_t kConditionMet = 0x80065828u;
 constexpr uint32_t kGridEntries = 0x80136FCCu;
 constexpr uint32_t kCutsceneFlag = 0x80130B39u;
+constexpr uint32_t kDatItemByName = 0x80047B48u;
+constexpr uint32_t kTerrainHeight = 0x80068180u;
 constexpr uint32_t kRegion = RS64_HR_STANDINS;
 constexpr uint32_t kRegionEnd = RS64_HR_STANDINS_END;
 constexpr uint32_t kStateSize = 0x50u;
@@ -200,6 +202,53 @@ uint32_t build_instance(uint8_t* rdram, recomp_context* ctx, uint32_t model, uin
     return size;
 }
 
+// A unit with a path (name at item + item[+0x8C], "-" for none) spawns on it (func_800F947C): the spline starts at the path's second point
+// (+0x20 offsets from +0x10, +0x1C the count) facing along (p2 - p0). Walkers stand on the terrain, ground transports keep the DAT's height above it.
+void place_on_path(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t state)
+{
+
+    const uint32_t offset = rw(rdram, item + 0x8Cu);
+    const uint32_t name = item + offset;
+
+    if (offset < 0x90u || offset >= 0x400u || rb(rdram, name) == '-' || rb(rdram, name) == 0) return;
+
+    const uint32_t path = mips_call(rdram, ctx, kDatItemByName, { name }).v0;
+
+    if (path < 0x80000000u || path >= 0x80800000u || rh(rdram, path) != 3 || rw(rdram, path + 0x1Cu) < 3) return;
+
+    const uint32_t pts = rw(rdram, path + 0x20u);
+
+    if (pts < 0x80000000u || pts >= 0x80800000u) return;
+
+    const float x = rf(rdram, path + 0x10u) + rf(rdram, pts + 12u);
+    const float y = rf(rdram, path + 0x14u) + rf(rdram, pts + 16u);
+    const float z = rf(rdram, path + 0x18u) + rf(rdram, pts + 20u);
+    const float dx = rf(rdram, pts + 24u) - rf(rdram, pts);
+    const float dz = rf(rdram, pts + 32u) - rf(rdram, pts + 8u);
+    const float len = std::sqrt(dx * dx + dz * dz);
+
+    const uint16_t sub = rh(rdram, item);
+    const bool walker = sub == 0x0F || sub == 0x1F || sub == 0x47;
+    const bool transport = sub == 0x2B || sub == 0x2D || sub == 0x2E;
+    const float ground = walker || transport ? mips_call(rdram, ctx, kTerrainHeight, { 0, 0, 0, 0 }, {}, x, z).f0 : 0.0f;
+    const float dat_x = rf(rdram, item + 0x10u);
+    const float dat_z = rf(rdram, item + 0x18u);
+    const float dat_ground = transport ? mips_call(rdram, ctx, kTerrainHeight, { 0, 0, 0, 0 }, {}, dat_x, dat_z).f0 : 0.0f;
+
+    wf(rdram, state, x);
+    wf(rdram, state + 4u, walker ? ground : (transport ? rf(rdram, item + 0x14u) + ground - dat_ground : y));
+    wf(rdram, state + 8u, z);
+
+    if (len > 1e-4f) {
+        wf(rdram, state + 0xCu, dx / len);
+        wf(rdram, state + 0x10u, 0.0f);
+        wf(rdram, state + 0x14u, dz / len);
+        wf(rdram, state + 0x18u, 0.0f);
+        wf(rdram, state + 0x1Cu, 1.0f);
+        wf(rdram, state + 0x20u, 0.0f);
+    }
+}
+
 // The prop handler's spawn (message 1): position in row 0, Euler rotation, the instance and the item, and the cull radius = model radius
 // (+0x44) times the largest scale component (instance flag 0x400 when y is largest, 0x800 when z is).
 void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t state, uint32_t inst, uint32_t model, uint32_t* scale)
@@ -213,6 +262,7 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
 
     for (uint32_t i = 0x24u; i < 0x30u; i += 4) ww(rdram, state + i, 0);
 
+    place_on_path(rdram, ctx, item, state);
     ww(rdram, state + 0x30u, inst);
     ww(rdram, state + 0x34u, item);
 
