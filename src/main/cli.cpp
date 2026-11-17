@@ -128,6 +128,7 @@ static const CliFlag kCliFlags[] = {
     {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
     {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
     {"vr",               "ROGUESQ_VR",               CliFlag::Bool,  "1", "0", "play in a VR headset (OpenXR builds)"},
+    {"preset",           "ROGUESQ_VIDEO_CONFIG",     CliFlag::Value, "",  "",  "display settings from a video preset (low | medium | high | ultra | original | vr) or a settings file; changes save there"},
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
     {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},
@@ -272,7 +273,21 @@ int apply_args(int argc, char* argv[]) {
                     return 2;
                 }
 
-                set_env(found->env, val);
+                std::string value = val;
+
+                if (!strcmp(found->flag, "preset") && !std::filesystem::exists(value))
+                {
+                    value = "video-presets/" + value + "/roguesq_video.json";
+
+                    if (!std::filesystem::exists(value))
+                    {
+                        fprintf(stderr, "error: no preset or file named '%s'\n", val);
+
+                        return 2;
+                    }
+                }
+
+                set_env(found->env, value.c_str());
             }
 
             continue;

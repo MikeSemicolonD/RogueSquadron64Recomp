@@ -472,7 +472,7 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 > Tested on a Quest 2 over Meta Horizon Link.
 
 - **Build:** configure with `-DRS64_OPENXR=ON`. VR needs the Vulkan renderer.
-- **Start:** launch with `--vr`, or copy the [vr video preset](video-presets/vr/roguesq_video.json), which starts in the headset with settings that hold the headset's frame rate. Without a headset or runtime the game starts flat.
+- **Start:** launch with `--preset vr` to use the [vr video preset](video-presets/vr/roguesq_video.json), which starts in the headset with settings that hold the headset's frame rate. Without a headset or runtime the game starts flat.
 - **Your size:** push the right thumbstick up to grow or down to shrink until the cockpit feels right. It is saved as `vrScale`.
 - Missions, cutscenes and SELECT LEVEL are in stereoscopic 3D while the menus and results screens show on a virtual screen in front of you.
 

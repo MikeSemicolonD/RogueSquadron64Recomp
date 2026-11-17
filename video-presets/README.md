@@ -2,6 +2,8 @@
 
 Ready-made graphics settings. Pick the folder that fits your PC and copy its `roguesq_video.json` next to the game, replacing the old file. Close the game first. Settings a preset leaves out (fullscreen, language, graphics API) go back to their defaults.
 
+To try one without replacing your file, launch with `--preset <name>` (for example `--preset vr`). Changes made in OPTIONS during that run save into the preset.
+
 Where the file goes:
 
 - Windows and the Linux tarball: the game folder (next to `RogueSquadron64Recomp.exe` or `run.sh`).
