@@ -2,7 +2,7 @@
 # The game hard-codes the ring size 60 at 0.33 units per segment (about 1.5 loops around an AT-AT, the trip needs 3); these patches make it 240 at 0.22, about 4 loops. Max 255: head and count are bytes.
 [manifest]
 id = "long_tow_cable"
-version = "1.2.0"
+version = "1.2.1"
 display_name = "Long Tow Cable"
 description = "The snowspeeder tow cable holds 240 shorter segments instead of 60, about four loops around an AT-AT instead of one and a half, so the cable no longer erases its oldest end while you wrap the walker and bends more smoothly behind the ship. Takes effect at the next mission start."
 short_description = "Tow cable long enough to wrap an AT-AT."
@@ -119,6 +119,13 @@ func = "updateCinematicCameraStateMachine"
 vram = 0x800AD7D8
 expect_asm = "lwc1 $f0, 0x5400($at)"
 asm = "mtc1 $at, $f0"
+
+# Walker pull: segments from head-2 back drift toward the nearest leg while the newer ones stay put, so the cable kinks at the first pulled joint. Starting at head-6 keeps that kink 1.3 units behind the ship instead of 0.44.
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD8BC
+expect_asm = "addiu $s3, $zero, 0x2"
+asm = "addiu $s3, $zero, 0x6"
 
 # Live-segment cap, count = min(count + 1, 60): the limit that erases the cable's oldest end.
 [[patches.instruction]]
