@@ -20,7 +20,8 @@ bool start_session(RT64::Application& app);
 // On quit: ends the VR session and, once one was started, the process (Windows). No-op when running flat.
 void quit();
 
-enum PadButton { kPadA, kPadB, kPadX, kPadMenu, kPadStickClickL, kPadStickClickR, kPadTriggerL, kPadTriggerR, kPadGripL, kPadGripR, kPadButtons };
+// In rs64::input::VrButton order, the bindings' VR button codes.
+enum PadButton { kPadA, kPadB, kPadX, kPadY, kPadMenu, kPadStickClickL, kPadStickClickR, kPadTriggerL, kPadTriggerR, kPadGripL, kPadGripR, kPadButtons };
 
 // Touch controllers: held is a PadButton bitmask, the stick is the left thumbstick. False without input focus.
 struct Pad {

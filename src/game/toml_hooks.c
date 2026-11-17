@@ -321,12 +321,13 @@ void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_conte
 static int shadow_keep(uint8_t* rdram, recomp_context* ctx, float r)
 {
 
-    const int vr = (s_render_view_test || (g_active_overlay > 0)) && rs64_vr_active();
+    const int vr = (s_render_view_test || s_effect_view_test || (g_active_overlay > 0)) && rs64_vr_active();
     union { uint32_t u; float f; } far_plane;
 
     far_plane.u = (uint32_t)MEM_W(0x28, ctx->r17);
 
-    const float d = vr ? far_plane.f * rs64_draw_dist() : (s_render_view_test ? rs64_shadow_keep_dist() : 0.0f);
+    // The far plane is a depth, so the view's corners reach past it in distance: 1.6 covers a 100 degree diagonal.
+    const float d = vr ? far_plane.f * rs64_draw_dist() * 1.6f : (s_render_view_test ? rs64_shadow_keep_dist() : 0.0f);
     union { uint32_t u; float f; } x, y, z;
 
     if (!(d > 0.0f))

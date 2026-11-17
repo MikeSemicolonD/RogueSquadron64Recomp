@@ -418,7 +418,8 @@ extern "C" float rs64_aspect_scale(void);
 static float hud_shift(const uint8_t* rdram, float width)
 {
 
-    if (g_active_overlay != 0 || rb(rdram, 0x80130B17u) == 0) return 0.0f;
+    // VR places the HUD itself; a shift moves the radar disc by a different amount than its ring there.
+    if (g_active_overlay != 0 || rb(rdram, 0x80130B17u) == 0 || rs64_vr_active()) return 0.0f;
 
     return rs64hud::shiftNative(width, rs64::video::hud_placement(), rs64_aspect_scale());
 }

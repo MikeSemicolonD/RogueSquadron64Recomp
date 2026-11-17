@@ -37,8 +37,8 @@ static constexpr int64_t kVkFormatB8G8R8A8Srgb = 50;
 // The virtual screen for 2D screens: a 4:3 image on a quad straight ahead of where the session started.
 static constexpr uint32_t kScreenWidth = 1280;
 static constexpr uint32_t kScreenHeight = 960;
-static constexpr float kScreenMeters = 1.8f;
-static constexpr float kScreenDistance = 2.0f;
+static constexpr float kScreenMeters = 1.5f;
+static constexpr float kScreenDistance = 1.15f;
 static constexpr uint32_t kNotAcquired = UINT32_MAX;
 
 struct EyeSwapchain {
@@ -60,6 +60,7 @@ static constexpr PadAction kPadActions[] = {
     { "a", "/user/hand/right/input/a/click" },
     { "b", "/user/hand/right/input/b/click" },
     { "x", "/user/hand/left/input/x/click" },
+    { "y", "/user/hand/left/input/y/click" },
     { "menu", "/user/hand/left/input/menu/click" },
     { "stick-click-left", "/user/hand/left/input/thumbstick/click" },
     { "stick-click-right", "/user/hand/right/input/thumbstick/click" },
@@ -93,6 +94,7 @@ struct State {
     rs64vr::EyeViews handViews;
     // The runtime's controller models (XR_FB_render_model) as triangles of position and normal; handModelReady 1 once loaded, -1 when one can't be read.
     bool renderModels = false;
+    bool refreshRates = false;
     PFN_xrEnumerateRenderModelPathsFB enumerateModelPaths = nullptr;
     PFN_xrGetRenderModelPropertiesFB getModelProperties = nullptr;
     PFN_xrLoadRenderModelFB loadModel = nullptr;
@@ -437,6 +439,43 @@ bool create_pad_actions()
 }
 
 // Session state changes drive xrBeginSession / xrEndSession; called once per headset frame, and until the session runs from rs64_vr_session.
+// The headset can sit at a lower rate than the runtime's frame period reports (Link at 72 Hz with 90 chosen), so ask for its highest.
+static void request_top_refresh_rate()
+{
+
+    PFN_xrEnumerateDisplayRefreshRatesFB enumerate = nullptr;
+    PFN_xrGetDisplayRefreshRateFB get = nullptr;
+    PFN_xrRequestDisplayRefreshRateFB request = nullptr;
+
+    if (!g.refreshRates || !load_function("xrEnumerateDisplayRefreshRatesFB", enumerate) || !load_function("xrGetDisplayRefreshRateFB", get) || !load_function("xrRequestDisplayRefreshRateFB", request))
+    {
+        fprintf(stderr, "[vr] refresh rate: no XR_FB_display_refresh_rate\n");
+        return;
+    }
+
+    uint32_t count = 0;
+
+    enumerate(g.session, 0, &count, nullptr);
+
+    std::vector<float> rates(count);
+
+    enumerate(g.session, count, &count, rates.data());
+
+    float current = 0.0f;
+
+    get(g.session, &current);
+
+    const float top = rates.empty() ? 0.0f : *std::max_element(rates.begin(), rates.end());
+    const XrResult requested = (top > current) ? request(g.session, top) : XR_SUCCESS;
+    std::string list;
+
+    for (float r : rates) {
+        list += " " + std::to_string(int(r + 0.5f));
+    }
+
+    fprintf(stderr, "[vr] refresh rate %.1f Hz, available%s, requested %.1f (%d)\n", current, list.c_str(), top, int(requested));
+}
+
 void poll_events()
 {
 
@@ -454,6 +493,9 @@ void poll_events()
         if (event.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             const auto* changed = reinterpret_cast<const XrEventDataSessionStateChanged*>(&event);
 
+            // 1 idle, 2 ready, 3 synchronized, 4 visible, 5 focused, 6 stopping, 7 loss pending, 8 exiting.
+            fprintf(stderr, "[vr] session state %d\n", int(changed->state));
+
             if (changed->state == XR_SESSION_STATE_READY) {
                 XrSessionBeginInfo begin{ XR_TYPE_SESSION_BEGIN_INFO };
 
@@ -463,6 +505,10 @@ void poll_events()
                 g.sessionBegun = XR_SUCCEEDED(began);
                 g.running.store(g.sessionBegun ? 1 : 0);
                 fprintf(stderr, "[vr] xrBeginSession %d\n", int(began));
+
+                if (g.sessionBegun) {
+                    request_top_refresh_rate();
+                }
             }
             else if (changed->state == XR_SESSION_STATE_STOPPING) {
                 g.running.store(0);
@@ -522,6 +568,7 @@ bool init_before_device()
     for (const XrExtensionProperties& p : properties) {
         g.colorScale = g.colorScale || (std::strcmp(p.extensionName, XR_KHR_COMPOSITION_LAYER_COLOR_SCALE_BIAS_EXTENSION_NAME) == 0);
         g.renderModels = g.renderModels || (std::strcmp(p.extensionName, XR_FB_RENDER_MODEL_EXTENSION_NAME) == 0);
+        g.refreshRates = g.refreshRates || (std::strcmp(p.extensionName, XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME) == 0);
     }
 
     fprintf(stderr, "[vr] view changes fade %s, controllers are %s\n", g.colorScale ? "through black" : "with black frames (no color scale)",
@@ -535,6 +582,10 @@ bool init_before_device()
 
     if (g.renderModels) {
         extensions.push_back(XR_FB_RENDER_MODEL_EXTENSION_NAME);
+    }
+
+    if (g.refreshRates) {
+        extensions.push_back(XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME);
     }
 
     XrInstanceCreateInfo info{ XR_TYPE_INSTANCE_CREATE_INFO };
@@ -911,9 +962,35 @@ extern "C" int rs64_vr_begin_frame(void)
         return fail();
     }
 
+    // The display can run slower than the period the runtime reports (Link at 72 Hz reporting 90), so the period is the shortest step between
+    // display times over the last 90 frames, longer steps being frames the runtime skipped.
+    static XrTime s_last = 0;
+    static int64_t s_shortest = INT64_MAX;
+    static uint32_t s_steps = 0;
+    static int64_t s_measured = 0;
+    const int64_t step = (s_last != 0) ? int64_t(frame.predictedDisplayTime - s_last) : 0;
+
+    s_last = frame.predictedDisplayTime;
+
+    if (step > 0) {
+        s_shortest = std::min(s_shortest, step);
+    }
+
+    if (++s_steps >= 90) {
+        const bool slower = (s_shortest != INT64_MAX) && (s_shortest * 10 > frame.predictedDisplayPeriod * 11);
+
+        if (rs64vr::logEnabled()) {
+            fprintf(stderr, "[vr] display period %.2f ms (runtime reports %.2f ms)\n", double(slower ? s_shortest : frame.predictedDisplayPeriod) / 1e6, double(frame.predictedDisplayPeriod) / 1e6);
+        }
+
+        s_measured = slower ? s_shortest : 0;
+        s_shortest = INT64_MAX;
+        s_steps = 0;
+    }
+
     g.displayTime = frame.predictedDisplayTime;
     g.predictedTime.store(frame.predictedDisplayTime);
-    g.predictedPeriod.store(frame.predictedDisplayPeriod);
+    g.predictedPeriod.store((s_measured > 0) ? s_measured : frame.predictedDisplayPeriod);
 
     // The runtime may use the binding's VkQueue in begin, end, acquire and release (OpenXR 12.24.2).
     std::lock_guard<std::mutex> lock(*g.queueMutex);
