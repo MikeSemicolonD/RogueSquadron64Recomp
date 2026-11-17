@@ -458,10 +458,14 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
     float sx = defl[(int)Target::StickRight] - defl[(int)Target::StickLeft];
     float sy = defl[(int)Target::StickUp]    - defl[(int)Target::StickDown];
 
-    // Look-around: hold C-Up and point the stick, overriding steering while a look input is held.
+    // Look-around: hold C-Up and point the stick, overriding steering while a look input is held. In VR the head looks around, so C-Up is dropped.
     float lx = defl[(int)Target::LookRight] - defl[(int)Target::LookLeft];
     float ly = defl[(int)Target::LookUp]    - defl[(int)Target::LookDown];
-    const bool looking = std::fabs(lx) > 0.5f || std::fabs(ly) > 0.5f;
+    const bool looking = !s.vr && (std::fabs(lx) > 0.5f || std::fabs(ly) > 0.5f);
+
+    if (s.vr) {
+        btn &= ~N64_U_CBUTTONS;
+    }
 
     if (looking) {
         btn |= N64_U_CBUTTONS;

@@ -311,6 +311,19 @@ static void vr_checks()
     resolve(b, st, &btn, &x, &y);
     assert(!(btn & N64_R_TRIG));
 
+    // vr_drops_look_around: the head looks around in VR, so the look-around key gives no C-Up there.
+    uint8_t look_keys[SDL_NUM_SCANCODES] = {0};
+    look_keys[SDL_SCANCODE_Q] = 1;
+    RawState look = st;
+    look.vr_buttons = 0;
+    look.keys = look_keys;
+    look.keys_len = SDL_NUM_SCANCODES;
+    resolve(b, look, &btn, &x, &y);
+    assert(!(btn & N64_U_CBUTTONS));
+    look.vr = false;
+    resolve(b, look, &btn, &x, &y);
+    assert(btn & N64_U_CBUTTONS);
+
     st.vr_buttons = (1u << VrGripL) | (1u << VrGripR);
     resolve(b, st, &btn, &x, &y);
     assert(btn & N64_R_TRIG);
