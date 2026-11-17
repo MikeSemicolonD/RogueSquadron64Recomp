@@ -520,6 +520,8 @@ void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx);
 void rs64_terrain_grid_log(int32_t, int32_t, int32_t, int32_t, uint32_t, uint32_t, uint32_t);
 void rs64_tgrid_budget_probe(uint32_t, uint32_t);
 void rs64_tgrid_clamp_polygon(uint8_t*);
+void rs64_vr_terrain_heights(uint8_t*);
+void rs64_cockpit_mark(void);
 void rs64_tgrid_clear(uint8_t*);
 void rs64_wait_gfx_parse_yield(uint8_t*, recomp_context*);
 void rs64_wheel_typed(uint8_t* rdram, recomp_context* ctx);

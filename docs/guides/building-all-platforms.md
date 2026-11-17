@@ -40,7 +40,7 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 | Android Studio (SDK, bundled JDK 17 or newer, `adb`) with **NDK 29.0.14206865**; compile/target SDK 34, min SDK 28 | Android. Gradle 9.6 (Android Gradle Plugin 9.4.1) fetches SDL 2.32.10 and its own CMake |
 | WSL2 with Ubuntu-24.04 | Linux targets from `bundle-release.ps1` |
 
-Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and for x86 Microsoft's DXC v1.8.2403.2 zip (the in-tree `dxc-bin` has no x86 `dxcompiler.dll`).
+Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and Microsoft's DXC v1.9.2609 zip (shader compiler and its runtime DLLs).
 
 D3D11 shader cache: Windows packages carry `d3d11_shader_cache/`, built by `RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt` (no ROM; `PLUME_D3D11_SHADER_CACHE` sets the output folder; WARP is used without a GPU). It compiles the list twice into the same folder, for feature level 11 (shader model 5) and feature level 10 (shader model 4, plus the raw-TMEM variant of each textured combination), about 5 minutes and 4 MB. Release CI and `tools/release/bundle-release.ps1` run it. The list was collected by playing the mission recordings, the other levels, the demos and the cutscenes on D3D11 and D3D10; to extend it, merge new lines from a play session's `d3d11_shader_cache/rt64_combos.txt`.
 

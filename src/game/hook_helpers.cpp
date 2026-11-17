@@ -346,37 +346,71 @@ extern "C" void rs64_vr_death_camera(uint8_t* rdram, recomp_context* ctx)
 }
 
 // VR: the head can look anywhere, so the forward view trapezoid becomes a square around the camera cell (cx, cz) reaching as far as the trapezoid did.
-// The corners keep the trapezoid's winding.
+// One corner order always: a thin trapezoid's winding flips (Mos Eisley's intro), and a square copying it reversed binned no cells, so no terrain.
 static void vr_terrain_square(uint8_t* rdram, float cx, float cz)
 {
 
-    float px[4], pz[4];
     float reach = 0.0f;
-    float area = 0.0f;
 
     for (uint32_t i = 0; i < 4; i++) {
         const uint32_t p = 0x80130C10u + (i + 1) * 0xCu;
 
-        px[i] = rf(rdram, p);
-        pz[i] = rf(rdram, p + 8);
-        reach = std::max(reach, std::max(std::fabs(px[i] - cx), std::fabs(pz[i] - cz)));
-    }
-
-    for (uint32_t i = 0; i < 4; i++) {
-        const uint32_t j = (i + 1) % 4;
-
-        area += px[i] * pz[j] - px[j] * pz[i];
+        reach = std::max(reach, std::max(std::fabs(rf(rdram, p) - cx), std::fabs(rf(rdram, p + 8) - cz)));
     }
 
     const float sx[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
     const float sz[4] = { -1.0f, -1.0f, 1.0f, 1.0f };
 
     for (uint32_t i = 0; i < 4; i++) {
-        const uint32_t k = (area < 0.0f) ? 3 - i : i;
         const uint32_t p = 0x80130C10u + (i + 1) * 0xCu;
 
-        wf(rdram, p, cx + sx[k] * reach);
-        wf(rdram, p + 8, cz + sz[k] * reach);
+        wf(rdram, p, cx + sx[i] * reach);
+        wf(rdram, p + 8, cz + sz[i] * reach);
+    }
+}
+
+static std::atomic<int64_t> s_cockpit_ms{ -1000 };
+
+static int64_t steady_ms()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// VR: the cockpit view drew this frame (refreshEffectObjectCamerasAndState hook).
+extern "C" void rs64_cockpit_mark(void)
+{
+    s_cockpit_ms.store(steady_ms(), std::memory_order_relaxed);
+}
+
+// 1 while the cockpit view is drawing: marked within the last quarter second, so RT64 reading a frame later still sees it.
+extern "C" int rs64_vr_cockpit_view(void)
+{
+    return (steady_ms() - s_cockpit_ms.load(std::memory_order_relaxed)) < 250 ? 1 : 0;
+}
+
+// VR, between binPolygonIntoTerrainGrid and streamTerrainGridCellsByDistance: every binned cell gets the full altitude band (highest 127, lowest -128).
+// The bin writes the band the game camera can see; looking up, it sits above the ground and streaming dropped every cell, so the head looking down saw none.
+extern "C" void rs64_vr_terrain_heights(uint8_t* rdram)
+{
+
+    constexpr uint32_t kCells = 128u * 128u;
+    constexpr int8_t kUncovered = -128;
+
+    if (!rs64_vr_active())
+    {
+        return;
+    }
+
+    int8_t* top =reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80130DB0u) - 0x80000000u));
+    int8_t* bottom = reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80131DB0u) - 0x80000000u));
+
+    for (uint32_t i = 0; i < kCells; i++) {
+        if ((top[i] == kUncovered) && (bottom[i] == kUncovered)) {
+            continue;
+        }
+
+        top[i] = 127;
+        bottom[i] = kUncovered;
     }
 }
 
@@ -1192,8 +1226,7 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     g_rate_frame_seen = true;
 
     const int display_hz = (int)ultramodern::get_display_refresh_rate();
-    // VR menus run at the game's own 30: they fell far short of the headset rate, so frame-counted menu animation crawled. RT64 still renders every headset frame.
-    const int vr_hz = (g_active_overlay == 1) ? std::min(rs64_vr_game_hz(), 30) : rs64_vr_game_hz();
+    const int vr_hz = rs64_vr_game_hz();
     const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
     const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
     const int sub = on ? s_sub : 1;

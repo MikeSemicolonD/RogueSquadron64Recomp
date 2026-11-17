@@ -7,7 +7,7 @@
   "ssaa": 1,
   "fxaa": false,
   "vsync": true,
-  "frameInterpolation": true,
+  "frameInterpolation": false,
   "targetFramerate": "display",
   "drawDistance": 4.0,
   "terrainTessellation": 4,

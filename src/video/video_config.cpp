@@ -68,7 +68,8 @@ std::atomic<bool> g_vr_mode{false};
 constexpr float kVrScaleMin = 0.25f;
 constexpr float kVrScaleMax = 16.0f;
 // The size that felt right in an X-wing cockpit on a Quest 2.
-std::atomic<float> g_vr_scale{8.0f};
+std::atomic<float> g_vr_scale[3]{ 8.0f, 4.0f, 2.0f };
+constexpr const char* kVrScaleKeys[3] = { "vrScale", "vrScaleMenus", "vrScaleCutscenes" };
 
 std::atomic<bool> g_legacy_terrain{false};
 
@@ -387,12 +388,16 @@ void set_vr_mode(bool on) {
     g_vr_mode.store(on, std::memory_order_relaxed);
 }
 
-float vr_scale() {
-    return g_vr_scale.load(std::memory_order_relaxed);
+VrScene vr_scene_of_overlay(int overlay) {
+    return (overlay == 1) ? VrScene::Menus : ((overlay == 2) ? VrScene::Cutscenes : VrScene::Missions);
 }
 
-void set_vr_scale(float scale) {
-    g_vr_scale.store(std::clamp(scale, kVrScaleMin, kVrScaleMax), std::memory_order_relaxed);
+float vr_scale(VrScene scene) {
+    return g_vr_scale[int(scene)].load(std::memory_order_relaxed);
+}
+
+void set_vr_scale(VrScene scene, float scale) {
+    g_vr_scale[int(scene)].store(std::clamp(scale, kVrScaleMin, kVrScaleMax), std::memory_order_relaxed);
 }
 
 bool framebuffer_writeback() {
@@ -715,8 +720,10 @@ void apply_friendly(UC& uc, const json& j)
         set_vr_mode(j["vrMode"].get<bool>());
     }
 
-    if (has("vrScale") && j["vrScale"].is_number()) {
-        set_vr_scale(j["vrScale"].get<float>());
+    for (int s = 0; s < 3; s++) {
+        if (has(kVrScaleKeys[s]) && j[kVrScaleKeys[s]].is_number()) {
+            set_vr_scale(VrScene(s), j[kVrScaleKeys[s]].get<float>());
+        }
     }
 
     if (has("legacyTerrain") && j["legacyTerrain"].is_boolean()) {
@@ -887,7 +894,9 @@ json to_friendly(const UC& uc)
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
     j["vrMode"] = vr_mode();
-    j["vrScale"] = std::round(vr_scale() * 100.0f) / 100.0f;
+    for (int s = 0; s < 3; s++) {
+        j[kVrScaleKeys[s]] = std::round(vr_scale(VrScene(s)) * 100.0f) / 100.0f;
+    }
     j["legacyTerrain"] = legacy_terrain();
     j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();

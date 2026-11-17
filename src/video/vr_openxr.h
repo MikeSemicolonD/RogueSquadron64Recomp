@@ -17,6 +17,9 @@ bool init_before_device();
 // After RT64's setup: the session on RT64's present queue, the eye swapchains and the LOCAL space. False = run flat.
 bool start_session(RT64::Application& app);
 
+// A headset session was created (it may not be running yet).
+bool has_session();
+
 // On quit: ends the VR session and, once one was started, the process (Windows). No-op when running flat.
 void quit();
 
@@ -31,4 +34,7 @@ struct Pad {
 };
 
 bool poll_pad(Pad* out);
+
+// Vibrates the controllers for 100 ms (0-1 each, 0 stops): heavy on the left hand, light on the right. No-op without a running session.
+void rumble(float heavy, float light);
 }

@@ -403,7 +403,7 @@ extern "C" float rs64_vr_units_per_meter(void)
     constexpr float kMenuSceneScale = 16.0f;
     static const char* s_env = env_str("ROGUESQ_VR_UNITS_PER_METER");
     static const float s_env_units = s_env ? float(std::atof(s_env)) : kMissionUnitsPerMeter;
-    const float units = ((s_env_units > 0.0f) ? s_env_units : kMissionUnitsPerMeter) * rs64::video::vr_scale();
+    const float units = ((s_env_units > 0.0f) ? s_env_units : kMissionUnitsPerMeter) * rs64::video::vr_scale(rs64::video::vr_scene_of_overlay(g_active_overlay));
 
     return (g_active_overlay == 1) ? units * kMenuSceneScale : units;
 }

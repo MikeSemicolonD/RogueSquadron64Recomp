@@ -23,6 +23,7 @@
 
 #include "hle/rt64_application.h"
 #include "hle/rt64_rs64_vr.h"
+#include "game/upstream_compat.h"
 #include "util/debug_logs.h"
 #include "video/video_config.h"
 
@@ -84,6 +85,12 @@ struct State {
     XrAction grip = XR_NULL_HANDLE;
     // Right thumbstick, which the game doesn't use: up and down set the player's size (vrScale).
     XrAction scaleStick = XR_NULL_HANDLE;
+    // Both controllers' vibration: the game's heavy rumble motor on the left hand, the light one on the right.
+    XrAction haptic = XR_NULL_HANDLE;
+    XrPath handPaths[2] = { XR_NULL_PATH, XR_NULL_PATH };
+    // The rumble thread's latest strengths (heavy, light), applied by poll_pad: haptics from another thread while it synced actions locked the controller input.
+    std::atomic<float> rumbleWant[2] = { 0.0f, 0.0f };
+    std::atomic<int> rumbleDirty{ 0 };
     Uint32 scaleTicks = 0;
     XrSpace handSpaces[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
     EyeSwapchain eyes[2];
@@ -218,6 +225,7 @@ void destroy_all()
     g.actionSet = XR_NULL_HANDLE;
     g.grip = XR_NULL_HANDLE;
     g.scaleStick = XR_NULL_HANDLE;
+    g.haptic = XR_NULL_HANDLE;
     g.padReady = false;
 
     if (g.session != XR_NULL_HANDLE) {
@@ -401,6 +409,24 @@ bool create_pad_actions()
 
     if (XR_SUCCEEDED(xrCreateAction(g.actionSet, &scale, &g.scaleStick)) && XR_SUCCEEDED(xrStringToPath(g.instance, "/user/hand/right/input/thumbstick", &scalePath))) {
         suggested.push_back({ g.scaleStick, scalePath });
+    }
+
+    XrActionCreateInfo haptic{ XR_TYPE_ACTION_CREATE_INFO };
+    XrPath hapticPaths[2] = { XR_NULL_PATH, XR_NULL_PATH };
+
+    haptic.actionType = XR_ACTION_TYPE_VIBRATION_OUTPUT;
+    haptic.countSubactionPaths = 2;
+    haptic.subactionPaths = handPaths;
+    std::strncpy(haptic.actionName, "rumble", XR_MAX_ACTION_NAME_SIZE - 1);
+    std::strncpy(haptic.localizedActionName, "rumble", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+    xrStringToPath(g.instance, "/user/hand/left/output/haptic", &hapticPaths[0]);
+    xrStringToPath(g.instance, "/user/hand/right/output/haptic", &hapticPaths[1]);
+
+    if (XR_SUCCEEDED(xrCreateAction(g.actionSet, &haptic, &g.haptic))) {
+        suggested.push_back({ g.haptic, hapticPaths[0] });
+        suggested.push_back({ g.haptic, hapticPaths[1] });
+        g.handPaths[0] = handPaths[0];
+        g.handPaths[1] = handPaths[1];
     }
 
     XrInteractionProfileSuggestedBinding profile{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
@@ -656,6 +682,12 @@ bool init_before_device()
     return true;
 }
 
+bool has_session()
+{
+
+    return g.session != XR_NULL_HANDLE;
+}
+
 bool start_session(RT64::Application& app)
 {
 
@@ -768,6 +800,45 @@ void quit()
 #endif
 }
 
+void rumble(float heavy, float light)
+{
+
+    g.rumbleWant[0].store(heavy);
+    g.rumbleWant[1].store(light);
+    g.rumbleDirty.store(1);
+}
+
+// Input thread only, after xrSyncActions.
+static void apply_rumble()
+{
+
+    if ((g.haptic == XR_NULL_HANDLE) || (g.rumbleDirty.exchange(0) == 0))
+    {
+        return;
+    }
+
+    const float amplitude[2] = { g.rumbleWant[0].load(), g.rumbleWant[1].load() };
+
+    for (int h = 0; h < 2; h++) {
+        XrHapticActionInfo info{ XR_TYPE_HAPTIC_ACTION_INFO };
+
+        info.action = g.haptic;
+        info.subactionPath = g.handPaths[h];
+
+        if (amplitude[h] <= 0.0f) {
+            xrStopHapticFeedback(g.session, &info);
+            continue;
+        }
+
+        XrHapticVibration vibration{ XR_TYPE_HAPTIC_VIBRATION };
+
+        vibration.amplitude = std::min(amplitude[h], 1.0f);
+        vibration.duration = 100'000'000;
+        vibration.frequency = XR_FREQUENCY_UNSPECIFIED;
+        xrApplyHapticFeedback(g.session, &info, reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
+    }
+}
+
 bool poll_pad(Pad* out)
 {
 
@@ -791,6 +862,8 @@ bool poll_pad(Pad* out)
     {
         return false;
     }
+
+    apply_rumble();
 
     XrActionStateGetInfo info{ XR_TYPE_ACTION_STATE_GET_INFO };
 
@@ -822,13 +895,15 @@ bool poll_pad(Pad* out)
     info.action = g.scaleStick;
 
     if ((g.scaleStick != XR_NULL_HANDLE) && XR_SUCCEEDED(xrGetActionStateVector2f(g.session, &info, &scale)) && scale.isActive && (std::fabs(scale.currentState.y) > 0.3f)) {
-        rs64::video::set_vr_scale(rs64::video::vr_scale() * std::exp2(0.5f * scale.currentState.y * dt));
+        const rs64::video::VrScene scene = rs64::video::vr_scene_of_overlay(g_active_overlay);
+
+        rs64::video::set_vr_scale(scene, rs64::video::vr_scale(scene) * std::exp2(0.5f * scale.currentState.y * dt));
 
         static Uint32 s_logged = 0;
 
         if (now - s_logged > 500) {
             s_logged = now;
-            fprintf(stderr, "[vr] player size %.2f\n", rs64::video::vr_scale());
+            fprintf(stderr, "[vr] player size %.2f (scene %d)\n", rs64::video::vr_scale(scene), int(scene));
         }
     }
 
@@ -860,15 +935,14 @@ extern "C" uint32_t rs64_vr_target_rate(void)
     return (g.running.load() && (period > 0)) ? uint32_t(1e9 / double(period)) : 0;
 }
 
-// Game logic rate in VR: half the headset rate, each logic frame rendered twice at fresh head poses. At the full rate the present thread fell out of
-// step with the headset and about a third of finished frames never reached it (53 of 90 a second); ROGUESQ_VR_FULL_RATE=1 runs the full rate.
+// Game logic rate in VR: the headset rate. ROGUESQ_VR_HALF_RATE=1 runs half of it, each logic frame rendered twice at fresh head poses, for PCs that can't keep up.
 extern "C" int rs64_vr_game_hz(void)
 {
 
-    static const bool s_full = env_on("ROGUESQ_VR_FULL_RATE");
+    static const bool s_half = env_on("ROGUESQ_VR_HALF_RATE");
     const uint32_t rate = rs64_vr_target_rate();
 
-    return int(s_full ? rate : rate / 2);
+    return int(s_half ? rate / 2 : rate);
 }
 
 extern "C" void rs64_vr_eye_size(uint32_t* width, uint32_t* height)
@@ -962,30 +1036,30 @@ extern "C" int rs64_vr_begin_frame(void)
         return fail();
     }
 
-    // The display can run slower than the period the runtime reports (Link at 72 Hz reporting 90), so the period is the shortest step between
-    // display times over the last 90 frames, longer steps being frames the runtime skipped.
+    // The display can run slower than the period the runtime reports (Link at 72 Hz reporting 90), so the period is the median step between display
+    // times over the last 90 frames: skipped frames and the odd short step (which flipped the rate between 90 and 72 and stuttered) don't move it.
     static XrTime s_last = 0;
-    static int64_t s_shortest = INT64_MAX;
-    static uint32_t s_steps = 0;
+    static std::vector<int64_t> s_steps;
     static int64_t s_measured = 0;
     const int64_t step = (s_last != 0) ? int64_t(frame.predictedDisplayTime - s_last) : 0;
 
     s_last = frame.predictedDisplayTime;
 
     if (step > 0) {
-        s_shortest = std::min(s_shortest, step);
+        s_steps.push_back(step);
     }
 
-    if (++s_steps >= 90) {
-        const bool slower = (s_shortest != INT64_MAX) && (s_shortest * 10 > frame.predictedDisplayPeriod * 11);
+    if (s_steps.size() >= 90) {
+        std::nth_element(s_steps.begin(), s_steps.begin() + s_steps.size() / 2, s_steps.end());
+        const int64_t median = s_steps[s_steps.size() / 2];
+        const bool slower = median * 10 > frame.predictedDisplayPeriod * 11;
 
         if (rs64vr::logEnabled()) {
-            fprintf(stderr, "[vr] display period %.2f ms (runtime reports %.2f ms)\n", double(slower ? s_shortest : frame.predictedDisplayPeriod) / 1e6, double(frame.predictedDisplayPeriod) / 1e6);
+            fprintf(stderr, "[vr] display period %.2f ms (runtime reports %.2f ms)\n", double(slower ? median : frame.predictedDisplayPeriod) / 1e6, double(frame.predictedDisplayPeriod) / 1e6);
         }
 
-        s_measured = slower ? s_shortest : 0;
-        s_shortest = INT64_MAX;
-        s_steps = 0;
+        s_measured = slower ? median : 0;
+        s_steps.clear();
     }
 
     g.displayTime = frame.predictedDisplayTime;

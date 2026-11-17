@@ -947,7 +947,7 @@ func = "streamTerrainGridCellsByDistance"
 before_vram = 0x80042DDC
 text = '{ rs64_th_streamTerrainGridCellsByDistance_80042DDC(rdram, ctx); }'
 
-# Terrain grid probe (ROGUESQ_LOG_TERRAIN_GRID): bounding box written by binPolygonIntoTerrainGrid and the level cell budget.
+# After binPolygonIntoTerrainGrid: VR opens each binned cell's altitude band (rs64_vr_terrain_heights), then the terrain grid probe (ROGUESQ_LOG_TERRAIN_GRID).
 [[patches.hook]]
 func = "buildVisibleTerrainGridAroundCamera"
 before_vram = 0x80043A8C

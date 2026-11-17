@@ -11,7 +11,11 @@
 #include "os_compat.h"
 #include "ultramodern/ultra64.h"
 #include "util/debug_logs.h"
-#include "video/video_config.h"
+
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
+#endif
+
 #ifdef _WIN32
 #include "SDL.h"
 #else
@@ -568,14 +572,15 @@ void set_frequency(uint32_t freq)
 static const char* vr_audio_device()
 {
 
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+#if !defined(RS64_OPENXR)
     return nullptr;
 #else
 
     static constexpr const char* kHeadsetNames[] = { "Oculus", "Rift" };
     static std::string s_name;
 
-    if (!rs64::video::vr_mode())
+    // The Meta virtual device exists whenever its software is installed, so a VR launch that fell back to flat keeps the PC output.
+    if (!rs64::vr::has_session())
     {
         return nullptr;
     }

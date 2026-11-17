@@ -62,9 +62,14 @@ void set_keep_cutscene_draw_distance(bool on);
 bool vr_mode();
 void set_vr_mode(bool on);
 
-// The player's size in VR ("vrScale", default 8; bigger makes the world look smaller), set in the headset with the right thumbstick.
-float vr_scale();
-void set_vr_scale(float scale);
+// The player's size in VR, one per kind of scene: missions ("vrScale", default 8), the menus' 3D scenes such as the hangar ("vrScaleMenus") and
+// cutscenes and the opening crawl ("vrScaleCutscenes"), default 4 and 2. Bigger makes the world look smaller. Set in the headset with the right thumbstick.
+enum class VrScene { Missions, Menus, Cutscenes };
+
+// The scene kind of a loaded overlay (0 mission, 1 menu, 2 cinematic).
+VrScene vr_scene_of_overlay(int overlay);
+float vr_scale(VrScene scene);
+void set_vr_scale(VrScene scene, float scale);
 
 // RT64 copies each rendered frame back to RDRAM ("framebufferWriteback", default on; off by default on a Raspberry Pi). This game never reads them
 // back, and the copy plus the GPU wait it needs cost slow GPUs about half their frame time. Applies live.
