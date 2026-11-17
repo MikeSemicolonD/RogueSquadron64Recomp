@@ -1144,7 +1144,13 @@ extern "C" void rs64_env_level_load(uint8_t* rdram, float game_frac)
 
     rs64::mips::wf(rdram, 0x80136FBCu, frac);
     rs64_level_fog_frac(frac);
-    rs64_level_fog_reach(s_env ? (int)s_env->fogReach : (int)rs64env::FogReach::Auto);
+
+    // Escape from Fest (11) keeps its stock fog at a high draw distance, as Nonnah does by its early fog start.
+    constexpr uint32_t kEscapeFromFest = 11;
+    const bool keepFog = !mod && (rw(rdram, 0x80130B70u) == kEscapeFromFest);
+    const auto reach = s_env ? s_env->fogReach : (keepFog ? rs64env::FogReach::Thin : rs64env::FogReach::Auto);
+
+    rs64_level_fog_reach((int)reach);
 }
 
 extern "C" int rs64_level_has_clouds(void)

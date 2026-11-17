@@ -22,6 +22,13 @@
             "lights": []
         },
         {
+            "name": "haze_fest",
+            "enabled": true,
+            "level": 11,
+            "haze": { "amount": 0.15, "range": 8000 },
+            "lights": []
+        },
+        {
             "name": "emissive_shield_dome",
             "enabled": true,
             "mesh": "shield",

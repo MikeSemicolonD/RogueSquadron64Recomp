@@ -254,14 +254,24 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 #### Ray Tracing Caveats
 
+- With Ray Tracing on, the following levels get light-shaft haze because I genuinely think they visually work better with it:
+  - Search for the Nonnah
+  - Imperial Construction Yard
+  - Escape from Fest
+  - Battle above Taloraan
+
 - Stray/odd shadows in places mostly due to terrain or its edge geometry
 
-- Shadows popping in and out because of geometry being culled when outside the camera's frustum. It has been increased/offset to alleviate this.
+- Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
 
 - Reflections might not look completely accurate because of the nature of Screen Space Reflections
-  - Initial Calamari cutscene doesn't reflect the explosion: physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
+  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
 
 #### Draw distance Caveats
+
+- 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
+  - 'Search for Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
+  - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
 
 - Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
 
