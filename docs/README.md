@@ -23,6 +23,7 @@ How-to:
 - [debugging-with-visual-studio.md](engine/debugging-with-visual-studio.md): stepping through the recompiled code, crash and hang tools, and the F5 profiler HUD.
 - [debug-trace-env-vars.md](engine/debug-trace-env-vars.md): every `ROGUESQ_*` trace, dump and A/B switch.
 - [modding-host-api.md](engine/modding-host-api.md): the host API for native mods.
+- [rendering-and-ray-tracing.md](engine/rendering-and-ray-tracing.md): where to change ray-tracing settings, what ray tracing hits, and how objects and textures render.
 - [rt64-mcp.md](engine/rt64-mcp.md): an MCP server that lets an agent launch the game, freeze an exact frame and read RT64's inspector data.
 - [release-ci.md](engine/release-ci.md): the release pipeline and its runners.
 - [../patches/README.md](../patches/README.md): base-game C patches.
