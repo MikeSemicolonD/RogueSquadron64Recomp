@@ -197,7 +197,13 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 #### Rebinding controls
 
-Rebind in-game under **Options > Controller Settings** (the **Controls Menu** mod, on by default), which lists the actions for the keyboard, gamepad or joystick you open it with. Or press **F6** for the **Controls** window:
+Rebind in-game under **Options > Controller Settings** (the **Controls Menu** mod, on by default), which lists the actions for the keyboard, gamepad, joystick or VR controller you open it with:
+
+- Every action takes two bindings. Press left or right to pick a column; the selected one is shown in braces.
+- **Combos:** hold one input and press another while rebinding to bind the pair, shown as `A - B`. While both are held, the combo replaces the second input's own binding.
+- **Delete**, **Backspace** or holding **A** for 2 seconds clears a binding.
+
+Or press **F6** for the **Controls** window:
 
 - Click **Rebind** or **Add** on an action, then press a key or button or move an axis. **Clear** removes the selected binding.
 - **Joysticks / H.O.T.A.S.** shows each joystick's axes live, with invert and deadzone settings.
@@ -238,7 +244,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Shooting at the lava or colliding against the ground in Raid on Sullust produces fireballs that look dim/muted compared to the other bigger lava explosion effects in the level.
 
-- Terrain tile textures don't align perfectly and seem to have a slight cutoff.
+- Textures that are tiled or used in a gridlike form look smoother and lighter than the ones around them, almost like a faint shadow and/or they don't align perfectly. This is because of the textures themselves, not the recomp.
 
 - The select craft text and description font changes when it fades in/out making the text look a little more aliased than the text that displays normally.
 
