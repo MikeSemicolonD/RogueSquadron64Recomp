@@ -92,12 +92,42 @@ static void controls_menu_checks()
     assert(holds(b, Target::B, key(SDL_SCANCODE_BACKSPACE)) && holds(b, Target::B, Source{ SourceKind::MouseButton, SDL_BUTTON_LEFT, 0 }));
     assert(holds(b, Target::A, key(SDL_SCANCODE_RETURN)));
 
-    // rebind_swap_with_second_source
+    // rebind_swap_with_second_column: Return is THRUST's second (shown) column, so THRUST gets Space there.
     b = default_bindings();
-    assert(rebind(b, Target::B, Device::Keyboard, key(SDL_SCANCODE_RETURN)) == Target::Count);
+    assert(rebind(b, Target::B, Device::Keyboard, key(SDL_SCANCODE_RETURN)) == Target::A);
     assert(same(b.targets[(int)Target::B][0], key(SDL_SCANCODE_RETURN)));
-    assert(!holds(b, Target::A, key(SDL_SCANCODE_RETURN)) && !holds(b, Target::A, key(SDL_SCANCODE_SPACE)));
+    assert(!holds(b, Target::A, key(SDL_SCANCODE_RETURN)));
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 1)], key(SDL_SCANCODE_SPACE)));
     assert(same(b.targets[(int)Target::A][0], key(SDL_SCANCODE_W)));
+
+    // Columns: THRUST shows W | Return; binding column 1 replaces Return, a third keyboard source is never shown.
+    b = default_bindings();
+    assert(nth_source(b, Target::A, Device::Keyboard, 0) == shown_source(b, Target::A, Device::Keyboard));
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 1)], key(SDL_SCANCODE_RETURN)));
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 2)], Source{ SourceKind::MouseButton, SDL_BUTTON_MIDDLE, 0 }));
+    assert(nth_source(b, Target::A, Device::Keyboard, 3) == -1);
+    assert(rebind(b, Target::A, Device::Keyboard, key(SDL_SCANCODE_G), 1) == Target::Count);
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 0)], key(SDL_SCANCODE_W)));
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 1)], key(SDL_SCANCODE_G)));
+
+    // An empty second column is filled; binding the row's own other input swaps the two columns.
+    b = default_bindings();
+    assert(nth_source(b, Target::Z, Device::Keyboard, 1) == -1);
+    rebind(b, Target::Z, Device::Keyboard, key(SDL_SCANCODE_K), 1);
+    assert(same(b.targets[(int)Target::Z][nth_source(b, Target::Z, Device::Keyboard, 1)], key(SDL_SCANCODE_K)));
+    assert(rebind(b, Target::Z, Device::Keyboard, key(SDL_SCANCODE_S), 1) == Target::Count);
+    assert(same(b.targets[(int)Target::Z][nth_source(b, Target::Z, Device::Keyboard, 0)], key(SDL_SCANCODE_K)));
+    assert(same(b.targets[(int)Target::Z][nth_source(b, Target::Z, Device::Keyboard, 1)], key(SDL_SCANCODE_S)));
+
+    // clear_binding removes one column; the other moves up to column 0 and other devices keep theirs.
+    b = default_bindings();
+    clear_binding(b, Target::A, Device::Keyboard, 0);
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 0)], key(SDL_SCANCODE_RETURN)));
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 1)], Source{ SourceKind::MouseButton, SDL_BUTTON_MIDDLE, 0 }));
+    assert(nth_source(b, Target::A, Device::Gamepad, 0) >= 0);
+    clear_binding(b, Target::A, Device::Keyboard, 1);
+    assert(same(b.targets[(int)Target::A][nth_source(b, Target::A, Device::Keyboard, 0)], key(SDL_SCANCODE_RETURN)));
+    assert(nth_source(b, Target::A, Device::Keyboard, 1) == -1);
 
     // rebind_same_source_is_noop
     b = default_bindings();
@@ -190,6 +220,135 @@ static void controls_menu_checks()
     assert(menu_fixed_mask(st, true) == (0x1000 | 0x0800));
 }
 
+static Source vr(int code) { return Source{ SourceKind::VrButton, code, 0 }; }
+
+static Source combo(Source main, const Source& held)
+{
+
+    main.with = as_held(held);
+
+    return main;
+}
+
+// Combos: a binding counts only while its `with` is held, and an active combo hides the plain binding of its own input.
+static void combo_checks()
+{
+
+    uint8_t keys[SDL_NUM_SCANCODES] = {0};
+    RawState st;
+    uint16_t btn = 0;
+    float x = 0, y = 0;
+
+    st.keys = keys;
+    st.keys_len = SDL_NUM_SCANCODES;
+
+    Bindings b;
+    b.targets[(int)Target::RTrig].push_back(combo(key(SDL_SCANCODE_E), key(SDL_SCANCODE_LSHIFT)));
+    b.targets[(int)Target::CDown].push_back(key(SDL_SCANCODE_E));
+
+    keys[SDL_SCANCODE_E] = 1;
+    resolve(b, st, &btn, &x, &y);
+    assert(!(btn & N64_R_TRIG) && (btn & N64_D_CBUTTONS));
+
+    keys[SDL_SCANCODE_LSHIFT] = 1;
+    resolve(b, st, &btn, &x, &y);
+    assert((btn & N64_R_TRIG) && !(btn & N64_D_CBUTTONS));
+
+    keys[SDL_SCANCODE_E] = 0;
+    resolve(b, st, &btn, &x, &y);
+    assert(!(btn & N64_R_TRIG) && !(btn & N64_D_CBUTTONS));
+    keys[SDL_SCANCODE_LSHIFT] = 0;
+
+    // input_down reads the source's own input only.
+    keys[SDL_SCANCODE_E] = 1;
+    assert(input_down(b, st, b.targets[(int)Target::RTrig][0]));
+    keys[SDL_SCANCODE_E] = 0;
+
+    // Names: the held input first.
+    assert(menu_source_name(b.targets[(int)Target::RTrig][0]) == "L SHIFT - E");
+    assert(font_safe(menu_source_name(b.targets[(int)Target::RTrig][0])));
+    assert(source_label(b.targets[(int)Target::RTrig][0]) == "Left Shift+E");
+
+    // Rebinding to a combo stores it; the same input without the held one is a different binding.
+    Bindings rb = default_bindings();
+    rebind(rb, Target::RTrig, Device::Keyboard, combo(key(SDL_SCANCODE_E), key(SDL_SCANCODE_LSHIFT)));
+    const Source& shown = rb.targets[(int)Target::RTrig][shown_source(rb, Target::RTrig, Device::Keyboard)];
+    assert(shown.code == SDL_SCANCODE_E && shown.with.kind == SourceKind::Key && shown.with.code == SDL_SCANCODE_LSHIFT);
+
+    // JSON keeps the combo.
+    assert(save_bindings(b, "combo_test.json"));
+    Bindings r;
+    assert(load_bindings(r, "combo_test.json"));
+    remove("combo_test.json");
+    assert(r.targets[(int)Target::RTrig].size() == 1);
+    assert(r.targets[(int)Target::RTrig][0].with.kind == SourceKind::Key && r.targets[(int)Target::RTrig][0].with.code == SDL_SCANCODE_LSHIFT);
+    assert(r.targets[(int)Target::CDown][0].with.kind == SourceKind::None);
+}
+
+// VR controllers are a device of their own: today's layout as defaults, both grips = Roll, the left stick steers.
+static void vr_checks()
+{
+
+    RawState st;
+    uint16_t btn = 0;
+    float x = 0, y = 0;
+    const Bindings b = default_bindings();
+
+    assert(device_of(vr(VrA)) == Device::Vr && device_of(Source{ SourceKind::VrAxis, 0, 1 }) == Device::Vr);
+
+    // No keyboard, pad or joystick, but VR input: active.
+    Bindings only_vr = b;
+    only_vr.keyboard_enabled = false;
+    assert(!resolve(only_vr, st, &btn, &x, &y));
+    st.vr = true;
+    assert(resolve(only_vr, st, &btn, &x, &y));
+
+    st.vr_buttons = 1u << VrA;
+    resolve(b, st, &btn, &x, &y);
+    assert(btn == N64_B_BUTTON);
+
+    st.vr_buttons = 1u << VrGripL;
+    resolve(b, st, &btn, &x, &y);
+    assert(!(btn & N64_R_TRIG));
+
+    st.vr_buttons = (1u << VrGripL) | (1u << VrGripR);
+    resolve(b, st, &btn, &x, &y);
+    assert(btn & N64_R_TRIG);
+
+    st.vr_buttons = 0;
+    st.vr_x = 1.0f;
+    st.vr_y = 1.0f;
+    resolve(b, st, &btn, &x, &y);
+    assert(near(x, 80.0f / 127.0f) && near(y, 80.0f / 127.0f));
+    st.vr_x = st.vr_y = 0.0f;
+
+    // The roll row shows the grip combo.
+    assert(menu_source_name(b.targets[(int)Target::RTrig][shown_source(b, Target::RTrig, Device::Vr)]) == "L GRIP - R GRIP");
+    assert(font_safe(menu_source_name(Source{ SourceKind::VrAxis, 0, -1 })));
+
+    // Menus: VR A confirms, B backs out, Menu pauses.
+    st.vr_buttons = (1u << VrA) | (1u << VrMenu);
+    assert(menu_fixed_mask(st) == (N64_A_BUTTON | N64_START_BUTTON));
+    st.vr_buttons = 0;
+
+    // A VR capture takes VR inputs only; resetting VR leaves the keyboard alone.
+    assert(capture_accepts(CaptureFilter{ false, Device::Vr }, vr(VrX)) && !capture_accepts(CaptureFilter{ false, Device::Vr }, key(SDL_SCANCODE_G)));
+    Bindings rb = b;
+    rebind(rb, Target::A, Device::Vr, vr(VrY));
+    rebind(rb, Target::A, Device::Keyboard, key(SDL_SCANCODE_G));
+    rb = default_device_bindings(rb, Device::Vr);
+    assert(rb.targets[(int)Target::A][shown_source(rb, Target::A, Device::Vr)].code == VrTriggerR);
+    assert(rb.targets[(int)Target::A][shown_source(rb, Target::A, Device::Keyboard)].code == SDL_SCANCODE_G);
+
+    // JSON keeps VR sources and the grip combo.
+    assert(save_bindings(b, "vr_test.json"));
+    Bindings r;
+    assert(load_bindings(r, "vr_test.json"));
+    remove("vr_test.json");
+    const Source& roll = r.targets[(int)Target::RTrig][shown_source(r, Target::RTrig, Device::Vr)];
+    assert(roll.kind == SourceKind::VrButton && roll.with.kind == SourceKind::VrButton);
+}
+
 // menu_fixed_mask_pad: pad A/B/Start and the D-pad.
 static void menu_fixed_pad_checks()
 {
@@ -245,6 +404,8 @@ int main() {
 #endif
 
     controls_menu_checks();
+    combo_checks();
+    vr_checks();
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {
         printf("SDL_Init failed: %s\n", SDL_GetError());
@@ -404,6 +565,11 @@ int main() {
         add_joystick_defaults(x, xd, 7, 34, 1);
         assert(x.targets[(int)Target::Throttle].size() == 1 && x.targets[(int)Target::Throttle][0].code == 2);
         assert(x.targets[(int)Target::RollRight].size() == 1 && x.targets[(int)Target::RollRight][0].code == 5);
+
+        // Roll left/right are combos with the Roll button (button 6).
+        const Source& rl = x.targets[(int)Target::RollLeft][0];
+        assert(rl.with.kind == SourceKind::JoyButton && rl.with.code == 6 && rl.with.dev == xd);
+        assert(menu_source_name(rl) == "J1 BTN 6 - J1 AX 5 <");
         assert(x.targets[(int)Target::StickRight].size() == 1 && x.targets[(int)Target::StickRight][0].code == 0);
     }
 

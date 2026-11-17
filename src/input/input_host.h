@@ -59,8 +59,11 @@ namespace rs64::app {
     int joy_dev_locked(const OpenJoy& oj);
     void rebind_open_joysticks_locked();
 
+    // Port 0's N64 buttons as the game last read them.
+    uint16_t n64_buttons();
+
     // Rebind capture shared by the F6 window and the in-game Controls screen. capture_poll: 1 = *out captured,
-    // 0 = waiting, -1 = cancelled (Esc, or pad Start for a one-device capture). Call without holding g_bindings_mtx.
+    // 0 = waiting, -1 = cancelled (Esc, or pad Start for a one-device capture), 2 = cleared (Delete or Backspace, when the filter asks). Call without holding g_bindings_mtx.
     void capture_begin(const rs64::input::CaptureFilter& f);
     int capture_poll(rs64::input::Source* out);
     void capture_end();

@@ -85,6 +85,44 @@ rs64::input::Device last_device() {
     return s_last_device.load();
 }
 
+// The VR controllers as the game's input poll last read them, for the bindings and the rebind capture; g_vr_ok is false without a session or input focus.
+static std::atomic<bool> g_vr_ok{false};
+static std::atomic<uint32_t> g_vr_buttons{0};
+static std::atomic<float> g_vr_x{0.0f};
+static std::atomic<float> g_vr_y{0.0f};
+
+static void poll_vr_state()
+{
+
+#if defined(RS64_OPENXR)
+
+    static_assert((int)rs64::vr::kPadButtons == (int)rs64::input::VrButtonCount);
+
+    rs64::vr::Pad pad;
+    const bool ok = rs64::vr::poll_pad(&pad);
+
+    // A new VR press makes VR the device the Controls screen edits.
+    if (ok && (pad.held & ~g_vr_buttons.load())) {
+        s_last_device.store(rs64::input::Device::Vr);
+    }
+
+    g_vr_ok.store(ok);
+    g_vr_buttons.store(ok ? pad.held : 0u);
+    g_vr_x.store(ok ? pad.stick_x : 0.0f);
+    g_vr_y.store(ok ? pad.stick_y : 0.0f);
+
+#endif
+}
+
+static void fill_vr_state(rs64::input::RawState& st)
+{
+
+    st.vr = g_vr_ok.load();
+    st.vr_buttons = g_vr_buttons.load();
+    st.vr_x = g_vr_x.load();
+    st.vr_y = g_vr_y.load();
+}
+
 // Esc pressed in a pause submenu went to the game as B (pause_escape); the held key drives no binding until released.
 static std::atomic<bool> s_esc_dropped{false};
 
@@ -1318,45 +1356,6 @@ static void pad_gyro_steer(float* x, float* y)
     }
 }
 
-#if defined(RS64_OPENXR)
-
-// Touch controllers on the default Luke layout; in menus A, B and Menu confirm, go back and pause.
-static bool merge_vr_pad(bool menu, uint16_t* buttons, float* x, float* y)
-{
-
-    rs64::vr::Pad pad;
-
-    if (!rs64::vr::poll_pad(&pad))
-    {
-        return false;
-    }
-
-    static constexpr uint16_t kFlight[rs64::vr::kPadButtons] = { N64_B_BUTTON, N64_L_CBUTTONS, N64_R_CBUTTONS, N64_START_BUTTON, N64_L_TRIG, N64_D_CBUTTONS, N64_Z_TRIG, N64_A_BUTTON, 0, 0 };
-    static constexpr uint16_t kMenu[rs64::vr::kPadButtons] = { N64_A_BUTTON, N64_B_BUTTON, 0, N64_START_BUTTON, 0, 0, 0, 0, 0, 0 };
-    constexpr uint32_t kBothGrips = (1u << rs64::vr::kPadGripL) | (1u << rs64::vr::kPadGripR);
-    const uint16_t* map = menu ? kMenu : kFlight;
-
-    for (int i = 0; i < rs64::vr::kPadButtons; i++) {
-        if (pad.held & (1u << i)) {
-            *buttons |= map[i];
-        }
-    }
-
-    // Both grips held is the roll button.
-    if (!menu && ((pad.held & kBothGrips) == kBothGrips)) {
-        *buttons |= N64_R_TRIG;
-    }
-
-    if ((pad.stick_x * pad.stick_x + pad.stick_y * pad.stick_y) > (*x * *x + *y * *y)) {
-        *x = pad.stick_x;
-        *y = pad.stick_y;
-    }
-
-    return true;
-}
-
-#endif
-
 static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, float* y)
 {
 
@@ -1367,6 +1366,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
 
         return false;
     }
+
+    // Before the Controls window's early return, so its rebind capture sees the VR controllers.
+    poll_vr_state();
 
     // While the controls window is open, suppress gameplay input so rebinding
     // or navigating the UI doesn't also drive the ship. Still report connected.
@@ -1553,6 +1555,7 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     st.mouse_dy = s_sm_dy;
     st.joys = g_joy_by_dev.data();
     st.joys_len = (int)g_joy_by_dev.size();
+    fill_vr_state(st);
 
     if (input_claim().on) apply_input_claim(st);
 
@@ -1580,14 +1583,6 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
             btn &= (uint16_t)~brake;
         }
     }
-
-#if defined(RS64_OPENXR)
-
-    if (merge_vr_pad(mouse_menu_context(menu_ctx), &btn, x, y)) {
-        active = true;
-    }
-
-#endif
 
     if (!active)
     {
@@ -1654,6 +1649,14 @@ extern "C" int rs64_atst_head(float* yaw, float* pitch)
     return 1;
 }
 
+// Port 0's buttons as the game last read them (the Controls list's hold-A clear).
+static std::atomic<uint16_t> s_n64_buttons{0};
+
+uint16_t n64_buttons()
+{
+    return s_n64_buttons.load();
+}
+
 bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y)
 {
 
@@ -1662,6 +1665,7 @@ bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y)
 
         if (c == 0) {
             rs64::host::run_input_filters(0, b, sx, sy);
+            s_n64_buttons.store(*b);
         }
 
         return ok;
@@ -1732,8 +1736,14 @@ struct CaptureState {
     uint32_t pad = 0, mouse = 0;
     uint16_t touch = 0;
     float pad_axes[SDL_CONTROLLER_AXIS_MAX] = {0};
+    uint32_t vr = 0;
+    float vr_axes[2] = {0};
     struct JoySnap { SDL_JoystickID id; std::vector<float> axes; std::vector<uint8_t> buttons, hats; };
     std::vector<JoySnap> joys;
+
+    // The first input pressed, waiting: released alone it binds by itself; a second press while it is down binds the two as a combo.
+    bool pending = false;
+    rs64::input::Source first;
 };
 
 CaptureState s_cap;
@@ -1774,6 +1784,10 @@ void capture_begin(const rs64::input::CaptureFilter& f)
 
     for (int a = 0; controller && a < SDL_CONTROLLER_AXIS_MAX; ++a) s_cap.pad_axes[a] = SDL_GameControllerGetAxis(controller, (SDL_GameControllerAxis)a) / 32767.0f;
 
+    s_cap.vr = g_vr_buttons.load();
+    s_cap.vr_axes[0] = g_vr_x.load();
+    s_cap.vr_axes[1] = g_vr_y.load();
+
     std::lock_guard<std::mutex> lk(g_bindings_mtx);
 
     for (const OpenJoy& oj : g_open_joys)
@@ -1800,7 +1814,9 @@ int capture_poll(rs64::input::Source* out)
     int nk = 0;
     const uint8_t* ks = SDL_GetKeyboardState(&nk);
     const uint32_t pad = pad_buttons_now();
-    const bool start_cancels = !s_cap.filter.any && (pad & ~s_cap.pad & (1u << SDL_CONTROLLER_BUTTON_START));
+    const uint32_t vr = g_vr_buttons.load();
+    const bool vr_capture = !s_cap.filter.any && (s_cap.filter.device == ri::Device::Vr);
+    const bool start_cancels = !s_cap.filter.any && ((pad & ~s_cap.pad & (1u << SDL_CONTROLLER_BUTTON_START)) || (vr_capture && (vr & ~s_cap.vr & (1u << ri::VrMenu))));
     const uint16_t touch = g_touch_buttons.load();
     const bool touch_cancels = touch & ~s_cap.touch & (rs64::touch::B | rs64::touch::START);
 
@@ -1813,11 +1829,24 @@ int capture_poll(rs64::input::Source* out)
         return -1;
     }
 
+    const auto pressed_now = [&](int sc) { return sc < nk && ks[sc] && !s_cap.keys[sc]; };
+
+    if (s_cap.filter.clear_keys && (pressed_now(SDL_SCANCODE_DELETE) || pressed_now(SDL_SCANCODE_BACKSPACE)))
+    {
+        s_cap.active = false;
+
+        return 2;
+    }
+
     ri::Source got;
     bool have = false;
+    const ri::Source& first = s_cap.first;
     auto offer = [&](const ri::Source& s) {
 
-        if (!have && ri::capture_accepts(s_cap.filter, s)) {
+        // A held axis is offered every poll; the waiting first input never pairs with itself.
+        const bool is_first = s_cap.pending && s.kind == first.kind && s.code == first.code && s.dir == first.dir && s.dev == first.dev;
+
+        if (!have && !is_first && ri::capture_accepts(s_cap.filter, s)) {
             got = s;
             have = true;
         }
@@ -1854,6 +1883,22 @@ int capture_poll(rs64::input::Source* out)
     }
 
     s_cap.mouse = mb;
+
+    for (int b = 0; b < ri::VrButtonCount; ++b)
+    {
+        if ((vr >> b & 1u) && !(s_cap.vr >> b & 1u)) offer({ ri::SourceKind::VrButton, b, 0 });
+    }
+
+    s_cap.vr = vr;
+
+    const float vr_axes[2] = { g_vr_x.load(), g_vr_y.load() };
+
+    for (int a = 0; a < 2; ++a)
+    {
+        const float delta = vr_axes[a] - s_cap.vr_axes[a];
+
+        if (std::fabs(delta) >= 0.5f) offer({ ri::SourceKind::VrAxis, a, (int8_t)(delta > 0.0f ? 1 : -1) });
+    }
 
     std::unique_lock<std::mutex> lk(g_bindings_mtx);
 
@@ -1897,11 +1942,41 @@ int capture_poll(rs64::input::Source* out)
         }
     }
 
+    // The first input waits for a second one (a combo) or its own release (bound alone).
+    ri::RawState now;
+
+    now.keys = ks;
+    now.keys_len = nk;
+    now.pad = controller;
+    now.mouse_buttons = mb;
+    now.joys = g_joy_by_dev.data();
+    now.joys_len = (int)g_joy_by_dev.size();
+    fill_vr_state(now);
+
+    const bool first_down = s_cap.pending && ri::input_down(g_bindings, now, s_cap.first);
+
     lk.unlock();
 
-    if (!have) return 0;
+    if (!s_cap.pending)
+    {
+        s_cap.pending = have;
+        s_cap.first = got;
 
-    *out = got;
+        return 0;
+    }
+
+    ri::Source combo = got;
+
+    combo.with = ri::as_held(s_cap.first);
+
+    if (have && first_down && ri::capture_accepts(s_cap.filter, combo)) {
+        *out = combo;
+    } else if (!first_down) {
+        *out = s_cap.first;
+    } else {
+        return 0;
+    }
+
     s_cap.active = false;
 
     return 1;
@@ -1924,6 +1999,7 @@ bool capture_device_present(rs64::input::Device d)
     {
         case rs64::input::Device::Gamepad:  return controller != nullptr;
         case rs64::input::Device::Joystick: return !g_open_joys.empty();
+        case rs64::input::Device::Vr:       return g_vr_ok.load();
         default:                            return true;
     }
 }

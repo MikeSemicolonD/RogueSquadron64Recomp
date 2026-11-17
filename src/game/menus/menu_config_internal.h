@@ -344,6 +344,7 @@ bool langs_on_screen(uint8_t* rdram);
 
 int font_glyph(uint8_t* rdram, uint32_t font, char c);
 int font_width(uint8_t* rdram, uint32_t font, const std::string& s, int gap);
+int text_advance(uint8_t* rdram, uint32_t group, const std::string& s);
 void ensure_menu_period(uint8_t* rdram);
 void show_menu_lock(uint8_t* rdram, bool lock);
 

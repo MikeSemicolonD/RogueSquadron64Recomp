@@ -43,6 +43,38 @@ int font_width(uint8_t* rdram, uint32_t font, const std::string& s, int gap)
     return w;
 }
 
+// Width of s as a text group lays it out (measurePlayerSlotTextLayout 0x80062108), in the units of its tab stops: a glyph adds its width (+0x18 by
+// glyph; +0x02 in a fixed-width font, flag +0x14) and the letter spacing (+0x08); a space adds +0x1C, +0x02 and the spacing; a character with no glyph adds +0x02 and the spacing.
+int text_advance(uint8_t* rdram, uint32_t group, const std::string& s)
+{
+
+    const uint32_t obj = (uint32_t)rd_w(rdram, 0x9FC10u + group * 4) - 0x80000000u;
+    const uint32_t glyphs = (uint32_t)rd_w(rdram, obj + 0x20) - 0x80000000u;
+    const uint32_t widths = (uint32_t)rd_w(rdram, obj + 0x18) - 0x80000000u;
+    const int cell = (uint16_t)rd_h(rdram, obj + 0x02);
+    const int spacing = (int16_t)rd_h(rdram, obj + 0x08);
+    const bool fixed = rd_b(rdram, obj + 0x14) != 0;
+    int w = 0;
+
+    for (const char ch : s)
+    {
+        const uint8_t c = (uint8_t)ch;
+
+        if (c == ' ') {
+            w += (int8_t)rd_b(rdram, obj + 0x1C) + cell + spacing;
+            continue;
+        }
+
+        if (c < 0x20) continue;
+
+        const uint8_t g = rd_b(rdram, glyphs + c);
+
+        w += ((g == 0xFF) || fixed) ? (cell + spacing) : (rd_b(rdram, widths + g) + spacing);
+    }
+
+    return w;
+}
+
 // The padlock takes the brace '}' slot, which is also the level select's right arrow (the string "}" at 0x800A5BCC): the slot shows the padlock only on
 // a page whose live labels hold a '$' (co-op's locked games), the brace everywhere else.
 static struct { uint32_t rec = 0, dst = 0; std::vector<uint8_t> brace, lock; bool shown = true; } s_lock_glyph;

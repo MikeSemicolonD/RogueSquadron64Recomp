@@ -163,6 +163,10 @@ void window_size(float* w, float* h) {
 // and the thumb's least height are in window heights.
 constexpr float kBarGameX = 268.0f, kTextBarGameX = 300.0f, kBarWidth = 0.012f, kBarReach = 0.04f, kBarMinThumb = 0.05f;
 
+// The bindings list (CONTROLLER SETTINGS, menu 5) has two binding columns and runs wider.
+constexpr int kBindingsMenu = 5;
+constexpr float kBindingsBarGameX = 304.0f;
+
 bool list_scrollbar(float w, float h, ListBar* out)
 {
 
@@ -203,7 +207,9 @@ bool list_scrollbar(float w, float h, ListBar* out)
         return false;
     }
 
-    rs64::touch::n64_to_window(area1 > area0 ? kTextBarGameX : kBarGameX, 0.0f, w, h, &x0, &unused);
+    const float bar_x = (area1 > area0) ? kTextBarGameX : ((menu == kBindingsMenu) ? kBindingsBarGameX : kBarGameX);
+
+    rs64::touch::n64_to_window(bar_x, 0.0f, w, h, &x0, &unused);
 
     const float th = std::min(y1 - y0, std::max(kBarMinThumb, (y1 - y0) * visible / total));
     const float t0 = y0 + (y1 - y0 - th) * top / (total - visible);
