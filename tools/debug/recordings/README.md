@@ -36,9 +36,9 @@ A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, th
 | 16 | Beggar's Canyon (bonus) | | none yet |
 | 17 | The Death Star Trench Run (bonus) | | none yet |
 | 18 | The Battle of Hoth (bonus) | | none yet |
-| 20 | CHICKEN (AT-ST passcode level) | | none yet |
+| 20 | CHICKEN (AT-ST passcode level) | [ai/20-chicken](ai/20-chicken) | see below |
 
-Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, `construction_yards_bonus` and both `assault_on_kile_ii` recordings were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
+Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, and `construction_yards_bonus` were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
 
 ### 00 Ambush at Mos Eisley
 
@@ -62,6 +62,14 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 | File | Kind | Contents |
 | --- | --- | --- |
 | `kessel.rec` | Session (v3) | Boot, menus, then flying past the searchlight towers and fighting (frame-interpolation checks) |
+
+### 20 CHICKEN (ai/)
+
+`ai/` holds recordings an agent played through the rs64 MCP, one `<id>-<mission>` folder per level, kept apart from hand-played runs.
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `chicken_try6.rec` | Mission, no baseline | Agent-played AT-ST run with recorded head aim, 3238 frames: first base cleared, bunker opened, rebel pilots leave it ~frame 2440. A checkpoint to continue from with `ROGUESQ_LS_RESUME`, not a test |
 
 ## Scripts
 
