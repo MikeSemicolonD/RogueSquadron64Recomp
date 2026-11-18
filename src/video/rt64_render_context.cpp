@@ -90,6 +90,9 @@ extern "C" volatile unsigned long long g_most_drawn_fb_ms;
 extern "C" volatile uint32_t g_rs64_clear_seq;          // mode-change clear count and size (hook_helpers.cpp)
 extern "C" volatile uint32_t g_rs64_clear_bytes;
 
+extern "C" int rs64_crawl_playing(void);
+extern "C" int rs64_vr_active(void);
+
 // Defined below
 extern "C" void rs64_sanitize_fb_registry(void);
 
@@ -1541,6 +1544,9 @@ private:
         // Every present: the nav sequencer needs fresh state to catch fast menu screens.
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
         rs64::discord::poll((const uint8_t*)app->core.RDRAM);
+
+        // Letterboxed menus (level select, hangar) fill the window height and lose their sides; cutscenes and the crawl keep their bars.
+        RT64::letterboxCrop.store((g_active_overlay == 1) && !rs64_crawl_playing() && !rs64_vr_active(), std::memory_order_relaxed);
 
         diag().log_gamestate();
 
