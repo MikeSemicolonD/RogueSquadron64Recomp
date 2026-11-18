@@ -36,6 +36,14 @@ These are issues that are external to the base game relating to how the mod itse
 > For example, 'Draw Distance' would be considered a "**Game Issue**" which in turn warrants a "**Recomp. Feature**" to allow users to adjust the draw distance from a defined base value. You'd then provide an option in the video settings file while also providing a 'modding hook'.
 > A mod hook allows an external UI Mod to provide front-end functionality to the user, like a Draw Distance Slider in the Options menu.
 
+## Making a Pull Request
+
+1. Fork the repo, clone it with `--recursive`, and branch off `main`.
+2. Build and run the game as described in [Building](README.md#building). You need your own ROM. Never commit it or anything made from it.
+3. Overrides of game functions go in `rogue_squadron.toml` hooks, not hand edits to `RecompiledFuncs/`. [AGENTS.md](AGENTS.md) has the rules and the code style, and an AI agent will read it on its own.
+4. Run the unit tests and style check. With a game build: `cmake --build build --config Release --target rs64_unit_tests`. Without a ROM: `cmake -S tests -B build-tests` then `cmake --build build-tests --config Release --target rs64_unit_tests`.
+5. Open the PR against `main` and fill in the template, including how you tested it.
+
 ## AI Usage
 
 AI Agent usage **is** allowed and **encouraged** when working/contributing to this repo. This is basically a hobby project and really I don't expect to be inundated with pull requests. If you'd like to contribute feel free to make a pull request.
