@@ -8,6 +8,7 @@
 #include "game/mod_content/terrain_edit.h"
 #include "lockstep/lockstep_core.h"
 #include "util/mips_call.h"
+#include "util/host_ram_map.h"
 #include "hle/rt64_rs64_lights.h"
 #include "json/json.hpp"
 #ifdef _WIN32
@@ -42,6 +43,8 @@ extern "C" int rs64_rules_run_line(uint8_t*, void*, const char*);
 extern "C" int32_t rs64_rules_var_get(const char*);
 extern "C" void rs64_rules_var_set(const char*, int32_t);
 extern "C" float rs64_rules_mission_seconds(void);
+extern "C" int rs64_rules_spawn(uint8_t*, void*, const char*, const char*, const float*);
+extern "C" void rs64_set_mod_camera_view(float, float, float, float, float);
 extern "C" int rs64_hook(uint32_t hook, uint8_t* rdram, recomp_context* ctx);
 
 namespace {
@@ -325,6 +328,8 @@ void init_once(uint8_t* rdram) {
     s.mod_data_dir = svc_mod_data_dir;
     s.save_slot = svc_save_slot;
     s.light_set = svc_light_set;
+    s.spawn_unit = rs64_rules_spawn;
+    s.camera_view = rs64_set_mod_camera_view;
     s_rdram = rdram;
     rs64::host::bind_services(s);
     rs64_register_builtin_hooks();
@@ -354,6 +359,10 @@ void init_once(uint8_t* rdram) {
 
     // The tile table terrain_set_cell moves the map's tiles to.
     rs64_snapshot_add_range(rs64::terrain::kTable - 0x80000000u, rs64::terrain::kTableEnd - 0x80000000u);
+
+    // Spawned units' DAT records: game records the NPC health guard must accept, and the renderer may read.
+    rs64::host::add_valid_ram(RS64_HR_SPAWNED, RS64_HR_SPAWNED_END - RS64_HR_SPAWNED);
+    rs64_snapshot_add_range(RS64_HR_SPAWNED - 0x80000000u, RS64_HR_SPAWNED_END - 0x80000000u);
 
     rs64_register_builtin_late_hooks();
     rs64::host::seal();
@@ -552,6 +561,50 @@ void ex_destroy_object(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64_rul
 void ex_key_down(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = svc_key_down(arg_str(rdram, ctx, 4).c_str()); }
 void ex_save_slot(uint8_t*, recomp_context* ctx) { ctx->r2 = svc_save_slot(); }
 
+// rs64_spawn_unit(template_name, name, const float pos[3]): name may be NULL.
+void ex_spawn_unit(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const uint32_t at = (uint32_t)ctx->r6;
+    const std::string tmpl = arg_str(rdram, ctx, 4);
+    const std::string name = arg_str(rdram, ctx, 5);
+
+    if (tmpl.empty() || !guest_ptr(at, 12))
+    {
+        ctx->r2 = -1;
+
+        return;
+    }
+
+    float pos[3];
+
+    for (int i = 0; i < 3; ++i)
+    {
+        const uint32_t bits = (uint32_t)MEM_W(4 * i, (gpr)(int32_t)at);
+
+        std::memcpy(&pos[i], &bits, 4);
+    }
+
+    ctx->r2 = rs64_rules_spawn(rdram, ctx, tmpl.c_str(), name.empty() ? nullptr : name.c_str(), pos);
+}
+
+// rs64_camera_view(const float view[5]): yaw, pitch, then the offset x, y, z; NULL resets the view.
+void ex_camera_view(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const uint32_t at = (uint32_t)ctx->r4;
+    float v[5] = {};
+
+    for (int i = 0; guest_ptr(at, 20) && i < 5; ++i)
+    {
+        const uint32_t bits = (uint32_t)MEM_W(4 * i, (gpr)(int32_t)at);
+
+        std::memcpy(&v[i], &bits, 4);
+    }
+
+    rs64_set_mod_camera_view(v[0], v[1], v[2], v[3], v[4]);
+}
+
 // rs64_light_set(name, preset_json): the JSON may run to 16 KB; a null pointer removes the preset.
 void ex_light_set(uint8_t* rdram, recomp_context* ctx)
 {
@@ -605,7 +658,7 @@ const std::pair<const char*, recomp_func_t*> kNrmExports[] = {
     { "rs64_fire_rule_event", ex_fire_rule_event }, { "rs64_run_rule_line", ex_run_rule_line }, { "rs64_rule_var_get", ex_rule_var_get },
     { "rs64_rule_var_set", ex_rule_var_set }, { "rs64_object_by_name", ex_object_by_name }, { "rs64_object_health", ex_object_health },
     { "rs64_destroy_object", ex_destroy_object }, { "rs64_terrain_get_cell", ex_terrain_get_cell }, { "rs64_terrain_set_cell", ex_terrain_set_cell },
-    { "rs64_key_down", ex_key_down }, { "rs64_save_slot", ex_save_slot }, { "rs64_light_set", ex_light_set },
+    { "rs64_key_down", ex_key_down }, { "rs64_save_slot", ex_save_slot }, { "rs64_light_set", ex_light_set }, { "rs64_spawn_unit", ex_spawn_unit }, { "rs64_camera_view", ex_camera_view },
 };
 
 int trigger_hook_event(uint32_t hook, uint8_t* rdram, recomp_context* ctx)

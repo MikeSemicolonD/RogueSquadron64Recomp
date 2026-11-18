@@ -15,7 +15,7 @@ cmake -S mods/native-demo -B mods/native-demo/build
 cmake --build mods/native-demo/build
 ```
 
-The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v11 taken` and `[host] mod native-demo took the host API (...)`.
+The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v12 taken` and `[host] mod native-demo took the host API (...)`.
 
 How [native_demo.cpp](../../mods/native-demo/native_demo.cpp) works:
 
@@ -34,7 +34,7 @@ A mod exports `rs64_mod_init` (`RS64_MOD_INIT_EXPORT`), listed in its `mod.json`
 | Register | Meaning |
 | --- | --- |
 | `r4` (in) | `const rs64_host_api*`, the table |
-| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 11) |
+| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 12) |
 | `r2` (out) | 0 to accept, non-zero to refuse |
 | `r3` (out) | the `RS64_HOST_API_VERSION` the mod was built against (0 = not set, treated as 1) |
 
@@ -100,6 +100,8 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `mod_data_dir(mod_id)` | v10. A folder for the mod's own files, `mod_data/<mod_id>/` beside the game's settings (with a trailing separator), created on first use; `""` for an id holding a path separator or when it cannot be made |
 | `save_slot()` | v10. The pilot (save slot, 0-based) confirmed on the account screen, -1 before one is. Key per-pilot files in `mod_data_dir` on it |
 | `light_set(name, preset_json)` | v11. A ray-traced light preset set while the game runs: `preset_json` is one preset object as in `roguesq_lights.json`'s `"presets"` (a `level`, `mesh` or `sprite` key and its `lights`), and `NULL` or `""` removes it. It replaces a file preset of the same name from the next frame, so setting it every frame moves the light. Prefix the name with your mod's id. Any thread. Returns 0, -1 for a null name, -2 for JSON that is not an object with a `lights` array. A removed preset that replaced a file's comes back at the next light-file reload |
+| `spawn_unit(rdram, ctx, template, name, pos)` | v12. Spawns a copy of the level unit named `template` at `pos` (map space, Y down) through the game's own unit spawner, named `name` (`NULL` keeps the template's). The copy has the template's kind, settings and current health, follows the same path if it has one, and counts for objectives when destroyed. It is not one of the level's objects, so `object_by_name` and level rules do not find it; `RS64_HOOK_UNIT_DESTROYED` reports its death with its name. Up to 48 a mission, only in this game (co-op does not share it). Missions only, from a hook. Returns the NPC slot, or -1 no such unit, -2 no mission, -3 no room (48 spawned, or the game's NPC pool is full), -4 not a unit that can be copied, -5 the spawn failed |
+| `camera_view(yaw, pitch, offset)` | v12. Turns and moves what is drawn relative to the game's camera: `yaw` left and `pitch` up in degrees, `offset` in game camera axes and units (x right, y down, z forward); all zero restores the game's view, and it lasts until changed. Only the drawn scene moves: the game still culls and aims from its own camera, so a large turn shows the edge of what it drew, the 2D HUD stays put, and replays stay exact. Ignored while a VR headset or `ROGUESQ_VR_FAKE_YAW` drives the view. Any thread |
 
 ## Services
 
@@ -187,7 +189,7 @@ All five are function entries, so `RS64_HOOK_RETURN` skips the function and `.nr
 | `RS64_HOOK_SOUND_3D` (53) | `play3DSoundEvent` entry | A positioned sound effect starts: `a0` = the emitting object or 0, `a1` = its position (`float[3]*`). The sound id is the u16 at `sp+0x1A` and its volume (0-127) the byte at `sp+0x1F`; write either in RDRAM to change it. RETURN mutes it (`r2` = -1) |
 | `RS64_HOOK_PLAYER_DAMAGE` (54) | `applyPlayerCraftDamage` entry | Damage reaches a player's craft: `a0` = its record (player 1 is 0x80137DBC), `a1` = the damage as float bits, may be replaced (scale it, or 0). RETURN takes none. God mode and the spawn shield are checked before this |
 | `RS64_HOOK_PLAYER_FIRE` (55) | Each player craft's laser fire function (`playerXwingFireBlaster` and its A-wing, V-wing, Falcon, TIE Interceptor, T-16 and Naboo counterparts), and the fire check inside the Y-wing's and snowspeeder's weapon tick | A player craft fires: `a0` = the weapon context (its first word the player), `a1` = the hardpoint (0 for the snowspeeder, whose guns fire together). RETURN skips that shot; for the Y-wing and snowspeeder the hook then runs on a copy of the registers and the skip clears the frame's fire check, so it comes again next frame while the button is held. Secondary weapons have no hook |
-| `RS64_HOOK_CAMERA` (56) | `setupCameraMatrices` entry | v11. A camera's projection is set up: `a0` = the camera, whose `+0x20` FOV (degrees), `+0x24` near and `+0x28` far planes and `+0x10` / `+0x14` viewport size may be edited. The game's view tests use the same cameras, so a change affects what is culled and can change a replay. Never RETURN. The camera's position is not in this struct and has no hook yet |
+| `RS64_HOOK_CAMERA` (56) | `setupCameraMatrices` entry | v11. A camera's projection is set up: `a0` = the camera, whose `+0x20` FOV (degrees), `+0x24` near and `+0x28` far planes and `+0x10` / `+0x14` viewport size may be edited. The game's view tests use the same cameras, so a change affects what is culled and can change a replay. Never RETURN. To turn or move the view, use `camera_view` |
 
 Damage enemies take arrives as `RS64_HOOK_NPC_HIT`: its message's `+6` damage can be rewritten in RDRAM before the target's handler reads it.
 
@@ -245,6 +247,7 @@ Every hook with a `rogue_squadron.toml` site, and every game event (v9), is also
 | `int rs64_terrain_get_cell(col, row, signed char heights[25], unsigned short* tex)` / `int rs64_terrain_set_cell(col, row, const signed char heights[25], int tex)` | As `terrain_get_cell` / `terrain_set_cell` |
 | `int rs64_key_down(const char* key)` / `int rs64_save_slot(void)` | As `key_down` / `save_slot`; a code mod's own files go in `recomp_get_mod_folder_path` or the save path from `recompconfig.h` |
 | `int rs64_light_set(const char* name, const char* preset_json)` | As `light_set` (the JSON up to 16 KB) |
+| `int rs64_spawn_unit(const char* template_name, const char* name, const float pos[3])` / `void rs64_camera_view(const float view[5])` | As `spawn_unit` / `camera_view` (`view` = yaw, pitch, then the offset; `NULL` restores the view) |
 
 Strings and arrays passed to these are the mod's own memory (its globals, stack or `recomp_alloc`).
 

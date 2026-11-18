@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 11
+#define RS64_HOST_API_VERSION 12
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -180,6 +180,13 @@ typedef struct rs64_host_api {
     // v11: a ray-traced light preset set while the game runs: preset_json is one preset object as in roguesq_lights.json's "presets" (level, mesh or sprite, lights, ...), NULL or "" removes it.
     // It replaces a file preset of the same name and shows from the next frame, so calling it every frame moves a light. Prefix name with your mod's id. Any thread. 0, -1 for a null name, -2 for JSON that is not an object with a lights array.
     int (*light_set)(const char* name, const char* preset_json);
+    // v12, missions only, game thread (a hook): spawns a copy of the level unit named template (its DAT record, current health and settings included) at pos, named name (NULL keeps the template's), through the game's own unit spawner.
+    // The copy is the template's kind (a path-following unit follows the same path) and is not one of the level's objects, so object_by_name and level rules do not find it; RS64_HOOK_UNIT_DESTROYED reports its death. Up to 48 a mission, local to this game (co-op does not share it).
+    // Returns the NPC slot, or -1 no such unit, -2 no mission, -3 no room (48 spawned this mission, or the game's NPC pool is full), -4 not a unit that can be copied, -5 the spawn failed.
+    int (*spawn_unit)(uint8_t* rdram, void* ctx, const char* template_name, const char* name, const float pos[3]);
+    // v12: turns and moves the drawn view relative to the game's camera: yaw left and pitch up in degrees, offset in game camera axes and units (x right, y down, z forward); all zero = the game's own view. It lasts until changed.
+    // It moves only what is drawn: the game still culls and aims from its own camera, so a large turn shows the edge of what the game drew, and replays stay exact. Ignored while a VR headset or ROGUESQ_VR_FAKE_YAW drives the view. Any thread.
+    void (*camera_view)(float yaw_degrees, float pitch_degrees, const float offset[3]);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

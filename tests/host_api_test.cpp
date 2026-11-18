@@ -151,7 +151,7 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 11 && RS64_HOST_API_VERSION == 11);
+    CHECK(a->version == 12 && RS64_HOST_API_VERSION == 12);
     CHECK(a->add_rule_condition == add_rule_condition);
     CHECK(a->terrain_get_cell == terrain_get_cell && a->terrain_set_cell == terrain_set_cell);
     CHECK(a->add_rule_action == add_rule_action && a->fire_rule_event == fire_rule_event);
@@ -191,7 +191,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && accept_mod_init(0, 8) && accept_mod_init(0, 9) && accept_mod_init(0, 10) && accept_mod_init(0, 11) && !accept_mod_init(0, 12));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && accept_mod_init(0, 8) && accept_mod_init(0, 9) && accept_mod_init(0, 10) && accept_mod_init(0, 11) && accept_mod_init(0, 12) && !accept_mod_init(0, 13));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }
@@ -484,6 +484,10 @@ static const char* fake_dir(const char*) { return "mod_data/m/"; }
 static int fake_slot() { return 2; }
 static std::string g_light;
 static int fake_light(const char* n, const char* j) { g_light = std::string(n) + "=" + (j ? j : "(null)"); return 0; }
+static float g_view[5];
+static void fake_view(float yaw, float pitch, float x, float y, float z) { g_view[0] = yaw; g_view[1] = pitch; g_view[2] = x; g_view[3] = y; g_view[4] = z; }
+static std::string g_spawn;
+static int fake_spawn(uint8_t*, void*, const char* t, const char* n, const float* p) { g_spawn = std::string(t) + ">" + (n ? n : "") + "@" + std::to_string((int)p[2]); return 0x111; }
 
 // v10: with nothing bound each call is a safe no-op; bound, it reaches the game's service.
 static void test_v10_forwarding() {
@@ -503,6 +507,22 @@ static void test_v10_forwarding() {
     bind_services(s);
     CHECK(api()->light_set("m.lamp", "{\"lights\":[]}") == 0 && g_light == "m.lamp={\"lights\":[]}");
     CHECK(api()->light_set("m.lamp", nullptr) == 0 && g_light == "m.lamp=(null)" && api()->light_set(nullptr, nullptr) == -1);
+    bind_services(Services{});
+    const float pos[3] = {1, 2, 3};
+    uint8_t ram[4] = {};
+    int ctx = 0;
+    CHECK(api()->spawn_unit(ram, &ctx, "tie", nullptr, pos) == -2 && api()->spawn_unit(ram, &ctx, nullptr, nullptr, pos) == -1 && api()->spawn_unit(ram, &ctx, "tie", nullptr, nullptr) == -1);
+    s.spawn_unit = fake_spawn;
+    bind_services(s);
+    CHECK(api()->spawn_unit(ram, &ctx, "tie", "tie_copy", pos) == 0x111 && g_spawn == "tie>tie_copy@3" && api()->spawn_unit(ram, nullptr, "tie", nullptr, pos) == -2);
+    bind_services(Services{});
+    api()->camera_view(10.0f, 5.0f, pos);
+    s.camera_view = fake_view;
+    bind_services(s);
+    api()->camera_view(10.0f, 5.0f, pos);
+    CHECK(g_view[0] == 10.0f && g_view[1] == 5.0f && g_view[2] == 1.0f && g_view[4] == 3.0f);
+    api()->camera_view(0.0f, 0.0f, nullptr);
+    CHECK(g_view[0] == 0.0f && g_view[2] == 0.0f && g_view[4] == 0.0f);
     bind_services(Services{});
 }
 

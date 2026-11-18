@@ -1262,6 +1262,64 @@ extern "C" float rs64_rules_mission_seconds(void)
     return s_mission_running ? s_rules_elapsed : 0.0f;
 }
 
+// ---- Spawned units: a copy of a level unit's DAT record in host RAM, spawned through setupNpcUpdateFunctions as the level's own units are ----
+namespace {
+constexpr uint32_t kSpawnSlot = 0x400u;
+constexpr uint32_t kSpawnName = 0x3C0u;
+constexpr uint32_t kSpawnSlots = (RS64_HR_SPAWNED_END - RS64_HR_SPAWNED) / kSpawnSlot;
+uint32_t s_spawned = 0;
+}
+
+extern "C" int rs64_rules_spawn(uint8_t* rdram, void* c, const char* tmpl, const char* name, const float pos[3])
+{
+
+    auto* ctx = (recomp_context*)c;
+
+    if (!tmpl || !pos) return -1;
+
+    if (!s_mission_running) return -2;
+
+    const uint32_t item = level_object(rdram, ctx, tmpl);
+
+    if (!item) return -1;
+
+    // The record's size (+0x08); only level units (sub-type 0x0C and up, what setupNpcUpdateFunctions spawns) can be copied.
+    const uint32_t size = rw(rdram, item + 0x08u);
+
+    if (rh(rdram, item) < 0x0Cu || size < 0x40u || size > kSpawnName || (size & 3u)) return -4;
+
+    // spawnNpcOfType does not fail cleanly with no free NPC context or slot (it pops past its stack), so it is only called with room in both.
+    if (s_spawned >= kSpawnSlots || (int32_t)rw(rdram, 0x80130BC8u) < 0 || rh(rdram, 0x80130BB4u) == 0xFFFFu) return -3;
+
+    const uint32_t rec = RS64_HR_SPAWNED + s_spawned * kSpawnSlot;
+
+    for (uint32_t i = 0; i < size; i += 4) ww(rdram, rec + i, rw(rdram, item + i));
+
+    // The loader's runtime fields start fresh: no NPC slot yet (+0x06, +0x34) and no runtime state block (+0x54).
+    wh(rdram, rec + 0x06u, 0xFFFFu);
+    wh(rdram, rec + 0x34u, 0xFFFFu);
+    ww(rdram, rec + 0x54u, 0x80000000u);
+
+    wstr(rdram, rec + kSpawnName, std::string(name && *name ? name : tmpl).substr(0, 0x3F));
+    ww(rdram, rec + 0x0Cu, rec + kSpawnName);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        uint32_t bits;
+
+        std::memcpy(&bits, &pos[i], 4);
+        ww(rdram, rec + 0x10u + 4u * (uint32_t)i, bits);
+    }
+
+    ++s_spawned;
+
+    const uint32_t slot = rs64::mips::mips_call(rdram, ctx, 0x800653B4u, { rec }).v0 & 0xFFFFu;
+
+    fprintf(stderr, "[spawn] %s as %s: slot %04X (record %08X, %u bytes)\n", tmpl, rstr(rdram, rec + kSpawnName, 63).c_str(), slot, rec, size);
+
+    return slot == 0xFFFFu ? -5 : (int)slot;
+}
+
 static std::map<std::string, rs64env::Environment> s_env_by_folder;
 static const rs64env::Environment* s_env = nullptr;
 static std::atomic<bool> s_env_clouds{false};
@@ -1488,6 +1546,7 @@ extern "C" void rs64_rules_mission_start(uint8_t* rdram)
     s_rules_elapsed = 0;
     s_rules.reset({}, [](const std::string&) { return true; });
     s_mission_running = true;
+    s_spawned = 0;
     s_mission_ready_pending = true;
 
     // A message or mod event from the last mission does not carry into this one.

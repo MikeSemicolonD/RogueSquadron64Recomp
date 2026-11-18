@@ -99,6 +99,8 @@ struct Services {
     const char* (*mod_data_dir)(const char*) = nullptr;
     int (*save_slot)() = nullptr;
     int (*light_set)(const char*, const char*) = nullptr;
+    int (*spawn_unit)(uint8_t*, void*, const char*, const char*, const float*) = nullptr;
+    void (*camera_view)(float, float, float, float, float) = nullptr;
 };
 void bind_services(const Services& s);
 const rs64_host_api* api();

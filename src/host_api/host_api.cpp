@@ -114,6 +114,8 @@ int key_fwd(const char* k) { return g_services.key_down && k ? g_services.key_do
 const char* data_dir_fwd(const char* m) { return g_services.mod_data_dir && m ? g_services.mod_data_dir(m) : ""; }
 int slot_fwd() { return g_services.save_slot ? g_services.save_slot() : -1; }
 int light_fwd(const char* n, const char* j) { return !n ? -1 : (g_services.light_set ? g_services.light_set(n, j) : 0); }
+int spawn_fwd(uint8_t* r, void* c, const char* t, const char* n, const float* p) { return g_services.spawn_unit && r && c && t && p ? g_services.spawn_unit(r, c, t, n, p) : (t && p ? -2 : -1); }
+void view_fwd(float yaw, float pitch, const float* o) { if (g_services.camera_view) g_services.camera_view(yaw, pitch, o ? o[0] : 0.0f, o ? o[1] : 0.0f, o ? o[2] : 0.0f); }
 }
 
 int add_hook(uint32_t hook, rs64_hook_fn fn, void* user) {
@@ -648,7 +650,7 @@ const rs64_host_api* api() {
         clip_fwd, frame_fwd,
         reloc_fwd, object_fwd, health_fwd, destroy_fwd, line_fwd, var_get_fwd, var_set_fwd, add_rule_condition, mission_fwd, cfg_num_fwd, cfg_str_fwd,
         key_fwd, data_dir_fwd, slot_fwd,
-        light_fwd,
+        light_fwd, spawn_fwd, view_fwd,
     };
 
     return &table;

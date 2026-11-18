@@ -335,6 +335,51 @@ extern "C" float rs64_cull_widen_y(void)
     return (rs64_cull_widen() > 1.0f) ? kCullEdgeSlack : 1.0f;
 }
 
+// A mod's camera view (host API camera_view): yaw, pitch (degrees) and an offset in game camera axes and units (x right, y down, z forward), relative to the game camera.
+namespace {
+std::mutex s_mod_view_mu;
+float s_mod_view[5] = {};
+bool s_mod_view_on = false;
+}
+
+extern "C" void rs64_set_mod_camera_view(float yaw, float pitch, float x, float y, float z)
+{
+
+    std::lock_guard<std::mutex> lk(s_mod_view_mu);
+
+    s_mod_view[0] = yaw;
+    s_mod_view[1] = std::clamp(pitch, -89.0f, 89.0f);
+    s_mod_view[2] = x;
+    s_mod_view[3] = y;
+    s_mod_view[4] = z;
+    s_mod_view_on = yaw != 0.0f || pitch != 0.0f || x != 0.0f || y != 0.0f || z != 0.0f;
+}
+
+extern "C" int rs64_mod_camera_view_on(void)
+{
+
+    std::lock_guard<std::mutex> lk(s_mod_view_mu);
+
+    return s_mod_view_on ? 1 : 0;
+}
+
+extern "C" float rs64_vr_units_per_meter(void);
+
+// The mod's view as a head pose (OpenXR axes, meters: y up, z back), which RT64 applies to the drawn view only; 0 = none set.
+static int mod_camera_pose(rs64vr::Pose* pose)
+{
+
+    std::lock_guard<std::mutex> lk(s_mod_view_mu);
+
+    if (!s_mod_view_on || rs64_vr_session()) return 0;
+
+    const float upm = rs64_vr_units_per_meter();
+
+    *pose = rs64vr::headPose(s_mod_view[0], s_mod_view[1], s_mod_view[2] / upm, -s_mod_view[3] / upm, -s_mod_view[4] / upm);
+
+    return 1;
+}
+
 // ROGUESQ_VR_FAKE_YAW=<degrees>: a fake head with no headset, starting turned that far left, to test VR. Numpad 4/6 turn, 8/2 look up/down,
 // 7/9 move left/right, 1/3 down/up, +/- forward/back (in the starting frame), 5 recenters. Called only from RT64's workload thread.
 extern "C" int rs64_vr_fake_head(rs64vr::Pose* pose)
@@ -344,7 +389,7 @@ extern "C" int rs64_vr_fake_head(rs64vr::Pose* pose)
 
     if (!s_env)
     {
-        return 0;
+        return mod_camera_pose(pose);
     }
 
     constexpr float kDegreesPerSecond = 90.0f;
