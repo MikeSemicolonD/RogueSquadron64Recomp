@@ -154,8 +154,9 @@ static bool fake_controller_enabled() {
 #ifdef RS64_MCP
 // The MCP press tool's held input (src/lockstep/lockstep.cpp); false when none is active.
 extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y);
-extern "C" uint32_t rs64_game_frames(void);
 #endif
+
+extern "C" uint32_t rs64_game_frames(void);
 
 // A controller input name (ROGUESQ_INPUT_SEQ and the MCP press tool): ORs its button into mask or sets the stick; false when unknown.
 extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, float* sy)
