@@ -163,8 +163,10 @@ Actions are for the game's default **Luke** controller setting. The other contro
   - The throttle sets your speed by position: *full back* is the craft's slowest, *full forward* is fastest, and *middle* is normal speed.
   - Other axes can be bound from the Controls window (**F6**)
   
-- **Lightbar support via DualShock 4 & DualSense:** lightbar color will change depending on the state of the game.
+- **DualShock 4 & DualSense Lightbar Support:** lightbar color will change depending on the state of the game.
   - Colors configurable from the `lightbar` section in `roguesq_input.json`
+
+- **DualSense Adaptive Trigger Support:** Ship speed affects the resistance of the Thrust & Brake triggers. Brake trigger becomes *resitive* if the speed is beyond cruising speed. Thrust trigger becomes *resistive* if at cruise speed or less.
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
