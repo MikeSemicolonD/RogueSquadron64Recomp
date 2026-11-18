@@ -184,11 +184,12 @@ namespace rs64::touch {
             busy = std::max(busy, q.delay + q.polls);
         }
 
-        pulses_.push_back({ buttons, x, y, polls * poll_scale_, busy ? busy + gap * poll_scale_ : 0 });
+        pulses_.push_back({ buttons, x, y, polls, busy ? busy + gap : 0 });
     }
 
-    void Engine::set_poll_scale(int scale) {
-        poll_scale_ = std::max(1, scale);
+    void Engine::set_frame(uint32_t frame) {
+        frame_set_ = true;
+        frame_ = frame;
     }
 
     void Engine::inject(uint16_t buttons, float x, float y, int polls, int gap) {
@@ -604,10 +605,35 @@ namespace rs64::touch {
     void Engine::drain_pulses(Pad* p)
     {
 
+        // Without a frame count every poll is a step.
+        const bool step = !frame_set_ || frame_ != drained_frame_;
+
+        drained_frame_ = frame_;
+
         for (Pulse& q : pulses_) {
             if (q.delay > 0) {
-                --q.delay;
+                if (step) {
+                    --q.delay;
+                }
+
                 continue;
+            }
+
+            if (frame_set_)
+            {
+                if (q.started && step) {
+                    --q.polls;
+                }
+
+                if (q.polls <= 0) {
+                    continue;
+                }
+
+                // A press that starts partway through a game frame keeps that frame and its full count after it.
+                if (!q.started) {
+                    q.started = true;
+                    q.polls += step ? 0 : 1;
+                }
             }
 
             p->buttons |= q.buttons;
@@ -615,7 +641,9 @@ namespace rs64::touch {
             if (std::fabs(q.x) > std::fabs(p->x)) p->x = q.x;
             if (std::fabs(q.y) > std::fabs(p->y)) p->y = q.y;
 
-            --q.polls;
+            if (!frame_set_) {
+                --q.polls;
+            }
         }
 
         pulses_.erase(std::remove_if(pulses_.begin(), pulses_.end(), [](const Pulse& q) { return q.polls <= 0; }), pulses_.end());

@@ -85,8 +85,8 @@ namespace rs64::touch {
         void set_menu_hover(MenuHoverFn fn);
         // Queues a host-driven press lasting `polls` game polls, after any pending presses.
         void inject(uint16_t buttons, float x, float y, int polls, int gap = 1);
-        // Polls per poll at the game's own 2 video ticks a frame: the host polls every tick, and above 30 fps a frame spans more ticks.
-        void set_poll_scale(int scale);
+        // The game's frame count. Once set, a press counts its polls in game frames (plus the frame it starts in), so the game reads it however many times a frame the host polls.
+        void set_frame(uint32_t frame);
         // A finger tap's per-context menu action at (x, y); also used for mouse clicks, so it works with touch disabled.
         void tap(Context ctx, float x, float y);
         Pad poll(Context ctx, uint32_t ms);
@@ -117,7 +117,7 @@ namespace rs64::touch {
         std::vector<ButtonDef> tools() const;
         void set_scale(uint16_t mask, float scale);
         bool placement(uint16_t mask, std::string* id, Placement* p) const;
-        struct Pulse { uint16_t buttons; float x, y; int polls; int delay; };
+        struct Pulse { uint16_t buttons; float x, y; int polls; int delay; bool started = false; };
 
         std::vector<ButtonDef> layout(Context ctx) const;
         bool hit_button(Context ctx, float x, float y, uint16_t* mask, bool all) const;
@@ -131,7 +131,9 @@ namespace rs64::touch {
         float pic_x0_ = 0.0f;
         float pic_x1_ = 1.0f;
         bool active_ = false;
-        int poll_scale_ = 1;
+        bool frame_set_ = false;
+        uint32_t frame_ = 0;
+        uint32_t drained_frame_ = 0;
         Context last_ctx_ = Context::None;
         std::unordered_map<int64_t, Finger> fingers_;
         std::vector<Pulse> pulses_;

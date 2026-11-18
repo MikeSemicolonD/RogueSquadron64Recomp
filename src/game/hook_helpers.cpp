@@ -1160,9 +1160,17 @@ extern "C" uint32_t rs64_vi_rate(void) {
 }
 
 static bool g_rate_frame_seen = false;
+static std::atomic<uint32_t> g_submitted_frames{ 0 };
+
+// Game frames submitted since boot, read by input polling on the SI thread.
+extern "C" uint32_t rs64_game_frames(void) {
+    return g_submitted_frames.load(std::memory_order_relaxed);
+}
 
 // Each submitted frame: a screen whose loop doesn't run the rate (menus, the pause menu) gets the game's own 30 fps back.
 extern "C" void rs64_rate_submit(uint8_t* rdram) {
+
+    g_submitted_frames.fetch_add(1, std::memory_order_relaxed);
 
     if (!g_rate_frame_seen && (rs64::mips::rb(rdram, 0x80128EAFu) != 2 || ultramodern::get_vi_rate() != 60))
     {

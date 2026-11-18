@@ -701,16 +701,19 @@ static void test_inject_one_poll() {
     CHECK(NEAR(e.poll(Context::ListMenu, 2).x, 0.0f));
 }
 
-// With more video ticks per game frame, a press lasts as many game frames as at 30 fps.
-static void test_inject_poll_scale() {
+// With a frame count, a press holds through the frame it starts in plus its polls in whole game frames, however often the host polls.
+static void test_inject_counts_game_frames() {
     Engine e = make_engine(Context::ListMenu);
-    e.set_poll_scale(2);
-    e.inject(A, 0.0f, 0.0f, 3);
-    int held = 0;
-    for (int i = 0; i < 10; ++i) {
-        if (e.poll(Context::ListMenu, 1 + i).buttons & A) ++held;
-    }
-    CHECK(held == 6);
+    e.set_frame(10);
+    e.poll(Context::ListMenu, 1);
+    e.inject(A, 0.0f, 0.0f, 1);
+    CHECK(e.poll(Context::ListMenu, 2).buttons & A);
+    CHECK(e.poll(Context::ListMenu, 3).buttons & A);
+    e.set_frame(11);
+    CHECK(e.poll(Context::ListMenu, 4).buttons & A);
+    CHECK(e.poll(Context::ListMenu, 5).buttons & A);
+    e.set_frame(12);
+    CHECK((e.poll(Context::ListMenu, 6).buttons & A) == 0);
 }
 
 // Horizontal fine-drag nudges are single-poll presses (one game frame = one slider unit).
@@ -1395,7 +1398,7 @@ int main() {
     test_taps_outside_picture_ignored();
     test_carousel_tap_direction();
     test_inject_one_poll();
-    test_inject_poll_scale();
+    test_inject_counts_game_frames();
     test_fine_nudge_is_one_poll();
     test_cutscene_tap_is_start_and_back_is_b();
     test_arbitration();
