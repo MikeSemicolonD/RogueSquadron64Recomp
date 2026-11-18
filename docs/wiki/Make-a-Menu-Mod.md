@@ -22,7 +22,7 @@ Open the **Menus** tab and pick a menu to preview it.
 | `toggle` | On/off setting | Fullscreen, widescreen, frame interpolation, ray-traced lights, shadows, soft shadows, fog shafts, rumble, gyro aiming (Android), cutscene draw distance, frame writeback |
 | `cycle` | Steps through choices | Draw distance, resolution, anti-aliasing, frame rate, texture filter, upscale filter |
 | `slider` | A bar | Draw distance, mouse sensitivity, mouse smoothing, dead zone |
-| `submenu` | Opens a page | A new page (up to 7 buttons plus BACK) or a game menu |
+| `submenu` | Opens a page | A new page (up to 11 buttons plus BACK) or a game menu |
 | `label` | Text the cursor skips | |
 
 Settings apply at once and save with the game's settings.
@@ -53,7 +53,6 @@ Without a code mod, a button can't:
 
 Always:
 
-- Menus fit 8 lines; **Options** and **Game Settings** are full, so a new button there replaces or hides one.
-- A new page holds 7 buttons plus BACK; pause menus about 16 lines.
+- Menus fit 12 lines; a new page holds 11 buttons plus BACK; pause menus about 16 lines.
 - Pause menu titles can't change.
 - The menu font has capitals, numbers and some punctuation only.
