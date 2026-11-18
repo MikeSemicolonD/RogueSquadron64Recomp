@@ -538,12 +538,12 @@ Once your agent is set up, tasks that would've taken weeks/months/years to do ca
 
 Here's a list of MCPs that could be useful for this project:
 
-- [rs64-mcp](docs/engine/rt64-mcp.md) (in this repo, `tools/debug/mcp/rs64_mcp.py`, set up in the local `.mcp.json`) lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and screenshots. The game side is built into Debug by default. For Release, configure with `-DRS64_MCP=ON` (or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)")
-- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp) (Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11)
-- [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server) (Requires [Go 1.25.2](https://go.dev/dl/))
+- [rs64-mcp](docs/engine/rt64-mcp.md): lets an agent launch the game, pause on an exact frame, and inspect draws, textures, framebuffers, RDRAM and take screenshots. Built into Debug by default. For Release, configure with `-DRS64_MCP=ON` or run the VS Code task "Build: RogueSquadron64Recomp (Release, MCP)"
+- [renderdoc](https://github.com/Linkingooo/renderdoc-mcp): Requires [RenderDoc source code](https://github.com/baldurk/renderdoc) and [Python 3.11](https://www.python.org/downloads/) to compile the `renderdoc.pyd` that this MCP needs; the `.pyd` loads only in the Python version it was built with, so the MCP server must run on that same 3.11
+- [windows-screenshot-mcp-server](https://github.com/MikeSemicolonD/windows-screenshot-mcp-server): Requires [Go 1.25.2](https://go.dev/dl/)
 
 > [!CAUTION]
-> `windows-screenshot-mcp-server` usage can be finicky.
+> Screenshot usage using `windows-screenshot-mcp-server` or `rs64-mcp` can be finicky.
 >
 > While Claude (*as of **September 2026***) can view pixels in the screenshots, it can miss things that are visually obvious to a human like visual glitches or rapidly flickering artifacts.
 >
