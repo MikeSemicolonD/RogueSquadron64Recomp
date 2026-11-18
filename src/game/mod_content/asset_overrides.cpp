@@ -335,6 +335,27 @@ std::vector<std::pair<std::string, std::string>> rs64::assets::read_from_map(con
     return out;
 }
 
+// The Naboo Starfighter's textures are stored encrypted (decrypt_ns_hmt; key = CRC32 of "!YNGWIE!"), and an edit changes every
+// cipher byte after it, so a patch applies to the decrypted file and the result is encrypted again.
+constexpr const char* kNabooHmt = "pl_crafts/koelsch_HMT";
+
+static std::vector<uint8_t> naboo_cipher(const std::vector<uint8_t>& in, bool encrypt)
+{
+
+    std::vector<uint8_t> out(in.size());
+    uint32_t key = 0x050FE09Cu;
+
+    for (size_t i = 0; i < in.size(); i++)
+    {
+        const uint8_t c = encrypt ? (uint8_t)(in[i] ^ key) : in[i];
+
+        out[i] = encrypt ? c : (uint8_t)(c ^ key);
+        key = ((key >> 8) | (key << 24)) + c;
+    }
+
+    return out;
+}
+
 // A file named <path>.bps is a BPS patch applied to the player's own copy of <path>, so mods built from game assets ship no game data.
 extern "C" void rs64_asset_overrides_init()
 {
@@ -479,14 +500,17 @@ extern "C" void rs64_asset_overrides_init()
         for (const auto& [path, src] : rom_assets(recomp::get_rom(), [&](const std::string& p) { return patches.count(p) != 0; }))
         {
             const auto& [mod_id, bps] = patches[path];
+            const bool naboo = path == kNabooHmt;
             std::vector<uint8_t> out;
-            const auto res = recomp::patcher::patch_rom(src, bps, out);
+            const auto res = recomp::patcher::patch_rom(naboo ? naboo_cipher(src, false) : src, bps, out);
 
             if (res != recomp::patcher::PatcherResult::Success || out.empty())
             {
                 fprintf(stderr, "[assets] %s: patch for %s does not apply (%s)\n", mod_id.c_str(), path.c_str(), res == recomp::patcher::PatcherResult::WrongRom ? "made from a different asset" : "invalid patch");
                 continue;
             }
+
+            if (naboo) out = naboo_cipher(out, true);
 
             check_dat(mod_id, path, out);
             s_asset_overrides[path] = append(out);
