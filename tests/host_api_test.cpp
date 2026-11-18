@@ -151,7 +151,7 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 10 && RS64_HOST_API_VERSION == 10);
+    CHECK(a->version == 11 && RS64_HOST_API_VERSION == 11);
     CHECK(a->add_rule_condition == add_rule_condition);
     CHECK(a->terrain_get_cell == terrain_get_cell && a->terrain_set_cell == terrain_set_cell);
     CHECK(a->add_rule_action == add_rule_action && a->fire_rule_event == fire_rule_event);
@@ -191,7 +191,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && accept_mod_init(0, 8) && accept_mod_init(0, 9) && accept_mod_init(0, 10) && !accept_mod_init(0, 11));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && accept_mod_init(0, 8) && accept_mod_init(0, 9) && accept_mod_init(0, 10) && accept_mod_init(0, 11) && !accept_mod_init(0, 12));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }
@@ -482,6 +482,8 @@ static void test_v9_forwarding() {
 static int fake_key(const char* k) { return std::strcmp(k, "F7") == 0; }
 static const char* fake_dir(const char*) { return "mod_data/m/"; }
 static int fake_slot() { return 2; }
+static std::string g_light;
+static int fake_light(const char* n, const char* j) { g_light = std::string(n) + "=" + (j ? j : "(null)"); return 0; }
 
 // v10: with nothing bound each call is a safe no-op; bound, it reaches the game's service.
 static void test_v10_forwarding() {
@@ -495,6 +497,12 @@ static void test_v10_forwarding() {
     bind_services(s);
     CHECK(api()->key_down("F7") == 1 && api()->key_down("K") == 0 && api()->key_down(nullptr) == 0);
     CHECK(std::strcmp(api()->mod_data_dir("m"), "mod_data/m/") == 0 && std::strcmp(api()->mod_data_dir(nullptr), "") == 0 && api()->save_slot() == 2);
+    bind_services(Services{});
+    CHECK(api()->light_set("m.lamp", "{}") == 0 && api()->light_set(nullptr, "{}") == -1);
+    s.light_set = fake_light;
+    bind_services(s);
+    CHECK(api()->light_set("m.lamp", "{\"lights\":[]}") == 0 && g_light == "m.lamp={\"lights\":[]}");
+    CHECK(api()->light_set("m.lamp", nullptr) == 0 && g_light == "m.lamp=(null)" && api()->light_set(nullptr, nullptr) == -1);
     bind_services(Services{});
 }
 

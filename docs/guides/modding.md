@@ -255,6 +255,7 @@ A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the 
 - A level light with `"rectSize": [width, height]` is a glowing panel facing along `direction`: it draws as a solid face and lights what is in front of it.
 - Any light can flicker (`flickerIntensity`, 0-1) or be a spotlight (`direction`, `spotMaxCosine` / `spotFalloffCosine`, RT64's negative cosines; the RS64 Explorer shows them as cone angles).
 - Only 64 lights shine at once. A preset's `priority` decides which are kept when there are more (see the table below).
+- A native or code mod can set a preset while the game runs, to move, recolour or switch a light from its own code ([`light_set`](../engine/modding-host-api.md#the-table)).
 
 **Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over. Players can change the shares in `roguesq_video.json` (`rayTracing.lightLimits`).
 

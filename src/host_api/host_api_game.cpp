@@ -8,6 +8,8 @@
 #include "game/mod_content/terrain_edit.h"
 #include "lockstep/lockstep_core.h"
 #include "util/mips_call.h"
+#include "hle/rt64_rs64_lights.h"
+#include "json/json.hpp"
 #ifdef _WIN32
 #include "SDL.h"
 #else
@@ -181,6 +183,26 @@ int svc_config_number(const char* mod, const char* option, double* out)
 uint8_t* s_rdram = nullptr;
 std::atomic<bool> s_pilot_chosen{false};
 
+// A mod's runtime light preset (RT64 applies it at its next frame); the JSON is checked here so a bad one is refused rather than logged every change.
+int svc_light_set(const char* name, const char* preset)
+{
+
+    if (!preset || !*preset)
+    {
+        rs64lights::setRuntimePreset(name, {});
+
+        return 0;
+    }
+
+    const nlohmann::json j = nlohmann::json::parse(preset, nullptr, false);
+
+    if (!j.is_object() || !j.contains("lights") || !j["lights"].is_array()) return -2;
+
+    rs64lights::setRuntimePreset(name, preset);
+
+    return 0;
+}
+
 int svc_key_down(const char* key)
 {
 
@@ -302,6 +324,7 @@ void init_once(uint8_t* rdram) {
     s.key_down = svc_key_down;
     s.mod_data_dir = svc_mod_data_dir;
     s.save_slot = svc_save_slot;
+    s.light_set = svc_light_set;
     s_rdram = rdram;
     rs64::host::bind_services(s);
     rs64_register_builtin_hooks();
@@ -469,21 +492,21 @@ void rs64_export_terrain_dist(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64
 void rs64_export_tgrid_base(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64_tgrid_base((uint32_t)ctx->r4); }
 void rs64_export_relocated(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64::ls::relocated((uint32_t)ctx->r4); }
 
-// A pointer into librecomp's RDRAM (the game's 8 MB or a mod's recomp_alloc block), with room for a 256-byte read.
-bool guest_ptr(uint32_t addr)
+// A pointer into librecomp's RDRAM (the game's 8 MB or a mod's recomp_alloc block), with room for a read of len bytes.
+bool guest_ptr(uint32_t addr, uint32_t len = 256u)
 {
-    return addr >= 0x80000000u && addr - 0x80000000u + 256u <= recomp::mem_size;
+    return addr >= 0x80000000u && addr - 0x80000000u + len <= recomp::mem_size;
 }
 
-// A NUL-terminated string a .nrm mod passed (a KSEG0 pointer), at most 255 bytes.
-std::string guest_str(uint8_t* rdram, uint32_t addr)
+// A NUL-terminated string a .nrm mod passed (a KSEG0 pointer), at most max bytes.
+std::string guest_str(uint8_t* rdram, uint32_t addr, uint32_t max = 255u)
 {
 
     std::string s;
 
-    if (!guest_ptr(addr)) return s;
+    if (!guest_ptr(addr, max + 1)) return s;
 
-    for (uint32_t i = 0; i < 255; ++i)
+    for (uint32_t i = 0; i < max; ++i)
     {
         const char c = (char)MEM_B(i, (gpr)(int32_t)addr);
 
@@ -529,6 +552,16 @@ void ex_destroy_object(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64_rul
 void ex_key_down(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = svc_key_down(arg_str(rdram, ctx, 4).c_str()); }
 void ex_save_slot(uint8_t*, recomp_context* ctx) { ctx->r2 = svc_save_slot(); }
 
+// rs64_light_set(name, preset_json): the JSON may run to 16 KB; a null pointer removes the preset.
+void ex_light_set(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const std::string name = arg_str(rdram, ctx, 4);
+    const std::string preset = guest_str(rdram, (uint32_t)ctx->r5, 16383u);
+
+    ctx->r2 = name.empty() ? -1 : svc_light_set(name.c_str(), preset.c_str());
+}
+
 // rs64_terrain_get_cell(col, row, signed char heights[25], unsigned short* tex) / rs64_terrain_set_cell(col, row, const signed char heights[25], int tex).
 void ex_terrain_get_cell(uint8_t* rdram, recomp_context* ctx)
 {
@@ -572,7 +605,7 @@ const std::pair<const char*, recomp_func_t*> kNrmExports[] = {
     { "rs64_fire_rule_event", ex_fire_rule_event }, { "rs64_run_rule_line", ex_run_rule_line }, { "rs64_rule_var_get", ex_rule_var_get },
     { "rs64_rule_var_set", ex_rule_var_set }, { "rs64_object_by_name", ex_object_by_name }, { "rs64_object_health", ex_object_health },
     { "rs64_destroy_object", ex_destroy_object }, { "rs64_terrain_get_cell", ex_terrain_get_cell }, { "rs64_terrain_set_cell", ex_terrain_set_cell },
-    { "rs64_key_down", ex_key_down }, { "rs64_save_slot", ex_save_slot },
+    { "rs64_key_down", ex_key_down }, { "rs64_save_slot", ex_save_slot }, { "rs64_light_set", ex_light_set },
 };
 
 int trigger_hook_event(uint32_t hook, uint8_t* rdram, recomp_context* ctx)

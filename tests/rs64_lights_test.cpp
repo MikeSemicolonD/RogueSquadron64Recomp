@@ -1659,7 +1659,21 @@ static void testTerrainWaterLayers() {
     CHECK(waterLayer(shoreCells[1]) == 21);
 }
 
+// Mods' runtime presets: taken once per change (or when forced by a light-file reload), and an empty json removes one.
+static void testRuntimePresets() {
+    uint64_t seen = 0;
+    std::map<std::string, std::string> out;
+    CHECK(!rs64lights::takeRuntimePresets(seen, false, out));
+    rs64lights::setRuntimePreset("m.lamp", "{\"lights\":[]}");
+    CHECK(rs64lights::takeRuntimePresets(seen, false, out) && out.size() == 1 && out["m.lamp"] == "{\"lights\":[]}");
+    CHECK(!rs64lights::takeRuntimePresets(seen, false, out));
+    CHECK(rs64lights::takeRuntimePresets(seen, true, out) && out.size() == 1);
+    rs64lights::setRuntimePreset("m.lamp", "");
+    CHECK(rs64lights::takeRuntimePresets(seen, false, out) && out.empty());
+}
+
 int main() {
+    testRuntimePresets();
     testInverse();
     testScreenRoundTrip();
     testSpriteLight();

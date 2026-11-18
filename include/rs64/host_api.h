@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 10
+#define RS64_HOST_API_VERSION 11
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -73,7 +73,9 @@ typedef enum rs64_hook_id {
     RS64_HOOK_SONG_START = 52,           // playSongById: a0 = the song id (u16), may be replaced by another loaded song; RETURN skips it (r2 = -1)
     RS64_HOOK_SOUND_3D = 53,             // play3DSoundEvent: a positioned sound effect starts; a0 = the emitting object or 0, a1 = its position (float[3]*); the sound id is the u16 at sp+0x1A and its volume (0-127) the byte at sp+0x1F, both may be rewritten; RETURN mutes it (r2 = -1)
     RS64_HOOK_PLAYER_DAMAGE = 54,        // applyPlayerCraftDamage: a0 = the player's craft record (player 1 is 0x80137DBC), a1 = the damage as float bits, may be replaced; RETURN takes none
-    RS64_HOOK_PLAYER_FIRE = 55,          // each player craft's laser fire function (the X-wing's playerXwingFireBlaster and its A-wing, V-wing, Falcon, TIE, T-16 and Naboo counterparts; not the Y-wing or snowspeeder yet): one bolt from one hardpoint; a0 = the weapon context (its first word the player), a1 = the hardpoint; RETURN skips the bolt
+    RS64_HOOK_PLAYER_FIRE = 55,          // a player craft fires its lasers: each craft's fire function (the X-wing's playerXwingFireBlaster and its A-wing, V-wing, Falcon, TIE, T-16 and Naboo counterparts) or, for the Y-wing and snowspeeder, the fire check in their weapon tick; a0 = the weapon context (its first word the player), a1 = the hardpoint; RETURN skips the shot
+    // v11
+    RS64_HOOK_CAMERA = 56,               // setupCameraMatrices entry: a camera's projection is set up; a0 = the camera (+0x20 FOV in degrees, +0x24 near, +0x28 far, +0x10/+0x14 viewport size), may be edited. Gameplay view tests use these cameras too. Never RETURN
     RS64_HOOK_COUNT
 } rs64_hook_id;
 
@@ -175,6 +177,9 @@ typedef struct rs64_host_api {
     const char* (*mod_data_dir)(const char* mod_id);
     // v10: the pilot (save slot, 0-based) chosen on the account screen, -1 before one is.
     int (*save_slot)(void);
+    // v11: a ray-traced light preset set while the game runs: preset_json is one preset object as in roguesq_lights.json's "presets" (level, mesh or sprite, lights, ...), NULL or "" removes it.
+    // It replaces a file preset of the same name and shows from the next frame, so calling it every frame moves a light. Prefix name with your mod's id. Any thread. 0, -1 for a null name, -2 for JSON that is not an object with a lights array.
+    int (*light_set)(const char* name, const char* preset_json);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

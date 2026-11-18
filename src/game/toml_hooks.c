@@ -2043,6 +2043,38 @@ int rs64_th_player_fire_entry(uint8_t* rdram, recomp_context* ctx) {
     return rs64_hook(RS64_HOOK_PLAYER_FIRE, rdram, ctx);
 }
 
+// setupCameraMatrices entry: a camera's projection
+void rs64_th_setupCameraMatrices_entry(uint8_t* rdram, recomp_context* ctx)
+{
+    rs64_hook(RS64_HOOK_CAMERA, rdram, ctx);
+}
+
+// A fire check inside a craft's weapon tick ($v1 = the fire buttons): the fire handlers see a0 = the weapon context, a1 = the hardpoint, on a copy of the registers; a skip clears $v1.
+static void rs64_fire_gate(uint8_t* rdram, recomp_context* ctx, uint32_t weapon, uint32_t hardpoint)
+{
+
+    if (ctx->r3 == 0) return;
+
+    recomp_context c = *ctx;
+
+    c.r4 = (gpr)(int32_t)weapon;
+    c.r5 = (gpr)(int32_t)hardpoint;
+
+    if (rs64_th_player_fire_entry(rdram, &c)) ctx->r3 = 0;
+}
+
+// spawnTexturedExplosionBurst 0x800B7F18 (Y-wing): s3 = the weapon context, s1 = the player record (+0x158 the next hardpoint)
+void rs64_th_spawnTexturedExplosionBurst_800B7F18(uint8_t* rdram, recomp_context* ctx)
+{
+    rs64_fire_gate(rdram, ctx, (uint32_t)ctx->r19, (uint32_t)MEM_HU(0x158, ctx->r17) & 1u);
+}
+
+// tickCinematicEffectObject 0x800AC884 (snowspeeder): s1 = the weapon context; both guns fire together
+void rs64_th_tickCinematicEffectObject_800AC884(uint8_t* rdram, recomp_context* ctx)
+{
+    rs64_fire_gate(rdram, ctx, (uint32_t)ctx->r17, 0u);
+}
+
 // mainGameLoop 0x8003E138: the front end is about to start
 void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx) {
 

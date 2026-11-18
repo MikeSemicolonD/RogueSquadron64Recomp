@@ -113,6 +113,7 @@ const char* cfg_str_fwd(const char* m, const char* o) { return g_services.config
 int key_fwd(const char* k) { return g_services.key_down && k ? g_services.key_down(k) : 0; }
 const char* data_dir_fwd(const char* m) { return g_services.mod_data_dir && m ? g_services.mod_data_dir(m) : ""; }
 int slot_fwd() { return g_services.save_slot ? g_services.save_slot() : -1; }
+int light_fwd(const char* n, const char* j) { return !n ? -1 : (g_services.light_set ? g_services.light_set(n, j) : 0); }
 }
 
 int add_hook(uint32_t hook, rs64_hook_fn fn, void* user) {
@@ -541,6 +542,7 @@ const char* hook_name(uint32_t hook)
         "RS64_HOOK_FRAME", "RS64_HOOK_STATE_CHANGED", "RS64_HOOK_CUTSCENE", "RS64_HOOK_UNIT_DESTROYED",
         "RS64_HOOK_AREA_CROSSED", "RS64_HOOK_PATH_POINT", "RS64_HOOK_OBJECTIVE_STATE", "RS64_HOOK_MISSION_READY",
         "RS64_HOOK_SONG_START", "RS64_HOOK_SOUND_3D", "RS64_HOOK_PLAYER_DAMAGE", "RS64_HOOK_PLAYER_FIRE",
+        "RS64_HOOK_CAMERA",
     };
 
     static_assert(sizeof(names) / sizeof(names[0]) == RS64_HOOK_COUNT, "hook_name table must list every hook id");
@@ -646,6 +648,7 @@ const rs64_host_api* api() {
         clip_fwd, frame_fwd,
         reloc_fwd, object_fwd, health_fwd, destroy_fwd, line_fwd, var_get_fwd, var_set_fwd, add_rule_condition, mission_fwd, cfg_num_fwd, cfg_str_fwd,
         key_fwd, data_dir_fwd, slot_fwd,
+        light_fwd,
     };
 
     return &table;

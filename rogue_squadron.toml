@@ -1908,6 +1908,23 @@ text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
 func = "triggerNabooEngineEffect"
 text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
 
+# A camera's projection is set up (a0 = the camera: +0x20 FOV, +0x24 near, +0x28 far): mods may change them.
+# hook: RS64_HOOK_CAMERA
+[[patches.hook]]
+func = "setupCameraMatrices"
+text = '{ rs64_th_setupCameraMatrices_entry(rdram, ctx); }'
+
+# The Y-wing (spawnTexturedExplosionBurst, its weapon tick) and the snowspeeder (tickCinematicEffectObject) fire mid-function: $v1 = the fire buttons once the cooldown is done, cleared when a fire handler skips the shot.
+[[patches.hook]]
+func = "spawnTexturedExplosionBurst"
+before_vram = 0x800B7F18
+text = '{ rs64_th_spawnTexturedExplosionBurst_800B7F18(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickCinematicEffectObject"
+before_vram = 0x800AC884
+text = '{ rs64_th_tickCinematicEffectObject_800AC884(rdram, ctx); }'
+
 # Front end start (a1 = overlay state, a2 = the menu it opens; 4 = ELITE ROGUES after a game over): co-op goes back to mission select instead.
 # hook: RS64_HOOK_FRONT_END
 [[patches.hook]]
