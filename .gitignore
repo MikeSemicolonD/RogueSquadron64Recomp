@@ -55,6 +55,7 @@ bld/
 out/
 node_modules/
 vcpkg_installed/
+/tools/web/rs64-explorer/tests/projects/
 /wiki-preview/
 
 # Build artifacts

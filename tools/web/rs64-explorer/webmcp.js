@@ -1743,7 +1743,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_terrain_brush',
     edit: true,
-    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius; "blend" soft-paints texture over the ground with the same falloff, strength 0-1 its opacity at the centre, not tied to tiles (stock levels only; triplanar: true wraps it along slopes instead of stretching it down cliffs). square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
+    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius; "blend" soft-paints texture over the ground with the same falloff, strength 0-1 its opacity at the centre, not tied to tiles (stock levels only; triplanar: true wraps it along slopes instead of stretching it down cliffs). square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Raising or lowering past the level\'s height range (heightRange in rs64_terrain_get) grows the range, up to about 4x the tallest stock level\'s, and the whole level\'s height steps get coarser. Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1819,17 +1819,21 @@ const WEBMCP_TOOLS = [
         if ((tool === 'raise' || tool === 'lower') && !(amount > 0))
           throw new Error('Give amount (level units, > 0)');
 
-        const flat = (height ?? groundAt(g.hts, g, scale, x, z)) / scale;
+        let flat = (height ?? groundAt(g.hts, g, scale, x, z)) / scale;
+
+        if (tool === 'flatten' && Math.abs(flat) > 127.5)
+          flat *= growHeightRange(flat);
 
         for (let p = 0; p < (tool === 'smooth' ? passes : 1); p++)
           brushHeights(g, gx, gy, r, tool, { amount: amount / scale, flat, mix: strength, square, hard });
       }
 
       const bytes = rebuildTerrain();
+      const grown = scale / mcpTerrainScale(s);
 
       if (!bytes)
       {
-        g.hts.set(hts);
+        g.hts.set(hts.map((h) => h * grown));
         g.tex.set(texs);
         rebuildTerrain();
 
@@ -1846,7 +1850,7 @@ const WEBMCP_TOOLS = [
         $('optFollow').checked = follow;
       }
 
-      return { tool, at: { x, z, y: +groundAt(g.hts, g, scale, x, z).toFixed(3) }, tiles: $('sculptInfo').textContent };
+      return { tool, at: { x, z, y: +groundAt(g.hts, g, mcpTerrainScale(s), x, z).toFixed(3) }, tiles: $('sculptInfo').textContent };
     },
   },
   {

@@ -1296,7 +1296,8 @@ async function loadSculpt()
     undo: [],
     tex: null,
     bytes: null,
-    scale: dv.getFloat32(0x10)
+    scale: dv.getFloat32(0x10),
+    waterK: 1
   };
 
   sculpt.committed = sculpt.grid.hts.slice();
@@ -1306,8 +1307,12 @@ async function loadSculpt()
   paintBudgetShow();
   sculptStatus('');
   showTileGrid();
+  sculptRangeShow();
+}
 
-  // Stored heights are -128..127 steps, so each level has its own height range.
+// Stored heights are -128..127 steps of the level's height scale, so each level has its own height range.
+function sculptRangeShow()
+{
   const flat = $('sculptFlat');
   const hi = +(128 * sculpt.scale).toFixed(2);
   const lo = +(-127 * sculpt.scale).toFixed(2);
@@ -1674,10 +1679,14 @@ function brushHeights(g, gx, gy, r, tool, { amount = 0, flat = 0, mix = 0, squar
 
       const i = y * g.W + x;
 
-      if (tool === 'raise')
-        g.hts[i] -= amount * w;
-      else if (tool === 'lower')
-        g.hts[i] += amount * w;
+      if (tool === 'raise' || tool === 'lower')
+      {
+        const v = g.hts[i] + (tool === 'raise' ? -amount : amount) * w;
+        const k = Math.abs(v) > 127.5 ? growHeightRange(v) : 1;
+
+        amount *= k;
+        g.hts[i] = v * k;
+      }
       else if (tool === 'flatten')
         g.hts[i] += (flat - g.hts[i]) * Math.min(1, mix * w);
       else
@@ -1688,6 +1697,35 @@ function brushHeights(g, gx, gy, r, tool, { amount = 0, flat = 0, mix = 0, squar
   }
 
   return brushBox(g, gx, gy, r);
+}
+
+// The largest height scale the ground grows to, about 4x the largest stock one (lv_i's 0.107).
+const MAX_HEIGHT_SCALE = 0.4;
+
+// Doubles the level's height scale until stored height v fits, rescaling everything held in stored steps so the ground keeps its shape
+// in coarser steps; the water's level and waves follow on the next commit. Returns the factor applied to stored heights.
+function growHeightRange(v)
+{
+  let k = 1;
+
+  while (Math.abs(v * k) > 127.5 && sculpt.scale / (k / 2) <= MAX_HEIGHT_SCALE)
+    k /= 2;
+
+  if (k === 1)
+    return 1;
+
+  for (const a of [sculpt.grid.hts, sculpt.committed, ...sculpt.undo.map((u) => u.hts)])
+    a.forEach((h, i) => (a[i] = h * k));
+
+  sculpt.flat *= k;
+  sculpt.waterK *= k;
+  sculpt.scale = Math.fround(sculpt.scale / k);
+  sculpt.regrid = true;
+  new DataView(sculpt.base.buffer, sculpt.base.byteOffset).setFloat32(0x10, sculpt.scale);
+  sculpt.notice = `Height range raised to ${+(127 * sculpt.scale).toFixed(1)}`;
+  sculptRangeShow();
+
+  return k;
 }
 
 // Paints texture on every tile whose centre is within the brush.
@@ -1838,6 +1876,11 @@ function rebuildTerrain(box = null)
   if (!terrain)
     return bytes;
 
+  if (sculpt.regrid)
+    box = { x0: 0, y0: 0, x1: hmp.w - 1, y1: hmp.h - 1 };
+
+  sculpt.regrid = false;
+
   if (box && terrain.userData.update?.(hmp, box)) {
     terrain.userData.tiles = { hmp, texIds: sculpt.texIds };
     sculptBudget(hmp.tiles.length);
@@ -1941,8 +1984,22 @@ async function commitTerrain(bytes) {
   if (!bytes)
     return;
 
+  const waterK = sculpt.waterK;
+
+  sculpt.waterK = 1;
+
   await historyGroup('Terrain', async () => {
     await editAsset(sculpt.dir + '/hmp', () => bytes);
+
+    // Water level and wave height are in stored height steps, so they follow a grown height range.
+    const w = waterK !== 1 && datWaterGet(await rom.read(sculpt.dir + '/dat'));
+
+    if (w?.on)
+      await editAsset(sculpt.dir + '/dat', (b) => datWaterSet(b, {
+        ...w,
+        level: Math.round(w.level * waterK),
+        waves: Math.max(1, Math.round(w.waves * waterK))
+      }));
 
     for (const k of [...terrainCache.keys()])
       if (k.startsWith(sculpt.dir + '|'))
@@ -2044,9 +2101,14 @@ canvas.addEventListener('pointerdown', (e) => {
   const cx = Math.min(g.W - 1, Math.max(0, Math.round(h.gx)));
   const cy = Math.min(g.H - 1, Math.max(0, Math.round(h.gy)));
 
-  sculpt.flat = typed !== '' && Number.isFinite(+typed) ? Math.max(-128, Math.min(127, -typed / sculpt.scale)) : g.hts[cy * g.W + cx];
-  stroke = { last: h, dirty: false, queued: false, box: null };
   sculpt.notice = '';
+  sculpt.flat = typed !== '' && Number.isFinite(+typed) ? -typed / sculpt.scale : g.hts[cy * g.W + cx];
+
+  if (Math.abs(sculpt.flat) > 127.5)
+    growHeightRange(sculpt.flat);
+
+  sculpt.flat = Math.max(-128, Math.min(127, sculpt.flat));
+  stroke = { last: h, dirty: false, queued: false, box: null };
   strokeStep(h);
 });
 

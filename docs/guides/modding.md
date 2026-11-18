@@ -79,7 +79,7 @@ The easiest way to make one is the RS64 Explorer (`tools/web/rs64-explorer`), wh
 1. Make your changes:
    - **Textures:** right-click a textured face and pick *Replace texture from image…*
    - **Object placement:** in a level, right-click a placed object or marker and edit its *Placement* (position, rotation, scale or zone size). Objects can also be duplicated or deleted, except ones the mission script refers to.
-   - **Terrain:** tick *Edit terrain* to sculpt and repaint the ground (placed objects follow it), or import a grey heightmap PNG.
+   - **Terrain:** tick *Edit terrain* to sculpt and repaint the ground (placed objects follow it), or import a grey heightmap PNG. Raising or lowering past the level's height range grows it, and the whole level's ground then moves in coarser height steps.
    - **Craft models:** on a player craft in the Models tab, pick *Import craft model (.glb)…*. The engines, glows and canopy stay; the model's first texture goes into the craft's largest texture slot.
 2. Click *Export mod* and extract the zip into `mods/`. With more than one kind of change (Levels, Models, Audio, UI, Fonts), it asks how to split them: one mod per kind, groups you name (*+ Group*, then move changes into them), or all in one. Changes that need each other, such as a level and the custom ship it places, always export together, and the dialog says so. The groups are saved with the project.
 
