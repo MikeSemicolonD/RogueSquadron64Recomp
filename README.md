@@ -557,11 +557,9 @@ Here's a list of MCPs that could be useful for this project:
 
 [pj64](https://www.pj64-emu.com/nightly-builds) to pull memory dumps for checks and comparisons. (Development builds are recommended since they provide more ways to debug/validate *even though it performs slower*)
 
-## Contributors
+## Contributors / Testers
 
 - **[terminalcommand](https://github.com/terminalcommand)**: Assisted in improving the Linux build process, fixed missing tool calls in the CMakeLists, fixed Wayland crashes on Linux and added borderless fullscreen argument.
-
-## Play Testers
 
 - **[gpeter12](https://github.com/gpeter12)**: Helped to test and verify that the recomp. works on Linux Mint 22.3 - Cinnamon 64-bit in addition to testing and verifying the 'setup.sh' to improve the build process for both developers & non-developers.
 
