@@ -473,6 +473,7 @@ extern "C" void rs64_ships_load_models(uint8_t* rdram, recomp_context* ctx)
 }
 
 static float s_boost_t = 0.0f;
+static bool s_aim_logged = false;
 static float s_foil_t = 0.0f;
 static int s_foil_state = 0;
 static uint32_t s_wings[2] = { 0, 0 };
@@ -515,6 +516,7 @@ extern "C" void rs64_ships_mission_reset() {
     s_shadow_scene = -1;
     s_in_cutscene = false;
     s_boost_t = 0.0f;
+    s_aim_logged = false;
     s_foil_t = 0.0f;
     s_foil_state = 0;
     s_wings_looked = false;
@@ -562,6 +564,12 @@ extern "C" void rs64_ships_aim(uint8_t* rdram, recomp_context* ctx)
 
     wf(rdram, cone_at, aim ? std::min(rf(rdram, cone_at), cone) : cone);
     ctx->r7 = (gpr)(int32_t)bits_of(r);
+
+    if (!s_aim_logged)
+    {
+        s_aim_logged = true;
+        fprintf(stderr, "[ships] %s aim: range %.1f, cone cos %.4f\n", s.id.c_str(), r, rf(rdram, cone_at));
+    }
 }
 
 // A ship's V-wing boost (0x800B9074..0x800B9280) and X-wing S-foils (0x800B4940..0x800B4C40, fire lock 0x800B521C) on another craft, with
@@ -649,7 +657,12 @@ static void boost(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* targ
 
     if (s_boost_t <= 0.0f) return;
 
-    *target = s_boost_t > 6.0f ? 6.0f : std::min(*target, 3.0f);
+    // The V-wing's boost 6 and cooldown cap 3 against its top speed 4.5, scaled to the template's top speed (the throttle hooks' caps).
+    static constexpr uint32_t kTopSpeed[] = { 0x800A58DCu, 0x800A5B90u, 0x800A5A54u, 0x800A5CC0u, 0x800A532Cu, 0x800A5DE8u, 0, 0, 0x800A6154u };
+    const uint32_t top_at = kTopSpeed[s_ships[s_flying].tmpl];
+    const float scale = top_at ? rf(rdram, top_at) / 4.5f : 1.0f;
+
+    *target = s_boost_t > 6.0f ? 6.0f * scale : std::min(*target, 3.0f * scale);
     s_boost_t = std::max(0.0f, s_boost_t - f_of(ctx->r5));
 }
 
