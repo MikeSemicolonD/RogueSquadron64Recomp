@@ -44,6 +44,11 @@ struct FrameInput {
     uint32_t frame = 0;
     uint8_t pad[6] = {};
     uint8_t throttle = 0xFF;
+
+    // The AT-ST head aim (CHICKEN) in 1/127 steps of the -1..1 range; written only while something aims the head.
+    bool head = false;
+    int8_t head_x = 0;
+    int8_t head_y = 0;
 };
 
 std::string format_frame(const FrameInput& f);

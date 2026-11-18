@@ -43,7 +43,7 @@ static uint64_t s_mcp_epoch = 0;
 static nlohmann::json s_mcp_picture;
 
 // The MCP press tool's input on controller 1, held until dl_seq reaches until_dl (0 = until release).
-struct McpInput { uint16_t mask; float x; float y; uint64_t until_dl; nlohmann::json names; };
+struct McpInput { uint16_t mask; float x; float y; uint64_t until_dl; nlohmann::json names; bool head = false; float head_x = 0.0f; float head_y = 0.0f; };
 static std::optional<McpInput> s_mcp_input;
 
 extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, float* sy);
@@ -72,6 +72,23 @@ extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y)
     *buttons = s_mcp_input->mask;
     *x = s_mcp_input->x;
     *y = s_mcp_input->y;
+
+    return true;
+}
+
+// The press tool's AT-ST head aim (-1..1), while its input is held.
+extern "C" bool rs64_mcp_head(float* x, float* y)
+{
+
+    std::lock_guard<std::mutex> g(s_mcp_lock);
+
+    if (!mcp_input_live() || !s_mcp_input->head)
+    {
+        return false;
+    }
+
+    *x = s_mcp_input->head_x;
+    *y = s_mcp_input->head_y;
 
     return true;
 }
@@ -548,13 +565,32 @@ static nlohmann::json mcp_press(const nlohmann::json& p)
         in.y = std::clamp(st[1].get<float>(), -1.0f, 1.0f);
     }
 
+    if (p.contains("head"))
+    {
+        const auto& hd = p["head"];
+
+        if (!hd.is_array() || hd.size() != 2 || !hd[0].is_number() || !hd[1].is_number())
+        {
+            throw std::runtime_error("head must be [x, y] in -1..1 (x right, y up)");
+        }
+
+        // The mouse's head y (rs64_atst_head) is positive down; the tool takes y up.
+        in.head = true;
+        in.head_x = std::clamp(hd[0].get<float>(), -1.0f, 1.0f);
+        in.head_y = -std::clamp(hd[1].get<float>(), -1.0f, 1.0f);
+    }
+
     const uint32_t frames = p.value("frames", 0u);
     std::lock_guard<std::mutex> g(s_mcp_lock);
 
     in.until_dl = (frames > 0) ? s_mcp_dl_seq + frames : 0;
     s_mcp_input = in;
 
-    return { { "buttons", in.names }, { "stick", { in.x, in.y } }, { "until_dl", in.until_dl } };
+    nlohmann::json out = { { "buttons", in.names }, { "stick", { in.x, in.y } }, { "until_dl", in.until_dl } };
+
+    if (in.head) out["head"] = { in.head_x, -in.head_y };
+
+    return out;
 }
 
 static nlohmann::json mcp_release(const nlohmann::json&)

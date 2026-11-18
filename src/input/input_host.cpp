@@ -154,6 +154,7 @@ static bool fake_controller_enabled() {
 #ifdef RS64_MCP
 // The MCP press tool's held input (src/lockstep/lockstep.cpp); false when none is active.
 extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y);
+extern "C" bool rs64_mcp_head(float* x, float* y);
 #endif
 
 extern "C" uint32_t rs64_game_frames(void);
@@ -1634,14 +1635,38 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     return true;
 }
 
-// Head angles for updatePlayerAtStBehavior 0x800D1AE0 in the game's own scale (yaw = x * 80, pitch = y * -30); 0 while the mouse isn't aiming.
-extern "C" int rs64_atst_head(float* yaw, float* pitch)
+// The live AT-ST head aim in -1..1: an MCP press's head, else the mouse; 0 while nothing aims it.
+extern "C" int rs64_atst_head_live(float* x, float* y)
 {
+
+#ifdef RS64_MCP
+
+    if (rs64_mcp_head(x, y))
+    {
+        return 1;
+    }
+
+#endif
 
     if (!g_atst_head_on) return 0;
 
-    *yaw = g_atst_head_x * 80.0f;
-    *pitch = g_atst_head_y * -30.0f;
+    *x = g_atst_head_x;
+    *y = g_atst_head_y;
+
+    return 1;
+}
+
+// Head angles for updatePlayerAtStBehavior 0x800D1AE0 in the game's own scale (yaw = x * 80, pitch = y * -30); 0 while nothing aims the head.
+extern "C" int rs64_atst_head(float* yaw, float* pitch)
+{
+
+    float x = 0.0f;
+    float y = 0.0f;
+
+    if (!rs64_ls_head(rs64_atst_head_live(&x, &y), &x, &y)) return 0;
+
+    *yaw = x * 80.0f;
+    *pitch = y * -30.0f;
 
     return 1;
 }

@@ -6,10 +6,12 @@ Run as a stdio MCP server (Claude Code .mcp.json), or `python rs64_mcp.py --self
 import functools
 import http.client
 import json
+import math
 import os
 import re
 import shlex
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -94,6 +96,50 @@ def symbol_table():
                     for sym in section.get("symbols", []) + section.get("functions", []):
                         _symbols.setdefault(sym["name"], sym["vram"])
     return _symbols
+
+
+class RamReader:
+    """Game memory through rdram_read, fetched in 64 KB pages so a walk over scattered records costs a few calls."""
+
+    def __init__(self, game):
+        self.game = game
+        self.pages = {}
+
+    def rd(self, addr, n):
+        out = b""
+        while n > 0:
+            page = addr & ~0xFFFF
+            if page not in self.pages:
+                self.pages[page] = bytes.fromhex(self.game.call("rdram_read", {"addr": page, "size": 0x10000})["hex"])
+            take = min(n, page + 0x10000 - addr)
+            out += self.pages[page][addr - page:addr - page + take]
+            addr += take
+            n -= take
+        return out
+
+    def u32(self, a):
+        return int.from_bytes(self.rd(a, 4), "big")
+
+    def u16(self, a):
+        return int.from_bytes(self.rd(a, 2), "big")
+
+    def vec(self, a, k=3):
+        return struct.unpack(f">{k}f", self.rd(a, 4 * k))
+
+    def cstr(self, a, n=32):
+        return self.rd(a, n).split(b"\0")[0].decode("ascii", "replace") if self.ok(a, n) else ""
+
+    @staticmethod
+    def ok(p, size=0):
+        return 0x80000000 <= p < 0x80800000 - size
+
+
+@functools.cache
+def function_names():
+    """vram -> name for the function symbols in syms/."""
+    import tomllib
+    with open(os.path.join(REPO, "syms", "rogue_squadron.syms.toml"), "rb") as f:
+        return {fn["vram"]: fn["name"] for section in tomllib.load(f).get("section", []) for fn in section.get("functions", [])}
 
 
 def write_minidump(pid, path):
@@ -717,6 +763,107 @@ class Game:
                 hops += 1
         return {"count": len(models), "models": sorted(models, key=lambda m: m["name"])}
 
+    # Handlers that are never something to shoot: falling debris, explosions and the player's own parts. 0x8005C874 (misnamed audioCueDispatcherNpcHandler) is the laser bolt.
+    NOT_TARGETS = {"npcDebris1Update", "updateDestructionDebrisNpc", "playerAtStUpdate", "orientedNpcHandler"}
+    LASER = "audioCueDispatcherNpcHandler"
+
+    def targets(self, max_dist=0.0, limit=40, bolts=False):
+        """Every live object in the NPC slot table (0x80130BB0 -> 8-byte slots -> context: +0 handler, +8 position pointer; one object can fill several slots), named by its handler, with distance, bearing (+ right) and elevation (+ up; world Y points down) from player 1's craft (0x80137DC0 position, +0xC forward)."""
+        ram = RamReader(self)
+        rd, u32, u16, vec, ok = ram.rd, ram.u32, ram.u16, ram.vec, ram.ok
+        names = function_names()
+        me = vec(0x80137DC0)
+        fwd = vec(0x80137DCC)
+        heading = math.atan2(fwd[0], fwd[2])
+        table = u32(0x80130BB0)
+        my_slot = u16(0x80137DBA)
+        found = []
+        walker = None
+        seen = set()
+        for slot in range(0x800):
+            ctx = u32(table + slot * 8) if ok(table, 0x4000) else 0
+            if not ok(ctx, 0x40) or ctx in seen:
+                continue
+            seen.add(ctx)
+            if slot == my_slot:
+                block = u32(ctx + 4)
+                walker = block if ok(block, 0x100) else None
+                continue
+            handler = u32(ctx)
+            kind = names.get(handler, f"0x{handler:08X}")
+            # Context flag 0x10: destroyed (a turret's wreck keeps its slot).
+            if kind == self.LASER:
+                if not bolts:
+                    continue
+                kind = "laser"
+            if kind in self.NOT_TARGETS or u16(ctx + 0x14) & 0x10:
+                continue
+            at = u32(ctx + 8)
+            if not ok(at, 12):
+                continue
+            p = vec(at)
+            d = [p[i] - me[i] for i in range(3)]
+            flat = math.hypot(d[0], d[2])
+            dist = math.hypot(flat, d[1])
+            if not all(math.isfinite(v) for v in p) or (max_dist and dist > max_dist):
+                continue
+            bearing = math.degrees((math.atan2(d[0], d[2]) - heading + math.pi) % (2 * math.pi) - math.pi)
+            found.append({"slot": slot, "kind": kind, "dist": round(dist, 1), "bearing": round(bearing, 1), "elev": round(math.degrees(math.atan2(-d[1], flat)), 1), "pos": [round(v, 2) for v in p], "flags": f"0x{u16(ctx + 0x14):04X}"})
+        found.sort(key=lambda t: t["dist"])
+        kinds = {}
+        for t in found:
+            kinds[t["kind"]] = kinds.get(t["kind"], 0) + 1
+        out = {"player": {"pos": [round(v, 2) for v in me], "heading": round(math.degrees(heading), 1), "slot": my_slot}, "kinds": kinds, "targets": found[:limit]}
+        if walker is not None:
+            out["player"]["walker_hp"] = struct.unpack(">i", rd(walker + 0xB0, 4))[0]
+        return out
+
+    def objectives(self):
+        """The mission's objective state and the level objects that change it. Booleans u8[128] at 0x801388A0, counts s32[128] at 0x80138060 (moved +0xA00000 while the co-op mod is loaded), timers f32[8] at 0x8010C9F8, all 1-based. DAT items: *(0x801375D8) = count, +4 the item list; an item has its name at +0xC, position +0x10, live slot +6 (0xFFFF = not spawned) and its death effect at +0x70: count[+0x70] += +0x74, flag[+0x78] = +0x7C, count[+0x80] += +0x84."""
+        ram = RamReader(self)
+        u32, u16, vec, ok = ram.u32, ram.u16, ram.vec, ram.ok
+        moved = 0x80138060 + 0xA00000
+        counts_at = moved if any(ram.rd(moved, 0x200)) else 0x80138060
+        flags = ram.rd(0x801388A0, 0x80)
+        counts = [struct.unpack(">i", ram.rd(counts_at + i * 4, 4))[0] for i in range(128)]
+        me = vec(0x80137DC0)
+        fwd = vec(0x80137DCC)
+        heading = math.atan2(fwd[0], fwd[2])
+        table = u32(0x80130BB0)
+        dat = u32(0x801375D8)
+        items = []
+        n = u32(dat) if ok(dat, 8) else 0
+        lst = u32(dat + 4) if n else 0
+        for i in range(min(n, 4096)):
+            it = u32(lst + i * 4)
+            if not ok(it, 0x100):
+                continue
+            c1, a1, fl, fv, c2, a2 = (u32(it + o) for o in (0x70, 0x74, 0x78, 0x7C, 0x80, 0x84))
+            effect = []
+            if 1 <= c1 <= 128 and a1:
+                effect.append(f"count{c1}+={a1}")
+            if 1 <= fl <= 128:
+                effect.append(f"flag{fl}={fv}")
+            if 1 <= c2 <= 128 and a2 and a2 < 0x10000:
+                effect.append(f"count{c2}+={a2}")
+            if not effect:
+                continue
+            slot = u16(it + 6)
+            ctx = u32(table + slot * 8) if slot < 0x800 else 0
+            # Slot 0xFFFF: not spawned yet, or killed and removed.
+            state = "inactive" if slot == 0xFFFF else ("dead" if not ok(ctx, 0x40) or u16(ctx + 0x14) & 0x10 else "alive")
+            p = vec(it + 0x10)
+            d = [p[k] - me[k] for k in range(3)]
+            bearing = math.degrees((math.atan2(d[0], d[2]) - heading + math.pi) % (2 * math.pi) - math.pi)
+            items.append({"dat": i, "name": ram.cstr(u32(it + 0xC)), "state": state, "effect": " ".join(effect), "dist": round(math.hypot(d[0], d[2]), 1), "bearing": round(bearing, 1)})
+        return {
+            "level": u32(0x80130B70),
+            "flags": {i + 1: v for i, v in enumerate(flags) if v},
+            "counts": {i + 1: v for i, v in enumerate(counts) if v},
+            "timers": [round(t, 2) for t in vec(0x8010C9F8, 8)],
+            "items": items,
+        }
+
     def walk_dl(self, addr="task"):
         """Dump RDRAM and walk a display list offline with tools/debug/validate/f5_dl_walk.py (default: the current gfx task)."""
         dl = self.call("frame_info")["clocks"]["dl"]
@@ -1231,16 +1378,28 @@ def serve():
         return game.loaded_models()
 
     @tool()
+    def targets(max_dist: float = 0, limit: int = 40, bolts: bool = False) -> dict:
+        """Live objects around player 1, nearest first: kind (handler name), distance, bearing (deg from the craft's heading, + right) and elevation (deg, + up), with counts per kind and the player's pose (walker_hp on the AT-ST level). Destroyed objects and debris are left out; bolts=true adds laser bolts (kind "laser"). For choosing and aiming at targets without a screenshot."""
+        return game.targets(max_dist, limit, bolts)
+
+    @tool()
+    def objectives() -> dict:
+        """The mission's objective flags, counts and timers, and every level object whose destruction changes them (name, alive/dead/inactive = not spawned or killed and removed, its effect such as flag2=1 or count3+=1, distance and bearing from the player). Read it to learn what a level wants destroyed or protected; count1+=1 on everything is usually just the kill count."""
+        return game.objectives()
+
+    @tool()
     def rdram_write(addr: int, hex: str) -> dict:
         """Write hex bytes to game memory at a KSEG0 address. Prefer writing while paused."""
         return game.call("rdram_write", {"addr": addr, "hex": hex})
 
     @tool()
-    def press(buttons: list[str] | None = None, stick: list[float] | None = None, frames: int = 0) -> dict:
-        """Hold controller-1 buttons (start a b z l r dup ddown dleft dright cup cdown cleft cright; up/down/left/right = full stick) and/or stick [x, y] for `frames` display lists (0 = until release). While paused, follow with step to play exactly those frames."""
+    def press(buttons: list[str] | None = None, stick: list[float] | None = None, frames: int = 0, head: list[float] | None = None) -> dict:
+        """Hold controller-1 buttons (start a b z l r dup ddown dleft dright cup cdown cleft cright; up/down/left/right = full stick) and/or stick [x, y] for `frames` display lists (0 = until release). While paused, follow with step to play exactly those frames. head [x, y] (-1..1, x right, y up) aims the AT-ST head in CHICKEN as the mouse does; it recentres once the press ends."""
         params = {"buttons": buttons or [], "frames": frames}
         if stick is not None:
             params["stick"] = stick
+        if head is not None:
+            params["head"] = head
         return game.call("press", params)
 
     @tool()

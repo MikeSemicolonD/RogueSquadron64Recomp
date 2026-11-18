@@ -50,9 +50,13 @@ struct State {
     std::vector<FrameInput> frames;
     uint8_t throttle_q = 0xFF;
     float cruise = 0.0f;
+    bool head = false;
+    int8_t head_x = 0;
+    int8_t head_y = 0;
 
     // Replay with ROGUESQ_LS_RECORD also set: replays one file and writes an upgraded copy (inputs replayed, audio answers live).
     bool rerecord = false;
+    bool resume = false;
     std::map<uint32_t, std::vector<uint8_t>> song;
     uint32_t song_frame = 0xFFFFFFFFu;
     size_t song_idx = 0;
@@ -312,6 +316,15 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
             fputs(format_header(h).c_str(), s.rec);
             fflush(s.rec);
             s.rerecord = true;
+
+            // ROGUESQ_LS_RESUME=<frame>: replay only the frames before it, then keep recording live input into the new file (rewind to a checkpoint).
+            const long resume = recomp::dbg::env_int("ROGUESQ_LS_RESUME", -1);
+
+            if (resume >= 0 && (size_t)resume <= s.frames.size()) {
+                s.frames.resize((size_t)resume);
+                s.song.erase(s.song.lower_bound((uint32_t)resume), s.song.end());
+                s.resume = true;
+            }
         }
 
         s.hash_path = out ? std::string(out) : (rerec ? std::string(rerec) + ".hash" : std::string(path) + ".replay.hash");
@@ -779,6 +792,14 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         ls_pause_point(s);
     }
 
+    if (s.mode == Mode::Replay && s.resume && s.frame >= s.frames.size())
+    {
+        s.mode = Mode::Record;
+        s.rerecord = false;
+
+        fprintf(stderr, "[ls] resumed live recording at frame %u\n", s.frame);
+    }
+
     if (s.mode == Mode::Record) {
         FrameInput f;
         f.frame = s.frame;
@@ -789,6 +810,16 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
 
         s.throttle_q = quantize_throttle(rs64_throttle_live());
         f.throttle = s.throttle_q;
+
+        float hx = 0.0f;
+        float hy = 0.0f;
+
+        f.head = rs64_atst_head_live(&hx, &hy) != 0;
+        f.head_x = (int8_t)std::lround(std::clamp(hx, -1.0f, 1.0f) * 127.0f);
+        f.head_y = (int8_t)std::lround(std::clamp(hy, -1.0f, 1.0f) * 127.0f);
+        s.head = f.head;
+        s.head_x = f.head_x;
+        s.head_y = f.head_y;
 
         if (s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
@@ -814,6 +845,9 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         }
 
         s.throttle_q = f.throttle;
+        s.head = f.head;
+        s.head_x = f.head_x;
+        s.head_y = f.head_y;
 
         if (s.rerecord && s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
@@ -849,7 +883,7 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
     s.frame++;
 
     // A recording that ends with the mission (success, fail) has no mission frame after its last one, so stop here.
-    if (s.mode == Mode::Replay && s.frame >= s.frames.size()) {
+    if (s.mode == Mode::Replay && !s.resume && s.frame >= s.frames.size()) {
         end_session("replay finished");
     }
 }
@@ -872,6 +906,23 @@ extern "C" float rs64_ls_throttle(float live) {
     }
 
     return live;
+}
+
+// The AT-ST head aim this frame: the recorded one while a session records or replays, so mouse or MCP aiming replays exactly.
+extern "C" int rs64_ls_head(int live, float* x, float* y)
+{
+
+    State& s = st();
+
+    if (!s.active || (s.mode != Mode::Record && s.mode != Mode::Replay))
+    {
+        return live;
+    }
+
+    *x = s.head_x / 127.0f;
+    *y = s.head_y / 127.0f;
+
+    return s.head ? 1 : 0;
 }
 
 extern "C" float rs64_ls_cruise(float live) {

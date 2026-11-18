@@ -37,7 +37,9 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `frame_info` | Game state, every clock, held / paused flags, the frozen picture. |
 | `rdram_read` / `rdram_write` | Game memory as hex at KSEG0 addresses (relocated ranges handled). |
 | `rdram_dump` | The 8 MB RDRAM in the `ROGUESQ_DUMP_RDRAM_AT_VI` format, for `rdram_golden_diff.py` / `state_diff`. |
-| `press` / `release` | Hold controller-1 buttons or the stick for N frames (or until release); with `step`, plays exact frames of input. |
+| `press` / `release` | Hold controller-1 buttons or the stick for N frames (or until release); with `step`, plays exact frames of input. `head` aims the AT-ST head in CHICKEN, recorded like the mouse aim. |
+| `targets` | Live objects around the player, nearest first: kind, distance, bearing and elevation (for aiming without a screenshot), counts per kind, the walker's hp; `bolts=true` adds laser bolts. |
+| `objectives` | Objective flags, counts and timers, and each level object whose destruction changes them (alive / dead / inactive, its effect, distance and bearing). |
 | `type_text` | Type letters (and Backspaces) on the PASSCODES / ENTER NAME wheels, posted to the game window without focus. |
 | `screenshot` | PNG of the game window, captured by the game's PID. |
 | `frame_summary` / `list_draws` / `get_draw` | The frozen frame's framebuffer pairs and draw calls, everything the F1 Debugger shows. |
