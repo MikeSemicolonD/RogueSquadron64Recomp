@@ -1753,18 +1753,20 @@ extern "C" void rs64_lobby_debrief_pad(uint8_t* rdram, recomp_context* ctx)
     ctx->r2 = (gpr)(s.debrief.released() ? (p | 0x8000u) : (p & ~0x9000u));
 }
 
-// mainGameLoop starting the front end (a1 = overlay state, a2 = the menu it opens): after a game over (result 0x80130B14 = 3) it opens the main menu and ELITE ROGUES, and the main menu ends the session; the session goes back to mission select instead.
+// mainGameLoop starting the front end (a1 = overlay state, a2 = the menu it opens): after a game over (result 0x80130B14 = 3) it opens the main menu and ELITE ROGUES, and after
+// the AT-ST level (0x14, no debrief) SELECT GAME; both would end the session, so it goes back to mission select instead.
 extern "C" void rs64_lobby_front_end(uint8_t* rdram, recomp_context* ctx)
 {
 
     const Ghost& s = g();
+    const bool walker = s.session_level == 0x14;
 
-    if (!s.started || !s.lobby.ready() || s.peer_left || s.missions == 0 || rb(rdram, 0x80130B14u) != 3)
+    if (!s.started || !s.lobby.ready() || s.peer_left || s.missions == 0 || (rb(rdram, 0x80130B14u) != 3 && !walker))
     {
         return;
     }
 
-    fprintf(stderr, "[lobby] game over: back to mission select (was state %u menu %u)\n", (uint32_t)ctx->r5, (uint32_t)ctx->r6);
+    fprintf(stderr, "[lobby] %s: back to mission select (was state %u menu %u)\n", walker ? "walker level over" : "game over", (uint32_t)ctx->r5, (uint32_t)ctx->r6);
 
     ctx->r5 = 1;
     ctx->r6 = 0;

@@ -20,7 +20,7 @@ Online co-op runs one game per player. Each instance flies its own player 1 in i
 - Lives are one shared pool. When the other player dies, their ship is shot down where it was, WINGMATE DOWN appears and your lives counter ticks down; WINGMATE OUT when that took the last life, WINGMATE LEFT if they quit.
 - A player who dies with no lives left spectates: their camera follows the survivor, turning with them, and SPECTATING is shown until the mission ends. When the survivor is shot down, the spectator sees it too.
 - The host's mission result (success, failure, abort) ends the mission for both.
-- The debrief waits until both players press continue, then both go on together (a restart, or the next screen). After a game over both go back to SELECT LEVEL instead of the high scores, whose exit to the main menu would end the session.
+- The debrief waits until both players press continue, then both go on together (a restart, or the next screen). After a game over both go back to SELECT LEVEL instead of the high scores, whose exit to the main menu would end the session. A walker level (the AT-ST, which has no debrief) also goes back to SELECT LEVEL instead of SELECT GAME.
 
 ## Code layout
 

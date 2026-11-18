@@ -1404,6 +1404,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     Ghost& s = g();
     s.rdram = rdram;
     s.in_session = false;
+    s.session_level = -1;
     s.pending_result = -1;
     s.host_result = -1;
     s.allow_transition = -1;
@@ -1508,6 +1509,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.missions++;
     s.epoch++;
     s.in_session = true;
+    s.session_level = running.level;
     s.seq = 0;
     s.have_prev = false;
     s.puppet = Puppet{};

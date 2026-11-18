@@ -263,6 +263,9 @@ struct Ghost {
     std::vector<FrameInput> frames;
     uint32_t frame = 0;
     int missions = 0;
+
+    // The level of the last mission played in session (-1: the last one was played alone).
+    int session_level = -1;
     FILE* trace = nullptr;
     uint8_t* rdram = nullptr;
     bool result_sent = false;
