@@ -110,9 +110,9 @@ async function loadGameLights(ask)
   folders.sort(([a], [b]) => a.localeCompare(b));
 
   for (const [id, h] of folders)
-    await read(h, `mods/${id}`);
+    await read(h, `from the ${id} mod`);
 
-  await read(dir, 'next to the exe');
+  await read(dir, 'from the game folder');
   gameLightTexts = texts;
 
   return true;
@@ -133,6 +133,15 @@ const freeName = (base, taken) => {
 const lightPreset = (name) => lightsAll().find((p) => p.name === name);
 const lightOf = (s) => lightPreset(s?.preset)?.lights.find((l) => l.name === s.light);
 const isPicked = (p, l) => lightSel?.preset === p.name && lightSel.light === l.name;
+
+// A preset or light name as the panel shows it; the stored name, used by the lights file and the game's Lights tab, goes in its tooltip.
+const lightLabel = (name) => {
+
+  const hp = /^glw([a-z])_(\d+)$/.exec(name);
+  const s = hp ? `glow ${hp[1].toUpperCase()}${+hp[2] + 1}` : name.replace(/_/g, ' ');
+
+  return s[0].toUpperCase() + s.slice(1);
+};
 
 // A level light's map position <-> the level world's local space (game Y-down, rotated by the world group).
 const mapToWorld = (m, hs) => [m[0] / 256, (m[1] * hs) / 16, m[2] / 256];
@@ -875,7 +884,12 @@ function lightScope(p)
       models.get(model).push(part);
   }
 
-  return 'On ' + [...models].map(([m, parts]) => (parts.length ? `${m} part${parts.length > 1 ? 's' : ''} ${parts.join(', ')}` : `every ${m}`)).join(' · ');
+  const name = (m) => {
+
+    return modelName(objectHomeReady?.get(m) ?? m) ?? m;
+  };
+
+  return 'On ' + [...models].map(([m, parts]) => (parts.length ? `${name(m)} part${parts.length > 1 ? 's' : ''} ${parts.join(', ')}` : `every ${name(m)}`)).join(' · ');
 }
 
 function lightsPanel()
@@ -913,15 +927,20 @@ function lightsPanel()
 
   for (const p of lightsHere)
   {
-    const from = isGameLight(p) ? ` · from the game's ${lightsBaseInfo.get(p).src}` : '';
+    const from = isGameLight(p) ? ` · ${lightsBaseInfo.get(p).src}` : '';
 
-    kids.push(elem('div', { className: 'lightRow' }, elem('span', { textContent: p.name }), elem('small', {
+    kids.push(elem('div', { className: 'lightRow' }, elem('span', { textContent: lightLabel(p.name), title: p.name }), elem('small', {
       textContent: lightScope(p) + from,
       title: p.mesh || p.sprite ? `${p.mesh ? 'Mesh' : 'Sprite'} keys: ${(p.mesh || p.sprite).split('|').join(', ')}` : ''
     })));
 
     for (const l of p.lights)
-      kids.push(elem('button', { textContent: l.name, className: isPicked(p, l) ? 'on' : '', onclick: () => lightSelect({ preset: p.name, light: l.name }) }));
+      kids.push(elem('button', {
+        textContent: lightLabel(l.name),
+        title: l.name,
+        className: isPicked(p, l) ? 'on' : '',
+        onclick: () => lightSelect({ preset: p.name, light: l.name })
+      }));
   }
 
   const p = lightPreset(lightSel?.preset);

@@ -1733,7 +1733,7 @@ void rs64_th_applyDatObjectiveTriggerEffect_80065A0C(uint8_t* rdram, recomp_cont
 {
 
     rs64_camera_shots_trigger(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
-    rs64_rules_area(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
+    rs64_rules_area(rdram, ctx, (uint32_t)ctx->r4, (uint32_t)ctx->r5);
 }
 
 // runInMissionFrame 0x800FA7D8
@@ -1778,6 +1778,8 @@ int rs64_th_runInMissionFrame_800FA94C(uint8_t* rdram, recomp_context* ctx) {
 
 // endMissionCleanup 0x800FB9E4
 int rs64_th_endMissionCleanup_800FB9E4(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_rules_mission_end();
 
     if (rs64_hook(RS64_HOOK_MISSION_END, rdram, ctx)) return 1;
 
@@ -2014,6 +2016,33 @@ void rs64_th_playSpeechClip_entry(uint8_t* rdram, recomp_context* ctx) {
     rs64_hook(RS64_HOOK_SPEECH_CLIP, rdram, ctx);
 }
 
+// playSongById / play3DSoundEvent entry: a skip returns -1, as when nothing plays
+int rs64_th_playSongById_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->r2 = -1;
+
+    return rs64_hook(RS64_HOOK_SONG_START, rdram, ctx);
+}
+
+int rs64_th_play3DSoundEvent_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->r2 = -1;
+
+    return rs64_hook(RS64_HOOK_SOUND_3D, rdram, ctx);
+}
+
+// applyPlayerCraftDamage entry
+int rs64_th_applyPlayerCraftDamage_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    return rs64_hook(RS64_HOOK_PLAYER_DAMAGE, rdram, ctx);
+}
+
+// Each player craft's laser fire function: one bolt from one hardpoint
+int rs64_th_player_fire_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    return rs64_hook(RS64_HOOK_PLAYER_FIRE, rdram, ctx);
+}
+
 // mainGameLoop 0x8003E138: the front end is about to start
 void rs64_th_mainGameLoop_8003E138(uint8_t* rdram, recomp_context* ctx) {
 
@@ -2046,6 +2075,16 @@ void rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(uint8_t* rdram, recomp_
 void rs64_th_setupCraftAnimationFlagSet_800B9334(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_mod_levels_select_game(rdram, ctx);
+}
+
+// runHangarMenuFromOverlay entry: a walker level skips AVAILABLE CRAFT and the hangar, as if a craft were picked (v0 = 1).
+int rs64_th_runHangarMenuFromOverlay_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    if (!rs64_mod_levels_walker_pick()) return 0;
+
+    ctx->r2 = 1;
+
+    return 1;
 }
 
 // getLevelIntroCrawlId entry / buildModelViewerTextPage 0x800CA77C: a mod level's opening crawl.
@@ -2374,7 +2413,7 @@ void rs64_th_getVoiceText_80055A10(uint8_t* rdram, recomp_context* ctx)
 void rs64_th_updateNpcEffectIntensity_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
-    rs64_rules_path(rdram, (uint32_t)ctx->r5);
+    rs64_rules_path(rdram, ctx, (uint32_t)ctx->r5);
 }
 
 // selectMeshLodAndSubmitForRender 0x80058104

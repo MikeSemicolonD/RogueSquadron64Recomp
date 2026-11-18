@@ -1860,6 +1860,54 @@ text = '{ rs64_th_slotDispatcherIter_entry(rdram, ctx); }'
 func = "playSpeechClip"
 text = '{ rs64_th_playSpeechClip_entry(rdram, ctx); }'
 
+# A song starting (a0 = its id): mods may swap or skip it.
+# hook: RS64_HOOK_SONG_START
+[[patches.hook]]
+func = "playSongById"
+text = '{ if (rs64_th_playSongById_entry(rdram, ctx)) return; }'
+
+# A positioned sound effect starting (a1 = its position, the sound id at sp+0x1A): mods may swap or skip it.
+# hook: RS64_HOOK_SOUND_3D
+[[patches.hook]]
+func = "play3DSoundEvent"
+text = '{ if (rs64_th_play3DSoundEvent_entry(rdram, ctx)) return; }'
+
+# Damage reaching a player's craft (a0 = its record, a1 = the damage as float bits): mods may scale or block it.
+# hook: RS64_HOOK_PLAYER_DAMAGE
+[[patches.hook]]
+func = "applyPlayerCraftDamage"
+text = '{ if (rs64_th_applyPlayerCraftDamage_entry(rdram, ctx)) return; }'
+
+# A player craft firing a laser bolt from one hardpoint (a0 = the weapon context, a1 = the hardpoint): mods may skip it. Each craft has its own fire function; all share the one hook.
+# hook: RS64_HOOK_PLAYER_FIRE
+[[patches.hook]]
+func = "playerXwingFireBlaster"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "emitTexturedImpactEffect"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "orientVwingSubmodelByQuat"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "triggerFalconEngineEffect"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "triggerTieInterceptorEffect"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "triggerT16Effect"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
+[[patches.hook]]
+func = "triggerNabooEngineEffect"
+text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
+
 # Front end start (a1 = overlay state, a2 = the menu it opens; 4 = ELITE ROGUES after a game over): co-op goes back to mission select instead.
 # hook: RS64_HOOK_FRONT_END
 [[patches.hook]]
@@ -1902,6 +1950,11 @@ text = '{ rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(rdram, ctx); }'
 func = "setupCraftAnimationFlagSet"
 before_vram = 0x800B9334
 text = '{ rs64_th_setupCraftAnimationFlagSet_800B9334(rdram, ctx); }'
+
+# Mod levels: a walker level has no craft to pick, so AVAILABLE CRAFT and the hangar answer "picked" at once (v0 = 1).
+[[patches.hook]]
+func = "runHangarMenuFromOverlay"
+text = '{ if (rs64_th_runHangarMenuFromOverlay_entry(rdram, ctx)) return; }'
 
 # Mod levels: their own opening crawl, or none (v0 = crawl 0-3 for the planet pan-down, 0xFF none; a0 = level).
 [[patches.hook]]

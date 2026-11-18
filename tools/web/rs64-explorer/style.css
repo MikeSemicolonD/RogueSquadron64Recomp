@@ -38,6 +38,8 @@ body.nav-drag { transition: none; cursor: ew-resize; }
 /* Edit panel and stats share the top-left corner; the stats sit right of the panel whatever its width. */
 #topLeft { position: absolute; top: 10px; left: 24px; display: flex; gap: 10px; align-items: flex-start; max-height: calc(100% - 20px); pointer-events: none; }
 #topLeft > .panel { position: static; }
+/* The cutscene timeline spans the top, so its stats move to the bottom corner. */
+main:has(#cutPanel:not([hidden])) #topLeft { top: auto; bottom: 10px; }
 /* Top right in the model view; in the level view left of the marker legend (as #rulesPanel). */
 /* View gizmo + orthographic toggle, a vertical strip at the view's left edge. */
 #viewNav { left: 10px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px; z-index: 4; }
@@ -51,6 +53,8 @@ body.nav-drag { transition: none; cursor: ew-resize; }
 #lightPanel input { min-width: 0; }
 #lightPanel .lightRow small { overflow-wrap: anywhere; }
 #lightPanel.inLevel { right: 270px; }
+/* The editor windows and the cutscene timeline open where the lights panel sits, so it steps aside while one is open. */
+main:has(:is(#rulesPanel, #crawlPanel, #lookPanel, #objPanel, #levelPanel, #cutPanel):not([hidden])) #lightPanel { display: none; }
 #lightPanel[hidden] { display: none; }
 #lightPanel .editHead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
 #lightPanel label { display: flex; gap: 6px; align-items: center; justify-content: space-between; }
@@ -181,7 +185,7 @@ dialog.levelDialog { max-width: min(640px, 92vw); display: grid; gap: 8px; backg
 #btnLevelSettings, #btnBlankLevel { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 #btnLevelSettings[hidden], #btnBlankLevel[hidden] { display: none; }
 .levelDialog > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
-.levelDialog label.stacked, .crawlEdit label.stacked { flex-direction: column; align-items: center; }
+.levelDialog label.stacked, .crawlEdit label.stacked { flex-direction: column; align-items: flex-start; }
 .levelDialog label.stacked > input, .levelDialog label.stacked > textarea, .crawlEdit label.stacked > input, .crawlEdit label.stacked > textarea { align-self: stretch; }
 .levelDialog::backdrop { background: rgba(0, 0, 0, 0.5); }
 .levelDialog label, .levelDialog th, .levelDialog b { color: var(--text); }
@@ -498,6 +502,18 @@ main:has(#selHud:not(:empty)) #legend { max-height: calc(100% - var(--scene-h, 2
 #drop .loadingMsg { display: none; align-items: center; justify-content: center; gap: 8px; color: var(--text); }
 #drop.loading .loadingMsg { display: flex; }
 #drop.loading .box > :not(.loadingMsg) { display: none; }
+/* A narrow window keeps the editors: the stats, shortcut list and lights panel give way, and editor windows span the view. */
+@media (max-width: 900px) {
+  #hud, #selHud, #help, #lightPanel { display: none !important; }
+  #cutPanel { left: 10px; right: 10px; }
+  #rulesPanel, #lookPanel, #objPanel, #levelPanel { left: 10px; right: 10px; width: auto; background: var(--panel); }
+  #crawlPanel { right: 10px; max-width: calc(100% - 20px); background: var(--panel); }
+}
+/* Too narrow for the edit panel and the marker list side by side. */
+@media (max-width: 700px) {
+  main:has(#editPanel.open) #legend, #viewNav { display: none; }
+  #editPanel { max-height: calc(60vh - var(--scene-h, 290px) - 30px); }
+}
 @media (max-width: 700px) { aside > * { min-width: 279px; } body, body.nav-closed { grid-template-columns: 1fr; grid-template-rows: 40% 60%; } body.nav-closed { grid-template-rows: 0 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--line); } aside > * { min-width: 0; } }
 /* Marker icons use their marker's own colour; on the light theme a thin outline keeps the pale ones (white wingmen) visible. */
 :root[data-theme="light"] :is(#legend label, #addList .addRow) .icon img { filter: drop-shadow(var(--s) 0 0 var(--icon-color, currentColor)) drop-shadow(0 0 .6px rgba(0,0,0,.85)); }

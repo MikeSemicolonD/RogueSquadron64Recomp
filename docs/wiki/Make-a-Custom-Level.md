@@ -7,11 +7,13 @@ A new mission, shown in SELECT LEVEL after the last unlocked level, with its own
 Open a stock level in **Levels** and pick:
 
 - **New level from this one**: a full copy.
-- **New blank level**: a player start on flat ground, blank 3-second intro and ending, and the original's sky, ground textures and music.
+- **New blank level**: a player start on flat ground and a blank 3-second intro and ending. Pick a **Flying level** (your craft, with the original's sky, ground textures and music) or a **Walker level** (you walk an AT-ST, on the AT-ST level's ground and sky).
 
 It opens in the editor, ready to build. Rename it in Level settings.
 
 The stock level it starts from, its *template*, sets the sky, ground textures and map size.
+
+A walker level plays like the CHICKEN passcode: no craft select, no approved craft, and the game goes back to SELECT GAME when it ends. **New level from this one** on *AT-ST (CHICKEN passcode)* in the Levels list makes a walker copy of that level.
 
 ## 2. Level settings
 
@@ -22,7 +24,7 @@ The stock level it starts from, its *template*, sets the sky, ground textures an
 - **Title** and **description** for SELECT LEVEL.
 - **Picture**: the hologram on SELECT LEVEL. The camera button lets you frame a shot in the 3D view: fly to it, then click or press **Enter** to take it (**Esc** cancels). The folder button loads any image and crops it to fit. Without one, it shows the original level's picture.
 - **Briefing**: a game voice line, or **Import recording…** (`.wav`, `.mp3`).
-- **Approved craft**: the hangar shows every owned ship, but only approved ones launch.
+- **Approved craft**: the hangar shows every owned ship, but only approved ones launch. A walker level has none.
 - **Medals**: time, kills, accuracy and friendlies saved per medal, kept per save slot.
 - **Opening crawl** and **starting song**.
 
@@ -62,7 +64,7 @@ Under each objective's **Voice and camera**:
 
 ## Example: a short hunt on Tatooine
 
-1. Open Ambush at Mos Eisley and pick **New blank level**.
+1. Open Ambush at Mos Eisley and pick **New blank level**, then **Flying level**.
 2. **Level settings…**: title *Desert Hunt*, a description, the X-wing approved.
 3. In Objects mode, **Add to level** → *TIE fighter* (from another level), click three spots ahead of the start. They attack on their own; **New path** gives one a route.
 4. **Objectives…**, **Add objective**, click all three in the view.

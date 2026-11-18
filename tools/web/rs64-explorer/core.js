@@ -3,7 +3,7 @@
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
 const { parseShadowTextures, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, terrainTexRGBA, paintApply, paintPath, paintBudget, PAINT_MARK, modAssetFile, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
-  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, menuExtParse, zipUnpack, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
+  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, modChecksOf, menuExtParse, zipUnpack, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 function elem(tag, props, ...children) {
@@ -248,6 +248,31 @@ const SUBTYPES = {
   0x51: 'Lava vent',
   0x52: 'Unnamed item',
 };
+
+// The player crafts' model files; a c_ file is the craft's cutscene copy.
+const CRAFT_MODELS = {
+  xwing: 'X-wing', c_xwg: 'X-wing', ywing: 'Y-wing', c_ywg: 'Y-wing', awing: 'A-wing', c_awg: 'A-wing', vwing: 'V-wing', c_vwg: 'V-wing',
+  snowspeeder: 'Snowspeeder', c_spdr: 'Snowspeeder', falcon: 'Millennium Falcon', c_fal: 'Millennium Falcon', c_tie: 'TIE interceptor',
+  t16: 'T-16 Skyhopper', c_t16: 'T-16 Skyhopper'
+};
+
+const UNIT_MODELS = new Map(Object.entries(SUBTYPE_MODEL).filter(([, p]) => !p.includes('#')).map(([s, p]) => ['data/' + p, SUBTYPES[s]]));
+
+// What a model file draws, by the game's unit or craft name ('data/imp_stuff/atat_lo' -> 'AT-AT (low detail)'), or null if it has none.
+function modelName(id)
+{
+  const file = id.split('/').pop();
+
+  if (CRAFT_MODELS[file])
+    return CRAFT_MODELS[file] + (file.startsWith('c_') ? ' (cutscene)' : '');
+
+  const lod = ['_hi', '_lo', 'lo', 'l'].find((s) => id.endsWith(s) && UNIT_MODELS.has(id.slice(0, -s.length)));
+
+  if (!lod)
+    return UNIT_MODELS.get(id) ?? null;
+
+  return UNIT_MODELS.get(id.slice(0, -lod.length)) + (lod === '_hi' ? '' : ' (low detail)');
+}
 
 // An icon from icons/<name>.svg drawn in color (default: the text colour around it). From file:// an <img> is the only way to load an SVG
 // file, and it can't take the page's colours, so it sits clipped just out of its box while its drop shadow paints the shape in place.

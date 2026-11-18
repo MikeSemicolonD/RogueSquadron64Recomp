@@ -68,7 +68,7 @@ uint8_t message_type(const uint8_t* data, size_t n)
         return data[1];
     }
 
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::EndClip)
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Mod)
     {
         return 0;
     }
@@ -708,6 +708,76 @@ bool decode_rules(const uint8_t* data, size_t n, bool* friendly_fire)
     }
 
     *friendly_fire = ff != 0;
+    return true;
+}
+
+bool mod_channel_name_ok(const char* name)
+{
+
+    if (!name)
+    {
+        return false;
+    }
+
+    const size_t len = std::strlen(name);
+
+    return len >= 1 && len <= kModChannelNameMax;
+}
+
+std::vector<uint8_t> encode_mod(const char* channel, const uint8_t* data, size_t size)
+{
+
+    if (!mod_channel_name_ok(channel) || size > kModChannelDataMax || (size && !data))
+    {
+        return {};
+    }
+
+    Writer w;
+    const size_t len = std::strlen(channel);
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Mod);
+    w.u8((uint8_t)len);
+
+    for (size_t i = 0; i < len; ++i) w.u8((uint8_t)channel[i]);
+
+    w.u16((uint16_t)size);
+
+    for (size_t i = 0; i < size; ++i) w.u8(data[i]);
+
+    return w.b;
+}
+
+bool decode_mod(const uint8_t* data, size_t n, std::string* channel, std::vector<uint8_t>* payload)
+{
+
+    Reader r{data, n};
+
+    if (!header(r, Msg::Mod))
+    {
+        return false;
+    }
+
+    const uint8_t len = r.u8();
+
+    if (len < 1 || len > kModChannelNameMax || !r.need(len))
+    {
+        return false;
+    }
+
+    std::string name((const char*)data + r.at, len);
+
+    r.at += len;
+
+    const uint16_t size = r.u16();
+
+    if (!r.ok || size > kModChannelDataMax || !r.need(size) || r.n - r.at != size || name.find('\0') != std::string::npos)
+    {
+        return false;
+    }
+
+    *channel = std::move(name);
+    payload->assign(data + r.at, data + r.at + size);
     return true;
 }
 

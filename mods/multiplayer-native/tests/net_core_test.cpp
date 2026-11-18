@@ -1181,6 +1181,26 @@ static void test_cipher() {
     CHECK(z.open(u1.data(), u1.size(), &out) == Cipher::Open::Drop);
 }
 
+// mp.channel: a mod's bytes on a named channel round-trip; out-of-range names and sizes are never encoded, and a truncated or padded message never decodes.
+static void test_mod_channel_roundtrip() {
+    const uint8_t data[] = {1, 2, 3, 250};
+    const std::vector<uint8_t> b = encode_mod("rain.state", data, sizeof data);
+    std::string ch;
+    std::vector<uint8_t> out;
+    CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::Mod);
+    CHECK(decode_mod(b.data(), b.size(), &ch, &out) && ch == "rain.state" && out == std::vector<uint8_t>(data, data + 4));
+    const std::vector<uint8_t> empty = encode_mod("x", nullptr, 0);
+    CHECK(decode_mod(empty.data(), empty.size(), &ch, &out) && ch == "x" && out.empty());
+    CHECK(!decode_mod(b.data(), b.size() - 1, &ch, &out));
+    std::vector<uint8_t> padded = b;
+    padded.push_back(0);
+    CHECK(!decode_mod(padded.data(), padded.size(), &ch, &out));
+    const std::vector<uint8_t> big(kModChannelDataMax + 1, 7);
+    CHECK(encode_mod("x", big.data(), big.size()).empty() && encode_mod("", data, 1).empty() && encode_mod(nullptr, data, 1).empty());
+    CHECK(encode_mod(std::string(kModChannelNameMax + 1, 'a').c_str(), data, 1).empty() && !encode_mod(std::string(kModChannelNameMax, 'a').c_str(), big.data(), kModChannelDataMax).empty());
+    CHECK(encode_mod(std::string(kModChannelNameMax, 'a').c_str(), big.data(), kModChannelDataMax).size() <= kMaxPacket);
+}
+
 int main() {
 #ifdef _WIN32
     // Report failed checks on stderr instead of the Debug CRT's modal dialog.
@@ -1188,6 +1208,7 @@ int main() {
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
     test_cpace_vectors();
+    test_mod_channel_roundtrip();
     test_cipher();
     test_link_poll_edges();
     test_launch_and_bye_roundtrip();

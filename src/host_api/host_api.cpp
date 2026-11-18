@@ -32,8 +32,10 @@ struct Condition { rs64_condition_fn fn; void* user; };
 struct Key { rs64_key_fn fn; void* user; };
 struct Quit { rs64_event_fn fn; void* user; };
 struct RuleAction { rs64_rule_action_fn fn; void* user; };
+struct RuleCondition { rs64_rule_condition_fn fn; void* user; };
 std::map<std::string, Action> g_actions;
 std::map<std::string, RuleAction> g_rule_actions;
+std::map<std::string, RuleCondition> g_rule_conditions;
 std::vector<std::pair<std::string, std::string>> g_rule_events;
 std::mutex g_rule_events_mu;
 std::map<std::string, Condition> g_conditions;
@@ -98,6 +100,19 @@ uint32_t call_fwd(uint8_t* r, void* c, uint32_t v, const uint32_t* a, uint32_t n
 uint32_t alloc_fwd(uint8_t* r, uint32_t n) { return g_services.alloc ? g_services.alloc(r, n) : 0u; }
 const char* state_fwd() { return g_services.state_id ? g_services.state_id() : "unknown"; }
 int cut_fwd() { return g_services.in_cutscene ? g_services.in_cutscene() : 0; }
+uint32_t reloc_fwd(uint32_t a) { return g_services.relocated ? g_services.relocated(a) : a; }
+uint32_t object_fwd(uint8_t* r, void* c, const char* n) { return g_services.object_by_name && r && c && n ? g_services.object_by_name(r, c, n) : 0u; }
+float health_fwd(uint8_t* r, void* c, const char* n) { return g_services.object_health && r && c && n ? g_services.object_health(r, c, n) : -1.0f; }
+int destroy_fwd(uint8_t* r, void* c, const char* n) { return g_services.destroy_object && r && c && n ? g_services.destroy_object(r, c, n) : -1; }
+int line_fwd(uint8_t* r, void* c, const char* l) { return g_services.run_rule_line && r && c && l ? g_services.run_rule_line(r, c, l) : -2; }
+int32_t var_get_fwd(const char* n) { return g_services.rule_var_get && n ? g_services.rule_var_get(n) : 0; }
+void var_set_fwd(const char* n, int32_t v) { if (g_services.rule_var_set && n) g_services.rule_var_set(n, v); }
+float mission_fwd() { return g_services.mission_seconds ? g_services.mission_seconds() : 0.0f; }
+int cfg_num_fwd(const char* m, const char* o, double* out) { return g_services.config_number && m && o && out ? g_services.config_number(m, o, out) : 0; }
+const char* cfg_str_fwd(const char* m, const char* o) { return g_services.config_string && m && o ? g_services.config_string(m, o) : ""; }
+int key_fwd(const char* k) { return g_services.key_down && k ? g_services.key_down(k) : 0; }
+const char* data_dir_fwd(const char* m) { return g_services.mod_data_dir && m ? g_services.mod_data_dir(m) : ""; }
+int slot_fwd() { return g_services.save_slot ? g_services.save_slot() : -1; }
 }
 
 int add_hook(uint32_t hook, rs64_hook_fn fn, void* user) {
@@ -393,6 +408,31 @@ bool run_rule_action(const char* name, uint8_t* rdram, void* ctx, const char* co
     return true;
 }
 
+int add_rule_condition(const char* name, rs64_rule_condition_fn fn, void* user) {
+
+    if (!name || !fn || refuse_sealed("add_rule_condition")) {
+        return -1;
+    }
+
+    if (!g_rule_conditions.emplace(name, RuleCondition{fn, user}).second)
+    {
+        log_line((std::string("[host] rule condition registered twice, keeping the first: ") + name).c_str());
+
+        return -1;
+    }
+
+    return 0;
+}
+
+bool has_rule_condition(const char* name) { return g_rule_conditions.count(name ? name : "") != 0; }
+
+double rule_condition(const char* name, uint8_t* rdram, void* ctx, const char* arg) {
+
+    auto it = g_rule_conditions.find(name ? name : "");
+
+    return it == g_rule_conditions.end() ? 0.0 : it->second.fn(rdram, ctx, arg ? arg : "", it->second.user);
+}
+
 int fire_rule_event(const char* name, const char* object) {
 
     if (!name)
@@ -468,6 +508,7 @@ void reset_for_tests() {
     g_filters.clear();
     g_actions.clear();
     g_rule_actions.clear();
+    g_rule_conditions.clear();
     take_rule_events();
     g_conditions.clear();
     g_keys.clear();
@@ -497,6 +538,9 @@ const char* hook_name(uint32_t hook)
         "RS64_HOOK_MENU_PAD", "RS64_HOOK_MAIN_MENU", "RS64_HOOK_POWERUP_TOUCH", "RS64_HOOK_POWERUP_COLLECT",
         "RS64_HOOK_TRIGGER_EFFECT", "RS64_HOOK_WALKER_TRIPPED", "RS64_HOOK_ATST_TICK", "RS64_HOOK_DEBRIEF_PAD",
         "RS64_HOOK_FRONT_END", "RS64_HOOK_WINGMAN_DRAW", "RS64_HOOK_NPC_HIT", "RS64_HOOK_SPEECH_CLIP",
+        "RS64_HOOK_FRAME", "RS64_HOOK_STATE_CHANGED", "RS64_HOOK_CUTSCENE", "RS64_HOOK_UNIT_DESTROYED",
+        "RS64_HOOK_AREA_CROSSED", "RS64_HOOK_PATH_POINT", "RS64_HOOK_OBJECTIVE_STATE", "RS64_HOOK_MISSION_READY",
+        "RS64_HOOK_SONG_START", "RS64_HOOK_SOUND_3D", "RS64_HOOK_PLAYER_DAMAGE", "RS64_HOOK_PLAYER_FIRE",
     };
 
     static_assert(sizeof(names) / sizeof(names[0]) == RS64_HOOK_COUNT, "hook_name table must list every hook id");
@@ -519,6 +563,7 @@ Mark mark() {
     for (const auto& t : g_text) m.text.insert(t.first);
     for (const auto& a : g_actions) m.actions.insert(a.first);
     for (const auto& a : g_rule_actions) m.rule_actions.insert(a.first);
+    for (const auto& c : g_rule_conditions) m.rule_conditions.insert(c.first);
     for (const auto& c : g_conditions) m.conditions.insert(c.first);
 
     m.keys = g_keys.size();
@@ -552,6 +597,11 @@ void rollback(const Mark& m)
     for (auto it = g_rule_actions.begin(); it != g_rule_actions.end();)
     {
         it = m.rule_actions.count(it->first) ? std::next(it) : g_rule_actions.erase(it);
+    }
+
+    for (auto it = g_rule_conditions.begin(); it != g_rule_conditions.end();)
+    {
+        it = m.rule_conditions.count(it->first) ? std::next(it) : g_rule_conditions.erase(it);
     }
 
     for (auto it = g_conditions.begin(); it != g_conditions.end();)
@@ -594,6 +644,8 @@ const rs64_host_api* api() {
         add_rule_action, fire_rule_event,
         terrain_get_cell, terrain_set_cell,
         clip_fwd, frame_fwd,
+        reloc_fwd, object_fwd, health_fwd, destroy_fwd, line_fwd, var_get_fwd, var_set_fwd, add_rule_condition, mission_fwd, cfg_num_fwd, cfg_str_fwd,
+        key_fwd, data_dir_fwd, slot_fwd,
     };
 
     return &table;

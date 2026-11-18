@@ -1021,7 +1021,7 @@ function endCutscene()
     applyFog();
   }
 
-  $('cutPanel').hidden = $('cutInspector').hidden = true;
+  $('cutPanel').hidden = $('cutInspector').hidden = $('crawlPanel').hidden = true;
   controls.enabled = true;
   camera.fov = 50;
   camera.updateProjectionMatrix();
@@ -1912,8 +1912,10 @@ async function showCutscene(path)
 
   loadCutAudio(path);
 
+  const pick = $('cutPick').selectedOptions[0];
+
   stats = {
-    cutscene: path.split('/').pop(),
+    cutscene: pick?.value === `cut:${path}` ? pick.textContent : (path.endsWith('/id19_special') ? 'Factor 5 logo' : path.split('/').pop()),
     length: `${data.length.toFixed(1)} s`,
     actors: data.actors.length,
     models: data.actors.filter((a) => a.model).length,
@@ -2272,6 +2274,7 @@ function crawlQuad(tl, tr, bl, br, map)
   const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([...tl, ...tr, ...bl, ...br], 3));
 
   g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2)).setIndex([0, 2, 1, 1, 2, 3]);
+  g.computeVertexNormals();
 
   return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
 }

@@ -104,7 +104,8 @@ A `levels.json` at the mod root lists them:
 } ] }
 ```
 
-- `template`: a playable stock level, 0-18. Its mission script runs, so keep the objects it uses (start from a copy of its files). Templates 0, 5, 10 and 15 play their chapter crawl first; Beggar's Canyon (16) has no craft select.
+- `template`: a playable stock level, 0-18, or 20 for a walker level. Its mission script runs, so keep the objects it uses (start from a copy of its files). Templates 0, 5, 10 and 15 play their chapter crawl first; Beggar's Canyon (16) has no craft select.
+- A walker level (`"template": 20`, the CHICKEN passcode's level) plays as an AT-ST: SELECT LEVEL lists no craft, it skips the hangar, and it returns to SELECT GAME when it ends. It needs its own `medals` (the level has none to fall back on), and without its own `preview` it shows Mos Eisley's picture.
 - `folder`: up to 48 characters. The level's files are `assets/level/<folder>/` (the template's file names: `dat`, `hmp`, ...), its cutscenes `assets/cuts/<folder>_intro` and `_extro`. A file the folder lacks is the template's; `.from` and `.bps` work as anywhere in `assets/`.
 - `title` and `description` show in capitals; characters the menu fonts lack are left out (letters, digits and `! ( ) _ - / \ , . : '` show).
 - `voice`: a stock voice line played as the SELECT LEVEL briefing (none if left out). A recording of your own goes in `assets/level/<folder>/brief` and plays instead: a MORT stream (the game's 8 kHz GSM 06.10 voice codec). The explorer's *Import recording…* makes it from a .wav or .mp3.
@@ -228,6 +229,7 @@ Any `when` line except `when true:` can end in `if <condition>`: the rule only f
 | `time > 120` | that many seconds have passed |
 | `<variable>` / `<variable> >= 3` | the variable is not 0 / compares true |
 | `flag(<1-128>)` / `counter(<1-128>) >= 2` | an objective flag is set / a counter compares true |
+| `<check>(<text>)`, such as `shields(player) < 30` | a check a native mod adds is true or compares true |
 
 Combine checks with `and`, `or`, `not` and parentheses; comparisons are `<`, `<=`, `>`, `>=`, `==`, `!=`. Variables are whole numbers that start at 0 each mission (`true` is 1, `false` 0), and every enabled mod's rules for a level share them.
 
@@ -237,7 +239,7 @@ An older `rules.json` still loads; when one mod folder has both files, `rules.tx
 
 In the explorer, rules are attached to the object they are about: select an area or path event in Events mode, or a unit in Objects mode, and use *+ Add rule* in its panel (the object is given a unique name if it needs one). Each rule has an *Only if* box for its condition. *Level events…* in Events mode opens a window with the level-wide rules and a list of every rule in the level, and its script button shows the whole `rules.txt` to edit as text. Both boxes suggest names from the level as you type and underline in red whatever the game would skip, with the reason below; *Export mod* warns about rules whose object was deleted.
 
-Anything the rules cannot say goes in a native mod, which can add its own actions and `custom` events ([Level rules actions](../engine/modding-host-api.md#level-rules-actions)).
+Anything the rules cannot say goes in a native mod, which can add its own actions, checks and `custom` events ([Level rules actions](../engine/modding-host-api.md#level-rules-actions)), and run any rules action or read and set rule variables from its own code. A code mod (`.nrm`) can do the same through the `rs64_run_rule_line`, `rs64_rule_var_*` and `rs64_fire_rule_event` exports.
 
 The [exhaust-color](../../mods/exhaust-color/) mod is a different approach: it recolors every craft's exhaust from the player's ROM at startup, driven by a config option.
 

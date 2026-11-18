@@ -316,6 +316,8 @@ async function loadAudioBank()
 
   // Songs: the ROM song table names sound/<name>_SNG; a _SNG missing from it has no instrument group.
   const songIds = new Map(parseSongTable(romBytes).map((s) => [s.name, s.id]));
+  const { levelSongs } = parseMusicCues(romBytes);
+  const playedIn = (id) => levelSongs.flatMap((s, lv) => (s === id && missionNames[lv] ? [missionNames[lv]] : []));
   const musicCtx = { ...sfxBank, groups: parseSongGroups(await rom.read('data/sound/proj_SND')) };
   const music = [...rom.assets.values()].filter((a) => /_SNG$/.test(a.name)).map((a) => {
     const name = a.name.slice(0, -4);
@@ -327,7 +329,7 @@ async function loadAudioBank()
       index: id,
       name,
       path: a.path,
-      label: id == null ? `${name} (not referenced)` : name,
+      label: id == null ? `${name} (not referenced)` : [name, ...playedIn(id)].join(' · '),
       text: '',
       rate: 22050,
       levels: [],
@@ -865,7 +867,7 @@ async function showMusic(r)
   const unres = [...s.unresolved];
   const silent = s.notes.filter((n) => n.silent).length;
 
-  $('musicHead').innerHTML = `<b>${esc(r.label)}</b> <span class="meta">song ${r.index ?? '-'} · group ${s.group ?? '-'} · ${[...new Set(s.bpm)].join(' / ')} BPM · ${clock(s.length)}`
+  $('musicHead').innerHTML = `<b>${esc(r.label)}</b> <span class="meta">${[...new Set(s.bpm)].join(' / ')} BPM · ${clock(s.length)}`
     + `${s.loopAt != null ? ` · loops at ${clock(s.loopAt)}` : ''} · reverb: ${s.reverb ? esc(s.reverb.name) : 'none (in-mission)'}`
     + `${silent ? ` · ${silent} note${silent === 1 ? '' : 's'} outside the instrument's key range` : ''}</span>`
     + (unres.length ? `<div class="warn">Not yet confirmed: ${unres.map(esc).join('; ')}</div>` : '');
@@ -1038,8 +1040,7 @@ function drawMusic(r)
     const kind = first?.target == null ? '' : (first.target & 0x8000 ? 'layer' : (first.target & 0x4000 ? 'keymap' : 'sound'));
     const d = elem('div', { className: 'lane' });
 
-    d.innerHTML = `<span title="Track ${t} of the song file · MIDI channel ${tr.channel + 1} · instrument #${prog ?? '-'}">`
-      + `T${t} · ch${tr.channel + 1}${prog != null ? ` · #${prog} ${kind}` : ''}</span>`;
+    d.innerHTML = `<span title="MIDI channel ${tr.channel + 1}${prog != null ? `, instrument ${prog}${kind ? ` (${kind})` : ''}` : ''}">Track ${t + 1}</span>`;
 
     for (const k of ['M', 'S'])
     {
@@ -1325,6 +1326,9 @@ function showAudio(r)
 // opkg (atst, i_lnd_hi in lplatform, train pillars, other levels' shared buildings).
 let objectHome = null;
 
+// The same index once built, for labels that cannot wait for it.
+let objectHomeReady = null;
+
 function buildObjectIndex() {
   objectHome ??= (async () => {
     const map = new Map();
@@ -1340,6 +1344,8 @@ function buildObjectIndex() {
             map.set(o.name, a.path.replace(/_HOB$/, ''));
       } catch { /* a malformed or encrypted HOB just isn't indexed */ }
     }
+
+    objectHomeReady = map;
 
     return map;
   })();

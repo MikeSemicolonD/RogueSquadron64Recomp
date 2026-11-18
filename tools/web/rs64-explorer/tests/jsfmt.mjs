@@ -1,6 +1,6 @@
 // node tools/web/rs64-explorer/tests/jsfmt.mjs [--check | --write] [files...]
 // Lays out the web JS the way AGENTS.md "Web JS" describes (style_check checks only part of it line by line). With no files it takes every
-// .js / .mjs under tools/web except voice_cats.js (generated). --check lists what would change and exits 1; --write rewrites. Needs `npm install`
+// .js / .mjs under tools/web except the files style_check skips (SKIPPED). --check lists what would change and exits 1; --write rewrites. Needs `npm install`
 // in this folder (TypeScript's parser). Every rewrite is verified first: the same code once declaration lists are split and ternary parentheses
 // dropped, the same string and template texts, the same comment words, it parses, and a second run changes nothing.
 import ts from 'typescript';
@@ -18,6 +18,9 @@ const BRACE_LINE = 70;
 const report = [];
 const parse = (name, text) => ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 
+// Generated (voice_cats.js, the built rs64tint.js) and vendored (coi-serviceworker.js) files, as style_check skips them.
+const SKIPPED = ['voice_cats.js', 'coi-serviceworker.js', 'rs64tint.js'];
+
 function webFiles(dir) {
   const out = [];
 
@@ -27,7 +30,7 @@ function webFiles(dir) {
 
     if (e.isDirectory() && e.name !== 'node_modules')
       out.push(...webFiles(p));
-    else if (e.isFile() && /\.m?js$/.test(e.name) && e.name !== 'voice_cats.js')
+    else if (e.isFile() && /\.m?js$/.test(e.name) && !SKIPPED.includes(e.name))
       out.push(p);
   }
 

@@ -76,6 +76,10 @@ const setMode = (m) => {
 
   syncBackButton();
   renderList();
+
+  // These tabs have no view of their own, so they open on their first item instead of an empty page.
+  if ((m === 'audio' && !overCut && !audioSel && !musicSel) || (m === 'fonts' && !fontSel) || (m === 'menus' && !menuSel))
+    $('list').querySelector('.row')?.click();
 };
 
 $('tabFonts').onclick = () => setMode('fonts');
@@ -2332,8 +2336,8 @@ function fillCutPick(dir)
   {
     const path = ml ? `data/cuts/${ml.folder}_${kind}` : `data/cuts/id${n}_${kind}`;
 
-    if ((ml || n <= 15) && rom.assets.has(path))
-      files.push([`cut:${path}`, label]);
+    if ((ml || n <= 15 || n === 19) && rom.assets.has(path))
+      files.push([`cut:${path}`, n === 19 ? 'Factor 5 logo' : label]);
   }
 
   const camItems = (root?.getObjectByName('markers')?.children ?? []).map((m) => m.userData.item).filter((it) => it.type === 0 && it.sub === 0x26);
@@ -2453,20 +2457,21 @@ async function addCutCrawl()
     $('cutEdit').click();
 }
 
-$('cutAdd').onclick = () => {
-  const menu = $('cutAddMenu');
-  const open = menu.hidden;
+// The small menu of things to add, opened above the button that asked; rows are [label, note, action]. A second click closes it.
+let addMenuFor = null;
 
+function toggleAddMenu(button, rows)
+{
+  const menu = $('cutAddMenu');
+  const open = menu.hidden || addMenuFor !== button;
+
+  addMenuFor?.setAttribute('aria-expanded', false);
   menu.hidden = !open;
-  $('cutAdd').setAttribute('aria-expanded', open);
+  addMenuFor = open ? button : null;
+  button.setAttribute('aria-expanded', open);
 
   if (!open)
     return;
-
-  const rows = [['Mid-mission sequence', 'Camera shots a trigger area or rule can start', addCutSequence]];
-
-  if (!cutCrawl && modLevelOf(cutLevel))
-    rows.push(['Opening crawl', 'Story text that scrolls before the intro', addCutCrawl]);
 
   menu.replaceChildren(...rows.map(([label, note, add]) => elem('button', {
     onclick: () => {
@@ -2475,14 +2480,23 @@ $('cutAdd').onclick = () => {
     }
   }, elem('span', { textContent: label }), elem('small', { textContent: note }))));
 
-  const b = $('cutAdd').getBoundingClientRect();
+  const b = button.getBoundingClientRect();
 
   menu.style.left = `${Math.max(10, b.right - menu.offsetWidth)}px`;
   menu.style.top = `${Math.max(10, b.top - menu.offsetHeight - 6)}px`;
+}
+
+$('cutAdd').onclick = () => {
+  const rows = [['Mid-mission sequence', 'Camera shots a trigger area or rule can start', addCutSequence]];
+
+  if (!cutCrawl && modLevelOf(cutLevel))
+    rows.push(['Opening crawl', 'Story text that scrolls before the intro', addCutCrawl]);
+
+  toggleAddMenu($('cutAdd'), rows);
 };
 
 document.addEventListener('pointerdown', (e) => {
-  if (!$('cutAddMenu').hidden && !e.target.closest('#cutAddMenu, #cutAdd'))
+  if (!$('cutAddMenu').hidden && !e.target.closest('#cutAddMenu') && !addMenuFor?.contains(e.target))
     $('cutAddMenu').hidden = true;
 }, true);
 

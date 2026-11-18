@@ -42,6 +42,12 @@
     "errorLines": []
   },
   {
+    "name": "mod_checks (any other word followed by \"(\" is a native mod's check; its argument may be empty)",
+    "text": "when true: shields(player) < 30 and boss_phase() >= 2\n    win\nend\nwhen start if radar(far) and not x\n    win\nend\nwhen start if shields(player\n    win\nend\n",
+    "rules": 2,
+    "errorLines": [7]
+  },
+  {
     "name": "junk",
     "text": "\u0000\u0001when start\nwin\nend\nÿþ garbage\nwhen start\nwin\nend\n",
     "rules": 1,

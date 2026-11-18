@@ -106,6 +106,19 @@ check('check_marks_unknown_variable', () => {
   assert.deepEqual(one.map((m) => [m.from, m.to]), [[0, 4]]);
 });
 
+check('check_marks_mod_checks', () => {
+  const ext = RS64.rulesExtParse('{ "conditions": [ { "check": "shields", "label": "Shields" } ] }', 'm');
+  const text = 'when true: shields(player) < 30 and radar() > 0\n    win\nend\n';
+  const marks = RS64.rulesScriptCheck(text, { objects: null, objectives: true, ext });
+
+  assert.deepEqual(ext.map((e) => [e.kind, e.name]), [['condition', 'shields']]);
+  assert.equal(marks.length, 1);
+  assert.equal(text.slice(marks[0].from, marks[0].to), 'radar');
+  assert.match(marks[0].reason, /needs a mod/);
+  assert.equal(RS64.rulesScriptCheck(text, { objects: null, objectives: true }).length, 0);
+  assert.ok(RS64.rulesComplete('when true: shi', 14, { ext }).items.some((i) => i.label === 'shields('));
+});
+
 check('check_marks_objects_and_objectives', () => {
   const objects = new Map([['gate', 'unit'], ['bridge_zone', 'area']]);
   const text = 'when enter gate if destroyed(bridge_zone) and objective_done(1)\n    destroy nothing_here\nend\n';

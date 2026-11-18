@@ -112,14 +112,15 @@ inline bool polled(When w)
 }
 
 // ---- Conditions: "destroyed(gate) and not objective_done(2) or kills >= 3", read-only checks the runner answers ----
-enum class Check { Destroyed, Entered, Health, ObjectiveDone, ObjectiveFailed, Time, Flag, Counter, Variable };
+enum class Check { Destroyed, Entered, Health, ObjectiveDone, ObjectiveFailed, Time, Flag, Counter, Variable, Mod };
 enum class Op { None, Lt, Le, Gt, Ge, Eq, Ne };
 
-// name: an object or variable; index: an objective, flag or counter.
+// name: an object, variable or a native mod's check (add_rule_condition); index: an objective, flag or counter; arg: the text inside a mod check's "()".
 struct Atom {
     Check check = Check::Variable;
     std::string name;
     int index = 0;
+    std::string arg;
 };
 
 struct Cond {
@@ -370,6 +371,12 @@ private:
 
         while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) text.pop_back();
 
+        if (hi < 0)
+        {
+            a.arg = text;
+            return true;
+        }
+
         if (text.empty())
         {
             fail("nothing inside \"()\"");
@@ -435,7 +442,18 @@ private:
         auto c = std::make_shared<Cond>();
         const auto found = kChecks.find(w);
 
+        skip();
+
+        // Any other word followed by "(" is a check a native mod adds; its argument may be empty.
+        const bool modCheck = w != "time" && found == kChecks.end() && pos_ < s_.size() && s_[pos_] == '(';
+
         if (w == "time") c->atom.check = Check::Time;
+        else if (modCheck)
+        {
+            c->atom = { Check::Mod, w, 0, "" };
+
+            if (!inner(c->atom, 0, -1)) return nullptr;
+        }
         else if (found == kChecks.end()) c->atom = { Check::Variable, w, 0 };
         else
         {
@@ -511,7 +529,7 @@ inline bool evalCondition(const CondPtr& c, const std::function<double(const Ato
 }
 
 struct CondRefs {
-    std::vector<std::string> objects, variables;
+    std::vector<std::string> objects, variables, mods;
     bool objectives = false;
     int checks = 0;
 };
@@ -536,6 +554,7 @@ inline void condRefsInto(const CondPtr& c, CondRefs& out)
 
     if (k == Check::Destroyed || k == Check::Entered || k == Check::Health) add(out.objects, c->atom.name);
     else if (k == Check::Variable) add(out.variables, c->atom.name);
+    else if (k == Check::Mod) add(out.mods, c->atom.name);
     else if (k == Check::ObjectiveDone || k == Check::ObjectiveFailed) out.objectives = true;
 }
 
@@ -1244,13 +1263,15 @@ struct Facts {
     std::function<int(const std::string&)> health;
     std::function<bool(int)> flag;
     std::function<int32_t(int)> counter;
+    // A native mod's check: (name, arg).
+    std::function<double(const std::string&, const std::string&)> mod;
 };
 
 class Runner {
 public:
     // Drops, with one message each: rules naming an object known() rejects (in the when or the condition), objective rules on a
-    // level without its own objectives, and rules reading a variable no rule sets.
-    std::vector<std::string> reset(std::vector<Rule> rules, const std::function<bool(const std::string&)>& known, bool objectives = true)
+    // level without its own objectives, rules reading a variable no rule sets, and rules using a mod check knownMod rejects (unset: all known).
+    std::vector<std::string> reset(std::vector<Rule> rules, const std::function<bool(const std::string&)>& known, bool objectives = true, const std::function<bool(const std::string&)>& knownMod = {})
     {
 
         std::vector<std::string> dropped;
@@ -1271,6 +1292,7 @@ public:
             const auto refs = condRefs(r.cond);
             const auto unknown = std::find_if(refs.objects.begin(), refs.objects.end(), [&](const std::string& n) { return !known(n); });
             const auto unset = std::find_if(refs.variables.begin(), refs.variables.end(), [&](const std::string& v) { return std::find(written.begin(), written.end(), v) == written.end(); });
+            const auto noMod = std::find_if(refs.mods.begin(), refs.mods.end(), [&](const std::string& m) { return knownMod && !knownMod(m); });
             const bool usesObjectives = refs.objectives || r.when == When::ObjectiveDone || r.when == When::ObjectiveFailed
                 || std::any_of(r.actions.begin(), r.actions.end(), [](const Action& a) { return a.kind == "objectiveDone" || a.kind == "objectiveFail"; });
             const std::string where = r.line ? "line " + std::to_string(r.line) + ": " : "";
@@ -1279,6 +1301,7 @@ public:
             else if (unknown != refs.objects.end()) dropped.push_back(where + "\"" + *unknown + "\": no such object in the level");
             else if (!objectives && usesObjectives) dropped.push_back(where + "uses objectives, but this level has none of its own");
             else if (unset != refs.variables.end()) dropped.push_back(where + "no rule sets \"" + *unset + "\"");
+            else if (noMod != refs.mods.end()) dropped.push_back(where + "no mod adds the check \"" + *noMod + "\"");
             else rules_.push_back(std::move(r));
         }
 
@@ -1344,6 +1367,7 @@ public:
                 case Check::Flag: return facts.flag && facts.flag(a.index);
                 case Check::Counter: return facts.counter ? facts.counter(a.index) : 0;
                 case Check::Variable: return variable(a.name);
+                case Check::Mod: return facts.mod ? facts.mod(a.name, a.arg) : 0;
             }
 
             return 0;
@@ -1422,6 +1446,12 @@ public:
         const auto it = vars_.find(name);
 
         return it == vars_.end() ? 0 : it->second;
+    }
+
+    // A native mod's write; rules reading it see the value on their next check.
+    void setVariable(const std::string& name, int32_t value)
+    {
+        vars_[name] = value;
     }
 
 private:

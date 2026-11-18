@@ -7,6 +7,7 @@
 #include "util/rdram_words.h"
 #include "mp_host.h"
 #include "rs64/camera_shots.h"
+#include "rs64/mp_channel.h"
 #include "json/json.hpp"
 #include <algorithm>
 #include <chrono>
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -483,6 +485,41 @@ const rs64_camera_shots* camera_shots()
     return svc;
 }
 
+// The mp.channel service: other mods' messages to the other player, by channel name.
+struct ChannelListener {
+    rs64_mp_message_fn fn = nullptr;
+    void* user = nullptr;
+};
+
+std::mutex s_channels_mu;
+std::map<std::string, ChannelListener> s_channels;
+
+// A copy, so the listener runs without the lock (it may listen or send itself).
+ChannelListener channel_listener(const std::string& channel)
+{
+
+    std::lock_guard<std::mutex> lk(s_channels_mu);
+    const auto it = s_channels.find(channel);
+
+    return it == s_channels.end() ? ChannelListener{} : it->second;
+}
+
+void deliver_mod_message(const std::vector<uint8_t>& m)
+{
+
+    std::string channel;
+    std::vector<uint8_t> payload;
+
+    if (!rs64::net::decode_mod(m.data(), m.size(), &channel, &payload))
+    {
+        return;
+    }
+
+    const ChannelListener l = channel_listener(channel);
+
+    if (l.fn) l.fn(payload.data(), (uint32_t)payload.size(), l.user);
+}
+
 // Peak backlogs a peer can leave waiting for the mission to settle: four full resyncs of the largest DAT list, and far more trigger edges than a level has.
 constexpr size_t kMaxDatApply = 4 * 4096;
 constexpr size_t kMaxTriggerIn = 1024;
@@ -780,6 +817,9 @@ void drain()
 
             break;
         }
+        case rs64::net::Msg::Mod:
+            deliver_mod_message(m);
+            break;
         case rs64::net::Msg::Mission: {
             uint8_t id = 0;
 
@@ -1083,6 +1123,39 @@ extern "C" uint32_t rs64_ghost_active(void) {
 }
 
 // Quit: tells the other player at once instead of leaving them to the connection timeout. Runs on a game thread (poll_input) but _Exit follows, so the 200 ms wait is acceptable only on this exit path.
+// The mp.channel service (include/rs64/mp_channel.h), published by rs64_mp_register.
+extern "C" const rs64_mp_channel* rs64_ghost_channel(void)
+{
+
+    static const rs64_mp_channel svc = {
+        RS64_MP_CHANNEL_VERSION,
+        (uint32_t)sizeof(rs64_mp_channel),
+        [] { return g().lobby.ready() ? 1 : 0; },
+        [] { return g().lobby.ready() ? g().player : -1; },
+        [](const char* channel, const void* data, uint32_t size, int reliable) {
+            if (!rs64::net::mod_channel_name_ok(channel) || size > rs64::net::kModChannelDataMax || (size && !data)) return -2;
+
+            if (!g().lobby.ready()) return -1;
+
+            g().link.send(rs64::net::encode_mod(channel, (const uint8_t*)data, size), reliable != 0);
+
+            return 0;
+        },
+        [](const char* channel, rs64_mp_message_fn fn, void* user) {
+            if (!rs64::net::mod_channel_name_ok(channel)) return -2;
+
+            std::lock_guard<std::mutex> lk(s_channels_mu);
+
+            if (fn) s_channels[channel] = ChannelListener{ fn, user };
+            else s_channels.erase(channel);
+
+            return 0;
+        },
+    };
+
+    return &svc;
+}
+
 extern "C" void rs64_ghost_quit(void) {
 
     Ghost& s = g();

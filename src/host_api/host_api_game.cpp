@@ -13,8 +13,12 @@
 #else
 #include "SDL2/SDL.h"
 #endif
+#include <atomic>
 #include <cctype>
 #include <cstdio>
+#include <filesystem>
+#include <map>
+#include <mutex>
 #include <cstring>
 #include <initializer_list>
 #include <string>
@@ -29,8 +33,19 @@ extern "C" void rs64_camera_shots_register_service();
 extern "C" void rs64_register_builtin_late_hooks();
 extern "C" void osYieldThread_recomp(uint8_t*, recomp_context*);
 extern "C" void rs64_menu_request_quit(void);
+extern "C" uint32_t rs64_rules_object(uint8_t*, void*, const char*);
+extern "C" float rs64_rules_object_health(uint8_t*, void*, const char*);
+extern "C" int rs64_rules_destroy_object(uint8_t*, void*, const char*);
+extern "C" int rs64_rules_run_line(uint8_t*, void*, const char*);
+extern "C" int32_t rs64_rules_var_get(const char*);
+extern "C" void rs64_rules_var_set(const char*, int32_t);
+extern "C" float rs64_rules_mission_seconds(void);
+extern "C" int rs64_hook(uint32_t hook, uint8_t* rdram, recomp_context* ctx);
 
 namespace {
+// Set once the built-ins and mods are registered; the v9 host-dispatched hooks never start that registration themselves.
+std::atomic<bool> s_host_ready{false};
+
 void svc_yield(uint8_t* rdram, void* c) {
 
     if (c) {
@@ -141,6 +156,96 @@ void svc_log(const char* s) {
     fflush(stderr);
 }
 
+int svc_config_number(const char* mod, const char* option, double* out)
+{
+
+    const auto v = recomp::mods::get_mod_config_value(mod, option);
+
+    if (const auto* u = std::get_if<uint32_t>(&v))
+    {
+        *out = (double)*u;
+
+        return 1;
+    }
+
+    if (const auto* d = std::get_if<double>(&v))
+    {
+        *out = *d;
+
+        return 1;
+    }
+
+    return 0;
+}
+
+uint8_t* s_rdram = nullptr;
+std::atomic<bool> s_pilot_chosen{false};
+
+int svc_key_down(const char* key)
+{
+
+    const SDL_Scancode sc = SDL_GetScancodeFromName(key);
+    int n = 0;
+    const Uint8* keys = SDL_GetKeyboardState(&n);
+
+    return sc != SDL_SCANCODE_UNKNOWN && keys && (int)sc < n && keys[sc] ? 1 : 0;
+}
+
+// mod_data/<mod_id>/ beside the game's settings; ids that could leave that folder get "".
+const char* svc_mod_data_dir(const char* mod)
+{
+
+    static std::mutex mu;
+    static std::map<std::string, std::string> dirs;
+    const std::string id = mod;
+
+    if (id.empty() || id.find_first_of("/\\:") != std::string::npos || id == "." || id == "..") return "";
+
+    std::lock_guard<std::mutex> lk(mu);
+    auto it = dirs.find(id);
+
+    if (it != dirs.end()) return it->second.c_str();
+
+    std::error_code ec;
+    const std::filesystem::path dir = std::filesystem::path(svc_base_path()) / "mod_data" / id;
+
+    std::filesystem::create_directories(dir, ec);
+
+    const std::string out = ec ? std::string() : (dir.string() + (char)std::filesystem::path::preferred_separator);
+
+    return dirs.emplace(id, out).first->second.c_str();
+}
+
+// Pilot slot byte 0x80130B44, once a pilot was confirmed (RS64_HOOK_MENU_PILOT_CHOSEN).
+int svc_save_slot()
+{
+
+    uint8_t* rdram = s_rdram;
+
+    return s_pilot_chosen.load() && rdram ? (int)(int8_t)MEM_B(0, (gpr)(int32_t)0x80130B44u) : -1;
+}
+
+int pilot_chosen(uint32_t, uint8_t*, void*, void*)
+{
+
+    s_pilot_chosen.store(true);
+
+    return RS64_HOOK_CONTINUE;
+}
+
+// Valid until the next call (on any thread), as the table documents.
+const char* svc_config_string(const char* mod, const char* option)
+{
+
+    static thread_local std::string s;
+    const auto v = recomp::mods::get_mod_config_value(mod, option);
+    const auto* str = std::get_if<std::string>(&v);
+
+    s = str ? *str : std::string();
+
+    return s.c_str();
+}
+
 // A mod whose rs64_mod_init refuses has its registrations rolled back; mods init in load order, after the built-ins.
 void init_mods(uint8_t* rdram) {
 
@@ -184,8 +289,23 @@ void init_once(uint8_t* rdram) {
     s.base_path = svc_base_path;
     s.set_clipboard = svc_set_clipboard;
     s.frame_seconds = [] { return rs64_rate_scale() / 30.0f; };
+    s.relocated = [](uint32_t a) { return rs64::ls::relocated(a); };
+    s.object_by_name = rs64_rules_object;
+    s.object_health = rs64_rules_object_health;
+    s.destroy_object = rs64_rules_destroy_object;
+    s.run_rule_line = rs64_rules_run_line;
+    s.rule_var_get = rs64_rules_var_get;
+    s.rule_var_set = rs64_rules_var_set;
+    s.mission_seconds = rs64_rules_mission_seconds;
+    s.config_number = svc_config_number;
+    s.config_string = svc_config_string;
+    s.key_down = svc_key_down;
+    s.mod_data_dir = svc_mod_data_dir;
+    s.save_slot = svc_save_slot;
+    s_rdram = rdram;
     rs64::host::bind_services(s);
     rs64_register_builtin_hooks();
+    rs64::host::add_hook(RS64_HOOK_MENU_PILOT_CHOSEN, pilot_chosen, nullptr);
     rs64_camera_shots_register_service();
     init_mods(rdram);
 
@@ -214,6 +334,7 @@ void init_once(uint8_t* rdram) {
 
     rs64_register_builtin_late_hooks();
     rs64::host::seal();
+    s_host_ready.store(true);
 }
 }
 
@@ -316,6 +437,10 @@ bool hook_site_is_entry(uint32_t hook) {
     case RS64_HOOK_RESULT_SUCCESS:
     case RS64_HOOK_TRIGGER_EFFECT:
     case RS64_HOOK_ATST_TICK:
+    case RS64_HOOK_SONG_START:
+    case RS64_HOOK_SOUND_3D:
+    case RS64_HOOK_PLAYER_DAMAGE:
+    case RS64_HOOK_PLAYER_FIRE:
         return true;
     default:
         return false;
@@ -343,6 +468,112 @@ void rs64_export_draw_dist(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64_dr
 void rs64_export_terrain_dist(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64_terrain_dist(); }
 void rs64_export_tgrid_base(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64_tgrid_base((uint32_t)ctx->r4); }
 void rs64_export_relocated(uint8_t*, recomp_context* ctx) { ctx->r2 = (int32_t)rs64::ls::relocated((uint32_t)ctx->r4); }
+
+// A pointer into librecomp's RDRAM (the game's 8 MB or a mod's recomp_alloc block), with room for a 256-byte read.
+bool guest_ptr(uint32_t addr)
+{
+    return addr >= 0x80000000u && addr - 0x80000000u + 256u <= recomp::mem_size;
+}
+
+// A NUL-terminated string a .nrm mod passed (a KSEG0 pointer), at most 255 bytes.
+std::string guest_str(uint8_t* rdram, uint32_t addr)
+{
+
+    std::string s;
+
+    if (!guest_ptr(addr)) return s;
+
+    for (uint32_t i = 0; i < 255; ++i)
+    {
+        const char c = (char)MEM_B(i, (gpr)(int32_t)addr);
+
+        if (!c) break;
+
+        s += c;
+    }
+
+    return s;
+}
+
+void put_guest_str(uint8_t* rdram, uint32_t addr, uint32_t size, const char* s)
+{
+
+    if (!guest_ptr(addr) || size == 0) return;
+
+    uint32_t i = 0;
+
+    for (; s[i] && i + 1 < size; ++i) MEM_B(i, (gpr)(int32_t)addr) = (int8_t)s[i];
+
+    MEM_B(i, (gpr)(int32_t)addr) = 0;
+}
+
+std::string arg_str(uint8_t* rdram, recomp_context* ctx, int reg)
+{
+    return guest_str(rdram, (uint32_t)(&ctx->r0)[reg]);
+}
+
+// The game-state, mission and level-rules exports (the v9 table's functions for .nrm mods). They run on the mod's guest stack, so game calls use its ctx.
+void ex_state_id(uint8_t* rdram, recomp_context* ctx) { put_guest_str(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5, rs64_state_current_id()); }
+void ex_in_cutscene(uint8_t*, recomp_context* ctx) { ctx->r2 = rs64_state_in_cinematic(); }
+void ex_frame_seconds(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64::host::api()->frame_seconds(); }
+void ex_mission_seconds(uint8_t*, recomp_context* ctx) { ctx->f0.fl = rs64_rules_mission_seconds(); }
+void ex_get_flag(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64::host::flag(arg_str(rdram, ctx, 4).c_str()); }
+void ex_set_flag(uint8_t* rdram, recomp_context* ctx) { rs64::host::set_flag(arg_str(rdram, ctx, 4).c_str(), (int32_t)ctx->r5); }
+void ex_fire_rule_event(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64::host::fire_rule_event(arg_str(rdram, ctx, 4).c_str(), arg_str(rdram, ctx, 5).c_str()); }
+void ex_run_rule_line(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64_rules_run_line(rdram, ctx, arg_str(rdram, ctx, 4).c_str()); }
+void ex_rule_var_get(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64_rules_var_get(arg_str(rdram, ctx, 4).c_str()); }
+void ex_rule_var_set(uint8_t* rdram, recomp_context* ctx) { rs64_rules_var_set(arg_str(rdram, ctx, 4).c_str(), (int32_t)ctx->r5); }
+void ex_object_by_name(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = (int32_t)rs64_rules_object(rdram, ctx, arg_str(rdram, ctx, 4).c_str()); }
+void ex_object_health(uint8_t* rdram, recomp_context* ctx) { ctx->f0.fl = rs64_rules_object_health(rdram, ctx, arg_str(rdram, ctx, 4).c_str()); }
+void ex_destroy_object(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = rs64_rules_destroy_object(rdram, ctx, arg_str(rdram, ctx, 4).c_str()); }
+void ex_key_down(uint8_t* rdram, recomp_context* ctx) { ctx->r2 = svc_key_down(arg_str(rdram, ctx, 4).c_str()); }
+void ex_save_slot(uint8_t*, recomp_context* ctx) { ctx->r2 = svc_save_slot(); }
+
+// rs64_terrain_get_cell(col, row, signed char heights[25], unsigned short* tex) / rs64_terrain_set_cell(col, row, const signed char heights[25], int tex).
+void ex_terrain_get_cell(uint8_t* rdram, recomp_context* ctx)
+{
+
+    int8_t h[25];
+    uint16_t tex = 0;
+    const uint32_t out = (uint32_t)ctx->r6, tex_out = (uint32_t)ctx->r7;
+    const int r = rs64::terrain::get_cell(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5, h, &tex);
+
+    if (r == 0 && guest_ptr(out))
+    {
+        for (int i = 0; i < 25; ++i) MEM_B(i, (gpr)(int32_t)out) = h[i];
+    }
+
+    if (r == 0 && guest_ptr(tex_out)) MEM_H(0, (gpr)(int32_t)tex_out) = (int16_t)tex;
+
+    ctx->r2 = r;
+}
+
+void ex_terrain_set_cell(uint8_t* rdram, recomp_context* ctx)
+{
+
+    int8_t h[25];
+    const uint32_t in = (uint32_t)ctx->r6;
+
+    if (!guest_ptr(in))
+    {
+        ctx->r2 = rs64::terrain::NoMap;
+
+        return;
+    }
+
+    for (int i = 0; i < 25; ++i) h[i] = (int8_t)MEM_B(i, (gpr)(int32_t)in);
+
+    ctx->r2 = rs64::terrain::set_cell(rdram, (uint32_t)ctx->r4, (uint32_t)ctx->r5, h, (int)(int32_t)ctx->r7);
+}
+
+const std::pair<const char*, recomp_func_t*> kNrmExports[] = {
+    { "rs64_state_id", ex_state_id }, { "rs64_in_cutscene", ex_in_cutscene }, { "rs64_frame_seconds", ex_frame_seconds },
+    { "rs64_mission_seconds", ex_mission_seconds }, { "rs64_get_flag", ex_get_flag }, { "rs64_set_flag", ex_set_flag },
+    { "rs64_fire_rule_event", ex_fire_rule_event }, { "rs64_run_rule_line", ex_run_rule_line }, { "rs64_rule_var_get", ex_rule_var_get },
+    { "rs64_rule_var_set", ex_rule_var_set }, { "rs64_object_by_name", ex_object_by_name }, { "rs64_object_health", ex_object_health },
+    { "rs64_destroy_object", ex_destroy_object }, { "rs64_terrain_get_cell", ex_terrain_get_cell }, { "rs64_terrain_set_cell", ex_terrain_set_cell },
+    { "rs64_key_down", ex_key_down }, { "rs64_save_slot", ex_save_slot },
+};
 
 int trigger_hook_event(uint32_t hook, uint8_t* rdram, recomp_context* ctx)
 {
@@ -393,7 +624,7 @@ void rs64_register_mod_events(const char* const* patch_events)
 
     for (uint32_t h = 1; h < RS64_HOOK_COUNT; ++h)
     {
-        if (rs64::host::hook_has_toml_site(h)) names.push_back(event_name(h));
+        if (rs64::host::hook_has_event(h)) names.push_back(event_name(h));
     }
 
     for (const std::string& n : names) list.push_back(n.c_str());
@@ -403,7 +634,7 @@ void rs64_register_mod_events(const char* const* patch_events)
 
     for (uint32_t h = 0; h < RS64_HOOK_COUNT; ++h)
     {
-        s_event_index[h] = rs64::host::hook_has_toml_site(h) ? recomp::overlays::get_base_event_index(event_name(h)) : (size_t)-1;
+        s_event_index[h] = rs64::host::hook_has_event(h) ? recomp::overlays::get_base_event_index(event_name(h)) : (size_t)-1;
     }
 
     recomp::overlays::register_base_export("rs64_event_return", rs64_event_return);
@@ -415,6 +646,9 @@ void rs64_register_mod_events(const char* const* patch_events)
     recomp::overlays::register_base_export("rs64_terrain_dist", rs64_export_terrain_dist);
     recomp::overlays::register_base_export("rs64_tgrid_base", rs64_export_tgrid_base);
     recomp::overlays::register_base_export("rs64_relocated", rs64_export_relocated);
+
+    for (const auto& [name, fn] : kNrmExports) recomp::overlays::register_base_export(name, fn);
+
     s_events_registered = true;
 }
 
@@ -435,4 +669,44 @@ extern "C" int rs64_hook(uint32_t hook, uint8_t* rdram, recomp_context* ctx)
     if (r == RS64_HOOK_RETURN || !ctx || !s_events_registered || hook >= RS64_HOOK_COUNT || s_event_index[hook] == (size_t)-1) return r;
 
     return trigger_hook_event(hook, rdram, ctx);
+}
+
+// The v9 host-dispatched hooks: a copy of the game's registers with a0-a2 set, so handlers read their values there and the game's own registers stay as they were.
+extern "C" void rs64_hook_event(uint32_t hook, uint8_t* rdram, recomp_context* ctx, uint32_t a0, uint32_t a1, uint32_t a2)
+{
+
+    if (!s_host_ready.load(std::memory_order_acquire) || !ctx) return;
+
+    recomp_context copy = *ctx;
+
+    copy.r4 = (gpr)(int32_t)a0;
+    copy.r5 = (gpr)(int32_t)a1;
+    copy.r6 = (gpr)(int32_t)a2;
+    rs64_hook(hook, rdram, &copy);
+}
+
+// osViSwapBuffer, on the game thread once a frame in every state: RS64_HOOK_FRAME, then state and cutscene changes.
+extern "C" void rs64_host_frame(uint8_t* rdram, recomp_context* ctx, uint32_t fb)
+{
+
+    static int s_state = -1;
+    static int s_cutscene = 0;
+
+    rs64_hook_event(RS64_HOOK_FRAME, rdram, ctx, fb, 0, 0);
+
+    const int state = rs64_state_current();
+
+    if (state != s_state)
+    {
+        rs64_hook_event(RS64_HOOK_STATE_CHANGED, rdram, ctx, (uint32_t)state, (uint32_t)s_state, 0);
+        s_state = state;
+    }
+
+    const int cutscene = rs64_state_in_cinematic() ? 1 : 0;
+
+    if (cutscene != s_cutscene)
+    {
+        rs64_hook_event(RS64_HOOK_CUTSCENE, rdram, ctx, (uint32_t)cutscene, 0, 0);
+        s_cutscene = cutscene;
+    }
 }

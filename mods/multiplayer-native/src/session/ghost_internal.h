@@ -23,6 +23,7 @@ uint32_t rs64_ghost_is_client(void);
 
 // Registers the multiplayer text sources, actions, the key handler and the cutscene-skip input filter with the host registry.
 void rs64_ghost_register_host(void);
+const struct rs64_mp_channel* rs64_ghost_channel(void);
 uint32_t rs64_lobby_menu_session(void);
 void rs64_lobby_host(void);
 void rs64_lobby_join(void);

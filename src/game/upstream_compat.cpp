@@ -227,6 +227,7 @@ extern "C" void osViSwapBuffer_recomp(uint8_t* rdram, recomp_context* ctx) {
 
     extern void osViSwapBuffer(uint8_t* rdram, int32_t frameBufPtr);
     osViSwapBuffer(rdram, (int32_t)fb);
+    rs64_host_frame(rdram, ctx, fb);
 }
 
 extern "C" void osViSetMode_recomp(uint8_t* rdram, recomp_context* ctx) {

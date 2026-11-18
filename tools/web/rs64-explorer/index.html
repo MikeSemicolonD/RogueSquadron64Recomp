@@ -134,19 +134,19 @@
   </div>
   <div id="scene" class="panel needs-rom" hidden>
     <button id="btnLevelSettings" hidden></button>
-    <button id="btnBlankLevel" hidden title="A new level with only a player start on flat ground, using this level's sky, textures and music">New blank level</button>
+    <button id="btnBlankLevel" hidden aria-expanded="false" title="A new level with only a player start on flat ground, flown or walked">New blank level</button>
     <b id="cutPickHead">Cutscene</b>
     <div id="cutPickRow"><select id="cutPick" title="The level's cutscenes and in-mission sequences"></select><button id="cutAdd" data-icon="add" aria-expanded="false" title="Add a cutscene to this level"></button><button id="cutDel" data-icon="delete" hidden title="Delete this cutscene"></button></div>
     <label id="cutSeqNameRow" hidden title="Trigger areas and rules start this sequence by its name">Name <input id="cutSeqName" type="text" maxlength="47"></label>
     <b>Scene</b>
     <label><input type="checkbox" id="optSky" checked> Skybox</label>
-    <label for="optFog" title="1x is the game's own fog range (it follows the camera)"><input type="checkbox" id="optFog"> Fog distance <input type="range" id="optFogDist" min="1" max="8" step="0.1" value="1" data-notch="5" disabled><output id="fogVal">1x</output></label>
+    <label for="optFog" title="1x is the game's own fog range (it follows the camera)"><input type="checkbox" id="optFog"> Fog distance <input type="range" id="optFogDist" aria-label="Fog distance" min="1" max="8" step="0.1" value="1" data-notch="5" disabled><output id="fogVal">1x</output></label>
     <b>Markers</b>
     <label title="Lifts each spline above the splines it overlaps so stacked paths can be told apart">Spread paths <input type="range" id="optSpread" min="0" max="3" step="0.1" value="0" data-notch="5"><output id="spreadVal">0</output></label>
   </div>
   <div id="cutPanel" class="panel needs-rom" hidden>
     <button id="cutPlay" title="Pause" aria-label="Pause"></button>
-    <input type="range" id="cutTime" min="0" max="1" step="0.0005" value="0" hidden>
+    <input type="range" id="cutTime" aria-label="Cutscene time" min="0" max="1" step="0.0005" value="0" hidden>
     <output id="cutTimeVal">0.0 s</output>
     <button id="cutEdit" data-icon="edit" aria-pressed="false" title="Edit cutscene: drag clips to move them, drag their ends to trim"></button>
     <span id="cutEditBadge" style="visibility:hidden">EDITING CUTSCENE</span>

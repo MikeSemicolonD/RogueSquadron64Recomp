@@ -884,8 +884,12 @@ const CRAFT = [
   ['naboo', 'Naboo starfighter']
 ];
 
+// The level the CHICKEN passcode plays, where the player is an AT-ST; a mod level made from it plays the same way.
+const AT_ST_LEVEL = 20;
+
 // What a template brings that the new level cannot change (yet).
 const TEMPLATE_NOTES = {
+  [AT_ST_LEVEL]: 'you play as an AT-ST',
   0: 'opening crawl (chapter 1)',
   5: 'opening crawl (chapter 2)',
   10: 'opening crawl (chapter 3); no Y-wing or speeder',
@@ -1255,7 +1259,9 @@ function viewAsLevelImage()
 function levelImageRow(l)
 {
   const path = `mod/assets/level/${l.folder}/preview`;
-  const stock = `data/backdrop/level${l.template}`;
+
+  // The AT-ST level has no picture; the game shows Mos Eisley's in its place.
+  const stock = `data/backdrop/level${l.template === AT_ST_LEVEL ? 0 : l.template}`;
   const img = elem('img', { className: 'levelImage', alt: 'The picture SELECT LEVEL shows' });
 
   const reset = iconButton('close', 'Back to the picture of the level it was copied from', async () => {
@@ -1373,7 +1379,8 @@ async function modLevelDialog(dir)
 
   const medals = elem('table', {
     className: 'medalGrid',
-    title: 'A medal needs all of: time at most, the rest at least. Empty keeps the template\'s thresholds'
+    title: 'A medal needs all of: time at most, the rest at least. '
+      + (l.template === AT_ST_LEVEL ? 'Fill in every box: the AT-ST level has no thresholds to fall back on' : 'Empty keeps the template\'s thresholds')
   });
 
   medals.innerHTML = `<tr><th></th>${cols.map(([, h]) => `<th>${h}</th>`).join('')}</tr>`;
@@ -1476,7 +1483,8 @@ async function modLevelDialog(dir)
   d.append(...(tmplNote ? [elem('small', { className: 'shotNote', textContent: 'From its template it keeps: ' + tmplNote })] : []),
     stacked(fld('Title', title)), fontNote, stacked(fld('Description', desc, 'The SELECT LEVEL briefing text')), fld('Briefing voice ', voice, 'Played when the level is highlighted in SELECT LEVEL'), useSub, recRow, recNote, hr(),
     elem('b', { textContent: 'Picture' }), levelImageRow(l), hr(),
-    elem('b', { textContent: 'Approved craft' }), craftBox, hr(),
+    // A walker level has no craft to approve: the player is the AT-ST.
+    ...(l.template === AT_ST_LEVEL ? [] : [elem('b', { textContent: 'Approved craft' }), craftBox, hr()]),
     elem('b', { textContent: 'Medals' }), medals, hr(),
     crawlRow,
     hr(), fld(elem('b', { textContent: 'Starting song ' }), music),
@@ -1940,7 +1948,7 @@ function fillLevelButton()
   const dir = selectedLevel && !String(selected).startsWith('cut:') ? selected : null;
 
   $('btnBlankLevel').hidden = true;
-  b.hidden = !dir || !(modLevelOf(dir) || /\/lv_[0-9a-i]$/.test(dir));
+  b.hidden = !dir || !(modLevelOf(dir) || /\/lv_[0-9a-ik]$/.test(dir));
 
   if (b.hidden)
     return;
@@ -1972,7 +1980,14 @@ function fillLevelButton()
     blank.removeAttribute('aria-label');
   }
 
-  blank.onclick = () => newModLevel(dir, true);
+  const atSt = 'data/level/lv_' + AT_ST_LEVEL.toString(36);
+  const walker = () => newModLevel(atSt, true);
+
+  // The AT-ST level's own blank level is already a walker level.
+  blank.onclick = () => (dir === atSt ? walker() : toggleAddMenu(blank, [
+    ['Flying level', 'Your craft, with this level\'s sky, ground textures and music', () => newModLevel(dir, true)],
+    ['Walker level', 'You walk an AT-ST, on the AT-ST level\'s ground and sky', walker]
+  ]));
 }
 
 // The selected item again after its level reloads (an edit can move or grow its record).
@@ -3044,7 +3059,7 @@ function ruleCondRow(r, kinds, ctx, save)
     check: (t) => (t.trim() || own ? condCheck(t, ctx) : []),
 
     complete: (t, c) => {
-      const out = rulesComplete(head + t, head.length + c, { objects: kinds });
+      const out = rulesComplete(head + t, head.length + c, { objects: kinds, ext: ctx.ext });
 
       return { ...out, from: out.from - head.length, to: out.to - head.length };
     },
@@ -3099,7 +3114,7 @@ function rulesSection(owner) {
     const ctx = { dir, items, variables };
     const own = !!modLevelOf(dir)?.objectives?.length;
     const kinds = ruleObjectKinds(items);
-    const condCtx = { objects: kinds, objectives: own, variables: new Set(variables) };
+    const condCtx = { objects: kinds, objectives: own, variables: new Set(variables), modChecks: ruleExt.length ? modChecksOf(ruleExt) : null, ext: ruleExt };
     const whens = RULE_WHENS.filter((w) => w.on === owner.kind && (own || !w.objectives));
     const broken = new Set(rulesBroken(doc, items, ruleExt).map((b) => `${b.rule}:${b.field}`));
 
@@ -3763,14 +3778,14 @@ function openCrawlPanel(ctx)
   body.onchange = () => save('text', { body: body.value.trim() });
   gaps();
 
-  const status = ctx.exists ? `${ctx.label}: this mod's crawl (${ctx.name})` : `${ctx.label}: the game's crawl; an edit makes this mod's own`;
-  const textRow = stacked(fld('Text', body, 'Wrapped to the crawl width; an empty line starts a paragraph'));
+  const status = ctx.exists ? `${ctx.label}: this mod's crawl (${ctx.name})` : `${ctx.label}: the game's crawl. Editing it makes a copy in this mod`;
+  const textRow = stacked(fld('Text', body, 'Wrapped to the crawl width. An empty line starts a paragraph'));
 
   textRow.classList.add('crawlText');
   box.append(elem('small', {
     className: 'shotNote',
     textContent: status
-  }), stacked(fld('Chapter', chapter, 'Small line above the title; may be empty')), stacked(fld('Title', title)), textRow, note);
+  }), stacked(fld('Chapter', chapter, 'Small line above the title, can be empty')), stacked(fld('Title', title)), textRow, note);
   $('crawlBody').replaceChildren(box);
   $('crawlPanel').hidden = false;
   placeCrawlPanel();

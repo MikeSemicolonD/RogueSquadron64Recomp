@@ -76,6 +76,9 @@ extern "C" void rs64_nav_clock_point()
 // The SELECT LEVEL entry of a mod level the boot target names, -1 for none (mod_level_hooks.cpp).
 extern "C" int rs64_mod_levels_boot_entry();
 
+// Whether the boot target names a mod level (mod_level_hooks.cpp).
+extern "C" int rs64_mod_levels_boot_named();
+
 // menu:<label>/<label>/...: the entries to select in turn from the main menu (the last may be an action on a page).
 static std::vector<std::string>& menu_path() {
 
@@ -342,7 +345,8 @@ static bool bonus_level(int level)
 static void nav_level(uint8_t* rdram, const char* st)
 {
     // A new pilot auto-launches a forced level, so there is no select screen; pin level+craft only after name entry (step >= 2), since writing currentLevel earlier freezes the flow.
-    if (s_step >= 2 && !(s_step >= 3 && bonus_level(g_target.a))) {
+    // A mod level is picked by its SELECT LEVEL entry; its target is its template, which for a walker level is not the level its menus run.
+    if (s_step >= 2 && !rs64_mod_levels_boot_named() && !(s_step >= 3 && bonus_level(g_target.a))) {
         // gGameSettings currentLevel (u8), gCurrentLevel (u32)
         nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
         nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
@@ -1122,9 +1126,10 @@ extern "C" void rs64_nav_boot_cutscene_done(void)
 }
 
 // level:20 (CHICKEN) starts as the passcode does: mainGameLoop 0x8003E250 launches the AT-ST mission when the bit is set and the front end has returned, so the first front end is skipped. The menus' level path crashes in the hangar for this level.
+// A mod level made from it is picked in SELECT LEVEL instead.
 static bool nav_is_chicken(const RsNavTarget& t)
 {
-    return t.kind == NAV_LEVEL && t.a == 0x14 && t.c != 1;
+    return t.kind == NAV_LEVEL && t.a == 0x14 && t.c != 1 && !rs64_mod_levels_boot_named();
 }
 
 static bool s_front_end_next = false;

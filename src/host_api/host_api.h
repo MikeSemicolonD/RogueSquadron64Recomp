@@ -23,7 +23,11 @@ int add_quit_handler(rs64_event_fn fn, void* user);
 void run_quit_handlers();
 // Hooks with a rogue_squadron.toml site (one each); the others are dispatched by host code.
 constexpr bool hook_has_toml_site(uint32_t id) {
-    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_SPEECH_CLIP);
+    return (id >= 1u && id <= RS64_HOOK_RADAR) || (id >= RS64_HOOK_POWERUP_TOUCH && id <= RS64_HOOK_SPEECH_CLIP) || (id >= RS64_HOOK_SONG_START && id <= RS64_HOOK_PLAYER_FIRE);
+}
+// Hooks that are also rs64_on_* events for .nrm mods: the toml sites and the v9 host-dispatched ones, which run with a game ctx.
+constexpr bool hook_has_event(uint32_t id) {
+    return hook_has_toml_site(id) || (id >= RS64_HOOK_FRAME && id <= RS64_HOOK_MISSION_READY);
 }
 void set_flag(const char* name, int value);
 int flag(const char* name);
@@ -34,7 +38,7 @@ struct Mark {
     std::vector<size_t> hooks;
     size_t filters = 0;
     std::set<std::string> text;
-    std::set<std::string> actions, conditions, rule_actions;
+    std::set<std::string> actions, conditions, rule_actions, rule_conditions;
     size_t keys = 0, quits = 0;
     std::set<std::string> services;
     size_t hash_parts = 0, valid_ram = 0, moved = 0;
@@ -49,6 +53,10 @@ int add_moved_range(uint32_t lo, uint32_t hi, uint32_t delta);
 int add_rule_action(const char* name, rs64_rule_action_fn fn, void* user);
 bool run_rule_action(const char* name, uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count);
 int fire_rule_event(const char* name, const char* object);
+int add_rule_condition(const char* name, rs64_rule_condition_fn fn, void* user);
+bool has_rule_condition(const char* name);
+// A mod check's value, 0 when no mod added it.
+double rule_condition(const char* name, uint8_t* rdram, void* ctx, const char* arg);
 int terrain_get_cell(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex);
 int terrain_set_cell(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex);
 // The (name, object) events fired since the last call, in order.
@@ -77,6 +85,19 @@ struct Services {
     const char* (*base_path)() = nullptr;
     void (*set_clipboard)(const char*) = nullptr;
     float (*frame_seconds)() = nullptr;
+    uint32_t (*relocated)(uint32_t) = nullptr;
+    uint32_t (*object_by_name)(uint8_t*, void*, const char*) = nullptr;
+    float (*object_health)(uint8_t*, void*, const char*) = nullptr;
+    int (*destroy_object)(uint8_t*, void*, const char*) = nullptr;
+    int (*run_rule_line)(uint8_t*, void*, const char*) = nullptr;
+    int32_t (*rule_var_get)(const char*) = nullptr;
+    void (*rule_var_set)(const char*, int32_t) = nullptr;
+    float (*mission_seconds)() = nullptr;
+    int (*config_number)(const char*, const char*, double*) = nullptr;
+    const char* (*config_string)(const char*, const char*) = nullptr;
+    int (*key_down)(const char*) = nullptr;
+    const char* (*mod_data_dir)(const char*) = nullptr;
+    int (*save_slot)() = nullptr;
 };
 void bind_services(const Services& s);
 const rs64_host_api* api();

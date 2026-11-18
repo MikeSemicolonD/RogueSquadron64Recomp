@@ -5,6 +5,7 @@
 #include "util/debug_logs.h"
 #include "util/rdram_words.h"
 #include "recomp.h"
+#include "rs64/mp_channel.h"
 #include <cstdio>
 #include <map>
 #include <vector>
@@ -274,4 +275,5 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
 
     rs64::ls::set_moved_ranges({std::begin(rs64::ls::kMovedRanges), std::end(rs64::ls::kMovedRanges)});
     rs64_ghost_register_host();
+    api->add_service(RS64_MP_CHANNEL_SERVICE, rs64_ghost_channel());
 }

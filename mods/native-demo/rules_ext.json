@@ -1,4 +1,5 @@
 {
   "actions": [ { "do": "demo_log", "label": "Log a line (native demo)", "params": [ { "key": "text", "picker": "text" } ] } ],
-  "events": [ { "custom": "demo.ping", "label": "The native demo pinged" } ]
+  "events": [ { "custom": "demo.ping", "label": "The native demo pinged" } ],
+  "conditions": [ { "check": "demo_kills", "label": "Units destroyed this mission (native demo)" } ]
 }

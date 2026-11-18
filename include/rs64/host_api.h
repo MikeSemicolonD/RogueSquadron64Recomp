@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 8
+#define RS64_HOST_API_VERSION 10
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -60,6 +60,20 @@ typedef enum rs64_hook_id {
     RS64_HOOK_WINGMAN_DRAW = 41,         // npcWingmanUpdate 0x800D9A90: a wingman just added its model to the render list; s3 = the NPC, s1 = the render info (what the tow-cable renderer 0x800ADD5C takes as a0). Never RETURN (mid-function)
     RS64_HOOK_NPC_HIT = 42,              // v8. slotDispatcherIter 0x8003E8DC entry, a HIT (action 5) only: a0 = the target NPC slot, a2 = the message (+2 u16 the shooter's slot, player 1 = u16 0x80137DBA; +4 weapon category; +6 damage). Observe only, never RETURN
     RS64_HOOK_SPEECH_CLIP = 43,          // playSpeechClip 0x80066EE4 entry: a voice clip starts; a0 = the clip, a1-a3 its playback arguments (a2 = the volume as float bits). Observe only, never RETURN
+    // v9, host-dispatched with a copy of the game's registers: a0-a2 carry the values below, edits are dropped, RETURN is ignored. Each is also an rs64_on_* event.
+    RS64_HOOK_FRAME = 44,                // osViSwapBuffer: every frame the game presents, in any state (menus, cutscenes, missions); a0 = the framebuffer
+    RS64_HOOK_STATE_CHANGED = 45,        // osViSwapBuffer: the classified game state changed; a0 = the new state number, a1 = the old one (state_id() names it)
+    RS64_HOOK_CUTSCENE = 46,             // osViSwapBuffer: a cutscene started (a0 = 1) or ended (a0 = 0)
+    RS64_HOOK_UNIT_DESTROYED = 47,       // a unit's death effect starts; a0 = its DAT record, a1 = its name (char*, KSEG0)
+    RS64_HOOK_AREA_CROSSED = 48,         // a trigger area's effect runs; a0 = its DAT record, a1 = 1 entered / 0 left, a2 = its name
+    RS64_HOOK_PATH_POINT = 49,           // an NPC reached a path event; a0 = the event's DAT record, a1 = its name
+    RS64_HOOK_OBJECTIVE_STATE = 50,      // a mod level's own objective changed; a0 = the objective (1-4), a1 = 1 done / 0 failed
+    RS64_HOOK_MISSION_READY = 51,        // the first mission frame, once the level's objects are loaded (object_by_name works from here)
+    // v10, toml sites at function entry (RETURN skips the function).
+    RS64_HOOK_SONG_START = 52,           // playSongById: a0 = the song id (u16), may be replaced by another loaded song; RETURN skips it (r2 = -1)
+    RS64_HOOK_SOUND_3D = 53,             // play3DSoundEvent: a positioned sound effect starts; a0 = the emitting object or 0, a1 = its position (float[3]*); the sound id is the u16 at sp+0x1A and its volume (0-127) the byte at sp+0x1F, both may be rewritten; RETURN mutes it (r2 = -1)
+    RS64_HOOK_PLAYER_DAMAGE = 54,        // applyPlayerCraftDamage: a0 = the player's craft record (player 1 is 0x80137DBC), a1 = the damage as float bits, may be replaced; RETURN takes none
+    RS64_HOOK_PLAYER_FIRE = 55,          // each player craft's laser fire function (the X-wing's playerXwingFireBlaster and its A-wing, V-wing, Falcon, TIE, T-16 and Naboo counterparts; not the Y-wing or snowspeeder yet): one bolt from one hardpoint; a0 = the weapon context (its first word the player), a1 = the hardpoint; RETURN skips the bolt
     RS64_HOOK_COUNT
 } rs64_hook_id;
 
@@ -79,6 +93,8 @@ typedef void (*rs64_event_fn)(void* user);
 typedef uint64_t (*rs64_hash_fn)(const uint8_t* rdram, void* user);
 // A level rules action: the rule's parameters as count key/value strings (numbers as their JSON text), on the game thread.
 typedef void (*rs64_rule_action_fn)(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user);
+// A level rules check `name(arg)`: its value, compared as written (`shields(player) < 30`) or true when non-zero; arg may be "". On the game thread.
+typedef double (*rs64_rule_condition_fn)(uint8_t* rdram, void* ctx, const char* arg, void* user);
 
 typedef struct rs64_host_api {
     uint32_t version;
@@ -134,6 +150,31 @@ typedef struct rs64_host_api {
     void (*set_clipboard)(const char* utf8);
     // v8: the game time one mission frame covers, in seconds: 1/30 at the game's own rate, 1/60 when TARGET FPS runs 60 logic frames a second.
     float (*frame_seconds)(void);
+    // v9: where a game field lives now (a per-player field the co-op mod moved); other addresses pass through.
+    uint32_t (*relocated)(uint32_t address);
+    // v9, missions only, game thread (a hook): the level object named name (its DAT record, KSEG0) or 0; its health 0-100 (-1 when there is none); destroy_object kills it as a lethal hit would (0 = done, -1 none, -2 already destroyed).
+    uint32_t (*object_by_name)(uint8_t* rdram, void* ctx, const char* name);
+    float (*object_health)(uint8_t* rdram, void* ctx, const char* name);
+    int (*destroy_object)(uint8_t* rdram, void* ctx, const char* name);
+    // v9: runs one level rules action line as rules.txt writes it ("message 4 Hold the bridge", "music 92", "shake seconds=2"), built-in or a mod's. Missions only, game thread.
+    // 0 = ran, -1 the line does not read (or is a wait), -2 no mission is running, -3 no action of that name.
+    int (*run_rule_line)(uint8_t* rdram, void* ctx, const char* line);
+    // v9: level rules variables (every mod's rules for the level share them; they start at 0 each mission). Game thread.
+    int32_t (*rule_var_get)(const char* name);
+    void (*rule_var_set)(const char* name, int32_t value);
+    // v9: a check level rules can test as name(arg); only before the registry seals, first wins. A rule using a check no mod added is skipped.
+    int (*add_rule_condition)(const char* name, rs64_rule_condition_fn fn, void* user);
+    // v9: seconds of game time since the mission started (0 outside one).
+    float (*mission_seconds)(void);
+    // v9: a mod's config option (its mod.json config_schema): 1 and *out for a number or enum, 0 if not set or not a number. config_string: the text of a string option, "" if none; valid until the next call.
+    int (*config_number)(const char* mod_id, const char* option, double* out);
+    const char* (*config_string)(const char* mod_id, const char* option);
+    // v10: non-zero while the keyboard key named key is down (SDL key names: "F7", "K", "Left Shift"). Let players pick the key through a string config option.
+    int (*key_down)(const char* key);
+    // v10: a folder for the mod's own files beside the game's settings (mod_data/<mod_id>/ with a trailing separator), created on first use; "" if it cannot be.
+    const char* (*mod_data_dir)(const char* mod_id);
+    // v10: the pilot (save slot, 0-based) chosen on the account screen, -1 before one is.
+    int (*save_slot)(void);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

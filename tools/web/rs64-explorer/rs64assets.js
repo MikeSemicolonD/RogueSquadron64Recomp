@@ -255,6 +255,7 @@ function rs64Lib()
     return [
       ...(Array.isArray(doc.actions) ? doc.actions : []).filter((e) => e?.do).map((e) => entry('action', e.do, e)),
       ...(Array.isArray(doc.events) ? doc.events : []).filter((e) => e?.custom).map((e) => entry('event', e.custom, e)),
+      ...(Array.isArray(doc.conditions) ? doc.conditions : []).filter((e) => e?.check).map((e) => entry('condition', e.check, e))
     ];
   }
 
@@ -469,8 +470,14 @@ function rs64Lib()
       if (++checks > 64)
         return fail(at, pos, 'more than 64 checks');
 
-      const spec = COND_CHECKS[w];
-      const atom = { check: w === 'time' || spec ? w : 'variable', word: { from: at, to: pos }, from: at, to: pos };
+      const end = pos;
+
+      skip();
+
+      // Any other word followed by "(" is a check a native mod adds (add_rule_condition); its argument may be empty.
+      const modCheck = w !== 'time' && !COND_CHECKS[w] && text[pos] === '(';
+      const spec = modCheck ? { mod: true } : COND_CHECKS[w];
+      const atom = { check: modCheck ? 'mod' : (w === 'time' || spec ? w : 'variable'), word: { from: at, to: end }, from: at, to: end };
 
       if (atom.check === 'variable')
         atom.name = w;
@@ -498,13 +505,13 @@ function rs64Lib()
 
         pos = close + 1;
 
-        if (!name)
+        if (spec.mod)
+          Object.assign(atom, { name: w, arg: name });
+        else if (!name)
           return fail(at, pos, 'nothing inside "()"');
-
-        if (spec.hi && !(/^\d+$/.test(name) && +name >= 1 && +name <= spec.hi))
+        else if (spec.hi && !(/^\d+$/.test(name) && +name >= 1 && +name <= spec.hi))
           return fail(from, from + name.length, `"${name}" is not a number from 1 to ${spec.hi}`);
-
-        if (spec.hi)
+        else if (spec.hi)
           atom.index = +name;
         else
           Object.assign(atom, { name, kind: spec.kind, from, to: from + name.length });
@@ -564,7 +571,13 @@ function rs64Lib()
     return { atoms, error };
   }
 
-  // Marks for one condition. ctx: { objects: Map<name, kind> | null, objectives: boolean, variables: Set | null, strictVariables }.
+  // The check names the mods' rules_ext.json entries add.
+  function modChecksOf(ext)
+  {
+    return new Set(ext.filter((e) => e.kind === 'condition').map((e) => e.name));
+  }
+
+  // Marks for one condition. ctx: { objects: Map<name, kind> | null, objectives: boolean, variables: Set | null, strictVariables, modChecks: Set | null }.
   function condCheck(text, ctx = {})
   {
     const { atoms, error } = condScan(text);
@@ -586,6 +599,9 @@ function rs64Lib()
 
       if (a.check === 'variable' && ctx.variables && ctx.strictVariables !== false && !ctx.variables.has(a.name))
         marks.push({ from: a.from, to: a.to, reason: `no rule sets "${a.name}"` });
+
+      if (a.check === 'mod' && ctx.modChecks && !ctx.modChecks.has(a.name))
+        marks.push({ from: a.word.from, to: a.word.to, reason: `"${a.name}" needs a mod that adds it` });
     }
 
     return marks;
@@ -1028,7 +1044,7 @@ function rs64Lib()
   {
     const lines = rulesLines(text || '');
     const marks = [];
-    const vctx = { ...ctx, variables: new Set(rulesVariables(text)) };
+    const vctx = { ...ctx, variables: new Set(rulesVariables(text)), modChecks: ctx.ext ? modChecksOf(ctx.ext) : null };
 
     const mark = (l, from, to, reason) => {
       marks.push({ from: lines[l].at + from, to: lines[l].at + Math.max(to, from + 1), reason });
@@ -1216,7 +1232,9 @@ function rs64Lib()
 
     const prefix = /[A-Za-z_][A-Za-z0-9_]*$/.exec(t)?.[0] ?? '';
 
-    return result(prefix, [...variables, ...COND_WORDS.map((label) => ({ label, kind: 'word' }))]);
+    const modWords = (ctx.ext ?? []).filter((e) => e.kind === 'condition').map((e) => ({ label: e.name + '(', kind: 'word' }));
+
+    return result(prefix, [...variables, ...COND_WORDS.map((label) => ({ label, kind: 'word' })), ...modWords]);
   }
 
   // ---- Split export: what kind of change a project path is (the export dialog's starting groups); null for explorer/ sidecars ----
@@ -1678,8 +1696,12 @@ function rs64Lib()
 
   // A new level from a template: id and folder from the title, made unique and kept to the game's 48-character folder limit.
   // data/medal_info: per level, bronze/silver/gold records of f32 minutes, then u16 kills, accuracy %, friendlies saved, bonus (bonus is not a mod level's).
+  // Undefined for a level the table has no row for (the AT-ST level).
   function medalInfo(dv, level)
   {
+    if ((level * 3 + 3) * 0xC > dv.byteLength)
+      return undefined;
+
     return Object.fromEntries(['bronze', 'silver', 'gold'].map((t, i) => {
       const o = (level * 3 + i) * 0xC;
 
@@ -9811,7 +9833,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, modChecksOf, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

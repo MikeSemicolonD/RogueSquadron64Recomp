@@ -43,7 +43,11 @@ const fromData = RS64.arrowSources(mos, noRules, 0, 1);
 assert.equal(fromData.units.length, 21);
 assert.equal(fromData.managed, false);
 
-const doc = { rules: [{ when: 'destroyed', object: 'A', actions: [{ do: 'counter', counter: 127, add: 1 }] }, { when: 'enter', object: 'Zone', actions: [{ do: 'flag', flag: 126, value: 1 }] }] };
+const doc = { rules: [
+  { when: 'destroyed', object: 'A', actions: [{ do: 'counter', counter: 127, add: 1 }] },
+  { when: 'enter', object: 'Zone', actions: [{ do: 'flag', flag: 126, value: 1 }] }
+] };
+
 assert.deepEqual(RS64.arrowSources(mos, doc, 0, 127), { units: ['A'], areas: [], managed: true });
 assert.deepEqual(RS64.arrowSources(mos, doc, 126, 0), { units: [], areas: ['Zone'], managed: true });
 
@@ -55,6 +59,7 @@ assert.ok(used.counters.has(120) && used.counters.has(121));
 const romBytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.length);
 const script = RS64.missionScript(romBytes, 0);
 const dead = RS64.scriptUnits(script, mos, 51, 0);
+
 for (const name of ['A1_Probe_Droid', 'Fodder_Droid_01', 'Fodder_Droid_02'])
   assert.ok(dead.includes(name), name);
 

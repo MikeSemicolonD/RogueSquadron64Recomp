@@ -14,7 +14,7 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31, Hit = 32, Rules = 33, EndClip = 34 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31, Hit = 32, Rules = 33, EndClip = 34, Mod = 35 };
 enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3, WrongPassword = 4 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
@@ -147,6 +147,13 @@ bool decode_hit(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* damage)
 // Host -> client, reliable: the host's session rules (HOST SETTINGS), sent on connect and on every change.
 std::vector<uint8_t> encode_rules(bool friendly_fire);
 bool decode_rules(const uint8_t* data, size_t n, bool* friendly_fire);
+
+// Another mod's data on a named channel (the mp.channel service): u8 name length, the name, u16 size, the bytes. Empty when the name or size is out of range.
+constexpr size_t kModChannelNameMax = 31;
+constexpr size_t kModChannelDataMax = 1024;
+bool mod_channel_name_ok(const char* name);
+std::vector<uint8_t> encode_mod(const char* channel, const uint8_t* data, size_t size);
+bool decode_mod(const uint8_t* data, size_t n, std::string* channel, std::vector<uint8_t>* payload);
 
 // Ghost co-op: a player's tow cable for the other side to draw. Its state (cable state 0x8010B6E8: phase, head index, segment count) and, unless index is kNoSegment, one segment's first 16 words (start, 4x3 transform).
 // The head segment goes every frame unreliably, a finished segment and every phase change reliably.

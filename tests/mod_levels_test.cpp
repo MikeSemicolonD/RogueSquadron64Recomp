@@ -34,6 +34,19 @@ int main() {
         CHECK(errors.size() == 5);
         CHECK(parseModLevels("m", "not json", errors).empty());
     }
+    // takes_the_atst_level_with_its_own_medals: template 20 (no stock thresholds) needs medals; 19 stays refused
+    {
+        std::vector<std::string> errors;
+        const auto lv = parseModLevels("m", R"({ "levels": [
+            { "id": "a", "title": "A", "template": 20, "folder": "a" },
+            { "id": "b", "title": "B", "template": 20, "folder": "b", "medals": {
+                "bronze": { "time": 9, "kills": 1, "accuracy": 1, "friendlies": 0 },
+                "silver": { "time": 8, "kills": 2, "accuracy": 2, "friendlies": 0 },
+                "gold": { "time": 7, "kills": 3, "accuracy": 3, "friendlies": 0 } } } ] })", errors);
+        CHECK(lv.size() == 1 && lv[0].id == "b" && lv[0].tmpl == 20);
+        CHECK(errors.size() == 1);
+        CHECK(isTemplate(20) && !isTemplate(19) && !isTemplate(21));
+    }
     // remaps_template_files_the_mod_ships: a lookup of the template's level file or intro/extro goes to the mod level's own copy, if it has one
     {
         ModLevel l;

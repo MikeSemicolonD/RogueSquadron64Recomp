@@ -502,7 +502,7 @@ async function showEffect(id, keepView = false)
   }
 
   stats = {
-    effect: id,
+    effect: PART_LABELS[id] ?? id.split('/').pop(),
     frames: frames.length,
     size: [...new Set(frames.map((f) => f.w + 'x' + f.h))].join(', '),
     format: [...new Set(frames.map((f) => TEX_NAMES[f.type] ?? 'type ' + f.type))].join(', ')
@@ -1649,7 +1649,7 @@ async function showModel(id, objIndex = -1, keepView = false)
   $('lodVal').textContent = lodLevel();
 
   stats = {
-    model: id,
+    model: modelName(id) ?? id.split('/').pop(),
     objects: hob.objects.length,
     'LOD levels': counts.lods,
     parts: counts.parts,
@@ -2482,7 +2482,16 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
   syncFogControls();
   await lightsShowLevel(world, hmp, stockDir(dir).includes('/level/lv_') ? lvIndex : -1);
-  stats = { level: dir.split('/').pop(), items: dat.items.length, placed, markers: markers.children.length, triangles: counts.tris, vertices: counts.verts };
+
+  stats = {
+    level: modLevelOf(dir)?.title ?? lvName(dir.split('/').pop()),
+    items: dat.items.length,
+    placed,
+    markers: markers.children.length,
+    triangles: counts.tris,
+    vertices: counts.verts
+  };
+
   hud();
   renderLegend(markers);
 
@@ -2614,13 +2623,15 @@ async function openFile(file)
     savedStep = null;
     updateModButton();
     applyModLevelsText('');
-    objectHome = null;
+    objectHome = objectHomeReady = null;
 
     if (rom.assets.has('data/voice_TXT'))
       voiceLine = parseVoiceLines(romBytes, await rom.read('data/voice_TXT'));
 
     frontText = rom.assets.has('data/front_TXT') ? parseFrontText(await rom.read('data/front_TXT')) : [];
-    missionNames = frontText.slice(0, 19).map(titleCase);
+
+    // The game has no titles for level 19, the stage of the Factor 5 logo sequence, or level 20, where the CHICKEN passcode plays as an AT-ST.
+    missionNames = [...frontText.slice(0, 19).map(titleCase), 'Factor 5 logo stage', 'AT-ST (CHICKEN passcode)'];
     stopAudio();
     audioSel = null;
     musicSel = null;
@@ -2643,7 +2654,7 @@ async function openFile(file)
     const pkgs = [...rom.assets.values()].filter((a) => /\/opkg\d*_HOB$/.test(a.path) && a.size > 8);
 
     await Promise.all(pkgs.map((a) => loadModel(a.path.replace(/_HOB$/, ''))));
-    buildObjectIndex();
+    buildObjectIndex().then(() => lightsPanel());
     renderList();
   } catch (e) {
     $('dropErr').textContent = e.message;

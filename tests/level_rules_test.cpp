@@ -499,6 +499,38 @@ int main()
         CHECK(fired(r) == Fired({ "voice:1" }));
     }
 
+    // mod_checks: any other word followed by "(" is a native mod's check, its argument passed as written (may be empty); a rule using a check no mod added is dropped
+    {
+        std::string err;
+        const auto refs = condRefs(parseCondition("shields(player) < 30 and boss_phase() >= 2 and x", err));
+
+        CHECK(err.empty() && refs.mods == std::vector<std::string>({ "shields", "boss_phase" }) && refs.variables == std::vector<std::string>({ "x" }));
+        CHECK(!parseCondition("shields(player", err) && !err.empty());
+
+        Runner r;
+        Facts f;
+        std::vector<std::string> errors;
+        std::string seen;
+
+        f.mod = [&](const std::string& name, const std::string& arg) {
+
+            seen += name + "(" + arg + ") ";
+
+            return name == "shields" ? 20.0 : 0.0;
+        };
+
+        const auto rules = parseScript("when true: shields(player) < 30\n  voice 1\nend\nwhen start if radar()\n  voice 2\nend\nwhen start if missing(a)\n  voice 3\nend\n", errors);
+        const auto dropped = r.reset(rules, kAll, true, [](const std::string& n) { return n != "missing"; });
+
+        CHECK(errors.empty() && dropped.size() == 1 && dropped[0].find("no mod adds the check \"missing\"") != std::string::npos);
+
+        r.tick(0.0f, 0.0f, f);
+        CHECK(fired(r) == Fired({ "voice:1" }) && seen == "shields(player) radar() ");
+
+        r.setVariable("x", 7);
+        CHECK(r.variable("x") == 7);
+    }
+
     // after_once_waits_for_condition: "when after 10 if x" fires at the first tick past 10 s where x holds
     {
         Runner r;

@@ -336,7 +336,15 @@ private:
     std::map<std::string, int> best_;
 };
 
-// Templates are the playable stock levels 0x00-0x12. Folders are one plain name (assets/level/<folder>/).
+// Templates are the playable stock levels 0x00-0x12, and 0x14, where the player is an AT-ST (the CHICKEN passcode's level). It has no medal
+// thresholds, SELECT LEVEL picture or game save slot of its own. Folders are one plain name (assets/level/<folder>/).
+constexpr int kLastStockLevel = 0x12;
+constexpr int kAtStLevel = 0x14;
+
+inline bool isTemplate(int level) {
+    return (level >= 0 && level <= kLastStockLevel) || level == kAtStLevel;
+}
+
 inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::string& text, std::vector<std::string>& errors) {
     std::vector<ModLevel> out;
     const auto doc = nlohmann::json::parse(text, nullptr, false);
@@ -425,8 +433,12 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
             if (errors.size() != before) l.objectives.clear();
         }
         const bool plain = !l.folder.empty() && l.folder.size() <= kMaxFolder && l.folder.find_first_of("/\\") == std::string::npos && l.folder != "." && l.folder != "..";
-        if (l.tmpl < 0 || l.tmpl > 0x12 || !plain || l.id.empty()) {
-            errors.push_back(mod + ": level '" + l.id + "' needs a template 0-18 and a plain folder name of at most 48 characters");
+        if (!isTemplate(l.tmpl) || !plain || l.id.empty()) {
+            errors.push_back(mod + ": level '" + l.id + "' needs a template 0-18 or 20 and a plain folder name of at most 48 characters");
+            continue;
+        }
+        if (l.tmpl > kLastStockLevel && !l.hasMedals) {
+            errors.push_back(mod + ": level '" + l.id + "' needs its own medals, as its template has none");
             continue;
         }
         out.push_back(std::move(l));

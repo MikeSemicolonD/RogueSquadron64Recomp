@@ -228,6 +228,11 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | CONTINUE | A player pressed continue on the debrief; both leave it once each side has. |
 | SKIP | Host to client: a cutscene skip, tagged with the scene it was made in (see [Cutscene skip sharing](#cutscene-skip-sharing)). |
 | BYE | Quit, mismatch, or the host refusing a password (`WrongPassword`). |
+| MOD | Both: another mod's bytes on a named channel (see [Mod channels](#mod-channels)). |
+
+### Mod channels
+
+The mod publishes the `mp.channel` host-API service ([include/rs64/mp_channel.h](../../include/rs64/mp_channel.h)), so other mods can keep their own state in step between the two players without a protocol of their own. `send(channel, data, size, reliable)` sends up to 1024 bytes as a MOD message (the channel name, at most 31 characters, then the bytes); `listen(channel, fn, user)` hands each one the other player sends on that channel to `fn` on the game thread, from `drain()`. Prefix the channel with the mod's id. A channel nobody listens to drops its messages, so both players need the mod, and an older build ignores MOD messages. `connected()` and `player()` (0 host, 1 client) say who is on the other end.
 
 `rs64_ghost_quit` (called from the quit path in `input_host.cpp` before `_Exit`) sends BYE (`Quit`) and flushes for up to 200 ms, so the other player is told at once instead of waiting for the connection timeout. The 200 ms wait is acceptable only on that exit path. `ROGUESQ_MP_TEST_QUIT` ends the host abruptly; with `ROGUESQ_MP_TEST_QUIT_CLEAN=1` it takes the menu quit path and sends BYE.
 
