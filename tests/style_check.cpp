@@ -1,4 +1,4 @@
-// Style checks for src/, mods/multiplayer-native/src and relay-server/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line. The web JS gets the first and last plus its own (AGENTS.md "Web JS").
+// Style checks for src/, mods/multiplayer-native/src and relay-server/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line. The web JS gets the first and last plus its own (docs/engine/web-js-style.md).
 // Usage: style_check <repo root> [--update-baseline]. Exits 1 on findings not in tools/style/baseline.txt.
 #include <algorithm>
 #include <cctype>
@@ -44,7 +44,7 @@ static std::vector<std::string> findings(const fs::path& root) {
     static const std::regex two(R"(;\s+(if|while)\s*\()");
     static const std::regex include_re(R"re(^\s*#\s*include\s+"([^"]+)")re");
     // Base-game headers the multiplayer mod may include; anything else it needs goes through the host API (mods/multiplayer-native/CMakeLists.txt lists the same files).
-    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/camera_shots.h", "json/json.hpp", "relay_protocol.h"};
+    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/mp_channel.h", "rs64/camera_shots.h", "json/json.hpp", "relay_protocol.h"};
     const std::string mp_dir = "mods/multiplayer-native/src";
     std::vector<std::pair<std::string, fs::path>> files;
     for (const std::string dir : {std::string("src"), mp_dir, std::string("relay-server/src")}) {
@@ -78,7 +78,7 @@ static std::vector<std::string> findings(const fs::path& root) {
             if (std::regex_search(code, two) && s.rfind("for", 0) != 0) out.push_back(rel + ": two statements on one line: " + head60(s));
         }
     }
-    // Web JS (tools/web, AGENTS.md "Web JS"): no comment after code and one statement per line. Strings and regex literals are blanked first.
+    // Web JS (tools/web, docs/engine/web-js-style.md): no comment after code and one statement per line. Strings and regex literals are blanked first.
     std::vector<fs::path> js;
     for (auto it = fs::recursive_directory_iterator(root / "tools/web"); it != fs::recursive_directory_iterator(); ++it) {
         if (it->is_directory() && it->path().filename() == "node_modules") {
@@ -86,7 +86,9 @@ static std::vector<std::string> findings(const fs::path& root) {
             continue;
         }
         auto ext = it->path().extension();
-        if (it->is_regular_file() && (ext == ".js" || ext == ".mjs") && it->path().filename() != "voice_cats.js") js.push_back(it->path());
+        const auto name = it->path().filename();
+
+        if (it->is_regular_file() && (ext == ".js" || ext == ".mjs") && name != "voice_cats.js" && name != "coi-serviceworker.js" && name != "rs64tint.js") js.push_back(it->path());
     }
     std::sort(js.begin(), js.end());
     for (auto& f : js) {

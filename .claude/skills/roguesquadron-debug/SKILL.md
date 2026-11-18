@@ -70,7 +70,7 @@ Grep the log for the SEH line:
 [recomp] SEH caught: thread_entry=0x... code=0xC0000005 kind=READ av_target=0x... av_pc=0x... av_rva=0xNNNNNN
 ```
 - `code=0xC0000005` = hardware AV (our bug class). `code=0xE06D7363` = a C++ exception (usually benign,
-  recovered by the outer catch — see AGENTS.md exception pipeline). Focus on C0000005 on the game thread.
+  recovered by the outer catch — see "Exception handling pipeline" in docs/reference/game-architecture.md). Focus on C0000005 on the game thread.
 - A **small** `av_target` (< 0x1000 + offset) = NULL+offset deref. A **huge** `av_target`
   (e.g. 0x1A2...) = a wild pointer computed from a bad base, then run through `MEM_W` (recomp.h) which
   does NO masking: `*(int32_t*)(rdram + ((reg+offset) - 0xFFFFFFFF80000000))`. An out-of-RDRAM guest
@@ -79,7 +79,7 @@ Grep the log for the SEH line:
 ```bash
 echo 0xNNNNNN | "C:/Program Files/LLVM/bin/llvm-symbolizer.exe" \
    --obj=build/Debug/RogueSquadron64Recomp.exe --relative-address
-# -> functionName  E:\Projects\N64Recomp\RecompiledFuncs\funcs_NN.c:LINE:0
+# -> functionName  RecompiledFuncs\funcs_NN.c:LINE:0
 ```
 `llvm-nm` on the exe returns nothing (symbols live in the PDB, not the COFF table); the symbolizer uses
 the PDB. Do this for EVERY distinct `av_rva` in the run (`grep -oE "av_rva=0x[0-9A-Fa-f]+" | sort -u`).
@@ -98,7 +98,7 @@ Read it before instrumenting.
 
 ## Where and how to apply fixes
 
-### NEVER hand-edit `E:/Projects/N64Recomp/RecompiledFuncs/funcs_*.c` for logic/guards.
+### NEVER hand-edit `RecompiledFuncs/funcs_*.c` for logic/guards.
 Those files are auto-generated; the next regen silently strips inline edits. This has burned the project
 repeatedly. Diagnostic `fprintf` probes there are fine (rate-limit them), but every load-bearing
 override belongs in a `[[patches.hook]]` in `rogue_squadron.toml`.

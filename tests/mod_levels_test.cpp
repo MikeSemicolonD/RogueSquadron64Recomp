@@ -34,6 +34,19 @@ int main() {
         CHECK(errors.size() == 5);
         CHECK(parseModLevels("m", "not json", errors).empty());
     }
+    // takes_the_atst_level_with_its_own_medals: template 20 (no stock thresholds) needs medals; 19 stays refused
+    {
+        std::vector<std::string> errors;
+        const auto lv = parseModLevels("m", R"({ "levels": [
+            { "id": "a", "title": "A", "template": 20, "folder": "a" },
+            { "id": "b", "title": "B", "template": 20, "folder": "b", "medals": {
+                "bronze": { "time": 9, "kills": 1, "accuracy": 1, "friendlies": 0 },
+                "silver": { "time": 8, "kills": 2, "accuracy": 2, "friendlies": 0 },
+                "gold": { "time": 7, "kills": 3, "accuracy": 3, "friendlies": 0 } } } ] })", errors);
+        CHECK(lv.size() == 1 && lv[0].id == "b" && lv[0].tmpl == 20);
+        CHECK(errors.size() == 1);
+        CHECK(isTemplate(20) && !isTemplate(19) && !isTemplate(21));
+    }
     // remaps_template_files_the_mod_ships: a lookup of the template's level file or intro/extro goes to the mod level's own copy, if it has one
     {
         ModLevel l;
@@ -275,6 +288,11 @@ int main() {
         CHECK(crawlServedPath("crawl/shadows/backdrop") == "backdrop/shadows");
         CHECK(crawlServedPath("crawl/shadows/dat") == "frontend/starwars/shadows");
         CHECK(crawlServedPath("crawl/shadows/crawl.json").empty() && crawlServedPath("level/x/dat").empty());
+        CHECK(previewName("a_folder_name_much_longer_than_the_limit").size() + 5 <= 15);
+        CHECK(previewName("a") != previewName("b"));
+        CHECK(previewServedPath("level/desert/preview") == "backdrop/" + previewName("desert"));
+        CHECK(previewServedPath("level/desert/previewalpha") == "backdrop/" + previewName("desert") + "alpha");
+        CHECK(previewServedPath("level/desert/brief").empty() && previewServedPath("crawl/x/backdrop").empty());
 
         // own_planet_redirects: the stock backdrop the crawl looks up maps to its own
         const std::set<std::string> both = { "crawl/shadows/backdrop", "crawl/shadows/dat" };
@@ -322,6 +340,29 @@ int main() {
         CHECK(crawlCameraAt(keys, 86.5f, pos, rot) && near(pos[1], 2.5f));
         CHECK(crawlCameraAt(keys, 120, pos, rot) && pos[1] == 5 && rot[0] == 40);
         CHECK(!crawlCameraAt({}, 1, pos, rot));
+    }
+    {
+        // Two type 0 records listed at 0x48 (offsets from the list), each numbered at +4 as the game reads them.
+        std::vector<uint8_t> dat(0x80, 0);
+        const auto put32 = [&](size_t o, uint32_t v) { dat[o] = uint8_t(v >> 24); dat[o + 1] = uint8_t(v >> 16); dat[o + 2] = uint8_t(v >> 8); dat[o + 3] = uint8_t(v); };
+        put32(0x00, 2);
+        put32(0x04, 0x48);
+        put32(0x48, 0x10);
+        put32(0x4C, 0x20);
+        dat[0x58 + 5] = 0;
+        dat[0x68 + 5] = 1;
+        CHECK(datProblem(dat.data(), dat.size()).empty());
+
+        dat[0x68 + 5] = 0xB3;
+        CHECK(datProblem(dat.data(), dat.size()).find("numbered 179") != std::string::npos);
+
+        dat[0x68 + 5] = 1;
+        put32(0x4C, 0x100);
+        CHECK(datProblem(dat.data(), dat.size()).find("past the end") != std::string::npos);
+
+        put32(0x00, 0x1000);
+        CHECK(datProblem(dat.data(), dat.size()).find("runs past") != std::string::npos);
+        CHECK(!datProblem(dat.data(), 0x20).empty());
     }
     std::printf("mod_levels_test: ok\n");
     return 0;

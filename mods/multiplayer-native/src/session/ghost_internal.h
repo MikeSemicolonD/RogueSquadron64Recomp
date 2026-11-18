@@ -23,6 +23,7 @@ uint32_t rs64_ghost_is_client(void);
 
 // Registers the multiplayer text sources, actions, the key handler and the cutscene-skip input filter with the host registry.
 void rs64_ghost_register_host(void);
+const struct rs64_mp_channel* rs64_ghost_channel(void);
 uint32_t rs64_lobby_menu_session(void);
 void rs64_lobby_host(void);
 void rs64_lobby_join(void);
@@ -45,11 +46,14 @@ void rs64_lobby_edit_toggle(void);
 void rs64_lobby_edit_off(void);
 int rs64_ghost_puppet_model(void);
 int rs64_ghost_remote_foil(void);
+void rs64_ghost_remote_walker(float head[2], uint8_t shots[2], float* walk);
+void rs64_ghost_atst_fire(uint8_t*, recomp_context*);
 uint32_t rs64_lobby_ready(void);
 void rs64_lobby_input(uint8_t* rdram);
 int rs64_ghost_puppet(const float seed[9], float dt, float out[12]);
 void rs64_ghost_mission_end(uint8_t* rdram);
 uint32_t rs64_ghost_block_result(void);
+void rs64_ghost_speech_clip(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_take_start_offset(void);
 uint32_t rs64_ghost_want_puppet(float out_pos[3]);
 void rs64_ghost_puppet_spawned(void);
@@ -61,6 +65,8 @@ void rs64_ghost_tow_load(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_tow_release(uint8_t* rdram, recomp_context* ctx);
 void rs64_ghost_mission_init(uint8_t*, recomp_context*);
 void rs64_ghost_frame(uint8_t*, recomp_context*);
+void rs64_ghost_solo_frame(uint8_t*, recomp_context*);
+void rs64_ghost_npc_hit(uint8_t*, recomp_context*);
 void rs64_ghost_powerup_touch(uint8_t*, recomp_context*);
 void rs64_ghost_powerup_collect(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_gate_response(uint32_t, uint32_t);
@@ -72,6 +78,7 @@ uint32_t rs64_ghost_objective_event(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_trigger_effect(uint8_t*, recomp_context*);
 void rs64_ghost_walker_tripped(uint8_t*, recomp_context*);
 void rs64_imposter_tick(uint8_t*, recomp_context*);
+bool rs64_imposter_atst_tick(uint8_t*, recomp_context*);
 void rs64_imposter_activation(uint8_t*, recomp_context*, uint32_t);
 void rs64_imposter_stream(uint8_t*, recomp_context*);
 void rs64_lobby_mission_select_init(uint8_t*, recomp_context*);
@@ -113,6 +120,9 @@ struct Ghost {
     // Client: the host's mission-select cursor and screen state (BROWSE), -1 before the first. Host: what it last sent.
     int host_cursor = -1;
     int host_state = 0;
+
+    // This side's first mod level entry on SELECT LEVEL; host_pick and host_cursor hold the host's link values (entry_to_wire).
+    int mod_base = 0xFF;
     int sent_browse = -1;
 
     // Craft select: nobody leaves until both picked. release_cool spaces the injected confirm until the hangar takes it.
@@ -145,7 +155,16 @@ struct Ghost {
 
     // The other player's S-foils from their STATE, 0 closed .. 250 open.
     int remote_foil = 250;
+
+    // Walkers: the other player's head turn and pitch, per-gun shot counts and walk cycle position from their STATE, and this player's own shot counts.
+    float remote_head[2] = {};
+    uint8_t remote_shots[2] = {};
+    float remote_walk = 0.0f;
+    uint8_t shots[2] = {};
     int follow_cool = 0;
+
+    // Client: B pressed on mission select, so it stops following the host and its own B takes it out to the main menu.
+    bool leaving = false;
     uint32_t status_buf = 0;
 
     // A handshake completed (menus or ROGUESQ_MP): ghost mode stays on for later missions. from_menu: the menus started it, so ghost mode is on without ROGUESQ_MP.
@@ -176,6 +195,11 @@ struct Ghost {
     rs64::net::CodeEditor host_pin;
     bool host_pin_set = false;
 
+    // HOST SETTINGS' friendly fire (roguesq_net.json friendly_fire); session_ff: the rule this session plays by (a client's comes from the host's RULES); ff_damage: the other player's hits not applied yet.
+    bool friendly_fire = false;
+    bool session_ff = false;
+    uint32_t ff_damage = 0;
+
     // The password this player sends when joining (join_pin_set false: none); pin_mode: a host refused it, so the MULTIPLAYER page's address row edits it until the next JOIN.
     rs64::net::CodeEditor join_pin;
     bool join_pin_set = false;
@@ -192,6 +216,7 @@ struct Ghost {
     bool brief_sent = false;
     uint32_t skips_seen = 0;
     uint16_t skip_prev_buttons = 0;
+    int crawl_skips_seen = 0;
 
     // 0 none, 1 hangar launch, 2 cutscene timeline, 3 opening crawl.
     int skip_scene = 0;
@@ -241,9 +266,18 @@ struct Ghost {
     int pending_result = -1;
     int host_result = -1;
     int allow_transition = -1;
+
+    // End-of-mission voice lines: the host forwards the clips it starts from its end request until its result lands; the client plays them once the host's result applied, skipping any it just played itself.
+    bool end_clips_open = false;
+    int end_clips_sent = 0;
+    std::vector<rs64::net::EndClip> end_clips;
+    std::vector<std::pair<uint32_t, uint32_t>> own_clips;
     std::vector<FrameInput> frames;
     uint32_t frame = 0;
     int missions = 0;
+
+    // The level of the last mission played in session (-1: the last one was played alone).
+    int session_level = -1;
     FILE* trace = nullptr;
     uint8_t* rdram = nullptr;
     bool result_sent = false;
@@ -261,11 +295,6 @@ struct Ghost {
     // The other player went down: frames left before their shot-down puppet is removed (-1 none). Spectating: this side's craft already took their death.
     int puppet_dying = -1;
     bool spectate_hit = false;
-
-    // Mission end. Host: its end landed and the client was told. Client: the host's end landed; frames this side's end has waited on it or on a spectated death (kEndWaitFrames at most).
-    bool landed_sent = false;
-    bool host_landed = false;
-    int end_wait = 0;
 
     // Tow cables. Sent: the local cable's phase and head index last sent (-1 none). Received: the other player's cable state and the mirror segment pool the game's tow-cable code draws (0 = not loaded).
     uint8_t tow_sent_phase = 0;
@@ -350,9 +379,6 @@ uint8_t mission_tag();
 // Frames into a mission before the other player's damage, triggers and trips are applied.
 constexpr uint32_t kDamageSettleFrames = 30;
 
-// The longest a mission end waits for the host's end cue or a spectated death before it lands anyway.
-constexpr int kEndWaitFrames = 300;
-
 // world_sync.cpp: the host's objective state, the level's DAT items (health, mirrored damage), shared power-ups, the client's trigger volumes.
 void read_objectives(const uint8_t* rdram, rs64::net::ObjSnapshot* s);
 void write_objectives(uint8_t* rdram, const rs64::net::ObjSnapshot& s);
@@ -370,6 +396,9 @@ void apply_remote_tows(uint8_t* rdram, recomp_context* ctx);
 void sync_tow_cable(uint8_t* rdram);
 void apply_tow_seg(uint8_t* rdram, const rs64::net::TowSeg& t);
 
+// Player 1's craft handler extension (slot table 0x80130BB0 [player slot 0x80137DBA] -> ctx +4; a walker's own block), 0 while there is none.
+uint32_t player_ext(const uint8_t* rdram);
+
 // The HIT dealDamagetoDatItem sends (slotDispatcherIter(slot, 5, msg), weapon 7, damage capped at 0xFFFF), without its follow-up lookup, which reads a freed slot after a lethal hit.
 void send_hit(uint8_t* rdram, recomp_context* ctx, uint32_t slot, uint32_t damage);
 void show_status(uint8_t* rdram, recomp_context* ctx, uint32_t font, uint32_t slot, int y, const std::string& text, std::string* shown);
@@ -380,6 +409,8 @@ constexpr uint32_t kLives = 0x80130B10u;
 constexpr uint32_t kPlayerHealth = 0x80137E7Cu;
 // Shoots player 1's craft down through the game's own damage path (applyPlayerCraftDamage 0x800B13E0, which runs the death at 0 health), after clearing its spawn shield (+0xC8, 1.0 after a spawn: no damage).
 void kill_player(uint8_t* rdram, recomp_context* ctx);
+// The other player's friendly-fire hits (ff_damage) onto player 1's craft through applyPlayerCraftDamage.
+void apply_friendly_fire(uint8_t* rdram, recomp_context* ctx);
 
 // ROGUESQ_MP_TEST=<op>@<frame>[:<arg>],...: scripted test steps on mission frames, e.g. die@150,quit@900:1 (run-mp.ps1 builds each instance's list).
 struct TestStep {

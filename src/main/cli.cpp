@@ -10,7 +10,9 @@
 #ifdef _WIN32
 
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 
 #endif
@@ -125,6 +127,8 @@ static const CliFlag kCliFlags[] = {
     {"language",         "ROGUESQ_LANGUAGE",         CliFlag::Value, "",  "",  "game text language for this run: en | de | fr or a language mod's code (the saved setting is unchanged)"},
     {"window-size",     "ROGUESQ_WINDOW_SIZE",      CliFlag::Value, "",  "",  "initial window client size WxH (e.g. 1280x720)"},
     {"widescreen",       "ROGUESQ_WIDESCREEN",       CliFlag::Bool,  "1", "0", "expand the aspect ratio to fill the window"},
+    {"vr",               "ROGUESQ_VR",               CliFlag::Bool,  "1", "0", "play in a VR headset (OpenXR builds)"},
+    {"preset",           "ROGUESQ_VIDEO_CONFIG",     CliFlag::Value, "",  "",  "display settings from a video preset (low | medium | high | ultra | original | vr) or a settings file; changes save there"},
     {"draw-distance",    "ROGUESQ_DRAW_DIST",        CliFlag::Value, "",  "",  "draw distance multiplier (e.g. 1.3; terrain and fog capped at 2.5)"},
     {"force-level",      "ROGUESQ_FORCE_LEVEL",      CliFlag::Value, "",  "",  "missions you launch from the menus are level N (0-18)"},
     {"force-craft",      "ROGUESQ_FORCE_CRAFT",      CliFlag::Value, "",  "",  "missions you launch from the menus use craft N (0-8)"},
@@ -135,6 +139,8 @@ static const CliFlag kCliFlags[] = {
 
     {"boot-target",      "ROGUESQ_BOOT_TARGET",      CliFlag::Value, "",  "",  "skip the intro to a target: menu | menu:LABEL/LABEL... | demo:N | level:N[,craft] | abort:N | cutscene:N | lobby:host|join[,level]; N can be a mod level's id"},
     {"record",           "ROGUESQ_LS_RECORD",        CliFlag::Value, "",  "",  "record the next mission's input to <path.rec>, to replay it later"},
+    {"replay",           "ROGUESQ_LS_REPLAY",        CliFlag::Value, "",  "",  "play a recording made with --record (start its level with --boot-target)"},
+    {"keep-running",     "ROGUESQ_LS_KEEP_RUNNING",  CliFlag::Bool,  "1", "0", "stay on the last screen when a replay ends instead of quitting"},
 };
 
 static void print_cli_usage()
@@ -267,7 +273,21 @@ int apply_args(int argc, char* argv[]) {
                     return 2;
                 }
 
-                set_env(found->env, val);
+                std::string value = val;
+
+                if (!strcmp(found->flag, "preset") && !std::filesystem::exists(value))
+                {
+                    value = "video-presets/" + value + "/roguesq_video.json";
+
+                    if (!std::filesystem::exists(value))
+                    {
+                        fprintf(stderr, "error: no preset or file named '%s'\n", val);
+
+                        return 2;
+                    }
+                }
+
+                set_env(found->env, value.c_str());
             }
 
             continue;

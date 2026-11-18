@@ -1,5 +1,6 @@
 # The steam-relay native mod: multiplayer's "mp.transport" service over Steam (app id 480). Compiles against a local Steamworks SDK's headers (STEAMWORKS_SDK_DIR) and links nothing from it; the player supplies the runtime library.
 # Added by the game's CMake only when the SDK is present; one folder per config, staged by tools/mods/stage_mods.cmake and by the POST_BUILD below.
+cmake_minimum_required(VERSION 3.20)
 set(SR_OUT "${RS64_BUILT_MODS_DIR}/$<CONFIG>/steam-relay")
 add_library(steam_relay SHARED ${CMAKE_CURRENT_SOURCE_DIR}/steam_mod.cpp)
 set_target_properties(steam_relay PROPERTIES

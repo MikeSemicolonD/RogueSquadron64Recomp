@@ -7,6 +7,7 @@ body:
     attributes:
       label: Kind
       description: Fixes to the base game's own behaviour are usually better as a mod; see [CONTRIBUTING.md](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/CONTRIBUTING.md#fixing-bugsissues).
+      multiple: true
       options:
         - Recomp. Feature (built into the port)
         - Mod hook / host API addition

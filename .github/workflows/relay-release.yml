@@ -53,8 +53,8 @@ jobs:
             (cd stage && 7z a "../$pkg" *)
           else
             cp build-relay/rs64_relay stage/
-            pkg="rs64_relay-${{ matrix.name }}-$ver.tar.gz"
-            tar -czf "$pkg" -C stage .
+            pkg="rs64_relay-${{ matrix.name }}-$ver.tar.xz"
+            tar -cJf "$pkg" -C stage .
           fi
           echo "PKG=$pkg" >> "$GITHUB_ENV"
 

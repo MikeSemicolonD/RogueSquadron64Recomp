@@ -4,7 +4,7 @@
 # Usage: powershell -ExecutionPolicy Bypass -File tools\setup\setup.ps1 [-Rom <path>] [-MipsToolchainDir <path>]
 param(
     [string]$Rom = "",
-    [string]$MipsToolchainDir = "E:/mips-toolchain"
+    [string]$MipsToolchainDir = $env:MIPS_TOOLCHAIN_DIR
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,8 +63,14 @@ if (-not (Test-Path $vswhere) -or -not (& $vswhere -latest -products * -requires
     Fail "Visual Studio 2022 with the 'C++ Clang tools for Windows' component is needed"
 }
 
+$onPath = Get-Command mips64-elf-gcc.exe -ErrorAction SilentlyContinue
+
+if (-not $MipsToolchainDir -and $onPath) {
+    $MipsToolchainDir = Split-Path (Split-Path $onPath.Source)
+}
+
 while (-not (Test-Path "$MipsToolchainDir/bin/mips64-elf-gcc.exe")) {
-    Write-Host "MIPS GCC is not in $MipsToolchainDir. Download and unzip gcc-toolchain-mips64: https://github.com/n64-tools/gcc-toolchain-mips64/releases"
+    Write-Host "MIPS GCC was not found. Download and unzip gcc-toolchain-mips64: https://github.com/n64-tools/gcc-toolchain-mips64/releases"
     $MipsToolchainDir = (Read-Host "Folder that holds bin\mips64-elf-gcc.exe").Trim().Trim('"', "'")
 }
 

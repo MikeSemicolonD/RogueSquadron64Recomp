@@ -38,6 +38,7 @@
 #include "input/input_host.h"
 #include "input/touch_config.h"
 #include "util/mips_call.h"
+#include "util/host_ram_map.h"
 #include "host_api/host_api.h"
 #include "util/debug_logs.h"
 
@@ -55,8 +56,8 @@ constexpr uint16_t PAUSE_BACK_TID  = 0x0039;
 constexpr uint32_t PAUSE_ROOT      = 0x109DD4;
 constexpr uint32_t PAUSE_GS        = 0x109E24;
 constexpr uint32_t PAUSE_GS_SPACER = 0x109E54;
-constexpr uint32_t PAUSE_HOST      = 0xC43000;
-constexpr uint32_t PAUSE_HOST_END  = 0xC44000;
+constexpr uint32_t PAUSE_HOST      = RS64_HR_PAUSE_MENU - 0x80000000u;
+constexpr uint32_t PAUSE_HOST_END  = RS64_HR_PAUSE_MENU_END - 0x80000000u;
 constexpr uint32_t PAUSE_STRIDE    = 0x80;
 constexpr uint8_t  PAUSE_GS_ID     = 1;
 constexpr uint8_t  PAUSE_FIRST_PAGE = 4;
@@ -100,13 +101,17 @@ uint8_t s_back_from = 0;
 int16_t s_back_cursor = 0;
 bool s_back_wait = false;
 
-uint8_t pause_page_id(const std::string& page)
+} // namespace
+
+uint8_t rs64::menucfg::pause_page_id(const std::string& page)
 {
 
     const uint8_t id = page_id(page);
 
     return id == 0xFF ? 0xFF : (uint8_t)(PAUSE_FIRST_PAGE + (id - FIRST_PAGE_ID));
 }
+
+namespace {
 
 const std::string* pause_page_name(uint8_t id)
 {
@@ -209,9 +214,10 @@ void add_pause_button(PauseWriter& w, const Button& b, uint8_t self)
     const uint16_t mark = (uint16_t)(PAUSE_MARK_BASE + (&b - config().buttons.data()));
     BehaviorFns fns = resolve_behavior(b.mod_id, b.type, b.behavior);
 
-    // A slider is the native four-row widget (title, endpoints, two bar halves) while a channel byte is free and the rows fit, else a text bar.
+    // A slider is the native four-row widget (title, endpoints, two bar halves) plus the spacer the game's AUDIO page puts after each, while a channel byte
+    // is free and the rows fit, else a text bar.
     const int k = (int)s_pause_sliders.size();
-    const bool fits = w.lines + 4 + w.line_reserve() <= PAUSE_MAX_LINES && w.off + 6u * (4u + (uint32_t)w.reserve) + 2u <= w.limit;
+    const bool fits = w.lines + 4 + w.line_reserve() <= PAUSE_MAX_LINES && w.off + 6u * (5u + (uint32_t)w.reserve) + 2u <= w.limit;
 
     if (b.type == BType::Slider && b.confirm.empty() && SND_CH_FIRST + k <= SND_CH_LAST && fits)
     {
@@ -225,6 +231,7 @@ void add_pause_button(PauseWriter& w, const Button& b, uint8_t self)
         w.add(0x4400, PAUSE_TEXTID, (uint16_t)(PAUSE_SLIDER_MARK + k), std::string{});
         w.add(0x4800, (uint16_t)(PAUSE_BAR_TID + k), 0, std::string{});
         w.add(0x4800, (uint16_t)(PAUSE_BAR_TID + k), 1, std::string{});
+        w.add(0x1000, 0x0001, 0, std::string{});
 
         return;
     }

@@ -10,6 +10,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 > [!IMPORTANT]
 > **Heavily AI-assisted.**
+>
 > Most of the debugging, architectural decisions, and code here were produced with Claude.
 
 ---
@@ -61,12 +62,15 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Frame Interpolation:** smooths the game's native ~30 fps to match your monitor's refresh rate.
 - **Support for Texture packs:** RT64 texture-replacement packs load at startup.
 - **Ray Tracing Support:** reflections, shadows, dynamic lights from lasers and explosions, and light shafts through fog. [Has some caveats](#ray-tracing-caveats).
+- **60+ FPS:** run the game beyond the original's *near* 30 FPS limitations and use Vulkan to take it even higher.
+- **VR Support:** completely immerse yourself in the game, viewing it like never before using OpenXR.
 
 #### Input
 
 - **Keyboard and mouse:** fly with the mouse and fire with the mouse buttons.
   - **Menu navigation with the Mouse:** ability to seamlessly select and control menu navigation exclusively with the mouse via cursor placement, LMB (Start) & RMB (Back)
 - **Gamepads:** any SDL-supported controller works, with gamepad lightbar support.
+  - **Gyro aiming:** turn on **GYRO STEERING** in Game Settings to aim by moving the controller. Tested on a DualSense; Steam Deck and Switch Pro are untested.
 - **Flight sticks and H.O.T.A.S.:** use the throttle lever to set your speed, and twist or rudder roll.
 - **Rumble:** the game's own Rumble Pak effects play on gamepads and force-feedback joysticks. Fully adjustable in `roguesq_input.json`.
 - **Full rebinding:** press **F6** in-game to rebind actions, change sensitivity, adjust deadzones, and rumble settings OR use the [Controls Menu Mod](#mods). See [Controls](#controls).
@@ -78,16 +82,19 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Multiplayer (experimental)
 
-- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu.
-  - Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result. Works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
-  - Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
-  - **Multiplayer** is shipped as a `multiplayer-native` mod.
-- **Co-op over Steam using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
-  - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, the MULTIPLAYER will default to using direct connections.
+- **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result.
+  - Multiplayer is shipped as a `multiplayer-native` mod. Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
+  - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
+- **Ways to connect:**
+  - **Direct:** works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
+  - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi direct (macOS uses 'Network Sharing').
+  - **Steam, using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
+  - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
+- **Setup notes:**
+  - **Windows Firewall asks to allow the game** the first time it runs. For co-op, tick **Private networks** (for home and LAN play) and press **Allow access**. If you press Cancel, co-op can't take incoming connections until you allow `RogueSquadron64Recomp.exe` under Windows Security > Firewall > Allow an app through firewall.
+  - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, MULTIPLAYER defaults to direct connections.
   - **Steam Relay OFF by default:** press F6 in the game, turn on **Steam Relay** in the Mods window OR toggle the mod in the in-game mod menu.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
-- **Co-op using a self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
-- See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 
 > [!NOTE]
 > Steam-Relay mod on Linux, Steam Deck and macOS is untested.
@@ -119,27 +126,27 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 <div align="center">
 
-| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. |
-| --- | --- | --- | --- | --- | --- |
-| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Mouse X/Y | Analog stick | Left stick | Stick X/Y |
-| Fire blasters | <kbd>Space</kbd> | <kbd>LMB</kbd> | B | X | Button 1 (trigger) |
-| Fire secondary | <kbd>Alt</kbd> | <kbd>RMB</kbd> | C-Left | Back | Button 2 |
-| Fire mode | <kbd>X</kbd> | — | C-Down | B | Button 6 |
-| Thrust | <kbd>W</kbd> | — | A | A | Button 3 |
-| Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 |
-| Speed (positional) | — | — | — | — | Throttle lever |
-| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick |
-| Special | <kbd>F</kbd> | — | C-Right | Guide | Button 5 |
-| Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad | — |
-| Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad | — |
-| Close view | <kbd>B</kbd> | — | D-Pad Right | D-Pad | — |
-| Switch view | <kbd>N</kbd> | — | L | Left shoulder | Button 8 |
-| In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — |
-| Look around | <kbd>Q</kbd> | — | C-Up | Y | Hat |
-| Drop camera | <kbd>Z</kbd> | — | D-Pad Left | D-Pad | — |
-| Menu confirm | <kbd>Enter</kbd> | — | A | A | Button 3 |
-| Back | <kbd>Backspace</kbd> | — | B | X | Button 1 |
-| Pause | <kbd>Esc</kbd> | — | Start | Start | — |
+| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. | Quest HMD (VR) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Mouse X/Y | Analog stick | Left stick | Stick X/Y | LS |
+| Fire blasters | <kbd>Space</kbd> | <kbd>LMB</kbd> | B | A (South) | Button 1 (trigger) | A |
+| Fire secondary | <kbd>Alt</kbd> | <kbd>RMB</kbd> | C-Left | B (East) | Button 2 | B |
+| Fire mode | <kbd>X</kbd> | — | C-Down | Y (North) | Button 6 | R1 (Click down) |
+| Thrust | <kbd>W</kbd> | — | A | Right trigger | Button 3 | R2 |
+| Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 | L2 |
+| Speed (positional) | — | — | — | — | Throttle lever | — |
+| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | Both grips |
+| Special | <kbd>F</kbd> | — | C-Right | X (West) | Button 5 | X |
+| Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad Up | — | — |
+| Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad Down | — | — |
+| Close view | <kbd>B</kbd> | — | D-Pad Right | D-Pad Right | — | — |
+| Switch view | <kbd>N</kbd> | — | L | Back | Button 8 | L1 (Click down) |
+| In-Game Profiler HUD | <kbd>F5</kbd> | — | — | — | — | — |
+| Look around | <kbd>Q</kbd> | — | C-Up | Left shoulder | Hat | — |
+| Drop camera | <kbd>Z</kbd> | — | D-Pad Left | D-Pad Left | — | — |
+| Confirm (Menu) | <kbd>Enter</kbd> / <kbd>Space</kbd> | — | A | A | Button 3 | A |
+| Back | <kbd>Backspace</kbd> | — | B | B | Button 1 | B |
+| Pause | <kbd>Esc</kbd> | — | Start | Start | — | Menu |
 
 </div>
 
@@ -177,6 +184,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | <kbd>F5</kbd> | In-game profiler HUD | All |
 | <kbd>F6</kbd> | Controls window (rebinding, joysticks, rumble, mouse) | All |
 | <kbd>F7</kbd> | FPS counter | All |
+| <kbd>F8</kbd> | VR camera controls via Numpad + Mouse | All (with VR Mode ON) |
 | <kbd>F9</kbd> / <kbd>Shift</kbd>+<kbd>F9</kbd> | Step forward / back through the ray tracing debug views | All |
 | <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
 | <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |
@@ -189,7 +197,13 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 #### Rebinding controls
 
-Rebind in-game under **Options > Controller Settings** (the **Controls Menu** mod, on by default), which lists the actions for the keyboard, gamepad or joystick you open it with. Or press **F6** for the **Controls** window:
+Rebind in-game under **Options > Controller Settings** (the **Controls Menu** mod, on by default), which lists the actions for the keyboard, gamepad, joystick or VR controller you open it with:
+
+- Every action takes two bindings. Press left or right to pick a column; the selected one is shown in braces.
+- **Combos:** hold one input and press another while rebinding to bind the pair, shown as `A - B`. While both are held, the combo replaces the second input's own binding.
+- **Delete**, **Backspace** or holding **A** for 2 seconds clears a binding.
+
+Or press **F6** for the **Controls** window:
 
 - Click **Rebind** or **Add** on an action, then press a key or button or move an axis. **Clear** removes the selected binding.
 - **Joysticks / H.O.T.A.S.** shows each joystick's axes live, with invert and deadzone settings.
@@ -206,13 +220,18 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 > [!IMPORTANT]
 > **Recomp. Issues** are bugs involving rendering, input, hooks and added features like Frame Interpolation and Ray Tracing.
-> All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3Arecomp).
+>
+> All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3A"Recomp.+Issue").
+
+- Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain render. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
 
 ### Game specific Issues
 
 > [!IMPORTANT]
-> **Game Issues** are deep-seated issues that have been in the game since release.
+> **Game Issues** are issues that have been in the game since release.
+>
 > Game Issues are less of a priority since fixing them might take away the charm that those rough edges bring.
+>
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'.
@@ -223,9 +242,13 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Some enemies pop in at a distance because the game spawns them in view whereas the original fog + draw distance would hide most of this.
 
-- Shooting at the lava or colliding against the ground in Raid on Sullust produces fireballs that look dim/muted compared to the other bigger lava explosion effects in the level
+- Shooting at the lava or colliding against the ground in Raid on Sullust produces fireballs that look dim/muted compared to the other bigger lava explosion effects in the level.
 
-- Terrain tile textures don't align perfectly and seem to have a slight cutoff.
+- Textures that are tiled or used in a gridlike form look smoother and lighter than the ones around them, almost like a faint shadow and/or they don't align perfectly. This is because of the textures themselves, not the recomp.
+
+- The select craft text and description font changes when it fades in/out making the text look a little more aliased than the text that displays normally.
+
+- Button doesn't respond to input during the first few frames when it is highlighted.
 
 - The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
 
@@ -233,16 +256,28 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - During the end sequence a few firework effects (After 4 go off in sequence and are visible on screen) don't display.
 
+- Camera jitter after the player dies, spirals out and hits the ground while the camera is over a sharp incline.
+
 #### Ray Tracing Caveats
+
+- With Ray Tracing on, the following levels get light-shaft haze because I genuinely think they visually work better with it:
+  - Search for the Nonnah
+  - Imperial Construction Yard
+  - Escape from Fest
+  - Battle above Taloraan
 
 - Stray/odd shadows in places mostly due to terrain or its edge geometry
 
-- Shadows popping in and out because of geometry being culled when outside the camera's frustum. It has been increased/offset to alleviate this.
+- Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
 
 - Reflections might not look completely accurate because of the nature of Screen Space Reflections
-  - Initial Calamari cutscene doesn't reflect the explosion: physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
+  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
 
 #### Draw distance Caveats
+
+- 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
+  - 'Search for Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
+  - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
 
 - Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
 
@@ -252,10 +287,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 ### Roadmap
 
-- RS64 Improvments/Fixes
-
-- Removing system/frame limits while maintaining others for playability
-- VR Support via OpenXR (Dependent on removing system/frame limits)
+- RS64 Improvements/Fixes
 
 ## Building
 
@@ -450,6 +482,29 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 - **Duplicate symbols:** Apple's `ld64` has no `--allow-multiple-definition`, so the runtime functions this game overrides are declared weak on Apple (`ULTRAMODERN_OVERRIDABLE` in the N64ModernRuntime fork).
 
+### VR
+
+> [!IMPORTANT]
+> Tested on a Quest 2 over Meta Horizon Link.
+
+- **Build:** configure with `-DRS64_OPENXR=ON`. VR needs the Vulkan renderer.
+- **Start:** launch with `--preset vr` to use the [vr video preset](video-presets/vr/roguesq_video.json), which starts in the headset with settings that hold the headset's frame rate. Without a headset or runtime the game starts flat.
+- **Your size:** push the right thumbstick up to grow or down to shrink until the cockpit feels right. Missions, the menus' 3D scenes (the hangar) and cutscenes each keep their own size, saved as `vrScale`, `vrScaleMenus` and `vrScaleCutscenes`.
+- Missions, cutscenes and SELECT LEVEL are in stereoscopic 3D while the menus and results screens show on a virtual screen in front of you.
+
+### Developing VR without a headset
+
+The [Meta VR CLI](https://github.com/meta-quest/agentic-tools) (`metavr`) was instrumental in fixing and debugging VR. Its `metavr xrsim` commands drive the **Meta XR Simulator**, a headset stand-in that runs the real OpenXR path on the desktop. An agent can start the simulator, pick a device and refresh rate, and launch the game against it, then capture frames and read logs without anyone wearing a headset.
+
+```powershell
+metavr xrsim app ensure-running
+metavr xrsim device set --name "Meta Quest 2"
+$env:XR_RUNTIME_JSON = "$env:APPDATA\metavr\tools\xrsim\meta_openxr_simulator.json"
+.\RogueSquadron64Recomp.exe --vr
+```
+
+`ROGUESQ_LOG_VR=1` logs how each headset frame was filled every 2 seconds. Real-headset runs still matter: the simulator lacks some runtime extensions, and only a person in the headset can judge comfort and scale.
+
 ## Architecture
 
 How the port is put together (recompiled code, the forked RT64 and N64ModernRuntime, frame pacing, audio and the override layer) is in [docs/reference/game-architecture.md](docs/reference/game-architecture.md). [docs/README.md](docs/README.md) indexes the rest of the engine docs, including debugging, native mods and co-op.
@@ -505,6 +560,10 @@ Here's a list of MCPs that could be useful for this project:
 ## Contributors
 
 - **[terminalcommand](https://github.com/terminalcommand)**: Assisted in improving the Linux build process, fixed missing tool calls in the CMakeLists, fixed Wayland crashes on Linux and added borderless fullscreen argument.
+
+## Play Testers
+
+- **[gpeter12](https://github.com/gpeter12)**: Helped to test and verify that the recomp. works on Linux Mint 22.3 - Cinnamon 64-bit in addition to testing and verifying the 'setup.sh' to improve the build process for both developers & non-developers.
 
 ## Acknowledgements
 

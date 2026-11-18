@@ -1,8 +1,8 @@
 # Run the Linux release runner: one fresh container per job, looping until Ctrl+C.
 # Secrets come from ci/linux/runner.env (gitignored; copy runner.env.example). The ELF and ucode sources are mounted read-only.
 param(
-    [string]$ElfPath  = "E:\Projects\rogue_squadron64\build\roguesquadron.elf",
-    [string]$UcodeDir = "E:\Projects\RogueSquadron64Recomp\build\factor5_ucode",
+    [string]$ElfPath  = $(if ($env:RS64_ELF) { $env:RS64_ELF } else { "$PSScriptRoot\..\..\..\rogue_squadron64\build\roguesquadron.elf" }),
+    [string]$UcodeDir = $(if ($env:RS64_UCODE_DIR) { $env:RS64_UCODE_DIR } else { "$PSScriptRoot\..\..\build\factor5_ucode" }),
     [string]$EnvFile  = "$PSScriptRoot\runner.env",
     [string]$Image    = "rs64-linux-runner",
     [switch]$Rebuild,

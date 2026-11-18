@@ -1,4 +1,10 @@
 #include "net/relay_client.h"
+#include "net/net_core.h"
+
+#ifdef __EMSCRIPTEN__
+#include "../web/web_net.h"
+#endif
+
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -56,8 +62,13 @@ std::string relay_reason_text(relay::Reason r) {
     }
 }
 
-void RelayClient::set_server(const std::string& server)
+void RelayClient::set_server(const std::string& with_hash)
 {
+
+    std::string server;
+    std::string hash;
+
+    split_relay_hash(with_hash, &server, &hash);
 
     std::string host = server;
     uint16_t port = relay::kDefaultPort;
@@ -70,6 +81,13 @@ void RelayClient::set_server(const std::string& server)
         host = server.substr(0, colon);
         port = (p > 0 && p < 65536) ? (uint16_t)p : relay::kDefaultPort;
     }
+
+#ifdef __EMSCRIPTEN__
+
+    // A browser reaches the relay's WebTransport port, pinning the certificate its join link carries.
+    if (!hash.empty()) rs64_web_net_set_hash(host.c_str(), port, hash.c_str());
+
+#endif
 
     if (host == host_ && port == port_)
     {
@@ -214,7 +232,7 @@ void RelayClient::pump()
         switch ((relay::Type)relay::message_type(m.data(), m.size()))
         {
         case relay::Type::Data:
-            if (relay::decode_data(m.data(), m.size(), &bytes, &len)) {
+            if (inbox_.size() < kMaxInbox && relay::decode_data(m.data(), m.size(), &bytes, &len)) {
                 inbox_.emplace_back(bytes, bytes + len);
             }
 
@@ -304,6 +322,13 @@ void RelayClient::set_info(const std::string& name, bool locked) {
 
     if (role_ == RS64_MP_ROLE_HOST && game_) {
         link_.send(relay::encode_update(locked_, name_), true);
+    }
+}
+
+void RelayClient::kick() {
+
+    if (role_ == RS64_MP_ROLE_HOST && connected_) {
+        link_.send(relay::encode_kick(), true);
     }
 }
 
@@ -417,6 +442,7 @@ const rs64_mp_transport* RelayClient::table()
         [](void* u, int i) -> const char* { return C(u).game_peer(i); },
         [](void* u, int i) -> int { return C(u).game(i) && C(u).game(i)->locked ? 1 : 0; },
         [](void* u, const char* name, int locked) { C(u).set_info(name ? name : "", locked != 0); },
+        [](void* u) { C(u).kick(); },
     };
     table_.user = this;
     return &table_;

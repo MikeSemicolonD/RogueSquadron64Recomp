@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 
 namespace rs64::terrain {
 
@@ -12,8 +13,9 @@ constexpr uint32_t kTileBytes = 0x1Eu;
 constexpr uint32_t kMaxTiles = 0x2000u;
 
 // The tile table moves here on a map's first edit: cells share tiles, so an edited cell gets its own copy, and the level's table has no room after it.
-constexpr uint32_t kTable = 0x80A10000u;
+constexpr uint32_t kTable = RS64_HR_TERRAIN_EDIT;
 constexpr uint32_t kTableEnd = kTable + kMaxTiles * kTileBytes;
+static_assert(kTableEnd <= RS64_HR_TERRAIN_EDIT_END, "terrain edit table outgrew its host RAM range");
 
 enum Result { Ok = 0, NoMap = -1, OutOfRange = -2, Full = -3 };
 

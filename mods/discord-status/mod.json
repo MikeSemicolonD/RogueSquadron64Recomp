@@ -1,0 +1,9 @@
+{
+  "game_id": "rs64",
+  "id": "discord-status",
+  "display_name": "Discord Status",
+  "description": "Shows the mission and craft you are flying on your Discord profile while Discord is running.",
+  "version": "1.0.0",
+  "authors": ["RogueSquadron64Recomp"],
+  "minimum_recomp_version": "0.0.0"
+}

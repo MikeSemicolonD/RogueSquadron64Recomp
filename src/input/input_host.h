@@ -36,6 +36,10 @@ namespace rs64::app {
     extern std::atomic<bool> g_show_controls;
     extern std::atomic<bool> g_show_fps;
     extern std::atomic<bool> g_mouse_capture;
+    // F8 with the fake VR head on: mouse motion turns the head instead of steering.
+    extern std::atomic<bool> g_vr_mouse_look;
+    // Mouse motion in pixels since the last call, while g_vr_mouse_look is on.
+    void take_vr_mouse_look(float* dx, float* dy);
     extern std::vector<OpenJoy> g_open_joys;
     extern std::vector<SDL_Joystick*> g_joy_by_dev;
     extern std::atomic<float> g_throttle;
@@ -55,8 +59,11 @@ namespace rs64::app {
     int joy_dev_locked(const OpenJoy& oj);
     void rebind_open_joysticks_locked();
 
+    // Port 0's N64 buttons as the game last read them.
+    uint16_t n64_buttons();
+
     // Rebind capture shared by the F6 window and the in-game Controls screen. capture_poll: 1 = *out captured,
-    // 0 = waiting, -1 = cancelled (Esc, or pad Start for a one-device capture). Call without holding g_bindings_mtx.
+    // 0 = waiting, -1 = cancelled (Esc, or pad Start for a one-device capture), 2 = cleared (Delete or Backspace, when the filter asks). Call without holding g_bindings_mtx.
     void capture_begin(const rs64::input::CaptureFilter& f);
     int capture_poll(rs64::input::Source* out);
     void capture_end();
@@ -75,6 +82,11 @@ namespace rs64::app {
     rs64::touch::TapAction touch_menu_tap(float x, float y);
     bool mouse_menu_context(rs64::touch::Context ctx);
     void window_size(float* w, float* h);
+
+    // A scrolling list page's scrollbar in normalized window coords: the track beside its rows and the thumb over the rows shown.
+    struct ListBar { float x0, x1, y0, y1, t0, t1; int total, visible; };
+
+    bool list_scrollbar(float w, float h, ListBar* out);
 
     // touch_host.cpp, called from poll_input: finger and mouse events on the menus, and the touch state poll_input resets.
     void touch_event(const SDL_Event& e);

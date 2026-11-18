@@ -17,7 +17,7 @@ import os, re, glob
 
 FUNCS_DIR = os.environ.get(
     "RSR_FUNCS_DIR",
-    "E:/Projects/N64Recomp/RecompiledFuncs",
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "RecompiledFuncs"),
 )
 
 func_def = re.compile(r"^RECOMP_FUNC void (\w+)\(uint8_t\* rdram, recomp_context\* ctx\) \{", re.M)

@@ -64,7 +64,7 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ico="$repo/favicon.ico"
 png_size=$(od -An -t u4 -j 14 -N 4 "$ico" | tr -d ' ')
 png_offset=$(od -An -t u4 -j 18 -N 4 "$ico" | tr -d ' ')
-tail -c +$((png_offset + 1)) "$ico" | head -c "$png_size" > "$stage/rs64recomp.png"
+head -c $((png_offset + png_size)) "$ico" | tail -c "$png_size" > "$stage/rs64recomp.png"
 
 case "$(readelf -h "$exe" | sed -n 's/^ *Machine: *//p')" in
     AArch64) arch=arm64 ;;
@@ -100,6 +100,7 @@ cp "$repo/ci/release-readme.txt" "$stage/README.txt"
 cp "$repo/LICENSE" "$stage/LICENSE.txt"
 cp "$repo/NOTICES.txt" "$stage/NOTICES.txt"
 cp -r "$repo/licenses" "$stage/licenses"
+cp -r "$repo/video-presets" "$stage/video-presets"
 if [ -d "$BUILD_DIR/mods" ]; then
   cp -r "$BUILD_DIR/mods" "$stage/mods"
   find "$stage/mods" -name '*.so' -exec "$STRIP" --strip-unneeded {} +

@@ -7,12 +7,14 @@
 #include "host_api/host_api.h"
 #include "rs64_toml_hooks.h"
 #include "game/menus/menu_config.h"
+#include "game/menus/menu_layout.h"
+#include <cstdlib>
 #include "main/main.h"               // rs64_menu_request_quit
 #include <atomic>
 #include <chrono>
 #include <cstring>
-#include <cstdlib>
 #include <cstdio>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -34,6 +36,22 @@ extern "C" void rs64_nav_inject(uint16_t buttons, float x, float y) {
     g_hold_y.store((int)(y * 127.0f), std::memory_order_relaxed);
 }
 
+extern "C" void rs64_pause_point(const char* clock, uint32_t frame);
+
+// The "nav" pause clock: game frames since the menu acted on the A press that ends a menu path (its confirm, rs64_nav_menu_page).
+// A press read while the menu still ignores input waits for the next one.
+static std::atomic<bool> s_final_press{false};
+static std::atomic<bool> s_final_read{false};
+static bool s_nav_clock_on = false;
+static uint32_t s_nav_clock = 0;
+
+static bool nav_running();
+
+extern "C" bool rs64_nav_active(void)
+{
+    return nav_running();
+}
+
 extern "C" bool rs64_nav_consume(uint16_t* buttons, float* x, float* y) {
 
     if (!g_driving.load(std::memory_order_acquire)) return false;
@@ -42,13 +60,24 @@ extern "C" bool rs64_nav_consume(uint16_t* buttons, float* x, float* y) {
     *x = g_hold_x.load(std::memory_order_relaxed) / 127.0f;
     *y = g_hold_y.load(std::memory_order_relaxed) / 127.0f;
 
+    if ((*buttons & N64_A_BUTTON) && s_final_press.exchange(false)) s_final_read = true;
+
     return true;
+}
+
+extern "C" void rs64_nav_clock_point()
+{
+
+    if (s_nav_clock_on) rs64_pause_point("nav", s_nav_clock++);
 }
 
 // ---- Target ----
 
 // The SELECT LEVEL entry of a mod level the boot target names, -1 for none (mod_level_hooks.cpp).
 extern "C" int rs64_mod_levels_boot_entry();
+
+// Whether the boot target names a mod level (mod_level_hooks.cpp).
+extern "C" int rs64_mod_levels_boot_named();
 
 // menu:<label>/<label>/...: the entries to select in turn from the main menu (the last may be an action on a page).
 static std::vector<std::string>& menu_path() {
@@ -138,9 +167,25 @@ static int s_overlay = -1;
 static int s_watchdog = 0;
 static int s_since_press = 9999;
 static bool s_disabled = false;
+
+static bool nav_running()
+{
+    return g_target.kind != NAV_NONE && !s_disabled;
+}
 static const char* s_last_state = "";
 
-// Presents per step before bailing (~20s at 60fps); ROGUESQ_NAV_STEP_BUDGET raises it for slow builds (Linux Debug, fast-clock replays).
+// A step is stuck only past both budgets: game frames drawn (graphics tasks) and 20 s of wall time. Video ticks ran out at ROGUESQ_SPEED > 1 during loads and on
+// slow devices (the Android emulator) during a menu's sweep, since they come at a fixed real rate while the game runs slower. ROGUESQ_NAV_STEP_BUDGET raises the frame budget.
+static std::chrono::steady_clock::time_point s_step_since;
+constexpr std::chrono::seconds kStepWallBudget{ 20 };
+static std::atomic<uint32_t> s_frames{ 0 };
+static uint32_t s_frames_seen = 0;
+
+extern "C" void rs64_nav_frame()
+{
+    s_frames.fetch_add(1, std::memory_order_relaxed);
+}
+
 static int step_budget()
 {
 
@@ -153,13 +198,19 @@ static int step_budget()
 // not injecting on later ticks. Called across successive ticks via a pulse counter.
 static int s_pulse = 0;
 static uint16_t s_pulse_btn = 0;
+static bool s_pulse_cine = false;
+
 static void begin_pulse(uint16_t btn) {
 
     s_pulse = 8;
     s_pulse_btn = btn;
+    s_pulse_cine = rs64_state_in_cinematic();
     g_driving.store(true, std::memory_order_release);
 }
 static bool run_pulse() {
+
+    // A press that started a cutscene (AT THE MOVIES) lets go at once, or the held button skips it.
+    if (s_pulse > 0 && !s_pulse_cine && rs64_state_in_cinematic()) s_pulse = 0;
 
     if (s_pulse <= 0) { rs64_nav_inject(0, 0, 0); return false; }
 
@@ -174,10 +225,16 @@ static void nav_advance() { s_step++; s_watchdog = 0; s_since_press = 9999; }
 
 // Frames of the craft-select hangar (runHangarSelectionFrame) seen; the menu classifier can't tell it from SELECT GAME.
 static int s_hangar_frames = 0;
+static std::atomic<uint32_t> s_hangar_total{0};
 
 extern "C" void rs64_nav_hangar_frame()
 {
     ++s_hangar_frames;
+    s_hangar_total.fetch_add(1, std::memory_order_relaxed);
+}
+
+extern "C" uint32_t rs64_nav_hangar_frame_count(void) {
+    return s_hangar_total.load(std::memory_order_relaxed);
 }
 
 static void nav_write_u8(uint8_t* rdram, uint32_t phys, uint8_t val) { rdram[phys ^ 3] = val; }
@@ -278,10 +335,18 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
     return false;
 }
 
+// The bonus levels (Beggar's Canyon, the Trench Run, Hoth) are picked with the SELECT LEVEL cursor after their passcodes, as a player does: forcing currentLevel
+// there sends Beggar's Canyon, which has no hangar, into one built for the cursor's level.
+static bool bonus_level(int level)
+{
+    return level >= 16 && level <= 18;
+}
+
 static void nav_level(uint8_t* rdram, const char* st)
 {
     // A new pilot auto-launches a forced level, so there is no select screen; pin level+craft only after name entry (step >= 2), since writing currentLevel earlier freezes the flow.
-    if (s_step >= 2) {
+    // A mod level is picked by its SELECT LEVEL entry; its target is its template, which for a walker level is not the level its menus run.
+    if (s_step >= 2 && !rs64_mod_levels_boot_named() && !(s_step >= 3 && bonus_level(g_target.a))) {
         // gGameSettings currentLevel (u8), gCurrentLevel (u32)
         nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
         nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
@@ -289,8 +354,8 @@ static void nav_level(uint8_t* rdram, const char* st)
         if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
     }
 
-    // Success as soon as the mission launches (once past name entry).
-    if (s_step >= 2 && is(st, "mission"))
+    // Success as soon as the mission launches (once past name entry). After an abort the state still reads "mission" at SELECT LEVEL (the menu overlay is up), so the mission overlay must be loaded too.
+    if (s_step >= 2 && is(st, "mission") && s_overlay == 0)
     {
         fprintf(stderr, "[nav] level target=%d reached; currentLevel=0x%02X craft=0x%02X secondary=0x%02X\n",
                 g_target.a, rdram[0x130B40 ^ 3], rdram[0x130B41 ^ 3], rdram[0x130B43 ^ 3]);
@@ -332,9 +397,9 @@ static void nav_level(uint8_t* rdram, const char* st)
         case 3:  // SELECT LEVEL: write target level, confirm, until AVAILABLE CRAFT
             if (is(st, "menu.account.level_select")) {
 
-                // A mod level is walked to with the D-pad (cursor u8 0x800CDAC1, screen state 0x800CDAC4) and picked as a player would, so
+                // A mod or bonus level is walked to with the D-pad (cursor u8 0x800CDAC1 = level id, screen state 0x800CDAC4) and picked as a player would, so
                 // its confirm (briefing, medals, craft) runs; a stock level is written: gGameSettings currentLevel (u8), gCurrentLevel (u32).
-                const int entry = rs64_mod_levels_boot_entry();
+                const int entry = bonus_level(g_target.a) ? g_target.a : rs64_mod_levels_boot_entry();
 
                 if (entry >= 0)
                 {
@@ -386,6 +451,22 @@ static void nav_level(uint8_t* rdram, const char* st)
     }
 }
 
+static std::atomic<int> s_chain_next{ -1 };
+
+static bool nav_chain()
+{
+
+    static const bool on = recomp::dbg::env_on("ROGUESQ_NAV_CHAIN");
+
+    return on;
+}
+
+extern "C" void rs64_nav_chain_next(int level)
+{
+
+    s_chain_next.store(level);
+}
+
 // Abort target: pause, pick ABORT MISSION (cursor written like touch taps, HUD+0xD68, then A), then YES and wait for the front end.
 // YES is the first confirm row unless ROGUESQ_NAV_ABORT_YES says otherwise; landing back on the root means that row was NO, so the next is tried.
 static int s_settle = 0;
@@ -430,6 +511,28 @@ static void nav_abort(uint8_t* rdram, const char* st) {
         case 10: {
             static const int hold = recomp::dbg::env_int("ROGUESQ_NAV_ABORT_HOLD", 0);
             static auto s_t0 = std::chrono::steady_clock::now();
+
+            // A mission that ended on its own (won or lost) has the front end back up: no pause to open, so walk its results to SELECT LEVEL.
+            if (s_overlay == 1)
+            {
+                s_watchdog = 0;
+
+                if (!nav_chain() || s_chain_next.load() >= 0)
+                {
+                    fprintf(stderr, "[nav] abort: mission ended on its own (state=%s), walking its results\n", st);
+                    fflush(stderr);
+                    s_step = 14;
+                }
+
+                break;
+            }
+
+            // A chain waits here, paused or not, while the harness shoots the level and cycles its pause pages, until it names the next level.
+            if (nav_chain() && s_chain_next.load() < 0)
+            {
+                s_watchdog = 0;
+                break;
+            }
 
             if (!is(st, "mission") || paused) break;
 
@@ -552,10 +655,11 @@ static void nav_abort(uint8_t* rdram, const char* st) {
                     s_since_press = 0;
                     begin_pulse(N64_A_BUTTON);
                     nav_advance();
-                } else if (++s_loops_done < loops) {
+                } else if (nav_chain() || ++s_loops_done < loops) {
                     static const bool same = recomp::dbg::env_on("ROGUESQ_NAV_ABORT_SAME");
 
-                    if (!same) g_target.a = (g_target.a + 1) % 16;
+                    if (nav_chain()) g_target.a = s_chain_next.exchange(-1);
+                    else if (!same) g_target.a = (g_target.a + 1) % 16;
 
                     fprintf(stderr, "[nav] abort loop %d/%d: next level %d\n", s_loops_done, loops, g_target.a);
                     fflush(stderr);
@@ -642,14 +746,22 @@ static std::string nav_original(const std::string& shown)
     return buf;
 }
 
-// A label ending in '*' matches entries that start with the rest (a slider or live label whose text changes).
+// A label ending in '*' matches entries that start with the rest (a slider or live label whose text changes); "#n" is row n, for pages whose labels
+// are cleared once drawn (the SHOWROOM hub).
 static int nav_find_entry(uint8_t* rdram, const char* label) {
 
     const int n = rdram[(0xCE730u + 0x95) ^ 3];
     const size_t len = std::strlen(label);
     const bool prefix = len && label[len - 1] == '*';
 
-    for (int i = 0; i < n && i < 8; ++i)
+    if (label[0] == '#')
+    {
+        const int row = std::atoi(label + 1);
+
+        return row >= 0 && row < n ? row : -1;
+    }
+
+    for (int i = 0; i < n && i < rs64::menu::kMenuRows; ++i)
     {
         const std::string text = nav_original(nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)));
 
@@ -657,6 +769,19 @@ static int nav_find_entry(uint8_t* rdram, const char* label) {
     }
 
     return -1;
+}
+
+static void nav_log_menu(uint8_t* rdram)
+{
+
+    std::string entries;
+    const int count = rdram[(0xCE730u + 0x95) ^ 3];
+
+    for (int i = 0; i < std::min(count, rs64::menu::kMenuRows); ++i)
+        entries += " [" + nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)) + "]";
+
+    fprintf(stderr, "[nav] menu %u title [%s] count %d cursor %u:%s\n", rdram[(0xCE730u + 0x04) ^ 3], nav_str(rdram, nav_word(rdram, 0xCE730u)).c_str(), count, rdram[(0xCE730u + 0x94) ^ 3], entries.c_str());
+    fflush(stderr);
 }
 
 static bool nav_pick(uint8_t* rdram, const char* label) {
@@ -670,11 +795,44 @@ static bool nav_pick(uint8_t* rdram, const char* label) {
     return true;
 }
 
+static std::mutex s_menu_next_mtx;
+static std::string s_menu_next;
+static bool s_menu_next_set = false;
+static bool s_menu_back = false;
+
+extern "C" void rs64_nav_menu_next(const char* path)
+{
+
+    std::lock_guard<std::mutex> lk(s_menu_next_mtx);
+
+    s_menu_next = path;
+    s_menu_next_set = true;
+}
+
+// A path queued by rs64_nav_menu_next replaces the finished one, starting with a walk back to the main menu.
+static void take_menu_next()
+{
+
+    std::lock_guard<std::mutex> lk(s_menu_next_mtx);
+
+    if (!s_menu_next_set) return;
+
+    s_menu_next_set = false;
+    s_final_press.store(false);
+    s_final_read.store(false);
+    g_target = rs64_nav_parse(("menu:" + s_menu_next).c_str());
+    s_step = 0;
+    s_watchdog = 0;
+    s_disabled = false;
+    s_menu_back = true;
+}
+
 // Each step selects menu_path()[s_step] once it is listed: the cursor is written, and once it has held there, A. The step is done when the menu changes or the press reached a mod entry (rs64_menu_confirms); a press during a page's redraw and sweep transition is dropped, so an unanswered press is repeated.
 static void nav_menu(uint8_t* rdram, const char* st)
 {
 
     static int s_pressed_at = -1;
+    static bool s_cine_at_press = false;
     static uint32_t s_title_word = 0, s_confirms = 0;
     static uint8_t s_menu_id = 0;
     static int s_stable = 0, s_cursor_held = 0;
@@ -689,16 +847,36 @@ static void nav_menu(uint8_t* rdram, const char* st)
         return;
     }
 
+    // B backs out of whatever the last path opened, a screen outside the menus (BIOGRAPHIES) included.
+    if (s_menu_back && !is(st, "menu.main")) {
+        nav_repress(N64_B_BUTTON);
+
+        return;
+    }
+
+    s_menu_back = false;
+
     if (s_overlay != 1 && std::strncmp(st, "menu", 4) != 0) return;
 
     const uint32_t title_word = nav_word(rdram, 0xCE730u);
     const uint8_t menu_id = rdram[(0xCE730u + 0x04) ^ 3];
 
+    // AT THE MOVIES starts a cutscene with the menu still up: a cutscene that began after the press is the menu answering it, and a repeat would skip it.
     if (s_pressed_at >= 0)
     {
-        if (title_word != s_title_word || menu_id != s_menu_id || rs64_menu_confirms() != s_confirms)
+        const bool cutscene = rs64_state_in_cinematic() && !s_cine_at_press;
+
+        if (title_word != s_title_word || menu_id != s_menu_id || rs64_menu_confirms() != s_confirms || cutscene)
         {
             fprintf(stderr, "[nav] menu: selected %s\n", path[s_step].c_str());
+
+            // Screens with their own input handler (the SHOWROOM hub) never reach rs64_nav_menu_page, so the clock starts when the change shows.
+            if (s_final_read.exchange(false))
+            {
+                s_nav_clock_on = true;
+                s_nav_clock = 0;
+            }
+
             s_pressed_at = -1;
             nav_advance();
 
@@ -723,7 +901,17 @@ static void nav_menu(uint8_t* rdram, const char* st)
 
     const int want = nav_find_entry(rdram, path[s_step].c_str());
 
-    if (want < 0) return;
+    // A page that has not listed the label after 20 s of game time fails, so a wait on "selected" or "stuck" does not run to its timeout. Labels fill in late, so it can't be sooner.
+    if (want < 0)
+    {
+        if (s_stable < 45 + 600) return;
+
+        fprintf(stderr, "[nav] stuck: no entry \"%s\" on this page\n", path[s_step].c_str());
+        nav_log_menu(rdram);
+        s_disabled = true;
+
+        return;
+    }
 
     if (rdram[(0xCE730u + 0x94) ^ 3] != want) {
         nav_write_u8(rdram, 0xCE730u + 0x94, (uint8_t)want);
@@ -735,8 +923,13 @@ static void nav_menu(uint8_t* rdram, const char* st)
     if (++s_cursor_held < 10) return;
 
     s_cursor_held = 0;
+    // Marked before the press goes down, or the game can read it first and only mark it on a later poll, after the confirm.
+    if (s_step + 1 == (int)path.size()) s_final_press.store(true);
+
     begin_pulse(N64_A_BUTTON);
+
     s_pressed_at = s_watchdog;
+    s_cine_at_press = rs64_state_in_cinematic();
     s_title_word = title_word;
     s_menu_id = menu_id;
     s_confirms = rs64_menu_confirms();
@@ -842,10 +1035,19 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
                     // The host walks the cursor (u8 0x800CDAC1; screen state 0x800CDAC4) to its level; the client's own follow code picks the host's.
                     if (g_target.b != 0) break;
 
-                    const int step = rs64::ls::follow_step(rdram[0xCDAC1u ^ 3], rdram[0xCDAC4u ^ 3], g_target.a, 3, true);
-                    const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : 0;
+                    // Test: ROGUESQ_NAV_BROWSE=<n> first walks the cursor n levels past the target, then back to pick it, a press as soon as the last one ends (a host browsing fast).
+                    static const long s_browse = recomp::dbg::env_int("ROGUESQ_NAV_BROWSE", 0);
+                    static bool s_browsed = s_browse <= 0;
+                    const int cursor = rdram[0xCDAC1u ^ 3];
+                    const int state = rdram[0xCDAC4u ^ 3];
 
-                    if (btn) nav_repress(btn);
+                    if (!s_browsed && cursor == g_target.a + (int)s_browse && state == 2) s_browsed = true;
+
+                    const int step = s_browsed ? rs64::ls::follow_step(cursor, state, g_target.a, 3, true) : rs64::ls::follow_step(cursor, state, g_target.a + (int)s_browse, 2, false);
+                    const uint16_t btn = step == rs64::ls::kFollowLeft ? N64_L_JPAD : step == rs64::ls::kFollowRight ? N64_R_JPAD : step == rs64::ls::kFollowConfirm ? N64_A_BUTTON : step == rs64::ls::kFollowBack ? N64_B_BUTTON : 0;
+
+                    if (btn && s_browse > 0 && step != rs64::ls::kFollowConfirm) begin_pulse(btn);
+                    else if (btn) nav_repress(btn);
                 } else if (screen == 0) {
                     // Picked in a co-op lobby (flag from the multiplayer mod): the pick waits for the partner and the hangar then launches, which presses here hold back.
                     if (rs64::host::flag("craft_picked"))
@@ -923,6 +1125,41 @@ extern "C" void rs64_nav_boot_cutscene_done(void)
     rs64_menu_request_quit();
 }
 
+// level:20 (CHICKEN) starts as the passcode does: mainGameLoop 0x8003E250 launches the AT-ST mission when the bit is set and the front end has returned, so the first front end is skipped. The menus' level path crashes in the hangar for this level.
+// A mod level made from it is picked in SELECT LEVEL instead.
+static bool nav_is_chicken(const RsNavTarget& t)
+{
+    return t.kind == NAV_LEVEL && t.a == 0x14 && t.c != 1 && !rs64_mod_levels_boot_named();
+}
+
+static bool s_front_end_next = false;
+
+// mainGameLoop 0x8003E138, the only menuOverlayInit call that opens the front end at boot.
+extern "C" void rs64_nav_front_end_next(void)
+{
+    s_front_end_next = true;
+}
+
+extern "C" int rs64_nav_skip_front_end(uint8_t* rdram)
+{
+
+    static bool s_done = false;
+    static const bool s_chicken = nav_is_chicken(rs64_nav_parse(recomp::dbg::env_str("ROGUESQ_BOOT_TARGET")));
+    const bool front_end = s_front_end_next;
+
+    s_front_end_next = false;
+
+    if (s_done || !s_chicken || !front_end) return 0;
+
+    s_done = true;
+    nav_write_u32(rdram, 0x130B58, nav_word(rdram, 0x130B58) | 0x02000000u);
+
+    fprintf(stderr, "[nav] level 20: front end skipped, CHICKEN bit set\n");
+    fflush(stderr);
+
+    return 1;
+}
+
 // Demo target: the custom menu is auto-disabled so the attract-idle path runs and the demo fires on the natural idle timeout.
 static void nav_demo(uint8_t* rdram, const char* st)
 {
@@ -984,13 +1221,107 @@ static void force_tick(uint8_t* rdram)
     if (craft >= 0) nav_write_craft(rdram, rdram[0x130B40 ^ 3], craft);
 }
 
+// ROGUESQ_CHEATS=<hex>: OR these bits into the cheat unlock word (gGameSettings+0x18, 0x80130B58) once the main menu is up, as typing their passcodes there would.
+static void apply_cheats(uint8_t* rdram)
+{
+
+    static const uint32_t s_cheats = recomp::dbg::env_u32("ROGUESQ_CHEATS");
+    static bool s_done = false;
+
+    // A run that may reach a bonus level types their passcodes too: GAMEFLO! (all missions), WOISTHAN (Trench Run), DEADDACK (Hoth).
+    constexpr uint32_t kBonusLevels = 0x18000001u;
+    const bool levels = (g_target.kind == NAV_LEVEL || g_target.kind == NAV_ABORT) && (bonus_level(g_target.a) || nav_chain());
+    const uint32_t cheats = s_cheats | (levels ? kBonusLevels : 0u);
+
+    if (!cheats || s_done || !rdram || !is(rs64_state_current_id(), "menu.main")) return;
+
+    nav_write_u32(rdram, 0x130B58, nav_word(rdram, 0x130B58) | cheats);
+    s_done = true;
+
+    fprintf(stderr, "[nav] cheats 0x%08X set\n", cheats);
+    fflush(stderr);
+}
+
+// ROGUESQ_SUBTITLES=1 keeps subtitles on: a new pilot starts with them off (bit 4 of the settings word at gGameSettings+0x10), and a save can turn them off.
+static void apply_subtitles(uint8_t* rdram)
+{
+
+    static const bool s_on = recomp::dbg::env_on("ROGUESQ_SUBTITLES");
+
+    if (!s_on || !rdram) return;
+
+    const uint32_t w = nav_word(rdram, 0x130B50);
+
+    if (w & 0x10) nav_write_u32(rdram, 0x130B50, w & ~0x10u);
+}
+
+// ROGUESQ_MENU_FIXED=<seed>: menus repeat frame for frame run to run. The seed is the RNG state (0x80003470) at the front end's start and at every backdrop pick.
+static uint32_t menu_fixed()
+{
+
+    static const uint32_t s_seed = recomp::dbg::env_u32("ROGUESQ_MENU_FIXED");
+
+    return s_seed;
+}
+
+extern "C" void rs64_nav_menu_seed(uint8_t* rdram)
+{
+
+    if (menu_fixed()) nav_write_u32(rdram, 0x3470, menu_fixed());
+}
+
+// The menu confirming an entry (menuControllerInput 0x800B51B8, A or START): starts the nav clock if it is the path's final press.
+extern "C" void rs64_nav_menu_page(uint8_t* rdram)
+{
+
+    // The menu has taken the press, so let go: an A still held when AT THE MOVIES starts skips the cutscene.
+    s_pulse = 0;
+
+    if (s_final_read.exchange(false))
+    {
+        s_nav_clock_on = true;
+        s_nav_clock = 0;
+    }
+
+    if (!menu_fixed()) return;
+
+    // Timers that run on from boot carry over between pages: the highlight pulse (gCurrentMenuData +0x9C / +0xA0, restarted as a cursor move does) and the
+    // front end's phase D_800CF074 (Elite Rogues name shimmer, PASSCODES helmet).
+    nav_write_u32(rdram, 0xCE730u + 0x9C, 0);
+    nav_write_u32(rdram, 0xCE730u + 0xA0, nav_word(rdram, 0x0A66F0));
+    nav_write_u32(rdram, 0xCF074, 0);
+}
+
+// A menu frame's dt: 1/30 s under ROGUESQ_MENU_FIXED, so menu animation follows frames instead of wall time.
+extern "C" float rs64_nav_menu_dt(float dt)
+{
+
+    return menu_fixed() ? 1.0f / 30.0f : dt;
+}
+
 extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
 {
 
     s_overlay = overlay;
     force_tick(rdram);
+    apply_cheats(rdram);
+    apply_subtitles(rdram);
 
     if (g_target.kind == NAV_NONE || !rdram) return;
+
+    // Step timings and the watchdog count 60 Hz ticks; above 30 fps the VI clock runs at TARGET FPS times its subticks (960 Hz at 240).
+    static uint32_t s_vi_phase = 0;
+    const uint32_t vi_hz = rs64_vi_rate();
+
+    s_vi_phase += 60;
+
+    if (s_vi_phase < vi_hz) return;
+
+    s_vi_phase -= vi_hz;
+
+    take_menu_next();
+
+    if (nav_is_chicken(g_target)) s_disabled = true;
     if (s_disabled) { g_driving.store(false, std::memory_order_release); return; }
 
     // Do NOT drive before the first action: the boot START pulse must advance the title ->
@@ -1014,14 +1345,37 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
         s_step = LOBBY_FIRST_STEP;
     }
 
-    if (++s_watchdog > step_budget())
+    const auto now = std::chrono::steady_clock::now();
+
+    // Time the game spends on its own is not a stuck step: the boot before the first menu (longer than either budget on the Android emulator), any cutscene,
+    // which plays on wall time at any speed (the hangar's take-off runs 12 s after its load), and a level's opening crawl.
+    if ((s_step == 0 && (is(st, "unknown") || is(st, "cinematic"))) || rs64_state_in_cinematic() || rs64::host::flag("crawl")) s_watchdog = 0;
+
+    if (s_watchdog == 0) s_step_since = now;
+
+    const uint32_t frames = s_frames.load(std::memory_order_relaxed);
+
+    if (frames != s_frames_seen)
+    {
+        s_frames_seen = frames;
+        ++s_watchdog;
+    }
+
+    if (s_watchdog > step_budget() && now - s_step_since > kStepWallBudget)
     {
         fprintf(stderr, "[nav] stuck step=%d state=%s -- aborting sequence\n", s_step, st);
-        std::string entries;
+        nav_log_menu(rdram);
+        s_disabled = true;
 
-        for (int i = 0; i < 8; ++i) entries += " [" + nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)) + "]";
+        return;
+    }
 
-        fprintf(stderr, "[nav] menu %u title [%s] count %u cursor %u:%s\n", rdram[(0xCE730u + 0x04) ^ 3], nav_str(rdram, nav_word(rdram, 0xCE730u)).c_str(), rdram[(0xCE730u + 0x95) ^ 3], rdram[(0xCE730u + 0x94) ^ 3], entries.c_str());
+    // An id outside the game's levels, written to gCurrentLevel, crashes the level load.
+    const bool to_level = g_target.kind == NAV_LEVEL || g_target.kind == NAV_ABORT;
+
+    if (to_level && (g_target.a < 0 || g_target.a > 0x14))
+    {
+        fprintf(stderr, "[nav] level %d is not a level (0-20); target ignored\n", g_target.a);
         fflush(stderr);
         s_disabled = true;
 

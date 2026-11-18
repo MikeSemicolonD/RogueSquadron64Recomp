@@ -37,7 +37,8 @@ Right-clicking a placed object in a level opens it here; **Back** returns.
 1. Open a player craft, such as the X-wing.
 2. **Import craft model (.glb)…** (from Blender: *File > Export > glTF 2.0*).
 
-- It's scaled to the craft's size; engines, glows and canopy stay.
+- It's scaled to the craft's size. The import window can hide the cockpit glass and recolour or remove the exhaust.
+- To place the flames, add an Empty named `eng_1`, `eng_2`... where each engine ends and export it with the model. Each flame goes to its nearest Empty; the X-wing has four.
 - Name a mesh after a craft part, such as `wngrot_a`, to keep it moving.
 - Each texture takes a free slot of the craft and is scaled to it.
 
@@ -47,7 +48,7 @@ Right-click a part: moving parts have a **Joint** row (the X-wing's wings are `w
 
 ### Budgets
 
-Stock crafts have 300-530 triangles and 14-22 textures, most under 100 pixels a side. Much heavier models can run out of memory in busy levels; the info box shows the triangle count.
+Stock crafts have 300-530 triangles and 14-22 textures, most under 100 pixels a side. Imports are limited to 1,500 faces, about 2,900 triangles: two triangles sharing an edge become one face. Past that the game runs out of memory and crashes. The info box shows the triangle count.
 
 The texture on the most triangles gets the first slot; extras past the last slot share it, so pack details into one atlas.
 

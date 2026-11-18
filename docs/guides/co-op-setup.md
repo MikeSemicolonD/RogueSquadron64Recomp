@@ -22,7 +22,7 @@ Press A on the address row to edit it. Type on a keyboard, or use the pad: left 
 
 ## Same network
 
-One player presses HOST GAME, the other JOIN GAME. JOIN GAME finds the host by itself.
+One player presses HOST GAME, the other JOIN GAME. JOIN GAME finds the host by itself, unless an address has been set in the address row.
 
 If it does not, type the host's `YOUR LAN ADDRESS` into the address row and press JOIN GAME again. Guest Wi-Fi networks often keep devices from seeing each other.
 
@@ -77,7 +77,8 @@ Each player types the server's address into the address row. While it is in the 
 | VERSION MISMATCH | Both players need the same version |
 | CANNOT HOST | The game could not open its port. Close any other copy that is hosting |
 | NO NETWORK ADDRESS | This device is not connected to a network |
-| PASSWORD NEEDED, WRONG PASSWORD | The address row now takes the 6-digit password. Enter it and press JOIN GAME |
+| PASSWORD NEEDED, WRONG PASSWORD | The address row now takes the 6-digit password. Enter it to join again |
+| GAME HAS NO PASSWORD | A password was sent to a game without one. Press JOIN GAME again to join without it |
 | GAME FULL | That game already has two players |
 | RELAY SERVER FULL, TOO MANY CONNECTIONS | The server is at its limit. Try again later |
 | STEAM API DLL MISSING | The library is not in `mods/steam-relay/` |

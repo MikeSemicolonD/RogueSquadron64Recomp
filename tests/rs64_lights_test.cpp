@@ -471,12 +471,11 @@ static void testSceneCaptureEnabled() {
 }
 
 static void testSceneWanted() {
-    CHECK(sceneWanted(true, false, false, false, false));
-    CHECK(sceneWanted(false, true, true, true, false));
-    CHECK(!sceneWanted(false, true, false, true, false));
-    CHECK(!sceneWanted(false, true, true, false, false));
-    CHECK(!sceneWanted(false, true, true, true, true));
-    CHECK(!sceneWanted(false, false, true, true, false));
+    CHECK(sceneWanted(true, false, false, false));
+    CHECK(sceneWanted(false, true, true, true));
+    CHECK(!sceneWanted(false, true, false, true));
+    CHECK(!sceneWanted(false, true, true, false));
+    CHECK(!sceneWanted(false, false, true, true));
 }
 
 static void testLightRaySpan() {
@@ -1410,6 +1409,27 @@ static void testTmemAverage() {
     CHECK(tmemAverage(tmem.data(), 2, 0, 0, 1, 8, 2, 1, rgb, cov));
     CHECK(near(rgb[0], 1.0f, 1e-3f) && near(rgb[1], 0.0f, 1e-3f) && near(rgb[2], 0.0f, 1e-3f));
     CHECK(near(cov, 0.5f, 1e-3f));
+    const float behind[3] = { 0.0f, 0.0f, -50.0f };
+    const float side[3] = { 200.0f, 0.0f, 10.0f };
+    const float seen[3] = { 0.0f, 0.0f, 50.0f };
+    const float forward[3] = { 0.0f, 0.0f, 1.0f };
+    const float backward[3] = { 0.0f, 0.0f, -1.0f };
+    const float right[3] = { 1.0f, 0.0f, 0.0f };
+    const float left[3] = { -1.0f, 0.0f, 0.0f };
+    CHECK(casterReachesView(behind, 5.0f, forward, 1.0f, 1.0f));
+    CHECK(!casterReachesView(behind, 5.0f, backward, 1.0f, 1.0f));
+    CHECK(!casterReachesView(side, 5.0f, right, 1.0f, 1.0f));
+    CHECK(casterReachesView(side, 5.0f, left, 1.0f, 1.0f));
+    CHECK(casterReachesView(seen, 5.0f, backward, 1.0f, 1.0f));
+    std::vector<uint8_t> fbA(1000, 7);
+    std::vector<uint8_t> fbB = fbA;
+    CHECK(changedPixels(fbA.data(), fbB.data(), 1000, 2) == 0);
+    fbB[0] = 9;
+    fbB[1] = 9;
+    fbB[501] = 9;
+    fbB[999] = 9;
+    CHECK(changedPixels(fbA.data(), fbB.data(), 1000, 2) == 3);
+    CHECK(changedPixels(fbA.data(), fbB.data(), 1000, 4) == 3);
     // RGBA16 solid opaque green 4x1.
     std::fill(tmem.begin(), tmem.end(), 0);
     for (int i = 0; i < 4; ++i) {
@@ -1639,7 +1659,21 @@ static void testTerrainWaterLayers() {
     CHECK(waterLayer(shoreCells[1]) == 21);
 }
 
+// Mods' runtime presets: taken once per change (or when forced by a light-file reload), and an empty json removes one.
+static void testRuntimePresets() {
+    uint64_t seen = 0;
+    std::map<std::string, std::string> out;
+    CHECK(!rs64lights::takeRuntimePresets(seen, false, out));
+    rs64lights::setRuntimePreset("m.lamp", "{\"lights\":[]}");
+    CHECK(rs64lights::takeRuntimePresets(seen, false, out) && out.size() == 1 && out["m.lamp"] == "{\"lights\":[]}");
+    CHECK(!rs64lights::takeRuntimePresets(seen, false, out));
+    CHECK(rs64lights::takeRuntimePresets(seen, true, out) && out.size() == 1);
+    rs64lights::setRuntimePreset("m.lamp", "");
+    CHECK(rs64lights::takeRuntimePresets(seen, false, out) && out.empty());
+}
+
 int main() {
+    testRuntimePresets();
     testInverse();
     testScreenRoundTrip();
     testSpriteLight();

@@ -1,4 +1,5 @@
 #include "input/input_bindings.h"
+#include "util/settings_file.h"
 
 #include <algorithm>
 #include <cctype>
@@ -50,7 +51,22 @@ bool is_stick_target(int t)
 // Axis sources sum within a direction (stick X + twist rudder); keys and buttons take the max.
 bool is_axis_source(SourceKind k)
 {
-    return k == SourceKind::PadAxis || k == SourceKind::JoyAxis || k == SourceKind::MouseAxis;
+    return k == SourceKind::PadAxis || k == SourceKind::JoyAxis || k == SourceKind::MouseAxis || k == SourceKind::VrAxis;
+}
+
+// The same physical input (a combo's `with` aside).
+bool same_input(const Source& p, const Source& q)
+{
+    return p.kind == q.kind && p.code == q.code && p.dir == q.dir && p.dev == q.dev;
+}
+
+// Deflection past a dead zone, rescaled to [0,1].
+float past_deadzone(float v, float deadzone)
+{
+
+    const float dz = std::clamp(deadzone, 0.0f, 0.95f);
+
+    return (v <= dz) ? 0.0f : std::min(1.0f, (v - dz) / (1.0f - dz));
 }
 
 _SDL_Joystick* joy_of(const Source& s, const RawState& st) {
@@ -121,11 +137,30 @@ float source_value(const Source& s, const RawState& st, const Bindings& b) {
 
             return std::min(1.0f, (v - dz) / (1.0f - dz));
         }
+        case SourceKind::VrButton:
+            return (st.vr && (st.vr_buttons >> s.code & 1u)) ? 1.0f : 0.0f;
+        case SourceKind::VrAxis:
+            return st.vr ? past_deadzone(((s.code == 0) ? st.vr_x : st.vr_y) * (float)s.dir, b.pad_deadzone) : 0.0f;
         default:
             return 0.0f;
     }
 }
 } // namespace
+
+Source held_source(const Held& h)
+{
+    return Source{ h.kind, h.code, h.dir, h.dev };
+}
+
+Held as_held(const Source& s)
+{
+    return Held{ s.kind, s.code, s.dir, s.dev };
+}
+
+bool input_down(const Bindings& b, const RawState& s, const Source& src)
+{
+    return source_value(src, s, b) > 0.5f;
+}
 
 float joy_axis(const Bindings& b, const RawState& st, int dev, int axis)
 {
@@ -229,9 +264,17 @@ void add_joystick_defaults(Bindings& b, int dev, int num_axes, int num_buttons, 
         add(Target::Throttle, SourceKind::JoyAxis, throttle_axis, -1);
     }
 
+    // Twist rolls while the Roll button (the 7th, R below) is held: two combos, one per twist direction.
+    constexpr int kRollButton = 6;
+
     if (twist_axis >= 0 && twist_axis < num_axes) {
         add(Target::RollLeft,  SourceKind::JoyAxis, twist_axis, -1);
         add(Target::RollRight, SourceKind::JoyAxis, twist_axis, +1);
+
+        if (num_buttons > kRollButton && !throttle_unit) {
+            b.targets[(int)Target::RollLeft].back().with = Held{ SourceKind::JoyButton, kRollButton, 0, (int8_t)dev };
+            b.targets[(int)Target::RollRight].back().with = Held{ SourceKind::JoyButton, kRollButton, 0, (int8_t)dev };
+        }
     }
 
     if (!throttle_unit && num_axes >= 2) {
@@ -304,25 +347,43 @@ Bindings default_bindings()
     add(Target::CLeft, mb(SDL_BUTTON_RIGHT));       // fire secondary
     add(Target::A,     mb(SDL_BUTTON_MIDDLE));      // menu confirm
 
-    // --- Gamepad (mirrors the prior hardcoded map) ---
-    add(Target::A,     pb(SDL_CONTROLLER_BUTTON_A));
-    add(Target::B,     pb(SDL_CONTROLLER_BUTTON_X));
+    // --- Gamepad (menus read pad A/B as confirm/back through menu_fixed_mask) ---
+    add(Target::B,     pb(SDL_CONTROLLER_BUTTON_A));
+    add(Target::CLeft, pb(SDL_CONTROLLER_BUTTON_B));
+    add(Target::CDown, pb(SDL_CONTROLLER_BUTTON_Y));
+    add(Target::CRight,pb(SDL_CONTROLLER_BUTTON_X));
+    add(Target::A,     pax(SDL_CONTROLLER_AXIS_TRIGGERRIGHT, +1));
+    add(Target::Z,     pax(SDL_CONTROLLER_AXIS_TRIGGERLEFT, +1));
+    add(Target::RTrig, pb(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
+    add(Target::CUp,   pb(SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
+    add(Target::LTrig, pb(SDL_CONTROLLER_BUTTON_BACK));
     add(Target::Start, pb(SDL_CONTROLLER_BUTTON_START));
     add(Target::DpadUp,   pb(SDL_CONTROLLER_BUTTON_DPAD_UP));
     add(Target::DpadDown, pb(SDL_CONTROLLER_BUTTON_DPAD_DOWN));
     add(Target::DpadLeft, pb(SDL_CONTROLLER_BUTTON_DPAD_LEFT));
     add(Target::DpadRight,pb(SDL_CONTROLLER_BUTTON_DPAD_RIGHT));
-    add(Target::LTrig, pb(SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
-    add(Target::RTrig, pb(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
-    add(Target::CUp,   pb(SDL_CONTROLLER_BUTTON_Y));
-    add(Target::CDown, pb(SDL_CONTROLLER_BUTTON_B));
-    add(Target::CLeft, pb(SDL_CONTROLLER_BUTTON_BACK));
-    add(Target::CRight,pb(SDL_CONTROLLER_BUTTON_GUIDE));
-    add(Target::Z,     pax(SDL_CONTROLLER_AXIS_TRIGGERLEFT, +1));
     add(Target::StickRight, pax(SDL_CONTROLLER_AXIS_LEFTX, +1));
     add(Target::StickLeft,  pax(SDL_CONTROLLER_AXIS_LEFTX, -1));
     add(Target::StickUp,    pax(SDL_CONTROLLER_AXIS_LEFTY, -1));
     add(Target::StickDown,  pax(SDL_CONTROLLER_AXIS_LEFTY, +1));
+
+    // --- VR controllers (Luke layout; menus read A/B/Menu through menu_fixed_mask) ---
+    auto vb = [](int c) { return Source{ SourceKind::VrButton, c, 0 }; };
+    auto vax = [](int c, int d) { return Source{ SourceKind::VrAxis, c, (int8_t)d }; };
+
+    add(Target::B,      vb(VrA));
+    add(Target::CLeft,  vb(VrB));
+    add(Target::CRight, vb(VrX));
+    add(Target::Start,  vb(VrMenu));
+    add(Target::LTrig,  vb(VrStickClickL));
+    add(Target::CDown,  vb(VrStickClickR));
+    add(Target::Z,      vb(VrTriggerL));
+    add(Target::A,      vb(VrTriggerR));
+    add(Target::RTrig,  Source{ SourceKind::VrButton, VrGripR, 0, -1, Held{ SourceKind::VrButton, VrGripL, 0, -1 } });
+    add(Target::StickRight, vax(0, +1));
+    add(Target::StickLeft,  vax(0, -1));
+    add(Target::StickUp,    vax(1, +1));
+    add(Target::StickDown,  vax(1, -1));
 
     return b;
 }
@@ -333,7 +394,7 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
     bool any_joy = false;
 
     for (int i = 0; b.joystick_enabled && s.joys && i < s.joys_len && !any_joy; ++i) any_joy = s.joys[i] != nullptr;
-    if (!b.keyboard_enabled && s.pad == nullptr && !any_joy) return false;
+    if (!b.keyboard_enabled && s.pad == nullptr && !any_joy && !s.vr) return false;
 
     RawState st = s;
 
@@ -350,11 +411,31 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
     uint16_t btn = 0;
     float defl[(int)Target::Count] = {0};
 
+    // Combos down now: their own inputs drive no plain binding meanwhile (Shift+E as Roll doesn't also press what E alone does).
+    static thread_local std::vector<Source> combos;
+
+    combos.clear();
+
+    for (int t = 0; t < (int)Target::Count; ++t) {
+        for (const Source& src : b.targets[t]) {
+            if (src.with.kind != SourceKind::None && input_down(b, st, held_source(src.with)) && input_down(b, st, src)) combos.push_back(src);
+        }
+    }
+
+    const auto hidden = [&](const Source& src) {
+
+        return std::any_of(combos.begin(), combos.end(), [&](const Source& c) { return same_input(c, src); });
+    };
+
     for (int t = 0; t < (int)Target::Count; ++t) {
         float dig = 0.0f, ana = 0.0f;
 
         for (const Source& src : b.targets[t])
         {
+            const bool combo = src.with.kind != SourceKind::None;
+
+            if ((combo && !input_down(b, st, held_source(src.with))) || (!combo && hidden(src))) continue;
+
             float v = source_value(src, st, b);
 
             if (!is_axis_source(src.kind)) {
@@ -377,10 +458,14 @@ bool resolve(const Bindings& b, const RawState& s, uint16_t* buttons, float* x, 
     float sx = defl[(int)Target::StickRight] - defl[(int)Target::StickLeft];
     float sy = defl[(int)Target::StickUp]    - defl[(int)Target::StickDown];
 
-    // Look-around: hold C-Up and point the stick, overriding steering while a look input is held.
+    // Look-around: hold C-Up and point the stick, overriding steering while a look input is held. In VR the head looks around, so C-Up is dropped.
     float lx = defl[(int)Target::LookRight] - defl[(int)Target::LookLeft];
     float ly = defl[(int)Target::LookUp]    - defl[(int)Target::LookDown];
-    const bool looking = std::fabs(lx) > 0.5f || std::fabs(ly) > 0.5f;
+    const bool looking = !s.vr && (std::fabs(lx) > 0.5f || std::fabs(ly) > 0.5f);
+
+    if (s.vr) {
+        btn &= ~N64_U_CBUTTONS;
+    }
 
     if (looking) {
         btn |= N64_U_CBUTTONS;
@@ -494,8 +579,57 @@ int mouse_button_code(const std::string& s)
     if (s == "x2") return SDL_BUTTON_X2;       return 0;
 }
 
-// Serialize one source to {kind, name, dir?}. Returns false if unrepresentable.
-bool source_to_json(const Source& s, json& o) {
+// VR button names in roguesq_input.json, by VrButton.
+constexpr const char* kVrButtonNames[VrButtonCount] = { "a", "b", "x", "y", "menu", "stick-click-left", "stick-click-right", "trigger-left", "trigger-right", "grip-left", "grip-right" };
+
+int vr_button_code(const std::string& s)
+{
+
+    for (int i = 0; i < VrButtonCount; ++i) {
+        if (s == kVrButtonNames[i]) return i;
+    }
+
+    return -1;
+}
+
+bool input_to_json(const Source& s, json& o);
+bool input_from_json(const json& o, Source& s);
+
+// Serialize one source to {kind, name, dir?, with?}. Returns false if unrepresentable.
+bool source_to_json(const Source& s, json& o)
+{
+
+    if (!input_to_json(s, o)) return false;
+
+    json with;
+
+    if (s.with.kind != SourceKind::None)
+    {
+        if (!input_to_json(held_source(s.with), with)) return false;
+
+        o["with"] = with;
+    }
+
+    return true;
+}
+
+bool source_from_json(const json& o, Source& s)
+{
+
+    if (!input_from_json(o, s)) return false;
+
+    if (!o.contains("with")) return true;
+
+    Source held;
+
+    if (!input_from_json(o["with"], held)) return false;
+
+    s.with = as_held(held);
+
+    return true;
+}
+
+bool input_to_json(const Source& s, json& o) {
 
     switch (s.kind)
     {
@@ -546,12 +680,22 @@ bool source_to_json(const Source& s, json& o) {
             o = { {"kind","joyhat"}, {"device", (int)s.dev}, {"name", "hat" + std::to_string(s.code)}, {"dir", hat_dir_name(s.dir)} };
 
             return true;
+        case SourceKind::VrButton:
+            if (s.code < 0 || s.code >= VrButtonCount) return false;
+
+            o = { {"kind","vrbutton"}, {"name", kVrButtonNames[s.code]} };
+
+            return true;
+        case SourceKind::VrAxis:
+            o = { {"kind","vraxis"}, {"name", s.code == 0 ? "x" : "y"}, {"dir", (int)s.dir} };
+
+            return true;
         default:
             return false;
     }
 }
 
-bool source_from_json(const json& o, Source& s)
+bool input_from_json(const json& o, Source& s)
 {
 
     if (!o.is_object() || !o.contains("kind") || !o.contains("name")) return false;
@@ -620,6 +764,16 @@ bool source_from_json(const json& o, Source& s)
         s = { SourceKind::MouseButton, c, 0 };
     } else if (kind == "mouseaxis") {
         s = { SourceKind::MouseAxis, (name == "y") ? 1 : 0, (int8_t)dir };
+    } else if (kind == "vrbutton") {
+        const int c = vr_button_code(name);
+
+        if (c < 0) return false;
+
+        s = { SourceKind::VrButton, c, 0 };
+    } else if (kind == "vraxis") {
+        if (dir != 1 && dir != -1) return false;
+
+        s = { SourceKind::VrAxis, (name == "y") ? 1 : 0, (int8_t)dir };
     } else {
         return false;
     }
@@ -633,6 +787,15 @@ int target_count() { return (int)Target::Count; }
 const char* target_label(Target t) { return target_name(t); }
 
 std::string source_label(const Source& s) {
+
+    if (s.with.kind != SourceKind::None)
+    {
+        Source main = s;
+
+        main.with = Held{};
+
+        return source_label(held_source(s.with)) + "+" + source_label(main);
+    }
 
     switch (s.kind)
     {
@@ -661,6 +824,10 @@ std::string source_label(const Source& s) {
             return "J" + std::to_string(s.dev + 1) + " axis" + std::to_string(s.code) + (s.dir >= 0 ? "+" : "-");
         case SourceKind::JoyHat:
             return "J" + std::to_string(s.dev + 1) + " hat" + std::to_string(s.code) + " " + hat_dir_name(s.dir);
+        case SourceKind::VrButton:
+            return std::string("vr:") + ((s.code >= 0 && s.code < VrButtonCount) ? kVrButtonNames[s.code] : "?");
+        case SourceKind::VrAxis:
+            return std::string("vrStick") + (s.code == 0 ? "X" : "Y") + (s.dir >= 0 ? "+" : "-");
         default:
             return "?";
     }
@@ -676,6 +843,8 @@ Device device_of(const Source& s)
         case SourceKind::JoyButton:
         case SourceKind::JoyAxis:
         case SourceKind::JoyHat:    return Device::Joystick;
+        case SourceKind::VrButton:
+        case SourceKind::VrAxis:    return Device::Vr;
         default:                    return Device::Keyboard;
     }
 }
@@ -718,31 +887,46 @@ std::vector<ControlRow> control_rows(Device d)
 
 int shown_source(const Bindings& b, Target t, Device d)
 {
+    return nth_source(b, t, d, 0);
+}
+
+int nth_source(const Bindings& b, Target t, Device d, int n)
+{
 
     const std::vector<Source>& v = b.targets[(int)t];
 
     for (size_t k = 0; k < v.size(); ++k) {
-        if (device_of(v[k]) == d) return (int)k;
+        if (device_of(v[k]) == d && n-- == 0) return (int)k;
     }
 
     return -1;
 }
 
-Target rebind(Bindings& b, Target t, Device d, const Source& got)
+Target rebind(Bindings& b, Target t, Device d, const Source& got, int column)
 {
 
+    constexpr int kShownColumns = 2;
+
     auto same = [](const Source& p, const Source& q) {
-        return p.kind == q.kind && p.code == q.code && p.dir == q.dir && p.dev == q.dev;
+        return same_input(p, q) && same_input(held_source(p.with), held_source(q.with));
+    };
+
+    // Column of v[k] among its row's device-d sources.
+    auto column_of = [d](const std::vector<Source>& v, size_t k) {
+        return (int)std::count_if(v.begin(), v.begin() + k, [d](const Source& s) { return device_of(s) == d; });
     };
 
     std::vector<Source>& mine = b.targets[(int)t];
-    const int shown = shown_source(b, t, d);
+    const int at = nth_source(b, t, d, column);
 
-    if (shown >= 0 && same(mine[shown], got)) return Target::Count;
+    if (at >= 0 && same(mine[at], got)) return Target::Count;
 
+    const bool had = at >= 0;
+    const Source old = had ? mine[at] : Source{};
     Target giver = Target::Count;
+    bool found = false;
 
-    for (int u = 0; u < (int)Target::Count && giver == Target::Count; ++u)
+    for (int u = 0; u < (int)Target::Count && !found; ++u)
     {
         std::vector<Source>& v = b.targets[u];
 
@@ -750,15 +934,12 @@ Target rebind(Bindings& b, Target t, Device d, const Source& got)
         {
             if (!same(v[k], got)) continue;
 
-            if (u == (int)t) {
-                v.erase(v.begin() + k);
-                break;
-            }
+            found = true;
 
-            // Only a binding the other row shows is swapped; a hidden one (B's mouse button behind Space) is just taken.
-            if (shown >= 0 && (int)k == shown_source(b, (Target)u, d)) {
-                v[k] = mine[shown];
-                giver = (Target)u;
+            // A binding another row shows (or this row's other column) takes the replaced one; a hidden one (B's mouse button behind two keys) is just taken.
+            if (had && column_of(v, k) < kShownColumns) {
+                v[k] = old;
+                giver = (u == (int)t) ? Target::Count : (Target)u;
             } else {
                 v.erase(v.begin() + k);
             }
@@ -767,12 +948,21 @@ Target rebind(Bindings& b, Target t, Device d, const Source& got)
         }
     }
 
-    const int at = shown_source(b, t, d);
+    // The column's own index again: an erase above may have moved it.
+    const int now = nth_source(b, t, d, column);
 
-    if (at >= 0 && shown >= 0) mine[at] = got;
+    if (now >= 0 && had) mine[now] = got;
     else mine.push_back(got);
 
     return giver;
+}
+
+void clear_binding(Bindings& b, Target t, Device d, int column)
+{
+
+    const int at = nth_source(b, t, d, column);
+
+    if (at >= 0) b.targets[(int)t].erase(b.targets[(int)t].begin() + at);
 }
 
 namespace {
@@ -828,6 +1018,18 @@ const char* pad_axis_menu_name(int code) {
 std::string menu_source_name(const Source& s)
 {
 
+    static constexpr const char* kVrMenuNames[VrButtonCount] = { "A", "B", "X", "Y", "MENU", "LS CLICK", "RS CLICK", "L TRIG", "R TRIG", "L GRIP", "R GRIP" };
+
+    if (s.with.kind != SourceKind::None)
+    {
+        Source main = s;
+
+        main.with = Held{};
+
+        // The menu font has no '+'.
+        return menu_source_name(held_source(s.with)) + " - " + menu_source_name(main);
+    }
+
     const std::string arrow = s.dir >= 0 ? " >" : " <";
     const std::string joy = "J" + std::to_string(s.dev + 1) + " ";
 
@@ -869,6 +1071,8 @@ std::string menu_source_name(const Source& s)
         case SourceKind::JoyButton:   return joy + "BTN " + std::to_string(s.code);
         case SourceKind::JoyAxis:     return joy + "AX " + std::to_string(s.code) + arrow;
         case SourceKind::JoyHat:      return joy + "HAT " + font_text(hat_dir_name(s.dir));
+        case SourceKind::VrButton:    return (s.code >= 0 && s.code < VrButtonCount) ? kVrMenuNames[s.code] : "--";
+        case SourceKind::VrAxis:      return std::string("STICK ") + (s.code == 0 ? "X" : "Y") + arrow;
         default:                      return "--";
     }
 }
@@ -877,7 +1081,7 @@ uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
 {
 
     static const std::pair<int, uint16_t> keys[] = {
-        { SDL_SCANCODE_RETURN, N64_A_BUTTON }, { SDL_SCANCODE_KP_ENTER, N64_A_BUTTON }, { SDL_SCANCODE_BACKSPACE, N64_B_BUTTON },
+        { SDL_SCANCODE_RETURN, N64_A_BUTTON }, { SDL_SCANCODE_KP_ENTER, N64_A_BUTTON }, { SDL_SCANCODE_SPACE, N64_A_BUTTON }, { SDL_SCANCODE_BACKSPACE, N64_B_BUTTON },
         { SDL_SCANCODE_UP, N64_U_JPAD }, { SDL_SCANCODE_DOWN, N64_D_JPAD }, { SDL_SCANCODE_LEFT, N64_L_JPAD }, { SDL_SCANCODE_RIGHT, N64_R_JPAD },
     };
     static const std::pair<SDL_GameControllerButton, uint16_t> pad[] = {
@@ -898,6 +1102,12 @@ uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start)
         if (s.pad && SDL_GameControllerGetButton(s.pad, b)) m |= bit;
     }
 
+    static const std::pair<int, uint16_t> vr[] = { { VrA, N64_A_BUTTON }, { VrB, N64_B_BUTTON }, { VrMenu, N64_START_BUTTON } };
+
+    for (const auto& [b, bit] : vr) {
+        if (s.vr && (s.vr_buttons >> b & 1u)) m |= bit;
+    }
+
     return m;
 }
 
@@ -913,6 +1123,9 @@ bool capture_accepts(const CaptureFilter& f, const Source& s)
 {
 
     if (s.kind == SourceKind::None || s.kind == SourceKind::MouseAxis) return false;
+
+    // A combo's held input comes from the same device.
+    if ((s.with.kind != SourceKind::None) && (s.with.kind == SourceKind::MouseAxis || device_of(held_source(s.with)) != device_of(s))) return false;
 
     return f.any || device_of(s) == f.device;
 }
@@ -1096,12 +1309,6 @@ bool save_bindings(const Bindings& b, const std::string& path)
 
     j["binds"] = binds;
 
-    std::ofstream f(path, std::ios::trunc);
-
-    if (!f.is_open()) return false;
-
-    f << j.dump(2) << "\n";
-
-    return f.good();
+    return rs64::settings::write_file(path, j.dump(2) + "\n");
 }
 } // namespace rs64::input

@@ -51,9 +51,25 @@ void set_terrain_tessellation(int quads);
 float hud_placement();
 void set_hud_placement(float placement);
 
+// The TARGET FPS setting in frames a second; display_hz when it is set to DISPLAY.
+int target_fps(int display_hz);
+
 // Cutscenes keep the view distance the game sets per shot ("keepCutsceneDrawDistance", default on); ROGUESQ_CINE_DRAW_DIST overrides.
 bool keep_cutscene_draw_distance();
 void set_keep_cutscene_draw_distance(bool on);
+
+// Start in a VR headset ("vrMode", default off; ROGUESQ_VR / --vr force it on). Read once at launch: VR picks the GPU before RT64 starts.
+bool vr_mode();
+void set_vr_mode(bool on);
+
+// The player's size in VR, one per kind of scene: missions ("vrScale", default 8), the menus' 3D scenes such as the hangar ("vrScaleMenus") and
+// cutscenes and the opening crawl ("vrScaleCutscenes"), default 4 and 2. Bigger makes the world look smaller. Set in the headset with the right thumbstick.
+enum class VrScene { Missions, Menus, Cutscenes };
+
+// The scene kind of a loaded overlay (0 mission, 1 menu, 2 cinematic).
+VrScene vr_scene_of_overlay(int overlay);
+float vr_scale(VrScene scene);
+void set_vr_scale(VrScene scene, float scale);
 
 // RT64 copies each rendered frame back to RDRAM ("framebufferWriteback", default on; off by default on a Raspberry Pi). This game never reads them
 // back, and the copy plus the GPU wait it needs cost slow GPUs about half their frame time. Applies live.
@@ -72,6 +88,9 @@ void pin_fullscreen(bool on);
 // Reads only the "fullscreen" key, so the window can be created fullscreen before the full config loads.
 bool peek_fullscreen(const std::string& path);
 
+// The display settings file: roguesq_video.json in the working directory, or ROGUESQ_VIDEO_CONFIG (test runs keep their changes out of the player's file).
+std::string config_path();
+
 // Game text language code ("language" in roguesq_video.json: a built-in "en" / "de" / "fr" or a language mod's code; "" = unset, the game's own choice). OPTIONS > LANGUAGE saves it.
 std::string language();
 void set_language(const std::string& code);
@@ -88,7 +107,7 @@ bool ray_query_supported();
 void set_ray_query_supported(bool on);
 
 // Menu-driven display settings. The menu reads and steps a desired copy of the RT64 fields it owns; the renderer applies it at present (apply_pending).
-enum class Display { Resolution, Widescreen, AntiAliasing, FrameInterpolation, TargetFps, TextureFilter, UpscaleFilter };
+enum class Display { Resolution, Widescreen, AntiAliasing, FrameInterpolation, TargetFps, TextureFilter, UpscaleFilter, GraphicsApi };
 
 // Current choice index; -1 = CUSTOM (an anti-aliasing combination matching no preset).
 int display_value(Display d);
@@ -97,6 +116,9 @@ int display_choice_count(Display d);
 // English choice text ("AUTO", "MSAA 4X", "3-POINT", "DISPLAY", "144", ...); "CUSTOM" for -1.
 std::string display_label(Display d, int choice);
 bool frame_interpolation_on();
+
+// A setting read only at launch (renderer backend, VR mode) differs from the one running now.
+bool restart_required();
 
 // Choice <-> RT64 field mapping. Resolution: AUTO, 1X..4X. Anti-aliasing: OFF, FXAA, MSAA 2X/4X/8X, SSAA 2X/4X (-1 = CUSTOM). Upscale: NEAREST, LINEAR, AA PIXEL.
 int aa_preset(const RT64::UserConfiguration& uc);
@@ -112,6 +134,9 @@ ApplyResult apply_pending(RT64::UserConfiguration& uc);
 
 // Refresh rates the window's display supports (ascending, distinct), for TARGET FPS.
 void set_refresh_rates(std::vector<int> hz);
+
+// RT64's resolution multiplier before SSAA; the ANTI-ALIASING choice shows and offers only the SSAA steps its cap renders (RT64::rs64CappedSsaa).
+void set_ssaa_base(float scale);
 
 // The draw distance multiplier; 1.0 while the game owns the view. Taloraan's cloud floor keeps the stock fog in the renderer (f5_cloud_floor_fog).
 float effective_draw_distance(float setting, bool game_view);

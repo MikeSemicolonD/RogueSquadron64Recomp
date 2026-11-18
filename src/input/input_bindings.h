@@ -44,7 +44,18 @@ enum class Target : int {
     Count
 };
 
-enum class SourceKind : uint8_t { None, Key, PadButton, PadAxis, MouseButton, MouseAxis, JoyButton, JoyAxis, JoyHat };
+enum class SourceKind : uint8_t { None, Key, PadButton, PadAxis, MouseButton, MouseAxis, JoyButton, JoyAxis, JoyHat, VrButton, VrAxis };
+
+// VR controller buttons (VrButton codes; bit n of RawState::vr_buttons).
+enum VrButton : int { VrA, VrB, VrX, VrY, VrMenu, VrStickClickL, VrStickClickR, VrTriggerL, VrTriggerR, VrGripL, VrGripR, VrButtonCount };
+
+// The input a combo also needs held (kind None = none).
+struct Held {
+    SourceKind kind = SourceKind::None;
+    int32_t    code = 0;
+    int8_t     dir  = 0;
+    int8_t     dev  = -1;
+};
 
 // One physical input bound to a target.
 //   Key:         code = SDL_Scancode
@@ -55,11 +66,16 @@ enum class SourceKind : uint8_t { None, Key, PadButton, PadAxis, MouseButton, Mo
 //   JoyButton:   code = button index,           dev = Bindings::joy_devices index
 //   JoyAxis:     code = axis index, dir = +1/-1, dev
 //   JoyHat:      code = hat index, dir = SDL_HAT_UP/RIGHT/DOWN/LEFT bit, dev
+//   VrButton:    code = VrButton
+//   VrAxis:      code = 0 (x) or 1 (y) of the left thumbstick, dir = +1/-1 (y is up)
 struct Source {
     SourceKind kind = SourceKind::None;
     int32_t    code = 0;
     int8_t     dir  = 0;
     int8_t     dev  = -1;
+
+    // A combo: this input counts only while `with` is held too.
+    Held       with;
 };
 
 // A raw (non-gamepad) joystick such as a flight stick or HOTAS throttle, identified by GUID
@@ -135,6 +151,12 @@ struct RawState {
     float                   mouse_curve  = 1.0f;       // response exponent applied to mouse-axis deflection
     uint32_t                mouse_buttons= 0;          // SDL_GetMouseState button mask
     bool                    mouse_active = false;      // relative capture engaged
+
+    // VR controllers: whether they report input, the held VrButton bits and the left thumbstick (y up).
+    bool                    vr           = false;
+    uint32_t                vr_buttons   = 0;
+    float                   vr_x         = 0.0f;
+    float                   vr_y         = 0.0f;
 };
 
 Bindings default_bindings();
@@ -158,6 +180,13 @@ float throttle_speed(float p, float cruise_at, float min_speed, float cruise_spe
 // Joystick axis in [-1,1] with the device's invert applied (no deadzone). 0 if disconnected.
 float joy_axis(const Bindings& b, const RawState& s, int dev, int axis);
 
+// Whether a source's own input is past half travel, its `with` ignored (rebind capture).
+bool input_down(const Bindings& b, const RawState& s, const Source& src);
+
+// The source's `with` as a source of its own, and a held input as a combo's `with`.
+Source held_source(const Held& h);
+Held as_held(const Source& s);
+
 // Index of the device with this GUID + ordinal, adding it if new (*added = true).
 int find_or_add_joy_device(Bindings& b, const std::string& guid, int ordinal, const std::string& name, bool* added);
 
@@ -168,7 +197,7 @@ int find_or_add_joy_device(Bindings& b, const std::string& guid, int ordinal, co
 void add_joystick_defaults(Bindings& b, int dev, int num_axes, int num_buttons, int num_hats);
 
 // The in-game Controls screen: bindings shown and edited per device (the mouse counts as keyboard).
-enum class Device : uint8_t { Keyboard, Gamepad, Joystick };
+enum class Device : uint8_t { Keyboard, Gamepad, Joystick, Vr };
 
 Device device_of(const Source& s);
 
@@ -180,21 +209,27 @@ std::vector<ControlRow> control_rows(Device d);
 // Index into b.targets[t] of the first source of device d, or -1.
 int shown_source(const Bindings& b, Target t, Device d);
 
-// Bind `got` as t's shown source for device d, in place. If another target holds `got`, it takes t's old
-// shown source in that slot (or loses it if t had none) and is returned; otherwise Target::Count.
-Target rebind(Bindings& b, Target t, Device d, const Source& got);
+// Index into b.targets[t] of device d's source in list column n (0 first, 1 second; later ones are never shown), or -1.
+int nth_source(const Bindings& b, Target t, Device d, int n);
 
-// Upper-case, menu-font-safe name ("LEFT SHIFT", "PAD A", "J1 AXIS 2 <"); "--" for no source.
+// Bind `got` in column `column` of t's row for device d, in place. If another target shows `got` in one of its two columns, it takes
+// t's old binding there (or loses it if t had none) and is returned; if t's own other column holds it, the columns swap. Else Target::Count.
+Target rebind(Bindings& b, Target t, Device d, const Source& got, int column = 0);
+
+// Removes t's binding in column `column` for device d (a second one moves up to the first column).
+void clear_binding(Bindings& b, Target t, Device d, int column);
+
+// Upper-case, menu-font-safe name ("LEFT SHIFT", "PAD A", "J1 AXIS 2 <", a combo "L GRIP - R GRIP"); "--" for no source.
 std::string menu_source_name(const Source& s);
 
-// N64 buttons from inputs that always work in menus, whatever the bindings say: Return/Enter, Backspace, Esc, arrows; pad A, B, Start, D-pad. Esc is B (back), or START on the pause menu so it resumes.
+// N64 buttons from inputs that always work in menus, whatever the bindings say: Return/Enter, Space, Backspace, Esc, arrows; pad A, B, Start, D-pad; VR A, B, Menu. Esc is B (back), or START on the pause menu so it resumes.
 uint16_t menu_fixed_mask(const RawState& s, bool esc_is_start = false);
 
 // A menu's buttons: while a fixed menu input is held, its button replaces the menu buttons the bindings add (Return bound to fire is only A).
 uint16_t menu_buttons(uint16_t bound, uint16_t fixed);
 
-// Which inputs a rebind capture takes: anything (the F6 window), or one device's. Mouse motion never binds.
-struct CaptureFilter { bool any = true; Device device = Device::Keyboard; };
+// Which inputs a rebind capture takes: anything (the F6 window), or one device's. Mouse motion never binds. With clear_keys, Delete and Backspace clear the binding instead.
+struct CaptureFilter { bool any = true; Device device = Device::Keyboard; bool clear_keys = false; };
 
 bool capture_accepts(const CaptureFilter& f, const Source& s);
 

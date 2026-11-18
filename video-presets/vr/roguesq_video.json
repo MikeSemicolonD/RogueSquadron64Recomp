@@ -1,0 +1,23 @@
+{
+  "schema": 2,
+  "vrMode": true,
+  "widescreen": true,
+  "resolutionScale": "auto",
+  "antialiasing": 2,
+  "ssaa": 1,
+  "fxaa": false,
+  "vsync": true,
+  "frameInterpolation": false,
+  "targetFramerate": "display",
+  "drawDistance": 4.0,
+  "terrainTessellation": 4,
+  "rayTracing": {
+    "lights": false,
+    "shadows": false,
+    "softShadows": false,
+    "fogShafts": false,
+    "ambientOcclusion": false,
+    "globalIllumination": false,
+    "reflections": false
+  }
+}

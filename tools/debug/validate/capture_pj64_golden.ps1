@@ -7,12 +7,14 @@
 #   .\tools\debug\validate\capture_pj64_golden.ps1 -Seconds 120
 param(
     [int]$Seconds = 45,
-    [string]$Rom = "F:\ROMS\n64\Star Wars - Rogue Squadron (USA).n64",
+    [string]$Rom = "",
     [string]$Pj64Dir = "build\pj64"
 )
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
+if (-not $Rom) { $Rom = Join-Path $root "build\Debug\rogue_squadron.z64" }
 $dir = Join-Path $root $Pj64Dir
-Copy-Item (Join-Path $PSScriptRoot "pj64_rs64_dump.js") (Join-Path $dir "Scripts\pj64_rs64_dump.js") -Force
+$js = (Get-Content -Raw (Join-Path $PSScriptRoot "pj64_rs64_dump.js")).Replace("RS64_DUMP_DIR", ($root -replace '\\', '/') + "/dumps/pj64")
+Set-Content -NoNewline -Encoding ascii (Join-Path $dir "Scripts\pj64_rs64_dump.js") $js
 New-Item -ItemType Directory -Force (Join-Path $root "dumps\pj64") | Out-Null
 Add-Type -AssemblyName UIAutomationClient; Add-Type -AssemblyName UIAutomationTypes
 Add-Type @'

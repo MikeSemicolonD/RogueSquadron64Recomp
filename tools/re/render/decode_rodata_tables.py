@@ -15,7 +15,7 @@ Read-only. Prints a report to stdout.
 """
 import subprocess, sys, struct, os
 
-ELF = sys.argv[1] if len(sys.argv) > 1 else r"E:/Projects/rogue_squadron64/build/roguesquadron.elf"
+ELF = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "rogue_squadron64", "build", "roguesquadron.elf")
 OBJDUMP = r"C:/Program Files/LLVM/bin/llvm-objdump"
 
 def load_mem(elf):

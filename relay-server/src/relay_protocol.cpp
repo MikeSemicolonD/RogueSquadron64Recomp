@@ -199,6 +199,9 @@ bool decode_data(const uint8_t* data, size_t n, const uint8_t** bytes, size_t* l
     return true;
 }
 
+std::vector<uint8_t> encode_kick() { return encode_fields(Type::Kick); }
+bool decode_kick(const uint8_t* data, size_t n) { return decode_fields(data, n, Type::Kick); }
+
 std::vector<uint8_t> encode_registered(uint32_t id, const std::string& name)
 {
 
@@ -228,7 +231,7 @@ bool decode_registered(const uint8_t* data, size_t n, uint32_t* id, std::string*
     }
 
     *id = v;
-    *name = s;
+    *name = sanitize_name(s, "GAME");
     return true;
 }
 
@@ -283,6 +286,8 @@ bool decode_list_reply(const uint8_t* data, size_t n, ListReply* out)
             return false;
         }
 
+        // The server is not trusted to have cleaned the names shown in the menus.
+        g.name = sanitize_name(g.name, "GAME");
         g.locked = l != 0;
         lr.games.push_back(g);
     }

@@ -6,14 +6,17 @@ The explorer is for modders who don't write code. Every feature is judged by whe
 
 - Speak the modder's language. No addresses, offsets, byte sizes, flag or counter numbers, internal ids or code names in labels, tooltips, errors or dialogs. Show one only when the modder needs it, such as a real limit (a name length, a size cap).
 - Pick, don't type. Things are chosen from named lists (songs by name, voice lines by their text, paths by what flies them) or done in the view; the explorer picks the bookkeeping (free flags, counters, unique names) for the modder.
+- Where the modder does type (rule conditions, the rules script), names come from the level as they type: a list opens after `(` or in a slot that takes an object, a pick-in-view button puts a clicked object in, and whatever the game would skip is underlined red with the reason shown under the box while they type.
 - When the explorer refuses something, say why in plain words (for example, the mission script needs that object).
 
 ## Controls
 
+- Nothing opens by itself to ask what the modder wants. The page starts on something to play with, and help waits behind a button.
 - Few, compact controls. Use an icon with a tooltip instead of a text label wherever the action reads from an icon; the label goes in `title` and `aria-label`. Exception: the edit panel's Global/Local axis toggle stays text.
 - Keep a toggle away from anything destructive, so a missed click can't delete. A section's on/off box has no label of its own (the heading is its label) and sits right of the heading; when the heading row also has a delete icon, the box moves left of the heading text and the delete stays alone at the far right. Headings get a divider line above.
 - Icons are SVG files in `icons/` (marker glyphs in `icons/markers/`), drawn in one colour (it is replaced) and placed with `iconImg` (core.js), `setEditIcon` (levels.js) or `iconButton` (lights.js). They take the text colour, or the marker kind's, so they follow the theme and the selected (gold) state.
 - A big editor gets its own window instead of growing a cramped popup (the Level events window replaced rules inside Level settings).
+- The shortcut list only shows what works right now: rows for the current mode and selection (`data-modes`, `data-when`), so it never describes something the modder can't use yet.
 
 ## Safe editing
 

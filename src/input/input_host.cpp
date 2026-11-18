@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -27,12 +28,21 @@
 #include "game/upstream_compat.h"
 #include "game/hook_helpers.h"
 #include "game/nav_sequencer.h"
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "video/rt64_render_context.h"
 #include "video/video_config.h"
 #include "main/crash.h"
 #include "main/ui_panels.h"
 #ifdef __ANDROID__
 #include "main/android_host.h"
+#endif
+
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
 #endif
 
 using recomp::dbg::env_on;
@@ -75,6 +85,44 @@ rs64::input::Device last_device() {
     return s_last_device.load();
 }
 
+// The VR controllers as the game's input poll last read them, for the bindings and the rebind capture; g_vr_ok is false without a session or input focus.
+static std::atomic<bool> g_vr_ok{false};
+static std::atomic<uint32_t> g_vr_buttons{0};
+static std::atomic<float> g_vr_x{0.0f};
+static std::atomic<float> g_vr_y{0.0f};
+
+static void poll_vr_state()
+{
+
+#if defined(RS64_OPENXR)
+
+    static_assert((int)rs64::vr::kPadButtons == (int)rs64::input::VrButtonCount);
+
+    rs64::vr::Pad pad;
+    const bool ok = rs64::vr::poll_pad(&pad);
+
+    // A new VR press makes VR the device the Controls screen edits.
+    if (ok && (pad.held & ~g_vr_buttons.load())) {
+        s_last_device.store(rs64::input::Device::Vr);
+    }
+
+    g_vr_ok.store(ok);
+    g_vr_buttons.store(ok ? pad.held : 0u);
+    g_vr_x.store(ok ? pad.stick_x : 0.0f);
+    g_vr_y.store(ok ? pad.stick_y : 0.0f);
+
+#endif
+}
+
+static void fill_vr_state(rs64::input::RawState& st)
+{
+
+    st.vr = g_vr_ok.load();
+    st.vr_buttons = g_vr_buttons.load();
+    st.vr_x = g_vr_x.load();
+    st.vr_y = g_vr_y.load();
+}
+
 // Esc pressed in a pause submenu went to the game as B (pause_escape); the held key drives no binding until released.
 static std::atomic<bool> s_esc_dropped{false};
 
@@ -99,14 +147,17 @@ static bool fake_controller_enabled() {
 // ROGUESQ_INPUT_SEQ="name:holdMs:afterMs,..." — a scripted virtual-controller
 // timeline injected at get_n64_input (no window focus needed, unlike SendInput).
 // ROGUESQ_INPUT_DELAY=<ms> waits before the first step (default 12000, to clear boot).
-// Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright
+// Names: start a b z l r  dup ddown dleft dright  cup cdown cleft cright; @<state id> waits for that game state.
 //        up down left right (analog stick)  wait (neutral hold).
 // Used for headless front-end navigation + state calibration. Default OFF.
 
 #ifdef RS64_MCP
 // The MCP press tool's held input (src/lockstep/lockstep.cpp); false when none is active.
 extern "C" bool rs64_mcp_consume_input(uint16_t* buttons, float* x, float* y);
+extern "C" bool rs64_mcp_head(float* x, float* y);
 #endif
+
+extern "C" uint32_t rs64_game_frames(void);
 
 // A controller input name (ROGUESQ_INPUT_SEQ and the MCP press tool): ORs its button into mask or sets the stick; false when unknown.
 extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, float* sy)
@@ -139,7 +190,16 @@ extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, flo
     return false;
 }
 
-struct InputStep { uint16_t mask; float sx, sy; uint32_t hold, after; };
+// gate: a game state id prefix the sequence waits for before the next step ("@menu.account.level_select"); its timing starts from there.
+// True from a passed state gate until the sequence ends: the sequence then steers instead of the menu driver.
+static bool s_seq_steering = false;
+
+struct InputStep {
+    uint16_t mask;
+    float sx, sy;
+    uint32_t hold, after;
+    std::string gate;
+};
 
 static bool scripted_input(uint16_t* buttons, float* x, float* y)
 {
@@ -160,8 +220,14 @@ static bool scripted_input(uint16_t* buttons, float* x, float* y)
 
             auto tok = [](const std::string& n) -> InputStep {
 
-                InputStep s{0, 0.f, 0.f, 90, 400};
+                InputStep s{0, 0.f, 0.f, 90, 400, {}};
                 std::string name = n;
+
+                if (!name.empty() && name[0] == '@')
+                {
+                    s.gate = name.substr(1);
+                    return s;
+                }
                 size_t c1 = name.find(':');
                 std::string hold, after;
 
@@ -204,23 +270,49 @@ static bool scripted_input(uint16_t* buttons, float* x, float* y)
 
     if (elapsed < s_delay) { *buttons = 0; *x = 0.f; *y = 0.f; return true; }
 
-    uint32_t t = elapsed - s_delay;
-    uint32_t acc = 0;
+    static size_t s_idx = 0;
+    static uint32_t s_step_t0 = 0;
 
-    for (const InputStep& st : s_steps) {
-        uint32_t span = st.hold + st.after;
+    if (s_step_t0 == 0) {
+        s_step_t0 = now;
+    }
 
-        if (t < acc + span) {
-            bool holding = (t - acc) < st.hold;
+    while (s_idx < s_steps.size()) {
+        const InputStep& st = s_steps[s_idx];
+
+        if (!st.gate.empty())
+        {
+            if (std::strncmp(rs64_state_current_id(), st.gate.c_str(), st.gate.size()) != 0) {
+                *buttons = 0;
+                *x = 0.f;
+                *y = 0.f;
+                return true;
+            }
+
+            fprintf(stderr, "[input-seq] reached %s at t=%ums\n", st.gate.c_str(), now - s_t0);
+            s_seq_steering = true;
+            ++s_idx;
+            s_step_t0 = now;
+            continue;
+        }
+
+        const uint32_t t = now - s_step_t0;
+
+        if (t < st.hold + st.after)
+        {
+            const bool holding = t < st.hold;
+
             *buttons = holding ? st.mask : 0;
             *x = holding ? st.sx : 0.f;
             *y = holding ? st.sy : 0.f;
-
             return true;
         }
 
-        acc += span;
+        ++s_idx;
+        s_step_t0 += st.hold + st.after;
     }
+
+    s_seq_steering = false;
 
     if (!s_done_logged) { s_done_logged = true; fprintf(stderr, "[input-seq] sequence complete at t=%ums\n", elapsed); fflush(stderr); }
 
@@ -249,6 +341,16 @@ std::mutex            g_bindings_mtx;
 std::atomic<bool>     g_show_controls{false};
 std::atomic<bool>     g_show_fps{false};
 std::atomic<bool>     g_mouse_capture{false};
+std::atomic<bool>     g_vr_mouse_look{false};
+static std::atomic<float> g_vr_look_x{0.0f};
+static std::atomic<float> g_vr_look_y{0.0f};
+
+void take_vr_mouse_look(float* dx, float* dy)
+{
+
+    *dx = g_vr_look_x.exchange(0.0f);
+    *dy = g_vr_look_y.exchange(0.0f);
+}
 static float                 g_mouse_ax = 0.0f;   // accumulated relative motion this frame
 static float                 g_mouse_ay = 0.0f;
 static uint32_t              g_mouse_btn = 0;
@@ -348,8 +450,15 @@ static void open_raw_joystick(int device_index)
     oj.joy = j;
     oj.id = SDL_JoystickInstanceID(j);
 
-    for (const OpenJoy& o : g_open_joys) {
-        if (o.id == oj.id) return;
+    // Already open: give back the extra reference SDL_JoystickOpen took.
+    for (const OpenJoy& o : g_open_joys)
+    {
+        if (o.id == oj.id)
+        {
+            SDL_JoystickClose(j);
+
+            return;
+        }
     }
 
     char guid[64] = {};
@@ -687,6 +796,7 @@ extern "C" void rs64_toggle_fullscreen(void)  { rs64::video::set_fullscreen(!rs6
 
 static SDL_Sensor* g_accel_sensor = nullptr;
 static SDL_Sensor* g_gyro_sensor = nullptr;
+static std::atomic<bool> g_pad_gyro{false};
 
 // Tilt steering: screen roll from gravity, low-passed so hand shake and linear acceleration don't jitter the turn.
 static void accel_event(const SDL_Event& e)
@@ -750,6 +860,24 @@ static void update_gyro_sensor() {
         }
     }
 
+    // Gamepad gyro (Steam Deck, DualSense, Switch Pro): only the active pad's is on. A pad left behind is either closed or harmlessly still reporting.
+    static SDL_GameController* s_gyro_pad = nullptr;
+    SDL_GameController* pad = (want && controller && SDL_GameControllerHasSensor(controller, SDL_SENSOR_GYRO)) ? controller : nullptr;
+
+    if (pad != s_gyro_pad) {
+        if (s_gyro_pad && s_gyro_pad == controller) {
+            SDL_GameControllerSetSensorEnabled(s_gyro_pad, SDL_SENSOR_GYRO, SDL_FALSE);
+        }
+
+        if (pad) {
+            SDL_GameControllerSetSensorEnabled(pad, SDL_SENSOR_GYRO, SDL_TRUE);
+        }
+
+        s_gyro_pad = pad;
+    }
+
+    g_pad_gyro.store(pad != nullptr);
+
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     rs64::touch::Config tc = g_touch.config();
     tc.gyro = want && g_accel_sensor;
@@ -804,11 +932,66 @@ static void update_keyboard_shift() {
 #endif
 }
 
+// Pasted text goes where typed text goes, one line of it; true when a typing field took it.
+static bool paste_text(const char* text)
+{
+
+    std::string line;
+
+    for (const char* p = text; p && *p && *p != '\r' && *p != '\n'; ++p) line += *p;
+
+    if (line.empty())
+    {
+        return false;
+    }
+
+    return rs64::host::run_key_handlers(line.c_str(), 0) || rs64_menu_type(line.c_str(), 0);
+}
+
+#ifdef __EMSCRIPTEN__
+
+static std::mutex g_paste_mtx;
+static std::string g_pasted;
+
+// The page's paste event (the browser's clipboard is only readable there); poll_input hands it to the typing field.
+extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_paste(const char* text)
+{
+
+    std::lock_guard<std::mutex> lk(g_paste_mtx);
+
+    g_pasted = text ? text : "";
+}
+
+static std::string take_pasted()
+{
+
+    std::lock_guard<std::mutex> lk(g_paste_mtx);
+    std::string out;
+
+    out.swap(g_pasted);
+    return out;
+}
+
+#endif
+
 void poll_input()
 {
 
+#ifdef __EMSCRIPTEN__
+
+    const std::string pasted = take_pasted();
+
+    if (!pasted.empty()) paste_text(pasted.c_str());
+
+#endif
+
     apply_fullscreen_if_requested();
     update_keyboard_shift();
+
+#ifdef __ANDROID__
+    rs64::android::update_wifi_direct();
+#endif
+
     static bool s_scanned = false;
 
     if (!s_scanned) {
@@ -880,6 +1063,26 @@ void poll_input()
             break;
         case SDL_KEYDOWN: {
             const SDL_Keycode sym = e.key.keysym.sym;
+            const bool command = (e.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
+
+            // Ctrl/Cmd+C copies the typing field's text; the key goes on to the game when no field takes it.
+            if (e.key.repeat == 0 && command && sym == SDLK_c && rs64::host::run_key_handlers(nullptr, 3)) break;
+
+#ifndef __EMSCRIPTEN__
+
+            // Ctrl/Cmd+V or Shift+Insert pastes into the typing field (the browser pastes through the page, rs64_web_paste).
+            const bool paste = (command && sym == SDLK_v) || ((e.key.keysym.mod & KMOD_SHIFT) && sym == SDLK_INSERT);
+
+            if (e.key.repeat == 0 && paste && SDL_HasClipboardText()) {
+                char* clip = SDL_GetClipboardText();
+                const bool taken = paste_text(clip);
+
+                SDL_free(clip);
+
+                if (taken) break;
+            }
+
+#endif
 
             if (sym == SDLK_BACKSPACE || sym == SDLK_RETURN || sym == SDLK_KP_ENTER)
             {
@@ -912,6 +1115,13 @@ void poll_input()
                         break;
                     case SDL_SCANCODE_F7:
                         g_show_fps.store(!g_show_fps.load());
+                        break;
+                    case SDL_SCANCODE_F8:
+                        if (rs64_vr_active()) {
+                            g_vr_mouse_look.store(!g_vr_mouse_look.load());
+                            rs64::app::notify("vrlook", g_vr_mouse_look.load() ? "Mouse turns the VR head (F8)" : "Mouse steers (F8)", 2.0f);
+                        }
+
                         break;
                     case SDL_SCANCODE_F5: {
                         // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
@@ -994,6 +1204,10 @@ void poll_input()
             fflush(stderr);
             rs64::host::run_quit_handlers();
 
+#if defined(RS64_OPENXR)
+            rs64::vr::quit();
+#endif
+
             // _Exit, not exit: the recomp game threads and RT64 are still live, so
             // running the C++/atexit static-destructor table here throws (-> terminate,
             // the Release crash-on-close) or deadlocks (the hang). Terminate now; the OS
@@ -1025,7 +1239,16 @@ void poll_input()
     int rdx = 0, rdy = 0;
     uint32_t rbtn = SDL_GetRelativeMouseState(&rdx, &rdy);
 
-    if (g_mouse_capture.load()) {
+    // Mouse look ends with the VR session, or the mouse would steer nothing.
+    if (!rs64_vr_active()) {
+        g_vr_mouse_look.store(false);
+    }
+
+    if (g_vr_mouse_look.load()) {
+        g_vr_look_x.store(g_vr_look_x.load() + (float)rdx);
+        g_vr_look_y.store(g_vr_look_y.load() + (float)rdy);
+        g_mouse_ax = g_mouse_ay = 0.0f;
+    } else if (g_mouse_capture.load()) {
         g_mouse_ax += (float)rdx;
         g_mouse_ay += (float)rdy;
     } else {
@@ -1083,6 +1306,7 @@ static rs64::touch::Pad poll_touch()
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     g_touch.set_screen(w, h);
     g_touch.set_picture(px0, px1);
+    g_touch.set_frame(rs64_game_frames());
 
     if (take_touch_edit_request() && g_touch.config().enabled) {
         touch_slider_cancel();
@@ -1103,6 +1327,33 @@ static rs64::touch::Pad poll_touch()
     return pad;
 }
 
+// Gamepad gyro flies like the mouse: turning the pad left/right (yaw) and tipping its top away/toward (pitch) move the stick while in motion. Wins when it
+// deflects further than the sticks. SDL controller axes: +x right, +y up, +z toward the player, rates counter-clockwise positive.
+static void pad_gyro_steer(float* x, float* y)
+{
+
+    float g[3] = {};
+
+    if (!g_pad_gyro.load() || !controller || touch_context() != rs64::touch::Context::Flight)
+    {
+        return;
+    }
+
+    if (SDL_GameControllerGetSensorData(controller, SDL_SENSOR_GYRO, g, 3) != 0)
+    {
+        return;
+    }
+
+    const rs64::touch::Config& c = rs64::touch::shared_config();
+    const float gx = rs64::touch::gyro_stick(-g[1], c);
+    const float gy = rs64::touch::gyro_stick(-g[0], c);
+
+    if ((gx * gx + gy * gy) > (*x * *x + *y * *y)) {
+        *x = gx;
+        *y = gy;
+    }
+}
+
 static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, float* y)
 {
 
@@ -1113,6 +1364,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
 
         return false;
     }
+
+    // Before the Controls window's early return, so its rebind capture sees the VR controllers.
+    poll_vr_state();
 
     // While the controls window is open, suppress gameplay input so rebinding
     // or navigating the UI doesn't also drive the ship. Still report connected.
@@ -1131,16 +1385,9 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     uint16_t nav_buttons = 0;
     float nav_x = 0.f, nav_y = 0.f;
 
-    if (rs64_nav_consume(&nav_buttons, &nav_x, &nav_y)) {
-        *buttons = nav_buttons;
-        *x = nav_x;
-        *y = nav_y;
-
-        return true;
-    }
-
 #ifdef RS64_MCP
 
+    // An MCP press wins over the menu driver, which keeps reporting idle input while a chained run waits for its next level.
     if (rs64_mcp_consume_input(&nav_buttons, &nav_x, &nav_y)) {
         *buttons = nav_buttons;
         *x = nav_x;
@@ -1150,6 +1397,23 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     }
 
 #endif
+
+    // A scripted sequence past a state gate steers instead of the menu driver until it ends.
+    if (fake_controller_enabled() && scripted_input(&nav_buttons, &nav_x, &nav_y) && s_seq_steering) {
+        *buttons = nav_buttons;
+        *x = nav_x;
+        *y = nav_y;
+
+        return true;
+    }
+
+    if (rs64_nav_consume(&nav_buttons, &nav_x, &nav_y)) {
+        *buttons = nav_buttons;
+        *x = nav_x;
+        *y = nav_y;
+
+        return true;
+    }
 
     if (fake_controller_enabled()) {
         uint16_t sb = 0;
@@ -1253,8 +1517,30 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     float smooth_dt = s_last_ms ? (float)(smooth_now - s_last_ms) : 16.0f;
     s_last_ms = smooth_now;
 
-    // Pixels since the last poll grow with the frame time and the game scales turning by it too, so convert to pixels per 30 fps frame; the floor guards a double poll.
-    const float per_frame = (1000.0f / 30.0f) / std::max(smooth_dt, 1000.0f / 60.0f);
+    // The controller is read every video tick, which above 60 fps is several times a frame, so take the motion over the last 1/60 s or more rather than since
+    // the last read: a few pixels per read gave the stick a fraction of its deflection.
+    struct MouseSample { std::chrono::steady_clock::time_point t; double x; double y; };
+    static std::deque<MouseSample> s_trail;
+    static double s_cum_x = 0.0, s_cum_y = 0.0;
+    const auto mouse_now = std::chrono::steady_clock::now();
+    const auto window = std::chrono::microseconds(16667);
+
+    s_cum_x += raw_dx;
+    s_cum_y += raw_dy;
+    s_trail.push_back({ mouse_now, s_cum_x, s_cum_y });
+
+    while (s_trail.size() > 2 && (mouse_now - s_trail[1].t) >= window) {
+        s_trail.pop_front();
+    }
+
+    const MouseSample& from = (s_trail.size() > 1) ? s_trail.front() : s_trail.back();
+    const float window_ms = std::max(std::chrono::duration<float, std::milli>(mouse_now - from.t).count(), 1000.0f / 60.0f);
+
+    raw_dx = (float)(s_cum_x - from.x);
+    raw_dy = (float)(s_cum_y - from.y);
+
+    // Pixels over that window grow with the frame time and the game scales turning by it too, so convert to pixels per 30 fps frame.
+    const float per_frame = (1000.0f / 30.0f) / window_ms;
 
     raw_dx *= per_frame;
     raw_dy *= per_frame;
@@ -1267,6 +1553,7 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
     st.mouse_dy = s_sm_dy;
     st.joys = g_joy_by_dev.data();
     st.joys_len = (int)g_joy_by_dev.size();
+    fill_vr_state(st);
 
     if (input_claim().on) apply_input_claim(st);
 
@@ -1342,21 +1629,54 @@ static bool get_n64_input_live(int controller_num, uint16_t* buttons, float* x, 
 
     btn |= boot_start_pulse();
     rs64::touch::merge(poll_touch(), &btn, x, y);
+    pad_gyro_steer(x, y);
     *buttons = btn;
 
     return true;
 }
 
-// Head angles for updatePlayerAtStBehavior 0x800D1AE0 in the game's own scale (yaw = x * 80, pitch = y * -30); 0 while the mouse isn't aiming.
-extern "C" int rs64_atst_head(float* yaw, float* pitch)
+// The live AT-ST head aim in -1..1: an MCP press's head, else the mouse; 0 while nothing aims it.
+extern "C" int rs64_atst_head_live(float* x, float* y)
 {
+
+#ifdef RS64_MCP
+
+    if (rs64_mcp_head(x, y))
+    {
+        return 1;
+    }
+
+#endif
 
     if (!g_atst_head_on) return 0;
 
-    *yaw = g_atst_head_x * 80.0f;
-    *pitch = g_atst_head_y * -30.0f;
+    *x = g_atst_head_x;
+    *y = g_atst_head_y;
 
     return 1;
+}
+
+// Head angles for updatePlayerAtStBehavior 0x800D1AE0 in the game's own scale (yaw = x * 80, pitch = y * -30); 0 while nothing aims the head.
+extern "C" int rs64_atst_head(float* yaw, float* pitch)
+{
+
+    float x = 0.0f;
+    float y = 0.0f;
+
+    if (!rs64_ls_head(rs64_atst_head_live(&x, &y), &x, &y)) return 0;
+
+    *yaw = x * 80.0f;
+    *pitch = y * -30.0f;
+
+    return 1;
+}
+
+// Port 0's buttons as the game last read them (the Controls list's hold-A clear).
+static std::atomic<uint16_t> s_n64_buttons{0};
+
+uint16_t n64_buttons()
+{
+    return s_n64_buttons.load();
 }
 
 bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y)
@@ -1367,6 +1687,7 @@ bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y)
 
         if (c == 0) {
             rs64::host::run_input_filters(0, b, sx, sy);
+            s_n64_buttons.store(*b);
         }
 
         return ok;
@@ -1437,8 +1758,14 @@ struct CaptureState {
     uint32_t pad = 0, mouse = 0;
     uint16_t touch = 0;
     float pad_axes[SDL_CONTROLLER_AXIS_MAX] = {0};
+    uint32_t vr = 0;
+    float vr_axes[2] = {0};
     struct JoySnap { SDL_JoystickID id; std::vector<float> axes; std::vector<uint8_t> buttons, hats; };
     std::vector<JoySnap> joys;
+
+    // The first input pressed, waiting: released alone it binds by itself; a second press while it is down binds the two as a combo.
+    bool pending = false;
+    rs64::input::Source first;
 };
 
 CaptureState s_cap;
@@ -1479,6 +1806,10 @@ void capture_begin(const rs64::input::CaptureFilter& f)
 
     for (int a = 0; controller && a < SDL_CONTROLLER_AXIS_MAX; ++a) s_cap.pad_axes[a] = SDL_GameControllerGetAxis(controller, (SDL_GameControllerAxis)a) / 32767.0f;
 
+    s_cap.vr = g_vr_buttons.load();
+    s_cap.vr_axes[0] = g_vr_x.load();
+    s_cap.vr_axes[1] = g_vr_y.load();
+
     std::lock_guard<std::mutex> lk(g_bindings_mtx);
 
     for (const OpenJoy& oj : g_open_joys)
@@ -1505,7 +1836,9 @@ int capture_poll(rs64::input::Source* out)
     int nk = 0;
     const uint8_t* ks = SDL_GetKeyboardState(&nk);
     const uint32_t pad = pad_buttons_now();
-    const bool start_cancels = !s_cap.filter.any && (pad & ~s_cap.pad & (1u << SDL_CONTROLLER_BUTTON_START));
+    const uint32_t vr = g_vr_buttons.load();
+    const bool vr_capture = !s_cap.filter.any && (s_cap.filter.device == ri::Device::Vr);
+    const bool start_cancels = !s_cap.filter.any && ((pad & ~s_cap.pad & (1u << SDL_CONTROLLER_BUTTON_START)) || (vr_capture && (vr & ~s_cap.vr & (1u << ri::VrMenu))));
     const uint16_t touch = g_touch_buttons.load();
     const bool touch_cancels = touch & ~s_cap.touch & (rs64::touch::B | rs64::touch::START);
 
@@ -1518,11 +1851,24 @@ int capture_poll(rs64::input::Source* out)
         return -1;
     }
 
+    const auto pressed_now = [&](int sc) { return sc < nk && ks[sc] && !s_cap.keys[sc]; };
+
+    if (s_cap.filter.clear_keys && (pressed_now(SDL_SCANCODE_DELETE) || pressed_now(SDL_SCANCODE_BACKSPACE)))
+    {
+        s_cap.active = false;
+
+        return 2;
+    }
+
     ri::Source got;
     bool have = false;
+    const ri::Source& first = s_cap.first;
     auto offer = [&](const ri::Source& s) {
 
-        if (!have && ri::capture_accepts(s_cap.filter, s)) {
+        // A held axis is offered every poll; the waiting first input never pairs with itself.
+        const bool is_first = s_cap.pending && s.kind == first.kind && s.code == first.code && s.dir == first.dir && s.dev == first.dev;
+
+        if (!have && !is_first && ri::capture_accepts(s_cap.filter, s)) {
             got = s;
             have = true;
         }
@@ -1559,6 +1905,22 @@ int capture_poll(rs64::input::Source* out)
     }
 
     s_cap.mouse = mb;
+
+    for (int b = 0; b < ri::VrButtonCount; ++b)
+    {
+        if ((vr >> b & 1u) && !(s_cap.vr >> b & 1u)) offer({ ri::SourceKind::VrButton, b, 0 });
+    }
+
+    s_cap.vr = vr;
+
+    const float vr_axes[2] = { g_vr_x.load(), g_vr_y.load() };
+
+    for (int a = 0; a < 2; ++a)
+    {
+        const float delta = vr_axes[a] - s_cap.vr_axes[a];
+
+        if (std::fabs(delta) >= 0.5f) offer({ ri::SourceKind::VrAxis, a, (int8_t)(delta > 0.0f ? 1 : -1) });
+    }
 
     std::unique_lock<std::mutex> lk(g_bindings_mtx);
 
@@ -1602,11 +1964,41 @@ int capture_poll(rs64::input::Source* out)
         }
     }
 
+    // The first input waits for a second one (a combo) or its own release (bound alone).
+    ri::RawState now;
+
+    now.keys = ks;
+    now.keys_len = nk;
+    now.pad = controller;
+    now.mouse_buttons = mb;
+    now.joys = g_joy_by_dev.data();
+    now.joys_len = (int)g_joy_by_dev.size();
+    fill_vr_state(now);
+
+    const bool first_down = s_cap.pending && ri::input_down(g_bindings, now, s_cap.first);
+
     lk.unlock();
 
-    if (!have) return 0;
+    if (!s_cap.pending)
+    {
+        s_cap.pending = have;
+        s_cap.first = got;
 
-    *out = got;
+        return 0;
+    }
+
+    ri::Source combo = got;
+
+    combo.with = ri::as_held(s_cap.first);
+
+    if (have && first_down && ri::capture_accepts(s_cap.filter, combo)) {
+        *out = combo;
+    } else if (!first_down) {
+        *out = s_cap.first;
+    } else {
+        return 0;
+    }
+
     s_cap.active = false;
 
     return 1;
@@ -1629,6 +2021,7 @@ bool capture_device_present(rs64::input::Device d)
     {
         case rs64::input::Device::Gamepad:  return controller != nullptr;
         case rs64::input::Device::Joystick: return !g_open_joys.empty();
+        case rs64::input::Device::Vr:       return g_vr_ok.load();
         default:                            return true;
     }
 }

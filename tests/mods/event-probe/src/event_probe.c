@@ -4,10 +4,10 @@
 #include "recompdata.h"
 #include "recomputils.h"
 
-#define MENU_FRAMES (*(volatile unsigned int*)0x80C00000)
-#define DATA_RESULTS ((volatile unsigned int*)0x80C00050)
+#define MENU_FRAMES (*(volatile unsigned int*)0x80A02000)
+#define DATA_RESULTS ((volatile unsigned int*)0x80A02050)
 
-// Expected at 0x80C00050..60: 1234, BEEF, 2, 77, CAFE.
+// Expected at 0x80A02050..60: 1234, BEEF, 2, 77, CAFE.
 static void check_recompdata(void) {
     unsigned long v = 0;
     U32ValueHashmapHandle vm = recomputil_create_u32_value_hashmap();
@@ -43,8 +43,8 @@ static void check_recompdata(void) {
     recomputil_destroy_u32_memory_hashmap(mm);
     recomputil_destroy_memory_slotmap(ms);
 }
-#define MISSION_FRAMES (*(volatile unsigned int*)0x80C00004)
-#define RETURNS (*(volatile unsigned int*)0x80C00008)
+#define MISSION_FRAMES (*(volatile unsigned int*)0x80A02004)
+#define RETURNS (*(volatile unsigned int*)0x80A02008)
 
 RECOMP_CALLBACK("*", rs64_on_menu_frame) void probe_menu_frame(void) {
     if (MENU_FRAMES++ == 0) {
@@ -58,7 +58,7 @@ RECOMP_CALLBACK("*", rs64_on_menu_frame) void probe_menu_frame(void) {
     }
 }
 
-#define EXPORTS ((volatile unsigned int*)0x80C0000C)
+#define EXPORTS ((volatile unsigned int*)0x80A0200C)
 
 extern unsigned int gObjectiveCounts[];
 

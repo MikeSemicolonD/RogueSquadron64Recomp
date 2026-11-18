@@ -73,13 +73,28 @@ static int demo_menu_frame(uint32_t, uint8_t*, void*, void*) {
     return RS64_HOOK_CONTINUE;
 }
 
-// Level rules (host API v6): a rule action { "do": "demo_log", ... } logs its fields, then raises the custom when "demo.ping",
-// which a rule { "when": "custom", "custom": "demo.ping" } in a level's rules.json can answer.
+// Level rules (host API v6): a rule action "demo_log key=value ..." logs its fields, then raises the custom when "demo.ping",
+// which a rule "when custom demo.ping" in a level's rules.txt can answer.
 static void demo_log(uint8_t*, void*, const char* const* keys, const char* const* values, int count, void*) {
     std::string line = "[native-demo] rule action demo_log";
     for (int i = 0; i < count; i++) line += std::string(" ") + keys[i] + "=" + values[i];
     g_api->log(line.c_str());
     g_api->fire_rule_event("demo.ping", "");
+}
+
+// Level rules check (host API v9): demo_kills() counts the units destroyed this mission (RS64_HOOK_UNIT_DESTROYED), so a rule can test
+// "when true: demo_kills() >= 5". RS64_HOOK_MISSION_READY starts each mission's count at 0.
+static int s_kills = 0;
+static int demo_unit_destroyed(uint32_t, uint8_t*, void*, void*) {
+    ++s_kills;
+    return RS64_HOOK_CONTINUE;
+}
+static int demo_mission_ready(uint32_t, uint8_t*, void*, void*) {
+    s_kills = 0;
+    return RS64_HOOK_CONTINUE;
+}
+static double demo_kills(uint8_t*, void*, const char*, void*) {
+    return s_kills;
 }
 
 MOD_EXPORT void rs64_mod_init(uint8_t* rdram, void* ctx) {
@@ -94,6 +109,9 @@ MOD_EXPORT void rs64_mod_init(uint8_t* rdram, void* ctx) {
     g_api->add_hook(RS64_HOOK_MENU_FRAME, demo_menu_frame, nullptr);
     g_api->add_text_source("demo_frames", demo_text, nullptr);
     g_api->add_rule_action("demo_log", demo_log, nullptr);
+    g_api->add_hook(RS64_HOOK_UNIT_DESTROYED, demo_unit_destroyed, nullptr);
+    g_api->add_hook(RS64_HOOK_MISSION_READY, demo_mission_ready, nullptr);
+    g_api->add_rule_condition("demo_kills", demo_kills, nullptr);
     char line[64];
     std::snprintf(line, sizeof line, "[native-demo] host API v%d taken", (int)RS64_HOST_API_VERSION);
     g_api->log(line);

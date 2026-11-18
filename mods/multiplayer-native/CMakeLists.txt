@@ -1,5 +1,6 @@
 # Online co-op as a native mod: multiplayer_native.dll / .so, which reaches the game only through the host API table.
 # Added by the game's CMake; one folder per config, staged by tools/mods/stage_mods.cmake and by the POST_BUILD below.
+cmake_minimum_required(VERSION 3.20)
 include(${CMAKE_CURRENT_SOURCE_DIR}/net_libs.cmake)
 
 set(MP_OUT "${RS64_BUILT_MODS_DIR}/$<CONFIG>/multiplayer-native")
@@ -13,7 +14,12 @@ set(MP_BASE_FILES
     ${CMAKE_SOURCE_DIR}/src/util/rdram_words.h)
 # The relay server's protocol (relay-server/src), shared with rs64_relay.
 set(MP_RELAY_FILES ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.cpp ${CMAKE_SOURCE_DIR}/relay-server/src/relay_protocol.h)
-add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES} ${MP_RELAY_FILES})
+# The browser build can't load libraries: there the mod is a static library linked into the game (web/register_static.cpp).
+if (EMSCRIPTEN)
+    add_library(multiplayer_native STATIC ${MP_SOURCES} ${MP_BASE_FILES} ${MP_RELAY_FILES})
+else()
+    add_library(multiplayer_native SHARED ${MP_SOURCES} ${MP_BASE_FILES} ${MP_RELAY_FILES})
+endif()
 # Same rounding as the game's copy of lockstep_core: no fused multiply-add in the flight model.
 set(MP_NO_FMA ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/core/mp_core.cpp)
 if (MSVC)
@@ -43,7 +49,16 @@ target_include_directories(multiplayer_native PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include
     ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
-target_link_libraries(multiplayer_native PRIVATE enet6 libminiupnpc-static)
+target_link_libraries(multiplayer_native PRIVATE enet6 monocypher)
+
+# Wi-Fi Direct pairing (src/net/wifi_direct.cpp).
+if (WIN32)
+    target_link_libraries(multiplayer_native PRIVATE wlanapi windowsapp)
+endif()
+# A browser can't reach the router, so the web build has no UPnP.
+if (NOT EMSCRIPTEN)
+    target_link_libraries(multiplayer_native PRIVATE libminiupnpc-static)
+endif()
 # Linux: every symbol resolves inside the library (nothing from the exe), its own calls bind to itself, and only the two mod entry points are exported (no ENet / miniupnpc or libstdc++ template symbols).
 if (UNIX AND NOT APPLE)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/exports.map" "{ global: recomp_api_version; rs64_mod_init; local: *; };\n")
@@ -54,6 +69,30 @@ endif()
 if (APPLE)
     target_link_options(multiplayer_native PRIVATE "-Wl,-exported_symbols_list,${CMAKE_CURRENT_SOURCE_DIR}/exports.macos" -Wl,-undefined,error)
 endif()
+# Browser build: linked into the game, its folder holds only mod.json (from the desktop build's regen_funcs_web) and the menu; the relocation is recompiled in.
+if (EMSCRIPTEN)
+    set(MP_WEB_OUT "${RS64_BUILT_MODS_DIR}/web/multiplayer-native")
+    add_custom_target(multiplayer_native_web_folder
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${MP_WEB_OUT}
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/RecompiledFuncsWeb/multiplayer_native.mod.json ${MP_WEB_OUT}/mod.json
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/roguesq_menu.json ${MP_WEB_OUT}/roguesq_menu.json
+        VERBATIM)
+    target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/web/register_static.cpp)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE multiplayer_native)
+    target_link_options(RogueSquadron64Recomp PRIVATE "--pre-js=${CMAKE_CURRENT_SOURCE_DIR}/web/rs64net.js")
+
+    # Browser test of ENet over WebTransport through a relay (tests/enet_web_test.cpp says how to run it).
+    add_executable(enet_web_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/tests/enet_web_test.cpp ${MP_RELAY_FILES})
+    target_include_directories(enet_web_test PRIVATE ${CMAKE_SOURCE_DIR}/relay-server/src ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(enet_web_test PRIVATE enet6)
+    set_target_properties(enet_web_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+    target_link_options(enet_web_test PRIVATE -sPROXY_TO_PTHREAD -sEXPORTED_FUNCTIONS=_main,_malloc,_free -sEXPORTED_RUNTIME_METHODS=UTF8ToString,HEAPU8 "--pre-js=${CMAKE_CURRENT_SOURCE_DIR}/web/rs64net.js")
+    add_custom_command(TARGET enet_web_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/tests/enet_web_test.html $<TARGET_FILE_DIR:enet_web_test>
+        VERBATIM)
+    return()
+endif()
+
 # mod.json and instruction_patches.json (the per-player data relocation, applied by librecomp at load) come from mod.toml through RecompModTool: the in-tree one, or the host one a cross build passes (Android).
 set(MP_MODTOOL_OUT "${CMAKE_CURRENT_BINARY_DIR}/modtool")
 if (TARGET RecompModTool AND NOT CMAKE_CROSSCOMPILING)
@@ -76,6 +115,7 @@ add_custom_command(OUTPUT "${MP_MODTOOL_OUT}/mod.json" "${MP_MODTOOL_OUT}/instru
     VERBATIM)
 add_custom_target(multiplayer_native_manifest DEPENDS "${MP_MODTOOL_OUT}/mod.json" "${MP_MODTOOL_OUT}/instruction_patches.json")
 add_dependencies(multiplayer_native multiplayer_native_manifest)
+
 
 # The mod folder: the library plus its mod.json, menu and instruction_patches.json.
 add_custom_command(TARGET multiplayer_native POST_BUILD

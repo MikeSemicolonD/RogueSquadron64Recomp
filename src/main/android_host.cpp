@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include "SDL.h"
 #include "SDL_system.h"
+#include "host_api/host_api.h"
 #include "util/debug_logs.h"
 
 namespace rs64::android {
@@ -295,6 +296,59 @@ namespace rs64::android {
         env->DeleteLocalRef(activity);
 
         return f;
+    }
+
+    void update_wifi_direct()
+    {
+
+        static int s_mode = 0;
+        const int mode = rs64::host::flag("wifi_direct");
+
+        if (mode == 0 && s_mode == 0)
+        {
+            return;
+        }
+
+        JNIEnv* env = static_cast<JNIEnv*>(SDL_AndroidGetJNIEnv());
+        jobject activity = static_cast<jobject>(SDL_AndroidGetActivity());
+
+        if (!env || !activity)
+        {
+            return;
+        }
+
+        jclass cls = env->GetObjectClass(activity);
+
+        if (mode != s_mode) {
+            s_mode = mode;
+            jmethodID set = env->GetStaticMethodID(cls, "wifiDirect", "(I)V");
+
+            if (set) {
+                env->CallStaticVoidMethod(cls, set, mode);
+            }
+
+            if (env->ExceptionCheck()) {
+                env->ExceptionClear();
+            }
+
+            fprintf(stderr, "[net] Wi-Fi Direct mode %d\n", mode);
+        }
+
+        int state = 0;
+        jmethodID get = env->GetStaticMethodID(cls, "wifiDirectState", "()I");
+
+        if (get) {
+            state = env->CallStaticIntMethod(cls, get);
+        }
+
+        if (env->ExceptionCheck()) {
+            env->ExceptionClear();
+        }
+
+        env->DeleteLocalRef(cls);
+        env->DeleteLocalRef(activity);
+
+        rs64::host::set_flag("wifi_direct_link", mode ? state : 0);
     }
 
     void set_window_frame_rate(void* native_window)

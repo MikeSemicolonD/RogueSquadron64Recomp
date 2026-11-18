@@ -10,7 +10,7 @@ extern "C" {
 // Every call comes from the game thread; the transport runs its own network thread. Messages are whole byte buffers, in order per reliability class.
 #define RS64_MP_TRANSPORT_SERVICE "mp.transport"
 // Bump only when a field is appended; existing fields never change. Callers check size before using a later version's fields.
-#define RS64_MP_TRANSPORT_VERSION 2
+#define RS64_MP_TRANSPORT_VERSION 3
 
 #define RS64_MP_ROLE_HOST 1
 #define RS64_MP_ROLE_CLIENT 2
@@ -58,10 +58,15 @@ typedef struct rs64_mp_transport {
     int (*game_locked)(void* user, int i);
     // What a host advertises: its game's name (menu-font text) and whether it asks for a password. May be called again while hosting.
     void (*set_info)(void* user, const char* name, int locked);
+
+    // Version 3: a host disconnects its current peer, after what was already sent to it, and accepts the next one; lost() then reports the peer gone.
+    void (*kick)(void* user);
 } rs64_mp_transport;
 
 // Non-zero when t has the version 2 game list.
-#define RS64_MP_TRANSPORT_HAS_LIST(t) ((t)->version >= 2 && (t)->size >= sizeof(rs64_mp_transport))
+#define RS64_MP_TRANSPORT_HAS_LIST(t) ((t)->version >= 2 && (t)->size >= offsetof(rs64_mp_transport, set_info) + sizeof(void*))
+// Non-zero when t has the version 3 kick.
+#define RS64_MP_TRANSPORT_HAS_KICK(t) ((t)->version >= 3 && (t)->size >= sizeof(rs64_mp_transport))
 // The size of a version 1 table: the oldest one multiplayer accepts.
 #define RS64_MP_TRANSPORT_V1_SIZE (offsetof(rs64_mp_transport, pending_join) + sizeof(void*))
 

@@ -12,9 +12,16 @@
 #include "relay_core.h"
 #include "relay_host.h"
 
+#ifdef RS64_RELAY_WEBTRANSPORT
+#include "relay_webtransport.h"
+#endif
+
 using namespace rs64::relay;
 
 namespace {
+
+// The browser build's play page on the project site.
+static constexpr const char* kBrowserPlayUrl = "https://mikesemicolond.github.io/RogueSquadron64Recomp/play/";
 
 std::atomic<bool> g_stop{false};
 std::mutex g_lines_mu;
@@ -102,11 +109,57 @@ int main(int argc, char** argv)
     std::thread(read_console).detach();
 
     print_log("'" + o.settings.name + "' listening on UDP port " + std::to_string(o.settings.port) + (o.config_found ? ", settings from " : ", no config file at ") + o.config);
+
+#ifdef RS64_RELAY_WEBTRANSPORT
+
+    // Browser players reach the ENet port through the bridge; its sockets are serviced on their own thread.
+    Bridge bridge(o.settings.port);
+    BrowserListener browsers(bridge);
+    std::atomic<bool> bridge_run{true};
+    std::thread bridge_thread([&] {
+        while (bridge_run) bridge.pump(5);
+    });
+    // The play page saves the relay from this link; the operator puts the PC's public IP in it and shares it.
+    const auto browser_line = [&] {
+
+        const std::string port = std::to_string(o.settings.browser_port);
+
+        print_log("browser players: share " + std::string(kBrowserPlayUrl) + "?relay=PUBLIC-IP:" + port + "&hash=" + browsers.hash());
+        print_log("  (PUBLIC-IP: this PC's internet address; forward UDP port " + port + " too)");
+    };
+
+    host.set_bridge(&bridge);
+
+    if (o.settings.browser_port) {
+        std::string error;
+
+        if (browsers.start(o.settings.browser_port, now_ms(), &error)) {
+            browser_line();
+        } else {
+            print_log("browser players can't join: " + error);
+        }
+    }
+
+#endif
+
     print_log("type help for commands");
 
     while (!relay.quitting()) {
         host.service(relay, 10);
         relay.tick(now_ms());
+
+#ifdef RS64_RELAY_WEBTRANSPORT
+
+        std::string renew_error;
+
+        if (browsers.tick(now_ms(), &renew_error)) {
+            print_log("new certificate: browser players use the new address");
+            browser_line();
+        } else if (!renew_error.empty()) {
+            print_log("browser players can't join: " + renew_error);
+        }
+
+#endif
 
         std::deque<std::string> lines = take_lines();
 
@@ -118,6 +171,15 @@ int main(int argc, char** argv)
 
         for (const std::string& l : relay.take_log()) print_log(l);
     }
+
+#ifdef RS64_RELAY_WEBTRANSPORT
+
+    browsers.stop();
+    bridge_run = false;
+    bridge_thread.join();
+    host.set_bridge(nullptr);
+
+#endif
 
     // Lets the disconnects reach the players before the socket closes.
     host.close();

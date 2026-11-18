@@ -6,7 +6,7 @@ extern "C" {
 #endif
 
 // Bump only when a field is appended to rs64_host_api; existing fields never change.
-#define RS64_HOST_API_VERSION 7
+#define RS64_HOST_API_VERSION 12
 
 // A hook handler returns CONTINUE to fall through to the game's code, RETURN to make the hooked function return now (set ctx->r2 first if it returns a value).
 enum { RS64_HOOK_CONTINUE = 0, RS64_HOOK_RETURN = 1 };
@@ -58,6 +58,27 @@ typedef enum rs64_hook_id {
     RS64_HOOK_DEBRIEF_PAD = 39,          // runMenuRandomBackdropScreen 0x800BFC4C (menu overlay debrief): v0 = the pressed buttons its continue check reads (A/START 0x9000 leave the screen); may be edited. Never RETURN (mid-function)
     RS64_HOOK_FRONT_END = 40,            // mainGameLoop 0x8003E138: the front end is about to start, a1 = menu overlay state (1 mission select, 2 menus), a2 = the menu state 2 opens (4 = ELITE ROGUES after a game over); may be edited. Never RETURN (mid-function)
     RS64_HOOK_WINGMAN_DRAW = 41,         // npcWingmanUpdate 0x800D9A90: a wingman just added its model to the render list; s3 = the NPC, s1 = the render info (what the tow-cable renderer 0x800ADD5C takes as a0). Never RETURN (mid-function)
+    RS64_HOOK_NPC_HIT = 42,              // v8. slotDispatcherIter 0x8003E8DC entry, a HIT (action 5) only: a0 = the target NPC slot, a2 = the message (+2 u16 the shooter's slot, player 1 = u16 0x80137DBA; +4 weapon category; +6 damage). Observe only, never RETURN
+    RS64_HOOK_SPEECH_CLIP = 43,          // playSpeechClip 0x80066EE4 entry: a voice clip starts; a0 = the clip, a1-a3 its playback arguments (a2 = the volume as float bits). Observe only, never RETURN
+    // v9, host-dispatched with a copy of the game's registers: a0-a2 carry the values below, edits are dropped, RETURN is ignored. Each is also an rs64_on_* event.
+    RS64_HOOK_FRAME = 44,                // osViSwapBuffer: every frame the game presents, in any state (menus, cutscenes, missions); a0 = the framebuffer
+    RS64_HOOK_STATE_CHANGED = 45,        // osViSwapBuffer: the classified game state changed; a0 = the new state number, a1 = the old one (state_id() names it)
+    RS64_HOOK_CUTSCENE = 46,             // osViSwapBuffer: a cutscene started (a0 = 1) or ended (a0 = 0)
+    RS64_HOOK_UNIT_DESTROYED = 47,       // a unit's death effect starts; a0 = its DAT record, a1 = its name (char*, KSEG0)
+    RS64_HOOK_AREA_CROSSED = 48,         // a trigger area's effect runs; a0 = its DAT record, a1 = 1 entered / 0 left, a2 = its name
+    RS64_HOOK_PATH_POINT = 49,           // an NPC reached a path event; a0 = the event's DAT record, a1 = its name
+    RS64_HOOK_OBJECTIVE_STATE = 50,      // a mod level's own objective changed; a0 = the objective (1-4), a1 = 1 done / 0 failed
+    RS64_HOOK_MISSION_READY = 51,        // the first mission frame, once the level's objects are loaded (object_by_name works from here)
+    // v10, toml sites at function entry (RETURN skips the function).
+    RS64_HOOK_SONG_START = 52,           // playSongById: a0 = the song id (u16), may be replaced by another loaded song; RETURN skips it (r2 = -1)
+    RS64_HOOK_SOUND_3D = 53,             // play3DSoundEvent: a positioned sound effect starts; a0 = the emitting object or 0, a1 = its position (float[3]*); the sound id is the u16 at sp+0x1A and its volume (0-127) the byte at sp+0x1F, both may be rewritten; RETURN mutes it (r2 = -1)
+    RS64_HOOK_PLAYER_DAMAGE = 54,        // applyPlayerCraftDamage: a0 = the player's craft record (player 1 is 0x80137DBC), a1 = the damage as float bits, may be replaced; RETURN takes none
+    RS64_HOOK_PLAYER_FIRE = 55,          // a player craft fires its lasers: each craft's fire function (the X-wing's playerXwingFireBlaster and its A-wing, V-wing, Falcon, TIE, T-16 and Naboo counterparts) or, for the Y-wing and snowspeeder, the fire check in their weapon tick; a0 = the weapon context (its first word the player), a1 = the hardpoint; RETURN skips the shot
+    // v11
+    RS64_HOOK_CAMERA = 56,               // setupCameraMatrices entry: a camera's projection is set up; a0 = the camera (+0x20 FOV in degrees, +0x24 near, +0x28 far, +0x10/+0x14 viewport size), may be edited. Gameplay view tests use these cameras too. Never RETURN
+    // v12
+    RS64_HOOK_NPC_ATST_TICK = 57,        // npcAtStUpdate entry: an NPC AT-ST's update; a0 = its NPC context, a1 = the action (3 = tick), a2 = &dt; RETURN (r2 = 1) skips the update
+    RS64_HOOK_ATST_FIRE = 58,            // spawnPlayerAtStCannonFire entry: a walker fires one gun; a0 = the walker's block (+0x30 its model, +0x72 its NPC slot), a1 = the gun (0 its model node "a", else node "b"); RETURN skips the shot
     RS64_HOOK_COUNT
 } rs64_hook_id;
 
@@ -71,12 +92,14 @@ typedef void (*rs64_input_fn)(int port, uint16_t* buttons, float* x, float* y, v
 typedef void (*rs64_action_fn)(void* user);
 // A menu exit_when condition: non-zero = met.
 typedef int (*rs64_condition_fn)(void* user);
-// Typed text (utf8 non-NULL, key 0) or Backspace / Enter (utf8 NULL, key '\b' / '\r'); return 1 to take the event from the game.
+// Typed or pasted text (utf8 non-NULL, key 0), or Backspace / Enter / copy (utf8 NULL, key '\b' / '\r' / 3: Ctrl+C, the field's text goes to set_clipboard); return 1 to take the event from the game.
 typedef int (*rs64_key_fn)(const char* utf8, int key, void* user);
 typedef void (*rs64_event_fn)(void* user);
 typedef uint64_t (*rs64_hash_fn)(const uint8_t* rdram, void* user);
 // A level rules action: the rule's parameters as count key/value strings (numbers as their JSON text), on the game thread.
 typedef void (*rs64_rule_action_fn)(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user);
+// A level rules check `name(arg)`: its value, compared as written (`shields(player) < 30`) or true when non-zero; arg may be "". On the game thread.
+typedef double (*rs64_rule_condition_fn)(uint8_t* rdram, void* ctx, const char* arg, void* user);
 
 typedef struct rs64_host_api {
     uint32_t version;
@@ -120,7 +143,7 @@ typedef struct rs64_host_api {
     int (*add_valid_ram)(uint32_t addr, uint32_t size);
     // v5: game data [lo, hi) the mod moved to lo + delta (its instruction_patches.json repoints the game's code), so host code that reads it (lockstep hashes, rs64_relocated for .nrm mods) follows; only before the registry seals, no overlaps.
     int (*add_moved_range)(uint32_t lo, uint32_t hi, uint32_t delta);
-    // v6: a level rules action named in rules.json ("do": name), only before the registry seals; fire_rule_event raises a rule "custom" when (name, object) any time.
+    // v6: a level rules action a rules.txt line names ("<name> key=value ..."), only before the registry seals; fire_rule_event raises a rule "custom" when (name, object) any time.
     int (*add_rule_action)(const char* name, rs64_rule_action_fn fn, void* user);
     int (*fire_rule_event)(const char* name, const char* object);
     // v7: the level map's cell (col, row): its 25 heights (s8, the HMP's units) and texture id (an lv_X_TEX index). terrain_set_cell writes the game's own map, so
@@ -128,6 +151,45 @@ typedef struct rs64_host_api {
     // Game thread (a hook). 0 = ok, -1 no map, -2 out of range, -3 too many tiles.
     int (*terrain_get_cell)(uint8_t* rdram, uint32_t col, uint32_t row, int8_t heights[25], uint16_t* tex);
     int (*terrain_set_cell)(uint8_t* rdram, uint32_t col, uint32_t row, const int8_t heights[25], int tex);
+    // v8: puts text on the system clipboard (a key handler's copy, key 3). Any thread.
+    void (*set_clipboard)(const char* utf8);
+    // v8: the game time one mission frame covers, in seconds: 1/30 at the game's own rate, 1/60 when TARGET FPS runs 60 logic frames a second.
+    float (*frame_seconds)(void);
+    // v9: where a game field lives now (a per-player field the co-op mod moved); other addresses pass through.
+    uint32_t (*relocated)(uint32_t address);
+    // v9, missions only, game thread (a hook): the level object named name (its DAT record, KSEG0) or 0; its health 0-100 (-1 when there is none); destroy_object kills it as a lethal hit would (0 = done, -1 none, -2 already destroyed).
+    uint32_t (*object_by_name)(uint8_t* rdram, void* ctx, const char* name);
+    float (*object_health)(uint8_t* rdram, void* ctx, const char* name);
+    int (*destroy_object)(uint8_t* rdram, void* ctx, const char* name);
+    // v9: runs one level rules action line as rules.txt writes it ("message 4 Hold the bridge", "music 92", "shake seconds=2"), built-in or a mod's. Missions only, game thread.
+    // 0 = ran, -1 the line does not read (or is a wait), -2 no mission is running, -3 no action of that name.
+    int (*run_rule_line)(uint8_t* rdram, void* ctx, const char* line);
+    // v9: level rules variables (every mod's rules for the level share them; they start at 0 each mission). Game thread.
+    int32_t (*rule_var_get)(const char* name);
+    void (*rule_var_set)(const char* name, int32_t value);
+    // v9: a check level rules can test as name(arg); only before the registry seals, first wins. A rule using a check no mod added is skipped.
+    int (*add_rule_condition)(const char* name, rs64_rule_condition_fn fn, void* user);
+    // v9: seconds of game time since the mission started (0 outside one).
+    float (*mission_seconds)(void);
+    // v9: a mod's config option (its mod.json config_schema): 1 and *out for a number or enum, 0 if not set or not a number. config_string: the text of a string option, "" if none; valid until the next call.
+    int (*config_number)(const char* mod_id, const char* option, double* out);
+    const char* (*config_string)(const char* mod_id, const char* option);
+    // v10: non-zero while the keyboard key named key is down (SDL key names: "F7", "K", "Left Shift"). Let players pick the key through a string config option.
+    int (*key_down)(const char* key);
+    // v10: a folder for the mod's own files beside the game's settings (mod_data/<mod_id>/ with a trailing separator), created on first use; "" if it cannot be.
+    const char* (*mod_data_dir)(const char* mod_id);
+    // v10: the pilot (save slot, 0-based) chosen on the account screen, -1 before one is.
+    int (*save_slot)(void);
+    // v11: a ray-traced light preset set while the game runs: preset_json is one preset object as in roguesq_lights.json's "presets" (level, mesh or sprite, lights, ...), NULL or "" removes it.
+    // It replaces a file preset of the same name and shows from the next frame, so calling it every frame moves a light. Prefix name with your mod's id. Any thread. 0, -1 for a null name, -2 for JSON that is not an object with a lights array.
+    int (*light_set)(const char* name, const char* preset_json);
+    // v12, missions only, game thread (a hook): spawns a copy of the level unit named template (its DAT record, current health and settings included) at pos, named name (NULL keeps the template's), through the game's own unit spawner.
+    // The copy is the template's kind (a path-following unit follows the same path) and is not one of the level's objects, so object_by_name and level rules do not find it; RS64_HOOK_UNIT_DESTROYED reports its death. Up to 48 a mission, local to this game (co-op does not share it).
+    // Returns the NPC slot, or -1 no such unit, -2 no mission, -3 no room (48 spawned this mission, or the game's NPC pool is full), -4 not a unit that can be copied, -5 the spawn failed.
+    int (*spawn_unit)(uint8_t* rdram, void* ctx, const char* template_name, const char* name, const float pos[3]);
+    // v12: turns and moves the drawn view relative to the game's camera: yaw left and pitch up in degrees, offset in game camera axes and units (x right, y down, z forward); all zero = the game's own view. It lasts until changed.
+    // It moves only what is drawn: the game still culls and aims from its own camera, so a large turn shows the edge of what the game drew, and replays stay exact. Ignored while a VR headset or ROGUESQ_VR_FAKE_YAW drives the view. Any thread.
+    void (*camera_view)(float yaw_degrees, float pitch_degrees, const float offset[3]);
 } rs64_host_api;
 
 // Mods dispatch after the built-ins, in mod-load order. During rs64_mod_init `call` and `yield` have no usable game ctx and init runs inside rs64_hook's static initializer (yielding can deadlock other game threads entering rs64_hook): do not use them there (alloc is fine).

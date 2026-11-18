@@ -6,9 +6,12 @@ Run as a stdio MCP server (Claude Code .mcp.json), or `python rs64_mcp.py --self
 import functools
 import http.client
 import json
+import math
 import os
 import re
+import shlex
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -18,15 +21,64 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tmem_decode  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-RENDERDOC_DLL = r"E:\Projects\renderdoc\x64\Release\renderdoc.dll"
-WAIT_LOG_FAIL = r"SEH caught|null-call|Assertion failed|Failed to find function"
+# ROGUESQ_RENDERDOC, else a renderdoc checkout next to the repo (the build the renderdoc MCP replays with), else the installed RenderDoc.
+RENDERDOC_DLL = os.environ.get("ROGUESQ_RENDERDOC") or next((p for p in (os.path.join(REPO, "..", "renderdoc", "x64", "Release", "renderdoc.dll"), os.path.join(os.environ.get("ProgramFiles", ""), "RenderDoc", "renderdoc.dll")) if os.path.isfile(p)), "")
+WAIT_LOG_FAIL = r"SEH caught|null-call|Assertion failed|Failed to find function|\[nav\] stuck"
+# wait_log gives up on a game that is neither held nor sending display lists for this long (a hang logs nothing).
+WAIT_LOG_FROZEN_S = 10
 # Debug builds serve the bridge here unless ROGUESQ_MCP_PORT says otherwise (src/main/main.cpp).
 DEFAULT_BRIDGE_PORT = 47064
 WAIT_LOG_MAX_S = 120
+# A long bridge call gives up after this long with no display list and the game not held (a load can pause drawing for a few seconds).
+CALL_STALL_S = 20
+# A menu screen that nothing drives (no boot target, no held input) never changes; a wait there gives up after this long. The main menu is left out: idling there starts the attract demo.
+MENU_IDLE_S = 20
+
+
+class MenuIdle:
+    """Raises once the game has sat on one undriven menu screen for MENU_IDLE_S."""
+
+    def __init__(self):
+        self.state, self.since = None, time.time()
+
+    def check(self, info, what):
+        st = info.get("state") or ""
+        driven = info.get("held") or info.get("input") or info.get("nav")
+        if driven or st != self.state or not st.startswith("menu") or st == "menu.main":
+            self.state, self.since = st, time.time()
+        elif time.time() - self.since >= MENU_IDLE_S:
+            raise GameError(f"{what}: stopped, the game has sat on {st} for {MENU_IDLE_S}s with nothing driving it (no boot target running, no press); it will not change on its own")
 
 
 class GameError(Exception):
     pass
+
+
+class MissionEnded(GameError):
+    """The mission ended (won or lost) while a call waited on its lockstep clock, which then never reaches the frame."""
+    pass
+
+
+def merge_settings(base, over):
+    """over merged into base: nested objects key by key, anything else replaced."""
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = merge_settings(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def session_video_config(exe_dir, session_dir, settings):
+    """The player's roguesq_video.json with settings merged over it, copied into the session so nothing the run changes reaches the player's file."""
+    base = {}
+    try:
+        with open(os.path.join(exe_dir, "roguesq_video.json"), encoding="utf-8") as f:
+            base = json.load(f)
+    except (OSError, ValueError):
+        pass
+    path = os.path.join(session_dir, "roguesq_video.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(merge_settings(base, settings or {}), f, indent=2)
+    return path
 
 
 _symbols = None
@@ -44,6 +96,50 @@ def symbol_table():
                     for sym in section.get("symbols", []) + section.get("functions", []):
                         _symbols.setdefault(sym["name"], sym["vram"])
     return _symbols
+
+
+class RamReader:
+    """Game memory through rdram_read, fetched in 64 KB pages so a walk over scattered records costs a few calls."""
+
+    def __init__(self, game):
+        self.game = game
+        self.pages = {}
+
+    def rd(self, addr, n):
+        out = b""
+        while n > 0:
+            page = addr & ~0xFFFF
+            if page not in self.pages:
+                self.pages[page] = bytes.fromhex(self.game.call("rdram_read", {"addr": page, "size": 0x10000})["hex"])
+            take = min(n, page + 0x10000 - addr)
+            out += self.pages[page][addr - page:addr - page + take]
+            addr += take
+            n -= take
+        return out
+
+    def u32(self, a):
+        return int.from_bytes(self.rd(a, 4), "big")
+
+    def u16(self, a):
+        return int.from_bytes(self.rd(a, 2), "big")
+
+    def vec(self, a, k=3):
+        return struct.unpack(f">{k}f", self.rd(a, 4 * k))
+
+    def cstr(self, a, n=32):
+        return self.rd(a, n).split(b"\0")[0].decode("ascii", "replace") if self.ok(a, n) else ""
+
+    @staticmethod
+    def ok(p, size=0):
+        return 0x80000000 <= p < 0x80800000 - size
+
+
+@functools.cache
+def function_names():
+    """vram -> name for the function symbols in syms/."""
+    import tomllib
+    with open(os.path.join(REPO, "syms", "rogue_squadron.syms.toml"), "rb") as f:
+        return {fn["vram"]: fn["name"] for section in tomllib.load(f).get("section", []) for fn in section.get("functions", [])}
 
 
 def write_minidump(pid, path):
@@ -181,6 +277,62 @@ def capture_window(pid):
     return bytes(rgba), w, h
 
 
+ADB = os.path.join(os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk"), "platform-tools", "adb.exe")
+ANDROID_PACKAGE = "com.rs64recomp.app"
+SSH_EXE = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "OpenSSH", "ssh.exe")
+SCP_EXE = os.path.join(os.path.dirname(SSH_EXE), "scp.exe")
+ANDROID_FILES = f"/sdcard/Android/data/{ANDROID_PACKAGE}/files"
+# The session video settings on the device: read-only to the game, as the shell pushed it.
+ANDROID_VIDEO = ANDROID_FILES + "/roguesq_mcp_video.json"
+
+
+def adb(serial, *args, **kw):
+    return subprocess.run([ADB, "-s", serial, *args], capture_output=True, text=True, stdin=subprocess.DEVNULL, **kw)
+
+
+class AndroidProcess:
+    """The game on an Android device: enough of Popen for Game, by the app's pid (checked at most once a second, since each check is an adb round trip)."""
+
+    def __init__(self, serial):
+        self.serial = serial
+        self.returncode = None
+        self.pid = 0
+        self.checked = 0.0
+
+    def poll(self):
+        if self.returncode is not None or time.time() - self.checked < 1.0:
+            return self.returncode
+        self.checked = time.time()
+        out = adb(self.serial, "shell", "pidof", ANDROID_PACKAGE).stdout.strip()
+        if out:
+            self.pid = int(out.split()[0])
+            return None
+        self.returncode = 0
+        return 0
+
+    def wait(self, timeout=None):
+        deadline = time.time() + (timeout or 0)
+        while self.poll() is None and (timeout is None or time.time() < deadline):
+            time.sleep(0.5)
+        return self.returncode
+
+
+def wsl_path(path):
+    """A Windows path as WSL sees it (E:\\x -> /mnt/e/x)."""
+    drive, rest = os.path.splitdrive(os.path.abspath(path))
+    return "/mnt/" + drive[0].lower() + rest.replace("\\", "/")
+
+
+def android_serial():
+    """ANDROID_SERIAL, else the one device adb sees."""
+    if os.environ.get("ANDROID_SERIAL"):
+        return os.environ["ANDROID_SERIAL"]
+    devices = [line.split()[0] for line in subprocess.run([ADB, "devices"], capture_output=True, text=True).stdout.splitlines()[1:] if line.endswith("\tdevice")]
+    if len(devices) != 1:
+        raise GameError(f"set ANDROID_SERIAL: adb sees {len(devices)} devices ({', '.join(devices) or 'none'})")
+    return devices[0]
+
+
 class ExternalProcess:
     """A game started by someone else, found by its bridge port: just enough of Popen (pid, poll, returncode, wait) for Game."""
 
@@ -228,13 +380,81 @@ class Game:
         self.next_id = 1
         self.pending = {}
         self.lock = threading.Lock()
+        self.platform = "windows"
+        self.linux_pid_file = None
+        self.serial = None
+        self.logcat = None
+        self.ssh_target = ""
+        self.remote_dir = ""
+
+    def game_path(self, path):
+        """A path on this machine as the game sees it: a Linux build under WSL reads drive E: at /mnt/e; on Android it is the same place under the app's files
+        folder (pushed before launch, pulled after the game writes it)."""
+        path = os.path.abspath(path)
+        if self.platform == "android":
+            return ANDROID_FILES + "/mcp/" + os.path.relpath(path, REPO).replace("\\", "/")
+        if self.platform == "ssh":
+            return self.remote_dir + "/mcp/" + os.path.relpath(path, REPO).replace("\\", "/")
+        if self.platform != "linux":
+            return path
+        return wsl_path(path)
+
+    def ssh(self, command, stdin=subprocess.DEVNULL, **kw):
+        """Run a command on the RS64_SSH_TARGET machine with Windows' OpenSSH (key in ~/.ssh)."""
+        return subprocess.run([SSH_EXE, "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", self.ssh_target, command], capture_output=True, stdin=stdin, **kw)
+
+    def ssh_sync(self, stage_dir, video_cfg):
+        """Stream the staged folder (game, mods, mods.json, ROM) into the remote folder, its saves and outputs cleared, and the session's video settings."""
+        self.ssh(f"rm -rf {self.remote_dir}/saves {self.remote_dir}/mod_config {self.remote_dir}/mcp {self.remote_dir}/mods; mkdir -p {self.remote_dir}/saves")
+        pack = subprocess.Popen(["tar", "-C", stage_dir, "-cf", "-", "."], stdout=subprocess.PIPE, stdin=subprocess.DEVNULL)
+        self.ssh(f"tar -xf - -C {self.remote_dir}", stdin=pack.stdout, timeout=600)
+        pack.wait()
+        remote_cfg = self.game_path(video_cfg)
+        with open(video_cfg, "rb") as f:
+            self.ssh(f"mkdir -p {os.path.dirname(remote_cfg)} && cat > {remote_cfg}", stdin=f)
+
+    def ssh_pull(self, path):
+        """Copy a file the remote game wrote back to the same place here."""
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        subprocess.run([SCP_EXE, "-o", "BatchMode=yes", f"{self.ssh_target}:{self.game_path(path)}", os.path.abspath(path)], capture_output=True, stdin=subprocess.DEVNULL)
+
+    def android_sync(self, stage_dir, video_cfg, env_file):
+        """Mirror a staged folder's mods, mods.json and empty saves onto the device, with the session's video settings and env file; the ROM is pushed once."""
+        files = ANDROID_FILES
+        adb(self.serial, "shell", "am", "force-stop", ANDROID_PACKAGE)
+        # Folders the shell makes here are not writable by the app (Android 11+ storage), so the game makes saves/ and mcp/ itself.
+        adb(self.serial, "shell", f"rm -rf {files}/mods {files}/saves {files}/mod_config {files}/mods.json {files}/mcp {ANDROID_VIDEO}")
+        for name in ("mods", "mods.json"):
+            if os.path.exists(os.path.join(stage_dir, name)):
+                adb(self.serial, "push", os.path.join(stage_dir, name), f"{files}/", timeout=300)
+        if not adb(self.serial, "shell", f"ls {files}/rogue_squadron.z64").stdout.strip().endswith(".z64"):
+            adb(self.serial, "push", os.path.join(stage_dir, "rogue_squadron.z64"), f"{files}/rogue_squadron.z64", timeout=300)
+        adb(self.serial, "push", video_cfg, ANDROID_VIDEO)
+        adb(self.serial, "push", env_file, f"{files}/roguesq_env.txt")
 
     def alive(self):
-        return self.proc is not None and self.proc.poll() is None
+        """True while the game runs. Once its process is gone (closed by the user, crashed) the bridge connection is dropped, so it needs no close()."""
+        running = self.proc is not None and self.proc.poll() is None
+        if not running and self.sock is not None:
+            self.disconnect()
+        return running
 
     def status(self):
+        state = None
+        held = None
+
+        if self.alive():
+            try:
+                info = self.call("frame_info", timeout_s=2)
+                state = info.get("state")
+                held = info.get("held")
+            except GameError:
+                pass
+
         return {
             "running": self.alive(),
+            "state": state,
+            "held": held,
             "pid": self.proc.pid if self.proc else 0,
             "port": self.port,
             "exit_code": None if (self.proc is None or self.alive()) else self.proc.returncode,
@@ -249,35 +469,99 @@ class Game:
         except OSError:
             return ""
 
-    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None):
+    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None, platform="windows"):
+        """platform="linux" runs build/<config>/RogueSquadron64Recomp (a Linux build) under WSL on the GPU through Mesa Dozen, as tools/release/run-wsl-gpu.sh does."""
         if self.alive():
             raise GameError(f"game already running (pid {self.proc.pid}); close it first")
 
+        self.platform = platform
         exe_dir = os.path.join(REPO, "build", config)
-        exe = os.path.join(exe_dir, "RogueSquadron64Recomp.exe")
-        if not os.path.isfile(exe):
+        exe = os.path.join(exe_dir, "RogueSquadron64Recomp" if platform in ("linux", "ssh") else "RogueSquadron64Recomp.exe")
+        if platform == "android":
+            self.serial = android_serial()
+        elif not os.path.isfile(exe):
             raise GameError(f"no build at {exe}")
+
+        # platform="ssh": a Linux machine (RS64_SSH_TARGET, user@host) runs the game in RS64_SSH_DIR under its home, on its logged-in desktop.
+        if platform == "ssh":
+            self.ssh_target = os.environ.get("RS64_SSH_TARGET", "")
+            if not self.ssh_target:
+                raise GameError("set RS64_SSH_TARGET to user@host")
+            home = self.ssh("echo $HOME").stdout.decode("utf-8", "replace").strip()
+            if not home:
+                raise GameError(f"no answer from {self.ssh_target} over ssh")
+            self.remote_dir = home + "/" + os.environ.get("RS64_SSH_DIR", "rs64-smoke")
 
         self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
         os.makedirs(self.session_dir, exist_ok=True)
         self.log_path = os.path.join(self.session_dir, "game.log")
+        video_cfg = session_video_config(exe_dir, self.session_dir, settings)
 
         with socket.socket() as s:
             s.bind(("127.0.0.1", 0))
             self.port = s.getsockname()[1]
 
-        full_env = dict(os.environ)
-        full_env["ROGUESQ_HLE_DEV_MODE"] = "1"
-        if os.path.isfile(RENDERDOC_DLL):
-            full_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
-            full_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
+        game_env = {"ROGUESQ_HLE_DEV_MODE": "1", "ROGUESQ_VIDEO_CONFIG": self.game_path(video_cfg)}
+        # Game time steps one frame per frame, so a cutscene, menu or mission frame number is the same picture on every launch; env ROGUESQ_FIXED_STEP=0 plays on real time.
+        game_env["ROGUESQ_FIXED_STEP"] = "1"
+        if platform == "windows" and os.path.isfile(RENDERDOC_DLL):
+            game_env["ROGUESQ_RENDERDOC"] = RENDERDOC_DLL
+            game_env["ROGUESQ_RENDERDOC_OUT"] = os.path.join(REPO, "dumps", "RenderDoc", "mcp-" + os.path.basename(self.session_dir), "cap")
+            # Vulkan loads RenderDoc as a layer from its manifest; the installed one is a second copy the capture trigger never reaches.
+            if os.path.isfile(os.path.join(os.path.dirname(RENDERDOC_DLL), "renderdoc.json")):
+                game_env["VK_IMPLICIT_LAYER_PATH"] = os.path.dirname(RENDERDOC_DLL)
         if record:
-            full_env["ROGUESQ_LS_RECORD"] = os.path.abspath(record)
-        full_env.update({k: str(v) for k, v in (env or {}).items()})
+            # The game makes no folder for a recording, and on Android one the shell makes is not the app's to write, so it goes in the files folder there.
+            if platform == "android":
+                game_env["ROGUESQ_LS_RECORD"] = f"{ANDROID_FILES}/mcp_{os.path.basename(record)}"
+            elif platform == "ssh":
+                game_env["ROGUESQ_LS_RECORD"] = f"{self.remote_dir}/mcp_{os.path.basename(record)}"
+            else:
+                game_env["ROGUESQ_LS_RECORD"] = self.game_path(record)
+        game_env.update({k: str(v) for k, v in (env or {}).items()})
 
-        cmd = [exe, "--mcp-port", str(self.port), "--mute", "--unfocused"] + list(args or [])
+        game_args = ["--mcp-port", str(self.port), "--mute", "--unfocused"] + list(args or [])
         log = open(self.log_path, "wb")
-        self.proc = subprocess.Popen(cmd, cwd=exe_dir, env=full_env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+
+        if platform == "linux":
+            # wsl.exe passes no Windows environment, so the game's variables are exported in the script; its Linux pid goes to a file for close().
+            self.linux_pid_file = os.path.join(self.session_dir, "linux.pid")
+            exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in game_env.items())
+            script = (f"echo $$ > {shlex.quote(self.game_path(self.linux_pid_file))}; {exports}"
+                      "export VK_ICD_FILENAMES=$HOME/mesa-dzn/share/vulkan/icd.d/dzn_icd.x86_64.json; "
+                      "export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$HOME/mesa-dzn/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH; "
+                      f"cd {shlex.quote(self.game_path(exe_dir))} && exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args))
+            self.proc = subprocess.Popen(["wsl.exe", "-e", "bash", "-lc", script], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        elif platform == "ssh":
+            # The desktop session's display, as tools/release/linux/test-remote.sh finds it, and the bundle's libraries from the machine's install (RS64_SSH_LIBS).
+            self.ssh_sync(exe_dir, video_cfg)
+            libs = os.environ.get("RS64_SSH_LIBS", "$HOME/rs64/lib")
+            exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in game_env.items())
+            script = ("uid=$(id -u); w=$(ls /run/user/$uid 2>/dev/null | grep -m1 '^wayland-[0-9]*$'); x=$(ls /tmp/.X11-unix 2>/dev/null | head -1 | sed 's/^X/:/'); "
+                      "export XDG_RUNTIME_DIR=/run/user/$uid DISPLAY=${x:-:0}; [ -n \"$w\" ] && export WAYLAND_DISPLAY=$w; "
+                      f"export LD_LIBRARY_PATH={libs}:$LD_LIBRARY_PATH; echo $$ > {self.remote_dir}/mcp.pid; {exports}"
+                      f"cd {self.remote_dir} && chmod +x RogueSquadron64Recomp && exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args))
+            self.proc = subprocess.Popen([SSH_EXE, "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes", "-L", f"{self.port}:127.0.0.1:{self.port}",
+                                          self.ssh_target, script], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+        elif platform == "android":
+            # No command line on Android: the variables (the bridge port included) go in roguesq_env.txt, and --mute becomes gain 0.
+            game_env["ROGUESQ_MCP_PORT"] = str(self.port)
+            game_env["ROGUESQ_VIDEO_CONFIG"] = ANDROID_VIDEO
+            game_env["ROGUESQ_AUDIO_GAIN"] = "0"
+            env_file = os.path.join(self.session_dir, "roguesq_env.txt")
+            with open(env_file, "w", encoding="utf-8", newline="\n") as f:
+                f.write("".join(f"{k}={v}\n" for k, v in game_env.items()))
+            self.android_sync(exe_dir, video_cfg, env_file)
+            adb(self.serial, "forward", f"tcp:{self.port}", f"tcp:{self.port}")
+            adb(self.serial, "logcat", "-c")
+            adb(self.serial, "shell", "am", "start", "-W", "-n", f"{ANDROID_PACKAGE}/.MainActivity", timeout=60)
+            self.logcat = subprocess.Popen([ADB, "-s", self.serial, "logcat", "-v", "raw", "-s", "RS64:*"], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            self.proc = AndroidProcess(self.serial)
+        else:
+            full_env = dict(os.environ)
+            full_env.update(game_env)
+            self.proc = subprocess.Popen([exe] + game_args, cwd=exe_dir, env=full_env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+
         log.close()
 
         deadline = time.time() + timeout_s
@@ -287,6 +571,10 @@ class Game:
                 if "unknown option '--mcp-port'" in tail:
                     raise GameError(f"the {config} build has no MCP bridge; configure with -DRS64_MCP=ON (or use Debug) and rebuild")
                 raise GameError(f"game exited (code {self.proc.returncode}) during launch:\n{tail}")
+            # An ssh forward accepts the connection before the remote bridge listens, then drops it, so wait for the game to say it listens.
+            if platform == "ssh" and "[mcp] listening" not in self.log_tail(200):
+                time.sleep(0.25)
+                continue
             try:
                 self.sock = socket.create_connection(("127.0.0.1", self.port), timeout=1)
                 break
@@ -341,6 +629,8 @@ class Game:
             pass
 
     def call(self, method, params=None, timeout_s=30):
+        if not self.alive() and self.proc is not None and not self.attached:
+            raise GameError(f"game exited (code {self.proc.returncode}); launch it again")
         if self.sock is None:
             raise GameError("game not launched")
 
@@ -358,12 +648,49 @@ class Game:
                 pass
 
             deadline = time.time() + timeout_s
+            # A long call (pause_at, step, a capture) ends early on a crash or stuck line in the log, or when the game stops drawing without being held:
+            # the bridge answers frame_info on its own thread while this call waits.
+            watch = timeout_s > 10 and method != "frame_info"
+            # A wait for the next mission (next, after) outlives the current one on purpose.
+            on_ls = (params or {}).get("clock") == "ls" and not (params or {}).get("next") and "after" not in (params or {})
+            log_at = os.path.getsize(self.log_path) if watch and self.log_path and os.path.exists(self.log_path) else 0
+            fail = re.compile(WAIT_LOG_FAIL)
+            last_dl, moved_at, checked_at = None, time.time(), time.time()
+            idle = MenuIdle()
             while not slot["event"].wait(0.05):
                 if not self.alive():
                     code = self.proc.returncode if self.proc else None
                     raise GameError(f"game exited (code {code}):\n{self.log_tail()}")
                 if time.time() > deadline:
                     raise GameError(f"{method}: no reply within {timeout_s}s")
+                if watch and time.time() - checked_at >= 2:
+                    checked_at = time.time()
+                    with open(self.log_path, "rb") as f:
+                        f.seek(log_at)
+                        chunk = f.read()
+                    done = chunk.rfind(b"\n") + 1
+                    log_at += done
+                    for text in chunk[:done].decode("utf-8", errors="replace").splitlines():
+                        if fail.search(text):
+                            raise GameError(f"{method}: stopped, the log says: {text}")
+                        if on_ls and "[ls] session ended" in text:
+                            raise MissionEnded(f"{method}: {text}")
+                    try:
+                        info = self.call("frame_info", timeout_s=5)
+                    except GameError:
+                        continue
+                    if not self.attached:
+                        idle.check(info, method)
+                    # On the lockstep clock, progress is that clock: it stops at a game over while the game keeps drawing.
+                    dl = info.get("clocks", {}).get("ls" if on_ls else "dl")
+                    if info.get("held") or dl != last_dl:
+                        last_dl, moved_at = dl, checked_at
+                    elif on_ls and dl is None:
+                        moved_at = checked_at
+                    elif checked_at - moved_at >= CALL_STALL_S:
+                        if on_ls:
+                            raise MissionEnded(f"{method}: the lockstep clock stopped at {dl} for {CALL_STALL_S}s (state {info.get('state')}): the mission ended")
+                        raise GameError(f"{method}: no progress for {CALL_STALL_S}s (no display list at dl {dl}, state {info.get('state')}, not held)")
         finally:
             with self.lock:
                 self.pending.pop(rid, None)
@@ -381,9 +708,9 @@ class Game:
             raise GameError(f"tile must be in [0, {len(tiles)})")
         name = tiles[tile].get("tmem_hash") or tiles[tile].get("tile_copy_id", "tile")
         path = os.path.join(self.session_dir, "tex", f"{name}.tmem")
-        r = self.call("dump_tmem", {"fb": fb, "proj": proj, "call": call, "tile": tile, "path": path})
-        png = tmem_decode.decode_file(r["path"])
-        return {"tmem_path": r["path"], "json_path": r["json_path"], "png_path": png, "meta": r["meta"]}
+        r = self.call("dump_tmem", {"fb": fb, "proj": proj, "call": call, "tile": tile, "path": self.game_path(path)})
+        png = tmem_decode.decode_file(path)
+        return {"tmem_path": path, "json_path": path + ".json", "png_path": png, "meta": r["meta"]}
 
     def screenshot(self, path=None):
         """PNG of the game window's client area, found by this server's own PID; returns path, size and distinct colour count."""
@@ -398,10 +725,15 @@ class Game:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         # The game saves its own color buffer; window capture is the fallback (it reads black when the swapchain bypasses DWM).
         try:
-            r = self.call("capture_frame", {"path": os.path.abspath(path)}, timeout_s=4)
+            r = self.call("capture_frame", {"path": self.game_path(path)}, timeout_s=4)
+            if self.platform == "android":
+                adb(self.serial, "pull", self.game_path(path), path)
+            elif self.platform == "ssh":
+                self.ssh_pull(path)
             return {"path": path, "width": r["width"], "height": r["height"], "colours": r["colours"]}
         except GameError:
-            pass
+            if self.platform != "windows":
+                raise
         rgba, w, h = capture_window(self.proc.pid)
         tmem_decode.write_png(path, rgba, w, h)
         colours = len(set(rgba[i:i + 4] for i in range(0, min(len(rgba), 4 * 65536), 4)))
@@ -431,11 +763,112 @@ class Game:
                 hops += 1
         return {"count": len(models), "models": sorted(models, key=lambda m: m["name"])}
 
+    # Handlers that are never something to shoot: falling debris, explosions and the player's own parts. 0x8005C874 (misnamed audioCueDispatcherNpcHandler) is the laser bolt.
+    NOT_TARGETS = {"npcDebris1Update", "updateDestructionDebrisNpc", "playerAtStUpdate", "orientedNpcHandler"}
+    LASER = "audioCueDispatcherNpcHandler"
+
+    def targets(self, max_dist=0.0, limit=40, bolts=False):
+        """Every live object in the NPC slot table (0x80130BB0 -> 8-byte slots -> context: +0 handler, +8 position pointer; one object can fill several slots), named by its handler, with distance, bearing (+ right) and elevation (+ up; world Y points down) from player 1's craft (0x80137DC0 position, +0xC forward)."""
+        ram = RamReader(self)
+        rd, u32, u16, vec, ok = ram.rd, ram.u32, ram.u16, ram.vec, ram.ok
+        names = function_names()
+        me = vec(0x80137DC0)
+        fwd = vec(0x80137DCC)
+        heading = math.atan2(fwd[0], fwd[2])
+        table = u32(0x80130BB0)
+        my_slot = u16(0x80137DBA)
+        found = []
+        walker = None
+        seen = set()
+        for slot in range(0x800):
+            ctx = u32(table + slot * 8) if ok(table, 0x4000) else 0
+            if not ok(ctx, 0x40) or ctx in seen:
+                continue
+            seen.add(ctx)
+            if slot == my_slot:
+                block = u32(ctx + 4)
+                walker = block if ok(block, 0x100) else None
+                continue
+            handler = u32(ctx)
+            kind = names.get(handler, f"0x{handler:08X}")
+            # Context flag 0x10: destroyed (a turret's wreck keeps its slot).
+            if kind == self.LASER:
+                if not bolts:
+                    continue
+                kind = "laser"
+            if kind in self.NOT_TARGETS or u16(ctx + 0x14) & 0x10:
+                continue
+            at = u32(ctx + 8)
+            if not ok(at, 12):
+                continue
+            p = vec(at)
+            d = [p[i] - me[i] for i in range(3)]
+            flat = math.hypot(d[0], d[2])
+            dist = math.hypot(flat, d[1])
+            if not all(math.isfinite(v) for v in p) or (max_dist and dist > max_dist):
+                continue
+            bearing = math.degrees((math.atan2(d[0], d[2]) - heading + math.pi) % (2 * math.pi) - math.pi)
+            found.append({"slot": slot, "kind": kind, "dist": round(dist, 1), "bearing": round(bearing, 1), "elev": round(math.degrees(math.atan2(-d[1], flat)), 1), "pos": [round(v, 2) for v in p], "flags": f"0x{u16(ctx + 0x14):04X}"})
+        found.sort(key=lambda t: t["dist"])
+        kinds = {}
+        for t in found:
+            kinds[t["kind"]] = kinds.get(t["kind"], 0) + 1
+        out = {"player": {"pos": [round(v, 2) for v in me], "heading": round(math.degrees(heading), 1), "slot": my_slot}, "kinds": kinds, "targets": found[:limit]}
+        if walker is not None:
+            out["player"]["walker_hp"] = struct.unpack(">i", rd(walker + 0xB0, 4))[0]
+        return out
+
+    def objectives(self):
+        """The mission's objective state and the level objects that change it. Booleans u8[128] at 0x801388A0, counts s32[128] at 0x80138060 (moved +0xA00000 while the co-op mod is loaded), timers f32[8] at 0x8010C9F8, all 1-based. DAT items: *(0x801375D8) = count, +4 the item list; an item has its name at +0xC, position +0x10, live slot +6 (0xFFFF = not spawned) and its death effect at +0x70: count[+0x70] += +0x74, flag[+0x78] = +0x7C, count[+0x80] += +0x84."""
+        ram = RamReader(self)
+        u32, u16, vec, ok = ram.u32, ram.u16, ram.vec, ram.ok
+        moved = 0x80138060 + 0xA00000
+        counts_at = moved if any(ram.rd(moved, 0x200)) else 0x80138060
+        flags = ram.rd(0x801388A0, 0x80)
+        counts = [struct.unpack(">i", ram.rd(counts_at + i * 4, 4))[0] for i in range(128)]
+        me = vec(0x80137DC0)
+        fwd = vec(0x80137DCC)
+        heading = math.atan2(fwd[0], fwd[2])
+        table = u32(0x80130BB0)
+        dat = u32(0x801375D8)
+        items = []
+        n = u32(dat) if ok(dat, 8) else 0
+        lst = u32(dat + 4) if n else 0
+        for i in range(min(n, 4096)):
+            it = u32(lst + i * 4)
+            if not ok(it, 0x100):
+                continue
+            c1, a1, fl, fv, c2, a2 = (u32(it + o) for o in (0x70, 0x74, 0x78, 0x7C, 0x80, 0x84))
+            effect = []
+            if 1 <= c1 <= 128 and a1:
+                effect.append(f"count{c1}+={a1}")
+            if 1 <= fl <= 128:
+                effect.append(f"flag{fl}={fv}")
+            if 1 <= c2 <= 128 and a2 and a2 < 0x10000:
+                effect.append(f"count{c2}+={a2}")
+            if not effect:
+                continue
+            slot = u16(it + 6)
+            ctx = u32(table + slot * 8) if slot < 0x800 else 0
+            # Slot 0xFFFF: not spawned yet, or killed and removed.
+            state = "inactive" if slot == 0xFFFF else ("dead" if not ok(ctx, 0x40) or u16(ctx + 0x14) & 0x10 else "alive")
+            p = vec(it + 0x10)
+            d = [p[k] - me[k] for k in range(3)]
+            bearing = math.degrees((math.atan2(d[0], d[2]) - heading + math.pi) % (2 * math.pi) - math.pi)
+            items.append({"dat": i, "name": ram.cstr(u32(it + 0xC)), "state": state, "effect": " ".join(effect), "dist": round(math.hypot(d[0], d[2]), 1), "bearing": round(bearing, 1)})
+        return {
+            "level": u32(0x80130B70),
+            "flags": {i + 1: v for i, v in enumerate(flags) if v},
+            "counts": {i + 1: v for i, v in enumerate(counts) if v},
+            "timers": [round(t, 2) for t in vec(0x8010C9F8, 8)],
+            "items": items,
+        }
+
     def walk_dl(self, addr="task"):
         """Dump RDRAM and walk a display list offline with tools/debug/validate/f5_dl_walk.py (default: the current gfx task)."""
         dl = self.call("frame_info")["clocks"]["dl"]
         dump = os.path.join(self.session_dir, f"rdram_dl{dl}.bin")
-        self.call("rdram_dump", {"path": dump}, 60)
+        self.call("rdram_dump", {"path": self.game_path(dump)}, 60)
         out = os.path.join(self.session_dir, f"dl_walk_{dl}_{addr}.txt")
         walker = os.path.join(REPO, "tools", "debug", "validate", "f5_dl_walk.py")
         # A child Python inheriting the MCP stdin pipe blocks at startup while FastMCP has a read pending on it.
@@ -444,15 +877,37 @@ class Game:
             f.write(r.stdout + r.stderr)
         return {"walk_path": out, "dump_path": dump, "exit_code": r.returncode, "tail": (r.stdout + r.stderr)[-3000:]}
 
-    def wait_log(self, pattern, timeout_s=30, from_start=False, fail_pattern=WAIT_LOG_FAIL):
+    def wait_log(self, pattern, timeout_s=30, from_start=False, fail_pattern=WAIT_LOG_FAIL, repeat=False):
         """Wait for a regex to appear in the game's log (stdout+stderr): new lines only unless from_start. A fail_pattern line ends the wait
-        with an error at once; timeout_s is capped at WAIT_LOG_MAX_S."""
+        with an error at once; timeout_s is capped at WAIT_LOG_MAX_S. Without repeat, a pattern already printed errors at once."""
         regex = re.compile(pattern)
         fail = re.compile(fail_pattern) if fail_pattern else None
         timeout_s = min(timeout_s, WAIT_LOG_MAX_S)
         offset = 0 if from_start else os.path.getsize(self.log_path)
+
+        if offset and not repeat:
+            with open(self.log_path, "rb") as f:
+                seen = [line for line in f.read(offset).decode("utf-8", errors="replace").splitlines() if regex.search(line)]
+            if seen:
+                raise GameError(f"{pattern!r} already printed before this wait: {seen[-1]} (from_start=true takes it, repeat=true waits for another)")
+
         deadline = time.time() + timeout_s
+        last_dl, moved_at, checked_at = None, time.time(), 0.0
+        idle = MenuIdle()
         while True:
+            if self.sock is not None and time.time() - checked_at >= 2:
+                checked_at = time.time()
+                try:
+                    info = self.call("frame_info", timeout_s=5)
+                except Exception:
+                    info = None
+                if info and not self.attached:
+                    idle.check(info, f"wait_log {pattern!r}")
+                dl = info and info.get("clocks", {}).get("dl")
+                if info is None or info.get("held") or not dl or dl != last_dl:
+                    last_dl, moved_at = dl, checked_at
+                elif checked_at - moved_at >= WAIT_LOG_FROZEN_S:
+                    raise GameError(f"game frozen before {pattern!r}: no display list for {WAIT_LOG_FROZEN_S}s at dl {dl}, state {info.get('state')} (hang_dump captures it)")
             with open(self.log_path, "rb") as f:
                 f.seek(offset)
                 chunk = f.read()
@@ -506,7 +961,23 @@ class Game:
             self.attached = False
             return status
 
+        if self.platform == "android" and self.proc is not None:
+            adb(self.serial, "shell", "am", "force-stop", ANDROID_PACKAGE)
+            adb(self.serial, "forward", "--remove", f"tcp:{self.port}")
+            self.logcat.kill()
+            self.proc.returncode = 0
+            return self.status()
+
         if self.alive():
+            # Killing wsl.exe leaves the Linux game running, so it is killed inside WSL by the pid its script wrote.
+            if self.platform == "linux" and self.linux_pid_file and os.path.isfile(self.linux_pid_file):
+                with open(self.linux_pid_file) as f:
+                    pid = f.read().strip()
+                if pid.isdigit():
+                    subprocess.run(["wsl.exe", "-e", "kill", "-9", pid], capture_output=True)
+            # Ending the ssh session can leave the remote game running, so it is killed there by the pid its script wrote.
+            if self.platform == "ssh":
+                self.ssh(f"kill -9 $(cat {self.remote_dir}/mcp.pid) 2>/dev/null")
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)], capture_output=True)
             try:
                 self.proc.wait(10)
@@ -807,9 +1278,9 @@ def serve():
         return register
 
     @tool()
-    def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None) -> dict:
-        """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target)."""
-        return game.launch(config, env, args, timeout_s, record)
+    def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None, settings: dict | None = None) -> dict:
+        """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target). settings are roguesq_video.json keys merged over the player's file for this run only, e.g. {"antialiasing": 4, "graphicsAPI": "vulkan", "rayTracing": {"lights": false}}; the game reads and saves a copy in the session folder, so set_config and in-game changes never reach the player's file."""
+        return game.launch(config, env, args, timeout_s, record, settings)
 
     @tool()
     def attach(port: int = DEFAULT_BRIDGE_PORT) -> dict:
@@ -823,7 +1294,7 @@ def serve():
 
     @tool()
     def status() -> dict:
-        """Game process status: running, pid, port, exit_code, log_path (stdout+stderr) and session_dir (outputs)."""
+        """Game process status: running, state (menu.main, cutscene, attract.demo, mission, ...), held, pid, port, exit_code, log_path (stdout+stderr) and session_dir (outputs)."""
         return game.status()
 
     @tool()
@@ -832,16 +1303,26 @@ def serve():
         return game.call(method, params, timeout_s)
 
     @tool()
-    def pause_at(clock: str, frame: int, timeout_s: float = 120) -> dict:
-        """Hold the game so the picture is exactly `frame` of `clock`, then freeze RT64 on it. Clocks: a game state id (mission, menu.main, ...; frames since entered), cutscene, crawl, or dl (display-list sequence since boot). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+    def pause_at(clock: str, frame: int, timeout_s: float = 120, next: bool = False) -> dict:
+        """Hold the game so the picture is `frame` of `clock`, then freeze RT64 on it. Clocks: cutscene (the cutscene's own frames; the boot logos, attract cutscenes and mission cutscenes), crawl, ls (a replay's lockstep frame), or a game state id (mission, menu.main, ...; frames since entered). Use the clock the moment belongs to: a RenderDoc capture is named after the clocks running when it was taken (cap_cutscene-412_...), and those are the numbers to pass here. Launches run with ROGUESQ_FIXED_STEP=1, so game time advances one frame per frame and each of these frame numbers is the same picture on every launch. dl (display lists since boot) still depends on load times and is refused here (pause_now and step use it within a run). A frame already passed needs a relaunch, or next=true to wait for the clock to start over (the next cutscene, or the next mission for ls). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        if clock == "dl":
+            raise RuntimeError("dl frames drift between launches: pause on the cutscene/crawl/ls/state clock the moment belongs to (a capture's name lists them), or pause_now and step")
+
         info = game.call("frame_info")
         now = info.get("clocks", {}).get(clock)
 
         # A clock already past frame (the state being shown, or dl) would only time out: say so instead of waiting.
-        if now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
+        if not next and now is not None and now >= frame and (clock == "dl" or clock == info.get("state")):
             raise RuntimeError(f"{clock} is already at frame {now} (past {frame}): use pause_now, or step from a pause")
 
-        return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s}, timeout_s + 15)
+        # next=true on the state being shown waits for it to be left and entered again, which only happens if something drives the game there.
+        if next and now is not None and clock == info.get("state"):
+            if now < frame:
+                next = False
+            else:
+                raise RuntimeError(f"{clock} is on screen at frame {now} (past {frame}); next=true would wait for it to be left and entered again: use pause_now, or drive the game out and back first")
+
+        return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s, "next": next}, timeout_s + 15)
 
     @tool()
     def pause_now(timeout_s: float = 30) -> dict:
@@ -864,15 +1345,16 @@ def serve():
         return game.call("pause_when_drawn", {"key": key, "timeout_s": timeout_s}, timeout_s + 15)
 
     @tool()
-    def wait_log(pattern: str, timeout_s: float = 30, from_start: bool = False, fail_pattern: str = WAIT_LOG_FAIL) -> dict:
+    def wait_log(pattern: str, timeout_s: float = 30, from_start: bool = False, fail_pattern: str = WAIT_LOG_FAIL, repeat: bool = False) -> dict:
         """Wait until a regex appears in the game's log; new lines only unless from_start. Ends early with an error when the game exits or
         a fail_pattern line appears (default: crash markers; pass a line that proves the awaited one will not come, or "" for none).
+        A pattern already in the log errors at once with that line (most events print once); repeat=true waits for another one.
         timeout_s is capped at 120: drive the game toward the event (press, step) and wait again rather than waiting long."""
-        return game.wait_log(pattern, timeout_s, from_start, fail_pattern)
+        return game.wait_log(pattern, timeout_s, from_start, fail_pattern, repeat)
 
     @tool()
     def step(frames: int = 1, clock: str = "dl", timeout_s: float = 30) -> dict:
-        """From a frozen frame, run `frames` more frames of `clock` and freeze again. Light edits show after a step."""
+        """From a frozen frame, run `frames` more frames of `clock` and freeze again; the frames in between are never seen, so search for a short camera shot in steps of 15 or less with a screenshot each. Light edits show after a step."""
         return game.call("step", {"frames": frames, "clock": clock, "timeout_s": timeout_s}, timeout_s + 15)
 
     @tool()
@@ -896,16 +1378,28 @@ def serve():
         return game.loaded_models()
 
     @tool()
+    def targets(max_dist: float = 0, limit: int = 40, bolts: bool = False) -> dict:
+        """Live objects around player 1, nearest first: kind (handler name), distance, bearing (deg from the craft's heading, + right) and elevation (deg, + up), with counts per kind and the player's pose (walker_hp on the AT-ST level). Destroyed objects and debris are left out; bolts=true adds laser bolts (kind "laser"). For choosing and aiming at targets without a screenshot."""
+        return game.targets(max_dist, limit, bolts)
+
+    @tool()
+    def objectives() -> dict:
+        """The mission's objective flags, counts and timers, and every level object whose destruction changes them (name, alive/dead/inactive = not spawned or killed and removed, its effect such as flag2=1 or count3+=1, distance and bearing from the player). Read it to learn what a level wants destroyed or protected; count1+=1 on everything is usually just the kill count."""
+        return game.objectives()
+
+    @tool()
     def rdram_write(addr: int, hex: str) -> dict:
         """Write hex bytes to game memory at a KSEG0 address. Prefer writing while paused."""
         return game.call("rdram_write", {"addr": addr, "hex": hex})
 
     @tool()
-    def press(buttons: list[str] | None = None, stick: list[float] | None = None, frames: int = 0) -> dict:
-        """Hold controller-1 buttons (start a b z l r dup ddown dleft dright cup cdown cleft cright; up/down/left/right = full stick) and/or stick [x, y] for `frames` display lists (0 = until release). While paused, follow with step to play exactly those frames."""
+    def press(buttons: list[str] | None = None, stick: list[float] | None = None, frames: int = 0, head: list[float] | None = None) -> dict:
+        """Hold controller-1 buttons (start a b z l r dup ddown dleft dright cup cdown cleft cright; up/down/left/right = full stick) and/or stick [x, y] for `frames` display lists (0 = until release). While paused, follow with step to play exactly those frames. head [x, y] (-1..1, x right, y up) aims the AT-ST head in CHICKEN as the mouse does; it recentres once the press ends."""
         params = {"buttons": buttons or [], "frames": frames}
         if stick is not None:
             params["stick"] = stick
+        if head is not None:
+            params["head"] = head
         return game.call("press", params)
 
     @tool()
@@ -1004,7 +1498,7 @@ def serve():
 
     @tool()
     def set_config(user: dict | None = None, enhancement: dict | None = None, save: bool = False) -> dict:
-        """Change Configuration-tab settings live (keys as get_config returns them). Not written to RT64's config file unless save=true."""
+        """Change Configuration-tab settings live (keys as get_config returns them). A launched game saves them only to its session copy of roguesq_video.json; on an attached game they reach the player's file."""
         params = {"save": save}
         if user is not None:
             params["user"] = user

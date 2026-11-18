@@ -83,7 +83,7 @@ const rs64_mp_transport* server_relay()
     const Ghost& s = g();
     const std::string row = s.row_hosting ? s.join_entry : s.editor.entry();
     const bool in_use = s.relay_session && s.relay_t == s_client.table();
-    const std::string saved = in_use || row == s.relay_server ? s.relay_server : std::string{};
+    const std::string saved = in_use || row == rs64::net::relay_address(s.relay_server) ? s.relay_server : std::string{};
 
     s_client.set_server(env ? env : saved);
     return s_client.configured() ? s_client.table() : nullptr;
@@ -261,7 +261,7 @@ extern "C" void rs64_lobby_host(void)
     }
 
     info.build = s.lobby.local_build();
-    const bool answering = s.started && s.responder.start(cfg.port, info);
+    const bool answering = s.started && s.responder.start(cfg.port, info, cfg.bind_v4);
 
     fprintf(stderr, "[lobby] LAN discovery %s on port %u\n", answering ? "answering" : "unavailable", (unsigned)(cfg.port + rs64::net::kDiscoveryPortOffset));
 
@@ -275,6 +275,44 @@ extern "C" void rs64_lobby_host(void)
 }
 
 constexpr uint32_t kSearchMs = 2000;
+constexpr uint32_t kWifiDirectMs = 30000;
+
+// A password row once it closes: six digits set the password (true), an emptied field means none, anything else keeps what was set. Call every frame the row is up.
+struct PinWatch {
+    bool open = false;
+    std::string typed;
+};
+
+static bool pin_watch(const rs64::net::CodeEditor& e, PinWatch& w, bool* set)
+{
+
+    if (e.editing || e.typing)
+    {
+        w.open = true;
+        w.typed = e.typed;
+        return false;
+    }
+
+    if (!w.open)
+    {
+        return false;
+    }
+
+    w.open = false;
+
+    if (rs64::net::CodeEditor::valid(w.typed) && e.code() == w.typed) {
+        *set = true;
+        return true;
+    }
+
+    if (w.typed.empty()) {
+        *set = false;
+    }
+
+    return false;
+}
+
+static PinWatch s_join_pin_watch;
 constexpr uint32_t kQueryEveryMs = 250;
 
 // Leaving the lobby (cancel, or the page without a ready session): LAN discovery stops and the router mapping goes.
@@ -314,6 +352,7 @@ extern "C" void rs64_lobby_join(void)
     }
 
     s.join_pin.editing = false;
+    pin_watch(s.join_pin, s_join_pin_watch, &s.join_pin_set);
     s.pin_mode = false;
     load_net_config();
     save_net_config();
@@ -335,8 +374,8 @@ extern "C" void rs64_lobby_join(void)
 
     set_from_menu(true);
 
-    // A scripted address skips the search; the pair runner shares one machine and port.
-    if (recomp::dbg::env_str("ROGUESQ_MP_ADDR") || !s.finder.start(cfg.port))
+    // A scripted address skips the search (the pair runner shares one machine and port), and so does one the player set: a stranger on the LAN must not be able to answer in the host's place.
+    if (recomp::dbg::env_str("ROGUESQ_MP_ADDR") || s.editor.entry() != rs64::net::AddressEditor{}.entry() || !s.finder.start(cfg.port))
     {
         join_typed(cfg);
         return;
@@ -367,6 +406,17 @@ static void discovery_tick() {
     }
 
     const uint32_t now = now_ms32();
+    static int s_last_link = 0;
+    const int link = rs64::mp::flag("wifi_direct_link");
+
+    // Android puts a socket on the network it was made on, so the search reopens once a Wi-Fi Direct link comes up, with a fresh kSearchMs for the host to answer on it.
+    if (link == 2 && s_last_link != 2) {
+        s.finder.start(s.search_cfg.port);
+        s.search_until_ms = now + kSearchMs;
+        s.next_query_ms = 0;
+    }
+
+    s_last_link = link;
 
     if ((int32_t)(now - s.next_query_ms) >= 0) {
         s.finder.query();
@@ -374,29 +424,37 @@ static void discovery_tick() {
     }
 
     const std::vector<rs64::net::FoundHost> found = s.finder.poll();
+    const auto host = std::find_if(found.begin(), found.end(), [&s](const rs64::net::FoundHost& f) { return f.info.build == s.lobby.local_build(); });
     rs64::net::LinkConfig cfg = s.search_cfg;
 
-    if (!found.empty())
-    {
-        cfg.addr = found[0].addr;
-        cfg.port = found[0].info.port;
-        s.editor.load(cfg.addr);
-        s.editor.port = cfg.port == link_config().port ? 0 : cfg.port;
-        save_net_config();
+    // Test only: a joiner still on the host's Wi-Fi network waits for its Wi-Fi Direct link instead of taking the host it found over that network.
+    static const bool s_wifi_direct_test = recomp::dbg::env_on("ROGUESQ_MP_WIFI_DIRECT_TEST");
+    const bool wait_for_link = s_wifi_direct_test && link != 2;
 
-        fprintf(stderr, "[lobby] found %.3s at %s:%u\n", found[0].info.name, cfg.addr.c_str(), cfg.port);
+    if (host != found.end() && !wait_for_link)
+    {
+        cfg.addr = host->addr;
+        cfg.port = host->info.port;
+
+        fprintf(stderr, "[lobby] found %.3s at %s:%u\n", host->info.name, cfg.addr.c_str(), cfg.port);
         stop_discovery();
         lobby_start(cfg);
         return;
     }
 
-    if ((int32_t)(now - s.search_until_ms) >= 0)
+    // A Wi-Fi Direct link still forming (wifi_direct_link 1) holds the search open up to kWifiDirectMs.
+    const bool linking = link == 1 && (int32_t)(now - (s.search_until_ms - kSearchMs + kWifiDirectMs)) < 0;
+
+    if ((int32_t)(now - s.search_until_ms) >= 0 && !linking)
     {
         fprintf(stderr, "[lobby] no host answered on the LAN; trying the typed address\n");
         stop_discovery();
         join_typed(cfg);
     }
 }
+
+// Craft select: 0 until the hangar takes the confirmed pick, then set for its launch (until the next craft select).
+constexpr uint32_t kHangarTook = 0x800CD6F8u;
 
 static void skip_filter(uint16_t* buttons)
 {
@@ -406,6 +464,12 @@ static void skip_filter(uint16_t* buttons)
     const uint32_t skips = rs64::mp::cutscene_skips();
     const bool skipped = skips != s.skips_seen;
     s.skips_seen = skips;
+
+    // A crawl the game itself ended on A/START (a press it ignored does not end it).
+    const int crawl_skips = rs64::mp::flag("crawl_skips");
+    const bool crawl_took = crawl_skips != s.crawl_skips_seen;
+
+    s.crawl_skips_seen = crawl_skips;
 
     if (!s.started || !s.lobby.ready()) {
         rs64::mp::set_flag("hangar_launch", 0);
@@ -428,7 +492,8 @@ static void skip_filter(uint16_t* buttons)
 
     s_crawl_polls = crawl ? s_crawl_polls + 1 : 0;
 
-    if (s_test_crawl && s_crawl_polls == 60) {
+    // Held for a few polls as a player's press is: the crawl reads input once per frame and misses a one-poll press.
+    if (s_test_crawl && s_crawl_polls >= 60 && s_crawl_polls < 66) {
         *buttons |= kStart;
     }
 
@@ -437,9 +502,9 @@ static void skip_filter(uint16_t* buttons)
         s.in_hangar = false;
     }
 
-    // The launch starts once the hangar took the pick (result 0x800CD6D4 = the craft; 0 before, 0xFFFFFE = left); the START that confirms is not a skip.
-    const uint32_t hangar_result = s.rdram ? rw(s.rdram, 0x800CD6D4u) : 0u;
-    const bool launching = !timeline && !crawl && s.in_hangar && s.craft.released() && hangar_result != 0u && hangar_result != 0xFFFFFEu;
+    // The launch starts once the hangar took the pick (kHangarTook set; the hangar result 0x800CD6D4 only gets the craft once the mission loads); the A that confirms is not a skip.
+    const bool took = s.rdram && rw(s.rdram, kHangarTook) != 0;
+    const bool launching = !timeline && !crawl && s.in_hangar && s.craft.released() && took;
     rs64::mp::set_flag("hangar_launch", launching ? 1 : 0);
     const int scene = timeline ? 2 : crawl ? 3 : launching ? 1 : 0;
 
@@ -452,6 +517,9 @@ static void skip_filter(uint16_t* buttons)
             s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) | ((s.skip_tag + 1u) & 0xFFu));
         }
 
+        static const char* const kSceneNames[] = {"none", "launch", "cutscene", "crawl"};
+
+        fprintf(stderr, "[ghost] scene %04X %s at %.2f s\n", s.skip_tag, kSceneNames[scene], now_s());
         s.skip_scene = scene;
     }
 
@@ -465,16 +533,18 @@ static void skip_filter(uint16_t* buttons)
     // The host dictates skips: its skip of a scene goes to the client, which skips that scene when it gets there.
     if (s.player == 0)
     {
-        const bool launch_skipped = launching && (*buttons & kStart) && !(s.skip_prev_buttons & kStart);
-        const bool crawl_skipped = crawl && (*buttons & 0x9000u & ~s.skip_prev_buttons) != 0;
+        const bool launch_skipped = launching && (*buttons & 0x9000u & ~s.skip_prev_buttons) != 0;
 
         s.skip_prev_buttons = *buttons;
 
-        if (skipped || launch_skipped || crawl_skipped)
-        {
-            s.link.send(rs64::net::encode_skip(launch_skipped || crawl_skipped ? s.skip_tag : prev_tag), true);
+        // The crawl's flag stays on through the loading after it, so its skip is this poll's scene; a timeline's skip ended the last poll's.
+        const uint16_t tag = (crawl_took && scene == 3) || launch_skipped ? s.skip_tag : prev_tag;
 
-            fprintf(stderr, "[ghost] cutscene %04X skipped here; telling the other player\n", launch_skipped || crawl_skipped ? s.skip_tag : prev_tag);
+        if (skipped || crawl_took || launch_skipped)
+        {
+            s.link.send(rs64::net::encode_skip(tag), true);
+
+            fprintf(stderr, "[ghost] cutscene %04X skipped here at %.2f s; telling the other player\n", tag, now_s());
         }
 
         return;
@@ -485,13 +555,13 @@ static void skip_filter(uint16_t* buttons)
         *buttons &= (uint16_t)~0x9000u;
     }
 
-    // The skip took: the game counted it (a timeline), or one pulse went in (the crawl and launch count nothing), so nothing carries into the next scene.
-    if (skipped || (scene != 2 && s.skip.pulsed(now_s()))) {
+    // The skip took once the game counted it (a timeline or the crawl; until then START keeps pulsing, since a press early in the crawl is ignored), or after one pulse for the launch, which counts nothing.
+    if (skipped || crawl_took || (scene == 1 && s.skip.pulsed(now_s()))) {
         s.skip.landed();
     }
 
-    if (skipped) {
-        fprintf(stderr, "[ghost] cutscene skipped by the host's skip\n");
+    if (skipped || crawl_took) {
+        fprintf(stderr, "[ghost] cutscene skipped by the host's skip at %.2f s\n", now_s());
     }
 
     // Test: ROGUESQ_MP_TEST_NO_SKIP_SHARE=1 ignores the host's skips (a late joiner).
@@ -687,11 +757,20 @@ static void list_open() {
 // The address row is checked as a relay server whenever it changes (typing ends) and on JOIN GAME: a game list back within kProbeMs makes it the saved server, so HOST GAME hosts there and JOIN GAME lists its games.
 // With no answer, a JOIN GAME that asked (s_probe_join) joins the row as a host (rs64_lobby_join).
 constexpr uint32_t kProbeMs = 2500;
+
+// A direct join from this page (the address row, not a listed game) that fails shows why for kFailBackMs, then goes back to MULTIPLAYER, whose address row takes a password after a refusal.
+constexpr uint32_t kFailBackMs = 2000;
+static bool s_on_games = false;
+static bool s_direct_join = false;
+static bool s_back_armed = false;
+static uint32_t s_back_at_ms = 0;
 static rs64::net::RelayClient s_probe;
 static std::string s_probe_addr;
 static std::string s_checked_addr;
 static bool s_probing = false;
 static bool s_probe_join = false;
+// A browser was given an address without a relay's join link (web only).
+static bool s_needs_link = false;
 static uint32_t s_probe_until_ms = 0;
 
 // The relay server in use: ROGUESQ_MP_RELAY for scripted runs, else roguesq_net.json's relay_server.
@@ -728,6 +807,10 @@ static void join_open()
     Ghost& s = g();
 
     list_open();
+    s_on_games = true;
+    s_direct_join = false;
+    s_needs_link = false;
+    s_back_armed = false;
 
     if (s.editor.typing) {
         s.editor.end_typing();
@@ -737,7 +820,7 @@ static void join_open()
 
     const std::string addr = s.editor.entry();
 
-    if (rs64_lobby_hosting() || s.lobby.ready() || addr == saved_server())
+    if (rs64_lobby_hosting() || s.lobby.ready() || addr == rs64::net::relay_address(saved_server()))
     {
         return;
     }
@@ -765,7 +848,7 @@ static void join_probe_update()
     if (!s_probing && !s.editor.editing && !s.editor.typing && s.editor.entry() != s_checked_addr) {
         s_checked_addr = s.editor.entry();
 
-        if (s_checked_addr != saved_server() && !s.started) {
+        if (s_checked_addr != rs64::net::relay_address(saved_server()) && !s.started) {
             join_probe_start(s_checked_addr);
         }
     }
@@ -801,7 +884,18 @@ static void join_probe_update()
         return;
     }
 
+#ifdef __EMSCRIPTEN__
+
+    // A browser can't reach a host directly, nor a relay without the certificate hash its join link carries.
+    s_needs_link = true;
+
+    fprintf(stderr, "[lobby] %s: a browser joins through a relay server's browser link\n", s_probe_addr.c_str());
+    return;
+
+#endif
+
     fprintf(stderr, "[lobby] %s is not a relay server; joining it as a host\n", s_probe_addr.c_str());
+    s_direct_join = true;
     rs64_lobby_join();
 }
 
@@ -809,6 +903,10 @@ static void join_probe_update()
 static void join_leave() {
 
     join_probe_stop();
+    s_on_games = false;
+    s_direct_join = false;
+    s_needs_link = false;
+    s_back_armed = false;
 
     if (g().started && !g().lobby.ready() && !rs64_lobby_hosting()) {
         lobby_stop(false);
@@ -838,6 +936,8 @@ static void list_join(const Listed& game)
 
     join_probe_stop();
     s_list_joined = true;
+    s_direct_join = false;
+    s_needs_link = false;
 
     if (g().started) {
         lobby_stop(false);
@@ -861,8 +961,10 @@ static void list_pick(int row)
         return;
     }
 
-    if (!s_listed[i].locked) {
-        s.join_pin_set = false;
+    static const char* test_pin = recomp::dbg::env_str("ROGUESQ_MP_TEST_JOIN_PIN");
+
+    if (!s_listed[i].locked || (test_pin && rs64::net::CodeEditor::valid(test_pin))) {
+        s.join_pin_set = s_listed[i].locked;
         list_join(s_listed[i]);
         return;
     }
@@ -943,7 +1045,12 @@ static std::string list_status_line()
         return rs64::net::status_dots("CONNECTING", now_ms32());
     }
 
-    if (g().started || (s_list_joined && g().lobby.state() == rs64::net::LobbyState::Failed))
+    if (s_needs_link)
+    {
+        return "NEEDS A RELAY SERVER LINK";
+    }
+
+    if (g().started || ((s_list_joined || s_direct_join) && g().lobby.state() == rs64::net::LobbyState::Failed))
     {
         return rs64_lobby_status();
     }
@@ -976,22 +1083,9 @@ static void sync_host_settings()
     // Read before the first compare, so the file is never rewritten from defaults.
     load_net_config();
 
-    // The password row once it closes: six digits set the password, an emptied field means none, anything else keeps what was set.
-    static std::string s_pin_typed;
-    static bool s_pin_open = false;
+    static PinWatch s_host_pin_watch;
 
-    if (s.host_pin.editing || s.host_pin.typing) {
-        s_pin_open = true;
-        s_pin_typed = s.host_pin.typed;
-    } else if (s_pin_open) {
-        s_pin_open = false;
-
-        if (rs64::net::CodeEditor::valid(s_pin_typed) && s.host_pin.code() == s_pin_typed) {
-            s.host_pin_set = true;
-        } else if (s_pin_typed.empty()) {
-            s.host_pin_set = false;
-        }
-    }
+    pin_watch(s.host_pin, s_host_pin_watch, &s.host_pin_set);
 
     const std::string pin = s.host_pin_set ? s.host_pin.code() : std::string{};
     const std::string saved = s.host_name.name + "|" + pin;
@@ -1052,6 +1146,23 @@ extern "C" void rs64_lobby_tick(void)
         }
     }
 
+    // Wi-Fi Direct pairing while this lobby hosts or joins without a relay (1 host, 2 join, 3 joined); Android's host side or the mod's Windows worker reports the link as wifi_direct_link.
+    int wifi_direct = 0;
+
+    if (!s.relay_session && rs64_lobby_hosting()) {
+        wifi_direct = 1;
+    } else if (!s.relay_session && s.lobby.ready()) {
+        wifi_direct = 3;
+    } else if (!s.relay_session && (s_on_games || s.started)) {
+        wifi_direct = 2;
+    }
+
+    rs64::mp::set_flag("wifi_direct", wifi_direct);
+
+#if RS64_WIFI_DIRECT
+    rs64::mp::set_flag("wifi_direct_link", rs64::net::wifi_direct_tick(wifi_direct, s.searching));
+#endif
+
     discovery_tick();
 
     if (g().started) {
@@ -1063,7 +1174,10 @@ extern "C" const char* rs64_lobby_status(void) {
 
     Ghost& s = g();
     rs64::mp::set_flag("mp_lobby_state", (int)s.lobby.state());
-    s.status_text = s.searching ? "SEARCHING" : s.lobby.status();
+    // Past the plain LAN search, a search still open is waiting on a Wi-Fi Direct link (scan, connect, address).
+    const bool wifi_wait = s.searching && rs64::mp::flag("wifi_direct_link") == 1 && (int32_t)(now_ms32() - s.search_until_ms) >= 0;
+
+    s.status_text = wifi_wait ? "JOINING NEARBY GAME" : (s.searching ? "SEARCHING" : s.lobby.status());
 
     if (rs64::net::waiting_status(s.status_text)) {
         s.status_text = rs64::net::status_dots(s.status_text, now_ms32());
@@ -1117,6 +1231,18 @@ extern "C" void rs64_lobby_type_text(const char* utf8) {
     });
 }
 
+// Ctrl+C while a field is typed: its text goes to the clipboard.
+static void copy_typed() {
+
+    each_editor([](auto& e) {
+        if (e.typing) {
+            rs64::mp::set_clipboard(e.typed.c_str());
+        }
+
+        return e.typing;
+    });
+}
+
 // key: '\b' deletes the last character, '\r' finishes (applies valid text and hides the keyboard, never confirms).
 extern "C" void rs64_lobby_type_key(int key) {
 
@@ -1144,10 +1270,14 @@ extern "C" void rs64_lobby_edit_toggle(void)
 
     Ghost& s = g();
 
-    // A host asked for a password: the row is the password until the next JOIN.
+    // A host asked for a password: the row is the password until the next JOIN. It opens empty; closing it decides (pin_watch).
     if (s.pin_mode) {
-        s.join_pin_set = true;
         toggle_edit(s.join_pin);
+
+        if (s.join_pin.typing) {
+            s.join_pin.typed.clear();
+        }
+
         return;
     }
 
@@ -1240,6 +1370,7 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
 
     s.in_hangar = false;
     s.follow_out = false;
+    s.leaving = false;
 
     if (s.player == 0) {
         s.sent_browse = -1;
@@ -1254,12 +1385,15 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
 
     const int start = s.host_pick >= 0 ? s.host_pick : s.host_cursor;
 
-    if (s.player == 1 && start >= 0) {
-        ctx->r7 = (gpr)start;
+    // A client shows the host's stock levels up to its cursor; a mod level is placed after this side's own (mod levels follow a2 here).
+    if (s.player == 1 && start >= 0 && !(start & 0x80) && (int)(uint32_t)ctx->r6 < start) {
+        ctx->r6 = (gpr)start;
+    }
 
-        if ((int)(uint32_t)ctx->r6 < start) {
-            ctx->r6 = (gpr)start;
-        }
+    s.mod_base = (int)(uint32_t)ctx->r6 + 1;
+
+    if (s.player == 1 && start >= 0) {
+        ctx->r7 = (gpr)rs64::ls::entry_from_wire(start, s.mod_base);
     }
 }
 
@@ -1358,7 +1492,7 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         if (now != s.sent_browse)
         {
             s.sent_browse = now;
-            s.link.send(rs64::net::encode_browse((uint8_t)cursor, (uint8_t)reported), true);
+            s.link.send(rs64::net::encode_browse(rs64::ls::entry_to_wire(cursor, s.mod_base), (uint8_t)reported), true);
         }
 
         return;
@@ -1374,6 +1508,17 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         fprintf(stderr, "[lobby] briefing ended here; telling the host\n");
     }
 
+    // The client's B always leaves (back to the main menu, which ends the session), so a host that stopped answering cannot hold it here.
+    if (own & 0x4000u) {
+        s.leaving = true;
+    }
+
+    if (s.leaving)
+    {
+        ww(rdram, pressed, own & 0x4000u);
+        return;
+    }
+
     if (s.host_pick < 0 && s.host_cursor < 0) {
         ww(rdram, pressed, own & ~0x9000u);
         show_status(rdram, ctx, 2, 2, -0x7C, "WAITING FOR HOST", &shown);
@@ -1385,7 +1530,7 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
     // Mirror the host: its cursor and briefing while it browses, its pick once made. The client's own presses are replaced.
     // The host confirmed when its screen starts exiting (BROWSE state 4); its PICK only follows after its exit fade.
     const bool picked = s.host_pick >= 0 || s.host_state == 4;
-    const int target = s.host_pick >= 0 ? s.host_pick : s.host_cursor;
+    const int target = rs64::ls::entry_from_wire(s.host_pick >= 0 ? s.host_pick : s.host_cursor, s.mod_base);
     ww(rdram, 0x800CDAD0u, rw(rdram, 0x800CDAD0u) | ((1u << (target + 1)) - 1u));
     uint32_t edge = 0;
 
@@ -1399,11 +1544,6 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         }
     }
 
-    // The client can still leave (B, back to the main menu, which ends the session) while the host browses.
-    if (state == 2 && !picked) {
-        edge |= own & 0x4000u;
-    }
-
     ww(rdram, pressed, edge);
 }
 
@@ -1411,11 +1551,60 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
 // wingman loader does it (isHobObjectLoaded 0x80056DA4; else sprintf "pl_crafts/%s" @0x8003BB5C, load_hmt_and_hob 0x8005645C(path, 0, 1, 0), loadCraftShadowTextures 0x8006B710).
 static int s_puppet_model = -1;
 
+// Loads the model name from path (the asset name; pl_crafts/<name> when path is null) unless the level has it. False: already loaded, or no room for the strings.
+static bool load_model(uint8_t* rdram, recomp_context* ctx, const char* name, const char* path)
+{
+
+    static uint32_t buf = 0;
+
+    if (!buf) {
+        buf = rs64::mp::alloc(rdram, 64);
+    }
+
+    if (!buf)
+    {
+        return false;
+    }
+
+    auto put = [rdram](uint32_t a, const char* str) {
+        for (size_t i = 0; i <= strlen(str); ++i) {
+            rdram[((a - 0x80000000u) + (uint32_t)i) ^ 3] = (uint8_t)str[i];
+        }
+    };
+
+    put(buf, name);
+
+    if (rs64::mp::call(rdram, ctx, 0x80056DA4u, {buf}).v0 != 0)
+    {
+        return false;
+    }
+
+    if (path) {
+        put(buf + 16u, path);
+    } else {
+        rs64::mp::call(rdram, ctx, 0x80033CC4u, {buf + 16u, 0x8003BB5Cu, buf});
+    }
+
+    rs64::mp::call(rdram, ctx, 0x8005645Cu, {buf + 16u, 0u, 1u, 0u});
+    return true;
+}
+
 extern "C" void rs64_ghost_craft_assets(uint8_t* rdram, recomp_context* ctx)
 {
 
     Ghost& s = g();
     s_puppet_model = -1;
+
+    // The AT-ST level: the other player is an NPC AT-ST (coop_imposter.cpp); its model, in case a walker level's package lacks it.
+    if (rs64_coop_imposter() && rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel)
+    {
+        if (load_model(rdram, ctx, "atst", "imp_stuff/atst"))
+        {
+            fprintf(stderr, "[coop] loaded atst for the other player's walker\n");
+        }
+
+        return;
+    }
 
     if (!s.in_session)
     {
@@ -1431,33 +1620,12 @@ extern "C" void rs64_ghost_craft_assets(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    static uint32_t buf = 0;
-
-    if (!buf) {
-        const uint32_t a = rs64::mp::alloc(rdram, 64);
-
-        if (!a)
-        {
-            return;
-        }
-
-        buf = a;
-    }
-
-    const char* name = rs64::ls::wingman_model_name(m);
-
-    for (size_t i = 0; i <= strlen(name); ++i) {
-        rdram[((buf - 0x80000000u) + (uint32_t)i) ^ 3] = (uint8_t)name[i];
-    }
-
-    if (rs64::mp::call(rdram, ctx, 0x80056DA4u, {buf}).v0 == 0)
+    if (load_model(rdram, ctx, rs64::ls::wingman_model_name(m), nullptr))
     {
         static const uint32_t kShadow[8] = {2, 3, 0, 1, 4, 5, 7, 6};
-        rs64::mp::call(rdram, ctx, 0x80033CC4u, {buf + 16u, 0x8003BB5Cu, buf});
-        rs64::mp::call(rdram, ctx, 0x8005645Cu, {buf + 16u, 0u, 1u, 0u});
         rs64::mp::call(rdram, ctx, 0x8006B710u, {kShadow[m]});
 
-        fprintf(stderr, "[coop] loaded %s for the other player's craft %d\n", name, s.remote_craft);
+        fprintf(stderr, "[coop] loaded %s for the other player's craft %d\n", rs64::ls::wingman_model_name(m), s.remote_craft);
     }
 
     s_puppet_model = m;
@@ -1556,9 +1724,9 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
         p &= 0x4000u;
     }
 
-    // Released: the player's own presses pass (START skips the launch that follows); the A pulse confirms the pick the barrier held back.
+    // Released: the player's own presses pass (A or START skips the launch that follows); the A pulse confirms the pick the barrier held back, and stops once the hangar took it (0x800CD6F8 set), or it would skip the launch too.
     if (s.craft.released()) {
-        if (--s.release_cool <= 0) {
+        if (rw(rdram, kHangarTook) == 0 && --s.release_cool <= 0) {
             p |= 0x8000u;
             s.release_cool = 30;
         }
@@ -1567,6 +1735,8 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
     } else if (s.craft.local >= 0) {
         p &= ~0x9000u;
         show_status(rdram, ctx, 2, 3, -0x70, "WAITING ON PARTNER", &shown);
+    } else if (s.craft.remote >= 0) {
+        show_status(rdram, ctx, 2, 3, -0x70, "PARTNER IS READY", &shown);
     } else {
         show_status(rdram, ctx, 2, 3, -0x70, "", &shown);
     }
@@ -1614,18 +1784,20 @@ extern "C" void rs64_lobby_debrief_pad(uint8_t* rdram, recomp_context* ctx)
     ctx->r2 = (gpr)(s.debrief.released() ? (p | 0x8000u) : (p & ~0x9000u));
 }
 
-// mainGameLoop starting the front end (a1 = overlay state, a2 = the menu it opens): after a game over (result 0x80130B14 = 3) it opens the main menu and ELITE ROGUES, and the main menu ends the session; the session goes back to mission select instead.
+// mainGameLoop starting the front end (a1 = overlay state, a2 = the menu it opens): after a game over (result 0x80130B14 = 3) it opens the main menu and ELITE ROGUES, and after
+// the AT-ST level (0x14, no debrief) SELECT GAME; both would end the session, so it goes back to mission select instead.
 extern "C" void rs64_lobby_front_end(uint8_t* rdram, recomp_context* ctx)
 {
 
     const Ghost& s = g();
+    const bool walker = s.session_level == 0x14;
 
-    if (!s.started || !s.lobby.ready() || s.peer_left || s.missions == 0 || rb(rdram, 0x80130B14u) != 3)
+    if (!s.started || !s.lobby.ready() || s.peer_left || s.missions == 0 || (rb(rdram, 0x80130B14u) != 3 && !walker))
     {
         return;
     }
 
-    fprintf(stderr, "[lobby] game over: back to mission select (was state %u menu %u)\n", (uint32_t)ctx->r5, (uint32_t)ctx->r6);
+    fprintf(stderr, "[lobby] %s: back to mission select (was state %u menu %u)\n", walker ? "walker level over" : "game over", (uint32_t)ctx->r5, (uint32_t)ctx->r6);
 
     ctx->r5 = 1;
     ctx->r6 = 0;
@@ -1647,19 +1819,19 @@ extern "C" void rs64_lobby_mission_confirmed(uint8_t* rdram, recomp_context* ctx
 
     if (s.player == 0)
     {
-        s.link.send(rs64::net::encode_pick((uint8_t)level), true);
+        s.link.send(rs64::net::encode_pick(rs64::ls::entry_to_wire((int)level, s.mod_base)), true);
 
         fprintf(stderr, "[lobby] host picked level %u (sent)\n", level);
 
         // Level 0x10 forces the T-16 and skips craft select, so no READY comes.
-        if (level == 0x10) {
+        if (level == 0x10 && (int)level < s.mod_base) {
             s.remote_craft = 7;
         }
 
         return;
     }
 
-    const int level_here = s.host_pick >= 0 ? s.host_pick : (s.host_state == 4 ? s.host_cursor : -1);
+    const int level_here = rs64::ls::entry_from_wire(s.host_pick >= 0 ? s.host_pick : (s.host_state == 4 ? s.host_cursor : -1), s.mod_base);
 
     if (level_here >= 0)
     {
@@ -1679,6 +1851,24 @@ extern "C" void rs64_lobby_input(uint8_t* rdram)
 {
 
     g().rdram = rdram;
+
+    // A failed direct join backs out of JOIN GAME with a B press once its reason has been up for kFailBackMs.
+    if (s_on_games && s_direct_join && g().lobby.state() == rs64::net::LobbyState::Failed)
+    {
+        const uint32_t now = now_ms32();
+
+        if (!s_back_armed)
+        {
+            s_back_armed = true;
+            s_back_at_ms = now + kFailBackMs;
+        } else if ((int32_t)(now - s_back_at_ms) >= 0) {
+            s_direct_join = false;
+            s_back_armed = false;
+            ww(rdram, 0x8013A960u, rw(rdram, 0x8013A960u) | 0x4000u);
+
+            fprintf(stderr, "[lobby] join failed: back to MULTIPLAYER\n");
+        }
+    }
 
     // The row being edited takes the pad; with none, the address editor's frame still runs (it turns the keyboard off).
     const bool any = each_editor([&](auto& e) {
@@ -1809,9 +1999,15 @@ extern "C" void rs64_ghost_register_host(void)
             s.editor.cancel_typing();
         }
 
+        // A host asked for a password: entering six digits joins it again from this page.
+        if (s.pin_mode && pin_watch(s.join_pin, s_join_pin_watch, &s.join_pin_set) && !rs64_lobby_hosting())
+        {
+            rs64_lobby_join();
+        }
+
         if (s.pin_mode)
         {
-            return mp_text(b, pin_label(s.join_pin, s.join_pin_set, "------"));
+            return mp_text(b, pin_label(s.join_pin, s.join_pin_set, "NONE"));
         }
 
         return mp_text(b, std::string(rs64_lobby_address_label()));
@@ -1857,6 +2053,23 @@ extern "C" void rs64_ghost_register_host(void)
         static std::string b;
         return mp_text(b, pin_label(g().host_pin, g().host_pin_set, "NONE"));
     }, nullptr);
+    add_text_source("mp_ff_label", [](void*) -> const char* {
+        return g().friendly_fire ? "FRIENDLY FIRE ON" : "FRIENDLY FIRE OFF";
+    }, nullptr);
+
+    // A change while a player is connected reaches them at once.
+    rs64::mp::add_action("mp_ff_toggle", [](void*) {
+
+        Ghost& s = g();
+
+        s.friendly_fire = !s.friendly_fire;
+        save_net_config();
+
+        if (s.player == 0 && s.lobby.ready()) {
+            s.session_ff = s.friendly_fire;
+            s.link.send(rs64::net::encode_rules(s.friendly_fire), true);
+        }
+    });
     rs64::mp::add_action("mp_name_edit", [](void*) {
         toggle_edit(g().host_name);
     });
@@ -1927,6 +2140,8 @@ extern "C" void rs64_ghost_register_host(void)
 
         if (utf8) {
             rs64_lobby_type_text(utf8);
+        } else if (key == 3) {
+            copy_typed();
         } else {
             rs64_lobby_type_key(key);
         }

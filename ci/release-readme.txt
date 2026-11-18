@@ -14,6 +14,8 @@ Star Wars: Rogue Squadron (N64, USA v1.0) as a .z64 ROM.
 
 The ROM is checked on load; other regions or revisions are rejected.
 
+Ready-made graphics settings for low-end to high-end PCs, the original N64 look and VR are in video-presets/; see video-presets/README.md.
+
 Bundled mods are in mods/; turn them on and off in the Mods panel (F6).
 Online co-op comes from the Multiplayer mod (multiplayer-native), which is on by default and must stay enabled.
 

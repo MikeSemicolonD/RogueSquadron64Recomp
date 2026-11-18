@@ -1,5 +1,6 @@
 #include "main/crash.h"
 
+#include <atomic>
 #include <cstdio>
 #include <csignal>
 #include <cstdlib>
@@ -73,7 +74,14 @@ void print_stack_with_symbols(void** frames, USHORT count) {
 
 #endif
 
+// librecomp's counts of the calls and faults it stubbed or caught.
+extern "C" unsigned recomp_null_call_count(void);
+extern "C" unsigned recomp_fault_caught_count(void);
+
 namespace rs64::crash {
+
+static std::atomic<unsigned> s_crt_reports{0};
+
 #ifdef _WIN32
 
 static char s_last_dump[MAX_PATH] = {};
@@ -145,6 +153,14 @@ bool write_minidump_safe(EXCEPTION_POINTERS* ep)
     fflush(stderr);
 
     return ok != FALSE;
+}
+
+// After a crash, DLL detach (which _Exit still runs) can block for good, e.g. Windows.Devices.WiFiDirect with a group up; TerminateProcess skips it.
+[[noreturn]] static void die(UINT code)
+{
+
+    TerminateProcess(GetCurrentProcess(), code);
+    _Exit((int)code);
 }
 
 static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep)
@@ -249,7 +265,7 @@ void install_handlers()
 
         print_stack_with_symbols(frames, count);  // symbolized to stderr when a PDB exists
         write_minidump_safe(nullptr);
-        _Exit(3);
+        die(3);
     });
 
     signal(SIGABRT, [](int){
@@ -262,7 +278,7 @@ void install_handlers()
         // No EXCEPTION_POINTERS on the abort path — passing nullptr makes
         // VS open the dump without the "unhandled exception" dialog.
         write_minidump_safe(nullptr);
-        _Exit(3);
+        die(3);
     });
 
     // Route CRT debug asserts to stderr instead of the blocking dialog.
@@ -276,6 +292,7 @@ void install_handlers()
     _CrtSetReportHook([](int reportType, char* message, int*) -> int
     {
 
+        s_crt_reports.fetch_add(1, std::memory_order_relaxed);
         fprintf(stderr, "[CRT_REPORT type=%d] %s\n", reportType,
             message ? message : "(null)");
         void* frames[48];
@@ -325,7 +342,7 @@ void install_handlers()
         }
 
         fflush(stderr);
-        _Exit(4);
+        die(4);
     });
 }
 
@@ -338,4 +355,11 @@ void install_exception_filter() {}
 void install_handlers() {}
 
 #endif
+
+void log_suppressed()
+{
+
+    fprintf(stderr, "[suppressed] bounds_reports=%u null_calls=%u faults=%u\n", s_crt_reports.load(), recomp_null_call_count(), recomp_fault_caught_count());
+    fflush(stderr);
+}
 }

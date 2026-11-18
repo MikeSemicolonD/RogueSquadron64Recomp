@@ -5,7 +5,7 @@
 > *port* (how it bridges to RT64 + ultramodern). Current status is in
 > [Current status & known blockers](#current-status--known-blockers).
 >
-> Symbol-name source of truth: `E:/Projects/rogue_squadron64/symbol_files/`
+> Symbol-name source of truth: `../rogue_squadron64/symbol_files/`
 > (per-overlay `.txt`); unnamed globals use the splat `D_<ADDR>` convention.
 > Hardware truth comes from Project64 RDRAM goldens and message-order traces
 > (`tools/debug/validate/`), and the graphics ucode grammar from its IMEM listing
@@ -42,7 +42,7 @@ The host glue lives in `src/`:
 | --- | --- |
 | `src/main/main.cpp` | Entry point; SDL2 window, gfx and VI callbacks |
 | `src/input/input_host.cpp` | Gamepads, joysticks, keyboard/mouse, sensors, the SDL event loop |
-| `src/input/touch_host.cpp` | Touch and mouse on the menus (taps, slider and MODS-page drags, hover) |
+| `src/input/touch_host.cpp` | Touch and mouse on the menus (taps, slider and list scrollbar drags, hover) |
 | `src/main/ui_panels.cpp` | ImGui panels: controls/rebind, mods, touch overlay |
 | `src/main/crash.cpp` | Crash handlers and minidumps (Windows) |
 | `src/audio/audio.cpp` | `get_rsp_microcode` task dispatch (M_AUDTASK→MusyX synth; graphics tasks go to `send_dl` in events.cpp); SDL2 audio output |
@@ -51,7 +51,7 @@ The host glue lives in `src/`:
 | `src/game/register_overlays.cpp` | Registers all overlay function tables at boot (`recomp::overlays::register_overlays`) |
 | `src/game/upstream_compat.cpp` | `/FORCE:MULTIPLE` overrides of libultra shims (`osRecvMesg`, `osSendMesg`, `osYieldThread`, `osDestroyThread`, `osInitialize`, `osViBlack`, `osStopThread`, …), `rs64_load_overlay`, the message trace, the watchdog with all-thread stack dumps |
 | `src/game/hook_helpers.cpp` | Host logic called from `rogue_squadron.toml` hooks (draw distance, HUD placement, pacing, DL walkers) |
-| `src/game/menus/` | Front-end menus and mod pages (`menu_config.cpp`) and the pause menu (`pause_menu.cpp`) |
+| `src/game/menus/` | Front-end menus and mod pages (`menu_config.cpp`), the Controls list (`controls_menu.cpp`), the MODS page (`mods_menu.cpp`), menu font and typing helpers (`menu_font.cpp`, `menu_typing.cpp`) and the pause menu (`pause_menu.cpp`) |
 | `src/game/mod_content/` | Mod asset overrides and mod level content: camera shots, levels, crawls, medals, objectives, level rules |
 | `src/game/lang/` | Language mods |
 | `src/game/builtin_hooks.cpp` | Built-in hooks registered through the host API |
@@ -497,6 +497,14 @@ The recomp runs exactly this: no host-injected tokens, no forced non-blocking re
 
 The host never writes these bytes.
 
+### Frame pacing: 30 fps is the game's own cap
+
+The game is double-buffered (`0x80128EAD` = 2) with a minimum of 2 VIs per frame (`0x80128EAF` = 2, written once by `initVideoSubsystem` 0x8001A19C), so it presents at exactly 30 fps on any host. `viRetraceHandlerThread` bumps `0x80128EAE` every VI, zeroes it on a swap, and holds the next buffer until the counter reaches the minimum (0x80019AC8); buffer states are bytes at `0x80128EAA`. Every RDRAM golden (menu, cinematic, demos, missions) shows 2/2. On hardware heavy scenes dropped below 30; on PC the host never does, so the game thread idles on the swap and the F5 walk's `0xE9` wait is pacing, not render cost (render thread ~2-3 ms, GPU ~0.15 ms).
+
+Game time is variable-timestep, not frame-counted: `timeSnapshotFiller` (0x8000BC00) measures the interval from `osGetTime` plus the VIs still owed before the swap, and `runInMissionFrame` rounds it to whole VI periods (`getViModePeriod` 0x80002710: 16.667 ms NTSC / 20 ms PAL; `floatModulo` 0x8001E20C), uses 1/30 s if it is <= 0, clamps to 0.1 s, and passes it as `$f12` to the per-frame ticks (`slotDispatcherIter`, `updateGridLayerScroll`, audio listeners). The lockstep/replay path uses fixed 1/30 s steps instead (`rs64_ls_frame_dt`).
+
+TARGET FPS sets the mission logic rate (`rs64::rate::logic_hz`): interpolation off runs real frames at the target, interpolation on runs 30 logic up to a target of 60 and 60 logic above it. A rate above 30 writes the tick count to `0x80128EAF` each frame (`rs64_rate_frame`) and any overlay load puts 2 back. Missions, cutscenes and menus apply it. The video clock runs at the rate times 4 (`ROGUESQ_VI_SUBTICKS`) with a 4-tick frame minimum (`ultramodern::set_vi_rate`, `getViModePeriod` hook), so a late frame waits a fraction of a frame for its swap. Each frame's dt is the smoothed measured frame time plus a share of the time still owed: the game's own dt mispredicts the swap tick and makes it up a frame later, and raw wall-clock time jitters, and both made the hangar take-off camera judder. Game logic that counts frames is patched by hooks that read `rs64_rate_scale()` (this frame's share of a 30 Hz step, 1 when off) or `rs64_rate_tick()` (true 30 times a second, always true when off): a fixed per-frame step is multiplied by the scale, a per-frame multiplier goes through `rs64_rate_drag`, a frame counter only advances on tick frames. New per-frame logic found at 60 fps gets the same treatment.
+
 ### Diagnostic env vars (rendering)
 
 | Var | Effect |
@@ -541,6 +549,10 @@ The host never writes these bytes.
 - CPU side (`musyxSynthFrame`, 0x8009123C, run as an SI callback by the VI retrace thread each VI): `tickAudioSequencerFrame` drives channels each frame; `musyxMixActiveVoices` (0x80090E04) builds DSP descriptors from the 20-slot voice table `D_80149710`; `musyxBuildVoiceCommandList` (0x80091034) assembles the DSP task; key-on via `musyxKeyOnVoice`.
 - PCM/WAV capture: `ROGUESQ_DUMP_PCM=<path>` writes a streaming 22050 Hz stereo s16 WAV of the real synth output (the output dir must exist); `ROGUESQ_DUMP_PCM=1` writes `dumps/wav/capture.wav`.
 
+### MORT voice codec
+
+Subtitled **dialogue uses a separate codec, MORT** (per the [rerogue](https://github.com/dpethes/rerogue) PC-version RE), fully recompiled; `tools/re/mort_decode.py` / `tools/re/MORTDecoder.cpp` are the offline reference and `tools/re/extract_speech_table.py` extracts the voiceId→text table. The voice filters read `$ra` after `bltzal $zero` as the base of an embedded coefficient table, so N64Recomp must write `ctx->r31 = PC+8` for the conditional branch-and-link ops (`Generator::emit_link_address`); `jal`/`jalr` still do not write `r31`.
+
 ---
 
 ## Overlay loading
@@ -567,6 +579,24 @@ case 2: load_overlays(0x00137580, 0x800A5130, 0x0000B810); // .ovl.cinematic
 The menu and cinematic overlays' distinct functions execute and the screens
 render their content. Overlays are registered at boot only, matching
 Zelda64Recomp.
+
+---
+
+## Host RAM above 8 MB
+
+The flight terrain's view grid tables (span tables, two byte tables, the per-cell pointer table) are relocated to host RDRAM above the game's 8 MB, and their row strides are doubled by `[[patches.instruction]]` entries in `rogue_squadron.toml`. Any new code touching these tables must go through `rs64_tgrid_base`.
+
+Host-side tables above 8 MB. Each is a named range in [src/util/host_ram_map.h](../../src/util/host_ram_map.h), which fails the build if two overlap: add a new one there, and give a mod its memory through the host API's `alloc` instead.
+
+`ROGUESQ_DRAW_DIST` (0.25-8) scales the far plane and object culls; terrain reach and fog follow it capped at 2.5x (`ROGUESQ_TERRAIN_DIST` overrides), and the level cell budget doubles at 2x+ (`ROGUESQ_TGRID_BUDGET_MULT`), and for cutscene levels on legacy terrain in widescreen.
+
+---
+
+## Game-state model and BOOT_TARGET nav engine
+
+A canonical game-state model classifies the current state each present from RDRAM: descriptor `tools/state/state_model.toml` → `tools/state/gen_state_table.cpp` (CMake `gen_state_table`) → `src/game/state_table.inl`, host classifier in [src/game/game_state.cpp](../../src/game/game_state.cpp) (`rs64_state_current_id`), Python tools read the same TOML. `ROGUESQ_LOG_GAMESTATE=1` prints the classified state. Discriminators are verified against live RDRAM (e.g. mission = `numMissionObjectives` 0x130B17 != 0; menu = `gCurrentMenuData` 0x800CE730; menu id at 0x800CE734; pilot sub-screen `bridgeMenuState` 0x800CDAC4). A **headless scripted virtual controller** (`ROGUESQ_INPUT_SEQ`, injected at `get_n64_input` **before** `resolve()` so keyboard-active runs don't swallow it) drives menus without window focus.
+
+`ROGUESQ_BOOT_TARGET=level:<id>[,craft]` is a state-gated **nav sequencer** ([src/game/nav_sequencer.cpp](../../src/game/nav_sequencer.cpp)) that drives the real menus to a mission. Never call a recompiled function from the host to force state — inject input + write fields the game's own confirm path reads (e.g. `gCurrentLevel` 0x130B70 is a **u32**, not a byte — a byte write = out-of-range id = crash). `demo:<n>` auto-disables the custom menu (it displaced the attract idle path) so the chosen attract demo plays; firing it *instantly* is unsolved (idle trigger is `(clock − lastInputFrame) > threshold`, `lastInputFrame` not locatable statically).
 
 ---
 
@@ -603,6 +633,12 @@ harmless here because every thread has a distinct priority.
 - **SI busy flag** `D_80110741` — spin-wait for serial idle (save vs controller).
 - **Service-worker registry** `D_801128D0` — linked list of registered workers.
 - **Buffer-arbiter state machine** `D_80128EAA[]` — producer/consumer between the game thread and `viRetraceHandlerThread` (see [Buffer arbiter](#buffer-arbiter)).
+
+### DP event delivery
+
+Disproven, don't chase: contention on `0x8011A7E8` (only `submitGfxFrame` 0x8000C07C uses it), lost DP messages (`mqdiag` shows 0 lost/requeued), DP throughput (the producer side is fine; 10x `dp_complete` changed nothing), and `0x80128EAE/F` as a sync token (they are the frame-pacing counters).
+
+DP (`OS_EVENT_DP`) events arrive on a non-game thread → `enqueue_external_message_src` → drained on the next game-thread `osSendMesg`/`osRecvMesg`/`osJamMesg` via `dequeue_external_messages`. Queue 0x8011A408 (gate-thread DP queue, count=1) and 0x8011A7E8 (consumer) are the DP-pacing pair. Default `MessageQueueControl{}` has `requeue_dp = true`. The `mqdiag` instrumentation in [ultramodern/src/mesgqueue.cpp](../../lib/N64ModernRuntime/ultramodern/src/mesgqueue.cpp) tracks per-queue send/recv/external/delivered/blocked/lost/requeued counts; dump via `mqdiag_dump(path)`.
 
 ---
 
@@ -646,6 +682,20 @@ in `rt64_render_context.cpp`. `PresentEarly` mode is on by default (opt out with
 | `osStopThread` non-self semantics | Overrides upstream `assert(false)` with libultra-equivalent |
 | Audio (M_AUDTASK) | Runs the recompiled MusyX synth; samples stream from the cartridge through librecomp's ROM read |
 
+[patches/src/npc_health.c](../../patches/src/npc_health.c) replaces `getNpcCurrentHealth` and the other four health accessors and guards the slot read, which is NULL (`npc+0x190`) while a structure explodes. `getNpcCurrentHealth` is reached only through `LOOKUP_FUNC`; the patch covers it because `PatchesLib` is an OBJECT library (a STATIC one bound the func_map to the unguarded body).
+
+### Exception handling pipeline
+
+- **C++ exceptions** (SEH `0xE06D7363`): the `__except` filter in [librecomp/src/recomp.cpp](../../lib/N64ModernRuntime/librecomp/src/recomp.cpp) **must** let these propagate (`EXCEPTION_CONTINUE_SEARCH`). Catching them with `std::exit(1)` kills the game on any throw; the outer `try/catch` in [ultramodern/src/threads.cpp](../../lib/N64ModernRuntime/ultramodern/src/threads.cpp) recovers.
+- **Hardware SEH** (AVs, illegal instructions): caught, the thread terminates, the process continues.
+- **STL bounds checks** ("vector subscript out of range"): the `_CrtSetReportHook` in [crash.cpp](../../src/main/crash.cpp) returns 1 to suppress the abort. Trade-off: occasional visual glitch over a hard crash.
+- **`get_function` on an unmapped address** (NULL or stray fn-ptr call): stubbed to a no-op in [librecomp/src/overlays.cpp](../../lib/N64ModernRuntime/librecomp/src/overlays.cpp) so the recompiled MIPS continues; logs `[null-call] addr=...` with the calling MIPS function (MSVC builds) or `Failed to find function at 0x...` (other compilers).
+- A replay's log ends with `[suppressed] bounds_reports=N null_calls=N faults=N`, the count of each of the three above. A clean run shows zeros.
+
+### RT64 interpreter safety
+
+There is no global iteration cap in [rt64_interpreter.cpp](../../lib/rt64/src/hle/rt64_interpreter.cpp). F5 walks are bounded by the chunk-fetch rules in `rt64_gbi_f3dfactor5.cpp`: a per-task limit of 4096 chunk hops, exact chunk-revisit detection, and a back-link check. A runaway walk means one of those rules failed. `hleGBI` NULL checks exist around the reset path; the main HLE loop only `assert`s it.
+
 ---
 
 ## Current status & known blockers
@@ -688,7 +738,7 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
    ```
 3. **Rebuild** (Debug is the dev/debug target; Release for perf):
    ```
-   cd E:/Projects/RogueSquadron64Recomp && cmake --build build --config Debug -j 4
+   cmake --build build --config Debug -j 4
    ```
    Check the executable's timestamp afterwards: a failed build leaves the previous binary in place and the run scripts will happily launch it.
 4. **Smoke test**: `tools/debug/validate/capture_menu_rdram.ps1 -Screen "menu,400" -Timeout 420 -FastFwd 0` boots headless to the menu and dumps RDRAM there; `tools/debug/validate/rdram_golden_diff.py` compares it with a Project64 golden. `./tools/debug/run-stability.ps1 -Runs 1 -Timeout 30` is the shorter check.
@@ -706,13 +756,13 @@ After renaming a symbol (`llvm-objcopy --redefine-sym`):
 1. When renaming a function: add it to the matching subsystem table.
 2. When discovering a new subsystem: add a numbered section under "Subsystems".
 3. When mapping a global address: add to the "Memory map" table, using the recomp symbol (or `D_<ADDR>` if unnamed).
-4. Keep entries terse — one line each; link out to `E:/Projects/rogue_squadron64/docs/` for deeper specs.
+4. Keep entries terse — one line each; link out to `../rogue_squadron64/docs/` for deeper specs.
 
 ## See also
 
 - [docs/reference/data-structures.md](data-structures.md) — field-offset layouts for the entity/gameplay objects, global game state, HUD/menu, and cinematic/scene-graph structs.
-- `E:/Projects/rogue_squadron64/symbol_files/` — authoritative symbol names (per-overlay).
-- `E:/Projects/rogue_squadron64/docs/` — per-subsystem detail (HOB/HMT/SND/DAT/save/menus + partial m2c decomp).
+- `../rogue_squadron64/symbol_files/` — authoritative symbol names (per-overlay).
+- `../rogue_squadron64/docs/` — per-subsystem detail (HOB/HMT/SND/DAT/save/menus + partial m2c decomp).
 - [docs/reference/f5-model-dl-spec.md](f5-model-dl-spec.md) — display-list grammar; §7 is the ucode-derived truth (chunk fetch, opcodes, terrain records).
 - [docs/reference/factor5-gbi.md](factor5-gbi.md) — Factor 5 graphics microcode docs (older runtime priors).
 - [docs/reference/factor5-ucode-dispatch.md](factor5-ucode-dispatch.md) — dispatch-table notes; its handler readings are offset by 0x80 (see the spec §7).

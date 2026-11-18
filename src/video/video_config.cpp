@@ -5,6 +5,7 @@
 #include <cmath>
 #include <fstream>
 #include <mutex>
+#include <optional>
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
@@ -26,8 +27,49 @@ void adv_get(const json& a, const char* key, T& out)
     if (a.contains(key) && !a.at(key).is_null()) out = a.at(key).get<T>();
 }
 
+constexpr std::pair<int, int> kAspects[] = { {4, 3}, {5, 4}, {3, 2}, {16, 10}, {16, 9}, {21, 9}, {32, 9} };
+
+json aspect_to_json(double a)
+{
+
+    for (const auto& [w, h] : kAspects) {
+        if (std::fabs(a - double(w) / h) < 1e-4) {
+            return std::to_string(w) + ":" + std::to_string(h);
+        }
+    }
+
+    return std::round(a * 10000.0) / 10000.0;
+}
+
+// Accepts "16:9" or a plain width/height number.
+void aspect_get(const json& a, const char* key, double& out)
+{
+
+    if (!a.contains(key)) return;
+
+    const json& v = a.at(key);
+
+    if (v.is_number()) {
+        out = v.get<double>();
+        return;
+    }
+
+    int w = 0;
+    int h = 0;
+
+    if (v.is_string() && std::sscanf(v.get<std::string>().c_str(), "%d:%d", &w, &h) == 2 && w > 0 && h > 0) {
+        out = double(w) / h;
+    }
+}
+
 std::atomic<float> g_draw_distance{1.0f};
 std::atomic<bool> g_keep_cutscene{true};
+std::atomic<bool> g_vr_mode{false};
+constexpr float kVrScaleMin = 0.25f;
+constexpr float kVrScaleMax = 16.0f;
+// The size that felt right in an X-wing cockpit on a Quest 2.
+std::atomic<float> g_vr_scale[3]{ 8.0f, 4.0f, 2.0f };
+constexpr const char* kVrScaleKeys[3] = { "vrScale", "vrScaleMenus", "vrScaleCutscenes" };
 
 std::atomic<bool> g_legacy_terrain{false};
 
@@ -39,6 +81,7 @@ std::atomic<int> g_terrain_tessellation{4};
 
 std::atomic<bool> g_fb_writeback{true};
 std::atomic<bool> g_d3d10{false};
+std::atomic<float> g_ssaa_base{1.0f};
 std::atomic<bool> g_fullscreen{false};
 std::atomic<bool> g_ray_query{false};
 
@@ -56,6 +99,16 @@ UC g_desired;
 bool g_pending = false;
 std::vector<int> g_refresh_rates;
 
+// The settings read only at launch, as they were when the renderer started (first apply_pending). A new one adds a field here, in restart_snapshot and in restart_required.
+struct RestartSettings
+{
+    UC::GraphicsAPI api{};
+    bool d3d10 = false;
+    bool vr = false;
+};
+
+std::optional<RestartSettings> g_started;
+
 struct AaPreset { UC::Antialiasing msaa; int ssaa; bool fxaa; const char* name; };
 
 const AaPreset kAaPresets[] = {
@@ -69,16 +122,49 @@ const AaPreset kAaPresets[] = {
 };
 
 constexpr int kAaPresetCount = (int)(sizeof(kAaPresets) / sizeof(kAaPresets[0]));
+
+// The ANTI-ALIASING choice that renders: a saved SSAA above what the cap allows at this resolution shows as the step RT64 lowers it to.
+int shown_aa_preset(const UC& uc)
+{
+
+    UC shown = uc;
+
+    shown.downsampleMultiplier = RT64::rs64CappedSsaa(uc.downsampleMultiplier, g_ssaa_base.load(std::memory_order_relaxed));
+
+    return aa_preset(shown);
+}
+
 const char* const kResolutionNames[] = { "AUTO", "1X", "2X", "3X", "4X" };
 const char* const kUpscaleNames[] = { "NEAREST", "LINEAR", "AA PIXEL" };
 const char* const kTextureNames[] = { "BILINEAR", "3-POINT" };
 const char* const kOnOff[] = { "OFF", "ON" };
+
+// RENDERER choices (Windows only); takes effect at the next start. A saved "d3d10" shows as D3D11.
+const UC::GraphicsAPI kApiChoices[] = { UC::GraphicsAPI::Automatic, UC::GraphicsAPI::Vulkan, UC::GraphicsAPI::D3D12, UC::GraphicsAPI::D3D11 };
+const char* const kApiNames[] = { "AUTO", "VULKAN", "D3D12", "D3D11" };
+constexpr int kApiCount = 4;
+
+int api_choice(const UC& uc)
+{
+
+    for (int i = 0; i < kApiCount; i++)
+    {
+        if (kApiChoices[i] == uc.graphicsAPI) return i;
+    }
+
+    return -1;
+}
 
 // TARGET FPS choices: 0 = DISPLAY, then the monitor's rates, with a saved rate it doesn't list kept in order.
 std::vector<int> target_choices(const UC& uc)
 {
 
     std::vector<int> v = g_refresh_rates;
+
+    if (std::find(v.begin(), v.end(), 30) == v.end())
+    {
+        v.insert(std::upper_bound(v.begin(), v.end(), 30), 30);
+    }
 
     if (!g_target_display.load(std::memory_order_relaxed) && std::find(v.begin(), v.end(), uc.refreshRateTarget) == v.end())
     {
@@ -96,10 +182,11 @@ int choice_of(const UC& uc, Display d)
     switch (d) {
         case Display::Resolution:         return resolution_choice(uc);
         case Display::Widescreen:         return uc.aspectRatio == UC::AspectRatio::Expand ? 1 : 0;
-        case Display::AntiAliasing:       return aa_preset(uc);
+        case Display::AntiAliasing:       return shown_aa_preset(uc);
         case Display::FrameInterpolation: return uc.refreshRate != UC::RefreshRate::Original ? 1 : 0;
         case Display::TextureFilter:      return uc.threePointFiltering ? 1 : 0;
         case Display::UpscaleFilter:      return upscale_choice(uc);
+        case Display::GraphicsApi:        return api_choice(uc);
         case Display::TargetFps:          break;
     }
 
@@ -117,6 +204,7 @@ int count_of(const UC& uc, Display d)
         case Display::Resolution:    return 5;
         case Display::AntiAliasing:  return kAaPresetCount;
         case Display::UpscaleFilter: return 3;
+        case Display::GraphicsApi:   return kApiCount;
         case Display::TargetFps:     return (int)target_choices(uc).size();
         default:                     return 2;
     }
@@ -137,13 +225,29 @@ void step_in(UC& uc, Display d)
             uc.aspectRatio = next ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
             break;
         case Display::AntiAliasing:
-            apply_aa_preset(uc, next);
+        {
+
+            // SSAA steps the cap would lower at this resolution are skipped, so the row never names one that doesn't render.
+            const float base = g_ssaa_base.load(std::memory_order_relaxed);
+            int pick = next;
+
+            for (int i = 0; i < kAaPresetCount && RT64::rs64CappedSsaa(kAaPresets[pick].ssaa, base) != kAaPresets[pick].ssaa; ++i)
+            {
+                pick = (pick + 1) % kAaPresetCount;
+            }
+
+            apply_aa_preset(uc, pick);
             break;
+        }
         case Display::TextureFilter:
             uc.threePointFiltering = next != 0;
             break;
         case Display::UpscaleFilter:
             apply_upscale_choice(uc, next);
+            break;
+        case Display::GraphicsApi:
+            uc.graphicsAPI = kApiChoices[next];
+            g_d3d10.store(false, std::memory_order_relaxed);
             break;
         case Display::FrameInterpolation:
             uc.refreshRate = next ? interp_rate() : UC::RefreshRate::Original;
@@ -260,6 +364,8 @@ void set_legacy_terrain(bool on)
     set_draw_distance(draw_distance());
 }
 
+
+
 int terrain_tessellation() {
     return g_terrain_tessellation.load(std::memory_order_relaxed);
 }
@@ -272,6 +378,26 @@ void set_terrain_tessellation(int quads)
 
 void set_keep_cutscene_draw_distance(bool on) {
     g_keep_cutscene.store(on, std::memory_order_relaxed);
+}
+
+bool vr_mode() {
+    return g_vr_mode.load(std::memory_order_relaxed);
+}
+
+void set_vr_mode(bool on) {
+    g_vr_mode.store(on, std::memory_order_relaxed);
+}
+
+VrScene vr_scene_of_overlay(int overlay) {
+    return (overlay == 1) ? VrScene::Menus : ((overlay == 2) ? VrScene::Cutscenes : VrScene::Missions);
+}
+
+float vr_scale(VrScene scene) {
+    return g_vr_scale[int(scene)].load(std::memory_order_relaxed);
+}
+
+void set_vr_scale(VrScene scene, float scale) {
+    g_vr_scale[int(scene)].store(std::clamp(scale, kVrScaleMin, kVrScaleMax), std::memory_order_relaxed);
 }
 
 bool framebuffer_writeback() {
@@ -311,6 +437,18 @@ void apply_aa_preset(UC& uc, int preset)
     uc.antialiasing = p.msaa;
     uc.downsampleMultiplier = p.ssaa;
     uc.fxaa = p.fxaa;
+}
+
+// One anti-aliasing method at a time, as the menu offers them: SSAA under MSAA multiplies the multisampled target (SSAA 2X + MSAA 4X ran at 2 fps where
+// either alone ran at 57 and 221), so MSAA wins over SSAA and either over FXAA.
+static void single_aa(UC& uc)
+{
+
+    const bool msaa = uc.antialiasing != UC::Antialiasing::None;
+    const bool ssaa = uc.downsampleMultiplier > 1;
+
+    if (msaa && ssaa) uc.downsampleMultiplier = 1;
+    if ((msaa || ssaa) && uc.fxaa) uc.fxaa = false;
 }
 
 int resolution_choice(const UC& uc)
@@ -387,6 +525,7 @@ std::string display_label(Display d, int choice)
         case Display::AntiAliasing:  return kAaPresets[std::min(choice, kAaPresetCount - 1)].name;
         case Display::UpscaleFilter: return kUpscaleNames[std::min(choice, 2)];
         case Display::TextureFilter: return kTextureNames[choice ? 1 : 0];
+        case Display::GraphicsApi:   return kApiNames[std::min(choice, kApiCount - 1)];
         case Display::TargetFps:     break;
         default:                     return kOnOff[choice ? 1 : 0];
     }
@@ -399,6 +538,14 @@ std::string display_label(Display d, int choice)
     return choice < (int)v.size() ? std::to_string(v[choice]) : "DISPLAY";
 }
 
+int target_fps(int display_hz)
+{
+
+    std::lock_guard<std::mutex> lock(g_display_mutex);
+
+    return g_target_display.load(std::memory_order_relaxed) ? display_hz : g_desired.refreshRateTarget;
+}
+
 bool frame_interpolation_on()
 {
 
@@ -407,11 +554,28 @@ bool frame_interpolation_on()
     return g_desired.refreshRate != UC::RefreshRate::Original;
 }
 
+RestartSettings restart_snapshot(const UC& uc)
+{
+    return { uc.graphicsAPI, d3d10(), vr_mode() };
+}
+
+bool restart_required()
+{
+
+    std::lock_guard<std::mutex> lock(g_display_mutex);
+
+    const RestartSettings now = restart_snapshot(g_desired);
+
+    return g_started && (now.api != g_started->api || now.d3d10 != g_started->d3d10 || now.vr != g_started->vr);
+}
+
 ApplyResult apply_pending(UC& uc)
 {
 
     std::lock_guard<std::mutex> lock(g_display_mutex);
     ApplyResult r;
+
+    if (!g_started) g_started = restart_snapshot(uc);
 
     // No menu change waiting: mirror the live config (the F1 inspector and env overrides edit it directly).
     if (!g_pending)
@@ -436,6 +600,7 @@ ApplyResult apply_pending(UC& uc)
     uc.refreshRateTarget = d.refreshRateTarget;
     uc.threePointFiltering = d.threePointFiltering;
     uc.filtering = d.filtering;
+    uc.graphicsAPI = d.graphicsAPI;
     g_pending = false;
 
     return r;
@@ -450,6 +615,11 @@ void set_refresh_rates(std::vector<int> hz)
     std::lock_guard<std::mutex> lock(g_display_mutex);
 
     g_refresh_rates = std::move(hz);
+}
+
+void set_ssaa_base(float scale)
+{
+    g_ssaa_base.store(scale, std::memory_order_relaxed);
 }
 
 bool d3d10() {
@@ -503,6 +673,14 @@ void pin_language(const std::string& code)
     g_language_pin = code;
 }
 
+std::string config_path()
+{
+
+    const char* path = env_str("ROGUESQ_VIDEO_CONFIG");
+
+    return path ? path : "roguesq_video.json";
+}
+
 bool peek_fullscreen(const std::string& path)
 {
 
@@ -538,9 +716,20 @@ void apply_friendly(UC& uc, const json& j)
         set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
     }
 
+    if (has("vrMode") && j["vrMode"].is_boolean()) {
+        set_vr_mode(j["vrMode"].get<bool>());
+    }
+
+    for (int s = 0; s < 3; s++) {
+        if (has(kVrScaleKeys[s]) && j[kVrScaleKeys[s]].is_number()) {
+            set_vr_scale(VrScene(s), j[kVrScaleKeys[s]].get<float>());
+        }
+    }
+
     if (has("legacyTerrain") && j["legacyTerrain"].is_boolean()) {
         set_legacy_terrain(j["legacyTerrain"].get<bool>());
     }
+
 
     if (has("terrainTessellation") && j["terrainTessellation"].is_number()) {
         set_terrain_tessellation(j["terrainTessellation"].get<int>());
@@ -618,6 +807,7 @@ void apply_friendly(UC& uc, const json& j)
     if (has("supersampling")) uc.downsampleMultiplier = j["supersampling"].get<int>();
     if (has("ssaa")) uc.downsampleMultiplier = j["ssaa"].get<int>();
     if (has("fxaa")) uc.fxaa = j["fxaa"].get<bool>();
+    if (has("vsync")) uc.vsync = j["vsync"].get<bool>();
 
     if (has("smoothUpscale"))
     {
@@ -682,8 +872,8 @@ void apply_friendly(UC& uc, const json& j)
         adv_get(a, "hardwareResolve", uc.hardwareResolve);
         adv_get(a, "resolutionMultiplier", uc.resolutionMultiplier);
         adv_get(a, "downsampleMultiplier", uc.downsampleMultiplier);
-        adv_get(a, "aspectTarget", uc.aspectTarget);
-        adv_get(a, "extAspectTarget", uc.extAspectTarget);
+        aspect_get(a, "aspectTarget", uc.aspectTarget);
+        aspect_get(a, "extAspectTarget", uc.extAspectTarget);
         adv_get(a, "refreshRateTarget", uc.refreshRateTarget);
         adv_get(a, "idleWorkActive", uc.idleWorkActive);
         adv_get(a, "developerMode", uc.developerMode);
@@ -691,6 +881,7 @@ void apply_friendly(UC& uc, const json& j)
 
     if (uc.refreshRate == UC::RefreshRate::Display) g_target_display.store(true, std::memory_order_relaxed);
 
+    single_aa(uc);
     uc.validate();
 }
 
@@ -702,6 +893,10 @@ json to_friendly(const UC& uc)
     j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
     j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
     j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
+    j["vrMode"] = vr_mode();
+    for (int s = 0; s < 3; s++) {
+        j[kVrScaleKeys[s]] = std::round(vr_scale(VrScene(s)) * 100.0f) / 100.0f;
+    }
     j["legacyTerrain"] = legacy_terrain();
     j["terrainTessellation"] = terrain_tessellation();
     j["framebufferWriteback"] = framebuffer_writeback();
@@ -738,7 +933,7 @@ json to_friendly(const UC& uc)
         j["widescreen"] = false;
     } else {
         adv["aspectRatio"] = uc.aspectRatio;
-        adv["aspectTarget"] = uc.aspectTarget;
+        adv["aspectTarget"] = aspect_to_json(uc.aspectTarget);
     }
 
     // resolutionScale <-> resolution + resolutionMultiplier
@@ -758,6 +953,7 @@ json to_friendly(const UC& uc)
 
     j["ssaa"] = uc.downsampleMultiplier;
     j["fxaa"] = uc.fxaa;
+    j["vsync"] = uc.vsync;
 
     if (uc.filtering == UC::Filtering::AntiAliasedPixelScaling) {
         j["smoothUpscale"] = true;
@@ -807,7 +1003,7 @@ json to_friendly(const UC& uc)
     adv["hardwareResolve"] = uc.hardwareResolve;
     adv["idleWorkActive"] = uc.idleWorkActive;
     adv["extAspectRatio"] = uc.extAspectRatio;
-    adv["extAspectTarget"] = uc.extAspectTarget;
+    adv["extAspectTarget"] = aspect_to_json(uc.extAspectTarget);
 
     j["advanced"] = adv;
 
@@ -861,6 +1057,10 @@ void apply_env_overrides(UC& uc)
         fprintf(stderr, "[RT64] MSAA=%ux\n", UC::msaaSampleCount(uc.antialiasing));
     }
 
+    if (env_str("ROGUESQ_VR")) {
+        set_vr_mode(env_on("ROGUESQ_VR"));
+    }
+
     // ROGUESQ_RES_SCALE=<mult>: internal render-resolution multiplier (Manual).
     if (const char* v = env_str("ROGUESQ_RES_SCALE")) {
         double m = std::atof(v);
@@ -889,7 +1089,9 @@ void apply_env_overrides(UC& uc)
         fprintf(stderr, "[RT64] fxaa=%d\n", uc.fxaa ? 1 : 0);
     }
 
-    // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1 expands to the window.
+    single_aa(uc);
+
+    // ROGUESQ_ASPECT=<w/h> forces a ratio; ROGUESQ_WIDESCREEN=1|0 expands to the window or keeps 4:3, over the saved setting.
     if (const char* v = env_str("ROGUESQ_ASPECT")) {
         double a = std::atof(v);
 
@@ -899,17 +1101,26 @@ void apply_env_overrides(UC& uc)
 
             fprintf(stderr, "[RT64] aspect=Manual %.4f\n", a);
         }
-    } else if (env_on("ROGUESQ_WIDESCREEN")) {
-        uc.aspectRatio = UC::AspectRatio::Expand;
+    } else if (env_str("ROGUESQ_WIDESCREEN")) {
+        const bool wide = env_on("ROGUESQ_WIDESCREEN");
 
-        fprintf(stderr, "[RT64] aspect=Expand\n");
+        uc.aspectRatio = wide ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
+
+        fprintf(stderr, "[RT64] aspect=%s\n", wide ? "Expand" : "Original");
     }
 
-    // ROGUESQ_HDR=1: high internal color format.
-    if (env_on("ROGUESQ_HDR")) {
-        uc.internalColorFormat = UC::InternalColorFormat::High;
+    // ROGUESQ_HDR=1|0: high or standard internal color format.
+    if (env_str("ROGUESQ_HDR")) {
+        const bool hdr = env_on("ROGUESQ_HDR");
 
-        fprintf(stderr, "[RT64] HDR internal color format\n");
+        uc.internalColorFormat = hdr ? UC::InternalColorFormat::High : UC::InternalColorFormat::Automatic;
+
+        fprintf(stderr, "[RT64] HDR=%d\n", hdr ? 1 : 0);
+    }
+
+    // ROGUESQ_HLE_DEV_MODE=1|0: the F1 inspector.
+    if (env_str("ROGUESQ_HLE_DEV_MODE")) {
+        uc.developerMode = env_on("ROGUESQ_HLE_DEV_MODE");
     }
 
     // ROGUESQ_TEX_FILTER=nearest|linear|aa drives both the VI upscale filter (filtering) and the per-texture sampler (threePointFiltering).

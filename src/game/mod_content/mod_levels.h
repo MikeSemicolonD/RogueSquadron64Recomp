@@ -4,6 +4,7 @@
 #include "json/json.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <map>
 #include <optional>
@@ -249,6 +250,24 @@ inline std::string crawlServedPath(const std::string& key) {
     return file == "backdrop" ? "backdrop/" + name : file == "dat" ? "frontend/starwars/" + name : std::string();
 }
 
+// The short name a level's own SELECT LEVEL picture is served under: with the game's "alpha" suffix it has to fit a 15-character manifest name.
+inline std::string previewName(const std::string& folder) {
+    uint32_t h = 2166136261u;
+    for (const unsigned char c : folder) h = (h ^ c) * 16777619u;
+    char name[10];
+    snprintf(name, sizeof name, "p%08x", h);
+    return name;
+}
+
+// level/<folder>/preview[alpha] -> backdrop/<short name>[alpha], where the picture's lookups find it.
+inline std::string previewServedPath(const std::string& key) {
+    const size_t slash = key.find('/', 6);
+    if (key.rfind("level/", 0) != 0 || slash == std::string::npos) return std::string();
+    const std::string file = key.substr(slash + 1);
+    if (file != "preview" && file != "previewalpha") return std::string();
+    return "backdrop/" + previewName(key.substr(6, slash - 6)) + file.substr(7);
+}
+
 // The name a lookup uses while crawl c plays: its own backdrop (with planet "own") and its own scene DAT when it ships them (have).
 inline std::optional<std::string> crawlAsset(const Crawl& c, const std::string& lookedUp, const std::set<std::string>& have) {
     const bool backdrop = c.ownPlanet && lookedUp.rfind("backdrop/planet_", 0) == 0;
@@ -317,7 +336,15 @@ private:
     std::map<std::string, int> best_;
 };
 
-// Templates are the playable stock levels 0x00-0x12. Folders are one plain name (assets/level/<folder>/).
+// Templates are the playable stock levels 0x00-0x12, and 0x14, where the player is an AT-ST (the CHICKEN passcode's level). It has no medal
+// thresholds, SELECT LEVEL picture or game save slot of its own. Folders are one plain name (assets/level/<folder>/).
+constexpr int kLastStockLevel = 0x12;
+constexpr int kAtStLevel = 0x14;
+
+inline bool isTemplate(int level) {
+    return (level >= 0 && level <= kLastStockLevel) || level == kAtStLevel;
+}
+
 inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::string& text, std::vector<std::string>& errors) {
     std::vector<ModLevel> out;
     const auto doc = nlohmann::json::parse(text, nullptr, false);
@@ -406,8 +433,12 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
             if (errors.size() != before) l.objectives.clear();
         }
         const bool plain = !l.folder.empty() && l.folder.size() <= kMaxFolder && l.folder.find_first_of("/\\") == std::string::npos && l.folder != "." && l.folder != "..";
-        if (l.tmpl < 0 || l.tmpl > 0x12 || !plain || l.id.empty()) {
-            errors.push_back(mod + ": level '" + l.id + "' needs a template 0-18 and a plain folder name of at most 48 characters");
+        if (!isTemplate(l.tmpl) || !plain || l.id.empty()) {
+            errors.push_back(mod + ": level '" + l.id + "' needs a template 0-18 or 20 and a plain folder name of at most 48 characters");
+            continue;
+        }
+        if (l.tmpl > kLastStockLevel && !l.hasMedals) {
+            errors.push_back(mod + ": level '" + l.id + "' needs its own medals, as its template has none");
             continue;
         }
         out.push_back(std::move(l));
@@ -464,6 +495,47 @@ struct Entries {
 };
 inline Entries layout(int stock_max, size_t n) {
     return { stock_max + 1, (int)std::min<size_t>(n, (size_t)std::max(0, kMaxEntry - stock_max)) };
+}
+
+// A level DAT as the game reads it: for each listed type, a count at type*8 and a list at type*8+4 of offsets to records, and each record holds its own index in
+// its type at +0x04, which the game indexes the type's table with. Empty when it holds, else what is wrong, for the player.
+inline std::string datProblem(const uint8_t* d, size_t n) {
+
+    const auto be32 = [&](size_t o) { return o + 4 <= n ? (uint32_t(d[o]) << 24) | (uint32_t(d[o + 1]) << 16) | (uint32_t(d[o + 2]) << 8) | d[o + 3] : 0xFFFFFFFFu; };
+    char msg[160];
+
+    if (n < 0x48) return "the file is too short to be a level";
+
+    for (const int type : { 0, 2, 3, 6, 7 }) {
+        const uint32_t count = be32(type * 8);
+        const uint32_t list = be32(type * 8 + 4);
+
+        if (count != 0 && (uint64_t(list) + uint64_t(count) * 4 > n))
+        {
+            snprintf(msg, sizeof msg, "its list of type %d objects runs past the end of the file", type);
+            return msg;
+        }
+
+        for (uint32_t i = 0; i < count; i++) {
+            const uint64_t rec = uint64_t(list) + be32(list + i * 4);
+
+            if (rec + 8 > n)
+            {
+                snprintf(msg, sizeof msg, "type %d object %u starts past the end of the file", type, i);
+                return msg;
+            }
+
+            const uint32_t index = (uint32_t(d[rec + 4]) << 8) | d[rec + 5];
+
+            if (index != i)
+            {
+                snprintf(msg, sizeof msg, "it was saved by an older RS64 Explorer (type %d object %u is numbered %u)", type, i, index);
+                return msg;
+            }
+        }
+    }
+
+    return {};
 }
 
 }

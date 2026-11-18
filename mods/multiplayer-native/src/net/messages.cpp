@@ -2,6 +2,8 @@
 #include "net/net_core.h"
 #include "net/wire.h"
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 
 namespace rs64::net {
 
@@ -66,12 +68,29 @@ uint8_t message_type(const uint8_t* data, size_t n)
         return data[1];
     }
 
-    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::TowSeg)
+    if (data[0] != kProtocol || data[1] < 1 || data[1] > (uint8_t)Msg::Mod)
     {
         return 0;
     }
 
     return data[1];
+}
+
+bool handshake_message(uint8_t type)
+{
+
+    switch ((Msg)type) {
+    case Msg::Hello:
+    case Msg::Auth:
+    case Msg::Accept:
+    case Msg::Bye:
+    case Msg::Pake1:
+    case Msg::Pake2:
+    case Msg::Pake3:
+        return true;
+    default:
+        return false;
+    }
 }
 
 // HELLO leads with the sender's protocol, not ours, so a mismatch decodes and can be reported.
@@ -85,8 +104,9 @@ std::vector<uint8_t> encode_hello(const Hello& h)
     w.u16(h.protocol);
     w.u32(h.build);
     w.u8(h.role);
+    w.u8(h.locked);
 
-    for (char c : h.name) w.u8((uint8_t)c);
+    for (uint8_t c : h.nonce) w.u8(c);
 
     return w.b;
 }
@@ -113,16 +133,128 @@ bool decode_hello(const uint8_t* data, size_t n, Hello* out)
     h.protocol = r.u16();
     h.build = r.u32();
     h.role = r.u8();
+    h.locked = r.u8();
 
-    for (char& c : h.name) c = (char)r.u8();
+    for (uint8_t& c : h.nonce) c = r.u8();
 
-    if (!r.done() || h.role > 1)
+    if (!r.done() || h.role > 1 || h.locked > 1)
     {
         return false;
     }
 
     *out = h;
     return true;
+}
+
+std::vector<uint8_t> encode_name(const char name[3])
+{
+
+    Writer w;
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Name);
+
+    for (int i = 0; i < 3; ++i) w.u8((uint8_t)name[i]);
+
+    return w.b;
+}
+
+bool decode_name(const uint8_t* data, size_t n, char name[3])
+{
+
+    Reader r{data, n};
+    char c[3];
+
+    if (!header(r, Msg::Name))
+    {
+        return false;
+    }
+
+    for (char& x : c) x = (char)r.u8();
+
+    if (!r.done())
+    {
+        return false;
+    }
+
+    memcpy(name, c, 3);
+    return true;
+}
+
+std::vector<uint8_t> encode_pake(Msg type, const uint8_t* point, const uint8_t* tag)
+{
+
+    Writer w;
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)type);
+
+    if (type != Msg::Pake3) {
+        for (size_t i = 0; i < kPakePoint; ++i) w.u8(point[i]);
+    }
+
+    if (type != Msg::Pake1) {
+        for (size_t i = 0; i < kPakeTag; ++i) w.u8(tag[i]);
+    }
+
+    return w.b;
+}
+
+bool decode_pake(const uint8_t* data, size_t n, Msg type, uint8_t* point, uint8_t* tag)
+{
+
+    Reader r{data, n};
+    uint8_t p[kPakePoint] = {};
+    uint8_t t[kPakeTag] = {};
+
+    if (!header(r, type) || (type != Msg::Pake1 && type != Msg::Pake2 && type != Msg::Pake3))
+    {
+        return false;
+    }
+
+    if (type != Msg::Pake3) {
+        for (uint8_t& c : p) c = r.u8();
+    }
+
+    if (type != Msg::Pake1) {
+        for (uint8_t& c : t) c = r.u8();
+    }
+
+    if (!r.done())
+    {
+        return false;
+    }
+
+    if (point) {
+        memcpy(point, p, sizeof(p));
+    }
+
+    if (tag) {
+        memcpy(tag, t, sizeof(t));
+    }
+
+    return true;
+}
+
+std::string pilot_name(const char name[3])
+{
+
+    std::string out;
+
+    for (int i = 0; i < 3; ++i) {
+        const char c = name[i];
+
+        if (!c)
+        {
+            break;
+        }
+
+        if (c >= 0x20 && c < '~') {
+            out += c;
+        }
+    }
+
+    return out;
 }
 
 std::vector<uint8_t> encode_launch(const std::string& header_text)
@@ -132,7 +264,7 @@ std::vector<uint8_t> encode_launch(const std::string& header_text)
 
     w.u8(kProtocol);
     w.u8((uint8_t)Msg::Launch);
-    put_string<uint16_t>(w, header_text, kMaxPacket - 4);
+    put_string<uint16_t>(w, header_text, kMaxPacket - 4 - kSealOverhead);
     return w.b;
 }
 
@@ -148,37 +280,6 @@ bool decode_launch(const uint8_t* data, size_t n, std::string* header_text)
     }
 
     *header_text = std::move(s);
-    return true;
-}
-
-std::vector<uint8_t> encode_auth(const std::string& pin)
-{
-
-    Writer w;
-
-    w.u8(kProtocol);
-    w.u8((uint8_t)Msg::Auth);
-    put_string<uint8_t>(w, pin, 255);
-    return w.b;
-}
-
-bool decode_auth(const uint8_t* data, size_t n, std::string* pin)
-{
-
-    Reader r{data, n};
-    std::string p;
-
-    if (!header(r, Msg::Auth) || !take_string<uint8_t>(r, &p, 255) || !r.done())
-    {
-        return false;
-    }
-
-    if (!p.empty() && (p.size() != (size_t)CodeEditor::kDigits || !CodeEditor::valid(p)))
-    {
-        return false;
-    }
-
-    *pin = p;
     return true;
 }
 
@@ -282,7 +383,7 @@ bool decode_damage(const uint8_t* data, size_t n, uint8_t* epoch, std::vector<st
 
 std::vector<uint8_t> encode_state(const StatePacket& s)
 {
-    return encode_fields(Msg::State, s.seq, s.epoch, s.pos, s.fwd, s.down, s.vel, s.pad, s.flags, s.foil, s.sent_ms);
+    return encode_fields(Msg::State, s.seq, s.epoch, s.pos, s.fwd, s.down, s.vel, s.pad, s.flags, s.foil, s.head, s.shots, s.walk, s.sent_ms);
 }
 
 bool decode_state(const uint8_t* data, size_t n, StatePacket* out)
@@ -290,9 +391,15 @@ bool decode_state(const uint8_t* data, size_t n, StatePacket* out)
 
     StatePacket s;
 
-    if (!read_fields(data, n, Msg::State, &s.seq, &s.epoch, &s.pos, &s.fwd, &s.down, &s.vel, &s.pad, &s.flags, &s.foil, &s.sent_ms) || s.foil > 250)
+    if (!read_fields(data, n, Msg::State, &s.seq, &s.epoch, &s.pos, &s.fwd, &s.down, &s.vel, &s.pad, &s.flags, &s.foil, &s.head, &s.shots, &s.walk, &s.sent_ms) || s.foil > 250 || !(s.walk >= 0.0f && s.walk <= 1.0f))
     {
         return false;
+    }
+
+    // A head angle reaches the puppet's model matrix: finite and within half a turn (degrees).
+    for (float a : s.head)
+    {
+        if (!(a > -180.0f && a < 180.0f)) return false;
     }
 
     *out = s;
@@ -342,6 +449,39 @@ bool decode_tow_seg(const uint8_t* data, size_t n, TowSeg* out)
     }
 
     *out = t;
+    return true;
+}
+
+bool tow_seg_ok(const TowSeg& t, uint32_t ring)
+{
+
+    if (t.head >= ring)
+    {
+        return false;
+    }
+
+    if (t.index == TowSeg::kNoSegment)
+    {
+        return true;
+    }
+
+    for (int i = 0; i < 16; ++i)
+    {
+        // +0xC sits between the start position and the transform and is not a coordinate.
+        if (i == 3) {
+            continue;
+        }
+
+        float v;
+
+        std::memcpy(&v, &t.words[i], 4);
+
+        if (!std::isfinite(v) || std::fabs(v) > 1e6f)
+        {
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -397,6 +537,24 @@ bool decode_presence(const uint8_t* data, size_t n, uint8_t* epoch, uint8_t* in_
     return true;
 }
 
+std::vector<uint8_t> encode_end_clip(const EndClip& c) {
+    return encode_fields(Msg::EndClip, c.epoch, c.args);
+}
+
+bool decode_end_clip(const uint8_t* data, size_t n, EndClip* out)
+{
+
+    EndClip c;
+
+    if (!read_fields(data, n, Msg::EndClip, &c.epoch, &c.args))
+    {
+        return false;
+    }
+
+    *out = c;
+    return true;
+}
+
 // MISSION, LIFE and OUT keep the [epoch, value] layout they shared with RESULT; the value is fixed.
 std::vector<uint8_t> encode_mission(uint8_t id) { return encode_fields(Msg::Mission, id, (uint8_t)0); }
 std::vector<uint8_t> encode_life_lost(uint8_t epoch) { return encode_fields(Msg::Life, epoch, (uint8_t)1); }
@@ -426,6 +584,11 @@ bool decode_out(const uint8_t* data, size_t n, uint8_t* epoch)
     return decode_fields(data, n, Msg::Out, epoch, &v) && v <= 1;
 }
 
+// A stock SELECT LEVEL entry (0..0x12) or a mod level's (0x80 | its index, entry_to_wire).
+static bool level_entry_ok(uint8_t l) {
+    return l <= 0x12 || (l >= 0x80 && l < 0x80 + 0x1E);
+}
+
 std::vector<uint8_t> encode_pick(uint8_t level) { return encode_fields(Msg::Pick, (uint8_t)0, level); }
 
 bool decode_pick(const uint8_t* data, size_t n, uint8_t* level)
@@ -434,7 +597,7 @@ bool decode_pick(const uint8_t* data, size_t n, uint8_t* level)
     uint8_t e = 0;
     uint8_t l = 0;
 
-    if (!decode_fields(data, n, Msg::Pick, &e, &l) || l > 0x12)
+    if (!decode_fields(data, n, Msg::Pick, &e, &l) || !level_entry_ok(l))
     {
         return false;
     }
@@ -451,7 +614,7 @@ bool decode_browse(const uint8_t* data, size_t n, uint8_t* level, uint8_t* state
     uint8_t l = 0;
     uint8_t st = 0;
 
-    if (!decode_fields(data, n, Msg::Browse, &l, &st) || l > 0x12 || st > 4)
+    if (!decode_fields(data, n, Msg::Browse, &l, &st) || !level_entry_ok(l) || st > 4)
     {
         return false;
     }
@@ -497,6 +660,8 @@ bool decode_skip(const uint8_t* data, size_t n, uint16_t* scene)
 
 std::vector<uint8_t> encode_briefing_done() { return encode_fields(Msg::BriefingDone); }
 bool decode_briefing_done(const uint8_t* data, size_t n) { return decode_fields(data, n, Msg::BriefingDone); }
+std::vector<uint8_t> encode_auth() { return encode_fields(Msg::Auth); }
+bool decode_auth(const uint8_t* data, size_t n) { return decode_fields(data, n, Msg::Auth); }
 std::vector<uint8_t> encode_accept() { return encode_fields(Msg::Accept); }
 bool decode_accept(const uint8_t* data, size_t n) { return decode_fields(data, n, Msg::Accept); }
 std::vector<uint8_t> encode_continue() { return encode_fields(Msg::Continue); }
@@ -532,6 +697,99 @@ std::vector<uint8_t> encode_tow_trip(uint8_t epoch, uint16_t item) { return enco
 bool decode_tow_trip(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* item)
 {
     return decode_fields(data, n, Msg::TowTrip, epoch, item);
+}
+
+std::vector<uint8_t> encode_hit(uint8_t epoch, uint16_t damage) { return encode_fields(Msg::Hit, epoch, damage); }
+
+bool decode_hit(const uint8_t* data, size_t n, uint8_t* epoch, uint16_t* damage)
+{
+    return decode_fields(data, n, Msg::Hit, epoch, damage);
+}
+
+std::vector<uint8_t> encode_rules(bool friendly_fire) { return encode_fields(Msg::Rules, (uint8_t)(friendly_fire ? 1 : 0)); }
+
+bool decode_rules(const uint8_t* data, size_t n, bool* friendly_fire)
+{
+
+    uint8_t ff = 0;
+
+    if (!decode_fields(data, n, Msg::Rules, &ff))
+    {
+        return false;
+    }
+
+    *friendly_fire = ff != 0;
+    return true;
+}
+
+bool mod_channel_name_ok(const char* name)
+{
+
+    if (!name)
+    {
+        return false;
+    }
+
+    const size_t len = std::strlen(name);
+
+    return len >= 1 && len <= kModChannelNameMax;
+}
+
+std::vector<uint8_t> encode_mod(const char* channel, const uint8_t* data, size_t size)
+{
+
+    if (!mod_channel_name_ok(channel) || size > kModChannelDataMax || (size && !data))
+    {
+        return {};
+    }
+
+    Writer w;
+    const size_t len = std::strlen(channel);
+
+    w.u8(kProtocol);
+    w.u8((uint8_t)Msg::Mod);
+    w.u8((uint8_t)len);
+
+    for (size_t i = 0; i < len; ++i) w.u8((uint8_t)channel[i]);
+
+    w.u16((uint16_t)size);
+
+    for (size_t i = 0; i < size; ++i) w.u8(data[i]);
+
+    return w.b;
+}
+
+bool decode_mod(const uint8_t* data, size_t n, std::string* channel, std::vector<uint8_t>* payload)
+{
+
+    Reader r{data, n};
+
+    if (!header(r, Msg::Mod))
+    {
+        return false;
+    }
+
+    const uint8_t len = r.u8();
+
+    if (len < 1 || len > kModChannelNameMax || !r.need(len))
+    {
+        return false;
+    }
+
+    std::string name((const char*)data + r.at, len);
+
+    r.at += len;
+
+    const uint16_t size = r.u16();
+
+    if (!r.ok || size > kModChannelDataMax || !r.need(size) || r.n - r.at != size || name.find('\0') != std::string::npos)
+    {
+        return false;
+    }
+
+    *channel = std::move(name);
+    payload->assign(data + r.at, data + r.at + size);
+    return true;
 }
 
 std::vector<uint8_t> encode_trigger(uint8_t epoch, uint16_t event, bool enter)

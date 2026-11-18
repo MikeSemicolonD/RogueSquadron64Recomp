@@ -81,6 +81,7 @@ add_executable(level_rules_test EXCLUDE_FROM_ALL
 )
 set_target_properties(level_rules_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(level_rules_test PRIVATE ${RS64_ROOT}/src ${RS64_ROOT}/lib/rt64/src/contrib)
+target_compile_definitions(level_rules_test PRIVATE RS64_RULES_CASES="${RS64_ROOT}/tests/level_rules_script_cases.json")
 
 add_executable(level_environment_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/level_environment_test.cpp
@@ -109,6 +110,13 @@ add_executable(terrain_edit_test EXCLUDE_FROM_ALL
 set_target_properties(terrain_edit_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(terrain_edit_test PRIVATE ${RS64_ROOT}/src)
 
+# Standalone unit test for Soft paint textures (merging a level's painted textures into its bank).
+add_executable(terrain_paint_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/terrain_paint_test.cpp
+)
+set_target_properties(terrain_paint_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(terrain_paint_test PRIVATE ${RS64_ROOT}/src)
+
 # Standalone unit test for language mods (parsing, code page, glyph packs).
 add_executable(lang_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/lang_test.cpp
@@ -132,11 +140,24 @@ add_executable(hud_placement_test EXCLUDE_FROM_ALL
 )
 set_target_properties(hud_placement_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
+# Standalone unit test for the mission frame rate core.
+add_executable(game_rate_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/game_rate_test.cpp
+)
+set_target_properties(game_rate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(game_rate_test PRIVATE ${RS64_ROOT}/src)
+
 # Standalone unit test for the dynamic point-light helpers.
 add_executable(rs64_lights_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/rs64_lights_test.cpp
 )
 set_target_properties(rs64_lights_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# Standalone unit test for the VR eye view and projection math.
+add_executable(rs64_vr_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/rs64_vr_test.cpp
+)
+set_target_properties(rs64_vr_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
 # Standalone unit test for the mode-change blanking gate.
 add_executable(transition_gate_test EXCLUDE_FROM_ALL
@@ -157,13 +178,41 @@ add_executable(play_link_test EXCLUDE_FROM_ALL
 set_target_properties(play_link_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_include_directories(play_link_test PRIVATE ${RS64_ROOT}/src)
 
+# Standalone unit test for the SPIR-V passes that prepare RT64 shaders for WGSL.
+add_executable(spirv_web_passes_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/spirv_web_passes_test.cpp
+)
+set_target_properties(spirv_web_passes_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+
+# Standalone unit test for the browser build's audio ring.
+add_executable(audio_ring_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/audio_ring_test.cpp
+)
+set_target_properties(audio_ring_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(audio_ring_test PRIVATE ${RS64_ROOT}/src)
+
+# Standalone unit test for the recompiled code's float-to-int truncations.
+add_executable(recomp_fp_convert_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/recomp_fp_convert_test.cpp
+)
+set_target_properties(recomp_fp_convert_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(recomp_fp_convert_test PRIVATE ${RS64_ROOT}/lib/N64ModernRuntime/N64Recomp/include)
+
+# librecomp's registry of native mod libraries linked into the executable.
+add_executable(static_native_libs_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/static_native_libs_test.cpp
+    ${RS64_ROOT}/lib/N64ModernRuntime/librecomp/src/static_native_libs.cpp
+)
+set_target_properties(static_native_libs_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_include_directories(static_native_libs_test PRIVATE ${RS64_ROOT}/tests ${RS64_ROOT}/lib/N64ModernRuntime/librecomp/include ${RS64_ROOT}/lib/N64ModernRuntime/N64Recomp/include)
+
 # AGENTS.md style rules for src/, against tools/style/baseline.txt.
 add_executable(style_check EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/style_check.cpp
 )
 set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
-set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test level_environment_test crosshair_match_test hud_placement_test rs64_lights_test menu_layout_test mods_page_test lang_test terrain_edit_test mcp_framing_test)
+set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test level_rules_test level_environment_test crosshair_match_test hud_placement_test game_rate_test rs64_lights_test rs64_vr_test menu_layout_test mods_page_test lang_test terrain_edit_test terrain_paint_test mcp_framing_test spirv_web_passes_test recomp_fp_convert_test audio_ring_test static_native_libs_test)
 set(RS64_TESTS ${RS64_BASE_TESTS} mp_core_test net_core_test net_link_test relay_core_test relay_client_test)
 
 if (MSVC)

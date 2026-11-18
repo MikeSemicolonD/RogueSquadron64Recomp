@@ -1,0 +1,15 @@
+[manifest]
+id = "atst_crosshair"
+version = "1.0.0"
+display_name = "AT-ST Crosshair"
+description = "The AT-ST on the bonus level aims with the same crosshair rings as the ships. They follow its head and turn on and off with the CROSSHAIRS setting."
+short_description = "Crosshair rings for the AT-ST."
+authors = ["RogueSquadron64Recomp"]
+game_id = "rs64"
+minimum_recomp_version = "0.0.0"
+
+[inputs]
+elf_path = "build/mod.elf"
+mod_filename = "atst_crosshair"
+func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
+data_reference_syms_files = [ "../../syms/rogue_squadron.datasyms.toml" ]

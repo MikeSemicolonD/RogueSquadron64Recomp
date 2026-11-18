@@ -1,6 +1,7 @@
 #include "net/net_core.h"
 #include "net/net_link.h"
 #include "check.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -47,7 +48,10 @@ static void f_stop(void* u) {
 static int f_conn(void* u) { fake_poll(fe(u)); return fe(u)->was_connected; }
 static int f_lost(void* u) { fake_poll(fe(u)); return fe(u)->lost; }
 static uint32_t f_count(void* u) { fake_poll(fe(u)); return fe(u)->connects; }
+// Every byte the fake transport carried, as a relay would see it.
+static std::vector<uint8_t> g_wire;
 static void f_send(void* u, const uint8_t* b, uint32_t n, int) {
+    g_wire.insert(g_wire.end(), b, b + n);
     if (fe(u)->up()) fe(u)->other->inbox.emplace_back(b, b + n);
 }
 static int f_flush(void*, int) { return 1; }
@@ -96,6 +100,89 @@ static void test_external_transport() {
     CHECK(!a.started && !b.started);
 }
 
+static bool wire_has(const std::string& s) {
+    return std::search(g_wire.begin(), g_wire.end(), s.begin(), s.end()) != g_wire.end();
+}
+
+// One side of ghost.cpp's lobby loop over a Link: connect edge, open and dispatch, queued replies before keys, ACCEPT once ready.
+struct Side {
+    Link link;
+    Lobby lobby;
+    bool was_up = false, was_ready = false;
+    std::vector<std::vector<uint8_t>> app;
+    void flush() {
+        for (auto& b : lobby.take_sends()) link.send(std::move(b), true);
+        SessionKeys k;
+        if (lobby.take_keys(&k)) link.set_cipher(k);
+    }
+    void poll() {
+        if (link.connected() && !was_up) {
+            link.clear_cipher();
+            lobby.on_connected(0);
+        }
+        was_up = link.connected();
+        for (auto& raw : link.receive()) {
+            flush();
+            std::vector<uint8_t> m;
+            if (link.open(raw, &m) != Cipher::Open::Ok) continue;
+            const uint8_t t = message_type(m.data(), m.size());
+            uint8_t point[kPakePoint], tag[kPakeTag];
+            Hello h;
+            if (t == (uint8_t)Msg::Hello && decode_hello(m.data(), m.size(), &h)) lobby.on_hello(h);
+            else if (t == (uint8_t)Msg::Accept && decode_accept(m.data(), m.size())) lobby.on_accept();
+            else if (t == (uint8_t)Msg::Pake1 && decode_pake(m.data(), m.size(), Msg::Pake1, point, tag)) lobby.on_pake1(point);
+            else if (t == (uint8_t)Msg::Pake2 && decode_pake(m.data(), m.size(), Msg::Pake2, point, tag)) lobby.on_pake2(point, tag);
+            else if (t == (uint8_t)Msg::Pake3 && decode_pake(m.data(), m.size(), Msg::Pake3, point, tag)) lobby.on_pake3(tag);
+            else if (lobby.ready() && !handshake_message(t)) app.push_back(m);
+        }
+        flush();
+        if (lobby.ready() && !was_ready && lobby.hosting()) link.send(encode_accept(), true);
+        was_ready = lobby.ready();
+    }
+};
+
+// A password game over a relay-like transport: the handshake finishes, then game messages cross sealed and the transport never sees the password or their text.
+static void test_sealed_session() {
+    FakeEnd a, b;
+    a.other = &b;
+    b.other = &a;
+    const rs64_mp_transport ta = fake_table(&a), tb = fake_table(&b);
+    Side host, client;
+    LinkConfig hc{Role::Host};
+    hc.external = &ta;
+    LinkConfig cc{Role::Client};
+    cc.external = &tb;
+    cc.peer = "123456";
+    host.lobby.set_password("424242");
+    host.lobby.host();
+    client.lobby.set_password("424242");
+    client.lobby.join();
+    g_wire.clear();
+    CHECK(host.link.start(hc) && client.link.start(cc));
+    for (int i = 0; i < 10; ++i) {
+        host.poll();
+        client.poll();
+    }
+    CHECK(host.lobby.ready() && client.lobby.ready());
+    client.link.send(encode_launch("SECRET BRIEFING"), true);
+    host.link.send(encode_launch("HOST SECRET"), false);
+    for (int i = 0; i < 3; ++i) {
+        host.poll();
+        client.poll();
+    }
+    std::string text;
+    CHECK(host.app.size() == 1 && decode_launch(host.app[0].data(), host.app[0].size(), &text) && text == "SECRET BRIEFING");
+    CHECK(client.app.size() == 1 && decode_launch(client.app[0].data(), client.app[0].size(), &text) && text == "HOST SECRET");
+    CHECK(!wire_has("424242") && !wire_has("SECRET"));
+
+    // A plaintext message injected after sealing is refused.
+    a.inbox.push_back(encode_launch("INJECTED"));
+    host.poll();
+    CHECK(host.app.size() == 1);
+    host.link.stop();
+    client.link.stop();
+}
+
 struct Seen {
     bool last = false;
     int distinct = 0;
@@ -134,6 +221,31 @@ static void drain(Link& link, Seen& seen, std::string* launch) {
     }
 }
 
+// A kick lands after what was sent before it, and frees the host's one slot for the next player.
+static void test_kick() {
+    const auto until = [](auto done) {
+        const auto t0 = std::chrono::steady_clock::now();
+        while (!done() && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(8)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        }
+        return done();
+    };
+    Link host, first, second;
+    CHECK(host.start(LinkConfig{Role::Host, "127.0.0.1", 27165}));
+    CHECK(first.start(LinkConfig{Role::Client, "127.0.0.1", 27165}));
+    CHECK(until([&] { return host.connected() && first.connected(); }));
+    host.send(encode_accept(), true);
+    host.kick();
+    CHECK(until([&] { return host.lost(); }));
+    const auto got = first.receive();
+    CHECK(got.size() == 1 && decode_accept(got[0].data(), got[0].size()));
+    first.stop();
+    CHECK(second.start(LinkConfig{Role::Client, "127.0.0.1", 27165}));
+    CHECK(until([&] { return host.connected() && second.connected(); }));
+    host.stop();
+    second.stop();
+}
+
 int main() {
 #ifdef _WIN32
     // Report failed checks on stderr instead of the Debug CRT's modal dialog.
@@ -141,6 +253,8 @@ int main() {
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
     test_external_transport();
+    test_sealed_session();
+    test_kick();
     using clock = std::chrono::steady_clock;
     constexpr int kLossPct = 20;
     Link host;

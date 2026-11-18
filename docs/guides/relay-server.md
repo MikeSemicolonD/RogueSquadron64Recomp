@@ -21,7 +21,7 @@ Each game release on GitHub has these downloads alongside the game's own:
 | Package | Contents |
 | --- | --- |
 | `rs64_relay-windows-x64-<ver>.zip` | `rs64_relay.exe`, this README, licenses. No runtime to install. |
-| `rs64_relay-linux-x64-<ver>.tar.gz` | `rs64_relay`, this README, licenses. Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12 and later). |
+| `rs64_relay-linux-x64-<ver>.tar.xz` | `rs64_relay`, this README, licenses. Needs glibc 2.35 or newer (Ubuntu 22.04, Debian 12 and later). |
 
 Unpack it anywhere and run it from a terminal:
 
@@ -38,10 +38,12 @@ Every setting is a command-line flag, a line in the config file, and (limits onl
 | Flag | Config key | Default | Meaning |
 | --- | --- | --- | --- |
 | `--port` | `port` | 27070 | UDP port (1-65535) |
+| `--browser-port` | `browser_port` | 27071 | UDP port browser players connect to (0 = off). Only a relay built with `RELAY_WEBTRANSPORT` (below) listens on it |
 | `--name` | `name` | RS64 RELAY | Server name shown in the game's list (A-Z, 0-9, space; at most 16) |
 | `--max-clients` | `max_clients` | 64 | Connections at once: hosts, joiners and players browsing the list (1-4000) |
 | `--max-games` | `max_games` | 32 | Registered games (1-2000) |
-| `--max-per-ip` | `max_per_ip` | 4 | Connections from one address (1-4000) |
+| `--max-per-ip` | `max_per_ip` | 4 | Connections from one address, or one IPv6 /64 (1-4000) |
+| `--games-per-ip` | `games_per_ip` | 2 | Games hosted from one address, or one IPv6 /64 (1-2000) |
 | `--rate` | `rate` | 120 | Packets per second per connection before it is dropped (10-10000); a game sends about 35 |
 | `--idle-timeout` | `idle_timeout` | 60 | Seconds before a connection outside a game is closed (5-3600) |
 | `--config` | | rs64_relay.cfg | Config file, relative to the current directory |
@@ -98,8 +100,8 @@ The log goes to the journal (`journalctl -u rs64_relay`). Change settings in `rs
 
 - Each game is two players: the host and one joiner. A full game drops out of the list until the joiner leaves.
 - The list shows only games from the same game build, so players on different versions never meet.
-- A game's password is checked by the host's game, never by the server; the server only knows that a game is locked.
-- The server forwards game packets without reading them, so it does not need updating when the game's protocol changes. Traffic is not encrypted.
+- A game's password is checked by the two players' games and never reaches the server. A game with a password is encrypted end to end, so the server cannot read or change its traffic. A game without one is not encrypted.
+- The server forwards game packets without reading them, so it does not need updating when the game's protocol changes.
 
 ## Building from source
 
@@ -110,5 +112,7 @@ git submodule update --init mods/multiplayer-native/lib/enet6
 cmake -S relay-server -B build-relay
 cmake --build build-relay --config Release --target rs64_relay
 ```
+
+Add `-DRELAY_WEBTRANSPORT=ON` to the first `cmake` line for a relay browser players can join (Windows only for now). It downloads libwtf and Microsoft's MsQuic package, and `msquic.dll` and `wtf.dll` must stay next to `rs64_relay.exe`.
 
 `relay_core_test` (also run by `rs64_unit_tests`) tests the protocol, limits, console and config handling.

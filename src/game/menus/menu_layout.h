@@ -10,6 +10,10 @@
 
 namespace rs64::menu {
 
+// gCurrentMenuData (0x800CE730) holds 12 rows: menu_rows.toml moves its type, x/y and param arrays past the game's 0xF8 bytes. Row offsets, stride 4 (type 1).
+inline constexpr int kMenuRows = 12;
+inline constexpr uint32_t kRowLabel = 0x08, kRowType = 0x188, kRowPos = 0xF8, kRowScale = 0x54, kRowParam = 0x128;
+
 // JSON text is UTF-8; the game's fonts index Latin-1 bytes (the menu font has A-Z, digits, some punctuation and Ä Ö Ü). Characters past U+00FF become '?'.
 inline std::string to_latin1(const std::string& s)
 {

@@ -27,8 +27,9 @@ int rs64_menu_typing(void);
 int rs64_menu_type(const char* utf8, int key);
 // SDL thread: mouse wheel steps over the CONTROLS page.
 void rs64_controls_wheel(int steps);
-// The MODS page for drags: a front-end entry's mod row (its slot, else -1), where a row's ON/OFF part starts, and a drag step to queue.
-int rs64_mods_page_row(int entry);
-float rs64_mods_toggle_from(void);
-void rs64_mods_drag(int op, int entry);
+// The scrolling list page on screen (CONTROLLER SETTINGS, LANGUAGE, MODS, a mod's text), any thread: its menu id, length, rows shown, first row,
+// and for text the scrolled area's top and bottom on the 320x240 screen (0 for rows); returns 0 when none.
+int rs64_list_view(int* menu, int* total, int* visible, int* top, int* y0, int* y1);
+// SDL thread: the first row the list's scrollbar was dragged to, applied by the next menu pass.
+void rs64_list_scroll_to(int top);
 }

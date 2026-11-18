@@ -19,10 +19,18 @@ int main() {
     CHECK(matches(outer, Rect{ 22.0f, 79.75f, 73.0f, 139.25f }, ow, oh, clip));
     CHECK(matches(Element{ -253.9f, -161.5f, 3 }, Rect{ 2.0f, 62.25f, 27.5f, 92.0f }, iw, ih, clip));
 
-    // A ring partly off the left edge: the upper-left clamps to the clip edge and only the lower-right matches.
-    CHECK(matches(Element{ -275.5f, -146.6f, 3 }, Rect{ 0.0f, 77.25f, 31.5f, 136.75f }, ow, oh, clip));
-    // The same clamp at the right edge.
-    CHECK(matches(Element{ 360.0f, -144.2f, 3 }, Rect{ 616.0f, 79.75f, 640.0f, 139.25f }, ow, oh, clip));
+    // A ring past the left edge is moved whole to the edge.
+    CHECK(matches(Element{ -275.5f, -146.6f, 3 }, Rect{ 0.0f, 77.25f, 51.25f, 136.75f }, ow, oh, clip));
+    // The same at the right edge, and when it is entirely outside the frame.
+    CHECK(matches(Element{ 360.0f, -144.2f, 3 }, Rect{ 588.75f, 79.75f, 640.0f, 139.25f }, ow, oh, clip));
+    CHECK(matches(Element{ 500.0f, -144.2f, 3 }, Rect{ 588.75f, 79.75f, 640.0f, 139.25f }, ow, oh, clip));
+
+    // A moved ring is known by its tile, wherever the element's position has got to by the time it is drawn.
+    const Element tiles[kElementCount] = { outer, Element{ 900.0f, -900.0f, 3 }, Element{ 0.0f, 0.0f, 0 } };
+    CHECK(ringOfTile(tiles, TexSize{ 32, 32 }) == 0);
+    CHECK(ringOfTile(tiles, TexSize{ 16, 16 }) == 1);
+    CHECK(ringOfTile(tiles, TexSize{ 32, 20 }) == -1);
+    CHECK(ringOfTile(tiles, TexSize{ 64, 64 }) == -1);
 
     // Hidden elements and other HUD rects never match.
     CHECK(!matches(Element{ -233.9f, -144.2f, 0 }, Rect{ 22.0f, 79.75f, 73.0f, 139.25f }, ow, oh, clip));
@@ -41,12 +49,12 @@ int main() {
     CHECK(ringOf(els, Rect{ 58.0f, 79.75f, 83.5f, 109.5f }, outerTex, 0x280, 0x224, clip) == -1);
     CHECK(ringOf(els, Rect{ 22.0f, 79.75f, 73.0f, 139.25f }, outerTex, 0, 0x224, clip) == -1);
 
-    // Y-wing bomb sight (level 13): a 32x20 tile drawn 32 x 37.25 px, and clamped at the bottom edge.
+    // Y-wing bomb sight (level 13): a 32x20 tile drawn 32 x 37.25 px, and moved up to the bottom edge.
     const Element all[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -3.12f, 21.17f, 3 } };
     const TexSize bombTex{ 32, 20 };
     CHECK(ringOf(all, Rect{ 252.75f, 245.0f, 284.75f, 282.25f }, bombTex, 0x280, 0x224, clip) == 2);
     const Element clamped[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -34.17f, 206.84f, 3 } };
-    CHECK(ringOf(clamped, Rect{ 221.75f, 430.75f, 253.75f, 448.0f }, bombTex, 0x280, 0x224, Rect{ 0.0f, 0.0f, 640.0f, 448.0f }) == 2);
+    CHECK(ringOf(clamped, Rect{ 221.75f, 410.75f, 253.75f, 448.0f }, bombTex, 0x280, 0x224, Rect{ 0.0f, 0.0f, 640.0f, 448.0f }) == 2);
     // Hidden bomb sight: no match.
     const Element hidden[kElementCount] = { outer, Element{ -197.9f, -144.2f, 3 }, Element{ -3.12f, 21.17f, 0 } };
     CHECK(ringOf(hidden, Rect{ 252.75f, 245.0f, 284.75f, 282.25f }, bombTex, 0x280, 0x224, clip) == -1);

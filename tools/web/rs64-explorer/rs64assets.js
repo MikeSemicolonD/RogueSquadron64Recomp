@@ -175,7 +175,7 @@ function rs64Lib()
     return { assets, read, write, alias, unalias, aliases };
   }
 
-  // ---- Level rules: a mod's assets/level/<folder>/rules.json (see src/game/mod_content/level_rules.h) ----
+  // ---- Level rules: a mod's assets/level/<folder>/rules.txt, or an older rules.json (see src/game/mod_content/level_rules.h) ----
   // on: what the "when" attaches to (area = area trigger, path = path event, unit = destroyable unit, level = Level settings).
   const RULE_WHENS = [
     { when: 'enter', on: 'area', label: 'Something enters this area' },
@@ -187,6 +187,7 @@ function rs64Lib()
     { when: 'after', on: 'level', label: 'Seconds after the start', params: [{ key: 'seconds', picker: 'seconds' }] },
     { when: 'objectiveDone', on: 'level', label: 'An objective is completed', objectives: true, params: [{ key: 'value', picker: 'objective' }] },
     { when: 'objectiveFailed', on: 'level', label: 'An objective fails', objectives: true, params: [{ key: 'value', picker: 'objective' }] },
+    { when: 'true', on: 'level', label: 'Conditions become true' },
     { when: 'flagIs', on: 'level', label: 'Flag is set (advanced)', params: [{ key: 'value', picker: 'flag' }] },
     {
       when: 'counterAtLeast',
@@ -210,6 +211,8 @@ function rs64Lib()
     { do: 'win', label: 'Win the mission' },
     { do: 'fail', label: 'Fail the mission' },
     { do: 'wait', label: 'Wait', params: [{ key: 'seconds', picker: 'seconds' }] },
+    { do: 'set', label: 'Set variable', params: [{ key: 'variable', picker: 'variable' }, { key: 'value', picker: 'number' }] },
+    { do: 'add', label: 'Add to variable', params: [{ key: 'variable', picker: 'variable' }, { key: 'value', picker: 'number' }] },
     { do: 'flag', label: 'Set flag (advanced)', params: [{ key: 'flag', picker: 'flag' }, { key: 'value', picker: 'number' }] },
     { do: 'counter', label: 'Add to counter (advanced)', params: [{ key: 'counter', picker: 'flag' }, { key: 'add', picker: 'number' }] },
   ];
@@ -227,7 +230,8 @@ function rs64Lib()
     'text',
     'number',
     'seconds',
-    'flag'
+    'flag',
+    'variable'
   ]);
 
   // A native mod's mods/<id>/rules_ext.json: the actions it registers with add_rule_action and the custom whens it fires; unknown pickers become text.
@@ -251,10 +255,59 @@ function rs64Lib()
     return [
       ...(Array.isArray(doc.actions) ? doc.actions : []).filter((e) => e?.do).map((e) => entry('action', e.do, e)),
       ...(Array.isArray(doc.events) ? doc.events : []).filter((e) => e?.custom).map((e) => entry('event', e.custom, e)),
+      ...(Array.isArray(doc.conditions) ? doc.conditions : []).filter((e) => e?.check).map((e) => entry('condition', e.check, e))
     ];
   }
 
-  const RULES_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.json';
+  // What an installed mod offers other menu mods: the setting keys and conditions its roguesq_menu.json uses, and its mod.json config options
+  // as config:<mod id>:<option id> conditions. Its own @exports and config:<option id> keys only work inside that mod, so they are left out.
+  function menuExtParse(menuText, manifestText, folder)
+  {
+    let manifest = {};
+
+    try {
+      manifest = JSON.parse(manifestText || '{}') ?? {};
+    } catch {}
+
+    const mod = String(manifest.id || folder);
+    const out = [];
+    const seen = new Set();
+    const text = (v) => (typeof v === 'string' ? v : v?.en);
+
+    const add = (kind, name, label) => {
+      if (seen.has(kind + ' ' + name))
+        return;
+
+      seen.add(kind + ' ' + name);
+      out.push({ kind, name, label: label || name, mod });
+    };
+
+    for (const b of menuParse(menuText || '').doc?.buttons ?? [])
+    {
+      const kind = b?.type ?? 'action';
+      const key = kind !== 'submenu' && kind !== 'label' && b?.[kind];
+
+      if (typeof key === 'string' && key && !key.startsWith('@') && !key.startsWith('config:'))
+        add(kind, key, text(b.label) || text(b.label_on));
+
+      for (const c of [b?.requires ?? []].flat())
+      {
+        const name = typeof c === 'string' ? c.replace(/^!/, '') : '';
+
+        if (name && (!name.startsWith('config:') || name.indexOf(':', 7) > 0))
+          add('condition', name);
+      }
+    }
+
+    for (const o of Array.isArray(manifest.config_schema?.options) ? manifest.config_schema.options : [])
+      if (o?.id)
+        add('condition', `config:${mod}:${o.id}`, o.name);
+
+    return out;
+  }
+
+  const RULES_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.txt';
+  const RULES_JSON_PATH = (folder) => 'mod/assets/level/' + folder + '/rules.json';
 
   function rulesParse(text) {
     try {
@@ -280,6 +333,10 @@ function rs64Lib()
     if (rule.who && rule.who !== 'player')
       out.push({ field: 'who', name: rule.who });
 
+    for (const a of condScan(rule.if ?? '').atoms)
+      if (a.kind)
+        out.push({ field: 'if', name: a.name });
+
     (rule.actions ?? []).forEach((a, k) => {
       const params = RULE_ACTIONS.find((x) => x.do === a.do)?.params ?? ext.find((e) => e.kind === 'action' && e.name === a.do)?.params ?? [];
 
@@ -303,6 +360,8 @@ function rs64Lib()
 
         if (head === 'actions')
           r.actions[+k][key] = to;
+        else if (head === 'if')
+          r.if = condRename(r.if, from, to);
         else
           r[head] = to;
 
@@ -321,6 +380,861 @@ function rs64Lib()
     doc.rules.forEach((r, i) => ruleRefs(r, ext).forEach((ref) => names.has(ref.name) || out.push({ rule: i, field: ref.field, name: ref.name })));
 
     return out;
+  }
+
+  // ---- Level rules script: rules.txt, read by parseScript in src/game/mod_content/level_rules.h. tests/level_rules_script_cases.json keeps
+  // the two parsers in step. The explorer's reader is lenient (half-made rules and unreadable text survive a save); rulesScriptCheck marks
+  // what the game would drop. ----
+  const COND_CHECKS = {
+    destroyed: { kind: 'unit' },
+    entered: { kind: 'area' },
+    health: { kind: 'unit', needsOp: true },
+    objective_done: { hi: 4, objectives: true },
+    objective_failed: { hi: 4, objectives: true },
+    flag: { hi: 128 },
+    counter: { hi: 128, needsOp: true }
+  };
+
+  const COND_RESERVED = ['and', 'or', 'not', 'true', 'false'];
+  const COND_WORDS = [...Object.keys(COND_CHECKS).map((w) => w + '('), 'time', ...COND_RESERVED];
+  const KIND_WORDS = { area: 'an area', path: 'a path point', unit: 'a unit', camera: 'a camera' };
+  const RULE_OBJECT_KIND = { enter: 'area', leave: 'area', pathPoint: 'path', destroyed: 'unit', healthBelow: 'unit' };
+  const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  // A condition's checks with their offsets, and its first error ({ from, to, reason }) or null. Mirrors CondParser.
+  function condScan(text)
+  {
+    let pos = 0;
+    let checks = 0;
+    let error = null;
+    const atoms = [];
+
+    const fail = (from, to, reason) => {
+      error ??= { from, to: Math.max(to, from + 1), reason };
+    };
+
+    const skip = () => {
+      while (text[pos] === ' ' || text[pos] === '\t')
+        pos++;
+    };
+
+    const peekWord = () => {
+      skip();
+
+      return /^[A-Za-z0-9_]*/.exec(text.slice(pos))[0];
+    };
+
+    const takeWord = (w) => {
+      if (peekWord() !== w)
+        return false;
+
+      pos += w.length;
+
+      return true;
+    };
+
+    const takeChar = (c) => {
+      skip();
+
+      if (text[pos] !== c)
+        return false;
+
+      pos++;
+
+      return true;
+    };
+
+    const taken = (re) => {
+      skip();
+
+      const m = re.exec(text.slice(pos));
+
+      if (m)
+        pos += m[0].length;
+
+      return !!m;
+    };
+
+    const test = () => {
+      const w = peekWord();
+      const at = pos;
+
+      if (!w || /^[0-9]/.test(w))
+        return fail(at, at + w.length, pos < text.length ? `expected a check at "${text.slice(pos, pos + 24)}"` : 'the condition ends too soon');
+
+      if (COND_RESERVED.includes(w))
+        return fail(at, at + w.length, `"${w}" is not a check`);
+
+      pos += w.length;
+
+      if (++checks > 64)
+        return fail(at, pos, 'more than 64 checks');
+
+      const end = pos;
+
+      skip();
+
+      // Any other word followed by "(" is a check a native mod adds (add_rule_condition); its argument may be empty.
+      const modCheck = w !== 'time' && !COND_CHECKS[w] && text[pos] === '(';
+      const spec = modCheck ? { mod: true } : COND_CHECKS[w];
+      const atom = { check: modCheck ? 'mod' : (w === 'time' || spec ? w : 'variable'), word: { from: at, to: end }, from: at, to: end };
+
+      if (atom.check === 'variable')
+        atom.name = w;
+      else if (spec)
+      {
+        if (!takeChar('('))
+          return fail(at, pos, 'expected "(" after the check');
+
+        let close = pos;
+
+        for (let open = 1; close < text.length; close++)
+        {
+          if (text[close] === '(')
+            open++;
+          else if (text[close] === ')' && --open === 0)
+            break;
+        }
+
+        if (close >= text.length)
+          return fail(at, text.length, 'a "(" is never closed');
+
+        const inner = text.slice(pos, close);
+        const name = inner.trim();
+        const from = pos + inner.length - inner.trimStart().length;
+
+        pos = close + 1;
+
+        if (spec.mod)
+          Object.assign(atom, { name: w, arg: name });
+        else if (!name)
+          return fail(at, pos, 'nothing inside "()"');
+        else if (spec.hi && !(/^\d+$/.test(name) && +name >= 1 && +name <= spec.hi))
+          return fail(from, from + name.length, `"${name}" is not a number from 1 to ${spec.hi}`);
+        else if (spec.hi)
+          atom.index = +name;
+        else
+          Object.assign(atom, { name, kind: spec.kind, from, to: from + name.length });
+      }
+
+      const op = taken(/^(<=|>=|==|!=|<|>)/);
+
+      if (!op && (w === 'time' || spec?.needsOp))
+        return fail(at, pos, `"${w}" needs a comparison, like ${w}${w === 'time' ? '' : '(...)'} > 10`);
+
+      if (op && !taken(/^(true|false)\b|^-?[0-9.]+/))
+        return fail(pos, pos + 1, 'expected a number after the comparison');
+
+      atoms.push(atom);
+    };
+
+    const unary = (depth) => {
+      if (depth > 16)
+        return fail(pos, pos + 1, 'nested more than 16 deep');
+
+      if (takeWord('not'))
+        return unary(depth + 1);
+
+      skip();
+
+      const open = pos;
+
+      if (!takeChar('('))
+        return test();
+
+      either(depth + 1);
+
+      if (!error && !takeChar(')'))
+        fail(open, open + 1, 'a "(" is never closed');
+    };
+
+    const both = (depth) => {
+      unary(depth);
+
+      while (!error && takeWord('and'))
+        unary(depth);
+    };
+
+    const either = (depth) => {
+      both(depth);
+
+      while (!error && takeWord('or'))
+        both(depth);
+    };
+
+    either(0);
+    skip();
+
+    if (!error && pos < text.length)
+      fail(pos, text.length, `unexpected "${text.slice(pos, pos + 24)}"`);
+
+    return { atoms, error };
+  }
+
+  // The check names the mods' rules_ext.json entries add.
+  function modChecksOf(ext)
+  {
+    return new Set(ext.filter((e) => e.kind === 'condition').map((e) => e.name));
+  }
+
+  // Marks for one condition. ctx: { objects: Map<name, kind> | null, objectives: boolean, variables: Set | null, strictVariables, modChecks: Set | null }.
+  function condCheck(text, ctx = {})
+  {
+    const { atoms, error } = condScan(text);
+    const marks = error ? [error] : [];
+
+    for (const a of atoms)
+    {
+      const has = ctx.objects?.get(a.name);
+
+      if (a.kind && ctx.objects && has !== a.kind)
+        marks.push({
+          from: a.from,
+          to: a.to,
+          reason: has ? `"${a.name}" is ${KIND_WORDS[has]}, not ${KIND_WORDS[a.kind]}` : `no ${a.kind} "${a.name}" in this level`
+        });
+
+      if (COND_CHECKS[a.check]?.objectives && ctx.objectives === false)
+        marks.push({ from: a.word.from, to: a.word.to, reason: 'this level has no objectives of its own' });
+
+      if (a.check === 'variable' && ctx.variables && ctx.strictVariables !== false && !ctx.variables.has(a.name))
+        marks.push({ from: a.from, to: a.to, reason: `no rule sets "${a.name}"` });
+
+      if (a.check === 'mod' && ctx.modChecks && !ctx.modChecks.has(a.name))
+        marks.push({ from: a.word.from, to: a.word.to, reason: `"${a.name}" needs a mod that adds it` });
+    }
+
+    return marks;
+  }
+
+  // Renames an object inside a condition's checks, leaving variables and other text alone.
+  function condRename(text, from, to)
+  {
+    let out = text;
+
+    for (const a of condScan(text).atoms.filter((x) => x.kind && x.name === from).reverse())
+      out = out.slice(0, a.from) + to + out.slice(a.to);
+
+    return out;
+  }
+
+  // Lines with their normalized text (tabs as spaces, trimmed) and its offset in the file; a leading BOM is skipped.
+  function rulesLines(text)
+  {
+    const out = [];
+    let at = text.startsWith('﻿') ? 1 : 0;
+
+    for (const part of text.slice(at).split('\n'))
+    {
+      const raw = part.endsWith('\r') ? part.slice(0, -1) : part;
+      const spaced = raw.replace(/\t/g, ' ');
+      const lead = spaced.length - spaced.replace(/^ +/, '').length;
+
+      out.push({ at: at + lead, raw, text: spaced.trim() === '' ? '' : spaced.slice(lead).replace(/ +$/, '') });
+      at += part.length + 1;
+    }
+
+    return out;
+  }
+
+  // Rules (header, body, end line indices, comment lines just above) and stray lines, as the game walks them.
+  function rulesBlocks(lines)
+  {
+    const blocks = [];
+    let cur = null;
+    let junk = null;
+    let comment = [];
+
+    lines.forEach(({ text: t }, i) => {
+      if (!t)
+      {
+        if (!cur)
+          comment = [];
+
+        return;
+      }
+
+      if (t[0] === '#')
+      {
+        if (!cur)
+          comment.push(i);
+
+        return;
+      }
+
+      if (/^(when|every)( |$)/.test(t))
+      {
+        if (cur)
+          cur.noEnd = true;
+
+        cur = { header: i, body: [], end: null, comment };
+        junk = null;
+        comment = [];
+        blocks.push(cur);
+
+        return;
+      }
+
+      comment = [];
+
+      if (t === 'end' && cur)
+      {
+        cur.end = i;
+        cur = null;
+      }
+      else if (cur)
+        cur.body.push(i);
+      else if (junk)
+      {
+        junk.lines.push(i);
+
+        if (t === 'end')
+          junk = null;
+      }
+      else
+      {
+        junk = { lines: [i], strayEnd: t === 'end' };
+        blocks.push(junk);
+
+        if (t === 'end')
+          junk = null;
+      }
+    });
+
+    if (cur)
+      cur.noEnd = true;
+
+    return blocks;
+  }
+
+  const ruleValue = (s) => (/^-?\d+(\.\d+)?$/.test(s) ? Number(s) : s);
+  const collapse = (s) => s.replace(/ +/g, ' ').trim();
+
+  // A header as the explorer's rule object, keeping what it can (null when it names no known event).
+  function headerParse(line)
+  {
+    const r = {};
+    let s = line;
+
+    if (/ every time$/.test(s))
+    {
+      r.every = true;
+      s = s.slice(0, -11).trim();
+    }
+
+    if (s.startsWith('when true:'))
+    {
+      const c = s.slice(10).trim();
+
+      r.when = 'true';
+
+      if (c)
+        r.if = c;
+
+      return r;
+    }
+
+    const ifAt = s.indexOf(' if ');
+
+    if (ifAt >= 0)
+    {
+      r.if = s.slice(ifAt + 4).trim();
+      s = s.slice(0, ifAt).trim();
+    }
+
+    const w = s.split(/ +/);
+    const rest = w.slice(2).join(' ');
+    const set = (key, v) => v !== '' && v !== undefined && (r[key] = ruleValue(v));
+
+    if (w[0] === 'every')
+    {
+      if (r.every || w.length > 3 || (w[2] ?? 'seconds') !== 'seconds')
+        return null;
+
+      r.when = 'after';
+      r.every = true;
+      set('seconds', w[1] === 'seconds' ? undefined : w[1]);
+
+      return r;
+    }
+
+    if (w[0] !== 'when')
+      return null;
+
+    const kind = w[1];
+    const named = { enter: 'enter', leave: 'leave', point: 'pathPoint', destroyed: 'destroyed' };
+
+    if (named[kind])
+    {
+      r.when = named[kind];
+
+      if (rest)
+        r.object = rest;
+    }
+    else if (kind === 'health')
+    {
+      const m = /^(.*?) ?\bbelow\b ?(.*)$/.exec(rest);
+
+      r.when = 'healthBelow';
+
+      if (m?.[1] || (!m && rest))
+        r.object = m ? m[1] : rest;
+
+      set('value', m?.[2]);
+    }
+    else if (kind === 'start' && !rest)
+      r.when = 'start';
+    else if (kind === 'after')
+    {
+      r.when = 'after';
+      set('seconds', rest);
+    }
+    else if (kind === 'objective')
+    {
+      const ws = rest.split(' ').filter(Boolean);
+      const state = ws.find((x) => x === 'done' || x === 'failed');
+
+      if (!state)
+        return null;
+
+      r.when = state === 'done' ? 'objectiveDone' : 'objectiveFailed';
+      set('value', ws.filter((x) => x !== state).join(' '));
+    }
+    else if (kind === 'flag')
+    {
+      r.when = 'flagIs';
+      set('value', rest);
+    }
+    else if (kind === 'counter')
+    {
+      const m = /^(.*?) ?\breaches\b ?(.*)$/.exec(rest);
+
+      r.when = 'counterAtLeast';
+      set('value', m ? m[1] : rest);
+      set('count', m?.[2]);
+    }
+    else if (kind === 'custom')
+    {
+      const forAt = rest.indexOf(' for ');
+
+      r.when = 'custom';
+      set('custom', forAt < 0 ? rest : rest.slice(0, forAt));
+
+      if (forAt >= 0)
+        r.object = rest.slice(forAt + 5).trim();
+    }
+    else
+      return null;
+
+    return r;
+  }
+
+  function headerWrite(r)
+  {
+    const v = (x) => (x === undefined ? '' : String(x));
+    const named = { enter: 'enter', leave: 'leave', pathPoint: 'point', destroyed: 'destroyed' };
+    let s;
+
+    if (r.when === 'true')
+      s = `when true: ${v(r.if)}`;
+    else if (r.when === 'after')
+      s = r.every ? `every ${v(r.seconds)} seconds` : `when after ${v(r.seconds)}`;
+    else if (named[r.when])
+      s = `when ${named[r.when]} ${v(r.object)}`;
+    else if (r.when === 'healthBelow')
+      s = `when health ${v(r.object)} below ${v(r.value)}`;
+    else if (r.when === 'objectiveDone' || r.when === 'objectiveFailed')
+      s = `when objective ${v(r.value)} ${r.when === 'objectiveDone' ? 'done' : 'failed'}`;
+    else if (r.when === 'flagIs')
+      s = `when flag ${v(r.value)}`;
+    else if (r.when === 'counterAtLeast')
+      s = `when counter ${v(r.value)} reaches ${v(r.count)}`;
+    else if (r.when === 'custom')
+      s = `when custom ${v(r.custom)}${r.object ? ' for ' + r.object : ''}`;
+    else
+      s = `when ${r.when ?? 'start'}`;
+
+    s = collapse(s);
+
+    if (r.if && r.when !== 'true')
+      s += ` if ${r.if}`;
+
+    if (r.every && r.when !== 'after')
+      s += ' every time';
+
+    return s;
+  }
+
+  // Actions with fixed positions: the last key marked * takes the rest of the line.
+  const ACTION_FORMS = {
+    voice: ['id'],
+    music: ['song'],
+    wait: ['seconds'],
+    recording: ['file*'],
+    camera: ['camera*'],
+    destroy: ['unit*'],
+    flag: ['flag', 'value'],
+    counter: ['counter', 'add'],
+    set: ['variable', 'value'],
+    add: ['variable', 'value']
+  };
+
+  // An action line as the explorer's action object, or null when it is not one.
+  function actionParse(line)
+  {
+    const w = line.split(/ +/);
+    const k = w[0];
+    const rest = w.slice(1).join(' ');
+
+    if ((k === 'win' || k === 'fail') && w.length === 1)
+      return { do: k };
+
+    if ((k === 'complete' || k === 'fail') && w[1] === 'objective' && w.length <= 3)
+    {
+      const a = { do: k === 'complete' ? 'objectiveDone' : 'objectiveFail' };
+
+      if (w[2] !== undefined)
+        a.objective = ruleValue(w[2]);
+
+      return a;
+    }
+
+    if (k === 'message')
+    {
+      const a = { do: 'message' };
+      const timed = w[1] !== undefined && /^-?\d+(\.\d+)?$/.test(w[1]);
+      const text = timed ? w.slice(2).join(' ') : rest;
+
+      if (timed)
+        a.seconds = Number(w[1]);
+
+      if (text)
+        a.text = text;
+
+      return a;
+    }
+
+    const form = ACTION_FORMS[k];
+
+    if (form)
+    {
+      const a = { do: k };
+
+      form.forEach((key, i) => {
+        const tail = key.endsWith('*');
+        const value = tail ? w.slice(i + 1).join(' ') : w[i + 1];
+
+        if (value !== undefined && value !== '')
+          a[tail ? key.slice(0, -1) : key] = k === 'set' && i === 1 && (value === 'true' || value === 'false') ? value === 'true' : ruleValue(value);
+      });
+
+      return a;
+    }
+
+    if (!/^[A-Za-z0-9_.]+$/.test(k) || (rest && !/^[A-Za-z0-9_]+=/.test(rest)))
+      return null;
+
+    const a = { do: k };
+    const keys = [...rest.matchAll(/(?:^| )([A-Za-z0-9_]+)=/g)];
+
+    keys.forEach((m, i) => {
+      const from = m.index + m[0].length;
+      const end = i + 1 < keys.length ? keys[i + 1].index : rest.length;
+
+      a[m[1]] = ruleValue(rest.slice(from, end).trim());
+    });
+
+    return a;
+  }
+
+  function actionWrite(a)
+  {
+    if (a.raw !== undefined)
+      return a.raw;
+
+    const v = (x) => (x === undefined ? '' : String(x));
+
+    if (a.do === 'objectiveDone' || a.do === 'objectiveFail')
+      return collapse(`${a.do === 'objectiveDone' ? 'complete' : 'fail'} objective ${v(a.objective)}`);
+
+    if (a.do === 'message')
+      return collapse(`message ${v(a.seconds)} ${v(a.text)}`);
+
+    const form = ACTION_FORMS[a.do];
+
+    if (form)
+    {
+      const parts = [a.do];
+
+      for (const key of form.map((x) => x.replace('*', '')))
+      {
+        if (a[key] === undefined || a[key] === '')
+          break;
+
+        parts.push(String(a[key]));
+      }
+
+      return parts.join(' ');
+    }
+
+    return [a.do, ...Object.entries(a).filter(([k]) => k !== 'do').map(([k, x]) => `${k}=${x}`)].join(' ');
+  }
+
+  // The level's rules from rules.txt text, in the shape the rule panels edit. Unreadable blocks and actions come back as { raw }.
+  function rulesScriptParse(text)
+  {
+    const lines = rulesLines(text || '');
+    const rawOf = (from, to) => lines.slice(from, to + 1).map((l) => l.raw).join('\n');
+    const rules = [];
+
+    for (const b of rulesBlocks(lines))
+    {
+      const comment = b.comment?.length ? { comment: b.comment.map((i) => lines[i].text).join('\n') } : {};
+
+      if (b.lines)
+      {
+        rules.push({ raw: rawOf(b.lines[0], b.lines.at(-1)), line: b.lines[0] + 1 });
+        continue;
+      }
+
+      const last = b.end ?? b.body.at(-1) ?? b.header;
+      const head = lines[b.header].text;
+      const r = headerParse(head);
+
+      if (!r || collapse(headerWrite(r)) !== collapse(head))
+      {
+        rules.push({ ...comment, raw: rawOf(b.header, last), line: b.header + 1 });
+        continue;
+      }
+
+      r.actions = b.body.map((i) => {
+        const a = actionParse(lines[i].text);
+
+        return a && collapse(actionWrite(a)) === collapse(lines[i].text) ? a : { raw: lines[i].text };
+      });
+
+      rules.push({ ...comment, ...r, line: b.header + 1 });
+    }
+
+    return { version: 1, rules };
+  }
+
+  function rulesScriptWrite(doc)
+  {
+    const one = (r) => {
+      const comment = r.comment ? r.comment + '\n' : '';
+
+      if (r.raw !== undefined)
+        return comment + r.raw;
+
+      return comment + [headerWrite(r), ...(r.actions ?? []).map((a) => '    ' + actionWrite(a)), 'end'].join('\n');
+    };
+
+    return doc.rules.length ? doc.rules.map(one).join('\n\n') + '\n' : '';
+  }
+
+  // Variables some rule sets or adds to.
+  const rulesVariables = (text) => [...new Set([...(text || '').matchAll(/^[ \t]*(?:set|add)[ \t]+([A-Za-z_][A-Za-z0-9_]*)/gm)].map((m) => m[1]))];
+
+  const isNumber = (x, lo, hi, whole = true) => typeof x === 'number' && (!whole || Number.isInteger(x)) && x >= lo && x <= hi;
+
+  // Marks ({ from, to, reason }, file offsets) on everything the game would drop. ctx: { objects: Map<name, kind> | null, objectives,
+  // strictVariables, ext } (ext: rulesExtParse entries; mod actions are only checked when given).
+  function rulesScriptCheck(text, ctx = {})
+  {
+    const lines = rulesLines(text || '');
+    const marks = [];
+    const vctx = { ...ctx, variables: new Set(rulesVariables(text)), modChecks: ctx.ext ? modChecksOf(ctx.ext) : null };
+
+    const mark = (l, from, to, reason) => {
+      marks.push({ from: lines[l].at + from, to: lines[l].at + Math.max(to, from + 1), reason });
+    };
+
+    const whole = (l, reason) => mark(l, 0, lines[l].text.length, reason);
+
+    const object = (l, name, kind, at) => {
+      const has = ctx.objects?.get(name);
+
+      if (ctx.objects && name && has !== kind)
+        mark(l, at, at + name.length, has ? `"${name}" is ${KIND_WORDS[has]}, not ${KIND_WORDS[kind]}` : `no ${kind} "${name}" in this level`);
+    };
+
+    const cond = (l, c, at) => {
+      for (const m of condCheck(c, vctx))
+        mark(l, at + m.from, at + m.to, m.reason);
+    };
+
+    const header = (l) => {
+      const t = lines[l].text;
+      const r = headerParse(t);
+      const w = t.split(' ');
+
+      if (!r)
+        return whole(l, /^every /.test(t) && / every time$/.test(t) ? '"every N seconds" already repeats; drop "every time"' : `"${w[1] ?? w[0]}" is not something a rule can wait for`);
+
+      if (r.when === 'true')
+      {
+        const ifWord = / if( |$)/.exec(t);
+
+        if (ifWord)
+          return mark(l, ifWord.index + 1, ifWord.index + 3, '"when true:" is its own condition; it takes no "if"');
+
+        const at = 10 + (t.slice(10).length - t.slice(10).trimStart().length);
+
+        return cond(l, r.if ?? '', at);
+      }
+
+      const kind = RULE_OBJECT_KIND[r.when];
+      const bad = {
+        after: () => !isNumber(r.seconds, r.every ? 0.001 : 0, 86400, false) && (r.every ? 'expected "every <seconds> seconds"' : 'expected "when after <seconds>"'),
+        healthBelow: () => (!r.object || !isNumber(r.value, 0, 100)) && 'expected "when health <unit> below <percent>"',
+        objectiveDone: () => !isNumber(r.value, 1, 4) && 'expected "when objective <1-4> done"',
+        objectiveFailed: () => !isNumber(r.value, 1, 4) && 'expected "when objective <1-4> failed"',
+        flagIs: () => !isNumber(r.value, 1, 128) && 'expected "when flag <1-128>"',
+        counterAtLeast: () => (!isNumber(r.value, 1, 128) || !isNumber(r.count, -2147483647, 2147483647)) && 'expected "when counter <1-128> reaches <count>"',
+        custom: () => (!r.custom || / /.test(String(r.custom))) && 'expected "when custom <event> [for <object>]"'
+      }[r.when]?.();
+
+      if (bad)
+        whole(l, bad);
+      else if (kind && !r.object)
+        whole(l, `"${w.slice(0, 2).join(' ')}" needs a name`);
+      else if (kind)
+        object(l, r.object, kind, t.indexOf(r.object, w[0].length + w[1].length + 1));
+
+      if ((r.when === 'objectiveDone' || r.when === 'objectiveFailed') && ctx.objectives === false)
+        whole(l, 'this level has no objectives of its own');
+
+      if (r.if !== undefined)
+      {
+        const at = t.indexOf(' if ') + 4;
+
+        cond(l, r.if, at + (t.slice(at).length - t.slice(at).trimStart().length));
+      }
+    };
+
+    const action = (l) => {
+      const t = lines[l].text;
+      const a = actionParse(t);
+      const k = t.split(' ')[0];
+
+      if (!a || collapse(actionWrite(a)) !== collapse(t))
+        return mark(l, 0, k.length, `"${k}" is not an action`);
+
+      const expected = {
+        voice: () => !isNumber(a.id, 0, 65535) && 'voice <id>',
+        music: () => !isNumber(a.song, 0, 255) && 'music <song>',
+        wait: () => !isNumber(a.seconds, 0, 86400, false) && 'wait <seconds>',
+        recording: () => !a.file && 'recording <file>',
+        camera: () => !a.camera && 'camera <name>',
+        destroy: () => !a.unit && 'destroy <unit>',
+        message: () => (!isNumber(a.seconds, 1, 10) || !a.text) && 'message <1-10 seconds> <text>',
+        flag: () => (!isNumber(a.flag, 1, 128) || !(a.value === undefined || isNumber(a.value, -2147483647, 2147483647))) && 'flag <1-128> [value]',
+        counter: () => (!isNumber(a.counter, 1, 128) || !(a.add === undefined || isNumber(a.add, -2147483647, 2147483647))) && 'counter <1-128> [add]',
+        set: () => (!VARIABLE_NAME.test(a.variable ?? '') || COND_RESERVED.includes(a.variable) || a.variable === 'time' || !(typeof a.value === 'boolean' || isNumber(a.value, -2147483647, 2147483647))) && 'set <variable> <number, true or false>',
+        add: () => (!VARIABLE_NAME.test(a.variable ?? '') || COND_RESERVED.includes(a.variable) || a.variable === 'time' || !isNumber(a.value, -2147483647, 2147483647)) && 'add <variable> <number>',
+        objectiveDone: () => !isNumber(a.objective, 1, 4) && 'complete objective <1-4>',
+        objectiveFail: () => !isNumber(a.objective, 1, 4) && 'fail objective <1-4>'
+      }[a.do]?.();
+
+      if (expected)
+        return whole(l, `expected "${expected}"`);
+
+      const known = ['win', 'fail', 'spawn', 'wave', ...Object.keys(ACTION_FORMS), 'message', 'objectiveDone', 'objectiveFail'];
+
+      if (ctx.ext && !known.includes(a.do) && !ctx.ext.some((e) => e.kind === 'action' && e.name === a.do))
+        mark(l, 0, k.length, `"${k}" needs a mod that adds it`);
+
+      if (a.do === 'destroy')
+        object(l, a.unit, 'unit', t.indexOf(a.unit, k.length));
+
+      if (a.do === 'camera')
+        object(l, a.camera, 'camera', t.indexOf(a.camera, k.length));
+
+      if ((a.do === 'objectiveDone' || a.do === 'objectiveFail') && ctx.objectives === false)
+        whole(l, 'this level has no objectives of its own');
+    };
+
+    if ((text || '').length > 256 * 1024)
+    {
+      whole(0, 'the file is over 256 KB, so the game does not read it');
+
+      return marks;
+    }
+
+    let count = 0;
+
+    for (const b of rulesBlocks(lines))
+    {
+      if (b.lines)
+      {
+        whole(b.lines[0], b.strayEnd ? '"end" without a rule' : 'expected "when" or "every" to start a rule');
+        continue;
+      }
+
+      const before = marks.length;
+
+      for (const l of [b.header, ...b.body].filter((i) => lines[i].text.length > 1024))
+        whole(l, 'the line is over 1024 characters');
+
+      header(b.header);
+      b.body.forEach(action);
+
+      if (b.noEnd)
+        whole(b.header, 'no "end" for this rule');
+
+      if (marks.length === before && ++count > 512)
+        whole(b.header, 'more than 512 rules; the game stops reading here');
+    }
+
+    return marks;
+  }
+
+  // What fits at the cursor: object names in an object slot, else variables and check words inside a condition.
+  // ctx: { objects: Map<name, kind> }. Returns { from, to, items: [{ label, kind }] } (from/to: the word being typed).
+  function rulesComplete(text, cursor, ctx = {})
+  {
+    const start = text.lastIndexOf('\n', cursor - 1) + 1;
+    const t = text.slice(start, cursor).replace(/\t/g, ' ').replace(/^ +/, '');
+    const tail = /^[^\s()]*/.exec(text.slice(cursor))[0];
+    const names = (kind) => [...(ctx.objects ?? new Map())].filter(([, k]) => k === kind).map(([label]) => ({ label, kind }));
+    const variables = rulesVariables(text).map((label) => ({ label, kind: 'variable' }));
+
+    const result = (prefix, items) => ({
+      from: cursor - prefix.length,
+      to: cursor + tail.length,
+      items: items.filter((i) => i.label.toLowerCase().startsWith(prefix.toLowerCase())).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))
+    });
+
+    let m = /(destroyed|entered|health)\( *([^()]*)$/.exec(t);
+
+    if (m)
+      return result(m[2], names(COND_CHECKS[m[1]].kind));
+
+    if (!/^when true:/.test(t) && !/ if /.test(t))
+    {
+      const slots = [
+        [/^when (?:enter|leave) (.*)$/, 'area'],
+        [/^when point (.*)$/, 'path'],
+        [/^when (?:destroyed|health) ((?:(?! below).)*)$/, 'unit'],
+        [/^destroy (.*)$/, 'unit'],
+        [/^camera (.*)$/, 'camera']
+      ];
+
+      for (const [re, kind] of slots)
+        if ((m = re.exec(t)))
+          return result(m[1], names(kind));
+
+      m = /^(?:set|add) ([A-Za-z0-9_]*)$/.exec(t);
+
+      return m ? result(m[1], variables) : result('', []);
+    }
+
+    const prefix = /[A-Za-z_][A-Za-z0-9_]*$/.exec(t)?.[0] ?? '';
+
+    const modWords = (ctx.ext ?? []).filter((e) => e.kind === 'condition').map((e) => ({ label: e.name + '(', kind: 'word' }));
+
+    return result(prefix, [...variables, ...COND_WORDS.map((label) => ({ label, kind: 'word' })), ...modWords]);
   }
 
   // ---- Split export: what kind of change a project path is (the export dialog's starting groups); null for explorer/ sidecars ----
@@ -782,8 +1696,12 @@ function rs64Lib()
 
   // A new level from a template: id and folder from the title, made unique and kept to the game's 48-character folder limit.
   // data/medal_info: per level, bronze/silver/gold records of f32 minutes, then u16 kills, accuracy %, friendlies saved, bonus (bonus is not a mod level's).
+  // Undefined for a level the table has no row for (the AT-ST level).
   function medalInfo(dv, level)
   {
+    if ((level * 3 + 3) * 0xC > dv.byteLength)
+      return undefined;
+
     return Object.fromEntries(['bronze', 'silver', 'gold'].map((t, i) => {
       const o = (level * 3 + i) * 0xC;
 
@@ -1003,7 +1921,8 @@ function rs64Lib()
     const texCount = dv.getUint16(texOff);
     const textures = [];
 
-    for (let i = 0; i < texCount; i++) {
+    for (let i = 0; i < texCount; i++)
+    {
       const o = texOff + 4 + i * 0x34;
       const ft = dv.getUint16(o + 0x2E);
 
@@ -1021,6 +1940,11 @@ function rs64Lib()
       };
 
       t.rgba = decodeTexture(dv, t);
+
+      // An odd stored height is rounded up, and the row past the pixels holds the next texture's name. The game has only the stored rows.
+      if (t.rows === t.h - 1)
+        t.rgba.copyWithin(t.rows * t.w * 4, (t.rows - 1) * t.w * 4, t.rows * t.w * 4);
+
       textures.push(t);
     }
 
@@ -1357,12 +2281,188 @@ function rs64Lib()
     return slots.sort((a, b) => b.tex.w * b.tex.h - a.tex.w * a.tex.h);
   }
 
+  // Pairs triangles sharing an edge into quads [a, b, c, d] drawn as (a, b, c) (a, c, d), the same triangles for about half the display list space.
+  function hobPairQuads(faces)
+  {
+    const sameUv = (p, q) => (!p && !q) || (p && q && p[0] === q[0] && p[1] === q[1]);
+    const byEdge = new Map();
+
+    faces.forEach((f, i) => f.idx.forEach((v, k) => {
+      const e = v + ',' + f.idx[(k + 1) % 3];
+
+      if (!byEdge.has(e))
+        byEdge.set(e, []);
+
+      byEdge.get(e).push([i, k]);
+    }));
+
+    const used = new Set();
+    const out = [];
+
+    faces.forEach((f, i) => {
+      if (used.has(i))
+        return;
+
+      used.add(i);
+
+      for (let k = 0; k < 3; k++)
+      {
+        const [ia, ib, ic] = [k, (k + 1) % 3, (k + 2) % 3];
+        const [a, c] = [f.idx[ia], f.idx[ic]];
+
+        for (const [j, m] of byEdge.get(a + ',' + c) || [])
+        {
+          const g = faces[j];
+          const id = (m + 2) % 3;
+          const nc = (m + 1) % 3;
+
+          if (used.has(j) || g.mat !== f.mat || f.idx.includes(g.idx[id]) || !f.uvs !== !g.uvs)
+            continue;
+
+          if (g.colors[m] !== f.colors[ia] || g.colors[nc] !== f.colors[ic])
+            continue;
+
+          if (f.uvs && !(sameUv(g.uvs[m], f.uvs[ia]) && sameUv(g.uvs[nc], f.uvs[ic])))
+            continue;
+
+          used.add(j);
+
+          out.push({
+            idx: [a, f.idx[ib], c, g.idx[id]],
+            mat: f.mat,
+            colors: [f.colors[ia], f.colors[ib], f.colors[ic], g.colors[id]],
+            uvs: f.uvs && [f.uvs[ia], f.uvs[ib], f.uvs[ic], g.uvs[id]]
+          });
+
+          return;
+        }
+      }
+
+      out.push(f);
+    });
+
+    return out;
+  }
+
+  // A part's vertices split into the groups its faces join (one flame or glow each), with their centres.
+  function hobPartGroups(p)
+  {
+    const up = Array.from({ length: p.verts.length / 3 }, (_, i) => i);
+    const find = (v) => (up[v] === v ? v : (up[v] = find(up[v])));
+
+    for (const f of p.faces)
+      for (const v of f.idx)
+        up[find(v)] = find(f.idx[0]);
+
+    const groups = new Map();
+
+    for (const f of p.faces)
+      for (const v of f.idx)
+      {
+        if (!groups.has(find(v)))
+          groups.set(find(v), new Set());
+
+        groups.get(find(v)).add(v);
+      }
+
+    return [...groups.values()].map((s) => {
+      const verts = [...s];
+
+      return { p, verts, c: [0, 1, 2].map((a) => verts.reduce((t, v) => t + p.verts[v * 3 + a], 0) / verts.length) };
+    });
+  }
+
+  // Canopy and exhaust options, edited where those parts already are. Colours as the host's exhaust-colour option: the tint scales each colour's spread.
+  function hobEditNamedParts(bytes, lod, { noGlass, exhaust, engines })
+  {
+    const o = viewOf(bytes);
+    const named = lod.flat().filter((p) => p.name);
+    const flames = named.filter((p) => p.name.startsWith('eng_'));
+    const glows = named.filter((p) => p.name.startsWith('glw_'));
+    const hide = (p) => o.setUint32(o.getUint32(p.offset + 0x20) + 12, 0);
+
+    if (noGlass)
+      named.filter((p) => p.name.startsWith('wnd_')).forEach(hide);
+
+    if (exhaust === 'none')
+    {
+      flames.concat(glows).forEach(hide);
+
+      return;
+    }
+
+    if (exhaust !== undefined)
+      for (const p of flames)
+      {
+        const fg = o.getUint32(p.offset + 0x20);
+        let at = o.getUint32(fg + 8);
+
+        for (let f = o.getUint32(fg + 12); f > 0; f--)
+        {
+          const flags = o.getUint32(at);
+          const nv = flags & 8 ? 4 : 3;
+          const nc = flags & 0x20 ? (flags & 0x10 ? nv : 1) : 0;
+          const first = at + 20 + (o.getUint32(at + 4) & 0x2000 ? 8 : 0);
+
+          for (let k = 0; k < nc; k++)
+          {
+            const rgb = [0, 1, 2].map((ch) => o.getUint8(first + k * 4 + ch));
+            const lo = Math.min(...rgb);
+            const hi = Math.max(...rgb);
+
+            for (let ch = 0; ch < 3; ch++)
+              o.setUint8(first + k * 4 + ch, lo + Math.trunc((hi - lo) * ((exhaust >> (16 - ch * 8)) & 0xFF) / 255));
+          }
+
+          at += (o.getUint8(at + 4) & 0x3F) * 4;
+        }
+      }
+
+    if (!engines.length)
+      return;
+
+    const free = glows.flatMap(hobPartGroups);
+
+    // A flame's marker is where its engine ends: the flame's glow, or the flame itself on craft with no glow.
+    const items = flames.flatMap(hobPartGroups).map((flame) => {
+      const dist = (g) => Math.hypot(g.c[0] - flame.c[0], g.c[1] - flame.c[1]);
+      const glow = free.reduce((best, g) => (!best || dist(g) < dist(best) ? g : best), null);
+
+      if (glow)
+        free.splice(free.indexOf(glow), 1);
+
+      return { groups: glow ? [flame, glow] : [flame], at: (glow || flame).c };
+    });
+
+    const pairs = items.flatMap((it) => engines.map((m) => [Math.hypot(...m.map((c, a) => c - it.at[a])), it, m]));
+    const taken = new Set();
+
+    for (const [, it, m] of pairs.sort((a, b) => a[0] - b[0]))
+    {
+      if (taken.has(it) || taken.has(m))
+        continue;
+
+      taken.add(it);
+      taken.add(m);
+
+      for (const g of it.groups)
+      {
+        const vs = o.getUint32(g.p.offset + 0x24);
+
+        for (const v of g.verts)
+          for (let a = 0; a < 3; a++)
+            o.setInt16(vs + v * 8 + a * 2, Math.max(-32768, Math.min(32767, Math.round(g.p.verts[v * 3 + a] + m[a] - it.at[a]))));
+      }
+    }
+  }
+
   // tris: [{ p: [[x, y, z] x3] in three.js display space (Y up), uv: [[u, v] x3] or null, rgba: [u32 x3], node: name, mat (optional, else opts.mat) }].
+  // Options: noGlass hides the canopy; exhaust is 'none' (hides flames and glows) or a 0xRRGGBB flame colour; engines lists flame positions in display space, each flame going to the nearest.
   // Display maps to HOB as (x, -y, -z); with plusZ the model's nose is +Z (glTF habit) and is turned to face the craft's way.
   // The model is scaled and centred onto the original craft's extent. A triangle goes to the unnamed part of the node it names
   // (model-space nodes only, flags 0/1), otherwise to the body; unnamed parts left without triangles are emptied.
   // shortcut: first object and LOD 0 only (every player craft has one of each); nodes with their own translation (flags 4/8) are not targeted.
-  function hobImportCraft(orig, hob, tris, { mat, plusZ = true })
+  function hobImportCraft(orig, hob, tris, { mat, plusZ = true, noGlass = false, exhaust, engines = [] })
   {
     const obj = hob.objects[0];
     const lod = obj.lods[0];
@@ -1420,14 +2520,17 @@ function rs64Lib()
     let out = orig;
 
     for (const list of lod)
-      for (const p of list) {
+      for (const p of list)
+      {
         if (p.name)
           continue;
 
         const g = geos.get(p) || { verts: [], faces: [] };
 
-        out = hobSetPartGeometry(out, p.offset, g);
+        out = hobSetPartGeometry(out, p.offset, { verts: g.verts, faces: hobPairQuads(g.faces) });
       }
+
+    hobEditNamedParts(out, lod, { noGlass, exhaust, engines: engines.map(place) });
 
     return out;
   }
@@ -1603,7 +2706,7 @@ function rs64Lib()
   // offset to the record's last string; "-" none, "+name" a roam box). Only subtypes stock levels defer this way; World Devastators (0x37)
   // are left out because data follows their path string.
   const WAVE_LAYOUT = { flag: 0x60, counter: 0x64, atLeast: 0x68, gridSpawn: 0x88, path: 0x8C };
-  const WAVE_FIELDS = Object.fromEntries([0x3B, 0x3D, 0x12, 0x0C, 0x13, 0x1F, 0x3C, 0x25, 0x47, 0x21, 0x24, 0x0F, 0x2E, 0x2B, 0x2C, 0x3E, 0x29, 0x35, 0x2D, 0x30, 0x31, 0x2F, 0x34, 0x48].map((s) => [s, WAVE_LAYOUT]));
+  const WAVE_FIELDS = Object.fromEntries([0x50, 0x3B, 0x3D, 0x12, 0x0C, 0x13, 0x1F, 0x3C, 0x25, 0x47, 0x21, 0x24, 0x0F, 0x2E, 0x2B, 0x2C, 0x3E, 0x29, 0x35, 0x2D, 0x30, 0x31, 0x2F, 0x34, 0x48].map((s) => [s, WAVE_LAYOUT]));
 
   function waveGet(dv, item) {
     const L = item.type === 0 && WAVE_FIELDS[item.sub];
@@ -1978,10 +3081,15 @@ function rs64Lib()
     const counters = new Set();
     const flags = levelUsedFlags(dv);
 
-    for (const it of parseDAT(dv).items) {
+    for (const it of parseDAT(dv).items)
+    {
       for (const b of [it.onEnter, it.onExit])
         if (b?.counter)
           counters.add(b.counter);
+
+      for (const c of [it.waypoint?.counter, it.waypoint?.hideCounter])
+        if (c)
+          counters.add(c);
 
       if (it.requires?.counter)
         counters.add(it.requires.counter);
@@ -2115,13 +3223,15 @@ function rs64Lib()
   }
 
   // Flat ground at the terrain's median height (cells keep their textures, so the ground still looks like the level's), kept above any water.
-  function hmpFlat(orig, waterLevel = null)
+  // at: a world x/z whose ground height the level takes (a walker level's start: an AT-ST cannot climb above its valley floor) instead of the median.
+  function hmpFlat(orig, waterLevel = null, at = null)
   {
     const hmp = parseHMP(viewOf(orig));
     const g = hmpGrid(hmp);
-    const median = [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
+    const cell = (v, n) => Math.min(n - 1, Math.max(0, Math.round(v * 2)));
+    const level = at ? g.hts[cell(at.z, g.H) * g.W + cell(at.x, g.W)] : [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
 
-    g.hts.fill(waterLevel === null ? median : Math.min(median, waterLevel - 1));
+    g.hts.fill(waterLevel === null ? level : Math.min(level, waterLevel - 1));
 
     return writeHMP(orig, g);
   }
@@ -2178,6 +3288,21 @@ function rs64Lib()
     if (it.type === 0 && it.sub === 0x27 && it.name)
       rec.fill(0, dv.getUint32(0x0C) + it.name.length + 1, dv.getUint32(0x0C) + it.name.length + 2);
 
+    // A music region's song can wait for a flag and a counter, which belong to the level it came from.
+    if (it.type === 6 && it.sub === 0x10 && dv.getUint32(8) >= 0x94)
+    {
+      dv.setUint32(0x84, 0);
+      dv.setUint32(0x8C, 0);
+    }
+
+    // An objective arrow's conditions and target belong to the level it came from.
+    if (it.type === 7 && it.waypoint)
+    {
+      rec.fill(0, 0x30, 0x48);
+      rec[dv.getUint32(0x2C)] = 0x2D;
+      rec[dv.getUint32(0x2C) + 1] = 0;
+    }
+
     if (it.type === 7 && it.onEnter) {
       const base = it.sub === 0x18 ? 0x38 : 0x48;
 
@@ -2210,20 +3335,137 @@ function rs64Lib()
   // A trigger's enter block for waves: 'free' (no flag), 'wave' (raises a wave's flag), 'stock' (sets or clears a flag the mission uses).
   const triggerWave = (onEnter, waves) => (!onEnter.flag ? 'free' : (onEnter.value && Object.values(waves).includes(onEnter.flag) ? 'wave' : 'stock'));
 
-  // Subtypes proven to spawn with their model when copied into a level that has none (TIE fighter, TIE interceptor).
-  const WAVE_FOREIGN = new Set([0x0C, 0x12]);
+  // Subtypes run in-game after being copied into a level that has none: they spawn with their model and run without faulting. Left out for
+  // now: 0x21, 0x4F fault without their model, 0x4A whites out the view. Train cars come with their engine (datAddTrain).
+  const UNITS_ANY_LEVEL = new Set([0x0C, 0x0D, 0x0E, 0x0F, 0x12, 0x13, 0x1E, 0x1F, 0x24, 0x25, 0x28, 0x29, 0x2A, 0x2B, 0x2C, 0x2D, 0x2E, 0x2F, 0x32, 0x33, 0x34, 0x36, 0x37, 0x3B, 0x3C, 0x3D, 0x3E, 0x40, 0x41, 0x42, 0x43, 0x44, 0x46, 0x47, 0x48, 0x4C, 0x4D, 0x50]);
 
-  // Appends a copied enemy record at pos with no wave gate and no path: a template's gate and spline name belong to its own level.
-  function datAddEnemy(bytes, record, pos)
+  // These fault the game when the path they name is missing, so every placed one gets a path.
+  const UNITS_NEED_PATH = new Set([0x2F, 0x34, 0x37, 0x40, 0x43]);
+
+  // Placed objects whose record names a model from a level package (+0x5C): from another level they need that package loaded (packages.json).
+  const MODEL_UNITS = new Set([0x14, 0x21, 0x4A, 0x4B, 0x4F, 0x52]);
+  const PACKAGES_PATH = (folder) => 'mod/assets/level/' + folder + '/packages.json';
+
+  function unitModelName(dv, it)
+  {
+    const size = dv.getUint32(it.offset + 8);
+    const at = dv.getUint32(it.offset + 0x5C);
+    let name = '';
+
+    if (at < 0x40 || at >= size)
+      return '';
+
+    for (let k = at; k < size && dv.getUint8(it.offset + k); k++)
+      name += String.fromCharCode(dv.getUint8(it.offset + k));
+
+    return name;
+  }
+
+  // Copies the gun records a World Devastator names (+0xE4..+0xF4) that this level does not have yet.
+  function datAddDevastatorGuns(bytes, fromBytes, record)
+  {
+    const r = viewOf(record);
+    const from = viewOf(fromBytes);
+    const units = parseDAT(from).items.filter((x) => x.type === 0 && x.sub === 0x49);
+    let out = bytes;
+
+    for (const field of [0xE4, 0xE8, 0xEC, 0xF0, 0xF4])
+    {
+      let name = '';
+
+      for (let k = r.getUint32(field); k < record.length && r.getUint8(k); k++)
+        name += String.fromCharCode(r.getUint8(k));
+
+      const gun = units.find((x) => x.name === name);
+
+      if (gun && !datLookup(out, name))
+        out = datAddItem(out, 0, fromBytes.slice(gun.offset, gun.offset + from.getUint32(gun.offset + 8)));
+    }
+
+    return out;
+  }
+
+  const hmtNameAt = (dv, i) => dv.getUint32(dv.getUint32(4) + 4 + i * 0x34 + 0x24);
+
+  // Gives the named textures of an HMT their own names, tagged with the level: the game shares a loaded texture with any later one of the same
+  // name, so a borrowed package's would show another model's pixels. Names keep their 16-byte slots (15 characters and a NUL).
+  function hmtRenameTextures(bytes, lv, names)
+  {
+    const out = bytes.slice();
+    const dv = viewOf(out);
+    const tag = '~' + lv.slice(-1);
+    const count = dv.getUint16(dv.getUint32(4));
+    const taken = new Set(Array.from({ length: count }, (_, i) => cstr(dv, hmtNameAt(dv, i), 16)));
+    const renamed = new Map();
+
+    for (let i = 0; i < count; i++)
+    {
+      const at = hmtNameAt(dv, i);
+      const name = cstr(dv, at, 16);
+
+      if (!names.has(name))
+        continue;
+
+      if (!renamed.has(name))
+      {
+        let next = name.slice(0, 13) + tag;
+
+        for (let k = 0; taken.has(next); k++)
+          next = name.slice(0, 12) + k.toString(36) + tag;
+
+        taken.add(next);
+        renamed.set(name, next);
+      }
+
+      out.fill(0, at, at + 16);
+      out.set(new TextEncoder().encode(renamed.get(name)), at);
+    }
+
+    return out;
+  }
+
+  // Puts every texture's name back as it is in original, leaving any other edits to the file alone.
+  function hmtRestoreNames(bytes, original)
+  {
+    const out = bytes.slice();
+    const dv = viewOf(out);
+
+    for (let i = 0; i < dv.getUint16(dv.getUint32(4)); i++)
+      out.set(original.subarray(hmtNameAt(dv, i), hmtNameAt(dv, i) + 16), hmtNameAt(dv, i));
+
+    return out;
+  }
+
+  // World Devastators and wave skimmers fault running off the end of a path and ignore the end attack, so each gets its own, ending in a stop order.
+  const UNITS_OWN_PATH = new Set([0x37, 0x40]);
+
+  // No stock level places a B soldier; the game runs it with the stormtrooper's code, so it starts from that record.
+  const UNIT_RECORD_FROM = { 0x50: 0x3B };
+
+  // Appends a copied enemy record at pos with no wave gate. Its path is the given name, else none: a template's gate and spline name belong to
+  // its own level.
+  function datAddEnemy(bytes, record, pos, path, foreign)
   {
     const rec = record.slice();
+    const r = new DataView(rec.buffer);
 
-    pos.forEach((v, a) => new DataView(rec.buffer).setFloat32(0x10 + a * 4, v));
+    pos.forEach((v, a) => r.setFloat32(0x10 + a * 4, v));
+
+    // Mission flag and counter gate (isDatItemConditionMet): with the template's values the unit would wait for that level's events.
+    if (UNITS_ANY_LEVEL.has(r.getUint16(0)) || MODEL_UNITS.has(r.getUint16(0)))
+      [0x60, 0x64, 0x68].forEach((o) => r.setUint32(o, 0));
+
+    // A unit from another level would tick that level's objective counters and flags when destroyed.
+    if (foreign)
+      Object.values(UNIT_DEATH).forEach((o) => r.setUint32(o, 0));
 
     const out = datAddItem(bytes, 0, rec);
     const it = parseDAT(new DataView(out.buffer)).items.filter((x) => x.type === 0).at(-1);
 
-    return waveSet(out, it, { flag: 0, counter: 0, atLeast: 0, gridSpawn: 0, path: '-' });
+    if (WAVE_FIELDS[it.sub])
+      return waveSet(out, it, { flag: 0, counter: 0, atLeast: 0, gridSpawn: 0, path: path ?? '-' });
+
+    return path ? npcSetPath(out, it, path) : out;
   }
 
   // Copy of the DAT with the given wave fields of one item changed. A path that does not fit where the old one was grows the record
@@ -2244,7 +3486,7 @@ function rs64Lib()
 
   // The field holding the record offset of an NPC's path (or roam area) name, the record's last string: enemies +0x8C, wingman spawns +0x94
   // (all 139 stock ones). 0 for items that fly no path.
-  const npcPathField = (it) => (it.type !== 0 ? 0 : (WAVE_FIELDS[it.sub] ? WAVE_LAYOUT.path : (it.sub === 0x27 ? 0x94 : 0)));
+  const npcPathField = (it) => (it.type !== 0 ? 0 : (WAVE_FIELDS[it.sub] || UNITS_NEED_PATH.has(it.sub) ? WAVE_LAYOUT.path : (it.sub === 0x27 ? 0x94 : 0)));
 
   function npcPathGet(dv, it) {
     const o = it.offset;
@@ -2258,7 +3500,8 @@ function rs64Lib()
     return path;
   }
 
-  function npcSetPath(bytes, item, path) {
+  function npcSetPath(bytes, item, path)
+  {
     const o = item.offset;
     const out = bytes.slice();
     const dv = new DataView(out.buffer);
@@ -2266,12 +3509,24 @@ function rs64Lib()
     const po = dv.getUint32(o + npcPathField(item));
     const text = new TextEncoder().encode(path);
 
-    if (text.length < size - po) {
-      out.fill(0, o + po, o + size);
+    // Other strings can follow the path (a renamed unit's name, a World Devastator's gun names): the room ends where the next one starts.
+    let end = po;
+
+    while (end < size && dv.getUint8(o + end))
+      end++;
+
+    while (end < size && !dv.getUint8(o + end))
+      end++;
+
+    if (text.length < end - po) {
+      out.fill(0, o + po, o + end);
       out.set(text, o + po);
 
       return out;
     }
+
+    if (end < size)
+      return recordAppendField(bytes, item, npcPathField(item), text);
 
     const grown = new Uint8Array((po + text.length + 1 + 3) & ~3);
 
@@ -2330,6 +3585,86 @@ function rs64Lib()
         dv.setUint32(o + 0xA4, links.length);
       }
     }
+
+    return out;
+  }
+
+  const TRAIN_UNITS = new Set([0x2F, 0x30, 0x31, 0x34, 0x35]);
+
+  // Record offsets of a train unit's links to the next unit: a 1, an 8, then that unit's type-0 index (units are the level's type-0 items).
+  function trainLinks(dv, it, units)
+  {
+    const out = [];
+    const size = dv.getUint32(it.offset + 8);
+
+    if (!TRAIN_UNITS.has(it.sub))
+      return out;
+
+    for (let o = 0x90; o + 4 <= size; o += 4)
+      if (dv.getUint32(it.offset + o - 8) === 1 && dv.getUint32(it.offset + o - 4) === 8 && dv.getUint32(it.offset + o) < units.length)
+        out.push(o);
+
+    return out;
+  }
+
+  // The type-0 indices (ascending) of the train a unit is part of; just the unit if it is not in one.
+  function trainOf(dv, index)
+  {
+    const units = parseDAT(dv).items.filter((x) => x.type === 0);
+    const links = units.flatMap((u) => trainLinks(dv, u, units).map((o) => [u.index, dv.getUint32(u.offset + o)]));
+    const found = new Set([index]);
+
+    for (let grew = true; grew; )
+    {
+      const size = found.size;
+
+      links.forEach(([a, b]) => (found.has(a) || found.has(b)) && found.add(a).add(b));
+      grew = found.size > size;
+    }
+
+    return [...found].sort((a, b) => a - b);
+  }
+
+  // Removes a placed unit, its whole train if it is in one, and renumbers the links of the trains left.
+  function datRemoveUnit(orig, index)
+  {
+    const gone = trainOf(viewOf(orig), index);
+    let out = orig;
+
+    for (const i of [...gone].reverse())
+      out = datRemoveItem(out, 0, i);
+
+    const dv = viewOf(out);
+    const units = parseDAT(dv).items.filter((x) => x.type === 0);
+    const before = { length: units.length + gone.length };
+
+    for (const u of units)
+      for (const o of trainLinks(dv, u, before))
+        dv.setUint32(u.offset + o, dv.getUint32(u.offset + o) - gone.filter((i) => i < dv.getUint32(u.offset + o)).length);
+
+    return out;
+  }
+
+  // Copies the train with the given engine from another DAT to pos, links renumbered, gates and death effects cleared (they name that level's
+  // flags and counters). Its path is left for the caller to set.
+  function datAddTrain(bytes, fromBytes, engine, pos)
+  {
+    const from = viewOf(fromBytes);
+    const units = parseDAT(from).items.filter((x) => x.type === 0);
+    const members = trainOf(from, units.find((x) => x.sub === engine).index);
+    const start = parseDAT(viewOf(bytes)).items.filter((x) => x.type === 0).length;
+    let out = bytes;
+
+    members.forEach((index) => {
+      const size = from.getUint32(units[index].offset + 8);
+      const rec = fromBytes.slice(units[index].offset, units[index].offset + size);
+      const d = viewOf(rec);
+
+      pos.forEach((v, a) => d.setFloat32(0x10 + a * 4, v));
+      [0x60, 0x64, 0x68, ...Object.values(UNIT_DEATH)].forEach((o) => d.setUint32(o, 0));
+      trainLinks(from, units[index], units).forEach((o) => d.setUint32(o, start + members.indexOf(d.getUint32(o))));
+      out = datAddItem(out, 0, rec);
+    });
 
     return out;
   }
@@ -2496,6 +3831,241 @@ function rs64Lib()
     return out;
   }
 
+  const TERRAIN_TEX_BYTES = 2080;
+
+  // The inverse of decodeTerrainTex: up to 16 colours by median cut over RGB555 (alpha is ignored), nearest-colour indices, TMEM-swizzled rows.
+  function encodeTerrainTex(rgba)
+  {
+    const counts = new Map();
+
+    for (let i = 0; i < 4096; i++)
+    {
+      const k = ((rgba[i * 4] >> 3) << 10) | ((rgba[i * 4 + 1] >> 3) << 5) | (rgba[i * 4 + 2] >> 3);
+
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+
+    const chan = (k, ch) => (k >> (10 - ch * 5)) & 31;
+    const boxes = [[...counts.keys()]];
+
+    const spread = (box) => {
+      let best = { ch: 0, range: -1 };
+
+      for (let ch = 0; ch < 3; ch++)
+      {
+        const vals = box.map((k) => chan(k, ch));
+        const range = Math.max(...vals) - Math.min(...vals);
+
+        if (range > best.range)
+          best = { ch, range };
+      }
+
+      return best;
+    };
+
+    while (boxes.length < 16)
+    {
+      let pick = -1;
+      let score = 0;
+
+      boxes.forEach((box, i) => {
+        const s = spread(box).range * box.reduce((n, k) => n + counts.get(k), 0);
+
+        if (box.length > 1 && s > score) {
+          pick = i;
+          score = s;
+        }
+      });
+
+      if (pick < 0)
+        break;
+
+      const box = boxes[pick];
+      const { ch } = spread(box);
+
+      box.sort((a, b) => chan(a, ch) - chan(b, ch));
+
+      const total = box.reduce((n, k) => n + counts.get(k), 0);
+      let acc = 0;
+      let cut = 1;
+
+      for (; cut < box.length - 1; cut++)
+      {
+        acc += counts.get(box[cut - 1]);
+
+        if (acc * 2 >= total)
+          break;
+      }
+
+      boxes.splice(pick, 1, box.slice(0, cut), box.slice(cut));
+    }
+
+    const palette = boxes.map((box) => {
+      const total = box.reduce((n, k) => n + counts.get(k), 0);
+
+      return [0, 1, 2].map((ch) => Math.round(box.reduce((s, k) => s + chan(k, ch) * counts.get(k), 0) / total));
+    });
+
+    const out = new Uint8Array(TERRAIN_TEX_BYTES);
+    const dv = new DataView(out.buffer);
+
+    palette.forEach(([r, g, b], i) => dv.setUint16(2048 + i * 2, (r << 11) | (g << 6) | (b << 1) | 1));
+
+    const rgb = palette.map((p) => p.map(c5));
+
+    for (let i = 0; i < 4096; i++)
+    {
+      let best = 0;
+      let bestD = Infinity;
+
+      for (let p = 0; p < rgb.length; p++)
+      {
+        const d = (rgb[p][0] - rgba[i * 4]) ** 2 + (rgb[p][1] - rgba[i * 4 + 1]) ** 2 + (rgb[p][2] - rgba[i * 4 + 2]) ** 2;
+
+        if (d < bestD) {
+          best = p;
+          bestD = d;
+        }
+      }
+
+      const src = (i >> 6) & 1 ? i ^ 8 : i;
+
+      out[src >> 1] |= src & 1 ? best : best << 4;
+    }
+
+    return out;
+  }
+
+  // Painted cells live in a per-level file of bank-layout entries; a _TEX bank field 0x2000 + i is its entry i. The game itself uses the top
+  // two bits (0x8000 + id borrows another id's texture, 0x4000 is set while loaded), so painted fields keep them clear.
+  const PAINT_MARK = 0x2000;
+  const paintPath = (dir) => dir + '_PAINT';
+  const isPainted = (bankField) => (bankField & 0xE000) === PAINT_MARK;
+
+  const terrainTexRGBA = (bank, paint, bankField) => (isPainted(bankField) ? decodeTerrainTex(paint, bankField & 0x1FFF) : decodeTerrainTex(bank, bankField));
+
+  // Bakes cells (Map cell -> 64x64 RGBA) into the level: a result that decodes like one of the level's textures reuses it, else a new paint
+  // entry and a new plain _TEX id inserted at the HMP's plain count (+0x1A), ahead of the animated blocks. Inputs are left as they were on error.
+  function paintApply({ hmp, tex, paint, grid, bank, cells })
+  {
+    const hv = viewOf(hmp);
+    const tv = viewOf(tex);
+    const plain = hv.getUint16(0x1A);
+    const pv = new DataView(paint.buffer, paint.byteOffset, paint.byteLength);
+    const paintCount = paint.length / TERRAIN_TEX_BYTES;
+    const keyOf = (rgba) => crc32(rgba) + ':' + rgba.length;
+    const idOf = new Map();
+
+    for (let id = 0; id < plain; id++)
+    {
+      const f = tv.getUint16(id * 4);
+
+      if (isPainted(f) ? (f & 0x1FFF) < paintCount : f < PAINT_MARK && (f + 1) * TERRAIN_TEX_BYTES <= bank.byteLength)
+      {
+        const key = keyOf(terrainTexRGBA(bank, pv, f));
+
+        if (!idOf.has(key))
+          idOf.set(key, id);
+      }
+    }
+
+    // Cells whose texture the level already has take it; the rest wait (NEW) until the painted ids nothing uses any more are known.
+    const NEW = 0xFFFF;
+    const added = [];
+    const recycled = [];
+    const ids = grid.tex.slice();
+    const pending = [];
+
+    for (const [cell, rgba] of cells)
+    {
+      const enc = encodeTerrainTex(rgba);
+      const key = keyOf(decodeTerrainTex(new DataView(enc.buffer), 0));
+
+      ids[cell] = idOf.get(key) ?? NEW;
+      pending.push([cell, key, enc]);
+    }
+
+    const used = new Set(ids);
+    const free = [];
+
+    for (let id = 0; id < plain; id++)
+    {
+      const f = tv.getUint16(id * 4);
+
+      if (isPainted(f) && (f & 0x1FFF) < paintCount && !used.has(id))
+        free.push(id);
+    }
+
+    for (const [cell, key, enc] of pending)
+    {
+      if (ids[cell] !== NEW)
+        continue;
+
+      if (!idOf.has(key) && free.length) {
+        const id = free.shift();
+
+        recycled.push([tv.getUint16(id * 4) & 0x1FFF, enc]);
+        idOf.set(key, id);
+      } else if (!idOf.has(key))
+      {
+        if (paintCount + added.length >= PAINT_MARK)
+          throw new Error(`This level holds ${PAINT_MARK} painted textures`);
+
+        idOf.set(key, plain + added.length);
+        added.push(enc);
+      }
+
+      ids[cell] = idOf.get(key);
+    }
+
+    const outTex = new Uint8Array(tex.length + added.length * 4);
+    const ov = new DataView(outTex.buffer);
+
+    outTex.set(tex.subarray(0, plain * 4));
+    added.forEach((_, i) => ov.setUint16((plain + i) * 4, PAINT_MARK | (paintCount + i)));
+    outTex.set(tex.subarray(plain * 4), (plain + added.length) * 4);
+
+    const outPaint = new Uint8Array(paint.length + added.length * TERRAIN_TEX_BYTES);
+
+    outPaint.set(paint);
+    recycled.forEach(([i, e]) => outPaint.set(e, i * TERRAIN_TEX_BYTES));
+    added.forEach((e, i) => outPaint.set(e, paint.length + i * TERRAIN_TEX_BYTES));
+
+    const outHmp = writeHMP(hmp, { ...grid, tex: ids });
+
+    new DataView(outHmp.buffer).setUint16(0x1A, plain + added.length);
+    grid.tex.set(ids);
+
+    return { hmp: outHmp, tex: outTex, paint: outPaint };
+  }
+
+  // One edited asset in an exported mod: a BPS patch of the original, or the whole file when the asset is new (original null).
+  const modAssetFile = (path, original, now) => {
+    const name = 'assets/' + path.replace(/^data\//, '');
+
+    return original ? { name: name + '.bps', data: encodeBPS(original, now) } : { name, data: now.slice() };
+  };
+
+  // The most distinct textures within r cells (a square) of any cell: what the game's texture cache must hold around the camera.
+  function paintBudget(keys, w, h, r = 10)
+  {
+    let best = 0;
+
+    for (let cy = 0; cy < h; cy++)
+      for (let cx = 0; cx < w; cx++)
+      {
+        const seen = new Set();
+
+        for (let y = Math.max(0, cy - r); y <= Math.min(h - 1, cy + r); y++)
+          for (let x = Math.max(0, cx - r); x <= Math.min(w - 1, cx + r); x++)
+            seen.add(keys[y * w + x]);
+
+        best = Math.max(best, seen.size);
+      }
+
+    return best;
+  }
+
   // ---- DAT: level items (only the common header is understood) ----
 
   const DAT_TYPES = { 0: 0x04, 2: 0x14, 3: 0x1C, 6: 0x34, 7: 0x3C };
@@ -2576,6 +4146,12 @@ function rs64Lib()
 
           if (item.flags & 0x80)
             item.songs = [0x3C, 0x40, 0x44, 0x48].map((o) => dv.getUint32(it + o));
+
+          if (item.sub === 0x10 && recSize >= MUSIC_RECORD_MIN)
+            item.music = Object.fromEntries(Object.entries(MUSIC_FIELDS).map(([k, [kind, o]]) => [
+              k,
+              kind === 'f' ? dv.getFloat32(it + o) : dv.getInt32(it + o)
+            ]));
 
           // Linked zones: count +0xA4, list at item + [+0xA8] + 0xA6 of u16 zone indices. Music zones link their 0x39
           // trigger area this way; func_800ECC28 copies the linked area into its live check.
@@ -4599,10 +6175,312 @@ function rs64Lib()
 
   // Gives an item a name (path events have none) so the game can find it by name: the name goes after the record (+0x0C = its offset,
   // +8 = the new size); the record keeps its place and index, and the name map is rebuilt.
+  // Rewrites an objective arrow's conditions and follow target. w: the shape parseDAT gives (0 = test unused, '' = no target).
+  function arrowWrite(orig, item, w)
+  {
+    const enc = (s) => new TextEncoder().encode(s);
+    const follow = enc(w.follow || '-');
+    const name = item.name ? enc(item.name) : null;
+    const tail = 0x48 + follow.length + 1;
+    const nameAt = name ? Math.max(tail, 0x60) : 0;
+    const rec = new Uint8Array(((name ? nameAt + name.length + 1 : tail) + 3) & ~3);
+
+    rec.set(orig.subarray(item.offset, item.offset + 0x48));
+    rec.set(follow, 0x48);
+
+    if (name)
+      rec.set(name, nameAt);
+
+    const r = new DataView(rec.buffer);
+
+    r.setUint32(8, rec.length);
+    r.setUint32(0x0C, nameAt);
+    r.setUint32(0x2C, 0x48);
+    [w.flag, w.counter, w.atLeast, w.hideFlag, w.hideCounter, w.below].forEach((v, k) => r.setInt32(0x30 + k * 4, v));
+
+    return datReplaceItem(orig, 7, item.index, rec);
+  }
+
+  // What drives an arrow's flag or counter: the units and areas in the level data and in rules. managed = rules alone, so the explorer may rewrite them.
+  function arrowSources(dv, doc, flag, counter)
+  {
+    const units = new Set();
+    const areas = new Set();
+
+    for (const it of parseDAT(dv).items)
+    {
+      const d = isUnit(it) && it.name && unitDeath(dv, it);
+
+      if (d && ((counter && (d.counter === counter || d.counter2 === counter)) || (flag && d.flag === flag)))
+        units.add(it.name);
+
+      if (flag && it.name && it.onEnter?.flag === flag)
+        areas.add(it.name);
+    }
+
+    const inData = units.size + areas.size;
+
+    for (const r of doc.rules)
+      if (r.object && (r.actions ?? []).some((a) => (counter && a.do === 'counter' && a.counter === counter) || (flag && a.do === 'flag' && a.flag === flag)))
+        (r.when === 'destroyed' ? units : areas).add(r.object);
+
+    return { units: [...units], areas: [...areas], managed: !inData };
+  }
+
+  // Reads a stock level's mission script out of the ROM (US v1.0, otherwise nothing): what has to be true when it sets each flag or adds to each
+  // counter. Each entry is a list of ways it can happen, each way a list of needs: { flag }, { counter, atLeast }, or { other: true } for a test
+  // this can't name. Follows the level's start-up and per-frame code, callbacks that wait on a flag or counter, timers and calls into mission code.
+  function missionScript(romBytes, level)
+  {
+    const FN = { setFlag: 0x800C7540, getFlag: 0x800C759C, addCount: 0x800C75EC, getCount: 0x800C761C, whenMet: 0x800C7830, after: 0x800C7864 };
+    const toRom = (a) => a - 0x7FFFF400;
+    const word = (a) => ((romBytes[toRom(a)] << 24) | (romBytes[toRom(a) + 1] << 16) | (romBytes[toRom(a) + 2] << 8) | romBytes[toRom(a) + 3]) >>> 0;
+    const out = { flags: new Map(), counters: new Map() };
+
+    if (word(0x8010A450) !== 0x80101090)
+      return out;
+
+    const done = new Set();
+
+    const walk = (start, base, depth) => {
+
+      const key = start + JSON.stringify(base);
+
+      if (depth > 8 || done.has(key))
+        return;
+
+      done.add(key);
+
+      // The forward branch targets, which end a run of tests, and the function's end: a return no branch jumps past.
+      const targets = new Set();
+      let end = start;
+
+      for (let pc = start, far = start; pc < start + 0x4000; pc += 4)
+      {
+        const op = word(pc) >>> 26;
+
+        if ([4, 5, 6, 7, 0x14, 0x15, 0x16, 0x17].includes(op))
+        {
+          const to = pc + 4 + (((word(pc) << 16) >> 16) << 2);
+
+          targets.add(to);
+          far = Math.max(far, to);
+        }
+
+        if (word(pc) === 0x03E00008 && pc >= far)
+        {
+          end = pc + 4;
+          break;
+        }
+      }
+
+      // reg: known constants. tag: registers holding the result of a flag or counter read.
+      const reg = new Array(32).fill(undefined);
+      const tag = new Array(32).fill(undefined);
+      let arg4;
+      let needs = [];
+
+      reg[0] = 0;
+
+      const step = (i) => {
+
+        const op = i >>> 26;
+        const rs = (i >>> 21) & 31;
+        const rt = (i >>> 16) & 31;
+        const rd = (i >>> 11) & 31;
+        const imm = (i << 16) >> 16;
+
+        if (op === 9 && rt)
+        {
+          reg[rt] = reg[rs] === undefined ? undefined : (reg[rs] + imm) | 0;
+          tag[rt] = undefined;
+        }
+        else if ((op === 0x0F || op === 0x0D) && rt)
+        {
+          reg[rt] = op === 0x0F ? (i & 0xFFFF) << 16 : (reg[rs] === undefined ? undefined : reg[rs] | (i & 0xFFFF));
+          tag[rt] = undefined;
+        }
+        else if (op === 0 && ((i & 63) === 0x25 || (i & 63) === 0x21) && rd)
+        {
+          const from = rt === 0 ? rs : (rs === 0 ? rt : -1);
+
+          reg[rd] = from >= 0 ? reg[from] : undefined;
+          tag[rd] = from >= 0 ? tag[from] : undefined;
+        }
+        else if (op === 0x2B && rs === 29 && imm === 0x10)
+          arg4 = reg[rt];
+        else if (op === 0x0A && rt)
+        {
+          tag[rt] = tag[rs]?.counter ? { counter: tag[rs].counter, below: imm } : undefined;
+          reg[rt] = undefined;
+        }
+        else if (rt && [0x08, 0x0C, 0x20, 0x21, 0x23, 0x24, 0x25, 0x31].includes(op))
+        {
+          reg[rt] = undefined;
+          tag[rt] = undefined;
+        }
+      };
+
+      const record = (map, id) => {
+
+        if (!map.has(id))
+          map.set(id, []);
+
+        map.get(id).push([...base, ...needs.filter((n) => n.flag !== id)]);
+      };
+
+      for (let pc = start; pc < end; pc += 4)
+      {
+        if (targets.has(pc))
+          needs = [];
+
+        const i = word(pc);
+        const op = i >>> 26;
+
+        if (op === 3)
+        {
+          step(word(pc + 4));
+
+          const to = (0x80000000 | ((i & 0x03FFFFFF) << 2)) >>> 0;
+          const [a0, a1, a2, a3] = [reg[4], reg[5], reg[6], reg[7]];
+
+          if (to === FN.setFlag && a1)
+            record(out.flags, a0);
+          else if (to === FN.addCount)
+            record(out.counters, a0);
+          else if (to === FN.whenMet)
+            walk(a0 >>> 0, [...base, ...needs, ...(a1 && a2 ? [{ flag: a1 }] : []), ...(a3 ? [{ counter: a3, atLeast: arg4 }] : [])], depth + 1);
+          else if (to === FN.after)
+            walk(a0 >>> 0, [...base, ...needs], depth + 1);
+          else if (to >= 0x80100000 && to < 0x8010A450)
+            walk(to, [...base, ...needs], depth + 1);
+
+          for (const r of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 24, 25])
+          {
+            reg[r] = undefined;
+            tag[r] = undefined;
+          }
+
+          if (to === FN.getFlag)
+            tag[2] = { flag: a0 };
+
+          if (to === FN.getCount)
+            tag[2] = { counter: a0 };
+
+          pc += 4;
+          continue;
+        }
+
+        if (op === 4 || op === 5 || op === 0x14 || op === 0x15)
+        {
+          const rs = (i >>> 21) & 31;
+          const rt = (i >>> 16) & 31;
+          const beq = op === 4 || op === 0x14;
+          const held = tag[rs] ? rs : (tag[rt] ? rt : -1);
+          const seen = held >= 0 ? tag[held] : null;
+          const value = held === rs ? reg[rt] : (held === rt ? reg[rs] : undefined);
+
+          // A taken branch skips what follows, so what follows needs the opposite of its test. "b" (beq with itself) tests nothing.
+          if (!(beq && rs === rt))
+          {
+            if (seen?.flag && (value === 0 || value === 1))
+              needs.push((beq ? value === 0 : value === 1) ? { flag: seen.flag } : { flag: seen.flag, not: true });
+            else if (seen?.below !== undefined && value === 0 && !beq)
+              needs.push({ counter: seen.counter, atLeast: seen.below });
+            else if (seen?.counter && seen.below === undefined && value > 0 && !beq)
+              needs.push({ counter: seen.counter, atLeast: value });
+            else
+              needs.push({ other: true });
+
+            // Past a bne, the two sides are known to be equal.
+            if (seen && !beq && value !== undefined)
+            {
+              reg[held] = value;
+              tag[held] = undefined;
+            }
+          }
+
+          step(word(pc + 4));
+          pc += 4;
+          continue;
+        }
+
+        step(i);
+      }
+    };
+
+    for (const slot of [0, 4, 12])
+      walk(word(0x8010A450 + level * 16 + slot), [], 0);
+
+    return out;
+  }
+
+  // The units whose deaths lead a level script to set this flag or reach this counter, or null when something else is involved.
+  function scriptUnits(script, dv, flag, counter)
+  {
+    const units = parseDAT(dv).items.filter((it) => isUnit(it) && it.name).map((it) => [it.name, unitDeath(dv, it)]);
+    const byFlag = (f) => units.filter(([, d]) => d.flag === f).map(([n]) => n);
+    const byCounter = (c) => units.filter(([, d]) => d.counter === c || d.counter2 === c).map(([n]) => n);
+
+    const resolve = (need, seen) => {
+
+      if (need.other || need.not)
+        return null;
+
+      const here = need.flag ? byFlag(need.flag) : byCounter(need.counter);
+
+      if (here.length)
+        return here;
+
+      const id = need.flag ?? need.counter;
+      const mark = (need.flag ? 'f' : 'c') + id;
+      const ways = (need.flag ? script.flags : script.counters).get(id);
+
+      if (!ways || seen.has(mark))
+        return null;
+
+      const unique = [...new Set(ways.map((w) => JSON.stringify(w)))].map((w) => JSON.parse(w)).filter((w) => w.length);
+
+      if (unique.length !== 1)
+        return null;
+
+      const out = new Set();
+
+      for (const n of unique[0].filter((x) => !(x.not && x.flag))) {
+        const got = resolve(n, new Set([...seen, mark]));
+
+        if (!got)
+          return null;
+
+        got.forEach((x) => out.add(x));
+      }
+
+      return out.size ? [...out] : null;
+    };
+
+    return resolve(flag ? { flag } : { counter }, new Set());
+  }
+
   function datNameItem(orig, item, name)
   {
     // Past every path-event body field (they run to +0x5C), so a short record's tail stays zero where the game reads it.
     return recordAppendField(orig, item, 0x0C, new TextEncoder().encode(name), 0x60);
+  }
+
+  // An attack order's target (+0x4C, "-" = none) or a fly order's ('+' then a name at +0x44, "+" alone = the player). The old name is wiped, or the parser's string scan would still link to it.
+  const orderSetTarget = (orig, item, name) => (item.sub === 0x20 ? recordSetName(orig, item, 0x4C, name, 0x60) : recordSetName(orig, item, 0x44, '+' + name, 0x60));
+
+  // Points a name field at new text. Old text inside the record is wiped; a field can also point at another item's name, which stays.
+  function recordSetName(orig, item, field, text, minAt = 0)
+  {
+    const out = orig.slice();
+    const dv = viewOf(out);
+    const rel = dv.getUint32(item.offset + field);
+
+    if (rel && rel < dv.getUint32(item.offset + 8))
+      out.fill(0, item.offset + rel, out.indexOf(0, item.offset + rel));
+
+    return recordAppendField(out, item, field, new TextEncoder().encode(text), minAt);
   }
 
   // The record with data (then a 0 byte) appended at its end (or at minAt), the record-relative offset at `field` pointing at it.
@@ -4700,6 +6578,158 @@ function rs64Lib()
 
   // A music region (DAT type 6 sub 0x10) playing cue on entry: flag 0x80 at +0x34 (also what preloads its songs), cue in slot 0
   // (+0x3C, played on entry) and slots 1-2 (+0x40/+0x44, what it switches to later), so a copy never falls back to another level's song.
+  // A music region's song starts when the player enters its linked trigger area and ends when they leave the region, so the gap between the
+  // two boxes keeps the song from flickering at the border. The game reads only position and size. Sides are -X, +X, -Z, +Z.
+  const MUSIC_OUT = [-1, 1, -1, 1];
+  const musicBox = (z) => [z.pos[0], z.pos[0] + z.size[0], z.pos[2], z.pos[2] + z.size[2]];
+  const musicLimits = (mapW, mapH) => [0, mapW, 0, mapH];
+
+  function musicGaps(region, trigger) {
+    const t = musicBox(trigger);
+
+    return musicBox(region).map((v, s) => (v - t[s]) * MUSIC_OUT[s]);
+  }
+
+  function musicRegionBox(region, trigger, gaps)
+  {
+    const [x0, x1, z0, z1] = musicBox(trigger).map((v, s) => v + gaps[s] * MUSIC_OUT[s]);
+
+    return { pos: [x0, region.pos[1], z0], size: [x1 - x0, region.size[1], z1 - z0] };
+  }
+
+  // The usual gap of a pair: the median of the sides not stretched past the map, whose gaps mean nothing.
+  function musicMargin(region, trigger, mapW, mapH)
+  {
+    const lim = musicLimits(mapW, mapH);
+    const r = musicBox(region);
+    const gaps = musicGaps(region, trigger);
+    const free = gaps.filter((g, s) => (lim[s] - r[s]) * MUSIC_OUT[s] >= -0.01);
+    const list = (free.length ? free : gaps).sort((a, b) => a - b);
+
+    return list[list.length >> 1];
+  }
+
+  // Gives a new region its own trigger area, inset by margin; a side whose gap would reach the map edge goes past it, so flying along the edge can't end the song.
+  function musicAddTrigger(orig, region, triggerRecord, margin, mapW, mapH)
+  {
+    const m = Math.min(margin, Math.min(region.size[0], region.size[2]) / 4);
+    const trigger = { pos: [region.pos[0] + m, region.pos[1], region.pos[2] + m], size: [region.size[0] - 2 * m, region.size[1], region.size[2] - 2 * m] };
+    const lim = musicLimits(mapW, mapH);
+    const gaps = musicBox(trigger).map((v, s) => ((v + m * MUSIC_OUT[s] - lim[s]) * MUSIC_OUT[s] >= 0 ? (lim[s] - v) * MUSIC_OUT[s] + m : m));
+    const box = musicRegionBox(region, trigger, gaps);
+    const rec = triggerRecord.slice();
+    const rv = new DataView(rec.buffer);
+
+    trigger.pos.concat(trigger.size).forEach((v, a) => rv.setFloat32((a < 3 ? 0x10 : 0x28 - 12) + a * 4, v));
+
+    const out = datAddItem(orig, 6, rec);
+    const dv = viewOf(out);
+    const zones = parseDAT(dv).items.filter((x) => x.type === 6);
+    const o = zones.find((x) => x.index === region.index).offset;
+
+    box.pos.concat(box.size).forEach((v, a) => dv.setFloat32(o + (a < 3 ? 0x10 : 0x28 - 12) + a * 4, v));
+    dv.setUint32(o + 0xA4, 1);
+    dv.setUint16(o + dv.getUint32(o + 0xA8) + 0xA6, zones.length - 1);
+
+    return out;
+  }
+
+  // A music region's settings (tickCraftMountedAnimationEffect, processPendingSoundCueRequest). Cues: 0 stop, 1 keep, n >= 2 cue table entry n - 2.
+  // enter plays on entering; action replaces it while the when condition holds (flag == value and/or counter >= threshold, or < -threshold when
+  // negative); hold is seconds until the entry song gives way, loops its repeats (1 = no limit, 0 = random up to loopsMax), then after; leave plays on
+  // leaving. Fades are seconds, old song out then new song in. uses counts leaves until the region removes itself (0 = never), reenter is the delay
+  // before it responds again, restart cancels a running hold, linger keeps the action song after leaving. gate decides whether the region runs at all.
+  const MUSIC_RECORD_MIN = 0xA4;
+
+  const MUSIC_FIELDS = {
+    enter: ['i', 0x3C],
+    action: ['i', 0x40],
+    after: ['i', 0x44],
+    leave: ['i', 0x48],
+    enterFadeOut: ['f', 0x50],
+    enterFadeIn: ['f', 0x54],
+    leaveFadeOut: ['f', 0x58],
+    leaveFadeIn: ['f', 0x5C],
+    hold: ['f', 0x60],
+    loops: ['i', 0x64],
+    loopsMax: ['i', 0x68],
+    uses: ['i', 0x6C],
+    reenter: ['f', 0x70],
+    restart: ['i', 0x74],
+    linger: ['f', 0x78],
+    gateFlag: ['i', 0x84],
+    gateValue: ['i', 0x88],
+    gateCounter: ['i', 0x8C],
+    gateAtLeast: ['i', 0x90],
+    whenFlag: ['i', 0x94],
+    whenValue: ['i', 0x98],
+    whenCounter: ['i', 0x9C],
+    whenThreshold: ['i', 0xA0]
+  };
+
+  function musicZoneEdit(orig, item, patch)
+  {
+    const out = orig.slice();
+    const dv = viewOf(out);
+
+    if (dv.getUint32(item.offset + 8) < MUSIC_RECORD_MIN)
+      throw new Error('This region has no music settings');
+
+    for (const [k, v] of Object.entries(patch))
+    {
+      const [kind, o] = MUSIC_FIELDS[k];
+
+      if (kind === 'f')
+        dv.setFloat32(item.offset + o, v);
+      else
+        dv.setInt32(item.offset + o, v);
+    }
+
+    // The game loads only the songs of regions with this flag set.
+    dv.setUint32(item.offset + 0x34, dv.getUint32(item.offset + 0x34) | 0x80);
+
+    return out;
+  }
+
+  // What in the level sets each mission flag and counter, as { flags, counters } maps of number -> names, for picking a condition by name.
+  function musicConditionSources(dv)
+  {
+    const flags = new Map();
+    const counters = new Map();
+
+    const add = (map, key, name) => {
+      if (key > 0 && key <= 128)
+        (map.get(key) ?? map.set(key, new Set()).get(key)).add(name);
+    };
+
+    for (const it of parseDAT(dv).items)
+    {
+      const name = it.name || it.label;
+
+      if (!name)
+        continue;
+
+      for (const b of [it.onEnter, it.onExit])
+      {
+        add(flags, b?.flag, name);
+        add(counters, b?.counter, name);
+      }
+
+      add(counters, it.pathEvent?.addCounter, name);
+
+      if (isUnit(it))
+      {
+        const d = unitDeath(dv, it);
+
+        add(flags, d.flag, name);
+        add(counters, d.counter, name);
+        add(counters, d.counter2, name);
+      }
+    }
+
+    return { flags, counters };
+  }
+
   function musicZoneSet(orig, item, cue) {
     const out = orig.slice();
     const dv = new DataView(out.buffer);
@@ -6060,14 +8090,21 @@ function rs64Lib()
   // ---- Edit history: every asset change as before / after bytes; begin/end group a drag into one step ----
   function createHistory() {
     let open = null;
+    let depth = 0;
 
     const h = {
       steps: [],
       at: 0,
       begin(label) {
+        depth++;
         open ??= { label, changes: [] };
       },
       end() {
+        depth = Math.max(depth - 1, 0);
+
+        if (depth)
+          return;
+
         const s = open;
 
         open = null;
@@ -6597,6 +8634,18 @@ function rs64Lib()
   }
 
   // The level's lines with object name `from` (trigger, camera or destroy target) renamed; n = lines changed.
+  // Without the lines that start any of these cameras.
+  function shotDropCameras(text, level, cameras)
+  {
+    const lines = shotLines(text).filter((l) => {
+      const f = shotFields(l);
+
+      return !(f.length >= 3 && f[0] === level && cameras.includes(f[2]));
+    });
+
+    return lines.length ? lines.join('\n') + '\n' : '';
+  }
+
   function shotRename(text, level, from, to) {
     let n = 0;
 
@@ -7557,11 +9606,44 @@ function rs64Lib()
     return out;
   }
 
-  // Reads a stored (uncompressed) zip such as zipStore writes, by its central directory.
+  // Reads a stored (uncompressed) zip such as zipStore writes.
   function zipRead(bytes) {
+    const out = new Map();
+
+    for (const e of zipEntries(bytes))
+    {
+      if (e.method !== 0)
+        throw new Error('Compressed zip entries are not supported');
+
+      out.set(e.name, e.data);
+    }
+
+    return out;
+  }
+
+  // Reads a stored or deflated zip, such as a .nrm code mod.
+  async function zipUnpack(bytes)
+  {
+    const out = new Map();
+
+    for (const e of zipEntries(bytes))
+    {
+      if (e.method !== 0 && e.method !== 8)
+        throw new Error('Unsupported zip compression');
+
+      const raw = e.method === 8 && new Blob([e.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+
+      out.set(e.name, raw ? new Uint8Array(await new Response(raw).arrayBuffer()) : e.data);
+    }
+
+    return out;
+  }
+
+  // A zip's entries by its central directory: name, compression method and the stored bytes.
+  function zipEntries(bytes) {
     const dv = viewOf(bytes);
     const dec = new TextDecoder();
-    const out = new Map();
+    const out = [];
     let end = bytes.length - 22;
 
     while (end >= 0 && dv.getUint32(end, true) !== 0x06054b50)
@@ -7577,9 +9659,7 @@ function rs64Lib()
       if (dv.getUint32(at, true) !== 0x02014b50)
         throw new Error('Bad zip directory');
 
-      if (dv.getUint16(at + 10, true) !== 0)
-        throw new Error('Compressed zip entries are not supported');
-
+      const method = dv.getUint16(at + 10, true);
       const size = dv.getUint32(at + 20, true);
       const nameLen = dv.getUint16(at + 28, true);
       const local = dv.getUint32(at + 42, true);
@@ -7589,7 +9669,7 @@ function rs64Lib()
       if (data + size > bytes.length)
         throw new Error('Truncated zip');
 
-      out.set(name, bytes.subarray(data, data + size));
+      out.push({ name, method, data: bytes.subarray(data, data + size) });
       at += 46 + nameLen + dv.getUint16(at + 30, true) + dv.getUint16(at + 32, true);
     }
 
@@ -7755,7 +9835,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, rulesParse, rulesExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, levelUsedFlags, waveFlagFor, triggerWave, WAVE_FOREIGN, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, parseVoiceLines, parseAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, modChecksOf, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

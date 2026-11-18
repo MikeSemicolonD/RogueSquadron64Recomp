@@ -81,6 +81,16 @@ static void test_interp_puppet_midpoint_and_extrapolation() {
     CHECK(std::fabs(p.sample(0.1).pos.x - 0.0f) < 1e-4f);
 }
 
+static void test_interp_puppet_extrapolates_the_sent_track_not_the_sent_velocity() {
+    // A sender at 20 fps reporting velocity as if at 30 (15 units/s for a real 10): the coast follows the samples' own slope.
+    Puppet p;
+    p.set_interp(0.05);
+    p.on_state(at_x(0.0f, 15.0f), 0.05, 0.0);
+    p.on_state(at_x(0.5f, 15.0f), 0.10, 0.05);
+    // now 0.2 -> render time 0.2 - 0.05 - 0.05 = 0.1: 0.05 s past the newest.
+    CHECK(std::fabs(p.sample(0.2).pos.x - 1.0f) < 1e-3f);
+}
+
 static void test_interp_puppet_ignores_jitter() {
     // Constant motion (1 unit/s) sent at 30 Hz, arriving 50 ms plus 0..40 ms of jitter; sampled at 60 Hz with a 100 ms buffer.
     Puppet p;
@@ -155,6 +165,16 @@ static void test_puppet_model() {
     CHECK(puppet_model(-1) == -1);
     CHECK(std::string(wingman_model_name(1)) == "wmywng" && std::string(wingman_model_name(7)) == "t16");
     CHECK(wingman_model_name(8) == nullptr && wingman_model_name(-1) == nullptr);
+}
+
+static void test_level_entry_wire() {
+
+    // Host unlocked to 18 (mod levels from 19), client to 15 (from 16): the first mod level is 19 there, 16 here.
+    CHECK(entry_to_wire(19, 19) == 0x80);
+    CHECK(entry_from_wire(entry_to_wire(19, 19), 16) == 16);
+    CHECK(entry_from_wire(entry_to_wire(20, 19), 16) == 17);
+    CHECK(entry_from_wire(entry_to_wire(12, 19), 16) == 12);
+    CHECK(entry_from_wire(-1, 16) == -1);
 }
 
 static void test_pad2_bytes_idle_when_recording_ends() {
@@ -357,6 +377,23 @@ static void test_imposter_fire_cooldown() {
     CHECK(idle == 2);
 }
 
+static void test_imposter_atst_record() {
+    std::vector<uint8_t> ram(kRdramSpan, 0xCC);
+    build_imposter_atst_record(ram.data(), Vec3{1.0f, 2.0f, 3.0f});
+    auto b = [&](uint32_t a) { return ram[(a - 0x80000000u) ^ 3]; };
+    auto w = [&](uint32_t a) { return (uint32_t)b(a) << 24 | (uint32_t)b(a + 1) << 16 | (uint32_t)b(a + 2) << 8 | b(a + 3); };
+    CHECK(b(kImposterRec + 0x0) == 0x00 && b(kImposterRec + 0x1) == 0x1F);
+    CHECK(w(kImposterRec + 0x10) == 0x3F800000u);
+    CHECK(w(kImposterRec + 0x28) == 0x3CA3D70Au && w(kImposterRec + 0x30) == 0x3CA3D70Au);
+
+    // No path: +0x8C points at the '-' name.
+    CHECK(w(kImposterRec + 0x8C) == 0xF0u && b(kImposterRec + 0xF0) == '-');
+    CHECK(w(kImposterRec + 0x90) == 0x3EC7AE14u);
+    CHECK(w(kImposterRec + 0x6C) == 1000u);
+    CHECK(std::fabs(atst_walk_phase(0.75f, 0.5f, 1.0f) - 0.25f) < 1e-6f);
+    CHECK(atst_walk_phase(0.5f, 3.0f, 0.0f) == 0.5f);
+}
+
 static void test_imposter_record_layout() {
     std::vector<uint8_t> ram(kRdramSpan, 0xCC);
     build_imposter_record(ram.data(), Vec3{1.0f, 2.0f, 3.0f});
@@ -491,14 +528,15 @@ static void test_play_clock_steps_evenly_through_uneven_frames() {
 }
 
 static void test_skip_share_stops_once_the_skip_took() {
-    // One full pulse, then landed (the crawl and launch count no skip): nothing carries into the loading or the next scene.
+    // START keeps pulsing until the skip lands (the game counted it, or one pulse for the launch), then nothing carries into the loading or the next scene.
     SkipShare k;
     k.on_remote(0x0101);
     CHECK(k.press(1.0, true, 0x0101));
     CHECK(!k.pulsed(1.0 + SkipShare::kPulseS * 0.5));
     CHECK(k.pulsed(1.0 + SkipShare::kPulseS * 1.5));
+    CHECK(k.press(1.0 + SkipShare::kPulseS * 4.5, true, 0x0101));
     k.landed();
-    CHECK(!k.press(1.0 + SkipShare::kPulseS * 2.5, true, 0x0101));
+    CHECK(!k.press(1.0 + SkipShare::kPulseS * 6.5, true, 0x0101));
     CHECK(!k.pulsed(2.0));
 }
 
@@ -752,6 +790,7 @@ int main() {
     test_imposter_stays_above_ground();
     test_imposter_fire_cooldown();
     test_imposter_record_layout();
+    test_imposter_atst_record();
     test_clear_imposter_record_zeroes_only_the_record();
     test_imposter_spawn_pos_is_unfused();
     test_imposter_spawn_ok_rejects_failed_spawns();
@@ -775,8 +814,10 @@ int main() {
     test_browse_report();
     test_hud_message();
     test_interp_puppet_midpoint_and_extrapolation();
+    test_interp_puppet_extrapolates_the_sent_track_not_the_sent_velocity();
     test_interp_puppet_ignores_jitter();
     test_puppet_model();
+    test_level_entry_wire();
     test_team_triggers_first_enter_last_exit();
     test_team_triggers_ignore_repeats_and_strays();
     test_team_triggers_forget_and_reset();

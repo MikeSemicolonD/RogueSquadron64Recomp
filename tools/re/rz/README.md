@@ -6,7 +6,7 @@ the grep-based tools in `tools/re/rename/` can't: register-relative data accesse
 call graphs, and string references, all resolved against the named symbols.
 
 Input is the symbolized ELF the sister decomp repo builds
-(`E:/Projects/rogue_squadron64/build/roguesquadron.elf`, from `tools/make_elf.py`).
+(`../rogue_squadron64/build/roguesquadron.elf`, from `tools/make_elf.py`).
 Rebuild that ELF after adding names to `symbol_files/` or rizin won't see them.
 
 ```

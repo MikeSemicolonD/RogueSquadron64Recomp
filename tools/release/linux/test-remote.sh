@@ -2,7 +2,7 @@
 # Tests the Linux package on remote machines (Raspberry Pis) over ssh: deploy the tarball matching each machine's architecture, run --help, then a headless boot in its desktop session.
 # Usage: tools/release/linux/test-remote.sh <release-dir> <rom> [remote-name ...]
 # Remotes come from ~/.config/rs64/remotes (kept out of the repo), one per line: <name> <user>@<host> <remote-dir>, e.g.
-#   pi-ubuntu  michael@pi-ubuntu.local  ~/rs64
+#   pi-ubuntu  user@pi-ubuntu.local  ~/rs64
 # One ssh connection per remote is shared by every step (ControlMaster), so a password is asked for once; an ssh key avoids it entirely.
 # Test machine packages beyond the game's own needs: xdotool (tools/release/linux/drive-menus.sh drives the menus), vulkan-validationlayers
 # (run with VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation), flatpak (to test the Flatpak bundle). Delete what you put on the machine afterwards.

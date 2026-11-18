@@ -20,11 +20,13 @@ def sdlJavaDir = layout.buildDirectory.dir("generated/sdl-java")
 // Host tools come from the Windows Debug build unless -Prs64FileToC / -Prs64N64Recomp / -Prs64RecompModTool name them (release CI builds Release).
 // file_to_c embeds RT64's SPIR-V shaders when cross-compiling.
 def hostFileToC = findProperty('rs64FileToC') ?: rootProject.file("../build/Debug/file_to_c.exe").absolutePath
-// N64Recomp recompiles the patches ELF (MIPS GCC from MIPS_TOOLCHAIN_DIR's default, or -Prs64MipsDir).
+// N64Recomp recompiles the patches ELF (MIPS GCC from the MIPS_TOOLCHAIN_DIR environment variable or PATH, or -Prs64MipsDir).
 def hostN64Recomp = findProperty('rs64N64Recomp') ?: rootProject.file("../build/Debug/N64Recomp.exe").absolutePath
 // RecompModTool writes the multiplayer-native mod's mod.json and instruction_patches.json from its mod.toml.
 def hostRecompModTool = findProperty('rs64RecompModTool') ?: rootProject.file("../build/Debug/RecompModTool.exe").absolutePath
 def mipsDirArgs = findProperty('rs64MipsDir') ? ["-DMIPS_TOOLCHAIN_DIR=${findProperty('rs64MipsDir')}"] : []
+// -Prs64Mcp=ON builds the MCP bridge into every variant (tools/debug/mcp, the smoke test); ROGUESQ_MCP_PORT in roguesq_env.txt starts it.
+def mcpArgs = findProperty('rs64Mcp') ? ["-DRS64_MCP=${findProperty('rs64Mcp')}"] : []
 // ccache on PATH caches native objects; base_dir and hash_dir=false let a new .cxx/<hash> folder reuse them.
 def ccacheExe = providers.environmentVariable('PATH').getOrElse('').tokenize(File.pathSeparator).collectMany { [new File(it, 'ccache.exe'), new File(it, 'ccache')] }.find { it.isFile() }
 def ccacheLauncher = ccacheExe ? "${ccacheExe.absolutePath.replace('\\', '/')};base_dir=${rootProject.file('..').absolutePath.replace('\\', '/')};hash_dir=false" : null
@@ -73,11 +75,15 @@ tasks.register('bundleNotices') {
     }
 }
 
+// The closed Discord Social SDK (from the Discord developer portal, never committed): with app/libs/discord_partner_sdk.aar present, the APK gets Discord status and the discord-status mod.
+def discordAar = file('libs/discord_partner_sdk.aar')
+
 // Mods bundled into the APK: the "android" list in mods/platforms.json (folders or built .nrm files). android_host.cpp installs them into <files>/mods on launch from assets/mods/index.txt.
 // A mod the game's CMake builds (a native mod) comes from that build's finished folder, as desktop's tools/mods/stage_mods.cmake does; its .so is already packed with the game's libraries, so it is skipped.
 abstract class BundleMods extends DefaultTask {
     @Internal abstract DirectoryProperty getModsRoot()
     @Internal abstract DirectoryProperty getBuiltMods()
+    @Input abstract ListProperty<String> getExtraMods()
     @OutputDirectory abstract DirectoryProperty getOutputDir()
 
     @TaskAction
@@ -93,7 +99,7 @@ abstract class BundleMods extends DefaultTask {
             java.nio.file.Files.copy(f.toPath(), dst.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
             lines << rel
         }
-        new groovy.json.JsonSlurper().parse(new File(root, 'platforms.json')).android.each { String name ->
+        (new groovy.json.JsonSlurper().parse(new File(root, 'platforms.json')).android + extraMods.get()).each { String name ->
             File built = null
             if (builtRoot.isDirectory()) {
                 builtRoot.eachDir { cfg -> if (new File(cfg, name).isDirectory()) built = new File(cfg, name) }
@@ -122,6 +128,7 @@ androidComponents {
         def bundle = tasks.register("bundleMods${suffix}", BundleMods) {
             modsRoot.set(rootProject.file('../mods'))
             builtMods.set(layout.buildDirectory.dir("built_mods/${variant.name}"))
+            extraMods.set(discordAar.exists() ? ['discord-status'] : [])
             dependsOn "externalNativeBuild${suffix}"
             doNotTrackState('Reads mods/ and the native build output; cheap to rerun')
         }
@@ -148,8 +155,8 @@ android {
         externalNativeBuild {
             cmake {
                 // Multiplayer ships as the multiplayer-native mod, as on desktop: libmultiplayer_native.so is packed with the game's libraries.
-                arguments('-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs, *ccacheArgs)
-                targets 'RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'
+                arguments('-DANDROID_STL=c++_shared', "-DRT64_HOST_FILE_TO_C=${hostFileToC}", "-DN64RECOMP_EXE=${hostN64Recomp}", "-DRECOMP_MOD_TOOL=${hostRecompModTool}", *mipsDirArgs, *mcpArgs, *ccacheArgs)
+                targets(*(['RogueSquadron64Recomp', 'SDL2', 'multiplayer_native'] + (discordAar.exists() ? ['discord_bridge'] : [])))
             }
         }
     }
@@ -196,6 +203,17 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        prefab = discordAar.exists()
+    }
+}
+
+if (discordAar.exists()) {
+    dependencies {
+        implementation files(discordAar)
+        implementation 'androidx.browser:browser:1.8.0'
     }
 }
 

@@ -17,7 +17,8 @@ What each tool does: [tools/debug/mcp/README.md](../../../tools/debug/mcp/README
   - `ROGUESQ_BOOT_TARGET=level:<id>[,craft]` drives the real menus into a mission. `menu:...`, `hangar:<id>`, `pause:<id>`, `cutscene:<level>,<kind>`: [debug-trace-env-vars.md](../../../docs/engine/debug-trace-env-vars.md).
   - `hangar:<lvl>[,craft]` reaches the 3D craft-select hangar in ~35 s through the saved pilot; `pause_at` / `step` work there too.
   - `ROGUESQ_DRAW_DIST=<x>` overrides the draw distance setting (1-8 with the terrain pass).
-  - `ROGUESQ_WIDESCREEN=1` for widescreen. Don't flip display settings with `set_config`: it writes the user's `roguesq_video.json` even with `save=false`.
+  - `ROGUESQ_WIDESCREEN=1` for widescreen.
+- Display settings for one run go in `launch`'s `settings` (`roguesq_video.json` keys over the user's file, e.g. `{"antialiasing": 4, "graphicsAPI": "vulkan"}`). The game uses a copy in the session folder, so `set_config` is safe on a launched game; on an attached one it still writes the user's file.
   - Level ids seen so far: 3 = Corellia (78x78 map, water). The boot loads a 32x32 map (level 19) for the front end; ignore it.
 
 ## The core loop
@@ -34,7 +35,7 @@ close()
 
 - `pause_at` only works when running. Once frozen, move with `step`, or `resume` and then `pause_at` again; calling `pause_at` while paused errors with "already paused".
 - `pause_at` waits for a frame that is still to come. To hold what is on screen now (the game is already at the screen you want), use `pause_now`. Don't pick a big frame on a clock that is already counting, and don't pause just to read memory: `rdram_read` works while the game runs.
-- Before a `pause_at` on a state clock, check `frame_info().state`: the 3D craft-select hangar classifies as `menu.account.enter_name` (bridgeMenuState 4, as SELECT GAME), so `pause_at("menu.account.craft_select", ...)` never fires there.
+- Before a `pause_at` on a state clock, check `frame_info().state`. The 3D craft-select hangar is `menu.account.hangar`; `menu.account.craft_select` is the 2D AVAILABLE CRAFT list. A clock already counting needs `next=false` and a frame still ahead; `next=true` waits for the state to be entered again.
 - Use `clock="mission"` (or the state you are in) for `step`, so frame numbers match `pause_at`. The default `dl` counts display lists since boot.
 - `press` with `frames=N` then `step N` plays exactly N frames of that input. `frames=0` holds until `release`.
 - A mission's first ~200 frames are the opening fly-in. Steer after that.

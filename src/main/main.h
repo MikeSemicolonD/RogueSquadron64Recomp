@@ -15,6 +15,8 @@ extern "C" {
     float rs64_throttle_cruise_live(void);
     float rs64_ls_throttle(float live);
     float rs64_ls_cruise(float live);
+    int rs64_atst_head_live(float* x, float* y);
+    int rs64_ls_head(int live, float* x, float* y);
     void rs64_reloc_guard_tick(uint8_t* rdram);
 }
 

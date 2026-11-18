@@ -307,6 +307,7 @@ async function showEffect(id, keepView = false)
 {
   setContext(false, true);
   selected = id;
+  syncBackButton();
   selectedLevel = false;
   selectedEffect = true;
   renderList();
@@ -501,7 +502,7 @@ async function showEffect(id, keepView = false)
   }
 
   stats = {
-    effect: id,
+    effect: PART_LABELS[id] ?? id.split('/').pop(),
     frames: frames.length,
     size: [...new Set(frames.map((f) => f.w + 'x' + f.h))].join(', '),
     format: [...new Set(frames.map((f) => TEX_NAMES[f.type] ?? 'type ' + f.type))].join(', ')
@@ -666,45 +667,45 @@ const SIMS = {
     k,
     {
       label: s.label,
-      tip: `${s.src}: ${s.rings(1).length} shockwave(s) via func_80072684, all spawned together; the ring meshes grow, spin 640 deg/s and fade over their own lifetimes.${s.sized ? ' Sizes scale with the object size field (Size slider).' : ''}`
+      tip: `Shockwave rings that grow, spin and fade${s.sized ? ', scaled by the Size slider' : ''}`
     }
   ])),
   'sim:ground': {
     label: 'Ground explosion',
-    tip: 'triggerDistanceScaledExplosion 0x80074600 at 2.5 units from the camera: 7 debris fireballs (50 degree cone around up, 0.8..3.5 units/s, gravity 5) and a shock sphere (0.05 -> 0.18 over 0.5 s) and an ember burst (0x80073E4C: 20 sparks in all directions at 0.4 units/s, shrinking to nothing over 1 s). Each fireball that lands kicks up a brown dust splash (the wtrspray mesh, func_80072EC4 type 3, tinted 0x7C2206: 0.2 rising to 0.4 tall and back over 0.5 s, widening 0.05 -> 0.2).'
+    tip: 'Debris fireballs, a shock sphere and embers, with dust where the fireballs land'
   },
   ...Object.fromEntries(Object.entries(BURSTS).map(([k, b]) => [
     k,
     {
       label: b.label,
-      tip: `${b.src}: ${b.n} debris1 chunks (spawnDebris1Npc 0x80072384) thrown within ${b.cone} degrees of up at ${b.speed[0]}..${b.speed[1]} units/s${b.radius ? `, starting ${b.radius} units out along their direction` : ''}. Each chunk runs the debris landing effect when it hits the ground.${b.shock ? ` It also spawns its shockwaves (${SHOCKS[b.shock].label} in Shockwaves).` : ''}${b.note ? ' ' + b.note : ''}`
+      tip: `${b.n} debris chunks thrown upward${b.shock ? `, with the ${SHOCKS[b.shock].label} shockwaves` : ''}`
     }
   ])),
   'sim:shotdown': {
     label: 'Craft shot down',
-    tip: 'npcWingmanUpdate shot-down state (+0x5C = 2) -> func_800D8988: three emitters ride the craft (smoke sm_f, tiny srp_f fireballs, srp_s smoke-trail puffs) for 4 s. The crash (a ~60 degree dive, then a short slide to a stop) is a viewer choice; pick the craft above the background colour.'
+    tip: 'Smoke and small fires trail the craft as it crashes'
   },
   'sim:land': {
     label: 'Debris landing',
-    tip: 'triggerObjectDestructionEffects 0x8007483C, called by a landing debris1 chunk (npcDebris1Update): a 0.5 smoke puff, then rand % 100 rolls another chunk (under 2) or a 2-puff smoke plume (0x80073750, 2..9). The Chunk / Plume chances set those odds (game: 2% and 8%, only when the player made the kill).'
+    tip: 'A smoke puff, sometimes with another chunk or a smoke plume'
   },
-  'sim:impact_fire': { label: 'Laser impact', tip: 'Projectile impact 0x80076250, weapon types 10/11/13/14: one fire particle at scale 0.6.' },
-  'sim:impact_ion': { label: 'Ion impact', tip: 'Projectile impact 0x80076250, weapon type 12: one ion particle (ionex2, A 0.4, B 0.8).' },
+  'sim:impact_fire': { label: 'Laser impact', tip: 'One fire particle' },
+  'sim:impact_ion': { label: 'Ion impact', tip: 'One ion particle' },
   'sim:impact_small': {
     label: 'Small impact',
-    tip: 'Projectile impact 0x80076250, other weapon types: an ember burst (0x80073E4C, 0.05, 0.2) and one fire particle at 0.2.'
+    tip: 'Embers and one small fire particle'
   },
   'sim:water': {
     label: 'Water hit',
-    tip: '0x8007483C over water: a 20-puff spray (0x800739A4: +-15 degrees, 0.38 units/s, 0.5 s) water-tinted smoke and the wtrspray splash model (func_80072EC4 type 1: 0.3 tall, widening 0.05 -> 0.4 and fading over 0.3 s, its texture cycling wtrspray_ANM at 12 fps). This is a hit by anyone other than the player.'
+    tip: 'Spray and a splash, from a hit by anyone but the player'
   },
   'sim:fireworks': {
     label: 'Fireworks',
-    tip: 'spawnCutsceneDebrisField 0x800AAC88 (medal ceremony event type 15, case 8): an i_missile rocket every 0.3 s for 6 s from a 3.2 x 0.6 x 3.2 box, each rising 1.5 units in 0.9 s and bursting into 30 starex sparks (spawnNpcBurstAlongSegment case 6) coloured by one of three ramps.'
+    tip: 'Rockets that rise and burst into sparks'
   },
   'sim:water_player': {
     label: 'Water hit (player)',
-    tip: 'The water hit when the player made it: 0x8007483C then also calls func_80074600(pos, 0.1, 0.4, 1.0), the full ground explosion (fireballs that splash where they land, the shock sphere, embers).'
+    tip: 'The water hit plus a full explosion, from a hit by the player'
   },
 };
 
@@ -1179,7 +1180,7 @@ async function showSim(id, keepView)
     const fw = await buildFireworks([{ ...em, at: 0, c: [0, -1.5, 0] }], space, await loadModel('data/weapons'), { tris: 0, verts: 0, parts: 0 });
     let t = 0;
 
-    stats = { simulation: SIMS[id].label, source: SIMS[id].tip.split(':')[0] };
+    stats = { simulation: SIMS[id].label };
     hud();
 
     if (!keepView)
@@ -1356,7 +1357,7 @@ async function showSim(id, keepView)
     done: () => !items.length,
   };
 
-  stats = { simulation: SIMS[id].label, source: SIMS[id].tip.split(':')[0] };
+  stats = { simulation: SIMS[id].label };
   hud();
 
   // Debris bursts fly ~3 units out; shockwaves frame their widest ring (mesh radius x peak scale); the rest stay within half a unit.
@@ -1580,12 +1581,18 @@ async function showModel(id, objIndex = -1, keepView = false)
 {
   setContext(false);
   selected = id;
+  syncBackButton();
   selectedObj = objIndex;
   selectedLevel = false;
   selectedEffect = false;
   renderList();
 
   const model = await loadModel(id);
+
+  // Something else was opened while this model loaded (a level opened right after the ROM, say): leave the view to it.
+  if (selected !== id)
+    return;
+
   const { hob, hmt } = model;
   const sel = $('objSel');
 
@@ -1628,6 +1635,10 @@ async function showModel(id, objIndex = -1, keepView = false)
   pivot.add(group);
   setRoot(pivot);
   await setupAnimations(id, group.children[0]);
+
+  if (selected !== id)
+    return;
+
   setupFoils(id, group.children[0]);
   setupExhaust(group.children[0]);
   await lightsShow(group);
@@ -1638,7 +1649,7 @@ async function showModel(id, objIndex = -1, keepView = false)
   $('lodVal').textContent = lodLevel();
 
   stats = {
-    model: id,
+    model: modelName(id) ?? id.split('/').pop(),
     objects: hob.objects.length,
     'LOD levels': counts.lods,
     parts: counts.parts,
@@ -1660,7 +1671,12 @@ const TERRAIN_PAD = 20;
 
 // One 64x64 texture per tile, packed into an atlas; tiles get their own vertices so UVs don't share across tile edges.
 // update(hmp2, box) rewrites the tiles in box ({ x0, y0, x1, y1 }, inclusive map tiles) from an edited HMP of the same size in place, or returns false when it uses a texture the atlas lacks.
-function buildTerrain(hmp, texIds, bank)
+// Where a craft on this path starts: the game's route runs from the second point, the first only shapes the curve.
+const pathStart = (path) => path.points[1] ?? path.points[0];
+
+// paint: the level's painted textures (paintPath), for _TEX fields with PAINT_MARK. spare: extra atlas slots that paintCell(cell, rgba) fills to show a cell image
+// during a Soft paint stroke; it returns false once they run out.
+function buildTerrain(hmp, texIds, bank, paint = null, spare = 0)
 {
   const P = TERRAIN_PAD;
   const TW = hmp.w + 2 * P;
@@ -1693,18 +1709,19 @@ function buildTerrain(hmp, texIds, bank)
 
   const cols = 16;
   const AW = cols * 64;
-  const AH = Math.max(1, Math.ceil(slots.size / cols)) * 64;
+  const AH = Math.max(1, Math.ceil((slots.size + spare) / cols)) * 64;
   const atlas = new Uint8Array(AW * AH * 4).fill(255);
 
-  for (const [bankId, slot] of slots)
-  {
-    const px = decodeTerrainTex(bank, bankId);
+  const putSlot = (slot, px) => {
     const ox = (slot % cols) * 64;
     const oy = ((slot / cols) | 0) * 64;
 
     for (let y = 0; y < 64; y++)
       atlas.set(px.subarray(y * 256, y * 256 + 256), ((oy + y) * AW + ox) * 4);
-  }
+  };
+
+  for (const [bankId, slot] of slots)
+    putSlot(slot, terrainTexRGBA(bank, paint, bankId));
 
   for (let i = 3; i < atlas.length; i += 4)
     atlas[i] = 255;
@@ -1740,8 +1757,12 @@ function buildTerrain(hmp, texIds, bank)
         writeTile(hm, tx, ty);
   };
 
+  // Soft paint previews: map cell -> atlas slot past the level's own textures.
+  const cellSlot = new Map();
+
   const writeTile = (hm, tx, ty) => {
-    const slot = slots.get(texIds[tileOf(hm, tx, ty)?.tex]) ?? 0;
+    const cell = Math.min(hm.h - 1, Math.max(0, ty)) * hm.w + Math.min(hm.w - 1, Math.max(0, tx));
+    const slot = cellSlot.get(cell) ?? slots.get(texIds[tileOf(hm, tx, ty)?.tex]) ?? 0;
     const u0 = (slot % cols) * 64 + 0.5;
     const v0 = ((slot / cols) | 0) * 64 + 0.5;
     const base = ((ty + P) * TW + tx + P) * n * n;
@@ -1822,18 +1843,47 @@ function buildTerrain(hmp, texIds, bank)
     return true;
   };
 
-  return { g, map, tris: idx.length / 3, update };
+  const paintCell = (cell, rgba) => {
+    let slot = cellSlot.get(cell);
+
+    if (slot === undefined) {
+      if (cellSlot.size >= spare)
+        return false;
+
+      slot = slots.size + cellSlot.size;
+      cellSlot.set(cell, slot);
+    }
+
+    const px = rgba.slice();
+
+    for (let i = 3; i < px.length; i += 4)
+      px[i] = 255;
+
+    putSlot(slot, px);
+    map.needsUpdate = true;
+
+    const tx = cell % hmp.w;
+    const ty = Math.floor(cell / hmp.w);
+
+    // Border tiles past the map edge repeat the edge cells, so an edge cell redraws its share of the border too.
+    writeTiles(hmp, tx === 0 ? -P : tx, ty === 0 ? -P : ty, tx === hmp.w - 1 ? hmp.w + P - 1 : tx, ty === hmp.h - 1 ? hmp.h + P - 1 : ty);
+    g.attributes.uv.needsUpdate = true;
+
+    return true;
+  };
+
+  return { g, map, tris: idx.length / 3, update, paintCell };
 }
 
 // Terrain geometry and atlas are cached per level and terrain LOD (cleared with the other caches); the mesh and material are rebuilt.
 const terrainCache = new Map();
 
-function terrainMesh(hmp, texIds, bank, key)
+function terrainMesh(hmp, texIds, bank, key, paint = null)
 {
   if (!terrainCache.has(key))
-    terrainCache.set(key, buildTerrain(hmp, texIds, bank));
+    terrainCache.set(key, buildTerrain(hmp, texIds, bank, paint));
 
-  const { g, map, tris, update } = terrainCache.get(key);
+  const { g, map, tris, update, paintCell } = terrainCache.get(key);
 
   texCache.set('terrain', { map });
 
@@ -1845,6 +1895,7 @@ function terrainMesh(hmp, texIds, bank, key)
   m.userData.terrain = map;
   m.userData.tiles = { hmp, texIds };
   m.userData.update = update;
+  m.userData.paintCell = paintCell;
 
   return { mesh: m, tris };
 }
@@ -1857,6 +1908,9 @@ function syncFogControls()
 {
   $('optFog').closest('label').hidden = $('optFogDist').closest('label').hidden = !levelFog;
   $('optFogDist').disabled = !$('optFog').checked;
+
+  for (const b of $('optFogDist').closest('label').querySelectorAll('.step'))
+    b.disabled = !$('optFog').checked;
 }
 
 // Fog follows the draw distance (computeGridLayerScrollOffset 0x800455C8): the game blends a range D from low to high over camera altitude
@@ -1907,7 +1961,12 @@ async function showLevel(dir, keepView = false, skyOverride = null)
   setContext(true);
   $('lodRow').hidden = false;
   $('optLod').max = 3;
-  $('btnBack').hidden = true;
+
+  if (mode === 'levels') {
+    $('btnBack').hidden = true;
+    backTo = null;
+  }
+
   selected = dir;
   selectedLevel = true;
   selectedEffect = false;
@@ -1926,8 +1985,13 @@ async function showLevel(dir, keepView = false, skyOverride = null)
   {
     hmp = parseHMP(await rom.read(dir + '/hmp'));
 
-    const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
-    const t = terrainMesh(hmp, texIds, bank, dir + '|' + $('optTerrainLod').value);
+    const [texIds, bank, paint] = await Promise.all([
+      rom.read(stockDir(dir) + '_TEX').then(parseTexTable),
+      rom.read('data/level/tex'),
+      rom.read(paintPath(dir)).catch(() => null)
+    ]);
+
+    const t = terrainMesh(hmp, texIds, bank, dir + '|' + $('optTerrainLod').value, paint);
 
     // Bilinear ground height on the 0.5-unit vertex grid (4x4 quads per 2-unit tile).
     const gw = hmp.w * 4;
@@ -1963,9 +2027,19 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
     if (water?.on)
     {
+      // The seabed is stored at exactly the water level and WebGPU ignores polygonOffset, so the water is pulled toward the camera: a share of its distance for close views, a depth offset for far ones.
+      const view = THREE.modelViewMatrix.mul(THREE.vec4(THREE.positionLocal, 1)).xyz.mul(1 - 1.5e-3);
+      const clip = THREE.cameraProjectionMatrix.mul(THREE.vec4(view, 1));
       const plane = new THREE.Mesh(
         new THREE.PlaneGeometry(hmp.w * 2, hmp.h * 2).rotateX(-Math.PI / 2),
-        new THREE.MeshBasicMaterial({ color: 0x2a6fa8, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false })
+        new THREE.MeshBasicNodeMaterial({
+          color: 0x2a6fa8,
+          transparent: true,
+          opacity: 0.55,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          vertexNode: clip.sub(THREE.vec4(0, 0, clip.w.mul(1e-6), 0))
+        })
       );
 
       plane.position.set(hmp.w, water.level * hmp.heightScale, hmp.h);
@@ -2003,6 +2077,18 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
   for (const [z, t] of links)
     (t.linkedFrom ??= []).push(z.name || 'zone #' + z.index);
+
+  // The game reads only a music region's first link.
+  for (const z of zoneList)
+  {
+    const t = zoneList[z.zoneLinks?.[0]];
+
+    if (z.sub === 0x10 && t?.sub === 0x39)
+    {
+      z.musicTrigger = t;
+      t.musicRegion ??= z;
+    }
+  }
 
   // Music trigger areas (0x39) are unnamed in the DAT; label them by the music zone that owns them.
   for (const t of zoneList)
@@ -2076,10 +2162,14 @@ async function showLevel(dir, keepView = false, skyOverride = null)
       named.push(it.waypoint.follow);
 
     // A roam area's users are the NPCs whose box name (the string after their own name) is this item.
-    if (it.sub === 0x11 || it.sub === 0x17) {
+    if (it.sub === 0x11 || it.sub === 0x17)
+    {
       for (const n of dat.items)
-        if (n.type === 0 && n.model === it.name)
+        if (n.type === 0 && (n.model === it.name || n.model === '+' + it.name))
+        {
           named.push(n.name);
+          (it.roamUsers ??= []).push(n);
+        }
     }
 
     it.targets = [...new Set(named)];
@@ -2124,7 +2214,7 @@ async function showLevel(dir, keepView = false, skyOverride = null)
       color: new THREE.Color().setHSL((0.08 + i / kinds.length) % 1, 0.8, 0.62).getHex(),
       label,
       icon: 'cross',
-      tip: `Splines followed by ${label}; the cross marks the start`
+      tip: `Splines followed by ${label}`
     };
   });
 
@@ -2246,7 +2336,7 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
       // Rebuilt from the item whenever the editor changes it (or moves its spline).
       holder.userData.compose = () => {
-        let pos = path ? path.points[0] : it.pos;
+        let pos = path ? pathStart(path) : it.pos;
 
         // Ground units stand on the terrain whatever their placed height (actor flag 4: Y = terrain - 0.25 * obj+0x40, which only the
         // ground transports set, from record +0xA0).
@@ -2254,7 +2344,7 @@ async function showLevel(dir, keepView = false, skyOverride = null)
           pos = [pos[0], levelHeight(pos[0], pos[2]) - (GROUND_SINK.has(it.sub) ? 0.25 * datDv.getFloat32(it.offset + 0xA0) : 0), pos[2]];
 
         // Face along the path's first segment: models look down +Z, so yaw = atan2(dx, dz) in (Y-down) game space.
-        const next = path ? path.points.find((p) => Math.hypot(p[0] - pos[0], p[2] - pos[2]) > 1e-3) : null;
+        const next = path ? path.points.slice(2).find((p) => Math.hypot(p[0] - pos[0], p[2] - pos[2]) > 1e-3) : null;
         const rotation = next ? new THREE.Matrix4().makeRotationY(Math.atan2(next[0] - pos[0], next[2] - pos[2])) : placementRotation(it.rot);
         const sc = (it.scale[0] ? it.scale : [0.25, 0.25, 0.25]).map((s) => (s / div) * HOB_TO_WORLD);
 
@@ -2297,20 +2387,22 @@ async function showLevel(dir, keepView = false, skyOverride = null)
         (it.nodePoints || []).slice(1).forEach((p, k) => {
           const d = new THREE.Mesh(beadGeometry(it.nodeTangents[k + 1]), meshMat(markerKind(it)));
 
+          d.raycast = beadRaycast;
           d.position.set(p[0] - it.pos[0], p[1] - it.pos[1], p[2] - it.pos[2]);
           d.userData.item = it;
+          d.userData.at = p;
           mk.add(d);
         });
 
       // Trigger -> target links, drawn under the trigger so they hide with it.
       for (const t of it.targets || [])
       {
-        const p = byName.get(t).pos;
-        const end = new THREE.Vector3(p[0] - it.pos[0], p[1] - it.pos[1], p[2] - it.pos[2]);
-
         // Attack orders (0x20) point at their victim: red, dashed, with an arrowhead at the target.
         const attack = it.sub === 0x20 && t === it.pathEvent?.target;
-        const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), end]), attack ? attackLineMat : lineMat(markerKind(it), 0.45));
+        const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(),
+          new THREE.Vector3()
+        ]), attack ? attackLineMat : lineMat(markerKind(it), 0.45));
 
         if (attack)
         {
@@ -2318,13 +2410,17 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
           const head = new THREE.Mesh(GEO.arrow, attackHeadMat);
 
-          head.position.copy(end).addScaledVector(end.clone().normalize(), -0.3);
-          head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.clone().normalize());
           head.userData.item = it;
           link.add(head);
         }
 
         link.userData.item = it;
+
+        const far = byName.get(t);
+
+        // A region's position is its corner; its link goes to the middle, where a fly order heads.
+        link.userData.to = far.type === 6 ? far.pos.map((v, a) => v + far.size[a] / 2) : far.pos;
+        aimLink(link, new THREE.Vector3(...it.pos));
         mk.add(link);
       }
 
@@ -2386,7 +2482,16 @@ async function showLevel(dir, keepView = false, skyOverride = null)
 
   syncFogControls();
   await lightsShowLevel(world, hmp, stockDir(dir).includes('/level/lv_') ? lvIndex : -1);
-  stats = { level: dir.split('/').pop(), items: dat.items.length, placed, markers: markers.children.length, triangles: counts.tris, vertices: counts.verts };
+
+  stats = {
+    level: modLevelOf(dir)?.title ?? lvName(dir.split('/').pop()),
+    items: dat.items.length,
+    placed,
+    markers: markers.children.length,
+    triangles: counts.tris,
+    vertices: counts.verts
+  };
+
   hud();
   renderLegend(markers);
 
@@ -2518,13 +2623,15 @@ async function openFile(file)
     savedStep = null;
     updateModButton();
     applyModLevelsText('');
-    objectHome = null;
+    objectHome = objectHomeReady = null;
 
     if (rom.assets.has('data/voice_TXT'))
       voiceLine = parseVoiceLines(romBytes, await rom.read('data/voice_TXT'));
 
     frontText = rom.assets.has('data/front_TXT') ? parseFrontText(await rom.read('data/front_TXT')) : [];
-    missionNames = frontText.slice(0, 19).map(titleCase);
+
+    // The game has no titles for level 19, the stage of the Factor 5 logo sequence, or level 20, where the CHICKEN passcode plays as an AT-ST.
+    missionNames = [...frontText.slice(0, 19).map(titleCase), 'Factor 5 logo stage', 'AT-ST (CHICKEN passcode)'];
     stopAudio();
     audioSel = null;
     musicSel = null;
@@ -2542,14 +2649,12 @@ async function openFile(file)
     if (rom.assets.has(first + '_HOB'))
       showModel(first);
 
-    showGoalsOnce();
-
     busy('Indexing object packages...');
 
     const pkgs = [...rom.assets.values()].filter((a) => /\/opkg\d*_HOB$/.test(a.path) && a.size > 8);
 
     await Promise.all(pkgs.map((a) => loadModel(a.path.replace(/_HOB$/, ''))));
-    buildObjectIndex();
+    buildObjectIndex().then(() => lightsPanel());
     renderList();
   } catch (e) {
     $('dropErr').textContent = e.message;

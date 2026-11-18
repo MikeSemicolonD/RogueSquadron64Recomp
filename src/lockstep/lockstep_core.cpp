@@ -127,7 +127,15 @@ std::string format_frame(const FrameInput& f)
     snprintf(buf, sizeof(buf), "%u %02X%02X%02X%02X%02X%02X %u", f.frame,
         f.pad[0], f.pad[1], f.pad[2], f.pad[3], f.pad[4], f.pad[5], (unsigned)f.throttle);
 
-    return buf;
+    if (!f.head)
+    {
+        return buf;
+    }
+
+    char head[8];
+    snprintf(head, sizeof(head), " %02X%02X", (uint8_t)f.head_x, (uint8_t)f.head_y);
+
+    return std::string(buf) + head;
 }
 
 // Recordings written in text mode on Windows end lines with "\r\n"; parse them like "\n".
@@ -151,9 +159,12 @@ bool parse_frame(const char* raw, FrameInput* out)
     char hex[13] = {};
     unsigned thr = 0;
     char tail = 0;
+    unsigned head = 0;
+    char head_hex[5] = {};
+    const bool with_head = line && sscanf(line, "%u %12s %u %4s%c", &frame, hex, &thr, head_hex, &tail) == 5;
 
     // The writer ends every frame with a newline; a line without one was cut off mid-write.
-    if (!line || sscanf(line, "%u %12s %u%c", &frame, hex, &thr, &tail) != 4 || tail != '\n')
+    if (!line || (!with_head && sscanf(line, "%u %12s %u%c", &frame, hex, &thr, &tail) != 4) || tail != '\n')
     {
         return false;
     }
@@ -161,6 +172,17 @@ bool parse_frame(const char* raw, FrameInput* out)
     if (strlen(hex) != 12 || thr > 0xFF)
     {
         return false;
+    }
+
+    if (with_head)
+    {
+        char* end = nullptr;
+        head = (unsigned)std::strtoul(head_hex, &end, 16);
+
+        if (strlen(head_hex) != 4 || *end != 0)
+        {
+            return false;
+        }
     }
 
     FrameInput f;
@@ -178,6 +200,9 @@ bool parse_frame(const char* raw, FrameInput* out)
     }
 
     f.throttle = (uint8_t)thr;
+    f.head = with_head;
+    f.head_x = (int8_t)(uint8_t)(head >> 8);
+    f.head_y = (int8_t)(uint8_t)(head & 0xFF);
     *out = f;
 
     return true;

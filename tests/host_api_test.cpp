@@ -43,6 +43,7 @@ V1_SAME(state_id);
 V1_SAME(in_cutscene);
 static_assert(offsetof(rs64_host_api, add_action) == sizeof(rs64_host_api_v1), "v2 fields must start right after the v1 table");
 static_assert(offsetof(rs64_host_api, add_service) == offsetof(rs64_host_api, base_path) + sizeof(void*), "v3 fields must start right after the v2 table");
+static_assert(offsetof(rs64_host_api, relocated) == offsetof(rs64_host_api, frame_seconds) + sizeof(void*), "v9 fields must start right after the v8 table");
 
 static std::vector<int>* g_order;
 static int h_a(uint32_t, uint8_t*, void*, void*) { g_order->push_back(1); return RS64_HOOK_CONTINUE; }
@@ -150,7 +151,8 @@ static void test_api_table() {
     const rs64_host_api* a = api();
     CHECK(a->version == RS64_HOST_API_VERSION && a->size == sizeof(rs64_host_api));
     CHECK(a->add_hook == add_hook && a->add_text_source == add_text_source);
-    CHECK(a->version == 7 && RS64_HOST_API_VERSION == 7);
+    CHECK(a->version == 12 && RS64_HOST_API_VERSION == 12);
+    CHECK(a->add_rule_condition == add_rule_condition);
     CHECK(a->terrain_get_cell == terrain_get_cell && a->terrain_set_cell == terrain_set_cell);
     CHECK(a->add_rule_action == add_rule_action && a->fire_rule_event == fire_rule_event);
     CHECK(a->add_service == add_service && a->get_service == get_service);
@@ -189,7 +191,7 @@ static void test_seal_reentrancy_safe() {
 static void test_mod_init_version_gate() {
     CHECK(init_version() == RS64_HOST_API_VERSION);
     CHECK(accept_mod_init(0, 0) && accept_mod_init(0, RS64_HOST_API_VERSION));
-    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && !accept_mod_init(0, 8));
+    CHECK(accept_mod_init(0, 1) && accept_mod_init(0, 2) && accept_mod_init(0, 3) && accept_mod_init(0, 4) && accept_mod_init(0, 5) && accept_mod_init(0, 6) && accept_mod_init(0, 7) && accept_mod_init(0, 8) && accept_mod_init(0, 9) && accept_mod_init(0, 10) && accept_mod_init(0, 11) && accept_mod_init(0, 12) && !accept_mod_init(0, 13));
     CHECK(!accept_mod_init(0, RS64_HOST_API_VERSION + 1) && !accept_mod_init(0, 0xFFFFFFFFu));
     CHECK(!accept_mod_init(1, 1) && !accept_mod_init(0xFFFFFFFFu, 0));
 }
@@ -315,6 +317,39 @@ static void test_call_marshals_stack_and_f14() {
     bind_services(Services{});
 }
 
+static std::string g_clipboard;
+
+static void fake_clipboard(const char* s) { g_clipboard = s; }
+
+// v8: a mod's copy reaches the game's clipboard service; with none bound (or a null text) nothing happens.
+static void test_set_clipboard() {
+    reset_for_tests();
+    bind_services(Services{});
+    api()->set_clipboard("unbound");
+    CHECK(g_clipboard.empty());
+    Services s;
+    s.set_clipboard = fake_clipboard;
+    bind_services(s);
+    api()->set_clipboard("1.2.3.4:27070");
+    api()->set_clipboard(nullptr);
+    CHECK(g_clipboard == "1.2.3.4:27070");
+    bind_services(Services{});
+}
+
+static float sixty_hz() { return 1.0f / 60.0f; }
+
+// v8: a mission frame's game time comes from the game (60 logic frames a second halves it); with nothing bound it is the game's own 1/30.
+static void test_frame_seconds() {
+    reset_for_tests();
+    bind_services(Services{});
+    CHECK(api()->frame_seconds() == 1.0f / 30.0f);
+    Services s;
+    s.frame_seconds = sixty_hz;
+    bind_services(s);
+    CHECK(api()->frame_seconds() == 1.0f / 60.0f);
+    bind_services(Services{});
+}
+
 static void test_services() {
     reset_for_tests();
     static const int first = 1, second = 2;
@@ -391,6 +426,106 @@ static void test_rule_actions_and_events() {
     CHECK(add_rule_action("late", r_record, nullptr) != 0 && fire_rule_event("late", "") == 0);
 }
 
+static double c_shields(uint8_t*, void*, const char* arg, void* user) { return std::strcmp(arg, "player") == 0 ? *(double*)user : -1.0; }
+
+// v9: a mod check answers level rules by name; first wins, rolled back with a refused mod, refused after the seal.
+static void test_rule_conditions() {
+    reset_for_tests();
+    static double value = 30;
+    CHECK(api()->add_rule_condition("shields", c_shields, &value) == 0);
+    CHECK(add_rule_condition("shields", c_shields, nullptr) != 0 && add_rule_condition(nullptr, c_shields, nullptr) != 0 && add_rule_condition("x", nullptr, nullptr) != 0);
+    CHECK(has_rule_condition("shields") && !has_rule_condition("missing") && !has_rule_condition(nullptr));
+    CHECK(rule_condition("shields", nullptr, nullptr, "player") == 30.0 && rule_condition("shields", nullptr, nullptr, nullptr) == -1.0);
+    CHECK(rule_condition("missing", nullptr, nullptr, "player") == 0.0);
+    const Mark m = mark();
+    add_rule_condition("drop", c_shields, &value);
+    rollback(m);
+    CHECK(!has_rule_condition("drop") && has_rule_condition("shields"));
+    seal();
+    CHECK(add_rule_condition("late", c_shields, &value) != 0);
+}
+
+static int32_t g_var = 0;
+static int32_t fake_var_get(const char*) { return g_var; }
+static void fake_var_set(const char*, int32_t v) { g_var = v; }
+static int fake_line(uint8_t*, void*, const char* line) { return std::strcmp(line, "win") == 0 ? 0 : -1; }
+static uint32_t fake_reloc(uint32_t a) { return a + 0x00A00000u; }
+static int fake_cfg(const char*, const char*, double* out) { *out = 2.5; return 1; }
+
+// v9: with nothing bound each call is a safe no-op; bound, it reaches the game's service.
+static void test_v9_forwarding() {
+    reset_for_tests();
+    bind_services(Services{});
+    uint8_t ram[4] = {};
+    int ctx = 0;
+    double d = 0;
+    CHECK(api()->relocated(0x80138058u) == 0x80138058u);
+    CHECK(api()->object_by_name(ram, &ctx, "gate") == 0u && api()->object_health(ram, &ctx, "gate") == -1.0f && api()->destroy_object(ram, &ctx, "gate") == -1);
+    CHECK(api()->run_rule_line(ram, &ctx, "win") == -2 && api()->rule_var_get("kills") == 0 && api()->mission_seconds() == 0.0f);
+    CHECK(api()->config_number("m", "o", &d) == 0 && std::strcmp(api()->config_string("m", "o"), "") == 0);
+    api()->rule_var_set("kills", 3);
+    Services s;
+    s.rule_var_get = fake_var_get;
+    s.rule_var_set = fake_var_set;
+    s.run_rule_line = fake_line;
+    s.relocated = fake_reloc;
+    s.config_number = fake_cfg;
+    bind_services(s);
+    api()->rule_var_set("kills", 4);
+    CHECK(api()->rule_var_get("kills") == 4 && g_var == 4);
+    CHECK(api()->run_rule_line(ram, &ctx, "win") == 0 && api()->run_rule_line(ram, &ctx, "wiat 3") == -1 && api()->run_rule_line(ram, nullptr, "win") == -2);
+    CHECK(api()->relocated(0x80138058u) == 0x80B38058u);
+    CHECK(api()->config_number("m", "o", &d) == 1 && d == 2.5 && api()->config_number("m", "o", nullptr) == 0);
+    bind_services(Services{});
+}
+
+static int fake_key(const char* k) { return std::strcmp(k, "F7") == 0; }
+static const char* fake_dir(const char*) { return "mod_data/m/"; }
+static int fake_slot() { return 2; }
+static std::string g_light;
+static int fake_light(const char* n, const char* j) { g_light = std::string(n) + "=" + (j ? j : "(null)"); return 0; }
+static float g_view[5];
+static void fake_view(float yaw, float pitch, float x, float y, float z) { g_view[0] = yaw; g_view[1] = pitch; g_view[2] = x; g_view[3] = y; g_view[4] = z; }
+static std::string g_spawn;
+static int fake_spawn(uint8_t*, void*, const char* t, const char* n, const float* p) { g_spawn = std::string(t) + ">" + (n ? n : "") + "@" + std::to_string((int)p[2]); return 0x111; }
+
+// v10: with nothing bound each call is a safe no-op; bound, it reaches the game's service.
+static void test_v10_forwarding() {
+    reset_for_tests();
+    bind_services(Services{});
+    CHECK(api()->key_down("F7") == 0 && std::strcmp(api()->mod_data_dir("m"), "") == 0 && api()->save_slot() == -1);
+    Services s;
+    s.key_down = fake_key;
+    s.mod_data_dir = fake_dir;
+    s.save_slot = fake_slot;
+    bind_services(s);
+    CHECK(api()->key_down("F7") == 1 && api()->key_down("K") == 0 && api()->key_down(nullptr) == 0);
+    CHECK(std::strcmp(api()->mod_data_dir("m"), "mod_data/m/") == 0 && std::strcmp(api()->mod_data_dir(nullptr), "") == 0 && api()->save_slot() == 2);
+    bind_services(Services{});
+    CHECK(api()->light_set("m.lamp", "{}") == 0 && api()->light_set(nullptr, "{}") == -1);
+    s.light_set = fake_light;
+    bind_services(s);
+    CHECK(api()->light_set("m.lamp", "{\"lights\":[]}") == 0 && g_light == "m.lamp={\"lights\":[]}");
+    CHECK(api()->light_set("m.lamp", nullptr) == 0 && g_light == "m.lamp=(null)" && api()->light_set(nullptr, nullptr) == -1);
+    bind_services(Services{});
+    const float pos[3] = {1, 2, 3};
+    uint8_t ram[4] = {};
+    int ctx = 0;
+    CHECK(api()->spawn_unit(ram, &ctx, "tie", nullptr, pos) == -2 && api()->spawn_unit(ram, &ctx, nullptr, nullptr, pos) == -1 && api()->spawn_unit(ram, &ctx, "tie", nullptr, nullptr) == -1);
+    s.spawn_unit = fake_spawn;
+    bind_services(s);
+    CHECK(api()->spawn_unit(ram, &ctx, "tie", "tie_copy", pos) == 0x111 && g_spawn == "tie>tie_copy@3" && api()->spawn_unit(ram, nullptr, "tie", nullptr, pos) == -2);
+    bind_services(Services{});
+    api()->camera_view(10.0f, 5.0f, pos);
+    s.camera_view = fake_view;
+    bind_services(s);
+    api()->camera_view(10.0f, 5.0f, pos);
+    CHECK(g_view[0] == 10.0f && g_view[1] == 5.0f && g_view[2] == 1.0f && g_view[4] == 3.0f);
+    api()->camera_view(0.0f, 0.0f, nullptr);
+    CHECK(g_view[0] == 0.0f && g_view[2] == 0.0f && g_view[4] == 0.0f);
+    bind_services(Services{});
+}
+
 int main() {
 #ifdef _WIN32
     _set_error_mode(_OUT_TO_STDERR);
@@ -412,9 +547,14 @@ int main() {
     test_call_marshals_stack_and_f14();
     test_rollback_drops_refused_registrations();
     test_services();
+    test_set_clipboard();
+    test_frame_seconds();
     test_hash_parts_and_valid_ram();
     test_moved_ranges();
     test_rule_actions_and_events();
+    test_rule_conditions();
+    test_v9_forwarding();
+    test_v10_forwarding();
     printf("host_api_test OK\n");
     return 0;
 }

@@ -29,6 +29,7 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 | Python 3.11+ | Producing the decomp ELF, `ci/stage_inputs.py`, validation tools (not used by the build itself) |
 | A MIPS GCC: `mips64-elf-gcc` on Windows ([gcc-toolchain-mips64](https://github.com/n64-tools/gcc-toolchain-mips64/releases)), `gcc-mips-linux-gnu` on Ubuntu | Patches ELF (`patches/`) and `.nrm` code mods |
 | Steamworks SDK in `lib/steamworks/sdk` (optional) | The `steam-relay` mod; skipped with a warning without it |
+| Discord Social SDK 1.10+ `discord_partner_sdk.aar` in `android/app/libs/` (optional, from the Discord developer portal) | Discord status on Android and its `discord-status` mod in the APK; desktop needs nothing |
 
 ## Windows host
 
@@ -39,7 +40,7 @@ Windows ARM is not built: Windows on ARM runs the x64 build under emulation. Fla
 | Android Studio (SDK, bundled JDK 17 or newer, `adb`) with **NDK 29.0.14206865**; compile/target SDK 34, min SDK 28 | Android. Gradle 9.6 (Android Gradle Plugin 9.4.1) fetches SDL 2.32.10 and its own CMake |
 | WSL2 with Ubuntu-24.04 | Linux targets from `bundle-release.ps1` |
 
-Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and for x86 Microsoft's DXC v1.8.2403.2 zip (the in-tree `dxc-bin` has no x86 `dxcompiler.dll`).
+Downloaded at configure time (no install): SDL2 2.30.3 VC zip (x64 and x86 libs), and Microsoft's DXC v1.9.2609 zip (shader compiler and its runtime DLLs).
 
 D3D11 shader cache: Windows packages carry `d3d11_shader_cache/`, built by `RogueSquadron64Recomp.exe --precompile-d3d11-shaders tools/d3d11/shader_combos.txt` (no ROM; `PLUME_D3D11_SHADER_CACHE` sets the output folder; WARP is used without a GPU). It compiles the list twice into the same folder, for feature level 11 (shader model 5) and feature level 10 (shader model 4, plus the raw-TMEM variant of each textured combination), about 5 minutes and 4 MB. Release CI and `tools/release/bundle-release.ps1` run it. The list was collected by playing the mission recordings, the other levels, the demos and the cutscenes on D3D11 and D3D10; to extend it, merge new lines from a play session's `d3d11_shader_cache/rt64_combos.txt`.
 
@@ -110,6 +111,19 @@ sudo apt install flatpak flatpak-builder
 
 `tools/release/linux/make-flatpak.sh` adds Flathub for the current user and installs `org.freedesktop.Platform` and `org.freedesktop.Sdk` 26.08 for the target architecture on first use, a few hundred MB each. aarch64 bundles also need `sudo apt install qemu-user-static`: its emulator registrations carry the `F` (fix-binary) flag, without which the arm64 SDK's `/bin/sh` can't start inside Flatpak's sandbox (`bwrap: execvp /bin/sh: No such file or directory`).
 
+## Browser (Windows host, untested)
+
+Plays with WebGPU graphics and sound in Chrome or Edge; data-only mods ship with it; code mods, co-op and ray tracing are still to come. It reuses `src/game/state_table.inl`, `build/factor5_ucode/*.c` and the host tools from a Windows Release build, and compiles `RecompiledFuncsWeb/` (the co-op relocation recompiled in), which the Windows build makes with `cmake --build build --config Debug --target regen_funcs_web`.
+
+Install [emsdk](https://github.com/emscripten-core/emsdk) and activate Emscripten 6.0.13 (`emsdk install 6.0.13`, `emsdk activate 6.0.13`), then from an `emsdk_env` shell:
+
+```bat
+emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release -DRT64_HOST_FILE_TO_C=build/Release/file_to_c.exe -DN64RECOMP_EXE=build/Release/N64Recomp.exe -DRECOMP_MOD_TOOL=build/Release/RecompModTool.exe -DMIPS_TOOLCHAIN_DIR=<mips toolchain>
+cmake --build build-web --target RogueSquadron64Recomp
+```
+
+`build-web/` then holds the page (`index.html`), so serve that folder over HTTPS or `localhost` and open it in Chrome or Edge. The `-DRS64_DAWN_DIR=<Dawn release package>` option on the Windows build adds `rs64_web_shaders`, which converts the renderer's shaders to WGSL.
+
 ## What players need
 
 | Platform | Requirement |
@@ -125,14 +139,33 @@ sudo apt install flatpak flatpak-builder
 
 The Linux tarball and AppImage bundle the game's own libraries (SDL2, GTK and their dependencies) but take glibc, `libstdc++` and everything GPU drivers load into the process (Vulkan, Wayland, X11/xcb, `libdrm`, `libz`, fonts) from the host: a bundled older copy would shadow the host's and the drivers would fail to load. The Flatpak also drops every library the runtime provides.
 
-The AppImage keeps saves, configs and mods in `~/.local/share/RogueSquadron64Recomp` (`RS64_DATA_DIR` overrides) and links a `rogue_squadron.z64` placed next to the AppImage on first launch. The Flatpak (`io.github.MikeSemicolonD.RogueSquadron64Recomp`) uses `~/.var/app/io.github.MikeSemicolonD.RogueSquadron64Recomp/data`; copy the ROM there before the first launch.
+The AppImage keeps saves, configs and mods in a `RogueSquadron64Recomp-data` folder next to it if you create one, otherwise in `~/.local/share/RogueSquadron64Recomp` (`RS64_DATA_DIR` overrides both), and links a `rogue_squadron.z64` placed next to the AppImage on first launch. The Flatpak (`io.github.MikeSemicolonD.RogueSquadron64Recomp`) uses `~/.var/app/io.github.MikeSemicolonD.RogueSquadron64Recomp/data`; copy the ROM there before the first launch.
 
 The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac architectures. It isn't notarized: clear the download quarantine once with `xattr -dr com.apple.quarantine RogueSquadron64Recomp.app`, then open it. It keeps saves, configs and mods in `~/Library/Application Support/RogueSquadron64Recomp` and asks for the ROM on first launch.
 
 **Raspberry Pi** (and other slow Linux GPUs): on a Pi the game starts at the N64's native resolution and with `"framebufferWriteback": false` in `roguesq_video.json`, which skips copying each rendered frame back to the emulated RAM (the game never reads it) and raises the frame rate there by about half. Setting it to `false` can help any GPU-limited machine. Resolution matters most: on a Pi 4 at a 1080p window, Auto resolution costs about three times the GPU time of 1x, so keep Resolution at 1x unless the GPU has headroom. The first runs compile shaders in the background ("Compiling shaders" panel); later runs reuse them.
+
+**Video presets:** [video-presets/](../../video-presets/README.md) holds ready-made display settings from low to ultra, plus original and vr. Launch with `--preset <name>` to use one without replacing your own `roguesq_video.json`.
+
+**No monitor attached** (a headless Pi): the desktop then shows one frame a second and the game stalls with it. Set `"vsync": false` in `roguesq_video.json` to run at full speed.
 
 **Android** (and other phone GPUs): MSAA 8X and SSAA 4X are can be heavy for mobile devices, dropping the game below 30 fps. Use a lower setting or FXAA.
 
 **Touchscreens** (Windows, Linux): set `"enabled": true` in `roguesq_touch.json` (written next to the saves on first launch) to get the Android touch controls. The mouse pointer then acts as a finger and its game bindings are off, since many desktops deliver touches as mouse input (Raspberry Pi OS does for every touchscreen).
 
 **D3D11** is for GPUs with a D3D11 driver but no D3D12 or Vulkan one (NVIDIA GTX 400/500, AMD HD 5000/6000, Intel Ivy Bridge). Select it with `--gfx-api d3d11` or `"graphicsAPI": "d3d11"` in `roguesq_video.json`; automatic mode uses it only when neither D3D12 nor Vulkan starts. It needs `d3dcompiler_47.dll` (part of Windows 10), and ray-traced effects are off. MSAA isn't available on D3D11 (RT64 needs programmable sample positions); use SSAA or FXAA instead. D3D10-class GPUs (feature level 10_0/10_1: NVIDIA GeForce 8/9/200, AMD HD 2000-4000) get the same backend at feature level 10, with vertex processing on the CPU and without SSAA; `--gfx-api d3d10` or `"graphicsAPI": "d3d10"` forces that path on any GPU; this is tested only on a modern GPU capped at feature level 10, not on real hardware. Its shaders ship precompiled in `d3d11_shader_cache/` next to the exe; keep that folder. A render state the shipped list doesn't cover compiles the first time it appears (the affected objects are missing until then, up to about 18 s for some texture modes, and a "Compiling shaders" progress panel shows in the bottom-right corner meanwhile) and is cached for later runs.
+
+### Frame rate
+
+TARGET FPS (Display Settings, Advanced) sets how many frames a second the game runs. Pick a row by what matters most to you:
+
+| Goal | Ray tracing | Frame interpolation | TARGET FPS | Result |
+| --- | --- | --- | --- | --- |
+| Most responsive | On/Off | Off | Display rate | Every frame is a real game frame: about 210-220 fps at 240 |
+| Smoothest | On/Off | On | Display rate | 60 game frames a second, interpolated up to about 238 shown at 240 |
+| Lowest input lag at 60 | On/Off | Off | 60 | A steady 60 real frames a second |
+| Original game | On/Off | Off | 30 | The N64's 30 fps |
+
+- With frame interpolation off, the game runs real frames at the target.
+- With frame interpolation on, the game runs 30 real frames a second up to a target of 60, and 60 above that, and fills in the rest. Interpolation adds about one frame of input lag.
+- Busy levels run fewer real frames: Battle of Calamari reaches about 110 at 240.

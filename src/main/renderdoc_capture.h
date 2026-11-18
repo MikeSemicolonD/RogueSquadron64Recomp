@@ -14,5 +14,7 @@ void rs64_renderdoc_trigger(uint32_t frames);
 void rs64_renderdoc_poll();
 // The newest capture's file path, empty when there is none.
 std::string rs64_renderdoc_last_capture();
+// The game clocks running at the newest pause point as file-name text, e.g. "cinematic-300_cutscene-412" (lockstep.cpp).
+std::string rs64_clock_label();
 
 #endif

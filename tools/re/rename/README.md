@@ -7,14 +7,14 @@ pipeline. `symbol_files/` and the ELF live in the sibling decomp repo
 
 ## Paths
 
-All scripts default to these paths (relative to a sibling-repo layout):
+All scripts default to these paths, relative to this repo (the decomp is a sibling checkout):
 
 | Var               | Default                                           |
 |-------------------|---------------------------------------------------|
-| `RSR_SYM_DIR`     | `E:/Projects/rogue_squadron64/symbol_files`       |
-| `RSR_ASM_DATA_DIR`| `E:/Projects/rogue_squadron64/asm/data`           |
-| `RSR_FUNCS_DIR`   | `E:/Projects/N64Recomp/RecompiledFuncs`           |
-| `RSR_REDEFS_PATH` | `E:/Projects/rogue_squadron64/build/redefs.txt`   |
+| `RSR_SYM_DIR`     | `../rogue_squadron64/symbol_files`                |
+| `RSR_ASM_DATA_DIR`| `../rogue_squadron64/asm/data`                    |
+| `RSR_FUNCS_DIR`   | `RecompiledFuncs`                                 |
+| `RSR_REDEFS_PATH` | `../rogue_squadron64/build/redefs.txt`            |
 
 Override any of them with an environment variable before running.
 
@@ -103,7 +103,7 @@ cmake --build build --config Debug --target RogueSquadron64Recomp
 ```
 
 A clean-state baseline ELF is kept at
-`E:/Projects/rogue_squadron64/build/roguesquadron.elf.preBatchContinue` —
+`../rogue_squadron64/build/roguesquadron.elf.preBatchContinue` —
 copy it back before each `llvm-objcopy` run if you want renames to compose
 cleanly across batches.
 

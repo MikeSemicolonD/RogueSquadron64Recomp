@@ -13,6 +13,10 @@
 #include "input/input_host.h"
 #include "game/game_state.h"
 
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
+#endif
+
 namespace rs64::rumble {
 namespace {
 
@@ -409,6 +413,11 @@ void rumble_thread_main() {
         const float mag = std::max(out.lo, out.hi);
         const auto now = std::chrono::steady_clock::now();
         const bool haptic_due = !any || std::fabs(mag - haptic_last) > 0.05f || now - haptic_t > std::chrono::milliseconds(100);
+
+#if defined(RS64_OPENXR)
+        if (haptic_due) rs64::vr::rumble(out.lo, out.hi);
+#endif
+
         std::lock_guard<std::mutex> lk(g_bindings_mtx);
 
         if (controller) SDL_GameControllerRumble(controller, lo, hi, ms);

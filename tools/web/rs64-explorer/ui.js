@@ -42,6 +42,9 @@ $('filterClear').onclick = () => {
 };
 
 const setMode = (m) => {
+  if (mode === 'levels' && m !== 'levels')
+    rememberLevel();
+
   mode = m;
 
   for (const [id, k] of [
@@ -71,16 +74,28 @@ const setMode = (m) => {
   if (typeof lightsPanel === 'function')
     lightsPanel();
 
+  syncBackButton();
   renderList();
+
+  // These tabs have no view of their own, so they open on their first item instead of an empty page.
+  if ((m === 'audio' && !overCut && !audioSel && !musicSel) || (m === 'fonts' && !fontSel) || (m === 'menus' && !menuSel))
+    $('list').querySelector('.row')?.click();
 };
 
 $('tabFonts').onclick = () => setMode('fonts');
-$('tabMenus').onclick = () => menuRefreshPages().then(() => setMode('menus'));
+
+$('tabMenus').onclick = () => {
+  menuRefreshPages().then(() => setMode('menus'));
+
+  if (window.showDirectoryPicker)
+    loadRuleExt(false);
+};
+
 $('tabAudio').onclick = () => setMode('audio');
 $('audCat').onchange = $('audLevel').onchange = renderList;
 $('viewOrtho').onclick = () => root && !cut && setOrtho(!orthoView);
 $('tabModels').onclick = () => setMode('models');
-$('tabLevels').onclick = () => setMode('levels');
+$('tabLevels').onclick = () => (backTo ? returnToLevel() : setMode('levels'));
 $('tabEffects').onclick = () => setMode('effects');
 
 // Opening the game's link counts as leaving the page, though it does not.
@@ -151,13 +166,70 @@ $('optTerrainLod').oninput = () => {
     refresh();
 };
 
-$('btnBack').onclick = async () => {
+// A level is worth coming back to while its editor is open or it has unexported edits.
+function levelBeingEdited(dir)
+{
+  const folder = dir.split('/').pop();
+
+  return !!editMode || cutEditing || modDirty().some((p) => p.startsWith(dir + '/') || p.includes(`/${folder}/`) || p.includes(`/${folder}_`));
+}
+
+// Leaving a level keeps a way back to it as it was left. always: the right-click card's Open in model view, on any level.
+function rememberLevel(always = false)
+{
+  const dir = cut ? cutLevel : selected;
+
+  if (backTo || !selectedLevel || !dir || (!always && !levelBeingEdited(dir)))
+    return;
+
+  backTo = {
+    level: dir,
+    cut: selected.startsWith('cut:') ? selected.slice(4) : null,
+    view: getView(),
+    editMode,
+    item: sel && { type: sel.it.type, index: sel.it.index }
+  };
+
+  const folder = dir.split('/').pop();
+
+  $('btnBack').textContent = '← Back to ' + (modLevelOf(dir)?.title ?? lvName(folder));
+  syncBackButton();
+}
+
+// The way back shows only once something else has replaced the level on screen.
+function syncBackButton()
+{
+  const covered = document.body.classList.contains('audio') || document.body.classList.contains('fonts');
+
+  $('btnBack').hidden = !backTo || (!covered && selected === (backTo.cut ? 'cut:' + backTo.cut : backTo.level));
+}
+
+async function returnToLevel()
+{
   const b = backTo;
 
-  $('tabLevels').click();
-  await showLevel(b.level, true);
+  backTo = null;
+  $('btnBack').hidden = true;
+  setMode('levels');
+
+  if (selected !== (b.cut ? 'cut:' + b.cut : b.level))
+    await (b.cut ? showCutscene(b.cut) : showLevel(b.level, true));
+
+  if (b.cut)
+    return;
+
   setView(b.view);
-};
+
+  if (b.editMode && editMode !== b.editMode)
+    setEditMode(b.editMode);
+
+  const again = b.item && editObjects().find(([, x]) => x.type === b.item.type && x.index === b.item.index && !x.pathEvent);
+
+  if (again)
+    select(again[0]);
+}
+
+$('btnBack').onclick = returnToLevel;
 
 $('optTex').onchange = () => {
   $('optFilter').disabled = !$('optTex').checked;
@@ -242,7 +314,7 @@ $('optSpread').oninput = () => {
 
 $('optFogDist').oninput = () => {
   $('fogVal').textContent = $('optFogDist').value + 'x';
-  applyFog();
+  updateFog();
 };
 
 // The shown model's skeletal animations as clips: each track key is posed with poseNode (the viewer's own rule, pivots included) and
@@ -393,7 +465,7 @@ const dirty = new Set();
 
 // The edited game assets a mod exports (the explorer/ authoring sidecars stay in the project).
 const modDirty = () => [...dirty].filter((p) => !p.startsWith('explorer/'));
-const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/');
+const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/') || p.endsWith('_PAINT');
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
 let history = createHistory();
 
@@ -403,7 +475,7 @@ function updateModButton()
 
   $('btnMod').disabled = !n;
   $('btnPlay').disabled = !rom;
-  $('btnModLabel').textContent = n ? `Export mod (${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
+  $('btnModLabel').textContent = n ? `Export mod\n(${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
   $('btnUndo').disabled = !history.at;
   $('btnRedo').disabled = history.at >= history.steps.length;
 }
@@ -441,7 +513,7 @@ async function editAsset(path, change, label)
   updateModButton();
 }
 
-// Text assets (camera_shots.txt, levels.json, rules.json, the explorer's JSON sidecars) read as "" when missing.
+// Text assets (camera_shots.txt, levels.json, rules.txt, the explorer's JSON sidecars) read as "" when missing.
 const virtualText = async (path) => new TextDecoder().decode(await rom.read(path).then(u8, () => new Uint8Array(0)));
 const editText = (path, text, label) => editAsset(path, () => new TextEncoder().encode(text), label);
 
@@ -458,13 +530,203 @@ async function readJson(path, fallback) {
 
 const writeJson = (path, value, label, indent) => editText(path, JSON.stringify(value, null, indent), label);
 
+// Line height of a code box, in px (style.css .codeField).
+const CODE_LINE = 18;
+
+// A text box for the rules script. check(text) gives red marks ([{ from, to, reason }]), shown under the text with the reason at the caret
+// below the box; complete(text, cursor) gives a list ({ from, to, items: [{ label, kind }] }) that opens under the caret. onChange(text)
+// runs when the box loses focus (or on Enter in a one-line box), so saving never rebuilds the box under the typing.
+function codeBox({ value = '', rows = 1, placeholder = '', title = '', check = () => [], complete = null, onChange })
+{
+  const one = rows === 1;
+  const area = elem('textarea', { value, rows, placeholder, title, spellcheck: false, className: 'codeText' });
+  const layer = elem('pre', { className: 'codeMarks' });
+  const menu = elem('div', { className: 'codeMenu', hidden: true, role: 'listbox' });
+  const note = elem('small', { className: 'codeNote' });
+  const field = elem('div', { className: 'codeField' }, layer, area, menu);
+  const wrap = elem('div', { className: 'codeBox' + (one ? ' one' : '') }, field, note);
+  let marks = [];
+  let open = null;
+  let active = 0;
+  let saved = value;
+
+  area.setAttribute('wrap', 'off');
+  area.setAttribute('aria-label', title || placeholder);
+
+  const paint = () => {
+    const text = area.value;
+    const parts = [];
+    let at = 0;
+
+    marks = check(text).sort((a, b) => a.from - b.from);
+
+    for (const m of marks)
+    {
+      const from = Math.max(m.from, at);
+      const to = Math.min(Math.max(m.to, from), text.length);
+
+      if (from > text.length)
+        continue;
+
+      parts.push(text.slice(at, from), elem('mark', { textContent: text.slice(from, to) || ' ' }));
+      at = Math.max(at, to);
+    }
+
+    parts.push(text.slice(at), '\n');
+    layer.replaceChildren(...parts);
+    layer.scrollTop = area.scrollTop;
+    layer.scrollLeft = area.scrollLeft;
+
+    const caret = area.selectionStart;
+    const here = marks.find((m) => caret >= m.from && caret <= m.to) ?? marks[0];
+
+    note.textContent = here?.reason ?? '';
+    wrap.classList.toggle('bad', marks.length > 0);
+  };
+
+  const close = () => {
+    open = null;
+    menu.hidden = true;
+  };
+
+  const highlight = () => [...menu.children].forEach((c, i) => c.classList.toggle('on', i === active));
+
+  const accept = (i) => {
+    const label = open.items[i].label;
+    const inCheck = area.value[open.from - 1] === '(' && area.value[open.to] !== ')';
+
+    // A name picked inside a check closes it, so "destroyed(ga" becomes "destroyed(gate)".
+    area.setRangeText(inCheck ? label + ')' : label, open.from, open.to, 'end');
+    close();
+    paint();
+
+    if (label.endsWith('('))
+      show();
+  };
+
+  // Opens after "(", while a name is being typed, or in a slot that takes an object.
+  const show = () => {
+    const cursor = area.selectionStart;
+    const c = complete?.(area.value, cursor);
+    const objects = c?.items.length && c.items.every((i) => i.kind !== 'word' && i.kind !== 'variable');
+    const typing = c && (c.from < cursor || area.value[cursor - 1] === '(');
+    const done = c?.items.length === 1 && c.items[0].label === area.value.slice(c.from, c.to);
+
+    if (!c?.items.length || (!typing && !objects) || done)
+      return close();
+
+    open = c;
+    active = 0;
+
+    menu.replaceChildren(...c.items.slice(0, 50).map((it, i) => elem('div', {
+      className: 'codeItem',
+      role: 'option',
+      textContent: it.label,
+      title: it.kind === 'word' ? 'Check' : it.kind[0].toUpperCase() + it.kind.slice(1),
+      onmousedown: (e) => {
+        e.preventDefault();
+        accept(i);
+      }
+    })));
+
+    const before = area.value.slice(0, c.from).split('\n');
+
+    menu.style.left = `calc(${before.at(-1).length}ch + 7px - ${area.scrollLeft}px)`;
+    menu.style.top = `${before.length * CODE_LINE + 6 - area.scrollTop}px`;
+    menu.hidden = false;
+
+    // Kept inside the box, so a long line never pushes the list past the window's edge.
+    if (menu.offsetLeft + menu.offsetWidth > field.clientWidth)
+      menu.style.left = `${Math.max(0, field.clientWidth - menu.offsetWidth)}px`;
+
+    highlight();
+  };
+
+  const commit = () => {
+    close();
+
+    if (area.value !== saved)
+    {
+      saved = area.value;
+      onChange(area.value);
+    }
+  };
+
+  area.oninput = () => {
+    paint();
+    show();
+  };
+
+  area.onscroll = paint;
+  area.onclick = paint;
+  area.onkeyup = (e) => e.key.startsWith('Arrow') && !open && paint();
+  area.onblur = commit;
+
+  area.onkeydown = (e) => {
+    e.stopPropagation();
+
+    const n = open?.items.length ?? 0;
+
+    if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp'))
+    {
+      e.preventDefault();
+      active = (active + (e.key === 'ArrowDown' ? 1 : n - 1)) % Math.min(n, 50);
+      highlight();
+    }
+    else if (open && (e.key === 'Enter' || e.key === 'Tab'))
+    {
+      e.preventDefault();
+      accept(active);
+    }
+    else if (open && e.key === 'Escape')
+    {
+      e.preventDefault();
+      close();
+    }
+    else if (one && e.key === 'Enter')
+    {
+      e.preventDefault();
+      area.blur();
+    }
+  };
+
+  // Outside changes land only while nobody is typing in the box.
+  wrap.setValue = (text) => {
+    if (document.activeElement === area)
+      return;
+
+    area.value = saved = text;
+    paint();
+  };
+
+  // Puts text at the caret (or the end) and saves, for the pick-in-view button.
+  wrap.insert = (text) => {
+    const at = area.selectionStart ?? area.value.length;
+
+    area.setRangeText(text, at, area.selectionEnd ?? at, 'end');
+    paint();
+    commit();
+  };
+
+  wrap.text = () => area.value;
+  paint();
+
+  return wrap;
+}
+
+let historyDepth = 0;
+
+// A group inside a group joins it, so the whole action stays one undo step.
 async function historyGroup(label, fn) {
-  history.begin(label);
+  if (!historyDepth++)
+    history.begin(label);
 
   try {
     return await fn();
   } finally {
-    history.end();
+    if (!--historyDepth)
+      history.end();
+
     updateModButton();
   }
 }
@@ -725,6 +987,76 @@ function askChoice(question, answers) {
   });
 }
 
+// Import options for a craft: the nose direction, and the canopy and exhaust options the craft has parts for.
+function askCraftImport(file, hob, engines)
+{
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const names = hob.objects[0].lods[0].flat().map((p) => p.name ?? '');
+  const hasPart = (prefix) => names.some((n) => n.startsWith(prefix));
+
+  const row = (text, ...inputs) => {
+    const l = elem('label', { textContent: text });
+
+    l.append(...inputs);
+
+    return l;
+  };
+
+  const nose = elem('select', { title: 'The way the front of the model points in your file' });
+
+  nose.append(new Option('+Z (Blender\'s default)', '+z'), new Option('-Z', '-z'));
+
+  const glass = elem('input', { type: 'checkbox' });
+  const exhaust = elem('select');
+  const colour = elem('input', { type: 'color', value: '#20ff20', hidden: true });
+
+  exhaust.append(new Option('Stock', 'stock'), new Option('Colour', 'colour'), new Option('None', 'none'));
+
+  exhaust.onchange = () => {
+    colour.hidden = exhaust.value !== 'colour';
+  };
+
+  const rows = [elem('b', { textContent: `Import ${file}` }), row('Nose ', nose)];
+
+  if (hasPart('wnd_'))
+    rows.push(row('Hide cockpit glass ', glass));
+
+  if (hasPart('eng_'))
+    rows.push(row('Exhaust ', exhaust, colour));
+
+  if (engines.length)
+    rows.push(elem('small', { textContent: `Flames move to the model's ${engines.length} eng_ markers` }));
+
+  const go = elem('button', { textContent: 'Import' });
+  const cancel = elem('button', { textContent: 'Cancel' });
+
+  cancel.onclick = () => d.close();
+
+  return new Promise((res) => {
+    go.onclick = () => {
+      const tint = exhaust.value === 'colour' ? parseInt(colour.value.slice(1), 16) : undefined;
+
+      res({ plusZ: nose.value === '+z', noGlass: glass.checked, exhaust: exhaust.value === 'none' ? 'none' : tint });
+      d.close();
+    };
+
+    d.onclose = () => {
+      d.remove();
+      res(null);
+    };
+
+    const actions = elem('div', { className: 'actions' });
+
+    actions.append(go, cancel);
+    d.append(...rows, actions);
+    document.body.append(d);
+    d.showModal();
+  });
+}
+
+// Highest face count tested in the game; it crashes when the faces fill its display list pool.
+const CRAFT_MAX_FACES = 1500;
+
 // Replaces a player craft's geometry with a .glb (hobImportCraft). Each of the model's textures takes one of the craft's free texture
 // slots, the most used texture the largest slot; untextured faces share a white slot.
 // shortcut: textures beyond the craft's free slots reuse the last slot; pack them into fewer images (an atlas) if that shows.
@@ -744,14 +1076,6 @@ async function importCraftModel()
   if (!file)
     return;
 
-  const plusZ = await askChoice(`Which way does the nose of ${file.name} point?`, [
-    [true, '+Z', 'The usual glTF export (Blender\'s default): turned to face the game\'s way'],
-    [false, '-Z', 'Already faces the game\'s way: kept as it is']
-  ]);
-
-  if (plusZ == null)
-    return;
-
   busy('Importing model...');
 
   try {
@@ -768,8 +1092,12 @@ async function importCraftModel()
 
     const tris = [];
     const v = new THREE.Vector3();
+    const engines = [];
 
     gltf.scene.traverse((o) => {
+      if (!o.isMesh && !o.children.length && /^eng_/i.test(o.name))
+        engines.push(o.getWorldPosition(new THREE.Vector3()).toArray());
+
       if (!o.isMesh)
         return;
 
@@ -817,6 +1145,15 @@ async function importCraftModel()
     if (!tris.length)
       throw new Error('That file has no meshes');
 
+    busy(null);
+
+    const options = await askCraftImport(file.name, model.hob, engines);
+
+    if (!options)
+      return;
+
+    busy('Importing model...');
+
     const uses = new Map();
 
     for (const t of tris)
@@ -829,7 +1166,11 @@ async function importCraftModel()
       t.mat = slotOf.get(t.map).mat;
 
     const dv = await rom.read(id + '_HOB');
-    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0].mat, plusZ });
+    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0].mat, engines, ...options });
+    const faces = parseHOB(new DataView(out.buffer, out.byteOffset, out.byteLength)).objects[0].lods[0].flat().reduce((s, p) => s + p.faces.length, 0);
+
+    if (faces > CRAFT_MAX_FACES)
+      throw new Error(`${file.name} has ${faces} faces after import and the game runs out of memory above ${CRAFT_MAX_FACES}. Reduce it (Blender: Decimate modifier) and import again.`);
 
     const images = ranked.slice(0, slots.length).map((map) => {
       const { tex } = slotOf.get(map);
@@ -933,17 +1274,45 @@ async function loadSculpt()
   const dv = await rom.read(dir + '/hmp');
   const base = u8(dv).slice();
   const hmp = parseHMP(dv);
-  const [texIds, bank] = await Promise.all([rom.read(stockDir(dir) + '_TEX').then(parseTexTable), rom.read('data/level/tex')]);
 
-  sculpt = { dir, base, grid: hmpGrid(hmp), texIds, bank, undo: [], tex: null, bytes: null, scale: dv.getFloat32(0x10) };
+  const [texDv, bank, paintDv] = await Promise.all([
+    rom.read(stockDir(dir) + '_TEX'),
+    rom.read('data/level/tex'),
+    rom.read(paintPath(dir)).catch(() => new DataView(new ArrayBuffer(0)))
+  ]);
+
+  const texIds = parseTexTable(texDv);
+
+  // Soft paint: texBytes / paintBytes are the level's _TEX and painted textures, cells the stroke's working 64x64 images (cell -> RGBA).
+  sculpt = {
+    dir,
+    base,
+    grid: hmpGrid(hmp),
+    texIds,
+    bank,
+    texBytes: u8(texDv).slice(),
+    paintBytes: u8(paintDv).slice(),
+    cells: new Map(),
+    undo: [],
+    tex: null,
+    bytes: null,
+    scale: dv.getFloat32(0x10),
+    waterK: 1
+  };
+
   sculpt.committed = sculpt.grid.hts.slice();
   controls.mouseButtons.LEFT = null;
   fillSculptPalette();
   sculptBudget(hmp.tiles.length);
+  paintBudgetShow();
   sculptStatus('');
   showTileGrid();
+  sculptRangeShow();
+}
 
-  // Stored heights are -128..127 steps, so each level has its own height range.
+// Stored heights are -128..127 steps of the level's height scale, so each level has its own height range.
+function sculptRangeShow()
+{
   const flat = $('sculptFlat');
   const hi = +(128 * sculpt.scale).toFixed(2);
   const lo = +(-127 * sculpt.scale).toFixed(2);
@@ -958,11 +1327,33 @@ function sculptStatus(text)
     $('sculptInfo').textContent = [text, sculpt.notice].filter(Boolean).join(' · ');
 }
 
-function sculptBudget(tiles) {
+// How many different textures the busiest stretch of ground uses (the game keeps about 300 loaded around the player); shown once the level has Soft paint.
+const PAINT_BUDGET = 300;
+
+function paintBudgetShow()
+{
+  const row = $('paintBudgetRow');
+
+  row.hidden = !sculpt?.paintBytes.length;
+
+  if (row.hidden)
+    return;
+
+  const n = paintBudget(Array.from(sculpt.grid.tex, (id) => sculpt.texIds[id]), sculpt.grid.w, sculpt.grid.h);
+
+  $('paintBudget').value = n;
+  row.title = n > PAINT_BUDGET ? `${n} textures: over ${PAINT_BUDGET}, the game may not load every painted texture nearby` : `${n} of ${PAINT_BUDGET} textures near the busiest spot`;
+}
+
+function sculptBudget(tiles)
+{
   const m = $('sculptBudget');
 
   m.value = tiles;
   m.title = `${tiles} of ${m.max} ground tiles`;
+
+  // Most maps can never come near the limit, so it only shows once a level does.
+  $('sculptBudgetRow').hidden = tiles < m.max * 0.8;
 }
 
 // The level's terrain textures as swatches: a click picks one to paint with (and the Paint tool); the current one is outlined.
@@ -972,7 +1363,7 @@ function fillSculptPalette() {
   pal.textContent = '';
 
   sculpt.texIds.forEach((id, k) => {
-    if (id === undefined)
+    if (id === undefined || id >= PAINT_MARK)
       return;
 
     const c = elem('canvas', { width: 64, height: 64, title: 'Paint with this texture', role: 'option' });
@@ -981,8 +1372,11 @@ function fillSculptPalette() {
     c.dataset.tex = k;
 
     c.onclick = () => {
-      $('sculptTool').value = 'paint';
+      if ($('sculptTool').value !== 'blend')
+        $('sculptTool').value = 'paint';
+
       setSculptTex(k);
+      sculptToolChanged();
     };
 
     pal.append(c);
@@ -1006,20 +1400,99 @@ function setSculptTex(k)
 function sculptHit(e)
 {
   const terrain = root?.getObjectByName('terrain');
-  const hit = terrain && pick(e, [terrain]);
+  const p = terrain?.visible && terrainRay(e, terrain);
 
-  if (!hit || hit.object !== terrain)
+  return p ? { gx: p.x * 2, gy: p.z * 2, swap: e.shiftKey, pick: e.altKey } : null;
+}
+
+// The live heights while sculpting, else the terrain's own, kept until its data changes.
+function terrainHeights(terrain)
+{
+  if (sculpt)
+    return sculpt;
+
+  const { hmp } = terrain.userData.tiles;
+
+  if (terrain.userData.heights?.hmp !== hmp)
+    terrain.userData.heights = { hmp, grid: hmpGrid(hmp), scale: hmp.heightScale };
+
+  return terrain.userData.heights;
+}
+
+// Where the cursor's ray meets the ground, in the terrain's space. It walks the height grid along the ray: testing the mesh's 400,000 triangles took over 30 ms a move.
+function terrainRay(e, terrain)
+{
+  const { grid: g, scale } = terrainHeights(terrain);
+
+  pick(e, []);
+  terrain.updateWorldMatrix(true, false);
+
+  const ray = raycaster.ray.clone().applyMatrix4(terrain.matrixWorld.clone().invert());
+
+  if (!terrain.geometry.boundingBox)
+    terrain.geometry.computeBoundingBox();
+
+  const { min, max } = terrain.geometry.boundingBox;
+  const span = [[ray.origin.x, ray.direction.x, min.x, max.x], [ray.origin.z, ray.direction.z, min.z, max.z]];
+  let t0 = 0;
+  let t1 = Infinity;
+
+  for (const [from, dir, low, high] of span)
+  {
+    if (Math.abs(dir) < 1e-9) {
+      if (from < low || from > high)
+        return null;
+
+      continue;
+    }
+
+    const a = (low - from) / dir;
+    const b = (high - from) / dir;
+
+    t0 = Math.max(t0, Math.min(a, b));
+    t1 = Math.min(t1, Math.max(a, b));
+  }
+
+  if (t0 > t1)
     return null;
 
-  const p = terrain.worldToLocal(hit.point.clone());
+  const point = new THREE.Vector3();
+  const above = (t) => ray.at(t, point).y - groundAt(g.hts, g, scale, point.x, point.z);
 
-  return { gx: p.x * 2, gy: p.z * 2, swap: e.shiftKey, pick: e.altKey };
+  // Only a crossing from the camera's side counts: a ray can enter the map's edge already below the ground there.
+  const side = Math.sign(above(0));
+  const STEP = 0.04;
+
+  for (let t = t0; t < t1; t += STEP)
+  {
+    const next = Math.min(t + STEP, t1);
+
+    if (Math.sign(above(t)) !== side || Math.sign(above(next)) === side)
+      continue;
+
+    let lo = t;
+    let hi = next;
+
+    for (let k = 0; k < 12; k++)
+    {
+      const mid = (lo + hi) / 2;
+
+      if (Math.sign(above(mid)) === side)
+        lo = mid;
+      else
+        hi = mid;
+    }
+
+    return ray.at(hi, point).clone();
+  }
+
+  return null;
 }
 
 const inMap = (h) => h.gx >= 0 && h.gy >= 0 && h.gx <= sculpt.grid.W - 1 && h.gy <= sculpt.grid.H - 1;
 
 // The brush outline draped on the ground under the cursor, coloured by tool.
-const SCULPT_RING_COLORS = { raise: 0x6fdc6f, lower: 0xff7a5c, flatten: 0xe8d04a, smooth: 0x6fb8ff, paint: 0xd08cff, pick: 0xffffff };
+const SCULPT_RING_COLORS = { raise: 0x6fdc6f, lower: 0xff7a5c, flatten: 0xe8d04a, smooth: 0x6fb8ff, paint: 0xd08cff, pick: 0xffffff, blend: 0xff9ad8 };
 const sculptRing = new THREE.Line(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(65 * 3), 3)), new THREE.LineBasicMaterial({ depthTest: false, transparent: true }));
 
 // A faint disc under the 1-pixel outline, so the brush reads on any ground: a fan from the centre (vertex 65) over the ring's points.
@@ -1103,9 +1576,10 @@ function sculptHover(e)
 canvas.addEventListener('pointermove', sculptHover);
 const brushTool = (h) => (h.pick ? 'pick' : (h.swap ? { raise: 'lower', lower: 'raise' }[$('sculptTool').value] ?? $('sculptTool').value : $('sculptTool').value));
 
-// Terrain-mode keys: 1-6 pick the tool, [ and ] shrink and grow the brush.
-function sculptKey(e) {
-  const tools = [...$('sculptTool').options].map((o) => o.value);
+// Terrain-mode keys: 1-7 pick the tool, [ and ] shrink and grow the brush.
+function sculptKey(e)
+{
+  const tools = [...document.querySelectorAll('[data-sculpt]')].map((b) => b.dataset.sculpt);
   const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
 
   if (e.ctrlKey || e.metaKey || e.altKey)
@@ -1130,11 +1604,47 @@ function sculptKey(e) {
 // The palette shows only for the texture tools, keeping the panel short.
 function sculptToolChanged()
 {
-  $('sculptPalette').hidden = !['paint', 'pick'].includes($('sculptTool').value);
+  const blend = $('sculptTool').value === 'blend';
+
+  $('sculptPalette').hidden = !['paint', 'pick', 'blend'].includes($('sculptTool').value);
   $('sculptFlatRow').hidden = $('sculptTool').value !== 'flatten';
+  $('btnTriplanar').hidden = !blend;
+  $('btnTriplanar').classList.toggle('on', sculptTriplanar);
+  $('sculptStrength').closest('label').title = blend ? 'How much each brush step covers the ground with the texture' : "Height change per brush step, in the level's stored height units";
+
+  // Soft paint keeps the level's own texture list, which a mod level shares with the level it is built on.
+  const modLevel = !!sculpt && stockDir(sculpt.dir) !== sculpt.dir;
+  const b = document.querySelector('[data-sculpt=blend]');
+
+  b.disabled = modLevel;
+  b.title = modLevel ? 'Soft paint works on stock levels' : 'Soft paint (7)';
+
+  if (modLevel && blend)
+    $('sculptTool').value = 'paint';
+
+  for (const b of document.querySelectorAll('[data-sculpt]'))
+    b.classList.toggle('on', b.dataset.sculpt === $('sculptTool').value);
+
+  for (const b of document.querySelectorAll('[data-shape]'))
+    b.classList.toggle('on', b.dataset.shape === $('sculptShape').value);
 }
 
-$('sculptTool').addEventListener('change', sculptToolChanged);
+// Soft paint follows the slope (triplanar) instead of laying the texture flat from above, so cliffs don't stretch it.
+let sculptTriplanar = false;
+
+$('btnTriplanar').onclick = () => {
+  sculptTriplanar = !sculptTriplanar;
+  sculptToolChanged();
+};
+
+for (const [attr, input] of [['sculpt', 'sculptTool'], ['shape', 'sculptShape']])
+  for (const b of document.querySelectorAll(`[data-${attr}]`))
+    b.onclick = () => {
+      $(input).value = b.dataset[attr];
+      sculptToolChanged();
+    };
+
+sculptToolChanged();
 
 // The map tiles a brush of radius r (grid steps) at grid point (gx, gy) can touch.
 const brushBox = (g, gx, gy, r) => ({
@@ -1169,10 +1679,14 @@ function brushHeights(g, gx, gy, r, tool, { amount = 0, flat = 0, mix = 0, squar
 
       const i = y * g.W + x;
 
-      if (tool === 'raise')
-        g.hts[i] -= amount * w;
-      else if (tool === 'lower')
-        g.hts[i] += amount * w;
+      if (tool === 'raise' || tool === 'lower')
+      {
+        const v = g.hts[i] + (tool === 'raise' ? -amount : amount) * w;
+        const k = Math.abs(v) > 127.5 ? growHeightRange(v) : 1;
+
+        amount *= k;
+        g.hts[i] = v * k;
+      }
       else if (tool === 'flatten')
         g.hts[i] += (flat - g.hts[i]) * Math.min(1, mix * w);
       else
@@ -1183,6 +1697,35 @@ function brushHeights(g, gx, gy, r, tool, { amount = 0, flat = 0, mix = 0, squar
   }
 
   return brushBox(g, gx, gy, r);
+}
+
+// The largest height scale the ground grows to, about 4x the largest stock one (lv_i's 0.107).
+const MAX_HEIGHT_SCALE = 0.4;
+
+// Doubles the level's height scale until stored height v fits, rescaling everything held in stored steps so the ground keeps its shape
+// in coarser steps; the water's level and waves follow on the next commit. Returns the factor applied to stored heights.
+function growHeightRange(v)
+{
+  let k = 1;
+
+  while (Math.abs(v * k) > 127.5 && sculpt.scale / (k / 2) <= MAX_HEIGHT_SCALE)
+    k /= 2;
+
+  if (k === 1)
+    return 1;
+
+  for (const a of [sculpt.grid.hts, sculpt.committed, ...sculpt.undo.map((u) => u.hts)])
+    a.forEach((h, i) => (a[i] = h * k));
+
+  sculpt.flat *= k;
+  sculpt.waterK *= k;
+  sculpt.scale = Math.fround(sculpt.scale / k);
+  sculpt.regrid = true;
+  new DataView(sculpt.base.buffer, sculpt.base.byteOffset).setFloat32(0x10, sculpt.scale);
+  sculpt.notice = `Height range raised to ${+(127 * sculpt.scale).toFixed(1)}`;
+  sculptRangeShow();
+
+  return k;
 }
 
 // Paints texture on every tile whose centre is within the brush.
@@ -1196,7 +1739,96 @@ function brushPaint(g, gx, gy, r, texture, square = false) {
   return brushBox(g, gx, gy, r);
 }
 
-const brushShape = () => ({ square: $('sculptShape').value.includes('square'), hard: $('sculptShape').value.includes('hard') });
+// A cell's working image for Soft paint (floats, so faint strokes add up): its current texture until a stroke changes it.
+function cellImage(cell)
+{
+  if (!sculpt.cells.has(cell))
+  {
+    const paint = new DataView(sculpt.paintBytes.buffer, sculpt.paintBytes.byteOffset, sculpt.paintBytes.byteLength);
+
+    sculpt.cells.set(cell, Float32Array.from(terrainTexRGBA(sculpt.bank, paint, sculpt.texIds[sculpt.grid.tex[cell]] ?? 0)));
+  }
+
+  return sculpt.cells.get(cell);
+}
+
+const imageBytes = (img) => Uint8Array.from(img, (v) => Math.max(0, Math.min(255, Math.round(v))));
+
+// Soft paint: blends texture src (64x64 RGBA) into every cell image the brush covers, per texel, with the height brush's falloff times opacity.
+// Texel (x, y) of a cell sits at grid point (cx * 4 + x / 16, cy * 4 + 4 - y / 16) (texture rows run opposite to z, as buildTerrain maps them).
+// triplanar samples src by world position along the surface normal (top, X and Z projections, sharpness 4) so it follows cliffs and lines up
+// across cells; otherwise it lies flat, one copy per cell. Returns the cells touched, or false.
+function brushBlend(g, gx, gy, r, src, { opacity, square = false, hard = false, triplanar = false })
+{
+  const box = brushBox(g, gx, gy, r);
+  const touched = [];
+
+  const sample = (u, v) => {
+    const x = ((Math.floor(u * 64) % 64) + 64) % 64;
+    const y = ((Math.floor(v * 64) % 64) + 64) % 64;
+
+    return (y * 64 + x) * 4;
+  };
+
+  for (let cy = box.y0; cy <= box.y1; cy++)
+    for (let cx = box.x0; cx <= box.x1; cx++)
+    {
+      const cell = cy * g.w + cx;
+      let img = null;
+
+      for (let y = 0; y < 64; y++)
+        for (let x = 0; x < 64; x++)
+        {
+          const px = cx * 4 + (x + 0.5) / 16;
+          const py = cy * 4 + 4 - (y + 0.5) / 16;
+          const d = brushDist(px - gx, py - gy, square);
+
+          if (d > r)
+            continue;
+
+          let w = hard ? 1 : 1 - d / r;
+
+          w = w * w * (3 - 2 * w) * opacity;
+          img ??= cellImage(cell);
+
+          const o = (y * 64 + x) * 4;
+
+          if (!triplanar)
+          {
+            for (let k = 0; k < 3; k++)
+              img[o + k] += (src[o + k] - img[o + k]) * w;
+
+            continue;
+          }
+
+          // World units: a grid step is 0.5, a cell (one texture repeat) is 2.
+          const wx = px / 2;
+          const wz = py / 2;
+          const h = groundAt(g.hts, g, sculpt.scale, wx, wz);
+          const nx = groundAt(g.hts, g, sculpt.scale, wx - 0.25, wz) - groundAt(g.hts, g, sculpt.scale, wx + 0.25, wz);
+          const nz = groundAt(g.hts, g, sculpt.scale, wx, wz - 0.25) - groundAt(g.hts, g, sculpt.scale, wx, wz + 0.25);
+          const a = [Math.abs(nx) ** 4, 0.5 ** 4, Math.abs(nz) ** 4];
+          const sum = a[0] + a[1] + a[2];
+          const top = sample(wx / 2, 1 - wz / 2);
+          const side = sample(wz / 2, h / 2);
+          const front = sample(wx / 2, h / 2);
+
+          for (let k = 0; k < 3; k++)
+          {
+            const c = (a[0] * src[side + k] + a[1] * src[top + k] + a[2] * src[front + k]) / sum;
+
+            img[o + k] += (c - img[o + k]) * w;
+          }
+        }
+
+      if (img)
+        touched.push(cell);
+    }
+
+  return touched.length ? touched : false;
+}
+
+const brushShape = () => ({ square: $('sculptShape').value === 'square' });
 
 // Applies the panel's brush at grid point (gx, gy); returns the map tiles it may have changed ({ x0, y0, x1, y1 }) or false.
 function brush(h)
@@ -1220,6 +1852,9 @@ function brush(h)
   return brushHeights(g, gx, gy, r, tool, { amount: s, flat: sculpt.flat, mix: s * 0.1, ...brushShape() });
 }
 
+// Atlas slots a sculpt mesh keeps free for Soft paint previews; a stroke that fills them rebuilds with twice as many.
+const SOFT_PAINT_SPARE = 1024;
+
 // Re-tiles the grid and updates the terrain mesh, in place for the tiles in box when the sculpt mesh allows it, else as a new mesh;
 // returns the new HMP bytes (null when it does not fit).
 function rebuildTerrain(box = null)
@@ -1241,6 +1876,11 @@ function rebuildTerrain(box = null)
   if (!terrain)
     return bytes;
 
+  if (sculpt.regrid)
+    box = { x0: 0, y0: 0, x1: hmp.w - 1, y1: hmp.h - 1 };
+
+  sculpt.regrid = false;
+
   if (box && terrain.userData.update?.(hmp, box)) {
     terrain.userData.tiles = { hmp, texIds: sculpt.texIds };
     sculptBudget(hmp.tiles.length);
@@ -1249,16 +1889,18 @@ function rebuildTerrain(box = null)
   }
 
   // A new mesh rather than a geometry swap: the WebGPU renderer keeps drawing a mesh's first geometry.
-  const t = buildTerrain(hmp, sculpt.texIds, sculpt.bank);
+  const paint = new DataView(sculpt.paintBytes.buffer, sculpt.paintBytes.byteOffset, sculpt.paintBytes.byteLength);
+  const t = buildTerrain(hmp, sculpt.texIds, sculpt.bank, paint, sculpt.spare ?? SOFT_PAINT_SPARE);
+
+  // A node material's clone drops its map, so the atlas is set again here.
   const material = terrain.material.clone();
 
-  if (material.map)
-    material.map = t.map;
+  material.map = $('optTex').checked ? t.map : null;
 
   const mesh = new THREE.Mesh(t.g, material);
 
   mesh.name = 'terrain';
-  mesh.userData = { ...terrain.userData, terrain: t.map, tiles: { hmp, texIds: sculpt.texIds }, update: t.update };
+  mesh.userData = { ...terrain.userData, terrain: t.map, tiles: { hmp, texIds: sculpt.texIds }, update: t.update, paintCell: t.paintCell };
   mesh.position.copy(terrain.position);
   mesh.quaternion.copy(terrain.quaternion);
   mesh.scale.copy(terrain.scale);
@@ -1342,8 +1984,22 @@ async function commitTerrain(bytes) {
   if (!bytes)
     return;
 
+  const waterK = sculpt.waterK;
+
+  sculpt.waterK = 1;
+
   await historyGroup('Terrain', async () => {
     await editAsset(sculpt.dir + '/hmp', () => bytes);
+
+    // Water level and wave height are in stored height steps, so they follow a grown height range.
+    const w = waterK !== 1 && datWaterGet(await rom.read(sculpt.dir + '/dat'));
+
+    if (w?.on)
+      await editAsset(sculpt.dir + '/dat', (b) => datWaterSet(b, {
+        ...w,
+        level: Math.round(w.level * waterK),
+        waves: Math.max(1, Math.round(w.waves * waterK))
+      }));
 
     for (const k of [...terrainCache.keys()])
       if (k.startsWith(sculpt.dir + '|'))
@@ -1355,6 +2011,7 @@ async function commitTerrain(bytes) {
 
   sculpt.committed = sculpt.grid.hts.slice();
   showTileGrid();
+  paintBudgetShow();
 }
 
 // Heightmap as an 8-bit grey PNG, one pixel per grid point (the 256 stored height steps); white is high (game Y is down).
@@ -1444,15 +2101,115 @@ canvas.addEventListener('pointerdown', (e) => {
   const cx = Math.min(g.W - 1, Math.max(0, Math.round(h.gx)));
   const cy = Math.min(g.H - 1, Math.max(0, Math.round(h.gy)));
 
-  sculpt.flat = typed !== '' && Number.isFinite(+typed) ? Math.max(-128, Math.min(127, -typed / sculpt.scale)) : g.hts[cy * g.W + cx];
-  stroke = { last: h, dirty: false, queued: false, box: null };
   sculpt.notice = '';
+  sculpt.flat = typed !== '' && Number.isFinite(+typed) ? -typed / sculpt.scale : g.hts[cy * g.W + cx];
+
+  if (Math.abs(sculpt.flat) > 127.5)
+    growHeightRange(sculpt.flat);
+
+  sculpt.flat = Math.max(-128, Math.min(127, sculpt.flat));
+  stroke = { last: h, dirty: false, queued: false, box: null };
   strokeStep(h);
 });
+
+// Shows the stroke's cell images on the terrain; a mesh without room for them (the level view's, or one whose spare slots ran out) is rebuilt with more.
+function previewCells(cells)
+{
+  const show = (list) => {
+    const terrain = root?.getObjectByName('terrain');
+
+    return !terrain || list.every((c) => terrain.userData.paintCell?.(c, imageBytes(sculpt.cells.get(c))));
+  };
+
+  if (show(cells))
+    return;
+
+  if (root.getObjectByName('terrain').userData.paintCell)
+    sculpt.spare = Math.max(SOFT_PAINT_SPARE, (sculpt.spare ?? 0) * 2, sculpt.cells.size * 2);
+
+  rebuildTerrain();
+  show([...sculpt.cells.keys()]);
+}
+
+function softPaintStep(h)
+{
+  if (sculpt.tex == null)
+    return;
+
+  const g = sculpt.grid;
+  const id = sculpt.texIds[sculpt.tex];
+
+  if (sculpt.srcId !== id) {
+    sculpt.src = decodeTerrainTex(sculpt.bank, id);
+    sculpt.srcId = id;
+  }
+
+  const touched = brushBlend(g, h.gx, h.gy, +$('sculptRadius').value, sculpt.src, {
+    opacity: +$('sculptStrength').value / 20,
+    triplanar: sculptTriplanar,
+    ...brushShape()
+  });
+
+  if (!touched)
+    return;
+
+  stroke.cells ??= new Set();
+  touched.forEach((c) => stroke.cells.add(c));
+  stroke.dirty = true;
+  previewCells(touched);
+}
+
+// Bakes a Soft paint stroke into the level (HMP, _TEX and the painted textures) as one undo step; a stroke the level can't hold is dropped
+// (false, the reason in sculpt.notice).
+async function commitSoftPaint(cells)
+{
+  const dir = sculpt.dir;
+  const images = new Map([...cells].map((c) => [c, imageBytes(sculpt.cells.get(c))]));
+  let out;
+
+  try {
+    out = paintApply({ hmp: sculpt.base, tex: sculpt.texBytes, paint: sculpt.paintBytes, grid: sculpt.grid, bank: sculpt.bank, cells: images });
+  } catch (err) {
+    sculpt.notice = err.message;
+  }
+
+  sculpt.cells.clear();
+
+  if (!out)
+  {
+    rebuildTerrain();
+    sculptStatus('');
+
+    return false;
+  }
+
+  sculpt.base = out.hmp;
+  sculpt.texBytes = out.tex;
+  sculpt.paintBytes = out.paint;
+  sculpt.texIds = parseTexTable(new DataView(out.tex.buffer));
+
+  await historyGroup('Soft paint', async () => {
+    await editAsset(dir + '/hmp', () => out.hmp);
+    await editAsset(dir + '_TEX', () => out.tex);
+    await editAsset(paintPath(dir), () => out.paint);
+
+    for (const k of [...terrainCache.keys()])
+      if (k.startsWith(dir + '|'))
+        terrainCache.delete(k);
+  });
+
+  rebuildTerrain();
+  paintBudgetShow();
+
+  return true;
+}
 
 // The stroke's tiles so far: a step over the tile limit leaves the mesh behind, so the next one updates everything since the stroke began.
 function strokeStep(h)
 {
+  if (brushTool(h) === 'blend')
+    return softPaintStep(h);
+
   const b = brush(h);
 
   if (!b)
@@ -1496,6 +2253,9 @@ canvas.addEventListener('pointerup', async (e) => {
 
   if (!s.dirty)
     return;
+
+  if (s.cells)
+    return commitSoftPaint(s.cells);
 
   if (!s.bytes)
   {
@@ -1625,27 +2385,29 @@ let cutLevel = null;
 
 function fillCutPick(dir)
 {
+  // A refill under the open cutscene keeps it picked while its entry is rebuilt.
+  const open = cut && cutLevel === dir ? $('cutPick').value : '';
+
   cutLevel = dir;
 
   const ml = modLevelOf(dir);
   const n = parseInt(dir.split('/lv_')[1], 36);
   const files = [];
-  const cams = [];
 
   for (const [kind, label] of [['intro', 'Intro'], ['extro', 'Extro'], ['special', 'Ending ceremony']])
   {
     const path = ml ? `data/cuts/${ml.folder}_${kind}` : `data/cuts/id${n}_${kind}`;
 
-    if ((ml || n <= 15) && rom.assets.has(path))
-      files.push([`cut:${path}`, label]);
+    if ((ml || n <= 15 || n === 19) && rom.assets.has(path))
+      files.push([`cut:${path}`, n === 19 ? 'Factor 5 logo' : label]);
   }
 
   const camItems = (root?.getObjectByName('markers')?.children ?? []).map((m) => m.userData.item).filter((it) => it.type === 0 && it.sub === 0x26);
 
-  for (const it of camItems)
-    cams.push([`cam:${it.index}`, it.name || 'camera #' + it.index]);
-
   const opt = ([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`;
+
+  cutSeqs.clear();
+  cutCrawl = null;
 
   // The level's opening crawl plays before its intro (stock chapter levels and mod levels; see levelCrawl).
   let seqsNow = [];
@@ -1655,29 +2417,40 @@ function fillCutPick(dir)
     seqsNow = seqs;
 
     const cuts = [...(crawlOpt ? [crawlOpt] : []), ...files];
+    const keep = $('cutPick').value || open;
 
     $('cutPick').innerHTML = opt(['', 'None (Level Editor)']) + (cuts.length ? `<optgroup label="Cutscenes">${cuts.map(opt).join('')}</optgroup>` : '')
-      + (seqs.length ? `<optgroup label="In-mission sequences">${seqs.map(opt).join('')}</optgroup>` : '')
-      + (cams.length ? `<optgroup label="In-mission cameras">${cams.map(opt).join('')}</optgroup>` : '');
+      + (seqs.length ? `<optgroup label="In-mission sequences">${seqs.map(opt).join('')}</optgroup>` : '');
+
+    $('cutPick').value = keep;
+
+    if ($('cutPick').selectedIndex < 0)
+      $('cutPick').selectedIndex = 0;
 
     if (cut?.crawl)
       $('cutPick').value = 'crawl';
 
-    $('cutPickHead').hidden = $('cutPickRow').hidden = !cuts.length && !cams.length;
+    $('cutPickHead').hidden = $('cutPickRow').hidden = false;
+    syncCutPickTools();
   };
 
   fill([]);
 
-  levelCrawl(dir).then((lc) => {
+  const crawlRead = levelCrawl(dir).then((lc) => {
     if (cutLevel !== dir || !lc)
       return;
 
+    cutCrawl = lc;
     crawlOpt = ['crawl', 'Opening crawl'];
     fill();
   });
 
   // The sequences need the camera records' next-item links, read from the level file.
-  if (camItems.length)
+  if (!camItems.length)
+    return crawlRead;
+
+  return Promise.all([
+    crawlRead,
     rom.read(dir + '/dat').then((dv) => {
       if (cutLevel !== dir)
         return;
@@ -1690,13 +2463,174 @@ function fillCutPick(dir)
         const chain = seqChain(r, byName);
         const unused = SEQ_UNUSED.has(`${dir.split('/').pop()}:${r.it.name}`) ? ', unused' : '';
 
+        cutSeqs.set(`seq:${r.it.index}`, chain);
+
         return [
           `seq:${r.it.index}`,
           chain.length > 1 || unused ? `${r.it.name} (${chain.length > 1 ? chain.length + ' shots' : ''}${chain.length > 1 ? unused : unused.slice(2)})` : r.it.name
         ];
       }));
-    });
+    })
+  ]);
 }
+
+// The level's sequences by list value (each its chain of camera records), and its crawl if it has one.
+const cutSeqs = new Map();
+let cutCrawl = null;
+
+function syncCutPickTools()
+{
+  const v = $('cutPick').value;
+  const chain = cutSeqs.get(v);
+
+  $('cutSeqNameRow').hidden = !chain;
+
+  if (chain)
+    $('cutSeqName').value = chain[0].it.name;
+
+  $('cutDel').hidden = !chain && !(v === 'crawl' && (cutCrawl?.level || cutCrawl?.exists));
+}
+
+// Refills the list after the level changed, then opens that entry.
+async function reopenCutPick(value)
+{
+  await showLevel(cutLevel, true);
+  await fillCutPick(cutLevel);
+  $('cutPick').value = value;
+  await $('cutPick').onchange();
+}
+
+async function addCutSequence()
+{
+  const { index } = await addSeqCamera(cutLevel, 'Sequence');
+
+  await reopenCutPick(`seq:${index}`);
+
+  if (!cutEditing)
+    $('cutEdit').click();
+}
+
+async function addCutCrawl()
+{
+  await saveCrawl(await levelCrawl(cutLevel, true), 'New');
+  await reopenCutPick('crawl');
+
+  if (!cutEditing)
+    $('cutEdit').click();
+}
+
+// The small menu of things to add, opened above the button that asked; rows are [label, note, action]. A second click closes it.
+let addMenuFor = null;
+
+function toggleAddMenu(button, rows)
+{
+  const menu = $('cutAddMenu');
+  const open = menu.hidden || addMenuFor !== button;
+
+  addMenuFor?.setAttribute('aria-expanded', false);
+  menu.hidden = !open;
+  addMenuFor = open ? button : null;
+  button.setAttribute('aria-expanded', open);
+
+  if (!open)
+    return;
+
+  menu.replaceChildren(...rows.map(([label, note, add]) => elem('button', {
+    onclick: () => {
+      menu.hidden = true;
+      add();
+    }
+  }, elem('span', { textContent: label }), elem('small', { textContent: note }))));
+
+  const b = button.getBoundingClientRect();
+
+  menu.style.left = `${Math.max(10, b.right - menu.offsetWidth)}px`;
+  menu.style.top = `${Math.max(10, b.top - menu.offsetHeight - 6)}px`;
+}
+
+$('cutAdd').onclick = () => {
+  const rows = [['Mid-mission sequence', 'Camera shots a trigger area or rule can start', addCutSequence]];
+
+  if (!cutCrawl && modLevelOf(cutLevel))
+    rows.push(['Opening crawl', 'Story text that scrolls before the intro', addCutCrawl]);
+
+  toggleAddMenu($('cutAdd'), rows);
+};
+
+document.addEventListener('pointerdown', (e) => {
+  if (!$('cutAddMenu').hidden && !e.target.closest('#cutAddMenu') && !addMenuFor?.contains(e.target))
+    $('cutAddMenu').hidden = true;
+}, true);
+
+async function deleteCutSequence(chain)
+{
+  const dir = cutLevel;
+  const names = chain.map((r) => r.it.name);
+  const named = names.find((n) => scriptFinds(n, dir));
+
+  if (named)
+    return alert(`The game looks "${named}" up by name, so this sequence can't be deleted.`);
+
+  if (!confirm(`Delete the sequence "${names[0]}"${names.length > 1 ? ` and its ${names.length} shots` : ''}? Trigger areas and rules that start it will stop working.`))
+    return;
+
+  try {
+    await historyGroup(`Delete ${names[0]}`, async () => {
+      await editAsset(dir + '/dat', (b) => chain.map((r) => r.it.index).sort((x, y) => y - x).reduce(datRemoveUnit, b));
+
+      const text = await virtualText(SHOT_LINKS);
+      const left = shotDropCameras(text, dir.split('/').pop(), names);
+
+      if (left !== text)
+        await editText(SHOT_LINKS, left, `No camera shot: ${names[0]}`);
+    });
+  } catch (e) {
+    return alert(`${e.message}, so it cannot be deleted.`);
+  }
+
+  await showLevel(dir, true);
+}
+
+async function deleteCutCrawl()
+{
+  const dir = cutLevel;
+  const ctx = await levelCrawl(dir);
+
+  if (!confirm(`Delete this opening crawl? ${ctx.level ? 'The level will start without one.' : "The game's original crawl comes back."}`))
+    return;
+
+  await historyGroup('Delete opening crawl', async () => {
+    for (const p of [CRAWL_PATH(ctx.name), crawlBackdrop(ctx.name), crawlDat(ctx.name)])
+      if (edits.has(p))
+        await editAsset(p, () => new Uint8Array(0), 'Delete opening crawl');
+
+    if (ctx.level)
+      await editModLevels((levels) => {
+        levels.find((x) => x.folder === ctx.level.folder).crawl = false;
+      }, 'No opening crawl');
+  });
+
+  await showLevel(dir, true);
+}
+
+$('cutDel').onclick = () => {
+  const v = $('cutPick').value;
+
+  return v === 'crawl' ? deleteCutCrawl() : deleteCutSequence(cutSeqs.get(v));
+};
+
+$('cutSeqName').onchange = async () => {
+  const v = $('cutPick').value;
+  const first = cutSeqs.get(v)[0].it;
+
+  try {
+    await renameObject(first, $('cutSeqName').value.trim(), cutLevel);
+    await reopenCutPick(v);
+  } catch (e) {
+    alert(e.message);
+    syncCutPickTools();
+  }
+};
 
 // In-mission camera sequences (func_800C7884 from the level script -> func_800FB2F8; traced 2026-10-19). A camera item (DAT 0/0x26) holds
 // for +0x60 seconds; +0x64 / +0x68 are item-relative offsets to its target's and the next item's names ("-" for none). With a spawned
@@ -1776,6 +2710,9 @@ const SEQ_AUDIO = {
   'lv_i:Camera_on_Rogue': [[701, 282, 283], 3],
 };
 
+// Flags the level script raises on the frame a shot starts: the units waiting on them appear in the shot, so they play in its preview too.
+const SEQ_WAVES = { 'lv_3:Camera_HL_Shuttle': [19, 20] };
+
 // A sequence as cutscene data (the shape parseCutscene returns), sampled at 30 Hz, so it plays with the cutscene viewer's timeline, audio
 // and effects: one camera entry per shot with type-4 cuts between them, wingman targets as model actors flying their splines, voice lines
 // (type 0, at the speech queue's times) and the music sting (type 1 with its song id).
@@ -1804,47 +2741,190 @@ async function buildSequenceData(dir, startIndex)
   const TIE = { speed: 0x90, start: 0xA0, lift: 0x98, liftRot: 0x9C, gain: 2 };
   const GROUND = { speed: 0x90, start: 0x9C, lift: 0x94, liftRot: 0x98, gain: 0 };
 
+  const TRANSPORT = {
+    ...GROUND,
+    ground: true,
+    normal: true,
+    sink: 0xA0
+  };
+
+  const TROOP = { ...GROUND, ground: true, troop: true };
+  const R = THREE.MathUtils.degToRad;
+  const D = THREE.MathUtils.radToDeg;
+
   const PATH_NPCS = {
     0x27: { speed: 0x98, start: 0xA8, lift: 0xA0, liftRot: 0xA4, gain: 1.5 },
     0x24: SHUTTLE,
+    0x2C: SHUTTLE,
     0x48: SHUTTLE,
     0x12: TIE,
     0x13: TIE,
     0x1F: { ...GROUND, ground: true, walk: 2 },
     0x0F: { ...GROUND, ground: true, walk: 26.4 },
-    0x2E: {
-      ...GROUND,
-      ground: true,
-      normal: true,
-      sink: 0xA0
-    },
-    0x2F: GROUND
+    0x47: { ...GROUND, ground: true, normal: true, walk: 1 / 0.06 },
+    0x25: { speed: 0x90, gain: 0, ground: true },
+    0x2B: TRANSPORT,
+    0x2D: TRANSPORT,
+    0x2E: TRANSPORT,
+    0x2F: GROUND,
+    0x37: { ...GROUND, ground: true },
+    0x3B: TROOP,
+    0x3C: TROOP,
+    0x3D: TROOP,
+    0x50: TROOP
+  };
+
+  // Foot soldiers named to a roam area (npcGroundTroopUpdate; executeActorType2Effect circle, 3 box): every 4-7 s a new heading 22.5-202.5 deg
+  // away, turned at 30 deg/s; straying out it turns back at 150 deg/s. shortcut: back toward the centre, not the game's wall-normal table.
+  const roamPath = (it, zone, speed) => {
+
+    const dt = 1 / fps;
+    const box = zone.type === 6;
+    const cx = box ? zone.pos[0] + zone.size[0] / 2 : zone.pos[0];
+    const cz = box ? zone.pos[2] + zone.size[2] / 2 : zone.pos[2];
+    const out = (x, z) => (box ? x < zone.pos[0] || z < zone.pos[2] || x > zone.pos[0] + zone.size[0] || z > zone.pos[2] + zone.size[2] : Math.hypot(x - cx, z - cz) > zone.radius);
+    const pts = [];
+    let x = it.pos[0];
+    let z = it.pos[2];
+    let yaw = Math.random() * 360;
+    let want = yaw;
+    let rate = 0;
+    let timer = 0;
+
+    for (let k = 0; k <= frames; k++)
+    {
+      pts.push(new THREE.Vector3(x, 0, z));
+      timer -= dt;
+
+      if (out(x + Math.sin(R(yaw)) * speed * dt, z + Math.cos(R(yaw)) * speed * dt))
+      {
+        want = D(Math.atan2(cx - x, cz - z));
+        rate = 150;
+      }
+      else if (!rate && timer <= 0)
+      {
+        timer = 4 + Math.random() * 3;
+        want = yaw + (Math.random() < 0.5 ? -1 : 1) * (22.5 + Math.random() * 180);
+        rate = 30;
+      }
+
+      if (rate)
+      {
+        const diff = THREE.MathUtils.euclideanModulo(want - yaw + 180, 360) - 180;
+        const step = rate * dt;
+
+        yaw += Math.sign(diff) * Math.min(step, Math.abs(diff));
+
+        if (Math.abs(diff) <= step)
+          rate = 0;
+      }
+
+      x += Math.sin(R(yaw)) * speed * dt;
+      z += Math.cos(R(yaw)) * speed * dt;
+    }
+
+    return (u) => {
+
+      const f = THREE.MathUtils.clamp(u, 0, 1) * frames;
+      const k = Math.min(frames - 1, Math.floor(f));
+
+      return pts[k].clone().lerp(pts[k + 1], f - k);
+    };
+  };
+
+  // Fraction along the path per frame, and its wing moves. 0x1B events retarget the speed (updateNpcEffectIntensity): the value or a multiple
+  // of the current speed, 0.1 if not positive, eased by sin(p * 90 deg) over c seconds (executeActorType1Effect).
+  const pathTrack = (path, u0, speed0, len) => {
+
+    const events = (path.events ?? []).map((e) => ({ at: e.at, t: items.find((i) => i.type === 7 && i.index === e.trigger) })).sort((a, b) => a.at - b.at);
+    const dt = 1 / fps;
+    const us = [u0];
+    const wings = [];
+    let u = u0;
+    let speed = speed0;
+    let from = speed0;
+    let to = speed0;
+    let p = 1;
+    let rate = 0;
+    let next = 0;
+
+    for (let k = 1; k <= frames; k++)
+    {
+      for (; next < events.length && events[next].at <= u; next++)
+      {
+        const { t } = events[next];
+        const e = t?.pathEvent;
+
+        if (t?.sub === 0x1B)
+        {
+          const v = e.ib ? speed * e.a : e.a;
+
+          from = speed;
+          to = v > 0 ? v : 0.1;
+          p = 0;
+          rate = e.c > 0 ? 1 / e.c : 0;
+
+          if (!rate)
+            speed = to;
+        }
+        else if (t?.sub === 0x1A && e.w[0] === 1)
+          wings.push({ frame: k - 1, forward: e.fl[1] > 0, frames: Math.max(1, Math.round(e.fl[2] * fps)) });
+      }
+
+      if (speed !== to)
+      {
+        p += rate * dt;
+        speed = p >= 1 ? to : from + (to - from) * Math.sin((p * Math.PI) / 2);
+      }
+
+      u = Math.min(1, u + (speed * dt) / (len || 1));
+      us.push(u);
+    }
+
+    return { us, wings };
   };
 
   const targets = new Map();
+  const waveFlags = SEQ_WAVES[`${dir.split('/').pop()}:${first.it.name}`] ?? [];
 
-  for (const r of chain)
+  // Besides the camera targets: the units the shot's flags bring in, and ground units with no wave gate near its cameras, which are already walking.
+  const SEQ_NEAR = 50;
+  const nearShot = (i) => chain.some((r) => new THREE.Vector3(...r.it.pos).distanceTo(new THREE.Vector3(...i.pos)) < SEQ_NEAR);
+
+  const joinsShot = (i) => {
+
+    const w = waveGet(dv, i);
+
+    return waveFlags.includes(w?.flag) || (PATH_NPCS[i.sub]?.ground && !w?.flag && !w?.counter && nearShot(i));
+  };
+
+  const extras = new Set(items.filter((i) => i.type === 0 && joinsShot(i)));
+  const inShot = [...chain.map((r) => r.target !== '-' && items.find((i) => i.type === 0 && i.name === r.target)), ...extras];
+
+  for (const it of inShot)
   {
-    const it = r.target !== '-' && items.find((i) => i.type === 0 && i.name === r.target);
-
     if (!it || targets.has(it.name))
       continue;
 
     const path = it.model && items.find((s) => s.type === 3 && s.name === it.model && s.points?.length > 1);
-    const kind = path && PATH_NPCS[it.sub];
+    const zone = !path && PATH_NPCS[it.sub]?.troop && it.model && items.find((s) => s.name === it.model && (s.type === 6 || s.radius));
+    const kind = (path?.points.length >= 4 || zone) && PATH_NPCS[it.sub];
 
-    // A uniform Catmull-Rom over the points, its parameter advancing speed / path length per second from start * speed / length (0 past 1).
-    // shortcut: the path length (path +0x24) is taken as the curve's arc length.
-    const curve = kind && new THREE.CatmullRomCurve3(path.points.map((p) => new THREE.Vector3(...p)), false, 'catmullrom', 0.5);
+    // The game's curve and stored length; the parameter advances speed / length per second from start * speed / length (0 past 1).
+    const curveAt = kind && !zone && splineAt(dv, path);
+    const roamAt = zone && roamPath(it, zone, dv.getFloat32(it.offset + kind.speed));
+    const curve = kind && { getPoint: zone ? roamAt : (u) => new THREE.Vector3(...curveAt(u)) };
     const f = (k) => dv.getFloat32(it.offset + k);
-    const len = curve ? curve.getLength() : 0;
+    const len = curve && !zone ? dv.getFloat32(path.offset + 0x24) : 0;
     const speed = kind ? f(kind.speed) : 0;
-    const t0 = kind && len ? (f(kind.start) * speed) / len : 0;
+    const t0 = kind?.start && len ? (f(kind.start) * speed) / len : 0;
+    const roamTrack = { us: Array.from({ length: frames + 1 }, (_, k) => k / frames), wings: [] };
+    const track = kind && (zone ? roamTrack : pathTrack(path, t0 > 1 ? 0 : t0, speed, len));
 
-    targets.set(it.name, { it, kind, curve, len, speed, t0: t0 > 1 ? 0 : t0, rest: new THREE.Vector3(...(path ? path.points[0] : it.pos)) });
+    targets.set(it.name, { it, kind, curve, len, speed, track, rest: new THREE.Vector3(...(path ? pathStart(path) : it.pos)) });
   }
 
-  const pathU = (tg, sec) => 0.999 * THREE.MathUtils.clamp(tg.t0 + (tg.speed * sec) / tg.len, 0, 1) + 0.001;
+  const pathU = (tg, sec) => 0.999 * tg.track.us[Math.min(frames, Math.round(sec * fps))] + 0.001;
   const at = (tg, sec) => (tg.curve ? tg.curve.getPoint(pathU(tg, sec)) : tg.rest.clone());
 
   const keys = (vals) => {
@@ -1883,8 +2963,6 @@ async function buildSequenceData(dir, startIndex)
   const actors = [];
   const foilEvents = [];
   const hidden = [];
-  const R = THREE.MathUtils.degToRad;
-  const D = THREE.MathUtils.radToDeg;
   const Y = new THREE.Vector3(0, 1, 0);
 
   for (const tg of [...targets.values()].filter((t) => t.curve))
@@ -1897,6 +2975,9 @@ async function buildSequenceData(dir, startIndex)
     let name;
     let src = null;
     let obj;
+
+    if (!holder && extras.has(tg.it))
+      continue;
 
     if (holder) {
       src = holder.userData.source;
@@ -1916,8 +2997,8 @@ async function buildSequenceData(dir, startIndex)
 
     const f = (k) => dv.getFloat32(o + k);
     const scale = tg.it.scale[0] || 0.25;
-    const lift = f(K.lift);
-    const liftRot = f(K.liftRot);
+    const lift = K.lift ? f(K.lift) : 0;
+    const liftRot = K.liftRot ? f(K.liftRot) : 0;
     const sink = K.sink ? f(K.sink) : 0;
     const level = K.level && dv.getUint32(o + K.level);
     const ch = [...Array(11)].map(() => []);
@@ -2101,6 +3182,10 @@ async function buildSequenceData(dir, startIndex)
     if (K.wings && dv.getUint32(o + K.wings))
       foilEvents.push({ type: 11, frame: 0, p: [i, 290, 1, 0] });
 
+    // Path event 0x1A on a shuttle (npcShuttleUpdate): the wings ease to 110 deg, or back to folded.
+    if (K.wings)
+      tg.track.wings.forEach((w) => foilEvents.push({ type: 11, frame: w.frame, p: [i, w.forward ? 290 : 180, w.frames, 0] }));
+
     // Walk cycle (npcAtStUpdate / npcAtAtUpdate): one cycle per walk * scale / speed seconds, as a type-13 rate over the whole sequence.
     if (K.walk && tg.speed > 0)
       foilEvents.push({ type: 13, frame: 0, p: [i, (length * tg.speed * 10) / (K.walk * scale), 0, 0] });
@@ -2109,6 +3194,7 @@ async function buildSequenceData(dir, startIndex)
       name,
       src,
       anim: K.walk && src && src.id.replace(/[^/]*$/, '') + src.id.split('/').pop().split('_')[0] + '_walk',
+      spriteClip: K.troop && src ? src.id.replace(/[^/]*$/, '') + SPRITE_ANIMS[src.id.replace(/^data\//, '')]?.[0] : null,
       phase0: K.walk ? Math.abs(((Math.random() * 128) | 0) - 64) / 64 : 0,
       flags: 0xff,
       model: true,
@@ -2192,28 +3278,10 @@ async function buildSequenceData(dir, startIndex)
   return { name: first.it.name, frames, length, fps, events, cameras, camera: cameras[0], actors, voiceRow, hidden, seq, picAspect: (4 / 3) * (224 / 170) };
 }
 
-// Looks through a camera placement: game cameras look down +Z (the marker pyramid opens that way).
-function lookThroughCamera(index)
-{
-  const m = root?.getObjectByName('markers')?.children.find((c) => c.userData.item.type === 0 && c.userData.item.index === index);
-
-  if (!m)
-    return;
-
-  const it = m.userData.item;
-
-  root.updateMatrixWorld(true);
-
-  const p = root.localToWorld(new THREE.Vector3(...it.pos));
-  const d = new THREE.Vector3(0, 0, 1).applyMatrix4(placementRotation(it.rot)).transformDirection(root.matrixWorld);
-
-  camera.position.copy(p);
-  controls.target.copy(p).addScaledVector(d, 5);
-  controls.update();
-}
-
 $('cutPick').onchange = async () => {
   const v = $('cutPick').value;
+
+  syncCutPickTools();
 
   if (v === 'crawl')
     return showCrawl(cutLevel);
@@ -2228,7 +3296,4 @@ $('cutPick').onchange = async () => {
     await showLevel(cutLevel, true);
     $('cutPick').value = v;
   }
-
-  if (v.startsWith('cam:'))
-    lookThroughCamera(+v.slice(4));
 };

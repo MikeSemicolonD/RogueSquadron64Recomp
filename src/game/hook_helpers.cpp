@@ -8,6 +8,7 @@
 #include <cstring>
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <string>
 #include <vector>
@@ -20,6 +21,7 @@
 #endif
 
 #include "librecomp/game.hpp"
+#include "ultramodern/ultramodern.hpp"
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
 #include "video/video_config.h"
@@ -27,10 +29,15 @@
 #include "game/hook_helpers.h"      // declares the exports defined below (g_vi_tick, rs64_cine_iter_get, …)
 #include "game/upstream_compat.h"   // rs64_fb_guards_mask
 #include "game/game_state.h"
+#include "game/game_rate.h"
+#include "host_api/host_api.h"
+#include "lockstep/lockstep_core.h"
+#include "game/mod_content/asset_overrides.h"
 #include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
 #include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_transition.h"
 
@@ -305,8 +312,7 @@ extern "C" void rs64_terrain_grid_log(int32_t minX, int32_t width, int32_t minZ,
 }
 
 // Terrain grid tables relocated into host-only RDRAM above the game's 8 MB, sized for the 128-stride patches (not optional).
-// 0x80A00000-0x80A01FFF is the F5 renderer's vertex/viewport scratch, so the tables start at 0x80B00000.
-static constexpr uint32_t RS64_TGRID_BASE = 0x80B00000u;
+static constexpr uint32_t RS64_TGRID_BASE = RS64_HR_TGRID;
 extern "C" uint32_t rs64_tgrid_base(uint32_t original) {
 
     switch (original) {
@@ -321,7 +327,91 @@ extern "C" uint32_t rs64_tgrid_base(uint32_t original) {
 
 // Zeroes the relocated terrain grid tables at level load, as a fresh level would find the originals.
 extern "C" void rs64_tgrid_clear(uint8_t* rdram) {
-    std::memset(rdram + (RS64_TGRID_BASE - 0x80000000u), 0, 0x20000);
+    std::memset(rdram + (RS64_TGRID_BASE - 0x80000000u), 0, RS64_HR_TGRID_END - RS64_HR_TGRID);
+}
+
+// VR: a spin-out sets up the crash camera (spawnRandomizedEffectBurst: holds the current camera pose, looks at the craft) instead of a random orbit
+// or the cockpit spinning with the craft. a0 of the hooked function ($s4) is the player.
+extern "C" void rs64_vr_death_camera(uint8_t* rdram, recomp_context* ctx)
+{
+
+    constexpr uint32_t kCrashCamera = 0x800514A0u;
+
+    if (!rs64_vr_active())
+    {
+        return;
+    }
+
+    mips_call(rdram, ctx, kCrashCamera, { (uint32_t)ctx->r20 });
+}
+
+// VR: the head can look anywhere, so the forward view trapezoid becomes a square around the camera cell (cx, cz) reaching as far as the trapezoid did.
+// One corner order always: a thin trapezoid's winding flips (Mos Eisley's intro), and a square copying it reversed binned no cells, so no terrain.
+static void vr_terrain_square(uint8_t* rdram, float cx, float cz)
+{
+
+    float reach = 0.0f;
+
+    for (uint32_t i = 0; i < 4; i++) {
+        const uint32_t p = 0x80130C10u + (i + 1) * 0xCu;
+
+        reach = std::max(reach, std::max(std::fabs(rf(rdram, p) - cx), std::fabs(rf(rdram, p + 8) - cz)));
+    }
+
+    const float sx[4] = { -1.0f, 1.0f, 1.0f, -1.0f };
+    const float sz[4] = { -1.0f, -1.0f, 1.0f, 1.0f };
+
+    for (uint32_t i = 0; i < 4; i++) {
+        const uint32_t p = 0x80130C10u + (i + 1) * 0xCu;
+
+        wf(rdram, p, cx + sx[i] * reach);
+        wf(rdram, p + 8, cz + sz[i] * reach);
+    }
+}
+
+static std::atomic<int64_t> s_cockpit_ms{ -1000 };
+
+static int64_t steady_ms()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// VR: the cockpit view drew this frame (refreshEffectObjectCamerasAndState hook).
+extern "C" void rs64_cockpit_mark(void)
+{
+    s_cockpit_ms.store(steady_ms(), std::memory_order_relaxed);
+}
+
+// 1 while the cockpit view is drawing: marked within the last quarter second, so RT64 reading a frame later still sees it.
+extern "C" int rs64_vr_cockpit_view(void)
+{
+    return (steady_ms() - s_cockpit_ms.load(std::memory_order_relaxed)) < 250 ? 1 : 0;
+}
+
+// VR, between binPolygonIntoTerrainGrid and streamTerrainGridCellsByDistance: every binned cell gets the full altitude band (highest 127, lowest -128).
+// The bin writes the band the game camera can see; looking up, it sits above the ground and streaming dropped every cell, so the head looking down saw none.
+extern "C" void rs64_vr_terrain_heights(uint8_t* rdram)
+{
+
+    constexpr uint32_t kCells = 128u * 128u;
+    constexpr int8_t kUncovered = -128;
+
+    if (!rs64_vr_active())
+    {
+        return;
+    }
+
+    int8_t* top =reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80130DB0u) - 0x80000000u));
+    int8_t* bottom = reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80131DB0u) - 0x80000000u));
+
+    for (uint32_t i = 0; i < kCells; i++) {
+        if ((top[i] == kUncovered) && (bottom[i] == kUncovered)) {
+            continue;
+        }
+
+        top[i] = 127;
+        bottom[i] = kUncovered;
+    }
 }
 
 // Keeps the terrain view box inside the 128-cell grid (far corners within 62 cells of the camera). ROGUESQ_TGRID_MAP_CLAMP=1 also clamps to the map bounds; off by default, since vanilla draws past the map edge by repeating edge tiles.
@@ -332,6 +422,11 @@ extern "C" void rs64_tgrid_clamp_polygon(uint8_t* rdram)
     static const bool s_map_clamp = env_on("ROGUESQ_TGRID_MAP_CLAMP", false);
     const float mapW = s_map_clamp ? (float)rh(rdram, 0x80136DF8u) : 0.0f, mapH = s_map_clamp ? (float)rh(rdram, 0x80136DFAu) : 0.0f;
     const float cx = rf(rdram, 0x80130C10u), cz = rf(rdram, 0x80130C18u);
+
+    if (rs64_vr_active())
+    {
+        vr_terrain_square(rdram, cx, cz);
+    }
 
     for (uint32_t i = 1; i <= 4; i++) {
         const uint32_t p = 0x80130C10u + i * 0xCu;
@@ -357,7 +452,8 @@ extern "C" float rs64_aspect_scale(void);
 static float hud_shift(const uint8_t* rdram, float width)
 {
 
-    if (g_active_overlay != 0 || rb(rdram, 0x80130B17u) == 0) return 0.0f;
+    // VR places the HUD itself; a shift moves the radar disc by a different amount than its ring there.
+    if (g_active_overlay != 0 || rb(rdram, 0x80130B17u) == 0 || rs64_vr_active()) return 0.0f;
 
     return rs64hud::shiftNative(width, rs64::video::hud_placement(), rs64_aspect_scale());
 }
@@ -369,11 +465,13 @@ extern "C" void rs64_hud_mark_element(uint8_t* rdram, recomp_context* ctx)
 
 
     const float width = (float)(int32_t)rw(rdram, (uint32_t)ctx->r17 + 0x10u);
+    const bool shifted = hud_shift(rdram, width) > 0.0f;
 
-    if (hud_shift(rdram, width) <= 0.0f) return;
+    // VR needs the marker in every display mode: it is how RT64 knows a texrect is HUD.
+    if (!shifted && !rs64_vr_active()) return;
 
     const uint32_t item = (uint32_t)ctx->r19;
-    const rs64hud::Side side = rs64hud::classify(item, rf(rdram, item + 0x18u), rw(rdram, item + 0x14u), width);
+    const rs64hud::Side side = shifted ? rs64hud::classify(item, rf(rdram, item + 0x18u), rw(rdram, item + 0x14u), width) : rs64hud::None;
     const uint32_t p = rw(rdram, 0x8011DC58u);
 
     ww(rdram, p, rs64hud::markerW0(side));
@@ -611,7 +709,8 @@ extern "C" uint32_t rs64_format_reply_slot(uint8_t* rdram, recomp_context* ctx, 
 {
 
     (void)ctx;
-    constexpr uint32_t kSlots = 32, kSlotSize = 0x30, kRing = 0x80B20000u;
+    constexpr uint32_t kSlots = 32, kSlotSize = 0x30, kRing = RS64_HR_REPLY_RING;
+    static_assert(kRing + kSlots * kSlotSize <= RS64_HR_REPLY_RING_END, "reply ring outgrew its host RAM range");
     static uint32_t s_next = 0;
 
     if ((src & 3u) != 0 || (src & 0xFF800000u) != 0x80000000u) return src;
@@ -975,6 +1074,206 @@ extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj,
 
     if (t.lastDrawn && !t.goneAt && ((frame - t.lastDrawn) <= 2u) && (edge < kInsideScreen) && !terrain_hides(rdram, ctx, pos)) {
         t.goneAt = frame;
-        fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f\n", name, obj, frame, t.nx, t.ny);
+        fprintf(stderr, "[pop] gone %s obj=%08X frame=%u at %.2f,%.2f by %s\n", name, obj, frame, t.nx, t.ny, seen ? "frustum" : "box/far/behind");
     }
+}
+
+// Adds display list chunks in free host RAM to the game's free list when a mod replaces a player craft, whose model can outgrow the game's pool.
+// Never for stock craft: effects spawn only while enough chunks are free, so more of them would change stock replays.
+extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
+{
+
+    static const bool s_on = [] {
+
+        static constexpr const char* kCrafts[] = {
+            "pl_crafts/xwing_HOB", "pl_crafts/ywing_HOB", "pl_crafts/awing_HOB", "pl_crafts/vwing_HOB", "pl_crafts/rmobil_HOB",
+            "pl_crafts/snowspeeder_HOB", "pl_crafts/falcon_HOB", "imp_stuff/tieinter_HOB", "pl_crafts/t16_HOB", "pl_crafts/koelsch_HOB"
+        };
+
+        return std::any_of(std::begin(kCrafts), std::end(kCrafts), [](const char* path) { return rs64::assets::find(path) != nullptr; });
+    }();
+
+    if (!s_on)
+    {
+        return;
+    }
+
+    constexpr uint32_t kFreeHead = 0x801163B0u;
+    constexpr uint32_t kStart = RS64_HR_DL_CHUNKS;
+    constexpr uint32_t kChunk = 0x108u;
+    constexpr uint32_t kCount = (RS64_HR_DL_CHUNKS_END - kStart) / kChunk;
+
+    const auto rd = [&](uint32_t a) { return (uint32_t)MEM_W(0, (gpr)(int32_t)a); };
+    const auto wr = [&](uint32_t a, uint32_t v) { MEM_W(0, (gpr)(int32_t)a) = (int32_t)v; };
+
+    uint32_t head = rd(kFreeHead);
+
+    for (uint32_t i = 0; i < kCount; ++i)
+    {
+        const uint32_t c = kStart + i * kChunk;
+
+        wr(c, head);
+        wr(c + 4, 0);
+
+        if (head)
+        {
+            wr(head + 4, c);
+        }
+
+        head = c;
+    }
+
+    wr(kFreeHead, head);
+    fprintf(stderr, "[dl-pool] added %u chunks at %08X\n", kCount, kStart);
+}
+
+// ---- Mission frame rate ----
+
+namespace {
+rs64::rate::State g_rate;
+}
+
+extern "C" int rs64_ls_session(void);
+
+extern "C" float rs64_rate_scale(void) {
+    return g_rate.scale;
+}
+
+extern "C" int rs64_rate_tick(void) {
+    return g_rate.tick ? 1 : 0;
+}
+
+extern "C" float rs64_rate_drag(float k) {
+    return rs64::rate::drag(k, g_rate.scale);
+}
+
+// An overlay load starts or ends a mission: back to the game's own 2 VIs per frame.
+extern "C" void rs64_rate_reset(uint8_t* rdram) {
+
+    g_rate = rs64::rate::State{};
+    rs64::mips::wb(rdram, 0x80128EAFu, 2);
+    ultramodern::set_vi_rate(60);
+}
+
+extern "C" uint32_t rs64_vi_rate(void) {
+    return ultramodern::get_vi_rate();
+}
+
+static bool g_rate_frame_seen = false;
+static std::atomic<uint32_t> g_submitted_frames{ 0 };
+
+// Game frames submitted since boot, read by input polling on the SI thread.
+extern "C" uint32_t rs64_game_frames(void) {
+    return g_submitted_frames.load(std::memory_order_relaxed);
+}
+
+// Each submitted frame: a screen whose loop doesn't run the rate (menus, the pause menu) gets the game's own 30 fps back.
+extern "C" void rs64_rate_submit(uint8_t* rdram) {
+
+    g_submitted_frames.fetch_add(1, std::memory_order_relaxed);
+
+    if (!g_rate_frame_seen && (rs64::mips::rb(rdram, 0x80128EAFu) != 2 || ultramodern::get_vi_rate() != 60))
+    {
+        rs64_rate_reset(rdram);
+    }
+
+    g_rate_frame_seen = false;
+}
+
+// ROGUESQ_LOG_RATE: one line per game second with the mission frames in it and the wall time it took.
+static void rate_log(float dt)
+{
+
+    static float s_total = 0.0f;
+    static float s_sec = 0.0f;
+    static int s_frames = 0;
+    static int s_one_vi = 0;
+    static auto s_wall = std::chrono::steady_clock::now();
+
+    s_sec += dt;
+    s_frames++;
+    s_one_vi += dt < 0.02f ? 1 : 0;
+
+    if (s_sec < 1.0f)
+    {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const int ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(now - s_wall).count();
+
+    s_total += s_sec;
+
+    fprintf(stderr, "[rate] t=%.1f frames=%d one_vi=%d wall_ms=%d scale=%.2f\n", s_total, s_frames, s_one_vi, ms, g_rate.scale);
+
+    s_sec = 0.0f;
+    s_frames = 0;
+    s_one_vi = 0;
+    s_wall = now;
+}
+
+// ROGUESQ_FIXED_STEP=1: game time advances one paced frame per frame instead of following real time (timeSnapshotFiller hook), so frame numbers repeat run to run.
+extern "C" int rs64_fixed_step(void)
+{
+
+    static const bool s_on = env_on("ROGUESQ_FIXED_STEP");
+
+    return s_on ? 1 : 0;
+}
+
+// Each mission frame, once its dt is final; returns the dt the frame uses. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps.
+// Above 30 the video clock ticks several times per frame, so a late frame waits a fraction of a frame for its swap instead of a whole one.
+extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
+{
+
+    static const int s_env = env_int("ROGUESQ_GAME_HZ", 0);
+    static const int s_sub = std::clamp(env_int("ROGUESQ_VI_SUBTICKS", 4), 1, 8);
+    static const bool s_log = env_on("ROGUESQ_LOG_RATE");
+    static auto s_last = std::chrono::steady_clock::now();
+
+    g_rate_frame_seen = true;
+
+    const int display_hz = (int)ultramodern::get_display_refresh_rate();
+    const int vr_hz = rs64_vr_game_hz();
+    const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
+    const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
+    const int sub = on ? s_sub : 1;
+    const auto now = std::chrono::steady_clock::now();
+    const float real = std::chrono::duration<float>(now - s_last).count();
+
+    s_last = now;
+
+    // With several ticks per frame the game's dt mispredicts the swap tick and makes it up a frame later, and the wall-clock interval jitters: both judder fast motion.
+    // A smoothed interval plus the time it still owes keeps steps even and game time on real time.
+    static float s_smooth = 0.0f;
+    static float s_debt = 0.0f;
+
+    if (sub > 1 && real > 0.0f && real <= 0.1f && !rs64_fixed_step())
+    {
+        s_smooth = s_smooth > 0.0f ? s_smooth + (real - s_smooth) * 0.1f : real;
+        s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);
+        dt = std::clamp(s_smooth + (s_debt - s_smooth) * 0.05f, 0.25f * s_smooth, 4.0f * s_smooth);
+        s_debt -= dt;
+    }
+    else
+    {
+        s_smooth = 0.0f;
+        s_debt = 0.0f;
+    }
+
+    rs64::rate::update(g_rate, dt, on);
+    rs64::mips::wb(rdram, 0x80128EAFu, on ? (uint8_t)sub : 2);
+    ultramodern::set_vi_rate(on ? (uint32_t)(hz * sub) : 60u);
+
+    if (s_log) {
+        rate_log(dt);
+    }
+
+    return dt;
+}
+
+// A player's A/START ended the crawl (the toml hook at the game's skip branch): the host flag counts them, which co-op reads.
+extern "C" void rs64_scene_skipped(const char* flag)
+{
+    rs64::host::set_flag(flag, rs64::host::flag(flag) + 1);
 }

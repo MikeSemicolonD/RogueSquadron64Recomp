@@ -7,6 +7,7 @@
 #include "util/rdram_words.h"
 #include "mp_host.h"
 #include "rs64/camera_shots.h"
+#include "rs64/mp_channel.h"
 #include "json/json.hpp"
 #include <algorithm>
 #include <chrono>
@@ -16,6 +17,7 @@
 #include <cstring>
 #include <fstream>
 #include <map>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +33,17 @@ Ghost& g() {
 
     static Ghost s;
     return s;
+}
+
+uint32_t player_ext(const uint8_t* rdram)
+{
+
+    const uint32_t slot = rs64::mips::rh(rdram, 0x80137DBAu);
+    const uint32_t table = rw(rdram, 0x80130BB0u);
+    const uint32_t npc = (slot < rs64::ls::kNpcSlots && table) ? rw(rdram, table + slot * 8u) : 0u;
+    const uint32_t ext = (npc >= 0x80000000u && npc < 0x80800000u) ? rw(rdram, npc + 4u) : 0u;
+
+    return (ext >= 0x80000000u && ext < 0x80800000u) ? ext : 0u;
 }
 
 uint8_t mission_tag() {
@@ -117,7 +130,8 @@ bool epoch_newer(uint8_t e, int current) {
 }
 
 uint32_t now_ms32() {
-    return (uint32_t)(now_s() * 1000.0);
+    // Wraps; a browser steady clock is past 2^32 ms, where a direct cast saturates.
+    return (uint32_t)(uint64_t)(now_s() * 1000.0);
 }
 
 // roguesq_net.json next to the exe: { "last_address": "10.0.0.189", "last_host": "10.0.0.5", "port": 27064 }. The last JOIN address seeds the editor; either may end in ":port".
@@ -166,6 +180,7 @@ void load_net_config() {
         const std::string pin = j.value("host_password", std::string{});
         g().host_pin_set = rs64::net::CodeEditor::valid(pin);
         g().host_pin.load(pin);
+        g().friendly_fire = j.value("friendly_fire", false);
         const int port = j.value("port", 27064);
         config_port() = (port > 0 && port < 65536) ? port : 27064;
     } catch (...) {
@@ -189,6 +204,7 @@ void save_net_config()
 
     j["host_name"] = s.host_name.name;
     j["host_password"] = s.host_pin_set ? s.host_pin.code() : std::string{};
+    j["friendly_fire"] = s.friendly_fire;
     j["port"] = config_port();
     std::ofstream f(net_config_path());
 
@@ -222,6 +238,14 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
         s.lobby.set_password(s.host_pin_set ? s.host_pin.code() : std::string{});
         s.lobby.host();
     } else {
+        static const char* test_pin = recomp::dbg::env_str("ROGUESQ_MP_TEST_JOIN_PIN");
+
+        if (test_pin && rs64::net::CodeEditor::valid(test_pin)) {
+            s.join_pin.load(test_pin);
+            s.join_pin_set = true;
+        }
+
+        s.lobby.set_password(s.join_pin_set ? s.join_pin.code() : std::string{});
         s.lobby.join();
     }
 
@@ -241,6 +265,25 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
         fprintf(stderr, "[lobby] hosting on port %u latency %d ms loss %d%%%s\n", cfg.port, cfg.latency_ms, cfg.loss_pct, s.started ? "" : " (network start failed)");
     } else {
         fprintf(stderr, "[lobby] joining %s:%u latency %d ms loss %d%%%s\n", cfg.addr.c_str(), cfg.port, cfg.latency_ms, cfg.loss_pct, s.started ? "" : " (network start failed)");
+    }
+}
+
+// The lobby's handshake messages go out before its keys are installed: the client's PAKE3 is the last plaintext message.
+void lobby_flush()
+{
+
+    Ghost& s = g();
+    rs64::net::SessionKeys k;
+
+    for (auto& b : s.lobby.take_sends()) {
+        s.link.send(std::move(b), true);
+    }
+
+    if (s.lobby.take_keys(&k)) {
+        s.link.set_cipher(k);
+        rs64::net::wipe_keys(&k);
+
+        fprintf(stderr, "[lobby] password checked, session sealed\n");
     }
 }
 
@@ -269,25 +312,9 @@ void lobby_poll()
 
     if (edges.connected)
     {
+        s.link.clear_cipher();
         s.lobby.on_connected(now);
-        rs64::net::Hello h;
-        h.build = s.lobby.local_build();
-        h.role = s.player;
-
-        // The pilot name (gGameSettings+7), for the label over this player's ship on the other screen.
-        if (s.rdram) {
-            for (int i = 0; i < 3; ++i) {
-                h.name[i] = (char)rb(s.rdram, 0x80130B47u + (uint32_t)i);
-            }
-        }
-
-        s.link.send(rs64::net::encode_hello(h), true);
-
-        // The client's password for this game (none: empty); the host answers ACCEPT or BYE WrongPassword.
-        if (s.player == 1)
-        {
-            s.link.send(rs64::net::encode_auth(s.join_pin_set ? s.join_pin.code() : std::string{}), true);
-        }
+        s.session_ff = s.player == 0 && s.friendly_fire;
     }
 
     s.was_connected = c;
@@ -300,13 +327,43 @@ void lobby_poll()
     }
 
     s.lobby.tick(now);
+    lobby_flush();
+
+    if (s.lobby.password_failed()) {
+        s.pin_mode = true;
+    }
+
+    // A password kept from an earlier game, refused by an open one: the next JOIN goes without it.
+    if (s.player == 1 && s.lobby.status() == "GAME HAS NO PASSWORD") {
+        s.join_pin_set = false;
+    }
+
+    if (s.lobby.take_kick())
+    {
+        s.link.kick();
+
+        fprintf(stderr, "[lobby] closed a connection that failed the handshake\n");
+    }
+
     const bool ready = s.lobby.ready();
 
     if (ready && !s.was_ready)
     {
         if (s.player == 0) {
             s.link.send(rs64::net::encode_accept(), true);
+            s.link.send(rs64::net::encode_rules(s.friendly_fire), true);
         }
+
+        // The pilot name (gGameSettings+7), for the label over this player's ship on the other screen.
+        char name[3] = {0, 0, 0};
+
+        if (s.rdram) {
+            for (int i = 0; i < 3; ++i) {
+                name[i] = (char)rb(s.rdram, 0x80130B47u + (uint32_t)i);
+            }
+        }
+
+        s.link.send(rs64::net::encode_name(name), true);
 
         s.lobby_session = true;
         s.peer_left = false;
@@ -372,7 +429,7 @@ void send_game_over() {
         s.link.send(rs64::net::encode_result(s.epoch, 3), true);
         s.result_sent = true;
 
-        fprintf(stderr, "[ghost] host result 3 sent early\n");
+        fprintf(stderr, "[ghost] host result 3 sent at %.2f s\n", now_s());
     }
 }
 
@@ -439,6 +496,45 @@ const rs64_camera_shots* camera_shots()
     return svc;
 }
 
+// The mp.channel service: other mods' messages to the other player, by channel name.
+struct ChannelListener {
+    rs64_mp_message_fn fn = nullptr;
+    void* user = nullptr;
+};
+
+std::mutex s_channels_mu;
+std::map<std::string, ChannelListener> s_channels;
+
+// A copy, so the listener runs without the lock (it may listen or send itself).
+ChannelListener channel_listener(const std::string& channel)
+{
+
+    std::lock_guard<std::mutex> lk(s_channels_mu);
+    const auto it = s_channels.find(channel);
+
+    return it == s_channels.end() ? ChannelListener{} : it->second;
+}
+
+void deliver_mod_message(const std::vector<uint8_t>& m)
+{
+
+    std::string channel;
+    std::vector<uint8_t> payload;
+
+    if (!rs64::net::decode_mod(m.data(), m.size(), &channel, &payload))
+    {
+        return;
+    }
+
+    const ChannelListener l = channel_listener(channel);
+
+    if (l.fn) l.fn(payload.data(), (uint32_t)payload.size(), l.user);
+}
+
+// Peak backlogs a peer can leave waiting for the mission to settle: four full resyncs of the largest DAT list, and far more trigger edges than a level has.
+constexpr size_t kMaxDatApply = 4 * 4096;
+constexpr size_t kMaxTriggerIn = 1024;
+
 void drain()
 {
 
@@ -447,9 +543,41 @@ void drain()
     // The connect edge first: the peer's HELLO can arrive in the same batch as the connection, and the lobby ignores a HELLO before it knows it is connected.
     lobby_poll();
 
-    for (const auto& m : s.link.receive())
+    for (auto& raw : s.link.receive())
     {
-        switch ((rs64::net::Msg)rs64::net::message_type(m.data(), m.size())) {
+        // The previous message's handshake replies and keys first: the next message may already be sealed.
+        lobby_flush();
+
+        std::vector<uint8_t> m;
+        const rs64::net::Cipher::Open opened = s.link.open(raw, &m);
+
+        if (opened == rs64::net::Cipher::Open::Fail)
+        {
+            fprintf(stderr, "[lobby] a sealed message did not open; closing the session\n");
+
+            s.link.clear_cipher();
+            s.lobby.on_lost();
+
+            if (s.player == 0) {
+                s.link.kick();
+            }
+
+            continue;
+        }
+
+        if (opened != rs64::net::Cipher::Open::Ok)
+        {
+            continue;
+        }
+
+        const uint8_t type = rs64::net::message_type(m.data(), m.size());
+
+        // A connection that has not passed the handshake (and the password) only gets to attempt it.
+        if (!s.lobby.ready() && !rs64::net::handshake_message(type)) {
+            continue;
+        }
+
+        switch ((rs64::net::Msg)type) {
         case rs64::net::Msg::State: {
             rs64::net::StatePacket p;
 
@@ -478,6 +606,9 @@ void drain()
             s.remote_rx_s = now_s();
             memcpy(s.remote_pad, p.pad, 6);
             s.remote_foil = p.foil;
+            memcpy(s.remote_head, p.head, sizeof(p.head));
+            memcpy(s.remote_shots, p.shots, sizeof(p.shots));
+            s.remote_walk = p.walk;
             s.remote_down = (p.flags & rs64::net::kStateDown) != 0;
             s.remote_pos = {p.pos[0], p.pos[1], p.pos[2]};
             PuppetState ps;
@@ -523,19 +654,25 @@ void drain()
         case rs64::net::Msg::Result: {
             uint8_t e = 0, r = 0;
 
-            // One result per mission: the host repeats it when its end lands and at its mission end, and applying it again mid-transition re-raises the end request.
+            // One result per mission: the host repeats it at its mission end, and applying it again mid-transition re-raises the end request.
             if (rs64::net::decode_result(m.data(), m.size(), &e, &r) && s.player == 1 && s.in_session && (s.remote_epoch < 0 || e == (uint8_t)s.remote_epoch))
             {
                 if (s.host_result < 0) {
                     s.pending_result = r;
                     s.host_result = r;
 
-                    fprintf(stderr, "[ghost] host result %u received\n", r);
-                } else if (r == s.host_result && !s.host_landed) {
-                    s.host_landed = true;
-
-                    fprintf(stderr, "[ghost] host result %u landed\n", r);
+                    fprintf(stderr, "[ghost] host result %u received at %.2f s\n", r, now_s());
                 }
+            }
+
+            break;
+        }
+        case rs64::net::Msg::EndClip: {
+            rs64::net::EndClip c;
+
+            if (rs64::net::decode_end_clip(m.data(), m.size(), &c) && s.player == 1 && s.in_session && (s.remote_epoch < 0 || c.epoch == (uint8_t)s.remote_epoch))
+            {
+                s.end_clips.push_back(c);
             }
 
             break;
@@ -602,7 +739,7 @@ void drain()
             uint8_t e = 0;
             std::vector<std::pair<uint16_t, int32_t>> items;
 
-            if (s.in_session && rs64::net::decode_damage(m.data(), m.size(), &e, &items) && e == mission_tag())
+            if (s.in_session && s.dat_apply.size() < kMaxDatApply && rs64::net::decode_damage(m.data(), m.size(), &e, &items) && e == mission_tag())
             {
                 s.dat_apply.insert(s.dat_apply.end(), items.begin(), items.end());
             }
@@ -643,7 +780,7 @@ void drain()
             uint16_t idx = 0;
             bool enter = false;
 
-            if (s.player == 0 && s.in_session && rs64::net::decode_trigger(m.data(), m.size(), &e, &idx, &enter) && e == mission_tag())
+            if (s.player == 0 && s.in_session && s.trigger_in.size() < kMaxTriggerIn && rs64::net::decode_trigger(m.data(), m.size(), &e, &idx, &enter) && e == mission_tag())
             {
                 s.trigger_in.emplace_back(idx, enter);
             }
@@ -672,6 +809,31 @@ void drain()
 
             break;
         }
+        case rs64::net::Msg::Hit: {
+            uint8_t e = 0;
+            uint16_t damage = 0;
+
+            if (s.in_session && s.session_ff && rs64::net::decode_hit(m.data(), m.size(), &e, &damage) && e == mission_tag()) {
+                s.ff_damage += damage;
+            }
+
+            break;
+        }
+        case rs64::net::Msg::Rules: {
+            bool ff = false;
+
+            if (s.player == 1 && rs64::net::decode_rules(m.data(), m.size(), &ff))
+            {
+                s.session_ff = ff;
+
+                fprintf(stderr, "[lobby] host rules: friendly fire %s\n", ff ? "on" : "off");
+            }
+
+            break;
+        }
+        case rs64::net::Msg::Mod:
+            deliver_mod_message(m);
+            break;
         case rs64::net::Msg::Mission: {
             uint8_t id = 0;
 
@@ -687,7 +849,6 @@ void drain()
 
             if (rs64::net::decode_hello(m.data(), m.size(), &h))
             {
-                s.remote_name.assign(h.name, strnlen(h.name, 3));
                 s.lobby.on_hello(h);
 
                 if (!s.lobby.ready() && s.lobby.state() == rs64::net::LobbyState::Failed)
@@ -706,7 +867,7 @@ void drain()
             {
                 s.skip.on_remote(scene);
 
-                fprintf(stderr, "[ghost] the host skipped cutscene %04X (here %04X)\n", scene, s.skip_tag);
+                fprintf(stderr, "[ghost] the host skipped cutscene %04X (here %04X) at %.2f s\n", scene, s.skip_tag, now_s());
             }
 
             break;
@@ -784,15 +945,46 @@ void drain()
         case rs64::net::Msg::Launch:
             rs64::net::decode_launch(m.data(), m.size(), &s.launch);
             break;
-        case rs64::net::Msg::Auth: {
-            std::string pin;
-
-            if (s.player == 0 && rs64::net::decode_auth(m.data(), m.size(), &pin) && !s.lobby.on_auth(pin))
+        case rs64::net::Msg::Auth:
+            if (s.player == 0 && rs64::net::decode_auth(m.data(), m.size()) && !s.lobby.on_auth())
             {
-                // shortcut: the refused player is trusted to leave on this BYE; a modified client could hold the host's one slot until it does.
-                s.link.send(rs64::net::encode_bye(rs64::net::ByeReason::WrongPassword, 0), true);
+                fprintf(stderr, "[lobby] refused a player: no password\n");
+            }
 
-                fprintf(stderr, "[lobby] refused a player: %s password\n", pin.empty() ? "no" : "wrong");
+            break;
+        case rs64::net::Msg::Pake1:
+        case rs64::net::Msg::Pake2:
+        case rs64::net::Msg::Pake3: {
+            uint8_t point[rs64::net::kPakePoint];
+            uint8_t tag[rs64::net::kPakeTag];
+            const rs64::net::Msg t = (rs64::net::Msg)type;
+
+            if (!rs64::net::decode_pake(m.data(), m.size(), t, point, tag))
+            {
+                break;
+            }
+
+            if (t == rs64::net::Msg::Pake1) {
+                s.lobby.on_pake1(point);
+            } else if (t == rs64::net::Msg::Pake2) {
+                s.lobby.on_pake2(point, tag);
+            } else {
+                s.lobby.on_pake3(tag);
+            }
+
+            if (s.lobby.password_failed())
+            {
+                fprintf(stderr, "[lobby] the host has another password\n");
+            }
+
+            break;
+        }
+        case rs64::net::Msg::Name: {
+            char name[3];
+
+            if (rs64::net::decode_name(m.data(), m.size(), name))
+            {
+                s.remote_name = rs64::net::pilot_name(name);
             }
 
             break;
@@ -812,7 +1004,7 @@ void drain()
                 s.lobby.on_refused(s.join_pin_set);
                 s.pin_mode = true;
 
-                fprintf(stderr, "[lobby] the host wants a password (%s)\n", s.join_pin_set ? "wrong one sent" : "none sent");
+                fprintf(stderr, "[lobby] the host refused this player (%s)\n", s.join_pin_set ? "password" : "no password");
                 break;
             }
 
@@ -912,8 +1104,6 @@ void apply_pending_result(uint8_t* rdram) {
         // The bit is raised directly: the request functions also reset speech playback (initSpeechPlaybackState), which would cut off the end cue the client's own level script has just started.
         ww(rdram, 0x8010C9E0u, (req & ~other) | bit);
         done = rw(rdram, 0x8010CA20u) == end_mode;
-    } else if (r == 3 && s.out && ++s.end_wait < kEndWaitFrames) {
-        // Spectating: this craft shows the survivor's death (or is still finishing its own), and its end (rs64_ghost_block_transition) closes the mission once it has exploded.
     } else if (rw(rdram, 0x8010CA20u) != 5) {
         // Abort / game over: not while the pause menu is open (its own close-down would be skipped).
         wb(rdram, 0x80130B14u, (uint8_t)r);
@@ -922,7 +1112,7 @@ void apply_pending_result(uint8_t* rdram) {
     }
 
     if (done) {
-        fprintf(stderr, "[ghost] applied host result %d\n", r);
+        fprintf(stderr, "[ghost] applied host result %d at %.2f s\n", r, now_s());
         s.pending_result = -1;
     }
 }
@@ -947,6 +1137,39 @@ extern "C" uint32_t rs64_ghost_active(void) {
 }
 
 // Quit: tells the other player at once instead of leaving them to the connection timeout. Runs on a game thread (poll_input) but _Exit follows, so the 200 ms wait is acceptable only on this exit path.
+// The mp.channel service (include/rs64/mp_channel.h), published by rs64_mp_register.
+extern "C" const rs64_mp_channel* rs64_ghost_channel(void)
+{
+
+    static const rs64_mp_channel svc = {
+        RS64_MP_CHANNEL_VERSION,
+        (uint32_t)sizeof(rs64_mp_channel),
+        [] { return g().lobby.ready() ? 1 : 0; },
+        [] { return g().lobby.ready() ? g().player : -1; },
+        [](const char* channel, const void* data, uint32_t size, int reliable) {
+            if (!rs64::net::mod_channel_name_ok(channel) || size > rs64::net::kModChannelDataMax || (size && !data)) return -2;
+
+            if (!g().lobby.ready()) return -1;
+
+            g().link.send(rs64::net::encode_mod(channel, (const uint8_t*)data, size), reliable != 0);
+
+            return 0;
+        },
+        [](const char* channel, rs64_mp_message_fn fn, void* user) {
+            if (!rs64::net::mod_channel_name_ok(channel)) return -2;
+
+            std::lock_guard<std::mutex> lk(s_channels_mu);
+
+            if (fn) s_channels[channel] = ChannelListener{ fn, user };
+            else s_channels.erase(channel);
+
+            return 0;
+        },
+    };
+
+    return &svc;
+}
+
 extern "C" void rs64_ghost_quit(void) {
 
     Ghost& s = g();
@@ -960,6 +1183,10 @@ extern "C" void rs64_ghost_quit(void) {
     // After the BYE: the relay carries it.
     s.link.stop();
     relay_shutdown();
+
+#if RS64_WIFI_DIRECT
+    rs64::net::wifi_direct_shutdown();
+#endif
 }
 
 // Recording-driven test runs keep the harness's fixed 1/30 s step so a recording replays at its own pace; live play keeps the game's dt.
@@ -1027,8 +1254,49 @@ extern "C" uint32_t rs64_ghost_unfreeze(uint8_t* rdram)
 
 extern "C" uint32_t rs64_ghost_block_result(void) {
 
-    const Ghost& s = g();
+    Ghost& s = g();
+
+    // The host's end request: the voice lines its level script starts next are the end cue, forwarded until its result lands.
+    if (s.in_session && s.player == 0 && !s.peer_left) {
+        s.end_clips_open = true;
+    }
+
     return (s.in_session && s.player == 1 && !s.peer_left) ? 1u : 0u;
+}
+
+// playSpeechClip entry (a0 = the clip, a1-a3 its playback arguments): the host forwards its end cue; the client remembers its own recent clips.
+extern "C" void rs64_ghost_speech_clip(uint8_t* rdram, recomp_context* ctx)
+{
+
+    (void)rdram;
+    constexpr int kMaxEndClips = 4;
+    constexpr size_t kOwnClips = 8;
+    Ghost& s = g();
+
+    if (!s.in_session || s.peer_left)
+    {
+        return;
+    }
+
+    if (s.player == 0 && s.end_clips_open && s.end_clips_sent < kMaxEndClips) {
+        rs64::net::EndClip c;
+
+        c.epoch = s.epoch;
+        c.args[0] = (uint32_t)ctx->r4;
+        c.args[1] = (uint32_t)ctx->r5;
+        c.args[2] = (uint32_t)ctx->r6;
+        c.args[3] = (uint32_t)ctx->r7;
+        s.link.send(rs64::net::encode_end_clip(c), true);
+        ++s.end_clips_sent;
+
+        fprintf(stderr, "[ghost] end clip 0x%X sent at %.2f s\n", c.args[0], now_s());
+    } else if (s.player == 1) {
+        if (s.own_clips.size() >= kOwnClips) {
+            s.own_clips.erase(s.own_clips.begin());
+        }
+
+        s.own_clips.emplace_back((uint32_t)ctx->r4, now_ms32());
+    }
 }
 
 // requestMissionTransitionMode(a0): arg 3 = success end mode, 2 = failure. A client in session enters them only for the host's result; the host announces its result as soon as it enters one (mode 0 = the transition will be accepted).
@@ -1047,13 +1315,7 @@ extern "C" uint32_t rs64_ghost_block_transition(uint8_t* rdram, uint32_t arg)
     if (arg == 1 && rw(rdram, 0x8010CA20u) == 0) {
         uint8_t& lives = rdram[(kLives - 0x80000000u) ^ 3];
 
-        if (s.out && s.pending_result == 3) {
-            // The survivor's death shown here is the last one: the game's own decrement to 0 ends the mission with result 3.
-            lives = 1;
-            s.pending_result = -1;
-
-            fprintf(stderr, "[ghost] game over after the spectated death\n");
-        } else if (s.out) {
+        if (s.out) {
             s.restore_lives = lives;
             lives = 2;
         } else if (s.player == 1) {
@@ -1104,7 +1366,7 @@ extern "C" uint32_t rs64_ghost_block_transition(uint8_t* rdram, uint32_t arg)
             s.link.send(rs64::net::encode_result(s.epoch, result), true);
             s.result_sent = true;
 
-            fprintf(stderr, "[ghost] host result %u sent early\n", result);
+            fprintf(stderr, "[ghost] host result %u sent at %.2f s\n", result, now_s());
         }
 
         return 0u;
@@ -1124,11 +1386,11 @@ extern "C" uint32_t rs64_ghost_gate_response(uint32_t result, uint32_t ready)
         return ready;
     }
 
-    // The host's end cue (a voiceline) plays before its result lands: the client is told when it does, and lands with it.
-    if (s.player == 0) {
-        if (ready && !s.landed_sent) {
-            s.link.send(rs64::net::encode_result(s.epoch, (uint8_t)result), true);
-            s.landed_sent = true;
+    // Each side lands after its own end cue (a voiceline), without waiting for the other.
+    if (s.player == 0)
+    {
+        if (ready && s.end_clips_open) {
+            s.end_clips_open = false;
 
             fprintf(stderr, "[ghost] result %u landed at %.2f s\n", result, now_s());
         }
@@ -1136,18 +1398,14 @@ extern "C" uint32_t rs64_ghost_gate_response(uint32_t result, uint32_t ready)
         return ready;
     }
 
-    if (s.host_result != (int)result)
-    {
-        return 0u;
-    }
-
-    if (!s.host_landed && ++s.end_wait < kEndWaitFrames)
+    // Not before the host's end cue is playing here, or nothing holds the landing until the line ends (the host sends its clips before its result).
+    if (s.host_result != (int)result || !s.end_clips.empty())
     {
         return 0u;
     }
 
     if (ready) {
-        fprintf(stderr, "[ghost] result %u landed at %.2f s (%s)\n", result, now_s(), s.host_landed ? "with the host" : "host end not heard");
+        fprintf(stderr, "[ghost] result %u landed at %.2f s\n", result, now_s());
     }
 
     return ready;
@@ -1160,9 +1418,21 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     Ghost& s = g();
     s.rdram = rdram;
     s.in_session = false;
+    s.session_level = -1;
     s.pending_result = -1;
     s.host_result = -1;
     s.allow_transition = -1;
+    s.end_clips_open = false;
+    s.end_clips_sent = 0;
+    s.end_clips.clear();
+    s.own_clips.clear();
+
+    const bool ghost = rs64_ghost_mode() && !demo_active(rdram);
+
+    // Queued messages first, so a PICK or READY that arrived late is cleared with the round below.
+    if (ghost) {
+        drain();
+    }
 
     // The menus' round state ends here on every path (a mission played alone included): a late PICK or READY belongs to the round that just ended.
     s.craft = rs64::ls::CraftBarrier{};
@@ -1173,15 +1443,15 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.in_hangar = false;
     s.follow_out = false;
     s.lives_seen = -1;
+    memset(s.shots, 0, sizeof(s.shots));
+    memset(s.remote_shots, 0, sizeof(s.remote_shots));
     s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) + 0x100u);
     s.crawl_over = false;
 
-    if (!rs64_ghost_mode() || demo_active(rdram))
+    if (!ghost)
     {
         return;
     }
-
-    drain();
 
     if (!s.lobby.ready() && !s.lobby_session)
     {
@@ -1225,11 +1495,14 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
 
         // Start together: a client that arrives late gets the host's objective state copied over steps its level script never ran, and faults on them (trigger 21 on level 0). The wait is capped; a slower client still catches up as before.
         constexpr uint32_t kStartWaitMs = 10000;
+        const double wait_from = now_s();
 
         if (!wait_for(rdram, ctx, kStartWaitMs, [&]() { return s.peer_arrived || s.peer_left; }))
         {
             fprintf(stderr, "[ghost] the other player is still loading; starting without waiting\n");
         }
+
+        fprintf(stderr, "[ghost] waited %.2f s at mission start for the other player\n", now_s() - wait_from);
     } else {
         SessionHeader h;
 
@@ -1257,6 +1530,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.missions++;
     s.epoch++;
     s.in_session = true;
+    s.session_level = running.level;
     s.seq = 0;
     s.have_prev = false;
     s.puppet = Puppet{};
@@ -1269,9 +1543,6 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.despawned = true;
     s.puppet_dying = -1;
     s.spectate_hit = false;
-    s.landed_sent = false;
-    s.host_landed = false;
-    s.end_wait = 0;
     s.tow_sent_phase = 0;
     s.tow_sent_head = -1;
     s.tow_remote = rs64::net::TowSeg{};
@@ -1308,6 +1579,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.trigger_applying = false;
     s.tows_mine.clear();
     s.tow_in.clear();
+    s.ff_damage = 0;
     s.tow_retry.clear();
     s.tow_injecting = false;
 
@@ -1354,6 +1626,54 @@ extern "C" void rs64_ghost_mission_end(uint8_t* rdram)
     s.in_session = false;
 }
 
+// Scripted mission ends: die (a lethal hit) and end (the abort's direct result write).
+static void test_ends(uint8_t* rdram, recomp_context* ctx, long frame)
+{
+
+    if (test_step("die", frame)) {
+        kill_player(rdram, ctx);
+
+        fprintf(stderr, "[ghost] test die at frame %ld\n", frame);
+    }
+
+    // Test fail: what level 0's objective check does on a failure (setHudEnableBit4, then playObjectiveVoiceLine2(0x229, 0.3)).
+    if (test_step("fail", frame)) {
+        rs64::mp::call(rdram, ctx, 0x800C7738u, {});
+        rs64::mp::call(rdram, ctx, 0x800C7D1Cu, {0x229u, 0x3E99999Au});
+
+        fprintf(stderr, "[ghost] test fail at frame %ld\n", frame);
+    }
+
+    if (const TestStep* t = test_step("end", frame)) {
+        wb(rdram, 0x80130B14u, (uint8_t)t->arg);
+        ww(rdram, 0x8010C9E0u, rw(rdram, 0x8010C9E0u) | 1u);
+
+        fprintf(stderr, "[ghost] test end: result %ld at frame %ld\n", t->arg, frame);
+    }
+}
+
+// The partner left mid-mission and the session ended: scripted ends still fire, to test finishing alone.
+extern "C" void rs64_ghost_solo_frame(uint8_t* rdram, recomp_context* ctx)
+{
+
+    Ghost& s = g();
+
+    if (!s.in_session || s.started)
+    {
+        return;
+    }
+
+    static uint32_t s_logged_epoch = 0;
+
+    if (s_logged_epoch != (uint32_t)s.epoch + 1u) {
+        s_logged_epoch = (uint32_t)s.epoch + 1u;
+
+        fprintf(stderr, "[ghost] mission continues alone from frame %u\n", s.frame);
+    }
+
+    test_ends(rdram, ctx, (long)s.frame++);
+}
+
 // Frame start (after the pad poll): remote messages in, the host's result applied, local input from a recording if one is set, local state out, remote pad onto port 1.
 extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
 {
@@ -1362,6 +1682,7 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
 
     if (!s.started)
     {
+        rs64_ghost_solo_frame(rdram, ctx);
         return;
     }
 
@@ -1502,6 +1823,26 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         apply_pending_result(rdram);
     }
 
+    // The host's end cue, once its result applied here (the end request before it resets speech playback): a clip this side played itself in the last kOwnClipMs is not played twice.
+    if (s.player == 1 && s.host_result >= 0 && s.pending_result < 0 && !s.end_clips.empty())
+    {
+        constexpr uint32_t kOwnClipMs = 10000;
+        constexpr uint32_t kPlaySpeechClip = 0x80066EE4u;
+        const uint32_t now = now_ms32();
+
+        for (const rs64::net::EndClip& c : s.end_clips) {
+            const bool heard = std::any_of(s.own_clips.begin(), s.own_clips.end(), [&](const std::pair<uint32_t, uint32_t>& o) { return o.first == c.args[0] && now - o.second < kOwnClipMs; });
+
+            if (!heard) {
+                rs64::mp::call(rdram, ctx, kPlaySpeechClip, {c.args[0], c.args[1], c.args[2], c.args[3]});
+
+                fprintf(stderr, "[ghost] host end clip 0x%X played\n", c.args[0]);
+            }
+        }
+
+        s.end_clips.clear();
+    }
+
     const long frame = (long)s.frame;
 
     // Test quit: arg 1 takes the menu QUIT path (sends BYE), otherwise the process dies with no goodbye.
@@ -1512,6 +1853,12 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         if (t->arg == 1) {
             rs64::mp::request_quit();
         } else {
+
+#if RS64_WIFI_DIRECT
+            // A Wi-Fi Direct group still up hangs the exit in Windows' DLL detach.
+            rs64::net::wifi_direct_shutdown();
+#endif
+
             std::_Exit(3);
         }
     }
@@ -1526,12 +1873,6 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         fprintf(stderr, "[ghost] test lives: shared pool set to %ld\n", test_lives);
     }
 
-    if (test_step("die", frame)) {
-        kill_player(rdram, ctx);
-
-        fprintf(stderr, "[ghost] test die at frame %u\n", s.frame);
-    }
-
     // Test upgrade: OR power-up bits into the settings word, the way a pickup does.
     if (const TestStep* t = test_step("upgrade", frame)) {
         const uint32_t bits = (uint32_t)t->arg & rs64::net::kUpgradeMask;
@@ -1540,12 +1881,24 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         fprintf(stderr, "[ghost] test upgrade: %05X at frame %u\n", bits, s.frame);
     }
 
-    // Test end: this result, the way the game's abort ends a mission.
-    if (const TestStep* t = test_step("end", frame)) {
-        wb(rdram, 0x80130B14u, (uint8_t)t->arg);
-        ww(rdram, 0x8010C9E0u, rw(rdram, 0x8010C9E0u) | 1u);
+    test_ends(rdram, ctx, frame);
 
-        fprintf(stderr, "[ghost] test end: result %ld at frame %u\n", t->arg, s.frame);
+    // Test hurt: friendly-fire damage, as if the other player's shot had landed.
+    if (const TestStep* t = test_step("hurt", frame)) {
+        s.ff_damage += (uint32_t)t->arg;
+    }
+
+    apply_friendly_fire(rdram, ctx);
+
+    // An end the game writes directly (request bit 1: an abort, a scripted end) skips requestMissionTransitionMode, so the host tells the client the frame it is raised.
+    if (s.player == 0 && !s.result_sent && !s.peer_left && (rw(rdram, 0x8010C9E0u) & 1u))
+    {
+        const uint8_t result = rb(rdram, 0x80130B14u);
+
+        s.link.send(rs64::net::encode_result(s.epoch, result), true);
+        s.result_sent = true;
+
+        fprintf(stderr, "[ghost] host result %u sent at %.2f s\n", result, now_s());
     }
 
     // The other player went down: their puppet takes a lethal hit so the game plays its death, and is removed kPuppetDeathFrames later (or at once when the hit could not land, or they are back up).
@@ -1596,7 +1949,8 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         }
     }
 
-    const float dt = 1.0f / 30.0f;
+    // A mission frame's game time: 1/60 when this side runs 60 logic frames a second, so the play clock and sent velocity match the other side's at any rate.
+    const float dt = rs64::mp::frame_seconds();
 
     // Spectating: the craft takes the survivor's pose before the tick pass (player block 0x80137DC0: pos, fwd +0xC, up +0x18, vel +0x24), so the camera follows them; health stays full and the pad keeps START plus the survivor's fire.
     if (s.out && rw(rdram, 0x8010CA20u) != 5)
@@ -1678,18 +2032,23 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         // Mission mode 1 = this player died and is respawning; an out player is down for good.
         out.flags = (rw(rdram, 0x8010CA20u) == 1 || s.out) ? rs64::net::kStateDown : 0;
 
-        // The X-wing's S-foils: its handler extension (slot table 0x80130BB0 [player slot 0x80137DBA] -> ctx +4) holds foil t at +4, 0 open .. 1 closed.
-        if (rb(rdram, 0x80130B41u) == 0)
-        {
-            const uint32_t slot = rs64::mips::rh(rdram, 0x80137DBAu);
-            const uint32_t table = rw(rdram, 0x80130BB0u);
-            const uint32_t npc = (slot < rs64::ls::kNpcSlots && table) ? rw(rdram, table + slot * 8u) : 0u;
-            const uint32_t ext = (npc >= 0x80000000u && npc < 0x80800000u) ? rw(rdram, npc + 4u) : 0u;
+        // The player's craft handler extension (slot table 0x80130BB0 [player slot 0x80137DBA] -> ctx +4): the X-wing's holds foil t at +4 (0 open .. 1 closed), a walker's
+        // its head turn and pitch at +0x4C and +0x48.
+        const uint32_t ext = player_ext(rdram);
+        const bool walker = rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel;
 
-            if (ext >= 0x80000000u && ext < 0x80800000u) {
-                const float t = std::clamp(rf(rdram, ext + 4u), 0.0f, 1.0f);
-                out.foil = (uint8_t)std::lround((1.0f - t) * 250.0f);
-            }
+        if (ext && walker) {
+            auto angle = [](float a) { return a > -180.0f && a < 180.0f ? a : 0.0f; };
+            out.head[0] = angle(rf(rdram, ext + 0x4Cu));
+            out.head[1] = angle(rf(rdram, ext + 0x48u));
+            memcpy(out.shots, s.shots, sizeof(s.shots));
+
+            // The walk cycle position (+0x88, 0 .. 1).
+            const float walk = rf(rdram, ext + 0x88u);
+            out.walk = walk >= 0.0f && walk <= 1.0f ? walk : 0.0f;
+        } else if (ext && rb(rdram, 0x80130B41u) == 0) {
+            const float t = std::clamp(rf(rdram, ext + 4u), 0.0f, 1.0f);
+            out.foil = (uint8_t)std::lround((1.0f - t) * 250.0f);
         }
 
         out.pos[0] = pos.x;
@@ -1734,8 +2093,12 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
     uint8_t port1[6];
     pad2_bytes(live ? &remote : nullptr, port1);
 
+    // On the AT-ST level a second controller turns player 1's walker head (updatePlayerAtStBehavior reads port 2's stick while its status byte 0x80130B92 is 1): the other walker comes
+    // through STATE instead, so port 2 stays unplugged.
+    const bool walker = rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel;
+
     for (int i = 0; i < 6; ++i) {
-        wb(rdram, 0x80130B8Eu + i, port1[i]);
+        wb(rdram, 0x80130B8Eu + i, walker ? 0 : port1[i]);
     }
 
     if (s.trace) {

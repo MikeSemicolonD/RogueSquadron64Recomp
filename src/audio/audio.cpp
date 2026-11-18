@@ -6,14 +6,24 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
 #include "os_compat.h"
 #include "ultramodern/ultra64.h"
 #include "util/debug_logs.h"
+
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
+#endif
+
 #ifdef _WIN32
 #include "SDL.h"
 #else
 #include "SDL2/SDL.h"
+#endif
+
+#if defined(__EMSCRIPTEN__)
+#include "audio/audio_web.h"
 #endif
 
 using recomp::dbg::env_on;
@@ -22,13 +32,6 @@ using recomp::dbg::env_int;
 static inline uint32_t rdram_be32(const uint8_t* rdram, uint32_t off)
 {
     return (uint32_t(rdram[(off + 0) ^ 3]) << 24) | (uint32_t(rdram[(off + 1) ^ 3]) << 16) | (uint32_t(rdram[(off + 2) ^ 3]) << 8) | uint32_t(rdram[(off + 3) ^ 3]);
-}
-static inline void rdram_wr32(uint8_t* rdram, uint32_t off, uint32_t v) {
-
-    rdram[(off + 0) ^ 3] = (uint8_t)(v >> 24);
-    rdram[(off + 1) ^ 3] = (uint8_t)(v >> 16);
-    rdram[(off + 2) ^ 3] = (uint8_t)(v >> 8);
-    rdram[(off + 3) ^ 3] = (uint8_t)v;
 }
 
 static unsigned g_rs64_audio_underruns = 0;
@@ -266,16 +269,13 @@ static RspExitReason musyx_audio_runner(uint8_t* rdram, uint32_t ucode_addr)
     // Writes <PATH>.bin (plain big-endian image, file[i]=rdram[i^3]) + <PATH>.task (OSTask, 0x40 BE bytes).
     static int s_tgt = -2;
 
-    if (s_tgt == -2) {
-        const char* e = recomp::os::getenv("ROGUESQ_DUMP_SYNTH_FRAME");
-        s_tgt = e ? atoi(e) : -1;
-    }
+    if (s_tgt == -2) s_tgt = env_int("ROGUESQ_DUMP_SYNTH_FRAME", -1);
 
     if (s_tgt >= 0 && s_n == s_tgt)
     {
-        const char* base = recomp::os::getenv("ROGUESQ_DUMP_SYNTH_PATH");
+        const char* base = recomp::dbg::env_str("ROGUESQ_DUMP_SYNTH_PATH");
 
-        if (!base || !base[0]) base = "dumps/synth_frame";
+        if (!base) base = "dumps/synth_frame";
 
         char pb[512];
         snprintf(pb, sizeof(pb), "%s.bin", base);
@@ -525,6 +525,18 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
 // ---------------------------------------------------------------------------
 // Audio (SDL2)
 // ---------------------------------------------------------------------------
+
+#if defined(__EMSCRIPTEN__)
+
+// The browser build sends the same calls to its own output: SDL2's web audio reads its AudioContext from the calling thread, and the game runs on a worker.
+#define SDL_OpenAudioDevice(device, capture, desired, obtained, changes) ::rs64::audio::web::open((desired)->freq)
+#define SDL_CloseAudioDevice(id) ::rs64::audio::web::close()
+#define SDL_PauseAudioDevice(id, paused) ((void)0)
+#define SDL_QueueAudio(id, data, bytes) ::rs64::audio::web::queue((data), (bytes))
+#define SDL_GetQueuedAudioSize(id) ::rs64::audio::web::queued_bytes()
+
+#endif
+
 static SDL_AudioDeviceID audio_device = 0;
 
 #ifdef __ANDROID__
@@ -555,6 +567,43 @@ void set_frequency(uint32_t freq)
     open_audio_device(freq);
 }
 
+// VR: the headset's playback device instead of the PC default; null (the default) without VR or such a device.
+// shortcut: matches Meta's Link device names only, add other headsets' names once someone tests them.
+static const char* vr_audio_device()
+{
+
+#if !defined(RS64_OPENXR)
+    return nullptr;
+#else
+
+    static constexpr const char* kHeadsetNames[] = { "Oculus", "Rift" };
+    static std::string s_name;
+
+    // The Meta virtual device exists whenever its software is installed, so a VR launch that fell back to flat keeps the PC output.
+    if (!rs64::vr::has_session())
+    {
+        return nullptr;
+    }
+
+    const int count = SDL_GetNumAudioDevices(0);
+
+    for (int i = 0; i < count; i++) {
+        const char* name = SDL_GetAudioDeviceName(i, 0);
+
+        for (const char* headset : kHeadsetNames) {
+            if ((name != nullptr) && (std::strstr(name, headset) != nullptr)) {
+                s_name = name;
+
+                return s_name.c_str();
+            }
+        }
+    }
+
+    return nullptr;
+
+#endif
+}
+
 static void open_audio_device(uint32_t freq)
 {
 
@@ -571,7 +620,13 @@ static void open_audio_device(uint32_t freq)
     desired.channels = 2;
     desired.samples  = 1024;
 
-    audio_device = SDL_OpenAudioDevice(nullptr, 0, &desired, nullptr, 0);
+    const char* device = vr_audio_device();
+
+    audio_device = SDL_OpenAudioDevice(device, 0, &desired, nullptr, 0);
+
+    if (!audio_device && (device != nullptr)) {
+        audio_device = SDL_OpenAudioDevice(nullptr, 0, &desired, nullptr, 0);
+    }
 
     if (!audio_device)
     {
@@ -582,7 +637,7 @@ static void open_audio_device(uint32_t freq)
 
     SDL_PauseAudioDevice(audio_device, 0);
 
-    fprintf(stderr, "[Audio] device OPENED freq=%u (output path live)\n", freq);
+    fprintf(stderr, "[Audio] device OPENED freq=%u on %s (output path live)\n", freq, (device != nullptr) ? device : "the default output");
     fflush(stderr);
 }
 
@@ -714,8 +769,8 @@ void queue_samples(int16_t* samples, size_t num_samples)
         static uint32_t s_wav_bytes = 0;
 
         if (s_wav_init < 0) {
-            const char* e = recomp::os::getenv("ROGUESQ_DUMP_PCM");
-            s_wav_init = (e && e[0] && e[0] != '0') ? 1 : 0;
+            const char* e = recomp::dbg::env_str("ROGUESQ_DUMP_PCM");
+            s_wav_init = (e && e[0] != '0') ? 1 : 0;
 
             if (s_wav_init)
             {
@@ -760,12 +815,12 @@ void queue_samples(int16_t* samples, size_t num_samples)
 
         // Speaker-safety master gain: the MusyX mix clips hard (peaks slam the int16 rail)
         // during busy cinematic SFX. Scale down before SDL so it doesn't blast/distort.
-        // Tunable via ROGUESQ_AUDIO_GAIN (0.0-1.0); default 0.5. Applied after the raw WAV dump.
+        // Tunable via ROGUESQ_AUDIO_GAIN (0.0-1.0); default 0.35. Applied after the raw WAV dump.
         static float s_gain = -1.0f;
 
         if (s_gain < 0.0f) {
-            const char* e = recomp::os::getenv("ROGUESQ_AUDIO_GAIN");
-            s_gain = (e && e[0]) ? (float)atof(e) : 0.35f;
+            const char* e = recomp::dbg::env_str("ROGUESQ_AUDIO_GAIN");
+            s_gain = e ? (float)atof(e) : 0.35f;
 
             if (s_gain < 0.0f || s_gain > 1.0f) s_gain = 0.35f;
         }
@@ -798,8 +853,15 @@ size_t get_frames_remaining()
     // audibly late against the picture (2026-09-08); the synth now runs on the retrace thread each VI.
     static int ms = -1;
 
+    // The browser's threads stall longer than a desktop's (shader compiles, main-thread waits), so it keeps a deeper queue.
+#if defined(__EMSCRIPTEN__)
+    static constexpr int kDefaultLatencyMs = 150;
+#else
+    static constexpr int kDefaultLatencyMs = 60;
+#endif
+
     if (ms < 0) {
-        ms = env_int("ROGUESQ_AUDIO_LATENCY_MS", 60);
+        ms = env_int("ROGUESQ_AUDIO_LATENCY_MS", kDefaultLatencyMs);
 
         if (ms < 0) ms = 0;
     }

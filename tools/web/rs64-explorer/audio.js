@@ -81,20 +81,71 @@ for (const proto of [AudioScheduledSourceNode.prototype, AudioBufferSourceNode.p
 function syncNav()
 {
   const open = !document.body.classList.contains('nav-closed');
-  const t = open ? 'Hide the sidebar' : 'Show the sidebar';
+  const t = open ? 'Drag to resize the sidebar, or click to hide it' : 'Click or drag to show the sidebar';
   const b = $('navToggle');
 
-  b.innerHTML = iconImg(open ? 'chevronLeft' : 'chevronRight');
   b.title = t;
   b.setAttribute('aria-label', t);
   b.setAttribute('aria-expanded', open);
 }
 
+const NAV_WIDTHS = { hide: 120, min: 200, max: 560 };
+const setNavWidth = (w) => document.body.style.setProperty('--nav-w', `${w}px`);
+
+// The bar on the sidebar's edge: drag to resize, past the narrowest width to hide it, or click to hide or show it.
+let navDragged = false;
+
+$('navToggle').onpointerdown = (e) => {
+  const bar = $('navToggle');
+  const body = document.body;
+  const start = body.classList.contains('nav-closed') ? 0 : document.querySelector('aside').offsetWidth;
+  let width = start;
+
+  navDragged = false;
+  bar.setPointerCapture(e.pointerId);
+  body.classList.add('nav-drag');
+
+  bar.onpointermove = (m) => {
+    navDragged ||= Math.abs(m.clientX - e.clientX) > 3;
+
+    if (!navDragged)
+      return;
+
+    width = start + m.clientX - e.clientX;
+    body.classList.toggle('nav-closed', width < NAV_WIDTHS.hide);
+
+    if (width >= NAV_WIDTHS.hide)
+      setNavWidth(Math.round(Math.min(NAV_WIDTHS.max, Math.max(NAV_WIDTHS.min, width))));
+  };
+
+  bar.onpointerup = () => {
+    bar.onpointermove = bar.onpointerup = null;
+    body.classList.remove('nav-drag');
+
+    if (!navDragged)
+      return;
+
+    // Hiding it by dragging passes through the narrowest width; it reopens at the size it had.
+    if (width < NAV_WIDTHS.hide && start)
+      setNavWidth(start);
+
+    store('rs64.navClosed', width < NAV_WIDTHS.hide ? 1 : 0);
+    store('rs64.navWidth', parseInt(body.style.getPropertyValue('--nav-w')) || null);
+    syncNav();
+  };
+};
+
 $('navToggle').onclick = () => {
+  if (navDragged)
+    return void (navDragged = false);
+
   document.body.classList.toggle('nav-closed');
   store('rs64.navClosed', document.body.classList.contains('nav-closed') ? 1 : 0);
   syncNav();
 };
+
+if (stored('rs64.navWidth', null))
+  setNavWidth(stored('rs64.navWidth', null));
 
 document.body.classList.toggle('nav-closed', stored('rs64.navClosed', 0) === 1);
 syncNav();
@@ -265,6 +316,8 @@ async function loadAudioBank()
 
   // Songs: the ROM song table names sound/<name>_SNG; a _SNG missing from it has no instrument group.
   const songIds = new Map(parseSongTable(romBytes).map((s) => [s.name, s.id]));
+  const { levelSongs } = parseMusicCues(romBytes);
+  const playedIn = (id) => levelSongs.flatMap((s, lv) => (s === id && missionNames[lv] ? [missionNames[lv]] : []));
   const musicCtx = { ...sfxBank, groups: parseSongGroups(await rom.read('data/sound/proj_SND')) };
   const music = [...rom.assets.values()].filter((a) => /_SNG$/.test(a.name)).map((a) => {
     const name = a.name.slice(0, -4);
@@ -276,7 +329,7 @@ async function loadAudioBank()
       index: id,
       name,
       path: a.path,
-      label: id == null ? `${name} (not referenced)` : name,
+      label: id == null ? `${name} (not referenced)` : [name, ...playedIn(id)].join(' · '),
       text: '',
       rate: 22050,
       levels: [],
@@ -814,7 +867,7 @@ async function showMusic(r)
   const unres = [...s.unresolved];
   const silent = s.notes.filter((n) => n.silent).length;
 
-  $('musicHead').innerHTML = `<b>${esc(r.label)}</b> <span class="meta">song ${r.index ?? '-'} · group ${s.group ?? '-'} · ${[...new Set(s.bpm)].join(' / ')} BPM · ${clock(s.length)}`
+  $('musicHead').innerHTML = `<b>${esc(r.label)}</b> <span class="meta">${[...new Set(s.bpm)].join(' / ')} BPM · ${clock(s.length)}`
     + `${s.loopAt != null ? ` · loops at ${clock(s.loopAt)}` : ''} · reverb: ${s.reverb ? esc(s.reverb.name) : 'none (in-mission)'}`
     + `${silent ? ` · ${silent} note${silent === 1 ? '' : 's'} outside the instrument's key range` : ''}</span>`
     + (unres.length ? `<div class="warn">Not yet confirmed: ${unres.map(esc).join('; ')}</div>` : '');
@@ -987,8 +1040,7 @@ function drawMusic(r)
     const kind = first?.target == null ? '' : (first.target & 0x8000 ? 'layer' : (first.target & 0x4000 ? 'keymap' : 'sound'));
     const d = elem('div', { className: 'lane' });
 
-    d.innerHTML = `<span title="Track ${t} of the song file · MIDI channel ${tr.channel + 1} · instrument #${prog ?? '-'}">`
-      + `T${t} · ch${tr.channel + 1}${prog != null ? ` · #${prog} ${kind}` : ''}</span>`;
+    d.innerHTML = `<span title="MIDI channel ${tr.channel + 1}${prog != null ? `, instrument ${prog}${kind ? ` (${kind})` : ''}` : ''}">Track ${t + 1}</span>`;
 
     for (const k of ['M', 'S'])
     {
@@ -1274,6 +1326,9 @@ function showAudio(r)
 // opkg (atst, i_lnd_hi in lplatform, train pillars, other levels' shared buildings).
 let objectHome = null;
 
+// The same index once built, for labels that cannot wait for it.
+let objectHomeReady = null;
+
 function buildObjectIndex() {
   objectHome ??= (async () => {
     const map = new Map();
@@ -1289,6 +1344,8 @@ function buildObjectIndex() {
             map.set(o.name, a.path.replace(/_HOB$/, ''));
       } catch { /* a malformed or encrypted HOB just isn't indexed */ }
     }
+
+    objectHomeReady = map;
 
     return map;
   })();
@@ -1487,7 +1544,7 @@ function renderList() {
       d.textContent = r.label;
       d.title = r.tip ?? (r.obj == null ? r.id : `${r.id} / ${r.label}`);
 
-      if (mode === 'models' || (mode === 'audio' && ['music', 'sfx', 'voice', 'group'].includes(r.row.kind)))
+      if (mode === 'audio' && ['music', 'sfx', 'voice', 'group'].includes(r.row.kind))
         d.prepend(dragGrip(r));
 
       d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : (mode === 'effects' ? showEffect(r.id) : (mode === 'audio' ? showAudio(r.row) : (mode === 'fonts' ? showFont(r.id) : (mode === 'menus' ? showMenu(r.id) : (r.id.startsWith('cut:') ? showCutscene(r.id.slice(4)) : showLevel(r.id)))))));

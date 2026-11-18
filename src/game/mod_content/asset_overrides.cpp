@@ -14,7 +14,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <array>
+#include <atomic>
 #include <span>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -27,12 +29,17 @@
 #include "rs64_toml_hooks.h"
 #include "util/debug_logs.h"
 #include "game/game_state.h"
+#include "ultramodern/error_handling.hpp"
 #include "game/mod_content/mod_levels.h"
+#include "game/mod_content/terrain_paint.h"
 #include "game/lang/lang.h"
 #include "game/mod_content/level_rules.h"
 #include "host_api/host_api.h"
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
+#include "rs64_mod_image_HOB_bps.h"
+#include "rs64_mod_image_HMT.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -52,6 +59,8 @@ uint32_t s_silence_rom[10] = {};
 // Craft HOBs with recoloured exhaust, one per exhaust-color option (index 0 = default, unused).
 std::unordered_map<std::string, std::vector<AssetOverride>> s_exhaust_variants;
 constexpr const char* kExhaustMod = "exhaust-color";
+constexpr const char* kModImageHob = "frontend/controller/mod_image_HOB";
+constexpr const char* kModImageHmt = "frontend/controller/mod_image_HMT";
 constexpr uint32_t kExhaustTints[] = { 0, 0xFF2000, 0xFF8000, 0xFFE000, 0x20FF20, 0x20FFFF, 0x2060FF, 0xA040FF, 0xFF40C0, 0xFFFFFF };
 
 uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
@@ -177,8 +186,9 @@ uint32_t exhaust_choice()
 }
 
 // Manifests grown with mod-added files live in host RAM above the game's 8 MB, one 64 KB block per gManifestTable slot: {copy, game's buffer}.
-constexpr uint32_t kManifestCopies = 0x80C00000u, kManifestCopySize = 0x10000u;
+constexpr uint32_t kManifestCopies = RS64_HR_MANIFESTS, kManifestCopySize = 0x10000u;
 std::pair<uint32_t, uint32_t> s_manifest_copies[4];
+static_assert(kManifestCopies + std::size(s_manifest_copies) * kManifestCopySize <= RS64_HR_MANIFESTS_END, "manifest copies outgrew their host RAM range");
 
 // A manifest entry (0x20 bytes, 8 words): +0 offset in block, +4 size, +8 stored size (-1 raw), +0xC flags (0x80 directory) and, for a
 // directory, its own entry plus everything inside in bytes at +0xE; +0x10 name[16].
@@ -345,9 +355,32 @@ extern "C" void rs64_asset_overrides_init()
     std::unordered_map<std::string, std::pair<std::string, std::vector<uint8_t>>> patches;
     std::unordered_map<std::string, std::pair<std::string, std::string>> derived;
 
+    // A level DAT the game can't read stops the game thread at its mission start with no picture, so the player is told which mod and why.
+    std::string dat_problems;
+    std::unordered_map<std::string, std::string> mod_names;
+
+    auto check_dat = [&dat_problems, &mod_names](const std::string& mod_id, const std::string& path, const std::vector<uint8_t>& data) {
+
+        if (path.rfind("level/", 0) != 0 || path.size() < 4 || path.compare(path.size() - 4, 4, "/dat") != 0) return;
+
+        const std::string problem = rs64levels::datProblem(data.data(), data.size());
+
+        if (problem.empty()) return;
+
+        fprintf(stderr, "[assets] %s: %s can't be read: %s\n", mod_id.c_str(), path.c_str(), problem.c_str());
+        dat_problems += "\n" + mod_names[mod_id] + " (" + path + "): " + problem + ".";
+    };
+
+    // Built in: the MODS page's image model (src/game/menus/mod_image), made from the controller's HOB with its own HMT. A mod's file of the same path wins.
+    derived[kModImageHob] = { "base", "frontend/controller/controller_HOB" };
+    patches[kModImageHob] = { "base", std::vector<uint8_t>(rs64_mod_image_HOB_bps, rs64_mod_image_HOB_bps + rs64_mod_image_HOB_bps_size) };
+    s_asset_overrides[kModImageHmt] = append(std::vector<uint8_t>(rs64_mod_image_HMT, rs64_mod_image_HMT + rs64_mod_image_HMT_size));
+
     for (const auto& d : recomp::mods::get_all_mod_details("rs64"))
     {
         if (!recomp::mods::is_mod_enabled(d.mod_id)) continue;
+
+        mod_names[d.mod_id] = d.display_name.empty() ? d.mod_id : d.display_name;
 
         const std::filesystem::path dir = recomp::mods::get_mod_filename(d.mod_id) / "assets";
         std::error_code ec;
@@ -386,6 +419,7 @@ extern "C" void rs64_asset_overrides_init()
             }
 
             patches.erase(key);
+            check_dat(d.mod_id, key, data);
             s_asset_overrides[key] = append(data);
 
             fprintf(stderr, "[assets] %s overrides %s (%zu bytes)\n", d.mod_id.c_str(), key.c_str(), data.size());
@@ -433,6 +467,7 @@ extern "C" void rs64_asset_overrides_init()
                 patches.erase(p);
             }
 
+            check_dat(mod_id, path, out);
             s_asset_overrides[path] = append(out);
 
             fprintf(stderr, "[assets] %s adds %s from %s (%zu bytes)\n", mod_id.c_str(), path.c_str(), src_path.c_str(), out.size());
@@ -453,18 +488,30 @@ extern "C" void rs64_asset_overrides_init()
                 continue;
             }
 
+            check_dat(mod_id, path, out);
             s_asset_overrides[path] = append(out);
 
             fprintf(stderr, "[assets] %s patches %s (%zu bytes)\n", mod_id.c_str(), path.c_str(), out.size());
         }
     }
 
-    // A crawl's own files are also served inside the crawl scene's directories, where its lookups find them.
+    // From another thread, so the game never waits on the dialog.
+    if (!dat_problems.empty())
+    {
+        const std::string text = "A mod level can't be played because the game can't read its level data:\n" + dat_problems +
+                                 "\n\nIts mission would start to a black screen. Export the level again from the RS64 Explorer, or turn the mod off.";
+
+        std::thread([text] { ultramodern::error_handling::message_box(text.c_str()); }).detach();
+    }
+
+    // A crawl's own files and a level's picture are also served inside the directories where their lookups find them.
     std::vector<std::pair<std::string, AssetOverride>> served;
 
     for (const auto& [path, ov] : s_asset_overrides)
     {
         if (const std::string s = rs64levels::crawlServedPath(path); !s.empty()) served.emplace_back(s, ov);
+
+        if (const std::string s = rs64levels::previewServedPath(path); !s.empty()) served.emplace_back(s, ov);
     }
 
     for (const auto& [path, ov] : served) s_asset_overrides[path] = ov;
@@ -524,7 +571,10 @@ extern "C" void rs64_asset_overrides_init()
     // Silent voice streams of 1-10 s for level-rule messages (a subtitle stays up while its line plays).
     for (int s = 1; s <= 10; s++) s_silence_rom[s - 1] = append(rs64rules::silentMort(s)).rom_off;
 
-    if (!rom.empty()) recomp::set_rom_contents(std::move(rom));
+    if (!rom.empty()) {
+        rom.shrink_to_fit();
+        recomp::set_rom_contents(std::move(rom));
+    }
 }
 
 // findManifestEntryByName exit: slot idx of gManifestTable (0x80110A80, 0x50 each) has just had its manifest loaded.
@@ -618,13 +668,15 @@ extern "C" uint32_t rs64_asset_manifest_to_free(uint32_t ptr) {
     return ptr;
 }
 
-// Terrain textures for RT64's whole-map pass, read from the ROM once: level/tex (2080-byte CI4 + RGBA5551 entries) and lv_<level, base 36>_TEX.
-// shortcut: stock ROM data only, ignores asset-override mods and mod-level aliases; read through the override table when terrain mods need it.
+// Terrain textures for RT64's whole-map pass, built once per level: level/tex and lv_<level, base 36>_TEX (a mod's copy when it replaces one) with the level's Soft paint textures (lv_<level>_PAINT) merged in as extra bank entries.
+// shortcut: mod-level aliases are not followed (Soft paint is stock levels only); follow them if mod levels get painted terrain.
 extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint32_t* bank_size, const uint8_t** ids, uint32_t* ids_size)
 {
 
     static std::once_flag s_once;
     static std::unordered_map<std::string, std::vector<uint8_t>> s_files;
+    static std::unordered_map<uint32_t, std::pair<std::vector<uint8_t>, std::vector<uint8_t>>> s_levels;
+    static std::mutex s_mutex;
 
     std::call_once(s_once, [] {
         s_files = rom_assets(recomp::get_rom(), [](const std::string& p) { return p == "level/tex" || (p.rfind("level/lv_", 0) == 0 && p.size() > 4 && p.compare(p.size() - 4, 4, "_TEX") == 0); });
@@ -637,20 +689,145 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
         return 0;
     }
 
-    const auto b = s_files.find("level/tex");
-    const auto t = s_files.find(std::string("level/lv_") + kDigits[level] + "_TEX");
+    std::lock_guard<std::mutex> lock(s_mutex);
+    auto it = s_levels.find(level);
 
-    if (b == s_files.end() || t == s_files.end())
+    if (it == s_levels.end())
+    {
+        const std::string lv = std::string("level/lv_") + kDigits[level];
+
+        const auto file = [](const std::string& path) {
+
+            std::vector<uint8_t> out;
+
+            if (const AssetOverride* o = rs64::assets::find(path))
+            {
+                const auto& rom = recomp::get_rom();
+
+                if ((size_t)o->rom_off + o->size <= rom.size()) out.assign(rom.begin() + o->rom_off, rom.begin() + o->rom_off + o->size);
+            } else if (const auto s = s_files.find(path); s != s_files.end())
+            {
+                out = s->second;
+            }
+
+            return out;
+        };
+
+        const std::vector<uint8_t> b = file("level/tex");
+        const std::vector<uint8_t> t = file(lv + "_TEX");
+        const std::vector<uint8_t> p = file(lv + "_PAINT");
+        std::pair<std::vector<uint8_t>, std::vector<uint8_t>> merged;
+
+        if (b.empty() || t.empty() || !rs64::terrain_paint::merge_bank(b.data(), (uint32_t)b.size(), t.data(), (uint32_t)t.size(), p.data(), (uint32_t)p.size(), merged.first, merged.second))
+        {
+            fprintf(stderr, "[assets] %s: no terrain textures for the whole-map pass\n", lv.c_str());
+        }
+
+        it = s_levels.emplace(level, std::move(merged)).first;
+    }
+
+    if (it->second.first.empty())
     {
         return 0;
     }
 
-    *bank = b->second.data();
-    *bank_size = (uint32_t)b->second.size();
-    *ids = t->second.data();
-    *ids_size = (uint32_t)t->second.size();
+    *bank = it->second.first.data();
+    *bank_size = (uint32_t)it->second.first.size();
+    *ids = it->second.second.data();
+    *ids_size = (uint32_t)it->second.second.size();
 
     return 1;
+}
+
+// Soft paint on the game's own terrain: the level's lv_<id>_PAINT is opened next to level/tex and the texture worker reads marked _TEX entries from it.
+namespace {
+std::string s_paint_dir;
+std::atomic<uint32_t> s_paint_handle{ 0 };
+std::atomic<uint32_t> s_paint_count{ 0 };
+constexpr uint32_t kTexService = 0x80138920u;
+constexpr uint32_t kTexSegment = 0x80137CFCu;
+constexpr uint32_t kFindAsset = 0x80004AACu;
+constexpr uint32_t kCloseAsset = 0x80004C70u;
+}
+
+// load_level_hmp entry: dir is the level's folder ("level/lv_1"), the prefix of its _TEX and _PAINT.
+extern "C" void rs64_paint_level_dir(uint8_t* rdram, uint32_t dir)
+{
+
+    s_paint_dir.clear();
+
+    for (uint32_t i = 0; i < 48; i++)
+    {
+        const char c = (char)rb(rdram, dir + i);
+
+        if (!c)
+        {
+            break;
+        }
+
+        s_paint_dir += c;
+    }
+}
+
+// loadLevelTextureCache, right after it opens level/tex: opens the level's painted textures the same way when a mod has them.
+extern "C" void rs64_paint_open(uint8_t* rdram, recomp_context* ctx)
+{
+
+    s_paint_handle = 0;
+
+    const std::string name = s_paint_dir + "_PAINT";
+    const AssetOverride* o = rs64::assets::find(name);
+
+    if (!o || name.size() >= RS64_HR_PAINT_NAME_END - RS64_HR_PAINT_NAME)
+    {
+        return;
+    }
+
+    for (size_t i = 0; i <= name.size(); i++)
+    {
+        wb(rdram, RS64_HR_PAINT_NAME + (uint32_t)i, i < name.size() ? (uint8_t)name[i] : 0);
+    }
+
+    const uint32_t handle = rs64::mips::mips_call(rdram, ctx, kFindAsset, { rw(rdram, kTexService), 0u, rw(rdram, kTexSegment), RS64_HR_PAINT_NAME }, { 0u }).v0;
+
+    if (handle == 0 || handle == 0xFFFFFFFFu)
+    {
+        fprintf(stderr, "[assets] %s: the game could not open it\n", name.c_str());
+
+        return;
+    }
+
+    s_paint_count = o->size / rs64::terrain_paint::kEntryBytes;
+    s_paint_handle = handle;
+
+    fprintf(stderr, "[assets] %s: %u painted textures\n", name.c_str(), s_paint_count.load());
+}
+
+// teardownGridLayerWorker entry: closes the painted textures with level/tex.
+extern "C" void rs64_paint_close(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const uint32_t handle = s_paint_handle.exchange(0);
+
+    if (handle)
+    {
+        rs64::mips::mips_call(rdram, ctx, kCloseAsset, { rw(rdram, kTexService), handle });
+    }
+}
+
+// The texture worker's read of _TEX field `field`: 0 = a level/tex entry, 1 = painted entry `index` of file `handle`, -1 = painted but not loadable.
+extern "C" int rs64_paint_dma(uint32_t field, uint32_t* handle, uint32_t* index)
+{
+
+    if (!rs64::terrain_paint::is_painted(field))
+    {
+        return 0;
+    }
+
+    *handle = s_paint_handle;
+    *index = field & rs64::terrain_paint::kIndexMask;
+
+    return (*handle && *index < s_paint_count) ? 1 : -1;
 }
 
 const rs64::assets::Override* rs64::assets::find(const std::string& path)

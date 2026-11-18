@@ -17,6 +17,8 @@ namespace rs64::android {
     std::string pick_rom();
     // The on-screen keyboard's height as a fraction of the window (MainActivity.imeFraction), 0 when hidden.
     float ime_fraction();
+    // Passes the co-op lobby's wifi_direct flag (0 off, 1 host, 2 join, 3 joined) to MainActivity.wifiDirect and its link back as wifi_direct_link (0 none, 1 connecting, 2 linked). Call once a frame.
+    void update_wifi_direct();
     // ANativeWindow_setFrameRate(FIXED_SOURCE) at ROGUESQ_ANDROID_FRAME_RATE (default 60, 0 = leave the display alone). API 30+.
     void set_window_frame_rate(void* native_window);
     // ADPF: reports one display list's CPU time to a hint session on the render threads (Gfx, RT64 Workload/Present). API 33+; ROGUESQ_ANDROID_PERF_HINT=0 disables.

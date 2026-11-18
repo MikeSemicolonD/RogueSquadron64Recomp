@@ -15,7 +15,7 @@ cmake -S mods/native-demo -B mods/native-demo/build
 cmake --build mods/native-demo/build
 ```
 
-The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v7 taken` and `[host] mod native-demo took the host API (...)`.
+The DLL lands beside `mod.json`. Copy the folder into the game's `mods/` directory, enable **Native Demo** in the Mods window (it is off by default), and open MAIN MENU > NATIVE DEMO: the label reads `DEMO FRAMES n` and counts up. The log shows `[native-demo] host API v12 taken` and `[host] mod native-demo took the host API (...)`.
 
 How [native_demo.cpp](../../mods/native-demo/native_demo.cpp) works:
 
@@ -34,7 +34,7 @@ A mod exports `rs64_mod_init` (`RS64_MOD_INIT_EXPORT`), listed in its `mod.json`
 | Register | Meaning |
 | --- | --- |
 | `r4` (in) | `const rs64_host_api*`, the table |
-| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 7) |
+| `r5` (in) | `RS64_HOST_API_VERSION` the host implements (currently 12) |
 | `r2` (out) | 0 to accept, non-zero to refuse |
 | `r3` (out) | the `RS64_HOST_API_VERSION` the mod was built against (0 = not set, treated as 1) |
 
@@ -80,10 +80,28 @@ Check `table->size >= sizeof(rs64_host_api)` before using fields, and always ret
 | `add_hash_part(name, gate_flag, fn, user)` | v4. Adds a column to the lockstep hash log (`ROGUESQ_LS_HASH`): `fn(rdram, user)` returns a 64-bit hash of the mod's state, counted only while the flag `gate_flag` is non-zero. Parts follow the base parts in registration order. Returns 0, or -1 for a null argument or a sealed registry |
 | `add_valid_ram(addr, size)` | v4. Declares a host-RAM range above the game's 8 MB (KSEG0 address) that holds game records the mod built, so base guards such as the NPC health patch accept pointers into it. Returns 0, or -1 for size 0 or a sealed registry |
 | `add_moved_range(lo, hi, delta)` | v5. Declares game data `[lo, hi)` the mod moved to `lo + delta` (its `instruction_patches.json` repoints the game's code), so host code that reads it (lockstep hashes, `rs64_relocated`) follows. Returns 0, or -1 for an empty range, a zero delta, an overlap with a registered range, or a sealed registry |
-| `add_rule_action(name, fn, user)` | v6. Adds a level rules action that a level's `rules.json` names with `"do": name` (see Level rules actions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
+| `add_rule_action(name, fn, user)` | v6. Adds a level rules action that a line of a level's `rules.txt` names (`name key=value ...`, see Level rules actions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
 | `fire_rule_event(name, object)` | v6. Raises the level rules "when" `custom` named `name` for `object` (may be `""`). Works any time and from any thread; the rules see it on the next mission frame, and events fired outside a mission are dropped. Returns 0, or -1 for a null name |
 | `terrain_get_cell(rdram, col, row, heights, tex)` | v7. Reads the level map's cell (`col`, `row`): its 25 heights (`int8_t`, the HMP's units; larger is lower, 16 record units a step) and, when `tex` is non-null, its texture id (an `lv_X_TEX` index). Returns 0, -1 with no map loaded, or -2 for a cell outside the map |
 | `terrain_set_cell(rdram, col, row, heights, tex)` | v7. Writes the cell's 25 heights and, when `tex` >= 0, its texture id into the game's own map, so its height queries (collision) and the renderer (the whole-map terrain pass and its ray-traced mesh) follow. Cells share tiles, so the map's first edit moves its tile table to host RAM (0x80A10000) and an edited cell that shares its tile gets its own copy. Neighbouring cells share their edge heights (a cell's last row and column of 5 are the next cell's first): keep them equal, or the legacy terrain renderer shows cracks between the cells. The legacy renderer shows height edits at once and a texture change when the cell next streams in. From the game thread (a hook). Returns 0, -1 / -2 as above, or -3 when the map has 8192 tiles already |
+| `set_clipboard(utf8)` | v8. Puts text on the system clipboard (in the browser, the page's). For a key handler's copy (key 3, Ctrl+C). Any thread |
+| `frame_seconds()` | v8. The game time one mission frame covers, in seconds: 1/30 at the game's own rate, 1/60 when TARGET FPS runs 60 logic frames a second. For per-frame motion a mod measures or sends |
+| `relocated(address)` | v9. Where a game field lives now: a per-player field the multiplayer mod moved, other addresses unchanged. Read such fields through it |
+| `object_by_name(rdram, ctx, name)` | v9. The level object named `name` (its DAT record, a KSEG0 address), or 0. Missions only, from a hook; works from `RS64_HOOK_MISSION_READY` on |
+| `object_health(rdram, ctx, name)` | v9. That object's health, 0-100, or -1 when there is none |
+| `destroy_object(rdram, ctx, name)` | v9. Destroys it as a lethal hit would, with its own explosion, and it counts for objectives. An object that is not loaded (far away) only loses its health. Returns 0, -1 for no such object, -2 when it is already destroyed |
+| `run_rule_line(rdram, ctx, line)` | v9. Runs one level rules action, written as in `rules.txt`: `"message 4 Hold the bridge"`, `"music 92"`, `"camera cam_1"`, `"flag 12"`, `"set kills 3"`, or a mod's `"shake seconds=2"`. Missions only, from a hook. Returns 0, -1 when the line does not read (or is a `wait`), -2 outside a mission, -3 when no action has that name |
+| `rule_var_get(name)` / `rule_var_set(name, value)` | v9. The level rules variables, shared by every mod's rules for the level and reset to 0 each mission. A rule that reads a variable no rule sets is still skipped, so a value only a mod provides belongs in a rule condition |
+| `add_rule_condition(name, fn, user)` | v9. Adds a check level rules can test as `name(arg)` (see Level rules conditions). Returns 0, or -1 for a null argument, a sealed registry, or a name already taken (first wins) |
+| `mission_seconds()` | v9. Seconds of game time since the mission started, as the rules' `time` counts them; 0 outside a mission |
+| `config_number(mod_id, option, out)` | v9. A mod's config option (its `config_schema`) as a number: 1 with `*out` set for a number or enum option, 0 when it is unset or text |
+| `config_string(mod_id, option)` | v9. A text config option, `""` when unset; valid until the next call |
+| `key_down(key)` | v10. Non-zero while the keyboard key with that SDL name is down (`"F7"`, `"K"`, `"Left Shift"`). For a hotkey players can change, read the name from a text config option |
+| `mod_data_dir(mod_id)` | v10. A folder for the mod's own files, `mod_data/<mod_id>/` beside the game's settings (with a trailing separator), created on first use; `""` for an id holding a path separator or when it cannot be made |
+| `save_slot()` | v10. The pilot (save slot, 0-based) confirmed on the account screen, -1 before one is. Key per-pilot files in `mod_data_dir` on it |
+| `light_set(name, preset_json)` | v11. A ray-traced light preset set while the game runs: `preset_json` is one preset object as in `roguesq_lights.json`'s `"presets"` (a `level`, `mesh` or `sprite` key and its `lights`), and `NULL` or `""` removes it. It replaces a file preset of the same name from the next frame, so setting it every frame moves the light. Prefix the name with your mod's id. Any thread. Returns 0, -1 for a null name, -2 for JSON that is not an object with a `lights` array. A removed preset that replaced a file's comes back at the next light-file reload |
+| `spawn_unit(rdram, ctx, template, name, pos)` | v12. Spawns a copy of the level unit named `template` at `pos` (map space, Y down) through the game's own unit spawner, named `name` (`NULL` keeps the template's). The copy has the template's kind, settings and current health, follows the same path if it has one, and counts for objectives when destroyed. It is not one of the level's objects, so `object_by_name` and level rules do not find it; `RS64_HOOK_UNIT_DESTROYED` reports its death with its name. Up to 48 a mission, only in this game (co-op does not share it). Missions only, from a hook. Returns the NPC slot, or -1 no such unit, -2 no mission, -3 no room (48 spawned, or the game's NPC pool is full), -4 not a unit that can be copied, -5 the spawn failed |
+| `camera_view(yaw, pitch, offset)` | v12. Turns and moves what is drawn relative to the game's camera: `yaw` left and `pitch` up in degrees, `offset` in game camera axes and units (x right, y down, z forward); all zero restores the game's view, and it lasts until changed. Only the drawn scene moves: the game still culls and aims from its own camera, so a large turn shows the edge of what it drew, the 2D HUD stays put, and replays stay exact. Ignored while a VR headset or `ROGUESQ_VR_FAKE_YAW` drives the view. Any thread |
 
 ## Services
 
@@ -91,6 +109,7 @@ A service is a versioned C table one mod hands another through the host, so a mo
 
 | Name | Header | Provider | Consumer |
 | --- | --- | --- | --- |
+| `mp.channel` | [include/rs64/mp_channel.h](../../include/rs64/mp_channel.h) | Multiplayer ([mods/multiplayer-native](../../mods/multiplayer-native/)) | Any mod that keeps its own state in co-op: `send` up to 1024 bytes on a named channel (reliable, or unreliable for state sent every frame) and `listen` for the other player's, delivered on the game thread. Both players need the mod; a channel nobody listens to drops its messages. See [multiplayer.md](../guides/multiplayer.md#mod-channels) |
 | `mp.transport` | [include/rs64/mp_transport.h](../../include/rs64/mp_transport.h) | [mods/steam-relay](../../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; a version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`) also feeds the JOIN GAME list; see [multiplayer.md](../guides/multiplayer.md#steam-relay-mod) |
 
 ## Hooks
@@ -157,6 +176,24 @@ Register names below are the game's MIPS registers in `ctx` (`ctx->r2`, `ctx->f2
 | `RS64_HOOK_DEBRIEF_PAD` (39) | `runMenuRandomBackdropScreen` 0x800BFC4C (menu overlay) | The debrief's continue check: `v0` = the pressed buttons it reads (A/START, `0x9000`, leave the screen) and may be edited. Never RETURN (mid-function). Co-op holds it until both players pressed |
 | `RS64_HOOK_FRONT_END` (40) | `mainGameLoop` 0x8003E138 | The front end is about to start after a mission: `a1` = menu overlay state (1 mission select, 2 menus), `a2` = the menu state 2 opens (4 = ELITE ROGUES, after a game over). May be edited. Never RETURN (mid-function). Co-op sends a game over back to mission select, since ELITE ROGUES leads to the main menu, which ends the session |
 | `RS64_HOOK_WINGMAN_DRAW` (41) | `npcWingmanUpdate` 0x800D9A90 | A wingman just added its model to the render list: `s3` = the NPC, `s1` = the render info (what the tow-cable renderer 0x800ADD5C takes as `a0`). Never RETURN (mid-function). Co-op draws the other player's tow cable here |
+| `RS64_HOOK_NPC_HIT` (42) | `slotDispatcherIter` entry | v8. A HIT (action 5) is about to reach an NPC: `a0` = the target slot, `a2` = the message (`+2` u16 the shooter's slot, player 1's is u16 0x80137DBA; `+4` weapon category; `+6` damage). Observe only, never RETURN. Co-op friendly fire sends player 1's hits on the other player's ship |
+| `RS64_HOOK_SPEECH_CLIP` (43) | `playSpeechClip` entry | A voice clip starts: `a0` = the clip, `a1`-`a3` its playback arguments (`a2` = the volume as float bits). Observe only, never RETURN. Co-op forwards the host's end-of-mission lines to the client |
+
+### Combat and sound (v10)
+
+All five are function entries, so `RS64_HOOK_RETURN` skips the function and `.nrm` callbacks can `rs64_event_return`; `RS64_HOOK_CAMERA` is the exception.
+
+| Id | Site | Contract |
+| --- | --- | --- |
+| `RS64_HOOK_SONG_START` (52) | `playSongById` entry | A song starts: `a0` = its id (u16), may be replaced by another loaded song. RETURN skips it (`r2` is already -1, as when nothing plays) |
+| `RS64_HOOK_SOUND_3D` (53) | `play3DSoundEvent` entry | A positioned sound effect starts: `a0` = the emitting object or 0, `a1` = its position (`float[3]*`). The sound id is the u16 at `sp+0x1A` and its volume (0-127) the byte at `sp+0x1F`; write either in RDRAM to change it. RETURN mutes it (`r2` = -1) |
+| `RS64_HOOK_PLAYER_DAMAGE` (54) | `applyPlayerCraftDamage` entry | Damage reaches a player's craft: `a0` = its record (player 1 is 0x80137DBC), `a1` = the damage as float bits, may be replaced (scale it, or 0). RETURN takes none. God mode and the spawn shield are checked before this |
+| `RS64_HOOK_PLAYER_FIRE` (55) | Each player craft's laser fire function (`playerXwingFireBlaster` and its A-wing, V-wing, Falcon, TIE Interceptor, T-16 and Naboo counterparts), and the fire check inside the Y-wing's and snowspeeder's weapon tick | A player craft fires: `a0` = the weapon context (its first word the player), `a1` = the hardpoint (0 for the snowspeeder, whose guns fire together). RETURN skips that shot; for the Y-wing and snowspeeder the hook then runs on a copy of the registers and the skip clears the frame's fire check, so it comes again next frame while the button is held. Secondary weapons have no hook |
+| `RS64_HOOK_CAMERA` (56) | `setupCameraMatrices` entry | v11. A camera's projection is set up: `a0` = the camera, whose `+0x20` FOV (degrees), `+0x24` near and `+0x28` far planes and `+0x10` / `+0x14` viewport size may be edited. The game's view tests use the same cameras, so a change affects what is culled and can change a replay. Never RETURN. To turn or move the view, use `camera_view` |
+| `RS64_HOOK_NPC_ATST_TICK` (57) | `npcAtStUpdate` entry | v12. An NPC AT-ST's update: `a0` = its NPC context (`+4` its block, `+0x10` its object), `a1` = the action (3 = tick, 1 = init), `a2` = `&dt` for a tick. RETURN with `r2` = 1 skips the update. Co-op draws the other player's walker as an NPC AT-ST and drives its tick here |
+| `RS64_HOOK_ATST_FIRE` (58) | `spawnPlayerAtStCannonFire` entry | v12. A walker fires one gun: `a0` = the walker's block (`+0x30` its model, `+0x72` its NPC slot), `a1` = the gun (0 its model node `a`, else node `b`). RETURN skips the shot. Co-op counts the player's shots here and fires the other player's walker through the same function |
+
+Damage enemies take arrives as `RS64_HOOK_NPC_HIT`: its message's `+6` damage can be rewritten in RDRAM before the target's handler reads it.
 
 ### Host-dispatched
 
@@ -167,11 +204,26 @@ These ids have no `rogue_squadron.toml` site: the host runs them from inside the
 | `RS64_HOOK_MENU_PAD` (32) | Inside the `RS64_HOOK_MENU_INPUT` built-in, before mod-page row navigation | The pressed word at 0x8013A960 may be edited; the flag `menu_page_shown` is 1 while a mod page is up |
 | `RS64_HOOK_MAIN_MENU` (33) | `rs64_menu_install_main` | The main menu is being built; `ctx` is NULL |
 
+### Game events (v9)
+
+The host raises these from inside its own code, on the game thread, with a copy of the game's registers: `a0`-`a2` carry the values below, register edits are dropped and `RS64_HOOK_RETURN` changes nothing. Each is also an `rs64_on_*` event for `.nrm` mods, with the values as its arguments. They start once the built-ins and mods are registered.
+
+| Id | When | Values |
+| --- | --- | --- |
+| `RS64_HOOK_FRAME` (44) | Every frame the game presents, in any state: menus, cutscenes, missions, the debrief | `a0` = the framebuffer |
+| `RS64_HOOK_STATE_CHANGED` (45) | The classified game state changed (checked once a frame) | `a0` = the new state number, `a1` = the old one; `state_id()` names the new one |
+| `RS64_HOOK_CUTSCENE` (46) | A cutscene started or ended | `a0` = 1 started, 0 ended |
+| `RS64_HOOK_UNIT_DESTROYED` (47) | A unit's death effect starts | `a0` = its DAT record, `a1` = its name (`char*`) |
+| `RS64_HOOK_AREA_CROSSED` (48) | Something entered or left a trigger area and its effect runs | `a0` = the area's DAT record, `a1` = 1 entered / 0 left, `a2` = its name |
+| `RS64_HOOK_PATH_POINT` (49) | An NPC reached a path event | `a0` = the event's DAT record, `a1` = its name |
+| `RS64_HOOK_OBJECTIVE_STATE` (50) | An objective of a mod level with its own `objectives` was completed or failed | `a0` = the objective, 1-4, `a1` = 1 done / 0 failed |
+| `RS64_HOOK_MISSION_READY` (51) | The first mission frame, once the level's objects are loaded | none; `object_by_name` works from here, while `RS64_HOOK_MISSION_INIT` runs before the level loads |
+
 `RS64_HOOK_COUNT` is an end marker that grows as ids are added; mods must not rely on its value.
 
 ### Events for `.nrm` mods
 
-Every hook with a `rogue_squadron.toml` site is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [syms/include/rs64_api.h](../../syms/include/rs64_api.h). The host-dispatched ids above have no event.
+Every hook with a `rogue_squadron.toml` site, and every game event (v9), is also a librecomp base event, named `rs64_on_` plus the id in lower case without `RS64_HOOK_` (`RS64_HOOK_MISSION_FRAME_PADS` is `rs64_on_mission_frame_pads`, `RS64_HOOK_UNIT_DESTROYED` is `rs64_on_unit_destroyed`). A code mod subscribes with `RECOMP_CALLBACK("*", rs64_on_mission_frame_pads) void f(void) { ... }` from [syms/include/rs64_api.h](../../syms/include/rs64_api.h). `RS64_HOOK_MENU_PAD` and `RS64_HOOK_MAIN_MENU` have no event.
 
 - Native handlers run first. If one returns `RS64_HOOK_RETURN`, the event does not fire.
 - The callback gets the hook site's registers, so `a0`-`a3` arrive as its arguments. librecomp restores every register after each callback, so a register change goes through `rs64_event_set_gpr(reg, value)` (any GPR but `r0` and `sp`) or `rs64_event_set_fpr(reg, value)` (a single-precision float). Those writes are applied after the last callback, at every hook point, up to 8 per event; at `mission_frame_dt`, `rs64_event_set_fpr(20, dt)` replaces the frame time.
@@ -186,21 +238,35 @@ Every hook with a `rogue_squadron.toml` site is also a librecomp base event, nam
 | `float rs64_terrain_dist(void)` | The terrain reach and fog multiplier, which follows the draw distance capped at 2.5 |
 | `unsigned rs64_tgrid_base(unsigned original)` | Where a terrain-grid table now lives (host RAM, doubled strides); other addresses pass through |
 | `unsigned rs64_relocated(unsigned address)` | Where a game field lives now: a per-player field the multiplayer mod moved (ranges R1-R4, only while that mod is enabled); other addresses pass through. `.nrm` mods link against the original addresses, so translate through this before reading such a field |
+| `void rs64_state_id(char* buf, unsigned size)` | The game state's id (`menu.main`, `mission`, ...), copied into `buf` |
+| `int rs64_in_cutscene(void)` | Non-zero while a cutscene plays |
+| `float rs64_frame_seconds(void)` / `float rs64_mission_seconds(void)` | As `frame_seconds` / `mission_seconds` in the table |
+| `int rs64_get_flag(const char*)` / `void rs64_set_flag(const char*, int)` | The flags native mods share |
+| `int rs64_fire_rule_event(const char* name, const char* object)` | As `fire_rule_event` |
+| `int rs64_run_rule_line(const char* line)` | As `run_rule_line` |
+| `int rs64_rule_var_get(const char*)` / `void rs64_rule_var_set(const char*, int)` | As `rule_var_get` / `rule_var_set` |
+| `unsigned rs64_object_by_name(const char*)` / `float rs64_object_health(const char*)` / `int rs64_destroy_object(const char*)` | As `object_by_name` / `object_health` / `destroy_object` |
+| `int rs64_terrain_get_cell(col, row, signed char heights[25], unsigned short* tex)` / `int rs64_terrain_set_cell(col, row, const signed char heights[25], int tex)` | As `terrain_get_cell` / `terrain_set_cell` |
+| `int rs64_key_down(const char* key)` / `int rs64_save_slot(void)` | As `key_down` / `save_slot`; a code mod's own files go in `recomp_get_mod_folder_path` or the save path from `recompconfig.h` |
+| `int rs64_light_set(const char* name, const char* preset_json)` | As `light_set` (the JSON up to 16 KB) |
+| `int rs64_spawn_unit(const char* template_name, const char* name, const float pos[3])` / `void rs64_camera_view(const float view[5])` | As `spawn_unit` / `camera_view` (`view` = yaw, pitch, then the offset; `NULL` restores the view) |
+
+Strings and arrays passed to these are the mod's own memory (its globals, stack or `recomp_alloc`).
 
 ## Menu actions, conditions, key and quit handlers
 
 - `add_action("name", fn, user)` registers `void fn(void* user)`, run by a menu `action` or `leave_action` of that name in `roguesq_menu.json`.
 - `add_condition("name", fn, user)` registers `int fn(void* user)`; a menu `exit_when` of that name is met while it returns non-zero.
 - Names are first-wins for both: a later registration of the same name is refused and logged, and the first stays.
-- `add_key_handler(fn, user)` registers `int fn(const char* utf8, int key, void* user)`. Typed text arrives as `utf8` non-NULL with `key` 0; Backspace and Enter arrive as `utf8` NULL with `key` `'\b'` / `'\r'`. Handlers run in registration order and the first that returns 1 takes the event; later ones and the game do not see it.
+- `add_key_handler(fn, user)` registers `int fn(const char* utf8, int key, void* user)`. Typed and pasted text (Ctrl+V, Cmd+V, Shift+Insert) arrives as `utf8` non-NULL with `key` 0; Backspace and Enter arrive as `utf8` NULL with `key` `'\b'` / `'\r'`, and Ctrl+C as `key` 3 (copy the field's text with `set_clipboard`). Handlers run in registration order and the first that returns 1 takes the event; later ones and the game do not see it.
 - `add_quit_handler(fn, user)` registers `void fn(void* user)`. Quit handlers run in registration order before `_Exit`, on window close or the menu QUIT.
 
 ## Level rules actions
 
 A native mod can add actions and "when"s to the [level rules](../guides/modding.md#level-rules) a level author builds in the explorer.
 
-- `add_rule_action("shake", fn, user)` registers `void fn(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user)`. A rule action `{ "do": "shake", "seconds": 2 }` calls it on the game thread with the action's other fields as `count` key/value strings (`"seconds"`, `"2"`). Call game functions from it only through `call`. A built-in action of the same name runs instead of yours.
-- `fire_rule_event("mod.tripped", "gate")` raises a `custom` when. A rule `{ "when": "custom", "custom": "mod.tripped" }` fires for any object; one that also names `"object": "gate"` fires only for that object.
+- `add_rule_action("shake", fn, user)` registers `void fn(uint8_t* rdram, void* ctx, const char* const* keys, const char* const* values, int count, void* user)`. A rule action `shake seconds=2` calls it on the game thread with the action's fields as `count` key/value strings (`"seconds"`, `"2"`). Call game functions from it only through `call`. A built-in action of the same name runs instead of yours.
+- `fire_rule_event("mod.tripped", "gate")` raises a `custom` when. A rule `when custom mod.tripped` fires for any object; `when custom mod.tripped for gate` fires only for that object.
 - A rule that names an action no loaded mod registered is skipped, and the log says `no action <name>; skipped`.
 
 [native-demo](../../mods/native-demo/) has a working example: its `demo_log` action logs the rule's fields and then fires `demo.ping`, and its `rules_ext.json` describes both for the explorer.
@@ -214,7 +280,17 @@ The explorer offers a mod's actions and events once it knows them: put a `rules_
 }
 ```
 
-A parameter's `picker` is one of `area`, `path`, `pathPoint`, `unit`, `camera`, `song`, `enemyKind`, `objective`, `voice`, `recording`, `text`, `number`, `seconds` or `flag`; any other value becomes a text box.
+A parameter's `picker` is one of `area`, `path`, `pathPoint`, `unit`, `camera`, `song`, `enemyKind`, `objective`, `voice`, `recording`, `text`, `number`, `seconds`, `flag` or `variable`; any other value becomes a text box.
+
+### Level rules conditions
+
+`add_rule_condition("shields", fn, user)` registers `double fn(uint8_t* rdram, void* ctx, const char* arg, void* user)`. A rule's condition can then test `shields(player) < 30`: the game calls `fn` with `arg` = `"player"` (the text inside the parentheses, which may be empty, as in `boss_phase() >= 2`) and compares the result, or treats a bare `shields(player)` as true when it is non-zero. It runs on the game thread while the level's rules are checked each mission frame. A rule that uses a check no loaded mod added is skipped with `no mod adds the check "<name>"`. Any word followed by `(` that is not a built-in check is read as a mod check.
+
+`rules_ext.json` lists conditions under `"conditions"`, so the explorer suggests them and marks a check no listed mod adds:
+
+```json
+{ "conditions": [ { "check": "shields", "label": "The player's shields (%)" } ] }
+```
 
 ## Text sources
 

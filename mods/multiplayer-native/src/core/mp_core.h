@@ -47,6 +47,24 @@ bool imposter_fire(bool fire, uint16_t* cooldown);
 void build_imposter_record(uint8_t* rdram, const Vec3& pos);
 void clear_imposter_record(uint8_t* rdram);
 
+// On the AT-ST level (0x80130B40 = 0x14) players walk, so the imposter is an NPC AT-ST (type 0x1F, npcAtStUpdate 0x800CFE7C) built from the stock ones' values, with no path.
+constexpr uint8_t kAtStLevel = 0x14;
+constexpr uint32_t kNpcAtStUpdate = 0x800CFE7Cu;
+
+// The record scale that draws the NPC's atst model the size of the player's (atst_hi at 0.2, playerAtStUpdate); the stock NPC AT-STs use 0.05.
+constexpr float kAtStPuppetScale = 0.02f;
+constexpr float kAtStBodyRadius = 0.3f;
+
+// More of the other walker's shots than this behind (a late join, a lost stretch of STATE) are skipped, not fired in a burst.
+constexpr uint8_t kAtStShotsBehindMax = 8;
+
+// Height of the player-sized walker's head above its feet (world units): the other player's name label goes there.
+constexpr float kAtStLabelHeight = 0.5f;
+void build_imposter_atst_record(uint8_t* rdram, const Vec3& pos);
+
+// The walk cycle's phase (0..1) after moving dist, at stride units per cycle.
+float atst_walk_phase(float phase, float dist, float stride);
+
 // 1.5 units along player 1's right axis, at player 1's height.
 Vec3 imposter_spawn_pos(const Vec3& p1, const Vec3& right);
 
@@ -138,6 +156,7 @@ public:
 
     // One full pulse went in.
     bool pulsed(double now_s) const { return pressing_since_s_ >= 0.0 && now_s - pressing_since_s_ >= kPulseS; }
+
     // The skip took: stop pressing.
     void landed() {
 
@@ -203,6 +222,10 @@ private:
 
 // The wingman model (record +0x8C) showing a remote player's craft: its own model for crafts 0-5 and 7, else -1 (TIE interceptor and Naboo have none).
 int puppet_model(int craft);
+
+// SELECT LEVEL entries on the link: mod levels follow each side's own highest stock entry, so a mod entry goes as 0x80 | its index past mod_base (this side's first mod entry).
+uint8_t entry_to_wire(int entry, int mod_base);
+int entry_from_wire(int wire, int mod_base);
 
 // The "imposter" frame-hash part (the record at kImposterRec plus its wingman block), registered with add_hash_part while coop_imposter is set.
 uint64_t hash_imposter(const uint8_t* rdram);

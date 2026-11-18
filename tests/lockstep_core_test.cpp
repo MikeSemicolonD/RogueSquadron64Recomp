@@ -47,7 +47,16 @@ static void test_frame_roundtrip() {
     CHECK(line == "1234 80017F810005 200");
     FrameInput g;
     CHECK(parse_frame((line + "\n").c_str(), &g));
-    CHECK(g.frame == 1234 && memcmp(g.pad, pad, 6) == 0 && g.throttle == 200);
+    CHECK(g.frame == 1234 && memcmp(g.pad, pad, 6) == 0 && g.throttle == 200 && !g.head);
+
+    f.head = true;
+    f.head_x = -127;
+    f.head_y = 64;
+    const std::string aimed = format_frame(f);
+    CHECK(aimed == "1234 80017F810005 200 8140");
+    CHECK(parse_frame((aimed + "\n").c_str(), &g));
+    CHECK(g.head && g.head_x == -127 && g.head_y == 64 && g.throttle == 200);
+    CHECK(!parse_frame("1234 80017F810005 200 81\n", &g));
 }
 
 static void test_parse_frame_rejects_partial() {

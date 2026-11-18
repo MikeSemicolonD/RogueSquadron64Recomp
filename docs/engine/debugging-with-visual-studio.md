@@ -140,6 +140,8 @@ Debug crashes on the x64 build. The 32-bit build has no 4 GB guard region around
 - `python tools/debug/reconstruct-freeze.py` rebuilds the game's threads and message queues from RAM and shows which thread is waiting on what.
 - `python tools/debug/host-stacks.py` prints symbolized host stacks (Debug build only; it refuses a dump from a different exe).
 
+To read a dump from the shell, use WinDbg's console debugger (`winget install Microsoft.WinDbg`): `cdbX64.exe -z <dmp> -y build\Debug -c "~*k;q"` prints every thread's stack. The Windows SDK's own `cdb.exe` may not start (its `dbghelp.dll` was replaced by a newer, incompatible one).
+
 Other helpers under [tools/debug/](../../tools/debug/):
 
 - `dump_stackscan.py` symbolizes thread stacks from a minidump.

@@ -1,5 +1,7 @@
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
+#include <string>
 
 #include "video/video_config.h"
 
@@ -12,6 +14,23 @@ std::atomic<float> g_rs64_hud_placement{ 0.0f };
 static int g_fail = 0;
 #define CHECK(cond) do { if (!(cond)) { ++g_fail; \
     std::fprintf(stderr, "FAIL %s:%d  %s\n", __FILE__, __LINE__, #cond); } } while (0)
+
+// Sets an environment variable, or removes it when value is null.
+static void set_env(const char* name, const char* value)
+{
+
+#ifdef _WIN32
+    _putenv((std::string(name) + "=" + (value ? value : "")).c_str());
+#else
+
+    if (value) {
+        setenv(name, value, 1);
+    } else {
+        unsetenv(name);
+    }
+
+#endif
+}
 
 static std::string uc_dump(const UC& uc) {
     json j = uc;                 // RT64 to_json
@@ -60,6 +79,11 @@ static void test_to_friendly_thirdstate_to_advanced() {
     CHECK(j["advanced"].value("filtering", std::string()) == "Linear");
     CHECK(!j.contains("widescreen"));
     CHECK(j["advanced"].value("aspectRatio", std::string()) == "Manual");
+    CHECK(j["advanced"]["aspectTarget"] == 2.35);
+    CHECK(j["advanced"].value("extAspectTarget", std::string()) == "16:9");
+
+    rs64::video::apply_friendly(uc, json{{"advanced", {{"aspectTarget", "21:9"}}}});
+    CHECK(uc.aspectTarget == 21.0 / 9.0);
 }
 
 static void test_d3d10_roundtrip() {
@@ -91,6 +115,51 @@ static void test_apply_basic() {
     CHECK(uc.threePointFiltering == true);               // smoothTextures false -> threePoint true
     CHECK(uc.refreshRate == UC::RefreshRate::Original);
     CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D12);
+}
+
+static void test_single_aa() {
+    UC uc; uc.validate();
+    rs64::video::apply_friendly(uc, json{{"antialiasing", 4}, {"ssaa", 2}, {"fxaa", true}});
+    CHECK(uc.antialiasing == UC::Antialiasing::MSAA4X);
+    CHECK(uc.downsampleMultiplier == 1);
+    CHECK(uc.fxaa == false);
+    rs64::video::apply_friendly(uc, json{{"antialiasing", 0}, {"ssaa", 2}, {"fxaa", true}});
+    CHECK(uc.downsampleMultiplier == 2);
+    CHECK(uc.fxaa == false);
+    rs64::video::apply_friendly(uc, json{{"advanced", {{"downsampleMultiplier", 2}}}, {"antialiasing", 2}});
+    CHECK(uc.downsampleMultiplier == 1);
+}
+
+static std::string aa_shown() {
+    using rs64::video::Display;
+    return rs64::video::display_label(Display::AntiAliasing, rs64::video::display_value(Display::AntiAliasing));
+}
+
+static void test_ssaa_cap_menu() {
+    using rs64::video::Display;
+    UC uc; uc.validate();
+    rs64::video::apply_aa_preset(uc, 6);                   // SSAA 4X saved
+    rs64::video::apply_pending(uc);                        // menu copy mirrors it
+
+    rs64::video::set_ssaa_base(3.0f);                      // 3 x 4 > 10: renders 2X
+    CHECK(aa_shown() == "SSAA 2X");
+
+    std::vector<std::string> seen;
+    for (int i = 0; i < 7; ++i) {
+        rs64::video::step_display(Display::AntiAliasing);
+        seen.push_back(aa_shown());
+    }
+    CHECK(std::find(seen.begin(), seen.end(), "SSAA 4X") == seen.end());
+    CHECK(std::find(seen.begin(), seen.end(), "MSAA 8X") != seen.end());
+
+    rs64::video::set_ssaa_base(6.0f);                      // 6 x 2 > 10: no SSAA step at all
+    seen.clear();
+    for (int i = 0; i < 7; ++i) {
+        rs64::video::step_display(Display::AntiAliasing);
+        seen.push_back(aa_shown());
+    }
+    CHECK(std::find(seen.begin(), seen.end(), "SSAA 2X") == seen.end());
+    rs64::video::set_ssaa_base(1.0f);
 }
 
 static void test_apply_resolution_number() {
@@ -132,6 +201,7 @@ static void test_roundtrip() {
     { UC u; u.aspectRatio = UC::AspectRatio::Manual; u.aspectTarget = 2.35; rt(u); }
     { UC u; u.internalColorFormat = UC::InternalColorFormat::Standard; rt(u); }
     { UC u; u.refreshRate = UC::RefreshRate::Display; rt(u); }
+    { UC u; u.vsync = false; rt(u); }
     { UC u; u.upscale2D = UC::Upscale2D::All; u.hardwareResolve = UC::HardwareResolve::Enabled; rt(u); }
 }
 
@@ -153,7 +223,7 @@ static void test_load_missing() {
 static void test_load_friendly() {
     UC uc; uc.validate();
     std::string p = write_tmp("tmp_friendly_video.json",
-        R"({"schema":2,"drawDistance":1.0,"hudPlacement":0.0,"widescreen":true,"resolutionScale":"auto"})");
+        R"({"schema":2,"drawDistance":1.0,"hudPlacement":0.0,"terrainTessellation":4,"widescreen":true,"resolutionScale":"auto"})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
@@ -186,6 +256,7 @@ static void test_keep_cutscene_default_and_roundtrip() {
     rs64::video::set_keep_cutscene_draw_distance(true);
     rs64::video::set_draw_distance(1.0f);
 }
+
 
 static void test_legacy_terrain_default_and_roundtrip() {
     rs64::video::set_legacy_terrain(false);
@@ -250,7 +321,7 @@ static void test_legacy_terrain_caps_draw_distance() {
 static void test_keep_cutscene_absent_key_not_migrated() {
     rs64::video::set_keep_cutscene_draw_distance(true);
     UC uc; uc.validate();
-    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3,"hudPlacement":0.0})");
+    std::string p = write_tmp("tmp_nokey_video.json", R"({"schema":2,"drawDistance":1.3,"hudPlacement":0.0,"terrainTessellation":4})");
     auto r = rs64::video::load(uc, p);
     CHECK(r.loaded == true);
     CHECK(r.migrated == false);
@@ -330,7 +401,7 @@ static void test_effective_draw_distance() {
 // rayTracing: the file round-trips the player's setting; an env var pins the live switch but never leaks into the file.
 static void test_ray_tracing_settings() {
     using rs64lights::Feature;
-    _putenv("ROGUESQ_RT_FOG_SHAFTS=1");
+    set_env("ROGUESQ_RT_FOG_SHAFTS", "1");
     UC uc; uc.validate();
     json j = rs64::video::to_friendly(uc);
     CHECK(j.contains("rayTracing"));
@@ -346,7 +417,7 @@ static void test_ray_tracing_settings() {
     CHECK(j["rayTracing"]["ambientOcclusion"] == false && j["rayTracing"]["globalIllumination"] == false && j["rayTracing"]["reflections"] == false);
     rs64::video::apply_friendly(uc, json{{"rayTracing", {{"ambientOcclusion", true}}}});
     CHECK(rs64lights::feature(Feature::AmbientOcclusion));
-    _putenv("ROGUESQ_RT_FOG_SHAFTS=");
+    set_env("ROGUESQ_RT_FOG_SHAFTS", nullptr);
     CHECK(j["rayTracing"]["lightLimits"]["engines"] == 12 && j["rayTracing"]["lightLimits"]["lasersMax"] == 8);
     rs64::video::apply_friendly(uc, json{{"rayTracing", {{"lightLimits", {{"effects", 20}, {"lasersMax", 2}, {"models", 999}}}}}});
     CHECK(rs64lights::priorityShare(5) == 20 && rs64lights::config().maxProjectileLights == 2);
@@ -418,7 +489,30 @@ static void test_custom_aa_steps_to_fxaa() {
     CHECK(rs64::video::aa_preset(uc) == 1);
 }
 
+static void test_graphics_api_cycle() {
+    using rs64::video::Display;
+    UC uc; uc.validate();
+    rs64::video::apply_friendly(uc, json{{"graphicsAPI", "d3d10"}});
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::display_label(Display::GraphicsApi, rs64::video::display_value(Display::GraphicsApi)) == "D3D11");
+
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::apply_pending(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::Automatic);
+    CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "auto");
+
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "vulkan");
+
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::step_display(Display::GraphicsApi);
+    rs64::video::apply_pending(uc);
+    CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "d3d11");
+}
+
 int main() {
+    test_graphics_api_cycle();
     test_custom_aa_steps_to_fxaa();
     test_aa_presets();
     test_resolution_and_upscale_choices();
@@ -437,6 +531,8 @@ int main() {
     test_to_friendly_mapping();
     test_to_friendly_thirdstate_to_advanced();
     test_apply_basic();
+    test_single_aa();
+    test_ssaa_cap_menu();
     test_d3d10_roundtrip();
     test_apply_resolution_number();
     test_advanced_wins();

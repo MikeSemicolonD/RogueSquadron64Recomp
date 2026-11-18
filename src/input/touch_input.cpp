@@ -187,6 +187,11 @@ namespace rs64::touch {
         pulses_.push_back({ buttons, x, y, polls, busy ? busy + gap : 0 });
     }
 
+    void Engine::set_frame(uint32_t frame) {
+        frame_set_ = true;
+        frame_ = frame;
+    }
+
     void Engine::inject(uint16_t buttons, float x, float y, int polls, int gap) {
         queue(buttons, x, y, polls, gap);
     }
@@ -300,7 +305,7 @@ namespace rs64::touch {
                 }
             } else if (f.role == Finger::Role::Gesture && (ctx == Context::ListMenu || ctx == Context::PauseMenu))
             {
-                // Horizontal: fine, two-way slider nudges (one step per kFineStep of drag). Vertical: coarse steps between entries.
+                // Horizontal: fine, two-way slider nudges (one step per kFineStep of drag). Vertical: coarse steps between pause entries; list pages scroll by their scrollbar.
                 const float dx = (x - f.x0) * aspect_;
                 const float dy = y - f.y0;
                 const bool hover = ctx == Context::PauseMenu && menu_hover_;
@@ -310,7 +315,7 @@ namespace rs64::touch {
                     if (std::fabs(dx) > kTapMove && std::fabs(dx) >= 2.0f * std::fabs(dy))
                     {
                         f.axis = 1;
-                    } else if (!hover && std::fabs(dy) > kTapMove && std::fabs(dy) >= 2.0f * std::fabs(dx))
+                    } else if (ctx == Context::PauseMenu && !hover && std::fabs(dy) > kTapMove && std::fabs(dy) >= 2.0f * std::fabs(dx))
                     {
                         f.axis = 2;
                     }
@@ -458,6 +463,17 @@ namespace rs64::touch {
         return total > 0.0f && in_plane >= kWheelMinPlane * total;
     }
 
+    float gyro_stick(float rate, const Config& c) {
+
+        if (std::fabs(rate) < kRateFloor) {
+            return 0.0f;
+        }
+
+        const float out = std::min(c.pitch_min + c.pitch_gain * std::fabs(rate), 1.0f);
+
+        return (rate < 0.0f) ? -out : out;
+    }
+
     void Engine::set_menu_tap(MenuTapFn fn) {
         menu_tap_ = std::move(fn);
     }
@@ -569,17 +585,10 @@ namespace rs64::touch {
                 gx += roll_rate_ * cfg_.rate_assist;
             }
 
-            // Up/down is mouse-like: the stick follows pitch motion and centers when the phone stops, so a held angle never overshoots.
-            float gy = 0.0f;
-
-            if (std::fabs(pitch_rate_) >= kRateFloor)
-            {
-                const float out = cfg_.pitch_min + cfg_.pitch_gain * std::fabs(pitch_rate_);
-                gy = (pitch_rate_ < 0.0f) ? -out : out;
-            }
+            // Up/down is mouse-like so a held angle never overshoots.
+            const float gy = gyro_stick(pitch_rate_, cfg_);
 
             gx = std::clamp(gx, -1.0f, 1.0f);
-            gy = std::clamp(gy, -1.0f, 1.0f);
 
             if ((gx * gx + gy * gy) > (p.x * p.x + p.y * p.y)) {
                 p.x = gx;
@@ -596,10 +605,35 @@ namespace rs64::touch {
     void Engine::drain_pulses(Pad* p)
     {
 
+        // Without a frame count every poll is a step.
+        const bool step = !frame_set_ || frame_ != drained_frame_;
+
+        drained_frame_ = frame_;
+
         for (Pulse& q : pulses_) {
             if (q.delay > 0) {
-                --q.delay;
+                if (step) {
+                    --q.delay;
+                }
+
                 continue;
+            }
+
+            if (frame_set_)
+            {
+                if (q.started && step) {
+                    --q.polls;
+                }
+
+                if (q.polls <= 0) {
+                    continue;
+                }
+
+                // A press that starts partway through a game frame keeps that frame and its full count after it.
+                if (!q.started) {
+                    q.started = true;
+                    q.polls += step ? 0 : 1;
+                }
             }
 
             p->buttons |= q.buttons;
@@ -607,7 +641,9 @@ namespace rs64::touch {
             if (std::fabs(q.x) > std::fabs(p->x)) p->x = q.x;
             if (std::fabs(q.y) > std::fabs(p->y)) p->y = q.y;
 
-            --q.polls;
+            if (!frame_set_) {
+                --q.polls;
+            }
         }
 
         pulses_.erase(std::remove_if(pulses_.begin(), pulses_.end(), [](const Pulse& q) { return q.polls <= 0; }), pulses_.end());

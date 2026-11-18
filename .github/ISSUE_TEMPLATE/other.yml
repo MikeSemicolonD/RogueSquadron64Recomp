@@ -1,0 +1,9 @@
+name: Something else
+description: Say or ask anything that doesn't fit the other templates.
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true

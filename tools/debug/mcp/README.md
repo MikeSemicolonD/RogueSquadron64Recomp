@@ -21,14 +21,14 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `launch` | Start the game (cwd `build/<config>`, RenderDoc injected, muted, dev mode) and connect. `env` adds `ROGUESQ_*` variables. Refuses while its game is still running. |
 | `attach` | Connect to a game the user started (a Debug build serves the bridge on port 47064). Everything but `wait_log` works; `close` only disconnects. |
 | `close` | Kill the game (an attached one is only disconnected). |
-| `status` | `running`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
+| `status` | `running`, `state` (the game state, e.g. `menu.main`, `cutscene`, `attract.demo`), `held`, `pid`, `port`, `exit_code`, `log_path`, `session_dir`. |
 | `call` | Send any bridge method directly. |
 | `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). Errors at once if the shown state's clock is already past `frame`. |
 | `pause_now` | Freeze on the next frame, whatever is on screen. |
 | `step` / `resume` | From a freeze, run `frames` more and re-freeze / let it run. |
 | `pause_when` | Freeze when an RDRAM value changes or meets eq/ne/gt/lt (checked once a frame). A state change is `pause_at(<state>, 0)`. |
 | `pause_when_drawn` | Freeze once a model part or effect sprite is on screen, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`; `\|` separates several). One or two frames after it first shows. |
-| `wait_log` | Wait for a regex in the game's log (e.g. `SEH caught\|null-call\|Assertion`). |
+| `wait_log` | Wait for a regex in the game's log (e.g. `SEH caught\|null-call\|Assertion`). A line already printed fails at once; `repeat=true` waits for another. |
 | `pick` / `highlight` | The draw calls under a framebuffer pixel (F1's right-click picker), each with its model part's light-preset `mesh_key` when it has one (RT lights on); tint one on screen or clear tints. |
 | `read_symbol` | Read memory at a `syms/` symbol name. |
 | `walk_dl` | RDRAM dump + `f5_dl_walk.py` over the current task (or a `frame_summary` `dl_addr`). |
@@ -37,7 +37,9 @@ Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session
 | `frame_info` | Game state, every clock, held / paused flags, the frozen picture. |
 | `rdram_read` / `rdram_write` | Game memory as hex at KSEG0 addresses (relocated ranges handled). |
 | `rdram_dump` | The 8 MB RDRAM in the `ROGUESQ_DUMP_RDRAM_AT_VI` format, for `rdram_golden_diff.py` / `state_diff`. |
-| `press` / `release` | Hold controller-1 buttons or the stick for N frames (or until release); with `step`, plays exact frames of input. |
+| `press` / `release` | Hold controller-1 buttons or the stick for N frames (or until release); with `step`, plays exact frames of input. `head` aims the AT-ST head in CHICKEN, recorded like the mouse aim. |
+| `targets` | Live objects around the player, nearest first: kind, distance, bearing and elevation (for aiming without a screenshot), counts per kind, the walker's hp; `bolts=true` adds laser bolts. |
+| `objectives` | Objective flags, counts and timers, and each level object whose destruction changes them (alive / dead / inactive, its effect, distance and bearing). |
 | `type_text` | Type letters (and Backspaces) on the PASSCODES / ENTER NAME wheels, posted to the game window without focus. |
 | `screenshot` | PNG of the game window, captured by the game's PID. |
 | `frame_summary` / `list_draws` / `get_draw` | The frozen frame's framebuffer pairs and draw calls, everything the F1 Debugger shows. |

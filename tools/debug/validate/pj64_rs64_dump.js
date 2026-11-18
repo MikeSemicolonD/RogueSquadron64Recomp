@@ -1,5 +1,6 @@
 // rs64_dump.js: dump RDRAM (8 MB, big-endian) at game milestones for tools/debug/validate/rdram_golden_diff.py
-var OUT = "E:/Projects/RogueSquadron64Recomp/dumps/pj64/";
+// capture_pj64_golden.ps1 fills in the repo path when it copies this script.
+var OUT = "RS64_DUMP_DIR/";
 var cine = 0, menu = 0, done = {};
 function dump(tag) {
     if (done[tag]) return;

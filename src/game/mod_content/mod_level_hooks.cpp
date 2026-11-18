@@ -27,6 +27,7 @@
 #include "util/debug_logs.h"
 #include "main/cli.h"
 #include "game/game_state.h"
+#include "game/nav_sequencer.h"
 #include "game/mod_content/camera_shots.h"
 #include "game/mod_content/mod_levels.h"
 #include "game/mod_content/level_rules.h"
@@ -37,6 +38,8 @@
 #include <deque>
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
+#include "util/host_ram_map.h"
+#include "util/settings_file.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;
@@ -51,11 +54,14 @@ uint32_t s_shot_frame = 0;
 
 // Shots queued through the camera.shots service (another player's, in co-op); they never call the listener back.
 std::deque<rs64shots::Shot> s_remote_shots;
+
+// A level links a handful of shots; the other player cannot queue without limit.
+constexpr size_t kMaxRemoteShots = 64;
 rs64_shot_fn s_shot_listener = nullptr;
 void* s_shot_listener_user = nullptr;
 
 // Host RAM for the camera name the game's shot starter reads (above the manifest copies).
-constexpr uint32_t kShotName = 0x80C40000u;
+constexpr uint32_t kShotName = RS64_HR_SHOT_NAME;
 }
 
 extern "C" const char* rs64_mod_levels_current_folder();
@@ -136,8 +142,8 @@ static uint32_t level_object(uint8_t* rdram, recomp_context* ctx, const std::str
     return (item & 0xFF800000u) == 0x80000000u ? item : 0;
 }
 
-// Destroys the level object named name as a lethal hit would; tag starts each log line.
-static void destroy_level_object(uint8_t* rdram, recomp_context* ctx, const std::string& name, const std::string& tag)
+// Destroys the level object named name as a lethal hit would; tag starts each log line. False when there is none or it is already gone.
+static bool destroy_level_object(uint8_t* rdram, recomp_context* ctx, const std::string& name, const std::string& tag)
 {
 
     const uint32_t item = level_object(rdram, ctx, name);
@@ -145,7 +151,7 @@ static void destroy_level_object(uint8_t* rdram, recomp_context* ctx, const std:
     if (!item)
     {
         fprintf(stderr, "%s: no object %s; skipped\n", tag.c_str(), name.c_str());
-        return;
+        return false;
     }
 
     const uint32_t slot = rw(rdram, item + 4) & 0xFFFFu, table = rw(rdram, 0x80130BB0u);
@@ -159,7 +165,7 @@ static void destroy_level_object(uint8_t* rdram, recomp_context* ctx, const std:
     if (kind == rs64shots::Destroy::Skip)
     {
         fprintf(stderr, "%s: %s is already destroyed or mid-teardown; skipped\n", tag.c_str(), name.c_str());
-        return;
+        return false;
     }
 
     if (kind == rs64shots::Destroy::CutHealth)
@@ -168,7 +174,7 @@ static void destroy_level_object(uint8_t* rdram, recomp_context* ctx, const std:
         rs64::mips::mips_call(rdram, ctx, 0x800C7390u, { kShotName, (uint32_t)health });
 
         fprintf(stderr, "%s: %s is not loaded; health cut, no explosion\n", tag.c_str(), name.c_str());
-        return;
+        return true;
     }
 
     // dealDamagetoDatItem's lethal HIT (action 5, weapon 7, damage -1) through the unit's own handler, without its follow-up
@@ -180,6 +186,8 @@ static void destroy_level_object(uint8_t* rdram, recomp_context* ctx, const std:
     rs64::mips::mips_call(rdram, ctx, 0x8003E8DCu, { slot, 5u, kShotName });
 
     fprintf(stderr, "%s: destroyed %s\n", tag.c_str(), name.c_str());
+
+    return true;
 }
 
 extern "C" void rs64_camera_shots_frame(uint8_t* rdram, recomp_context* ctx)
@@ -193,7 +201,7 @@ extern "C" void rs64_camera_shots_frame(uint8_t* rdram, recomp_context* ctx)
 
     const auto put_name = [&](const std::string& name) {
 
-        wstr(rdram, kShotName, name);
+        wstr(rdram, kShotName, name.substr(0, 255));
 
         return rs64::mips::mips_call(rdram, ctx, 0x80047B48u, { kShotName }).v0;
     };
@@ -253,7 +261,7 @@ int s_current_mod_level = -1;
 std::set<std::string> s_mod_level_files;
 
 // Host RAM for a redirected asset name (after the mid-mission shot name).
-constexpr uint32_t kLookupName = 0x80C40100u;
+constexpr uint32_t kLookupName = RS64_HR_LOOKUP_NAME;
 
 // The SELECT LEVEL cursor (menu overlay, u8 at 0x800CDAC1).
 const rs64levels::ModLevel* entry_at_cursor(uint8_t* rdram)
@@ -358,15 +366,41 @@ extern "C" void rs64_mod_levels_init() {
         rs64::cli::set_env("ROGUESQ_BOOT_TARGET", tmpl_target.c_str());
         rs64::cli::set_env("ROGUESQ_MOD_LEVEL", s_mod_levels[named].id.c_str());
 
+        // The render context may have read the mod level's name as the target already.
+        rs64_nav_set_target(tmpl_target.c_str());
+
         fprintf(stderr, "[levels] boot target %s -> %s\n", boot.c_str(), tmpl_target.c_str());
     }
 
     s_current_mod_level = forced_mod_level();
 }
 
-// SELECT LEVEL opens (a2 = highest stock entry shown): mod levels take the next entries.
-extern "C" void rs64_mod_levels_select_open(uint8_t*, recomp_context* ctx)
+// The AT-ST level has no SELECT LEVEL picture, craft table row (dDefaultCraftForLevel has 19, so its hangar crashes) or crawl, so the
+// menus run a walker level as Mos Eisley, and the CHICKEN bit starts the AT-ST mission once the front end returns (mainGameLoop 0x8003E250).
+static int menu_level(const rs64levels::ModLevel& l) {
+    return l.tmpl == rs64levels::kAtStLevel ? 0 : l.tmpl;
+}
+
+constexpr uint32_t kCheatFlags = 0x80130B58u;
+constexpr uint32_t kChickenBit = 0x02000000u;
+
+// Whether a walker pick set the CHICKEN bit, so backing out of it clears only that bit and never a typed passcode's.
+static bool s_walker_bit = false;
+
+static void set_walker_start(uint8_t* rdram, bool on)
 {
+
+    if (on) ww(rdram, kCheatFlags, rw(rdram, kCheatFlags) | kChickenBit);
+    else if (s_walker_bit) ww(rdram, kCheatFlags, rw(rdram, kCheatFlags) & ~kChickenBit);
+
+    s_walker_bit = on;
+}
+
+// SELECT LEVEL opens (a2 = highest stock entry shown): mod levels take the next entries.
+extern "C" void rs64_mod_levels_select_open(uint8_t* rdram, recomp_context* ctx)
+{
+
+    set_walker_start(rdram, false);
 
     if (s_mod_levels.empty()) return;
 
@@ -376,13 +410,16 @@ extern "C" void rs64_mod_levels_select_open(uint8_t*, recomp_context* ctx)
 
     ctx->r6 = s_level_entries.base + s_level_entries.count - 1;
     s_level_select_open = true;
+
+    fprintf(stderr, "[levels] SELECT LEVEL: mod levels at entries %d-%d, cursor %d\n", s_level_entries.base, (int)(uint32_t)ctx->r6, (int)(uint32_t)ctx->r7);
 }
 
 // Confirmed (s0 = entry): a mod entry plays as its template; a stock one clears the mod level.
-extern "C" void rs64_mod_levels_select_confirm(uint8_t*, recomp_context* ctx)
+extern "C" void rs64_mod_levels_select_confirm(uint8_t* rdram, recomp_context* ctx)
 {
 
     s_current_mod_level = forced_mod_level();
+    set_walker_start(rdram, false);
 
     if (!s_level_select_open) return;
 
@@ -391,7 +428,8 @@ extern "C" void rs64_mod_levels_select_confirm(uint8_t*, recomp_context* ctx)
     if (i < 0 || i >= s_level_entries.count) return;
 
     s_current_mod_level = i;
-    ctx->r16 = s_mod_levels[i].tmpl;
+    ctx->r16 = menu_level(s_mod_levels[i]);
+    set_walker_start(rdram, s_mod_levels[i].tmpl == rs64levels::kAtStLevel);
 
     fprintf(stderr, "[levels] playing %s (as level %d)\n", s_mod_levels[i].id.c_str(), s_mod_levels[i].tmpl);
 }
@@ -413,15 +451,30 @@ extern "C" void rs64_mod_levels_text(uint8_t* rdram, recomp_context* ctx, int de
     if (const uint32_t p = level_str(rdram, s.empty() ? " " : rs64levels::menuText(s))) ctx->r2 = (gpr)(int32_t)p;
 }
 
-// A per-level lookup made for a mod entry while SELECT LEVEL is open (preview image, craft icons) uses its template.
-extern "C" void rs64_mod_levels_entry_level(uint32_t* level)
+// The preview's sprintf of "level%d" (a1) with a2 = the level: a mod entry shows its own picture if it ships one, else its template's.
+// a1_delay: what the call's delay slot still adds to a1 after this hook.
+extern "C" void rs64_mod_levels_preview(uint8_t* rdram, recomp_context* ctx, int a1_delay)
 {
 
     if (!s_level_select_open) return;
 
-    const int i = (int)*level - s_level_entries.base;
+    const int i = (int)(uint32_t)ctx->r6 - s_level_entries.base;
 
-    if (i >= 0 && i < s_level_entries.count) *level = (uint32_t)s_mod_levels[i].tmpl;
+    if (i < 0 || i >= s_level_entries.count) return;
+
+    const auto& l = s_mod_levels[i];
+
+    if (rs64::assets::find("level/" + l.folder + "/preview"))
+    {
+        if (const uint32_t p = level_str(rdram, rs64levels::previewName(l.folder)))
+        {
+            ctx->r5 = (gpr)(int32_t)(p - a1_delay);
+
+            return;
+        }
+    }
+
+    ctx->r6 = (gpr)menu_level(l);
 }
 
 // Available craft for level: a mod level's approved craft mask (a SELECT LEVEL mod entry, or the template id while one plays), else -1
@@ -434,11 +487,14 @@ extern "C" int rs64_mod_levels_craft(uint32_t* level) {
     if (s_level_select_open && i >= 0 && i < s_level_entries.count)
     {
         l = &s_mod_levels[i];
-        *level = (uint32_t)l->tmpl;
-    } else if (s_current_mod_level >= 0 && (int)*level == s_mod_levels[s_current_mod_level].tmpl)
+        *level = (uint32_t)menu_level(*l);
+    } else if (s_current_mod_level >= 0 && (int)*level == menu_level(s_mod_levels[s_current_mod_level]))
     {
         l = &s_mod_levels[s_current_mod_level];
     }
+
+    // A walker level offers no craft: the player is the AT-ST.
+    if (l && l->tmpl == rs64levels::kAtStLevel) return 0;
 
     return l ? l->craftMask : -1;
 }
@@ -463,7 +519,7 @@ extern "C" void rs64_mod_levels_voice(uint8_t* rdram, recomp_context* ctx)
 
     if (!brief) return;
 
-    const uint32_t carrier = 0x279u + (uint32_t)l->tmpl;
+    const uint32_t carrier = 0x279u + (uint32_t)menu_level(*l);
     ctx->r2 = carrier;
     s_brief_index = (int16_t)MEM_H(0, (gpr)(int32_t)(0x8009FFE0u + carrier * 2u));
     s_brief_rom = brief->rom_off;
@@ -500,14 +556,27 @@ extern "C" int rs64_mod_levels_boot_entry()
     return s_level_select_open && i >= 0 && i < s_level_entries.count ? s_level_entries.base + i : -1;
 }
 
+extern "C" int rs64_mod_levels_boot_named() {
+    return forced_mod_level() >= 0;
+}
+
 // Back in the menus (menuOverlayInit state; 3 = a mission's debrief, after which a death replays the level): no mod level is being
 // played until SELECT LEVEL confirms one.
 extern "C" void rs64_mod_levels_menu(int state) {
+
+    // Back in the front end, mainGameLoop has used the CHICKEN bit a walker pick set.
+    s_walker_bit = false;
+
     if (state != 3) s_current_mod_level = forced_mod_level();
 }
 
 extern "C" int rs64_mod_levels_playing() {
     return s_current_mod_level >= 0;
+}
+
+// SELECT LEVEL confirmed a walker level, whose CHICKEN start needs no craft.
+extern "C" int rs64_mod_levels_walker_pick() {
+    return s_walker_bit;
 }
 
 // Crawl files from enabled mods (assets/crawl/<name>/crawl.json), in load order, and the one picked for the crawl now playing.
@@ -572,6 +641,9 @@ extern "C" int rs64_mod_levels_crawl_id(int level)
 
     int crawl = mod ? mod->crawl : rs64levels::kCrawlTemplate;
 
+    // A walker level's menus run as Mos Eisley, whose chapter crawl is not its template's: the AT-ST level has none.
+    if (mod && mod->tmpl == rs64levels::kAtStLevel && crawl == rs64levels::kCrawlTemplate) crawl = rs64levels::kCrawlNone;
+
     if (s_playing_crawl)
     {
         fprintf(stderr, "[crawl] level %d plays %s\n", level, s_playing_crawl->name.c_str());
@@ -592,11 +664,11 @@ extern "C" int rs64_mod_levels_crawl_id(int level)
     return crawl;
 }
 
-// The crawl's text, written to host RAM (0x80C41000-0x80C41FFF); 0 when the game's own plays.
+// The crawl's text, written to host RAM; 0 when the game's own plays.
 extern "C" uint32_t rs64_mod_levels_crawl_text(uint8_t* rdram)
 {
 
-    constexpr uint32_t kCrawlText = 0x80C41000u;
+    constexpr uint32_t kCrawlText = RS64_HR_CRAWL_TEXT;
 
     if (s_playing_crawl)
     {
@@ -668,6 +740,11 @@ extern "C" const char* rs64_mod_levels_current_folder()
     return s_current_mod_level >= 0 ? s_mod_levels[s_current_mod_level].folder.c_str() : nullptr;
 }
 
+extern "C" const char* rs64_mod_levels_current_title()
+{
+    return s_current_mod_level >= 0 ? s_mod_levels[s_current_mod_level].title.c_str() : nullptr;
+}
+
 // ---- Mod level medals: their own thresholds and their own record (roguesq_mod_medals.json), never the game's medals ----
 namespace {
 rs64levels::MedalStore s_mod_medals;
@@ -678,7 +755,7 @@ uint32_t s_debrief_level = 0, s_saved_medal_info = 0;
 uint8_t s_saved_medal = 0, s_saved_rank = 0;
 
 // Host RAM for a mod level's three medal_info records (after the redirected asset name).
-constexpr uint32_t kModMedals = 0x80C40200u;
+constexpr uint32_t kModMedals = RS64_HR_MOD_MEDALS;
 constexpr const char* kModMedalsFile = "roguesq_mod_medals.json";
 
 // Per profile: the account (0-2) the game plays with is the byte at 0x80130B44, the same number as its SELECT GAME slot.
@@ -722,8 +799,9 @@ extern "C" void rs64_mod_levels_debrief_begin(uint8_t* rdram, uint32_t level)
 
         for (size_t i = 0; i < rec.size(); i++) wb(rdram, kModMedals + (uint32_t)i, rec[i]);
 
-        // Bonuses are the level's secret pickups, which the template's mission script awards: keep its thresholds (u16 at +0xA).
-        for (uint32_t t = 0; t < 3; t++)
+        // Bonuses are the level's secret pickups, which the template's mission script awards: keep its thresholds (u16 at +0xA). The
+        // AT-ST level has no row in the table, so it asks for none.
+        for (uint32_t t = 0; t < 3 && l.tmpl <= rs64levels::kLastStockLevel; t++)
         {
             for (uint32_t k = 0; k < 2; k++) wb(rdram, kModMedals + t * 0xCu + 0xAu + k, rb(rdram, s_saved_medal_info + s_debrief_level * 0x24u + t * 0xCu + 0xAu + k));
         }
@@ -766,9 +844,12 @@ extern "C" void rs64_mod_levels_debrief_end(uint8_t* rdram)
 
     if (s_earned_medal > 0 && mod_medals().record(medal_key(current_profile(rdram), l), s_earned_medal))
     {
-        std::ofstream(kModMedalsFile, std::ios::binary) << mod_medals().save();
+        rs64::settings::write_file(kModMedalsFile, mod_medals().save());
     }
 }
+
+// Whether SELECT GAME's font 8 entries 4-6 have held the mod level medals (they stay drawn after a row without them).
+static bool s_select_game_medals = false;
 
 // SELECT GAME (setupCraftAnimationFlagSet, after it drew the profile's medal totals as text group 8 entries 1-3; s1 = the slot record at
 // 0x800CF180 + slot * 0x48, +0xC = account data or 0): the profile's mod level medals as a second set, entries 4-6, beside the game's.
@@ -786,7 +867,7 @@ extern "C" void rs64_mod_levels_select_game(uint8_t* rdram, recomp_context* ctx)
 
     for (const auto& l : s_mod_levels) count[mod_medals().best(medal_key(profile, l)) & 3]++;
 
-    constexpr uint32_t kIcons = 0x80C40300u, kCounts = 0x80C40320u, kColour = 0x80C40360u;
+    constexpr uint32_t kIcons = RS64_HR_MEDAL_TEXT, kCounts = kIcons + 0x20u, kColour = kIcons + 0x60u;
     wstr(rdram, kIcons, rstr(rdram, 0x800A6964u, 31));
     char counts[64];
     snprintf(counts, sizeof(counts), "~%d\n\n~~~~~~~~~%d\n\n~~~~~~~~%d", count[3], count[2], count[1]);
@@ -811,6 +892,20 @@ extern "C" void rs64_mod_levels_select_game(uint8_t* rdram, recomp_context* ctx)
         rs64::mips::mips_call(rdram, ctx, 0x800646F8u, { rw(rdram, 0x800CF078u), elem, x.key });
         rs64::mips::mips_call(rdram, ctx, 0x80063E54u, { 8, x.entry, x.colour });
         rs64::mips::mips_call(rdram, ctx, 0x80061F34u, { 8, x.entry, x.scale });
+    }
+
+    s_select_game_medals = true;
+}
+
+// applyCraftSlotAnimations 0x800C5694 (s0 = the alpha it just gave the game's medal entries 1-3): the mod level medals fade with them, back in after a pilot-first page hid them.
+extern "C" void rs64_mod_levels_select_game_alpha(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!s_select_game_medals) return;
+
+    for (uint32_t entry = 4; entry <= 6; ++entry)
+    {
+        rs64::mips::mips_call(rdram, ctx, 0x80061C74u, { 8, entry, (uint32_t)ctx->r16 });
     }
 }
 
@@ -913,7 +1008,7 @@ static void objective_callout(uint8_t* rdram, recomp_context* ctx, uint32_t i)
 
     if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, kHalfSecond });
 
-    if (!o.camera.empty()) cut_to_camera(rdram, ctx, o.camera, 0x80C42100u + i * 0x20u);
+    if (!o.camera.empty()) cut_to_camera(rdram, ctx, o.camera, RS64_HR_OBJECTIVE_CAMS + i * 0x20u);
 }
 
 // The per-level song table (0x8010B2EC, the song id per level startLevelBackgroundMusic plays); the original byte comes back at
@@ -968,9 +1063,10 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
     if (voice >= 0) ctx->r4 = (gpr)(int32_t)(voice - 0x2C0);
 }
 
-// ---- Level rules: assets/level/<folder>/rules.json from enabled mods, run against the level being played ----
+// ---- Level rules: assets/level/<folder>/rules.txt (or rules.json) from enabled mods, run against the level being played ----
 namespace {
 std::map<std::string, std::vector<rs64rules::Rule>> s_rules_by_folder;
+std::map<std::string, std::vector<std::string>> s_packages_by_folder;
 rs64rules::Runner s_rules;
 std::string s_rules_folder;
 std::string s_message_text;
@@ -978,7 +1074,7 @@ float s_message_left = 0;
 uint32_t s_message_text_id = 0xFFFFFFFFu;
 bool s_rules_pending = false;
 float s_rules_elapsed = 0;
-constexpr uint32_t kRuleName = 0x80C42200u;
+constexpr uint32_t kRuleName = RS64_HR_RULE_NAME;
 
 int rule_int(const rs64rules::Action& a, const char* key, int fallback = 0)
 {
@@ -988,6 +1084,21 @@ int rule_int(const rs64rules::Action& a, const char* key, int fallback = 0)
 std::string rule_str(const rs64rules::Action& a, const char* key)
 {
     return rs64rules::paramText(a, key);
+}
+
+// Voice ids the speech table has (mod_level_voice_carrier scans the same range).
+constexpr uint32_t kVoiceIds = 0x2F4;
+
+// A song id from the game's song table (D_main_8009FCD4: {u32 id, char* name} until id -1).
+bool song_known(uint8_t* rdram, int song)
+{
+
+    for (uint32_t at = 0x8009FCD4u, n = 0; n < 512 && rw(rdram, at) != 0xFFFFFFFFu; at += 8, n++)
+    {
+        if ((int)rw(rdram, at) == song) return true;
+    }
+
+    return false;
 }
 
 // An action a native mod registered with add_rule_action, given the rule's parameters as strings.
@@ -1008,70 +1119,224 @@ bool run_mod_rule_action(uint8_t* rdram, recomp_context* ctx, const rs64rules::A
     return rs64::host::run_rule_action(a.kind.c_str(), rdram, ctx, keys.data(), vals.data(), (int)keys.size());
 }
 
+// Runs one action; false when no built-in or mod action has its name.
+bool rule_do(uint8_t* rdram, recomp_context* ctx, const rs64rules::Action& a, const std::string& tag)
+{
+
+    const std::string& k = a.kind;
+
+    fprintf(stderr, "%s: %s\n", tag.c_str(), k.c_str());
+
+    if (k == "voice" && (rule_int(a, "id", -1) < 0 || rule_int(a, "id", -1) >= (int)kVoiceIds))
+    {
+        fprintf(stderr, "%s: voice %s out of range; skipped\n", tag.c_str(), rule_str(a, "id").c_str());
+    }
+    else if (k == "music" && !song_known(rdram, rule_int(a, "song", -1)))
+    {
+        fprintf(stderr, "%s: music %s is not a song id; skipped\n", tag.c_str(), rule_str(a, "song").c_str());
+    }
+    else if (k == "voice" || k == "recording")
+    {
+        const int voice = s_current_mod_level >= 0 ? mod_level_voice(rdram, rule_int(a, "id", -1), rule_str(a, "file")) : rule_int(a, "id", -1);
+
+        if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, 0u });
+    }
+    else if (k == "music")
+    {
+        // A new song in the level's table, and startLevelBackgroundMusic's once flag cleared so it stages that song again.
+        set_level_song(rdram, rule_int(a, "song"));
+        wb(rdram, 0x8010C424u, 0);
+    }
+    else if (k == "win") rs64::mips::mips_call(rdram, ctx, 0x800C776Cu, {});
+    else if (k == "fail") rs64::mips::mips_call(rdram, ctx, 0x800C7738u, {});
+    else if (k == "objectiveDone" || k == "objectiveFail")
+    {
+        const int i = rule_int(a, "objective") - 1;
+
+        if (own_objectives() && i >= 0 && i < (int)own_objectives()->size()) (k == "objectiveDone" ? s_obj_forced_done : s_obj_forced_failed) |= 1u << i;
+    }
+    else if (k == "flag" || k == "wave" || k == "spawn")
+    {
+        // A wave or spawn starts when its gate flag (written by the explorer) is raised.
+        const int f = rule_int(a, "flag");
+
+        if (f >= 1 && f <= 128) wb(rdram, rs64::ls::relocated(0x801388A0u) + (uint32_t)(f - 1), (uint8_t)rule_int(a, "value", 1));
+    }
+    else if (k == "counter")
+    {
+        const int c = rule_int(a, "counter");
+        const uint32_t at = rs64::ls::relocated(0x80138060u) + (uint32_t)(c - 1) * 4u;
+
+        if (c >= 1 && c <= 128) ww(rdram, at, rw(rdram, at) + (uint32_t)rule_int(a, "add", 1));
+    }
+    else if (k == "message")
+    {
+        // A subtitle: a silent line (speech 0, blank text) streamed for seconds, its text swapped in by getVoiceText's hooks.
+        const int seconds = std::clamp(rule_int(a, "seconds", 4), 1, 10);
+        const int carrier = mod_level_voice_carrier(rdram);
+
+        if (carrier < 0) return true;
+
+        s_message_text = rs64levels::menuText(rule_str(a, "text")).substr(0, 0x17F);
+        s_message_left = (float)seconds + 0.5f;
+        s_brief_index = 0;
+        s_brief_rom = rs64::assets::silence_rom(seconds);
+        rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)carrier, 0u });
+    }
+    else if (k == "destroy") destroy_level_object(rdram, ctx, rule_str(a, "unit"), tag);
+    else if (k == "camera") cut_to_camera(rdram, ctx, rule_str(a, "camera"), kRuleName);
+    else if (!run_mod_rule_action(rdram, ctx, a))
+    {
+        fprintf(stderr, "%s: no action %s; skipped\n", tag.c_str(), k.c_str());
+
+        return false;
+    }
+
+    return true;
+}
+
 void rules_run(uint8_t* rdram, recomp_context* ctx)
 {
 
     const std::string tag = "[rules] " + s_rules_folder;
 
-    for (const auto& a : s_rules.take())
-    {
-        const std::string& k = a.kind;
-
-        fprintf(stderr, "%s: %s\n", tag.c_str(), k.c_str());
-
-        if (k == "voice" || k == "recording")
-        {
-            const int voice = s_current_mod_level >= 0 ? mod_level_voice(rdram, rule_int(a, "id", -1), rule_str(a, "file")) : rule_int(a, "id", -1);
-
-            if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, 0u });
-        }
-        else if (k == "music")
-        {
-            // A new song in the level's table, and startLevelBackgroundMusic's once flag cleared so it stages that song again.
-            set_level_song(rdram, rule_int(a, "song"));
-            wb(rdram, 0x8010C424u, 0);
-        }
-        else if (k == "win") rs64::mips::mips_call(rdram, ctx, 0x800C776Cu, {});
-        else if (k == "fail") rs64::mips::mips_call(rdram, ctx, 0x800C7738u, {});
-        else if (k == "objectiveDone" || k == "objectiveFail")
-        {
-            const int i = rule_int(a, "objective") - 1;
-
-            if (own_objectives() && i >= 0 && i < (int)own_objectives()->size()) (k == "objectiveDone" ? s_obj_forced_done : s_obj_forced_failed) |= 1u << i;
-        }
-        else if (k == "flag" || k == "wave" || k == "spawn")
-        {
-            // A wave or spawn starts when its gate flag (written by the explorer) is raised.
-            const int f = rule_int(a, "flag");
-
-            if (f >= 1 && f <= 128) wb(rdram, rs64::ls::relocated(0x801388A0u) + (uint32_t)(f - 1), (uint8_t)rule_int(a, "value", 1));
-        }
-        else if (k == "counter")
-        {
-            const int c = rule_int(a, "counter");
-            const uint32_t at = rs64::ls::relocated(0x80138060u) + (uint32_t)(c - 1) * 4u;
-
-            if (c >= 1 && c <= 128) ww(rdram, at, rw(rdram, at) + (uint32_t)rule_int(a, "add", 1));
-        }
-        else if (k == "message")
-        {
-            // A subtitle: a silent line (speech 0, blank text) streamed for seconds, its text swapped in by getVoiceText's hooks.
-            const int seconds = std::clamp(rule_int(a, "seconds", 4), 1, 10);
-            const int carrier = mod_level_voice_carrier(rdram);
-
-            if (carrier < 0) continue;
-
-            s_message_text = rs64levels::menuText(rule_str(a, "text")).substr(0, 0x17F);
-            s_message_left = (float)seconds + 0.5f;
-            s_brief_index = 0;
-            s_brief_rom = rs64::assets::silence_rom(seconds);
-            rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)carrier, 0u });
-        }
-        else if (k == "destroy") destroy_level_object(rdram, ctx, rule_str(a, "unit"), tag);
-        else if (k == "camera") cut_to_camera(rdram, ctx, rule_str(a, "camera"), kRuleName);
-        else if (!run_mod_rule_action(rdram, ctx, a)) fprintf(stderr, "%s: no action %s; skipped\n", tag.c_str(), k.c_str());
-    }
+    for (const auto& a : s_rules.take()) rule_do(rdram, ctx, a, tag);
 }
+
+bool s_mission_running = false;
+bool s_mission_ready_pending = false;
+}
+
+extern "C" void rs64_rules_mission_end(void)
+{
+
+    s_mission_running = false;
+    s_mission_ready_pending = false;
+}
+
+// Host API v9 services (host_api_game.cpp binds them): missions only, on the game thread.
+extern "C" uint32_t rs64_rules_object(uint8_t* rdram, void* ctx, const char* name)
+{
+    return s_mission_running ? level_object(rdram, (recomp_context*)ctx, name) : 0u;
+}
+
+extern "C" float rs64_rules_object_health(uint8_t* rdram, void* ctx, const char* name)
+{
+
+    if (!rs64_rules_object(rdram, ctx, name)) return -1.0f;
+
+    wstr(rdram, kRuleName, std::string(name).substr(0, 0x3F));
+
+    return rs64::mips::mips_call(rdram, (recomp_context*)ctx, 0x800C7C28u, { kRuleName }).f0;
+}
+
+extern "C" int rs64_rules_destroy_object(uint8_t* rdram, void* ctx, const char* name)
+{
+
+    if (!rs64_rules_object(rdram, ctx, name)) return -1;
+
+    return destroy_level_object(rdram, (recomp_context*)ctx, name, "[host] destroy_object") ? 0 : -2;
+}
+
+extern "C" int rs64_rules_run_line(uint8_t* rdram, void* ctx, const char* line)
+{
+
+    if (!s_mission_running) return -2;
+
+    const std::string text = rs64rules::script::trim(line);
+    rs64rules::Action a;
+    std::string err;
+
+    if (text.empty() || !rs64rules::script::parseAction(text, a, err) || a.kind == "wait")
+    {
+        fprintf(stderr, "[host] run_rule_line \"%s\": %s\n", text.c_str(), err.empty() ? "not an action" : err.c_str());
+
+        return -1;
+    }
+
+    if (a.kind == "set" || a.kind == "add")
+    {
+        const int32_t base = a.kind == "add" ? s_rules.variable(rs64rules::paramOf(a, "variable")) : 0;
+
+        s_rules.setVariable(rs64rules::paramOf(a, "variable"), base + rule_int(a, "value"));
+
+        return 0;
+    }
+
+    return rule_do(rdram, (recomp_context*)ctx, a, "[host] run_rule_line") ? 0 : -3;
+}
+
+extern "C" int32_t rs64_rules_var_get(const char* name)
+{
+    return s_rules.variable(name);
+}
+
+extern "C" void rs64_rules_var_set(const char* name, int32_t value)
+{
+    s_rules.setVariable(name, value);
+}
+
+extern "C" float rs64_rules_mission_seconds(void)
+{
+    return s_mission_running ? s_rules_elapsed : 0.0f;
+}
+
+// ---- Spawned units: a copy of a level unit's DAT record in host RAM, spawned through setupNpcUpdateFunctions as the level's own units are ----
+namespace {
+constexpr uint32_t kSpawnSlot = 0x400u;
+constexpr uint32_t kSpawnName = 0x3C0u;
+constexpr uint32_t kSpawnSlots = (RS64_HR_SPAWNED_END - RS64_HR_SPAWNED) / kSpawnSlot;
+uint32_t s_spawned = 0;
+}
+
+extern "C" int rs64_rules_spawn(uint8_t* rdram, void* c, const char* tmpl, const char* name, const float pos[3])
+{
+
+    auto* ctx = (recomp_context*)c;
+
+    if (!tmpl || !pos) return -1;
+
+    if (!s_mission_running) return -2;
+
+    const uint32_t item = level_object(rdram, ctx, tmpl);
+
+    if (!item) return -1;
+
+    // The record's size (+0x08); only level units (sub-type 0x0C and up, what setupNpcUpdateFunctions spawns) can be copied.
+    const uint32_t size = rw(rdram, item + 0x08u);
+
+    if (rh(rdram, item) < 0x0Cu || size < 0x40u || size > kSpawnName || (size & 3u)) return -4;
+
+    // spawnNpcOfType does not fail cleanly with no free NPC context or slot (it pops past its stack), so it is only called with room in both.
+    if (s_spawned >= kSpawnSlots || (int32_t)rw(rdram, 0x80130BC8u) < 0 || rh(rdram, 0x80130BB4u) == 0xFFFFu) return -3;
+
+    const uint32_t rec = RS64_HR_SPAWNED + s_spawned * kSpawnSlot;
+
+    for (uint32_t i = 0; i < size; i += 4) ww(rdram, rec + i, rw(rdram, item + i));
+
+    // The loader's runtime fields start fresh: no NPC slot yet (+0x06, +0x34) and no runtime state block (+0x54).
+    wh(rdram, rec + 0x06u, 0xFFFFu);
+    wh(rdram, rec + 0x34u, 0xFFFFu);
+    ww(rdram, rec + 0x54u, 0x80000000u);
+
+    wstr(rdram, rec + kSpawnName, std::string(name && *name ? name : tmpl).substr(0, 0x3F));
+    ww(rdram, rec + 0x0Cu, rec + kSpawnName);
+
+    for (int i = 0; i < 3; ++i)
+    {
+        uint32_t bits;
+
+        std::memcpy(&bits, &pos[i], 4);
+        ww(rdram, rec + 0x10u + 4u * (uint32_t)i, bits);
+    }
+
+    ++s_spawned;
+
+    const uint32_t slot = rs64::mips::mips_call(rdram, ctx, 0x800653B4u, { rec }).v0 & 0xFFFFu;
+
+    fprintf(stderr, "[spawn] %s as %s: slot %04X (record %08X, %u bytes)\n", tmpl, rstr(rdram, rec + kSpawnName, 63).c_str(), slot, rec, size);
+
+    return slot == 0xFFFFu ? -5 : (int)slot;
 }
 
 static std::map<std::string, rs64env::Environment> s_env_by_folder;
@@ -1095,7 +1360,13 @@ extern "C" void rs64_env_level_load(uint8_t* rdram, float game_frac)
 
     rs64::mips::wf(rdram, 0x80136FBCu, frac);
     rs64_level_fog_frac(frac);
-    rs64_level_fog_reach(s_env ? (int)s_env->fogReach : (int)rs64env::FogReach::Auto);
+
+    // Escape from Fest (11) keeps its stock fog at a high draw distance, as Nonnah does by its early fog start.
+    constexpr uint32_t kEscapeFromFest = 11;
+    const bool keepFog = !mod && (rw(rdram, 0x80130B70u) == kEscapeFromFest);
+    const auto reach = s_env ? s_env->fogReach : (keepFog ? rs64env::FogReach::Thin : rs64env::FogReach::Auto);
+
+    rs64_level_fog_reach((int)reach);
 }
 
 extern "C" int rs64_level_has_clouds(void)
@@ -1183,7 +1454,7 @@ extern "C" void rs64_env_clouds_tick(uint8_t* rdram, recomp_context* ctx)
     }
 }
 
-// Boot: every enabled mod's assets/level/<folder>/rules.json (later mods add to a level's list) and environment.json (the last-loaded mod's is used).
+// Boot: every enabled mod's assets/level/<folder>/rules.txt or rules.json (later mods add to a level's list) and environment.json (the last-loaded mod's is used).
 extern "C" void rs64_rules_init()
 {
 
@@ -1208,13 +1479,37 @@ extern "C" void rs64_rules_init()
                 s_env_by_folder[it->path().filename().string()] = env;
             }
 
-            std::ifstream in(it->path() / "rules.json", std::ios::binary);
+            std::ifstream packages(it->path() / "packages.json", std::ios::binary);
 
-            if (!in) continue;
+            if (packages)
+            {
+                std::vector<std::string> package_errors;
+                auto& known = s_packages_by_folder[it->path().filename().string()];
 
-            std::vector<std::string> errors;
-            auto rules = rs64rules::parseRules(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()), errors);
+                for (const auto& level : rs64rules::parsePackages(std::string((std::istreambuf_iterator<char>(packages)), std::istreambuf_iterator<char>()), package_errors))
+                {
+                    if (std::find(known.begin(), known.end(), level) == known.end())
+                    {
+                        known.push_back(level);
+                    }
+                }
+
+                for (const auto& e : package_errors) fprintf(stderr, "[packages] %s %s: %s\n", d.mod_id.c_str(), it->path().filename().string().c_str(), e.c_str());
+            }
+
+            // rules.txt is the script form; a mod folder that has both uses it.
             const std::string folder = it->path().filename().string();
+            std::ifstream script(it->path() / "rules.txt", std::ios::binary);
+            std::ifstream json(it->path() / "rules.json", std::ios::binary);
+
+            if (!script && !json) continue;
+
+            if (script && json) fprintf(stderr, "[rules] %s %s: rules.txt used, rules.json ignored\n", d.mod_id.c_str(), folder.c_str());
+
+            std::ifstream& in = script ? script : json;
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            std::vector<std::string> errors;
+            auto rules = script ? rs64rules::parseScript(text, errors) : rs64rules::parseRules(text, errors);
 
             for (const auto& e : errors) fprintf(stderr, "[rules] %s %s: %s\n", d.mod_id.c_str(), folder.c_str(), e.c_str());
 
@@ -1223,6 +1518,37 @@ extern "C" void rs64_rules_init()
             auto& list = s_rules_by_folder[folder];
             list.insert(list.end(), rules.begin(), rules.end());
         }
+    }
+}
+
+// loadDatFile, after the level's own packages: other levels' packages the mod asked for, so its placed objects find their models. fp = the level's asset folder.
+extern "C" void rs64_load_level_packages(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const char* mod = rs64_mod_levels_current_folder();
+    const auto found = s_packages_by_folder.find(rs64rules::rulesFolder(mod ? mod : "", (int)rw(rdram, 0x80130B70u)));
+
+    if (found == s_packages_by_folder.end())
+    {
+        return;
+    }
+
+    constexpr uint32_t kPackageName = RS64_HR_PACKAGE_NAME;
+    constexpr uint32_t kModelTable = 0x80136FB0u;
+    std::string folder;
+
+    for (uint32_t a = (uint32_t)ctx->r30; rb(rdram, a) && folder.size() < 0x80; a++) folder.push_back((char)rb(rdram, a));
+
+    folder.resize(folder.rfind('/') == std::string::npos ? 0 : folder.rfind('/') + 1);
+
+    for (const auto& level : found->second)
+    {
+        const std::string path = (folder + level + "/opkg").substr(0, 0xFF);
+
+        for (size_t i = 0; i <= path.size(); i++) wb(rdram, kPackageName + (uint32_t)i, i < path.size() ? (uint8_t)path[i] : 0);
+
+        fprintf(stderr, "[packages] loading %s\n", path.c_str());
+        rs64::mips::mips_call(rdram, ctx, 0x8005645Cu, { kPackageName, kModelTable, 1u, 0u });
     }
 }
 
@@ -1238,6 +1564,9 @@ extern "C" void rs64_rules_mission_start(uint8_t* rdram)
     s_rules_pending = s_rules_by_folder.count(s_rules_folder) != 0;
     s_rules_elapsed = 0;
     s_rules.reset({}, [](const std::string&) { return true; });
+    s_mission_running = true;
+    s_spawned = 0;
+    s_mission_ready_pending = true;
 
     // A message or mod event from the last mission does not carry into this one.
     s_message_text.clear();
@@ -1253,56 +1582,72 @@ extern "C" void rs64_rules_frame(uint8_t* rdram, recomp_context* ctx)
     {
         s_rules_pending = false;
 
-        for (const auto& e : s_rules.reset(s_rules_by_folder[s_rules_folder], [&](const std::string& n) { return level_object(rdram, ctx, n) != 0; })) {
+        const auto known = [&](const std::string& n) { return level_object(rdram, ctx, n) != 0; };
+        const auto known_mod = [](const std::string& n) { return rs64::host::has_rule_condition(n.c_str()); };
+
+        for (const auto& e : s_rules.reset(s_rules_by_folder[s_rules_folder], known, own_objectives() != nullptr, known_mod)) {
             fprintf(stderr, "[rules] %s: %s; skipped\n", s_rules_folder.c_str(), e.c_str());
         }
     }
 
-    // shortcut: a fixed 1/30 s per mission frame (the game's cap); read the frame dt if 60 fps logic ever lands.
-    constexpr float kFrame = 1.0f / 30.0f;
+    if (s_mission_ready_pending)
+    {
+        s_mission_ready_pending = false;
+        rs64_hook_event(RS64_HOOK_MISSION_READY, rdram, ctx, 0, 0, 0);
+    }
 
-    s_rules_elapsed += kFrame;
+    // This frame's share of a 30 Hz step, so timers keep game time with 60 FPS Gameplay on.
+    const float dt = rs64_rate_scale() / 30.0f;
 
-    if (s_message_left > 0 && (s_message_left -= kFrame) <= 0) s_message_text.clear();
+    s_rules_elapsed += dt;
 
-    const auto condition = [&](const rs64rules::Rule& r) {
+    if (s_message_left > 0 && (s_message_left -= dt) <= 0) s_message_text.clear();
 
-        const uint32_t f = rs64::ls::relocated(0x801388A0u), c = rs64::ls::relocated(0x80138060u);
+    const uint32_t flags = rs64::ls::relocated(0x801388A0u);
+    const uint32_t counts = rs64::ls::relocated(0x80138060u);
+    rs64rules::Facts facts;
 
-        if (r.when == rs64rules::When::FlagIs) return r.value >= 1 && r.value <= 128 && rb(rdram, f + (uint32_t)(r.value - 1)) != 0;
+    facts.flag = [&](int i) { return i >= 1 && i <= 128 && rb(rdram, flags + (uint32_t)(i - 1)) != 0; };
+    facts.counter = [&](int i) { return i >= 1 && i <= 128 ? (int32_t)rw(rdram, counts + (uint32_t)(i - 1) * 4u) : 0; };
 
-        if (r.when == rs64rules::When::CounterAtLeast) return r.value >= 1 && r.value <= 128 && (int32_t)rw(rdram, c + (uint32_t)(r.value - 1) * 4u) >= r.count;
+    // getDatItemHealthPercentage 0x800C7C28 returns a 0-100 float in f0 (100 when the name is missing or the unit has no NPC).
+    facts.health = [&](const std::string& name) {
 
-        // getDatItemHealthPercentage 0x800C7C28 (100 when the name is missing).
-        wstr(rdram, kRuleName, r.object.substr(0, 0x3F));
+        wstr(rdram, kRuleName, name.substr(0, 0x3F));
 
-        return (int32_t)rs64::mips::mips_call(rdram, ctx, 0x800C7C28u, { kRuleName }).v0 < r.value;
+        return (int)rs64::mips::mips_call(rdram, ctx, 0x800C7C28u, { kRuleName }).f0;
     };
+
+    facts.mod = [&](const std::string& name, const std::string& arg) { return rs64::host::rule_condition(name.c_str(), rdram, ctx, arg.c_str()); };
 
     for (const auto& [name, object] : rs64::host::take_rule_events()) s_rules.event({ rs64rules::When::Custom, object, "", name });
 
-    s_rules.tick(kFrame, s_rules_elapsed, condition);
+    s_rules.tick(dt, s_rules_elapsed, facts);
     rules_run(rdram, ctx);
 }
 
 // applyDatObjectiveTriggerEffect past its gates (a0 = the trigger item, a1 = 1 entering / 0 leaving).
-extern "C" void rs64_rules_area(uint8_t* rdram, uint32_t item, uint32_t enter)
-{
-
-    const uint32_t name = rw(rdram, item + 0x0C);
-
-    if ((item & 0xFF800000u) != 0x80000000u || (name & 0xFF800000u) != 0x80000000u) return;
-
-    s_rules.event({ enter ? rs64rules::When::Enter : rs64rules::When::Leave, rstr(rdram, name, 255) });
-}
-
-// A path event as an NPC reaches it (updateNpcEffectIntensity entry, a1 = the event's DAT record), by the event's name.
-extern "C" void rs64_rules_path(uint8_t* rdram, uint32_t item)
+extern "C" void rs64_rules_area(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t enter)
 {
 
     const uint32_t name = (item & 0xFF800000u) == 0x80000000u ? rw(rdram, item + 0x0C) : 0;
 
-    if ((name & 0xFF800000u) == 0x80000000u) s_rules.event({ rs64rules::When::PathPoint, rstr(rdram, name, 255) });
+    if ((name & 0xFF800000u) != 0x80000000u) return;
+
+    s_rules.event({ enter ? rs64rules::When::Enter : rs64rules::When::Leave, rstr(rdram, name, 255) });
+    rs64_hook_event(RS64_HOOK_AREA_CROSSED, rdram, ctx, item, enter ? 1u : 0u, name);
+}
+
+// A path event as an NPC reaches it (updateNpcEffectIntensity entry, a1 = the event's DAT record), by the event's name.
+extern "C" void rs64_rules_path(uint8_t* rdram, recomp_context* ctx, uint32_t item)
+{
+
+    const uint32_t name = (item & 0xFF800000u) == 0x80000000u ? rw(rdram, item + 0x0C) : 0;
+
+    if ((name & 0xFF800000u) != 0x80000000u) return;
+
+    s_rules.event({ rs64rules::When::PathPoint, rstr(rdram, name, 255) });
+    rs64_hook_event(RS64_HOOK_PATH_POINT, rdram, ctx, item, name, 0);
 }
 
 // A unit's death effect (before datItemSetObjectiveBooleanCount at 0x8006D6F0 / 0x80078CC8, v1 = its DAT record).
@@ -1311,7 +1656,10 @@ extern "C" void rs64_rules_destroyed(uint8_t* rdram, recomp_context* ctx)
 
     const uint32_t item = (uint32_t)ctx->r3, name = (item & 0xFF800000u) == 0x80000000u ? rw(rdram, item + 0x0C) : 0;
 
-    if ((name & 0xFF800000u) == 0x80000000u) s_rules.event({ rs64rules::When::Destroyed, rstr(rdram, name, 255) });
+    if ((name & 0xFF800000u) != 0x80000000u) return;
+
+    s_rules.event({ rs64rules::When::Destroyed, rstr(rdram, name, 255) });
+    rs64_hook_event(RS64_HOOK_UNIT_DESTROYED, rdram, ctx, item, name, 0);
 }
 
 // getVoiceText entry (a0 = the text id) and before its return (0x80055A10, the text decrypted into voiceTxtString 0x80138E90):
@@ -1329,9 +1677,11 @@ extern "C" void rs64_rules_voice_text(uint8_t* rdram)
     wstr(rdram, rs64::ls::relocated(0x80138E90u), s_message_text);
 }
 
-extern "C" void rs64_rules_objective(int done, int index)
+static void rules_objective(uint8_t* rdram, recomp_context* ctx, int done, int index)
 {
+
     s_rules.event({ done ? rs64rules::When::ObjectiveDone : rs64rules::When::ObjectiveFailed, "", "", "", index });
+    rs64_hook_event(RS64_HOOK_OBJECTIVE_STATE, rdram, ctx, (uint32_t)index, done ? 1u : 0u, 0);
 }
 
 // checkComplexObjectives entry ($f12 = frame time): green each objective as it completes, then end the mission through the game's
@@ -1373,9 +1723,9 @@ extern "C" int rs64_mod_levels_objectives_tick(uint8_t* rdram, recomp_context* c
 
     for (uint32_t i = 0; i < objs->size(); i++)
     {
-        if ((st.done & ~s_obj_done) & (1u << i)) rs64_rules_objective(1, (int)i + 1);
+        if ((st.done & ~s_obj_done) & (1u << i)) rules_objective(rdram, ctx, 1, (int)i + 1);
 
-        if ((st.failed & ~s_obj_failed) & (1u << i)) rs64_rules_objective(0, (int)i + 1);
+        if ((st.failed & ~s_obj_failed) & (1u << i)) rules_objective(rdram, ctx, 0, (int)i + 1);
     }
 
     // The outcome first: its setter resets speech playback, so a callout queued before it in the same frame would be dropped.
@@ -1427,7 +1777,7 @@ extern "C" void rs64_mod_levels_objective_text(uint8_t* rdram, recomp_context* c
 
     if (i >= objs->size()) return;
 
-    constexpr uint32_t kObjectiveText = 0x80C42000u;
+    constexpr uint32_t kObjectiveText = RS64_HR_OBJECTIVE_TEXT;
     wstr(rdram, kObjectiveText + i * 0x40u, rs64levels::menuText((*objs)[i].text).substr(0, 0x3F));
     ctx->r2 = (gpr)(int32_t)(kObjectiveText + i * 0x40u);
 }
@@ -1456,7 +1806,7 @@ extern "C" uint32_t rs64_mod_levels_lookup(uint8_t* rdram, uint32_t name)
     {
         if (const auto own = rs64levels::crawlAsset(*s_playing_crawl, cur, s_mod_level_files))
         {
-            wstr(rdram, kLookupName, rs64levels::manifestPath(*own));
+            wstr(rdram, kLookupName, rs64levels::manifestPath(*own).substr(0, 0xFF));
 
             fprintf(stderr, "[crawl] %s -> %s\n", cur.c_str(), own->c_str());
 
@@ -1470,7 +1820,7 @@ extern "C" uint32_t rs64_mod_levels_lookup(uint8_t* rdram, uint32_t name)
 
     if (mod.empty()) return name;
 
-    wstr(rdram, kLookupName, rs64levels::manifestPath(mod));
+    wstr(rdram, kLookupName, rs64levels::manifestPath(mod).substr(0, 0xFF));
 
     fprintf(stderr, "[levels] %s -> %s\n", cur.c_str(), mod.c_str());
 
@@ -1483,7 +1833,7 @@ extern "C" void rs64_camera_shots_register_service() {
     static const rs64_camera_shots svc = {
         RS64_CAMERA_SHOTS_VERSION, (uint32_t)sizeof(rs64_camera_shots),
         [](const char* camera, const char* trigger) {
-            if (!camera || !*camera || !trigger) return;
+            if (!camera || !*camera || !trigger || s_remote_shots.size() >= kMaxRemoteShots) return;
 
             if (!s_shot_queue.remote(s_shot_links, trigger))
             {

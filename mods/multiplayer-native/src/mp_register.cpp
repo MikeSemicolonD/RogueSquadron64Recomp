@@ -5,6 +5,7 @@
 #include "util/debug_logs.h"
 #include "util/rdram_words.h"
 #include "recomp.h"
+#include "rs64/mp_channel.h"
 #include <cstdio>
 #include <map>
 #include <vector>
@@ -154,6 +155,8 @@ int frame_pads(uint32_t, uint8_t* rdram, void* c, void*) {
 
     if (rs64_ghost_mode()) {
         rs64_ghost_frame(rdram, (recomp_context*)c);
+    } else {
+        rs64_ghost_solo_frame(rdram, (recomp_context*)c);
     }
 
     return RS64_HOOK_CONTINUE;
@@ -199,6 +202,11 @@ int trigger_effect(uint32_t, uint8_t* rdram, void* c, void*)
     return rs64_ghost_trigger_effect(rdram, (recomp_context*)c) ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
 }
 
+int atst_tick(uint32_t, uint8_t* rdram, void* c, void*)
+{
+    return rs64_imposter_atst_tick(rdram, (recomp_context*)c) ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
+}
+
 int block_result(uint32_t, uint8_t*, void*, void*)
 {
     return rs64_ghost_block_result() ? RS64_HOOK_RETURN : RS64_HOOK_CONTINUE;
@@ -231,6 +239,8 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_imposter_release);
     add_hook(RS64_HOOK_MISSION_END, forward, (void*)rs64_ghost_tow_release);
     add_hook(RS64_HOOK_WINGMAN_DRAW, forward, (void*)rs64_ghost_tow_draw);
+    add_hook(RS64_HOOK_NPC_HIT, forward, (void*)rs64_ghost_npc_hit);
+    add_hook(RS64_HOOK_SPEECH_CLIP, forward, (void*)rs64_ghost_speech_clip);
     add_hook(RS64_HOOK_TRANSITION_REQUEST, transition_request);
     add_hook(RS64_HOOK_FREEZE_CHECK_A, unfreeze);
     add_hook(RS64_HOOK_FREEZE_CHECK_B, unfreeze);
@@ -240,6 +250,8 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
     add_hook(RS64_HOOK_RESULT_FAIL, block_result);
     add_hook(RS64_HOOK_RESULT_SUCCESS, block_result);
     add_hook(RS64_HOOK_WINGMAN_TICK, forward, (void*)rs64_imposter_tick);
+    add_hook(RS64_HOOK_NPC_ATST_TICK, atst_tick);
+    add_hook(RS64_HOOK_ATST_FIRE, forward, (void*)rs64_ghost_atst_fire);
     add_hook(RS64_HOOK_NPC_ACTIVATION, npc_activation);
     add_hook(RS64_HOOK_GRID_STREAM, forward, (void*)rs64_imposter_stream);
     add_hook(RS64_HOOK_MISSION_SELECT_INIT, forward, (void*)rs64_lobby_mission_select_init);
@@ -270,4 +282,5 @@ extern "C" void rs64_mp_register(const rs64_host_api* api)
 
     rs64::ls::set_moved_ranges({std::begin(rs64::ls::kMovedRanges), std::end(rs64::ls::kMovedRanges)});
     rs64_ghost_register_host();
+    api->add_service(RS64_MP_CHANNEL_SERVICE, rs64_ghost_channel());
 }

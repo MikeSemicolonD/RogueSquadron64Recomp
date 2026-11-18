@@ -23,18 +23,24 @@ crash_*.dmp
 *.z64
 *.n64
 
+# VR controller models saved from the player's OpenXR runtime (Meta's files)
+roguesq_controller_*.glb
+
 # Recompiler outputs
 RecompiledFuncs/
+RecompiledFuncsWeb/
 RecompiledPatches/
 
 # Build directories
 build*/
 build-*
-!tools/release/build-mods.ps1
+!tools/release/**/build-*
 cmake-build-*
 [Dd]ebug/
 [Dd]ebugPublic/
 [Rr]elease/
+!/tools/debug/
+!/tools/release/
 [Rr]eleases/
 x64/
 x86/
@@ -49,6 +55,7 @@ bld/
 out/
 node_modules/
 vcpkg_installed/
+/tools/web/rs64-explorer/tests/projects/
 /wiki-preview/
 
 # Build artifacts
@@ -147,6 +154,7 @@ libsteam_api.dylib
 android/.gradle/
 android/app/.cxx/
 android/local.properties
+android/app/libs/discord_partner_sdk.aar
 
 # CI runner secrets
 ci/linux/runner.env
@@ -169,3 +177,5 @@ tests/mods/replay_probe.nrm
 tests/mods/replay-probe/build/
 /.playwright-mcp
 *.blend1
+/screenshots/other
+discord.txt

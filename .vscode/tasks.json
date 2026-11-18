@@ -43,6 +43,28 @@
             "detail": "Release exe. POST_BUILD assembles a clean build/dist/ with just the exe + DLLs + menu json. Needs a ClangCL cache: cmake -B build -T ClangCL. Copy rogue_squadron.z64 next to the exe to run."
         },
         {
+            "label": "Build: VR (Release)",
+            "type": "shell",
+            "command": "cmake -B build-vr -G 'Visual Studio 17 2022' -T ClangCL -DRS64_OPENXR=ON -DRS64_MCP=${input:vrMcp}; if ($?) { cmake --build build-vr --parallel --config Release --target RogueSquadron64Recomp }",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile",
+            "detail": "OpenXR build in build-vr/dist/. Run it with --vr while the headset's runtime (Meta Horizon Link or SteamVR) is the active OpenXR runtime."
+        },
+        {
+            "label": "Build: Browser (web)",
+            "type": "shell",
+            "command": "cmake --build build --config Debug --target regen_funcs_web; if ($?) { cmake --build build-web --parallel --target RogueSquadron64Recomp }",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$gcc",
+            "detail": "Browser build in build-web/ (set up once: docs/guides/building-all-platforms.md). Serve build-web/ on localhost and open it in Chrome or Edge."
+        },
+        {
             "label": "Configure: MCP bridge in every config",
             "type": "shell",
             "command": "cmake",
@@ -188,7 +210,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Builds RecompModTool from the N64Recomp fork (Windows x64 here, Linux x64 through WSL) and writes RecompModTool-<platform>-modtool-<commit>.zip/.tar.gz plus SHA256SUMS.txt to <folder>/modtool-<commit>/."
+            "detail": "Builds RecompModTool from the N64Recomp fork (Windows x64 here, Linux x64 through WSL) and writes RecompModTool-<platform>-modtool-<commit>.zip/.tar.xz plus SHA256SUMS.txt to <folder>/modtool-<commit>/."
         },
         {
             "label": "Run: Game (pick level / craft)",
@@ -241,7 +263,7 @@
         {
             "label": "Run: Game with RenderDoc",
             "type": "shell",
-            "command": "$dll = @('E:\\Projects\\renderdoc\\x64\\Release\\renderdoc.dll', \"$env:ProgramFiles\\RenderDoc\\renderdoc.dll\") | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $dll) { Write-Error 'renderdoc.dll not found (install RenderDoc)'; exit 1 }; $out = '${workspaceFolder}\\dumps\\renderdoc'; New-Item -ItemType Directory -Force $out | Out-Null; $env:ROGUESQ_RENDERDOC = $dll; $env:ROGUESQ_RENDERDOC_OUT = \"$out\\rs64\"; Write-Host \"Print Screen captures a frame to $out\"; & .\\RogueSquadron64Recomp.exe",
+            "command": "$dll = @('${workspaceFolder}\\..\\renderdoc\\x64\\Release\\renderdoc.dll',\"$env:ProgramFiles\\RenderDoc\\renderdoc.dll\") | Where-Object { Test-Path $_ } | Select-Object -First 1; if (-not $dll) { Write-Error 'renderdoc.dll not found (install RenderDoc)'; exit 1 }; $out = '${workspaceFolder}\\dumps\\renderdoc'; New-Item -ItemType Directory -Force $out | Out-Null; $env:ROGUESQ_RENDERDOC = $dll; $env:ROGUESQ_RENDERDOC_OUT = \"$out\\rs64\"; Write-Host \"Print Screen captures a frame to $out\"; & .\\RogueSquadron64Recomp.exe",
             "options": {
                 "cwd": "${workspaceFolder}/build/${input:rsConfig}",
                 "shell": {
@@ -337,6 +359,38 @@
             },
             "problemMatcher": [],
             "detail": "Full-memory dump (RDRAM included) of every running RogueSquadron64Recomp.exe, even a frozen one, into dumps/crash-dumps/crash_<time>_pid<pid>_external.dmp. F12 writes a small dump without RDRAM; this one lets tools/debug/reconstruct-freeze.py rebuild the game threads and queues."
+        },
+        {
+            "label": "Test: Smoke test",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run; python tools/debug/smoke/smoke.py compare",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "problemMatcher": [],
+            "detail": "Builds Release, then plays every level with its pause settings, the menus, pause pages, setting changes, cutscenes and video presets in tools/debug/smoke/manifest.toml and compares them with the baseline (1-1.5 h). The report is dumps/smoke/current/windows/report.html."
+        },
+        {
+            "label": "Test: Smoke test baseline",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run --tag baseline",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "problemMatcher": [],
+            "detail": "Builds Release, then captures a new smoke test baseline in dumps/smoke/baseline (1-1.5 h). Look it over before comparing against it."
+        },
+        {
+            "label": "Test: Clean smoke test output",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py clean",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "detail": "Deletes dumps/smoke (smoke test screenshots and stats)."
         },
         {
             "label": "Record: Input recording (pick level / craft)",
@@ -654,6 +708,18 @@
             "group": "test",
             "problemMatcher": [],
             "detail": "Replays the Ambush at Mos Eisley mission recordings against the Release exe at ROGUESQ_SPEED=16 and compares each against its .hash baseline. Logs and summary.csv in logs/lockstep/smoke-windows/."
+        },
+        {
+            "label": "Test: Replay a mission (pick one)",
+            "type": "shell",
+            "command": "& .\\tools\\debug\\recordings\\run-replays.ps1 -Tag replay-pick -Recordings 'tools\\debug\\recordings\\${input:rsRecording}' -Binary .\\build\\Release\\RogueSquadron64Recomp.exe -Speed 16 -Timeout 900",
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "shell": { "executable": "powershell.exe", "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"] }
+            },
+            "group": "test",
+            "problemMatcher": [],
+            "detail": "Replays the picked mission's recordings against the Release exe and reports IDENTICAL or the first frame that diverges from its .hash baseline. Logs and summary.csv in logs/lockstep/replay-pick/."
         },
         {
             "label": "Test (WSL): Linux package boot + first-level replay",
@@ -979,11 +1045,45 @@
     ],
     "inputs": [
         {
+            "id": "vrMcp",
+            "type": "pickString",
+            "description": "Include the RS64 MCP bridge?",
+            "options": [
+                { "label": "With MCP", "value": "ON" },
+                { "label": "Without MCP", "value": "OFF" }
+            ],
+            "default": "ON"
+        },
+        {
             "id": "versionPart",
             "type": "pickString",
             "description": "Which part of VERSION to raise",
             "options": ["patch", "minor", "major"],
             "default": "patch"
+        },
+        {
+            "id": "rsRecording",
+            "type": "pickString",
+            "description": "Mission recordings to replay",
+            "options": [
+                { "label": "All missions", "value": "" },
+                { "label": "0  Ambush at Mos Eisley", "value": "00-ambush-at-mos-eisley" },
+                { "label": "1  Rendezvous on Barkhesh", "value": "01-rendezvous-on-barkhesh" },
+                { "label": "2  The Search for the Nonnah", "value": "02-the-search-for-the-nonnah" },
+                { "label": "3  Defection at Corellia", "value": "03-defection-at-corellia" },
+                { "label": "4  Liberation of Gerrard V", "value": "04-liberation-of-gerrard-v" },
+                { "label": "5  The Jade Moon", "value": "05-the-jade-moon" },
+                { "label": "6  Imperial Construction Yards", "value": "06-imperial-construction-yards" },
+                { "label": "7  Assault on Kile II", "value": "07-assault-on-kile-ii" },
+                { "label": "9  Prisons of Kessel", "value": "09-prisons-of-kessel" },
+                { "label": "10 Battle Above Taloraan", "value": "10-battle-above-taloraan" },
+                { "label": "11 Escape from Fest", "value": "11-escape-from-fest" },
+                { "label": "12 Blockade on Chandrila", "value": "12-blockade-on-chandrila" },
+                { "label": "13 Raid on Sullust", "value": "13-raid-on-sullust" },
+                { "label": "14 Moff Seerdon's Revenge", "value": "14-moff-seerdons-revenge" },
+                { "label": "15 The Battle of Calamari", "value": "15-the-battle-of-calamari" }
+            ],
+            "default": "00-ambush-at-mos-eisley"
         },
         {
             "id": "rsConfig",
@@ -1061,7 +1161,8 @@
                 { "label": "15 The Battle of Calamari", "value": "15" },
                 { "label": "16 Beggar's Canyon (bonus)", "value": "16" },
                 { "label": "17 The Death Star Trench Run (bonus)", "value": "17" },
-                { "label": "18 The Battle of Hoth (bonus)", "value": "18" }
+                { "label": "18 The Battle of Hoth (bonus)", "value": "18" },
+                { "label": "20 CHICKEN (AT-ST, mission recordings only)", "value": "20" }
             ],
             "default": "0"
         },

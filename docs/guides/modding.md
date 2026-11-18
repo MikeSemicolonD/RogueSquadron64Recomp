@@ -43,11 +43,13 @@ A folder without a `mod.json` is not loaded.
 
 Players turn mods on and off in the **Mods** window, which opens with **F6** alongside the Controls window (in Debug builds press **F1** first, since the RT64 inspector owns the overlay). The choice is saved in `mods.json` in the game's config folder. The first time a player has a mod, it is on unless its manifest sets `enabled_by_default` to `false` (cheats such as `invincibility` do). After that, `mods.json` decides. Mods are loaded at startup, so changes take effect on the next launch.
 
-A mod can declare config options (`config_schema` in `mod.json`, or `[[manifest.config_options]]` in a code mod's `mod.toml`). They appear in the Mods window, and a menu button can show them too (see `config:` in [adding-menus-and-buttons.md](adding-menus-and-buttons.md#behavior-keys)).
+A mod can declare config options (`config_schema` in `mod.json`, or `[[manifest.config_options]]` in a code mod's `mod.toml`). They appear in the Mods window and on the mod's SETTINGS page in the in-game MODS list, and a menu button can show them too (see `config:` in [adding-menus-and-buttons.md](adding-menus-and-buttons.md#behavior-keys)).
+
+The in-game MODS list opens a page per mod with its name, `version`, `authors` and `description` from the manifest. A `thumb.png` at the mod's root is shown on that page, over the menu's photo (drawn at 128x96, 4:3, cropped to fill). A `CREDITS.txt` or `LICENSE.txt` adds a CREDITS or LICENSE entry there that shows the file; a `.nrm` packs these files with `additional_files` under `[inputs]` in `mod.toml`.
 
 ### Shipping a mod with the game
 
-[mods/platforms.json](../../mods/platforms.json) lists which mods in this repo ship with each build. The `desktop` list is copied next to the exe (and into `dist/` for Release) by `tools/mods/stage_mods.cmake`. The `android` list is packed into the APK. A mod not listed there ships nowhere. For a code mod, list the built `.nrm` (for example `long_tow_cable.nrm`), not its source folder. Your own mod folders in a build's `mods/` folder are never overwritten.
+[mods/platforms.json](../../mods/platforms.json) lists which mods in this repo ship with each build. The `desktop` list is copied next to the exe (and into `dist/` for Release) by `tools/mods/stage_mods.cmake`. The `android` list is packed into the APK. The `web` list is packed into the browser build and holds data-only mods, since the browser can't load code mods yet. A mod not listed there ships nowhere. For a code mod, list the built `.nrm` (for example `long_tow_cable.nrm`), not its source folder. Your own mod folders in a build's `mods/` folder are never overwritten.
 
 ## Asset mods
 
@@ -64,6 +66,8 @@ A mod built from game assets should not include game data. It can ship `assets/<
 
 A mod can also add files the game does not have. A file at a new path (for example `assets/reb_stuff/my_ship_HOB` with its `_HMT`) is added to the game's asset list. To add a copy of an existing file under a new name, without shipping it, put a one-line `assets/<new path>.from` naming the existing file (`imp_stuff/prbdroid_HOB`), or list several in one `assets/from.json` (`{ "<new path>": "<existing file>", ... }`); a `<new path>.bps` patches the copy.
 
+The RS64 Explorer's Soft paint brush writes a stock level's painted ground to a new file, `assets/level/lv_<n>_PAINT` (one 64x64 texture per painted cell), and patches its `hmp` and `_TEX` to use it. The three files belong together, and the Explorer exports them as one mod.
+
 Cutscene actors can name any model by its asset path, such as `imp_stuff/tankdroid`. The game loads that path and uses the model whose object name is the part after the last `/`, so a model whose object name differs from its file name is added under its object name with `.from` (the RS64 Explorer's Actor menu does this for you, for example `imp_stuff/probe_droid`).
 
 A mod can also play an in-level camera shot during a mission. A `camera_shots.txt` at the mod root links a level's trigger to a camera item, one `<level> <trigger> <camera>` per line (`lv_0 canyon_entry cam_atat_reveal`; `#` starts a comment). The first time the trigger fires in a mission, the game cuts to that camera, follows its next cameras, then hands control back while the fight keeps running. A later line or mod wins for the same trigger. In online co-op both players see the shot whoever set the trigger off; a fourth word `personal` (`lv_0 canyon_entry cam_reveal personal`) shows it only to the player who did, for example when the camera chain ends at a restart point that moves the player. Both players need the mod. In the RS64 Explorer, pick the trigger in the level editor's Events mode and set *Play camera shot*; the cameras are the level's in-mission camera items.
@@ -75,7 +79,7 @@ The easiest way to make one is the RS64 Explorer (`tools/web/rs64-explorer`), wh
 1. Make your changes:
    - **Textures:** right-click a textured face and pick *Replace texture from image…*
    - **Object placement:** in a level, right-click a placed object or marker and edit its *Placement* (position, rotation, scale or zone size). Objects can also be duplicated or deleted, except ones the mission script refers to.
-   - **Terrain:** tick *Edit terrain* to sculpt and repaint the ground (placed objects follow it), or import a grey heightmap PNG.
+   - **Terrain:** tick *Edit terrain* to sculpt and repaint the ground (placed objects follow it), or import a grey heightmap PNG. Raising or lowering past the level's height range grows it, and the whole level's ground then moves in coarser height steps.
    - **Craft models:** on a player craft in the Models tab, pick *Import craft model (.glb)…*. The engines, glows and canopy stay; the model's first texture goes into the craft's largest texture slot.
 2. Click *Export mod* and extract the zip into `mods/`. With more than one kind of change (Levels, Models, Audio, UI, Fonts), it asks how to split them: one mod per kind, groups you name (*+ Group*, then move changes into them), or all in one. Changes that need each other, such as a level and the custom ship it places, always export together, and the dialog says so. The groups are saved with the project.
 
@@ -100,10 +104,12 @@ A `levels.json` at the mod root lists them:
 } ] }
 ```
 
-- `template`: a playable stock level, 0-18. Its mission script runs, so keep the objects it uses (start from a copy of its files). Templates 0, 5, 10 and 15 play their chapter crawl first; Beggar's Canyon (16) has no craft select.
+- `template`: a playable stock level, 0-18, or 20 for a walker level. Its mission script runs, so keep the objects it uses (start from a copy of its files). Templates 0, 5, 10 and 15 play their chapter crawl first; Beggar's Canyon (16) has no craft select.
+- A walker level (`"template": 20`, the CHICKEN passcode's level) plays as an AT-ST: SELECT LEVEL lists no craft, it skips the hangar, and it returns to SELECT GAME when it ends. It needs its own `medals` (the level has none to fall back on), and without its own `preview` it shows Mos Eisley's picture.
 - `folder`: up to 48 characters. The level's files are `assets/level/<folder>/` (the template's file names: `dat`, `hmp`, ...), its cutscenes `assets/cuts/<folder>_intro` and `_extro`. A file the folder lacks is the template's; `.from` and `.bps` work as anywhere in `assets/`.
 - `title` and `description` show in capitals; characters the menu fonts lack are left out (letters, digits and `! ( ) _ - / \ , . : '` show).
 - `voice`: a stock voice line played as the SELECT LEVEL briefing (none if left out). A recording of your own goes in `assets/level/<folder>/brief` and plays instead: a MORT stream (the game's 8 kHz GSM 06.10 voice codec). The explorer's *Import recording…* makes it from a .wav or .mp3.
+- `assets/level/<folder>/preview` and `previewalpha`: the SELECT LEVEL hologram and its outline mask, 320 x 200 and 160 x 100 JPEGs laid out like the stock `backdrop/levelN` files. Make them with the explorer, since the game's decoder fails on other JPEGs. Left out, the level shows its template's picture.
 - `craft`: approved craft, any of `xwing`, `ywing`, `awing`, `vwing`, `speeder`, `falcon`, `tie`, `t16`, `naboo` (the template's if left out).
 - `crawl`: the opening crawl played before the level, by name (one of the mod's [opening crawls](#opening-crawls)). Left out, the template's plays (if it has one); `false` plays none; a name no enabled mod has plays the template's and logs one line. An object with `chapter`, `title`, `body` and `planet` 0-3 (the older form) still plays as written.
 - `music`: the starting song, a song id from the in-mission music cue table (the template's if left out). Music regions placed in the level change it as the player flies into them; the explorer picks both by song name.
@@ -158,45 +164,82 @@ Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>`
 - `fog.reach`: at a longer draw distance, `scale` moves the fog out with it, `thin` keeps the stock fog and thins it out to the new edge, and `stock` holds a solid wall. Left out, `thin` when `start` is under 0.85, otherwise `scale`.
 - `clouds`: its presence adds Battle Above Taloraan's cloud sheets. `wind` is `[x, z]` in units per second. `altitude` holds them around one height (Y points down, so above the ground is negative); left out, they stay around the player, which suits a level with no ground. `tint` replaces their tan colour.
 
+### Models from other levels
+
+`assets/level/<folder>/packages.json` loads other levels' model packages into a level, so its objects can use their models: `{ "version": 1, "levels": ["lv_2", "lv_h"] }`. The RS64 Explorer writes this file when you place something from another level. The game shares a texture between packages that use the same name, so the Explorer also gives clashing textures their own names in that level's `opkg_HMT`, which ships with the mod.
+
 ### Level rules
 
-Rules add "when this happens, do that" to a level without code. They live in `assets/level/<folder>/rules.json`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>` (`lv_1` is Barkhesh):
+Rules add "when this happens, do that" to a level without code. They live in `assets/level/<folder>/rules.txt`, where `<folder>` is a mod level's folder or a stock level's `lv_<n>` (`lv_1` is Barkhesh):
 
-```json
-{ "version": 1, "rules": [
-  { "when": "enter", "object": "bridge_zone", "actions": [ { "do": "message", "text": "Hold the bridge", "seconds": 6 }, { "do": "wait", "seconds": 4 }, { "do": "music", "song": 92 } ] },
-  { "when": "destroyed", "object": "shield_gen", "actions": [ { "do": "win" } ] },
-  { "when": "after", "seconds": 120, "every": true, "actions": [ { "do": "voice", "id": 627 } ] }
-] }
+```text
+# Hold the bridge once the gate is down
+when enter bridge_zone if destroyed(gate) and not objective_done(2)
+    message 6 Hold the bridge
+    wait 4
+    music 92
+end
+
+when destroyed tie_wave_1 every time
+    add kills 1
+end
+
+when true: kills >= 3 and entered(bridge_zone)
+    win
+end
+
+every 120 seconds
+    voice 627
+end
 ```
 
-A rule fires once unless `"every": true`. Its actions run in order, and `wait` holds the ones after it. Objects are found by name: a rule whose object the level lacks is skipped with a log line, and the others still run.
+A rule is a `when` line, one action a line, then `end`; `#` starts a comment and indentation is free. Nothing is quoted: object names (which may have spaces, or parentheses as in `CIV_Hut_(NEW)_01`) are written as they are. A rule fires once unless its `when` line ends with `every time`, and its actions run in order with `wait` holding the ones after it.
 
-| `when` | Fires |
+| `when` line | Fires |
 | --- | --- |
-| `enter` / `leave` | something enters or leaves the trigger area `object` |
-| `pathPoint` | an NPC passes the path event `object` |
-| `destroyed` / `healthBelow` | the unit `object` is destroyed / its health drops below `value` % |
-| `start` / `after` | the mission starts / `seconds` after it started |
-| `objectiveDone` / `objectiveFailed` | objective `value` (1-4) of a level with its own `objectives` completes or fails |
-| `flagIs` / `counterAtLeast` | objective flag `value` is set / objective counter `value` reaches `count` |
-| `custom` | a native mod fires event `custom` (for `object`, when given) |
+| `when enter <area>` / `when leave <area>` | something enters or leaves the trigger area |
+| `when point <path event>` | an NPC passes the path event |
+| `when destroyed <unit>` / `when health <unit> below <percent>` | the unit is destroyed / its health drops below that |
+| `when start` / `when after <seconds>` / `every <seconds> seconds` | the mission starts / that long after it started / that often |
+| `when objective <1-4> done` / `failed` | that objective of a level with its own `objectives` completes or fails |
+| `when true: <condition>` | the condition becomes true |
+| `when flag <1-128>` / `when counter <1-128> reaches <count>` | an objective flag is set / an objective counter reaches the count |
+| `when custom <event> [for <object>]` | a native mod fires that event (for that object, when given) |
 
-| `do` | Fields |
+| Action | Does |
 | --- | --- |
-| `voice` / `recording` | `id`, a stock voice line / `file`, a MORT recording in the level's folder |
-| `message` | `text` shown as a subtitle for `seconds` (1-10) |
-| `music` | `song`, a song id from the in-mission cue table |
-| `spawn` | raises `flag`, the gate of an enemy wave the explorer adds to the level (waiting off-stage until then) |
-| `camera` / `destroy` | cut to the camera position `camera` / destroy the unit `unit` |
+| `voice <id>` / `recording <file>` | play a stock voice line / a MORT recording in the level's folder |
+| `message <1-10> <text>` | show the text as a subtitle for that many seconds |
+| `music <song>` | play a song id |
+| `camera <name>` / `destroy <unit>` | cut to a camera position / destroy a unit |
 | `win` / `fail` | end the mission |
-| `objectiveDone` / `objectiveFail` | mark objective `objective` (levels with their own objectives) |
-| `wait` | `seconds` before the next action |
-| `flag` / `counter` | set objective flag `flag` to `value` (default 1) / add `add` (default 1) to objective counter `counter` |
+| `complete objective <1-4>` / `fail objective <1-4>` | mark an objective (levels with their own objectives) |
+| `wait <seconds>` | hold the next actions |
+| `set <variable> <number, true or false>` / `add <variable> <number>` | change a variable |
+| `flag <1-128> [value]` / `counter <1-128> [add]` | set an objective flag (default 1) / add to an objective counter (default 1) |
+| `<name> key=value ...` | a native mod's action; `spawn` (a wave the explorer adds) uses this form too |
 
-In the explorer, rules are attached to the object they are about: select an area or path event in Events mode, or a unit in Objects mode, and use *+ Add rule* in its panel (the object is given a unique name if it needs one). *Level events…* in Events mode opens a window with the level-wide rules and a list of every rule in the level; a rule whose object was deleted shows red there, and *Export mod* warns about it.
+Any `when` line except `when true:` can end in `if <condition>`: the rule only fires while it holds, and one that fails stays ready for next time.
 
-Rules are not a scripting language: there are no variables or loops beyond flags, counters and `every`. Anything more goes in a native mod, which can add its own actions and `custom` whens ([Level rules actions](../engine/modding-host-api.md#level-rules-actions)).
+| Check | True when |
+| --- | --- |
+| `destroyed(<unit>)` / `entered(<area>)` | the unit was destroyed / the area was entered this mission |
+| `health(<unit>) < 50` | the unit's health compares true (0 once destroyed) |
+| `objective_done(<1-4>)` / `objective_failed(<1-4>)` | that objective is done / failed |
+| `time > 120` | that many seconds have passed |
+| `<variable>` / `<variable> >= 3` | the variable is not 0 / compares true |
+| `flag(<1-128>)` / `counter(<1-128>) >= 2` | an objective flag is set / a counter compares true |
+| `<check>(<text>)`, such as `shields(player) < 30` | a check a native mod adds is true or compares true |
+
+Combine checks with `and`, `or`, `not` and parentheses; comparisons are `<`, `<=`, `>`, `>=`, `==`, `!=`. Variables are whole numbers that start at 0 each mission (`true` is 1, `false` 0), and every enabled mod's rules for a level share them.
+
+The game skips a rule with a log line (`[rules] lv_1: line 7: ...`) when it does not read, names an object the level lacks, reads a variable no rule sets, or uses objectives on a level without its own; the others still run. In co-op, rules run on each player's game separately, and the second player's game does not see areas being entered.
+
+An older `rules.json` still loads; when one mod folder has both files, `rules.txt` is used.
+
+In the explorer, rules are attached to the object they are about: select an area or path event in Events mode, or a unit in Objects mode, and use *+ Add rule* in its panel (the object is given a unique name if it needs one). Each rule has an *Only if* box for its condition. *Level events…* in Events mode opens a window with the level-wide rules and a list of every rule in the level, and its script button shows the whole `rules.txt` to edit as text. Both boxes suggest names from the level as you type and underline in red whatever the game would skip, with the reason below; *Export mod* warns about rules whose object was deleted.
+
+Anything the rules cannot say goes in a native mod, which can add its own actions, checks and `custom` events ([Level rules actions](../engine/modding-host-api.md#level-rules-actions)), and run any rules action or read and set rule variables from its own code. A code mod (`.nrm`) can do the same through the `rs64_run_rule_line`, `rs64_rule_var_*` and `rs64_fire_rule_event` exports.
 
 The [exhaust-color](../../mods/exhaust-color/) mod is a different approach: it recolors every craft's exhaust from the player's ROM at startup, driven by a config option.
 
@@ -205,12 +248,14 @@ The [exhaust-color](../../mods/exhaust-color/) mod is a different approach: it r
 A mod's `roguesq_lights.json` adds point lights to the ray-traced lighting (the RAY TRACING page's lights setting). A preset replaces an earlier one with the same name, read in this order: the game's built-in lights ([src/video/default_lights.json](../../src/video/default_lights.json), compiled into the game: the engine, laser, torpedo and pickup lights) always first, then every other enabled mod in MODS-list order (lower in the list wins; a newly installed mod starts at the top), then the copy next to the exe, which the F1 Lights tab saves and which wins over all of them.
 
 - A preset with a `mesh` rides on a model part: `red_laser` lights every red bolt, `xwing#s0.p1` one X-wing part. Positions, radius and shadow offset are in the part's model units, or the radius in camera units with `"cameraUnits": true` (laser bolts are drawn at varying sizes).
-- A mesh preset with `"emissive": true` makes those parts self-lit (the World Devastator's exhaust, the briefing room's light strips): they are never shadowed, cast no shadow, and glow in reflections and bounce light. It can have lights of its own or an empty `lights` array. The F1 Lights tab's mesh picker lists the keys drawn on screen.
+- A mesh preset with `"emissive": true` makes those parts self-lit (the World Devastator's exhaust, the briefing room's light strips): they are never shadowed, cast no shadow, and glow in reflections and bounce light. It can have lights of its own or an empty `lights` array. With `"translucentOnly": true` only the part's see-through draws are self-lit and the rest still casts (the Imperial shuttle's exhaust is drawn inside its hull part). The F1 Lights tab's mesh picker lists the keys drawn on screen.
 - A preset without one lights a level: `level` is the level number (`-1` outside missions, `-2` or absent every level, `-3` the mission-select briefing room, `-4` the craft-select hangar) and positions are in the level's map space (512 per terrain cell, Y down; camera space in the front end).
 - A preset with a `sprite` (`|`-separated `spr:<texture name>` keys, one per effect frame, such as `spr:explo_tex0`) replaces the automatic light of those fire, smoke and explosion sprites: its lights sit on each sprite showing one of those frames, the radius is a multiple of the sprite's size and the brightness follows its fade. In the RS64 Explorer's Effects tab, the bulb-plus button lights every frame of the open effect and previews the lights on the playing sprites; in game, the F1 Lights tab lists the keys drawn while the effect is on screen.
+- A level preset can add haze, sunlit air near the camera that shows light shafts and the shadows of ridges and structures whatever the level's fog: `"haze": { "amount": 0.3, "range": 8000 }` (the share of sunlight a fully lit view `range` game units long scatters back; optional `"color": [r, g, b]`, default the sun's colour). It draws with the RAY TRACING page's light shafts setting, and the preset may have an empty `lights` array.
 - A level light with `"rectSize": [width, height]` is a glowing panel facing along `direction`: it draws as a solid face and lights what is in front of it.
 - Any light can flicker (`flickerIntensity`, 0-1) or be a spotlight (`direction`, `spotMaxCosine` / `spotFalloffCosine`, RT64's negative cosines; the RS64 Explorer shows them as cone angles).
 - Only 64 lights shine at once. A preset's `priority` decides which are kept when there are more (see the table below).
+- A native or code mod can set a preset while the game runs, to move, recolour or switch a light from its own code ([`light_set`](../engine/modding-host-api.md#the-table)).
 
 **Light priorities.** When more than 64 lights compete, each priority first takes up to its share of the slots (nearest lights first), then the slots still free go to the remaining lights, highest priority first. So every kind still shows in a busy fight, and nothing is wasted in a quiet one. A preset without `priority` gets its type's default; any other number only gets the slots left over. Players can change the shares in `roguesq_video.json` (`rayTracing.lightLimits`).
 
@@ -283,7 +328,7 @@ More examples:
 
 - [mods/any-craft/](../../mods/any-craft/): lets you pick any craft on any level.
 - [mods/larger-object-pool/](../../mods/larger-object-pool/): calls game functions.
-- [mods/long-tow-cable/](../../mods/long-tow-cable/): patches in assembly (`src/*.s`) and with instruction patches, for functions too large to rewrite in C.
+- [mods/long-tow-cable/](../../mods/long-tow-cable/): a code-less mod of instruction patches, for functions too large to rewrite in C.
 - [tests/mods/](../../tests/mods/): small probe mods used by the tests.
 
 ### Functions the game already patches
@@ -306,7 +351,7 @@ A mod that changes only a few instructions (a constant, a limit, a load address)
 func = "loadEffectModelInstancePool"
 vram = 0x800AE1B0
 expect_asm = "sltiu $v0, $s1, 60"
-asm = "sltiu $v0, $s1, 160"
+asm = "sltiu $v0, $s1, 240"
 ```
 
 `func` is a name from `syms/rogue_squadron.syms.toml`, `vram` the instruction's address, `expect_asm` the original instruction (checked at build and load time) and `asm` its replacement. This one is from `long-tow-cable`.
@@ -319,7 +364,7 @@ RecompModTool writes the patches into the `.nrm` as `instruction_patches.json` (
 - refuses two mods writing different words to one instruction,
 - rebuilds each patched function with the patches, the game's own fixes and any mod hooks applied, and logs `Mod instruction patches: N in M functions`.
 
-[mods/long-tow-cable/mod.toml](../../mods/long-tow-cable/mod.toml) is 21 commented patches that raise the tow cable's 60-segment ring to 160. The multiplayer mod's per-player data relocation is 200 more, generated by `mods/multiplayer-native/tools/gen_relocation.py`.
+[mods/long-tow-cable/mod.toml](../../mods/long-tow-cable/mod.toml) is 24 commented patches that raise the tow cable's 60-segment ring to 240, shorten each segment and move the walker pull further back from the ship. The multiplayer mod's per-player data relocation is 200 more, generated by `mods/multiplayer-native/tools/gen_relocation.py`.
 
 ### Gotchas
 

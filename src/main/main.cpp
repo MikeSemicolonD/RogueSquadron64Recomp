@@ -10,6 +10,11 @@
 #include <thread>
 #include <chrono>
 #include <atomic>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 #include <exception>
 #include <typeinfo>
 
@@ -26,6 +31,7 @@
 #include "audio/audio.h"
 #include "main/cli.h"
 #include "main/crash.h"
+#include "main/discord_presence.h"
 #include "input/input_host.h"
 #include "main/ui_panels.h"
 #include "input/input_bindings.h"
@@ -35,6 +41,7 @@
 #include "input/touch_config.h"
 #include "game/game_state.h"           // rs64_state_current_id
 #include "util/debug_logs.h"
+#include "util/settings_file.h"
 #include "host_api/host_api.h"
 #include "main/main.h"                 // this file's own exports (fullscreen/quit hooks)
 #include "game/hook_helpers.h"         // g_vi_tick, g_boot_pulse_start
@@ -44,6 +51,10 @@
 #include "video/video_config.h"
 #include "main/renderdoc_capture.h"
 #include <mutex>
+
+#if defined(RS64_OPENXR)
+#include "video/vr_openxr.h"
+#endif
 
 #ifdef RS64_MCP
 #include "main/mcp_bridge.h"
@@ -190,9 +201,11 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx()
 
         if (ev->type == SDL_APP_WILLENTERBACKGROUND) {
             rs64::audio::set_foreground(false);
+            rs64::discord::set_foreground(false);
             rs64_render_suspend_surface();
         } else if (ev->type == SDL_APP_DIDENTERFOREGROUND) {
             rs64::audio::set_foreground(true);
+            rs64::discord::set_foreground(true);
         }
 
         return 0;
@@ -259,7 +272,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 
 #if defined(__APPLE__)
     window_flags |= SDL_WINDOW_METAL;
-#elif !defined(_WIN32)
+#elif !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     window_flags |= SDL_WINDOW_VULKAN;
 #endif
 
@@ -271,7 +284,7 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     if (!hide_window) {
         if (recomp::dbg::env_str("ROGUESQ_FULLSCREEN")) {
             rs64::video::pin_fullscreen(env_on("ROGUESQ_FULLSCREEN"));
-        } else if (rs64::video::peek_fullscreen("roguesq_video.json")) {
+        } else if (rs64::video::peek_fullscreen(rs64::video::config_path())) {
             rs64::video::set_fullscreen(true);
         }
 
@@ -396,6 +409,37 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
 #endif
 }
 
+#if defined(__EMSCRIPTEN__)
+
+// Browsers lock the pointer only for a click, so the page asks for it and reports changes here.
+static std::atomic<bool> g_web_pointer_locked{false};
+
+extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_pointer_lock_changed(int locked)
+{
+    g_web_pointer_locked.store(locked != 0);
+}
+
+// Tells the page whether a click should lock the mouse, and steers only while it's locked.
+static bool web_pointer_lock_follow(bool want)
+{
+
+    static int s_wanted = -1;
+
+    if (int(want) != s_wanted) {
+        s_wanted = int(want);
+        MAIN_THREAD_ASYNC_EM_ASM({
+            Module.rs64WantsMouse = !!$0;
+
+            if (!$0 && document.pointerLockElement)
+              document.exitPointerLock();
+        }, want);
+    }
+
+    return want && g_web_pointer_locked.load();
+}
+
+#endif
+
 void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
 {
     // Window messages only dispatch on the thread that owns the window, so events (and RT64's F1-F4 filter) must be pumped here.
@@ -415,6 +459,11 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
         fprintf(stderr, "[main] close requested while the game thread is held: exiting\n");
         fflush(stderr);
         rs64::host::run_quit_handlers();
+
+#if defined(RS64_OPENXR)
+        rs64::vr::quit();
+#endif
+
         _Exit(EXIT_SUCCESS);
     }
 
@@ -444,11 +493,25 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
 
     // Capture the mouse for steering while focused, unless the F6 controls window, the F1 inspector or a clickable menu is up.
     // Drain the relative-motion accumulator on each transition so enabling doesn't jump.
-    bool want = (SDL_GetKeyboardFocus() != nullptr)
+#if defined(__EMSCRIPTEN__)
+    // SDL's Emscripten port learns of focus only from a focus change, so a page focused at load reads as unfocused; the pointer lock stands in.
+    const bool focused = true;
+#else
+    const bool focused = SDL_GetKeyboardFocus() != nullptr;
+#endif
+
+    bool want = focused && g_vr_mouse_look.load();
+
+    want = want || (focused
              && !rs64::touch::shared_config().enabled
              && !g_show_controls.load()
              && !rs64_rt64_inspector_open()
-             && !mouse_menu_context(touch_context());
+             && !mouse_menu_context(touch_context()));
+
+#if defined(__EMSCRIPTEN__)
+    want = web_pointer_lock_follow(want);
+#endif
+
     g_mouse_capture.store(want);
     static bool s_rel = false;
 
@@ -598,6 +661,19 @@ int main(int argc, char* argv[])
 
 #endif
 
+#ifdef __EMSCRIPTEN__
+    // The play page mounts the browser's storage at /persist and puts the ROM there before calling main.
+    std::filesystem::current_path("/persist");
+
+    // The build's mods replace /persist/mods each start (a page can't add its own), so a dropped mod doesn't linger.
+    std::error_code mods_ec;
+
+    std::filesystem::remove_all("/persist/mods", mods_ec);
+    std::filesystem::copy("/bundle/mods", "/persist/mods", std::filesystem::copy_options::recursive, mods_ec);
+
+    fprintf(stderr, "[mods] bundled mods%s\n", mods_ec ? " not copied" : " copied");
+#endif
+
 #ifdef __APPLE__
     enter_app_bundle_data_dir();
 #endif
@@ -656,11 +732,15 @@ int main(int argc, char* argv[])
     // defaults as an editable template if it's absent. ROGUESQ_INPUT_RESET=1
     // overwrites it with defaults.
     std::string cfg = rs64::input::default_config_path();
-    const char* reset = recomp::os::getenv("ROGUESQ_INPUT_RESET");
-    bool force = reset && reset[0] && reset[0] != '0';
+    const bool force = recomp::dbg::env_on("ROGUESQ_INPUT_RESET");
 
     if (force || !rs64::input::load_bindings(g_bindings, cfg))
     {
+        if (!force)
+        {
+            rs64::settings::keep_bad_file(cfg);
+        }
+
         g_bindings = rs64::input::default_bindings();
         rs64::input::save_bindings(g_bindings, cfg);
 
@@ -669,7 +749,8 @@ int main(int argc, char* argv[])
         fprintf(stderr, "[input] loaded bindings from %s\n", cfg.c_str());
     }
 
-    g_report_rumble_pak.store(g_bindings.rumble.enabled);
+    // Headless test runs (fake controller) must not drive the motors of a real pad that happens to be connected.
+    g_report_rumble_pak.store(g_bindings.rumble.enabled && !recomp::dbg::env_on("ROGUESQ_FAKE_CONTROLLER"));
     fflush(stderr);
 
     // Touch controls: roguesq_touch.json (on by default on Android); ROGUESQ_TOUCH_DEBUG draws the menu tap boxes.
@@ -845,6 +926,20 @@ int main(int argc, char* argv[])
         }
 
         rom_problem.clear();
+    }
+
+#elif defined(__EMSCRIPTEN__)
+
+    // The play page put the player's file at /persist; if it isn't the ROM, the page shows why and its picker again.
+    if (!recomp::is_rom_valid(rs_game_id))
+    {
+        const std::filesystem::path placed = "/persist/rogue_squadron.z64";
+        const std::string problem = rom_problem_text(recomp::select_rom(placed, rs_game_id));
+        std::error_code ec;
+
+        std::filesystem::remove(placed, ec);
+        MAIN_THREAD_EM_ASM({ Module.romRejected(UTF8ToString($0)); }, problem.c_str());
+        return 0;
     }
 
 #else

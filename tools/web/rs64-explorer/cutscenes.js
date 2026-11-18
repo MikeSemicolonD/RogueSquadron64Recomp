@@ -1006,6 +1006,12 @@ function endCutscene()
   // The level view keeps its own fog toggle; the cutscene's (and its type-17 range changes) end with it.
   const fogOn = cut.levelFogOn;
 
+  for (const [map, s] of cut.sprites ?? [])
+  {
+    map.image.data = s.rest;
+    map.needsUpdate = true;
+  }
+
   cut = null;
   restoreCutFar();
 
@@ -1015,7 +1021,7 @@ function endCutscene()
     applyFog();
   }
 
-  $('cutPanel').hidden = $('cutInspector').hidden = true;
+  $('cutPanel').hidden = $('cutInspector').hidden = $('crawlPanel').hidden = true;
   controls.enabled = true;
   camera.fov = 50;
   camera.updateProjectionMatrix();
@@ -1404,6 +1410,7 @@ async function showCutscene(path)
   if (lv && rom.assets.has(lv + '/dat')) {
     await showLevel(lv, false, ceremony ? 'data/level/sky_5' : null);
     $('cutPick').value = sq ? 'seq:' + sq[2] : 'cut:' + path;
+    syncCutPickTools();
   } else {
     setContext(true);
 
@@ -1423,6 +1430,7 @@ async function showCutscene(path)
 
   $('editPanel').hidden = true;
   selected = 'cut:' + path;
+  syncBackButton();
   fillLevelButton();
   selectedLevel = true;
   renderList();
@@ -1626,6 +1634,24 @@ async function showCutscene(path)
 
     return a >= 0 && b >= 0 && events.length ? [{ rig, a, b, events }] : [];
   });
+
+  // Foot soldiers' run frames, written over their textured slot; every actor sharing a texture flips together, as the game's per-kind pool does.
+  cut.sprites = new Map();
+
+  for (const [i, a] of data.actors.entries())
+  {
+    let info = null;
+
+    nodes[i].traverse((o) => { info ??= o.userData.infos?.find((x) => x.map && x.tex); });
+
+    if (!a.spriteClip || !info || cut.sprites.has(info.map) || !rom.assets.has(a.spriteClip))
+      continue;
+
+    const frames = parseSpriteAnim(await rom.read(a.spriteClip), info.tex.trans);
+
+    if (frames[0]?.w === info.tex.w && frames[0]?.h === info.tex.h)
+      cut.sprites.set(info.map, { frames, rest: info.map.image.data });
+  }
 
   syncCutNpcs();
   buildCutTimeline(data);
@@ -1886,8 +1912,10 @@ async function showCutscene(path)
 
   loadCutAudio(path);
 
+  const pick = $('cutPick').selectedOptions[0];
+
   stats = {
-    cutscene: path.split('/').pop(),
+    cutscene: pick?.value === `cut:${path}` ? pick.textContent : (path.endsWith('/id19_special') ? 'Factor 5 logo' : path.split('/').pop()),
     length: `${data.length.toFixed(1)} s`,
     actors: data.actors.length,
     models: data.actors.filter((a) => a.model).length,
@@ -2001,6 +2029,17 @@ function poseCutscene(t)
 
   if (cut.vortices?.length)
     poseVortices(t * data.length);
+
+  for (const [map, s] of cut.sprites ?? [])
+  {
+    const f = s.frames[Math.floor(t * data.length * SPRITE_FPS) % s.frames.length];
+
+    if (map.image.data !== f.rgba)
+    {
+      map.image.data = f.rgba;
+      map.needsUpdate = true;
+    }
+  }
 
   // Type 11 (scheduleCutsceneActionSlot, tickCutsceneActionSlots): the S-foils (wngrot_a +deg, wngrot_b -deg about Z, set as the node
   // rotation, composeInterpolatedNodeMatricesAlt) ease from closed (0) or the last target to p1 - 180 deg over p2 frames, quadratic in/out.
@@ -2235,6 +2274,7 @@ function crawlQuad(tl, tr, bl, br, map)
   const g = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([...tl, ...tr, ...bl, ...br], 3));
 
   g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 1, 1, 1, 0, 0, 1, 0], 2)).setIndex([0, 2, 1, 1, 2, 3]);
+  g.computeVertexNormals();
 
   return new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
 }
@@ -2264,6 +2304,7 @@ async function showCrawl(which, keep = null)
 
   $('editPanel').hidden = $('legend').hidden = true;
   selected = 'crawl:' + which;
+  syncBackButton();
   fillLevelButton();
   selectedLevel = true;
   renderList();
@@ -3546,8 +3587,8 @@ function fillSeqShotPanel(p, k)
 function syncSeqUi() {
   const s = !!cut?.seq;
 
-  $('insCut').querySelector('.insRow').hidden = s;
-  $('insCut').querySelector('.insDivider').hidden = s;
+  for (const c of $('insCut').querySelector('.insRow').children)
+    c.hidden = s && c.id !== 'cutAddCam';
 
   if (s)
     $('cutLengthRow').style.visibility = 'hidden';
@@ -3782,7 +3823,7 @@ function dragByHead(head, panel, key, setPos, place) {
 }
 
 const insHead = $('insCut').querySelector('h4');
-insHead.title = 'Drag to move the inspector; double-click to put it back';
+insHead.title = 'Drag to move, double-click to put it back';
 dragByHead(insHead, $('cutInspector'), 'rs64.insPos', (p) => (insPos = p), placeCutInspector);
 
 function syncCutEditUi()
@@ -4639,11 +4680,44 @@ $('cutCamView').onclick = snapFromView;
 const cutCamSnap = (v, t) => ({ t, p: v.p.clone().multiplyScalar(4).toArray(), q: v.q.toArray(), fov: v.fov });
 
 // New shot at the playhead, framed like the view: a new camera and its cut as one step. A cut already at the playhead (or the very start) just reframes that shot.
+// A sequence's next shot is a new camera at the view that the last one cuts to.
+async function seqNewShot()
+{
+  const { dir, shots } = cut.data.seq;
+
+  if (shots.length >= 6)
+  {
+    $('cutStatus').textContent = 'A sequence has 6 shots at most';
+
+    return;
+  }
+
+  if (cut.playing)
+    $('cutPlay').click();
+
+  if ($('cutCam').checked)
+    cutFreeView();
+
+  const last = shots.at(-1).name;
+
+  await historyGroup('New shot', async () => {
+    const { name } = await addSeqCamera(dir, shots[0].name + '_shot');
+
+    await editAsset(dir + '/dat', (b) => recordSetName(b, parseDAT(dvOf(b)).items.find((x) => x.type === 0 && x.name === last), 0x68, name));
+  });
+
+  await reopenCutscene();
+  await fillCutPick(dir);
+}
+
 async function cutNewShot()
 {
+  if (cut?.seq)
+    return seqNewShot();
+
   const f = cut?.file;
 
-  if (!f || cut.crawl || cut.seq)
+  if (!f || cut.crawl)
     return;
 
   if (cut.playing)
@@ -5692,9 +5766,13 @@ async function reloadLevel(dir) {
   syncLevelSettings();
 }
 
-async function deleteItem(it)
+async function deleteItem(item)
 {
   const dir = selected;
+
+  // A music region and its trigger area go together.
+  const it = item.musicRegion ?? item;
+  const trigger = it.musicTrigger;
 
   if (it.name && nameUses(romBytes.subarray(0, BLOB_START), it.name, 0, 0))
   {
@@ -5724,8 +5802,16 @@ async function deleteItem(it)
 
   try {
     await historyGroup(`Delete ${it.name || 'item'}`, async () => {
+      await arrowsForget(dir, it);
+
       // Zones and triggers are referred to by index: the rest are renumbered.
-      await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveItem(b, 0, it.index) : datRemoveIndexed(b, it.type, it.index)));
+      await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveUnit(b, it.index) : datRemoveIndexed(b, it.type, it.index)));
+
+      if (it.type === 0)
+        await syncPackages(dir);
+
+      if (trigger)
+        await editAsset(dir + '/dat', (b) => datRemoveIndexed(b, 6, trigger.index - (trigger.index > it.index ? 1 : 0)));
 
       if (!left.size)
         return;

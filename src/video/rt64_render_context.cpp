@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include "main/renderdoc_capture.h"
+#include "main/discord_presence.h"
 #include "SDL.h"
 #ifdef __ANDROID__
 #include "SDL_syswm.h"
@@ -27,11 +28,14 @@ extern SDL_Window* g_sdl_window;
 #include "hle/rt64_present_queue.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
+#include "hle/rt64_rs64_vr.h"
 #include "librecomp/mods.hpp"
 
 #include "ultramodern/ultramodern.hpp"
 #include "ultramodern/renderer_context.hpp"
 #include "util/debug_logs.h"
+#include "util/rdram_words.h"
+#include "util/settings_file.h"
 #include "rs64_toml_hooks.h"
 #include "game/upstream_compat.h"      // rs64_fb_guards_mask, g_active_overlay, g_last_swap_fb
 #include "game/hook_helpers.h"         // g_boot_pulse_start, g_current_scene, rs64_cine_iter_get, rs64_neutralize_matpool_cimg
@@ -41,7 +45,15 @@ extern SDL_Window* g_sdl_window;
 #include "lockstep/lockstep_core.h"    // load_replay: the recording's display settings
 #include "video/rt64_render_context.h"
 #include "video/render_diag.h"
+#include "video/vr_openxr.h"
+#include "input/input_host.h"
 #include "default_lights.h"
+
+#if defined(__EMSCRIPTEN__)
+#include "plume_webgpu.h"
+#include "video/web_shader_convert.h"
+#endif
+
 #ifdef __ANDROID__
 #include "main/android_host.h"
 #endif
@@ -316,6 +328,202 @@ extern "C" float rs64_cull_widen(void)
     return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
 }
 
+// The same slack on the vertical edges, where a banked or rolled craft's wings reach past its bounding sphere too.
+extern "C" float rs64_cull_widen_y(void)
+{
+
+    return (rs64_cull_widen() > 1.0f) ? kCullEdgeSlack : 1.0f;
+}
+
+// A mod's camera view (host API camera_view): yaw, pitch (degrees) and an offset in game camera axes and units (x right, y down, z forward), relative to the game camera.
+namespace {
+std::mutex s_mod_view_mu;
+float s_mod_view[5] = {};
+bool s_mod_view_on = false;
+}
+
+extern "C" void rs64_set_mod_camera_view(float yaw, float pitch, float x, float y, float z)
+{
+
+    std::lock_guard<std::mutex> lk(s_mod_view_mu);
+
+    s_mod_view[0] = yaw;
+    s_mod_view[1] = std::clamp(pitch, -89.0f, 89.0f);
+    s_mod_view[2] = x;
+    s_mod_view[3] = y;
+    s_mod_view[4] = z;
+    s_mod_view_on = yaw != 0.0f || pitch != 0.0f || x != 0.0f || y != 0.0f || z != 0.0f;
+}
+
+extern "C" int rs64_mod_camera_view_on(void)
+{
+
+    std::lock_guard<std::mutex> lk(s_mod_view_mu);
+
+    return s_mod_view_on ? 1 : 0;
+}
+
+extern "C" float rs64_vr_units_per_meter(void);
+
+// The mod's view as a head pose (OpenXR axes, meters: y up, z back), which RT64 applies to the drawn view only; 0 = none set.
+static int mod_camera_pose(rs64vr::Pose* pose)
+{
+
+    std::lock_guard<std::mutex> lk(s_mod_view_mu);
+
+    if (!s_mod_view_on || rs64_vr_session()) return 0;
+
+    const float upm = rs64_vr_units_per_meter();
+
+    *pose = rs64vr::headPose(s_mod_view[0], s_mod_view[1], s_mod_view[2] / upm, -s_mod_view[3] / upm, -s_mod_view[4] / upm);
+
+    return 1;
+}
+
+// ROGUESQ_VR_FAKE_YAW=<degrees>: a fake head with no headset, starting turned that far left, to test VR. Numpad 4/6 turn, 8/2 look up/down,
+// 7/9 move left/right, 1/3 down/up, +/- forward/back (in the starting frame), 5 recenters. Called only from RT64's workload thread.
+extern "C" int rs64_vr_fake_head(rs64vr::Pose* pose)
+{
+
+    static const char* s_env = env_str("ROGUESQ_VR_FAKE_YAW");
+
+    if (!s_env)
+    {
+        return mod_camera_pose(pose);
+    }
+
+    constexpr float kDegreesPerSecond = 90.0f;
+    constexpr float kMetersPerSecond = 0.5f;
+    static const float s_start = float(std::atof(s_env));
+    static float s_yaw = s_start;
+    static float s_pitch = 0.0f;
+    static float s_pos[3] = {};
+    static auto s_last = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    const float dt = std::min(std::chrono::duration<float>(now - s_last).count(), 0.1f);
+    const Uint8* keys = SDL_GetKeyboardState(nullptr);
+
+    s_last = now;
+
+    if (keys) {
+        auto axis = [&](SDL_Scancode plus, SDL_Scancode minus) { return (keys[plus] ? 1.0f : 0.0f) - (keys[minus] ? 1.0f : 0.0f); };
+
+        s_yaw += axis(SDL_SCANCODE_KP_4, SDL_SCANCODE_KP_6) * kDegreesPerSecond * dt;
+        s_pitch += axis(SDL_SCANCODE_KP_8, SDL_SCANCODE_KP_2) * kDegreesPerSecond * dt;
+        // Sideways and forward moves follow the facing, as a walking player's would.
+        const float right = axis(SDL_SCANCODE_KP_9, SDL_SCANCODE_KP_7) * kMetersPerSecond * dt;
+        const float back = axis(SDL_SCANCODE_KP_MINUS, SDL_SCANCODE_KP_PLUS) * kMetersPerSecond * dt;
+        const float yaw = s_yaw * 3.14159265f / 180.0f;
+
+        s_pos[0] += right * std::cos(yaw) + back * std::sin(yaw);
+        s_pos[1] += axis(SDL_SCANCODE_KP_3, SDL_SCANCODE_KP_1) * kMetersPerSecond * dt;
+        s_pos[2] += back * std::cos(yaw) - right * std::sin(yaw);
+
+        constexpr float kDegreesPerPixel = 0.15f;
+        float mx = 0.0f;
+        float my = 0.0f;
+
+        rs64::app::take_vr_mouse_look(&mx, &my);
+        s_yaw -= mx * kDegreesPerPixel;
+        s_pitch -= my * kDegreesPerPixel;
+
+        if (keys[SDL_SCANCODE_KP_5]) {
+            s_yaw = s_start;
+            s_pitch = 0.0f;
+            s_pos[0] = s_pos[1] = s_pos[2] = 0.0f;
+        }
+    }
+
+    s_pitch = std::clamp(s_pitch, -89.0f, 89.0f);
+    *pose = rs64vr::headPose(s_yaw, s_pitch, s_pos[0], s_pos[1], s_pos[2]);
+
+    return 1;
+}
+
+extern "C" float rs64_vr_units_per_meter(void)
+{
+
+    // Missions: a snowspeeder (5.3 m) spans about 62 camera units. The menu overlay's 3D scenes (the craft-select hangar) draw the same craft 16 times larger.
+    constexpr float kMissionUnitsPerMeter = 12.0f;
+    constexpr float kMenuSceneScale = 16.0f;
+    static const char* s_env = env_str("ROGUESQ_VR_UNITS_PER_METER");
+    static const float s_env_units = s_env ? float(std::atof(s_env)) : kMissionUnitsPerMeter;
+    const float units = ((s_env_units > 0.0f) ? s_env_units : kMissionUnitsPerMeter) * rs64::video::vr_scale(rs64::video::vr_scene_of_overlay(g_active_overlay));
+
+    return (g_active_overlay == 1) ? units * kMenuSceneScale : units;
+}
+
+extern "C" int rs64_vr_hud_quads(void)
+{
+
+    return (g_active_overlay == 0) ? 1 : 0;
+}
+
+// The menu overlay's screen (u16 0x800CFF50: 0 hangar, 1 SELECT LEVEL, 2 menu tree, 3 results) for the VR view: 1 = virtual screen (menu tree, results, even with models on them),
+// 0 = 3D view (SELECT LEVEL's briefing room), -1 = no say (other overlays, and the hangar's 0, which the boot screens also read).
+extern "C" int rs64_vr_menu_tree(void)
+{
+
+    if ((g_active_overlay != 1) || (g_rs64_parse_rdram == nullptr))
+    {
+        return -1;
+    }
+
+    const uint16_t screen = rs64::mips::rh(g_rs64_parse_rdram, 0x800CFF50u);
+
+    if ((screen == 2) || (screen == 3))
+    {
+        return 1;
+    }
+
+    return (screen == 1) ? 0 : -1;
+}
+
+// 1 when culls must cover every direction: a fake head turn is set or a VR session is running.
+extern "C" int rs64_vr_active(void)
+{
+
+    static const bool s_fake = env_str("ROGUESQ_VR_FAKE_YAW") != nullptr;
+
+    return (s_fake || rs64_vr_session()) ? 1 : 0;
+}
+
+#if !defined(RS64_OPENXR)
+
+// Flat builds: no OpenXR, so there is never a session.
+extern "C" int rs64_vr_session(void) { return 0; }
+extern "C" uint32_t rs64_vr_target_rate(void) { return 0; }
+extern "C" int rs64_vr_game_hz(void) { return 0; }
+
+extern "C" void rs64_vr_eye_size(uint32_t* width, uint32_t* height)
+{
+
+    *width = 0;
+    *height = 0;
+}
+
+extern "C" int rs64_vr_locate(uint32_t, rs64vr::EyeViews* out)
+{
+
+    out->valid = false;
+
+    return 0;
+}
+
+extern "C" int rs64_vr_begin_frame(void) { return -1; }
+extern "C" plume::RenderTexture* rs64_vr_acquire_eye(int, uint32_t*, uint32_t*) { return nullptr; }
+extern "C" void rs64_vr_end_frame(const rs64vr::EyeViews*) {}
+extern "C" plume::RenderTexture* rs64_vr_acquire_screen(uint32_t*, uint32_t*) { return nullptr; }
+extern "C" int rs64_vr_has_screen(void) { return 0; }
+extern "C" void rs64_vr_end_frame_screen(void) {}
+extern "C" void rs64_vr_set_brightness(float) {}
+extern "C" int rs64_vr_hands_frame(rs64vr::EyeViews*, rs64vr::Pose*, int*) { return 0; }
+extern "C" plume::RenderTexture* rs64_vr_acquire_hands(int, uint32_t*, uint32_t*) { return nullptr; }
+extern "C" int rs64_vr_hand_model(int, const float**, uint32_t*) { return 0; }
+
+#endif
+
+
 // Field-of-view widening for the game's render-side object view tests while RT sun shadows are on, so craft just off screen are drawn and cast
 // this frame's shadow (moving craft never enter the shadow history). Gameplay view tests are untouched. ROGUESQ_RT_SHADOWS_CULL_MARGIN overrides.
 extern "C" float rs64_shadow_cull_margin(void)
@@ -334,6 +542,29 @@ extern "C" float rs64_shadow_keep_dist(void)
     static const float s_dist = std::max(rs64lights::envFloat("ROGUESQ_RT_SHADOWS_KEEP_DIST", 4096.0f), 0.0f);
 
     return rs64lights::config().shadows.load(std::memory_order_relaxed) ? s_dist : 0.0f;
+}
+
+// Whether an off-screen object within the keep distance can shadow anything on screen. view is the rotation of the matrix that made p, so the sun lands in p's space.
+extern "C" int rs64_shadow_caster_reaches_view(const float p[3], float r, const float view[9], float slopeX, float slopeY)
+{
+
+    if (!(slopeX > 0.0f) || !(slopeY > 0.0f))
+    {
+        return 1;
+    }
+
+    const rs64lights::Sun sun = rs64lights::publishedSun();
+    const float minTan = std::tan(rs64lights::config().sunMinElevationDeg * 3.14159265f / 180.0f);
+    float toSun[3];
+
+    if (!sun.levelWorld || !rs64lights::sunCameraDir(sun.world, view, toSun, minTan))
+    {
+        return 1;
+    }
+
+    const float away[3] = { -toSun[0], -toSun[1], -toSun[2] };
+
+    return rs64lights::casterReachesView(p, r, away, slopeX, slopeY) ? 1 : 0;
 }
 
 // Output pixels per native pixel (RT64 vertical resolution scale), 1 before RT64 is up.
@@ -459,7 +690,7 @@ public:
         appCore.window = wm.info.android.window;
         rs64::android::set_window_frame_rate(wm.info.android.window);
 
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__EMSCRIPTEN__)
         appCore.window = window_handle;
 #elif defined(__APPLE__)
 
@@ -530,14 +761,19 @@ public:
         app->userConfig.refreshRate = UC::RefreshRate::Original;
         app->userConfig.refreshRateTarget = 60;
 
+#if defined(__ANDROID__)
+        app->userConfig.refreshRateTarget = 30;
+#endif
+
         // A Raspberry Pi's GPU can't keep up above the N64's own resolution, and RT64's framebuffer write-back costs it about half its frame time.
         if (is_raspberry_pi()) {
+            app->userConfig.refreshRateTarget = 30;
             app->userConfig.resolution = UC::Resolution::Original;
             rs64::video::set_framebuffer_writeback(false);
         }
 
         // roguesq_video.json in the working directory overrides the baseline above (a default is written on first run); the ROGUESQ_* env vars below override the file.
-        std::string cfgPath = "roguesq_video.json";
+        std::string cfgPath = rs64::video::config_path();
         video_cfg_path_ = cfgPath;                           // enables F1-menu save-back
         rs64::video::LoadResult lr = rs64::video::load(app->userConfig, cfgPath);
 
@@ -547,18 +783,34 @@ public:
         }
 
         if (!lr.loaded || lr.migrated) {
-            std::ofstream out{cfgPath, std::ios::trunc};
+            if (!lr.loaded)
+            {
+                rs64::settings::keep_bad_file(cfgPath);
+            }
 
-            if (out) {
-                out << rs64::video::to_friendly(app->userConfig).dump(2) << "\n";
-
+            if (rs64::settings::write_file(cfgPath, rs64::video::to_friendly(app->userConfig).dump(2) + "\n")) {
                 fprintf(stderr, "[RT64] wrote %s %s\n", cfgPath.c_str(),
                         lr.migrated ? "(migrated)" : "(default)");
             }
         }
 
+        json saved;
+
+        try { saved = rs64::video::to_friendly(app->userConfig); } catch (...) {}
+
         apply_replay_display();
         rs64::video::apply_env_overrides(app->userConfig);
+
+        // Keys a replay or ROGUESQ_* var changed: a save writes the player's value back unless the player changes the key in game.
+        try {
+            const json live = rs64::video::to_friendly(app->userConfig);
+
+            for (auto it = live.begin(); it != live.end(); ++it) {
+                if (saved.contains(it.key()) && saved[it.key()] != it.value()) {
+                    video_cfg_pins_[it.key()] = { it.value(), saved[it.key()] };
+                }
+            }
+        } catch (...) {}
 
         // PresentEarly (default on): the cinematic stays on one VI fb address, so RT64's
         // updateScreen never sees a VI change and would never present. ROGUESQ_HLE_PRESENT_EARLY=0 opts out.
@@ -580,7 +832,27 @@ public:
         thread_id = window_handle.thread_id;
 #endif
 
+#if defined(RS64_OPENXR)
+
+        // VR needs Vulkan, and 8-bit targets so a raw copy fills the headset's sRGB images.
+        const bool vr = rs64::vr::requested() && rs64::vr::init_before_device();
+
+        if (vr) {
+            app->userConfig.graphicsAPI = UC::GraphicsAPI::Vulkan;
+            app->userConfig.internalColorFormat = UC::InternalColorFormat::Standard;
+        }
+
+#endif
+
         setup_result = map_result(app->setup(thread_id));
+
+#if defined(RS64_OPENXR)
+
+        if (vr && (setup_result == ultramodern::renderer::SetupResult::Success)) {
+            rs64::vr::start_session(*app);
+        }
+
+#endif
 
 #ifdef __ANDROID__
 
@@ -680,6 +952,8 @@ public:
         rs64_mcp_note_dl();
 #endif
 
+        rs64_nav_frame();
+
         if (!app) return;
 
         rebuild_renderer_if_lost();
@@ -717,6 +991,12 @@ public:
         }
 
         apply_vi_overrides();
+
+        if (app->presentQueue)
+        {
+            rs64::video::set_ssaa_base(app->presentQueue->ext.sharedResources->ssaaBaseScale.load(std::memory_order_relaxed));
+        }
+
         diag().log_transition_lum();
         drive_boot_target();
         poll_gamestate();
@@ -788,6 +1068,13 @@ private:
     uint32_t game_vi_width_ = 0;
     std::string video_cfg_path_;      // roguesq_video.json next to the exe ("" = disabled)
     std::string video_cfg_snapshot_;  // last-persisted userConfig json; F1-menu edits rewrite the file
+
+    struct VideoCfgPin {
+        json live;
+        json saved;
+    };
+
+    std::map<std::string, VideoCfgPin> video_cfg_pins_;
 
     // A lost GPU device never recovers; rebuild RT64 on the same window. Rebuilds back off (1 s, doubling to 16 s) while losses keep recurring so a persistent fault can't spin.
     // ROGUESQ_NO_DEVICE_LOST_RECOVERY=1 disables. Runs on the gfx thread, which is the only caller of send_dl/update_screen.
@@ -882,12 +1169,27 @@ private:
 
         video_cfg_snapshot_ = cur;
 
-        std::ofstream out(video_cfg_path_, std::ios::trunc);
+        std::string text;
 
-        if (out.is_open())
+        try {
+            json j = json::parse(cur);
+
+            for (auto it = video_cfg_pins_.begin(); it != video_cfg_pins_.end();) {
+                if (j[it->first] == it->second.live) {
+                    j[it->first] = it->second.saved;
+                    ++it;
+                } else {
+                    it = video_cfg_pins_.erase(it);
+                }
+            }
+
+            text = j.dump(2) + "\n";
+        } catch (...) {
+            return;
+        }
+
+        if (rs64::settings::write_file(video_cfg_path_, text))
         {
-            try { out << json::parse(cur).dump(2) << "\n"; } catch (...) {}
-
             fprintf(stderr, "[RT64] saved %s (menu change)\n", video_cfg_path_.c_str());
         }
     }
@@ -1238,6 +1540,7 @@ private:
 
         // Every present: the nav sequencer needs fresh state to catch fast menu screens.
         rs64_state_poll((const uint8_t*)app->core.RDRAM);
+        rs64::discord::poll((const uint8_t*)app->core.RDRAM);
 
         diag().log_gamestate();
 
@@ -1258,6 +1561,27 @@ private:
 std::unique_ptr<ultramodern::renderer::RendererContext>
 create_render_context(uint8_t* rdram, ultramodern::renderer::WindowHandle window, bool developer_mode)
 {
+
+#if defined(__EMSCRIPTEN__)
+
+    // RT64 specializes its raster shaders before handing them over, so constants left here are a bug.
+    plume::webgpuSetShaderConverter([](const std::vector<uint32_t>& spirv, const plume::RenderSpecConstant*, uint32_t specConstantsCount, std::string& wgsl, std::string& error) {
+
+        if (specConstantsCount > 0)
+        {
+            error = "the browser build can't convert unspecialized shaders";
+            return false;
+        }
+
+        rs64::wgsl::ConvertResult result = rs64::wgsl::convert_here(spirv);
+
+        wgsl = std::move(result.wgsl);
+        error = std::move(result.error);
+        return result.ok;
+    });
+
+#endif
+
     return std::make_unique<RT64Context>(rdram, window, developer_mode);
 }
 } // namespace recomp

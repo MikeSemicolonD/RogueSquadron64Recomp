@@ -188,6 +188,11 @@ void apply_tow_seg(uint8_t* rdram, const rs64::net::TowSeg& t)
 
     const uint32_t ring = cable_ring(rdram);
 
+    if (!rs64::net::tow_seg_ok(t, ring))
+    {
+        return;
+    }
+
     if (cable_active(t.phase, t.count) && !cable_active(s.tow_remote.phase, s.tow_remote.count))
     {
         for (uint32_t i = 0; i < ring; ++i) {

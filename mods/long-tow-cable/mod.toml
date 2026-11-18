@@ -1,10 +1,10 @@
 # The tow cable is a ring of segment meshes: the head index moves forward as the cable pays out, a count byte says how many segments are live.
-# The game hard-codes the ring size 60 (about 1.5 loops around an AT-AT, the trip needs 3); these patches make it 160. Max 255: head and count are bytes.
+# The game hard-codes the ring size 60 at 0.33 units per segment (about 1.5 loops around an AT-AT, the trip needs 3); these patches make it 240 at 0.22, about 4 loops. Max 255: head and count are bytes.
 [manifest]
 id = "long_tow_cable"
-version = "1.1.0"
+version = "1.2.1"
 display_name = "Long Tow Cable"
-description = "The snowspeeder tow cable holds 160 segments instead of 60, about four loops around an AT-AT instead of one and a half, so the cable no longer erases its oldest end while you wrap the walker. Takes effect at the next mission start."
+description = "The snowspeeder tow cable holds 240 shorter segments instead of 60, about four loops around an AT-AT instead of one and a half, so the cable no longer erases its oldest end while you wrap the walker and bends more smoothly behind the ship. Takes effect at the next mission start."
 short_description = "Tow cable long enough to wrap an AT-AT."
 authors = ["RogueSquadron64Recomp"]
 game_id = "rs64"
@@ -14,27 +14,27 @@ minimum_recomp_version = "0.0.0"
 mod_filename = "long_tow_cable"
 func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
 
-# Pool: 60 * 0xF8-byte segment meshes, created and freed in loops of 60. ori, since addiu would sign-extend 0x9B00.
+# Pool: 60 * 0xF8-byte segment meshes, created and freed in loops of 60. ori, since addiu would sign-extend 0xE880.
 [[patches.instruction]]
 func = "loadEffectModelInstancePool"
 vram = 0x800AE13C
 expect_asm = "addiu $a0, $zero, 0x3A20"
-asm = "ori $a0, $zero, 0x9B00"
+asm = "ori $a0, $zero, 0xE880"
 
 [[patches.instruction]]
 func = "loadEffectModelInstancePool"
 vram = 0x800AE1B0
 expect_asm = "sltiu $v0, $s1, 60"
-asm = "sltiu $v0, $s1, 160"
+asm = "sltiu $v0, $s1, 240"
 
 [[patches.instruction]]
 func = "freeEffectModelInstancePool"
 vram = 0x800AE24C
 expect_asm = "sltiu $v0, $s1, 60"
-asm = "sltiu $v0, $s1, 160"
+asm = "sltiu $v0, $s1, 240"
 
 # Head advance, head = (head + 1) % 60: the game divides by multiplying with 0x88888889 (about 2^35 / 60).
-# Replaced by head = (head + 1 < 160) ? head + 1 : 0, a compare and a mask; the rest of the old sequence becomes nops (0x800AD81C is unchanged).
+# Replaced by head = (head + 1 < 240) ? head + 1 : 0, a compare and a mask; the rest of the old sequence becomes nops (0x800AD81C is unchanged).
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
 vram = 0x800AD7E8
@@ -51,7 +51,7 @@ asm = "nop"
 func = "updateCinematicCameraStateMachine"
 vram = 0x800AD7F8
 expect_asm = "mult $a0, $v0"
-asm = "sltiu $v0, $a0, 160"
+asm = "sltiu $v0, $a0, 240"
 
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
@@ -107,40 +107,60 @@ vram = 0x800AD820
 expect_asm = "subu $a0, $a0, $v0"
 asm = "and $a0, $a0, $v0"
 
+# Segment length: a new segment starts once the newest one reaches 0.33 (D_800A5400); shorter segments put the joints closer so the end at the ship swings less. lui+mtc1 loads 0.2197 (0x3E610000).
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD7D4
+expect_asm = "lui $at, 0x800A"
+asm = "lui $at, 0x3E61"
+
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD7D8
+expect_asm = "lwc1 $f0, 0x5400($at)"
+asm = "mtc1 $at, $f0"
+
+# Walker pull: segments from head-2 back drift toward the nearest leg while the newer ones stay put, so the cable kinks at the first pulled joint. Starting at head-6 keeps that kink 1.3 units behind the ship instead of 0.44.
+[[patches.instruction]]
+func = "updateCinematicCameraStateMachine"
+vram = 0x800AD8BC
+expect_asm = "addiu $s3, $zero, 0x2"
+asm = "addiu $s3, $zero, 0x6"
+
 # Live-segment cap, count = min(count + 1, 60): the limit that erases the cable's oldest end.
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
 vram = 0x800AD824
 expect_asm = "sltiu $v0, $v1, 60"
-asm = "sltiu $v0, $v1, 160"
+asm = "sltiu $v0, $v1, 240"
 
 # Walking back from the head, a negative index wraps by adding the ring size: four places in the simulation, one in the renderer.
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
 vram = 0x800AD8EC
 expect_asm = "addiu $s1, $s1, 60"
-asm = "addiu $s1, $s1, 160"
+asm = "addiu $s1, $s1, 240"
 
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
 vram = 0x800ADA5C
 expect_asm = "addiu $s1, $s1, 60"
-asm = "addiu $s1, $s1, 160"
+asm = "addiu $s1, $s1, 240"
 
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
 vram = 0x800ADB70
 expect_asm = "addiu $s1, $s1, 60"
-asm = "addiu $s1, $s1, 160"
+asm = "addiu $s1, $s1, 240"
 
 [[patches.instruction]]
 func = "updateCinematicCameraStateMachine"
 vram = 0x800ADBA4
 expect_asm = "addiu $v1, $v1, 60"
-asm = "addiu $v1, $v1, 160"
+asm = "addiu $v1, $v1, 240"
 
 [[patches.instruction]]
 func = "submitCameraTrackedObjectToRender"
 vram = 0x800ADDD0
 expect_asm = "addiu $a0, $a0, 60"
-asm = "addiu $a0, $a0, 160"
+asm = "addiu $a0, $a0, 240"

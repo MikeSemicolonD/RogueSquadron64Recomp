@@ -13,7 +13,7 @@ import os
 import struct
 import rabbitizer
 
-ROOT = r"E:/Projects/RogueSquadron64Recomp"
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 with open(os.path.join(ROOT, "dumps", "f5_ucode.imem.bin"), "rb") as f:
     imem = f.read()
 with open(os.path.join(ROOT, "dumps", "f5_ucode.dmem.bin"), "rb") as f:

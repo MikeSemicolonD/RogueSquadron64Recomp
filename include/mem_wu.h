@@ -6,7 +6,7 @@
 // the recompiled output needs it (e.g. funcs_7 pointer comparisons).
 #ifndef MEM_WU
 #define MEM_WU(offset, reg) \
-    (*(uint32_t*)(rdram + ((((reg) + (offset))) - 0xFFFFFFFF80000000)))
+    (*(uint32_t*)(rdram + RDRAM_OFFSET((reg) + (offset))))
 #endif
 
 #endif // RS64_MEM_WU_H

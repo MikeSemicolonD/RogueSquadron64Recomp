@@ -15,7 +15,7 @@ set -euo pipefail
 
 RS64_BUILD_DIR="${RS64_BUILD_DIR:-$HOME/rs64-build}"
 DZN_PREFIX="${DZN_PREFIX:-$HOME/mesa-dzn}"
-ROM_SRC="${ROM_SRC:-/mnt/e/Projects/RogueSquadron64Recomp/build/Debug/rogue_squadron.z64}"
+ROM_SRC="${ROM_SRC:-$(cd "$(dirname "$0")/../.." && pwd)/build/Debug/rogue_squadron.z64}"
 
 exe="$RS64_BUILD_DIR/RogueSquadron64Recomp"
 icd="$DZN_PREFIX/share/vulkan/icd.d/dzn_icd.x86_64.json"

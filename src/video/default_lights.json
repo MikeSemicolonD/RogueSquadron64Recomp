@@ -1,6 +1,49 @@
 {
     "presets": [
         {
+            "name": "haze_nonnah",
+            "enabled": true,
+            "level": 2,
+            "haze": { "amount": 0.45, "range": 8000 },
+            "lights": []
+        },
+        {
+            "name": "haze_construction_yards",
+            "enabled": true,
+            "level": 6,
+            "haze": { "amount": 0.45, "range": 8000 },
+            "lights": []
+        },
+        {
+            "name": "haze_taloraan",
+            "enabled": true,
+            "level": 10,
+            "haze": { "amount": 0.45, "range": 8000 },
+            "lights": []
+        },
+        {
+            "name": "haze_fest",
+            "enabled": true,
+            "level": 11,
+            "haze": { "amount": 0.15, "range": 8000 },
+            "lights": []
+        },
+        {
+            "name": "emissive_shield_dome",
+            "enabled": true,
+            "mesh": "shield",
+            "emissive": true,
+            "lights": []
+        },
+        {
+            "name": "emissive_imp_shuttle_exhaust",
+            "enabled": true,
+            "mesh": "imp_shuttle#s0.p0",
+            "emissive": true,
+            "translucentOnly": true,
+            "lights": []
+        },
+        {
             "name": "emissive_briefing_strips",
             "enabled": true,
             "mesh": "lights",

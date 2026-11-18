@@ -6,6 +6,7 @@
 #include "util/debug_logs.h"
 #include "host_api/host_api.h"
 #include "main/main.h"
+#include "main/crash.h"
 #include "main/renderdoc_capture.h"
 #include "recomp.h"
 #include "rs64_toml_hooks.h"
@@ -49,9 +50,13 @@ struct State {
     std::vector<FrameInput> frames;
     uint8_t throttle_q = 0xFF;
     float cruise = 0.0f;
+    bool head = false;
+    int8_t head_x = 0;
+    int8_t head_y = 0;
 
     // Replay with ROGUESQ_LS_RECORD also set: replays one file and writes an upgraded copy (inputs replayed, audio answers live).
     bool rerecord = false;
+    bool resume = false;
     std::map<uint32_t, std::vector<uint8_t>> song;
     uint32_t song_frame = 0xFFFFFFFFu;
     size_t song_idx = 0;
@@ -158,6 +163,7 @@ void end_session(const char* why)
     State& s = st();
 
     fprintf(stderr, "[ls] session ended at frame %u: %s\n", s.frame, why);
+    rs64::crash::log_suppressed();
     close_files();
     s.active = false;
     static const bool keep_running = recomp::dbg::env_on("ROGUESQ_LS_KEEP_RUNNING");
@@ -217,13 +223,22 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
     s.missions++;
 
+    // ROGUESQ_LS_EACH_MISSION=1 (smoke tests chaining levels in one launch): every mission starts a new session, rewriting the recording.
+    static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION");
+
     if (s.missions > 1) {
         if (s.active)
         {
-            end_session("second initMission (one recording = one mission attempt)");
+            end_session(each ? "next mission" : "second initMission (one recording = one mission attempt)");
         }
 
-        return;
+        if (!each) return;
+
+        const int missions = s.missions;
+
+        s = State{};
+        s.mode = mode();
+        s.missions = missions;
     }
 
     s.frame = 0;
@@ -301,6 +316,15 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
             fputs(format_header(h).c_str(), s.rec);
             fflush(s.rec);
             s.rerecord = true;
+
+            // ROGUESQ_LS_RESUME=<frame>: replay only the frames before it, then keep recording live input into the new file (rewind to a checkpoint).
+            const long resume = recomp::dbg::env_int("ROGUESQ_LS_RESUME", -1);
+
+            if (resume >= 0 && (size_t)resume <= s.frames.size()) {
+                s.frames.resize((size_t)resume);
+                s.song.erase(s.song.lower_bound((uint32_t)resume), s.song.end());
+                s.resume = true;
+            }
         }
 
         s.hash_path = out ? std::string(out) : (rerec ? std::string(rerec) + ".hash" : std::string(path) + ".replay.hash");
@@ -480,10 +504,50 @@ static std::vector<PauseTarget>& pause_targets()
     return v;
 }
 
+// The latest frame of every clock and when it was reached, so a capture can be named by game time instead of RenderDoc's present count.
+static std::mutex s_clock_mtx;
+static std::map<std::string, std::pair<uint32_t, std::chrono::steady_clock::time_point>> s_clock_seen;
+
+static void note_clock(const char* clock, uint32_t frame)
+{
+
+    std::lock_guard<std::mutex> lock(s_clock_mtx);
+
+    s_clock_seen[clock] = { frame, std::chrono::steady_clock::now() };
+}
+
+std::string rs64_clock_label()
+{
+
+    using namespace std::chrono;
+
+    std::lock_guard<std::mutex> lock(s_clock_mtx);
+    steady_clock::time_point newest{};
+
+    for (const auto& [name, seen] : s_clock_seen) {
+        newest = std::max(newest, seen.second);
+    }
+
+    std::string label;
+
+    // Clocks reached within a few frames of the newest pause point are the ones running now.
+    for (const auto& [name, seen] : s_clock_seen) {
+        if (newest - seen.second > milliseconds(100)) {
+            continue;
+        }
+
+        label += (label.empty() ? "" : "_") + name + "-" + std::to_string(seen.first);
+    }
+
+    return label;
+}
+
 extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
 {
 
     static const char* base = recomp::dbg::env_str("ROGUESQ_PAUSE_FILE");
+
+    note_clock(clock, frame);
 
 #ifdef RS64_MCP
 
@@ -527,6 +591,7 @@ static void state_tick()
     frames = id == last ? frames + 1 : 0;
     last = id;
     rs64_pause_point(id.c_str(), frames);
+    rs64_nav_clock_point();
 }
 
 // The game state's clock: frames since the classifier last changed state, from the per-frame menu and mission hooks.
@@ -719,9 +784,20 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         return;
     }
 
+    // The "ls" clock: frames since this session's mission started, which restarts with every chained mission (the state clock may not).
+    rs64_pause_point("ls", s.frame);
+
     if (s.mode == Mode::Replay) {
         ls_renderdoc_point(s);
         ls_pause_point(s);
+    }
+
+    if (s.mode == Mode::Replay && s.resume && s.frame >= s.frames.size())
+    {
+        s.mode = Mode::Record;
+        s.rerecord = false;
+
+        fprintf(stderr, "[ls] resumed live recording at frame %u\n", s.frame);
     }
 
     if (s.mode == Mode::Record) {
@@ -734,6 +810,16 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
 
         s.throttle_q = quantize_throttle(rs64_throttle_live());
         f.throttle = s.throttle_q;
+
+        float hx = 0.0f;
+        float hy = 0.0f;
+
+        f.head = rs64_atst_head_live(&hx, &hy) != 0;
+        f.head_x = (int8_t)std::lround(std::clamp(hx, -1.0f, 1.0f) * 127.0f);
+        f.head_y = (int8_t)std::lround(std::clamp(hy, -1.0f, 1.0f) * 127.0f);
+        s.head = f.head;
+        s.head_x = f.head_x;
+        s.head_y = f.head_y;
 
         if (s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
@@ -759,6 +845,9 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         }
 
         s.throttle_q = f.throttle;
+        s.head = f.head;
+        s.head_x = f.head_x;
+        s.head_y = f.head_y;
 
         if (s.rerecord && s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
@@ -794,7 +883,7 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
     s.frame++;
 
     // A recording that ends with the mission (success, fail) has no mission frame after its last one, so stop here.
-    if (s.mode == Mode::Replay && s.frame >= s.frames.size()) {
+    if (s.mode == Mode::Replay && !s.resume && s.frame >= s.frames.size()) {
         end_session("replay finished");
     }
 }
@@ -817,6 +906,23 @@ extern "C" float rs64_ls_throttle(float live) {
     }
 
     return live;
+}
+
+// The AT-ST head aim this frame: the recorded one while a session records or replays, so mouse or MCP aiming replays exactly.
+extern "C" int rs64_ls_head(int live, float* x, float* y)
+{
+
+    State& s = st();
+
+    if (!s.active || (s.mode != Mode::Record && s.mode != Mode::Replay))
+    {
+        return live;
+    }
+
+    *x = s.head_x / 127.0f;
+    *y = s.head_y / 127.0f;
+
+    return s.head ? 1 : 0;
 }
 
 extern "C" float rs64_ls_cruise(float live) {

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Wraps a tools/release/package-linux.sh tarball in an AppImage.
 # Usage: tools/release/linux/make-appimage.sh <bundle.tar.xz> <x86_64|aarch64> <out.AppImage>
-# The AppImage runs from ~/.local/share/RogueSquadron64Recomp (RS64_DATA_DIR overrides): saves, configs and mods live there, and a
+# The AppImage runs from a RogueSquadron64Recomp-data folder next to it if one exists, else ~/.local/share/RogueSquadron64Recomp
+# (RS64_DATA_DIR overrides both): saves, configs and mods live there, and a
 # rogue_squadron.z64 next to the AppImage file is linked in on first launch. Vulkan comes from the host, as with the tarball.
 set -euo pipefail
 TARBALL="$1"
@@ -37,11 +38,14 @@ cat > "$appdir/AppRun" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-data="${RS64_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/RogueSquadron64Recomp}"
+beside="$(dirname "${APPIMAGE:-$here}")"
+data="${XDG_DATA_HOME:-$HOME/.local/share}/RogueSquadron64Recomp"
+[ -d "$beside/RogueSquadron64Recomp-data" ] && data="$beside/RogueSquadron64Recomp-data"
+data="${RS64_DATA_DIR:-$data}"
 mkdir -p "$data/mods"
 # Refresh the shipped mods; mods the user added and per-mod settings (mod_config/) are left alone.
 [ -d "$here/usr/share/rs64/mods" ] && cp -a "$here/usr/share/rs64/mods/." "$data/mods/"
-rom_beside="$(dirname "${APPIMAGE:-$here}")/rogue_squadron.z64"
+rom_beside="$beside/rogue_squadron.z64"
 [ -e "$data/rogue_squadron.z64" ] || [ ! -f "$rom_beside" ] || ln -s "$rom_beside" "$data/rogue_squadron.z64"
 cd "$data"
 export LD_LIBRARY_PATH="$here/usr/lib:${LD_LIBRARY_PATH:-}"

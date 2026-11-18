@@ -8,7 +8,7 @@ segment OR populated by other ops we haven't decoded yet.
 import os
 import struct
 
-ROOT = r"E:/Projects/RogueSquadron64Recomp"
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 with open(os.path.join(ROOT, "dumps", "f5_ucode.dmem.bin"), "rb") as f:
     dmem = f.read()
 

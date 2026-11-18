@@ -13,7 +13,7 @@ namespace rs64::net {
 // A game's id on the server is its 6-digit join code. Game thread only (each Link runs its own network thread).
 class RelayClient {
 public:
-    // "host[:port]" (port default relay::kDefaultPort); empty: not configured, available() is false.
+    // "host[:port]" (port default relay::kDefaultPort), with "#sha256" for a browser's relay; empty: not configured, available() is false.
     void set_server(const std::string& server);
     bool configured() const { return !host_.empty(); }
     // Configured and not known to be down. The first call checks the server in the background; a down server is checked again every kRetryMs.
@@ -35,6 +35,7 @@ public:
     // The game's join code: what start() takes as its peer.
     const char* game_peer(int i) const { return game(i) ? codes_[i].c_str() : ""; }
     void set_info(const std::string& name, bool locked);
+    void kick();
 
     // The mp.transport table over this client (name "server").
     const rs64_mp_transport* table();

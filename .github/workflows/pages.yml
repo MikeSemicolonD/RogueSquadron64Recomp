@@ -28,7 +28,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      # Sparse, no submodules: the site keeps the repo's paths so existing links still work.
+      # Sparse, no submodules: the site keeps the repo's paths so existing links still work. The browser build's play page stays off the site for now.
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
@@ -36,6 +36,7 @@ jobs:
             /favicon.ico
             /screenshots/Capture*.png
             /tools/web/
+            !/tools/web/play/
           sparse-checkout-cone-mode: false
 
       - uses: actions/configure-pages@v5

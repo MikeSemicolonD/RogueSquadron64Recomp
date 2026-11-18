@@ -6,6 +6,10 @@ set(CMAKE_LIBRARY_ARCHITECTURE aarch64-linux-gnu)
 
 set(CMAKE_C_COMPILER aarch64-linux-gnu-gcc)
 set(CMAKE_CXX_COMPILER aarch64-linux-gnu-g++)
+
+# Scheduling tuned for the Raspberry Pi 4's Cortex-A72; it adds no instructions, so the build still runs on any ARMv8 CPU.
+set(CMAKE_C_FLAGS_INIT "-mtune=cortex-a72")
+set(CMAKE_CXX_FLAGS_INIT "-mtune=cortex-a72")
 set(CMAKE_CROSSCOMPILING_EMULATOR qemu-aarch64;-L;/usr/aarch64-linux-gnu)
 
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

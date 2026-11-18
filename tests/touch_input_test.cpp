@@ -504,20 +504,37 @@ static void test_list_horizontal_fine_drag() {
     e.finger(1, FingerEvent::Up, 0.30f + 0.016f / 2.0f, 0.50f, 1100);
 }
 
-// Vertical drags in lists move between entries: one step at 0.08, then one per 0.05.
+// Vertical drags in the pause menu move between entries: one step at 0.08, then one per 0.05.
 static void test_list_vertical_drag_steps() {
-    Engine e = make_engine(Context::ListMenu);
+    Engine e = make_engine(Context::PauseMenu);
     e.finger(1, FingerEvent::Down, 0.30f, 0.30f, 0);
     e.finger(1, FingerEvent::Move, 0.30f, 0.30f + 0.19f, 900);
     int presses = 0;
     bool was = false;
     for (int i = 0; i < 40; ++i) {
-        const bool now = e.poll(Context::ListMenu, 901 + i).y < -0.9f;
+        const bool now = e.poll(Context::PauseMenu, 901 + i).y < -0.9f;
         if (now && !was) ++presses;
         was = now;
     }
     CHECK(presses == 3);
     e.finger(1, FingerEvent::Up, 0.30f, 0.49f, 1000);
+}
+
+// Vertical drags on list pages do nothing (their scrollbar scrolls them) and never count as a tap.
+static void test_list_vertical_drag_inert() {
+    Engine e = make_engine(Context::ListMenu);
+    e.finger(1, FingerEvent::Down, 0.30f, 0.30f, 0);
+    e.finger(1, FingerEvent::Move, 0.30f, 0.30f + 0.19f, 100);
+    bool any = false;
+    for (int i = 0; i < 40; ++i) {
+        const Pad o = e.poll(Context::ListMenu, 101 + i);
+        any = any || o.y != 0.0f || o.buttons != 0;
+    }
+    e.finger(1, FingerEvent::Up, 0.30f, 0.49f, 200);
+    for (int i = 0; i < 10; ++i) {
+        any = any || e.poll(Context::ListMenu, 201 + i).buttons != 0;
+    }
+    CHECK(!any);
 }
 
 static void test_pause_drag_scrubs_and_tap_confirms() {
@@ -684,6 +701,21 @@ static void test_inject_one_poll() {
     CHECK(NEAR(e.poll(Context::ListMenu, 2).x, 0.0f));
 }
 
+// With a frame count, a press holds through the frame it starts in plus its polls in whole game frames, however often the host polls.
+static void test_inject_counts_game_frames() {
+    Engine e = make_engine(Context::ListMenu);
+    e.set_frame(10);
+    e.poll(Context::ListMenu, 1);
+    e.inject(A, 0.0f, 0.0f, 1);
+    CHECK(e.poll(Context::ListMenu, 2).buttons & A);
+    CHECK(e.poll(Context::ListMenu, 3).buttons & A);
+    e.set_frame(11);
+    CHECK(e.poll(Context::ListMenu, 4).buttons & A);
+    CHECK(e.poll(Context::ListMenu, 5).buttons & A);
+    e.set_frame(12);
+    CHECK((e.poll(Context::ListMenu, 6).buttons & A) == 0);
+}
+
 // Horizontal fine-drag nudges are single-poll presses (one game frame = one slider unit).
 static void test_fine_nudge_is_one_poll() {
     Engine e = make_engine(Context::ListMenu);
@@ -759,6 +791,17 @@ static void test_disabled_does_nothing() {
     e.finger(1, FingerEvent::Up, 0.5f, 0.5f, 10);
     Pad p = e.poll(Context::Cutscene, 11);
     CHECK(!p.has_input && p.buttons == 0);
+}
+
+// The gamepad gyro uses the same mouse-like curve: zero under the noise floor, pitch_min + gain past it, capped at full.
+static void test_gyro_stick_curve() {
+
+    const Config c;
+
+    CHECK(gyro_stick(0.01f, c) == 0.0f);
+    CHECK(NEAR(gyro_stick(0.5f, c), c.pitch_min + c.pitch_gain * 0.5f));
+    CHECK(NEAR(gyro_stick(-0.5f, c), -(c.pitch_min + c.pitch_gain * 0.5f)));
+    CHECK(gyro_stick(10.0f, c) == 1.0f);
 }
 
 static void test_gyro_off_is_neutral() {
@@ -1331,6 +1374,7 @@ int main() {
     test_pause_slider_value();
     test_sound_slider_bar();
     test_gyro_off_is_neutral();
+    test_gyro_stick_curve();
     test_gyro_only_in_flight();
     test_stick_center_deflect_release();
     test_stick_defaults();
@@ -1346,6 +1390,7 @@ int main() {
     test_wheel_side_hold();
     test_list_horizontal_fine_drag();
     test_list_vertical_drag_steps();
+    test_list_vertical_drag_inert();
     test_pause_drag_scrubs_and_tap_confirms();
     test_pause_touch_highlights_directly();
     test_list_tap_calls_menu_and_pulses_a();
@@ -1353,6 +1398,7 @@ int main() {
     test_taps_outside_picture_ignored();
     test_carousel_tap_direction();
     test_inject_one_poll();
+    test_inject_counts_game_frames();
     test_fine_nudge_is_one_poll();
     test_cutscene_tap_is_start_and_back_is_b();
     test_arbitration();

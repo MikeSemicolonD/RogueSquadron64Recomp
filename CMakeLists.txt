@@ -19,6 +19,12 @@ if (WIN32)
     add_compile_definitions(NOMINMAX _DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
+# The browser build: every object needs threads (shared memory) and wasm exceptions, which librecomp's thread recovery uses.
+if (EMSCRIPTEN)
+    add_compile_options(-pthread -fwasm-exceptions)
+    add_link_options(-pthread -fwasm-exceptions)
+endif()
+
 # MSBuild compiles a project's sources one at a time under ClangCL without the multi-tool task.
 if (CMAKE_GENERATOR MATCHES "Visual Studio")
     set(CMAKE_VS_GLOBALS "UseMultiToolTask=true" "EnforceProcessCountAcrossBuilds=true")
@@ -83,12 +89,24 @@ if (ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
         add_library(SDL2::SDL2 ALIAS SDL2-static)
     endif()
 endif()
+# The browser build uses Emscripten's SDL2 port.
+if (EMSCRIPTEN)
+    add_library(SDL2::SDL2 INTERFACE IMPORTED)
+    set_target_properties(SDL2::SDL2 PROPERTIES INTERFACE_COMPILE_OPTIONS "-sUSE_SDL=2" INTERFACE_LINK_OPTIONS "-sUSE_SDL=2"
+        INTERFACE_INCLUDE_DIRECTORIES "${EMSCRIPTEN_SYSROOT}/include/SDL2")
+endif()
 # RT64's file dialogs (inspector only) go through xdg-desktop-portal over D-Bus instead of linking GTK.
 if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(NFD_PORTAL ON CACHE BOOL "" FORCE)
 endif()
 
 # ---- RT64 renderer ----
+if (MSVC)
+    # Control Flow Guard: a corrupted native indirect call can only reach a real function entry.
+    add_compile_options(/guard:cf)
+    add_link_options(/guard:cf)
+endif()
+
 set(RT64_STATIC TRUE)
 set(RT64_SDL_WINDOW_VULKAN TRUE)
 add_compile_definitions(HLSL_CPU)
@@ -102,6 +120,11 @@ if (TARGET sdl_headers_copy)
     add_dependencies(plume sdl_headers_copy)
 endif()
 
+set(RS64_DAWN_DIR "" CACHE PATH "Dawn release package with Tint, for the browser build's WGSL shaders (rs64_web_shaders)")
+if (RS64_DAWN_DIR)
+    include(${CMAKE_SOURCE_DIR}/tools/wgsl/web_shaders.cmake)
+endif()
+
 # ---- N64ModernRuntime (ultramodern + librecomp) ----
 add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N64ModernRuntime)
 
@@ -109,6 +132,15 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime ${CMAKE_BINARY_DIR}/N6
 # ---- RecompiledFuncs ----
 # N64Recomp output; gitignored (derived from the ROM). Regenerate with the regen_funcs target.
 set(RECOMP_FUNCS_DIR "${CMAKE_SOURCE_DIR}/RecompiledFuncs")
+
+# The browser build compiles RecompiledFuncsWeb, which has the co-op relocation recompiled in (regen_funcs_web in the desktop build).
+if (EMSCRIPTEN)
+    set(RECOMP_FUNCS_DIR "${CMAKE_SOURCE_DIR}/RecompiledFuncsWeb")
+
+    if (NOT EXISTS "${RECOMP_FUNCS_DIR}/moved_ranges.inl")
+        message(FATAL_ERROR "The browser build needs RecompiledFuncsWeb; run: cmake --build build --config Debug --target regen_funcs_web")
+    endif()
+endif()
 
 add_library(RecompiledFuncs STATIC)
 
@@ -123,7 +155,8 @@ if (MSVC)
     target_compile_definitions(RecompiledFuncs PRIVATE _CRT_SECURE_NO_WARNINGS)
     # mem_wu.h adds the unsigned-word MEM_WU macro that upstream recomp.h lacks.
     target_compile_options(RecompiledFuncs PRIVATE
-        /FI${CMAKE_SOURCE_DIR}/include/mem_wu.h)
+        /FI${CMAKE_SOURCE_DIR}/include/mem_wu.h
+        /FI${CMAKE_SOURCE_DIR}/include/recomp_imports.h)
     # The recompiled code type-puns RDRAM through MEM_*; strict aliasing miscompiles it at -O2.
     target_compile_options(RecompiledFuncs PRIVATE -fno-strict-aliasing)
     target_compile_definitions(RecompiledFuncs PRIVATE main=rs_main)
@@ -133,7 +166,8 @@ else()
         -fno-strict-aliasing
         -Wno-unused-variable
         $<$<COMPILE_LANGUAGE:C>:-Wno-implicit-function-declaration>
-        -include "${CMAKE_SOURCE_DIR}/include/mem_wu.h"
+        "SHELL:-include ${CMAKE_SOURCE_DIR}/include/mem_wu.h"
+        "SHELL:-include ${CMAKE_SOURCE_DIR}/include/recomp_imports.h"
     )
 endif()
 
@@ -180,6 +214,26 @@ add_custom_target(dump_syms
     COMMENT "Dumping syms/ from the decomp ELF"
     VERBATIM
 )
+# RecompiledFuncsWeb for the browser build: regen_funcs plus the co-op mod's relocation, which a browser can't apply at runtime. cmake --build build --config Debug --target regen_funcs_web
+if (NOT EMSCRIPTEN)
+    set(RS64_WEB_REGEN_DIR "${CMAKE_BINARY_DIR}/web_regen")
+    add_custom_target(regen_funcs_web
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DPATCHES=${CMAKE_BINARY_DIR}/multiplayer-native/modtool/instruction_patches.json -DOUT=${RS64_WEB_REGEN_DIR}
+            -P "${CMAKE_SOURCE_DIR}/tools/mods/web_regen.cmake"
+        COMMAND ${N64RECOMP_EXE} "${RS64_WEB_REGEN_DIR}/rogue_squadron.web.toml"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Regenerating RecompiledFuncsWeb (rogue_squadron.toml plus the co-op relocation)"
+        VERBATIM
+    )
+
+    # The co-op mod's subdirectory comes later in this file; the name resolves at generate time.
+    add_dependencies(regen_funcs_web multiplayer_native_manifest)
+
+    if (TARGET N64RecompCLI)
+        add_dependencies(regen_funcs_web N64RecompCLI)
+    endif()
+endif()
+
 # Build the recompiler first so a stale exe can't silently truncate the output.
 if (TARGET N64RecompCLI)
     add_dependencies(regen_funcs N64RecompCLI)
@@ -216,13 +270,16 @@ add_custom_command(OUTPUT ${PATCHES_DIR}/patches.elf
     DEPENDS ${PATCH_OBJS} "${PATCHES_DIR}/patches.ld" "${PATCHES_DIR}/syms.ld"
     VERBATIM)
 set(PATCHES_RECOMP_DEPS "")
+set(PATCHES_N64RECOMP "${N64RECOMP_EXE}")
+# The recompiler of the config being built, so a fresh Release-only build doesn't look for a Debug one.
 if (TARGET N64RecompCLI AND N64RECOMP_EXE STREQUAL RS64_N64RECOMP_DEFAULT)
     set(PATCHES_RECOMP_DEPS N64RecompCLI)
+    set(PATCHES_N64RECOMP "$<TARGET_FILE:N64RecompCLI>")
 endif()
 add_custom_command(OUTPUT ${PATCHES_OUT}/patches.c ${PATCHES_OUT}/recomp_overlays.inl ${PATCHES_OUT}/funcs.h ${PATCHES_DIR}/patches.bin
-    COMMAND "${N64RECOMP_EXE}" "${CMAKE_SOURCE_DIR}/patches.toml"
+    COMMAND "${PATCHES_N64RECOMP}" "${CMAKE_SOURCE_DIR}/patches.toml"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml ${PATCHES_RECOMP_DEPS} "${N64RECOMP_EXE}"
+    DEPENDS ${PATCHES_DIR}/patches.elf ${CMAKE_SOURCE_DIR}/patches.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.syms.toml ${CMAKE_SOURCE_DIR}/syms/rogue_squadron.datasyms.toml ${PATCHES_RECOMP_DEPS} "${PATCHES_N64RECOMP}"
     COMMENT "Recompiling patches.elf"
     VERBATIM)
 add_custom_command(OUTPUT ${PATCHES_BUILD}/patches_bin.c ${PATCHES_BUILD}/patches_bin.h
@@ -239,8 +296,8 @@ target_include_directories(PatchesLib PRIVATE $<TARGET_PROPERTY:RecompiledFuncs,
 # Graphics are HLE through RT64; only the audio RSP ucodes (shared boot + MusyX synth, from rsp/*.toml) are recompiled.
 set(FACTOR5_BOOT_C  ${CMAKE_SOURCE_DIR}/build/factor5_ucode/factor5_boot_recompiled.c)
 set(MUSYX_AUDIO_C   ${CMAKE_SOURCE_DIR}/build/factor5_ucode/musyx_audio_recompiled.c)
-# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android and the macOS cross-build reuse the host-fixed files.
-if (ANDROID OR (APPLE AND CMAKE_CROSSCOMPILING))
+# RSPRecomp output is fixed up in place before it compiles (boot hand-off, MusyX task-complete return); unfixed audio ucode spins forever. Android, the macOS cross-build and the browser build reuse the host-fixed files.
+if (ANDROID OR EMSCRIPTEN OR (APPLE AND CMAKE_CROSSCOMPILING))
     foreach(ucode_c ${FACTOR5_BOOT_C} ${MUSYX_AUDIO_C})
         file(READ ${ucode_c} ucode_text)
         string(FIND "${ucode_text}" "/* fixup:" ucode_fixed)
@@ -274,6 +331,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/audio/audio.cpp
     ${CMAKE_SOURCE_DIR}/src/main/cli.cpp
     ${CMAKE_SOURCE_DIR}/src/main/crash.cpp
+    ${CMAKE_SOURCE_DIR}/src/main/discord_presence.cpp
     ${CMAKE_SOURCE_DIR}/src/input/input_host.cpp
     ${CMAKE_SOURCE_DIR}/src/input/touch_host.cpp
     ${CMAKE_SOURCE_DIR}/src/main/ui_panels.cpp
@@ -286,10 +344,16 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
     ${CMAKE_SOURCE_DIR}/src/video/video_config.cpp
     ${CMAKE_SOURCE_DIR}/src/game/menus/menu_config.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/controls_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/mods_menu.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/menu_font.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/menus/menu_typing.cpp
     ${CMAKE_SOURCE_DIR}/src/game/menus/pause_menu.cpp
     ${CMAKE_SOURCE_DIR}/src/game/lang/lang.cpp
     ${CMAKE_SOURCE_DIR}/src/video/rt64_render_context.cpp
     ${CMAKE_SOURCE_DIR}/src/video/render_diag.cpp
+    $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp>
+    $<$<BOOL:${EMSCRIPTEN}>:${CMAKE_SOURCE_DIR}/src/audio/audio_web.cpp>
     ${CMAKE_SOURCE_DIR}/src/game/register_overlays.cpp
     ${CMAKE_SOURCE_DIR}/src/game/register_patches.cpp
     ${CMAKE_SOURCE_DIR}/src/game/upstream_compat.cpp
@@ -321,8 +385,72 @@ if (ANDROID)
     set_target_properties(RogueSquadron64Recomp PROPERTIES OUTPUT_NAME main)
     target_link_libraries(RogueSquadron64Recomp PRIVATE android log)
     target_link_options(RogueSquadron64Recomp PRIVATE -Wl,-z,max-page-size=16384)
+
+    # Discord status on Android needs the closed Discord Social SDK, found through Prefab when android/app/libs/discord_partner_sdk.aar exists.
+    # It links only into libdiscord_bridge.so, which the game opens by name, never into the game.
+    find_package(discord_partner_sdk CONFIG QUIET)
+
+    if (discord_partner_sdk_FOUND)
+        add_library(discord_bridge SHARED ${CMAKE_SOURCE_DIR}/src/main/discord_bridge.cpp)
+        target_include_directories(discord_bridge PRIVATE ${CMAKE_SOURCE_DIR}/src)
+        target_link_libraries(discord_bridge PRIVATE discord_partner_sdk::discord_partner_sdk)
+        target_link_options(discord_bridge PRIVATE -Wl,-z,max-page-size=16384)
+    endif()
 else()
     add_executable(RogueSquadron64Recomp ${RS64_MAIN_SOURCES})
+endif()
+
+# Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
+set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
+
+# main runs on a worker so the page's thread never blocks; memory is fixed (growth slows JS heap access with threads) at a size mobile Safari accepted in 2025 reports.
+if (EMSCRIPTEN)
+    target_link_options(RogueSquadron64Recomp PRIVATE
+        -sPROXY_TO_PTHREAD -sPTHREAD_POOL_SIZE=32 -sDEFAULT_PTHREAD_STACK_SIZE=1MB -sSTACK_SIZE=1MB
+        -sINITIAL_MEMORY=512MB -sMAXIMUM_MEMORY=512MB -sALLOW_MEMORY_GROWTH=0
+        -sEXIT_RUNTIME=0 -sINVOKE_RUN=0 -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,IDBFS,UTF8ToString,HEAPU8,stringToNewUTF8 -lidbfs.js
+        -sEXPORTED_FUNCTIONS=_main,_malloc,_free -sAUDIO_WORKLET -sWASM_WORKERS
+        $<$<CONFIG:Debug>:-sSTACK_OVERFLOW_CHECK=1>)
+    target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/tools/wgsl)
+
+    # The web mods in mods/platforms.json are packed into RogueSquadron64Recomp.data at /bundle/mods.
+    # shortcut: editing a mod's files alone doesn't relink, so the pack updates on the next link; add a stamp to LINK_DEPENDS if that bites.
+    set(RS64_WEB_MODS_DIR ${CMAKE_BINARY_DIR}/web_mods)
+    add_custom_target(web_mods
+        COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=${RS64_WEB_MODS_DIR} -DPLATFORM=web -DBUILT=${RS64_BUILT_MODS_DIR}/web -P "${CMAKE_SOURCE_DIR}/tools/mods/stage_mods.cmake"
+        VERBATIM)
+    add_dependencies(RogueSquadron64Recomp web_mods)
+    add_dependencies(web_mods multiplayer_native_web_folder)
+    target_link_options(RogueSquadron64Recomp PRIVATE "--preload-file=${RS64_WEB_MODS_DIR}@/bundle/mods")
+    set_property(TARGET RogueSquadron64Recomp APPEND PROPERTY LINK_DEPENDS ${CMAKE_SOURCE_DIR}/mods/platforms.json)
+
+    # The play page, its service worker, the shader converter (rs64tint) and the game icon sit next to the .js/.wasm, so the build folder can be served as is.
+    add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tools/web/play/index.html ${CMAKE_SOURCE_DIR}/tools/web/play/coi-serviceworker.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm ${CMAKE_SOURCE_DIR}/favicon.ico $<TARGET_FILE_DIR:RogueSquadron64Recomp>
+        VERBATIM)
+
+    # Browser test: cmake --build build-web --target web_shader_convert_test, then open web_shader_convert_test.html from build-web.
+    set(RS64_WEB_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c)
+    set_source_files_properties(${RS64_WEB_TEST_SPIRV} PROPERTIES GENERATED TRUE)
+    add_executable(web_shader_convert_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_WEB_TEST_SPIRV})
+    target_include_directories(web_shader_convert_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)
+    add_dependencies(web_shader_convert_test rt64)
+    target_link_options(web_shader_convert_test PRIVATE -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
+    add_custom_command(TARGET web_shader_convert_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.html ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm $<TARGET_FILE_DIR:web_shader_convert_test>
+        VERBATIM)
+
+    # Browser test, run like web_shader_convert_test: plume's WebGPU backend with RT64 shaders.
+    set(RS64_PLUME_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/IdleCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/FullScreenVS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/TextureCopyPS.hlsl.spirv.c)
+    set_source_files_properties(${RS64_PLUME_TEST_SPIRV} PROPERTIES GENERATED TRUE)
+    add_executable(plume_webgpu_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_PLUME_TEST_SPIRV})
+    target_include_directories(plume_webgpu_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)
+    target_link_libraries(plume_webgpu_test PRIVATE plume)
+    add_dependencies(plume_webgpu_test rt64)
+    target_link_options(plume_webgpu_test PRIVATE -sPROXY_TO_PTHREAD -sEXPORTED_FUNCTIONS=_main,_malloc,_free)
+    add_custom_command(TARGET plume_webgpu_test POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_SOURCE_DIR}/tests/wasm/plume_webgpu_test.html ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.js ${CMAKE_SOURCE_DIR}/tools/web/play/rs64tint.wasm $<TARGET_FILE_DIR:plume_webgpu_test>
+        VERBATIM)
 endif()
 add_dependencies(RogueSquadron64Recomp gen_state_table)
 if (TARGET ucode_fixup)
@@ -331,19 +459,41 @@ endif()
 if (MSVC)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE _CRT_SECURE_NO_WARNINGS)
 endif()
-target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}" $<${RS64_MCP_GENEX}:RS64_MCP>)
+target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_VERSION_STRING="${RS64_VERSION}" RS64_VERSION_RC=${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0 $<${RS64_MCP_GENEX}:RS64_MCP>)
+
+# OpenXR VR (Vulkan only), from the Khronos OpenXR-SDK submodule at lib/OpenXR-SDK; the loader is linked statically.
+option(RS64_OPENXR "Build OpenXR VR support" OFF)
+if (RS64_OPENXR)
+    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/lib/OpenXR-SDK EXCLUDE_FROM_ALL)
+    target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/src/video/vr_openxr.cpp)
+    target_include_directories(RogueSquadron64Recomp PRIVATE ${CMAKE_SOURCE_DIR}/lib/OpenXR-SDK/include)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE openxr_loader)
+    target_compile_definitions(RogueSquadron64Recomp PRIVATE RS64_OPENXR=1)
+endif()
 # The shader combos warmed at startup without an ubershader are compiled into the exe.
 set(RS64_SHADER_COMBOS_FILE "${CMAKE_CURRENT_SOURCE_DIR}/tools/d3d11/shader_combos.txt")
 file(READ "${RS64_SHADER_COMBOS_FILE}" RS64_SHADER_COMBOS)
 file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/generated/rs64_shader_combos.inl" CONTENT "R\"RS64(@RS64_SHADER_COMBOS@)RS64\"\n" @ONLY)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${RS64_SHADER_COMBOS_FILE}")
 target_include_directories(RogueSquadron64Recomp PRIVATE "${CMAKE_BINARY_DIR}/generated")
+# The generated tables register_overlays.cpp (and the browser host's moved_ranges.inl) include by name, from the funcs folder this build compiles.
+target_include_directories(RogueSquadron64Recomp BEFORE PRIVATE "${RECOMP_FUNCS_DIR}")
 # The built-in RT light presets (engine exhausts, lasers, pickups, the briefing room) are compiled into the exe; mods and the exe-dir copy override them by name.
 add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE_BINARY_DIR}/generated/default_lights.h
     COMMAND file_to_c ${CMAKE_SOURCE_DIR}/src/video/default_lights.json rs64_default_lights ${CMAKE_BINARY_DIR}/generated/default_lights.c ${CMAKE_BINARY_DIR}/generated/default_lights.h
     DEPENDS ${CMAKE_SOURCE_DIR}/src/video/default_lights.json file_to_c
     VERBATIM)
 target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/generated/default_lights.c)
+# The MODS page's image model (src/game/menus/mod_image/build_model.mjs): a patch to the controller HOB and its own HMT, served as built-in assets.
+foreach(part mod_image_HOB.bps mod_image_HMT)
+    string(REPLACE "." "_" sym "rs64_${part}")
+    add_custom_command(OUTPUT ${CMAKE_BINARY_DIR}/generated/${sym}.c ${CMAKE_BINARY_DIR}/generated/${sym}.h
+        COMMAND file_to_c ${CMAKE_SOURCE_DIR}/src/game/menus/mod_image/${part} ${sym} ${CMAKE_BINARY_DIR}/generated/${sym}.c ${CMAKE_BINARY_DIR}/generated/${sym}.h
+        DEPENDS ${CMAKE_SOURCE_DIR}/src/game/menus/mod_image/${part} file_to_c
+        VERBATIM)
+    target_sources(RogueSquadron64Recomp PRIVATE ${CMAKE_BINARY_DIR}/generated/${sym}.c)
+endforeach()
 if (ANDROID)
     target_compile_definitions(RogueSquadron64Recomp PRIVATE SSE2NEON_SUPPRESS_WARNINGS)
     target_compile_options(RogueSquadron64Recomp PRIVATE -Wno-deprecated-literal-operator)
@@ -501,26 +651,27 @@ endif()
 if (WIN32)
     set(RS64_DIST_DIR "${CMAKE_BINARY_DIR}/dist")
 endif()
-# Native mods the game's CMake builds, one folder per config; stage_mods.cmake stages a listed mod from here before mods/.
-set(RS64_BUILT_MODS_DIR "${CMAKE_BINARY_DIR}/built_mods" CACHE PATH "Where native mods' finished folders go (Android's Gradle build points it at its own build dir to bundle them)")
 add_subdirectory(${CMAKE_SOURCE_DIR}/mods/multiplayer-native ${CMAKE_BINARY_DIR}/multiplayer-native EXCLUDE_FROM_ALL)
-add_dependencies(RogueSquadron64Recomp multiplayer_native)
+# The browser build links native mods statically instead (their CMake adds them to the game).
+if (NOT EMSCRIPTEN)
+    add_dependencies(RogueSquadron64Recomp multiplayer_native)
+endif()
 # The co-op relay server (rs64_relay, built on request); after multiplayer-native so it reuses ENet6.
 add_subdirectory(${CMAKE_SOURCE_DIR}/relay-server ${CMAKE_BINARY_DIR}/relay-server)
 # After multiplayer-native, so the tests reuse its ENet6 and miniupnpc targets.
 add_subdirectory(${CMAKE_SOURCE_DIR}/tests ${CMAKE_BINARY_DIR}/tests)
 # The steam-relay mod builds only against a local Steamworks SDK (headers only; never committed). Without one, mods/platforms.json's steam-relay entry is skipped with a warning.
 set(STEAMWORKS_SDK_DIR "${CMAKE_SOURCE_DIR}/lib/steamworks/sdk" CACHE PATH "Steamworks SDK folder (holds public/steam/steam_api_flat.h)")
-if (NOT ANDROID AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")
+if (NOT ANDROID AND NOT EMSCRIPTEN AND EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api_flat.h")
     add_subdirectory(${CMAKE_SOURCE_DIR}/mods/steam-relay ${CMAKE_BINARY_DIR}/steam-relay EXCLUDE_FROM_ALL)
     add_dependencies(RogueSquadron64Recomp steam_relay)
-elseif (NOT ANDROID)
+elseif (NOT ANDROID AND NOT EMSCRIPTEN)
     message(STATUS "steam-relay mod not built: no Steamworks SDK at ${STEAMWORKS_SDK_DIR}")
 endif()
 
 # Stage the desktop mods listed in mods/platforms.json next to the exe. The user's own mod folders there are left alone.
 # Native mods built by this CMake (multiplayer-native) are staged from build/built_mods/<Config>; a relink restages here, a rebuild of the library alone restages from its own POST_BUILD.
-if (NOT ANDROID)
+if (NOT ANDROID AND NOT EMSCRIPTEN)
 add_custom_command(TARGET RogueSquadron64Recomp POST_BUILD
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR}/mods -DDST=$<TARGET_FILE_DIR:RogueSquadron64Recomp>/mods -DPLATFORM=desktop
         -DBUILT=${RS64_BUILT_MODS_DIR}/$<CONFIG>

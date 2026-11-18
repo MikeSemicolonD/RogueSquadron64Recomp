@@ -374,12 +374,15 @@ const WEBMCP_TOOLS = [
       properties: { type: { type: 'integer' }, index: { type: 'integer' }, pos: vec3, rot: vec3, scale: vec3 },
       required: ['type', 'index']
     },
-    run: async ({ type, index, pos, rot, scale }) => {
+    run: async ({ type, index, pos: asked, rot, scale }) => {
       mcpNeedLevel();
 
-      const [o] = mcpObject(type, index);
+      const [o, item] = mcpObject(type, index);
 
       select(o);
+
+      // A music region's inner box selects as its outer box, so the same move is applied there.
+      const pos = asked && item !== sel.it ? asked.map((v, a) => v - item.pos[a] + sel.it.pos[a]) : asked;
 
       if (sel.fixed || sel.pathNode)
         throw new Error(`This object can't be moved on its own${sel.fixed ?? ': it sits on a spline'}`);
@@ -419,7 +422,8 @@ const WEBMCP_TOOLS = [
     run: async ({ type, index, force = false }) => {
       mcpNeedLevel();
 
-      const it = mcpObject(type, index)[1];
+      const picked = mcpObject(type, index)[1];
+      const it = picked.musicRegion ?? picked;
       const dir = selected;
 
       if (!canDelete(it))
@@ -434,7 +438,14 @@ const WEBMCP_TOOLS = [
       if (refs && !force)
         throw new Error(`Other items in this level mention "${it.name}" (${refs}x: triggers, paths or areas); pass force to delete it anyway`);
 
-      await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveItem(b, 0, it.index) : datRemoveIndexed(b, it.type, it.index)));
+      await historyGroup(`Delete ${it.name || 'item'}`, async () => {
+        await arrowsForget(dir, it);
+        await editAsset(dir + '/dat', (b) => (it.type === 0 ? datRemoveUnit(b, it.index) : datRemoveIndexed(b, it.type, it.index)));
+
+        if (it.musicTrigger)
+          await editAsset(dir + '/dat', (b) => datRemoveIndexed(b, 6, it.musicTrigger.index - (it.musicTrigger.index > it.index ? 1 : 0)));
+      });
+
       await reloadLevel(dir);
 
       return { deleted: mcpItem(it) };
@@ -911,7 +922,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_rules_get',
     edit: false,
-    description: 'A level\'s rules ("when X do Y", rules.json), plus the whens and actions a rule can use (with their parameters; mods\' own included). Defaults to the open level.',
+    description: 'A level\'s rules ("when X [if condition] do Y", saved as rules.txt), plus the whens and actions a rule can use (with their parameters; mods\' own included). Defaults to the open level.',
     inputSchema: { type: 'object', properties: { level: { type: 'string' } } },
     run: async ({ level }) => {
       mcpNeedRom();
@@ -931,7 +942,7 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_rules_set',
     edit: true,
-    description: 'Replaces a level\'s rules with the given list (the shape rs64_rules_get returns: { when, object?, who?, actions: [{ do, ...params }] }). Whens and actions must be ones rs64_rules_get lists. Defaults to the open level.',
+    description: 'Replaces a level\'s rules with the given list (the shape rs64_rules_get returns: { when, object?, if?, every?, actions: [{ do, ...params }] }). "if" is a condition such as "destroyed(gate) and kills >= 3"; when "true" fires once its "if" holds; set/add actions take { variable, value }. Whens and actions must be ones rs64_rules_get lists. Defaults to the open level.',
     inputSchema: { type: 'object', properties: { level: { type: 'string' }, rules: { type: 'array', items: { type: 'object' } } }, required: ['rules'] },
     run: async ({ level, rules }) => {
       mcpNeedRom();
@@ -943,6 +954,11 @@ const WEBMCP_TOOLS = [
       rules.forEach((r, i) => {
         if (!whens.has(r.when))
           throw new Error(`Rule ${i}: unknown when "${r.when}"`);
+
+        const bad = r.if ? condCheck(r.if, {})[0] : null;
+
+        if (bad)
+          throw new Error(`Rule ${i}: ${bad.reason}`);
 
         for (const a of r.actions ?? [])
           if (!acts.has(a.do))
@@ -1727,13 +1743,13 @@ const WEBMCP_TOOLS = [
   {
     name: 'rs64_terrain_brush',
     edit: true,
-    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius. square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
+    description: 'Shapes the open level\'s terrain with one brush stroke at (x, z), radius in level units, falling off smoothly to the edge: "raise" / "lower" by amount level units at the centre; "flatten" toward height (a level Y; default the height at the centre) by strength 0-1 (1 = all the way at the centre); "smooth" by strength 0-1, passes times; "paint" sets texture (a tile texture id from rs64_terrain_get) on the tiles in the radius; "blend" soft-paints texture over the ground with the same falloff, strength 0-1 its opacity at the centre, not tied to tiles (stock levels only; triplanar: true wraps it along slopes instead of stretching it down cliffs). square: true covers a square of half-size radius; hard: true keeps full strength to the edge (flat pads). Raising or lowering past the level\'s height range (heightRange in rs64_terrain_get) grows the range, up to about 4x the tallest stock level\'s, and the whole level\'s height steps get coarser. Placed objects keep their height above the ground unless followObjects is false. One undo step; refused if the reshaped terrain no longer fits the level\'s tile budget.',
     inputSchema: {
       type: 'object',
       properties: {
         tool: {
           type: 'string',
-          enum: ['raise', 'lower', 'flatten', 'smooth', 'paint']
+          enum: ['raise', 'lower', 'flatten', 'smooth', 'paint', 'blend']
         },
         x: { type: 'number' },
         z: { type: 'number' },
@@ -1753,11 +1769,12 @@ const WEBMCP_TOOLS = [
         texture: { type: 'integer' },
         square: { type: 'boolean' },
         hard: { type: 'boolean' },
+        triplanar: { type: 'boolean' },
         followObjects: { type: 'boolean' }
       },
       required: ['tool', 'x', 'z', 'radius']
     },
-    run: async ({ tool, x, z, radius, amount, height, strength = 1, passes = 1, texture, square = false, hard = false, followObjects = true }) => {
+    run: async ({ tool, x, z, radius, amount, height, strength = 1, passes = 1, texture, square = false, hard = false, triplanar = false, followObjects = true }) => {
       const s = await mcpSculptLoad();
       const g = s.grid;
       const scale = mcpTerrainScale(s);
@@ -1766,6 +1783,29 @@ const WEBMCP_TOOLS = [
       const r = radius * 2;
       const hts = g.hts.slice();
       const texs = g.tex.slice();
+
+      if (tool === 'blend')
+      {
+        const id = s.texIds[texture];
+
+        if (stockDir(s.dir) !== s.dir)
+          throw new Error('Soft paint works on stock levels');
+
+        if (id === undefined || id >= PAINT_MARK)
+          throw new Error('Give texture (a tile texture id of one of the level\'s own textures, as rs64_terrain_get reports one)');
+
+        const touched = brushBlend(g, gx, gy, r, decodeTerrainTex(s.bank, id), { opacity: strength, square, hard, triplanar });
+
+        if (touched && !(await commitSoftPaint(new Set(touched))))
+          throw new Error(`${sculpt.notice}; nothing changed`);
+
+        return {
+          tool,
+          at: { x, z, y: +groundAt(g.hts, g, scale, x, z).toFixed(3) },
+          cells: touched ? touched.length : 0,
+          texturesNearby: $('paintBudget').value
+        };
+      }
 
       if (tool === 'paint')
       {
@@ -1779,17 +1819,21 @@ const WEBMCP_TOOLS = [
         if ((tool === 'raise' || tool === 'lower') && !(amount > 0))
           throw new Error('Give amount (level units, > 0)');
 
-        const flat = (height ?? groundAt(g.hts, g, scale, x, z)) / scale;
+        let flat = (height ?? groundAt(g.hts, g, scale, x, z)) / scale;
+
+        if (tool === 'flatten' && Math.abs(flat) > 127.5)
+          flat *= growHeightRange(flat);
 
         for (let p = 0; p < (tool === 'smooth' ? passes : 1); p++)
           brushHeights(g, gx, gy, r, tool, { amount: amount / scale, flat, mix: strength, square, hard });
       }
 
       const bytes = rebuildTerrain();
+      const grown = scale / mcpTerrainScale(s);
 
       if (!bytes)
       {
-        g.hts.set(hts);
+        g.hts.set(hts.map((h) => h * grown));
         g.tex.set(texs);
         rebuildTerrain();
 
@@ -1806,7 +1850,7 @@ const WEBMCP_TOOLS = [
         $('optFollow').checked = follow;
       }
 
-      return { tool, at: { x, z, y: +groundAt(g.hts, g, scale, x, z).toFixed(3) }, tiles: $('sculptInfo').textContent };
+      return { tool, at: { x, z, y: +groundAt(g.hts, g, mcpTerrainScale(s), x, z).toFixed(3) }, tiles: $('sculptInfo').textContent };
     },
   },
   {
