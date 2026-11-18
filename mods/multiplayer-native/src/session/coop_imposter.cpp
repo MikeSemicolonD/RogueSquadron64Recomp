@@ -3,6 +3,7 @@
 #include "session/ghost_internal.h"
 #include "util/rdram_words.h"
 #include "mp_host.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -18,6 +19,18 @@ struct Imposter {
 
     // The wingman model the imposter spawned with (0 = X-wing, the only one with S-foil nodes).
     int model = -1;
+
+    // On the AT-ST level it is an NPC AT-ST; last is where its walk cycle was last advanced from.
+    bool walker = false;
+    bool have_last = false;
+    Vec3 last;
+
+    // The other player's per-gun shot counts this walker has fired (have_fired: synced once, so joining late fires nothing).
+    uint8_t fired[2] = {};
+    bool have_fired = false;
+
+    // A lethal hit landed (rs64_imposter_kill): the walker's own tick plays its destruction.
+    bool dying = false;
 
     // A spawn that got no slot retries every kRetryFrames, up to kRetries times.
     int wait = 0;
@@ -82,20 +95,33 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     Vec3 p1 = {rf(rdram, 0x80137DC0u), rf(rdram, 0x80137DC4u), rf(rdram, 0x80137DC8u)};
     Vec3 pos = imposter_spawn_pos(p1, right);
 
+    // On the AT-ST level the other player walks: an NPC AT-ST, whose model rs64_ghost_craft_assets loads. Walkers stand closer than craft.
+    const bool walker = rdram[(0x80130B40u - 0x80000000u) ^ 3] == kAtStLevel;
+    const float apart = walker ? 0.3f : 0.75f;
+
     if (rs64_ghost_mode())
     {
-        // Ghost co-op: both machines' player 1 starts at the level start, so the client moves itself 1.5 units right once per mission (where the host shows it).
+        // Ghost co-op: both machines' player 1 starts at the level start, so the client moves itself right once per mission (where the host shows it).
         if (rs64_ghost_is_client() && rs64_ghost_take_start_offset())
         {
             auto wf = [rdram](uint32_t a, float v) { uint32_t b; memcpy(&b, &v, 4); ww(rdram, a, b); };
             pos = p1;
-            p1 = imposter_spawn_pos(p1, right);
+            p1 = walker ? Vec3{p1.x + right.x * 0.6f, p1.y + right.y * 0.6f, p1.z + right.z * 0.6f} : imposter_spawn_pos(p1, right);
             wf(0x80137DC0u, p1.x);
             wf(0x80137DC4u, p1.y);
             wf(0x80137DC8u, p1.z);
             wf(m + 0x24, p1.x);
             wf(m + 0x28, p1.y);
             wf(m + 0x2C, p1.z);
+
+            // The walker's own block holds its position: playerAtStUpdate copies it over the player block each frame.
+            const uint32_t own = walker ? rs64::ghost::player_ext(rdram) : 0u;
+
+            if (own) {
+                wf(own + 0x0, p1.x);
+                wf(own + 0x4, p1.y);
+                wf(own + 0x8, p1.z);
+            }
 
             fprintf(stderr, "[ghost] client start offset to %.1f,%.1f,%.1f\n", p1.x, p1.y, p1.z);
         }
@@ -113,17 +139,17 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
         // Never spawn it inside player 1: wait until the two craft are apart.
         const Vec3 d = {pos.x - p1.x, pos.y - p1.y, pos.z - p1.z};
 
-        if (d.x * d.x + d.y * d.y + d.z * d.z < 0.75f * 0.75f)
+        if (d.x * d.x + d.y * d.y + d.z * d.z < apart * apart)
         {
             return;
         }
     }
 
     // The wingman dereferences its mesh instance during the spawn, so use a wingman model this level loaded (Mos Eisley: wmxwng; others differ) or skip the imposter.
-    int model = wingman_model(rdram);
+    int model = walker ? (mesh_loaded(rdram, "atst") ? 0 : -1) : wingman_model(rdram);
 
     // Ghost co-op: the other player's craft, when its wingman mesh is loaded.
-    const int remote_model = rs64_ghost_mode() ? rs64_ghost_puppet_model() : -1;
+    const int remote_model = rs64_ghost_mode() && !walker ? rs64_ghost_puppet_model() : -1;
 
     if (remote_model >= 0 && mesh_loaded(rdram, wingman_model_name(remote_model)))
     {
@@ -136,12 +162,17 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
         s.ctx = 0;
         s.blk = 0;
 
-        fprintf(stderr, "[coop] no wingman model loaded on this level; imposter skipped\n");
+        fprintf(stderr, "[coop] no %s model loaded on this level; imposter skipped\n", walker ? "AT-ST" : "wingman");
         return;
     }
 
-    build_imposter_record(rdram, pos);
-    ww(rdram, kImposterRec + 0x8C, (uint32_t)model);
+    if (walker) {
+        build_imposter_atst_record(rdram, pos);
+        model = -1;
+    } else {
+        build_imposter_record(rdram, pos);
+        ww(rdram, kImposterRec + 0x8C, (uint32_t)model);
+    }
 
     // spawnNpcOfType does not fail cleanly on an exhausted pool (it pops past its context stack or writes slot entry 0xFFFF), so it is only called with room in both.
     if (!npc_pool_room(rdram)) {
@@ -161,7 +192,7 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t slot = rs64::mp::call(rdram, ctx, 0x8003FFECu, {0x800D93C0u, kImposterRec, 2u, 0x5Au}).v0 & 0xFFFFu;
+    const uint32_t slot = rs64::mp::call(rdram, ctx, 0x8003FFECu, {walker ? kNpcAtStUpdate : 0x800D93C0u, kImposterRec, 2u, walker ? 0x55u : 0x5Au}).v0 & 0xFFFFu;
     const uint32_t table = rw(rdram, 0x80130BB0u);
     const uint32_t npc = slot < kNpcSlots ? rw(rdram, table + slot * 8) : 0u;
     const uint32_t blk = imposter_spawn_ok(slot, npc, 0x80000000u, 0x80000000u) ? rw(rdram, npc + 4) : 0u;
@@ -193,6 +224,16 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     rdram[(npc + 0x1A - 0x80000000u) ^ 3] += 1;
     ww(rdram, kImposterRec + 0xE0, blk);
     ww(rdram, kImposterRec + 0xE4, npc);
+
+    // The walker's tick is rs64_imposter_atst_tick from the first one on: its own would run the AT-ST's AI.
+    if (walker) {
+        s.spawned = true;
+        s.ctx = npc;
+        s.blk = blk;
+        s.walker = true;
+        s.have_last = false;
+        s.have_fired = false;
+    }
 
     // Like setupNpcUpdateFunctions: one tick right after the spawn (with its dt constant) enters the wingman into its tick chains.
     ww(rdram, kImposterRec + 0xF8, rw(rdram, 0x8003BED4u));
@@ -248,13 +289,14 @@ extern "C" uint32_t rs64_imposter_npc(void) {
     return s.spawned ? s.ctx : 0u;
 }
 
-// The other player went down: a lethal HIT (action 5, weapon 7, as mirrored damage sends) through the wingman's own handler, so the game plays its death. False when there is no live slot to hit.
+// The other player went down: a lethal HIT (action 5, weapon 7, as mirrored damage sends) through the puppet's own handler, so the game plays its death. False when there is no live slot to hit.
 extern "C" bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx)
 {
 
-    const Imposter& s = imp();
+    Imposter& s = imp();
 
-    if (!s.spawned || s.blk == 0)
+    // A walker's destruction swaps in the atstdest model, which a walker level's package may not have: it despawns instead.
+    if (!s.spawned || s.blk == 0 || (s.walker && !mesh_loaded(rdram, "atstdest")))
     {
         return false;
     }
@@ -267,6 +309,8 @@ extern "C" bool rs64_imposter_kill(uint8_t* rdram, recomp_context* ctx)
         return false;
     }
 
+    // The walker's death plays in its own tick (rs64_imposter_atst_tick hands it back).
+    s.dying = s.walker;
     rs64::ghost::send_hit(rdram, ctx, slot, 0xFFFFu);
     return true;
 }
@@ -414,6 +458,127 @@ extern "C" void rs64_imposter_tick(uint8_t* rdram, recomp_context* ctx)
     if (health >= 0x80000000u && health < 0x81000000u) {
         ww(rdram, health, 1000u);
     }
+}
+
+// The walker's update (npcAtStUpdate entry: a0 = NPC, a1 = action, a2 = &dt). Its tick (3) is replaced: the other player's pose, the walk cycle advanced by the distance walked, full health, none of
+// the AT-ST's AI (path, aim, fire, the out-of-range despawn). Its draw (4) builds the model from the block as usual. True skips the game's update (v0 = 1).
+extern "C" bool rs64_imposter_atst_tick(uint8_t* rdram, recomp_context* ctx)
+{
+
+    Imposter& s = imp();
+
+    if (!s.spawned || !s.walker || s.dying || s.blk == 0 || (uint32_t)ctx->r4 != s.ctx || (ctx->r5 & 0xFFFF) != 3)
+    {
+        return false;
+    }
+
+    const float dt = rf(rdram, (uint32_t)ctx->r6);
+    const uint32_t blk = s.blk;
+    auto wf = [rdram](uint32_t a, float v) { uint32_t b; memcpy(&b, &v, 4); ww(rdram, a, b); };
+    Vec3 pos = {rf(rdram, blk + 0x00), rf(rdram, blk + 0x04), rf(rdram, blk + 0x08)};
+    Vec3 fwd = {rf(rdram, blk + 0x0C), rf(rdram, blk + 0x10), rf(rdram, blk + 0x14)};
+    Vec3 down = {rf(rdram, blk + 0x18), rf(rdram, blk + 0x1C), rf(rdram, blk + 0x20)};
+
+    if (rs64_ghost_mode())
+    {
+        const float seed[9] = {pos.x, pos.y, pos.z, fwd.x, fwd.y, fwd.z, down.x, down.y, down.z};
+        float pose[12];
+
+        if (rs64_ghost_puppet(seed, dt, pose)) {
+            pos = {pose[0], pose[1], pose[2]};
+            fwd = {pose[3], pose[4], pose[5]};
+            down = {pose[6], pose[7], pose[8]};
+        }
+    }
+
+    // Local co-op has no second walker to drive: it stands a unit ahead of player 1's start, at player 1's height, to walk up to.
+    const Vec3 p1 = {rf(rdram, 0x80137DC0u), rf(rdram, 0x80137DC4u), rf(rdram, 0x80137DC8u)};
+
+    if (!rs64_ghost_mode())
+    {
+        if (!s.have_last) {
+            pos.x = p1.x + fwd.x;
+            pos.z = p1.z + fwd.z;
+        }
+
+        pos.y = p1.y;
+    }
+
+    const Vec3* parts[3] = {&pos, &fwd, &down};
+
+    for (int p = 0; p < 3; ++p) {
+        wf(blk + p * 0xC + 0x0, parts[p]->x);
+        wf(blk + p * 0xC + 0x4, parts[p]->y);
+        wf(blk + p * 0xC + 0x8, parts[p]->z);
+    }
+
+    // Walk cycle (phase +0x94, cycle seconds +0x98, animation slot +0x8C): locally, one cycle covers the distance the AT-ST walks at its speed (record +0x90) in one cycle.
+    const float cycle = rf(rdram, blk + 0x98);
+    const float dx = s.have_last ? pos.x - s.last.x : 0.0f;
+    const float dz = s.have_last ? pos.z - s.last.z : 0.0f;
+    float phase = atst_walk_phase(rf(rdram, blk + 0x94), std::sqrt(dx * dx + dz * dz), rf(rdram, kImposterRec + 0x90) * cycle);
+
+    if (rs64_ghost_mode())
+    {
+        // The other player's head (the draw turns the head node by +0x5C and +0x58, where the player walker keeps +0x4C and +0x48) and walk cycle position (+0x88, the same walk animation).
+        float head[2];
+        uint8_t shots[2];
+        rs64_ghost_remote_walker(head, shots, &phase);
+        wf(blk + 0x5C, head[0]);
+        wf(blk + 0x58, head[1]);
+
+        // Each shot their guns fired, one a tick per gun, through the player walker's own gun (spawnPlayerAtStCannonFire), which aims from the gun on the turned head.
+        // It reads the shooter's slot (+0x72, skipped by its aim ray) and clears +0x50 (this walker's radius), so both are swapped around the call.
+        for (uint32_t gun = 0; gun < 2; ++gun) {
+            const uint8_t behind = (uint8_t)(shots[gun] - s.fired[gun]);
+
+            if (!s.have_fired || behind > kAtStShotsBehindMax)
+            {
+                s.fired[gun] = shots[gun];
+                continue;
+            }
+
+            if (behind == 0)
+            {
+                continue;
+            }
+
+            const uint32_t radius = rw(rdram, blk + 0x50);
+            const uint16_t owner = rh(rdram, blk + 0x72);
+            wh(rdram, blk + 0x72, rh(rdram, kImposterRec + 0x6));
+            rs64::mp::call(rdram, ctx, 0x800D1248u, {blk, gun});
+            ww(rdram, blk + 0x50, radius);
+            wh(rdram, blk + 0x72, owner);
+            s.fired[gun]++;
+        }
+
+        s.have_fired = true;
+    }
+
+    float t = phase * cycle;
+    uint32_t t_bits;
+    memcpy(&t_bits, &t, 4);
+    wf(blk + 0x94, phase);
+    rs64::mp::call(rdram, ctx, 0x80083008u, {rw(rdram, blk + 0x8C), t_bits});
+    s.last = pos;
+    s.have_last = true;
+
+    // Player 1's step test (advancePlayerAtStLocomotion) stops at any NPC mesh in the way (ctx+0xC), so a player inside this walker (the same start or checkpoint) could never step out: it blocks
+    // only while player 1 is outside its body, a fraction of its bounding radius (+0x50, which spans the legs).
+    const float ox = p1.x - pos.x;
+    const float oz = p1.z - pos.z;
+    const float r = rf(rdram, blk + 0x50) * kAtStBodyRadius;
+    ww(rdram, s.ctx + 0xC, ox * ox + oz * oz < r * r ? 0u : rw(rdram, blk + 0x30));
+
+    const uint32_t obj = rw(rdram, s.ctx + 0x10);
+    const uint32_t health = rw(rdram, obj + 0x190) + (rw(rdram, 0x80137CE4u) << 2);
+
+    if (health >= 0x80000000u && health < 0x81000000u) {
+        ww(rdram, health, 1000u);
+    }
+
+    ctx->r2 = 1;
+    return true;
 }
 
 // Both reference-point users key on player 1 only on their normal path (no cutscene byte 0x80130B39, no fixed-point flag 0x8010CA1C & 8).

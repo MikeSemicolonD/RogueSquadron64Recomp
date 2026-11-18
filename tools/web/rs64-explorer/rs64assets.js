@@ -3223,13 +3223,15 @@ function rs64Lib()
   }
 
   // Flat ground at the terrain's median height (cells keep their textures, so the ground still looks like the level's), kept above any water.
-  function hmpFlat(orig, waterLevel = null)
+  // at: a world x/z whose ground height the level takes (a walker level's start: an AT-ST cannot climb above its valley floor) instead of the median.
+  function hmpFlat(orig, waterLevel = null, at = null)
   {
     const hmp = parseHMP(viewOf(orig));
     const g = hmpGrid(hmp);
-    const median = [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
+    const cell = (v, n) => Math.min(n - 1, Math.max(0, Math.round(v * 2)));
+    const level = at ? g.hts[cell(at.z, g.H) * g.W + cell(at.x, g.W)] : [...g.hts].sort((a, b) => a - b)[g.hts.length >> 1];
 
-    g.hts.fill(waterLevel === null ? median : Math.min(median, waterLevel - 1));
+    g.hts.fill(waterLevel === null ? level : Math.min(level, waterLevel - 1));
 
     return writeHMP(orig, g);
   }

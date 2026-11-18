@@ -76,6 +76,9 @@ typedef enum rs64_hook_id {
     RS64_HOOK_PLAYER_FIRE = 55,          // a player craft fires its lasers: each craft's fire function (the X-wing's playerXwingFireBlaster and its A-wing, V-wing, Falcon, TIE, T-16 and Naboo counterparts) or, for the Y-wing and snowspeeder, the fire check in their weapon tick; a0 = the weapon context (its first word the player), a1 = the hardpoint; RETURN skips the shot
     // v11
     RS64_HOOK_CAMERA = 56,               // setupCameraMatrices entry: a camera's projection is set up; a0 = the camera (+0x20 FOV in degrees, +0x24 near, +0x28 far, +0x10/+0x14 viewport size), may be edited. Gameplay view tests use these cameras too. Never RETURN
+    // v12
+    RS64_HOOK_NPC_ATST_TICK = 57,        // npcAtStUpdate entry: an NPC AT-ST's update; a0 = its NPC context, a1 = the action (3 = tick), a2 = &dt; RETURN (r2 = 1) skips the update
+    RS64_HOOK_ATST_FIRE = 58,            // spawnPlayerAtStCannonFire entry: a walker fires one gun; a0 = the walker's block (+0x30 its model, +0x72 its NPC slot), a1 = the gun (0 its model node "a", else node "b"); RETURN skips the shot
     RS64_HOOK_COUNT
 } rs64_hook_id;
 

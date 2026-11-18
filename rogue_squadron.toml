@@ -1914,6 +1914,18 @@ text = '{ if (rs64_th_player_fire_entry(rdram, ctx)) return; }'
 func = "setupCameraMatrices"
 text = '{ rs64_th_setupCameraMatrices_entry(rdram, ctx); }'
 
+# An NPC AT-ST's update (a0 = the NPC, a1 = the action, a2 = &dt): co-op drives the other player's walker here.
+# hook: RS64_HOOK_NPC_ATST_TICK
+[[patches.hook]]
+func = "npcAtStUpdate"
+text = '{ if (rs64_th_npcAtStUpdate_entry(rdram, ctx)) return; }'
+
+# A walker fires one gun (a0 = its block, a1 = 0 node a / else node b): co-op sends the player's shots and fires the other player's walker.
+# hook: RS64_HOOK_ATST_FIRE
+[[patches.hook]]
+func = "spawnPlayerAtStCannonFire"
+text = '{ if (rs64_th_spawnPlayerAtStCannonFire_entry(rdram, ctx)) return; }'
+
 # The Y-wing (spawnTexturedExplosionBurst, its weapon tick) and the snowspeeder (tickCinematicEffectObject) fire mid-function: $v1 = the fire buttons once the cooldown is done, cleared when a fire handler skips the shot.
 [[patches.hook]]
 func = "spawnTexturedExplosionBurst"
@@ -1967,6 +1979,12 @@ text = '{ rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(rdram, ctx); }'
 func = "setupCraftAnimationFlagSet"
 before_vram = 0x800B9334
 text = '{ rs64_th_setupCraftAnimationFlagSet_800B9334(rdram, ctx); }'
+
+# Mod levels: the mod level medals fade with SELECT GAME's own (s0 = the alpha its medal text just got).
+[[patches.hook]]
+func = "applyCraftSlotAnimations"
+before_vram = 0x800C5694
+text = '{ rs64_th_applyCraftSlotAnimations_800C5694(rdram, ctx); }'
 
 # Mod levels: a walker level has no craft to pick, so AVAILABLE CRAFT and the hangar answer "picked" at once (v0 = 1).
 [[patches.hook]]

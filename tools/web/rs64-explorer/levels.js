@@ -930,9 +930,14 @@ async function newModLevel(fromDir, blank = false, named = null)
 
     await editAsset(dir + '/dat', (b) => datBlank(b), `Blank level: ${title}`);
 
-    const water = datWaterGet(await rom.read(dir + '/dat'));
+    const dat = await rom.read(dir + '/dat');
+    const water = datWaterGet(dat);
 
-    await editAsset(dir + '/hmp', (b) => hmpFlat(b, water?.on ? water.level : null), `Flat ground: ${title}`);
+    // A walker level's ground is the AT-ST level's valley floor under its start: the walker cannot step onto ground higher than that.
+    const start = tmpl === AT_ST_LEVEL ? parseDAT(dat).items.find((x) => x.name === 'player_StartPosition') : null;
+    const at = start ? { x: start.pos[0], z: start.pos[2] } : null;
+
+    await editAsset(dir + '/hmp', (b) => hmpFlat(b, water?.on ? water.level : null, at), `Flat ground: ${title}`);
 
     // Its intro and outro start blank (3 s on the template's opening camera), not the template's scenes; templates past 15 have none.
     for (const kind of ['intro', 'extro']) {

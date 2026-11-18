@@ -2503,7 +2503,8 @@ static void hide_pilot_carousel(uint8_t* rdram, recomp_context* ctx, bool medals
 
     if (medals)
     {
-        for (uint32_t s = 1; s <= 3; ++s) rs64::mips::mips_call(rdram, ctx, 0x80061C74u, {8u, s, 0u});
+        // Slots 4-6 hold the mod level medals (rs64_mod_levels_select_game).
+        for (uint32_t s = 1; s <= 6; ++s) rs64::mips::mips_call(rdram, ctx, 0x80061C74u, {8u, s, 0u});
     }
 }
 

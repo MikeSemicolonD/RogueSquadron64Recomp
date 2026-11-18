@@ -410,6 +410,8 @@ extern "C" void rs64_mod_levels_select_open(uint8_t* rdram, recomp_context* ctx)
 
     ctx->r6 = s_level_entries.base + s_level_entries.count - 1;
     s_level_select_open = true;
+
+    fprintf(stderr, "[levels] SELECT LEVEL: mod levels at entries %d-%d, cursor %d\n", s_level_entries.base, (int)(uint32_t)ctx->r6, (int)(uint32_t)ctx->r7);
 }
 
 // Confirmed (s0 = entry): a mod entry plays as its template; a stock one clears the mod level.
@@ -846,6 +848,9 @@ extern "C" void rs64_mod_levels_debrief_end(uint8_t* rdram)
     }
 }
 
+// Whether SELECT GAME's font 8 entries 4-6 have held the mod level medals (they stay drawn after a row without them).
+static bool s_select_game_medals = false;
+
 // SELECT GAME (setupCraftAnimationFlagSet, after it drew the profile's medal totals as text group 8 entries 1-3; s1 = the slot record at
 // 0x800CF180 + slot * 0x48, +0xC = account data or 0): the profile's mod level medals as a second set, entries 4-6, beside the game's.
 extern "C" void rs64_mod_levels_select_game(uint8_t* rdram, recomp_context* ctx)
@@ -887,6 +892,20 @@ extern "C" void rs64_mod_levels_select_game(uint8_t* rdram, recomp_context* ctx)
         rs64::mips::mips_call(rdram, ctx, 0x800646F8u, { rw(rdram, 0x800CF078u), elem, x.key });
         rs64::mips::mips_call(rdram, ctx, 0x80063E54u, { 8, x.entry, x.colour });
         rs64::mips::mips_call(rdram, ctx, 0x80061F34u, { 8, x.entry, x.scale });
+    }
+
+    s_select_game_medals = true;
+}
+
+// applyCraftSlotAnimations 0x800C5694 (s0 = the alpha it just gave the game's medal entries 1-3): the mod level medals fade with them, back in after a pilot-first page hid them.
+extern "C" void rs64_mod_levels_select_game_alpha(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (!s_select_game_medals) return;
+
+    for (uint32_t entry = 4; entry <= 6; ++entry)
+    {
+        rs64::mips::mips_call(rdram, ctx, 0x80061C74u, { 8, entry, (uint32_t)ctx->r16 });
     }
 }
 

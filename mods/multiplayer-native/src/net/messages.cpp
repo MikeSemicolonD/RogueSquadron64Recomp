@@ -383,7 +383,7 @@ bool decode_damage(const uint8_t* data, size_t n, uint8_t* epoch, std::vector<st
 
 std::vector<uint8_t> encode_state(const StatePacket& s)
 {
-    return encode_fields(Msg::State, s.seq, s.epoch, s.pos, s.fwd, s.down, s.vel, s.pad, s.flags, s.foil, s.sent_ms);
+    return encode_fields(Msg::State, s.seq, s.epoch, s.pos, s.fwd, s.down, s.vel, s.pad, s.flags, s.foil, s.head, s.shots, s.walk, s.sent_ms);
 }
 
 bool decode_state(const uint8_t* data, size_t n, StatePacket* out)
@@ -391,9 +391,15 @@ bool decode_state(const uint8_t* data, size_t n, StatePacket* out)
 
     StatePacket s;
 
-    if (!read_fields(data, n, Msg::State, &s.seq, &s.epoch, &s.pos, &s.fwd, &s.down, &s.vel, &s.pad, &s.flags, &s.foil, &s.sent_ms) || s.foil > 250)
+    if (!read_fields(data, n, Msg::State, &s.seq, &s.epoch, &s.pos, &s.fwd, &s.down, &s.vel, &s.pad, &s.flags, &s.foil, &s.head, &s.shots, &s.walk, &s.sent_ms) || s.foil > 250 || !(s.walk >= 0.0f && s.walk <= 1.0f))
     {
         return false;
+    }
+
+    // A head angle reaches the puppet's model matrix: finite and within half a turn (degrees).
+    for (float a : s.head)
+    {
+        if (!(a > -180.0f && a < 180.0f)) return false;
     }
 
     *out = s;
@@ -578,6 +584,11 @@ bool decode_out(const uint8_t* data, size_t n, uint8_t* epoch)
     return decode_fields(data, n, Msg::Out, epoch, &v) && v <= 1;
 }
 
+// A stock SELECT LEVEL entry (0..0x12) or a mod level's (0x80 | its index, entry_to_wire).
+static bool level_entry_ok(uint8_t l) {
+    return l <= 0x12 || (l >= 0x80 && l < 0x80 + 0x1E);
+}
+
 std::vector<uint8_t> encode_pick(uint8_t level) { return encode_fields(Msg::Pick, (uint8_t)0, level); }
 
 bool decode_pick(const uint8_t* data, size_t n, uint8_t* level)
@@ -586,7 +597,7 @@ bool decode_pick(const uint8_t* data, size_t n, uint8_t* level)
     uint8_t e = 0;
     uint8_t l = 0;
 
-    if (!decode_fields(data, n, Msg::Pick, &e, &l) || l > 0x12)
+    if (!decode_fields(data, n, Msg::Pick, &e, &l) || !level_entry_ok(l))
     {
         return false;
     }
@@ -603,7 +614,7 @@ bool decode_browse(const uint8_t* data, size_t n, uint8_t* level, uint8_t* state
     uint8_t l = 0;
     uint8_t st = 0;
 
-    if (!decode_fields(data, n, Msg::Browse, &l, &st) || l > 0x12 || st > 4)
+    if (!decode_fields(data, n, Msg::Browse, &l, &st) || !level_entry_ok(l) || st > 4)
     {
         return false;
     }

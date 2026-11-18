@@ -164,8 +164,27 @@ void send_hit(uint8_t* rdram, recomp_context* ctx, uint32_t slot, uint32_t damag
     rs64::mp::call(rdram, ctx, 0x8003E8DCu, {slot, 5u, msg});
 }
 
+// A walker takes hits in its own handler (health at its block +0xB0; playerAtStUpdate's HIT): applyPlayerCraftDamage's death despawns flying craft slots the AT-ST level never filled
+// (despawnCraftAnimationSlotNpcsAndMarkStopping reads through a null table). False on other levels.
+static bool hit_walker(uint8_t* rdram, recomp_context* ctx, uint32_t damage)
+{
+
+    if (rs64::mips::rb(rdram, 0x80130B40u) != rs64::ls::kAtStLevel || !player_ext(rdram))
+    {
+        return false;
+    }
+
+    send_hit(rdram, ctx, rs64::mips::rh(rdram, 0x80137DBAu), damage);
+    return true;
+}
+
 void kill_player(uint8_t* rdram, recomp_context* ctx)
 {
+
+    if (hit_walker(rdram, ctx, 0xFFFFu))
+    {
+        return;
+    }
 
     const float damage = 1.0e6f;
     uint32_t bits;
@@ -193,6 +212,12 @@ void apply_friendly_fire(uint8_t* rdram, recomp_context* ctx)
 
     if (s.out)
     {
+        return;
+    }
+
+    if (hit_walker(rdram, ctx, (uint32_t)damage))
+    {
+        fprintf(stderr, "[ghost] friendly fire: walker took %.0f from the other player\n", damage);
         return;
     }
 
@@ -388,20 +413,53 @@ void sync_upgrades(uint8_t* rdram)
     }
 }
 
-// RS64_HOOK_NPC_HIT (a0 = the target slot, a2 = the HIT: +2 the shooter's slot, +6 damage): with friendly fire on, this player's hits on the other player's ship go to them.
+// Whether NPC slot holds a tracked DAT item, whose health the other player's DAMAGE mirrors.
+static bool slot_mirrored(const uint8_t* rdram, uint32_t slot)
+{
+
+    const uint32_t n = dat_count(rdram);
+
+    for (uint32_t i = 0; i < n; ++i) {
+        const uint32_t item = dat_item(rdram, i);
+
+        if (dat_tracked(rdram, item) && rs64::mips::rh(rdram, item + 6) == slot)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// RS64_HOOK_NPC_HIT (a0 = the target slot, a2 = the HIT: +2 the shooter's slot, +6 damage): the other player's puppet's shots are a copy of theirs, whose hits on level objects
+// arrive as DAMAGE, so here they do none (a DAMAGE landing first would take the same hit twice). With friendly fire on, this player's hits on the other player's ship go to them.
 extern "C" void rs64_ghost_npc_hit(uint8_t* rdram, recomp_context* ctx)
 {
 
     using rs64::mips::rh;
     Ghost& s = g();
 
-    if (!s.session_ff || !s.in_session || s.peer_left || rs64_imposter_npc() == 0)
+    if (!s.in_session || s.peer_left || rs64_imposter_npc() == 0)
     {
         return;
     }
 
     const uint32_t msg = (uint32_t)ctx->r6;
-    const bool on_partner = ((uint32_t)ctx->r4 & 0xFFFFu) == rh(rdram, kImposterRec + 0x6);
+    const uint32_t target = (uint32_t)ctx->r4 & 0xFFFFu;
+
+    // A walker player is an NPC too: the other player's friendly fire on it arrives as their HIT message, not from this copy.
+    if (rh(rdram, msg + 2) == rh(rdram, kImposterRec + 0x6) && (target == rh(rdram, 0x80137DBAu) || slot_mirrored(rdram, target)))
+    {
+        rs64::mips::wh(rdram, msg + 6, 0);
+        return;
+    }
+
+    if (!s.session_ff)
+    {
+        return;
+    }
+
+    const bool on_partner = target == rh(rdram, kImposterRec + 0x6);
 
     if (on_partner && rh(rdram, msg + 2) == rh(rdram, 0x80137DBAu)) {
         s.link.send(rs64::net::encode_hit(mission_tag(), rh(rdram, msg + 6)), true);

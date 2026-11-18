@@ -45,6 +45,13 @@ struct StatePacket {
     // The sender's S-foils, 0 closed .. 250 open (its X-wing's foil state), shown on its puppet.
     uint8_t foil = 250;
 
+    // The sender's walker on the AT-ST level: its head turn and pitch (block +0x4C, +0x48, degrees) and the shots each gun has fired (wrapping counts).
+    float head[2] = {};
+    uint8_t shots[2] = {};
+
+    // Its walk cycle position, 0 .. 1 (block +0x88), so the other side's copy puts its feet where the sender's are.
+    float walk = 0.0f;
+
     // The sender's steady clock (ms) when it sent this: the receiver's interpolation rebuilds the sender's timeline from it.
     uint32_t sent_ms = 0;
 };
@@ -95,7 +102,7 @@ bool decode_mission(const uint8_t* data, size_t n, uint8_t* id);
 std::vector<uint8_t> encode_life_lost(uint8_t epoch);
 bool decode_life_lost(const uint8_t* data, size_t n, uint8_t* epoch);
 
-// Lobby mission flow: the host's confirmed mission (level 0..0x12), and a player's confirmed craft (0..8; 0xFF = backed out of craft select).
+// Lobby mission flow: the host's confirmed mission (level 0..0x12, or 0x80 | a mod level's index), and a player's confirmed craft (0..8; 0xFF = backed out of craft select).
 std::vector<uint8_t> encode_pick(uint8_t level);
 bool decode_pick(const uint8_t* data, size_t n, uint8_t* level);
 

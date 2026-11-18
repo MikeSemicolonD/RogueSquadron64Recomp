@@ -1385,12 +1385,15 @@ extern "C" void rs64_lobby_mission_select_init(uint8_t* rdram, recomp_context* c
 
     const int start = s.host_pick >= 0 ? s.host_pick : s.host_cursor;
 
-    if (s.player == 1 && start >= 0) {
-        ctx->r7 = (gpr)start;
+    // A client shows the host's stock levels up to its cursor; a mod level is placed after this side's own (mod levels follow a2 here).
+    if (s.player == 1 && start >= 0 && !(start & 0x80) && (int)(uint32_t)ctx->r6 < start) {
+        ctx->r6 = (gpr)start;
+    }
 
-        if ((int)(uint32_t)ctx->r6 < start) {
-            ctx->r6 = (gpr)start;
-        }
+    s.mod_base = (int)(uint32_t)ctx->r6 + 1;
+
+    if (s.player == 1 && start >= 0) {
+        ctx->r7 = (gpr)rs64::ls::entry_from_wire(start, s.mod_base);
     }
 }
 
@@ -1489,7 +1492,7 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
         if (now != s.sent_browse)
         {
             s.sent_browse = now;
-            s.link.send(rs64::net::encode_browse((uint8_t)cursor, (uint8_t)reported), true);
+            s.link.send(rs64::net::encode_browse(rs64::ls::entry_to_wire(cursor, s.mod_base), (uint8_t)reported), true);
         }
 
         return;
@@ -1527,7 +1530,7 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
     // Mirror the host: its cursor and briefing while it browses, its pick once made. The client's own presses are replaced.
     // The host confirmed when its screen starts exiting (BROWSE state 4); its PICK only follows after its exit fade.
     const bool picked = s.host_pick >= 0 || s.host_state == 4;
-    const int target = s.host_pick >= 0 ? s.host_pick : s.host_cursor;
+    const int target = rs64::ls::entry_from_wire(s.host_pick >= 0 ? s.host_pick : s.host_cursor, s.mod_base);
     ww(rdram, 0x800CDAD0u, rw(rdram, 0x800CDAD0u) | ((1u << (target + 1)) - 1u));
     uint32_t edge = 0;
 
@@ -1548,11 +1551,60 @@ extern "C" void rs64_lobby_mission_select_tick(uint8_t* rdram, recomp_context* c
 // wingman loader does it (isHobObjectLoaded 0x80056DA4; else sprintf "pl_crafts/%s" @0x8003BB5C, load_hmt_and_hob 0x8005645C(path, 0, 1, 0), loadCraftShadowTextures 0x8006B710).
 static int s_puppet_model = -1;
 
+// Loads the model name from path (the asset name; pl_crafts/<name> when path is null) unless the level has it. False: already loaded, or no room for the strings.
+static bool load_model(uint8_t* rdram, recomp_context* ctx, const char* name, const char* path)
+{
+
+    static uint32_t buf = 0;
+
+    if (!buf) {
+        buf = rs64::mp::alloc(rdram, 64);
+    }
+
+    if (!buf)
+    {
+        return false;
+    }
+
+    auto put = [rdram](uint32_t a, const char* str) {
+        for (size_t i = 0; i <= strlen(str); ++i) {
+            rdram[((a - 0x80000000u) + (uint32_t)i) ^ 3] = (uint8_t)str[i];
+        }
+    };
+
+    put(buf, name);
+
+    if (rs64::mp::call(rdram, ctx, 0x80056DA4u, {buf}).v0 != 0)
+    {
+        return false;
+    }
+
+    if (path) {
+        put(buf + 16u, path);
+    } else {
+        rs64::mp::call(rdram, ctx, 0x80033CC4u, {buf + 16u, 0x8003BB5Cu, buf});
+    }
+
+    rs64::mp::call(rdram, ctx, 0x8005645Cu, {buf + 16u, 0u, 1u, 0u});
+    return true;
+}
+
 extern "C" void rs64_ghost_craft_assets(uint8_t* rdram, recomp_context* ctx)
 {
 
     Ghost& s = g();
     s_puppet_model = -1;
+
+    // The AT-ST level: the other player is an NPC AT-ST (coop_imposter.cpp); its model, in case a walker level's package lacks it.
+    if (rs64_coop_imposter() && rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel)
+    {
+        if (load_model(rdram, ctx, "atst", "imp_stuff/atst"))
+        {
+            fprintf(stderr, "[coop] loaded atst for the other player's walker\n");
+        }
+
+        return;
+    }
 
     if (!s.in_session)
     {
@@ -1568,33 +1620,12 @@ extern "C" void rs64_ghost_craft_assets(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    static uint32_t buf = 0;
-
-    if (!buf) {
-        const uint32_t a = rs64::mp::alloc(rdram, 64);
-
-        if (!a)
-        {
-            return;
-        }
-
-        buf = a;
-    }
-
-    const char* name = rs64::ls::wingman_model_name(m);
-
-    for (size_t i = 0; i <= strlen(name); ++i) {
-        rdram[((buf - 0x80000000u) + (uint32_t)i) ^ 3] = (uint8_t)name[i];
-    }
-
-    if (rs64::mp::call(rdram, ctx, 0x80056DA4u, {buf}).v0 == 0)
+    if (load_model(rdram, ctx, rs64::ls::wingman_model_name(m), nullptr))
     {
         static const uint32_t kShadow[8] = {2, 3, 0, 1, 4, 5, 7, 6};
-        rs64::mp::call(rdram, ctx, 0x80033CC4u, {buf + 16u, 0x8003BB5Cu, buf});
-        rs64::mp::call(rdram, ctx, 0x8005645Cu, {buf + 16u, 0u, 1u, 0u});
         rs64::mp::call(rdram, ctx, 0x8006B710u, {kShadow[m]});
 
-        fprintf(stderr, "[coop] loaded %s for the other player's craft %d\n", name, s.remote_craft);
+        fprintf(stderr, "[coop] loaded %s for the other player's craft %d\n", rs64::ls::wingman_model_name(m), s.remote_craft);
     }
 
     s_puppet_model = m;
@@ -1788,19 +1819,19 @@ extern "C" void rs64_lobby_mission_confirmed(uint8_t* rdram, recomp_context* ctx
 
     if (s.player == 0)
     {
-        s.link.send(rs64::net::encode_pick((uint8_t)level), true);
+        s.link.send(rs64::net::encode_pick(rs64::ls::entry_to_wire((int)level, s.mod_base)), true);
 
         fprintf(stderr, "[lobby] host picked level %u (sent)\n", level);
 
         // Level 0x10 forces the T-16 and skips craft select, so no READY comes.
-        if (level == 0x10) {
+        if (level == 0x10 && (int)level < s.mod_base) {
             s.remote_craft = 7;
         }
 
         return;
     }
 
-    const int level_here = s.host_pick >= 0 ? s.host_pick : (s.host_state == 4 ? s.host_cursor : -1);
+    const int level_here = rs64::ls::entry_from_wire(s.host_pick >= 0 ? s.host_pick : (s.host_state == 4 ? s.host_cursor : -1), s.mod_base);
 
     if (level_here >= 0)
     {

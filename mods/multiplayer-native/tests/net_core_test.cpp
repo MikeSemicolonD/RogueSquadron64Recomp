@@ -35,16 +35,31 @@ static void test_state_roundtrip_and_bounds() {
     }
     for (int i = 0; i < 6; ++i) s.pad[i] = (uint8_t)(0x10 + i);
     s.foil = 200;
+    s.head[0] = -80.0f;
+    s.head[1] = 0.25f;
+    s.shots[0] = 3;
+    s.shots[1] = 255;
+    s.walk = 0.5f;
     s.sent_ms = 123456789u;
     const std::vector<uint8_t> b = encode_state(s);
     CHECK(message_type(b.data(), b.size()) == (uint8_t)Msg::State);
     StatePacket q;
     CHECK(decode_state(b.data(), b.size(), &q));
     CHECK(q.seq == 77 && q.pos[2] == 3.5f && q.fwd[1] == -0.25f && q.vel[0] == 3.0f && q.pad[5] == 0x15 && q.foil == 200 && q.sent_ms == 123456789u);
+    CHECK(q.head[0] == -80.0f && q.head[1] == 0.25f && q.shots[0] == 3 && q.shots[1] == 255 && q.walk == 0.5f);
     for (size_t n = 0; n < b.size(); ++n) CHECK(!decode_state(b.data(), n, &q));
     std::vector<uint8_t> longer = b;
     longer.push_back(0);
     CHECK(!decode_state(longer.data(), longer.size(), &q));
+
+    // A head angle past half a turn (degrees) never reaches the puppet; -80 (a full look down) does.
+    s.head[0] = 200.0f;
+    const std::vector<uint8_t> wild = encode_state(s);
+    CHECK(!decode_state(wild.data(), wild.size(), &q));
+    s.head[0] = 0.0f;
+    s.walk = 1.5f;
+    const std::vector<uint8_t> wild_walk = encode_state(s);
+    CHECK(!decode_state(wild_walk.data(), wild_walk.size(), &q));
 }
 
 static void test_result_presence_and_state_epoch() {
@@ -614,6 +629,12 @@ static void test_browse() {
     CHECK(!decode_browse(bad_state.data(), bad_state.size(), &level, &state));
     const std::vector<uint8_t> bad_level = encode_browse(0x13, 2);
     CHECK(!decode_browse(bad_level.data(), bad_level.size(), &level, &state));
+
+    // A mod level's entry goes as 0x80 | its index.
+    const std::vector<uint8_t> mod = encode_browse(0x81, 2);
+    CHECK(decode_browse(mod.data(), mod.size(), &level, &state) && level == 0x81);
+    const std::vector<uint8_t> bad_mod = encode_browse(0xFF, 2);
+    CHECK(!decode_browse(bad_mod.data(), bad_mod.size(), &level, &state));
 }
 
 static void test_pick_and_ready() {
@@ -624,6 +645,8 @@ static void test_pick_and_ready() {
     CHECK(!decode_pick(p.data(), p.size() - 1, &v));
     const std::vector<uint8_t> bad = encode_pick(0x13);
     CHECK(!decode_pick(bad.data(), bad.size(), &v));
+    const std::vector<uint8_t> mod = encode_pick(0x80);
+    CHECK(decode_pick(mod.data(), mod.size(), &v) && v == 0x80);
     const std::vector<uint8_t> r = encode_ready(8);
     CHECK(message_type(r.data(), r.size()) == (uint8_t)Msg::Ready);
     CHECK(decode_ready(r.data(), r.size(), &v) && v == 8);

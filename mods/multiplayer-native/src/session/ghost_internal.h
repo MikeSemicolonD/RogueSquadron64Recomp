@@ -46,6 +46,8 @@ void rs64_lobby_edit_toggle(void);
 void rs64_lobby_edit_off(void);
 int rs64_ghost_puppet_model(void);
 int rs64_ghost_remote_foil(void);
+void rs64_ghost_remote_walker(float head[2], uint8_t shots[2], float* walk);
+void rs64_ghost_atst_fire(uint8_t*, recomp_context*);
 uint32_t rs64_lobby_ready(void);
 void rs64_lobby_input(uint8_t* rdram);
 int rs64_ghost_puppet(const float seed[9], float dt, float out[12]);
@@ -76,6 +78,7 @@ uint32_t rs64_ghost_objective_event(uint8_t*, recomp_context*);
 uint32_t rs64_ghost_trigger_effect(uint8_t*, recomp_context*);
 void rs64_ghost_walker_tripped(uint8_t*, recomp_context*);
 void rs64_imposter_tick(uint8_t*, recomp_context*);
+bool rs64_imposter_atst_tick(uint8_t*, recomp_context*);
 void rs64_imposter_activation(uint8_t*, recomp_context*, uint32_t);
 void rs64_imposter_stream(uint8_t*, recomp_context*);
 void rs64_lobby_mission_select_init(uint8_t*, recomp_context*);
@@ -117,6 +120,9 @@ struct Ghost {
     // Client: the host's mission-select cursor and screen state (BROWSE), -1 before the first. Host: what it last sent.
     int host_cursor = -1;
     int host_state = 0;
+
+    // This side's first mod level entry on SELECT LEVEL; host_pick and host_cursor hold the host's link values (entry_to_wire).
+    int mod_base = 0xFF;
     int sent_browse = -1;
 
     // Craft select: nobody leaves until both picked. release_cool spaces the injected confirm until the hangar takes it.
@@ -149,6 +155,12 @@ struct Ghost {
 
     // The other player's S-foils from their STATE, 0 closed .. 250 open.
     int remote_foil = 250;
+
+    // Walkers: the other player's head turn and pitch, per-gun shot counts and walk cycle position from their STATE, and this player's own shot counts.
+    float remote_head[2] = {};
+    uint8_t remote_shots[2] = {};
+    float remote_walk = 0.0f;
+    uint8_t shots[2] = {};
     int follow_cool = 0;
 
     // Client: B pressed on mission select, so it stops following the host and its own B takes it out to the main menu.
@@ -383,6 +395,9 @@ void apply_remote_triggers(uint8_t* rdram, recomp_context* ctx);
 void apply_remote_tows(uint8_t* rdram, recomp_context* ctx);
 void sync_tow_cable(uint8_t* rdram);
 void apply_tow_seg(uint8_t* rdram, const rs64::net::TowSeg& t);
+
+// Player 1's craft handler extension (slot table 0x80130BB0 [player slot 0x80137DBA] -> ctx +4; a walker's own block), 0 while there is none.
+uint32_t player_ext(const uint8_t* rdram);
 
 // The HIT dealDamagetoDatItem sends (slotDispatcherIter(slot, 5, msg), weapon 7, damage capped at 0xFFFF), without its follow-up lookup, which reads a freed slot after a lethal hit.
 void send_hit(uint8_t* rdram, recomp_context* ctx, uint32_t slot, uint32_t damage);

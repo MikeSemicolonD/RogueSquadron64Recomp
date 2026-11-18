@@ -625,6 +625,14 @@ int puppet_model(int craft) {
     return ((craft >= 0 && craft <= 5) || craft == 7) ? craft : -1;
 }
 
+uint8_t entry_to_wire(int entry, int mod_base) {
+    return (uint8_t)(entry >= mod_base ? 0x80 | (entry - mod_base) : entry);
+}
+
+int entry_from_wire(int wire, int mod_base) {
+    return (wire >= 0 && (wire & 0x80)) ? mod_base + (wire & 0x7F) : wire;
+}
+
 LifeOutcome shared_life(uint8_t pool, bool player_out) {
 
     if (player_out)
@@ -895,5 +903,38 @@ void build_imposter_record(uint8_t* rdram, const Vec3& pos)
     wf(r + 0xEC, 2.625f);
     wf(r + 0xF4, 2.625f);
     wr8(rdram, r + 0xF0, '-');
+}
+
+void build_imposter_atst_record(uint8_t* rdram, const Vec3& pos)
+{
+
+    auto wf = [rdram](uint32_t a, float f) { uint32_t b; memcpy(&b, &f, 4); wr32(rdram, a, b); };
+    build_imposter_record(rdram, pos);
+    const uint32_t r = kImposterRec;
+    wr8(rdram, r + 0x1, 0x1F);
+    wf(r + 0x28, kAtStPuppetScale);
+    wf(r + 0x2C, kAtStPuppetScale);
+    wf(r + 0x30, kAtStPuppetScale);
+    wr32(rdram, r + 0x4C, 7u);
+    wr32(rdram, r + 0x80, 0x6Fu);
+    wr32(rdram, r + 0x84, 1u);
+
+    // +0x8C: the offset of its path's name, the '-' at +0xF0 (none); +0x90: walk speed.
+    wr32(rdram, r + 0x8C, 0xF0u);
+    wf(r + 0x90, 0.39f);
+    wr32(rdram, r + 0x94, 0u);
+    wr32(rdram, r + 0xA0, 1u);
+}
+
+float atst_walk_phase(float phase, float dist, float stride)
+{
+
+    if (stride <= 0.0f)
+    {
+        return phase;
+    }
+
+    phase += dist / stride;
+    return phase - std::floor(phase);
 }
 }

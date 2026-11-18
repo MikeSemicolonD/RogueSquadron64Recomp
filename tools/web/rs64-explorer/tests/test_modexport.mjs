@@ -3093,6 +3093,21 @@ await check('water fields read the stock levels and round-trip', async () => {
   assert.equal(RS64.datWaterGet(dry).on, false);
 });
 
+await check('a blank walker level is flat at its start\'s ground, low enough for an AT-ST to walk', async () => {
+  const hmp = new Uint8Array((await rom.read('data/level/lv_k/hmp')).buffer).slice();
+  const start = RS64.parseDAT(await rom.read('data/level/lv_k/dat')).items.find((x) => x.name === 'player_StartPosition');
+  const scale = new DataView(hmp.buffer).getFloat32(0x10);
+  const before = RS64.hmpGrid(RS64.parseHMP(new DataView(hmp.buffer)));
+  const at = { x: start.pos[0], z: start.pos[2] };
+  const heights = RS64.hmpGrid(RS64.parseHMP(new DataView(RS64.hmpFlat(hmp, null, at).buffer))).hts;
+  const under = before.hts[Math.round(at.z * 2) * before.W + Math.round(at.x * 2)];
+
+  assert.ok(heights.every((h) => h === under), `flat at ${heights[0]}, start ground ${under}`);
+
+  // advancePlayerAtStLocomotion refuses ground above y 0.8 (Y down).
+  assert.ok(under * scale >= 0.8, `ground y ${under * scale}`);
+});
+
 await check('a blank Calamari stays above its water', async () => {
   const hmp = new Uint8Array((await rom.read('data/level/lv_f/hmp')).buffer).slice();
   const heights = RS64.hmpGrid(RS64.parseHMP(new DataView(RS64.hmpFlat(hmp, 122).buffer))).hts;

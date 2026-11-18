@@ -2049,6 +2049,18 @@ void rs64_th_setupCameraMatrices_entry(uint8_t* rdram, recomp_context* ctx)
     rs64_hook(RS64_HOOK_CAMERA, rdram, ctx);
 }
 
+// npcAtStUpdate entry: an NPC AT-ST's update
+int rs64_th_npcAtStUpdate_entry(uint8_t* rdram, recomp_context* ctx)
+{
+    return rs64_hook(RS64_HOOK_NPC_ATST_TICK, rdram, ctx);
+}
+
+// spawnPlayerAtStCannonFire entry: a walker fires one gun
+int rs64_th_spawnPlayerAtStCannonFire_entry(uint8_t* rdram, recomp_context* ctx)
+{
+    return rs64_hook(RS64_HOOK_ATST_FIRE, rdram, ctx);
+}
+
 // A fire check inside a craft's weapon tick ($v1 = the fire buttons): the fire handlers see a0 = the weapon context, a1 = the hardpoint, on a copy of the registers; a skip clears $v1.
 static void rs64_fire_gate(uint8_t* rdram, recomp_context* ctx, uint32_t weapon, uint32_t hardpoint)
 {
@@ -2107,6 +2119,12 @@ void rs64_th_applyPlayerSlotAnimChannelKeyframe_800B1FD4(uint8_t* rdram, recomp_
 void rs64_th_setupCraftAnimationFlagSet_800B9334(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_mod_levels_select_game(rdram, ctx);
+}
+
+// applyCraftSlotAnimations 0x800C5694: SELECT GAME's medal alpha is set
+void rs64_th_applyCraftSlotAnimations_800C5694(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_mod_levels_select_game_alpha(rdram, ctx);
 }
 
 // runHangarMenuFromOverlay entry: a walker level skips AVAILABLE CRAFT and the hangar, as if a craft were picked (v0 = 1).

@@ -218,7 +218,13 @@ extern "C" void rs64_ghost_hud_draw(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const Vec3 p = s.puppet_pos;
+    // A walker's position is at its feet: the label goes over its head (kAtStLabelHeight along its up axis, puppet_up being its down vector).
+    Vec3 p = s.puppet_pos;
+
+    if (rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel) {
+        p = {p.x - s.puppet_up.x * kAtStLabelHeight, p.y - s.puppet_up.y * kAtStLabelHeight, p.z - s.puppet_up.z * kAtStLabelHeight};
+    }
+
     float m[12];
 
     for (int i = 0; i < 12; ++i) {
@@ -277,4 +283,28 @@ extern "C" int rs64_ghost_puppet(const float seed[9], float dt, float out[12]) {
 // The other player's S-foils for their puppet, 0 closed .. 250 open.
 extern "C" int rs64_ghost_remote_foil(void) {
     return g().remote_foil;
+}
+
+// The other player's walker: head turn and pitch, per-gun shot counts and walk cycle position from their STATE.
+extern "C" void rs64_ghost_remote_walker(float head[2], uint8_t shots[2], float* walk)
+{
+
+    const Ghost& s = g();
+    memcpy(head, s.remote_head, sizeof(s.remote_head));
+    memcpy(shots, s.remote_shots, sizeof(s.remote_shots));
+    *walk = s.remote_walk;
+}
+
+// RS64_HOOK_ATST_FIRE (a0 = the firing walker's block, a1 = the gun): this player's own shots are counted for STATE; the other player's walker firing on this side is not.
+extern "C" void rs64_ghost_atst_fire(uint8_t* rdram, recomp_context* ctx)
+{
+
+    Ghost& s = g();
+
+    if (!s.in_session || (uint32_t)ctx->r4 != player_ext(rdram))
+    {
+        return;
+    }
+
+    s.shots[ctx->r5 ? 1 : 0]++;
 }

@@ -35,6 +35,17 @@ Ghost& g() {
     return s;
 }
 
+uint32_t player_ext(const uint8_t* rdram)
+{
+
+    const uint32_t slot = rs64::mips::rh(rdram, 0x80137DBAu);
+    const uint32_t table = rw(rdram, 0x80130BB0u);
+    const uint32_t npc = (slot < rs64::ls::kNpcSlots && table) ? rw(rdram, table + slot * 8u) : 0u;
+    const uint32_t ext = (npc >= 0x80000000u && npc < 0x80800000u) ? rw(rdram, npc + 4u) : 0u;
+
+    return (ext >= 0x80000000u && ext < 0x80800000u) ? ext : 0u;
+}
+
 uint8_t mission_tag() {
 
     const Ghost& s = g();
@@ -595,6 +606,9 @@ void drain()
             s.remote_rx_s = now_s();
             memcpy(s.remote_pad, p.pad, 6);
             s.remote_foil = p.foil;
+            memcpy(s.remote_head, p.head, sizeof(p.head));
+            memcpy(s.remote_shots, p.shots, sizeof(p.shots));
+            s.remote_walk = p.walk;
             s.remote_down = (p.flags & rs64::net::kStateDown) != 0;
             s.remote_pos = {p.pos[0], p.pos[1], p.pos[2]};
             PuppetState ps;
@@ -1413,6 +1427,13 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.end_clips.clear();
     s.own_clips.clear();
 
+    const bool ghost = rs64_ghost_mode() && !demo_active(rdram);
+
+    // Queued messages first, so a PICK or READY that arrived late is cleared with the round below.
+    if (ghost) {
+        drain();
+    }
+
     // The menus' round state ends here on every path (a mission played alone included): a late PICK or READY belongs to the round that just ended.
     s.craft = rs64::ls::CraftBarrier{};
     s.debrief = rs64::ls::CraftBarrier{};
@@ -1422,15 +1443,15 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
     s.in_hangar = false;
     s.follow_out = false;
     s.lives_seen = -1;
+    memset(s.shots, 0, sizeof(s.shots));
+    memset(s.remote_shots, 0, sizeof(s.remote_shots));
     s.skip_tag = (uint16_t)((s.skip_tag & 0xFF00u) + 0x100u);
     s.crawl_over = false;
 
-    if (!rs64_ghost_mode() || demo_active(rdram))
+    if (!ghost)
     {
         return;
     }
-
-    drain();
 
     if (!s.lobby.ready() && !s.lobby_session)
     {
@@ -2011,18 +2032,23 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
         // Mission mode 1 = this player died and is respawning; an out player is down for good.
         out.flags = (rw(rdram, 0x8010CA20u) == 1 || s.out) ? rs64::net::kStateDown : 0;
 
-        // The X-wing's S-foils: its handler extension (slot table 0x80130BB0 [player slot 0x80137DBA] -> ctx +4) holds foil t at +4, 0 open .. 1 closed.
-        if (rb(rdram, 0x80130B41u) == 0)
-        {
-            const uint32_t slot = rs64::mips::rh(rdram, 0x80137DBAu);
-            const uint32_t table = rw(rdram, 0x80130BB0u);
-            const uint32_t npc = (slot < rs64::ls::kNpcSlots && table) ? rw(rdram, table + slot * 8u) : 0u;
-            const uint32_t ext = (npc >= 0x80000000u && npc < 0x80800000u) ? rw(rdram, npc + 4u) : 0u;
+        // The player's craft handler extension (slot table 0x80130BB0 [player slot 0x80137DBA] -> ctx +4): the X-wing's holds foil t at +4 (0 open .. 1 closed), a walker's
+        // its head turn and pitch at +0x4C and +0x48.
+        const uint32_t ext = player_ext(rdram);
+        const bool walker = rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel;
 
-            if (ext >= 0x80000000u && ext < 0x80800000u) {
-                const float t = std::clamp(rf(rdram, ext + 4u), 0.0f, 1.0f);
-                out.foil = (uint8_t)std::lround((1.0f - t) * 250.0f);
-            }
+        if (ext && walker) {
+            auto angle = [](float a) { return a > -180.0f && a < 180.0f ? a : 0.0f; };
+            out.head[0] = angle(rf(rdram, ext + 0x4Cu));
+            out.head[1] = angle(rf(rdram, ext + 0x48u));
+            memcpy(out.shots, s.shots, sizeof(s.shots));
+
+            // The walk cycle position (+0x88, 0 .. 1).
+            const float walk = rf(rdram, ext + 0x88u);
+            out.walk = walk >= 0.0f && walk <= 1.0f ? walk : 0.0f;
+        } else if (ext && rb(rdram, 0x80130B41u) == 0) {
+            const float t = std::clamp(rf(rdram, ext + 4u), 0.0f, 1.0f);
+            out.foil = (uint8_t)std::lround((1.0f - t) * 250.0f);
         }
 
         out.pos[0] = pos.x;
@@ -2067,8 +2093,12 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
     uint8_t port1[6];
     pad2_bytes(live ? &remote : nullptr, port1);
 
+    // On the AT-ST level a second controller turns player 1's walker head (updatePlayerAtStBehavior reads port 2's stick while its status byte 0x80130B92 is 1): the other walker comes
+    // through STATE instead, so port 2 stays unplugged.
+    const bool walker = rb(rdram, 0x80130B40u) == rs64::ls::kAtStLevel;
+
     for (int i = 0; i < 6; ++i) {
-        wb(rdram, 0x80130B8Eu + i, port1[i]);
+        wb(rdram, 0x80130B8Eu + i, walker ? 0 : port1[i]);
     }
 
     if (s.trace) {
