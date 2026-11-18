@@ -732,7 +732,8 @@ async function historyGroup(label, fn) {
 }
 
 // Undo / redo: write the stored bytes back, then rebuild whatever shows them (cutscene, level with its terrain, or model).
-async function applyHistory(changes) {
+async function applyHistory(changes)
+{
   if (!changes.length)
     return;
 
@@ -743,7 +744,7 @@ async function applyHistory(changes) {
 
   updateModButton();
 
-  if (changes.some((c) => c.path === MOD_LEVELS))
+  if (changes.some((c) => c.path === MOD_LEVELS || c.path === MOD_SHIPS))
     await applyModLevels();
 
   rulesChanged();
@@ -869,7 +870,9 @@ async function openProject()
   }
 
   // A mod level's files are aliases of its template's: they must exist before their originals are read.
-  applyModLevelsText(new TextDecoder().decode(loaded.current.get(MOD_LEVELS) ?? new Uint8Array(0)));
+  const textOf = (p) => new TextDecoder().decode(loaded.current.get(p) ?? new Uint8Array(0));
+
+  applyModLevelsText(textOf(MOD_LEVELS), textOf(MOD_SHIPS));
 
   const originals = new Map();
 
@@ -988,10 +991,10 @@ function askChoice(question, answers) {
 }
 
 // Import options for a craft: the nose direction, and the canopy and exhaust options the craft has parts for.
-function askCraftImport(file, hob, engines)
+function askCraftImport(file, hob, engines, object, trails = [])
 {
   const d = elem('dialog', { className: 'panel levelDialog' });
-  const names = hob.objects[0].lods[0].flat().map((p) => p.name ?? '');
+  const names = hob.objects[object].lods[0].flat().map((p) => p.name ?? '');
   const hasPart = (prefix) => names.some((n) => n.startsWith(prefix));
 
   const row = (text, ...inputs) => {
@@ -1025,7 +1028,10 @@ function askCraftImport(file, hob, engines)
     rows.push(row('Exhaust ', exhaust, colour));
 
   if (engines.length)
-    rows.push(elem('small', { textContent: `Flames move to the model's ${engines.length} eng_ markers` }));
+    rows.push(elem('small', { textContent: `Flames and engine glows move to the model's ${engines.length} eng_ markers` }));
+
+  if (trails.length && hob.objects[object].hardpoints.some((h) => h.name.startsWith('trl')))
+    rows.push(elem('small', { textContent: `Contrails move to the model's ${trails.length} trl_ markers` }));
 
   const go = elem('button', { textContent: 'Import' });
   const cancel = elem('button', { textContent: 'Cancel' });
@@ -1064,9 +1070,18 @@ async function importCraftModel()
 {
   const id = selected;
 
-  if (selectedLevel || !id?.startsWith('data/pl_crafts/') || id.endsWith('/koelsch'))
+  if (selectedLevel || !id)
   {
-    alert('Open a player craft in the Models tab first (the Naboo Starfighter is encrypted and cannot be changed yet).');
+    alert('Open a model in the Models tab first.');
+
+    return;
+  }
+
+  const object = (await loadModel(id)).hob.objects.length === 1 ? 0 : selectedObj;
+
+  if (object < 0)
+  {
+    alert('This file holds several models: pick one in the list first.');
 
     return;
   }
@@ -1085,18 +1100,26 @@ async function importCraftModel()
     gltf.scene.updateMatrixWorld(true);
 
     const model = await loadModel(id);
-    const slots = craftImportSlots(model.hob, model.hmt);
+    const slots = craftImportSlots(model.hob, model.hmt, object);
 
-    if (!slots.length)
-      throw new Error('This craft has no texture slot that can take the import');
+    // A package object whose every texture other models also draw takes the import in its colours only, on a material of its own body.
+    const flatMat = model.hob.objects[object].lods[0].flat().find((p) => !p.name && p.faces.length)?.faces[0].mat;
+    const shared = 'Every texture this model draws is shared with other models in the level, so the import can\'t bring its own textures. Import it in its colours only?';
+
+    if (!slots.length && (flatMat == null || !confirm(shared)))
+      return;
 
     const tris = [];
     const v = new THREE.Vector3();
     const engines = [];
+    const trails = [];
 
     gltf.scene.traverse((o) => {
       if (!o.isMesh && !o.children.length && /^eng_/i.test(o.name))
         engines.push(o.getWorldPosition(new THREE.Vector3()).toArray());
+
+      if (!o.isMesh && !o.children.length && /^trl_/i.test(o.name))
+        trails.push(o.getWorldPosition(new THREE.Vector3()).toArray());
 
       if (!o.isMesh)
         return;
@@ -1105,7 +1128,7 @@ async function importCraftModel()
       let node = '';
 
       for (let p = o; p && !node; p = p.parent)
-        if (model.hob.objects[0].nodeNames.has(p.name))
+        if (model.hob.objects[object].nodeNames.has(p.name))
           node = p.name;
 
       const g = o.geometry;
@@ -1147,7 +1170,7 @@ async function importCraftModel()
 
     busy(null);
 
-    const options = await askCraftImport(file.name, model.hob, engines);
+    const options = await askCraftImport(file.name, model.hob, engines, object, trails);
 
     if (!options)
       return;
@@ -1163,11 +1186,14 @@ async function importCraftModel()
     const slotOf = new Map(ranked.map((m, i) => [m, slots[Math.min(i, slots.length - 1)]]));
 
     for (const t of tris)
-      t.mat = slotOf.get(t.map).mat;
+      if (slots.length)
+        t.mat = slotOf.get(t.map).mat;
+      else
+        [t.mat, t.uv] = [flatMat, null];
 
     const dv = await rom.read(id + '_HOB');
-    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0].mat, engines, ...options });
-    const faces = parseHOB(new DataView(out.buffer, out.byteOffset, out.byteLength)).objects[0].lods[0].flat().reduce((s, p) => s + p.faces.length, 0);
+    const out = hobImportCraft(u8(dv), model.hob, tris, { mat: slots[0]?.mat ?? flatMat, engines, trails, object, ...options });
+    const faces = parseHOB(new DataView(out.buffer, out.byteOffset, out.byteLength)).objects[object].lods[0].flat().reduce((s, p) => s + p.faces.length, 0);
 
     if (faces > CRAFT_MAX_FACES)
       throw new Error(`${file.name} has ${faces} faces after import and the game runs out of memory above ${CRAFT_MAX_FACES}. Reduce it (Blender: Decimate modifier) and import again.`);
@@ -1192,13 +1218,23 @@ async function importCraftModel()
 
     await editAsset(id + '_HOB', () => out);
 
-    await editAsset(id + '_HMT', (bytes) => {
-      for (const [tex, rgba] of images)
-        encodeTexture(bytes, tex, rgba, model.hmt.textures);
-    });
+    if (images.length)
+    {
+      await editAsset(id + '_HMT', (bytes) => {
+        for (const [tex, rgba] of images)
+          encodeTexture(bytes, tex, rgba, model.hmt.textures);
+      });
+    }
 
     modelCache.delete(id);
     clearCaches();
+
+    // A new ship's HUD icons, blueprint and shadow follow its model.
+    const ship = modShips.find((s) => id === `data/pl_crafts/${s.id}`);
+
+    if (ship)
+      await shipPictures(ship);
+
     await showModel(id, selectedObj, true);
   } catch (e) {
     alert(e.message);
@@ -1209,14 +1245,377 @@ async function importCraftModel()
 
 $('btnImport').onclick = importCraftModel;
 
-async function replaceTexture(id, name) {
-  if (id.endsWith('/koelsch'))
-  {
-    alert('The Naboo Starfighter textures are encrypted in the ROM and cannot be patched yet.');
+// A model drawn from above with its nose up, filling a w x h picture with a small margin, as the HUD icons show the craft: RGBA, top row
+// first, its brightness stretched so the lightest part is white. lines draws its edges in white, as the AVAILABLE CRAFT blueprints do.
+async function topViewPixels(id, w, h, lines = false)
+{
+  const model = await loadModel(id);
+  const mesh = buildObject(model.hob.objects[0], model, id, { tris: 0, verts: 0, parts: 0 });
+  const stage = new THREE.Scene();
 
-    return;
+  if (lines)
+  {
+    const edge = new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true });
+
+    mesh.traverse((o) => {
+      if (o.isMesh)
+        o.material = edge;
+    });
   }
 
+  stage.add(mesh);
+  mesh.updateWorldMatrix(true, true);
+
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3());
+  const mid = box.getCenter(new THREE.Vector3());
+  const unit = Math.max(size.x / w, size.z / h) * 0.55;
+  const lens = new THREE.OrthographicCamera(-unit * w, unit * w, unit * h, -unit * h, 0.01, size.y + 20);
+
+  // The game's Y points down, so above is -Y.
+  lens.position.set(mid.x, box.min.y - 10, mid.z);
+  lens.up.set(0, 0, 1);
+  lens.lookAt(mid);
+
+  // Drawn 4x larger and averaged down. A GPU read-back row must be a multiple of 256 bytes, so the big picture is 64-pixel aligned.
+  const big = 4;
+  const bw = Math.ceil((w * big) / 64) * 64;
+  const bh = h * big;
+  const target = new THREE.RenderTarget(bw, bh, { samples: 4 });
+  const held = renderer.getRenderTarget();
+  const clear = renderer.getClearColor(new THREE.Color());
+  const alpha = renderer.getClearAlpha();
+
+  lens.left = -unit * w * (bw / (w * big));
+  lens.right = unit * w * (bw / (w * big));
+  lens.updateProjectionMatrix();
+  renderer.setRenderTarget(target);
+  renderer.setClearColor(0x000000, 0);
+  renderer.render(stage, lens);
+  renderer.setRenderTarget(held);
+  renderer.setClearColor(clear, alpha);
+
+  const read = await renderer.readRenderTargetPixelsAsync(target, 0, 0, bw, bh);
+
+  target.dispose();
+
+  // The w * big middle columns of the big picture, averaged into w x h; lines take each block's brightest so thin edges stay lit.
+  const out = new Uint8Array(w * h * 4);
+  const x0 = (bw - w * big) >> 1;
+
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      for (let c = 0; c < 4; c++)
+      {
+        let sum = 0;
+        let most = 0;
+
+        for (let dy = 0; dy < big; dy++)
+          for (let dx = 0; dx < big; dx++)
+          {
+            const v = read[((y * big + dy) * bw + x0 + x * big + dx) * 4 + c];
+
+            sum += v;
+            most = Math.max(most, v);
+          }
+
+        out[(y * w + x) * 4 + c] = lines ? most : sum / (big * big);
+      }
+
+  let top = 1;
+
+  for (let i = 0; i < w * h; i++)
+    if (out[i * 4 + 3])
+      top = Math.max(top, out[i * 4], out[i * 4 + 1], out[i * 4 + 2]);
+
+  for (let i = 0; i < w * h * 4; i++)
+    if (i % 4 !== 3)
+      out[i] = Math.min(255, (out[i] * 255) / top);
+
+  return out;
+}
+
+// A ship's HUD icons (both sizes), AVAILABLE CRAFT blueprint and shadow drawn from its model, their textures named after the ship's place in
+// ships.json.
+async function shipPictures(ship)
+{
+  const model = `data/pl_crafts/${ship.id}`;
+  const tag = '~' + Math.max(0, modShips.findIndex((s) => s.id === ship.id));
+
+  for (const size of ['ov', '1v'])
+  {
+    const path = `data/ov/${size}_${ship.id}`;
+    const { w, h } = hudIconSize(await rom.read(path));
+    const rgba = await topViewPixels(model, w, h);
+
+    await editAsset(path, (b) => texFileRename(hudIconWrite(b, rgba), tag), `${ship.name}: HUD icon`);
+  }
+
+  const blueprint = `data/blueprints/${ship.id}`;
+  const { w, h } = hudIconSize(await rom.read(blueprint));
+  const rgba = await topViewPixels(model, w, h, true);
+
+  await editAsset(blueprint, (b) => texFileRename(blueprintWrite(b, rgba), tag), `${ship.name}: blueprint`);
+
+  // The shadow: its first image holds the craft's left half from above, nose up, as 4-bit coverage (the game mirrors it).
+  const shadow = `data/pl_crafts/s_${ship.id}`;
+  const half = hudIconSize(await rom.read(shadow));
+  const top = await topViewPixels(model, half.w * 2, half.h);
+  const cover = new Uint8Array(half.w * half.h * 4).fill(255);
+
+  for (let y = 0; y < half.h; y++)
+    for (let x = 0; x < half.w; x++)
+      cover[(y * half.w + x) * 4 + 3] = top[(y * half.w * 2 + x) * 4 + 3];
+
+  await editAsset(shadow, (b) => texFileRename(blueprintWrite(b, cover), tag), `${ship.name}: shadow`);
+}
+
+// The hangar craft (SHIP_TEMPLATES key) whose exterior model id is, null for any other model.
+const shipTemplateOf = (id) => Object.entries(SHIP_TEMPLATES).find(([, t]) => t.model === id)?.[0] ?? null;
+
+// A new hangar ship that flies as the open craft: its ships.json entry, a copy of the craft's model named after it and its hangar records.
+// Opens the copy, ready for Import model.
+async function newShip(named = null)
+{
+  const template = shipTemplateOf(selected);
+
+  if (!template)
+  {
+    alert('Open a hangar craft\'s model (the X-wing, say) in the Models tab first.');
+
+    return null;
+  }
+
+  const ships = shipsParse(await virtualText(MOD_SHIPS));
+  const name = (named ?? prompt('Name of the new ship, as the hangar shows it', 'New ship'))?.trim();
+
+  if (!name)
+    return null;
+
+  const taken = [...rom.assets.keys()].map((k) => k.split('/').pop().replace(/_(HOB|HMT)$/, ''));
+  const ship = shipNew(ships, name, template, taken);
+
+  if (!ship)
+  {
+    alert('The hangar has room for three new ships, and they are all taken.');
+
+    return null;
+  }
+
+  await historyGroup(`New ship: ${ship.name}`, async () => {
+    await editText(MOD_SHIPS, shipsWrite([...ships, ship]), `New ship: ${ship.name}`);
+    await applyModLevels();
+    await editAsset(`data/pl_crafts/${ship.id}_HOB`, (b) => hobSetObjectName(b, ship.id), `New ship: ${ship.name}`);
+    await editAsset(`data/pl_crafts/${ship.id}_HMT`, (b) => hmtOwnTextures(b, ship.id), `New ship: ${ship.name}`);
+    await editAsset('data/frontend/hangar/dat', (b) => shipHangarAdd(b, ship), `New ship: ${ship.name} in the hangar`);
+    await shipPictures(ship);
+  });
+
+  await showModel(`data/pl_crafts/${ship.id}`);
+
+  return ship;
+}
+
+$('btnNewShip').onclick = () => newShip();
+
+const HANGAR_DAT = 'data/frontend/hangar/dat';
+
+// The hangar floor from above: the scene's ships and props, the line the camera looks along (camroute_1) and the open ship; a click puts
+// the ship on the camera's line through it (as far from the camera as its craft stands from its own) and Place moves it there.
+async function placeShip(at = null)
+{
+  const ship = modShips.find((s) => selected === `data/pl_crafts/${s.id}`);
+
+  if (!ship)
+    return;
+
+  const dat = shipHangarRemove(await rom.read(HANGAR_DAT), ship.id);
+  const items = parseDAT(dvOf(dat)).items;
+  const skip = /^(floor_|int_|ceiling|hangar|roof|stars|planet|transport|camstart|camwatch)/;
+  const things = items.filter((i) => i.type === 0 && i.pos && !skip.test(i.name));
+  const crafts = new Set(Object.values(SHIP_TEMPLATES).map((t) => t.record));
+  const look = splineAt(dvOf(dat), items.find((i) => i.name === 'camroute_1'));
+  let spot = at ? shipSpotAt(dat, at) : null;
+  let stand = spot ? shipStandAt(dat, ship.template, spot) : null;
+
+  if (at)
+    return applyShipSpot(ship, spot);
+
+  const size = 360;
+  const xs = things.map((i) => i.pos[0]);
+  const zs = things.map((i) => i.pos[2]);
+  const [x0, x1, z0, z1] = [Math.min(...xs) - 4, Math.max(...xs) + 4, Math.min(...zs) - 4, Math.max(...zs) + 4];
+  const scale = size / Math.max(x1 - x0, z1 - z0);
+  const toMap = (x, z) => [(x - x0) * scale, (z - z0) * scale];
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const c = elem('canvas', { className: 'hangarMap', width: size, height: size, title: 'Click where the ship should stand' });
+  const go = elem('button', { textContent: 'Place', disabled: true });
+  const cancel = elem('button', { textContent: 'Cancel' });
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  const draw = () => {
+    const g = c.getContext('2d');
+
+    g.fillStyle = css('--bg');
+    g.fillRect(0, 0, size, size);
+    g.strokeStyle = css('--line');
+    g.beginPath();
+
+    for (let k = 0; k <= 100; k++) {
+      const p = look(k / 100);
+
+      g[k ? 'lineTo' : 'moveTo'](...toMap(p[0], p[2]));
+    }
+
+    g.stroke();
+    g.font = '10px sans-serif';
+
+    for (const i of things)
+    {
+      const [x, y] = toMap(i.pos[0], i.pos[2]);
+      const craft = crafts.has(i.name) || modShips.some((s) => s.id === i.name);
+
+      g.fillStyle = craft ? css('--obj') : css('--dim');
+      g.fillRect(x - (craft ? 4 : 2), y - (craft ? 4 : 2), craft ? 8 : 4, craft ? 8 : 4);
+
+      if (craft)
+        g.fillText(i.name, x + 6, y + 3);
+    }
+
+    if (stand) {
+      const [x, y] = toMap(stand[0], stand[2]);
+
+      g.fillStyle = css('--accent');
+      g.beginPath();
+      g.arc(x, y, 6, 0, Math.PI * 2);
+      g.fill();
+      g.fillText(ship.name, x + 8, y + 3);
+    }
+  };
+
+  c.onclick = (e) => {
+    const r = c.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * size;
+    const y = ((e.clientY - r.top) / r.height) * size;
+
+    spot = shipSpotAt(dat, [x / scale + x0, y / scale + z0]);
+    stand = shipStandAt(dat, ship.template, spot);
+    go.disabled = false;
+    draw();
+  };
+
+  cancel.onclick = () => d.close();
+
+  go.onclick = async () => {
+    d.close();
+    await applyShipSpot(ship, spot);
+  };
+
+  d.onclose = () => d.remove();
+
+  const actions = elem('div', { className: 'actions' });
+
+  actions.append(go, cancel);
+  d.append(elem('b', { textContent: `Place ${ship.name} in the hangar` }), c, elem('small', { textContent: 'Squares are the hangar\'s craft and props; the line is where the camera looks.' }), actions);
+  document.body.append(d);
+  draw();
+  d.showModal();
+}
+
+// A ship moved to a spot: its stop in ships.json and its hangar records rebuilt there.
+async function applyShipSpot(ship, spot)
+{
+  const ships = shipsParse(await virtualText(MOD_SHIPS));
+  const own = ships.find((s) => s.id === ship.id);
+
+  own.stop = spot.stop;
+
+  await historyGroup(`${ship.name}: place in hangar`, async () => {
+    await editText(MOD_SHIPS, shipsWrite(ships), `${ship.name}: place in hangar`);
+    await applyModLevels();
+    await editAsset(HANGAR_DAT, (b) => shipHangarAdd(shipHangarRemove(b, ship.id), own, spot), `${ship.name}: place in hangar`);
+  });
+
+  return own;
+}
+
+$('btnPlaceShip').onclick = () => placeShip();
+
+// The ship's own hangar line, pl_crafts/v_<id>, played instead of its craft's.
+$('btnShipLine').onclick = () => {
+  const ship = modShips.find((s) => selected === `data/pl_crafts/${s.id}`);
+
+  if (!ship)
+    return;
+
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const close = elem('button', { textContent: 'Close' });
+  const { row, note } = recordingControls(`mod/assets/pl_crafts/v_${ship.id}`, 'craft', () => {});
+  const actions = elem('div', { className: 'actions' });
+
+  close.onclick = () => d.close();
+  d.onclose = () => d.remove();
+  actions.append(close);
+  d.append(elem('b', { textContent: `${ship.name}: craft line` }), elem('small', { textContent: 'Plays in the hangar when the ship comes into view.' }), row, note, actions);
+  document.body.append(d);
+  d.showModal();
+};
+
+// The ship's craft abilities, from any craft: its ships.json "behaviours". S-foils and boost share the special button, so one turns the other off.
+const SHIP_ABILITIES = [
+  ['sfoils', 'S-foils (X-wing)', 'The special button closes the wings for speed, guns locked. Wings are the parts named wngrot_a and wngrot_b.'],
+  ['boost', 'Boost (V-wing)', 'The special button gives 6 seconds of speed, then 6 seconds of cooldown.'],
+  ['aim', 'Strong aim assist (A-wing)', 'Shots home in on targets in a wider cone.'],
+];
+
+$('btnShipAbilities').onclick = async () => {
+  const ship = modShips.find((s) => selected === `data/pl_crafts/${s.id}`);
+
+  if (!ship)
+    return;
+
+  const have = new Set(shipBehaviours(ship));
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const close = elem('button', { textContent: 'Close' });
+  const actions = elem('div', { className: 'actions' });
+  const boxes = new Map();
+
+  const save = async () => {
+    const ships = shipsParse(await virtualText(MOD_SHIPS));
+    const own = ships.find((s) => s.id === ship.id);
+
+    own.behaviours = SHIP_ABILITIES.map(([k]) => k).filter((k) => boxes.get(k).checked);
+    await editText(MOD_SHIPS, shipsWrite(ships), `${ship.name}: abilities`);
+    await applyModLevels();
+  };
+
+  for (const [key, label, tip] of SHIP_ABILITIES)
+  {
+    const box = elem('input', { type: 'checkbox', checked: have.has(key) });
+
+    box.onchange = () => {
+      const other = key === 'sfoils' ? 'boost' : (key === 'boost' ? 'sfoils' : null);
+
+      if (box.checked && other)
+        boxes.get(other).checked = false;
+
+      save();
+    };
+
+    boxes.set(key, box);
+    d.append(elem('label', { title: tip }, box, ' ' + label));
+  }
+
+  close.onclick = () => d.close();
+  d.onclose = () => d.remove();
+  actions.append(close);
+  d.prepend(elem('b', { textContent: `${ship.name}: abilities` }));
+  d.append(actions);
+  document.body.append(d);
+  d.showModal();
+};
+
+async function replaceTexture(id, name) {
   const file = await pickImage();
 
   if (!file)
@@ -2076,6 +2475,46 @@ async function importHeightmap() {
   await commitTerrain(bytes);
 }
 
+// Grows the map on its +X and +Z sides (hmpResize), so everything placed keeps its place. 128 cells a side is what has been flown in the game.
+const MAP_MAX = 128;
+
+async function growMap()
+{
+  const { w, h } = sculpt.grid;
+  const dir = sculpt.dir;
+  const ans = prompt(`Map size in cells (2 units each), ${w} x ${h} now, up to ${MAP_MAX} x ${MAP_MAX}. The ground continues from the +X and +Z edges.`, `${w} x ${h}`);
+
+  if (!ans)
+    return;
+
+  const m = ans.match(/^\s*(\d+)\s*[x*, ]\s*(\d+)\s*$/i);
+  const [nw, nh] = m ? [+m[1], +m[2]] : [0, 0];
+
+  if (nw < w || nh < h || nw > MAP_MAX || nh > MAP_MAX)
+  {
+    alert(`Give a size from ${w} x ${h} to ${MAP_MAX} x ${MAP_MAX}, like ${Math.min(w + 16, MAP_MAX)} x ${Math.min(h + 16, MAP_MAX)}. A map can only grow.`);
+
+    return;
+  }
+
+  if (nw === w && nh === h)
+    return;
+
+  try {
+    await editAsset(dir + '/hmp', (bytes) => hmpResize(bytes, nw, nh), `Map size ${nw} x ${nh}`);
+  } catch (e) {
+    alert(e.message);
+
+    return;
+  }
+
+  for (const k of [...terrainCache.keys()])
+    if (k.startsWith(dir + '|'))
+      terrainCache.delete(k);
+
+  await reloadLevel(dir);
+}
+
 let stroke = null;
 
 canvas.addEventListener('pointerdown', (e) => {
@@ -2375,6 +2814,7 @@ function flashTiles(tiles) {
 const needSculpt = (fn) => () => (sculpt ? fn() : ($('sculptInfo').textContent = 'This level has no terrain to edit.'));
 $('btnHeightOut').onclick = needSculpt(exportHeightmap);
 $('btnHeightIn').onclick = needSculpt(importHeightmap);
+$('btnMapSize').onclick = needSculpt(growMap);
 
 for (const id of ['sculptRadius', 'sculptStrength'])
   $(id).oninput = () => ($(id + 'Val').textContent = $(id).value);

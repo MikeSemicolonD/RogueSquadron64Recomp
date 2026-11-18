@@ -115,6 +115,7 @@ extern "C" volatile uint8_t* volatile g_recomp_rdram_for_wp_raw;
 extern "C" void rs64_asset_overrides_init();
 extern "C" void rs64_camera_shots_init();
 extern "C" void rs64_mod_levels_init();
+extern "C" void rs64_ships_init();
 extern "C" void rs64_menu_config_init(void);   // menu_config.cpp
 extern "C" void rs64_entrypoint_with_rdram_capture(uint8_t* rdram, recomp_context* ctx) {
 
@@ -122,6 +123,7 @@ extern "C" void rs64_entrypoint_with_rdram_capture(uint8_t* rdram, recomp_contex
     rs64_asset_overrides_init();
     rs64_camera_shots_init();
     rs64_mod_levels_init();
+    rs64_ships_init();
     recomp_entrypoint(rdram, ctx);
 }
 

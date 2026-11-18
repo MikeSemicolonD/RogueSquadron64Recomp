@@ -14,7 +14,7 @@ constexpr uint8_t kProtocol = 1;
 constexpr size_t kMaxPacket = 1200;
 
 // 1 was the lockstep frame packet and 8 a client objective-write event (both retired); keep them unused.
-enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31, Hit = 32, Rules = 33, EndClip = 34, Mod = 35 };
+enum class Msg : uint8_t { Frame = 1, Launch = 2, Bye = 3, State = 4, Result = 5, Presence = 6, Obj = 7, Damage = 9, Life = 10, Mission = 11, Out = 12, Hello = 13, Pick = 14, Ready = 15, Browse = 16, Skip = 17, BriefingDone = 18, Upgrades = 19, Pickup = 20, Trigger = 21, TowTrip = 22, Shot = 23, Auth = 24, Accept = 25, Continue = 26, TowSeg = 27, Pake1 = 28, Pake2 = 29, Pake3 = 30, Name = 31, Hit = 32, Rules = 33, EndClip = 34, Mod = 35, Ship = 36 };
 enum class ByeReason : uint8_t { Finished = 0, Desync = 1, Quit = 2, Mismatch = 3, WrongPassword = 4 };
 
 std::vector<uint8_t> encode_launch(const std::string& header_text);
@@ -200,6 +200,9 @@ std::vector<uint8_t> encode_hello(const Hello& h);
 bool decode_hello(const uint8_t* data, size_t n, Hello* out);
 
 // Sent by each side once connected (sealed in a password game): the pilot name (3 letters, gGameSettings+7), shown over this player's ship.
+// The ship (a mod's new hangar ship id, up to 15 characters) a READY's craft is, "" for the stock craft.
+std::vector<uint8_t> encode_ship(const std::string& id);
+bool decode_ship(const uint8_t* data, size_t n, std::string* id);
 std::vector<uint8_t> encode_name(const char name[3]);
 bool decode_name(const uint8_t* data, size_t n, char name[3]);
 

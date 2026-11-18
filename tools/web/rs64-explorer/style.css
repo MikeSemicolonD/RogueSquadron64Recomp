@@ -112,6 +112,8 @@ main:has(:is(#rulesPanel, #crawlPanel, #lookPanel, #objPanel, #levelPanel, #cutP
 .crawlEdit label.crawlText { flex: 1; min-height: 0; }
 .crawlEdit > .shotNote { flex: none; }
 #crawlPanel .crawlEdit label.crawlText > textarea { flex: 1; min-height: 6em; resize: none; }
+.lookRow { display: flex; gap: 4px; }
+#btnLook { flex: 1; }
 #btnRules, #btnLook { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 #btnRules[hidden], #btnLook[hidden] { display: none; }
 .levelRules { display: grid; gap: 6px; min-width: 0; }
@@ -583,6 +585,7 @@ main:has(#selHud:not(:empty)) #legend { max-height: calc(100% - var(--scene-h, 2
 #menuPanel .menuLine { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 #menuPanel .menuCut { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 6px; }
 #menuPanel canvas { position: static; inset: auto; image-rendering: pixelated; }
+.levelDialog canvas.hangarMap { position: static; inset: auto; width: 360px; height: 360px; max-width: 100%; justify-self: center; cursor: crosshair; border-radius: 4px; }
 #menuPanel .menuRow { outline: 1px dashed transparent; outline-offset: 3px; border-radius: 3px; cursor: pointer; min-height: 12px; line-height: 0; }
 #menuPanel .menuRow:hover { outline-color: #444; }
 #menuPanel .menuRow.sel { outline-color: var(--accent); z-index: 5; }

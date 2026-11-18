@@ -256,6 +256,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         h.draw_pct = (uint32_t)std::lround(rs64_draw_dist_setting() * 100.0f);
         s.cruise = rs64_throttle_cruise_live();
         memcpy(&h.cruise_bits, &s.cruise, 4);
+        h.ship = rs64_ships_flying_id();
         s.rec = fopen(path, "wb");
 
         if (!s.rec) {
@@ -297,6 +298,12 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         }
 
         apply_session(rdram, h);
+
+        if (!h.ship.empty() && !rs64_ships_fly(h.ship.c_str()))
+        {
+            fprintf(stderr, "[ls] the recording flew ship %s, which no enabled mod has: its template craft is shown\n", h.ship.c_str());
+        }
+
         s.god = h.flags0 & kGodModeBit;
         memcpy(&s.cruise, &h.cruise_bits, 4);
         ww(rdram, 0x80003470u, h.seed);

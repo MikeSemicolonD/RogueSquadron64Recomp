@@ -227,6 +227,7 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | SHOT | Host to client: a mod-linked mid-mission camera shot for the client (camera item and trigger names; a shared one the host also plays, or a personal one the client set off); the client plays it through the `camera.shots` service unless that trigger already fired in its own world. |
 | RESULT | Host's mission result. |
 | PICK, READY, BROWSE, BRIEFING_DONE | Lobby screens. |
+| SHIP | Both, after READY: the mod's new hangar ship the pick is, empty for a stock craft. A side that has the ship installed draws the other player's puppet with its model; otherwise the puppet is that craft's wingman. |
 | CONTINUE | A player pressed continue on the debrief; both leave it once each side has. |
 | SKIP | Host to client: a cutscene skip, tagged with the scene it was made in (see [Cutscene skip sharing](#cutscene-skip-sharing)). |
 | BYE | Quit, mismatch, or the host refusing a password (`WrongPassword`). |

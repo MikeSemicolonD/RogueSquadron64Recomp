@@ -80,7 +80,7 @@ The easiest way to make one is the RS64 Explorer (`tools/web/rs64-explorer`), wh
    - **Textures:** right-click a textured face and pick *Replace texture from image…*
    - **Object placement:** in a level, right-click a placed object or marker and edit its *Placement* (position, rotation, scale or zone size). Objects can also be duplicated or deleted, except ones the mission script refers to.
    - **Terrain:** tick *Edit terrain* to sculpt and repaint the ground (placed objects follow it), or import a grey heightmap PNG. Raising or lowering past the level's height range grows it, and the whole level's ground then moves in coarser height steps.
-   - **Craft models:** on a player craft in the Models tab, pick *Import craft model (.glb)…*. The engines, glows and canopy stay; the model's first texture goes into the craft's largest texture slot.
+   - **Models:** on a player craft, enemy or building in the Models tab, pick *Import model (.glb)…*. A craft's engines, glows and canopy stay; the model's textures take the model's own texture slots, largest first, and a building whose textures others in its level share keeps its colours only.
 2. Click *Export mod* and extract the zip into `mods/`. With more than one kind of change (Levels, Models, Audio, UI, Fonts), it asks how to split them: one mod per kind, groups you name (*+ Group*, then move changes into them), or all in one. Changes that need each other, such as a level and the custom ship it places, always export together, and the dialog says so. The groups are saved with the project.
 
 Rules:
@@ -167,6 +167,22 @@ Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>`
 ### Models from other levels
 
 `assets/level/<folder>/packages.json` loads other levels' model packages into a level, so its objects can use their models: `{ "version": 1, "levels": ["lv_2", "lv_h"] }`. The RS64 Explorer writes this file when you place something from another level. The game shares a texture between packages that use the same name, so the Explorer also gives clashing textures their own names in that level's `opkg_HMT`, which ships with the mod.
+
+### New hangar ships
+
+A `ships.json` at the mod root adds ships to the craft-select hangar. Each flies as a stock `template` craft (its handling, weapons and sounds) with its own name and model:
+
+```json
+{ "ships": [ { "id": "red_wing", "name": "RED WING", "template": "xwing", "stop": [0.8625, 0.847] } ] }
+```
+
+- `id`: 1-9 of `a-z 0-9 _`. The mod ships `assets/pl_crafts/<id>_HOB` / `_HMT`, whose object is named `<id>`, and may ship `pl_crafts/c_<id>` (cockpit), `ov/ov_<id>` / `ov/1v_<id>` (HUD icon) `blueprints/<id>` (its AVAILABLE CRAFT hologram, 64x80 4-bit intensity) and `pl_crafts/s_<id>` (its shadow in the hangar and in missions: the craft's left half from above, nose up, 32x64 4-bit, mirrored by the game); any left out is the template's. Its hangar line, `assets/pl_crafts/v_<id>`, is a MORT stream like a level's `brief` and plays instead of the template's. AVAILABLE CRAFT lists a ship wherever its template is available, while eight craft or fewer show.
+- `template`: `xwing ywing awing vwing speeder falcon naboo` (not the TIE interceptor, which has its own hangar reveal, nor the T-16, which has no bay).
+- `behaviours` (optional): the craft abilities it has, from any craft: `sfoils` (the X-wing's: the special button closes the wings for 1.5x speed and locks the guns, rotating the model's `wngrot_a` / `wngrot_b` parts), `boost` (the V-wing's: 6 s at speed 6, then 6 s capped at 3) and `aim` (the A-wing's wider aim assist). Left out, it has its template's own; an empty list turns them off. `sfoils` and `boost` share the special button, so a ship can't have both. The T-16 has no aim assist to widen.
+- `stop`: where the hangar camera stops for it, as positions along its two camera routes (`camroute_0`, where the camera stands, and `camroute_1`, where it looks). Turning visits every stop in order of the first, ships among the stock bays.
+- The mod's `frontend/hangar/dat` adds a ship record named `<id>` where it stands, plus `<id>_route` (its take-off), `<id>_camstart` and `<id>_camwatch` (the camera at its bay).
+
+The RS64 Explorer's *New ship from this craft* writes all of this, for up to three ships (the game's limit) in three free spots, and *Place in hangar* moves one to any point on the floor. It also copies the template's cockpit as `c_<id>` and draws both HUD icons (IA8, the craft from above, nose up) from the ship's model, and its blueprint as a line drawing from above.
 
 ### Level rules
 

@@ -50,7 +50,11 @@
     <label title="Game: models are prelit and the terrain is baked, as on the N64. Dynamic: real-time sun with cast shadows.">Lighting <select id="optLight" style="flex:1"><option value="game">Game (prelit)</option><option value="dynamic">Dynamic sun + shadows</option></select></label>
     <button id="btnExport" title="Exports what is shown: current object, LOD and markers">Export .glb</button>
     <hr class="divider">
-    <button class="mdl" id="btnImport" title="Replace this craft's model with a .glb">Import craft model (.glb)…</button>
+    <button class="mdl" id="btnImport" title="Replace this model with a .glb">Import model (.glb)…</button>
+    <button class="mdl" id="btnNewShip" hidden title="A new ship in the hangar that flies like this craft">New ship from this craft…</button>
+    <button class="mdl" id="btnPlaceShip" hidden title="Where this ship stands in the hangar">Place in hangar…</button>
+    <button class="mdl" id="btnShipLine" hidden title="The line a crew member says about this ship in the hangar">Craft line…</button>
+    <button class="mdl" id="btnShipAbilities" hidden title="S-foils, boost and aim assist, from any craft">Abilities…</button>
     <hr class="divider mdl">
     <div class="histRow"><button id="btnOpen" data-icon="open" title="Open project (.rs64proj): your saved edits and their undo history"></button><button id="btnSave" data-icon="save" title="Save project (Ctrl+S): your edits and undo history"></button><button id="btnUndo" data-icon="undo" disabled title="Undo (Ctrl+Z)"></button><button id="btnRedo" data-icon="redo" disabled title="Redo (Ctrl+Y or Ctrl+Shift+Z)"></button></div>
     <div class="histRow"><button id="btnMod" data-icon="modExport" disabled title="Save your edits as a mod (zip) to extract into the game's mods folder"></button><button id="btnPlay" data-icon="modPlay" disabled title="Play in game with your edits, starting at what is open here"></button></div>
@@ -80,7 +84,7 @@
           <label title="Brush radius in terrain grid steps (0.5 world units each)">Radius <input type="range" id="sculptRadius" min="1" max="40" value="8"><output id="sculptRadiusVal">8</output></label>
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
           <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
-          <button id="btnLook" title="The level's water, fog and clouds"></button>
+          <div class="lookRow"><button id="btnLook" title="The level's water, fog and clouds"></button><button id="btnMapSize" data-icon="scale" title="Map size: make the map bigger"></button></div>
           <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
           <div class="sculptFoot"><label id="sculptBudgetRow" hidden>Ground tiles <meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0"></meter></label><label id="paintBudgetRow" hidden>Textures near any spot <meter id="paintBudget" min="0" max="360" low="240" high="300" optimum="0"></meter></label><span id="sculptInfo"></span></div>
         </div>

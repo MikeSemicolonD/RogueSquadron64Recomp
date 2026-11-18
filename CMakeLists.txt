@@ -360,6 +360,7 @@ set(RS64_MAIN_SOURCES
     ${CMAKE_SOURCE_DIR}/src/game/hook_helpers.cpp
     ${CMAKE_SOURCE_DIR}/src/game/mod_content/asset_overrides.cpp
     ${CMAKE_SOURCE_DIR}/src/game/mod_content/mod_level_hooks.cpp
+    ${CMAKE_SOURCE_DIR}/src/game/mod_content/hangar_ships.cpp
     ${CMAKE_SOURCE_DIR}/src/game/static_standins.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep_core.cpp
     ${CMAKE_SOURCE_DIR}/src/lockstep/lockstep.cpp

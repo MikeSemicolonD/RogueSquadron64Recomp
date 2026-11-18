@@ -11,7 +11,7 @@ Open a stock level in **Levels** and pick:
 
 It opens in the editor, ready to build. Rename it in Level settings.
 
-The stock level it starts from, its *template*, sets the sky, ground textures and map size.
+The stock level it starts from, its *template*, sets the sky, ground textures and starting map size ([map size](Make-a-Level-Mod#reshape-the-ground) makes it bigger).
 
 A walker level plays like the CHICKEN passcode: no craft select, no approved craft, and the game goes back to SELECT GAME when it ends. **New level from this one** on *AT-ST (CHICKEN passcode)* in the Levels list makes a walker copy of that level.
 
@@ -92,7 +92,4 @@ To make the player land too, look at the outpost spot, add a **Reach an area** o
 
    It flies the run and stays on the medal screen. Your own runs record the same way with `--record <file.rec>`.
 
-## Not yet possible
-
-- A map bigger than its template.
-- Your own model as a **new** selectable ship.
+A new ship for the hangar is made in the Models tab: [Add a new ship to the hangar](Make-a-Model-Mod#add-a-new-ship-to-the-hangar).

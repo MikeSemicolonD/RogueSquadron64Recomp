@@ -1597,6 +1597,8 @@ async function showModel(id, objIndex = -1, keepView = false)
   const sel = $('objSel');
 
   $('objRow').hidden = hob.objects.length < 2;
+  $('btnNewShip').hidden = !shipTemplateOf(id);
+  $('btnPlaceShip').hidden = $('btnShipLine').hidden = $('btnShipAbilities').hidden = !modShips.some((s) => id === `data/pl_crafts/${s.id}`);
 
   if (sel.dataset.id !== id)
   {
@@ -2622,7 +2624,7 @@ async function openFile(file)
     history = createHistory();
     savedStep = null;
     updateModButton();
-    applyModLevelsText('');
+    applyModLevelsText('', '');
     objectHome = objectHomeReady = null;
 
     if (rom.assets.has('data/voice_TXT'))

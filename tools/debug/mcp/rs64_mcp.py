@@ -31,20 +31,27 @@ DEFAULT_BRIDGE_PORT = 47064
 WAIT_LOG_MAX_S = 120
 # A long bridge call gives up after this long with no display list and the game not held (a load can pause drawing for a few seconds).
 CALL_STALL_S = 20
-# A menu screen that nothing drives (no boot target, no held input) never changes; a wait there gives up after this long. The main menu is left out: idling there starts the attract demo.
+# A menu screen that nothing drives (no boot target, no held input) never changes; a wait there gives up after this long. The main menu and
+# the hangar are left out (idling there starts the attract demo; the hangar also speaks and launches on its own).
 MENU_IDLE_S = 20
+MENU_SELF_RUNNING = ("menu.main", "menu.account.hangar")
+# Clocks that run while the state still reads the menu that started them (a mission's crawl and opening cutscene).
+MENU_PLAYBACK_CLOCKS = ("crawl", "cutscene", "cinematic")
 
 
 class MenuIdle:
     """Raises once the game has sat on one undriven menu screen for MENU_IDLE_S."""
 
     def __init__(self):
-        self.state, self.since = None, time.time()
+        self.state, self.playback, self.since = None, None, time.time()
 
     def check(self, info, what):
         st = info.get("state") or ""
-        driven = info.get("held") or info.get("input") or info.get("nav")
-        if driven or st != self.state or not st.startswith("menu") or st == "menu.main":
+        clocks = info.get("clocks") or {}
+        playback = tuple(clocks.get(c) for c in MENU_PLAYBACK_CLOCKS)
+        driven = info.get("held") or info.get("input") or info.get("nav") or playback != self.playback
+        self.playback = playback
+        if driven or st != self.state or not st.startswith("menu") or st in MENU_SELF_RUNNING:
             self.state, self.since = st, time.time()
         elif time.time() - self.since >= MENU_IDLE_S:
             raise GameError(f"{what}: stopped, the game has sat on {st} for {MENU_IDLE_S}s with nothing driving it (no boot target running, no press); it will not change on its own")

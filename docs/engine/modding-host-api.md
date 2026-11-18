@@ -110,6 +110,7 @@ A service is a versioned C table one mod hands another through the host, so a mo
 | Name | Header | Provider | Consumer |
 | --- | --- | --- | --- |
 | `mp.channel` | [include/rs64/mp_channel.h](../../include/rs64/mp_channel.h) | Multiplayer ([mods/multiplayer-native](../../mods/multiplayer-native/)) | Any mod that keeps its own state in co-op: `send` up to 1024 bytes on a named channel (reliable, or unreliable for state sent every frame) and `listen` for the other player's, delivered on the game thread. Both players need the mod; a channel nobody listens to drops its messages. See [multiplayer.md](../guides/multiplayer.md#mod-channels) |
+| `ships` | [include/rs64/ships.h](../../include/rs64/ships.h) | The game (`hangar_ships.cpp`, the new hangar ships of `ships.json`) | Multiplayer: `shown()` is the ship a READY picks, `has(id)` whether that ship is installed here, and `set_puppet(id)` around the puppet's spawn makes it draw the ship's model |
 | `mp.transport` | [include/rs64/mp_transport.h](../../include/rs64/mp_transport.h) | [mods/steam-relay](../../mods/steam-relay/) | Multiplayer's lobby (`relay()` in `ghost_lobby.cpp`): while `available()` is true, HOST / JOIN run over it instead of ENet; a version 2 table (`RS64_MP_TRANSPORT_HAS_LIST`) also feeds the JOIN GAME list; see [multiplayer.md](../guides/multiplayer.md#steam-relay-mod) |
 
 ## Hooks

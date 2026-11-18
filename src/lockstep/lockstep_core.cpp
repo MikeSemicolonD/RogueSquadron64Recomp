@@ -27,11 +27,11 @@ std::string format_header(const SessionHeader& h)
     char buf[768];
     snprintf(buf, sizeof(buf),
         "%s\nseed=%u\nlevel=%u\ncraft=%u\ndifficulty=%u\nflags0=0x%08X\ncontroller=%u\nexpansion=%u\n"
-        "cheats0=0x%08X\ncheats1=0x%08X\nnaboo=0x%08X\nsecondary=%u\ncruise=0x%08X\nwidescreen=%u\ndraw=%u\npilot=%s\nbuild=%s\n---\n",
+        "cheats0=0x%08X\ncheats1=0x%08X\nnaboo=0x%08X\nsecondary=%u\ncruise=0x%08X\nwidescreen=%u\ndraw=%u\npilot=%s\nbuild=%s\n",
         kMagic, h.seed, h.level, h.craft, h.difficulty, h.flags0, h.controller, h.expansion,
         h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, h.widescreen, h.draw_pct, pilot, h.build.c_str());
 
-    return buf;
+    return std::string(buf) + (h.ship.empty() ? "" : "ship=" + h.ship + "\n") + "---\n";
 }
 
 static bool parse_hex_bytes(const std::string& hex, uint8_t* out, size_t n) {
@@ -114,6 +114,7 @@ bool parse_header(const std::string& text, SessionHeader* out) {
         else if (key == "widescreen") h.widescreen = v;
         else if (key == "draw") h.draw_pct = v;
         else if (key == "build") h.build = val;
+        else if (key == "ship") h.ship = val;
         else if (key == "pilot" && !parse_hex_bytes(val, h.pilot.data(), h.pilot.size())) return false;
     }
 

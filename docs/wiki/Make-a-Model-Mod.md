@@ -1,6 +1,6 @@
 # Make a model mod
 
-Repaint a ship or building, or give a player craft a new model.
+Repaint a ship or building, or give a ship, enemy or building a new model.
 
 ## Find the model
 
@@ -30,17 +30,17 @@ Right-clicking a placed object in a level opens it here; **Back** returns.
 - Transparent pixels stay transparent where the original had them.
 - Images are stretched to the texture's size, so match its proportions.
 - A level's shared texture changes every object using it. Other levels have their own copies.
-- The Naboo Starfighter's textures are encrypted and can't be replaced yet.
 
-## Replace a player craft with your own model
+## Replace a model with your own
 
-1. Open a player craft, such as the X-wing.
-2. **Import craft model (.glb)…** (from Blender: *File > Export > glTF 2.0*).
+1. Open a model: a player craft such as the X-wing, an enemy such as the probe droid (`imp_stuff/prbdroid`), or a building. Buildings sit in a level's package (`opkg`): pick one in its list.
+2. **Import model (.glb)…** (from Blender: *File > Export > glTF 2.0*).
 
-- It's scaled to the craft's size. The import window can hide the cockpit glass and recolour or remove the exhaust.
-- To place the flames, add an Empty named `eng_1`, `eng_2`... where each engine ends and export it with the model. Each flame goes to its nearest Empty; the X-wing has four.
+- It's scaled to the model's size, and every LOD gets it. On a craft, the import window can hide the cockpit glass and recolour or remove the exhaust.
+- To place the flames, add an Empty named `eng_1`, `eng_2`... where each engine ends and export it with the model. Each flame and engine glow goes to its nearest Empty; the X-wing has four.
+- To place the contrails, add Empties named `trl_1`, `trl_2`... at the wingtips. Each contrail goes to its nearest one.
 - Name a mesh after a craft part, such as `wngrot_a`, to keep it moving.
-- Each texture takes a free slot of the craft and is scaled to it.
+- Each texture takes a free slot of the model and is scaled to it. A building whose textures other buildings in the level also use comes in with its colours only.
 
 ### Find a craft's moving parts
 
@@ -57,8 +57,18 @@ The texture on the most triangles gets the first slot; extras past the last slot
 1. Model the body with a coloured or textured material, nose toward the **front** view (Numpad 1).
 2. Make the wing pairs separate objects named `wngrot_a` and `wngrot_b`.
 3. Export everything as **glTF Binary (.glb)**, **Selected Objects** ticked.
-4. Open `data/pl_crafts/xwing`, **Import craft model (.glb)…**, answer **+Z** for the nose.
+4. Open `data/pl_crafts/xwing`, **Import model (.glb)…**, answer **+Z** for the nose.
 5. Open the wings: your wing objects move, and the engine glows stay at the back.
+
+## Add a new ship to the hangar
+
+1. Open a hangar craft's model, such as `data/pl_crafts/xwing`.
+2. **New ship from this craft…** and name it. The name is what the hangar shows.
+3. Its model opens: **Import model (.glb)…** onto it.
+
+Up to three ships fit. Each stands in its own bay between two stock ones, in the order you make them: between the X-wing and the Naboo starfighter, between the V-wing and the Y-wing, then between the snowspeeder and the A-wing. **Place in hangar…** on the ship's model shows the hangar floor from above: click where it should stand, then **Place**. It goes on the camera's line through that point, as far from the camera as its craft stands from its own. Turning through the hangar reaches the ships in order round the room. A ship flies with its craft's handling, weapons and sounds, and missions show your model.
+
+A ship also gets its own cockpit, `pl_crafts/c_<ship>`, a copy of its craft's: open it and **Import model (.glb)…** to change it. Its HUD health icon, its blueprint on AVAILABLE CRAFT and its shadow (`pl_crafts/s_<ship>`) are drawn from the model from above, and redrawn after each import; edit them afterwards to sharpen an outline. **Craft line…** imports a .wav or .mp3 the hangar crew says when the ship comes into view, in place of its craft's line. **Abilities…** picks what the special button and guns do, from any craft: the X-wing's S-foils (they swing your `wngrot_a` and `wngrot_b` parts), the V-wing's boost, the A-wing's strong aim assist. S-foils and boost share the button, so a ship has one or the other. AVAILABLE CRAFT lists a ship wherever its craft is available, up to eight craft in all. In cutscenes your ship has no engine sound and its `wngrot_` wings stay shut.
 
 ## Use a game model in Blender
 
@@ -96,5 +106,4 @@ The export writes `roguesq_lights.json`. Built-in lights load first, then mods i
 
 ## Not yet possible
 
-- A model as a **new** selectable ship; imports replace a player craft.
-- Importing models for enemies or buildings (their textures can be replaced).
+- More than three new ships.

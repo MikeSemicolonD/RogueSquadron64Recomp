@@ -25,9 +25,12 @@ static void test_header_roundtrip() {
     CHECK(g.controller == 3 && g.expansion == 1 && g.cheats0 == 0x40u && g.naboo == 0xDEADBEEFu && g.build == "test build");
     CHECK(g.secondary == 9 && g.cruise_bits == 0x3F000000u && g.pilot == h.pilot);
     CHECK(g.widescreen == 1 && g.draw_pct == 553);
+    CHECK(g.ship.empty() && text.find("ship=") == std::string::npos);
+    h.ship = "red_wing";
+    CHECK(parse_header(format_header(h), &g) && g.ship == "red_wing");
     SessionHeader old;
     CHECK(parse_header("rs64-ls v2\nseed=1\n---\n", &old));
-    CHECK(old.draw_pct == 0);
+    CHECK(old.draw_pct == 0 && old.ship.empty());
 }
 
 static void test_header_rejects_bad_magic() {

@@ -25,7 +25,7 @@ In Terrain mode, pick a **Tool** and drag:
 - Keys: **1**-**6** tools, **[** **]** brush size, **Shift+drag** swaps Raise and Lower.
 - **Objects follow** keeps things on the ground. **Show tiles** outlines tiles.
 
-The download button saves a grey heightmap PNG (white is high); upload loads any image back.
+**Export** saves a grey heightmap PNG (white is high); **Import** loads any image back. The **map size** button beside **Water, fog and clouds** makes the map bigger, up to 128 x 128 cells of 2 units: the ground continues from the +X and +Z edges, and everything placed stays where it is.
 
 A level holds 8191 different ground tiles; a bar shows use once a level passes 80%. Unused tiles are dropped near the limit, and a stroke past it is undone. Smoother shapes use fewer.
 
@@ -112,9 +112,3 @@ Right-click the ground, **Add light here**; drag the bulb to move it.
 ## Finish
 
 [Try it in the game and export it](Saving-Testing-and-Sharing).
-
-## Not yet possible
-
-- A map larger than the original.
-
-Untested in game: new and edited paths, a copied camera in a camera shot, a unit in **Set off by** and *Play recording*.

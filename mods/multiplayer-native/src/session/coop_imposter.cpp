@@ -192,7 +192,14 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
+    // The other player's new hangar ship, loaded at mission start, replaces the wingman model while the puppet spawns.
+    const bool ship = model == remote_model && *rs64_ghost_puppet_ship() && rs64_ghost_ships();
+
+    if (ship) rs64_ghost_ships()->set_puppet(rs64_ghost_puppet_ship());
+
     const uint32_t slot = rs64::mp::call(rdram, ctx, 0x8003FFECu, {walker ? kNpcAtStUpdate : 0x800D93C0u, kImposterRec, 2u, walker ? 0x55u : 0x5Au}).v0 & 0xFFFFu;
+
+    if (ship) rs64_ghost_ships()->set_puppet(nullptr);
     const uint32_t table = rw(rdram, 0x80130BB0u);
     const uint32_t npc = slot < kNpcSlots ? rw(rdram, table + slot * 8) : 0u;
     const uint32_t blk = imposter_spawn_ok(slot, npc, 0x80000000u, 0x80000000u) ? rw(rdram, npc + 4) : 0u;

@@ -260,6 +260,15 @@ int s_current_mod_level = -1;
 // Manifest paths the enabled mods ship under assets/ (files, .from and .bps), so a lookup is redirected only to a file that exists.
 std::set<std::string> s_mod_level_files;
 
+}
+
+// Every enabled mod's asset names (the files under assets/, .from / .bps stripped).
+const std::set<std::string>& rs64_mod_files() {
+    return s_mod_level_files;
+}
+
+namespace {
+
 // Host RAM for a redirected asset name (after the mid-mission shot name).
 constexpr uint32_t kLookupName = RS64_HR_LOOKUP_NAME;
 
@@ -505,6 +514,14 @@ static int32_t s_brief_index = -1;
 static uint32_t s_brief_rom = 0;
 static bool s_brief_now = false;
 
+// The next start of sound id `carrier` plays the MORT stream at cart offset `rom` instead (also a new ship's craft line).
+extern "C" void rs64_mod_levels_stream_for(uint8_t* rdram, uint32_t carrier, uint32_t rom)
+{
+
+    s_brief_index = (int16_t)MEM_H(0, (gpr)(int32_t)(0x8009FFE0u + carrier * 2u));
+    s_brief_rom = rom;
+}
+
 // SELECT LEVEL briefing voice (v0): a mod entry's recording or chosen stock line, or 0xFFFF (an empty line list) for none.
 extern "C" void rs64_mod_levels_voice(uint8_t* rdram, recomp_context* ctx)
 {
@@ -521,8 +538,7 @@ extern "C" void rs64_mod_levels_voice(uint8_t* rdram, recomp_context* ctx)
 
     const uint32_t carrier = 0x279u + (uint32_t)menu_level(*l);
     ctx->r2 = carrier;
-    s_brief_index = (int16_t)MEM_H(0, (gpr)(int32_t)(0x8009FFE0u + carrier * 2u));
-    s_brief_rom = brief->rom_off;
+    rs64_mod_levels_stream_for(rdram, carrier, brief->rom_off);
 }
 
 // allocAndConfigureNewVoice 0x8009B114 (s3 = speech index, s2 = rate or 0 for the table's): the recording is 8 kHz.
@@ -544,6 +560,8 @@ extern "C" void rs64_mod_levels_brief_stream(uint8_t* rdram, recomp_context* ctx
     s_brief_index = -1;
     const uint32_t base = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80154684u);
     ctx->r5 = (gpr)(int32_t)(s_brief_rom - (base & 0x0FFFFFFFu));
+
+    fprintf(stderr, "[voice] own recording plays from cart 0x%X\n", s_brief_rom);
 }
 
 // The SELECT LEVEL entry of the mod level a boot target names (ROGUESQ_MOD_LEVEL), while SELECT LEVEL is open; -1 otherwise. The nav
@@ -971,13 +989,12 @@ static int mod_level_voice_carrier(uint8_t* rdram)
     return rs64levels::kVoiceNone;
 }
 
-// The voice id to play for the mod level: its recording (level/<folder>/<recording>) when it ships one, else the stock voice; a
+// The voice id to play: the level's recording (level/<folder>/<recording>) when a mod ships one, else the stock voice; a
 // recording streams through the carrier line, redirected like the briefing's.
-static int mod_level_voice(uint8_t* rdram, int voice, const std::string& recording)
+static int level_voice(uint8_t* rdram, const std::string& folder, int voice, const std::string& recording)
 {
 
-    const auto& l = s_mod_levels[s_current_mod_level];
-    const auto* rec = recording.empty() ? nullptr : rs64::assets::find("level/" + l.folder + "/" + recording);
+    const auto* rec = recording.empty() ? nullptr : rs64::assets::find("level/" + folder + "/" + recording);
 
     if (!rec) return voice;
 
@@ -1003,7 +1020,7 @@ static void objective_callout(uint8_t* rdram, recomp_context* ctx, uint32_t i)
 {
 
     const auto& o = s_mod_levels[s_current_mod_level].objectives[i];
-    const int voice = mod_level_voice(rdram, o.voice, o.recording);
+    const int voice = level_voice(rdram, s_mod_levels[s_current_mod_level].folder, o.voice, o.recording);
     constexpr uint32_t kHalfSecond = 0x3F000000u;
 
     if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, kHalfSecond });
@@ -1058,7 +1075,7 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
     if (i >= objs->size()) return;
 
     const auto& o = (*objs)[i];
-    const int voice = mod_level_voice(rdram, o.pauseVoice, o.pauseRecording);
+    const int voice = level_voice(rdram, s_mod_levels[s_current_mod_level].folder, o.pauseVoice, o.pauseRecording);
 
     if (voice >= 0) ctx->r4 = (gpr)(int32_t)(voice - 0x2C0);
 }
@@ -1137,7 +1154,7 @@ bool rule_do(uint8_t* rdram, recomp_context* ctx, const rs64rules::Action& a, co
     }
     else if (k == "voice" || k == "recording")
     {
-        const int voice = s_current_mod_level >= 0 ? mod_level_voice(rdram, rule_int(a, "id", -1), rule_str(a, "file")) : rule_int(a, "id", -1);
+        const int voice = level_voice(rdram, s_rules_folder, rule_int(a, "id", -1), rule_str(a, "file"));
 
         if (voice >= 0) rs64::mips::mips_call(rdram, ctx, 0x800C7D1Cu, { (uint32_t)voice, 0u });
     }

@@ -1098,6 +1098,7 @@ int rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx)
     if (rs64_nav_skip_front_end(rdram)) return 1;
 
     rs64_mod_levels_menu((int)ctx->r5);
+    rs64_ships_menu((int)ctx->r5);
 
     return 0;
 }
@@ -1608,6 +1609,8 @@ void rs64_th_getGameOrFrontText_800558C4(uint8_t* rdram, recomp_context* ctx)
 {
     unsigned s = rs64_gof_override(rdram, (unsigned)ctx->r4);
 
+    if (!s) s = rs64_ships_text(rdram, (unsigned)ctx->r4);
+
     if (!s) s = rs64_lang_text(rdram, (uint32_t)ctx->r4, (uint32_t)(ctx->r3 + ctx->r2));
 
     if (s)
@@ -1711,6 +1714,7 @@ int rs64_th_initMission_800FA28C(uint8_t* rdram, recomp_context* ctx) {
 
     rs64_camera_shots_mission_start(rdram);
     rs64_rules_mission_start(rdram);
+    rs64_ships_mission_reset();
 
     if (rs64_hook(RS64_HOOK_MISSION_INIT, rdram, ctx)) return 1;
 
@@ -2142,6 +2146,9 @@ int rs64_th_runHangarMenuFromOverlay_entry(uint8_t* rdram, recomp_context* ctx) 
 // getLevelIntroCrawlId entry / buildModelViewerTextPage 0x800CA77C: a mod level's opening crawl.
 int rs64_th_getLevelIntroCrawlId_entry(uint8_t* rdram, recomp_context* ctx) {
 
+    // The crawl's planet pan-down flies the squadron's craft: stock models, like a cutscene.
+    rs64_ships_cutscene_begin();
+
     int c = rs64_mod_levels_crawl_id((int)(ctx->r4 & 0xFF));
 
     if (c == -2) return 0;
@@ -2174,6 +2181,7 @@ void rs64_th_find_manifest_entry_entry(uint8_t* rdram, recomp_context* ctx)
 {
 
     ctx->r5 = (gpr)(int32_t)rs64_mod_levels_lookup(rdram, (uint32_t)ctx->r5);
+    ctx->r5 = (gpr)(int32_t)rs64_ships_lookup(rdram, (uint32_t)ctx->r5);
 }
 
 // startSlotLoopAnimWithVoiceSync 0x800B1C00 / 0x800B1D18: v0 = the briefing voice id.
@@ -2226,6 +2234,308 @@ int rs64_th_runHangarSelectionFrame_800AADD8(uint8_t* rdram, recomp_context* ctx
     if (rs64_hook(RS64_HOOK_CRAFT_SELECT_TICK, rdram, ctx)) return 1;
 
     return 0;
+}
+
+// Custom hangar ships (hangar_ships.cpp): hangarInitialize entry copies the stop tables and fills the bay table's spare bytes.
+void rs64_th_hangarInitialize_entry(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_hangar_begin(rdram);
+}
+
+// After the koelsch object: the ships' objects, a0 the running object count.
+void rs64_th_hangarInitialize_800A98C4(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r4 = (gpr)(int32_t)rs64_ships_add_objects(rdram, (uint32_t)ctx->r4 & 0xFFFFu);
+}
+
+// Before the stock ship models load.
+void rs64_th_hangarInitialize_800AA1CC(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_load_models(rdram, ctx);
+}
+
+// Per-bay setup loops (s2 the bay) run on through the ships' bays.
+void rs64_th_hangarInitialize_800AAB58(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_bay_loop((uint32_t)ctx->r18);
+}
+
+void rs64_th_dispatchOverlaySetupByParentAssetName_80053D30(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_setup_type(rdram, (uint32_t)ctx->r16, (int)(int16_t)ctx->r3);
+}
+
+// The bay setup loop's shadow index read (v0 = its address).
+void rs64_th_hangarInitialize_800AABE4(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_bay_shadow(rdram, (uint32_t)ctx->r2);
+}
+
+void rs64_th_hangarInitialize_800AABFC(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_bay_shadow_tex(ctx);
+}
+
+// The per-craft player updates, before they allocate the player's craft context.
+void rs64_th_player_craft_context(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_player_context();
+}
+
+// The per-craft gun aims, at their lock-on search call (a3 = range, 0x10($sp) = cone cosine).
+void rs64_th_player_craft_aim(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_aim(rdram, ctx);
+}
+
+// The shared craft physics step (a0 = the flight record, a1 = dt): a ship's boost and S-foils.
+void rs64_th_updatePlayerCraftPhysics_entry(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_behaviours(rdram, ctx);
+}
+
+void rs64_th_vwing_boost_gate(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_special_gate(ctx, 3);
+}
+
+void rs64_th_updateXwingFlightControls_800B499C(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_special_gate(ctx, 0);
+}
+
+// allocateAndInitCraftNpcContext 0x8006BD7C: s0 = the context's shadow texture.
+void rs64_th_allocateAndInitCraftNpcContext_8006BD7C(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_context_shadow(rdram, ctx);
+}
+
+// AVAILABLE CRAFT: the blueprint loader, the layout and the per-frame draw run on through the ships after the nine stock craft.
+void rs64_th_bridgeLoadShipBlueprints_800B1714(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_bp_name(rdram, ctx);
+}
+
+void rs64_th_bridgeLoadShipBlueprints_800B17D4(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_bp_load_next(rdram, ctx);
+}
+
+// s4 = the level's craft mask, s6 = the unlocked craft mask.
+void rs64_th_layoutMenuTextRow_800B1858(uint8_t* rdram, recomp_context* ctx)
+{
+
+    ctx->r20 = (gpr)(int32_t)rs64_ships_craft_mask((uint32_t)ctx->r20);
+    ctx->r22 = (gpr)(int32_t)rs64_ships_craft_mask((uint32_t)ctx->r22);
+}
+
+void rs64_th_layoutMenuTextRow_800B187C(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)rs64_ships_craft_loop((uint32_t)ctx->r16);
+}
+
+void rs64_th_layoutMenuTextRow_800B19B4(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_bp_layout_next(ctx);
+}
+
+void rs64_th_runScriptedCraftCinematicEvent_800B1204(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_craft_mask((uint32_t)ctx->r2);
+}
+
+void rs64_th_runScriptedCraftCinematicEvent_800B12E0(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_bp_draw_next(ctx);
+}
+
+// walkMeshdef0List entry: a0 = the object name a model is looked up by.
+void rs64_th_walkMeshdef0List_entry(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r4 = (gpr)(int32_t)rs64_ships_model_name(rdram, (uint32_t)ctx->r4);
+}
+
+// The per-frame ship pose loop (s4 the slot): the ships' slots read host data in place of the 8-entry tables.
+void rs64_th_composeNpcOrientationMatrix_800AB238(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_slot_object((uint32_t)ctx->r2);
+}
+
+void rs64_th_composeNpcOrientationMatrix_800AB278(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r4 = (gpr)(int32_t)rs64_ships_bay_word((uint32_t)ctx->r4);
+}
+
+void rs64_th_composeNpcOrientationMatrix_800AB314(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_bay_word((uint32_t)ctx->r2);
+}
+
+void rs64_th_composeNpcOrientationMatrix_800AB338(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_slot_extents(rdram, (uint32_t)ctx->r2);
+}
+
+void rs64_th_composeNpcOrientationMatrix_800AB468(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_slot_loop((uint32_t)ctx->r20 & 0xFFu);
+}
+
+// The per-bay word clear (v0 = 0x800CDA20 + 4 * (bay - 1)): past the stock eight it would land on the object counts.
+void rs64_th_hangarInitialize_800AAC08(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_bay_word((uint32_t)ctx->r2);
+}
+
+void rs64_th_hangarInitialize_800AAC10(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_bay_loop((uint32_t)ctx->r18);
+}
+
+void rs64_th_updateHangarBayScene_800AC274(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_bay_loop((uint32_t)ctx->r17 & 0xFFFFu);
+}
+
+// Turning right / left, after the stock step stored the stop.
+void rs64_th_updateHangarBayScene_800AC304(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_turn(rdram, 1);
+}
+
+void rs64_th_updateHangarBayScene_800AC390(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_turn(rdram, -1);
+}
+
+// The turn start's bay -> stop search (s1), which covers the stock eight.
+void rs64_th_updateHangarBayScene_800ABC84(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r17 = (gpr)(int32_t)rs64_ships_stop_of_bay(rdram, (int)ctx->r17);
+}
+
+// After the stock camstart / camwatch points are read: the ships' bays get theirs.
+void rs64_th_hangarInitialize_800AA9A8(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_cam_fill(rdram, ctx);
+}
+
+// The per-bay camera start (a1) and look-at (v0, after a2 took the fixed end point from it) array bases.
+void rs64_th_updateHangarBayScene_800ABE4C(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r5 = (gpr)(int32_t)rs64_ships_cam_base((uint32_t)ctx->r5);
+}
+
+void rs64_th_updateHangarBayScene_800ACA04(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_cam_base((uint32_t)ctx->r2);
+}
+
+// initSceneForMission entry: a cinematic's scene setup begins.
+void rs64_th_initSceneForMission_entry(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_cutscene_begin();
+}
+
+// processCutsceneActions return (a0 = the cutscene): the player's actor named by event 18.
+void rs64_th_processCutsceneActions_800AD21C(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_cutscene_actors(rdram, (uint32_t)ctx->r4);
+}
+
+// spawnCutsceneObjectsFromList's shadow flag test and shadow record for actor s7.
+void rs64_th_spawnCutsceneObjectsFromList_800A8228(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = rs64_ships_cutscene_shadow_flags((int)(int16_t)ctx->r23, (uint32_t)ctx->r2);
+}
+
+void rs64_th_spawnCutsceneObjectsFromList_800A8248(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_cutscene_shadow_record(rdram, (int)(int16_t)ctx->r23, (uint32_t)ctx->r2);
+}
+
+// spawnCutsceneObjectsFromList's craft context for actor s7.
+void rs64_th_spawnCutsceneObjectsFromList_800A8254(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_cutscene_shadow((int)(int16_t)ctx->r23);
+}
+
+// npcWingmanUpdate's model lookup (a0 = the wingman model's name): a co-op puppet's ship.
+void rs64_th_npcWingmanUpdate_800D94A4(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_puppet_mesh(rdram, ctx);
+}
+
+// The hangar's craft line (a0 = its sound id).
+void rs64_th_craftSelectionVoiceLineHelper_800AE3A4(uint8_t* rdram, recomp_context* ctx) {
+    rs64_ships_craft_line(rdram, ctx);
+}
+
+// The climb's per-bay rate entry (v0).
+void rs64_th_updateHangarBayScene_800ACEC0(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_climb_rate(rdram, (uint32_t)ctx->r2);
+}
+
+// The take-off target base (a0 = camwatch + 12, indexed by bay - 1).
+void rs64_th_updateHangarBayScene_800ACA30(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r4 = (gpr)(int32_t)rs64_ships_cam_base((uint32_t)ctx->r4);
+}
+
+// The hangar's result (s0): a craft id, 0xFFFFFE for back.
+void rs64_th_runHangarMenuFromOverlay_800C68C8(uint8_t* rdram, recomp_context* ctx) {
+
+    if ((uint32_t)ctx->r16 != 0xFFFFFEu) rs64_ships_confirm(rdram);
+}
+
+// The per-stop table bases (lui/addiu of 0x800CC404 stop -> bay, 0x800CC40C stop -> craft, 0x800CC414 / 0x800CC430 the route
+// positions), re-pointed at the host copies that hold the ships' stops.
+void rs64_th_hangarInitialize_800A9488(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r4 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r4);
+}
+
+void rs64_th_runHangarSelectionFrame_800AAF18(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_runHangarSelectionFrame_800AAF74(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AB6BC(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AB728(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AB7B0(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800AB800(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AB938(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AB9AC(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800ABAE4(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800ABC50(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r5 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r5);
+}
+
+void rs64_th_updateHangarBayScene_800ABCB8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800ABCDC(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800ABD0C(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800ABDA8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800AC108(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800AC2D8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r8 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r8);
+}
+
+void rs64_th_updateHangarBayScene_800AC364(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r8 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r8);
+}
+
+void rs64_th_updateHangarBayScene_800AC3F0(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AC444(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+// The crew voice line helper's stop -> bay: a ship's stop speaks its template's line (the voice tables hold the stock bays).
+void rs64_th_craftSelectionVoiceLineHelper_800AE2A8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_voice_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_craftSelectionVoiceLineHelper_800AE360(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_voice_table((uint32_t)ctx->r2);
 }
 
 // initMission 0x800FA5BC

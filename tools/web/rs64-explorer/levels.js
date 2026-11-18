@@ -839,12 +839,20 @@ function shotLinkRow(it)
 const MOD_LEVELS = 'mod/levels.json';
 let modLevels = [];
 
-// Aliases every mod level's folder and intro/extro onto its template's files (and drops those of removed levels).
-function applyModLevelsText(text)
+// ---- Custom ships (mod/ships.json): new hangar ships that fly as a stock craft, with copies of its exterior model as their own ----
+const MOD_SHIPS = 'mod/ships.json';
+let modShips = [];
+
+// Aliases every mod level's folder and intro/extro, and every ship's model, onto its template's files (and drops those of removed ones).
+function applyModLevelsText(text, shipsText = null)
 {
   modLevels = modLevelsParse(text);
 
-  const want = new Map(modLevels.flatMap((l) => modLevelAliases(l, [...rom.assets.keys()].filter((k) => !rom.aliases.has(k)))));
+  if (shipsText !== null)
+    modShips = shipsParse(shipsText);
+
+  const stock = [...rom.assets.keys()].filter((k) => !rom.aliases.has(k));
+  const want = new Map([...modLevels.flatMap((l) => modLevelAliases(l, stock)), ...modShips.flatMap(shipAliases)]);
 
   for (const p of [...rom.aliases.keys()])
     if (want.get(p) !== rom.aliases.get(p))
@@ -854,7 +862,7 @@ function applyModLevelsText(text)
     rom.alias(p, from);
 }
 
-const applyModLevels = async () => applyModLevelsText(await virtualText(MOD_LEVELS));
+const applyModLevels = async () => applyModLevelsText(await virtualText(MOD_LEVELS), await virtualText(MOD_SHIPS));
 const modLevelOf = (dir) => modLevels.find((l) => dir === 'data/level/' + l.folder);
 
 // The stock level a level directory plays as (its own for a stock level): per-level game data (textures, sky, fog) comes from it.
@@ -3602,6 +3610,7 @@ async function levelCrawl(dir, adding = false)
   const crawls = await modCrawls();
   const stock = chapter != null ? stockCrawls(frontText)[chapter] : null;
   const blank = { chapter: '', title: '', body: '', planet: chapter ?? 0, base: chapter ?? 0, replaces: -1, camera: [] };
+  const baseOf = (c) => (c.planet === 'own' ? c.base : c.planet);
 
   if (!ml) {
     if (chapter == null)
@@ -3614,7 +3623,7 @@ async function levelCrawl(dir, adding = false)
       name: mine?.name ?? `chapter_${chapter + 1}`,
       exists: !!mine,
       c: mine ?? { ...blank, ...stock },
-      base: chapter,
+      base: mine ? baseOf(mine) : chapter,
       replaces: chapter,
       level: null,
       label: `Chapter ${ROMAN[chapter]}`
@@ -3638,7 +3647,7 @@ async function levelCrawl(dir, adding = false)
   for (let i = 2; !named && taken.has(name); i++)
     name = stem.slice(0, 15 - String(i).length - 1) + '_' + i;
 
-  return { dir, name, exists: !!named, c, base: c.planet === 'own' ? c.base : c.planet, replaces: -1, level: ml, label: ml.title };
+  return { dir, name, exists: !!named, c, base: baseOf(c), replaces: -1, level: ml, label: ml.title };
 }
 
 // One undo step: more() writes the crawl's own files first, then crawl.json (made on the first edit; planet "own" while it has its own
@@ -3783,6 +3792,13 @@ function openCrawlPanel(ctx)
   body.onchange = () => save('text', { body: body.value.trim() });
   gaps();
 
+  const planet = selectOf(CRAWL_PLANETS.map((n, i) => [i, n]), ctx.base, { title: 'The backdrop (unless it has its own image) and the fly-by ships' });
+
+  planet.onchange = () => {
+    ctx.base = +planet.value;
+    save('planet', {});
+  };
+
   const status = ctx.exists ? `${ctx.label}: this mod's crawl (${ctx.name})` : `${ctx.label}: the game's crawl. Editing it makes a copy in this mod`;
   const textRow = stacked(fld('Text', body, 'Wrapped to the crawl width. An empty line starts a paragraph'));
 
@@ -3790,7 +3806,7 @@ function openCrawlPanel(ctx)
   box.append(elem('small', {
     className: 'shotNote',
     textContent: status
-  }), stacked(fld('Chapter', chapter, 'Small line above the title, can be empty')), stacked(fld('Title', title)), textRow, note);
+  }), fld('Planet', planet), stacked(fld('Chapter', chapter, 'Small line above the title, can be empty')), stacked(fld('Title', title)), textRow, note);
   $('crawlBody').replaceChildren(box);
   $('crawlPanel').hidden = false;
   placeCrawlPanel();
@@ -5267,8 +5283,9 @@ async function addItem(src, pos, zone, rot = null)
   if (zone)
     zone.size.concat(zone.rot).forEach((v, a) => new DataView(rec.buffer).setFloat32((a < 3 ? 0x28 : 0x1C - 12) + a * 4, v));
 
-  // A copy keeps its source's name; one that rules name (its source deleted or not) gets its own, so it never takes over their rules.
+  // A copy keeps its source's name; one that rules or the stock script name gets its own, so it never takes over their lookups and can be renamed.
   const ruled = await ruleNames(dir);
+  const ownName = it.name && (ruled.has(it.name) || scriptFinds(it.name, dir));
 
   const newest = (bytes) => parseDAT(dvOf(bytes)).items.filter((x) => x.type === it.type).reduce((a, b) => (a && a.index >= b.index ? a : b), null);
 
@@ -5286,7 +5303,7 @@ async function addItem(src, pos, zone, rot = null)
       });
     }
 
-    if (it.name && ruled.has(it.name))
+    if (ownName)
       await editAsset(dir + '/dat', (bytes) => datNameItem(bytes, newest(bytes), uniqueName(bytes, it.name, ruled)));
 
     // A linked music region gets its own trigger area; sharing the source's would leave the new region with no way to start its song.
@@ -6301,7 +6318,7 @@ const GOALS = [
   {
     label: 'Repaint or replace a ship',
     page: 'Make-a-Model-Mod',
-    next: 'Right-click a part to repaint it, or bring in your own model with Import craft model.',
+    next: 'Right-click a part to repaint it, or bring in your own model with Import model.',
     go: async () => {
       setMode('models');
       await showModel('data/pl_crafts/xwing');

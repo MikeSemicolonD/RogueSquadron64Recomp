@@ -320,7 +320,8 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
         s_bay_wait = 0;
     }
 
-    if (want < 0 || here == want || s_presses >= 12)
+    // 9 and up name a new hangar ship's bay (9 the first), whose craft byte is its template's.
+    if (want < 0 || (want >= 9 ? bay == want : here == want) || s_presses >= 12)
     {
         return true;
     }
@@ -331,7 +332,8 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
         return false;
     }
 
-    begin_pulse(N64_R_JPAD);
+    // Ships stand to the left of the starting X-wing in the stock spots, so a ship target turns that way.
+    begin_pulse(want >= 9 ? N64_L_JPAD : N64_R_JPAD);
     s_bay_wait = 240;
     ++s_presses;
 
@@ -354,7 +356,7 @@ static void nav_level(uint8_t* rdram, const char* st)
         nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
         nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
 
-        if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
+        if (g_target.b >= 0 && g_target.b < 9) nav_write_craft(rdram, g_target.a, g_target.b);
     }
 
     // Success as soon as the mission launches (once past name entry). After an abort the state still reads "mission" at SELECT LEVEL (the menu overlay is up), so the mission overlay must be loaded too.
@@ -428,7 +430,9 @@ static void nav_level(uint8_t* rdram, const char* st)
         case 5:  // the hangar: turn the bays to the target craft, confirm, until mission
             if (nav_step_craft(rdram, g_target.b, "level"))
             {
-                // hangar target: stop here with the craft showing.
+                // hangar target: stop here with the craft showing, once the opening camera pan is over and the hangar reads input (state 3).
+                if (g_target.c == 1 && rdram[0xCC3E4u ^ 3] != 3) break;
+
                 if (g_target.c == 1)
                 {
                     fprintf(stderr, "[nav] hangar reached (level %d)\n", g_target.a);
@@ -438,7 +442,7 @@ static void nav_level(uint8_t* rdram, const char* st)
                     return;
                 }
 
-                if (g_target.b >= 0) nav_write_craft(rdram, g_target.a, g_target.b);
+                if (g_target.b >= 0 && g_target.b < 9) nav_write_craft(rdram, g_target.a, g_target.b);
 
                 nav_repress(N64_A_BUTTON);
             } else if (is(st, "mission")) {
@@ -694,7 +698,7 @@ static void nav_abort(uint8_t* rdram, const char* st) {
 
             if (screen != 1)
             {
-                if (g_target.b >= 0) nav_write_u8(rdram, 0x130B41, (uint8_t)g_target.b);
+                if (g_target.b >= 0 && g_target.b < 9) nav_write_u8(rdram, 0x130B41, (uint8_t)g_target.b);
 
                 fprintf(stderr, "[nav] hangar reached (level %d, screen %u, state %s)\n", g_target.a, screen, st);
                 fflush(stderr);

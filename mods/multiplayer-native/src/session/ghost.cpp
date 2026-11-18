@@ -220,6 +220,7 @@ void lobby_start(const rs64::net::LinkConfig& cfg)
     Ghost& s = g();
     s.link.stop();
     s.remote_craft = -1;
+    s.remote_ship.clear();
     s.player = cfg.role == rs64::net::Role::Host ? 0 : 1;
     s.was_connected = false;
     s.seen_connects = s.link.connect_count();
@@ -899,6 +900,18 @@ void drain()
 
             break;
         }
+        case rs64::net::Msg::Ship: {
+            std::string id;
+
+            if (rs64::net::decode_ship(m.data(), m.size(), &id))
+            {
+                s.remote_ship = id;
+
+                fprintf(stderr, "[lobby] partner's craft is the ship %s\n", id.empty() ? "(stock)" : id.c_str());
+            }
+
+            break;
+        }
         case rs64::net::Msg::Browse: {
             uint8_t level = 0, state = 0;
 
@@ -919,6 +932,7 @@ void drain()
 
                 if (craft != 0xFF) {
                     s.remote_craft = craft;
+                    s.remote_ship.clear();
                 } else if (s.in_hangar && !s.left_sent) {
                     // They went back to mission select: follow them there.
                     s.follow_out = true;
