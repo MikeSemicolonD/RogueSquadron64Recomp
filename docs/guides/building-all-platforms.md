@@ -139,7 +139,7 @@ cmake --build build-web --target RogueSquadron64Recomp
 
 The Linux tarball and AppImage bundle the game's own libraries (SDL2, GTK and their dependencies) but take glibc, `libstdc++` and everything GPU drivers load into the process (Vulkan, Wayland, X11/xcb, `libdrm`, `libz`, fonts) from the host: a bundled older copy would shadow the host's and the drivers would fail to load. The Flatpak also drops every library the runtime provides.
 
-The AppImage keeps saves, configs and mods in `~/.local/share/RogueSquadron64Recomp` (`RS64_DATA_DIR` overrides) and links a `rogue_squadron.z64` placed next to the AppImage on first launch. The Flatpak (`io.github.MikeSemicolonD.RogueSquadron64Recomp`) uses `~/.var/app/io.github.MikeSemicolonD.RogueSquadron64Recomp/data`; copy the ROM there before the first launch.
+The AppImage keeps saves, configs and mods in a `RogueSquadron64Recomp-data` folder next to it if you create one, otherwise in `~/.local/share/RogueSquadron64Recomp` (`RS64_DATA_DIR` overrides both), and links a `rogue_squadron.z64` placed next to the AppImage on first launch. The Flatpak (`io.github.MikeSemicolonD.RogueSquadron64Recomp`) uses `~/.var/app/io.github.MikeSemicolonD.RogueSquadron64Recomp/data`; copy the ROM there before the first launch.
 
 The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac architectures. It isn't notarized: clear the download quarantine once with `xattr -dr com.apple.quarantine RogueSquadron64Recomp.app`, then open it. It keeps saves, configs and mods in `~/Library/Application Support/RogueSquadron64Recomp` and asks for the ROM on first launch.
 

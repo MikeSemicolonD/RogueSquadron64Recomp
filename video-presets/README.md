@@ -8,7 +8,7 @@ Where the file goes:
 
 - Windows and the Linux tarball: the game folder (next to `RogueSquadron64Recomp.exe` or `run.sh`).
 - macOS: `~/Library/Application Support/RogueSquadron64Recomp`.
-- Linux AppImage: `~/.local/share/RogueSquadron64Recomp`.
+- Linux AppImage: `RogueSquadron64Recomp-data` next to the AppImage if it exists, else `~/.local/share/RogueSquadron64Recomp`.
 - Flatpak: `~/.var/app/io.github.MikeSemicolonD.RogueSquadron64Recomp/data`.
 
 | Preset | For | What you get |
