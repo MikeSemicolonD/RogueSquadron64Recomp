@@ -1,6 +1,6 @@
 """Visual + stat smoke test: every target in manifest.toml captured on exact frames, then compared with a baseline run.
 
-  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
+  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf,memory] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
   python tools/debug/smoke/smoke.py compare [--baseline baseline] [--tag current] [--platforms windows]
   python tools/debug/smoke/smoke.py clean
 
@@ -36,7 +36,7 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 # invincibility: an unflown craft would otherwise crash (the Trench Run walls) and stop the chain on a game over.
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
-SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf"]
+SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf", "memory"]
 # The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
 # (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
 # or the one device adb sees.
@@ -688,6 +688,74 @@ def run(args):
                 if wanted(f"perf_level{level:02d}_{preset}"):
                     perf_run(out, level, preset, p["at"], p["seconds"])
 
+    if "memory" in sections:
+        mem = m["memory"]
+
+        if wanted(f"memory_level{mem['level']:02d}"):
+            memory_run(out, mem["level"], mem["loops"], mem["at"], args.speed)
+
+
+def private_bytes(pid):
+    """The process's committed private memory (PrivateUsage), which RT64's GPU allocations count toward too."""
+
+    import ctypes
+    from ctypes import wintypes
+
+    class Counters(ctypes.Structure):
+        _fields_ = [("cb", wintypes.DWORD), ("PageFaultCount", wintypes.DWORD)] + [(n, ctypes.c_size_t) for n in (
+            "PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage", "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage",
+            "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage", "PrivateUsage")]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    handle = kernel32.OpenProcess(0x1000, False, pid)
+
+    if not handle:
+        raise RuntimeError(f"could not open pid {pid}")
+
+    try:
+        c = Counters()
+        c.cb = ctypes.sizeof(c)
+
+        if not kernel32.K32GetProcessMemoryInfo(wintypes.HANDLE(handle), ctypes.byref(c), c.cb):
+            raise RuntimeError(f"GetProcessMemoryInfo failed for pid {pid}")
+
+        return c.PrivateUsage
+    finally:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+
+
+def memory_run(out, level, loops, at, speed):
+    """One launch that plays `level` `loops` times through the nav chain, reading the game's private bytes on mission frame `at` of each loop into
+    memory_level<id>/memory.json. A leak shows as growth from loop to loop."""
+
+    # shortcut: Windows only (GetProcessMemoryInfo by pid), add /proc or adb readers when another platform needs it.
+    if platform != "windows":
+        raise SystemExit("the memory section runs on Windows only")
+
+    path = os.path.join(out, f"memory_level{level:02d}", "memory.json")
+
+    def body(game):
+
+        enter(game, os.path.dirname(path))
+        samples = []
+
+        for i in range(loops):
+            game.call("pause_at", {"clock": "ls", "frame": at, "timeout_s": 240, "next": i > 0}, 255)
+            samples.append(private_bytes(game.proc.pid))
+
+            with open(path, "w") as f:
+                json.dump({"at": at, "private_bytes": samples}, f, indent=1)
+
+            print(f"memory loop {i + 1}/{loops}: {samples[-1] / 2**20:.0f} MB", flush=True)
+            game.call("resume")
+
+            if i + 1 < loops:
+                game.call("nav", {"next_level": level})
+
+    env = {"ROGUESQ_BOOT_TARGET": f"abort:{level}", "ROGUESQ_NAV_CHAIN": "1", "ROGUESQ_LS_EACH_MISSION": "1"}
+    session(out, env, body, speed, os.path.join(out, "memory.rec"))
+
 
 def perf_run(out, level, preset, at, seconds):
     """One real-speed launch with a repo video preset merged over the pinned profile: held on mission frame `at` to line the runs up, then run `seconds` and RT64's last
@@ -749,6 +817,8 @@ RULES = {
 STAT_FIELDS = ["player", "camera", "wingmen", "npcs"]
 # A preset whose average frame time grew by more than this fraction fails.
 PERF_SLOWER = 0.15
+# A memory run whose private bytes grow by more than this per replay of its level fails.
+MEMORY_GROWTH_MB = 16
 
 
 def load_json(path):
@@ -845,6 +915,28 @@ def compare(args):
 
         slower = after > before * (1 + PERF_SLOWER)
         rows.append((f"{rel} ({1000 / before:.0f} -> {1000 / after:.0f} fps)", None, [f"frame time +{after / before - 1:.0%}"] if slower else []))
+
+    # The first loop's level load fills caches, so growth is measured from the second loop on; the baseline's growth is shown alongside.
+    for root, _, files in os.walk(cur):
+        if "memory.json" not in files:
+            continue
+
+        rel = os.path.relpath(os.path.join(root, "memory.json"), cur)
+
+        def growth(path):
+
+            s = load_json(path)["private_bytes"] if os.path.exists(path) else []
+            return (s[-1] - s[1]) / (len(s) - 2) / 2**20 if len(s) > 2 else None
+
+        after = growth(os.path.join(cur, rel))
+        before = growth(os.path.join(base, rel))
+
+        if after is None:
+            rows.append((rel, None, ["too few loops"]))
+            continue
+
+        was = f"{before:+.1f} -> " if before is not None else ""
+        rows.append((f"{rel} ({was}{after:+.1f} MB/loop)", None, [f"grows {after:.1f} MB per loop"] if after > MEMORY_GROWTH_MB else []))
 
     failed = 0
 

@@ -383,6 +383,28 @@
             "detail": "Builds Release, then captures a new smoke test baseline in dumps/smoke/baseline (1-1.5 h). Look it over before comparing against it."
         },
         {
+            "label": "Test: FPS check",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run --sections perf --filter perf_level03_ultra; python tools/debug/smoke/smoke.py compare",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "problemMatcher": [],
+            "detail": "Builds Release, then measures the frame rate of level 3 on the ultra preset against the smoke test baseline (about 80 s). Read the perf_level03_ultra line."
+        },
+        {
+            "label": "Test: Memory leak check",
+            "type": "shell",
+            "command": "python tools/debug/smoke/smoke.py run --sections memory; python tools/debug/smoke/smoke.py compare",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "Build: RogueSquadron64Recomp (Release, MCP)",
+            "problemMatcher": [],
+            "detail": "Builds Release, then plays level 3 six times in one launch and fails if the game's memory keeps growing from one play to the next. Read the memory_level03 line."
+        },
+        {
             "label": "Test: Clean smoke test output",
             "type": "shell",
             "command": "python tools/debug/smoke/smoke.py clean",
