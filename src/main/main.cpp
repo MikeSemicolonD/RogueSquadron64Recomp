@@ -458,6 +458,7 @@ void update_gfx(ultramodern::gfx_callbacks_t::gfx_data_t)
     {
         fprintf(stderr, "[main] close requested while the game thread is held: exiting\n");
         fflush(stderr);
+        release_pad_effects();
         rs64::host::run_quit_handlers();
 
 #if defined(RS64_OPENXR)

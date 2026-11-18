@@ -239,6 +239,14 @@ extern "C" uint32_t rs64_nav_hangar_frame_count(void) {
 
 static void nav_write_u8(uint8_t* rdram, uint32_t phys, uint8_t val) { rdram[phys ^ 3] = val; }
 
+static void nav_write_u32(uint8_t* rdram, uint32_t phys, uint32_t val) {
+
+    rdram[(phys + 0) ^ 3] = (uint8_t)(val >> 24);
+    rdram[(phys + 1) ^ 3] = (uint8_t)(val >> 16);
+    rdram[(phys + 2) ^ 3] = (uint8_t)(val >> 8);
+    rdram[(phys + 3) ^ 3] = (uint8_t)(val);
+}
+
 // Craft byte gGameSettings+1 plus the secondary weapon gGameSettings+3 that menuOverlayInit derives from it; the craft byte alone keeps the old craft's secondary.
 // Mirrors getSecondaryWeaponForLevelAndCraft (0x800C6728, menu overlay) for pilot slot 0, as menuOverlayInit calls it.
 static void nav_write_craft(uint8_t* rdram, int level, int craft)
@@ -257,14 +265,9 @@ static void nav_write_craft(uint8_t* rdram, int level, int craft)
 
     rdram[0x130B41 ^ 3] = (uint8_t)craft;
     rdram[0x130B43 ^ 3] = w;
-}
 
-static void nav_write_u32(uint8_t* rdram, uint32_t phys, uint32_t val) {
-
-    rdram[(phys + 0) ^ 3] = (uint8_t)(val >> 24);
-    rdram[(phys + 1) ^ 3] = (uint8_t)(val >> 16);
-    rdram[(phys + 2) ^ 3] = (uint8_t)(val >> 8);
-    rdram[(phys + 3) ^ 3] = (uint8_t)(val);
+    // The Naboo Starfighter's textures decrypt with the key its passcode stores at 0x80130B68 (CRC32 of "!YNGWIE!"); without it load_hmt_and_hob reads garbage offsets and faults.
+    if (craft == 8) nav_write_u32(rdram, 0x130B68, 0x050FE09Cu);
 }
 
 // Menus can ignore a press that lands before they accept input, so steps re-press on this interval.

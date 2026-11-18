@@ -300,6 +300,9 @@ static LightRgb light_mix(LightRgb a, LightRgb b, float t)
     return { a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t };
 }
 
+// Set once quit or a crash has reset the pads; no lightbar or trigger effect is sent after it.
+static std::atomic<bool> s_pad_effects_released{false};
+
 // DualShock 4 / DualSense lightbar: state colors crossfade; in a mission the color follows health, pulses when critical,
 // flashes on hits, and strobes through the death spiral. Pads without an LED (XInput, Steam/DS4Windows virtual pads) are skipped.
 static void lightbar_tick(const rs64::input::LightbarConfig& cfg, const char* st, float dt)
@@ -374,9 +377,107 @@ static void lightbar_tick(const rs64::input::LightbarConfig& cfg, const char* st
     s_sent_t = now;
     std::lock_guard<std::mutex> lk(g_bindings_mtx);
 
+    if (s_pad_effects_released.load()) return;
+
     for (SDL_GameController* p : g_pads)
     {
         if (SDL_GameControllerHasLED(p)) SDL_GameControllerSetLED(p, (Uint8)(packed >> 16), (Uint8)(packed >> 8), (Uint8)packed);
+    }
+}
+
+// Caller holds g_bindings_mtx (or the process is going down). heavy: bit 0 right trigger, bit 1 left; force 0 clears both.
+// Returns the number of pads the effect was queued for.
+static int send_trigger_feel(uint32_t heavy, uint8_t force)
+{
+
+    if (!force) heavy = 0;
+
+    // SDL's DS5EffectsState_t: enable bits 0x04/0x08 = right/left trigger effect at bytes 10 and 21. Mode 0x01 is constant
+    // resistance (start position, force) that can still be pulled through; mode 0x05 clears it.
+    uint8_t fx[47] = {};
+
+    fx[0] = 0x04 | 0x08;
+    fx[10] = (heavy & 1u) ? 0x01 : 0x05;
+    fx[12] = (heavy & 1u) ? force : 0x00;
+    fx[21] = (heavy & 2u) ? 0x01 : 0x05;
+    fx[23] = (heavy & 2u) ? force : 0x00;
+
+    int sent = 0;
+
+    for (SDL_GameController* p : g_pads)
+    {
+        if (SDL_GameControllerGetType(p) == SDL_CONTROLLER_TYPE_PS5 && SDL_GameControllerSendEffect(p, fx, sizeof(fx)) == 0) ++sent;
+    }
+
+    return sent;
+}
+
+// DualSense adaptive triggers: heavy thrust until the craft is at max speed, heavy brake while it is above cruise. Off once the craft's speed update stops (pause, menus, cutscenes).
+static void trigger_feel_tick()
+{
+
+    static uint32_t s_sent = ~0u;
+    static auto s_sent_t = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+    const uint32_t feel = (now_ms - g_trigger_feel_ms.load() < 250) ? g_trigger_feel.load() : 0u;
+
+    std::lock_guard<std::mutex> lk(g_bindings_mtx);
+
+    // A trigger takes the feel of what it is bound to: A (boost) the thrust feel, Z (brake) the brake feel, anything else none.
+    auto role = [](int axis) {
+
+        uint32_t r = 0;
+
+        for (const rs64::input::Source& s : g_bindings.targets[(int)rs64::input::Target::A])
+        {
+            if (s.kind == rs64::input::SourceKind::PadAxis && s.code == axis && s.dir > 0) r |= 1u;
+        }
+
+        for (const rs64::input::Source& s : g_bindings.targets[(int)rs64::input::Target::Z])
+        {
+            if (s.kind == rs64::input::SourceKind::PadAxis && s.code == axis && s.dir > 0) r |= 2u;
+        }
+
+        return r;
+    };
+
+    const uint32_t heavy = ((feel & role(SDL_CONTROLLER_AXIS_TRIGGERRIGHT)) ? 1u : 0u) | ((feel & role(SDL_CONTROLLER_AXIS_TRIGGERLEFT)) ? 2u : 0u);
+    const uint8_t force = (uint8_t)std::lround(std::clamp(g_bindings.trigger_resistance, 0.0f, 1.0f) * 255.0f);
+    const uint32_t sent = force ? (heavy | (uint32_t)force << 8) : 0u;
+
+    if (s_pad_effects_released.load() || (sent == s_sent && now - s_sent_t < std::chrono::seconds(1))) return;
+
+    s_sent = sent;
+    s_sent_t = now;
+    send_trigger_feel(heavy, force);
+}
+
+// The pad keeps its trigger effect and lightbar color after the process ends, so quit and crash paths reset them (the
+// lightbar to the pads' standard blue). The crashing thread may hold g_bindings_mtx, so after a short wait this sends without it.
+void release_pad_effects()
+{
+
+    if (s_pad_effects_released.exchange(true)) return;
+
+    std::unique_lock<std::mutex> lk(g_bindings_mtx, std::defer_lock);
+
+    for (int i = 0; i < 10 && !lk.try_lock(); ++i)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    int sent = send_trigger_feel(0, 0);
+
+    for (SDL_GameController* p : g_pads)
+    {
+        if (SDL_GameControllerHasLED(p) && SDL_GameControllerSetLED(p, 0, 0, 255) == 0) ++sent;
+    }
+
+    // SDL writes DualSense / DualShock 4 output reports from its HIDAPI rumble thread, so the process must outlive the queued reset.
+    if (sent > 0)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
@@ -401,6 +502,7 @@ void rumble_thread_main() {
         const auto tick_now = std::chrono::steady_clock::now();
         lightbar_tick(light, st, std::chrono::duration<float>(tick_now - tick_t).count());
         tick_t = tick_now;
+        trigger_feel_tick();
         const bool in_mission = st && std::strcmp(st, "mission") == 0;
         const rs64::rumble::Output out = rs64::rumble::tick(cfg, (const uint8_t*)g_recomp_rdram_for_wp_raw, in_mission);
         const bool any = out.lo > 0.0f || out.hi > 0.0f;

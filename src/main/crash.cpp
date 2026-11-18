@@ -18,6 +18,8 @@
 
 using recomp::dbg::env_on;
 
+namespace rs64::app { void release_pad_effects(); }
+
 #ifdef _WIN32
 
 // One-shot init of DbgHelp symbol resolution — done lazily on first crash.
@@ -186,6 +188,72 @@ static LONG WINAPI crash_handler(EXCEPTION_POINTERS* ep)
     fprintf(stderr, "[CRASH] Stack trace (%u frames):\n", (unsigned)count);
     print_stack_with_symbols(frames, count);
     fflush(stderr);
+    rs64::app::release_pad_effects();
+    write_minidump_safe(ep);
+    fflush(stderr);
+
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+// Functions LiveRecomp regenerates for mod hooks register no unwind info, so Windows cannot dispatch a fault there to any SEH
+// handler or to crash_handler and the process ends without a report. A vectored handler runs before that dispatch.
+static LONG WINAPI unwindless_fault_handler(EXCEPTION_POINTERS* ep)
+{
+
+    const DWORD code = ep->ExceptionRecord->ExceptionCode;
+
+    if (code < 0xC0000000u || code == 0xE06D7363u)
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    const DWORD64 pc = ep->ContextRecord->Rip;
+    DWORD64 image = 0;
+    HMODULE mod = nullptr;
+    const DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
+
+    if (RtlLookupFunctionEntry(pc, &image, nullptr) || GetModuleHandleExW(flags, (LPCWSTR)pc, &mod))
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    static std::atomic<bool> s_reported{false};
+
+    if (s_reported.exchange(true))
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    fprintf(stderr, "[CRASH] Exception 0x%08lX at 0x%llX in runtime-recompiled code (no unwind info)\n", code, (unsigned long long)pc);
+
+    if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2)
+    {
+        fprintf(stderr, "[CRASH] Access violation %s address 0x%llX\n", ep->ExceptionRecord->ExceptionInformation[0] ? "writing" : "reading", (unsigned long long)ep->ExceptionRecord->ExceptionInformation[1]);
+    }
+
+    // The stack cannot be walked from here, so list return addresses into the exe found on it: the likely callers, nearest first.
+    const HMODULE exe = GetModuleHandleW(nullptr);
+    const auto* nt = (const IMAGE_NT_HEADERS*)((const uint8_t*)exe + ((const IMAGE_DOS_HEADER*)exe)->e_lfanew);
+    const uintptr_t lo = (uintptr_t)exe;
+    const uintptr_t hi = lo + nt->OptionalHeader.SizeOfImage;
+    ULONG_PTR stack_lo = 0;
+    ULONG_PTR stack_hi = 0;
+
+    GetCurrentThreadStackLimits(&stack_lo, &stack_hi);
+
+    const uintptr_t* sp = (const uintptr_t*)ep->ContextRecord->Rsp;
+    void* frames[24];
+    USHORT count = 0;
+
+    for (int i = 0; i < 512 && count < 24 && (uintptr_t)(sp + i + 1) <= stack_hi; ++i)
+    {
+        if (sp[i] > lo && sp[i] < hi) frames[count++] = (void*)sp[i];
+    }
+
+    fprintf(stderr, "[CRASH] Likely callers (%u return addresses on the stack):\n", (unsigned)count);
+    print_stack_with_symbols(frames, count);
+    fflush(stderr);
+    rs64::app::release_pad_effects();
     write_minidump_safe(ep);
     fflush(stderr);
 
@@ -200,6 +268,7 @@ void install_handlers()
 {
 
     SetUnhandledExceptionFilter(crash_handler);
+    AddVectoredExceptionHandler(0, unwindless_fault_handler);
 
     // Pinpoints uncaught C++ throws (notably ultramodern::thread_terminated, which
     // must be caught in _thread_func/entrypoint but escapes on any thread lacking
@@ -264,6 +333,7 @@ void install_handlers()
         if (tf) { fputs("\n", tf); fflush(tf); fclose(tf); }
 
         print_stack_with_symbols(frames, count);  // symbolized to stderr when a PDB exists
+        rs64::app::release_pad_effects();
         write_minidump_safe(nullptr);
         die(3);
     });
@@ -277,6 +347,7 @@ void install_handlers()
 
         // No EXCEPTION_POINTERS on the abort path — passing nullptr makes
         // VS open the dump without the "unhandled exception" dialog.
+        rs64::app::release_pad_effects();
         write_minidump_safe(nullptr);
         die(3);
     });
@@ -341,6 +412,7 @@ void install_handlers()
                 (unsigned long long)rva);
         }
 
+        rs64::app::release_pad_effects();
         fflush(stderr);
         die(4);
     });

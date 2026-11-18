@@ -43,6 +43,9 @@ namespace rs64::app {
     extern std::vector<OpenJoy> g_open_joys;
     extern std::vector<SDL_Joystick*> g_joy_by_dev;
     extern std::atomic<float> g_throttle;
+    // Trigger resistance the last craft speed update asked for (bit 0 thrust, bit 1 brake) and when, in steady_clock ms.
+    extern std::atomic<uint32_t> g_trigger_feel;
+    extern std::atomic<int64_t> g_trigger_feel_ms;
     extern std::atomic<bool> g_report_rumble_pak;
     extern bool g_fullscreen_applied;
     extern rs64::touch::Engine g_touch;
@@ -56,6 +59,8 @@ namespace rs64::app {
     void set_rumble(int controller_num, bool on);
     ultramodern::input::connected_device_info_t get_connected_device_info(int controller_num);
     void rumble_thread_main();
+    // Resets DualSense trigger resistance and the lightbar for good; called on quit and from the crash handlers.
+    void release_pad_effects();
     int joy_dev_locked(const OpenJoy& oj);
     void rebind_open_joysticks_locked();
 

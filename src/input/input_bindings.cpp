@@ -193,7 +193,27 @@ float throttle_position(const Bindings& b, const RawState& st) {
         }
     }
 
-    return -1.0f;
+    // No throttle lever: pad axes bound to A (boost) and Z (brake) push the lever from cruise by how far they are pulled.
+    auto pull = [&](Target t) {
+
+        float m = 0.0f;
+
+        for (const Source& s : b.targets[(int)t])
+        {
+            if (s.kind == SourceKind::PadAxis) m = std::max(m, source_value(s, st, b));
+        }
+
+        return m;
+    };
+
+    const float boost = pull(Target::A);
+    const float brake = pull(Target::Z);
+
+    if (boost <= 0.0f && brake <= 0.0f) return -1.0f;
+
+    const float c = std::clamp(b.throttle_cruise, 0.05f, 0.95f);
+
+    return std::clamp(c + boost * (1.0f - c) - brake * c, 0.0f, 1.0f);
 }
 
 float throttle_speed(float p, float cruise_at, float min_speed, float cruise_speed, float max_speed)
@@ -1178,6 +1198,7 @@ bool load_bindings(Bindings& b, const std::string& path) {
     b.stick_range      = j.value("stick_range", b.stick_range);
     b.pad_deadzone     = j.value("pad_deadzone", b.pad_deadzone);
     b.throttle_cruise  = j.value("throttle_cruise", b.throttle_cruise);
+    b.trigger_resistance = std::clamp(j.value("trigger_resistance", b.trigger_resistance), 0.0f, 1.0f);
 
     if (j.contains("rumble") && j["rumble"].is_object())
     {
@@ -1268,6 +1289,7 @@ bool save_bindings(const Bindings& b, const std::string& path)
     j["stick_range"] = b.stick_range;
     j["pad_deadzone"] = b.pad_deadzone;
     j["throttle_cruise"] = b.throttle_cruise;
+    j["trigger_resistance"] = b.trigger_resistance;
     const RumbleConfig& c = b.rumble;
     j["rumble"] = { {"enabled", c.enabled}, {"strength", c.strength},
                     {"scale_hits_by_damage", c.scale_hits_by_damage}, {"sustain_death_spiral", c.sustain_death_spiral},

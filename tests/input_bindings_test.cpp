@@ -401,9 +401,26 @@ static void menu_fixed_pad_checks()
     assert(near(x, 0.0f));
 
     Bindings r;
+    b.trigger_resistance = 0.25f;
     assert(save_bindings(b, "pad_deadzone_test.json") && load_bindings(r, "pad_deadzone_test.json"));
     remove("pad_deadzone_test.json");
-    assert(near(r.pad_deadzone, 0.5f));
+    assert(near(r.pad_deadzone, 0.5f) && near(r.trigger_resistance, 0.25f));
+
+    // Pad triggers bound to A/Z drive the throttle from cruise: released = the game's own speed, RT = full, LT = stop, both = cruise.
+    b = default_bindings();
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERLEFT, -32768);
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    assert(throttle_position(b, st) < 0.0f);
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, 32767);
+    SDL_GameControllerUpdate();
+    assert(near(throttle_position(b, st), 1.0f));
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERLEFT, 32767);
+    SDL_GameControllerUpdate();
+    assert(near(throttle_position(b, st), 0.5f));
+    SDL_JoystickSetVirtualAxis(pj, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+    SDL_GameControllerUpdate();
+    assert(near(throttle_position(b, st), 0.0f));
 
     SDL_GameControllerClose(pad);
     SDL_JoystickDetachVirtual(vi);

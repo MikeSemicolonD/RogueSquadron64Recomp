@@ -138,56 +138,56 @@ void rs64_th_initVideoSubsystem_8001A2EC(uint8_t* rdram, recomp_context* ctx) {
 void rs64_th_updateXwingFlightControls_800B48EC(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x14, 0x800A58C4, 0x800A58D0, 0x800A58DC, (uint32_t)ctx->r18 + 0x4);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r17 + 0xE8, (uint32_t)ctx->r18 + 0x14, 0x800A58C4, 0x800A58D0, 0x800A58DC, (uint32_t)ctx->r18 + 0x4, 0.0f, 0.0f);
 }
 
 // updateAwingFlightControls 0x800B5D54
 void rs64_th_updateAwingFlightControls_800B5D54(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, 0, 0x800A5A44, 0x800A5A4C, 0x800A5A54, 0);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0xE8, 0, 0x800A5A44, 0x800A5A4C, 0x800A5A54, 0, 0.0f, 0.0f);
 }
 
 // updateYwingFlightControls 0x800B7984
 void rs64_th_updateYwingFlightControls_800B7984(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, 0, 0x800A5B88, 0, 0x800A5B90, 0);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r16 + 0xE8, 0, 0x800A5B88, 0, 0x800A5B90, 0, 1.0f / 3.0f, 0.0f);
 }
 
 // updateVwingFlightControls 0x800B9280
 void rs64_th_updateVwingFlightControls_800B9280(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f24.fl = rs64_throttle_hook(rdram, ctx->f24.fl, 0, 0x800A5CB0, 0x800A5CB8, 0x800A5CC0, (uint32_t)ctx->r21 + 0x190);
+    ctx->f24.fl = rs64_throttle_hook(rdram, ctx->f24.fl, (uint32_t)ctx->r21 + 0xE8, 0, 0x800A5CB0, 0x800A5CB8, 0x800A5CC0, (uint32_t)ctx->r21 + 0x190, 0.0f, 0.0f);
 }
 
 // updateFalconFlightControls 0x800BA8F4
 void rs64_th_updateFalconFlightControls_800BA8F4(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x4, 0x800A5DD8, 0x800A5DE0, 0x800A5DE8, 0);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r17 + 0xE8, (uint32_t)ctx->r18 + 0x4, 0x800A5DD8, 0x800A5DE0, 0x800A5DE8, 0, 0.0f, 0.0f);
 }
 
 // updateTieInterceptorFlightControls 0x800BC190
 void rs64_th_updateTieInterceptorFlightControls_800BC190(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x4, 0x800A5F40, 0x800A5F48, 0x800A5F50, 0);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r17 + 0xE8, (uint32_t)ctx->r18 + 0x4, 0x800A5F40, 0x800A5F48, 0x800A5F50, 0, 0.0f, 0.0f);
 }
 
 // updateT16FlightControls 0x800BD148
 void rs64_th_updateT16FlightControls_800BD148(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0x4, 0x800A604C, 0x800A6054, 0x800A605C, 0);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r17 + 0xE8, (uint32_t)ctx->r18 + 0x4, 0x800A604C, 0x800A6054, 0x800A605C, 0, 0.0f, 0.0f);
 }
 
 // updateNabooStarfighterFlightControls 0x800BDEB0
 void rs64_th_updateNabooStarfighterFlightControls_800BDEB0(uint8_t* rdram, recomp_context* ctx)
 {
 
-    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, 0, 0x800A6144, 0x800A6150, 0x800A6154, 0);
+    ctx->f20.fl = rs64_throttle_hook(rdram, ctx->f20.fl, (uint32_t)ctx->r18 + 0xE8, 0, 0x800A6144, 0x800A6150, 0x800A6154, 0, 0.0f, 0.0f);
 }
 
 // updateSnowSpeederFlightControls 0x800ABDA0
@@ -198,7 +198,9 @@ void rs64_th_updateSnowSpeederFlightControls_800ABDA0(uint8_t* rdram, recomp_con
     const uint16_t held = MEM_HU(0, (gpr)(int32_t)0x80130B88);
     const uint16_t brakes = MEM_HU(0x14, (gpr)(int32_t)0x8010BE18) | MEM_HU(0x16, (gpr)(int32_t)0x8010BE18);
 
-    if (!(held & brakes)) ctx->f22.fl = rs64_throttle_hook(rdram, ctx->f22.fl, 0, half ? 0x800A5318 : 0x800A531C, half ? 0x800A5308 : 0x800A530C, half ? 0x800A5328 : 0x800A532C, 0);
+    const float speed = rs64_throttle_hook(rdram, ctx->f22.fl, (uint32_t)ctx->r19 + 0xE8, 0, half ? 0x800A5318 : 0x800A531C, half ? 0x800A5308 : 0x800A530C, half ? 0x800A5328 : 0x800A532C, 0, 0.0f, 1.0f / 3.0f);
+
+    if (!(held & brakes)) ctx->f22.fl = speed;
 }
 
 // Set just before the render paths call the view test; the view test takes it on entry, so its gameplay callers keep the exact test.

@@ -301,7 +301,7 @@ extern volatile int g_active_overlay;
 int rs64_vr_game_hz(void);
 int rs64_shadow_caster_reaches_view(const float p[3], float r, const float view[9], float slopeX, float slopeY);
 float rs64_terrain_dist(void);
-float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+float rs64_throttle_hook(uint8_t*, float, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, float, float);
 int rs64_atst_head(float*, float*);
 int rs64_controls_menu_active(void);
 int rs64_crawl_camera(uint8_t*, recomp_context*);

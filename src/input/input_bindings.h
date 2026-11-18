@@ -135,6 +135,9 @@ struct Bindings {
     float pad_deadzone      = 0.15f;
 
     float throttle_cruise   = 0.5f;   // throttle position [0,1] that gives the craft's cruise speed
+
+    // DualSense trigger resistance [0,1] for thrust/brake feel; 0 turns it off.
+    float trigger_resistance = 0.25f;
     RumbleConfig rumble;
     LightbarConfig lightbar;
 };

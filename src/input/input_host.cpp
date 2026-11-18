@@ -383,24 +383,38 @@ extern "C" float rs64_throttle_cruise_live(void) {
     return g_bindings.throttle_cruise;
 }
 
-// Per-craft speed hooks in rogue_squadron.toml call this just before the craft's current speed steps toward its
-// target. Addresses are f32 game constants (base_addr 0 = unscaled, cruise_addr 0 = none); a nonzero f32 at
-// skip_addr (a scripted boost) keeps the game's target.
-extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t base_addr, uint32_t floor_addr, uint32_t cruise_addr, uint32_t cap_addr, uint32_t skip_addr)
+std::atomic<uint32_t> g_trigger_feel{0};
+std::atomic<int64_t> g_trigger_feel_ms{0};
+
+// Per-craft speed hooks in rogue_squadron.toml call this just before the craft's current speed (f32 at speed_addr) steps
+// toward its target. Addresses are f32 game constants (base_addr 0 = unscaled); a nonzero f32 at skip_addr (a scripted
+// boost) keeps the game's target. A craft without a cruise constant (cruise_addr 0) cruises cruise_ratio of the way from
+// floor to cap, and the game's own brake lands brake_ratio of the way from floor to cruise.
+extern "C" float rs64_throttle_hook(uint8_t* rdram, float target, uint32_t speed_addr, uint32_t base_addr, uint32_t floor_addr, uint32_t cruise_addr, uint32_t cap_addr, uint32_t skip_addr, float cruise_ratio, float brake_ratio)
 {
+
+    auto f32 = [rdram](uint32_t addr) { float f; memcpy(&f, rdram + (addr - 0x80000000u), 4); return f; };
+
+    const float base = base_addr ? f32(base_addr) : 1.0f;
+    const float floor_speed = base * f32(floor_addr);
+    const float max_speed = base * f32(cap_addr);
+    const float cruise_speed = cruise_addr ? base * f32(cruise_addr) : floor_speed + cruise_ratio * (max_speed - floor_speed);
+    const float min_speed = floor_speed + brake_ratio * (cruise_speed - floor_speed);
+
+    if (max_speed > min_speed)
+    {
+        const float speed = f32(speed_addr);
+        const float eps = 0.01f * max_speed;
+
+        g_trigger_feel.store((speed < max_speed - eps ? 1u : 0u) | (speed > cruise_speed + eps ? 2u : 0u));
+        g_trigger_feel_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    }
 
     const float p = rs64_ls_throttle(rs64_throttle_live());
 
     if (p < 0.0f) return target;
 
-    auto f32 = [rdram](uint32_t addr) { float f; memcpy(&f, rdram + (addr - 0x80000000u), 4); return f; };
-
     if (skip_addr && f32(skip_addr) != 0.0f) return target;
-
-    const float base = base_addr ? f32(base_addr) : 1.0f;
-    const float min_speed = base * f32(floor_addr);
-    const float max_speed = base * f32(cap_addr);
-    const float cruise_speed = cruise_addr ? base * f32(cruise_addr) : -1.0f;
 
     if (!(max_speed > min_speed)) return target;
 
@@ -1202,6 +1216,7 @@ void poll_input()
         case SDL_QUIT:
             fprintf(stderr, "[main] SDL_QUIT received, exiting\n");
             fflush(stderr);
+            release_pad_effects();
             rs64::host::run_quit_handlers();
 
 #if defined(RS64_OPENXR)
