@@ -5,7 +5,7 @@ description: Ray-traced lighting in RogueSquadron64Recomp (RT64's RS64 light pas
 
 # RogueSquadron64Recomp — Ray-Traced Lighting
 
-Audience: AI agents. Read `AGENTS.md` first (project map, env vars, dead ends), then this. The field reference for players and modders is `docs/engine/debug-trace-env-vars.md` (row `roguesq_lights.json`) and
+Audience: AI agents. Read `AGENTS.md` first (rules, dead ends, doc links), then this. The field reference for players and modders is `docs/engine/debug-trace-env-vars.md` (row `roguesq_lights.json`) and
 `docs/guides/modding.md` (Light mods).
 
 ## 0. How to work (read this first, it is where time was lost)

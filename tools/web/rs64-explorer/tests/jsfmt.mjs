@@ -1,5 +1,5 @@
 // node tools/web/rs64-explorer/tests/jsfmt.mjs [--check | --write] [files...]
-// Lays out the web JS the way AGENTS.md "Web JS" describes (style_check checks only part of it line by line). With no files it takes every
+// Lays out the web JS the way docs/engine/web-js-style.md describes (style_check checks only part of it line by line). With no files it takes every
 // .js / .mjs under tools/web except the files style_check skips (SKIPPED). --check lists what would change and exits 1; --write rewrites. Needs `npm install`
 // in this folder (TypeScript's parser). Every rewrite is verified first: the same code once declaration lists are split and ternary parentheses
 // dropped, the same string and template texts, the same comment words, it parses, and a second run changes nothing.

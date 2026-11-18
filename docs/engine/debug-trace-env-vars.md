@@ -66,6 +66,8 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_LS_REPLAY=<path.rec>` | `--replay` | unset | Play a recording; start its level with `--boot-target`. |
 | `ROGUESQ_LS_KEEP_RUNNING=1` | `--keep-running` | off | Stay on the last screen when a replay ends instead of quitting. |
 
+With the inspector on, F1 toggles RT64's ImGui overlay, F3 toggles ViewRDRAM mode, F4 toggles texture replacement, and F12 writes a crash dump. F9 / Shift+F9 step through the ray-tracing debug views live (named in a bottom-right notice).
+
 Other user options without flags:
 
 | Env var | Default | Effect |

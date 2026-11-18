@@ -70,7 +70,7 @@ Grep the log for the SEH line:
 [recomp] SEH caught: thread_entry=0x... code=0xC0000005 kind=READ av_target=0x... av_pc=0x... av_rva=0xNNNNNN
 ```
 - `code=0xC0000005` = hardware AV (our bug class). `code=0xE06D7363` = a C++ exception (usually benign,
-  recovered by the outer catch — see AGENTS.md exception pipeline). Focus on C0000005 on the game thread.
+  recovered by the outer catch — see "Exception handling pipeline" in docs/reference/game-architecture.md). Focus on C0000005 on the game thread.
 - A **small** `av_target` (< 0x1000 + offset) = NULL+offset deref. A **huge** `av_target`
   (e.g. 0x1A2...) = a wild pointer computed from a bad base, then run through `MEM_W` (recomp.h) which
   does NO masking: `*(int32_t*)(rdram + ((reg+offset) - 0xFFFFFFFF80000000))`. An out-of-RDRAM guest

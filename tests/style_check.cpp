@@ -1,4 +1,4 @@
-// Style checks for src/, mods/multiplayer-native/src and relay-server/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line. The web JS gets the first and last plus its own (AGENTS.md "Web JS").
+// Style checks for src/, mods/multiplayer-native/src and relay-server/src from AGENTS.md (plus the mod's base-header allowlist): no comment after code, comment blocks of at most 2 lines, env reads through recomp::dbg::env_*, one statement per line. The web JS gets the first and last plus its own (docs/engine/web-js-style.md).
 // Usage: style_check <repo root> [--update-baseline]. Exits 1 on findings not in tools/style/baseline.txt.
 #include <algorithm>
 #include <cctype>
@@ -78,7 +78,7 @@ static std::vector<std::string> findings(const fs::path& root) {
             if (std::regex_search(code, two) && s.rfind("for", 0) != 0) out.push_back(rel + ": two statements on one line: " + head60(s));
         }
     }
-    // Web JS (tools/web, AGENTS.md "Web JS"): no comment after code and one statement per line. Strings and regex literals are blanked first.
+    // Web JS (tools/web, docs/engine/web-js-style.md): no comment after code and one statement per line. Strings and regex literals are blanked first.
     std::vector<fs::path> js;
     for (auto it = fs::recursive_directory_iterator(root / "tools/web"); it != fs::recursive_directory_iterator(); ++it) {
         if (it->is_directory() && it->path().filename() == "node_modules") {

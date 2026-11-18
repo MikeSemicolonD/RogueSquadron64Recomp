@@ -21,11 +21,14 @@ Pick the section that matches what you want to do.
 How-to:
 
 - [debugging-with-visual-studio.md](engine/debugging-with-visual-studio.md): stepping through the recompiled code, crash and hang tools, and the F5 profiler HUD.
+- [project-layout.md](engine/project-layout.md): what each folder holds, and where the recompiled code comes from.
+- [debug-tools.md](engine/debug-tools.md): stability and leak harnesses, the Project64 validation tools, frame-exact screenshots, and the renaming and cross-reference tools.
 - [debug-trace-env-vars.md](engine/debug-trace-env-vars.md): every `ROGUESQ_*` trace, dump and A/B switch.
 - [modding-host-api.md](engine/modding-host-api.md): the host API for native mods.
 - [rendering-and-ray-tracing.md](engine/rendering-and-ray-tracing.md): where to change ray-tracing settings, what ray tracing hits, and how objects and textures render.
 - [rt64-mcp.md](engine/rt64-mcp.md): an MCP server that lets an agent launch the game, freeze an exact frame and read RT64's inspector data.
 - [release-ci.md](engine/release-ci.md): the release pipeline and its runners.
+- [web-js-style.md](engine/web-js-style.md): code layout for the JavaScript under `tools/web`.
 - [../patches/README.md](../patches/README.md): base-game C patches.
 
 Reference (reverse-engineering notes, dense by design). Read [reference/README.md](reference/README.md) first: it covers what to read in what order, the vocabulary, and which doc answers which question.
@@ -39,4 +42,4 @@ Reference (reverse-engineering notes, dense by design). Read [reference/README.m
 - [musyx-voice-mixing.md](reference/musyx-voice-mixing.md): MusyX per-voice modulation and mixing.
 - [adding-menus-and-buttons.md#internals](guides/adding-menus-and-buttons.md#internals): the front-end and pause menu structures.
 
-[AGENTS.md](../AGENTS.md) is the condensed project guide written for AI agents; it is also a useful map of the codebase.
+[AGENTS.md](../AGENTS.md) holds the project rules written for AI agents, with links into these docs.

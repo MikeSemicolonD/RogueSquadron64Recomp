@@ -35,6 +35,8 @@ grammar itself (chunk fetch, per-opcode semantics from the IMEM listing) is in
 
 Other standard F3D/F3DEX opcodes (0xB8, 0xB9, 0xBA, 0xBC, 0xE6-0xED, 0xF6-0xFF) dispatch through the inherited map, several via logging/guarded wrappers.
 
+Chunks are contiguous 0x108-byte blocks. The interpreter walks chunk content linearly from +8; at +0x108, or on `0xB5`, it continues in the chunk named by the header's first word. `0x06` pushes and calls, `0x07` branches, and `0xB8` pops (or ends the task at depth 0). Models render as CI4 textures at palette bank 15. Per-face UVs are raw values scaled by the per-material `03 82` texcoord scale (16.16, DMEM 0x140). Use `f5_dl_walk.py --tex` to compare.
+
 ## RSP dispatch mechanism
 
 Main command loop at IMEM `0x04001010`:
