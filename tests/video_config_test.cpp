@@ -511,7 +511,27 @@ static void test_graphics_api_cycle() {
     CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "d3d11");
 }
 
+// A value of the wrong type is skipped on its own: the keys around it still load.
+static void test_wrong_types_skipped() {
+
+    UC uc;
+
+    uc.validate();
+    uc.vsync = false;
+    uc.fxaa = false;
+
+    const bool fxaa_before = uc.fxaa;
+
+    rs64::video::apply_friendly(uc, json{{"vsync", true}, {"fxaa", "yes"}, {"antialiasing", "4"},
+                                         {"widescreen", 1}, {"graphicsAPI", 5}, {"ssaa", 2},
+                                         {"advanced", {{"upscale2D", "x"}}}});
+    CHECK(uc.vsync == true);
+    CHECK(uc.fxaa == fxaa_before);
+    CHECK(uc.downsampleMultiplier == 2);
+}
+
 int main() {
+    test_wrong_types_skipped();
     test_graphics_api_cycle();
     test_custom_aa_steps_to_fxaa();
     test_aa_presets();

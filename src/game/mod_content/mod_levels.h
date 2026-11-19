@@ -352,14 +352,16 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
         errors.push_back(mod + ": levels.json is not { \"levels\": [...] }");
         return out;
     }
+    using rs64rules::field;
     for (const auto& e : doc["levels"]) {
         ModLevel l;
         l.mod = mod;
-        l.id = e.value("id", std::string());
-        l.title = e.value("title", std::string());
-        l.description = e.value("description", std::string());
-        l.folder = e.value("folder", std::string());
-        l.tmpl = e.value("template", -1);
+        l.id = field(e, "id", std::string(), mod + ": levels.json", errors);
+        const std::string where = mod + ": level '" + l.id + "'";
+        l.title = field(e, "title", std::string(), where, errors);
+        l.description = field(e, "description", std::string(), where, errors);
+        l.folder = field(e, "folder", std::string(), where, errors);
+        l.tmpl = field(e, "template", -1, where, errors);
         if (e.contains("voice") && e["voice"].is_number_integer()) {
             l.voice = e["voice"].get<int>();
         }
@@ -367,10 +369,10 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
         if (e.contains("crawl") && e["crawl"].is_string()) l.crawlName = e["crawl"].get<std::string>();
         if (e.contains("crawl") && e["crawl"].is_object()) {
             const auto& c = e["crawl"];
-            l.crawlChapter = c.value("chapter", std::string());
-            l.crawlTitle = c.value("title", std::string());
-            l.crawlBody = c.value("body", std::string());
-            const int planet = c.value("planet", 0);
+            l.crawlChapter = field(c, "chapter", std::string(), where + " crawl", errors);
+            l.crawlTitle = field(c, "title", std::string(), where + " crawl", errors);
+            l.crawlBody = field(c, "body", std::string(), where + " crawl", errors);
+            const int planet = field(c, "planet", 0, where + " crawl", errors);
             l.crawl = planet >= 0 && planet <= 3 ? planet : 0;
         }
         if (e.contains("craft") && e["craft"].is_array()) {
@@ -392,7 +394,8 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
                     continue;
                 }
                 const auto& t = m[tiers[i]];
-                l.medals[i] = { t.value("time", 0.0f), t.value("kills", (uint16_t)0), t.value("accuracy", (uint16_t)0), t.value("friendlies", (uint16_t)0) };
+                const std::string tier = where + " " + tiers[i] + " medal";
+                l.medals[i] = { field(t, "time", 0.0f, tier, errors), field(t, "kills", (uint16_t)0, tier, errors), field(t, "accuracy", (uint16_t)0, tier, errors), field(t, "friendlies", (uint16_t)0, tier, errors) };
             }
             if (!l.hasMedals) errors.push_back(mod + ": level '" + l.id + "' medals need bronze, silver and gold; the template's apply");
         }
@@ -407,20 +410,21 @@ inline std::vector<ModLevel> parseModLevels(const std::string& mod, const std::s
             const size_t before = errors.size();
             bool completes = false;
             for (const auto& j : e["objectives"]) {
-                const auto g = kGoals.find(j.value("goal", std::string()));
+                const std::string obj = where + " objective";
+                const auto g = kGoals.find(field(j, "goal", std::string(), obj, errors));
                 if (g == kGoals.end()) {
                     errors.push_back(mod + ": level '" + l.id + "' objective goal must be destroy, reach, protect, survive or timelimit");
                     continue;
                 }
-                Objective o{ j.value("text", std::string()), g->second };
-                o.index = j.value(o.goal == Goal::Destroy ? "counter" : "flag", 0);
-                o.amount = j.value("count", 0);
-                o.seconds = j.value("seconds", 0.0f);
-                o.voice = j.value("voice", kVoiceNone);
-                o.camera = j.value("camera", std::string());
-                o.recording = j.value("recording", std::string());
-                o.pauseVoice = j.value("pauseVoice", kVoiceNone);
-                o.pauseRecording = j.value("pauseRecording", std::string());
+                Objective o{ field(j, "text", std::string(), obj, errors), g->second };
+                o.index = field(j, o.goal == Goal::Destroy ? "counter" : "flag", 0, obj, errors);
+                o.amount = field(j, "count", 0, obj, errors);
+                o.seconds = field(j, "seconds", 0.0f, obj, errors);
+                o.voice = field(j, "voice", kVoiceNone, obj, errors);
+                o.camera = field(j, "camera", std::string(), obj, errors);
+                o.recording = field(j, "recording", std::string(), obj, errors);
+                o.pauseVoice = field(j, "pauseVoice", kVoiceNone, obj, errors);
+                o.pauseRecording = field(j, "pauseRecording", std::string(), obj, errors);
                 const bool timed = o.goal == Goal::Survive || o.goal == Goal::TimeLimit;
                 if (timed ? o.seconds <= 0 : (o.index < 1 || o.index > 128 || (o.goal == Goal::Destroy && o.amount < 1))) {
                     errors.push_back(mod + ": level '" + l.id + "' objective '" + o.text + "' needs " + (timed ? "seconds" : o.goal == Goal::Destroy ? "a counter 1-128 and a count" : "a flag 1-128"));

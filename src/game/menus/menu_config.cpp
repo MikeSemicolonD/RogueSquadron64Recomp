@@ -46,6 +46,7 @@
 #include "util/mips_call.h"
 #include "host_api/host_api.h"
 #include "util/debug_logs.h"
+#include "util/settings_file.h"
 
 namespace rs64::menucfg {
 
@@ -198,47 +199,53 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
 
     if (!e.is_object()) return;
 
+    const std::string file = mod_id.empty() ? "roguesq_menu.json" : mod_id;
+    const std::string id = rs64::settings::value_or(e, "id", std::string{}, file);
+    const std::string where = file + " button " + id;
+
+    auto v = [&](const char* key, auto fallback) { return rs64::settings::value_or(e, key, fallback, where); };
+
     Button b;
     b.mod_id = mod_id;
-    b.id       = e.value("id", std::string{});
-    b.menu     = e.value("menu", std::string{"main_menu"});
-    std::string t = e.value("type", std::string{"action"});
+    b.id       = id;
+    b.menu     = v("menu", std::string{"main_menu"});
+    std::string t = v("type", std::string{"action"});
 
     // A cycle is a toggle whose key names a cycles() entry; its label shows the current choice.
     b.type = (t == "toggle" || t == "cycle") ? BType::Toggle : (t == "slider") ? BType::Slider
            : (t == "submenu") ? BType::Submenu : (t == "label") ? BType::Label : BType::Action;
     const char* bkey = (t == "cycle") ? "cycle" : (b.type == BType::Toggle) ? "toggle" : (b.type == BType::Slider) ? "slider" : "action";
-    b.behavior = e.value(bkey, std::string{});
+    b.behavior = v(bkey, std::string{});
 
     // "config:<option>" names an option in the mod's own mod.toml config schema; the key carries the mod id so the registries need no button.
     if (b.behavior.rfind("config:", 0) == 0 && !mod_id.empty()) b.behavior = "config:" + mod_id + ":" + b.behavior.substr(7);
 
-    b.page  = e.value("page",  std::string{});
+    b.page  = v("page",  std::string{});
     b.title = text_field(e, "title", lang);
-    b.title_y = e.value("title_y", 0);
-    b.leave_action = e.value("leave_action", std::string{});
-    b.left_action = e.value("left_action", std::string{});
-    b.right_action = e.value("right_action", std::string{});
-    b.label_src = e.value("label_src", std::string{});
-    b.note = b.type == BType::Label && e.value("note", false);
-    b.transition = e.value("transition", std::string{});
-    b.exit_when = e.value("exit_when", std::string{});
-    b.smin  = e.value("min",  b.smin);
-    b.smax  = e.value("max",  b.smax);
-    b.sstep = e.value("step", b.sstep);
-    b.bar_width  = e.value("bar_width",  b.bar_width);
-    b.bar_filled = e.value("bar_filled", b.bar_filled);
-    b.bar_empty  = e.value("bar_empty",  b.bar_empty);
+    b.title_y = v("title_y", 0);
+    b.leave_action = v("leave_action", std::string{});
+    b.left_action = v("left_action", std::string{});
+    b.right_action = v("right_action", std::string{});
+    b.label_src = v("label_src", std::string{});
+    b.note = b.type == BType::Label && v("note", false);
+    b.transition = v("transition", std::string{});
+    b.exit_when = v("exit_when", std::string{});
+    b.smin  = v("min",  b.smin);
+    b.smax  = v("max",  b.smax);
+    b.sstep = v("step", b.sstep);
+    b.bar_width  = v("bar_width",  b.bar_width);
+    b.bar_filled = v("bar_filled", b.bar_filled);
+    b.bar_empty  = v("bar_empty",  b.bar_empty);
     b.confirm  = text_field(e, "confirm", lang);
     b.label    = text_field(e, "label", lang);
     b.label_on  = text_field(e, "label_on", lang);
     b.label_off = text_field(e, "label_off", lang);
 
-    if (e.contains("order")) { b.has_order = true; b.order = e.value("order", 0); }
+    if (e.contains("order")) { b.has_order = true; b.order = v("order", 0); }
 
-    b.before  = e.value("before",  std::string{});
-    b.after   = e.value("after",   std::string{});
-    b.replace = e.value("replace", std::string{});
+    b.before  = v("before",  std::string{});
+    b.after   = v("after",   std::string{});
+    b.replace = v("replace", std::string{});
 
     if (e.contains("index") && e["index"].is_number_integer()) {
         b.has_index = true;
@@ -265,12 +272,12 @@ void parse_button(const nlohmann::json& e, const std::string& mod_id, std::vecto
     }
 
     b.label_other = text_field(e, "label_other", lang);
-    b.x = e.value("x", 0);
-    b.y = e.value("y", 0);
-    b.gap_after = e.value("gap_after", 0);
-    b.row = e.value("row", std::string{});
-    b.scale = e.value("scale", 1.0f);
-    b.flags = e.value("flags", 0x4001);
+    b.x = v("x", 0);
+    b.y = v("y", 0);
+    b.gap_after = v("gap_after", 0);
+    b.row = v("row", std::string{});
+    b.scale = v("scale", 1.0f);
+    b.flags = v("flags", 0x4001);
     b.sound = parse_sound(e, b.id);
     out.push_back(std::move(b));
 }
@@ -315,10 +322,10 @@ void apply_json_text(MenuConfig& m, const std::string& text, const std::string& 
 
                 MenuTitle t;
                 t.text = text_field(it.value(), "label", lang);
-                t.x = it.value().value("x", 0);
+                t.x = rs64::settings::value_or(it.value(), "x", 0, file);
                 t.has_x = it.value().contains("x");
                 t.has_y = it.value().contains("y");
-                t.y = it.value().value("y", 0);
+                t.y = rs64::settings::value_or(it.value(), "y", 0, file);
                 m.titles[it.key()] = t;
             }
         }

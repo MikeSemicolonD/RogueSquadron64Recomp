@@ -44,7 +44,7 @@ static std::vector<std::string> findings(const fs::path& root) {
     static const std::regex two(R"(;\s+(if|while)\s*\()");
     static const std::regex include_re(R"re(^\s*#\s*include\s+"([^"]+)")re");
     // Base-game headers the multiplayer mod may include; anything else it needs goes through the host API (mods/multiplayer-native/CMakeLists.txt lists the same files).
-    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/mp_channel.h", "rs64/camera_shots.h", "rs64/ships.h", "json/json.hpp", "relay_protocol.h"};
+    static const std::set<std::string> mp_allowed = {"lockstep/lockstep_core.h", "util/debug_logs.h", "util/rdram_words.h", "util/settings_file.h", "recomp.h", "rs64/host_api.h", "rs64/mp_transport.h", "rs64/mp_channel.h", "rs64/camera_shots.h", "rs64/ships.h", "json/json.hpp", "relay_protocol.h"};
     const std::string mp_dir = "mods/multiplayer-native/src";
     std::vector<std::pair<std::string, fs::path>> files;
     for (const std::string dir : {std::string("src"), mp_dir, std::string("relay-server/src")}) {

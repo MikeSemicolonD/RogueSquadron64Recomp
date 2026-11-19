@@ -29,32 +29,37 @@ namespace rs64::touch {
             return c;
         }
 
-        try {
-            json j = json::parse(f);
-            c.enabled = j.value("enabled", c.enabled);
-            c.opacity = j.value("opacity", c.opacity);
-            c.button_scale = j.value("button_scale", c.button_scale);
-            c.stick_radius = j.value("stick_radius", c.stick_radius);
-            c.stick_curve = j.value("stick_curve", c.stick_curve);
-            c.gyro = j.value("gyro", c.gyro);
-            c.debug_hitboxes = j.value("debug_hitboxes", c.debug_hitboxes);
-            c.stick_split = j.value("stick_split", c.stick_split);
-            c.steer_dead_deg = j.value("steer_dead_deg", c.steer_dead_deg);
-            c.steer_full_deg = j.value("steer_full_deg", c.steer_full_deg);
-            c.steer_curve = j.value("steer_curve", c.steer_curve);
-            c.rate_assist = j.value("rate_assist", c.rate_assist);
-            c.pitch_gain = j.value("pitch_gain", c.pitch_gain);
-            c.pitch_min = j.value("pitch_min", c.pitch_min);
-            c.thumb_bridge = j.value("thumb_bridge", c.thumb_bridge);
+        json j;
 
-            if (j.contains("layout") && j["layout"].is_object()) {
-                for (const auto& [id, p] : j["layout"].items())
-                {
-                    c.layout[id] = { p.value("x", 0.5f), p.value("y", 0.5f), p.value("scale", 1.0f) };
-                }
-            }
-        } catch (...) {
+        if (!rs64::settings::parse_file(f, path, j)) {
             fprintf(stderr, "[touch] %s is not valid JSON; using defaults\n", path.c_str());
+
+            return c;
+        }
+
+        using rs64::settings::value_or;
+
+        c.enabled = value_or(j, "enabled", c.enabled);
+        c.opacity = value_or(j, "opacity", c.opacity);
+        c.button_scale = value_or(j, "button_scale", c.button_scale);
+        c.stick_radius = value_or(j, "stick_radius", c.stick_radius);
+        c.stick_curve = value_or(j, "stick_curve", c.stick_curve);
+        c.gyro = value_or(j, "gyro", c.gyro);
+        c.debug_hitboxes = value_or(j, "debug_hitboxes", c.debug_hitboxes);
+        c.stick_split = value_or(j, "stick_split", c.stick_split);
+        c.steer_dead_deg = value_or(j, "steer_dead_deg", c.steer_dead_deg);
+        c.steer_full_deg = value_or(j, "steer_full_deg", c.steer_full_deg);
+        c.steer_curve = value_or(j, "steer_curve", c.steer_curve);
+        c.rate_assist = value_or(j, "rate_assist", c.rate_assist);
+        c.pitch_gain = value_or(j, "pitch_gain", c.pitch_gain);
+        c.pitch_min = value_or(j, "pitch_min", c.pitch_min);
+        c.thumb_bridge = value_or(j, "thumb_bridge", c.thumb_bridge);
+
+        if (j.contains("layout") && j["layout"].is_object()) {
+            for (const auto& [id, p] : j["layout"].items())
+            {
+                c.layout[id] = { value_or(p, "x", 0.5f), value_or(p, "y", 0.5f), value_or(p, "scale", 1.0f) };
+            }
         }
 
         return c;

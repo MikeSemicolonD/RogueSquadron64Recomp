@@ -76,14 +76,17 @@ inline std::vector<Ship> parseShips(const std::string& mod, const std::string& t
         Ship s;
 
         s.mod = mod;
-        s.id = e.value("id", std::string());
-        s.name = e.value("name", std::string());
-        s.tmpl = craftId(e.value("template", std::string()));
+        s.id = rs64rules::field(e, "id", std::string(), mod + ": ships.json", errors);
+
+        const std::string where = mod + ": ship \"" + s.id + "\"";
+
+        s.name = rs64rules::field(e, "name", std::string(), where, errors);
+        s.tmpl = craftId(rs64rules::field(e, "template", std::string(), where, errors));
 
         // The TIE (its own hangar reveal, its model under imp_stuff/) and the T-16 (no hangar bay) can't be templates.
         if (s.tmpl == 6 || s.tmpl == 7) s.tmpl = -1;
 
-        const auto stop = e.value("stop", nlohmann::json::array());
+        const auto stop = e.is_object() && e.contains("stop") ? e["stop"] : nlohmann::json::array();
         const bool stopOk = stop.is_array() && stop.size() == 2 && stop[0].is_number() && stop[1].is_number();
 
         if (!validId(s.id) || s.name.empty() || s.tmpl < 0 || !stopOk)
@@ -95,7 +98,7 @@ inline std::vector<Ship> parseShips(const std::string& mod, const std::string& t
         s.stop[0] = stop[0].get<float>();
         s.stop[1] = stop[1].get<float>();
 
-        const auto beh = e.value("behaviours", nlohmann::json());
+        const auto beh = e.contains("behaviours") ? e["behaviours"] : nlohmann::json();
 
         if (beh.is_array())
         {

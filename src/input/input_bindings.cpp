@@ -725,7 +725,7 @@ bool input_from_json(const json& o, Source& s)
     std::string name = o["name"].get<std::string>();
 
     if (kind == "joybutton" || kind == "joyaxis" || kind == "joyhat") {
-        int dev = o.value("device", -1);
+        int dev = rs64::settings::value_or(o, "device", -1);
 
         if (dev < 0 || dev > 126) return false;
 
@@ -738,7 +738,7 @@ bool input_from_json(const json& o, Source& s)
             s = { SourceKind::JoyButton, i, 0, (int8_t)dev };
         } else if (kind == "joyaxis") {
             int i = indexed_name(name, "axis");
-            int d = o.value("dir", 0);
+            int d = rs64::settings::value_or(o, "dir", 0);
 
             if (i < 0 || (d != 1 && d != -1)) return false;
 
@@ -755,7 +755,7 @@ bool input_from_json(const json& o, Source& s)
         return true;
     }
 
-    int dir = o.value("dir", 0);
+    int dir = rs64::settings::value_or(o, "dir", 0);
 
     if (kind == "key")
     {
@@ -1182,51 +1182,57 @@ bool load_bindings(Bindings& b, const std::string& path) {
     if (!f.is_open()) return false;
 
     json j;
-    try { f >> j; } catch (...) { return false; }
+
+    if (!rs64::settings::parse_file(f, path, j) || !j.is_object())
+    {
+        return false;
+    }
+
+    using rs64::settings::value_or;
 
     if (j.contains("mouse") && j["mouse"].is_object()) {
         const json& m = j["mouse"];
-        b.mouse_sensitivity = m.value("sensitivity", b.mouse_sensitivity);
-        b.mouse_smoothing   = m.value("smoothing", b.mouse_smoothing);
-        b.mouse_curve       = m.value("curve", b.mouse_curve);
-        b.mouse_invert_x    = m.value("invert_x", b.mouse_invert_x);
-        b.mouse_invert_y    = m.value("invert_y", b.mouse_invert_y);
+        b.mouse_sensitivity = value_or(m, "sensitivity", b.mouse_sensitivity);
+        b.mouse_smoothing   = value_or(m, "smoothing", b.mouse_smoothing);
+        b.mouse_curve       = value_or(m, "curve", b.mouse_curve);
+        b.mouse_invert_x    = value_or(m, "invert_x", b.mouse_invert_x);
+        b.mouse_invert_y    = value_or(m, "invert_y", b.mouse_invert_y);
     }
 
-    b.keyboard_enabled = j.value("keyboard_enabled", b.keyboard_enabled);
-    b.joystick_enabled = j.value("joystick_enabled", b.joystick_enabled);
-    b.stick_range      = j.value("stick_range", b.stick_range);
-    b.pad_deadzone     = j.value("pad_deadzone", b.pad_deadzone);
-    b.throttle_cruise  = j.value("throttle_cruise", b.throttle_cruise);
-    b.trigger_resistance = std::clamp(j.value("trigger_resistance", b.trigger_resistance), 0.0f, 1.0f);
+    b.keyboard_enabled = value_or(j, "keyboard_enabled", b.keyboard_enabled);
+    b.joystick_enabled = value_or(j, "joystick_enabled", b.joystick_enabled);
+    b.stick_range      = value_or(j, "stick_range", b.stick_range);
+    b.pad_deadzone     = value_or(j, "pad_deadzone", b.pad_deadzone);
+    b.throttle_cruise  = value_or(j, "throttle_cruise", b.throttle_cruise);
+    b.trigger_resistance = std::clamp(value_or(j, "trigger_resistance", b.trigger_resistance), 0.0f, 1.0f);
 
     if (j.contains("rumble") && j["rumble"].is_object())
     {
         const json& r = j["rumble"];
         RumbleConfig& c = b.rumble;
-        c.enabled              = r.value("enabled", c.enabled);
-        c.strength             = r.value("strength", c.strength);
-        c.scale_hits_by_damage = r.value("scale_hits_by_damage", c.scale_hits_by_damage);
-        c.sustain_death_spiral = r.value("sustain_death_spiral", c.sustain_death_spiral);
+        c.enabled              = value_or(r, "enabled", c.enabled);
+        c.strength             = value_or(r, "strength", c.strength);
+        c.scale_hits_by_damage = value_or(r, "scale_hits_by_damage", c.scale_hits_by_damage);
+        c.sustain_death_spiral = value_or(r, "sustain_death_spiral", c.sustain_death_spiral);
 
         if (r.contains("effects") && r["effects"].is_object()) {
             const json& e = r["effects"];
-            c.hit              = e.value("hit", c.hit);
-            c.collision        = e.value("collision", c.collision);
-            c.object_collision = e.value("object_collision", c.object_collision);
-            c.terrain_scrape   = e.value("terrain_scrape", c.terrain_scrape);
-            c.weapons          = e.value("weapons", c.weapons);
-            c.death_spiral     = e.value("death_spiral", c.death_spiral);
-            c.crash            = e.value("crash", c.crash);
+            c.hit              = value_or(e, "hit", c.hit);
+            c.collision        = value_or(e, "collision", c.collision);
+            c.object_collision = value_or(e, "object_collision", c.object_collision);
+            c.terrain_scrape   = value_or(e, "terrain_scrape", c.terrain_scrape);
+            c.weapons          = value_or(e, "weapons", c.weapons);
+            c.death_spiral     = value_or(e, "death_spiral", c.death_spiral);
+            c.crash            = value_or(e, "crash", c.crash);
         }
     }
 
     if (j.contains("lightbar") && j["lightbar"].is_object()) {
         const json& l = j["lightbar"];
         LightbarConfig& c = b.lightbar;
-        c.enabled   = l.value("enabled", c.enabled);
-        c.health    = l.value("health", c.health);
-        c.hit_flash = l.value("hit_flash", c.hit_flash);
+        c.enabled   = value_or(l, "enabled", c.enabled);
+        c.health    = value_or(l, "health", c.health);
+        c.hit_flash = value_or(l, "hit_flash", c.hit_flash);
 
         if (l.contains("colors") && l["colors"].is_object()) {
             const json& k = l["colors"];
@@ -1247,10 +1253,10 @@ bool load_bindings(Bindings& b, const std::string& path) {
 
             JoyDevice jd;
             jd.guid        = d["guid"].get<std::string>();
-            jd.ordinal     = d.value("ordinal", 0);
-            jd.name        = d.value("name", std::string());
-            jd.invert_axes = d.value("invert_axes", 0u);
-            jd.deadzone    = d.value("deadzone", jd.deadzone);
+            jd.ordinal     = value_or(d, "ordinal", 0);
+            jd.name        = value_or(d, "name", std::string());
+            jd.invert_axes = value_or(d, "invert_axes", 0u);
+            jd.deadzone    = value_or(d, "deadzone", jd.deadzone);
             b.joy_devices.push_back(jd);
         }
     }

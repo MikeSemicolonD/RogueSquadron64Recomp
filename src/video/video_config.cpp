@@ -11,6 +11,7 @@
 #include <string_view>
 #include <utility>
 #include "util/debug_logs.h"
+#include "util/settings_file.h"
 
 namespace rs64::video {
 
@@ -24,7 +25,7 @@ namespace {
 template <class T>
 void adv_get(const json& a, const char* key, T& out)
 {
-    if (a.contains(key) && !a.at(key).is_null()) out = a.at(key).get<T>();
+    if (auto v = rs64::settings::get<T>(a, key)) out = *v;
 }
 
 constexpr std::pair<int, int> kAspects[] = { {4, 3}, {5, 4}, {3, 2}, {16, 10}, {16, 9}, {21, 9}, {32, 9} };
@@ -773,10 +774,10 @@ void apply_friendly(UC& uc, const json& j)
         }
     }
 
-    if (has("widescreen"))
-    {
-        uc.aspectRatio = j["widescreen"].get<bool>() ? UC::AspectRatio::Expand
-                                                     : UC::AspectRatio::Original;
+    using rs64::settings::get;
+
+    if (auto v = get<bool>(j, "widescreen")) {
+        uc.aspectRatio = *v ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
     }
 
     if (has("resolutionScale")) {
@@ -796,26 +797,23 @@ void apply_friendly(UC& uc, const json& j)
         }
     }
 
-    if (has("antialiasing")) {
-        int a = j["antialiasing"].get<int>();
-        uc.antialiasing = (a >= 8) ? UC::Antialiasing::MSAA8X
-                        : (a >= 4) ? UC::Antialiasing::MSAA4X
-                        : (a >= 2) ? UC::Antialiasing::MSAA2X
-                                   : UC::Antialiasing::None;
+    if (auto a = get<int>(j, "antialiasing")) {
+        uc.antialiasing = (*a >= 8) ? UC::Antialiasing::MSAA8X
+                        : (*a >= 4) ? UC::Antialiasing::MSAA4X
+                        : (*a >= 2) ? UC::Antialiasing::MSAA2X
+                                    : UC::Antialiasing::None;
     }
 
-    if (has("supersampling")) uc.downsampleMultiplier = j["supersampling"].get<int>();
-    if (has("ssaa")) uc.downsampleMultiplier = j["ssaa"].get<int>();
-    if (has("fxaa")) uc.fxaa = j["fxaa"].get<bool>();
-    if (has("vsync")) uc.vsync = j["vsync"].get<bool>();
+    if (auto v = get<int>(j, "supersampling")) uc.downsampleMultiplier = *v;
+    if (auto v = get<int>(j, "ssaa")) uc.downsampleMultiplier = *v;
+    if (auto v = get<bool>(j, "fxaa")) uc.fxaa = *v;
+    if (auto v = get<bool>(j, "vsync")) uc.vsync = *v;
 
-    if (has("smoothUpscale"))
-    {
-        uc.filtering = j["smoothUpscale"].get<bool>() ? UC::Filtering::AntiAliasedPixelScaling
-                                                      : UC::Filtering::Nearest;
+    if (auto v = get<bool>(j, "smoothUpscale")) {
+        uc.filtering = *v ? UC::Filtering::AntiAliasedPixelScaling : UC::Filtering::Nearest;
     }
 
-    if (has("smoothTextures")) uc.threePointFiltering = !j["smoothTextures"].get<bool>();
+    if (auto v = get<bool>(j, "smoothTextures")) uc.threePointFiltering = !*v;
     // targetFramerate is a number or "display" (follow the monitor); it is kept while interpolation is off.
     if (has("targetFramerate"))
     {
@@ -831,22 +829,18 @@ void apply_friendly(UC& uc, const json& j)
         if (uc.refreshRate != UC::RefreshRate::Original) uc.refreshRate = interp_rate();
     }
 
-    if (has("frameInterpolation")) uc.refreshRate = j["frameInterpolation"].get<bool>() ? interp_rate() : UC::RefreshRate::Original;
+    if (auto v = get<bool>(j, "frameInterpolation")) uc.refreshRate = *v ? interp_rate() : UC::RefreshRate::Original;
 
-    if (has("hdr"))
-    {
-        uc.internalColorFormat = j["hdr"].get<bool>() ? UC::InternalColorFormat::High
-                                                      : UC::InternalColorFormat::Automatic;
+    if (auto v = get<bool>(j, "hdr")) {
+        uc.internalColorFormat = *v ? UC::InternalColorFormat::High : UC::InternalColorFormat::Automatic;
     }
 
-    if (has("tripleBuffering"))
-    {
-        uc.displayBuffering = j["tripleBuffering"].get<bool>() ? UC::DisplayBuffering::Triple
-                                                              : UC::DisplayBuffering::Double;
+    if (auto v = get<bool>(j, "tripleBuffering")) {
+        uc.displayBuffering = *v ? UC::DisplayBuffering::Triple : UC::DisplayBuffering::Double;
     }
 
-    if (has("graphicsAPI")) {
-        std::string a = j["graphicsAPI"].get<std::string>();
+    if (auto api = get<std::string>(j, "graphicsAPI")) {
+        const std::string& a = *api;
         uc.graphicsAPI = (a == "vulkan") ? UC::GraphicsAPI::Vulkan
                        : (a == "d3d12")  ? UC::GraphicsAPI::D3D12
                        : (a == "metal")  ? UC::GraphicsAPI::Metal
@@ -855,7 +849,7 @@ void apply_friendly(UC& uc, const json& j)
         set_d3d10(a == "d3d10");
     }
 
-    if (has("developerMode")) uc.developerMode = j["developerMode"].get<bool>();
+    if (auto v = get<bool>(j, "developerMode")) uc.developerMode = *v;
 
     if (j.contains("advanced") && j["advanced"].is_object()) {
         const json& a = j["advanced"];
@@ -1019,12 +1013,26 @@ LoadResult load(UC& uc, const std::string& path)
     if (!in.is_open()) return r;
 
     json j;
-    try { in >> j; } catch (...) { return r; }
+
+    if (!rs64::settings::parse_file(in, path, j) || !j.is_object())
+    {
+        return r;
+    }
+
     r.loaded = true;
 
     if (j.contains("schema") && j["schema"].is_number_integer() && j["schema"].get<int>() >= 2)
     {
         apply_friendly(uc, j);
+
+        const json known = to_friendly(uc);
+
+        for (const auto& [key, value] : j.items()) {
+            if (!known.contains(key) && key != "supersampling" && key != "language" && key != "widescreen")
+            {
+                fprintf(stderr, "[settings] %s: unknown key \"%s\" ignored\n", path.c_str(), key.c_str());
+            }
+        }
 
         // Rewrite files that predate a friendly key so it shows up for editing.
         r.migrated = !j.contains("drawDistance") || !j.contains("hudPlacement") || !j.contains("terrainTessellation");
