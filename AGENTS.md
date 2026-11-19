@@ -55,6 +55,8 @@ For a headless run that drives past the title without a controller, pass `--fake
 
 Unit tests: `cmake --build build --config Release --target rs64_unit_tests` builds and runs the host, multiplayer-mod and relay-server tests plus `style_check`. They are defined in `tests/CMakeLists.txt` (the mod's in `mods/multiplayer-native/tests/`, the relay's in `relay-server/tests/`), which also configures on its own with only the submodules: `cmake -S tests -B build-tests`. `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test` and `fault_guard_test` are separate `EXCLUDE_FROM_ALL` targets.
 
+**Before committing code that could change frame rate, memory or game behaviour**, run the unit tests above, then `python -I tools/debug/smoke/smoke.py run --tag current --sections perf,memory --filter perf_level03_ultra,memory_level03` and `smoke.py compare --tag current`. Its `perf_level03_ultra` and `memory_level03` lines must read `ok`; ignore the "missing" rows. Delete `dumps/smoke/current` after. Docs, comments and small tool-only changes skip the smoke run.
+
 ## Overriding recompiled functions
 
 Base-game fixes are `[[patches.hook]]` (C inserted at the function's entry or `before_vram`) and `[[patches.instruction]]` entries in `rogue_squadron.toml`, with any non-trivial host logic in [src/game/hook_helpers.cpp](src/game/hook_helpers.cpp) as an `extern "C"` function the hook declares and calls. Re-run `regen_funcs` after editing the toml. Whole-function C goes in the patches ELF instead ([patches/README.md](patches/README.md)); it rebuilds with the game.
