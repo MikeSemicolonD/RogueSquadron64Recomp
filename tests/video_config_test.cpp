@@ -511,6 +511,37 @@ static void test_graphics_api_cycle() {
     CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == "d3d11");
 }
 
+// The file and ROGUESQ_GFX_API read the same names; an unknown env value leaves the setting alone.
+static void test_graphics_api_names() {
+
+    UC uc;
+
+    uc.validate();
+
+    for (const char* name : { "auto", "vulkan", "d3d12", "d3d11", "d3d10" })
+    {
+        rs64::video::apply_friendly(uc, json{{"graphicsAPI", name}});
+        CHECK(rs64::video::to_friendly(uc)["graphicsAPI"] == name);
+    }
+
+    set_env("ROGUESQ_GFX_API", "metal");
+    rs64::video::apply_env_overrides(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::Metal);
+    CHECK(rs64::video::d3d10() == false);
+
+    set_env("ROGUESQ_GFX_API", "d3d10");
+    rs64::video::apply_env_overrides(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D11);
+    CHECK(rs64::video::d3d10() == true);
+
+    set_env("ROGUESQ_GFX_API", "bogus");
+    rs64::video::apply_env_overrides(uc);
+    CHECK(uc.graphicsAPI == UC::GraphicsAPI::D3D11);
+
+    set_env("ROGUESQ_GFX_API", nullptr);
+    rs64::video::set_d3d10(false);
+}
+
 // A value of the wrong type is skipped on its own: the keys around it still load.
 static void test_wrong_types_skipped() {
 
@@ -528,11 +559,22 @@ static void test_wrong_types_skipped() {
     CHECK(uc.vsync == true);
     CHECK(uc.fxaa == fxaa_before);
     CHECK(uc.downsampleMultiplier == 2);
+
+    rs64::video::set_draw_distance(1.5f);
+    rs64::video::set_terrain_tessellation(4);
+    rs64::video::set_vr_mode(false);
+    rs64::video::apply_friendly(uc, json{{"drawDistance", true}, {"terrainTessellation", 2}, {"vrMode", 1}});
+    CHECK(rs64::video::draw_distance() == 1.5f);
+    CHECK(rs64::video::terrain_tessellation() == 2);
+    CHECK(rs64::video::vr_mode() == false);
+    rs64::video::set_draw_distance(1.0f);
+    rs64::video::set_terrain_tessellation(4);
 }
 
 int main() {
     test_wrong_types_skipped();
     test_graphics_api_cycle();
+    test_graphics_api_names();
     test_custom_aa_steps_to_fxaa();
     test_aa_presets();
     test_resolution_and_upscale_choices();

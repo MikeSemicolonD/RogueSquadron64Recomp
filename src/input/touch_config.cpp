@@ -8,6 +8,27 @@
 using nlohmann::json;
 
 namespace rs64::touch {
+    template <class C, class F>
+    void fields(C& c, F&& f)
+    {
+
+        f("enabled", c.enabled);
+        f("opacity", c.opacity);
+        f("button_scale", c.button_scale);
+        f("stick_radius", c.stick_radius);
+        f("stick_curve", c.stick_curve);
+        f("gyro", c.gyro);
+        f("debug_hitboxes", c.debug_hitboxes);
+        f("stick_split", c.stick_split);
+        f("steer_dead_deg", c.steer_dead_deg);
+        f("steer_full_deg", c.steer_full_deg);
+        f("steer_curve", c.steer_curve);
+        f("rate_assist", c.rate_assist);
+        f("pitch_gain", c.pitch_gain);
+        f("pitch_min", c.pitch_min);
+        f("thumb_bridge", c.thumb_bridge);
+    }
+
     // In the working directory with saves and mods: the exe's folder can be read-only (AppImage, Flatpak).
     std::string config_path() {
         return "roguesq_touch.json";
@@ -39,21 +60,7 @@ namespace rs64::touch {
 
         using rs64::settings::value_or;
 
-        c.enabled = value_or(j, "enabled", c.enabled);
-        c.opacity = value_or(j, "opacity", c.opacity);
-        c.button_scale = value_or(j, "button_scale", c.button_scale);
-        c.stick_radius = value_or(j, "stick_radius", c.stick_radius);
-        c.stick_curve = value_or(j, "stick_curve", c.stick_curve);
-        c.gyro = value_or(j, "gyro", c.gyro);
-        c.debug_hitboxes = value_or(j, "debug_hitboxes", c.debug_hitboxes);
-        c.stick_split = value_or(j, "stick_split", c.stick_split);
-        c.steer_dead_deg = value_or(j, "steer_dead_deg", c.steer_dead_deg);
-        c.steer_full_deg = value_or(j, "steer_full_deg", c.steer_full_deg);
-        c.steer_curve = value_or(j, "steer_curve", c.steer_curve);
-        c.rate_assist = value_or(j, "rate_assist", c.rate_assist);
-        c.pitch_gain = value_or(j, "pitch_gain", c.pitch_gain);
-        c.pitch_min = value_or(j, "pitch_min", c.pitch_min);
-        c.thumb_bridge = value_or(j, "thumb_bridge", c.thumb_bridge);
+        fields(c, rs64::settings::reader(j, path));
 
         if (j.contains("layout") && j["layout"].is_object()) {
             for (const auto& [id, p] : j["layout"].items())
@@ -68,12 +75,10 @@ namespace rs64::touch {
     bool save_config(const Config& c, const std::string& path)
     {
 
-        json j = { { "enabled", c.enabled }, { "opacity", c.opacity }, { "button_scale", c.button_scale },
-                   { "stick_radius", c.stick_radius }, { "stick_curve", c.stick_curve }, { "gyro", c.gyro },
-                   { "debug_hitboxes", c.debug_hitboxes }, { "stick_split", c.stick_split },
-                   { "steer_dead_deg", c.steer_dead_deg }, { "steer_full_deg", c.steer_full_deg },
-                   { "steer_curve", c.steer_curve }, { "rate_assist", c.rate_assist },
-                   { "pitch_gain", c.pitch_gain }, { "pitch_min", c.pitch_min }, { "thumb_bridge", c.thumb_bridge } };
+        json j = json::object();
+
+        fields(c, rs64::settings::writer(j));
+
         json layout = json::object();
 
         for (const auto& [id, p] : c.layout) {

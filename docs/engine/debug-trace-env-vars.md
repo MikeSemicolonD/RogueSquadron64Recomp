@@ -39,7 +39,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 
 | Env var | Flag | Default | Effect |
 | --- | --- | --- | --- |
-| `ROGUESQ_GFX_API` | `--gfx-api` | auto | `vulkan`, `d3d12`, `d3d11` or `d3d10` forces the backend (`d3d10` = D3D11 capped at feature level 10). |
+| `ROGUESQ_GFX_API` | `--gfx-api` | auto | `auto`, `vulkan`, `d3d12`, `metal`, `d3d11` or `d3d10` forces the backend (`d3d10` = D3D11 capped at feature level 10). |
 | `ROGUESQ_HLE_DEV_MODE` | `--[no-]hle-dev-mode` | on in Debug, off in Release | RT64 ImGui inspector on F1 (F6 = Controls window); wins over `developerMode` in `roguesq_video.json`. |
 | `ROGUESQ_MCP_PORT` | `--mcp-port` | 47064 in Debug, unset otherwise | Dev: serve the RT64 MCP bridge on `127.0.0.1:<port>` for [tools/debug/mcp](../../tools/debug/mcp/README.md) ([rt64-mcp.md](rt64-mcp.md)). A Debug build serves 47064 so the server's `attach` can reach a game started by hand; `0` turns it off. Other builds open no port without it. Debug builds only, unless configured with `-DRS64_MCP=ON`. |
 | `ROGUESQ_F5_NATIVE` | `--[no-]f5-native` | on | Emit Factor 5 geometry. `0` parses display lists without drawing. |

@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include "util/debug_logs.h"
 #include "util/settings_file.h"
@@ -144,6 +145,45 @@ const char* const kOnOff[] = { "OFF", "ON" };
 const UC::GraphicsAPI kApiChoices[] = { UC::GraphicsAPI::Automatic, UC::GraphicsAPI::Vulkan, UC::GraphicsAPI::D3D12, UC::GraphicsAPI::D3D11 };
 const char* const kApiNames[] = { "AUTO", "VULKAN", "D3D12", "D3D11" };
 constexpr int kApiCount = 4;
+
+// "graphicsAPI" in roguesq_video.json and ROGUESQ_GFX_API. "d3d10" is D3D11 with the device capped at feature level 10.
+struct ApiKey { const char* name; UC::GraphicsAPI api; bool d3d10; };
+
+const ApiKey kApiKeys[] = {
+    { "auto", UC::GraphicsAPI::Automatic, false },
+    { "vulkan", UC::GraphicsAPI::Vulkan, false },
+    { "d3d12", UC::GraphicsAPI::D3D12, false },
+    { "metal", UC::GraphicsAPI::Metal, false },
+    { "d3d11", UC::GraphicsAPI::D3D11, false },
+    { "d3d10", UC::GraphicsAPI::D3D11, true },
+};
+
+const ApiKey* api_key(std::string_view name)
+{
+
+    for (const ApiKey& k : kApiKeys)
+    {
+        if (name == k.name) return &k;
+    }
+
+    return nullptr;
+}
+
+const char* api_key_name(UC::GraphicsAPI api, bool d3d10)
+{
+
+    for (const ApiKey& k : kApiKeys)
+    {
+        if (k.api == api && k.d3d10 == (api == UC::GraphicsAPI::D3D11 && d3d10)) return k.name;
+    }
+
+    return kApiKeys[0].name;
+}
+
+UC::Antialiasing msaa_from_samples(int n)
+{
+    return (n >= 8) ? UC::Antialiasing::MSAA8X : (n >= 4) ? UC::Antialiasing::MSAA4X : (n >= 2) ? UC::Antialiasing::MSAA2X : UC::Antialiasing::None;
+}
 
 int api_choice(const UC& uc)
 {
@@ -699,82 +739,62 @@ float effective_draw_distance(float setting, bool game_view) {
     return game_view ? 1.0f : setting;
 }
 
+// The host-side settings stored as one plain value each, as f(key, getter, setter). legacyTerrain stays after drawDistance: turning it on clamps the draw distance.
+template <class F>
+static void scalar_fields(F&& f)
+{
+
+    f("drawDistance", draw_distance, set_draw_distance);
+    f("hudPlacement", hud_placement, set_hud_placement);
+    f("keepCutsceneDrawDistance", keep_cutscene_draw_distance, set_keep_cutscene_draw_distance);
+    f("vrMode", vr_mode, set_vr_mode);
+
+    for (int s = 0; s < 3; s++)
+    {
+        f(kVrScaleKeys[s], [s] { return vr_scale(VrScene(s)); }, [s](float v) { set_vr_scale(VrScene(s), v); });
+    }
+
+    f("legacyTerrain", legacy_terrain, set_legacy_terrain);
+    f("terrainTessellation", terrain_tessellation, set_terrain_tessellation);
+    f("framebufferWriteback", framebuffer_writeback, set_framebuffer_writeback);
+
+    // The setting itself, not fullscreen() / set_fullscreen(), which follow and clear the ROGUESQ_FULLSCREEN pin.
+    f("fullscreen", [] { return g_fullscreen.load(std::memory_order_relaxed); }, [](bool on) { g_fullscreen.store(on, std::memory_order_relaxed); });
+}
+
 void apply_friendly(UC& uc, const json& j)
 {
 
     auto has = [&](const char* k) { return j.contains(k) && !j.at(k).is_null(); };
 
-    if (has("drawDistance") && j["drawDistance"].is_number()) {
-        set_draw_distance(j["drawDistance"].get<float>());
-    }
+    scalar_fields([&](const char* key, auto getter, auto setter) {
+        if (auto v = rs64::settings::get<decltype(getter())>(j, key)) setter(*v);
+    });
 
-    if (has("hudPlacement") && j["hudPlacement"].is_number()) {
-        set_hud_placement(j["hudPlacement"].get<float>());
-    }
+    using rs64::settings::get;
 
-    if (has("keepCutsceneDrawDistance") && j["keepCutsceneDrawDistance"].is_boolean())
-    {
-        set_keep_cutscene_draw_distance(j["keepCutsceneDrawDistance"].get<bool>());
-    }
-
-    if (has("vrMode") && j["vrMode"].is_boolean()) {
-        set_vr_mode(j["vrMode"].get<bool>());
-    }
-
-    for (int s = 0; s < 3; s++) {
-        if (has(kVrScaleKeys[s]) && j[kVrScaleKeys[s]].is_number()) {
-            set_vr_scale(VrScene(s), j[kVrScaleKeys[s]].get<float>());
-        }
-    }
-
-    if (has("legacyTerrain") && j["legacyTerrain"].is_boolean()) {
-        set_legacy_terrain(j["legacyTerrain"].get<bool>());
-    }
-
-
-    if (has("terrainTessellation") && j["terrainTessellation"].is_number()) {
-        set_terrain_tessellation(j["terrainTessellation"].get<int>());
-    }
-
-    if (has("framebufferWriteback") && j["framebufferWriteback"].is_boolean()) {
-        set_framebuffer_writeback(j["framebufferWriteback"].get<bool>());
-    }
-
-    if (has("fullscreen") && j["fullscreen"].is_boolean())
-    {
-        g_fullscreen.store(j["fullscreen"].get<bool>(), std::memory_order_relaxed);
-    }
-
-    if (has("language") && j["language"].is_string())
+    if (auto v = get<std::string>(j, "language"))
     {
         std::lock_guard lock(g_language_mutex);
 
-        g_language = j["language"].get<std::string>();
+        g_language = *v;
     }
 
     if (has("rayTracing") && j["rayTracing"].is_object()) {
         const json& rt = j["rayTracing"];
 
         for (const auto& [key, feature] : kRtKeys) {
-            if (rt.contains(key) && rt.at(key).is_boolean()) {
-                set_rt_setting(feature, rt.at(key).get<bool>());
-            }
+            if (auto v = get<bool>(rt, key)) set_rt_setting(feature, *v);
         }
 
         if (rt.contains("lightLimits") && rt.at("lightLimits").is_object()) {
             const json& limits = rt.at("lightLimits");
 
             for (size_t i = 0; i < std::size(kLightLimitKeys); ++i) {
-                const char* key = kLightLimitKeys[i].first;
-
-                if (limits.contains(key) && limits.at(key).is_number_integer()) {
-                    set_light_limit(i, limits.at(key).get<int>());
-                }
+                if (auto v = get<int>(limits, kLightLimitKeys[i].first)) set_light_limit(i, *v);
             }
         }
     }
-
-    using rs64::settings::get;
 
     if (auto v = get<bool>(j, "widescreen")) {
         uc.aspectRatio = *v ? UC::AspectRatio::Expand : UC::AspectRatio::Original;
@@ -797,12 +817,7 @@ void apply_friendly(UC& uc, const json& j)
         }
     }
 
-    if (auto a = get<int>(j, "antialiasing")) {
-        uc.antialiasing = (*a >= 8) ? UC::Antialiasing::MSAA8X
-                        : (*a >= 4) ? UC::Antialiasing::MSAA4X
-                        : (*a >= 2) ? UC::Antialiasing::MSAA2X
-                                    : UC::Antialiasing::None;
-    }
+    if (auto a = get<int>(j, "antialiasing")) uc.antialiasing = msaa_from_samples(*a);
 
     if (auto v = get<int>(j, "supersampling")) uc.downsampleMultiplier = *v;
     if (auto v = get<int>(j, "ssaa")) uc.downsampleMultiplier = *v;
@@ -839,14 +854,11 @@ void apply_friendly(UC& uc, const json& j)
         uc.displayBuffering = *v ? UC::DisplayBuffering::Triple : UC::DisplayBuffering::Double;
     }
 
-    if (auto api = get<std::string>(j, "graphicsAPI")) {
-        const std::string& a = *api;
-        uc.graphicsAPI = (a == "vulkan") ? UC::GraphicsAPI::Vulkan
-                       : (a == "d3d12")  ? UC::GraphicsAPI::D3D12
-                       : (a == "metal")  ? UC::GraphicsAPI::Metal
-                       : ((a == "d3d11") || (a == "d3d10")) ? UC::GraphicsAPI::D3D11
-                                         : UC::GraphicsAPI::Automatic;
-        set_d3d10(a == "d3d10");
+    if (auto name = get<std::string>(j, "graphicsAPI")) {
+        const ApiKey* k = api_key(*name);
+
+        uc.graphicsAPI = k ? k->api : UC::GraphicsAPI::Automatic;
+        set_d3d10(k && k->d3d10);
     }
 
     if (auto v = get<bool>(j, "developerMode")) uc.developerMode = *v;
@@ -884,17 +896,16 @@ json to_friendly(const UC& uc)
 
     json j;
     j["schema"] = 2;
-    j["drawDistance"] = std::round(draw_distance() * 100.0f) / 100.0f;
-    j["hudPlacement"] = std::round(hud_placement() * 100.0f) / 100.0f;
-    j["keepCutsceneDrawDistance"] = keep_cutscene_draw_distance();
-    j["vrMode"] = vr_mode();
-    for (int s = 0; s < 3; s++) {
-        j[kVrScaleKeys[s]] = std::round(vr_scale(VrScene(s)) * 100.0f) / 100.0f;
-    }
-    j["legacyTerrain"] = legacy_terrain();
-    j["terrainTessellation"] = terrain_tessellation();
-    j["framebufferWriteback"] = framebuffer_writeback();
-    j["fullscreen"] = g_fullscreen.load(std::memory_order_relaxed);
+
+    scalar_fields([&](const char* key, auto getter, auto) {
+        const auto v = getter();
+
+        if constexpr (std::is_same_v<std::remove_const_t<decltype(v)>, float>) {
+            j[key] = std::round(v * 100.0f) / 100.0f;
+        } else {
+            j[key] = v;
+        }
+    });
 
     std::unique_lock lock(g_language_mutex);
 
@@ -938,12 +949,9 @@ json to_friendly(const UC& uc)
         default:                                 j["resolutionScale"] = uc.resolutionMultiplier; break;
     }
 
-    switch (uc.antialiasing) {
-        case UC::Antialiasing::MSAA2X: j["antialiasing"] = 2; break;
-        case UC::Antialiasing::MSAA4X: j["antialiasing"] = 4; break;
-        case UC::Antialiasing::MSAA8X: j["antialiasing"] = 8; break;
-        default:                       j["antialiasing"] = 0; break;
-    }
+    const int msaa = static_cast<int>(UC::msaaSampleCount(uc.antialiasing));
+
+    j["antialiasing"] = (msaa > 1) ? msaa : 0;
 
     j["ssaa"] = uc.downsampleMultiplier;
     j["fxaa"] = uc.fxaa;
@@ -980,14 +988,7 @@ json to_friendly(const UC& uc)
 
     j["tripleBuffering"] = (uc.displayBuffering == UC::DisplayBuffering::Triple);
 
-    switch (uc.graphicsAPI)
-    {
-        case UC::GraphicsAPI::Vulkan: j["graphicsAPI"] = "vulkan"; break;
-        case UC::GraphicsAPI::D3D12:  j["graphicsAPI"] = "d3d12"; break;
-        case UC::GraphicsAPI::Metal:  j["graphicsAPI"] = "metal"; break;
-        case UC::GraphicsAPI::D3D11:  j["graphicsAPI"] = d3d10() ? "d3d10" : "d3d11"; break;
-        default:                      j["graphicsAPI"] = "auto"; break;
-    }
+    j["graphicsAPI"] = api_key_name(uc.graphicsAPI, d3d10());
 
     j["developerMode"] = uc.developerMode;
 
@@ -1056,11 +1057,7 @@ void apply_env_overrides(UC& uc)
     // ROGUESQ_MSAA=2|4|8: multisample anti-aliasing (default off).
     if (env_str("ROGUESQ_MSAA"))
     {
-        int s = env_int("ROGUESQ_MSAA");
-        uc.antialiasing = (s >= 8) ? UC::Antialiasing::MSAA8X
-                                     : (s >= 4) ? UC::Antialiasing::MSAA4X
-                                     : (s >= 2) ? UC::Antialiasing::MSAA2X
-                                                : UC::Antialiasing::None;
+        uc.antialiasing = msaa_from_samples(env_int("ROGUESQ_MSAA"));
 
         fprintf(stderr, "[RT64] MSAA=%ux\n", UC::msaaSampleCount(uc.antialiasing));
     }
@@ -1173,23 +1170,14 @@ void apply_env_overrides(UC& uc)
         }
     }
 
-    // ROGUESQ_GFX_API=vulkan|d3d12|d3d11|d3d10 forces the backend (default Automatic).
-    if (const char* api = env_str("ROGUESQ_GFX_API")) {
-        if (std::string_view(api) == "vulkan")
+    // ROGUESQ_GFX_API forces the backend: the "graphicsAPI" names (default auto).
+    if (const char* name = env_str("ROGUESQ_GFX_API")) {
+        if (const ApiKey* k = api_key(name))
         {
-            uc.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan;
+            uc.graphicsAPI = k->api;
+            set_d3d10(k->d3d10);
 
-            fprintf(stderr, "[RT64] graphics API forced to Vulkan via ROGUESQ_GFX_API\n");
-        } else if (std::string_view(api) == "d3d12") {
-            uc.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D12;
-
-            fprintf(stderr, "[RT64] graphics API forced to D3D12 via ROGUESQ_GFX_API\n");
-        } else if ((std::string_view(api) == "d3d11") || (std::string_view(api) == "d3d10"))
-        {
-            uc.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::D3D11;
-            rs64::video::set_d3d10(std::string_view(api) == "d3d10");
-
-            fprintf(stderr, "[RT64] graphics API forced to %s via ROGUESQ_GFX_API\n", rs64::video::d3d10() ? "D3D10" : "D3D11");
+            fprintf(stderr, "[RT64] graphics API forced to %s via ROGUESQ_GFX_API\n", k->name);
         }
     }
 

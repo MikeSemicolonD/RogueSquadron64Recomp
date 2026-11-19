@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include "json/json.hpp"
 
 namespace rs64::settings {
@@ -18,6 +19,17 @@ std::optional<T> get(const nlohmann::json& o, const char* key, const std::string
     if (!o.is_object() || !o.contains(key) || o.at(key).is_null())
     {
         return std::nullopt;
+    }
+
+    // nlohmann reads true/false as 1/0 into a number; a bool in a number field is a mistake, not a value.
+    if constexpr (std::is_arithmetic_v<T> && !std::is_same_v<T, bool>)
+    {
+        if (o.at(key).is_boolean())
+        {
+            fprintf(stderr, "[settings] %s%signoring \"%s\": type must be number, but is boolean\n", where.c_str(), where.empty() ? "" : ": ", key);
+
+            return std::nullopt;
+        }
     }
 
     try {
@@ -36,6 +48,17 @@ template <class T>
 T value_or(const nlohmann::json& o, const char* key, const T& fallback, const std::string& where = {})
 {
     return get<T>(o, key, where).value_or(fallback);
+}
+
+// Visitors for a fields(c, f) list that names each key of a settings struct once: reader loads o into the fields, writer stores them into o.
+inline auto reader(const nlohmann::json& o, const std::string& where = {})
+{
+    return [&o, where](const char* key, auto& v) { v = value_or(o, key, v, where); };
+}
+
+inline auto writer(nlohmann::json& o)
+{
+    return [&o](const char* key, const auto& v) { o[key] = v; };
 }
 
 // Parses a settings file; a syntax error is logged with where it is.
