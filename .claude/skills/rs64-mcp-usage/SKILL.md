@@ -1,6 +1,6 @@
 ---
 name: rs64-mcp-usage
-description: Drive the running game through the rs64 MCP server (tools/debug/mcp/rs64_mcp.py) to see or prove something in a real frame - launch to a level, freeze on an exact frame, fly the craft with press/step, screenshot, inspect draws/textures/framebuffers/RDRAM, then close and clean up. Use whenever a change must be checked in-game (a renderer/terrain/lighting fix, a "looks wrong at a distance" report, a menu or mission screen), when the user asks to "try it", "look at", "fly to" or "capture" something, or before asking the user for an F1 screenshot. Covers the launch -> pause_at -> press/step -> screenshot loop, how the craft responds to stick input, frame-clock choice, the free_cam limitation with the terrain pass, and event triggers (pause_when_drawn, pause_when, wait_log), menu driving by RDRAM cursor, attaching to a user's game, and the gotchas (already paused, one launch, Debug vs Release config, env per launch, set_config saving, cleanup). Triggers on mcp__rs64__*, pause_at, press, step, attach, pause_when_drawn, free_cam, screenshot of the game, fly/steer the ship, check in game. Complements roguesquadron-debug (crash/hang triage), roguesquadron-menu-drive (keyboard menus) and renderdoc-mcp (GPU captures, via renderdoc_capture).
+description: Drive the running game through the rs64 MCP server (tools/debug/mcp/rs64_mcp.py) to see or prove something in a real frame - launch to a level, freeze on an exact frame, fly the craft with press/step, screenshot, inspect draws/textures/framebuffers/RDRAM, then close and clean up. Use whenever a change must be checked in-game (a renderer/terrain/lighting fix, a "looks wrong at a distance" report, a menu or mission screen), when the user asks to "try it", "look at", "fly to" or "capture" something, or before asking the user for an F1 screenshot. Covers the launch -> pause_at -> press/step -> screenshot loop, how the craft responds to stick input, frame-clock choice, the free_cam limitation with the terrain pass, and event triggers (pause_when_drawn, pause_when, wait_log), menu driving by RDRAM cursor, attaching to a user's game, and the gotchas (already paused, one launch, Debug vs Release config, env per launch, set_config saving, cleanup). Triggers on mcp__rs64__*, pause_at, press, step, attach, pause_when_drawn, free_cam, targets, objectives, screenshot of the game, fly/steer the ship, check in game. Complements roguesquadron-debug (crash/hang triage), roguesquadron-menu-drive (keyboard menus) and renderdoc-mcp (GPU captures, via renderdoc_capture).
 ---
 
 # Using the rs64 MCP
@@ -10,8 +10,10 @@ What each tool does: [tools/debug/mcp/README.md](../../../tools/debug/mcp/README
 ## Before launching
 
 - Build first (Debug has the bridge). A running exe blocks the link, and so does a game another session launched, so check with `Get-Process RogueSquadron64Recomp` and ask before killing one you did not start. Never stop the game by name (`taskkill /IM`, `Get-Process ... | Stop-Process`): it closes the user's own game too. Stop only your PID, or `close`.
-- `launch` defaults to `config="Debug"`. After a Release build pass `config="Release"`, or every check runs the stale Debug exe. A Release launch uses the user's own settings with the RT features off; turn them on with `rt_features(set={...})` after the first `pause_at`.
+- `launch` defaults to `config="Debug"`. After a Release build pass `config="Release"`, or every check runs the stale Debug exe. Release has the bridge only when configured with `-DRS64_MCP=ON`; without it the launch never connects. A Release launch uses the user's own settings with the RT features off; turn them on with `rt_features(set={...})` after the first `pause_at`.
 - Launch once. `launch` refuses while its own game runs, so if a launch seems to fail, check `status` and the process list before retrying.
+- The server also runs on Linux against a Linux build. There `hang_dump` and `type_text` are Windows-only, RenderDoc is not injected (no `renderdoc_capture`), and the process checks above are `pgrep` / `kill <pid>`.
+- `launch(record=<path>)` records the next mission's input, `press` included, as a `.rec` that replays frame-identically. To rewind a bad run, relaunch with `ROGUESQ_LS_REPLAY=<old.rec>`, `ROGUESQ_LS_RESUME=<frame>` and `record=<new.rec>`: it replays up to that frame, then records live input.
 - For a game the user started (Debug serves the bridge on port 47064), use `attach` instead of `launch`. Everything but `wait_log` works and `close` only disconnects. `screenshot` can come back one colour on an attached game; use `capture_window_by_pid` from the windows-screenshot MCP instead.
 - All settings go in `launch`'s `env`, every launch. Nothing carries over between launches, and trace categories (`ROGUESQ_LOG_*`) are read once at startup.
   - `ROGUESQ_BOOT_TARGET=level:<id>[,craft]` drives the real menus into a mission. `menu:...`, `hangar:<id>`, `pause:<id>`, `cutscene:<level>,<kind>`: [debug-trace-env-vars.md](../../../docs/engine/debug-trace-env-vars.md).
@@ -58,6 +60,8 @@ Never ask the user to say when something is on screen; their message arrives sec
 - Wait until `menu.main` frame ~150 before input; the slide-in eats presses. Move with 2-frame stick taps (`press(stick=[0, -1], frames=2)`, then step ~20); 6-frame holds auto-repeat.
 - MULTIPLAYER goes through SELECT GAME: A on the profile, step ~200, and the lobby shows. `ROGUESQ_MP_TRANSPORT=enet` shows the IP line instead of the Steam join code.
 - `type_text` fills the PASSCODES / ENTER NAME wheels.
+- In-mission pause pages: `call("pause_menu", {})` reports the open page and cursor; `{"page": n}` or `{"page": "display"}` puts the cursor on the entry that opens that page, then `press` A + `step`.
+- With no boot target driving and no held input, `wait_log`, `pause_at` and `step` give up after 20 s on one menu screen (not the main menu). That error means nothing was going to change the screen; send input.
 
 ## Flying the craft (X-wing class, measured on Corellia)
 
@@ -69,6 +73,8 @@ Never ask the user to say when something is on screen; their message arrives sec
 | stick y = +1 (up) | Nose DOWN (plane style); -1 pulls the nose up |
 | pitch | Fast and it holds: 40 frames full back went from a dive to near vertical. Use 8-15 frame taps |
 
+- Aim from `targets` instead of screenshots: it lists live objects nearest first with distance, bearing and elevation from the player (`bolts=true` adds laser bolts). `objectives` shows the objective flags, counts and timers and which level objects change them, so you know what to shoot.
+- In the AT-ST (CHICKEN), `press(head=[x, y])` (y up) aims the head; it is recorded like the mouse aim.
 - The camera trails the craft, so step ~10 frames with no input before judging a view.
 - High, level view across the map: ~25 frames back, then 15 + 8 frames forward.
 - With no input the craft flies on; on Corellia it leaves the map by mission frame ~1600 (handy for checking the edge past the map).
@@ -84,8 +90,9 @@ Never ask the user to say when something is on screen; their message arrives sec
 
 ## Co-op pairs
 
-- Every tool takes `instance` (default `p1`). Launch the host with `launch(env={"ROGUESQ_BOOT_TARGET": "level:0"}, coop="host")`, then the client with the same env, `coop="join"` and `instance="p2"`. Pass `instance="p2"` on every call meant for the client.
+- Every tool takes `instance` (default `p1`). Launch the host with `launch(env={"ROGUESQ_BOOT_TARGET": "level:0"}, coop="host")`, then the client with the same env, `coop="join"` and `instance="p2"`. Both must use the same `config`. Pass `instance="p2"` on every call meant for the client.
 - Wait for `wait_log("\\[ghost\\] peer in mission", instance=...)` on both before any pause: a hold during the mission-start handshake drops the other game to solo after 10 s. After that, holding or stepping one leaves the other running; its puppet just stops moving.
+- A pair started with `tools/debug/lockstep/run-mp.ps1` serves the host on 47065 and the client on 47066: `attach(47065)` and `attach(47066, instance="p2")`.
 - Close both instances when done (`close(instance="p2")` too).
 
 ## Finishing
