@@ -23,6 +23,7 @@ extern "C" {
     // The mod ship flying as the craft ("" for a stock craft), and making one fly (0 when no enabled mod has it).
     const char* rs64_ships_flying_id(void);
     int rs64_ships_fly(const char* id);
+    int rs64_ships_count(void);
 }
 
 #endif // RS64_HOOK_HELPERS_H

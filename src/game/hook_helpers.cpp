@@ -1078,12 +1078,17 @@ extern "C" void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj,
     }
 }
 
-// Adds display list chunks in free host RAM to the game's free list when a mod replaces a player craft, whose model can outgrow the game's pool.
-// Never for stock craft: effects spawn only while enough chunks are free, so more of them would change stock replays.
+// Adds display list chunks in free host RAM to the game's free list when a mod replaces a player craft or adds hangar ships, whose models can
+// outgrow the game's pool. Never for stock craft: effects spawn only while enough chunks are free, so more of them would change stock replays.
 extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
 {
 
     static const bool s_on = [] {
+
+        if (rs64_ships_count() > 0)
+        {
+            return true;
+        }
 
         static constexpr const char* kCrafts[] = {
             "pl_crafts/xwing_HOB", "pl_crafts/ywing_HOB", "pl_crafts/awing_HOB", "pl_crafts/vwing_HOB", "pl_crafts/rmobil_HOB",
@@ -1124,6 +1129,8 @@ extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
     }
 
     wr(kFreeHead, head);
+    rs64_snapshot_add_range(kStart - 0x80000000u, RS64_HR_DL_CHUNKS_END - 0x80000000u);
+
     fprintf(stderr, "[dl-pool] added %u chunks at %08X\n", kCount, kStart);
 }
 
