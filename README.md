@@ -507,10 +507,6 @@ $env:XR_RUNTIME_JSON = "$env:APPDATA\metavr\tools\xrsim\meta_openxr_simulator.js
 
 `ROGUESQ_LOG_VR=1` logs how each headset frame was filled every 2 seconds. Real-headset runs still matter: the simulator lacks some runtime extensions, and only a person in the headset can judge comfort and scale.
 
-## Architecture
-
-How the port is put together (recompiled code, the forked RT64 and N64ModernRuntime, frame pacing, audio and the override layer) is in [docs/reference/game-architecture.md](docs/reference/game-architecture.md). [docs/README.md](docs/README.md) indexes the rest of the engine docs, including debugging, native mods and co-op.
-
 ## Browser based tools
 
 ### [RS64 Explorer](https://mikesemicolond.github.io/RogueSquadron64Recomp/tools/web/rs64-explorer/)
@@ -536,7 +532,7 @@ Using an AI Agent properly comes down to handing it the *right set of tools*, *t
 
 This repo already provides **AGENTS.md** and **skill** files. **MCP** servers are configured and set up by the user themselves and are something we can't force/mandate. Beyond MCP are things called **harnesses** which can be a tool to perform tasks or orchestrate agents to perform a set of tasks at once. This repo contains some harnesses in `tools` to perform tests, perform multiple runs to verify robustness or drive an agent to a particular menu to chase a bug.
 
-Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week. (This reason alone is why trillions are being spent in this sector)
+Once your agent is set up, tasks that would've taken weeks/months/years to do can be done in a single day/week.
 
 Here's a list of MCPs that could be useful for this project:
 
