@@ -1659,6 +1659,15 @@ extern "C" const rs64_ships* rs64_ghost_ships(void)
     return svc;
 }
 
+// The ships service when it has the special position and puppet posing (version 3), else null.
+extern "C" const rs64_ships* rs64_ghost_ships_v3(void)
+{
+
+    const rs64_ships* svc = rs64_ghost_ships();
+
+    return svc && svc->version >= 3 && svc->size >= sizeof(rs64_ships) ? svc : nullptr;
+}
+
 // The puppet's wingman model for this mission (-1: use the level's).
 extern "C" int rs64_ghost_puppet_model(void) {
     return g().in_session ? s_puppet_model : -1;
@@ -1738,11 +1747,14 @@ extern "C" void rs64_lobby_craft_select_tick(uint8_t* rdram, recomp_context* ctx
         ww(rdram, 0x800CD714u, 0);
     }
 
-    // updateHangarBayScene takes A/Start only with the bay at rest (0x800CD6CC) and the craft's bit in the allowed mask 0x800CD6D8; the craft is read by bay (0x800CC3F8 [0x800CD6E4]), which also covers a new hangar ship's bay. A denied press passes through to its deny sound.
-    const bool pickable = rb(rdram, 0x800CD6CCu) == 0 && ((rw(rdram, 0x800CD6D8u) >> (rb(rdram, 0x800CC3F8u + rb(rdram, 0x800CD6E4u)) & 31u)) & 1u) != 0;
+    // updateHangarBayScene takes A/Start only with the bay at rest (0x800CD6CC) and the craft's bit in the allowed mask 0x800CD6D8; the craft is read by bay (0x800CD6E4), through the ships service where it offers bay_craft (its table moves to host RAM with the new hangar ships), else from 0x800CC3F8. A denied press passes through to its deny sound.
+    const rs64_ships* ships = rs64_ghost_ships();
+    const uint32_t bay = rb(rdram, 0x800CD6E4u);
+    const int here = ships && ships->version >= 2 && ships->size >= sizeof(rs64_ships) ? ships->bay_craft((int)bay) : (int)rb(rdram, 0x800CC3F8u + bay);
+    const bool pickable = rb(rdram, 0x800CD6CCu) == 0 && here >= 0 && ((rw(rdram, 0x800CD6D8u) >> ((uint32_t)here & 31u)) & 1u) != 0;
 
     if (s.craft.local < 0 && (p & 0x9000u) && pickable) {
-        const int c = rb(rdram, 0x800CC3F8u + rb(rdram, 0x800CD6E4u));
+        const int c = here;
         s.craft.pick(c);
         s.link.send(rs64::net::encode_ready((uint8_t)c), true);
         s.link.send(rs64::net::encode_ship(rs64_ghost_ships() ? rs64_ghost_ships()->shown() : ""), true);

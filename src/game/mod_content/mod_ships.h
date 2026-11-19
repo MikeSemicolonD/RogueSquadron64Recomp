@@ -11,9 +11,22 @@
 
 namespace rs64ships {
 
-// The hangar's bay -> craft table (0x800CC3F8) has three spare bytes after the stock bays 1..8, so three ships fit without moving it.
-constexpr size_t kMaxShips = 3;
+// The hangar's object array (*0x800CDA5C) has 56 slots and fills 48, so eight ships fit; its bay -> craft table runs in host RAM.
+constexpr size_t kMaxShips = 8;
 constexpr size_t kIdMax = 9;
+
+// The special button. Toggle (the S-foils): a press engages it over `seconds`, a press or the brake releases it; speed multiplies the
+// craft's speed. Timed (the boost): engaged for `seconds`, then a `cooldown`; speed multiplies its top speed. guns false locks the guns.
+enum class SpecialMode { None, Toggle, Timed };
+
+struct Special {
+    SpecialMode mode = SpecialMode::None;
+    float speed = 1.0f;
+    float seconds = 1.0f;
+    float cooldown = 0.0f;
+    bool guns = true;
+    bool custom = false;
+};
 
 struct Ship {
     std::string mod, id, name;
@@ -23,6 +36,8 @@ struct Ship {
     // Craft behaviours from any craft ("sfoils" X-wing, "boost" V-wing, "aim" A-wing); unlisted = the template's own.
     std::set<std::string> behaviours;
     bool ownBehaviours = false;
+    // ships.json "special": the button's own settings, in place of the sfoils / boost presets.
+    Special special;
 };
 
 constexpr const char* kBehaviours[] = { "sfoils", "boost", "aim" };
@@ -41,10 +56,25 @@ inline bool hasBehaviour(const Ship& s, const std::string& b)
     return false;
 }
 
+// The special button a ship flies with: its own "special", else the X-wing's S-foils (1 s, 1.5x speed, guns locked) or the V-wing's boost
+// (6 s at 4/3 of top speed, 6 s cooldown capped at 2/3) when it has that behaviour, else none.
+inline Special specialOf(const Ship& s)
+{
+
+    if (s.special.custom) return s.special;
+
+    if (hasBehaviour(s, "sfoils")) return { SpecialMode::Toggle, 1.5f, 1.0f, 0.0f, false, false };
+
+    if (hasBehaviour(s, "boost")) return { SpecialMode::Timed, 6.0f / 4.5f, 6.0f, 6.0f, true, false };
+
+    return {};
+}
+
+// The game splits a trailing digit off a model path, so pl_crafts/ship1 would load as pl_crafts/ship.
 inline bool validId(const std::string& id)
 {
 
-    if (id.empty() || id.size() > kIdMax) return false;
+    if (id.empty() || id.size() > kIdMax || (id.back() >= '0' && id.back() <= '9')) return false;
 
     return std::all_of(id.begin(), id.end(), [](char c) { return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_'; });
 }
@@ -122,6 +152,25 @@ inline std::vector<Ship> parseShips(const std::string& mod, const std::string& t
             {
                 errors.push_back(mod + ": ship \"" + s.id + "\" can't have both sfoils and boost (they share a button); boost dropped");
             }
+        }
+
+        // "special": { "mode": "toggle" | "timed" | "none", "speed", "seconds", "cooldown", "guns" }, each clamped to a sane range.
+        if (e.contains("special") && e["special"].is_object())
+        {
+            const auto& sp = e["special"];
+            const std::string mode = rs64rules::field(sp, "mode", std::string("toggle"), where, errors);
+
+            s.special.custom = true;
+            s.special.mode = mode == "timed" ? SpecialMode::Timed : (mode == "none" ? SpecialMode::None : SpecialMode::Toggle);
+
+            if (mode != "toggle" && mode != "timed" && mode != "none") errors.push_back(where + ": special mode \"" + mode + "\" is toggle, timed or none; toggle used");
+
+            const bool timed = s.special.mode == SpecialMode::Timed;
+
+            s.special.speed = std::clamp(rs64rules::field(sp, "speed", timed ? 6.0f / 4.5f : 1.5f, where, errors), 0.25f, 3.0f);
+            s.special.seconds = std::clamp(rs64rules::field(sp, "seconds", timed ? 6.0f : 1.0f, where, errors), 0.1f, 60.0f);
+            s.special.cooldown = std::clamp(rs64rules::field(sp, "cooldown", timed ? 6.0f : 0.0f, where, errors), 0.0f, 120.0f);
+            s.special.guns = rs64rules::field(sp, "guns", timed, where, errors);
         }
 
         out.push_back(std::move(s));

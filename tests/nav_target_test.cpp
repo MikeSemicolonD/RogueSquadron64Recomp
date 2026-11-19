@@ -12,6 +12,7 @@ extern "C" int rs64_mod_levels_boot_entry() { return -1; }
 extern "C" int rs64_mod_levels_boot_named() { return 0; }
 extern "C" uint32_t rs64_vi_rate() { return 60; }
 extern "C" void rs64_pause_point(const char*, uint32_t) {}
+extern "C" int rs64_ships_bay_craft(uint8_t* rdram, int bay) { return rdram[(0xCC3F8u + (uint32_t)bay) ^ 3]; }
 
 int main() {
     RsNavTarget t;

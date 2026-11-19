@@ -2291,6 +2291,28 @@ func = "tickPlayerCraftBlinkIndicator"
 before_vram = 0x800BE778
 text = '{ rs64_th_player_craft_aim(rdram, ctx); }'
 
+# Cutscene actors' engine sound (flag bit 2 at actor+3, then a switch on the type at actor+2) and S-foil animation (type 2): the ship's
+# actor reads as its template there (v1 / a3 / v0 = the actor, v0 / v1 / s1 = the value just loaded).
+[[patches.hook]]
+func = "emit3DSoundsForActiveNpcs"
+before_vram = 0x800A9DF8
+text = '{ rs64_th_emit3DSoundsForActiveNpcs_800A9DF8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "emit3DSoundsForActiveNpcs"
+before_vram = 0x800A9E14
+text = '{ rs64_th_emit3DSoundsForActiveNpcs_800A9E14(rdram, ctx); }'
+
+[[patches.hook]]
+func = "applyCutsceneSlotMaterialOverrides"
+before_vram = 0x800AA588
+text = '{ rs64_th_applyCutsceneSlotMaterialOverrides_800AA588(rdram, ctx); }'
+
+[[patches.hook]]
+func = "tickCutsceneActionSlots"
+before_vram = 0x800AA6F8
+text = '{ rs64_th_tickCutsceneActionSlots_800AA6F8(rdram, ctx); }'
+
 # A ship's boost and S-foils on another craft, before the shared physics step reads the flight record's speed.
 [[patches.hook]]
 func = "updatePlayerCraftPhysics"
@@ -2347,6 +2369,57 @@ text = '{ rs64_th_runHangarMenuFromOverlay_800C68C8(rdram, ctx); }'
 func = "hangarInitialize"
 before_vram = 0x800A9488
 text = '{ rs64_th_hangarInitialize_800A9488(rdram, ctx); }'
+
+# The bay -> craft table (0x800CC3F8) built with lui/addiu: its host copy, one byte per ship after the stock eight (the register just set).
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800A945C
+text = '{ rs64_th_hangarInitialize_800A945C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AAA54
+text = '{ rs64_th_hangarInitialize_800AAA54(rdram, ctx); }'
+
+[[patches.hook]]
+func = "hangarInitialize"
+before_vram = 0x800AACE4
+text = '{ rs64_th_hangarInitialize_800AACE4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "composeNpcOrientationMatrix"
+before_vram = 0x800AB40C
+text = '{ rs64_th_composeNpcOrientationMatrix_800AB40C(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC038
+text = '{ rs64_th_updateHangarBayScene_800AC038(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC8FC
+text = '{ rs64_th_updateHangarBayScene_800AC8FC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AC9AC
+text = '{ rs64_th_updateHangarBayScene_800AC9AC(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD0C4
+text = '{ rs64_th_updateHangarBayScene_800AD0C4(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD894
+text = '{ rs64_th_updateHangarBayScene_800AD894(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateHangarBayScene"
+before_vram = 0x800AD9FC
+text = '{ rs64_th_updateHangarBayScene_800AD9FC(rdram, ctx); }'
 
 [[patches.hook]]
 func = "runHangarSelectionFrame"

@@ -595,6 +595,9 @@ extern "C" void rs64_asset_overrides_init()
     // Silent voice streams of 1-10 s for level-rule messages (a subtitle stays up while its line plays).
     for (int s = 1; s <= 10; s++) s_silence_rom[s - 1] = append(rs64rules::silentMort(s)).rom_off;
 
+    // A voice stream is read in whole chunks, so the last appended one would read past the end of the cart: pad it.
+    append(std::vector<uint8_t>(0x10000, 0));
+
     if (!rom.empty()) {
         rom.shrink_to_fit();
         recomp::set_rom_contents(std::move(rom));

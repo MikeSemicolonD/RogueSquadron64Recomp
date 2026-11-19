@@ -76,8 +76,10 @@ constexpr uint32_t kTblVoiceBay = 0xA0u;
 // The ships' words of the 8-word per-bay array at 0x800CDA20, which the object counts follow.
 constexpr uint32_t kTblBayWord = 0xB0u;
 // Ship slot -> object for the per-frame ship pose loop (composeNpcOrientationMatrix), whose 8-byte table is 0x800CC518.
-constexpr uint32_t kTblSlotObject = 0xC0u;
-constexpr uint32_t kTblSize = 0xD0u;
+constexpr uint32_t kTblSlotObject = 0xD0u;
+// bay -> craft (0x800CC3F8 has room for 11 bays): stock bays 1..8, then one per ship.
+constexpr uint32_t kTblBayCraft = 0xE0u;
+constexpr uint32_t kTblSize = 0x100u;
 constexpr uint32_t kBayWords = 0x800CDA20u;
 constexpr uint32_t kSlotObject = 0x800CC518u;
 // Per-slot shadow extents (12 bytes each); the ships' slots use their template's.
@@ -164,6 +166,8 @@ extern "C" void rs64_ships_hangar_begin(uint8_t* rdram)
 
     if (!s_tables) s_tables = alloc_rdram(rdram, kTblSize);
 
+    for (uint32_t bay = 0; bay < (uint32_t)kFirstBay; bay++) wb(rdram, s_tables + kTblBayCraft + bay, rb(rdram, kBayCraft + bay));
+
     for (int i = 0; i < kStockStops; i++)
     {
         wb(rdram, s_tables + kTblVoiceBay + i, rb(rdram, kStopBay + i));
@@ -189,7 +193,10 @@ extern "C" void rs64_ships_hangar_begin(uint8_t* rdram)
         wb(rdram, s_tables + kTblCraft + stop, (uint8_t)s.tmpl);
         wf(rdram, s_tables + kTblU + stop * 4, s.stop[0]);
         wf(rdram, s_tables + kTblV + stop * 4, s.stop[1]);
-        wb(rdram, kBayCraft + kFirstBay + (uint32_t)k, (uint8_t)s.tmpl);
+        wb(rdram, s_tables + kTblBayCraft + kFirstBay + (uint32_t)k, (uint8_t)s.tmpl);
+
+        // The game's own table keeps its three spare bytes filled too, for any reader the redirect misses.
+        if (kFirstBay + (int)k < 12) wb(rdram, kBayCraft + kFirstBay + (uint32_t)k, (uint8_t)s.tmpl);
     }
 }
 
@@ -197,7 +204,7 @@ extern "C" void rs64_ships_hangar_begin(uint8_t* rdram)
 // The arrays are back to back, so the ships' bays use host copies, filled from the scene records <id>_camstart / <id>_camwatch.
 constexpr uint32_t kCamStart = 0x800CD714u;
 constexpr uint32_t kCamWatch = 0x800CD774u;
-constexpr uint32_t kCamElems = 16;
+constexpr uint32_t kCamElems = (uint32_t)kFirstBay + (uint32_t)rs64ships::kMaxShips;
 constexpr uint32_t kHangarDat = 0x800CC58Cu;
 static uint32_t s_cam = 0;
 
@@ -266,12 +273,23 @@ extern "C" uint32_t rs64_ships_table(uint32_t original)
 
     switch (original)
     {
+    case kBayCraft:  return s_tables + kTblBayCraft;
     case kStopBay:   return s_tables + kTblBay;
     case kStopCraft: return s_tables + kTblCraft;
     case kStopU:     return s_tables + kTblU;
     case kStopV:     return s_tables + kTblV;
     default:         return original;
     }
+}
+
+// The craft a hangar bay shows (bay -> craft, the host copy while ships are installed), for code outside the hangar's own (the nav, the
+// co-op lobby through the ships service).
+extern "C" int rs64_ships_bay_craft(uint8_t* rdram, int bay)
+{
+
+    if (bay < 0 || bay >= (int)(kFirstBay + rs64ships::kMaxShips)) return -1;
+
+    return rb(rdram, (s_tables ? s_tables + kTblBayCraft : kBayCraft) + (uint32_t)bay);
 }
 
 // An element address in the per-bay word array (0x800CDA20 + 4 * (bay - 1)): a ship's bay uses its host word.
@@ -474,12 +492,31 @@ extern "C" void rs64_ships_load_models(uint8_t* rdram, recomp_context* ctx)
 
 static float s_boost_t = 0.0f;
 static bool s_aim_logged = false;
+static float s_timed_clip = 0.0f;
+// Rule actions' overrides for this mission: craft.speed (times the speed), craft.guns on=0, craft.animation at (-1 = the special's own).
+static float s_rule_speed = 1.0f;
+static bool s_rule_guns_off = false;
+static float s_rule_clip = -1.0f;
+static bool s_fire_locked = false;
+static float s_native_prev = 0.0f;
+static uint32_t s_native_prev_state = 0;
+static bool s_clip_tried = false;
+static uint32_t s_clip_slot = 0;
+static uint32_t s_clip_file = 0;
+static uint32_t s_clip_model = 0;
 static float s_foil_t = 0.0f;
 static int s_foil_state = 0;
 static uint32_t s_wings[2] = { 0, 0 };
 static bool s_wings_looked = false;
 static bool s_speed_on = false;
 static float s_speed = 0.0f;
+// The flying ship's special position this frame (0 = rest .. 1 = engaged), for co-op; -1 when no ship flies.
+static float s_special_pos = -1.0f;
+// The co-op puppet showing a ship: its model instance, clip and wings, bound again when the puppet respawns.
+static uint32_t s_puppet_model = 0;
+static uint32_t s_puppet_slot = 0;
+static uint32_t s_puppet_file = 0;
+static uint32_t s_puppet_wings[2] = { 0, 0 };
 
 static float f_of(gpr r)
 {
@@ -517,6 +554,17 @@ extern "C" void rs64_ships_mission_reset() {
     s_in_cutscene = false;
     s_boost_t = 0.0f;
     s_aim_logged = false;
+    s_timed_clip = 0.0f;
+    s_rule_speed = 1.0f;
+    s_rule_guns_off = false;
+    s_rule_clip = -1.0f;
+    s_fire_locked = false;
+    s_native_prev = 0.0f;
+    s_native_prev_state = 0;
+    s_clip_tried = false;
+    s_clip_slot = 0;
+    s_special_pos = -1.0f;
+    s_puppet_model = 0;
     s_foil_t = 0.0f;
     s_foil_state = 0;
     s_wings_looked = false;
@@ -617,7 +665,43 @@ static void foil_sound(uint8_t* rdram, recomp_context* ctx, uint32_t rec, uint32
     craft_sound(rdram, ctx, rec + 4, rec + 0x28, 0.0f, a, 0x5Au);
 }
 
-static void boost(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* target)
+// The ship flies with its template's own special code: the X-wing's S-foils or the V-wing's boost, as the preset, not a custom "special".
+static bool native_special(const rs64ships::Ship& s)
+{
+
+    const rs64ships::Special sp = rs64ships::specialOf(s);
+
+    if (sp.custom) return false;
+
+    return (s.tmpl == 0 && sp.mode == rs64ships::SpecialMode::Toggle) || (s.tmpl == 3 && sp.mode == rs64ships::SpecialMode::Timed);
+}
+
+// A rule event for the flying ship's rules (and the level's): "when custom <name>", its object the ship's id.
+static void rule_event(const char* name)
+{
+    rs64::host::fire_rule_event(name, s_flying >= 0 ? s_ships[s_flying].id.c_str() : "");
+}
+
+// Fire held while the special locks the guns: no shot (the fire bit is cleared before the craft's fire code reads it), and Luke's line.
+static void lock_guns(uint8_t* rdram, recomp_context* ctx, bool line)
+{
+
+    if (!held(rdram, kBindFire))
+    {
+        s_fire_locked = false;
+        return;
+    }
+
+    if (!s_fire_locked) rule_event("fire_locked");
+
+    s_fire_locked = true;
+
+    if (line) speech_once(rdram, ctx, 0x134u, 0x28Cu);
+
+    wh(rdram, kHeldButtons, (uint16_t)(rs64::mips::rh(rdram, kHeldButtons) & ~rs64::mips::rh(rdram, kBindings + kBindFire)));
+}
+
+static void boost(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* target, const rs64ships::Special& sp)
 {
 
     if (held(rdram, kBindSpecial))
@@ -646,36 +730,207 @@ static void boost(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* targ
                 craft_sound(rdram, ctx, s_vec + 16, s_vec, 0.0f, 0x25u, 0x78u);
             }
 
-            s_boost_t = 12.0f;
+            s_boost_t = sp.seconds + sp.cooldown;
 
             speech_once(rdram, ctx, 0x12Bu, 0x20Fu);
             rs64::mips::mips_call(rdram, ctx, 0x800B3E4Cu, { rec, 8u });
             rs64::mips::mips_call(rdram, ctx, 0x80101018u, { 0u, 2u, bits_of(10.8f) });
+            rule_event("special_engaged");
             fprintf(stderr, "[ships] %s boost\n", s_ships[s_flying].id.c_str());
         }
     }
 
     if (s_boost_t <= 0.0f) return;
 
-    // The V-wing's boost 6 and cooldown cap 3 against its top speed 4.5, scaled to the template's top speed (the throttle hooks' caps).
+    // Engaged: sp.speed times the template's top speed (the throttle hooks' caps); the cooldown caps it at 2/3 of top, as the V-wing's.
     static constexpr uint32_t kTopSpeed[] = { 0x800A58DCu, 0x800A5B90u, 0x800A5A54u, 0x800A5CC0u, 0x800A532Cu, 0x800A5DE8u, 0, 0, 0x800A6154u };
     const uint32_t top_at = kTopSpeed[s_ships[s_flying].tmpl];
-    const float scale = top_at ? rf(rdram, top_at) / 4.5f : 1.0f;
+    const float top = top_at ? rf(rdram, top_at) : 4.5f;
 
-    *target = s_boost_t > 6.0f ? 6.0f * scale : std::min(*target, 3.0f * scale);
+    *target = s_boost_t > sp.cooldown ? sp.speed * top : std::min(*target, top * (2.0f / 3.0f));
+
+    const float was = s_boost_t;
+
     s_boost_t = std::max(0.0f, s_boost_t - f_of(ctx->r5));
+
+    if (was > sp.cooldown && s_boost_t <= sp.cooldown) rule_event("special_released");
+
+    if (s_boost_t == 0.0f) rule_event("special_ready");
+
+    if (s_boost_t > sp.cooldown && !sp.guns) lock_guns(rdram, ctx, false);
 }
 
-static void sfoils(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* target)
+// The rule events for a template's own special, from the state it keeps: the X-wing's foil state and position (0x8010BC80 / 0x8010BC90),
+// the V-wing's boost timer (flight record +0x190: 12 s down, engaged above 6).
+static void native_events(uint8_t* rdram, uint32_t rec, bool toggle)
 {
 
-    const float dt = f_of(ctx->r5);
+    float& s_prev = s_native_prev;
+    uint32_t& s_prev_state = s_native_prev_state;
+    const float v = toggle ? rf(rdram, 0x8010BC90u) : rf(rdram, rec + 0x190);
+    const uint32_t state = toggle ? rs64::mips::rw(rdram, 0x8010BC80u) : 0;
+
+    if (s_prev == 0.0f && v > 0.0f) rule_event("special_engaged");
+
+    if (toggle ? (s_prev_state == 1 && s_prev == 1.0f && v < 1.0f) : (s_prev > 6.0f && v <= 6.0f)) rule_event("special_released");
+
+    if (s_prev > 0.0f && v == 0.0f) rule_event("special_ready");
+
+    if (toggle && state == 1 && held(rdram, kBindFire))
+    {
+        if (!s_fire_locked) rule_event("fire_locked");
+
+        s_fire_locked = true;
+    }
+    else if (toggle)
+    {
+        s_fire_locked = false;
+    }
+
+    s_prev = v;
+    s_prev_state = state;
+}
+
+// A timed special's clip position: eases to 1 while engaged and back to 0 after, over half a second.
+static float timed_clip_position(float dt, bool engaged)
+{
+
+    s_timed_clip = std::clamp(s_timed_clip + (engaged ? dt : -dt) * 2.0f, 0.0f, 1.0f);
+
+    return s_timed_clip;
+}
+
+// A ship's own special-button clip, pl_crafts/a_<id> (the game's model-animation format, one track per part after the root), bound to
+// the player's model the way cutscene actors bind theirs (spawnCutsceneObjectsFromList 0x800A82C0..0x800A8318), cycle 1.0. 0 = none.
+static uint32_t bind_clip(uint8_t* rdram, recomp_context* ctx, const std::string& id, uint32_t model, uint32_t* file_out)
+{
+
+    const std::string path = "pl_crafts/a_" + id;
+
+    if (!model || !rs64_mod_files().count(path)) return 0;
+
+    static uint32_t s_path = 0;
+
+    if (!s_path) s_path = alloc_rdram(rdram, 32);
+
+    wstr(rdram, s_path, path);
+
+    const uint32_t file = rs64::mips::mips_call(rdram, ctx, 0x800647E0u, { s_path, 0x10u }).v0;
+
+    if (!file) return 0;
+
+    rs64::mips::mips_call(rdram, ctx, 0x80082BD0u, { file });
+
+    const uint32_t slot = rs64::mips::mips_call(rdram, ctx, 0x80082B00u, { rs64::mips::rw(rdram, model + 0x18), file }).v0;
+
+    if (slot)
+    {
+        rs64::mips::mips_call(rdram, ctx, 0x80082E18u, { slot, 0u });
+        rs64::mips::mips_call(rdram, ctx, 0x80083258u, { slot, bits_of(1.0f) });
+    }
+
+    *file_out = file;
+
+    fprintf(stderr, "[ships] %s special clip %s: slot %u\n", id.c_str(), path.c_str(), slot);
+
+    return slot;
+}
+
+static uint32_t special_clip(uint8_t* rdram, recomp_context* ctx, uint32_t rec)
+{
+
+    if (s_clip_tried) return s_clip_slot;
+
+    s_clip_tried = true;
+    s_clip_model = rs64::mips::rw(rdram, rec);
+    s_clip_slot = bind_clip(rdram, ctx, s_ships[s_flying].id, s_clip_model, &s_clip_file);
+
+    return s_clip_slot;
+}
+
+// The clip posed at t (0 = rest .. 1 = engaged). The engine also poses the parts the clip has no keys for (at their rest values), so their
+// pose (part record model + 0xC + i * 0x4C, rotation and translation at +0x1C..+0x4B) is put back: the craft's own code keeps moving them.
+static void pose_clip(uint8_t* rdram, recomp_context* ctx, uint32_t slot, uint32_t file, uint32_t model, float t)
+{
+
+    constexpr uint32_t kPose = 0x1C;
+    constexpr uint32_t kPoseBytes = 0x30;
+    const uint32_t count = rs64::mips::rh(rdram, file + 0x1A);
+    uint32_t tracks = rs64::mips::rw(rdram, file + 0xC);
+
+    if (tracks < 0x80000000u) tracks += file;
+
+    std::vector<std::pair<uint32_t, std::vector<uint32_t>>> kept;
+
+    for (uint32_t i = 0; i < count && i < 64; i++)
+    {
+        if (rs64::mips::rw(rdram, tracks + i * 0x1C + 4) & 0xCu) continue;
+
+        const uint32_t part = model + 0xC + (i + 1) * 0x4C + kPose;
+        std::vector<uint32_t> words(kPoseBytes / 4);
+
+        for (uint32_t w = 0; w < words.size(); w++) words[w] = rs64::mips::rw(rdram, part + w * 4);
+
+        kept.emplace_back(part, std::move(words));
+    }
+
+    rs64::mips::mips_call(rdram, ctx, 0x80083008u, { slot, bits_of(t) });
+    rs64::mips::mips_call(rdram, ctx, 0x80083468u, { slot });
+
+    for (const auto& [part, words] : kept)
+    {
+        for (uint32_t w = 0; w < words.size(); w++) ww(rdram, part + w * 4, words[w]);
+    }
+}
+
+static void play_clip(uint8_t* rdram, recomp_context* ctx, uint32_t slot, float t)
+{
+
+    s_special_pos = s_rule_clip >= 0.0f ? s_rule_clip : t;
+    pose_clip(rdram, ctx, slot, s_clip_file, s_clip_model, s_special_pos);
+}
+
+// A model's S-foil wings (wngrot_a / wngrot_b, 0 when missing) and their pose at t (10 degrees open at 0, shut at 1).
+static void find_wings(uint8_t* rdram, recomp_context* ctx, uint32_t model, uint32_t wings[2])
+{
+
+    static uint32_t s_names = 0;
+
+    if (!s_names) s_names = alloc_rdram(rdram, 32);
+
+    for (int i = 0; i < 2; i++)
+    {
+        wings[i] = 0;
+
+        if (!s_names || !model) continue;
+
+        wstr(rdram, s_names + i * 16, i ? "wngrot_b" : "wngrot_a");
+        wings[i] = rs64::mips::mips_call(rdram, ctx, 0x80059434u, { model, s_names + i * 16, 0u }).v0;
+    }
+}
+
+static void pose_wings(uint8_t* rdram, recomp_context* ctx, const uint32_t wings[2], float t)
+{
+
+    const float angle = (1.0f - t) * 10.0f;
+
+    for (int i = 0; i < 2; i++)
+    {
+        if (wings[i]) rs64::mips::mips_call(rdram, ctx, 0x800AA424u, { wings[i] + 0x1C, 0u, 0u, bits_of(i ? angle : -angle) });
+    }
+}
+
+static void sfoils(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* target, const rs64ships::Special& sp)
+{
+
+    const float dt = f_of(ctx->r5) / sp.seconds;
 
     if (s_foil_state == 0 && s_foil_t == 0.0f)
     {
         if (held(rdram, kBindSpecial))
         {
             foil_sound(rdram, ctx, rec, 0x4Du, 0x20u);
+            rule_event("special_engaged");
             craft_sound(rdram, ctx, rec + 4, rec + 0x28, 0.4f, 0x25u, 0x7Au);
             rs64::mips::mips_call(rdram, ctx, 0x800B3E4Cu, { rec, 8u });
             rs64::mips::mips_call(rdram, ctx, 0x80101018u, { 0u, 2u, bits_of(1.5f) });
@@ -697,6 +952,7 @@ static void sfoils(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* tar
         if (held(rdram, kBindSpecial) || held(rdram, kBindBrake))
         {
             foil_sound(rdram, ctx, rec, 0x37u, 0x1Fu);
+            rule_event("special_released");
             s_foil_t -= dt;
         }
     }
@@ -708,48 +964,37 @@ static void sfoils(uint8_t* rdram, recomp_context* ctx, uint32_t rec, float* tar
         {
             s_foil_t = 0.0f;
             s_foil_state = 0;
+            rule_event("special_ready");
         }
     }
 
-    // Closed foils: guns locked (Luke's line once the wings are nearly shut) and 1.5x the speed, as the X-wing's +0x14 speed scale.
-    if (s_foil_state == 1 && held(rdram, kBindFire))
-    {
-        if (s_foil_t > 0.95f) speech_once(rdram, ctx, 0x134u, 0x28Cu);
+    // Engaged (closed): the guns locked unless sp.guns (Luke's line once nearly shut) and the speed scaled toward sp.speed, as the
+    // X-wing's +0x14 speed scale (1.5x).
+    if (s_foil_state == 1 && !sp.guns) lock_guns(rdram, ctx, s_foil_t > 0.95f);
 
-        wh(rdram, kHeldButtons, (uint16_t)(rs64::mips::rh(rdram, kHeldButtons) & ~rs64::mips::rh(rdram, kBindings + kBindFire)));
-    }
-
-    if (s_foil_t > 0.0f) *target *= 1.0f + 0.5f * s_foil_t;
+    if (s_foil_t > 0.0f) *target *= 1.0f + (sp.speed - 1.0f) * s_foil_t;
 
     // The X-wing's per-player foil state and position, which the HUD reads (isWeaponSlotReady 0x800B585C) to show the guns locked.
     ww(rdram, 0x8010BC80u, (uint32_t)s_foil_state);
     wf(rdram, 0x8010BC90u, s_foil_t);
 
+    s_special_pos = s_foil_t;
+
+    if (const uint32_t slot = special_clip(rdram, ctx, rec))
+    {
+        play_clip(rdram, ctx, slot, s_foil_t);
+        return;
+    }
+
     if (!s_wings_looked)
     {
-        static uint32_t s_names = 0;
-
-        if (!s_names) s_names = alloc_rdram(rdram, 32);
-
         s_wings_looked = true;
-
-        const uint32_t model = rs64::mips::rw(rdram, rec);
-
-        for (int i = 0; i < 2 && s_names && model; i++)
-        {
-            wstr(rdram, s_names + i * 16, i ? "wngrot_b" : "wngrot_a");
-            s_wings[i] = rs64::mips::mips_call(rdram, ctx, 0x80059434u, { model, s_names + i * 16, 0u }).v0;
-        }
+        find_wings(rdram, ctx, rs64::mips::rw(rdram, rec), s_wings);
 
         fprintf(stderr, "[ships] %s S-foil wings %s\n", s_ships[s_flying].id.c_str(), s_wings[0] && s_wings[1] ? "found" : "missing (name them wngrot_a / wngrot_b)");
     }
 
-    const float angle = (1.0f - s_foil_t) * 10.0f;
-
-    for (int i = 0; i < 2; i++)
-    {
-        if (s_wings[i]) rs64::mips::mips_call(rdram, ctx, 0x800AA424u, { s_wings[i] + 0x1C, 0u, 0u, bits_of(i ? angle : -angle) });
-    }
+    pose_wings(rdram, ctx, s_wings, s_foil_t);
 }
 
 extern "C" void rs64_ships_behaviours(uint8_t* rdram, recomp_context* ctx)
@@ -757,15 +1002,43 @@ extern "C" void rs64_ships_behaviours(uint8_t* rdram, recomp_context* ctx)
 
     const uint32_t rec = (uint32_t)ctx->r4;
 
-    if (s_flying < 0 || s_in_cutscene || rec != kPlayerFlight) return;
+    if (s_in_cutscene || rec != kPlayerFlight) return;
 
-    const auto& s = s_ships[s_flying];
     const float game_target = rf(rdram, rec + 0xEC);
     float target = game_target;
 
-    if (s.tmpl != 3 && rs64ships::hasBehaviour(s, "boost")) boost(rdram, ctx, rec, &target);
+    if (s_flying >= 0)
+    {
+        const auto& s = s_ships[s_flying];
+        const rs64ships::Special sp = rs64ships::specialOf(s);
+        const bool timed = sp.mode == rs64ships::SpecialMode::Timed;
+        const bool toggle = sp.mode == rs64ships::SpecialMode::Toggle;
+        const bool native = native_special(s);
 
-    if (s.tmpl != 0 && rs64ships::hasBehaviour(s, "sfoils")) sfoils(rdram, ctx, rec, &target);
+        if (timed && !native) boost(rdram, ctx, rec, &target, sp);
+
+        if (toggle && !native) sfoils(rdram, ctx, rec, &target, sp);
+
+        if (native) native_events(rdram, rec, toggle);
+
+        // The template's own special with the ship's clip: the X-wing's foil position (0x8010BC90), the V-wing's boost while its timer (+0x190)
+        // is past the cooldown; posed after the craft's own part turns. A host timed special drives the clip the same way.
+        if (native || timed)
+        {
+            const uint32_t slot = special_clip(rdram, ctx, rec);
+            const bool engaged = native ? rf(rdram, rec + 0x190) > 6.0f : s_boost_t > sp.cooldown;
+            const float dt = f_of(ctx->r5);
+
+            s_special_pos = toggle ? rf(rdram, 0x8010BC90u) : timed_clip_position(dt, engaged);
+
+            if (slot) play_clip(rdram, ctx, slot, s_special_pos);
+        }
+    }
+
+    // The rules' craft actions, for any player craft.
+    target *= s_rule_speed;
+
+    if (s_rule_guns_off) lock_guns(rdram, ctx, false);
 
     if (target == game_target)
     {
@@ -784,13 +1057,14 @@ extern "C" void rs64_ships_behaviours(uint8_t* rdram, recomp_context* ctx)
     wf(rdram, rec + 0xE8, s_speed);
 }
 
-// The template's own special-button tests (v0 = the button's mask): the V-wing's boost, the X-wing's S-foils, off for a ship without them.
+// The template's own special-button tests (v0 = the button's mask): the V-wing's boost, the X-wing's S-foils, off unless the ship flies
+// with that one unchanged.
 extern "C" void rs64_ships_special_gate(recomp_context* ctx, int craft)
 {
 
     if (s_flying < 0 || s_ships[s_flying].tmpl != craft) return;
 
-    if (!rs64ships::hasBehaviour(s_ships[s_flying], craft == 3 ? "boost" : "sfoils")) ctx->r2 = 0;
+    if (!native_special(s_ships[s_flying])) ctx->r2 = 0;
 }
 
 // The bay setup loop's shadow call (hangarInitialize 0x800AABFC, a1 = the bay's shadow texture, s2 the bay + 1): a ship's own shadow.
@@ -882,6 +1156,42 @@ static int svc_has(const char* id)
     return 0;
 }
 
+// Co-op: the puppet showing ship `id` (model = its model instance) posed at the other player's special position t: its clip, else its
+// S-foil wings for a toggle special. Nonzero when `id` is a ship here (posed, or left as modelled), 0 to leave the puppet to the caller.
+static int svc_pose_puppet(uint8_t* rdram, void* c, const char* id, uint32_t model, float t)
+{
+
+    const auto it = std::find_if(s_ships.begin(), s_ships.end(), [&](const rs64ships::Ship& s) { return id && s.id == id; });
+
+    if (it == s_ships.end() || model < 0x80000000u || model >= 0x80800000u) return 0;
+
+    auto* ctx = (recomp_context*)c;
+
+    if (model != s_puppet_model)
+    {
+        s_puppet_model = model;
+        s_puppet_slot = bind_clip(rdram, ctx, it->id, model, &s_puppet_file);
+        find_wings(rdram, ctx, model, s_puppet_wings);
+
+        const char* pose = s_puppet_slot ? "its clip" : s_puppet_wings[0] && s_puppet_wings[1] ? "its wings" : "nothing to pose";
+
+        fprintf(stderr, "[ships] co-op puppet %s (model %08X): %s\n", id, model, pose);
+    }
+
+    t = std::clamp(t, 0.0f, 1.0f);
+
+    if (s_puppet_slot)
+    {
+        pose_clip(rdram, ctx, s_puppet_slot, s_puppet_file, model, t);
+    }
+    else if (rs64ships::specialOf(*it).mode == rs64ships::SpecialMode::Toggle)
+    {
+        pose_wings(rdram, ctx, s_puppet_wings, t);
+    }
+
+    return 1;
+}
+
 extern "C" void rs64_ships_register_service(uint8_t* rdram)
 {
 
@@ -893,9 +1203,30 @@ extern "C" void rs64_ships_register_service(uint8_t* rdram)
         svc_shown,
         svc_has,
         [](const char* id) { s_puppet = id ? id : ""; },
+        [](int bay) { return rs64_ships_bay_craft(s_rdram, bay); },
+        []() { return s_flying >= 0 ? s_special_pos : -1.0f; },
+        svc_pose_puppet,
     };
 
     rs64::host::add_service(RS64_SHIPS_SERVICE, &svc);
+
+    // Rule actions for a ship's rules (and any level's): the player craft's speed, guns, special animation and cooldown.
+    const auto value = [](const char* const* keys, const char* const* values, int count, const char* key, float fallback) {
+
+        for (int i = 0; i < count; i++)
+        {
+            if (std::strcmp(keys[i], key) == 0) return std::strtof(values[i], nullptr);
+        }
+
+        return fallback;
+    };
+
+    static const auto s_value = value;
+
+    rs64::host::add_rule_action("craft.speed", [](uint8_t*, void*, const char* const* k, const char* const* v, int n, void*) { s_rule_speed = std::clamp(s_value(k, v, n, "times", 1.0f), 0.0f, 4.0f); }, nullptr);
+    rs64::host::add_rule_action("craft.guns", [](uint8_t*, void*, const char* const* k, const char* const* v, int n, void*) { s_rule_guns_off = s_value(k, v, n, "on", 1.0f) == 0.0f; }, nullptr);
+    rs64::host::add_rule_action("craft.animation", [](uint8_t*, void*, const char* const* k, const char* const* v, int n, void*) { s_rule_clip = std::clamp(s_value(k, v, n, "at", -1.0f), -1.0f, 1.0f); }, nullptr);
+    rs64::host::add_rule_action("craft.ready", [](uint8_t*, void*, const char* const*, const char* const*, int, void*) { s_boost_t = 0.0f; }, nullptr);
 }
 
 // npcWingmanUpdate's model lookup (0x800D94A4, a0 = the wingman model's name): a co-op puppet showing a ship draws the ship's model.
@@ -1031,16 +1362,21 @@ static uint32_t bp_rec(uint32_t k) {
     return s_bp + 0x30u * k;
 }
 
+constexpr uint32_t kBpTex = 0x30u * (uint32_t)rs64ships::kMaxShips;
+constexpr uint32_t kBpPos = kBpTex + 2u * (uint32_t)rs64ships::kMaxShips;
+constexpr uint32_t kBpName = kBpPos + 4u * (uint32_t)rs64ships::kMaxShips;
+constexpr uint32_t kBpSize = kBpName + 16u * (uint32_t)rs64ships::kMaxShips;
+
 static uint32_t bp_tex(uint32_t k) {
-    return s_bp + 0x30u * (uint32_t)rs64ships::kMaxShips + 2u * k;
+    return s_bp + kBpTex + 2u * k;
 }
 
 static uint32_t bp_pos(uint32_t k) {
-    return s_bp + 0x30u * (uint32_t)rs64ships::kMaxShips + 8u + 4u * k;
+    return s_bp + kBpPos + 4u * k;
 }
 
 static uint32_t bp_name(uint32_t k) {
-    return s_bp + 0x30u * (uint32_t)rs64ships::kMaxShips + 0x20u + 16u * k;
+    return s_bp + kBpName + 16u * k;
 }
 
 // The level's craft mask (0x800C63C0, bit = craft id) with bit 9 + k for each ship whose template it allows, while at most eight show.
@@ -1093,7 +1429,7 @@ extern "C" void rs64_ships_bp_load_next(uint8_t* rdram, recomp_context* ctx)
 
     if (s_ships.empty()) return;
 
-    if (!s_bp) s_bp = alloc_rdram(rdram, 0x30u * rs64ships::kMaxShips + 0x20u + 16u * rs64ships::kMaxShips);
+    if (!s_bp) s_bp = alloc_rdram(rdram, kBpSize);
 
     const uint32_t k = (uint32_t)ctx->r20 - kStockCraft;
 
@@ -1191,20 +1527,70 @@ extern "C" uint32_t rs64_ships_cutscene_shadow_flags(int actor, uint32_t flags)
     return s_in_cutscene && actor == s_cut_player ? flags | 4u : flags;
 }
 
-extern "C" uint32_t rs64_ships_cutscene_shadow_record(uint8_t* rdram, int actor, uint32_t record)
+// The template's entry in the cutscene asset table (0x5C each, name at +0x20), -1 when it has none.
+static int template_cut_entry(uint8_t* rdram)
 {
 
     constexpr uint32_t kCutAssets = 0x800AF92Cu;
+
+    for (uint32_t i = 0; i < 32; i++)
+    {
+        if (rs64::mips::rstr(rdram, kCutAssets + i * 0x5C + 0x20, 16) == rs64ships::kExterior[s_ships[s_flying].tmpl]) return (int)i;
+    }
+
+    return -1;
+}
+
+extern "C" uint32_t rs64_ships_cutscene_shadow_record(uint8_t* rdram, int actor, uint32_t record)
+{
+
     constexpr uint32_t kCutShadows = 0x800B04ACu;
 
     if (!s_in_cutscene || actor != s_cut_player) return record;
 
-    for (uint32_t i = 0; i < 32; i++)
+    const int i = template_cut_entry(rdram);
+
+    return i >= 0 ? kCutShadows + (uint32_t)i * 20 : record;
+}
+
+// Cutscene engine sound (0x800A9E10) and S-foils (0x800AA584, 0x800AA6F4) go by the actor's table entry (actor + 2), the catch-all's for
+// the ship: these reads see the template's, and the X-wing's (2) for the wings when the ship has S-foils.
+static bool is_cut_ship(uint8_t* rdram, uint32_t actor)
+{
+
+    if (!s_in_cutscene || s_cut_player < 0) return false;
+
+    const uint32_t base = rs64::mips::rw(rdram, 0x800B1900u);
+
+    return actor == base + (uint32_t)s_cut_player * 0x13Cu;
+}
+
+extern "C" uint32_t rs64_ships_cutscene_sound_type(uint8_t* rdram, uint32_t actor, uint32_t type)
+{
+
+    if (!is_cut_ship(rdram, actor)) return type;
+
+    const int i = template_cut_entry(rdram);
+
+    static bool s_logged = false;
+
+    if (!s_logged)
     {
-        if (rs64::mips::rstr(rdram, kCutAssets + i * 0x5C + 0x20, 16) == rs64ships::kExterior[s_ships[s_flying].tmpl]) return kCutShadows + i * 20;
+        s_logged = true;
+        fprintf(stderr, "[ships] %s cutscene engine sound as type %d (was %u)\n", s_ships[s_flying].id.c_str(), i, type);
     }
 
-    return record;
+    return i >= 0 ? (uint32_t)i : type;
+}
+
+extern "C" uint32_t rs64_ships_cutscene_sound_flags(uint8_t* rdram, uint32_t actor, uint32_t flags)
+{
+    return is_cut_ship(rdram, actor) ? flags | 2u : flags;
+}
+
+extern "C" uint32_t rs64_ships_cutscene_wing_type(uint8_t* rdram, uint32_t actor, uint32_t type)
+{
+    return is_cut_ship(rdram, actor) && rs64ships::hasBehaviour(s_ships[s_flying], "sfoils") ? 2u : type;
 }
 
 // walkMeshdef0List entry (a model looked up by its object name): while a ship with its own exterior flies, the template's name finds

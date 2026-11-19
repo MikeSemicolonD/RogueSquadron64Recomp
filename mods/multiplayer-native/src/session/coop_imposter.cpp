@@ -428,8 +428,13 @@ extern "C" void rs64_imposter_tick(uint8_t* rdram, recomp_context* ctx)
     rdram[(kImposterRec + 0xFD - 0x80000000u) ^ 3] = c.foil_closed ? 1 : 0;
     wf(kImposterRec + 0xE8, c.foil_t);
 
-    // Ghost co-op: the other player's S-foils on the wingman's wing nodes (wngrot_a/b at blk+0x98/+0x9C, X-wing model only: other models keep other data there; blk+0xE4 = angle, 0..10 degrees, a +/-).
-    if (rs64_ghost_mode() && s.model == 0)
+    // Ghost co-op: a puppet drawing the other player's hangar ship takes its special pose (its clip or S-foil wings) from the host at the sent position.
+    const rs64_ships* ships = rs64_ghost_ships_v3();
+    const bool ship_posed = rs64_ghost_mode() && ships && *rs64_ghost_puppet_ship() &&
+        ships->pose_puppet(rdram, ctx, rs64_ghost_puppet_ship(), rw(rdram, blk + 0x30), 1.0f - (float)rs64_ghost_remote_foil() / 250.0f);
+
+    // Otherwise the other player's S-foils on the wingman's wing nodes (wngrot_a/b at blk+0x98/+0x9C, X-wing model only: other models keep other data there; blk+0xE4 = angle, 0..10 degrees, a +/-).
+    if (rs64_ghost_mode() && s.model == 0 && !ship_posed)
     {
         const uint32_t wing_a = rw(rdram, blk + 0x98);
         const uint32_t wing_b = rw(rdram, blk + 0x9C);

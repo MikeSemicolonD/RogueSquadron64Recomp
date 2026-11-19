@@ -444,11 +444,19 @@ $('btnExport').onclick = async () => {
   try {
     const animations = animClips();
 
+    // Clips are poses relative to the model, so it is written at its rest pose (hinged wings at 0 degrees: X-wing S-foils closed,
+    // shuttle wings up), the pose an import bakes and the game's hardpoints and own wing turn assume.
+    if (animations.length && foils)
+      applyFoils(foils.kind === 'shuttle' ? 0 : 1);
+
     // glTF cannot animate a node stored as a matrix, so animated exports write each node's transform as TRS (rig nodes keep theirs in .matrix).
     if (animations.length)
       root.traverse((o) => !o.matrixAutoUpdate && o.matrix.decompose(o.position, o.quaternion, o.scale));
 
     const glb = await new GLTFExporter().parseAsync(root, { binary: true, onlyVisible: true, animations, trs: animations.length > 0 });
+
+    if (animations.length && foils)
+      applyFoils();
 
     saveBlob(new Blob([glb], { type: 'model/gltf-binary' }), selected.split('/').pop() + (selectedLevel ? '' : '_lod' + lodLevel()) + '.glb');
   } finally {
@@ -1114,6 +1122,10 @@ async function importCraftModel()
     const engines = [];
     const trails = [];
 
+    // The craft's named parts (engine glows glw_, flames eng_, glass wnd_) stay its own, so a mesh under one of those names, as an
+    // exported model brings them back, is left out rather than added as solid faces.
+    const ownParts = new Set([...model.hob.objects[object].partNames.values()].filter(Boolean));
+
     gltf.scene.traverse((o) => {
       if (!o.isMesh && !o.children.length && /^eng_/i.test(o.name))
         engines.push(o.getWorldPosition(new THREE.Vector3()).toArray());
@@ -1121,7 +1133,7 @@ async function importCraftModel()
       if (!o.isMesh && !o.children.length && /^trl_/i.test(o.name))
         trails.push(o.getWorldPosition(new THREE.Vector3()).toArray());
 
-      if (!o.isMesh)
+      if (!o.isMesh || ownParts.has(o.name))
         return;
 
       // A mesh (or a parent) named after a craft node, e.g. wngrot_a, goes into that node's part so it keeps animating.
@@ -1235,12 +1247,79 @@ async function importCraftModel()
     if (ship)
       await shipPictures(ship);
 
+    // A ship's .glb with an animation: its first clip becomes the special button's (engaged at its end), on the parts it names.
+    if (ship && gltf.animations.length)
+    {
+      const placement = craftImportPlacement(model.hob, tris, options.plusZ ?? true, object);
+      const bytes = shipClipFromGltf(gltf, model.hob.objects[object], placement);
+
+      if (bytes)
+        await editAsset(`mod/assets/pl_crafts/a_${ship.id}`, () => bytes, `${ship.name}: special animation`);
+
+      // The model's animation list is built once per model: rebuild it so the new clip shows.
+      $('optAnim').dataset.id = '';
+    }
+
     await showModel(id, selectedObj, true);
   } catch (e) {
     alert(e.message);
   } finally {
     busy(null);
   }
+}
+
+// The glb's special-button animation (one named "special", else the explorer's own X-wing / shuttle closing sweep, else the first),
+// sampled at 30 per second (at most 64 keys): each object it moves that is named after a part of obj, as a turn and move from the pose the model was imported in. Null when it moves none.
+function shipClipFromGltf(gltf, obj, placement)
+{
+  const byName = (n) => gltf.animations.find((a) => a.name.toLowerCase() === n);
+  const clip = byName('special') ?? byName('sfoils_close') ?? byName('wings_lower') ?? gltf.animations[0];
+  const moved = new Set(clip.tracks.map((t) => t.name.split('.')[0]));
+  const parts = [];
+
+  gltf.scene.traverse((o) => {
+    if (obj.nodeNames.has(o.name) && moved.has(o.name))
+      parts.push({
+        o,
+        node: obj.nodeNames.get(o.name),
+        q0: o.getWorldQuaternion(new THREE.Quaternion()),
+        p0: o.getWorldPosition(new THREE.Vector3()),
+        samples: []
+      });
+  });
+
+  if (!parts.length)
+    return null;
+
+  const mixer = new THREE.AnimationMixer(gltf.scene);
+  const keys = Math.min(64, Math.max(2, Math.round(clip.duration * 30) + 1));
+
+  // Once, held at the end: a repeating action wraps to the first frame at exactly its duration.
+  const action = mixer.clipAction(clip);
+
+  action.setLoop(THREE.LoopOnce, 1);
+  action.clampWhenFinished = true;
+  action.play();
+
+  for (let k = 0; k < keys; k++)
+  {
+    const t = k / (keys - 1);
+
+    mixer.setTime(t * clip.duration);
+    gltf.scene.updateMatrixWorld(true);
+
+    for (const p of parts)
+    {
+      const q = p.o.getWorldQuaternion(new THREE.Quaternion()).multiply(p.q0.clone().invert());
+      const d = p.o.getWorldPosition(new THREE.Vector3()).sub(p.p0);
+
+      p.samples.push({ t, q: [q.x, q.y, q.z, q.w], d: d.toArray() });
+    }
+  }
+
+  mixer.stopAllAction();
+
+  return craftClipBake(obj, placement, new Map(parts.map((p) => [p.node, { origin: p.p0.toArray(), samples: p.samples }])), Math.round(clip.duration * 1000));
 }
 
 $('btnImport').onclick = importCraftModel;
@@ -1393,11 +1472,11 @@ async function newShip(named = null)
     return null;
 
   const taken = [...rom.assets.keys()].map((k) => k.split('/').pop().replace(/_(HOB|HMT)$/, ''));
-  const ship = shipNew(ships, name, template, taken);
+  const ship = shipNew(ships, name, template, taken, await rom.read(HANGAR_DAT));
 
   if (!ship)
   {
-    alert('The hangar has room for three new ships, and they are all taken.');
+    alert(`The hangar has room for ${SHIP_MAX} new ships, and they are all taken.`);
 
     return null;
   }
@@ -1529,6 +1608,7 @@ async function applyShipSpot(ship, spot)
   const own = ships.find((s) => s.id === ship.id);
 
   own.stop = spot.stop;
+  own.pos = spot.pos;
 
   await historyGroup(`${ship.name}: place in hangar`, async () => {
     await editText(MOD_SHIPS, shipsWrite(ships), `${ship.name}: place in hangar`);
@@ -1561,11 +1641,13 @@ $('btnShipLine').onclick = () => {
   d.showModal();
 };
 
-// The ship's craft abilities, from any craft: its ships.json "behaviours". S-foils and boost share the special button, so one turns the other off.
-const SHIP_ABILITIES = [
-  ['sfoils', 'S-foils (X-wing)', 'The special button closes the wings for speed, guns locked. Wings are the parts named wngrot_a and wngrot_b.'],
-  ['boost', 'Boost (V-wing)', 'The special button gives 6 seconds of speed, then 6 seconds of cooldown.'],
-  ['aim', 'Strong aim assist (A-wing)', 'Shots home in on targets in a wider cone.'],
+// The ship's abilities (ships.json "behaviours" and "special"): the special button is the X-wing's S-foils, the V-wing's boost, none or
+// its own settings; the aim assist is the A-wing's.
+const SHIP_SPECIALS = [
+  ['none', 'None'],
+  ['sfoils', 'S-foils (X-wing)'],
+  ['boost', 'Boost (V-wing)'],
+  ['custom', 'Your own'],
 ];
 
 $('btnShipAbilities').onclick = async () => {
@@ -1578,42 +1660,112 @@ $('btnShipAbilities').onclick = async () => {
   const d = elem('dialog', { className: 'panel levelDialog' });
   const close = elem('button', { textContent: 'Close' });
   const actions = elem('div', { className: 'actions' });
-  const boxes = new Map();
+  const own = ship.special ?? {};
+  const kind = ship.special ? 'custom' : (have.has('sfoils') ? 'sfoils' : (have.has('boost') ? 'boost' : 'none'));
+  const special = selectOf(SHIP_SPECIALS, kind, { title: 'What the special button does' });
+
+  const mode = selectOf([
+    ['toggle', 'Toggle'],
+    ['timed', 'Timed']
+  ], own.mode ?? 'toggle', { title: 'Toggle: a press engages, a press or the brake releases. Timed: engaged for a while, then a cooldown' });
+
+  const num = (value, min, max, step, title) => elem('input', { type: 'number', value, min, max, step, title, style: 'width:4.5em' });
+  const speed = num(own.speed ?? 1.5, 0.25, 3, 0.05, 'Speed while engaged: times the craft\'s speed (toggle) or its top speed (timed)');
+  const seconds = num(own.seconds ?? 1, 0.1, 60, 0.1, 'Seconds to engage (toggle) or seconds engaged (timed)');
+  const cooldown = num(own.cooldown ?? 0, 0, 120, 0.5, 'Seconds before it can engage again (timed)');
+  const guns = elem('input', { type: 'checkbox', checked: own.guns === false, title: 'The guns don\'t fire while it is engaged' });
+  const aim = elem('input', { type: 'checkbox', checked: have.has('aim') });
+  const custom = elem('div', { className: 'lookRow' }, mode, ' x', speed, ' ', seconds, 's ', cooldown, 's ', elem('label', { title: guns.title }, guns, ' guns off'));
+
+  const sync = () => {
+    custom.hidden = special.value !== 'custom';
+    cooldown.hidden = mode.value !== 'timed';
+  };
 
   const save = async () => {
     const ships = shipsParse(await virtualText(MOD_SHIPS));
-    const own = ships.find((s) => s.id === ship.id);
+    const entry = ships.find((s) => s.id === ship.id);
 
-    own.behaviours = SHIP_ABILITIES.map(([k]) => k).filter((k) => boxes.get(k).checked);
+    entry.behaviours = [...(['sfoils', 'boost'].includes(special.value) ? [special.value] : []), ...(aim.checked ? ['aim'] : [])];
+
+    if (special.value === 'custom')
+      entry.special = {
+        mode: mode.value,
+        speed: +speed.value,
+        seconds: +seconds.value,
+        cooldown: mode.value === 'timed' ? +cooldown.value : 0,
+        guns: !guns.checked
+      };
+    else
+      delete entry.special;
+
     await editText(MOD_SHIPS, shipsWrite(ships), `${ship.name}: abilities`);
     await applyModLevels();
   };
 
-  for (const [key, label, tip] of SHIP_ABILITIES)
-  {
-    const box = elem('input', { type: 'checkbox', checked: have.has(key) });
+  for (const input of [special, mode, speed, seconds, cooldown, guns, aim])
+    input.onchange = () => {
+      // A new mode starts from its preset's numbers: the S-foils' 1 s at 1.5x, the boost's 6 s at 4/3 of top speed and 6 s cooldown.
+      if (input === mode)
+        [speed.value, seconds.value, cooldown.value] = mode.value === 'timed' ? [1.33, 6, 6] : [1.5, 1, 0];
 
-    box.onchange = () => {
-      const other = key === 'sfoils' ? 'boost' : (key === 'boost' ? 'sfoils' : null);
-
-      if (box.checked && other)
-        boxes.get(other).checked = false;
-
+      sync();
       save();
     };
 
-    boxes.set(key, box);
-    d.append(elem('label', { title: tip }, box, ' ' + label));
-  }
+  sync();
+  d.append(
+    elem('label', { title: special.title }, 'Special button ', special),
+    custom,
+    elem('label', { title: 'Shots home in on targets in a wider cone' }, aim, ' Strong aim assist (A-wing)')
+  );
 
+  // The special button's animation: the ship's own (baked from its imported model) or its craft's.
+  const clip = await rom.read(`mod/assets/pl_crafts/a_${ship.id}`).catch(() => null);
+  const anim = clip?.byteLength ? parseAnim(clip) : null;
+  const names = [...((await loadModel(selected)).hob.objects[0].nodeNames ?? new Map())];
+  const moved = anim ? anim.tracks.map((t, i) => (t ? (names.find(([, n]) => n === i + 1)?.[0] ?? `part ${i + 1}`) : null)).filter(Boolean) : [];
+
+  d.append(elem('small', { textContent: moved.length ? `Special animation: your model's, moving ${moved.join(', ')}.` : 'Special animation: the craft\'s own. An animation in an imported model replaces it.' }));
+
+  // The ship's own rules (pl_crafts/<id>_rules.txt): run with the level's while it flies.
+  const rulesBtn = elem('button', { textContent: 'Rules…', title: 'Rules that run while this ship flies: the special button\'s events and craft actions' });
+
+  rulesBtn.onclick = () => shipRules(ship);
   close.onclick = () => d.close();
   d.onclose = () => d.remove();
-  actions.append(close);
+  actions.append(rulesBtn, close);
   d.prepend(elem('b', { textContent: `${ship.name}: abilities` }));
   d.append(actions);
   document.body.append(d);
   d.showModal();
 };
+
+// A ship's rules.txt as text, checked like a level's with the craft actions and special-button events (and loaded mods' actions).
+async function shipRules(ship)
+{
+  const path = `mod/assets/pl_crafts/${ship.id}_rules.txt`;
+  const d = elem('dialog', { className: 'panel levelDialog' });
+  const close = elem('button', { textContent: 'Close' });
+  const ctx = { objects: {}, objectives: false, ext: [...CRAFT_RULE_EXT, ...ruleExt] };
+  const example = 'when custom special_engaged every time\n    message 3 Boost!\n    craft.speed times=1.2\nend\n\nwhen custom special_released every time\n    craft.speed times=1\nend\n';
+
+  const code = codeBox({
+    value: await virtualText(path),
+    rows: 14,
+    placeholder: example,
+    title: 'This ship\'s rules: when … [if …], one action a line, end',
+    check: (t) => rulesScriptCheck(t, ctx),
+    complete: (t, c) => rulesComplete(t, c, ctx),
+    onChange: (t) => editText(path, t, `${ship.name}: rules`)
+  });
+
+  close.onclick = () => d.close();
+  d.onclose = () => d.remove();
+  d.append(elem('b', { textContent: `${ship.name}: rules` }), elem('small', { textContent: 'They run with the level\'s rules while the ship flies. Events: custom special_engaged, special_released, special_ready, fire_locked. Actions: craft.speed times=, craft.guns on=, craft.animation at=, craft.ready.' }), code, elem('div', { className: 'actions' }, close));
+  document.body.append(d);
+  d.showModal();
+}
 
 async function replaceTexture(id, name) {
   const file = await pickImage();

@@ -2071,6 +2071,9 @@ extern "C" void rs64_ghost_frame(uint8_t* rdram, recomp_context* ctx)
             // The walk cycle position (+0x88, 0 .. 1).
             const float walk = rf(rdram, ext + 0x88u);
             out.walk = walk >= 0.0f && walk <= 1.0f ? walk : 0.0f;
+        } else if (const float special = rs64_ghost_ships_v3() ? rs64_ghost_ships_v3()->special() : -1.0f; special >= 0.0f) {
+            // A hangar ship's special (its S-foils, boost or own clip), 0 rest .. 1 engaged, sent as the S-foils are.
+            out.foil = (uint8_t)std::lround((1.0f - std::min(special, 1.0f)) * 250.0f);
         } else if (ext && rb(rdram, 0x80130B41u) == 0) {
             const float t = std::clamp(rf(rdram, ext + 4u), 0.0f, 1.0f);
             out.foil = (uint8_t)std::lround((1.0f - t) * 250.0f);

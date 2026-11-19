@@ -215,7 +215,7 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | NAME | Both, once connected: the pilot name (label over the ship). |
 | MISSION, LAUNCH | Host picks the mission id first, then LAUNCH puts both on the same level and craft. `DAMAGE`, `OBJ` and `LIFE` carry the mission id. |
 | PRESENCE | Entering or leaving a mission. A departed player's puppet is removed (`destroyNpcSlotByIndex`); a peer entering triggers a full health resync. |
-| STATE | Unreliable, every frame: pose, velocity, pad buttons, down flag, S-foils (0 closed .. 250 open). |
+| STATE | Unreliable, every frame: pose, velocity, pad buttons, down flag, S-foils (0 closed .. 250 open; for a hangar ship its special, 0 engaged .. 250 rest). |
 | OBJ | Host to client: objective snapshot (booleans, counts, timers), sent on change for 5 frames and every 15. |
 | DAMAGE | DAT item health drops (see Shared deaths). |
 | LIFE, OUT | Client reports a death; host answers OUT when the shared lives are gone. |
@@ -227,7 +227,7 @@ All messages ride the ENet link; `Msg` in net_core.h lists them. A session start
 | SHOT | Host to client: a mod-linked mid-mission camera shot for the client (camera item and trigger names; a shared one the host also plays, or a personal one the client set off); the client plays it through the `camera.shots` service unless that trigger already fired in its own world. |
 | RESULT | Host's mission result. |
 | PICK, READY, BROWSE, BRIEFING_DONE | Lobby screens. |
-| SHIP | Both, after READY: the mod's new hangar ship the pick is, empty for a stock craft. A side that has the ship installed draws the other player's puppet with its model; otherwise the puppet is that craft's wingman. |
+| SHIP | Both, after READY: the mod's new hangar ship the pick is, empty for a stock craft. A side that has the ship installed draws the other player's puppet with its model, posed by the ships service (`pose_puppet`): its special clip, else its S-foil wings; otherwise the puppet is that craft's wingman. |
 | CONTINUE | A player pressed continue on the debrief; both leave it once each side has. |
 | SKIP | Host to client: a cutscene skip, tagged with the scene it was made in (see [Cutscene skip sharing](#cutscene-skip-sharing)). |
 | BYE | Quit, mismatch, or the host refusing a password (`WrongPassword`). |

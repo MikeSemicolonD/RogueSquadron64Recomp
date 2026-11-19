@@ -311,17 +311,19 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
     // A bay turn animates before the bay byte changes: after a press, wait for the change (or 240 presents) before judging again.
     static int s_bay_seen = -1, s_bay_wait = 0, s_presses = 0;
     const int bay = rdram[0xCD6E4u ^ 3];
-    const int here = rdram[(0xCC3F8u + bay) ^ 3];
+    const int here = rs64_ships_bay_craft(rdram, bay);
 
+    // A turn is progress: a lap through up to 15 bays outlasts one step's budget.
     if (bay != s_bay_seen)
     {
         fprintf(stderr, "[nav] %s: craft bay %d = craft %d (want %d)\n", who, bay, here, want);
         s_bay_seen = bay;
         s_bay_wait = 0;
+        s_watchdog = 0;
     }
 
     // 9 and up name a new hangar ship's bay (9 the first), whose craft byte is its template's.
-    if (want < 0 || (want >= 9 ? bay == want : here == want) || s_presses >= 12)
+    if (want < 0 || (want >= 9 ? bay == want : here == want) || s_presses >= 16)
     {
         return true;
     }

@@ -1500,6 +1500,16 @@ async function setupAnimations(id, objGroup)
         found.push({ name: a.name, data });
     }
 
+    // A new ship's own special-button clip, baked by Import model from the glb's animation.
+    const ship = modShips.find((s) => id === `data/pl_crafts/${s.id}`);
+    const shipClip = ship && (await rom.read(`mod/assets/pl_crafts/a_${ship.id}`).catch(() => null));
+    const shipData = shipClip?.byteLength ? parseAnim(shipClip) : null;
+
+    if (shipData && shipData.tracks.length)
+    {
+      found.push({ name: 'special', data: shipData });
+    }
+
     for (const name of SPRITE_ANIMS[id.replace(/^data\//, '')] ?? [])
     {
       const a = rom.assets.get(dir + name);

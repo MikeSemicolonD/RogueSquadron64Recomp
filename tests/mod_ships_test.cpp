@@ -10,7 +10,7 @@ int main() {
         std::vector<std::string> errors;
         const auto s = parseShips("my-mod", R"({ "ships": [
             { "id": "redwing", "name": "RED WING", "template": "xwing", "stop": [0.86, 0.85] },
-            { "id": "bluefin2", "name": "BLUEFIN", "template": "awing", "stop": [0.1, 0.2] } ] })", errors);
+            { "id": "bluefin", "name": "BLUEFIN", "template": "awing", "stop": [0.1, 0.2] } ] })", errors);
         CHECK(errors.empty());
         CHECK(s.size() == 2);
         CHECK(s[0].mod == "my-mod" && s[0].id == "redwing" && s[0].name == "RED WING" && s[0].tmpl == 0);
@@ -28,8 +28,10 @@ int main() {
             { "id": "ok", "name": "A", "template": "xwing", "stop": [0] },
             { "id": "ok", "name": "A", "template": "tie", "stop": [0, 0] },
             { "id": "ok", "name": "A", "template": "t16", "stop": [0, 0] },
+            { "id": "ship_1", "name": "A", "template": "xwing", "stop": [0, 0] },
+            { "id": "ship2", "name": "A", "template": "xwing", "stop": [0, 0] },
             { "id": "good", "name": "A", "template": "naboo", "stop": [0.5, 0.5] } ] })", errors);
-        CHECK(errors.size() == 7);
+        CHECK(errors.size() == 9);
         CHECK(s.size() == 1 && s[0].id == "good" && s[0].tmpl == 8);
         CHECK(parseShips("m", "[]", errors).empty());
     }
@@ -46,6 +48,26 @@ int main() {
         CHECK(hasBehaviour(s[0], "aim") && !hasBehaviour(s[0], "sfoils") && !hasBehaviour(s[0], "boost"));
         CHECK(hasBehaviour(s[1], "aim") && hasBehaviour(s[1], "sfoils") && !hasBehaviour(s[1], "boost") && !hasBehaviour(s[1], "warp"));
         CHECK(!hasBehaviour(s[2], "sfoils") && !hasBehaviour(s[2], "aim"));
+    }
+    // special: the presets from behaviours, a custom block in their place, values clamped
+    {
+        std::vector<std::string> errors;
+        const auto s = parseShips("m", R"({ "ships": [
+            { "id": "a", "name": "A", "template": "xwing", "stop": [0, 0] },
+            { "id": "b", "name": "B", "template": "vwing", "stop": [0, 0] },
+            { "id": "c", "name": "C", "template": "ywing", "stop": [0, 0] },
+            { "id": "d", "name": "D", "template": "xwing", "stop": [0, 0], "special": { "mode": "timed", "speed": 9, "seconds": 3, "cooldown": 2, "guns": false } },
+            { "id": "e", "name": "E", "template": "awing", "stop": [0, 0], "special": { "mode": "warp" } } ] })", errors);
+        CHECK(s.size() == 5 && errors.size() == 1);
+        const auto a = specialOf(s[0]);
+        const auto b = specialOf(s[1]);
+        const auto d = specialOf(s[3]);
+        const auto e = specialOf(s[4]);
+        CHECK(a.mode == SpecialMode::Toggle && !a.guns && !a.custom && a.speed > 1.49f && a.speed < 1.51f);
+        CHECK(b.mode == SpecialMode::Timed && b.guns && b.seconds == 6.0f && b.cooldown == 6.0f);
+        CHECK(specialOf(s[2]).mode == SpecialMode::None);
+        CHECK(d.custom && d.mode == SpecialMode::Timed && d.speed == 3.0f && d.seconds == 3.0f && d.cooldown == 2.0f && !d.guns);
+        CHECK(e.custom && e.mode == SpecialMode::Toggle && !e.guns);
     }
     // turning_order: by u round the route, as the stock stops (0..6 in their u order wrap 2 -> 3), ships among them, locked ones skipped
     {

@@ -48,6 +48,7 @@ void rs64_lobby_edit_off(void);
 int rs64_ghost_puppet_model(void);
 const char* rs64_ghost_puppet_ship(void);
 const rs64_ships* rs64_ghost_ships(void);
+const rs64_ships* rs64_ghost_ships_v3(void);
 int rs64_ghost_remote_foil(void);
 void rs64_ghost_remote_walker(float head[2], uint8_t shots[2], float* walk);
 void rs64_ghost_atst_fire(uint8_t*, recomp_context*);

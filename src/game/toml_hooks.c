@@ -2284,6 +2284,23 @@ void rs64_th_updatePlayerCraftPhysics_entry(uint8_t* rdram, recomp_context* ctx)
     rs64_ships_behaviours(rdram, ctx);
 }
 
+// Cutscene actor sound and S-foil type reads: the ship's actor reads as its template.
+void rs64_th_emit3DSoundsForActiveNpcs_800A9DF8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_cutscene_sound_flags(rdram, (uint32_t)ctx->r3, (uint32_t)ctx->r2);
+}
+
+void rs64_th_emit3DSoundsForActiveNpcs_800A9E14(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_cutscene_sound_type(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r3);
+}
+
+void rs64_th_applyCutsceneSlotMaterialOverrides_800AA588(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_cutscene_wing_type(rdram, (uint32_t)ctx->r7, (uint32_t)ctx->r3);
+}
+
+void rs64_th_tickCutsceneActionSlots_800AA6F8(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r17 = (gpr)(int32_t)rs64_ships_cutscene_wing_type(rdram, (uint32_t)ctx->r2, (uint32_t)ctx->r17);
+}
+
 void rs64_th_vwing_boost_gate(uint8_t* rdram, recomp_context* ctx) {
     rs64_ships_special_gate(ctx, 3);
 }
@@ -2451,6 +2468,47 @@ void rs64_th_runHangarMenuFromOverlay_800C68C8(uint8_t* rdram, recomp_context* c
 // positions), re-pointed at the host copies that hold the ships' stops.
 void rs64_th_hangarInitialize_800A9488(uint8_t* rdram, recomp_context* ctx) {
     ctx->r4 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r4);
+}
+
+// The bay -> craft table bases (0x800CC3F8): the host copy with the ships' bays.
+void rs64_th_hangarInitialize_800A945C(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_hangarInitialize_800AAA54(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_hangarInitialize_800AACE4(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r17 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r17);
+}
+
+void rs64_th_composeNpcOrientationMatrix_800AB40C(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800AC038(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AC8FC(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AC9AC(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800AD0C4(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r3 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r3);
+}
+
+void rs64_th_updateHangarBayScene_800AD894(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
+}
+
+void rs64_th_updateHangarBayScene_800AD9FC(uint8_t* rdram, recomp_context* ctx) {
+    ctx->r2 = (gpr)(int32_t)rs64_ships_table((uint32_t)ctx->r2);
 }
 
 void rs64_th_runHangarSelectionFrame_800AAF18(uint8_t* rdram, recomp_context* ctx) {

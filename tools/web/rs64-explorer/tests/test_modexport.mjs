@@ -567,9 +567,10 @@ await check('importing a model into a craft fills its body, empties the other un
   assert.deepEqual([...new Set(merged.faces[0].idx)].length, 4);
   assert.equal(bodyOf(RS64.hobImportCraft(orig, hob, square([0.5, 1]), { mat: pick.mat, plusZ: false })).faces.length, 2);
 
-  // Canopy and exhaust options. A model with the original's exact extent is placed 1:1, so markers land where they say.
+  // Canopy and exhaust options. A model with the original's exact extent (its plain parts: glow cards, flames and glass aren't
+  // imported) is placed 1:1, so markers land where they say.
   const stockParts = hob.objects[0].lods[0].flat();
-  const flat = stockParts.flatMap((p) => [...p.verts]);
+  const flat = stockParts.filter((p) => !p.name).flatMap((p) => [...p.verts]);
   const low = [0, 1, 2].map((a) => Math.min(...flat.filter((_, i) => i % 3 === a)));
   const high = [0, 1, 2].map((a) => Math.max(...flat.filter((_, i) => i % 3 === a)));
   const toDisplay = ([x, y, z]) => [x, -y, -z];
@@ -647,7 +648,7 @@ await check('importing a model into a craft fills its body, empties the other un
     if (p.name)
       assert.deepEqual([...p.verts], [...before.find((q) => q.offset === p.offset).verts]);
 
-  // Fitted onto the X-wing: the largest dimension matches the original's.
+  // Fitted onto the X-wing: the largest dimension matches the original's plain parts (glow cards and flames reach past them).
   const ext = (list) => {
     const mn = [Infinity, Infinity, Infinity];
     const mx = [-Infinity, -Infinity, -Infinity];
@@ -658,7 +659,9 @@ await check('importing a model into a craft fills its body, empties the other un
     return Math.max(...mx.map((v, a) => v - mn[a]));
   };
 
-  assert.ok(Math.abs(ext([body]) - ext(before)) <= 2, `${ext([body])} vs ${ext(before)}`);
+  const plain = before.filter((p) => !p.name);
+
+  assert.ok(Math.abs(ext([body]) - ext(plain)) <= 2, `${ext([body])} vs ${ext(plain)}`);
 });
 
 const cuts = [...rom.assets.keys()].filter((p) => /^data\/cuts\/id\d+_/.test(p));
@@ -3193,6 +3196,49 @@ await check('a grown map keeps the old ground and lights in place and continues 
   assert.throws(() => RS64.hmpResize(orig, 64, 72));
 });
 
+// A ship's special-button clip is written in the game's own model-animation format, so every stock clip must survive a parse/write.
+await check('stock model animations write back byte for byte', async () => {
+  const clips = ['reb_stuff/atpt_walk', 'reb_stuff/atpt_start', 'reb_stuff/atpt_stop', 'imp_stuff/atst_walk', 'imp_stuff/atst_stop', 'imp_stuff/atst_start', 'imp_stuff/atat_walk', 'imp_stuff/atat_die', 'imp_stuff/atat_start', 'imp_stuff/atat_stop'];
+
+  for (const c of clips)
+  {
+    const dv = await rom.read('data/' + c);
+    const orig = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+
+    assert.deepEqual(RS64.writeAnim(RS64.parseAnim(dv)), orig, c);
+  }
+});
+
+// A glTF clip baked for a ship: a part's turn and move come through the import's half turn and scale, other parts hold their rest pose.
+await check('a ship clip bakes part turns and moves into the model\'s space', async () => {
+  const hob = RS64.parseHOB(await rom.read('data/pl_crafts/xwing_HOB'));
+  const obj = hob.objects[0];
+  const tris = [{ p: [[-1, -1, -2], [1, 1, 2], [0, 0, 0]] }];
+  const placement = RS64.craftImportPlacement(hob, tris, true, 0);
+  const deg = (10 * Math.PI) / 360;
+
+  const parts = new Map([[
+    obj.nodeNames.get('wngrot_a'),
+    {
+      origin: [0, 0, 0],
+      samples: [
+        { t: 0, q: [0, 0, 0, 1], d: [0, 0, 0] },
+        { t: 1, q: [0, 0, Math.sin(deg), Math.cos(deg)], d: [0, 0.5, 0] },
+      ]
+    }
+  ]]);
+
+  const clip = RS64.parseAnim(new DataView(RS64.craftClipBake(obj, placement, parts).buffer));
+
+  assert.equal(clip.tracks.length, obj.nodes.length - 1);
+  assert.deepEqual(clip.tracks[0].times, [0, 1]);
+  assert.ok(Math.abs(clip.tracks[0].rot[1][2] - Math.sin(deg)) < 1e-3 && Math.abs(clip.tracks[0].rot[1][3] - Math.cos(deg)) < 1e-3, 'a turn about z keeps its sign through the +Z half turn');
+  assert.ok(clip.tracks[0].pos[1][1] < -1, 'an upward move points down in the model (y is flipped)');
+  assert.equal(clip.tracks[1], null);
+  assert.deepEqual(clip.rest[1].rot, [0, 0, 0, 4096]);
+  assert.deepEqual(clip.rest[0].pivot, placement.place([0, 0, 0]).map((v) => Math.round(v) + 0));
+});
+
 // The game's asset loader decrypts koelsch_HMT before applying the patch and encrypts the result (asset_overrides.cpp naboo_cipher).
 await check('the Naboo Starfighter textures read decrypted, so a texture edit is a small patch of the plain file', async () => {
   const path = 'data/pl_crafts/koelsch_HMT';
@@ -3225,7 +3271,10 @@ await check('new ship: ships.json entry, hangar records moved to its spot, model
   assert.equal(RS64.shipNew(ships, 'Other', 'awing'), null, 'no spot left');
   assert.equal(new Set(ships.map((s) => s.id)).size, ships.length);
   assert.equal(RS64.shipNew([], 'A very long name', 'awing').id, 'a_very_lo');
-  assert.equal(RS64.shipNew([], 'xwing', 'awing', ['xwing']).id, 'xwing_2');
+  assert.equal(RS64.shipNew([], 'xwing', 'awing', ['xwing']).id, 'xwing_b');
+  assert.equal(RS64.shipNew([], 'Ship 1', 'awing').id, 'ship', 'no id ends in a digit, which the game splits off a model path');
+  assert.equal(RS64.shipNew([{ id: 'ship', stop: [9, 9] }, { id: 'ship_b', stop: [8, 8] }], 'Ship 2', 'awing').id, 'ship_c');
+  assert.equal(RS64.shipNew([], '2187', 'awing').id, 'ship');
   assert.deepEqual(RS64.shipsParse(RS64.shipsWrite([ship])), [ship]);
   assert.deepEqual(RS64.shipBehaviours(ship), ['sfoils'], 'a ship without a list has its template\'s');
   assert.deepEqual(RS64.shipBehaviours({ ...ship, behaviours: ['aim'] }), ['aim']);
@@ -3268,6 +3317,20 @@ await check('new ship: ships.json entry, hangar records moved to its spot, model
 
   assert.deepEqual(names(moved).sort(), ['red_wing', 'red_wing_camstart', 'red_wing_camwatch', 'red_wing_route'], 'one set of records after a move');
   assert.equal(RS64.parseDAT(new DataView(moved.buffer)).items.length, RS64.parseDAT(new DataView(once.buffer)).items.length);
+
+  // With the hangar scene, ships past the fixed spots get a free spot of their own, apart from the others, up to SHIP_MAX.
+  const many = [...ships];
+
+  while (many.length < RS64.SHIP_MAX)
+  {
+    const s = RS64.shipNew(many, 'More', 'awing', [], stockDat);
+
+    assert.ok(s?.pos, `ship ${many.length + 1} has its own spot`);
+    assert.ok(many.every((o) => Math.hypot(RS64.shipPos(o)[0] - s.pos[0], RS64.shipPos(o)[1] - s.pos[1]) > 5), JSON.stringify(s.pos));
+    many.push(s);
+  }
+
+  assert.equal(RS64.shipNew(many, 'More', 'awing', [], stockDat), null, 'the hangar is full');
 
   // A ship's copy names its texture apart from the template's, at the same length.
   const renamed = RS64.texFileRename(bp, '~1');

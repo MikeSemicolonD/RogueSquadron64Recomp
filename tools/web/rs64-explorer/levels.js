@@ -3359,7 +3359,7 @@ function levelRulesPanel()
     Object.assign(scriptCtx, {
       objects: ruleObjectKinds(parseDAT(dv).items),
       objectives: !!modLevelOf(dir)?.objectives?.length,
-      ext: ruleExt.length ? ruleExt : null
+      ext: ruleExt.length ? [...ruleExt, ...CRAFT_RULE_EXT] : null
     });
 
     if (code)

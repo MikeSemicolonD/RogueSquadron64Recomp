@@ -176,13 +176,14 @@ A `ships.json` at the mod root adds ships to the craft-select hangar. Each flies
 { "ships": [ { "id": "red_wing", "name": "RED WING", "template": "xwing", "stop": [0.8625, 0.847] } ] }
 ```
 
-- `id`: 1-9 of `a-z 0-9 _`. The mod ships `assets/pl_crafts/<id>_HOB` / `_HMT`, whose object is named `<id>`, and may ship `pl_crafts/c_<id>` (cockpit), `ov/ov_<id>` / `ov/1v_<id>` (HUD icon) `blueprints/<id>` (its AVAILABLE CRAFT hologram, 64x80 4-bit intensity) and `pl_crafts/s_<id>` (its shadow in the hangar and in missions: the craft's left half from above, nose up, 32x64 4-bit, mirrored by the game); any left out is the template's. Its hangar line, `assets/pl_crafts/v_<id>`, is a MORT stream like a level's `brief` and plays instead of the template's. AVAILABLE CRAFT lists a ship wherever its template is available, while eight craft or fewer show.
+- `id`: 1-9 of `a-z 0-9 _`, not ending in a digit (the game splits a trailing digit off a model path). The mod ships `assets/pl_crafts/<id>_HOB` / `_HMT`, whose object is named `<id>`, and may ship `pl_crafts/c_<id>` (cockpit), `ov/ov_<id>` / `ov/1v_<id>` (HUD icon) `blueprints/<id>` (its AVAILABLE CRAFT hologram, 64x80 4-bit intensity) and `pl_crafts/s_<id>` (its shadow in the hangar and in missions: the craft's left half from above, nose up, 32x64 4-bit, mirrored by the game); any left out is the template's. Its hangar line, `assets/pl_crafts/v_<id>`, is a MORT stream like a level's `brief` and plays instead of the template's. Its special-button animation, `assets/pl_crafts/a_<id>`, is a model animation in the game's own format (as `imp_stuff/atst_walk`: one track per part after the root, the end pose = engaged); it plays forward as the special engages and back as it releases, and parts without keys keep the craft's own motion. Its rules, `assets/pl_crafts/<id>_rules.txt` (the [level rules](#level-rules) script), run with the level's while it flies. AVAILABLE CRAFT lists a ship wherever its template is available, while eight craft or fewer show.
 - `template`: `xwing ywing awing vwing speeder falcon naboo` (not the TIE interceptor, which has its own hangar reveal, nor the T-16, which has no bay).
 - `behaviours` (optional): the craft abilities it has, from any craft: `sfoils` (the X-wing's: the special button closes the wings for 1.5x speed and locks the guns, rotating the model's `wngrot_a` / `wngrot_b` parts), `boost` (the V-wing's: 6 s at a third over the craft's top speed, then 6 s capped at two thirds of it) and `aim` (the A-wing's wider aim assist). Left out, it has its template's own; an empty list turns them off. `sfoils` and `boost` share the special button, so a ship can't have both. The T-16 has no aim assist to widen.
+- `special` (optional): the special button's own settings, in place of the `sfoils` / `boost` presets: `{ "mode": "toggle" | "timed" | "none", "speed", "seconds", "cooldown", "guns" }`. A toggle engages over `seconds` (press again or brake to release) and multiplies the craft's speed by `speed` (0.25-3); a timed one stays engaged `seconds`, at `speed` times the top speed, then cools down for `cooldown` capped at two thirds of it. `"guns": false` locks the guns while engaged. Missing numbers take the preset's (toggle 1.5x for 1 s, guns off; timed 4/3 for 6 s, 6 s cooldown, guns on). The template's own S-foils or boost then stay off.
 - `stop`: where the hangar camera stops for it, as positions along its two camera routes (`camroute_0`, where the camera stands, and `camroute_1`, where it looks). Turning visits every stop in order of the first, ships among the stock bays.
 - The mod's `frontend/hangar/dat` adds a ship record named `<id>` where it stands, plus `<id>_route` (its take-off), `<id>_camstart` and `<id>_camwatch` (the camera at its bay).
 
-The RS64 Explorer's *New ship from this craft* writes all of this, for up to three ships (the game's limit) in three free spots, and *Place in hangar* moves one to any point on the floor. It also copies the template's cockpit as `c_<id>` and draws both HUD icons (IA8, the craft from above, nose up) from the ship's model, and its blueprint as a line drawing from above.
+The RS64 Explorer's *New ship from this craft* writes all of this, for up to eight ships (the hangar's free object slots): three in fixed spots between stock craft, the rest on the open floor, and *Place in hangar* moves one to any point on the floor. It also copies the template's cockpit as `c_<id>` and draws both HUD icons (IA8, the craft from above, nose up) from the ship's model, and its blueprint as a line drawing from above.
 
 ### Level rules
 
@@ -220,7 +221,7 @@ A rule is a `when` line, one action a line, then `end`; `#` starts a comment and
 | `when objective <1-4> done` / `failed` | that objective of a level with its own `objectives` completes or fails |
 | `when true: <condition>` | the condition becomes true |
 | `when flag <1-128>` / `when counter <1-128> reaches <count>` | an objective flag is set / an objective counter reaches the count |
-| `when custom <event> [for <object>]` | a native mod fires that event (for that object, when given) |
+| `when custom <event> [for <object>]` | a native mod fires that event (for that object, when given); a new ship's special button fires `special_engaged`, `special_released`, `special_ready` and `fire_locked` (for the ship's id) |
 
 | Action | Does |
 | --- | --- |
@@ -234,6 +235,8 @@ A rule is a `when` line, one action a line, then `end`; `#` starts a comment and
 | `set <variable> <number, true or false>` / `add <variable> <number>` | change a variable |
 | `flag <1-128> [value]` / `counter <1-128> [add]` | set an objective flag (default 1) / add to an objective counter (default 1) |
 | `<name> key=value ...` | a native mod's action; `spawn` (a wave the explorer adds) uses this form too |
+| `craft.speed times=<n>` / `craft.guns on=<0 or 1>` | the player craft's speed times n (1 = normal) / its guns off or on, for the rest of the mission |
+| `craft.animation at=<0-1>` / `craft.ready` | pose a new ship's special animation (-1 = the special's own) / end the special and its cooldown |
 
 Any `when` line except `when true:` can end in `if <condition>`: the rule only fires while it holds, and one that fails stays ready for next time.
 

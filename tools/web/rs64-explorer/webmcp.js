@@ -882,8 +882,8 @@ const WEBMCP_TOOLS = [
     run: async ({ craft, name }) => {
       mcpNeedRom();
 
-      if (!shipNew(shipsParse(await virtualText(MOD_SHIPS)), name, craft))
-        throw new Error('The hangar has room for three new ships, and they are all taken');
+      if (!shipNew(shipsParse(await virtualText(MOD_SHIPS)), name, craft, [], await rom.read(HANGAR_DAT)))
+        throw new Error(`The hangar has room for ${SHIP_MAX} new ships, and they are all taken`);
 
       setMode('models');
       await showModel(SHIP_TEMPLATES[craft].model);

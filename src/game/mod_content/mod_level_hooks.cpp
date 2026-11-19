@@ -27,6 +27,7 @@
 #include "util/debug_logs.h"
 #include "main/cli.h"
 #include "game/game_state.h"
+#include "game/hook_helpers.h"
 #include "game/nav_sequencer.h"
 #include "game/mod_content/camera_shots.h"
 #include "game/mod_content/mod_levels.h"
@@ -1083,6 +1084,8 @@ extern "C" void rs64_mod_levels_pause_voice(uint8_t* rdram, recomp_context* ctx)
 // ---- Level rules: assets/level/<folder>/rules.txt (or rules.json) from enabled mods, run against the level being played ----
 namespace {
 std::map<std::string, std::vector<rs64rules::Rule>> s_rules_by_folder;
+// A ship's rules sit in s_rules_by_folder under this prefix and its id.
+constexpr const char* kShipRulesPrefix = "ship:";
 std::map<std::string, std::vector<std::string>> s_packages_by_folder;
 rs64rules::Runner s_rules;
 std::string s_rules_folder;
@@ -1535,6 +1538,32 @@ extern "C" void rs64_rules_init()
             auto& list = s_rules_by_folder[folder];
             list.insert(list.end(), rules.begin(), rules.end());
         }
+
+        // A new ship's rules, assets/pl_crafts/<ship>_rules.txt: run with the level's while that ship flies.
+        const auto crafts = recomp::mods::get_mod_filename(d.mod_id) / "assets" / "pl_crafts";
+
+        ec.clear();
+
+        for (auto it = std::filesystem::directory_iterator(crafts, ec); !ec && it != std::filesystem::directory_iterator(); it.increment(ec))
+        {
+            const std::string name = it->path().filename().string();
+            constexpr const char* kShipRules = "_rules.txt";
+
+            if (name.size() <= std::strlen(kShipRules) || name.compare(name.size() - std::strlen(kShipRules), std::string::npos, kShipRules) != 0) continue;
+
+            std::ifstream in(it->path(), std::ios::binary);
+            const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            const std::string ship = name.substr(0, name.size() - std::strlen(kShipRules));
+            std::vector<std::string> errors;
+            auto rules = rs64rules::parseScript(text, errors);
+
+            for (const auto& e : errors) fprintf(stderr, "[rules] %s ship %s: %s\n", d.mod_id.c_str(), ship.c_str(), e.c_str());
+
+            fprintf(stderr, "[rules] %s: %zu rules for ship %s\n", d.mod_id.c_str(), rules.size(), ship.c_str());
+
+            auto& list = s_rules_by_folder[kShipRulesPrefix + ship];
+            list.insert(list.end(), rules.begin(), rules.end());
+        }
     }
 }
 
@@ -1578,7 +1607,9 @@ extern "C" void rs64_rules_mission_start(uint8_t* rdram)
     set_crawl_playing(0);
     s_playing_crawl = nullptr;
     s_rules_folder = rs64rules::rulesFolder(mod ? mod : "", (int)rw(rdram, 0x80130B70u));
-    s_rules_pending = s_rules_by_folder.count(s_rules_folder) != 0;
+    const std::string ship = rs64_ships_flying_id();
+
+    s_rules_pending = s_rules_by_folder.count(s_rules_folder) != 0 || (!ship.empty() && s_rules_by_folder.count(kShipRulesPrefix + ship) != 0);
     s_rules_elapsed = 0;
     s_rules.reset({}, [](const std::string&) { return true; });
     s_mission_running = true;
@@ -1602,7 +1633,14 @@ extern "C" void rs64_rules_frame(uint8_t* rdram, recomp_context* ctx)
         const auto known = [&](const std::string& n) { return level_object(rdram, ctx, n) != 0; };
         const auto known_mod = [](const std::string& n) { return rs64::host::has_rule_condition(n.c_str()); };
 
-        for (const auto& e : s_rules.reset(s_rules_by_folder[s_rules_folder], known, own_objectives() != nullptr, known_mod)) {
+        // The flying ship's own rules join the level's.
+        auto rules = s_rules_by_folder[s_rules_folder];
+        const std::string ship = rs64_ships_flying_id();
+        const auto shipRules = ship.empty() ? s_rules_by_folder.end() : s_rules_by_folder.find(kShipRulesPrefix + ship);
+
+        if (shipRules != s_rules_by_folder.end()) rules.insert(rules.end(), shipRules->second.begin(), shipRules->second.end());
+
+        for (const auto& e : s_rules.reset(rules, known, own_objectives() != nullptr, known_mod)) {
             fprintf(stderr, "[rules] %s: %s; skipped\n", s_rules_folder.c_str(), e.c_str());
         }
     }
