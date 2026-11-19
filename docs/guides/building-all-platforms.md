@@ -145,6 +145,8 @@ The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac archi
 
 **Raspberry Pi** (and other slow Linux GPUs): on a Pi the game starts at the N64's native resolution and with `"framebufferWriteback": false` in `roguesq_video.json`, which skips copying each rendered frame back to the emulated RAM (the game never reads it) and raises the frame rate there by about half. Setting it to `false` can help any GPU-limited machine. Resolution matters most: on a Pi 4 at a 1080p window, Auto resolution costs about three times the GPU time of 1x, so keep Resolution at 1x unless the GPU has headroom. The first runs compile shaders in the background ("Compiling shaders" panel); later runs reuse them.
 
+**Fullscreen** (DISPLAY SETTINGS, Alt+Enter, or `"fullscreen": true` in `roguesq_video.json`) is borderless: a window covering the screen at the desktop's resolution and refresh rate, with no display mode change, so switching away is instant. There is no exclusive fullscreen mode.
+
 **Video presets:** [video-presets/](../../video-presets/README.md) holds ready-made display settings from low to ultra, plus original and vr. Launch with `--preset <name>` to use one without replacing your own `roguesq_video.json`.
 
 **No monitor attached** (a headless Pi): the desktop then shows one frame a second and the game stalls with it. Set `"vsync": false` in `roguesq_video.json` to run at full speed.
