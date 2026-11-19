@@ -466,7 +466,7 @@ namespace rs64::touch {
         const uint8_t count = rb(r, kGcmd + 0x95);
 
         // Mod pages (DRAW DISTANCE) reuse the volume bar entry type, so any menu can hold one.
-        if (!in_label_mem(ptr) || entry < 0 || entry >= count || count > 8)
+        if (!in_label_mem(ptr) || entry < 0 || entry >= count || count > rs64::menu::kMenuRows)
         {
             return false;
         }

@@ -554,7 +554,7 @@ add_executable(touch_input_test EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/src/input/touch_config.cpp
 )
 set_target_properties(touch_input_test PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
-target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
+target_include_directories(touch_input_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include ${CMAKE_SOURCE_DIR}/lib/rt64/src/contrib)
 
 # Not part of the default build: cmake --build build --config Debug --target video_config_test
 add_executable(video_config_test EXCLUDE_FROM_ALL
