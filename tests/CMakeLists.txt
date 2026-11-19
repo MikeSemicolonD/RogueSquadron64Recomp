@@ -32,7 +32,6 @@ endif()
 # Standalone unit test for the nav-sequencer target parser.
 add_executable(nav_target_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/nav_target_test.cpp
-    ${RS64_ROOT}/src/game/nav_sequencer.cpp
     ${RS64_ROOT}/src/lockstep/lockstep_core.cpp
     ${RS64_ROOT}/src/game/game_state.cpp
     ${RS64_ROOT}/src/input/touch_menu.cpp
