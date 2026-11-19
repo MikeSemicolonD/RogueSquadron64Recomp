@@ -10,7 +10,9 @@ Register it in the repo's `.mcp.json` (gitignored, per machine):
 "rs64": { "type": "stdio", "command": "python", "args": ["tools/debug/mcp/rs64_mcp.py"] }
 ```
 
-`python tools/debug/mcp/rs64_mcp.py --self-test` launches the Debug build and checks the bridge end to end. `--self-test-pair` launches a co-op pair and checks that each holds and steps on its own.
+`python tools/debug/mcp/rs64_mcp.py --self-test` launches the Debug build and checks the bridge end to end. `--self-test-pair` launches a co-op pair and checks that each holds and steps on its own. `--config <dir>` picks another `build/<dir>`.
+
+The server also runs on Linux against a Linux build (`python3 tools/debug/mcp/rs64_mcp.py --self-test --config <dir>`). There, `hang_dump` and `type_text` are Windows-only and RenderDoc is not injected.
 
 Outputs (the game's stdout/stderr, dumps, screenshots) go to `dumps/mcp/<session>_<instance>/`; RenderDoc captures to `dumps/RenderDoc/mcp-<session>_<instance>/`.
 

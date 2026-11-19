@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tmem_decode  # noqa: E402
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+WINDOWS = os.name == "nt"
+EXE_SUFFIX = ".exe" if WINDOWS else ""
 # ROGUESQ_RENDERDOC, else a renderdoc checkout next to the repo (the build the renderdoc MCP replays with), else the installed RenderDoc.
 RENDERDOC_DLL = os.environ.get("ROGUESQ_RENDERDOC") or next((p for p in (os.path.join(REPO, "..", "renderdoc", "x64", "Release", "renderdoc.dll"), os.path.join(os.environ.get("ProgramFiles", ""), "RenderDoc", "renderdoc.dll")) if os.path.isfile(p)), "")
 WAIT_LOG_FAIL = r"SEH caught|null-call|Assertion failed|Failed to find function|\[nav\] stuck"
@@ -152,6 +154,9 @@ def function_names():
 
 def write_minidump(pid, path):
     """MiniDumpWithFullMemory of pid, as tools/debug/dump-game.ps1 writes (game threads and RDRAM included)."""
+    if not WINDOWS:
+        raise GameError("hang_dump runs only on Windows (its freeze and stack reports read a minidump)")
+
     import ctypes
     from ctypes import wintypes
 
@@ -197,6 +202,9 @@ def game_window(pid):
 
 def post_text(pid, text, backspaces=0, delay_ms=350):
     """Type into the game window without focus: Backspace as WM_KEYDOWN/UP, each character as WM_CHAR (SDL_TEXTINPUT)."""
+    if not WINDOWS:
+        raise GameError("type_text runs only on Windows")
+
     import ctypes
 
     user32 = ctypes.windll.user32
@@ -285,10 +293,11 @@ def capture_window(pid):
     return bytes(rgba), w, h
 
 
-ADB = os.path.join(os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk"), "platform-tools", "adb.exe")
+ANDROID_SDK = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or (os.path.join(os.environ.get("LOCALAPPDATA", ""), "Android", "Sdk") if WINDOWS else os.path.expanduser("~/Android/Sdk"))
+ADB = os.path.join(ANDROID_SDK, "platform-tools", "adb" + EXE_SUFFIX)
 ANDROID_PACKAGE = "com.rs64recomp.app"
-SSH_EXE = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "OpenSSH", "ssh.exe")
-SCP_EXE = os.path.join(os.path.dirname(SSH_EXE), "scp.exe")
+SSH_EXE = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "OpenSSH", "ssh.exe") if WINDOWS else "ssh"
+SCP_EXE = os.path.join(os.path.dirname(SSH_EXE), "scp.exe") if WINDOWS else "scp"
 ANDROID_FILES = f"/sdcard/Android/data/{ANDROID_PACKAGE}/files"
 # The session video settings on the device: read-only to the game, as the shell pushed it.
 ANDROID_VIDEO = ANDROID_FILES + "/roguesq_mcp_video.json"
@@ -349,6 +358,14 @@ class ExternalProcess:
         self.returncode = None
 
     def poll(self):
+        if not WINDOWS:
+            try:
+                os.kill(self.pid, 0)
+                return None
+            except OSError:
+                self.returncode = self.returncode if self.returncode is not None else 0
+                return self.returncode
+
         import ctypes
         kernel32 = ctypes.windll.kernel32
         handle = kernel32.OpenProcess(0x1000, False, self.pid)  # PROCESS_QUERY_LIMITED_INFORMATION
@@ -404,8 +421,25 @@ def coop_env(role, games):
     return env
 
 
+def kill_pid(pid, tree=False):
+    """Kill pid (and on Windows, with tree, its children: wsl.exe and ssh.exe sessions)."""
+    if WINDOWS:
+        subprocess.run(["taskkill", *(["/T"] if tree else []), "/F", "/PID", str(pid)], capture_output=True)
+        return
+
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        pass
+
+
 def listening_pid(port):
     """PID of the process listening on 127.0.0.1:port, or 0."""
+    if not WINDOWS:
+        out = subprocess.run(["ss", "-ltnpH", f"sport = :{port}"], capture_output=True, text=True).stdout
+        m = re.search(r"127\.0\.0\.1:\d+\s.*pid=(\d+)", out)
+        return int(m.group(1)) if m else 0
+
     out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True).stdout
     for line in out.splitlines():
         parts = line.split()
@@ -536,7 +570,7 @@ class Game:
         self.platform = platform
         self.config = config
         exe_dir = os.path.join(REPO, "build", config)
-        exe = os.path.join(exe_dir, "RogueSquadron64Recomp" if platform in ("linux", "ssh") else "RogueSquadron64Recomp.exe")
+        exe = os.path.join(exe_dir, "RogueSquadron64Recomp" + ("" if platform in ("linux", "ssh") else EXE_SUFFIX))
         if platform == "android":
             self.serial = android_serial()
         elif not os.path.isfile(exe):
@@ -791,7 +825,7 @@ class Game:
                 self.ssh_pull(path)
             return {"path": path, "width": r["width"], "height": r["height"], "colours": r["colours"]}
         except GameError:
-            if self.platform != "windows":
+            if self.platform != "windows" or not WINDOWS:
                 raise
         rgba, w, h = capture_window(self.proc.pid)
         tmem_decode.write_png(path, rgba, w, h)
@@ -1000,7 +1034,7 @@ class Game:
         return report
 
     def kill_external(self):
-        subprocess.run(["taskkill", "/F", "/PID", str(self.proc.pid)], capture_output=True)
+        kill_pid(self.proc.pid)
 
     def disconnect(self):
         """Hang up on the bridge (shutdown first: the reader's makefile keeps a plain close() from ending the connection)."""
@@ -1037,7 +1071,7 @@ class Game:
             # Ending the ssh session can leave the remote game running, so it is killed there by the pid its script wrote.
             if self.platform == "ssh":
                 self.ssh(f"kill -9 $(cat {self.remote_dir}/mcp.pid) 2>/dev/null")
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(self.proc.pid)], capture_output=True)
+            kill_pid(self.proc.pid, tree=True)
             try:
                 self.proc.wait(10)
             except subprocess.TimeoutExpired:
@@ -1087,10 +1121,10 @@ def launch_instance(games, name, config="Debug", env=None, args=None, timeout_s=
     return game.launch(config, game_env, args, timeout_s, record, settings, isolate=bool(others))
 
 
-def self_test():
+def self_test(config="Debug"):
     game = Game()
     try:
-        r = game.launch()
+        r = game.launch(config)
         assert r["running"] and r["pid"] > 0, r
         assert game.call("rt64_status", {})["paused"] is False
         game.kill_external()
@@ -1106,7 +1140,7 @@ def self_test():
 
     game = Game()
     try:
-        game.launch(env={"ROGUESQ_BOOT_TARGET": "level:0"})
+        game.launch(config, env={"ROGUESQ_BOOT_TARGET": "level:0"})
         dl0 = game.call("frame_info")["clocks"]["dl"]
         expect_error(lambda: game.call("list_draws"), "not paused")
         t0 = time.time()
@@ -1280,8 +1314,9 @@ def self_test():
         game.call("resume")
         frozen = game.call("pause_at", {"clock": "dl", "frame": game.call("frame_info")["clocks"]["dl"] + 5})["picture"]
 
-        rdc = game.call("renderdoc_capture", {"frames": 1}, timeout_s=40)["path"]
-        assert rdc.endswith(".rdc") and os.path.isfile(rdc), rdc
+        if WINDOWS and RENDERDOC_DLL:
+            rdc = game.call("renderdoc_capture", {"frames": 1}, timeout_s=40)["path"]
+            assert rdc.endswith(".rdc") and os.path.isfile(rdc), rdc
 
         stepped = game.call("step", {"frames": 1})["picture"]
         assert stepped["dl_seq"] == frozen["dl_seq"] + 1, (frozen, stepped)
@@ -1301,7 +1336,7 @@ def self_test():
         game.close()
     game = Game()
     try:
-        game.launch(env={"ROGUESQ_BOOT_TARGET": "level:0"})
+        game.launch(config, env={"ROGUESQ_BOOT_TARGET": "level:0"})
         game.disconnect()
         time.sleep(0.5)
         # What a browser fetch() puts on the wire: HTTP headers, then a JSON line in the body. The bridge must hang up before the body runs.
@@ -1864,6 +1899,6 @@ if __name__ == "__main__":
         self_test_instances()
     elif "--self-test" in sys.argv:
         self_test_instances()
-        self_test()
+        self_test(sys.argv[sys.argv.index("--config") + 1] if "--config" in sys.argv else "Debug")
     else:
         serve()
