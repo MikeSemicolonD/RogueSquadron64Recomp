@@ -10,6 +10,7 @@ import math
 import os
 import re
 import shlex
+import shutil
 import socket
 import struct
 import subprocess
@@ -366,6 +367,43 @@ class ExternalProcess:
         return self.poll()
 
 
+def stage_work_dir(exe_dir, dest):
+    """A game folder of its own (ROM, configs, mods, saves copied from exe_dir), as tools/debug/lockstep/run-mp.ps1 gives each co-op instance."""
+    os.makedirs(dest, exist_ok=True)
+
+    for name in os.listdir(exe_dir):
+        path = os.path.join(exe_dir, name)
+        if name in ("mods", "mod_config", "saves") and os.path.isdir(path):
+            shutil.copytree(path, os.path.join(dest, name), dirs_exist_ok=True)
+        elif name in ("rogue_squadron.z64", "rs64.n64.us.1.0.z64", "mods.json") or (name.startswith("roguesq_") and name.endswith(".json")):
+            shutil.copy2(path, dest)
+
+    return dest
+
+
+def coop_env(role, games):
+    """Scripted co-op (ROGUESQ_MP) over ENet on this machine: the host takes a free UDP port, so a player's own game on the default port is never joined,
+    and a join connects to the running host instance's port. Host window on the left, join on the right."""
+    if role not in ("host", "join"):
+        raise GameError(f"coop must be host or join, got {role!r}")
+
+    env = {"ROGUESQ_MP": role, "ROGUESQ_MP_UPNP": "0", "ROGUESQ_MP_TRANSPORT": "enet"}
+
+    if role == "host":
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind(("127.0.0.1", 0))
+            env["ROGUESQ_MP_PORT"] = str(s.getsockname()[1])
+        env["ROGUESQ_WINDOW_POS"] = "left"
+        return env
+
+    host = next((g for g in games.values() if g.coop == "host" and g.alive()), None)
+    if host is None:
+        raise GameError("no running host instance: launch one with coop=\"host\" first")
+
+    env.update({"ROGUESQ_MP_ADDR": "127.0.0.1", "ROGUESQ_MP_PORT": str(host.mp_port), "ROGUESQ_WINDOW_POS": "right"})
+    return env
+
+
 def listening_pid(port):
     """PID of the process listening on 127.0.0.1:port, or 0."""
     out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True).stdout
@@ -378,6 +416,7 @@ def listening_pid(port):
 
 class Game:
     def __init__(self):
+        self.name = "p1"
         self.attached = False
         self.proc = None
         self.sock = None
@@ -388,6 +427,9 @@ class Game:
         self.pending = {}
         self.lock = threading.Lock()
         self.platform = "windows"
+        self.config = None
+        self.coop = None
+        self.mp_port = 0
         self.linux_pid_file = None
         self.serial = None
         self.logcat = None
@@ -459,6 +501,7 @@ class Game:
                 pass
 
         return {
+            "instance": self.name,
             "running": self.alive(),
             "state": state,
             "held": held,
@@ -469,6 +512,12 @@ class Game:
             "session_dir": self.session_dir,
         }
 
+    def new_session_dir(self):
+        """dumps/mcp/<time>_<instance>, made; the instance keeps two games launched in the same second apart."""
+        self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S") + "_" + self.name)
+        os.makedirs(self.session_dir, exist_ok=True)
+        return self.session_dir
+
     def log_tail(self, lines=40):
         try:
             with open(self.log_path, "r", encoding="utf-8", errors="replace") as f:
@@ -476,12 +525,16 @@ class Game:
         except OSError:
             return ""
 
-    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None, platform="windows"):
-        """platform="linux" runs build/<config>/RogueSquadron64Recomp (a Linux build) under WSL on the GPU through Mesa Dozen, as tools/release/run-wsl-gpu.sh does."""
+    def launch(self, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None, platform="windows", isolate=False):
+        """platform="linux" runs build/<config>/RogueSquadron64Recomp (a Linux build) under WSL on the GPU through Mesa Dozen, as tools/release/run-wsl-gpu.sh does.
+        isolate runs the game in a copy of its folder (session_dir/work), so a second game never shares the first one's saves and configs."""
         if self.alive():
             raise GameError(f"game already running (pid {self.proc.pid}); close it first")
+        if isolate and platform != "windows":
+            raise GameError("a second game at once runs only on Windows")
 
         self.platform = platform
+        self.config = config
         exe_dir = os.path.join(REPO, "build", config)
         exe = os.path.join(exe_dir, "RogueSquadron64Recomp" if platform in ("linux", "ssh") else "RogueSquadron64Recomp.exe")
         if platform == "android":
@@ -499,9 +552,9 @@ class Game:
                 raise GameError(f"no answer from {self.ssh_target} over ssh")
             self.remote_dir = home + "/" + os.environ.get("RS64_SSH_DIR", "rs64-smoke")
 
-        self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
-        os.makedirs(self.session_dir, exist_ok=True)
+        self.new_session_dir()
         self.log_path = os.path.join(self.session_dir, "game.log")
+        work_dir = stage_work_dir(exe_dir, os.path.join(self.session_dir, "work")) if isolate else exe_dir
         video_cfg = session_video_config(exe_dir, self.session_dir, settings)
 
         with socket.socket() as s:
@@ -567,7 +620,7 @@ class Game:
         else:
             full_env = dict(os.environ)
             full_env.update(game_env)
-            self.proc = subprocess.Popen([exe] + game_args, cwd=exe_dir, env=full_env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            self.proc = subprocess.Popen([exe] + game_args, cwd=work_dir, env=full_env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
 
         log.close()
 
@@ -605,8 +658,7 @@ class Game:
         if pid == 0:
             raise GameError(f"no game is serving the bridge on 127.0.0.1:{port} (a Debug build started without ROGUESQ_MCP_PORT=0, or one passed --mcp-port {port})")
 
-        self.session_dir = os.path.join(REPO, "dumps", "mcp", time.strftime("%Y%m%d_%H%M%S"))
-        os.makedirs(self.session_dir, exist_ok=True)
+        self.new_session_dir()
         # The game's console is not captured: wait_log and log_tail see nothing.
         self.log_path = os.path.join(self.session_dir, "game.log")
         open(self.log_path, "wb").close()
@@ -993,6 +1045,48 @@ class Game:
         return self.status()
 
 
+INSTANCE_NAME = re.compile(r"[a-z0-9_-]{1,16}")
+
+
+def select_instance(current, name):
+    """Point the calling thread's tools at the game named name (p1, p2, ...); names become session folder suffixes."""
+    if not INSTANCE_NAME.fullmatch(name or ""):
+        raise GameError(f"instance must match {INSTANCE_NAME.pattern}, got {name!r}")
+    current.name = name
+
+
+class CurrentGame:
+    """Stands in for one Game: every attribute is the game the calling thread selected, made on first use."""
+
+    def __init__(self, games, current):
+        self._games = games
+        self._current = current
+
+    def __getattr__(self, attr):
+        name = self._current.name
+        if name not in self._games:
+            self._games[name] = Game()
+            self._games[name].name = name
+        return getattr(self._games[name], attr)
+
+
+def launch_instance(games, name, config="Debug", env=None, args=None, timeout_s=60, record=None, settings=None, coop=None):
+    """Launch games[name]. While another instance runs it gets its own game folder and must use the same build config; coop adds coop_env's variables under env."""
+    game = games.setdefault(name, Game())
+    game.name = name
+    others = [g for n, g in games.items() if n != name and g.alive()]
+
+    for other in others:
+        if other.config and other.config != config:
+            raise GameError(f"instance {other.name} runs {other.config}; launch {config} only after closing it")
+
+    game_env = coop_env(coop, games) if coop else {}
+    game_env.update(env or {})
+    game.coop = coop
+    game.mp_port = int(game_env.get("ROGUESQ_MP_PORT", 0)) if coop else 0
+    return game.launch(config, game_env, args, timeout_s, record, settings, isolate=bool(others))
+
+
 def self_test():
     game = Game()
     try:
@@ -1245,6 +1339,100 @@ def self_test():
     print("self-test OK")
 
 
+def self_test_instances():
+    games, current = {}, threading.local()
+    proxy = CurrentGame(games, current)
+
+    select_instance(current, "p1")
+    assert proxy.name == "p1" and list(games) == ["p1"]
+    select_instance(current, "p3")
+    expect_error(lambda: proxy.call("frame_info"), "not launched")
+    expect_error(lambda: select_instance(current, "Bad/Name"), "instance")
+    expect_error(lambda: select_instance(current, "p1\n"), "instance")
+
+    a, b = Game(), Game()
+    a.name, b.name = "p1", "p2"
+    dirs = (a.new_session_dir(), b.new_session_dir())
+    assert dirs[0] != dirs[1], dirs
+
+    for d in dirs:
+        os.rmdir(d)
+
+    src = os.path.join(REPO, "dumps", "mcp", "stage_test_src")
+    dst = os.path.join(REPO, "dumps", "mcp", "stage_test_dst")
+    staged = ("rogue_squadron.z64", "rs64.n64.us.1.0.z64", "roguesq_video.json", "mods.json", "saves/pilot.sav", "mod_config/a.json", "mods/multiplayer-native/mod.json")
+
+    for rel in staged + ("RogueSquadron64Recomp.pdb",):
+        os.makedirs(os.path.dirname(os.path.join(src, rel)), exist_ok=True)
+        open(os.path.join(src, rel), "w").close()
+
+    try:
+        assert stage_work_dir(src, dst) == dst
+        for rel in staged:
+            assert os.path.isfile(os.path.join(dst, rel)), rel
+        assert not os.path.exists(os.path.join(dst, "RogueSquadron64Recomp.pdb"))
+    finally:
+        shutil.rmtree(src)
+        shutil.rmtree(dst, ignore_errors=True)
+
+    expect_error(lambda: coop_env("join", {"p1": a}), "no running host")
+    expect_error(lambda: coop_env("solo", {}), "coop")
+    env = coop_env("host", {})
+    assert env["ROGUESQ_MP"] == "host" and env["ROGUESQ_MP_UPNP"] == "0" and env["ROGUESQ_MP_TRANSPORT"] == "enet", env
+    assert env["ROGUESQ_WINDOW_POS"] == "left" and 0 < int(env["ROGUESQ_MP_PORT"]) < 65536, env
+
+    host = Game()
+    host.coop, host.mp_port = "host", int(env["ROGUESQ_MP_PORT"])
+    host.alive = lambda: True
+    join = coop_env("join", {"p1": host})
+    assert join["ROGUESQ_MP"] == "join" and join["ROGUESQ_MP_ADDR"] == "127.0.0.1" and join["ROGUESQ_MP_PORT"] == env["ROGUESQ_MP_PORT"], join
+    assert join["ROGUESQ_WINDOW_POS"] == "right", join
+
+    print("instance test OK")
+
+
+def self_test_pair():
+    """Two Debug instances in scripted co-op: both reach the mission together, hold and step on their own, and a long hold keeps the session."""
+    games = {}
+    boot = {"ROGUESQ_BOOT_TARGET": "level:0"}
+
+    try:
+        launch_instance(games, "p1", env=boot, coop="host")
+        expect_error(lambda: launch_instance(games, "p2", config="Release", coop="join"), "runs Debug")
+        launch_instance(games, "p2", env=boot, coop="join")
+        host, client = games["p1"], games["p2"]
+        assert os.path.dirname(client.log_path) != os.path.dirname(host.log_path)
+        assert os.path.isfile(os.path.join(client.session_dir, "work", "rogue_squadron.z64"))
+
+        for g in (host, client):
+            g.wait_log(r"\[ghost\] peer in mission", timeout_s=120, from_start=True)
+
+        for g in (host, client):
+            g.call("pause_at", {"clock": "mission", "frame": 300}, timeout_s=180)
+
+        held = client.call("frame_info")["clocks"]["mission"]
+        host_frame = host.call("step", {"frames": 30, "clock": "mission"}, timeout_s=60)["picture"]["clocks"]["mission"]
+        assert host_frame >= 330, host_frame
+        assert client.call("frame_info")["held"] and client.call("frame_info")["clocks"]["mission"] == held
+
+        # Past the 10 s mission-start wait and the 5-10 s ENet timeout: the link lives on its own thread.
+        time.sleep(15)
+
+        for g in (host, client):
+            assert g.alive(), g.log_tail()
+            g.call("resume")
+
+        time.sleep(5)
+
+        for g in (host, client):
+            assert "[ghost] peer left" not in g.log_tail(400), g.log_tail()
+    finally:
+        for g in games.values():
+            g.close()
+
+    print("pair test OK")
+
+
 def reconnect(game):
     game.disconnect()
     game.sock = socket.create_connection(("127.0.0.1", game.port), timeout=5)
@@ -1272,22 +1460,35 @@ def serve():
     import anyio
     from mcp.server.fastmcp import FastMCP
 
+    import inspect
+
     mcp = FastMCP("rs64")
-    game = Game()
+    games = {}
+    current = threading.local()
+    game = CurrentGame(games, current)
+
+    def in_instance(fn, instance, args, kwargs):
+        select_instance(current, instance)
+        return fn(*args, **kwargs)
 
     # FastMCP runs a plain function on its event loop, so one waiting call (pause_at) held every other tool, close included, until it returned.
+    # Every tool also takes instance (default p1), the game it acts on, so one server drives a co-op pair.
     def tool():
         def register(fn):
             @functools.wraps(fn)
-            async def run(*args, **kwargs):
-                return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+            async def run(*args, instance: str = "p1", **kwargs):
+                return await anyio.to_thread.run_sync(functools.partial(in_instance, fn, instance, args, kwargs))
+
+            sig = inspect.signature(fn)
+            extra = inspect.Parameter("instance", inspect.Parameter.KEYWORD_ONLY, default="p1", annotation=str)
+            run.__signature__ = sig.replace(parameters=[*sig.parameters.values(), extra])
             return mcp.tool()(run)
         return register
 
     @tool()
-    def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None, settings: dict | None = None) -> dict:
-        """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target). settings are roguesq_video.json keys merged over the player's file for this run only, e.g. {"antialiasing": 4, "graphicsAPI": "vulkan", "rayTracing": {"lights": false}}; the game reads and saves a copy in the session folder, so set_config and in-game changes never reach the player's file."""
-        return game.launch(config, env, args, timeout_s, record, settings)
+    def launch(config: str = "Debug", env: dict | None = None, args: list[str] | None = None, timeout_s: float = 60, record: str | None = None, settings: dict | None = None, coop: str | None = None) -> dict:
+        """Launch the game (cwd = build/<config>, RenderDoc injected, muted, dev mode) and connect to its MCP bridge. env adds ROGUESQ_* variables, e.g. {"ROGUESQ_BOOT_TARGET": "level:0"}. record=<path.rec> records the next mission's input (including press) as a replayable recording (ROGUESQ_LS_RECORD; needs a level boot target). settings are roguesq_video.json keys merged over the player's file for this run only, e.g. {"antialiasing": 4, "graphicsAPI": "vulkan", "rayTracing": {"lights": false}}; the game reads and saves a copy in the session folder, so set_config and in-game changes never reach the player's file. A second instance (instance="p2") launched while another runs gets its own copy of the game folder (saves, configs, mods) and must use the same config. coop="host" / "join" pairs instances in scripted co-op on this machine (join needs a running host instance); wait_log("\\[ghost\\] peer in mission") on both before pausing either, since a hold during the mission-start handshake drops the other to solo after 10 s."""
+        return launch_instance(games, current.name, config, env, args, timeout_s, record, settings, coop)
 
     @tool()
     def attach(port: int = DEFAULT_BRIDGE_PORT) -> dict:
@@ -1652,11 +1853,17 @@ def serve():
     try:
         mcp.run()
     finally:
-        game.close()
+        for g in games.values():
+            g.close()
 
 
 if __name__ == "__main__":
-    if "--self-test" in sys.argv:
+    if "--self-test-pair" in sys.argv:
+        self_test_pair()
+    elif "--self-test-instances" in sys.argv:
+        self_test_instances()
+    elif "--self-test" in sys.argv:
+        self_test_instances()
         self_test()
     else:
         serve()

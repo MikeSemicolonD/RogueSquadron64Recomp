@@ -43,7 +43,8 @@ Release builds, and so every shipped build, have none of it.
 - RT64 methods are queued to [lib/rt64/src/hle/rt64_rs64_mcp.cpp](../../lib/rt64/src/hle/rt64_rs64_mcp.cpp) and run on the gfx thread at the top of `State::updateScreen`, which runs every VI, paused or not, with F1 open or closed.
 - `launch` runs the game from `build/<config>` with RenderDoc injected, audio muted and dev mode on; `close` kills it. Output (stdout/stderr, dumps, screenshots) lands in `dumps/mcp/<session>/`.
 - `attach(port)` connects to a game the user started instead. Every tool works on it except `wait_log` (its console is not captured), and `close` only disconnects.
-- Co-op pairs: `tools/debug/lockstep/run-mp.ps1` serves the host's bridge on 47065 and the client's on 47066 (Debug builds), so `attach(47066)` drives the client with the same `pause_at`, `press` and `step` as a launched game.
+- Co-op pairs: every tool takes `instance` (default `p1`). `launch(coop="host")` and then `launch(coop="join", instance="p2")` start a pair, the second in its own copy of the game folder ([README](../../tools/debug/mcp/README.md#two-games-at-once)). `tools/debug/lockstep/run-mp.ps1` serves the host's bridge on 47065 and the client's on 47066 (Debug builds), so `attach(47065)` and `attach(47066, instance="p2")` drive both.
+- Holding one game of a pair does not stall the other: co-op is the ghost model, and the link runs on its own thread. The one exception is the mission-start handshake, where a hold longer than 10 s drops the other game to solo, so wait for `[ghost] peer in mission` on both first.
 
 ## The pause model
 

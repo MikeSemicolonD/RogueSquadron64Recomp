@@ -82,6 +82,12 @@ Never ask the user to say when something is on screen; their message arrives sec
 - Light preset edits, `rt_features` and `rt_debug_view` show only after the next `step`. `lights_active` lists the lights that shone in the last frame and the traced sun.
 - Hard-shadow debug views 1-4 are not the soft path the final image uses; check the soft shadow view too.
 
+## Co-op pairs
+
+- Every tool takes `instance` (default `p1`). Launch the host with `launch(env={"ROGUESQ_BOOT_TARGET": "level:0"}, coop="host")`, then the client with the same env, `coop="join"` and `instance="p2"`. Pass `instance="p2"` on every call meant for the client.
+- Wait for `wait_log("\\[ghost\\] peer in mission", instance=...)` on both before any pause: a hold during the mission-start handshake drops the other game to solo after 10 s. After that, holding or stepping one leaves the other running; its puppet just stops moving.
+- Close both instances when done (`close(instance="p2")` too).
+
 ## Finishing
 
 - `close()` kills the game; an `exit_code` of 1 after `close` is the kill, not a crash. Check the log for crashes instead: scan `log_path` for `Assertion|Access violation|SEH caught|null-call`.
