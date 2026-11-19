@@ -27,6 +27,8 @@ struct SessionHeader {
     // Widescreen and DRAW DISTANCE (percent) at record time: both change the object culls. draw_pct 0 = not recorded (older files).
     uint32_t widescreen = 0;
     uint32_t draw_pct = 0;
+    // The SELECT GAME pilot slot (0x80130B44), part of the settings hash; 0 in files that predate it, the slot replays use.
+    uint32_t slot = 0;
     // gMissionState 0x80130B10..0x80130B3F before initMission: rank and per-level progress carried from the pilot.
     std::array<uint8_t, 0x30> pilot = {};
     std::string build;
@@ -57,8 +59,10 @@ std::string format_frame(const FrameInput& f);
 bool parse_frame(const char* line, FrameInput* out);
 
 // "S <frame> <0|1>": the audio thread's answer to isSongHandleActive in tickSongFadeTimer on that frame (a sim input).
-std::string format_song_event(uint32_t frame, bool active);
-bool parse_song_event(const char* line, uint32_t* frame, bool* active);
+// "P <frame> <0|1>": the same for the speech-idle check that gates the mission-end responders (requestSpeechResponseMode1/2).
+std::string format_song_event(uint32_t frame, bool active, char kind = 'S');
+// Without kind, only "S" lines parse.
+bool parse_song_event(const char* line, uint32_t* frame, bool* active, char* kind = nullptr);
 
 // ROGUESQ_LS_SEED text (decimal or 0x hex) to a seed; 0 for null, junk or zero (the caller keeps its default).
 uint32_t parse_seed(const char* s);
@@ -106,8 +110,11 @@ std::string format_hash_line(uint32_t frame, const FrameHash& h);
 // One line per byte region ("<name> <hex>"), for diffing two runs at a divergent frame.
 std::string dump_regions(const uint8_t* rdram);
 
-// A recording: its header, frames and song events. False, with a log line, when the file can't be read or its header is bad.
-bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song);
+// The file for mission attempt n of one recording session: the path itself for 1, else "<stem>_try<n>.rec".
+std::string attempt_path(const std::string& path, int n);
+
+// A recording: its header, frames, song events and (when speech is given) speech-idle events. False, with a log line, when the file can't be read or its header is bad.
+bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song, std::map<uint32_t, std::vector<uint8_t>>* speech = nullptr);
 // An attract demo is playing (gGameSettings flags 0x80130B50 & 0x60).
 bool demo_active(const uint8_t* rdram);
 

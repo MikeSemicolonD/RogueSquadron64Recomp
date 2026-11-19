@@ -27,9 +27,9 @@ std::string format_header(const SessionHeader& h)
     char buf[768];
     snprintf(buf, sizeof(buf),
         "%s\nseed=%u\nlevel=%u\ncraft=%u\ndifficulty=%u\nflags0=0x%08X\ncontroller=%u\nexpansion=%u\n"
-        "cheats0=0x%08X\ncheats1=0x%08X\nnaboo=0x%08X\nsecondary=%u\ncruise=0x%08X\nwidescreen=%u\ndraw=%u\npilot=%s\nbuild=%s\n",
+        "cheats0=0x%08X\ncheats1=0x%08X\nnaboo=0x%08X\nsecondary=%u\ncruise=0x%08X\nwidescreen=%u\ndraw=%u\nslot=%u\npilot=%s\nbuild=%s\n",
         kMagic, h.seed, h.level, h.craft, h.difficulty, h.flags0, h.controller, h.expansion,
-        h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, h.widescreen, h.draw_pct, pilot, h.build.c_str());
+        h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, h.widescreen, h.draw_pct, h.slot, pilot, h.build.c_str());
 
     return std::string(buf) + (h.ship.empty() ? "" : "ship=" + h.ship + "\n") + "---\n";
 }
@@ -113,6 +113,7 @@ bool parse_header(const std::string& text, SessionHeader* out) {
         else if (key == "cruise") h.cruise_bits = v;
         else if (key == "widescreen") h.widescreen = v;
         else if (key == "draw") h.draw_pct = v;
+        else if (key == "slot") h.slot = v;
         else if (key == "build") h.build = val;
         else if (key == "ship") h.ship = val;
         else if (key == "pilot" && !parse_hex_bytes(val, h.pilot.data(), h.pilot.size())) return false;
@@ -209,30 +210,38 @@ bool parse_frame(const char* raw, FrameInput* out)
     return true;
 }
 
-std::string format_song_event(uint32_t frame, bool active) {
+std::string format_song_event(uint32_t frame, bool active, char kind) {
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "S %u %u", frame, active ? 1u : 0u);
+    snprintf(buf, sizeof(buf), "%c %u %u", kind, frame, active ? 1u : 0u);
 
     return buf;
 }
 
-bool parse_song_event(const char* raw, uint32_t* frame, bool* active)
+bool parse_song_event(const char* raw, uint32_t* frame, bool* active, char* kind)
 {
 
     const std::string norm = normalize_eol(raw);
     const char* line = raw ? norm.c_str() : nullptr;
+    char k = 0;
     unsigned f = 0;
     unsigned v = 0;
     char tail = 0;
 
-    if (!line || sscanf(line, "S %u %u%c", &f, &v, &tail) != 3 || tail != '\n' || v > 1)
+    if (!line || sscanf(line, "%c %u %u%c", &k, &f, &v, &tail) != 4 || tail != '\n' || v > 1)
+    {
+        return false;
+    }
+
+    if (k != 'S' && (k != 'P' || !kind))
     {
         return false;
     }
 
     *frame = f;
     *active = v != 0;
+
+    if (kind) *kind = k;
 
     return true;
 }
@@ -379,6 +388,7 @@ SessionHeader read_session(const uint8_t* rdram, uint32_t seed) {
     h.craft = rb(rdram, 0x80130B41u);
     h.difficulty = rb(rdram, 0x80130B42u);
     h.secondary = rb(rdram, 0x80130B43u);
+    h.slot = rb(rdram, 0x80130B44u);
     h.controller = rb(rdram, 0x80130B45u);
     h.flags0 = rw(rdram, 0x80130B4Cu);
     h.cheats0 = rw(rdram, 0x80130B58u);
@@ -397,6 +407,7 @@ void apply_session(uint8_t* rdram, const SessionHeader& h) {
 
     wb(rdram, 0x80130B42u, (uint8_t)h.difficulty);
     wb(rdram, 0x80130B43u, (uint8_t)h.secondary);
+    wb(rdram, 0x80130B44u, (uint8_t)h.slot);
     wb(rdram, 0x80130B45u, (uint8_t)h.controller);
     ww(rdram, 0x80130B4Cu, h.flags0);
     ww(rdram, 0x80130B58u, h.cheats0);
@@ -607,7 +618,23 @@ bool cutscene_skipped(bool was_running, uint32_t gate, uint32_t end_frame, bool 
     return was_running && !running && gate + 30u < end_frame;
 }
 
-bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song)
+std::string attempt_path(const std::string& path, int n) {
+
+    if (n <= 1)
+    {
+        return path;
+    }
+
+    const size_t slash = path.find_last_of("/\\");
+    const size_t dot = path.rfind('.');
+    const bool has_ext = dot != std::string::npos && (slash == std::string::npos || dot > slash);
+    const std::string stem = has_ext ? path.substr(0, dot) : path;
+    const std::string ext = has_ext ? path.substr(dot) : "";
+
+    return stem + "_try" + std::to_string(n) + ext;
+}
+
+bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* frames, std::map<uint32_t, std::vector<uint8_t>>* song, std::map<uint32_t, std::vector<uint8_t>>* speech)
 {
 
     FILE* f = fopen(path, "rb");
@@ -636,11 +663,14 @@ bool load_replay(const char* path, SessionHeader* h, std::vector<FrameInput>* fr
         FrameInput fi;
         uint32_t song_frame = 0;
         bool song_active = false;
+        char kind = 0;
 
         if (parse_frame(line, &fi)) {
             frames->push_back(fi);
-        } else if (parse_song_event(line, &song_frame, &song_active)) {
-            (*song)[song_frame].push_back(song_active ? 1 : 0);
+        } else if (parse_song_event(line, &song_frame, &song_active, &kind)) {
+            auto* events = kind == 'P' ? speech : song;
+
+            if (events) (*events)[song_frame].push_back(song_active ? 1 : 0);
         } else {
             break;
         }

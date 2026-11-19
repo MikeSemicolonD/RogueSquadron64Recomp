@@ -38,6 +38,13 @@ using rs64::mips::ww;
 
 enum class Mode { Off, Record, Replay };
 
+// Recorded audio-thread answers by mission frame, served in query order within a frame.
+struct AudioAnswers {
+    std::map<uint32_t, std::vector<uint8_t>> by_frame;
+    uint32_t frame = 0xFFFFFFFFu;
+    size_t idx = 0;
+};
+
 struct State {
     Mode mode = Mode::Off;
     bool active = false;
@@ -57,9 +64,8 @@ struct State {
     // Replay with ROGUESQ_LS_RECORD also set: replays one file and writes an upgraded copy (inputs replayed, audio answers live).
     bool rerecord = false;
     bool resume = false;
-    std::map<uint32_t, std::vector<uint8_t>> song;
-    uint32_t song_frame = 0xFFFFFFFFu;
-    size_t song_idx = 0;
+    AudioAnswers song;
+    AudioAnswers speech;
 
     // The god-mode bit of gGameSettingsFlags (0x80130B4C) is set by the invincibility mod after the session hook, inside initMission.
     uint32_t god = 0;
@@ -226,13 +232,16 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     // ROGUESQ_LS_EACH_MISSION=1 (smoke tests chaining levels in one launch): every mission starts a new session, rewriting the recording.
     static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION");
 
+    // A live recording keeps going through a retry or the next mission, into <name>_try<N>.rec: one file per mission attempt.
+    const bool next_file = s.mode == Mode::Record;
+
     if (s.missions > 1) {
         if (s.active)
         {
-            end_session(each ? "next mission" : "second initMission (one recording = one mission attempt)");
+            end_session(each ? "next mission" : next_file ? "mission restarted, recording the next attempt" : "second initMission (one recording = one mission attempt)");
         }
 
-        if (!each) return;
+        if (!each && !next_file) return;
 
         const int missions = s.missions;
 
@@ -249,7 +258,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
     if (s.mode == Mode::Record)
     {
-        const char* path = recomp::dbg::env_str("ROGUESQ_LS_RECORD");
+        const std::string path = attempt_path(recomp::dbg::env_str("ROGUESQ_LS_RECORD"), each ? 1 : s.missions);
         SessionHeader h = read_session(rdram, ghost ? rw(rdram, 0x80003470u) : seed);
         h.build = __DATE__ " " __TIME__;
         h.widescreen = (uint32_t)rs64::video::display_value(rs64::video::Display::Widescreen);
@@ -257,10 +266,10 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         s.cruise = rs64_throttle_cruise_live();
         memcpy(&h.cruise_bits, &s.cruise, 4);
         h.ship = rs64_ships_flying_id();
-        s.rec = fopen(path, "wb");
+        s.rec = fopen(path.c_str(), "wb");
 
         if (!s.rec) {
-            fprintf(stderr, "[ls] cannot write %s\n", path);
+            fprintf(stderr, "[ls] cannot write %s\n", path.c_str());
 
             return;
         }
@@ -272,16 +281,16 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         fflush(s.rec);
 
         if (!ghost) {
-            s.hash = open_hash(std::string(path) + ".hash");
+            s.hash = open_hash(path + ".hash");
             ww(rdram, 0x80003470u, h.seed);
         }
 
-        fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s%s\n", h.level, h.craft, h.seed, path, ghost ? " (co-op: input only)" : "");
+        fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s%s\n", h.level, h.craft, h.seed, path.c_str(), ghost ? " (co-op: input only)" : "");
     } else if (s.mode == Mode::Replay) {
         const char* path = recomp::dbg::env_str("ROGUESQ_LS_REPLAY");
         SessionHeader h;
 
-        if (!load_replay(path, &h, &s.frames, &s.song)) {
+        if (!load_replay(path, &h, &s.frames, &s.song.by_frame, &s.speech.by_frame)) {
             rs64_menu_request_quit();
 
             return;
@@ -329,7 +338,9 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
             if (resume >= 0 && (size_t)resume <= s.frames.size()) {
                 s.frames.resize((size_t)resume);
-                s.song.erase(s.song.lower_bound((uint32_t)resume), s.song.end());
+                for (AudioAnswers* a : {&s.song, &s.speech}) {
+                    a->by_frame.erase(a->by_frame.lower_bound((uint32_t)resume), a->by_frame.end());
+                }
                 s.resume = true;
             }
         }
@@ -944,8 +955,10 @@ extern "C" float rs64_ls_cruise(float live) {
     return live;
 }
 
-// tickSongFadeTimer's isSongHandleActive answer comes from the audio thread, so it is recorded per frame and replayed like input.
-extern "C" uint32_t rs64_ls_song_active(uint8_t* rdram, uint32_t live) {
+namespace {
+// An audio-thread answer the sim branches on: recorded per query while recording, served back in order while replaying.
+uint32_t audio_answer(uint8_t* rdram, uint32_t live, AudioAnswers& a, char kind, int& warned)
+{
 
     State& s = st();
 
@@ -958,37 +971,53 @@ extern "C" uint32_t rs64_ls_song_active(uint8_t* rdram, uint32_t live) {
 
     if (s.mode == Mode::Record || s.rerecord) {
         if (s.rec) {
-            fprintf(s.rec, "%s\n", format_song_event(frame, live != 0).c_str());
+            fprintf(s.rec, "%s\n", format_song_event(frame, live != 0, kind).c_str());
             fflush(s.rec);
         }
 
         return live;
     }
 
-    if (s.mode != Mode::Replay)
+    // A recording made before this answer was recorded has none of it: play it live, as those recordings always did.
+    if (s.mode != Mode::Replay || (kind == 'P' && a.by_frame.empty()))
     {
         return live;
     }
 
-    if (s.song_frame != frame) {
-        s.song_frame = frame;
-        s.song_idx = 0;
+    if (a.frame != frame) {
+        a.frame = frame;
+        a.idx = 0;
     }
 
-    const auto it = s.song.find(frame);
+    const auto it = a.by_frame.find(frame);
 
-    if (it == s.song.end() || s.song_idx >= it->second.size()) {
-        static int s_warned = 0;
-
-        if (s_warned++ < 5)
+    if (it == a.by_frame.end() || a.idx >= it->second.size()) {
+        if (warned++ < 5)
         {
-            fprintf(stderr, "[ls] song query on frame %u not in the recording; using the live answer\n", frame);
+            fprintf(stderr, "[ls] %s query on frame %u not in the recording; using the live answer\n", kind == 'P' ? "speech" : "song", frame);
         }
 
         return live;
     }
 
-    return it->second[s.song_idx++];
+    return it->second[a.idx++];
+}
+}
+
+// tickSongFadeTimer's isSongHandleActive answer comes from the audio thread, so it is recorded per frame and replayed like input.
+extern "C" uint32_t rs64_ls_song_active(uint8_t* rdram, uint32_t live) {
+
+    static int s_warned = 0;
+
+    return audio_answer(rdram, live, st().song, 'S', s_warned);
+}
+
+// The mission-end responders wait for speech to go idle (isSpeechBusyOrQueued, audio thread), so that answer is a sim input too.
+extern "C" uint32_t rs64_ls_speech_idle(uint8_t* rdram, uint32_t live) {
+
+    static int s_warned = 0;
+
+    return audio_answer(rdram, live, st().speech, 'P', s_warned);
 }
 
 // ROGUESQ_RELOC_GUARD=1: poison the moved per-player ranges at their old addresses and report any write there.

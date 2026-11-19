@@ -13,6 +13,8 @@ Run outputs (`.replay.hash`, logs) go to `logs/`, not here. Record and replay in
 
 A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, the per-frame state hashes written while recording. A recording without a `.hash` is input-only.
 
+Besides input, a mission recording stores the audio thread's answers the simulation branches on: `S` lines (song finished) and `P` lines (speech idle, which gates the mission-end result). A recording made before `P` lines existed plays that answer live, so its last ~33 frames, the mission end, match only when replayed at the speed it was recorded at.
+
 ## Missions
 
 | Id | Mission | Folder | Recordings |
@@ -38,7 +40,7 @@ A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, th
 | 18 | The Battle of Hoth (bonus) | | none yet |
 | 20 | CHICKEN (AT-ST passcode level) | [ai/20-chicken](ai/20-chicken) | see below |
 
-Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, and `construction_yards_bonus` were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
+Needs re-recording: `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, and `construction_yards_bonus` were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
 
 ### 00 Ambush at Mos Eisley
 
@@ -49,6 +51,12 @@ Needs re-recording: `defection_at_corellia`, `liberation_of_gerrard_v`, `the_jad
 | `mos_eisley_dive.rec` | Mission, no baseline | Stick held into a dive from frame 300; the co-op player-death test |
 
 The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod loaded, so replays must run with it staged; other gameplay mods (e.g. invincibility) must not be staged during replays.
+
+### 04 Liberation of Gerrard V
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `liberation_of_gerrard_v_20261118_200850.rec` (+ `.hash`) | Mission | 3982 frames, X-wing: a failed attempt, ending where the game offers the retry. The mission-failure test |
 
 ### 06 Imperial Construction Yards
 

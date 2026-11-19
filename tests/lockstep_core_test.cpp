@@ -12,7 +12,7 @@ static void test_header_roundtrip() {
     SessionHeader h;
     h.seed = 7; h.level = 5; h.craft = 2; h.difficulty = 1; h.flags0 = 0x00012203u;
     h.controller = 3; h.expansion = 1; h.cheats0 = 0x40u; h.cheats1 = 0; h.naboo = 0xDEADBEEFu; h.build = "test build";
-    h.secondary = 9; h.cruise_bits = 0x3F000000u; h.widescreen = 1; h.draw_pct = 553;
+    h.secondary = 9; h.cruise_bits = 0x3F000000u; h.widescreen = 1; h.draw_pct = 553; h.slot = 2;
     for (size_t i = 0; i < h.pilot.size(); ++i) {
         h.pilot[i] = (uint8_t)(i * 7 + 1);
     }
@@ -24,13 +24,19 @@ static void test_header_roundtrip() {
     CHECK(g.seed == 7 && g.level == 5 && g.craft == 2 && g.difficulty == 1 && g.flags0 == 0x00012203u);
     CHECK(g.controller == 3 && g.expansion == 1 && g.cheats0 == 0x40u && g.naboo == 0xDEADBEEFu && g.build == "test build");
     CHECK(g.secondary == 9 && g.cruise_bits == 0x3F000000u && g.pilot == h.pilot);
-    CHECK(g.widescreen == 1 && g.draw_pct == 553);
+    CHECK(g.widescreen == 1 && g.draw_pct == 553 && g.slot == 2);
     CHECK(g.ship.empty() && text.find("ship=") == std::string::npos);
     h.ship = "red_wing";
     CHECK(parse_header(format_header(h), &g) && g.ship == "red_wing");
     SessionHeader old;
     CHECK(parse_header("rs64-ls v2\nseed=1\n---\n", &old));
-    CHECK(old.draw_pct == 0 && old.ship.empty());
+    CHECK(old.draw_pct == 0 && old.ship.empty() && old.slot == 0);
+}
+
+static void test_attempt_path() {
+    CHECK(attempt_path("C:\\r\\gerrard_20261118_200850.rec", 1) == "C:\\r\\gerrard_20261118_200850.rec");
+    CHECK(attempt_path("C:\\r\\gerrard_20261118_200850.rec", 2) == "C:\\r\\gerrard_20261118_200850_try2.rec");
+    CHECK(attempt_path("dir.v2/run", 3) == "dir.v2/run_try3");
 }
 
 static void test_header_rejects_bad_magic() {
@@ -91,6 +97,14 @@ static void test_song_event_roundtrip() {
     CHECK(!parse_song_event("7 000000000100 255\n", &frame, &active));
     FrameInput f;
     CHECK(!parse_frame("S 7 1\n", &f));
+    CHECK(format_song_event(3733, true, 'P') == "P 3733 1");
+    CHECK(!parse_song_event("P 3733 1\n", &frame, &active));
+    char kind = 0;
+    CHECK(parse_song_event("P 3733 1\n", &frame, &active, &kind));
+    CHECK(kind == 'P' && frame == 3733 && active);
+    CHECK(parse_song_event("S 5 0\n", &frame, &active, &kind));
+    CHECK(kind == 'S' && frame == 5 && !active);
+    CHECK(!parse_song_event("Q 5 0\n", &frame, &active, &kind));
 }
 
 static void test_parsers_accept_crlf() {
@@ -345,6 +359,7 @@ int main() {
     test_env_parsers();
     test_header_roundtrip();
     test_header_rejects_bad_magic();
+    test_attempt_path();
     test_frame_roundtrip();
     test_parse_frame_rejects_partial();
     test_parse_frame_requires_complete_line();

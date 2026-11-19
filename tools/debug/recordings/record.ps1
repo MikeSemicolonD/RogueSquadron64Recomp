@@ -67,7 +67,7 @@ try {
         $env:ROGUESQ_LS_RECORD = $rec
         if ($Invincible) { $env:ROGUESQ_LS_GOD = "1" }
         $env:ROGUESQ_BOOT_TARGET = if ($Craft -ne "") { "level:$Level,$Craft" } else { "level:$Level" }
-        Write-Host "Mission recording -> $rec (boot target $env:ROGUESQ_BOOT_TARGET). Finish or fail the mission, then close the game."
+        Write-Host "Mission recording -> $rec (boot target $env:ROGUESQ_BOOT_TARGET). Finish or fail the mission, then close the game. A retry records into <name>_try2.rec and so on."
     } else {
         $env:ROGUESQ_INPUT_RECORD = $rec
         $env:ROGUESQ_FORCE_LEVEL = "$Level"
@@ -81,8 +81,12 @@ try {
 }
 
 if (Test-Path $rec) {
-    Write-Host "Wrote $rec"
-    if (Test-Path "$rec.hash") { Write-Host "Wrote $rec.hash" }
+    $stem = [IO.Path]::GetFileNameWithoutExtension($rec)
+    $attempts = @(Get-Item $rec) + @(Get-ChildItem -Path $dir -Filter "${stem}_try*.rec" | Sort-Object { [int]($_.BaseName -replace '.*_try', '') })
+    foreach ($a in $attempts) {
+        Write-Host "Wrote $($a.FullName)"
+        if (Test-Path "$($a.FullName).hash") { Write-Host "Wrote $($a.FullName).hash" }
+    }
 } else {
     Write-Warning "No recording written (a mission recording only starts at mission frame 0)."
 }
