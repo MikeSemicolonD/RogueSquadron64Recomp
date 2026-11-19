@@ -48,7 +48,7 @@ Audience: AI agents. Read `AGENTS.md` first (rules, dead ends, doc links), then 
 ```
 F5 GBI parse (gbi/rt64_gbi_f3dfactor5.cpp, rt64_gbi_f5_rdpstate.cpp)
   -> rs64lights::Candidate pushed to workload.rs64Lights (f5_push_light, max 512)
-render thread: FramebufferRenderer::fillRS64Lights (render/rt64_framebuffer_renderer.cpp)
+render thread: FramebufferRenderer::fillRS64Lights (render/rt64_framebuffer_renderer_rs64.cpp)
   -> resolve each Candidate to camera space (world[transformIndex], or CameraSpace)
   -> level presets (map space -> camera via the terrain frame), mesh/sprite presets already candidates
   -> lamp gating (lamp presets vs lamp marks), dedupe (same colour within 1 unit), keep 64 (`MaxLights`; `selectLights`: priority pools, nearest edge first, projectiles capped at `maxProjectileLights`)
@@ -169,8 +169,9 @@ frames are converted into the texture pool; manifest +8 is not a load address).
 
 ## 7. Files
 
-`lib/rt64/src/hle/rt64_rs64_lights.h` (Candidate/Resolved, config, keys, lamp store, screen maps),
-`lib/rt64/src/render/rt64_framebuffer_renderer.cpp` (`fillRS64Lights`), `lib/rt64/src/shaders/RS64LightsPS.hlsl`,
+`lib/rt64/src/hle/rt64_rs64_lights.h` includes them all: `rt64_rs64_point_lights.h` (Candidate/Resolved, keys, selection),
+`rt64_rs64_config.h` (config), `rt64_rs64_shared.h` (lamp store, preset views), `rt64_rs64_math.h` (screen maps);
+`lib/rt64/src/render/rt64_framebuffer_renderer_rs64.cpp` (`fillRS64Lights`), `lib/rt64/src/shaders/RS64LightsPS.hlsl`,
 `lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp` (mesh registry, sprite path, `f5_sprite_key`, `f5_lamp_light`),
 `lib/rt64/src/gbi/rt64_gbi_f5_rdpstate.cpp` (texrect handler), `lib/rt64/src/hle/rt64_rdp.cpp` (load addresses),
 `lib/rt64/src/preset/rt64_preset_light.*`, `lib/rt64/src/hle/rt64_state.cpp` (Lights tab, preset merge),

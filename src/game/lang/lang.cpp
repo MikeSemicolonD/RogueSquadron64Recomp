@@ -13,6 +13,7 @@
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
 #include "video/video_config.h"
+#include "hle/rt64_rs64_host.h"
 
 
 namespace rs64::lang {
@@ -364,8 +365,6 @@ void write_slots(uint8_t* rdram, const std::vector<uint8_t>& slots)
 } // namespace rs64::lang
 
 using namespace rs64::lang;
-
-extern "C" void rs64_f5_set_texture_pool_move(uint32_t orig, uint32_t moved, uint32_t size);
 
 // A scene's texture pool (bounds at 0x8011A850/54) moves to host RAM below 0x81000000 (the game takes texture pointers as RAM only for top byte 0x80); RT64 maps the move back. The previous
 // pool can still be live while the next loads, so pools alternate between two regions; stock pools are at most 1.28 MB (D_80037560+0x38, D_800CD2B0, D_800B072C), so either region fits.

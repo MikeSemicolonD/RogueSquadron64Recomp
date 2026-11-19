@@ -8,7 +8,7 @@ The game builds Factor 5 display lists on the CPU (recompiled MIPS). RT64 parses
 | --- | --- | --- |
 | Game code | `rogue_squadron.toml` hooks, [src/game/toml_hooks.c](../../src/game/toml_hooks.c), [patches/](../../patches/README.md) | The game decides it: what is drawn, when, which texture frame, culls, timers |
 | F5 GBI parse | [lib/rt64/src/gbi/](../../lib/rt64/src/gbi/) | The display list is right but RT64 reads it wrong: geometry, UVs, textures, sprites, terrain |
-| RT passes | [lib/rt64/src/render/rt64_framebuffer_renderer.cpp](../../lib/rt64/src/render/rt64_framebuffer_renderer.cpp), [lib/rt64/src/shaders/](../../lib/rt64/src/shaders/) `RS64*` | How the traced lighting looks or what it traces against |
+| RT passes | [lib/rt64/src/render/rt64_framebuffer_renderer_rs64.cpp](../../lib/rt64/src/render/rt64_framebuffer_renderer_rs64.cpp), [lib/rt64/src/shaders/](../../lib/rt64/src/shaders/) `RS64*` | How the traced lighting looks or what it traces against |
 
 ## Ray-tracing settings
 
@@ -16,10 +16,10 @@ The game builds Factor 5 display lists on the CPU (recompiled MIPS). RT64 parses
 | --- | --- |
 | A light, its colour, radius or what it is attached to (no rebuild) | `roguesq_lights.json`: the built-in set is [src/video/default_lights.json](../../src/video/default_lights.json) (compiled in), a mod or the exe-dir copy overrides it by name. Edit live in the F1 inspector's Lights tab or the RS64 Explorer's Lights panel. Format: [Light mods](../guides/modding.md) |
 | Which features are on, light slots per category | `rayTracing` in `roguesq_video.json`, read and written in [src/video/video_config.cpp](../../src/video/video_config.cpp); the RAY TRACING menu page is [mods/display-settings/roguesq_menu.json](../../mods/display-settings/roguesq_menu.json); shipped defaults per tier are in [video-presets/](../../video-presets/README.md) |
-| A tuning default (strength, bias, ray counts, temporal weight) | `rs64lights::config()` in [lib/rt64/src/hle/rt64_rs64_lights.h](../../lib/rt64/src/hle/rt64_rs64_lights.h); each has a `ROGUESQ_RT_*` override for A/B runs, listed in [debug-trace-env-vars.md](debug-trace-env-vars.md) |
-| A new on/off feature | `rs64lights::Feature` and `featureEnv` in `rt64_rs64_lights.h`, then `rt_setting` in `video_config.cpp` and a row on the menu page |
-| Light selection (the 64 kept, priorities, dedupe, fades) | `fillRS64Lights` / `selectLights` in `rt64_framebuffer_renderer.cpp` and `rt64_rs64_lights.h`; unit tests in [tests/rs64_lights_test.cpp](../../tests/rs64_lights_test.cpp) |
-| The shading itself | `RS64LightsPS.hlsl`, `RS64ShadowsPS.hlsl` (+ `RS64ShadowBlurPS`, `RS64ShadowTemporalPS`), `RS64FogShaftsPS.hlsl`, `RS64WaterMirrorPS.hlsl` in [lib/rt64/src/shaders/](../../lib/rt64/src/shaders/); the pass recording is `recordRS64Lights` / `recordRS64Shadows` / `recordRS64FogShafts` in `rt64_framebuffer_renderer.cpp` |
+| A tuning default (strength, bias, ray counts, temporal weight) | `rs64lights::config()` in [lib/rt64/src/hle/rt64_rs64_config.h](../../lib/rt64/src/hle/rt64_rs64_config.h); each has a `ROGUESQ_RT_*` override for A/B runs, listed in [debug-trace-env-vars.md](debug-trace-env-vars.md) |
+| A new on/off feature | `rs64lights::Feature` and `featureEnv` in `rt64_rs64_config.h`, then `rt_setting` in `video_config.cpp` and a row on the menu page |
+| Light selection (the 64 kept, priorities, dedupe, fades) | `fillRS64Lights` in `rt64_framebuffer_renderer_rs64.cpp`, `selectLights` in [rt64_rs64_point_lights.h](../../lib/rt64/src/hle/rt64_rs64_point_lights.h); unit tests in [tests/rs64_lights_test.cpp](../../tests/rs64_lights_test.cpp) |
+| The shading itself | `RS64LightsPS.hlsl`, `RS64ShadowsPS.hlsl` (+ `RS64ShadowBlurPS`, `RS64ShadowTemporalPS`), `RS64FogShaftsPS.hlsl`, `RS64WaterMirrorPS.hlsl` and the shared `RS64Trace.hlsli` in [lib/rt64/src/shaders/](../../lib/rt64/src/shaders/); the pass recording is `recordRS64Lights` / `recordRS64Shadows` / `recordRS64FogShafts` in `rt64_framebuffer_renderer_rs64.cpp` |
 
 ## Putting ray tracing on geometry
 
@@ -28,10 +28,10 @@ What the rays hit is built each frame from the main view's draws plus a static t
 | To change | Edit |
 | --- | --- |
 | Make a model part self-lit (glows, casts no shadow) | A mesh preset with `"emissive": true` in `roguesq_lights.json`; no code. Keys come from the F1 Lights tab's mesh picker |
-| Which draws cast shadows (opaque, cutout, none) | `rs64lights::casterClass` / `casterAfterDeny` in `rt64_rs64_lights.h`, applied per draw in `FramebufferRenderer::addFramebuffer` (`rt64_framebuffer_renderer.cpp`) |
+| Which draws cast shadows (opaque, cutout, none) | `rs64lights::casterClass` / `casterAfterDeny` in [rt64_rs64_shadows.h](../../lib/rt64/src/hle/rt64_rs64_shadows.h), applied per draw in `FramebufferRenderer::fillRS64ScenePasses` (`rt64_framebuffer_renderer_rs64.cpp`) |
 | Per-draw flags the parser sets (`rs64NoCast`, `rs64NoCastCutout`, `rs64EmissiveXlu`) | Filled during the parse in [rt64_gbi_f3dfactor5.cpp](../../lib/rt64/src/gbi/rt64_gbi_f3dfactor5.cpp) (`f5_push_mesh_presets`), cleared per workload in `hle/rt64_workload.cpp` |
-| The per-frame object BLAS / the terrain BLAS | `recordRS64ShadowScene` and `recordRS64TerrainBLAS` in `rt64_framebuffer_renderer.cpp`; the terrain map comes from `f5_refresh_terrain_map` in the F5 GBI |
-| Colours the reflection and GI rays see | `buildRS64HitColors` in `rt64_framebuffer_renderer.cpp` |
+| The per-frame object BLAS / the terrain BLAS | `recordRS64ShadowScene` and `recordRS64TerrainBLAS` in `rt64_framebuffer_renderer_rs64.cpp`; the terrain map comes from `f5_refresh_terrain_map` in the F5 GBI |
+| Colours the reflection and GI rays see | `buildRS64HitColors` in `rt64_framebuffer_renderer_rs64.cpp` |
 | Lights that follow sprites or meshes | `f5_push_light`, `f5_push_sprite_presets`, `f5_push_mesh_presets` in the F5 GBI |
 
 The [roguesquadron-raytracing skill](../../.claude/skills/roguesquadron-raytracing/SKILL.md) covers the light pipeline, coordinate spaces and preset keys in depth.

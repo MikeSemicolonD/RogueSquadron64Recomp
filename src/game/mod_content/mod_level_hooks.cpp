@@ -41,6 +41,7 @@
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
 #include "util/settings_file.h"
+#include "hle/rt64_rs64_host.h"
 
 using recomp::dbg::env_str;
 using recomp::dbg::env_on;

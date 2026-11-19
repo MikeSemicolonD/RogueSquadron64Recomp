@@ -29,6 +29,7 @@
 #include "librecomp/helpers.hpp"
 #include "librecomp/overlays.hpp"
 #include "librecomp/addresses.hpp"
+#include "hle/rt64_rs64_host.h"
 #include "hle/rt64_rs64_lights.h"
 #include "ultramodern/ultramodern.hpp"
 #include "util/debug_logs.h"
@@ -93,10 +94,6 @@ extern "C" void __osContRamWrite_recomp(uint8_t* /*rdram*/, recomp_context* ctx)
 extern "C" void __osPfsSelectBank_recomp(uint8_t* /*rdram*/, recomp_context* ctx) { _return<s32>(ctx, 1); }  // PFS_ERR_NOPACK
 extern "C" void osViGetCurrentField_recomp(uint8_t* /*rdram*/, recomp_context* ctx) { ctx->r2 = 0; }
 
-// Per-frame RT64 workload counts (lib/rt64 rt64_state.cpp), read-and-cleared here.
-extern "C" std::atomic<uint32_t> g_rs64_frame_tris;
-extern "C" std::atomic<uint32_t> g_rs64_frame_draws;
-extern "C" std::atomic<uint32_t> g_rs64_frame_texloads;
 
 extern "C" void osDpGetCounters_recomp(uint8_t* rdram, recomp_context* ctx)
 {

@@ -38,6 +38,7 @@
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include "util/host_ram_map.h"
+#include "hle/rt64_rs64_host.h"
 #include "hle/rt64_rs64_hud.h"
 #include "hle/rt64_rs64_transition.h"
 
@@ -63,8 +64,6 @@ static float env_mult(const char* name, float def) {
 
     return (m >= 0.25f && m <= 8.0f) ? m : def;
 }
-
-extern "C" int rs64_static_terrain_mode(void);
 
 // Draw distance multiplier for the camera far plane and object culls: the in-game DRAW DISTANCE setting (roguesq_video.json), live; ROGUESQ_DRAW_DIST overrides.
 // Capped while the game draws its own terrain, whose grid breaks up further out.

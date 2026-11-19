@@ -26,6 +26,7 @@ extern SDL_Window* g_sdl_window;
 #endif
 #include "hle/rt64_application.h"
 #include "hle/rt64_present_queue.h"
+#include "hle/rt64_rs64_host.h"
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
 #include "hle/rt64_rs64_vr.h"
@@ -63,8 +64,6 @@ using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 using recomp::dbg::env_u32;
 
-extern "C" volatile unsigned g_f5_heur[4];
-
 #ifdef RS64_MCP
 extern "C" void rs64_mcp_note_dl();
 #endif
@@ -83,10 +82,6 @@ extern void print_stack_with_symbols(void** frames, unsigned short count);
 // ultramodern events.cpp
 extern "C" uint8_t* g_rs64_parse_rdram;             // RDRAM snapshot for the current parse
 
-// lib/rt64 F5 GBI
-extern "C" volatile unsigned g_most_drawn_fb;        // most-drawn color image and its width
-extern "C" volatile unsigned g_most_drawn_fb_width;
-extern "C" volatile unsigned long long g_most_drawn_fb_ms;
 extern "C" volatile uint32_t g_rs64_clear_seq;          // mode-change clear count and size (hook_helpers.cpp)
 extern "C" volatile uint32_t g_rs64_clear_bytes;
 
