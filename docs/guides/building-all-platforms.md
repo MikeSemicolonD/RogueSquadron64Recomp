@@ -153,6 +153,43 @@ The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac archi
 
 **Touchscreens** (Windows, Linux): set `"enabled": true` in `roguesq_touch.json` (written next to the saves on first launch) to get the Android touch controls. The mouse pointer then acts as a finger and its game bindings are off, since many desktops deliver touches as mouse input (Raspberry Pi OS does for every touchscreen).
 
+**Controller settings** live in `roguesq_input.json` (written next to the saves on first launch). Rebind in-game under OPTIONS > CONTROLLER SETTINGS; the other keys:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `keyboard_enabled` | `true` | Read the keyboard |
+| `joystick_enabled` | `true` | Read joysticks and HOTAS |
+| `stick_range` | `80` | N64 stick value at full deflection |
+| `pad_deadzone` | `0.15` | Gamepad stick deadzone (0-1) |
+| `throttle_cruise` | `0.5` | Throttle position for cruise speed (0-1) |
+| `trigger_resistance` | `0.25` | DualSense adaptive trigger strength (0-1); `0` turns it off |
+| `mouse` | | `sensitivity`, `smoothing`, `curve`, `invert_x`, `invert_y` |
+| `rumble` | | `enabled`, `strength`, `scale_hits_by_damage`, `sustain_death_spiral`, and per-effect on/off under `effects` |
+| `lightbar` | | `enabled`, `health`, `hit_flash` (DualSense / DualShock 4) |
+| `joysticks` | | One entry per joystick: `guid`, `name`, `deadzone`, `invert_axes` (bit n flips axis n) |
+| `binds` | | N64 input name to a list of sources, below |
+
+`binds` keys are the N64 inputs (`A`, `B`, `Z`, `Start`, `LTrig`, `RTrig`, `CUp`/`CDown`/`CLeft`/`CRight`, `DpadUp`..., `StickUp`/`StickDown`/`StickLeft`/`StickRight`, `LookUp`..., `Throttle`, `RollLeft`, `RollRight`). Each source has a `kind` and `name`:
+
+| `kind` | `name` | Extra |
+| --- | --- | --- |
+| `key` | SDL key name (`Space`, `W`, `Left Shift`) | |
+| `padbutton` | `a`, `b`, `x`, `y`, `leftshoulder`, `start`, ... | |
+| `padaxis` | `leftx`, `lefty`, `rightx`, `righty`, `triggerleft`, `triggerright` | `dir`: `1` or `-1` |
+| `mousebutton` | `left`, `right`, `middle`, `x1`, `x2` | |
+| `mouseaxis` | `x`, `y` | `dir` |
+| `joybutton` / `joyaxis` / `joyhat` | `button3`, `axis1`, `hat0` | `device` (index into `joysticks`), `dir` for axes, `up`/`down`/`left`/`right` for hats |
+| `vrbutton` / `vraxis` | `a`, `b`, `x`, `y`, `menu`, `trigger-left`, `grip-right`, ... / `x`, `y` | `dir` for axes |
+
+Add `"with": { ... }` (another source) to make a combo that fires only while that input is held. A missing key keeps its default bindings, and deleting the file restores them all:
+
+```json
+"binds": {
+  "A": [ { "kind": "key", "name": "Space" }, { "kind": "padaxis", "name": "triggerright", "dir": 1 } ],
+  "Z": [ { "kind": "padbutton", "name": "leftshoulder" } ]
+}
+```
+
 **D3D11** is for GPUs with a D3D11 driver but no D3D12 or Vulkan one (NVIDIA GTX 400/500, AMD HD 5000/6000, Intel Ivy Bridge). Select it with `--gfx-api d3d11` or `"graphicsAPI": "d3d11"` in `roguesq_video.json`; automatic mode uses it only when neither D3D12 nor Vulkan starts. It needs `d3dcompiler_47.dll` (part of Windows 10), and ray-traced effects are off. MSAA isn't available on D3D11 (RT64 needs programmable sample positions); use SSAA or FXAA instead. D3D10-class GPUs (feature level 10_0/10_1: NVIDIA GeForce 8/9/200, AMD HD 2000-4000) get the same backend at feature level 10, with vertex processing on the CPU and without SSAA; `--gfx-api d3d10` or `"graphicsAPI": "d3d10"` forces that path on any GPU; this is tested only on a modern GPU capped at feature level 10, not on real hardware. Its shaders ship precompiled in `d3d11_shader_cache/` next to the exe; keep that folder. A render state the shipped list doesn't cover compiles the first time it appears (the affected objects are missing until then, up to about 18 s for some texture modes, and a "Compiling shaders" progress panel shows in the bottom-right corner meanwhile) and is cached for later runs.
 
 ### Frame rate
