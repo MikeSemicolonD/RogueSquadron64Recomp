@@ -238,6 +238,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticable when in Widescreen. This is normal cutscene behaviour.
 
+- Turrets and structures aren't always uniformly connected to the ground, showing a gap between the structure and the ground.
+
 - Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. *CPU heavy* in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'. Raising the FPS limit and turning off frame interpolation alleviates this issue.
 
 - Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations look choppy for a few ms) due to glyphs, graphics and sounds loading in on the fly when menus load.
