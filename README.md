@@ -294,7 +294,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x` for performance reasons.
 
-- Draw distance will change on the fly relative to the cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes.
+- Draw distance will change on the fly relative to the intro/outro cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes. Mid-game cutscenes however will use the user's set draw distance.
 
 ### Roadmap
 
