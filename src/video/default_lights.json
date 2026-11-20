@@ -182,9 +182,9 @@
                             0
                         ],
                         "diffuseColor": [
-                            3,
-                            2.4,
-                            1.05
+                            6,
+                            4.8,
+                            2.1
                         ],
                         "attenuationRadius": 1500,
                         "attenuationExponent": 2,

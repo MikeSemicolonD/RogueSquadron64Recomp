@@ -653,6 +653,16 @@ static void testDedupeLights() {
     h[1].pos[0] = 300.0f;
     h[1].color[0] = 0.5f;
     CHECK(dedupeLights(h, 2, 1.0f) == 2);
+
+    // The pickup's per-part copies, a few units apart, always merge (within 1% of the radius), so it never flips between one and two lights.
+    Resolved p[2];
+    for (Resolved& r : p) {
+        r.kind = KindMesh;
+        r.radius = 1500.0f;
+    }
+
+    p[1].pos[1] = 6.0f;
+    CHECK(dedupeLights(p, 2, 1.0f) == 1);
 }
 
 static void testConsensusCameraDelta() {
