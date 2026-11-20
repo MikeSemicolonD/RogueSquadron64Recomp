@@ -1,4 +1,5 @@
 #include "game/game_state.h"
+#include "game/hook_helpers.h"
 #include "util/debug_logs.h"
 #include "lockstep/lockstep_core.h"
 #include <algorithm>
@@ -10,6 +11,18 @@
                              // g_state_table, RS_STATE_COUNT
 
 static std::atomic<int> g_current{-1};
+
+// The boot attribution screens (menuOverlayInit action 9) run before any overlay state is set, so no table rule can see them.
+static constexpr int kAttribution = RS_STATE_COUNT;
+static constexpr int kAttributionScene = 9;
+
+static const char* state_id(int i)
+{
+
+    if (i == kAttribution) return "attribution";
+
+    return (i >= 0 && i < RS_STATE_COUNT) ? g_state_table[i].id : "unknown";
+}
 static std::atomic<bool> g_cutscene_running{false};
 static std::atomic<bool> g_cutscene_viewer{false};
 static std::atomic<uint32_t> g_cutscene_skips{0};
@@ -95,12 +108,14 @@ void rs64_state_poll(const uint8_t* rdram)
         }
     }
 
+    if (best < 0 && g_current_scene == kAttributionScene) best = kAttribution;
+
     const int prev = g_current.exchange(best, std::memory_order_relaxed);
     static const bool s_log = recomp::dbg::env_on("ROGUESQ_LOG_GAMESTATE");
 
     if (s_log && (best != prev))
     {
-        fprintf(stderr, "[gamestate] -> %s\n", (best >= 0) ? g_state_table[best].id : "unknown");
+        fprintf(stderr, "[gamestate] -> %s\n", state_id(best));
     }
 
     static uint32_t s_gate = 0;
@@ -163,9 +178,7 @@ extern "C" int rs64_state_current(void) {
 extern "C" const char* rs64_state_current_id(void)
 {
 
-    int i = g_current.load(std::memory_order_relaxed);
-
-    return (i >= 0 && i < RS_STATE_COUNT) ? g_state_table[i].id : "unknown";
+    return state_id(g_current.load(std::memory_order_relaxed));
 }
 
 // ---- Force: stage values that TOML slot hooks consume at natural transition points. ----

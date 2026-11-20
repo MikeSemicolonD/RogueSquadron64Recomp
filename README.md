@@ -236,7 +236,9 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
-- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. CPU heavy in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'.
+- During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticable when in Widescreen. This is normal cutscene behaviour.
+
+- Some CPU performance hitching and slowdown (~20fps) in spots (although not as bad as the real N64 game). This is expected since the game is very CPU heavy with a lot of systems running off of counters based on a variable timestep. *CPU heavy* in the sense that the game has its own internal scheduler meaning the majority of the time it's actually waiting on a counter or something to 'finish'. Raising the FPS limit and turning off frame interpolation alleviates this issue.
 
 - Frame rate seems to drop temporarily when the game initially loads into the Profile Select menu (menu transition animations look choppy for a few ms) due to glyphs, graphics and sounds loading in on the fly when menus load.
 
@@ -252,13 +254,15 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Button doesn't respond to input during the first few frames when it is highlighted.
 
-- The starfield in the background used during the credits sequence really **is** *that* blurry with visible artifacts everywhere.
+- The background images used during the credits sequence AND showroom menu really **is** *that* blurry with visible artifacts everywhere.
 
 - Lasers + missiles popping out of existence due to the number of them being generated at once. This is the game's normal pooled object behavior. There's a larger-object-pool mod that extends this limit.
 
 - During the end sequence a few firework effects (After 4 go off in sequence and are visible on screen) don't display.
 
 - Camera jitter after the player dies, spirals out and hits the ground while the camera is over a sharp incline.
+
+- A craft's ground shadow can show as a thin dark line stretching down the screen, when part of the shadow picks up the wrong ground height (e.g. the Beggar's Canyon ending near the landing pad).
 
 #### Ray Tracing Caveats
 
@@ -527,6 +531,13 @@ A **MASSIVE** extension to the foundational work originally done by [Dávid Peth
 A save editor also exists in *`tools/web/save-editor`* as an HTML page, allowing a user to easily edit and export a save into any of the following formats: *`.bin`, `.eep`, `.srm`, `.sra` and `.raw`*
 
 ## 'Proper' AI Agent Usage
+
+> [!IMPORTANT]
+> **Please be involved in the loop when doing agentic coding.**
+>
+> An agent **does not know** what *looks* and what *feels* right for **any game**. When developing, verify bug fixes and play test to ensure consistency.
+>
+> If it can be helped, it'd be wise to create a 'unit test' to check the issue to ensure the bug remains fixed.
 
 Using an AI Agent properly comes down to handing it the *right set of tools*, *the right resources/knowledge to perform the work* and *instructions*. **AGENTS.md** provides the baseline instructions for your agent to make changes to this project. In addition to that, **skill** files *(just like AGENTS.md)* are used to provide instructions for things like tools, specific tasks and/or processes. **MCP** servers/tools can further augment existing applications by giving handles/methods for agents to *better* perform tasks.
 

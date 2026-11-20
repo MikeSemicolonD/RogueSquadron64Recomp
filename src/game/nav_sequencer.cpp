@@ -331,6 +331,9 @@ static const int REPRESS_INTERVAL = 60;
 
 static bool is(const char* st, const char* v) { return std::strcmp(st, v) == 0; }
 
+// SELECT LEVEL's AVAILABLE CRAFT panel for the picked level: bridgeMenuState (u8 0x800CDAC4) 3.
+static bool available_craft(const uint8_t* rdram) { return rdram[0xCDAC4u ^ 3] == 3; }
+
 // Press `btn` on the retry interval (used while parked waiting for a checkpoint).
 static void nav_repress(uint16_t btn)
 {
@@ -454,7 +457,9 @@ static void nav_level(uint8_t* rdram, const char* st)
             if (!is(st, "cinematic")) nav_repress(N64_A_BUTTON);
             break;
         case kStepLevelSelect:  // SELECT LEVEL: write target level, confirm, until AVAILABLE CRAFT
-            if (is(st, "menu.level_select")) {
+            if (is(st, "menu.level_select") && available_craft(rdram)) {
+                nav_advance();
+            } else if (is(st, "menu.level_select")) {
 
                 // A mod or bonus level is walked to with the D-pad (cursor u8 0x800CDAC1 = level id, screen state 0x800CDAC4) and picked as a player would, so
                 // its confirm (briefing, medals, craft) runs; a stock level is written: gGameSettings currentLevel (u8), gCurrentLevel (u32).
@@ -473,13 +478,11 @@ static void nav_level(uint8_t* rdram, const char* st)
                 nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
                 nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
                 nav_repress(N64_A_BUTTON);
-            } else if (is(st, "menu.craft_select")) {
-                nav_advance();
             }
             break;
         case kStepCraftSelect:  // AVAILABLE CRAFT (the bridge hologram): A opens the craft-select hangar
             if (s_run.hangar_frames > 0) { nav_advance(); return; }
-            if (is(st, "menu.craft_select")) nav_repress(N64_A_BUTTON);
+            if (is(st, "menu.level_select") && available_craft(rdram)) nav_repress(N64_A_BUTTON);
             break;
         case kStepHangar:  // the hangar: turn the bays to the target craft, confirm, until mission
             if (nav_step_craft(rdram, g_target.b, "level"))
@@ -1135,7 +1138,7 @@ static void nav_lobby(uint8_t* rdram, const char* st) {
                 return;
             }
 
-            if (is(st, "cinematic") || is(st, "unknown")) s_watchdog = 0;
+            if (is(st, "cinematic") || is(st, "unknown") || is(st, "attribution")) s_watchdog = 0;
 
             // Test: ROGUESQ_NAV_WATCH_CUTSCENES=1 sits through every cutscene (a late joiner), pressing nothing while one plays.
             static const bool s_watch = recomp::dbg::env_on("ROGUESQ_NAV_WATCH_CUTSCENES");
@@ -1326,7 +1329,7 @@ static void force_tick(uint8_t* rdram)
     const bool was_armed = s_armed;
 
     if (is(st, "mission")) s_armed = false;
-    else if ((s_was_name && !name) || is(st, "menu.level_select") || is(st, "menu.craft_select")) s_armed = true;
+    else if ((s_was_name && !name) || is(st, "menu.level_select")) s_armed = true;
 
     s_was_name = name;
 
@@ -1527,7 +1530,7 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
 
     // Time the game spends on its own is not a stuck step: the boot before the first menu (longer than either budget on the Android emulator), any cutscene,
     // which plays on wall time at any speed (the hangar's take-off runs 12 s after its load), and a level's opening crawl.
-    if ((s_step == 0 && (is(st, "unknown") || is(st, "cinematic"))) || rs64_state_in_cinematic() || rs64::host::flag("crawl")) s_watchdog = 0;
+    if ((s_step == 0 && (is(st, "unknown") || is(st, "attribution") || is(st, "cinematic"))) || rs64_state_in_cinematic() || rs64::host::flag("crawl")) s_watchdog = 0;
 
     if (s_watchdog == 0) s_step_since = now;
 

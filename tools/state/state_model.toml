@@ -55,7 +55,7 @@ classify = [
 focus = ["gCurrentMenuData"]
 
 # State ids name the screen, one level under "menu"; how deep a screen sits in the game's menus is not part of the id (the MCP menu tool tracks the path).
-# Menu pages are on the menu tree screen (0x800CFF50 = 2), SELECT LEVEL and AVAILABLE CRAFT on screen 1 and the hangar on 0, which keeps the siblings apart.
+# Menu pages are on the menu tree screen (0x800CFF50 = 2), SELECT LEVEL (with its AVAILABLE CRAFT panel) on screen 1 and the hangar on 0, which keeps the siblings apart.
 # SELECT GAME and ENTER NAME (menu id 1) on the menu tree screen (0x800CFF50 = 2). 0x800CE626 looked like a sub-step but is a frame counter's high byte.
 # SELECT LEVEL, AVAILABLE CRAFT and the hangar keep menu id 1; bridgeMenuState (u8 0x800CDAC4: 4 SELECT GAME and the hangar, 2 SELECT LEVEL, 3 AVAILABLE CRAFT) and the screen tell them apart.
 # After a mission the menu data is zero (menuId 0), so SELECT LEVEL and AVAILABLE CRAFT key on the loaded overlay (u32 0x800375B0: 0 mission, 1 menu, 2 cinematic) instead of the menu ptr.
@@ -76,23 +76,12 @@ focus = ["gCurrentMenuData", "gGameSettings"]
 id = "menu.level_select"
 name = "Select level"
 parent = "menu"
-# The SELECT LEVEL screen (0x800CFF50 = 1) before bridgeMenuState reaches 2 (it is 0 for a few frames after a pilot is picked) counts too.
+# The SELECT LEVEL screen (0x800CFF50 = 1) before bridgeMenuState reaches 2 (it is 0 for a few frames after a pilot is picked) counts too, and so does the
+# picked level's AVAILABLE CRAFT panel (bridgeMenuState 3): the craft is chosen in the hangar.
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00010000 },
-  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x03000000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x04000000 },
-]
-focus = ["gCurrentMenuData", "gGameSettings"]
-
-[[state]]
-id = "menu.craft_select"
-name = "Available craft"
-parent = "menu"
-classify = [
-  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
-  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00010000 },
-  { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x03000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 

@@ -190,7 +190,7 @@ def test_classify_real_descriptor_states():
         assert classify(m, b) == "menu.hangar"
     _set_u8(b, 0x800CDAC4, 3)
     _set_u16(b, 0x800CFF50, 1)
-    assert classify(m, b) == "menu.craft_select"
+    assert classify(m, b) == "menu.level_select"
 
     # the results screen after a mission: menu data cleared, bridgeMenuState left at the hangar's 4
     b = _blank_rdram()

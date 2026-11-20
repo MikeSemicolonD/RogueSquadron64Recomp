@@ -24,8 +24,7 @@ function classifyState() {
         var id = mem.u8[0x800CE734];               // menu id
         if (id == 1) { var sub = mem.u8[0x800CE626];
             if (sub == 0) return "menu.select_game";
-            if (sub == 1) return "menu.level_select";
-            if (sub == 2) return "menu.craft_select";
+            if (sub == 1 || sub == 2) return "menu.level_select";
             return "menu"; }
         var nm = { 0: "menu.main", 2: "menu.options", 3: "menu.game_settings", 4: "menu.elite_rogues",
                    5: "menu.controller_settings", 6: "menu.sound_settings", 7: "menu.passcodes",

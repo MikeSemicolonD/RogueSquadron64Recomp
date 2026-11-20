@@ -218,7 +218,7 @@ Read the linked doc before working in that area.
 - **Where code lives**: [docs/engine/project-layout.md](docs/engine/project-layout.md). The forks under `lib/` carry intentional `if(false) fprintf(...)` toggles and game-specific guards: don't propose stripping them.
 - **Test, validation and RE tools**: [docs/engine/debug-tools.md](docs/engine/debug-tools.md). Never time a screenshot by wall clock: hold an exact frame, then capture the window by PID. Trace callers and globals with `tools/re/rz/rzq.py` before grepping `RecompiledFuncs/`.
 - **Crash and hang dumps**: [docs/engine/debugging-with-visual-studio.md](docs/engine/debugging-with-visual-studio.md#crashes-and-hangs).
-- **Live frames**: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md). Use it instead of asking the user for F1 screenshots.
+- **Live frames**: [docs/engine/rt64-mcp.md](docs/engine/rt64-mcp.md). Use it instead of asking the user for F1 screenshots. For a visual glitch, hold the frame and `renderdoc_capture` it before tracing CPU code.
 - **Factor 5 display lists**: [docs/reference/factor5-gbi.md](docs/reference/factor5-gbi.md) (opcodes) and [docs/reference/f5-model-dl-spec.md](docs/reference/f5-model-dl-spec.md) (grammar).
 - **Co-op**: [docs/guides/multiplayer.md](docs/guides/multiplayer.md). The mod reaches the game only through `mp_host.h`, and a new base-side need is a flag or table entry, never a direct call. Host code reads the relocated per-player arrays through `rs64::ls::relocated()`.
 - **Engine internals**: [docs/reference/game-architecture.md](docs/reference/game-architecture.md) (overlays, host RAM, state model, frame pacing, audio, scheduler queues, exception handling). Rules from it:
