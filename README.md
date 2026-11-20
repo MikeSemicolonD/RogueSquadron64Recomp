@@ -88,7 +88,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 - **Online two-player co-op:** host or join from a **MULTIPLAYER** page on the main menu. Your partner flies alongside you as a wingman, shares objectives, lives, and the mission result.
   - Multiplayer is shipped as a `multiplayer-native` mod. Uses [miniupnp](https://github.com/miniupnp/miniupnp) and a fork of [ENet](https://github.com/lsalzman/enet) called [ENet6](https://github.com/SirLynix/enet6).
   - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
-- **Ways to connect:**
+- **Ways to connect:** there is no official server. See [docs/guides/co-op-setup.md](docs/guides/co-op-setup.md) for more details.
   - **Direct:** works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
   - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi direct (macOS uses 'Network Sharing').
   - **Steam, using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).

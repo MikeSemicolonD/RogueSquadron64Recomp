@@ -2,7 +2,11 @@
 
 Co-op is for two players, and both need the same version of the game. Start it from the main menu: MULTIPLAYER, pick a pilot, then HOST GAME or JOIN GAME.
 
-Playing on the same network needs no setup. Playing over the internet depends on the host's router, and there is no official server, so one of the routes below has to work for you.
+Playing on the same network needs no setup.
+
+**There is no official or dedicated server.** Over the internet, something on the path has to accept incoming connections: either the host's router lets the friend in (UPnP or a forwarded port), or both players connect out to something that does (a relay server someone runs at a public address, Steam, or a VPN). One of the routes below has to work for you.
+
+![The three ways to connect over the internet: direct through the host's router, through a relay server, or through Steam or a VPN](images/co-op-routes.svg)
 
 | Route | What it needs | Try it when |
 | --- | --- | --- |
