@@ -106,7 +106,7 @@ void rs64_state_poll(const uint8_t* rdram)
 
     if (running && !was_running)
     {
-        fprintf(stderr, "[cutscene] started at frame %u of %u\n", gate, endFrame);
+        fprintf(stderr, "[cutscene] started at frame %u of %u (level %u %s)\n", gate, endFrame, rs64_state_cutscene_level(), rs64_state_cutscene_kind());
     }
 
     s_gate = gate;
@@ -117,6 +117,29 @@ void rs64_state_poll(const uint8_t* rdram)
 
 extern "C" uint32_t rs64_state_level(void) {
     return g_level.load(std::memory_order_relaxed);
+}
+
+static std::atomic<uint32_t> g_cutscene_level{0};
+static std::atomic<uint32_t> g_cutscene_kind{0};
+
+extern "C" void rs64_state_cutscene_note(uint32_t level, uint32_t kind)
+{
+
+    g_cutscene_level.store(level & 0xFFu, std::memory_order_relaxed);
+    g_cutscene_kind.store(kind & 0xFFu, std::memory_order_relaxed);
+}
+
+extern "C" uint32_t rs64_state_cutscene_level(void) {
+    return g_cutscene_level.load(std::memory_order_relaxed);
+}
+
+extern "C" const char* rs64_state_cutscene_kind(void)
+{
+
+    static constexpr const char* kKinds[] = { "intro", "outro", "special" };
+    const uint32_t kind = g_cutscene_kind.load(std::memory_order_relaxed);
+
+    return kind < 3 ? kKinds[kind] : "cutscene";
 }
 
 extern "C" int rs64_state_current(void) {

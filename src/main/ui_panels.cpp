@@ -695,13 +695,15 @@ static void draw_fps_counter()
     {
         const double present_ms = rs64_rt64_present_ms();
 
-        ImGui::Text("Game     %3.0f FPS  %5.1f ms  frame %d", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f, ImGui::GetFrameCount());
+        ImGui::Text("Game     %3.0f FPS  %5.1f ms", io.Framerate, io.Framerate > 0.0f ? 1000.0f / io.Framerate : 0.0f);
         ImGui::Text("Display  %3.0f FPS  %5.1f ms", present_ms > 0.0 ? 1000.0 / present_ms : 0.0, present_ms);
 
-        // The running clocks' frames (ls-618_mission-618), the numbers MCP pause_at and capture names use.
+        // The running clock's frame (ingame-618, cutscene-412_ingame-30, menu.main-15), the numbers MCP pause_at and capture names use.
         const std::string clocks = rs64_clock_label();
 
-        if (!clocks.empty()) {
+        if (clocks.rfind("cutscene-", 0) == 0) {
+            ImGui::Text("Clocks   %s  (level %u %s)", clocks.c_str(), rs64_state_cutscene_level(), rs64_state_cutscene_kind());
+        } else if (!clocks.empty()) {
             ImGui::Text("Clocks   %s", clocks.c_str());
         }
     }

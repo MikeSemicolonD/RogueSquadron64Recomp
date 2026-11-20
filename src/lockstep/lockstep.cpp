@@ -546,18 +546,46 @@ std::string rs64_clock_label()
         newest = std::max(newest, seen.second);
     }
 
+    // Clocks reached within a few frames of the newest pause point are the ones running now.
+    const auto running = [&](const char* name) {
+
+        const auto it = s_clock_seen.find(name);
+
+        return it != s_clock_seen.end() && newest - it->second.second <= milliseconds(100);
+    };
+
+    const auto part = [&](const std::string& name) { return name + "-" + std::to_string(s_clock_seen[name].first); };
+
     std::string label;
 
-    // Clocks reached within a few frames of the newest pause point are the ones running now.
-    for (const auto& [name, seen] : s_clock_seen) {
-        if (newest - seen.second > milliseconds(100)) {
-            continue;
-        }
-
-        label += (label.empty() ? "" : "_") + name + "-" + std::to_string(seen.first);
+    if (running("cutscene")) {
+        label = part("cutscene");
+    } else if (running("crawl")) {
+        label = part("crawl");
     }
 
-    return label;
+    // ingame counts the mission's frames, so it replaces the mission state; the state is left out under a cutscene or crawl.
+    if (running("ingame"))
+    {
+        return label + (label.empty() ? "" : "_") + part("ingame");
+    }
+
+    if (!label.empty())
+    {
+        return label;
+    }
+
+    std::string state;
+    steady_clock::time_point latest{};
+
+    for (const auto& [name, seen] : s_clock_seen) {
+        if (name != "nav" && seen.second >= latest) {
+            state = name;
+            latest = seen.second;
+        }
+    }
+
+    return state.empty() ? label : part(state);
 }
 
 extern "C" void rs64_pause_point(const char* clock, uint32_t frame)
@@ -802,8 +830,8 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         return;
     }
 
-    // The "ls" clock: frames since this session's mission started, which restarts with every chained mission (the state clock may not).
-    rs64_pause_point("ls", s.frame);
+    // The "ingame" clock: frames since this recording or replay's mission started (the recording's frame numbers), which restarts with every chained mission (the state clock may not).
+    rs64_pause_point("ingame", s.frame);
 
     if (s.mode == Mode::Replay) {
         ls_renderdoc_point(s);

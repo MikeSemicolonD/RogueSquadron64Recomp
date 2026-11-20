@@ -464,6 +464,9 @@ void rs64_th_executeActorType4Effect_800F8694(uint8_t* rdram, recomp_context* ct
 void rs64_th_executeActorType4Effect_800F870C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_executeActorType4Effect_800F90FC(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_npcTieVariantSteerToward_800DA8CC(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_checkAndReturnByteFlagAsU8_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_state_cutscene_note(uint32_t level, uint32_t kind);
+void rs64_th_advanceNpcOnCurvedPath_8006C010(uint8_t* rdram, recomp_context* ctx);
 void rs64_grow_dl_pool(uint8_t* rdram);
 void rs64_th_buildAndRegisterDefaultMaterial_80018098(uint8_t* rdram, recomp_context* ctx);
 void rs64_menu_confirm_main(uint8_t* rdram);

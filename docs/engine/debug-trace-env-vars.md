@@ -458,7 +458,7 @@ Inert unless set. Record and replay are active only in real missions (never attr
 | `ROGUESQ_LS_REPLAY` | unset | `<path.rec>`: replay a recording (enter the same level and craft, e.g. with `ROGUESQ_BOOT_TARGET`); writes `<path.rec>.replay.hash` and quits at the end. |
 | `ROGUESQ_LS_RESUME` | unset | `<frame>` (with both `LS_REPLAY` and `LS_RECORD`): replay the first file's frames before `<frame>`, then record live input into the second file and keep running. Rewinds a run to a checkpoint. |
 | (both `LS_REPLAY` and `LS_RECORD`) | | Re-record: replays the first file's inputs and writes an upgraded copy to the second path (header, frames, live audio answers such as `S <frame> <0\|1>` song events), plus its hash baseline. Run at 1x. |
-| `ROGUESQ_LS_EACH_MISSION` | unset | `1`: every mission starts a new lockstep session (fixed step, forced seed, the `ls` pause clock from 0) instead of the first mission only; a recording is rewritten each time. For chaining levels in one launch. |
+| `ROGUESQ_LS_EACH_MISSION` | unset | `1`: every mission starts a new lockstep session (fixed step, forced seed, the `ingame` pause clock from 0) instead of the first mission only; a recording is rewritten each time. For chaining levels in one launch. |
 | `ROGUESQ_LS_KEEP_RUNNING` | unset | `1`: a replay keeps running after its last frame, to reach mission-end teardown and the ending cutscene. |
 | `ROGUESQ_LS_HASH_OUT` | unset | Replay hash log path. |
 | `ROGUESQ_LS_DUMP_FRAMES` | unset | `lo-hi` (or one frame): also write the raw bytes of every hashed region for those frames to `<hash log>.dump`, plus one `npc` line per live NPC with its hashed fields. |

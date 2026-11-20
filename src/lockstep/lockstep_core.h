@@ -149,8 +149,11 @@ inline std::vector<PauseTarget> parse_pause_targets(const std::string& spec)
 }
 
 // A target names its clock or, at a dot, any of its sub-states (menu covers menu.options).
+// "ls" is the in-game clock's old name.
 inline bool pause_clock_matches(const std::string& target, const std::string& clock)
 {
+
+    if (target == "ls") return clock == "ingame";
 
     return clock == target || (clock.size() > target.size() && clock.compare(0, target.size(), target) == 0 && clock[target.size()] == '.');
 }

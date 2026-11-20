@@ -264,10 +264,10 @@ def enter(game, target_dir):
 
 
 def hold(game, clock, shots, mission, after_restart=False):
-    """Hold on each (frame, suffix, action) of `clock` in turn; action(game), if any, runs on the held frame before stepping on. Shots are named mission-<frame> on the ls clock."""
+    """Hold on each (frame, suffix, action) of `clock` in turn; action(game), if any, runs on the held frame before stepping on. Shots are named mission-<frame> on the ingame clock."""
 
     prev = None
-    name = "mission" if clock == "ls" else clock
+    name = "mission" if clock == "ingame" else clock
 
     for frame, suffix, action in shots:
         if action:
@@ -292,14 +292,14 @@ def tap(game, buttons, wait):
     """Press for 2 frames from a held frame, then hold again `wait` lockstep frames later."""
 
     game.call("press", {"buttons": buttons, "frames": 2})
-    game.call("step", {"frames": wait, "clock": "ls", "timeout_s": 120}, 135)
+    game.call("step", {"frames": wait, "clock": "ingame", "timeout_s": 120}, 135)
 
 
 def pause_settings_cycle(game, at, pages, skip):
     """Held at lockstep frame `at`, pause and open each pause page path (as in pause_chain), then step every setting row through all its values with A,
     one shot per value (pause-<page>-<key>-NN), until it is back where it started; B and START return to the game. Rows in `skip` are left alone."""
 
-    game.call("pause_at", {"clock": "ls", "frame": at, "timeout_s": 240}, 255)
+    game.call("pause_at", {"clock": "ingame", "frame": at, "timeout_s": 240}, 255)
 
     # START can land on a fly-in or skip-intro prompt instead of pausing, and a page can take an extra press to close, so go by the page the game reports.
     for _ in range(8):
@@ -364,14 +364,14 @@ def pause_settings_cycle(game, at, pages, skip):
 def pause_chain(out, level, at, pages, frames, speed):
     """Every pause page in one fixed-step mission: held on lockstep frame `at`, START opens the root, and each page path ("1/display": a page id or mod page
     name per level) is opened from the root on held frames (MCP pause_menu sets the cursor, then A) and shot `frames` lockstep frames later; B per level goes back
-    to the root. The ls clock runs on while paused, so every shot is frame-exact."""
+    to the root. The ingame clock runs on while paused, so every shot is frame-exact."""
 
     settle = PAUSE_SETTLE
     press = tap
 
     def body(game):
 
-        game.call("pause_at", {"clock": "ls", "frame": at, "timeout_s": 240}, 255)
+        game.call("pause_at", {"clock": "ingame", "frame": at, "timeout_s": 240}, 255)
         press(game, ["start"], settle)
 
         for page in pages:
@@ -384,12 +384,12 @@ def pause_chain(out, level, at, pages, frames, speed):
                 press(game, ["a"], frames[0] if i == len(path) - 1 else settle)
 
             if not path:
-                game.call("step", {"frames": frames[0], "clock": "ls", "timeout_s": 120}, 135)
+                game.call("step", {"frames": frames[0], "clock": "ingame", "timeout_s": 120}, 135)
 
             shot(game, game.target_dir, f"pause-{frames[0]:06d}", False)
 
             for prev, frame in zip(frames, frames[1:]):
-                game.call("step", {"frames": frame - prev, "clock": "ls", "timeout_s": 120}, 135)
+                game.call("step", {"frames": frame - prev, "clock": "ingame", "timeout_s": 120}, 135)
                 shot(game, game.target_dir, f"pause-{frame:06d}", False)
 
             for _ in path:
@@ -470,7 +470,7 @@ def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
 
                 # A mission that ends on its own (won or lost) before its shots are done is not a failure: the nav walks its results to the next level.
                 try:
-                    hold(game, "ls", [(f, "", None) for f in frames], True, after_restart=i > 0)
+                    hold(game, "ingame",[(f, "", None) for f in frames], True, after_restart=i > 0)
 
                     if pause_pages:
                         pause_settings_cycle(game, frames[-1] + 30, pause_pages, pause_skip)
@@ -625,7 +625,7 @@ def run(args):
         def body(game):
 
             enter(game, os.path.join(out, f"{folder}{level:02d}"))
-            hold(game, "ls", shots, True)
+            hold(game, "ingame",shots, True)
 
             if pause_pages:
                 pause_settings_cycle(game, shots[-1][0] + 30, pause_pages, m["levels"].get("pause_skip", ()))
@@ -741,7 +741,7 @@ def memory_run(out, level, loops, at, speed):
         samples = []
 
         for i in range(loops):
-            game.call("pause_at", {"clock": "ls", "frame": at, "timeout_s": 240, "next": i > 0}, 255)
+            game.call("pause_at", {"clock": "ingame", "frame": at, "timeout_s": 240, "next": i > 0}, 255)
             samples.append(private_bytes(game.proc.pid))
 
             with open(path, "w") as f:
@@ -803,7 +803,7 @@ def image_diff(a, b, diff_path=None):
 
 
 # Per target kind: the most pixels (percent) that may change by more than PIXEL_DELTA (None = not compared), and the sidecar fields that must match.
-# Missions and pause pages (fixed step, ls clock) and menus (ROGUESQ_MENU_FIXED, nav clock) match exactly. Cutscenes match except animated water and
+# Missions and pause pages (fixed step, ingame clock) and menus (ROGUESQ_MENU_FIXED, nav clock) match exactly. Cutscenes match except animated water and
 # ground textures and subtitles, which follow the voice stream (measured up to 15%), so their limit only catches a wrong camera, scene or model.
 RULES = {
     "level": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),

@@ -745,7 +745,7 @@ class Game:
             # the bridge answers frame_info on its own thread while this call waits.
             watch = timeout_s > 10 and method != "frame_info"
             # A wait for the next mission (next, after) outlives the current one on purpose.
-            on_ls = (params or {}).get("clock") == "ls" and not (params or {}).get("next") and "after" not in (params or {})
+            on_ls = (params or {}).get("clock") in ("ingame", "ls") and not (params or {}).get("next") and "after" not in (params or {})
             log_at = os.path.getsize(self.log_path) if watch and self.log_path and os.path.exists(self.log_path) else 0
             fail = re.compile(WAIT_LOG_FAIL)
             last_dl, moved_at, checked_at = None, time.time(), time.time()
@@ -775,7 +775,7 @@ class Game:
                     if not self.attached:
                         idle.check(info, method)
                     # On the lockstep clock, progress is that clock: it stops at a game over while the game keeps drawing.
-                    dl = info.get("clocks", {}).get("ls" if on_ls else "dl")
+                    dl = info.get("clocks", {}).get("ingame" if on_ls else "dl")
                     if info.get("held") or dl != last_dl:
                         last_dl, moved_at = dl, checked_at
                     elif on_ls and dl is None:
@@ -1547,9 +1547,9 @@ def serve():
 
     @tool()
     def pause_at(clock: str, frame: int, timeout_s: float = 120, next: bool = False) -> dict:
-        """Hold the game so the picture is `frame` of `clock`, then freeze RT64 on it. Clocks: cutscene (the cutscene's own frames; the boot logos, attract cutscenes and mission cutscenes), crawl, ls (a replay's lockstep frame), or a game state id (mission, menu.main, ...; frames since entered). Use the clock the moment belongs to: a RenderDoc capture is named after the clocks running when it was taken (cap_cutscene-412_...), and those are the numbers to pass here. Launches run with ROGUESQ_FIXED_STEP=1, so game time advances one frame per frame and each of these frame numbers is the same picture on every launch. dl (display lists since boot) still depends on load times and is refused here (pause_now and step use it within a run). A frame already passed needs a relaunch, or next=true to wait for the clock to start over (the next cutscene, or the next mission for ls); a run already going but short of `frame` counts. To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        """Hold the game so the picture is `frame` of `clock`, then freeze RT64 on it. Clocks: cutscene (the cutscene's own frames; the boot logos, attract cutscenes and mission cutscenes), crawl, ingame (a recording's or replay's frame since the mission started; ls is the old name), or a game state id (mission, menu.main, ...; frames since entered). Use the clock the moment belongs to: a RenderDoc capture is named after the clocks running when it was taken (cap_cutscene-412_...), and those are the numbers to pass here. Launches run with ROGUESQ_FIXED_STEP=1, so game time advances one frame per frame and each of these frame numbers is the same picture on every launch. dl (display lists since boot) still depends on load times and is refused here (pause_now and step use it within a run). A frame already passed needs a relaunch, or next=true to wait for the clock to start over (the next cutscene, or the next mission for ingame); a run already going but short of `frame` counts. To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
         if clock == "dl":
-            raise RuntimeError("dl frames drift between launches: pause on the cutscene/crawl/ls/state clock the moment belongs to (a capture's name lists them), or pause_now and step")
+            raise RuntimeError("dl frames drift between launches: pause on the cutscene/crawl/ingame/state clock the moment belongs to (a capture's name lists them), or pause_now and step")
 
         info = game.call("frame_info")
         now = info.get("clocks", {}).get(clock)

@@ -23,6 +23,8 @@ void rs64_th_cinematicLoopBody_entry(uint8_t* rdram, recomp_context* ctx)
     // attribution VI redirect steals the cinematic's swaps.
     g_current_scene = -1;
 
+    rs64_state_cutscene_note((uint32_t)ctx->r4, (uint32_t)ctx->r5);
+
     // Periodic yield to break the cinematic thread-starvation stall.
     rs64_cine_yield();
 
@@ -307,6 +309,18 @@ void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* c
     s_render_view_test_next = 1;
 }
 
+
+// checkAndReturnByteFlagAsU8 entry: the view test walkers and other large units run before their render path, a render test like the rest.
+void rs64_th_checkAndReturnByteFlagAsU8_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
+}
+
+// advanceNpcOnCurvedPath 0x8006C010: the view test of a ground mark (a destroyed structure's scorch), a render test like the rest.
+void rs64_th_advanceNpcOnCurvedPath_8006C010(uint8_t* rdram, recomp_context* ctx) {
+
+    s_render_view_test_next = 1;
+}
 
 // transformVec3ToNpcLocalWithScale entry
 void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx) {

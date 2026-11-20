@@ -291,6 +291,7 @@ static void test_pause_targets() {
     // A clock matches its own name and, at a dot, its sub-states.
     CHECK(pause_clock_matches("menu", "menu.options") && pause_clock_matches("menu.options", "menu.options"));
     CHECK(!pause_clock_matches("menu.opt", "menu.options") && !pause_clock_matches("menu.options", "menu") && !pause_clock_matches("crawl", "cutscene"));
+    CHECK(pause_clock_matches("ls", "ingame") && pause_clock_matches("ingame", "ingame") && !pause_clock_matches("ls", "mission"));
 }
 
 static void test_follow_step() {

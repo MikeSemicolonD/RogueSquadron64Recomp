@@ -1112,6 +1112,12 @@ extern "C" void rs64_grow_dl_pool(uint8_t* rdram)
 
     uint32_t head = rd(kFreeHead);
 
+    // The hook runs twice per pool build; linking the chunks again would close the list into a loop.
+    if (head >= kStart && head < RS64_HR_DL_CHUNKS_END)
+    {
+        return;
+    }
+
     for (uint32_t i = 0; i < kCount; ++i)
     {
         const uint32_t c = kStart + i * kChunk;

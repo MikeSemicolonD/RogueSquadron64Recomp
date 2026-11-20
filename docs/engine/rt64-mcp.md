@@ -55,7 +55,8 @@ RT64's own pause (F4) only freezes the picture: it drops new display lists while
 
 Clocks:
 
-- `ls` counts frames of the lockstep session (missions launched with a recording, `ROGUESQ_LS_RECORD`). With `ROGUESQ_LS_EACH_MISSION=1` it starts over at every mission.
+- `ingame` counts mission frames while recording or replaying (`ROGUESQ_LS_RECORD`, `ROGUESQ_LS_REPLAY`); these are the recording's frame numbers. With `ROGUESQ_LS_EACH_MISSION=1` it starts over at every mission. `ls` is still accepted as its old name.
+- The overlay's `Clocks` line shows one clock: the cutscene (with its level and intro / outro / special) or crawl when one plays, plus `ingame` in a recording or replay, otherwise the current game state.
 - `nav` counts game frames since the game read the A press that ends a `menu:` path (the boot target's or a `nav {menu}`). A raw `call("pause_at", {..., "after": n})` holds only once the clock has restarted more than n times, so a client can read the count, send `nav`, and pause without racing the press.
 - A clock that starts over drops its old frame. `pause_at(..., next=true)` holds only after its clock has started over: frame N of the next cutscene or the next chained mission. `frame_info` and the held picture list each clock's restart count (`restarts`).
 
