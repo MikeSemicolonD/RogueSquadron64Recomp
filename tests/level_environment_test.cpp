@@ -40,6 +40,18 @@ int main()
     parseEnvironment("not json", errors);
     CHECK(errors.size() == 1);
 
+    errors.clear();
+
+    const Environment bounded = parseEnvironment(R"({ "bounds": [0, 30, 12.5, 4] })", errors);
+
+    CHECK(errors.empty());
+    CHECK(bounded.hasBounds && bounded.bounds[1] == 30.0f && bounded.bounds[2] == 12.5f);
+    CHECK(!empty.hasBounds);
+
+    parseEnvironment(R"({ "bounds": [1, 2, 3] })", errors);
+    parseEnvironment(R"({ "bounds": [1, -2, 3, 4] })", errors);
+    CHECK(errors.size() == 2);
+
     // hmp lighting block at 0x30: a point light, a flagged sun, then the sun (Construction Yards' colour, its mission sun normalized).
     std::vector<uint8_t> hmp(0x30 + 0xC + 3 * 0x20, 0);
 

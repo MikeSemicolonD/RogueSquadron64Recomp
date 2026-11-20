@@ -1,6 +1,7 @@
 #pragma once
 // A level's fog and clouds, from a mod's assets/level/<folder>/environment.json, and its sun colour from the level's hmp. No game access here.
 #include "json/json.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -30,6 +31,9 @@ struct Environment {
     bool hasAltitude = false;
     float altitude = 0.0f;
     Color cloudTint;
+    // Flight area: how far in from the map's min X, max X, min Z and max Z edges the craft is turned back.
+    bool hasBounds = false;
+    float bounds[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
 };
 
 inline Color parseColor(const nlohmann::json& v, const char* name, std::vector<std::string>& errors)
@@ -115,6 +119,23 @@ inline Environment parseEnvironment(const std::string& text, std::vector<std::st
         }
 
         if (clouds.contains("tint")) env.cloudTint = parseColor(clouds["tint"], "cloud tint", errors);
+    }
+
+    if (doc.contains("bounds"))
+    {
+        const auto& b = doc["bounds"];
+        const bool ok = b.is_array() && (b.size() == 4) && std::all_of(b.begin(), b.end(), [](const nlohmann::json& v) { return v.is_number() && (v.get<float>() >= 0.0f); });
+
+        if (ok)
+        {
+            env.hasBounds = true;
+
+            for (size_t i = 0; i < 4; i++) env.bounds[i] = b[i].get<float>();
+        }
+        else
+        {
+            errors.push_back("bounds is not [min X, max X, min Z, max Z] insets of 0 or more");
+        }
     }
 
     return env;

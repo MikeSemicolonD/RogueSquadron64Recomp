@@ -978,6 +978,12 @@ void rs64_th_setViewStateBytesAndFadeScale_entry(uint8_t* rdram, recomp_context*
     rs64_env_fog_color(ctx);
 }
 
+// loadPlayerStartPosition 0x800B0060
+void rs64_th_loadPlayerStartPosition_800B0060(uint8_t* rdram, recomp_context* ctx) {
+
+    rs64_env_flight_bounds(rdram);
+}
+
 // cinematicSplineWalkerNpcHandler 0x8005C2F0
 void rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(uint8_t* rdram, recomp_context* ctx) {
 

@@ -919,6 +919,12 @@ func = "cinematicSplineWalkerNpcHandler"
 before_vram = 0x8005C2F0
 text = '{ rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(rdram, ctx); }'
 
+# Flight area per side from a level's environment.json, where every path of the function has set the stock bounds.
+[[patches.hook]]
+func = "loadPlayerStartPosition"
+before_vram = 0x800B0060
+text = '{ rs64_th_loadPlayerStartPosition_800B0060(rdram, ctx); }'
+
 # Cloud sheet update: wind and a fixed altitude from a level's environment.json.
 [[patches.hook]]
 func = "updateWalkerParticlePositions"

@@ -3551,7 +3551,25 @@ function lookPanel()
       parts.push(lookColor('Cloud colour', 'Back to the tan Taloraan colour', clouds.tint, [182, 140, 87], (c) => setClouds('tint', c)));
     }
 
+    // Until a side is changed every side uses the level's own inset; then all four are kept in environment.json.
+    const own = datFlightInset(dv);
+    const insets = doc.bounds ?? [own, own, own, own];
+    const [W, H] = mapSize();
+    const setBounds = (b) => changeEnv('Flight area', (d) => (b ? (d.bounds = b) : delete d.bounds));
+    const side = (label, k) => lookSlider(label, 'How far in from this edge of the map the craft is turned back', insets[k], 0, (k < 2 ? W : H) - insets[k ^ 1] - 2, 0.5, (v) => setBounds(insets.map((x, i) => (i === k ? v : x))));
+
+    parts.push(
+      elem('div', { className: 'lookHead' }, elem('b', { textContent: 'Flight area' }), ...(doc.bounds ? [iconButton('undo', 'Back to the level\'s own', () => setBounds(undefined))] : [])),
+      side('X min side', 0),
+      side('X max side', 1),
+      side('Z min side', 2),
+      side('Z max side', 3)
+    );
+
     box.replaceChildren(...parts);
+
+    if (!$('lookPanel').hidden && lookPanelDir === dir)
+      showFlightArea(insets, setBounds);
   };
 
   liveRuleViews.add({ box, render });
@@ -3569,9 +3587,15 @@ function openLookPanel() {
 setEditIcon($('btnLook'), 'globe');
 $('btnLook').append('Water, fog and clouds…');
 $('btnLook').removeAttribute('aria-label');
-$('btnLook').onclick = () => ($('lookPanel').hidden || lookPanelDir !== selected ? openLookPanel() : ($('lookPanel').hidden = true));
+
+const closeLookPanel = () => {
+  $('lookPanel').hidden = true;
+  showFlightArea(null);
+};
+
+$('btnLook').onclick = () => ($('lookPanel').hidden || lookPanelDir !== selected ? openLookPanel() : closeLookPanel());
 setEditIcon($('lookClose'), 'close');
-$('lookClose').onclick = () => ($('lookPanel').hidden = true);
+$('lookClose').onclick = closeLookPanel;
 
 // ---- Opening crawls (mod/assets/crawl/<name>/crawl.json): the crawl of the level being edited. A stock chapter level's (0, 5, 10,
 // 15) is the mod's replacement for that chapter; a mod level's is the crawl its levels.json names. Until the first edit the game's (or
@@ -5256,7 +5280,7 @@ function syncSelPanel()
     $('rulesPanel').hidden = true;
 
   if (lookPanelDir !== selected)
-    $('lookPanel').hidden = true;
+    closeLookPanel();
 
   hud();
 }
@@ -5640,7 +5664,10 @@ const cornerGeo = new THREE.SphereGeometry(1, 12, 8);
 const _cw = new THREE.Vector3();
 
 // Constant on-screen size: about 1.2% of the distance to the camera.
-const sizeCorners = () => corners.forEach((h) => h.scale.setScalar(camera.position.distanceTo(h.getWorldPosition(_cw)) * 0.012));
+const sizeCorners = () => [
+  ...corners,
+  ...(flightArea?.handles ?? [])
+].forEach((h) => h.scale.setScalar(camera.position.distanceTo(h.getWorldPosition(_cw)) * 0.012));
 let corners = [];
 let cornerDrag = null;
 
@@ -5841,6 +5868,136 @@ canvas.addEventListener('pointerup', (e) => {
   const it = sel.it;
 
   setPathPoints(it, it.points, `Move point ${c.point + 1}`);
+}, true);
+
+// The flight area, drawn while the Water, fog and clouds panel is open: the craft is turned back at this box. insets are how far in from
+// the map's min X, max X, min Z and max Z edges each side is; a handle in the middle of a side drags that side alone.
+const flightMat = new THREE.LineBasicMaterial({ color: 0xff5a4a, depthTest: false, transparent: true });
+const flightHandleMat = new THREE.MeshBasicMaterial({ color: 0xff5a4a, depthTest: false, transparent: true });
+let flightArea = null;
+let flightDrag = null;
+
+function flightBox(insets)
+{
+  const [W, H] = mapSize();
+
+  return [insets[0], W - insets[1], insets[2], H - insets[3]];
+}
+
+function flightOutline(insets)
+{
+  const [x0, x1, z0, z1] = flightBox(insets);
+  const at = (x, z) => new THREE.Vector3(x, levelHeight(x, z) - 0.3, z);
+  const ring = [];
+
+  for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]])
+  {
+    const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
+
+    for (let i = 0; i < n; i++)
+      ring.push(at(ax + (bx - ax) * i / n, az + (bz - az) * i / n));
+  }
+
+  ring.push(ring[0].clone());
+
+  return new THREE.BufferGeometry().setFromPoints(ring);
+}
+
+function placeFlightHandles()
+{
+  const [x0, x1, z0, z1] = flightBox(flightArea.insets);
+  const mx = (x0 + x1) / 2;
+  const mz = (z0 + z1) / 2;
+
+  [[x0, mz], [x1, mz], [mx, z0], [mx, z1]].forEach(([x, z], k) => flightArea.handles[k].position.set(x, levelHeight(x, z) - 0.3, z));
+}
+
+// insets null hides the box; save(insets) stores a finished drag.
+function showFlightArea(insets, save)
+{
+  flightArea?.group.removeFromParent();
+  flightArea = null;
+
+  const world = root?.getObjectByName('markers')?.parent;
+
+  if (!insets || !world || !Number.isFinite(mapSize()[0]))
+    return;
+
+  const group = new THREE.Group();
+  const line = new THREE.Line(flightOutline(insets), flightMat);
+
+  line.renderOrder = 10;
+  line.raycast = () => {};
+  group.add(line);
+
+  const handles = [0, 1, 2, 3].map((side) => {
+    const h = new THREE.Mesh(cornerGeo, flightHandleMat);
+
+    h.renderOrder = 10;
+    h.userData.flightSide = side;
+    group.add(h);
+
+    return h;
+  });
+
+  world.add(group);
+  flightArea = { group, line, handles, insets: insets.slice(), save };
+  placeFlightHandles();
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !flightArea)
+    return;
+
+  const h = pick(e, flightArea.handles);
+
+  if (!h)
+    return;
+
+  flightDrag = { side: h.object.userData.flightSide, y: h.object.position.y };
+  controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
+  e.stopImmediatePropagation();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!flightDrag)
+    return;
+
+  e.stopImmediatePropagation();
+
+  const r = canvas.getBoundingClientRect();
+
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), root.localToWorld(new THREE.Vector3(0, flightDrag.y, 0)));
+  const w = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+
+  if (!w)
+    return;
+
+  const l = root.worldToLocal(w);
+  const [W, H] = mapSize();
+  const ins = flightArea.insets;
+  const side = flightDrag.side;
+  const span = side < 2 ? W : H;
+  const along = side < 2 ? l.x : l.z;
+  const inset = side % 2 ? span - along : along;
+
+  // A side stays on the map and at least 2 units (one cell) from the opposite side.
+  ins[side] = Math.round(Math.min(Math.max(inset, 0), span - ins[side ^ 1] - 2) * 10) / 10;
+  flightArea.line.geometry.dispose();
+  flightArea.line.geometry = flightOutline(ins);
+  placeFlightHandles();
+}, true);
+canvas.addEventListener('pointerup', (e) => {
+  if (!flightDrag)
+    return;
+
+  e.stopImmediatePropagation();
+  flightDrag = null;
+  controls.enabled = true;
+  flightArea.save(flightArea.insets.slice());
 }, true);
 setTool('translate');
 setEditMode(null);

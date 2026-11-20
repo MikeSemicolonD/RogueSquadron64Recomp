@@ -1395,6 +1395,28 @@ extern "C" int rs64_level_has_clouds(void)
     return s_env_clouds ? 1 : 0;
 }
 
+// loadPlayerStartPosition, after it set the flight area from the map edges and the start record's one inset: a level's own inset per side.
+extern "C" void rs64_env_flight_bounds(uint8_t* rdram)
+{
+
+    if (!s_env || !s_env->hasBounds)
+    {
+        return;
+    }
+
+    constexpr uint32_t kGrid = 0x80136DC0u;
+    constexpr uint32_t kBounds = 0x8010B790u;
+    const float minX = rs64::mips::rf(rdram, kGrid + 0x20) + s_env->bounds[0];
+    const float maxX = rs64::mips::rf(rdram, kGrid + 0x24) - s_env->bounds[1];
+    const float minZ = rs64::mips::rf(rdram, kGrid + 0x2C) + s_env->bounds[2];
+    const float maxZ = rs64::mips::rf(rdram, kGrid + 0x30) - s_env->bounds[3];
+
+    rs64::mips::wf(rdram, kBounds, minX);
+    rs64::mips::wf(rdram, kBounds + 0x4, maxX);
+    rs64::mips::wf(rdram, kBounds + 0x8, minZ);
+    rs64::mips::wf(rdram, kBounds + 0xC, maxZ);
+}
+
 // setFog entry: a0-a2 are the fog colour.
 extern "C" void rs64_env_fog_color(recomp_context* ctx)
 {

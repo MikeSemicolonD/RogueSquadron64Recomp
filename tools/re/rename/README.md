@@ -155,4 +155,5 @@ Functions whose current name is known to be wrong, with the role found by RE. No
 | 0x800FB05C | `endMissionEndTransition` | `endMissionPause` | pause resume | co-op research notes |
 | 0x8000CFD4 | `heapFreeListDequeue` | (check) | material/GBI display-list emitter | co-op research notes |
 | 0x800B42D4 | `spawnProjectileObject` (menu overlay) | (check) | menu element spawner | co-op research notes |
+| 0x800AE5C4 | `computeCraftSelectTurnFromInput` (mission overlay) | `turnCraftBackFromLevelBounds` | flight bounds check: past minX/maxX/minZ/maxZ (0x8010B790..9C, set by `loadPlayerStartPosition`) it sets player flag bit 0x2 (inner +0x180) and turns the craft toward 0x80137CE8 | Gerrard V bounds 2026-11-20 |
 | 0x800B448C | `spawnHudReticleAtMeshBounds` (menu overlay) | `spawnMenuElementSprite` (check) | sprite from a text element's texture desc (w/h at +0x10) and position (+0x20); used for the mod-menu slider bar | native slider 2026-09-20 |

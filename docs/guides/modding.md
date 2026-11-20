@@ -147,9 +147,9 @@ An opening crawl is a mod folder `assets/crawl/<name>/` (`name` up to 15 lowerca
 
 In the RS64 Explorer, the *Cutscene* list of a chapter level (0, 5, 10, 15) or a mod level has *Opening crawl*. It opens like a cutscene, with its timeline and the game's scene, and the crawl window edits its text. The first edit makes the mod's own crawl: for a chapter level, one that replaces that chapter; for a mod level, one its `levels.json` names. Right-click the backdrop to replace it from an image. With the cutscene pencil on, the camera poses like a cutscene camera: pick *Camera* and drag the gizmo, or take the free view (V). Its keys show on the timeline's Keys row, where they can be dragged or deleted, and route points are dragged in the view.
 
-### Water, fog and clouds
+### Water, fog, clouds and flight area
 
-In the RS64 Explorer, the terrain tools' *Water, fog and clouds…* window sets these for any level.
+In the RS64 Explorer, the terrain tools' *Water, fog and clouds…* window sets these for any level. While it is open the view shows the flight area, the box where the craft is turned back; drag the handle on a side to move that side alone.
 
 Water belongs to the level's `dat`. Everything below the water level becomes water, so shape it with the terrain tools. Paint it with one of the level's water textures; a level with none shows its ground texture on the water.
 
@@ -162,6 +162,7 @@ Fog and clouds are in `assets/level/<folder>/environment.json`, where `<folder>`
 
 - `fog.start`: where fog begins, as a share of the view distance (stock levels use 0.9; the Nonnah 0.3).
 - `fog.reach`: at a longer draw distance, `scale` moves the fog out with it, `thin` keeps the stock fog and thins it out to the new edge, and `stock` holds a solid wall. Left out, `thin` when `start` is under 0.85, otherwise `scale`.
+- `bounds`: the flight area, as `[min X, max X, min Z, max Z]`: how far in from each map edge, in units (a cell is 2), the craft is turned back. Left out, every side uses the level's own distance from its `player_StartPosition` (0 to 12 on stock levels, 30 on Gerrard V).
 - `clouds`: its presence adds Battle Above Taloraan's cloud sheets. `wind` is `[x, z]` in units per second. `altitude` holds them around one height (Y points down, so above the ground is negative); left out, they stay around the player, which suits a level with no ground. `tint` replaces their tan colour.
 
 ### Models from other levels

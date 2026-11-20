@@ -367,6 +367,8 @@ void rs64_th_cinematicSplineWalkerNpcHandler_8005C2F0(uint8_t* rdram, recomp_con
 void rs64_th_updateWalkerParticlePositions_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_env_level_load(uint8_t* rdram, float game_frac);
 void rs64_env_fog_color(recomp_context* ctx);
+void rs64_env_flight_bounds(uint8_t* rdram);
+void rs64_th_loadPlayerStartPosition_800B0060(uint8_t* rdram, recomp_context* ctx);
 void rs64_env_clouds_load(uint8_t* rdram, recomp_context* ctx);
 void rs64_env_clouds_tick(uint8_t* rdram, recomp_context* ctx);
 void rs64_fog_color_note(uint8_t* rdram);
