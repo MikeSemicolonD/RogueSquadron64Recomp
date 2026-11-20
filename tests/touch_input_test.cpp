@@ -1327,8 +1327,8 @@ static void test_classify() {
     CHECK(classify(1, "menu.biographies", false, false) == Context::ListMenu);
     CHECK(classify(1, "menu.elite_rogues", false, false) == Context::ListMenu);
     CHECK(classify(1, "menu.passcodes", false, false) == Context::Wheel);
-    CHECK(classify(1, "menu.media", false, false) == Context::ListMenu);
-    CHECK(classify(1, "menu.account.level_select", false, false) == Context::Carousel);
+    CHECK(classify(1, "menu.showroom", false, false) == Context::ListMenu);
+    CHECK(classify(1, "menu.level_select", false, false) == Context::Carousel);
     CHECK(classify(1, "mission", false, false) == Context::Carousel);
     CHECK(classify(0, "mission", false, false) == Context::Flight);
     CHECK(classify(0, "mission", true, false) == Context::PauseMenu);

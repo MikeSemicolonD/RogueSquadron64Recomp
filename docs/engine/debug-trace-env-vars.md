@@ -72,7 +72,7 @@ Other user options without flags:
 
 | Env var | Default | Effect |
 | --- | --- | --- |
-| `ROGUESQ_INPUT_SEQ` / `ROGUESQ_INPUT_DELAY` | unset / 12000 | Scripted virtual controller injected at `get_n64_input` (no window focus needed): `name:holdMs:afterMs,...` with names `start a b z l r dup ddown dleft dright cup cdown cleft cright up down left right wait` (`up`..`right` = analog stick). `@<state id>` waits until the game-state classifier reports that state (prefix match, e.g. `@menu.account.level_select`) and times the steps after it from there. `INPUT_DELAY` waits that many ms before the first step. |
+| `ROGUESQ_INPUT_SEQ` / `ROGUESQ_INPUT_DELAY` | unset / 12000 | Scripted virtual controller injected at `get_n64_input` (no window focus needed): `name:holdMs:afterMs,...` with names `start a b z l r dup ddown dleft dright cup cdown cleft cright up down left right wait` (`up`..`right` = analog stick). `@<state id>` waits until the game-state classifier reports that state (prefix match, e.g. `@menu.level_select`) and times the steps after it from there. `INPUT_DELAY` waits that many ms before the first step. |
 | `ROGUESQ_NO_MENU_BUTTONS` | off | Disables the custom front-end menu (also off for a `demo:` boot target). |
 | `ROGUESQ_NO_PAUSE_BUTTONS` | off | Disables the custom pause-menu buttons. |
 | `ROGUESQ_INPUT_RESET` | off | `1` overwrites `roguesq_input.json` with the default bindings at startup. |
@@ -120,7 +120,7 @@ Driven from `update_screen` (`src/video/rt64_render_context.cpp`) and the nav se
 | `ROGUESQ_BOOT_EXIT` | unset | `1`: quit once a `cutscene:` boot target has played (the boot intro call returns), so scripted cutscene runs end on their own; logs `[nav] boot cutscene finished`. |
 | `ROGUESQ_NAV_ABORT_LOOP` | unset | `<n>`: an `abort:` target plays `<n>` missions in a row, the next stock level (0-15) after each abort, then quits; logs `[nav] abort loop ...`. For memory runs with `tools/debug/measure-leak.ps1`, whose `missions` column counts the aborts. |
 | `ROGUESQ_MENU_FIXED` | unset | `<seed>` (nonzero): menus repeat frame for frame run to run. Sets the game's RNG state (0x80003470) to the seed when the front end starts and at each backdrop pick, restarts the highlight pulse and the front end's animation phase on each confirm, and gives every menu frame a dt of 1/30 s. For the smoke test's menu shots. |
-| `ROGUESQ_CHEATS` | unset | `<hex>`: ORs these bits into the cheat unlock word (`gGameSettings+0x18`, 0x80130B58; bits in `docs/reference/data-structures.md`) once the main menu is up, as typing the passcodes there would. `0x100000` (DIRECTOR) unlocks AT THE MOVIES. Needs a `ROGUESQ_BOOT_TARGET`. |
+| `ROGUESQ_CHEATS` | unset | `<passcode>[,<passcode>...]`: once the main menu is up, unlocks each passcode as typing it there would (e.g. `DIRECTOR,MAESTRO` for the SHOWROOM and its CONCERT HALL). A name that is not a passcode logs `[nav] cheats: "X" is not a passcode`. Needs a `ROGUESQ_BOOT_TARGET`. |
 | `ROGUESQ_SUBTITLES` | unset | `1`: keeps subtitles on (clears the DISABLE_SUBTITLES bit, bit 4 of `gGameSettings+0x10`, every frame); a new pilot starts with them off. For the smoke test's text checks. Needs a `ROGUESQ_BOOT_TARGET`. |
 | `ROGUESQ_NAV_CHAIN` | unset | `1`: an `abort:` target holds each mission until the MCP `nav` method names the next level (`next_level`), then aborts and starts it. Used by the smoke test (`tools/debug/smoke`). |
 | `ROGUESQ_NAV_ABORT_HOLD` | 0 | `<s>`: an `abort:` target flies each mission this many wall-clock seconds before pausing to abort. |

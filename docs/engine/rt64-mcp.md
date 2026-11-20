@@ -56,7 +56,7 @@ RT64's own pause (F4) only freezes the picture: it drops new display lists while
 Clocks:
 
 - `ingame` counts mission frames while recording or replaying (`ROGUESQ_LS_RECORD`, `ROGUESQ_LS_REPLAY`); these are the recording's frame numbers. With `ROGUESQ_LS_EACH_MISSION=1` it starts over at every mission. `ls` is still accepted as its old name.
-- The overlay's `Clocks` line shows one clock: the cutscene (with its level and intro / outro / special) or crawl when one plays, plus `ingame` in a recording or replay, otherwise the current game state.
+- The overlay's `Clocks` line shows one clock: the cutscene (with its level, intro / outro / special, and `AT THE MOVIES` when the viewer plays it) or crawl when one plays, plus `ingame` in a recording or replay, otherwise the current game state.
 - `nav` counts game frames since the game read the A press that ends a `menu:` path (the boot target's or a `nav {menu}`). A raw `call("pause_at", {..., "after": n})` holds only once the clock has restarted more than n times, so a client can read the count, send `nav`, and pause without racing the press.
 - A clock that starts over drops its old frame. `pause_at(..., next=true)` holds only after its clock has started over: frame N of the next cutscene or the next chained mission. `frame_info` and the held picture list each clock's restart count (`restarts`).
 
@@ -89,6 +89,7 @@ Inspection tools (`frame_summary`, `list_draws`, `get_draw`, `dump_texture`, `vi
 
 - `launch(settings={...})` merges `roguesq_video.json` keys over the player's file into a copy in the session folder and starts the game on it (`ROGUESQ_VIDEO_CONFIG`), so `set_config` and in-game changes stay in that copy.
 - `call("setting", {})` lists the in-game menu settings (the DISPLAY SETTINGS, RAY TRACING, ADVANCED and input keys). `{key}` steps a toggle or cycle as its button does, `{key, value}` sets a slider.
+- `menu()` (also `frame_info`'s `menu`) reports the front-end page: title, entries, cursor row and `path`, the pages from MAIN MENU to it (depth = its length). A page seen earlier in the path cuts it back, as backing out does, and a mission clears it. The host tracks it each present from `gCurrentMenuData` (`track_menu` in `nav_sequencer.cpp`); game state ids name the screen, not its depth.
 - `call("nav", {"menu": "OPTIONS/GAME SETTINGS"})` backs out to the main menu and selects that path. `{"next_level": n}` starts the next mission of a `ROGUESQ_NAV_CHAIN` run.
 - `call("pause_menu", {})` reports the in-mission pause page (0 root, 1 GAME SETTINGS, 2 SOUND SETTINGS, 3 abort confirm, 4+ mod pages, -1 closed) and its cursor. `{"page": n}` or `{"page": "display"}` (a mod page name) moves the open page's cursor onto the entry that opens that page, so a `press` of A and a `step` from a held frame open it on the same frame every run.
 - `set_config` applies Configuration-tab settings as the F1 tab does.

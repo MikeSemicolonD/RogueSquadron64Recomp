@@ -190,7 +190,7 @@ extern "C" bool rs64_input_name(const char* name, uint16_t* mask, float* sx, flo
     return false;
 }
 
-// gate: a game state id prefix the sequence waits for before the next step ("@menu.account.level_select"); its timing starts from there.
+// gate: a game state id prefix the sequence waits for before the next step ("@menu.level_select"); its timing starts from there.
 // True from a passed state gate until the sequence ends: the sequence then steers instead of the menu driver.
 static bool s_seq_steering = false;
 

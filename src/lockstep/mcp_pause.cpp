@@ -292,8 +292,15 @@ static nlohmann::json mcp_frame_info()
     clocks["dl"] = s_mcp_dl_seq;
 
     const nlohmann::json input = mcp_input_live() ? nlohmann::json{ { "buttons", s_mcp_input->names }, { "stick", { s_mcp_input->x, s_mcp_input->y } }, { "until_dl", s_mcp_input->until_dl } } : nlohmann::json();
+    const std::string state = rs64_state_current_id();
+    const RsMenuView view = rs64_nav_menu_view();
 
-    return { { "state", rs64_state_current_id() }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input }, { "nav", rs64_nav_active() } };
+    // A front-end page: its title, entries, cursor row and the pages that led to it (depth = path length).
+    const nlohmann::json menu = (state.rfind("menu", 0) == 0 && !view.title.empty())
+        ? nlohmann::json{ { "title", view.title }, { "entries", view.entries }, { "cursor", view.cursor }, { "path", view.path }, { "depth", view.path.size() } }
+        : nlohmann::json();
+
+    return { { "state", state }, { "clocks", clocks }, { "restarts", s_mcp_restarts }, { "held", s_mcp_held }, { "rt64_paused", RT64::rs64mcp::paused() }, { "picture", s_mcp_held ? s_mcp_picture : nlohmann::json() }, { "input", input }, { "nav", rs64_nav_active() }, { "menu", menu } };
 }
 
 struct McpWait { uint64_t gen; uint64_t epoch; };

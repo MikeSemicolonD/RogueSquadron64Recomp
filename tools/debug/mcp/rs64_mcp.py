@@ -37,7 +37,7 @@ CALL_STALL_S = 20
 # A menu screen that nothing drives (no boot target, no held input) never changes; a wait there gives up after this long. The main menu and
 # the hangar are left out (idling there starts the attract demo; the hangar also speaks and launches on its own).
 MENU_IDLE_S = 20
-MENU_SELF_RUNNING = ("menu.main", "menu.account.hangar")
+MENU_SELF_RUNNING = ("menu.main", "menu.hangar")
 # Clocks that run while the state still reads the menu that started them (a mission's crawl and opening cutscene).
 MENU_PLAYBACK_CLOCKS = ("crawl", "cutscene", "cinematic")
 
@@ -1604,8 +1604,14 @@ def serve():
 
     @tool()
     def frame_info() -> dict:
-        """Game state, every clock's latest frame (dl = display lists since boot), held/rt64_paused, and the frozen picture's clocks."""
+        """Game state, every clock's latest frame (dl = display lists since boot), held/rt64_paused, the frozen picture's clocks, and the front-end page (menu, see the menu tool)."""
         return game.call("frame_info")
+
+    @tool()
+    def menu() -> dict:
+        """Where you are in the front-end menus: the page title, its entries, the cursor row, and path (the pages that led here, main menu first; depth = its length). A page seen earlier in the path means you backed out to it. menu is null outside the front end (missions, cutscenes). For finding your way when stuck in the menus."""
+        info = game.call("frame_info")
+        return {"state": info.get("state"), "menu": info.get("menu")}
 
     @tool()
     def rdram_read(addr: int, size: int = 4) -> dict:

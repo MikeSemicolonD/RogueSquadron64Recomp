@@ -10,7 +10,9 @@
 #include "game/menus/menu_layout.h"
 #include <cstdlib>
 #include "main/main.h"               // rs64_menu_request_quit
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <cstdio>
@@ -434,11 +436,11 @@ static void nav_level(uint8_t* rdram, const char* st)
     switch (s_step)
     {
         case kStepEnterName:  // reach ENTER NAME: press A through main-menu -> select-game -> (new profile)
-            if (is(st, "menu.account.enter_name")) { nav_advance(); return; }
-            if (is(st, "menu.main") || is(st, "menu.account") || is(st, "menu")) nav_repress(N64_A_BUTTON);
+            if (is(st, "menu.select_game")) { nav_advance(); return; }
+            if (is(st, "menu.main") || is(st, "menu")) nav_repress(N64_A_BUTTON);
             break;
         case kStepNameEntry:  // SELECT GAME / ENTER NAME: A picks a saved pilot (-> SELECT LEVEL) or a letter, START finishes a name; alternate so misses retry
-            if (!is(st, "menu.account.enter_name")) { nav_advance(); return; }
+            if (!is(st, "menu.select_game")) { nav_advance(); return; }
 
             if (s_since_press >= REPRESS_INTERVAL) {
                 begin_pulse((s_run.name_toggle++ & 1) ? N64_START_BUTTON : N64_A_BUTTON);
@@ -448,11 +450,11 @@ static void nav_level(uint8_t* rdram, const char* st)
         case kStepAfterName:  // after name entry the new pilot auto-launches: confirm any menu prompt
                  // (ARE-YOU-SURE) but do NOT press during the intro cinematic -- mashing skip
                  // there triggers the cutscene freeze. Just wait for the mission.
-            if (is(st, "menu.account.level_select")) { nav_advance(); return; }
+            if (is(st, "menu.level_select")) { nav_advance(); return; }
             if (!is(st, "cinematic")) nav_repress(N64_A_BUTTON);
             break;
         case kStepLevelSelect:  // SELECT LEVEL: write target level, confirm, until AVAILABLE CRAFT
-            if (is(st, "menu.account.level_select")) {
+            if (is(st, "menu.level_select")) {
 
                 // A mod or bonus level is walked to with the D-pad (cursor u8 0x800CDAC1 = level id, screen state 0x800CDAC4) and picked as a player would, so
                 // its confirm (briefing, medals, craft) runs; a stock level is written: gGameSettings currentLevel (u8), gCurrentLevel (u32).
@@ -471,13 +473,13 @@ static void nav_level(uint8_t* rdram, const char* st)
                 nav_write_u8(rdram, 0x130B40, (uint8_t)g_target.a);
                 nav_write_u32(rdram, 0x130B70, (uint32_t)g_target.a);
                 nav_repress(N64_A_BUTTON);
-            } else if (is(st, "menu.account.craft_select")) {
+            } else if (is(st, "menu.craft_select")) {
                 nav_advance();
             }
             break;
         case kStepCraftSelect:  // AVAILABLE CRAFT (the bridge hologram): A opens the craft-select hangar
             if (s_run.hangar_frames > 0) { nav_advance(); return; }
-            if (is(st, "menu.account.craft_select")) nav_repress(N64_A_BUTTON);
+            if (is(st, "menu.craft_select")) nav_repress(N64_A_BUTTON);
             break;
         case kStepHangar:  // the hangar: turn the bays to the target craft, confirm, until mission
             if (nav_step_craft(rdram, g_target.b, "level"))
@@ -853,6 +855,64 @@ static void nav_log_menu(uint8_t* rdram)
 
     fprintf(stderr, "[nav] menu %u title [%s] count %d cursor %u:%s\n", rdram[(0xCE730u + 0x04) ^ 3], nav_str(rdram, nav_word(rdram, 0xCE730u)).c_str(), count, rdram[(0xCE730u + 0x94) ^ 3], entries.c_str());
     fflush(stderr);
+}
+
+static std::mutex s_menu_view_mtx;
+static RsMenuView s_menu_view;
+
+// Each present: the front-end page on screen and the path of pages to it. A mission clears the path.
+static void track_menu(uint8_t* rdram, int overlay)
+{
+
+    if (overlay == 0)
+    {
+        std::lock_guard<std::mutex> lock(s_menu_view_mtx);
+
+        s_menu_view = {};
+
+        return;
+    }
+
+    if (overlay != 1 || !rdram) return;
+
+    // The main menu has no title text. The CONCERT HALL player has no list, and its menu data still points at the main menu's.
+    const char* st = rs64_state_current_id();
+    const bool player = std::strcmp(st, "menu.concert_hall") == 0;
+    std::string title = player ? "CONCERT HALL" : nav_str(rdram, nav_word(rdram, 0xCE730u));
+
+    if (title.empty() && std::strcmp(st, "menu.main") == 0) title = "MAIN MENU";
+
+    if (title.empty()) return;
+
+    const int count = player ? 0 : std::min<int>(rdram[(0xCE730u + 0x95) ^ 3], rs64::menu::kMenuRows);
+    std::lock_guard<std::mutex> lock(s_menu_view_mtx);
+    std::vector<std::string>& path = s_menu_view.path;
+
+    s_menu_view.title = title;
+    s_menu_view.cursor = player ? 0 : rdram[(0xCE730u + 0x94) ^ 3];
+    s_menu_view.entries.clear();
+
+    for (int i = 0; i < count; ++i) {
+        s_menu_view.entries.push_back(nav_str(rdram, nav_word(rdram, 0xCE730u + 0x08 + i * 4)));
+    }
+
+    if (!path.empty() && path.back() == title) return;
+
+    const auto seen = std::find(path.begin(), path.end(), title);
+
+    if (seen != path.end()) {
+        path.erase(seen + 1, path.end());
+    } else {
+        path.push_back(title);
+    }
+}
+
+RsMenuView rs64_nav_menu_view()
+{
+
+    std::lock_guard<std::mutex> lock(s_menu_view_mtx);
+
+    return s_menu_view;
 }
 
 static bool nav_pick(uint8_t* rdram, const char* label) {
@@ -1262,11 +1322,11 @@ static void force_tick(uint8_t* rdram)
     static bool s_armed = false;
     static bool s_was_name = false;
     const char* st = rs64_state_current_id();
-    const bool name = is(st, "menu.account.enter_name");
+    const bool name = is(st, "menu.select_game");
     const bool was_armed = s_armed;
 
     if (is(st, "mission")) s_armed = false;
-    else if ((s_was_name && !name) || is(st, "menu.account.level_select") || is(st, "menu.account.craft_select")) s_armed = true;
+    else if ((s_was_name && !name) || is(st, "menu.level_select") || is(st, "menu.craft_select")) s_armed = true;
 
     s_was_name = name;
 
@@ -1287,24 +1347,75 @@ static void force_tick(uint8_t* rdram)
     if (craft >= 0) nav_write_craft(rdram, rdram[0x130B40 ^ 3], craft);
 }
 
-// ROGUESQ_CHEATS=<hex>: OR these bits into the cheat unlock word (gGameSettings+0x18, 0x80130B58) once the main menu is up, as typing their passcodes there would.
+// The passcode screen's check (applyCheatCodeFromInput): CRC32 seeded 0xFAC5FAC5 over the 8 typed letters, '-' for blanks, looked up in the game's 29 hashes at 0x800A0ED0; hash i unlocks bit i.
+static int passcode_bit(uint8_t* rdram, std::string code)
+{
+
+    if (code.empty() || code.size() > 8) return -1;
+
+    code.resize(8, '-');
+
+    uint32_t crc = 0xFAC5FAC5u;
+
+    for (char c : code) {
+        crc ^= (uint8_t)std::toupper((unsigned char)c);
+
+        for (int k = 0; k < 8; ++k) {
+            crc = (crc & 1) ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+        }
+    }
+
+    for (int i = 0; i < 29; ++i) {
+        if (nav_word(rdram, 0x0A0ED0u + i * 4) == crc) return i;
+    }
+
+    return -1;
+}
+
+// ROGUESQ_CHEATS=<passcode>[,<passcode>...]: once the main menu is up, unlock each as typing it on the passcode screen would (bits in the cheat word gGameSettings+0x18, 0x80130B58).
 static void apply_cheats(uint8_t* rdram)
 {
 
-    static const uint32_t s_cheats = recomp::dbg::env_u32("ROGUESQ_CHEATS");
+    static const char* s_codes = recomp::dbg::env_str("ROGUESQ_CHEATS");
     static bool s_done = false;
 
     // A run that may reach a bonus level types their passcodes too: GAMEFLO! (all missions), WOISTHAN (Trench Run), DEADDACK (Hoth).
     constexpr uint32_t kBonusLevels = 0x18000001u;
     const bool levels = (g_target.kind == NAV_LEVEL || g_target.kind == NAV_ABORT) && (bonus_level(g_target.a) || nav_chain());
-    const uint32_t cheats = s_cheats | (levels ? kBonusLevels : 0u);
 
-    if (!cheats || s_done || !rdram || !is(rs64_state_current_id(), "menu.main")) return;
+    if ((!s_codes && !levels) || s_done || !rdram || !is(rs64_state_current_id(), "menu.main")) return;
 
-    nav_write_u32(rdram, 0x130B58, nav_word(rdram, 0x130B58) | cheats);
+    // Codes 7-18 are one-at-a-time looks: the game clears the rest of that range when one is entered.
+    constexpr uint32_t kExclusive = 0x0007FF80u;
+    uint32_t word = nav_word(rdram, 0x130B58) | (levels ? kBonusLevels : 0u);
+    const std::string list = s_codes ? s_codes : "";
+    size_t start = 0;
+
+    while (start < list.size()) {
+        size_t end = list.find(',', start);
+
+        if (end == std::string::npos) end = list.size();
+
+        const std::string code = list.substr(start, end - start);
+        const int bit = passcode_bit(rdram, code);
+
+        start = end + 1;
+
+        if (bit < 0)
+        {
+            fprintf(stderr, "[nav] cheats: \"%s\" is not a passcode\n", code.c_str());
+            continue;
+        }
+
+        if ((kExclusive >> bit) & 1) word &= ~kExclusive;
+
+        word |= 1u << bit;
+    }
+
+    nav_write_u32(rdram, 0x130B58, word);
     s_done = true;
 
-    fprintf(stderr, "[nav] cheats 0x%08X set\n", cheats);
+    fprintf(stderr, "[nav] cheats 0x%08X set\n", word);
     fflush(stderr);
 }
 
@@ -1369,6 +1480,7 @@ extern "C" void rs64_nav_tick(uint8_t* rdram, int overlay)
 {
 
     s_overlay = overlay;
+    track_menu(rdram, overlay);
     force_tick(rdram);
     apply_cheats(rdram);
     apply_subtitles(rdram);

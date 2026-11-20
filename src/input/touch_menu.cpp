@@ -215,9 +215,9 @@ namespace rs64::touch {
             return Context::Wheel;
         }
 
-        if (s == "menu" || s == "menu.main" || s == "menu.account" || s == "menu.options" || s == "menu.game_settings" ||
+        if (s == "menu" || s == "menu.main" || s == "menu.options" || s == "menu.game_settings" ||
             s == "menu.sound_settings" || s == "menu.controller_settings" || s == "menu.biographies" || s == "menu.elite_rogues" ||
-            s == "menu.media")
+            s == "menu.showroom")
         {
             return Context::ListMenu;
         }

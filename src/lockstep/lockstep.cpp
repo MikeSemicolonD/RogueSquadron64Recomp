@@ -934,8 +934,9 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
     }
 }
 
+// A recording or replay is running: its mission must play the same whatever the display settings. Off again once it ends (ROGUESQ_LS_KEEP_RUNNING plays on live).
 extern "C" int rs64_ls_session(void) {
-    return mode() != Mode::Off;
+    return mode() != Mode::Off && st().active;
 }
 
 extern "C" int rs64_ls_replaying(void) {

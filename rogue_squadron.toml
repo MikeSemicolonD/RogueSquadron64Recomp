@@ -1232,6 +1232,14 @@ func = "advanceNpcOnCurvedPath"
 before_vram = 0x8006C010
 text = '{ rs64_th_advanceNpcOnCurvedPath_8006C010(rdram, ctx); }'
 [[patches.hook]]
+func = "advanceNpcOnCurvedPath"
+before_vram = 0x8006C018
+text = '{ rs64_th_advanceNpcOnCurvedPath_8006C018(rdram, ctx); }'
+[[patches.hook]]
+func = "checkAndReturnByteFlagAsU8"
+before_vram = 0x80059424
+text = '{ rs64_th_checkAndReturnByteFlagAsU8_80059424(rdram, ctx); }'
+[[patches.hook]]
 func = "drainMeshReleaseQueue"
 text = '{ rs64_th_drainMeshReleaseQueue_entry(rdram, ctx); }'
 [[patches.hook]]

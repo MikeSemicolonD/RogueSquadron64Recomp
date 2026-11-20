@@ -2,11 +2,23 @@
 // target (level / cutscene / demo) instead of poking state-machine fields.
 #pragma once
 #include <cstdint>
+#include <string>
+#include <vector>
 
 enum RsNavKind { NAV_NONE = 0, NAV_LEVEL, NAV_CUTSCENE, NAV_DEMO, NAV_ABORT, NAV_LOBBY, NAV_MENU };
 struct RsNavTarget { RsNavKind kind; int a; int b; int c = -1; };  // level: a=level b=craft; cutscene/demo: a=index; lobby: a=level b=0 host / 1 join c=craft
 
 RsNavTarget rs64_nav_parse(const char* boot_target);
+
+// The front-end page on screen (gCurrentMenuData) and the pages that led to it, oldest first: a page seen before cuts the path back to it, as backing out does.
+struct RsMenuView {
+    std::string title;
+    std::vector<std::string> entries;
+    int cursor = -1;
+    std::vector<std::string> path;
+};
+
+RsMenuView rs64_nav_menu_view();
 
 extern "C" {
     void rs64_nav_set_target(const char* boot_target);  // called once from the render context

@@ -1,4 +1,4 @@
-// Draw-only stand-ins for level objects and ground units the game has not spawned yet, so they show at long draw distance: a model instance and prop state
+// Draw-only stand-ins for level objects and ground units the game has not spawned yet, or destroyed structures, turrets and AT-STs as their wrecks, so they show at long draw distance: a model instance and prop state
 // block in host RAM, built as the prop handler (0x8006CBB0) spawns one, go through the game's visibility bucket. Nothing the game reads is written.
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
@@ -37,11 +37,23 @@ constexpr uint32_t kRegion = RS64_HR_STANDINS;
 constexpr uint32_t kRegionEnd = RS64_HR_STANDINS_END;
 constexpr uint32_t kStateSize = 0x50u;
 
+constexpr uint16_t kSubStructure = 0x14u;
+constexpr uint32_t kDebrisNames = 0x8003C9D0u;
+constexpr uint32_t kDebrisScale = 0x8003CA14u;
+constexpr uint32_t kScaleMatrix = 0x8001CB64u;
+constexpr uint32_t kRotateX = 0x8001CB9Cu;
+constexpr uint32_t kRotateY = 0x8001CCCCu;
+constexpr uint32_t kRotateZ = 0x8001CDFCu;
+constexpr uint32_t kTranslate = 0x8001CA90u;
+
+// wreck/wreck_scale: a destroyed structure's model, 0 when it has none.
 struct Standin {
     uint32_t item;
     uint32_t state;
     uint32_t inst;
     uint32_t scale;
+    uint32_t wreck;
+    uint32_t wreck_scale;
 };
 
 uint32_t s_dat = 0;
@@ -311,6 +323,98 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
     mips_call(rdram, ctx, kRootMatrix, { inst + 0x28u, state, item + 0x28u });
 }
 
+uint32_t bits(float f)
+{
+
+    uint32_t u;
+
+    std::memcpy(&u, &f, 4);
+
+    return u;
+}
+
+// A structure respawns destroyed as attachDebrisModelVariant (0x8006C9C0) builds it: item +0x90 picks bld_a/b/c_dst or fueltnk_dst (1-4), none (5)
+// or its own model; each axis scales by item +0x94.. times 0.25 when set, else by its own scale times the intact model's +0x34; then its rotation and position.
+uint32_t build_wreck(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t intact, uint32_t at, uint32_t* radius)
+{
+
+    const uint32_t kind = rw(rdram, item + 0x90u);
+
+    if (kind == 5) return 0;
+
+    const uint32_t name = (kind >= 1 && kind <= 4) ? kDebrisNames + (kind - 1) * 12u : rw(rdram, item + 0x5Cu);
+    const uint32_t model = (name >= 0x80000000u && name < 0x80800000u) ? find_model(rdram, name) : 0;
+
+    if (model == 0) return 0;
+
+    const uint32_t size = build_instance(rdram, ctx, model, at);
+
+    if (size == 0) return 0;
+
+    float s[3];
+
+    for (uint32_t k = 0; k < 3; ++k) {
+        const float set = rf(rdram, item + 0x94u + k * 4u);
+
+        s[k] = set != 0.0f ? set * rf(rdram, kDebrisScale + k * 4u) : rf(rdram, item + 0x28u + k * 4u) * rf(rdram, intact + 0x34u);
+    }
+
+    const uint32_t m = at + 0x28u;
+
+    mips_call(rdram, ctx, kScaleMatrix, { m, bits(s[0]), bits(s[1]), bits(s[2]) });
+    mips_call(rdram, ctx, kRotateX, { m, rw(rdram, item + 0x1Cu) });
+    mips_call(rdram, ctx, kRotateY, { m, rw(rdram, item + 0x20u) });
+    mips_call(rdram, ctx, kRotateZ, { m, rw(rdram, item + 0x24u) });
+    mips_call(rdram, ctx, kTranslate, { m, rw(rdram, item + 0x10u), rw(rdram, item + 0x14u), rw(rdram, item + 0x18u) });
+
+    *radius = bits(rf(rdram, model + 0x44u) * std::max({ s[0], s[1], s[2] }));
+
+    return size;
+}
+
+// The model a turret (npcTurretUpdate) or AT-ST (npcAtStUpdate) loads when it respawns with its spawn count spent, 0 for units without one.
+uint32_t unit_wreck_name(uint16_t sub)
+{
+
+    switch (sub) {
+    case 0x0D: return 0x800A6A30u;
+    case 0x1E: return 0x800A6A30u;
+    case 0x28: return 0x800A6A0Cu;
+    case 0x41: return 0x800A6A18u;
+    case 0x42: return 0x800A6A24u;
+    case 0x1F: return 0x800A7060u;
+    default: return 0;
+    }
+}
+
+// A destroyed turret or AT-ST: the same pose with its wreck model. The AT-ST's uniform scale is the item's over the loaded model's +0x34, as build_state does.
+uint32_t build_unit_wreck(uint8_t* rdram, recomp_context* ctx, const Standin& s, uint32_t at)
+{
+
+    const uint16_t sub = rh(rdram, s.item);
+    const uint32_t name = unit_wreck_name(sub);
+    const uint32_t model = name ? find_model(rdram, name) : 0;
+
+    if (model == 0) return 0;
+
+    const uint32_t size = build_instance(rdram, ctx, model, at);
+
+    if (size == 0) return 0;
+
+    if (sub == 0x1F)
+    {
+        mips_call(rdram, ctx, kUniformRootMatrix, { at + 0x28u, s.state, bits(rf(rdram, s.item + 0x28u) / rf(rdram, model + 0x34u)) });
+
+        return size;
+    }
+
+    wh(rdram, at + 8u, rh(rdram, s.inst + 8u));
+
+    for (uint32_t i = 0; i < 0x30u; i += 4) ww(rdram, at + 0x28u + i, rw(rdram, s.inst + 0x28u + i));
+
+    return size;
+}
+
 void rebuild(uint8_t* rdram, recomp_context* ctx, uint32_t dat)
 {
 
@@ -327,6 +431,7 @@ void rebuild(uint8_t* rdram, recomp_context* ctx, uint32_t dat)
     const uint32_t count = rw(rdram, dat);
     const uint32_t list = rw(rdram, dat + 4u);
     uint32_t at = kRegion;
+    uint32_t wrecks = 0;
 
     for (uint32_t i = 0; i < count && i < 4096; ++i) {
         const uint32_t item = rw(rdram, list + i * 4u);
@@ -345,14 +450,30 @@ void rebuild(uint8_t* rdram, recomp_context* ctx, uint32_t dat)
 
         if (size == 0) break;
 
-        Standin s{ item, state, inst, 0 };
+        Standin s{ item, state, inst, 0, 0, 0 };
 
         build_state(rdram, ctx, item, state, inst, model, &s.scale);
-        s_standins.push_back(s);
         at = (inst + size + 15u) & ~15u;
+
+        uint32_t wreck_size = 0;
+
+        if (sub == kSubStructure) {
+            wreck_size = build_wreck(rdram, ctx, item, model, at, &s.wreck_scale);
+        } else if ((wreck_size = build_unit_wreck(rdram, ctx, s, at)) != 0) {
+            s.wreck_scale = s.scale;
+        }
+
+        if (wreck_size != 0)
+        {
+            s.wreck = at;
+            at = (at + wreck_size + 15u) & ~15u;
+            ++wrecks;
+        }
+
+        s_standins.push_back(s);
     }
 
-    fprintf(stderr, "[standins] %zu objects, %u KB\n", s_standins.size(), (at - kRegion) / 1024u);
+    fprintf(stderr, "[standins] %zu objects, %u wrecks, %u KB\n", s_standins.size(), wrecks, (at - kRegion) / 1024u);
 }
 
 }
@@ -410,7 +531,10 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
         if (!std::binary_search(s_linked.begin(), s_linked.end(), s.item)) continue;
 
-        if ((int32_t)rw(rdram, s.item + 0x6Cu + diff * 4u) <= 0) continue;
+        // A spent spawn count means destroyed: the game respawns a structure as its wreck, anything else not at all.
+        const bool destroyed = (int32_t)rw(rdram, s.item + 0x6Cu + diff * 4u) <= 0;
+
+        if (destroyed && s.wreck == 0) continue;
 
         // Trigger and wave gates: isDatItemConditionMet reads only objective flags and counters.
         if (!cutscene && mips_call(rdram, ctx, kConditionMet, { s.item }).v0 == 0) continue;
@@ -423,6 +547,6 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
             continue;
         }
 
-        mips_call(rdram, ctx, kAddToBucket, { view, s.inst, s.state, s.scale });
+        mips_call(rdram, ctx, kAddToBucket, { view, destroyed ? s.wreck : s.inst, s.state, destroyed ? s.wreck_scale : s.scale });
     }
 }

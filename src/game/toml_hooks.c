@@ -310,16 +310,98 @@ void rs64_th_addNpcToVisibilityBucket_80057E48(uint8_t* rdram, recomp_context* c
 }
 
 
+// checkAndReturnByteFlagAsU8's arguments (view, instance, unit, scale): addNpcToVisibilityBucket's own.
+static uint32_t s_pre_test_args[4];
+
 // checkAndReturnByteFlagAsU8 entry: the view test walkers and other large units run before their render path, a render test like the rest.
 void rs64_th_checkAndReturnByteFlagAsU8_entry(uint8_t* rdram, recomp_context* ctx) {
 
     s_render_view_test_next = 1;
+    s_pre_test_args[0] = (uint32_t)ctx->r4;
+    s_pre_test_args[1] = (uint32_t)ctx->r5;
+    s_pre_test_args[2] = (uint32_t)ctx->r6;
+    s_pre_test_args[3] = (uint32_t)ctx->r7;
+}
+
+// checkAndReturnByteFlagAsU8 0x80059424 (its view test returned): in a recording or replay the unit's render path stays stock, so one the stock test
+// drops gets the draw-only pass at the pose its render path last built, while that pose is still within 1.5 units of the unit.
+void rs64_th_checkAndReturnByteFlagAsU8_80059424(uint8_t* rdram, recomp_context* ctx) {
+
+    const uint32_t inst = s_pre_test_args[1];
+    const uint32_t unit = s_pre_test_args[2];
+
+    if ((ctx->r2 & 0xFF) || !rs64_ls_session() || inst < 0x80000000u || inst >= 0x80800000u || unit < 0x80000000u || unit >= 0x80800000u)
+    {
+        return;
+    }
+
+    union { uint32_t u; float f; } ix, iz, ux, uz;
+
+    ix.u = (uint32_t)MEM_W(0x4C, (gpr)(int32_t)inst);
+    iz.u = (uint32_t)MEM_W(0x54, (gpr)(int32_t)inst);
+    ux.u = (uint32_t)MEM_W(0x0, (gpr)(int32_t)unit);
+    uz.u = (uint32_t)MEM_W(0x8, (gpr)(int32_t)unit);
+
+    if ((ix.f - ux.f) * (ix.f - ux.f) + (iz.f - uz.f) * (iz.f - uz.f) > 2.25f)
+    {
+        return;
+    }
+
+    rs64_npc_draw_only_pass(rdram, ctx, s_pre_test_args);
 }
 
 // advanceNpcOnCurvedPath 0x8006C010: the view test of a ground mark (a destroyed structure's scorch), a render test like the rest.
 void rs64_th_advanceNpcOnCurvedPath_8006C010(uint8_t* rdram, recomp_context* ctx) {
 
     s_render_view_test_next = 1;
+}
+
+// advanceNpcOnCurvedPath 0x8006C018 (the mark's view test returned in $v0): in a recording or replay a mark the stock test drops is tested again widened,
+// and if it passes its node ($s1 + 0x20) joins the render list ($s3) as the function's own tail does, without its fade, terrain ray or random numbers.
+void rs64_th_advanceNpcOnCurvedPath_8006C018(uint8_t* rdram, recomp_context* ctx) {
+
+    const uint32_t mark = (uint32_t)ctx->r17;
+    const uint32_t list = (uint32_t)ctx->r19;
+
+    if ((ctx->r2 & 0xFF) || !rs64_ls_session() || list == 0 || MEM_H(0x1E, (gpr)(int32_t)mark) == 0)
+    {
+        return;
+    }
+
+    const recomp_context saved = *ctx;
+
+    ctx->r4 = ctx->r20;
+    ctx->r5 = 0;
+    ctx->r6 = ADD32(ctx->r29, 0x18);
+    ctx->r7 = (gpr)(int32_t)0x3F800000;
+    ctx->r29 = ADD32(ctx->r29, -0x40);
+    MEM_W(0x10, ctx->r29) = 0;
+    s_render_view_test_next = 1;
+    rs64_npc_draw_only_mark(1);
+    transformVec3ToNpcLocalWithScale(rdram, ctx);
+    rs64_npc_draw_only_mark(0);
+
+    const int seen = (ctx->r2 & 0xFF) != 0;
+
+    *ctx = saved;
+
+    if (!seen)
+    {
+        return;
+    }
+
+    const uint32_t node = mark + 0x20u;
+    const uint32_t head = (uint32_t)MEM_W(0, (gpr)(int32_t)list);
+
+    MEM_W(0x20, (gpr)(int32_t)mark) = (int32_t)head;
+
+    if (head)
+    {
+        MEM_W(0x4, (gpr)(int32_t)head) = (int32_t)node;
+    }
+
+    MEM_W(0, (gpr)(int32_t)list) = (int32_t)node;
+    MEM_W(0x24, (gpr)(int32_t)mark) = 0;
 }
 
 // transformVec3ToNpcLocalWithScale entry

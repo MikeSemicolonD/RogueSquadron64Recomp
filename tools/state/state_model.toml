@@ -50,70 +50,77 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x00000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
+# State ids name the screen, one level under "menu"; how deep a screen sits in the game's menus is not part of the id (the MCP menu tool tracks the path).
+# Menu pages are on the menu tree screen (0x800CFF50 = 2), SELECT LEVEL and AVAILABLE CRAFT on screen 1 and the hangar on 0, which keeps the siblings apart.
+# SELECT GAME and ENTER NAME (menu id 1) on the menu tree screen (0x800CFF50 = 2). 0x800CE626 looked like a sub-step but is a frame counter's high byte.
+# SELECT LEVEL, AVAILABLE CRAFT and the hangar keep menu id 1; bridgeMenuState (u8 0x800CDAC4: 4 SELECT GAME and the hangar, 2 SELECT LEVEL, 3 AVAILABLE CRAFT) and the screen tell them apart.
+# After a mission the menu data is zero (menuId 0), so SELECT LEVEL and AVAILABLE CRAFT key on the loaded overlay (u32 0x800375B0: 0 mission, 1 menu, 2 cinematic) instead of the menu ptr.
 [[state]]
-id = "menu.account"
-name = "Select game / account"
+id = "menu.select_game"
+name = "Select game / enter name"
 parent = "menu"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
-]
-focus = ["gCurrentMenuData", "gGameSettings"]
-
-# Account sub-screens share menuId=1 and the menu ptr; bridgeMenuState (u8 0x800CDAC4) tells them apart: 4 SELECT GAME, 2 SELECT LEVEL, 3 AVAILABLE CRAFT.
-# enter_name covers SELECT GAME and ENTER NAME (0x800CE626 looked like a sub-step but is a frame counter's high byte), on the menu tree screen (0x800CFF50 = 2): the step from AVAILABLE CRAFT into the hangar keeps screen 1.
-# After a mission the menu data is zero (menuId 0), so SELECT LEVEL and AVAILABLE CRAFT key on the loaded overlay (u32 0x800375B0: 0 mission, 1 menu, 2 cinematic) instead of the menu ptr.
-
-[[state]]
-id = "menu.account.enter_name"
-name = "Select game / enter name"
-parent = "menu.account"
-classify = [
-  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
-  { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
-  { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x01000000 },
-  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x02000000 },
-  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x03000000 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 [[state]]
 # Level select, craft select and the hangar run in the mission-select overlay (0x800375B0 = 1), where the menu id byte keeps the last menu page shown (MULTIPLAYER in co-op), so it is not checked.
-id = "menu.account.level_select"
+id = "menu.level_select"
 name = "Select level"
-parent = "menu.account"
+parent = "menu"
+# The SELECT LEVEL screen (0x800CFF50 = 1) before bridgeMenuState reaches 2 (it is 0 for a few frames after a pilot is picked) counts too.
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
-  { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x02000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00010000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x03000000 },
+  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x04000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 [[state]]
-id = "menu.account.craft_select"
+id = "menu.craft_select"
 name = "Available craft"
-parent = "menu.account"
+parent = "menu"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00010000 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x03000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 # The 3D SELECT YOUR CRAFT hangar keeps SELECT GAME's bridgeMenuState 4; the menu overlay's screen u16 (0x800CFF50: 2 menu tree, 1 SELECT LEVEL, 0 hangar) tells it apart.
+# Its way in (screen still 1) and out to the mission's opening cutscene (screen 0x0B) count as the hangar.
 [[state]]
-id = "menu.account.hangar"
+id = "menu.hangar"
 name = "Craft-select hangar"
-parent = "menu.account"
+parent = "menu"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x04000000 },
-  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x00020000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x00030000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x000A0000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
+
+# The results screen after a mission (screen 3), where the menu data is cleared and bridgeMenuState keeps its pre-mission value.
+[[state]]
+id = "menu.results"
+name = "Mission results"
+parent = "menu"
+classify = [
+  { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00030000 },
+]
+focus = ["gGameSettings"]
 
 [[state]]
 id = "menu.options"
@@ -123,6 +130,7 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x02000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
@@ -134,6 +142,7 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x03000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
@@ -145,6 +154,7 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x04000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
@@ -156,6 +166,7 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x05000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
@@ -167,6 +178,7 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x06000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
@@ -178,6 +190,7 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x07000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
@@ -189,31 +202,33 @@ classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x08000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00020000 },
 ]
 focus = ["gCurrentMenuData"]
 
-# Media/extras hub (SHOWROOM / CONCERT HALL / AT THE MOVIES), menu id 10; showroom (model
-# viewer) is id 11. Concert Hall / At the Movies not yet mapped -- navigating there crashed
-# (STL vector subscript OOB, separate render bug).
+# SHOWROOM hub (CONCERT HALL / AT THE MOVIES), menu id 10, under OPTIONS once DIRECTOR is unlocked. It runs its own screen (0x0A) instead of the menu tree's 2.
 [[state]]
-id = "menu.media"
-name = "Media hub (Showroom/Concert Hall/Movies)"
+id = "menu.showroom"
+name = "Showroom (Concert Hall / At the Movies)"
 parent = "menu"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x0A000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x000A0000 },
 ]
 focus = ["gCurrentMenuData"]
 
+# CONCERT HALL music player (menu id 11, needs MAESTRO), on the SHOWROOM's screen. AT THE MOVIES has no page: it plays the cutscenes in a row as "cinematic" (screen 0x0C).
 [[state]]
-id = "menu.media.showroom"
-name = "Showroom (model viewer)"
-parent = "menu.media"
+id = "menu.concert_hall"
+name = "Concert Hall (music player)"
+parent = "menu"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CE730, mask = 0xFFFFFFFF, op = "range", value = 0x80000000, value_hi = 0x9FFFFFFF },
   { addr = 0x800CE734, mask = 0xFF000000, op = "eq", value = 0x0B000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x000A0000 },
 ]
 focus = ["gCurrentMenuData"]
 

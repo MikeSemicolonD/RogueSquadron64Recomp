@@ -168,26 +168,52 @@ def test_classify_real_descriptor_states():
     _set_u16(b, 0x800CFF50, 0x0B)
     assert classify(m, b) == "cinematic"
 
-    # menu main page: menu overlay, valid gCurrentMenuData, menu id 0
+    # menu main page: menu overlay, valid gCurrentMenuData, menu id 0, the menu tree screen
     b = _blank_rdram()
     _set_u32(b, 0x800375B0, 1)
     _set_u32(b, 0x800CE730, 0x800A5FD4)
     _set_u8(b, 0x800CE734, 0)
+    _set_u16(b, 0x800CFF50, 2)
     assert classify(m, b) == "menu.main"
 
-    # SELECT GAME on the menu tree screen; the step into the hangar keeps screen 1 and is not it
+    # SELECT GAME on the menu tree screen; SELECT LEVEL's screen while bridgeMenuState is still 0 is level select
     _set_u8(b, 0x800CE734, 1)
     _set_u16(b, 0x800CFF50, 2)
-    assert classify(m, b) == "menu.account.enter_name"
-    _set_u8(b, 0x800CDAC4, 4)
+    assert classify(m, b) == "menu.select_game"
     _set_u16(b, 0x800CFF50, 1)
-    assert classify(m, b) == "menu.account"
+    assert classify(m, b) == "menu.level_select"
+
+    # the hangar, its way in (screen 1) and out to the opening cutscene (screen 0x0B)
+    _set_u8(b, 0x800CDAC4, 4)
+    for screen in (0, 1, 0x0B):
+        _set_u16(b, 0x800CFF50, screen)
+        assert classify(m, b) == "menu.hangar"
+    _set_u8(b, 0x800CDAC4, 3)
+    _set_u16(b, 0x800CFF50, 1)
+    assert classify(m, b) == "menu.craft_select"
+
+    # the results screen after a mission: menu data cleared, bridgeMenuState left at the hangar's 4
+    b = _blank_rdram()
+    _set_u32(b, 0x800375B0, 1)
+    _set_u8(b, 0x800CDAC4, 4)
+    _set_u16(b, 0x800CFF50, 3)
+    assert classify(m, b) == "menu.results"
+
+    # the SHOWROOM hub runs its own screen (0x0A), even with bridgeMenuState left at the hangar's 4
+    _set_u32(b, 0x800CE730, 0x80198A72)
+    _set_u8(b, 0x800CE734, 0x0A)
+    _set_u16(b, 0x800CFF50, 0x0A)
+    assert classify(m, b) == "menu.showroom"
+    _set_u32(b, 0x800CE730, 0x800A5FD4)
+    _set_u8(b, 0x800CE734, 0x0B)
+    assert classify(m, b) == "menu.concert_hall"
 
     # menu options page: menu id 2 (child beats parent)
     b = _blank_rdram()
     _set_u32(b, 0x800375B0, 1)
     _set_u32(b, 0x800CE730, 0x800A5FD4)
     _set_u8(b, 0x800CE734, 2)
+    _set_u16(b, 0x800CFF50, 2)
     assert classify(m, b) == "menu.options"
 
     # menu resident but an unmapped id -> parent "menu"

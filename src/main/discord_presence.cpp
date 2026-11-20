@@ -565,12 +565,12 @@ Activity describe(const uint8_t* rdram, bool hangar)
         return level < std::size(kLevelNames) ? screen(level_name(level), "Cutscene") : screen("Watching a cutscene");
     }
 
-    if (st == "menu.account.level_select")
+    if (st == "menu.level_select")
     {
         return screen("Selecting a level");
     }
 
-    if (st == "menu.account.craft_select" || st == "menu.account.hangar")
+    if (st == "menu.craft_select" || st == "menu.hangar")
     {
         return screen("Choosing a craft", level_name(level));
     }
