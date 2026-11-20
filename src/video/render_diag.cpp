@@ -55,6 +55,8 @@ extern "C" void rs64_mcp_note_dl();
 extern "C" void rs64_data_bp_arm(void* host_addr);
 extern "C" void rs64_data_bp_set2(void* host_addr);
 extern "C" void rs64_data_bp_drain(int vi);
+extern "C" void rs64_write_trap_arm(uint8_t* lo, uint8_t* hi);
+extern "C" void rs64_write_trap_drain(int vi);
 
 #endif
 
@@ -237,6 +239,23 @@ void RenderDiag::data_bp_tick()
 {
 
 #ifdef _WIN32
+
+    // ROGUESQ_WRITE_TRAP=<lo>-<hi>: log every write into that RDRAM range (within one 4 KB page), from ROGUESQ_WRITE_TRAP_VI on.
+    static const char* s_wt = env_str("ROGUESQ_WRITE_TRAP");
+    static const int s_wt_vi = env_int("ROGUESQ_WRITE_TRAP_VI", 1);
+    static bool s_wt_armed = false;
+
+    if (s_wt && app->core.RDRAM && !s_wt_armed && vi_count_ >= s_wt_vi)
+    {
+        char* end = nullptr;
+        const uint32_t lo = (uint32_t)std::strtoul(s_wt, &end, 16) & 0x00FFFFFFu;
+        const uint32_t hi = (end && *end == '-') ? ((uint32_t)std::strtoul(end + 1, nullptr, 16) & 0x00FFFFFFu) : lo + 4u;
+
+        s_wt_armed = true;
+        rs64_write_trap_arm(app->core.RDRAM + lo, app->core.RDRAM + hi);
+    }
+
+    if (s_wt_armed) rs64_write_trap_drain(vi_count_);
 
     static const char* s_bp = env_str("ROGUESQ_DATA_BP");
 

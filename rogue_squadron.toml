@@ -1425,6 +1425,218 @@ func = "drawSubtitleText"
 vram = 0x80015AC4
 value = 0x24E70000
 
+# Per-frame draw queue: 512 12-byte entries at 0x80116400 with no bound check, and the camera index at 0x80117C00 sits right after it (a long tow cable round an AT-AT overflows it and the next draw faults). Moved to host RAM with room for 2048.
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AB44
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AB4C
+value = 0x8C221000
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AD00
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AD08
+value = 0x8C221004
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AE28
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AE30
+value = 0x8C241004
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AF50
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "beginFrameDLChunk"
+vram = 0x8000AF58
+value = 0x8C231000
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x8001024C
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010254
+value = 0xAC251000
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010258
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010260
+value = 0xAC241004
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x8001026C
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "submitSceneNodeRender"
+vram = 0x80010274
+value = 0xAC341008
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x80011288
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x80011290
+value = 0xAC241000
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x80011294
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x8001129C
+value = 0xAC281004
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x800112A8
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderFlatMeshFaceGroup"
+vram = 0x800112B0
+value = 0xAC311008
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013238
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013240
+value = 0xAC241000
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013244
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x8001324C
+value = 0xAC281004
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013258
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "renderLitMeshFaceGroup"
+vram = 0x80013260
+value = 0xAC361008
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015014
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x8001501C
+value = 0xAC251000
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015020
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015028
+value = 0xAC241004
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015034
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x8001503C
+value = 0xAC311008
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FAC
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FB4
+value = 0xAC271000
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FB8
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FC0
+value = 0xAC201004
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FC4
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "setupCameraMatrices"
+vram = 0x80016FCC
+value = 0xAC201008
+
+# Per-frame scene node list: 518 entries at 0x8010E090 with no bound check, and the face stamp buffer pointers at 0x8010E8A8/AC sit right after it (a long tow cable overflows it and the stamps then land in the next heap block). Moved to host RAM with room for 4096.
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015148
+value = 0x3C0180B2
+
+[[patches.instruction]]
+func = "processSceneNode"
+vram = 0x80015150
+value = 0xAC307000
+
+[[patches.instruction]]
+func = "submitGfxFrame"
+vram = 0x8000C0E4
+value = 0x3C1180B2
+
+[[patches.instruction]]
+func = "submitGfxFrame"
+vram = 0x8000C0E8
+value = 0x26317000
+
 [[patches.hook]]
 func = "buildAndRegisterDefaultMaterial"
 before_vram = 0x80018098

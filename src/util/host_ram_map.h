@@ -43,6 +43,14 @@
 #define RS64_HR_REPLY_RING 0x80B20000u
 #define RS64_HR_REPLY_RING_END 0x80B20600u
 
+// Per-frame draw queue, moved from 0x80116400 with room for 2048 12-byte entries (the lui 0x80B2 instruction patches in rogue_squadron.toml).
+#define RS64_HR_DRAW_QUEUE 0x80B21000u
+#define RS64_HR_DRAW_QUEUE_END 0x80B27000u
+
+// Per-frame scene node list, moved from 0x8010E090 with room for 4096 entries (the lui 0x80B2 + 0x7000 instruction patches in rogue_squadron.toml).
+#define RS64_HR_NODE_LIST 0x80B27000u
+#define RS64_HR_NODE_LIST_END 0x80B2B000u
+
 // Co-op mod: relocated per-player ranges (kMovedRanges in mp_core.h, delta 0x00A00000).
 #define RS64_HR_COOP_MOVED_A 0x80B38058u
 #define RS64_HR_COOP_MOVED_A_END 0x80B39020u
@@ -121,7 +129,9 @@ RS64_HR_ORDERED(TERRAIN_EDIT, FAR_MTX);
 RS64_HR_ORDERED(FAR_MTX, STANDINS);
 RS64_HR_ORDERED(STANDINS, TGRID);
 RS64_HR_ORDERED(TGRID, REPLY_RING);
-RS64_HR_ORDERED(REPLY_RING, COOP_MOVED_A);
+RS64_HR_ORDERED(REPLY_RING, DRAW_QUEUE);
+RS64_HR_ORDERED(DRAW_QUEUE, NODE_LIST);
+RS64_HR_ORDERED(NODE_LIST, COOP_MOVED_A);
 RS64_HR_ORDERED(COOP_MOVED_A, COOP_SCRATCH);
 RS64_HR_ORDERED(COOP_SCRATCH, COOP_MOVED_B);
 RS64_HR_ORDERED(COOP_MOVED_B, FACE_LIST);

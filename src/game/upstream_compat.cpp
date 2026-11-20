@@ -446,6 +446,98 @@ extern "C" void rs64_data_bp_drain(int vi)
     if (n) fflush(stderr);
 }
 
+// Write trap: the host page holding a watched RDRAM range is read-only; a write to the page faults, the handler records it when it lands in the range,
+// opens the page for one single-stepped instruction and closes it again. No thread is suspended, so it is safe on any thread at any time.
+static uint8_t* s_wt_page = nullptr;
+static uint8_t* s_wt_lo = nullptr;
+static uint8_t* s_wt_hi = nullptr;
+static Rs64BpHit s_wt_hits[256];
+static std::atomic<unsigned> s_wt_nhits{0};
+static thread_local bool s_wt_reprotect = false;
+
+static LONG CALLBACK rs64_wt_veh(EXCEPTION_POINTERS* ep)
+{
+
+    const DWORD code = ep->ExceptionRecord->ExceptionCode;
+
+    if (code == EXCEPTION_SINGLE_STEP && s_wt_reprotect)
+    {
+        DWORD old = 0;
+
+        s_wt_reprotect = false;
+        VirtualProtect(s_wt_page, 4096, PAGE_READONLY, &old);
+
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+
+    if (code != EXCEPTION_ACCESS_VIOLATION || ep->ExceptionRecord->ExceptionInformation[0] != 1)
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    uint8_t* target = (uint8_t*)ep->ExceptionRecord->ExceptionInformation[1];
+
+    if (target < s_wt_page || target >= s_wt_page + 4096)
+    {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    if (target >= s_wt_lo && target < s_wt_hi)
+    {
+        const unsigned i = s_wt_nhits.fetch_add(1);
+
+        s_wt_hits[i & 255] = { (uint32_t)(target - s_wt_lo), GetCurrentThreadId(), (uint64_t)ep->ContextRecord->Rip, 0 };
+    }
+
+    DWORD old = 0;
+
+    VirtualProtect(s_wt_page, 4096, PAGE_READWRITE, &old);
+    s_wt_reprotect = true;
+    ep->ContextRecord->EFlags |= 0x100;
+
+    return EXCEPTION_CONTINUE_EXECUTION;
+}
+
+extern "C" void rs64_write_trap_arm(uint8_t* lo, uint8_t* hi)
+{
+
+    DWORD old = 0;
+
+    SymSetOptions(SymGetOptions() | SYMOPT_LOAD_LINES);
+    s_wt_lo = lo;
+    s_wt_hi = hi;
+    s_wt_page = (uint8_t*)((uintptr_t)lo & ~(uintptr_t)4095);
+    AddVectoredExceptionHandler(1, rs64_wt_veh);
+    VirtualProtect(s_wt_page, 4096, PAGE_READONLY, &old);
+
+    fprintf(stderr, "[write-trap] armed host %p-%p\n", (void*)lo, (void*)hi);
+    fflush(stderr);
+}
+
+extern "C" void rs64_write_trap_drain(int vi)
+{
+
+    static unsigned s_done = 0;
+    const unsigned n = s_wt_nhits.load();
+
+    if (n - s_done > 256) s_done = n - 256;
+
+    for (; s_done < n; ++s_done)
+    {
+        const Rs64BpHit& h = s_wt_hits[s_done & 255];
+        const char* fn = rs64_host_caller_name((void*)h.rip);
+        IMAGEHLP_LINE64 line{};
+        line.SizeOfStruct = sizeof line;
+        DWORD ldisp = 0;
+        const bool has_line = SymGetLineFromAddr64(GetCurrentProcess(), h.rip, &ldisp, &line) != 0;
+
+        fprintf(stderr, "[write-trap] hit#%u vi=#%d tid=%u host+%u at %s (%s:%lu)\n", s_done + 1, vi, h.tid, h.value, fn,
+                has_line ? line.FileName : "?", has_line ? line.LineNumber : 0ul);
+    }
+
+    if (n) fflush(stderr);
+}
+
 #endif
 
 // ROGUESQ_LOG_MESG_TRACE=1: thread/message order for cinematic frames ROGUESQ_MESG_TRACE_FRAMES=lo-hi
