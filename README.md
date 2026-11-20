@@ -43,12 +43,15 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 | **[Android 9+ arm64](#android)** | Vulkan 1.1 |
 | **[macOS 11+ arm64 (Apple Silicon)](#macos)*** | Metal |
 | **[macOS 11+ x86_64 (Intel)](#macos)*** | Metal |
+| **[Web browser](https://github.com/n64hub/RogueSquadron64Recomp-web)**† | WebGPU |
 
 </div>
 
 *macOS builds but hasn't been run on a Mac yet (see [macOS](#macos))
 
 **The 32-bit x86 Linux build has only been tested on a 64-bit PC with software Vulkan.
+
+†A separate [fork](https://github.com/n64hub/RogueSquadron64Recomp-web) by [n64hub](https://github.com/n64hub/)/[amazingalek](https://github.com/amazingalek)
 
 [Per-platform minimum requirements](docs/guides/building-all-platforms.md#what-players-need).
 
@@ -500,9 +503,7 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 - **Your size:** push the right thumbstick up to grow or down to shrink until the cockpit feels right. Missions, the menus' 3D scenes (the hangar) and cutscenes each keep their own size, saved as `vrScale`, `vrScaleMenus` and `vrScaleCutscenes`.
 - Missions, cutscenes and SELECT LEVEL are in stereoscopic 3D while the menus and results screens show on a virtual screen in front of you.
 
-### Developing VR without a headset
-
-The [Meta VR CLI](https://github.com/meta-quest/agentic-tools) (`metavr`) was instrumental in fixing and debugging VR. Its `metavr xrsim` commands drive the **Meta XR Simulator**, a headset stand-in that runs the real OpenXR path on the desktop. An agent can start the simulator, pick a device and refresh rate, and launch the game against it, then capture frames and read logs without anyone wearing a headset.
+The [Meta VR CLI](https://github.com/meta-quest/agentic-tools) (`metavr`) is instrumental in fixing and debugging VR issues. Its `metavr xrsim` commands drive the **Meta XR Simulator**, a headset stand-in that runs the real OpenXR path on the desktop. An agent can start the simulator, pick a device and refresh rate, and launch the game against it, then capture frames and read logs without anyone wearing a headset.
 
 ```powershell
 metavr xrsim app ensure-running
@@ -579,6 +580,11 @@ Here's a list of MCPs that could be useful for this project:
 - **[Dávid Pethes](https://github.com/dpethes/rerogue)**: the rerogue tools and the [satd.sk write-up](https://satd.sk/pages/rs/) documenting the PC build's HOB, HMT, HMP, and MORT formats, which the N64 build shares.
 - **[jrra](https://github.com/jrra/rerogue)**: a community fork of rerogue.
 - **[Tmcg2](https://github.com/Tmcg2/rogue_squadron64)**: started the companion decomp project.
+
+## Notable Forks
+
+- **[amazingalek](https://github.com/amazingalek)**'s [Web implementation](https://github.com/n64hub/RogueSquadron64Recomp-web) playable right -> **[HERE](https://n64hub.com/star-wars-rogue-squadron/)**
+- **[bkacjio](https://github.com/bkacjios)**'s [port for the PocketGo S30](https://github.com/bkacjios/rs64recomp-s30)
 
 ## License
 
