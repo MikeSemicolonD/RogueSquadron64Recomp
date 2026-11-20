@@ -38,7 +38,7 @@
         {
             "name": "emissive_imp_shuttle_exhaust",
             "enabled": true,
-            "mesh": "imp_shuttle#s0.p0",
+            "mesh": "imp_shuttle#s0.p0|mshuttle#s0.p0",
             "emissive": true,
             "translucentOnly": true,
             "lights": []
