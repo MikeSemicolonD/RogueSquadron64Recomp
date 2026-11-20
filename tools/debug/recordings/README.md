@@ -23,11 +23,11 @@ Besides input, a mission recording stores the audio thread's answers the simulat
 | 1 | Rendezvous on Barkhesh | | none yet |
 | 2 | The Search for the Nonnah | | none yet |
 | 3 | Defection at Corellia | | none yet |
-| 4 | Liberation of Gerrard V | | none yet |
-| 5 | The Jade Moon | | none yet |
+| 4 | Liberation of Gerrard V | [04-liberation-of-gerrard-v](04-liberation-of-gerrard-v) | see below |
+| 5 | The Jade Moon | [05-the-jade-moon](05-the-jade-moon) | see below |
 | 6 | Imperial Construction Yards | [06-imperial-construction-yards](06-imperial-construction-yards) | see below |
-| 7 | Assault on Kile II | | none yet |
-| 8 | Rescue on Kessel | | none yet |
+| 7 | Assault on Kile II | [07-assault-on-kile-ii](07-assault-on-kile-ii) | see below |
+| 8 | Rescue on Kessel | [08-rescue-on-kessel](08-rescue-on-kessel) | see below |
 | 9 | Prisons of Kessel | [09-prisons-of-kessel](09-prisons-of-kessel) | see below |
 | 10 | Battle Above Taloraan | | none yet |
 | 11 | Escape from Fest | | none yet |
@@ -35,12 +35,14 @@ Besides input, a mission recording stores the audio thread's answers the simulat
 | 13 | Raid on Sullust | | none yet |
 | 14 | Moff Seerdon's Revenge | | none yet |
 | 15 | The Battle of Calamari | | none yet |
-| 16 | Beggar's Canyon (bonus) | | none yet |
-| 17 | The Death Star Trench Run (bonus) | | none yet |
+| 16 | Beggar's Canyon (bonus) | [16-beggars-canyon](16-beggars-canyon) | see below |
+| 17 | The Death Star Trench Run (bonus) | [17-the-death-star-trench-run](17-the-death-star-trench-run) | see below |
 | 18 | The Battle of Hoth (bonus) | | none yet |
 | 20 | CHICKEN (AT-ST passcode level) | [ai/20-chicken](ai/20-chicken) | see below |
 
-Needs re-recording: `liberation_of_gerrard_v`, `the_jade_moon`, `imperial_construction_yards`, and `construction_yards_bonus` were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
+Needs re-recording: `imperial_construction_yards`, and `construction_yards_bonus` were recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
+
+Upgrade pickups: these mission recordings fly through their level's upgrade (the collect at `npcPowerUpUpdate` fires during the replay): `defection_at_corellia_20261118_191957`, `the_jade_moon_20261119_171142`, `prisons_of_kessel_20261119_200534`, `battle_above_taloraan_20261007_134057`, `blockade_on_chandrila_20261007_135613`, `raid_on_sullust_20261007_140400` and `moff_seerdons_revenge_20261007_141118`. The `assault_on_kile_ii`, `escape_from_fest` and `the_search_for_the_nonnah` runs leave theirs. Every run starts with the pilot's upgrades from its `flags0` header, which already owns all of them in the 2026-11 recordings.
 
 ### 00 Ambush at Mos Eisley
 
@@ -56,7 +58,13 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 
 | File | Kind | Contents |
 | --- | --- | --- |
-| `liberation_of_gerrard_v_20261118_200850.rec` (+ `.hash`) | Mission | 3982 frames, X-wing: a failed attempt, ending where the game offers the retry. The mission-failure test |
+| `liberation_of_gerrard_v_20261119_170322.rec` (+ `.hash`) | Mission | 7335 frames, X-wing, no deaths: a full run to mission complete |
+
+### 05 The Jade Moon
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `the_jade_moon_20261119_171142.rec` (+ `.hash`) | Mission | 7578 frames, X-wing, one death mid-run, played to the mission end |
 
 ### 06 Imperial Construction Yards
 
@@ -65,11 +73,36 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 | `construction_yards_towcable.rec` (+ `.hash`) | Mission | 3209 frames in the snowspeeder (craft 4), firing the tow cable; frame-interpolation checks for the cable (`level:6,4`). Recorded with `larger_object_pool.nrm` staged and no gameplay mods (invincibility, long-tow-cable): replay the same way or player0 diverges from frame 0 |
 | `construction_yards_bonus.rec` (+ `.hash`) | Mission | 3126 frames in the snowspeeder (craft 4): destroys the far silo past the landing platform and collects the Advanced Bombs (power-up DAT item 121). Co-op pickup sharing: `run-mp.ps1 -HostPad` this, `-ClientPad construction_yards_towcable.rec` (which never goes near the silo) |
 
+### 07 Assault on Kile II
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `assault_on_kile_ii_20261119_194907.rec` (+ `.hash`) | Mission | 9932 frames, A-wing, no deaths, played to the mission end |
+
+### 08 Rescue on Kessel
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `rescue_on_kessel_20261119_194433.rec` (+ `.hash`) | Mission | 4194 frames, X-wing, no deaths, played to the mission end |
+
 ### 09 Prisons of Kessel
 
 | File | Kind | Contents |
 | --- | --- | --- |
+| `prisons_of_kessel_20261119_200534.rec` (+ `.hash`) | Mission | 18007 frames, X-wing, no deaths, played to the mission end |
 | `kessel.rec` | Session (v3) | Boot, menus, then flying past the searchlight towers and fighting (frame-interpolation checks) |
+
+### 16 Beggar's Canyon
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `beggars_canyon_20261119_200217.rec` (+ `.hash`) | Mission | 2392 frames, T-16, no deaths, played to the mission end |
+
+### 17 The Death Star Trench Run
+
+| File | Kind | Contents |
+| --- | --- | --- |
+| `the_death_star_trench_run_20261119_201651.rec` (+ `.hash`) | Mission | 6425 frames, X-wing, one death mid-run, played to the mission end |
 
 ### 20 CHICKEN (ai/)
 
