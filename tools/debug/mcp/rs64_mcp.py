@@ -1547,7 +1547,7 @@ def serve():
 
     @tool()
     def pause_at(clock: str, frame: int, timeout_s: float = 120, next: bool = False) -> dict:
-        """Hold the game so the picture is `frame` of `clock`, then freeze RT64 on it. Clocks: cutscene (the cutscene's own frames; the boot logos, attract cutscenes and mission cutscenes), crawl, ls (a replay's lockstep frame), or a game state id (mission, menu.main, ...; frames since entered). Use the clock the moment belongs to: a RenderDoc capture is named after the clocks running when it was taken (cap_cutscene-412_...), and those are the numbers to pass here. Launches run with ROGUESQ_FIXED_STEP=1, so game time advances one frame per frame and each of these frame numbers is the same picture on every launch. dl (display lists since boot) still depends on load times and is refused here (pause_now and step use it within a run). A frame already passed needs a relaunch, or next=true to wait for the clock to start over (the next cutscene, or the next mission for ls). To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
+        """Hold the game so the picture is `frame` of `clock`, then freeze RT64 on it. Clocks: cutscene (the cutscene's own frames; the boot logos, attract cutscenes and mission cutscenes), crawl, ls (a replay's lockstep frame), or a game state id (mission, menu.main, ...; frames since entered). Use the clock the moment belongs to: a RenderDoc capture is named after the clocks running when it was taken (cap_cutscene-412_...), and those are the numbers to pass here. Launches run with ROGUESQ_FIXED_STEP=1, so game time advances one frame per frame and each of these frame numbers is the same picture on every launch. dl (display lists since boot) still depends on load times and is refused here (pause_now and step use it within a run). A frame already passed needs a relaunch, or next=true to wait for the clock to start over (the next cutscene, or the next mission for ls); a run already going but short of `frame` counts. To freeze what is on screen now use pause_now; reading RDRAM needs no pause."""
         if clock == "dl":
             raise RuntimeError("dl frames drift between launches: pause on the cutscene/crawl/ls/state clock the moment belongs to (a capture's name lists them), or pause_now and step")
 
@@ -1559,11 +1559,8 @@ def serve():
             raise RuntimeError(f"{clock} is already at frame {now} (past {frame}): use pause_now, or step from a pause")
 
         # next=true on the state being shown waits for it to be left and entered again, which only happens if something drives the game there.
-        if next and now is not None and clock == info.get("state"):
-            if now < frame:
-                next = False
-            else:
-                raise RuntimeError(f"{clock} is on screen at frame {now} (past {frame}); next=true would wait for it to be left and entered again: use pause_now, or drive the game out and back first")
+        if next and now is not None and clock == info.get("state") and now >= frame:
+            raise RuntimeError(f"{clock} is on screen at frame {now} (past {frame}); next=true would wait for it to be left and entered again: use pause_now, or drive the game out and back first")
 
         return game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": timeout_s, "next": next}, timeout_s + 15)
 

@@ -311,7 +311,10 @@ static McpWait mcp_set_target(std::optional<PauseTarget> target, bool release = 
 
     s_mcp_target_after = after;
 
-    if (target && after_restart && !after) {
+    // A run that started before the request but is still short of the frame counts: the caller is often slower than the restart.
+    const auto now = target ? s_mcp_clocks.find(target->clock) : s_mcp_clocks.end();
+
+    if (target && after_restart && !after && now != s_mcp_clocks.end() && now->second >= target->frame) {
         s_mcp_target_after = s_mcp_restarts[target->clock];
     }
 

@@ -32,6 +32,7 @@
 #include "ultramodern/error_handling.hpp"
 #include "game/mod_content/mod_levels.h"
 #include "game/mod_content/terrain_paint.h"
+#include "game/mod_content/level_environment.h"
 #include "game/lang/lang.h"
 #include "game/mod_content/level_rules.h"
 #include "host_api/host_api.h"
@@ -763,6 +764,60 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
     *bank_size = (uint32_t)it->second.first.size();
     *ids = it->second.second.data();
     *ids_size = (uint32_t)it->second.second.size();
+
+    return 1;
+}
+
+// The mission sun's colour for a level (its lv_<level, base 36>/hmp, a mod's copy when it replaces one), known before the level loads: its intro cutscene lights with its own hmp.
+extern "C" int rs64_level_sun_color(uint32_t level, float* rgb)
+{
+
+    static std::mutex s_mutex;
+    static std::unordered_map<uint32_t, std::array<float, 4>> s_suns;
+    static constexpr char kDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+    if (level >= 36)
+    {
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lock(s_mutex);
+    auto it = s_suns.find(level);
+
+    if (it == s_suns.end())
+    {
+        const std::string path = std::string("level/lv_") + kDigits[level] + "/hmp";
+        const auto& rom = recomp::get_rom();
+        std::vector<uint8_t> hmp;
+
+        if (const AssetOverride* o = rs64::assets::find(path))
+        {
+            if ((size_t)o->rom_off + o->size <= rom.size()) hmp.assign(rom.begin() + o->rom_off, rom.begin() + o->rom_off + o->size);
+        }
+        else
+        {
+            auto files = rom_assets(rom, [&path](const std::string& p) { return p == path; });
+
+            if (!files.empty()) hmp = std::move(files.begin()->second);
+        }
+
+        std::array<float, 4> sun = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+        sun[3] = rs64env::hmpSunColor(hmp.data(), hmp.size(), sun.data()) ? 1.0f : 0.0f;
+
+        fprintf(stderr, "[assets] %s sun colour (%.3f, %.3f, %.3f)%s\n", path.c_str(), sun[0], sun[1], sun[2], sun[3] > 0.0f ? "" : " not found");
+
+        it = s_suns.emplace(level, sun).first;
+    }
+
+    if (it->second[3] <= 0.0f)
+    {
+        return 0;
+    }
+
+    rgb[0] = it->second[0];
+    rgb[1] = it->second[1];
+    rgb[2] = it->second[2];
 
     return 1;
 }
