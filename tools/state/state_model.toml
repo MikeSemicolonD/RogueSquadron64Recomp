@@ -76,17 +76,16 @@ focus = ["gCurrentMenuData", "gGameSettings"]
 id = "menu.level_select"
 name = "Select level"
 parent = "menu"
-# The SELECT LEVEL screen (0x800CFF50 = 1) before bridgeMenuState reaches 2 (it is 0 for a few frames after a pilot is picked) counts too, and so does the
-# picked level's AVAILABLE CRAFT panel (bridgeMenuState 3): the craft is chosen in the hangar.
+# The whole SELECT LEVEL screen (0x800CFF50 = 1) counts: bridgeMenuState 0 for a few frames after a pilot is picked, 2 the level list, 3 the picked level's
+# AVAILABLE CRAFT panel and 4 once it is confirmed, while the panel fades out (a level with one craft skips the hangar and goes straight to the mission).
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "eq", value = 0x00010000 },
-  { addr = 0x800CDAC4, mask = 0xFF000000, op = "ne", value = 0x04000000 },
 ]
 focus = ["gCurrentMenuData", "gGameSettings"]
 
 # The 3D SELECT YOUR CRAFT hangar keeps SELECT GAME's bridgeMenuState 4; the menu overlay's screen u16 (0x800CFF50: 2 menu tree, 1 SELECT LEVEL, 0 hangar) tells it apart.
-# Its way in (screen still 1) and out to the mission's opening cutscene (screen 0x0B) count as the hangar.
+# Its way out to the mission's opening cutscene (screen 0x0B) counts as the hangar; its way in (screen still 1) is SELECT LEVEL's panel fading out.
 [[state]]
 id = "menu.hangar"
 name = "Craft-select hangar"
@@ -94,6 +93,7 @@ parent = "menu"
 classify = [
   { addr = 0x800375B0, mask = 0xFFFFFFFF, op = "eq", value = 0x00000001 },
   { addr = 0x800CDAC4, mask = 0xFF000000, op = "eq", value = 0x04000000 },
+  { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x00010000 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x00020000 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x00030000 },
   { addr = 0x800CFF50, mask = 0xFFFF0000, op = "ne", value = 0x000A0000 },

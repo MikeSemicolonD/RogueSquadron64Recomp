@@ -183,11 +183,13 @@ def test_classify_real_descriptor_states():
     _set_u16(b, 0x800CFF50, 1)
     assert classify(m, b) == "menu.level_select"
 
-    # the hangar, its way in (screen 1) and out to the opening cutscene (screen 0x0B)
+    # the hangar and its way out to the opening cutscene (screen 0x0B); its way in (screen 1) is still SELECT LEVEL
     _set_u8(b, 0x800CDAC4, 4)
-    for screen in (0, 1, 0x0B):
+    for screen in (0, 0x0B):
         _set_u16(b, 0x800CFF50, screen)
         assert classify(m, b) == "menu.hangar"
+    _set_u16(b, 0x800CFF50, 1)
+    assert classify(m, b) == "menu.level_select"
     _set_u8(b, 0x800CDAC4, 3)
     _set_u16(b, 0x800CFF50, 1)
     assert classify(m, b) == "menu.level_select"
