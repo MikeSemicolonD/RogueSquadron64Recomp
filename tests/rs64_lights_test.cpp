@@ -1549,6 +1549,11 @@ static void testHitColorTable() {
     // Floor draws keep their colour and carry tag 253 (reflection rays skip them).
     const uint32_t f = markFloor(t[0].rgba);
     CHECK(((f >> 24) == 253) && ((f & 0xFFFFFF) == (t[0].rgba & 0xFFFFFF)));
+
+    // Emissive draws that write no depth (a shuttle's translucent exhaust) keep their colour and carry tag 252.
+    const uint32_t d = markDepthless(t[1].rgba);
+    CHECK(((d >> 24) == 252) && ((d & 0xFFFFFF) == (t[1].rgba & 0xFFFFFF)));
+
     const float up[3] = { 0.0f, -1.0f, 0.0f };
     const float dish[3] = { 0.5f, -9.0f, 0.2f };
     const float hull[3] = { 6.0f, -1.0f, 3.0f };
