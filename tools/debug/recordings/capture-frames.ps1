@@ -1,5 +1,5 @@
 # Replay a recording and screenshot the game window at exact replay frames (frame-matched A/B for render changes).
-# Usage: .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\06-imperial-construction-yards\construction_yards_bonus.rec -Frames 2900,3000 -Tag pickup [-Env "ROGUESQ_RT_LIGHTS=1;ROGUESQ_RT_LIGHTS_DEBUG=2"] [-Speed 4]
+# Usage: .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\16-beggars-canyon\beggars_canyon_20261119_200217.rec -Frames 600,1200 -Tag canyon [-Env "ROGUESQ_RT_LIGHTS=1;ROGUESQ_RT_LIGHTS_DEBUG=2"] [-Speed 4]
 # The replay pauses before each listed frame (ROGUESQ_LS_PAUSE_AT) until the capture is taken, so two runs with different -Env give identical frames.
 # Level and craft come from the .rec header; the hash log and PNGs go to dumps\capture\<Tag>\ (never next to the recording).
 # -RenderDoc also writes GPU captures (.rdc) of each listed frame to dumps\capture\<Tag>\rdc\ (open them with the renderdoc MCP or qrenderdoc).

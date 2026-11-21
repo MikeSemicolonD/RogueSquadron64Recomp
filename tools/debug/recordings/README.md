@@ -20,27 +20,25 @@ Besides input, a mission recording stores the audio thread's answers the simulat
 | Id | Mission | Folder | Recordings |
 | ---: | --- | --- | --- |
 | 0 | Ambush at Mos Eisley | [00-ambush-at-mos-eisley](00-ambush-at-mos-eisley) | see below |
-| 1 | Rendezvous on Barkhesh | | none yet |
-| 2 | The Search for the Nonnah | | none yet |
-| 3 | Defection at Corellia | | none yet |
+| 1 | Rendezvous on Barkhesh | [01-rendezvous-on-barkhesh](01-rendezvous-on-barkhesh) | in folder |
+| 2 | The Search for the Nonnah | [02-the-search-for-the-nonnah](02-the-search-for-the-nonnah) | in folder |
+| 3 | Defection at Corellia | [03-defection-at-corellia](03-defection-at-corellia) | in folder |
 | 4 | Liberation of Gerrard V | [04-liberation-of-gerrard-v](04-liberation-of-gerrard-v) | see below |
 | 5 | The Jade Moon | [05-the-jade-moon](05-the-jade-moon) | see below |
 | 6 | Imperial Construction Yards | [06-imperial-construction-yards](06-imperial-construction-yards) | see below |
 | 7 | Assault on Kile II | [07-assault-on-kile-ii](07-assault-on-kile-ii) | see below |
 | 8 | Rescue on Kessel | [08-rescue-on-kessel](08-rescue-on-kessel) | see below |
 | 9 | Prisons of Kessel | [09-prisons-of-kessel](09-prisons-of-kessel) | see below |
-| 10 | Battle Above Taloraan | | none yet |
-| 11 | Escape from Fest | | none yet |
-| 12 | Blockade on Chandrila | | none yet |
-| 13 | Raid on Sullust | | none yet |
-| 14 | Moff Seerdon's Revenge | | none yet |
-| 15 | The Battle of Calamari | | none yet |
+| 10 | Battle Above Taloraan | [10-battle-above-taloraan](10-battle-above-taloraan) | in folder |
+| 11 | Escape from Fest | [11-escape-from-fest](11-escape-from-fest) | in folder |
+| 12 | Blockade on Chandrila | [12-blockade-on-chandrila](12-blockade-on-chandrila) | in folder |
+| 13 | Raid on Sullust | [13-raid-on-sullust](13-raid-on-sullust) | in folder |
+| 14 | Moff Seerdon's Revenge | [14-moff-seerdons-revenge](14-moff-seerdons-revenge) | in folder |
+| 15 | The Battle of Calamari | [15-the-battle-of-calamari](15-the-battle-of-calamari) | in folder |
 | 16 | Beggar's Canyon (bonus) | [16-beggars-canyon](16-beggars-canyon) | see below |
 | 17 | The Death Star Trench Run (bonus) | [17-the-death-star-trench-run](17-the-death-star-trench-run) | see below |
-| 18 | The Battle of Hoth (bonus) | | none yet |
+| 18 | The Battle of Hoth (bonus) | [18-the-battle-of-hoth](18-the-battle-of-hoth) | in folder |
 | 20 | CHICKEN (AT-ST passcode level) | [ai/20-chicken](ai/20-chicken) | see below |
-
-Needs re-recording: `construction_yards_bonus` was recorded before the forced-craft secondary fix (secondary 3 whatever the craft). Replays now get the craft's own secondary from the menu driver, so they diverge from frame 0.
 
 Upgrade pickups: these mission recordings fly through their level's upgrade (the collect at `npcPowerUpUpdate` fires during the replay): `defection_at_corellia_20261118_191957`, `the_jade_moon_20261119_171142`, `prisons_of_kessel_20261119_200534`, `battle_above_taloraan_20261007_134057`, `blockade_on_chandrila_20261007_135613`, `raid_on_sullust_20261007_140400` and `moff_seerdons_revenge_20261007_141118`. The `assault_on_kile_ii`, `escape_from_fest` and `the_search_for_the_nonnah` runs leave theirs. Every run starts with the pilot's upgrades from its `flags0` header, which already owns all of them in the 2026-11 recordings.
 
@@ -71,8 +69,6 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 | File | Kind | Contents |
 | --- | --- | --- |
 | `construction_yards_towcable.rec` (+ `.hash`) | Mission | 3209 frames in the snowspeeder (craft 4), firing the tow cable; frame-interpolation checks for the cable (`level:6,4`). Recorded with `larger_object_pool.nrm` staged and no gameplay mods (invincibility, long-tow-cable): replay the same way or player0 diverges from frame 0 |
-| `construction_yards_bonus.rec` (+ `.hash`) | Mission | 3126 frames in the snowspeeder (craft 4): destroys the far silo past the landing platform and collects the Advanced Bombs (power-up DAT item 121). Co-op pickup sharing: `run-mp.ps1 -HostPad` this, `-ClientPad construction_yards_towcable.rec` (which never goes near the silo) |
-| `imperial_construction_yards_20261119_192539.rec` (+ `.hash`) | Mission | 12985 frames in the snowspeeder with the long tow cable: a failed attempt, closed at the failure screen |
 
 ### 07 Assault on Kile II
 
@@ -133,7 +129,7 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 - `capture-frames.ps1`: replays one recording (level and craft from its header, 4x) and screenshots the window at each listed frame; the replay pauses there (`ROGUESQ_LS_PAUSE_AT`) until the capture is taken, so two runs with different `-Env` give pixel-identical frames for A/B of render changes. Output and the hash log go to `dumps/capture/<tag>/`, never next to the recording.
 
   ```powershell
-  .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\06-imperial-construction-yards\construction_yards_bonus.rec -Frames 2995,3025 -Tag pickup -Env "ROGUESQ_RT_LIGHTS=1"
+  .\tools\debug\recordings\capture-frames.ps1 -Recording tools\debug\recordings\16-beggars-canyon\beggars_canyon_20261119_200217.rec -Frames 600,1200 -Tag canyon -Env "ROGUESQ_RT_LIGHTS=1"
   ```
 
   `-Cutscene <level>,<kind>` (kind 0 intro, 1 extro, 2 special) instead of `-Recording` boots into that cutscene and captures its own frames, the frame numbers the RS64 Explorer timeline shows (`ROGUESQ_PAUSE_AT=cutscene:<f>`), for comparing the game against the explorer frame for frame. It leaves other running game instances alone.
@@ -165,6 +161,8 @@ python tools\debug\recordings\compare_hashes.py tools\debug\recordings\00-ambush
 ```
 
 Use the `level=` and `craft=` values from the recording's header in `ROGUESQ_BOOT_TARGET`. The replay writes `<rec>.replay.hash` next to the recording and quits at the end; `run-replays.ps1` does all of this and keeps the output in `logs/`.
+
+Several recordings play in one launch as a `;`-separated `ROGUESQ_LS_REPLAY` list, booted with `ROGUESQ_BOOT_TARGET=abort:<level>,<craft>` (the first recording's) and `ROGUESQ_NAV_CHAIN=1`. Set `ROGUESQ_LS_HASH_OUT` to a folder and each recording's `.replay.hash` is written there. Every entry must replay under the same staged mods.
 
 ## Record and replay a session recording
 
