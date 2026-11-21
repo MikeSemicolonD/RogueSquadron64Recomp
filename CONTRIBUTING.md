@@ -44,6 +44,10 @@ These are issues that are external to the base game relating to how the mod itse
 4. Run the unit tests and style check. With a game build: `cmake --build build --config Release --target rs64_unit_tests`. Without a ROM: `cmake -S tests -B build-tests` then `cmake --build build-tests --config Release --target rs64_unit_tests`.
 5. Open the PR against `main` and fill in the template, including how you tested it.
 
+A pull request will be considered *stale* if it's open for a week or more with little to no work or word from the original contributor.
+
+Stale pull requests will be closed after a certain amount of time.
+
 ## AI Usage
 
 AI Agent usage **is** allowed and **encouraged** when working/contributing to this repo. This is basically a hobby project and really I don't expect to be inundated with pull requests. If you'd like to contribute feel free to make a pull request.
