@@ -1,6 +1,6 @@
 #pragma once
-// Mid-mission camera shots linked from level triggers: mods ship camera_shots.txt, one "<level> <trigger> <camera> [personal]" or
-// "<level> <trigger> destroy <object>" per line.
+// Mid-mission camera shots linked from level triggers: mods ship camera_shots.txt, one "<level> <trigger> <camera> [personal]",
+// "<level> <trigger> destroy <object>" or "<level> <camera> replace <camera>|none" per line.
 #include <algorithm>
 #include <cstdint>
 #include <deque>
@@ -37,6 +37,9 @@ inline std::vector<Link> addLinks(std::vector<Link>& links, std::string_view tex
             continue;
         }
         const bool destroy = l.camera == "destroy";
+        if (l.camera == "replace") {
+            continue;
+        }
         if (destroy && !(f >> mode)) {
             continue;
         }
@@ -65,6 +68,40 @@ inline std::vector<Link> addLinks(std::vector<Link>& links, std::string_view tex
         o->personal = l.personal;
     }
     return replaced_links;
+}
+
+// "<level> <camera> replace <camera>|none": when the mission script starts that camera, the other plays instead (none: nothing).
+struct Swap {
+    std::string level, from, to;
+};
+
+// The later line for the same level and camera wins.
+inline void addSwaps(std::vector<Swap>& swaps, std::string_view text) {
+    std::istringstream in{ std::string(text) };
+    for (std::string line; std::getline(in, line);) {
+        std::istringstream f(line);
+        Swap s;
+        std::string mode;
+        if (!(f >> s.level) || s.level[0] == '#' || !(f >> s.from >> mode >> s.to) || mode != "replace") {
+            continue;
+        }
+        const auto old = std::find_if(swaps.begin(), swaps.end(), [&](const Swap& x) { return x.level == s.level && x.from == s.from; });
+        if (old != swaps.end()) {
+            old->to = s.to;
+        } else {
+            swaps.push_back(s);
+        }
+    }
+}
+
+// What plays instead of camera on level: nullopt to keep it, "" for nothing.
+inline std::optional<std::string> swapFor(const std::vector<Swap>& swaps, const std::string& level, const std::string& camera) {
+    for (const auto& s : swaps) {
+        if (s.level == level && s.from == camera) {
+            return s.to == "none" ? std::string() : s.to;
+        }
+    }
+    return std::nullopt;
 }
 
 // How a destroy line treats its object: a spawned unit (slot != 0xFFFF) takes the lethal HIT only through a slot whose context points

@@ -51,6 +51,7 @@ using namespace rs64::mips;
 // ---- Mid-mission camera shots: mods link a level trigger to an in-level camera item in camera_shots.txt ----
 namespace {
 std::vector<rs64shots::Link> s_shot_links;
+std::vector<rs64shots::Swap> s_shot_swaps;
 rs64shots::Queue s_shot_queue;
 uint32_t s_shot_frame = 0;
 
@@ -64,6 +65,7 @@ void* s_shot_listener_user = nullptr;
 
 // Host RAM for the camera name the game's shot starter reads (above the manifest copies).
 constexpr uint32_t kShotName = RS64_HR_SHOT_NAME;
+constexpr uint32_t kShotSwap = RS64_HR_SHOT_SWAP;
 }
 
 extern "C" const char* rs64_mod_levels_current_folder();
@@ -81,12 +83,16 @@ extern "C" void rs64_camera_shots_init() {
         const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         const size_t before = s_shot_links.size();
 
+        const size_t swaps_before = s_shot_swaps.size();
+
+        rs64shots::addSwaps(s_shot_swaps, text);
+
         for (const auto& old : rs64shots::addLinks(s_shot_links, text))
         {
             fprintf(stderr, "[shots] %s: overrides the earlier link %s %s -> %s\n", d.mod_id.c_str(), old.level.c_str(), old.trigger.c_str(), old.camera.c_str());
         }
 
-        fprintf(stderr, "[shots] %s: camera_shots.txt read (%zu links in all, %zu new)\n", d.mod_id.c_str(), s_shot_links.size(), s_shot_links.size() - before);
+        fprintf(stderr, "[shots] %s: camera_shots.txt read (%zu links in all, %zu new, %zu cutscene replacements)\n", d.mod_id.c_str(), s_shot_links.size(), s_shot_links.size() - before, s_shot_swaps.size() - swaps_before);
     }
 }
 
@@ -95,7 +101,7 @@ extern "C" void rs64_camera_shots_mission_start(uint8_t* rdram)
 
     s_remote_shots.clear();
 
-    if (s_shot_links.empty()) return;
+    if (s_shot_links.empty() && s_shot_swaps.empty()) return;
 
     static const char* digits = "0123456789abcdefghijklmnopqrstuvwxyz";
     const uint32_t level = rw(rdram, 0x80130B70u);
@@ -248,6 +254,42 @@ extern "C" void rs64_camera_shots_frame(uint8_t* rdram, recomp_context* ctx)
     fprintf(stderr, "[shots] %s: playing %s (mission frame %u)%s\n", s_shot_queue.level().c_str(), name.c_str(), s_shot_frame, local ? "" : " for the other player");
 
     if (local && rs64shots::tellsPeer(*shot) && s_shot_listener) s_shot_listener(name.c_str(), shot->trigger.c_str(), s_shot_listener_user);
+}
+
+// The mission script's own cut (setHudFlagBit40AndStoreArg 0x800C7884, camera name at a0): a mod's replace line plays another camera,
+// or none (1: skip the call). The host's own cuts pass names in host RAM and stay as they are.
+extern "C" int rs64_camera_shots_script_cut(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const uint32_t name = (uint32_t)ctx->r4;
+
+    if (s_shot_swaps.empty() || name < 0x80000000u || name >= RS64_HR_START) return 0;
+
+    const std::string from = rstr(rdram, name, 255);
+    const auto to = rs64shots::swapFor(s_shot_swaps, s_shot_queue.level(), from);
+
+    if (!to) return 0;
+
+    if (to->empty())
+    {
+        fprintf(stderr, "[shots] %s: the mission's %s replaced by nothing\n", s_shot_queue.level().c_str(), from.c_str());
+        return 1;
+    }
+
+    const uint32_t item = level_object(rdram, ctx, *to);
+
+    if (!item || !rs64shots::isCameraItem(rw(rdram, item)))
+    {
+        fprintf(stderr, "[shots] %s: no camera %s to replace %s; the mission's plays\n", s_shot_queue.level().c_str(), to->c_str(), from.c_str());
+        return 0;
+    }
+
+    wstr(rdram, kShotSwap, to->substr(0, 255));
+    ctx->r4 = (int32_t)kShotSwap;
+
+    fprintf(stderr, "[shots] %s: playing %s in place of the mission's %s\n", s_shot_queue.level().c_str(), to->c_str(), from.c_str());
+
+    return 0;
 }
 
 // ---- Mod levels: levels.json entries shown in SELECT LEVEL after the stock ones, played as their template level ----

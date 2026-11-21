@@ -1848,6 +1848,13 @@ int rs64_th_runInMissionFrame_800FA7D0(uint8_t* rdram, recomp_context* ctx) {
     return 0;
 }
 
+// setHudFlagBit40AndStoreArg 0x800C7884: the mission script's cut to a level camera, which a mod's replace line can change.
+int rs64_th_setHudFlagBit40AndStoreArg_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    return rs64_camera_shots_script_cut(rdram, ctx);
+}
+
 // applyDatObjectiveTriggerEffect 0x80065A0C
 void rs64_th_applyDatObjectiveTriggerEffect_80065A0C(uint8_t* rdram, recomp_context* ctx)
 {

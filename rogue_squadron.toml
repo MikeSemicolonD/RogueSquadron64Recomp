@@ -995,6 +995,11 @@ func = "projectModelBoundsToScreen"
 before_vram = 0x80065FE4
 text = '{ rs64_th_projectModelBoundsToScreen_80065FE4(rdram, ctx); }'
 
+# A mod's camera_shots.txt replace line swaps the camera the mission script cuts to.
+[[patches.hook]]
+func = "setHudFlagBit40AndStoreArg"
+text = '{ if (rs64_th_setHudFlagBit40AndStoreArg_entry(rdram, ctx)) return; }'
+
 # VR: the head can face any way, so every hangar piece is drawn.
 [[patches.hook]]
 func = "projectModelBoundsToScreen"

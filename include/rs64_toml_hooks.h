@@ -337,6 +337,8 @@ void rs64_credits_wait_vi_cadence(uint8_t*, recomp_context*);
 void rs64_camera_shots_frame(uint8_t*, recomp_context*);
 void rs64_camera_shots_mission_start(uint8_t*);
 void rs64_camera_shots_trigger(uint8_t*, uint32_t, uint32_t);
+int rs64_camera_shots_script_cut(uint8_t*, recomp_context*);
+int rs64_th_setHudFlagBit40AndStoreArg_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_cine_iter_tick(unsigned iter);
 int rs64_cut_fade_active(void);
 void rs64_cut_fade_request(void);
