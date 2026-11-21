@@ -3442,7 +3442,8 @@ async function addCutCrawl()
 // The small menu of things to add, opened above the button that asked; rows are [label, note, action]. A second click closes it.
 let addMenuFor = null;
 
-function toggleAddMenu(button, rows)
+// at: [x, y] in the page to open the menu there (where something was clicked in the view) instead of above the button.
+function toggleAddMenu(button, rows, at = null)
 {
   const menu = $('cutAddMenu');
   const open = menu.hidden || addMenuFor !== button;
@@ -3463,6 +3464,14 @@ function toggleAddMenu(button, rows)
   }, elem('span', { textContent: label }), elem('small', { textContent: note }))));
 
   const b = button.getBoundingClientRect();
+
+  if (at)
+  {
+    menu.style.left = `${Math.max(10, Math.min(at[0] + 8, innerWidth - menu.offsetWidth - 10))}px`;
+    menu.style.top = `${Math.max(10, Math.min(at[1] + 8, innerHeight - menu.offsetHeight - 10))}px`;
+
+    return;
+  }
 
   menu.style.left = `${Math.max(10, b.right - menu.offsetWidth)}px`;
   menu.style.top = `${Math.max(10, b.top - menu.offsetHeight - 6)}px`;

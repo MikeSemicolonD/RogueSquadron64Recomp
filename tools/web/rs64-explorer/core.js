@@ -3,7 +3,7 @@
 // The explorer's shared core (renderer, camera, materials, markers, picking); the other area scripts load after it, in order (the loader at the end of index.html). three.js arrives through window.RS64_THREE.
 const { THREE, OrbitControls, TransformControls, GLTFExporter } = window.RS64_THREE;
 const { parseShadowTextures, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, openRom, parseHOB, parseHMT, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, terrainTexRGBA, paintApply, paintPath, paintBudget, PAINT_MARK, modAssetFile, parseVoiceLines, parseAnim, parseSpriteAnim, spriteKeys,
-  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, hmpResize, hmpShiftLights, datShift, cutsceneShift, hmpSetSun, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, SHIP_TEMPLATES, shipsParse, shipsWrite, shipBehaviours, SHIP_MAX, shipFreeSpot, shipNew, shipAliases, hobSetObjectName, hmtOwnTextures, hudIconSize, hudIconWrite, blueprintWrite, texFileRename, shipStandAt, shipSpotAt, shipHangarRemove, shipHangarAdd, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, CRAFT_RULE_EXT, modChecksOf, menuExtParse, zipUnpack, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, datFlightInset, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, unitGate, unitGateSet, unitDeathSet, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotSwapGet, shotSwapSet, shotRename, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, craftImportPlacement, craftClipBake, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
+  orderSetTarget, recordSetName, shotDropCameras, parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parsePool, parseSfxTable, renderSfx, parseCutsceneVoice, parseMixTables, parseSongTable, parseSongGroups, parseSong, encodeTexture, encodeBPS, zipStore, hmpGrid, writeHMP, hmpResize, hmpShiftLights, datShift, cutsceneShift, hmpSetSun, datAddItem, datRemoveItem, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, SHIP_TEMPLATES, shipsParse, shipsWrite, shipBehaviours, SHIP_MAX, shipFreeSpot, shipNew, shipAliases, hobSetObjectName, hmtOwnTextures, hudIconSize, hudIconWrite, blueprintWrite, texFileRename, shipStandAt, shipSpotAt, shipHangarRemove, shipHangarAdd, medalInfo, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, CRAFT_RULE_EXT, modChecksOf, menuExtParse, zipUnpack, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, rulesWrite, ruleRefs, rulesRename, rulesBroken, datBlank, hmpFlat, datWaterGet, datWaterSet, datFlightInset, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, objectivesApply, objectiveTargets, isUnit, isTriggerArea, isFlightPath, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, unitGate, unitGateSet, unitDeathSet, unitHasEvents, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, datAddEnemy, splineSetPoints, splinePoints, splineAt, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, shotDestroyGet, shotDestroySet, shotSwapGet, shotSwapSet, shotRename, splineLoops, splineLoopBlocked, splineSetLoop, datRenameItem, triggerSetActivators, craftImportSlots, hobImportCraft, craftImportPlacement, craftClipBake, parseCutscene, cutsceneValue, createHistory, projectWrite, projectRead, crc32, writeCutscene, shotLinkGet, shotLinkSet, cutClips, cutDragClip, cutAddEvent, cutRemoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutRemoveActor, cutSetActorName, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, CUT_LIMITS, CUT_ACTOR_EVENTS, cutMoveEvent, cutAnimateActor, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, gameFonts, glyphPackParse, glyphPackWrite, langChars, fontCovers, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults } = window.RS64;
 const $ = (id) => document.getElementById(id);
 
 function elem(tag, props, ...children) {
@@ -157,7 +157,7 @@ const TYPES = {
     color: 0x5fd17a,
     label: 'Goal areas',
     icon: 'tevent',
-    tip: 'Triggers when the player or a chosen unit comes close: it can complete a Reach an area objective, spawn a wave, play a camera shot or set off a rule'
+    tip: 'Triggers when the player or a chosen unit comes close: it can complete a Reach an area objective, set a flag, play a cutscene or set off a rule'
   },
   tspawn: { color: 0xc3e65a, label: 'Wave areas', icon: 'tspawn', tip: 'Like a goal area, and also brings in the unit it names' },
   troam: { color: 0xd17aff, label: 'Roam areas', icon: 'troam', tip: 'A unit wanders inside this ball and turns back toward the middle when it strays out. Height counts, so keep the centre at ground level for ground units' },
@@ -1558,7 +1558,9 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const TEX_TYPES = ['CI4', 'CI8', 'RGB16', 'RGB(A)32', 'Gray 4/8', 'Gray 8'];
 
 // A condition in words ("When 'X' is entered", from gateWords) as a card line: "Only once 'X' is entered".
-const onlyOnce = (w) => w.replace(/^When /, 'Only once ').replace(/^After /, 'Only after ');
+// A condition (gateWords: "When 'X' is entered") joined onto what sets the item off: ", after 'X' is entered" ('' with none). "after", not
+// "once": the item waits for it, it does not fire only one time.
+const afterWords = (w) => (w ? ', ' + w.replace(/^(When|After) /, 'after ') : '');
 
 // What an item does, in words; trigger targets and voice lines are filled in by showLevel.
 function describe(it)
@@ -1608,7 +1610,7 @@ function describe(it)
       const w = e.w;
       const fl = e.fl;
 
-      lines.push('When an NPC passes this point.');
+      lines.push(`When an NPC passes this point${afterWords(it.needWords)}.`);
 
       // 0x22 hold (func_800F9AB8 + func_800F410C): stop while the timer runs, flag w[1] != w[2], or counter w[3] < w[4].
       const hold = () => {
@@ -1639,9 +1641,6 @@ function describe(it)
       if (what)
         lines.push(what);
 
-      if (it.needWords)
-        lines.push(onlyOnce(it.needWords));
-
       const act = [
         e.addCounter && `counter #${e.addCounter} ${e.amount >= 0 ? '+' : '−'}= ${Math.abs(e.amount)}`,
         e.setFlag && `flag #${e.setFlag} = ${e.value}`
@@ -1660,13 +1659,22 @@ function describe(it)
       const who = it.activators.map((a) => (a === 'ply' ? 'the player' : `'${a}'`));
       const near = it.cylinder ? 'flies over it' : `comes within ${it.radius.toFixed(1)} units`;
 
-      lines.push(who.length === 1 ? `Triggers when ${who[0]} ${near}` : `Triggers when one of these ${near}:` + who.map((w) => `\n• ${w}`).join(''));
+      const after = afterWords(it.needWords);
 
-      if (it.needWords)
-        lines.push(onlyOnce(it.needWords));
+      lines.push(who.length === 1 ? `Triggers when ${who[0]} ${near}${after}` : `Triggers when one of these ${near}${after}:` + who.map((w) => `\n• ${w}`).join(''));
 
       // Enter/exit flags are just set / cleared, so only counter changes are worth listing.
-      const act = (b) => (b.counter ? `counter #${b.counter} ${b.add >= 0 ? '+' : '−'}= ${Math.abs(b.add)}` : '');
+      const act = (b) => {
+        const c = `'counter #${b.counter}'`;
+
+        if (!b.counter)
+          return '';
+
+        if (Math.abs(b.add) === 1)
+          return `${b.add > 0 ? 'Increments' : 'Decrements'} ${c}`;
+
+        return b.add >= 0 ? `Adds ${b.add} to ${c}` : `Subtracts ${-b.add} from ${c}`;
+      };
 
       if (act(it.onEnter))
         lines.push('On enter: ' + act(it.onEnter));
@@ -1682,7 +1690,7 @@ function describe(it)
     if (it.voice?.trim())
       lines.push(`Name points to voice line ${it.voiceId}: "${it.voice}"`);
     else if (it.voice != null)
-      lines.push(`Name points to voice line ${it.voiceId}, which is empty: the game has no recording or subtitle for it, so nothing plays`);
+      lines.push(`Name points to voice line ${it.voiceId} (empty)`);
 
     return lines.join('\n') || (SUBTYPES[it.sub] ?? 'Trigger') + ' (no activators or actions decoded for this subtype yet)';
   }
@@ -2070,9 +2078,11 @@ const legendKindOf = (k) => (k === 'zmtrig' ? 'zmus' : k);
 
 function applyMarkerVisibility(markers)
 {
-  const kinds = new Set(markers.children.map((m) => legendKindOf(String(markerKind(m.userData.item)))));
+  // The selection's edit handle also sits in the group; only items' markers follow the legend.
+  const items = markers.children.filter((m) => m.userData.item);
+  const kinds = new Set(items.map((m) => legendKindOf(String(markerKind(m.userData.item)))));
 
-  for (const m of markers.children)
+  for (const m of items)
     m.visible = !hiddenTypes.has(legendKindOf(String(markerKind(m.userData.item))));
 
   // The master checkbox mirrors the per-kind toggles: off when all are hidden, indeterminate when some are.

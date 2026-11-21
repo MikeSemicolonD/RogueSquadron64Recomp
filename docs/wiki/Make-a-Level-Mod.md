@@ -41,22 +41,23 @@ In Objects or Events mode:
 
 **Add to level** (the bar along the bottom, which scrolls sideways): pick an item and click where it goes, or drag it in by its grip. Enemies keep placing until **Esc**. *From another level* items are copied from that mission. A **Camera** is added at your view.
 
-## Enemies and waves
+## Enemies and flags
 
-A unit that doesn't start in the level has a **Spawns** level event saying when it enters: with a **wave** (started when a trigger area is entered, or by a level event), or **when an object is destroyed** (pick the condition, then the object). **+ Add…**, *Spawn this later, not at the start* adds one. Power-ups and the troopers that pour out of a destroyed bunker work this way. A unit's **When destroyed** level event lists what destroying it spawns and the cutscenes that play; click it to change them, or add one with **+ Add…** (in the list or that window). Troopers that appear in a ground-unit area show it as **Area**. Units from other levels, including turrets and vehicles, are in **Add to level**.
+A unit that doesn't start in the level has a **Spawns** level event saying when it enters: **when a flag is set** (by a trigger area being entered, a unit being destroyed or a level event), or **when an object is destroyed** (pick the condition, then the object). **+ Add…**, *Spawn this later, not at the start* adds one. Power-ups and the troopers that pour out of a destroyed bunker work this way. A power-up also has a **When picked up** event that picks the upgrade it gives: advanced lasers, missiles, torpedoes, bombs or shields, or seeker missiles, torpedoes or cluster missiles. A unit's **When destroyed** level event lists what destroying it spawns and the cutscenes that play; click it to change them, or add one with **+ Add…** (in the list or that window). Troopers that appear in a ground-unit area show it as **Area**. Units from other levels, including turrets and vehicles, are in **Add to level**.
 
-A wave is released:
+A flag is a switch in the mission: something sets it (an area entered, a unit destroyed) and every unit waiting for it spawns. A trigger area sets one with **Set flag** in its **When entered** level event; **New flag…** makes one with a name.
 
-- **By a trigger area**: in Events mode, its **When entered** level event, **Start wave**.
-- **By a rule**: the **Spawn** action. It starts with your last kind, count (up to 8) and path; change them or click a path in the view with the pin, then **Create wave**.
+A rule can also bring in a new wave of enemies: the **Spawn** action. It starts with your last kind, count (up to 8) and path; change them or click a path in the view with the pin, then **Create wave**.
 
-Behind a wave is a mission flag: something sets it (an area entered, a unit destroyed) and the units waiting for it spawn. The **globe** list shows every flag the level uses, such as *When flag 2 is set, spawn …*. Click one to give it a name (the name replaces the number everywhere), see what sets it, and spawn more units with it: search, tick the units, or tick **All shown**, then **Spawn**. The spawn pickers in **When destroyed** work the same way.
+The **Level-wide events** list shows every flag the level uses, such as *When flag 2 is set, spawn …*. Click one to give it a name (the name replaces the number everywhere), see what sets it, and spawn more units with it: search, tick the units, or tick **All shown**, then **Spawn**. The spawn pickers in **When destroyed** work the same way.
 
 ## Flight paths
 
 Pick a path in the unit's panel. *(then attacks the player)* marks paths ending in an attack run. **Copy from another level…** or **New path** add one; both end in an attack, since a path leading nowhere crashes the game.
 
 In Events mode, drag a path's points (**Shift+drag**: height, **Ctrl+click**: add after, **Alt+click**: delete, minimum 4). Craft fly from the second point to the second-last.
+
+**Loop** sends craft round the path again: it closes the path's shape and makes the path continue into itself, the way the game's own looping paths do (many other paths only look closed). A loop never reaches the end, so it replaces **At the end: attack the player**. On a looping path, a path event's **Along %** carries on past 100% from 0%. The box is off when the path always continues into another one first.
 
 ## Trigger areas, music and cutscenes
 
@@ -88,7 +89,7 @@ Pick actions from **+ Add action**. They run in order:
 - win or fail the mission or an objective
 - wait
 
-A rule fires once unless set to repeat. The list beside the object's panel then shows each rule that names it, searchable once it is long; click one to open it in the window beside the list. The **globe** at the top of the editor switches the list to the level-wide events (the mission start, timers, objectives), with **+** to add one and a script button for the whole `rules.txt` as text; a rule whose object was deleted shows there in red, and Export mod warns. Selecting an object switches back.
+A rule fires once unless set to repeat. The list beside the object's panel then shows each rule that names it, searchable once it is long; click one to open it in the window beside the list. **Level-wide events** (bottom right, under the level buttons) switches the list to the level-wide events (the mission start, timers, objectives), with **+** to add one and a script button for the whole `rules.txt` as text; a rule whose object was deleted shows there in red, and Export mod warns. Selecting an object switches back.
 
 ![The Level events window](images/level-events.png)
 

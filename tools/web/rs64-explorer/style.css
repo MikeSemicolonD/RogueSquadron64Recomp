@@ -75,7 +75,7 @@ main:has(:is(#rulesPanel, #crawlPanel, #lookPanel, #objPanel, #levelPanel, #cutP
 #editPanel:not(.open) #editBody { display: none; }
 #editBody { display: grid; gap: 6px; }
 #selInfo:not(:empty) { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
-#linksPanel { width: 300px; max-height: calc(100vh - 20px); overflow: auto; display: grid; gap: 6px; align-content: start; pointer-events: auto; }
+#linksPanel { width: 300px; min-width: 240px; min-height: 120px; resize: both; max-height: calc(100vh - var(--add-h, 220px) - 40px); overflow: auto; display: grid; gap: 6px; align-content: start; pointer-events: auto; }
 #linksPanel > * + * { border-top: 1px solid var(--line); padding-top: 6px; }
 #linksPanel .eventList { display: grid; gap: 4px; }
 #linksPanel .rulesPanelHead { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
@@ -83,12 +83,13 @@ main:has(:is(#rulesPanel, #crawlPanel, #lookPanel, #objPanel, #levelPanel, #cutP
 #linksPanel .rulesPanelHead select { flex: 0 1 8em; width: 8em; min-width: 0; }
 .levelRules.destroyed .shotRow .chip { flex: 1; text-align: left; }
 .levelRules.destroyed .shotRow .searchPick { flex: 1 1 0; }
+.levelRules.destroyed label.shotRow > input[type=text] { flex: 1; min-width: 0; }
 .levelRules select.addWide { width: 100%; }
 #linksPanel .eventList button.item { text-align: left; white-space: pre-line; }
 #linksPanel .eventList button.item.bad { color: var(--bad); }
 #linksPanel .eventList button.item.on { outline: 1px solid var(--accent); }
 main:has(#editPanel[hidden]) #linksPanel, main:has(#editPanel:not(.open)) #linksPanel { display: none; }
-#topLeft > #rulesPanel { pointer-events: auto; }
+#topLeft > #rulesPanel { pointer-events: auto; max-height: calc(100vh - var(--add-h, 220px) - 40px); }
 .searchPick { display: grid; gap: 2px; flex: 1 1 100%; min-width: 0; }
 .searchPick input { width: 100%; box-sizing: border-box; }
 .pickMenu { display: grid; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
@@ -124,7 +125,15 @@ main:has(#editPanel[hidden]) #linksPanel, main:has(#editPanel:not(.open)) #links
 .rulesBox .rule.focus { border-color: var(--accent); }
 .rulesBox .when { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rulesBox .when > select:first-child { color: var(--accent); font-weight: 600; }
-.rulesBox .act { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: 12px; }
+.rulesBox .rule > .when > select:first-child { flex: 1; }
+.rulesBox .rule > .when > button:last-child { margin-left: auto; }
+.rulesBox .act { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-left: 12px; }
+.rulesBox .act > * { min-width: 0; }
+.rulesBox .actHead { display: flex; gap: 4px; align-items: center; }
+.rulesBox .actHead > select { flex: 1; min-width: 0; }
+.rulesBox .actParams { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: 16px; }
+.rulesBox .actParams > select { flex: 1 1 160px; min-width: 0; }
+.rulesBox .actSep { border-top: 1px solid color-mix(in srgb, var(--dim) 45%, transparent); margin: 4px 0 2px 12px; }
 .rulesBox select, .rulesBox input:not([type=checkbox]) { min-width: 0; max-width: 100%; }
 /* A text field takes the rest of its row or wraps to its own, rather than shrinking to nothing in the narrow edit panel. */
 .rulesBox .act input[type=text] { flex: 1 1 140px; }
@@ -178,8 +187,8 @@ main:has(#editPanel[hidden]) #linksPanel, main:has(#editPanel:not(.open)) #links
 .levelRules .ruleScript .codeText { min-height: 280px; }
 .levelRules[hidden], .levelRules .ruleScript[hidden] { display: none; }
 .levelRules > .when:first-child { justify-content: flex-end; }
-.rulesBox .addAct { margin-left: 12px; justify-self: start; }
-.rulesBox .addRule { justify-self: start; }
+.rulesBox .addAct { margin-left: 12px; justify-self: stretch; }
+.rulesBox .addRule { justify-self: stretch; }
 #addOverlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; text-align: center; background: color-mix(in srgb, var(--panel) 55%, transparent); backdrop-filter: blur(4px); border-radius: 6px; }
 #addOverlay[hidden] { display: none; }
 #addOverlay small { color: var(--dim); }
@@ -216,8 +225,8 @@ main:has(#editPanel[hidden]) #linksPanel, main:has(#editPanel:not(.open)) #links
 dialog.levelDialog { max-width: min(640px, 92vw); display: grid; gap: 8px; background: var(--panel); color: var(--text); opacity: 1; }
 .levelDialog > * { min-width: 0; }
 .levelDialog > b, .levelDialog > small { text-align: center; }
-#btnLevelSettings, #btnBlankLevel { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-#btnLevelSettings[hidden], #btnBlankLevel[hidden] { display: none; }
+#btnLevelSettings, #btnBlankLevel, #btnRules { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#btnLevelSettings[hidden], #btnBlankLevel[hidden], #btnRules[hidden] { display: none; }
 .levelDialog > hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 .levelDialog label.stacked, .crawlEdit label.stacked { flex-direction: column; align-items: flex-start; }
 .levelDialog label.stacked > input, .levelDialog label.stacked > textarea, .crawlEdit label.stacked > input, .crawlEdit label.stacked > textarea { align-self: stretch; }
@@ -504,7 +513,7 @@ main:has(#selHud:not(:empty)) #legend { max-height: calc(100% - var(--scene-h, 2
 #tip { pointer-events: none; background: color-mix(in srgb, var(--bg) 94%, transparent); max-width: 340px; }
 #tip span { color: var(--dim); font-family: ui-monospace, monospace; }
 #tip q { color: var(--accent); }
-#info { background: color-mix(in srgb, var(--bg) 96%, transparent); border-color: var(--accent); max-width: 380px; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
+#info { background: color-mix(in srgb, var(--bg) 96%, transparent); border-color: var(--accent); max-width: 380px; max-height: calc(100% - 20px); overflow-y: auto; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; }
 #info b { grid-column: 1 / -1; color: var(--accent); margin-bottom: 4px; }
 #info:has(.eventHelp) b { padding-right: 22px; }
 #info .eventHelp { position: absolute; top: 8px; right: 8px; height: 1lh; display: flex; align-items: center; color: var(--accent); }
@@ -515,7 +524,7 @@ main:has(#selHud:not(:empty)) #legend { max-height: calc(100% - var(--scene-h, 2
 .musicSides { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-top: 4px; }
 .musicSides input { width: 0; flex: 1; padding: 2px 4px; }
 #info button { grid-column: 1 / -1; margin-top: 6px; }
-#info small { grid-column: 1 / -1; white-space: pre-line; }
+#info small { grid-column: 1 / -1; white-space: pre-line; max-height: 11em; overflow-y: auto; }
 #info span:nth-of-type(odd) { color: var(--dim); }
 #info span:nth-of-type(even) { font-family: ui-monospace, monospace; word-break: break-word; white-space: pre-line; }
 #info .pickRow { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; padding: 3px 6px; border-radius: 4px; cursor: pointer; }

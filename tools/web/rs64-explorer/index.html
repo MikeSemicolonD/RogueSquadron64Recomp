@@ -71,7 +71,7 @@
   <div id="viewNav" class="panel needs-rom" hidden><svg id="viewAxes" viewBox="-36 -36 72 72" width="72" height="72" role="group" aria-label="View axes"></svg><button id="viewOrtho" data-icon="camPersp" title="Perspective view: click for orthographic, which flattens the view for precise placement (numpad 5)"></button></div>
   <div id="topLeft">
     <div id="editPanel" class="panel needs-rom" hidden>
-      <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><div class="heightBtns" data-modes="objects events"><button id="btnRules" title="Level-wide events: what happens at the start, on a timer or with the objectives, not on one object"></button><button id="editSpace" title="Global axes"></button></div><div class="heightBtns" data-modes="terrain"><button id="btnHeightOut" title="Save the terrain as a heightmap image">Export</button><button id="btnHeightIn" title="Load a heightmap image onto the terrain">Import</button></div></div>
+      <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><button id="editSpace" data-modes="objects events" title="Global axes"></button><div class="heightBtns" data-modes="terrain"><button id="btnHeightOut" title="Save the terrain as a heightmap image">Export</button><button id="btnHeightIn" title="Load a heightmap image onto the terrain">Import</button></div></div>
       <div id="editBody">
         <div class="modes" role="group" aria-label="Edit mode"><button data-mode="objects" data-icon="objects" title="Objects: select, move, rotate, scale, duplicate and delete placed objects"></button><button data-mode="events" data-icon="events" title="Events: select, move and add paths, zones and triggers"></button><button data-mode="terrain" data-icon="terrain" title="Terrain: sculpt, paint and heightmaps"></button></div>
         <input type="checkbox" id="optSculpt" hidden>
@@ -139,6 +139,7 @@
   <div id="scene" class="panel needs-rom" hidden>
     <button id="btnLevelSettings" hidden></button>
     <button id="btnBlankLevel" hidden aria-expanded="false" title="A new level with only a player start on flat ground, flown or walked">New blank level</button>
+    <button id="btnRules" data-modes="objects events" title="What happens at the start, on a timer, with the objectives and with each flag, not on one object"></button>
     <b id="cutPickHead">Cutscene</b>
     <div id="cutPickRow"><select id="cutPick" title="The level's cutscenes and in-mission sequences"></select><button id="cutAdd" data-icon="add" aria-expanded="false" title="Add a cutscene to this level"></button><button id="cutDel" data-icon="delete" hidden title="Delete this cutscene"></button></div>
     <label id="cutSeqNameRow" hidden title="Trigger areas and rules start this sequence by its name">Name <input id="cutSeqName" type="text" maxlength="47"></label>
