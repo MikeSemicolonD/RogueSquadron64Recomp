@@ -21,7 +21,7 @@ Esc also releases mouse capture (harmless).
 `drive-input.ps1` posts key messages to the window of `-ProcessId` without focusing it, so the
 desktop keyboard is untouched. Never add global `SendInput` or `SetForegroundWindow` to a test driver:
 keystrokes land in whatever the user is working in. Window title:
-`Star Wars: Rogue Squadron 64 Recompiled`.
+`Rogue Squadron 64 Recompiled`.
 
 ## Tools
 

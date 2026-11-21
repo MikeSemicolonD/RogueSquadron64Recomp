@@ -87,7 +87,7 @@ public class RS64Cap {
     EnumWindows((h, p) => {
       uint wp; GetWindowThreadProcessId(h, out wp);
       var s = new System.Text.StringBuilder(256); GetWindowText(h, s, 256);
-      if (wp == pid && IsWindowVisible(h) && s.ToString().StartsWith("Star Wars")) { found = h; return false; }
+      if (wp == pid && IsWindowVisible(h) && s.ToString().StartsWith("Rogue Squadron 64")) { found = h; return false; }
       return true;
     }, IntPtr.Zero);
     return found;

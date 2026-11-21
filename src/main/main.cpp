@@ -345,9 +345,9 @@ ultramodern::renderer::WindowHandle create_window(ultramodern::gfx_callbacks_t::
     }
 
 #ifdef NDEBUG
-    static constexpr const char* kWindowTitle = "Star Wars: Rogue Squadron 64 Recompiled";
+    static constexpr const char* kWindowTitle = "Rogue Squadron 64 Recompiled";
 #else
-    static constexpr const char* kWindowTitle = "Star Wars: Rogue Squadron 64 Recompiled (Debug)";
+    static constexpr const char* kWindowTitle = "Rogue Squadron 64 Recompiled (Debug)";
 #endif
 
     auto create = [&] { return SDL_CreateWindow(kWindowTitle, window_x, window_y, window_w, window_h, window_flags); };
