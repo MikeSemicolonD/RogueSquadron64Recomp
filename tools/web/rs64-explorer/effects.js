@@ -2652,6 +2652,7 @@ async function openFile(file)
     pcmCache.clear();
     audioBank = await loadAudioBank().catch((e) => (console.warn('audio', e), null));
     $('drop').hidden = true;
+    idbKv('readwrite', (s) => s.put(file, 'lastRom')).catch(() => {});
     document.querySelector('header input').hidden = true;
     document.body.classList.remove('no-rom');
     renderList();

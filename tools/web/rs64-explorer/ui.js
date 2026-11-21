@@ -16,6 +16,21 @@ const drop = $('drop');
 const dropBox = drop.querySelector('.box');
 dropBox.onclick = () => $('romfile').click();
 dropBox.onkeydown = (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), $('romfile').click());
+
+idbKv('readonly', (s) => s.get('lastRom')).then((file) => {
+  if (!file)
+    return;
+
+  $('lastRom').hidden = false;
+  $('lastRom').title = file.name;
+
+  $('lastRom').onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openFile(file);
+  };
+}).catch(() => {});
+
 addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
 addEventListener('dragleave', () => drop.classList.remove('over'));
 

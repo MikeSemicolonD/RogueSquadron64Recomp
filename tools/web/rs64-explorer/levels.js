@@ -6317,23 +6317,6 @@ async function exportDialog(items, doc, base)
     dlg.showModal();
 }
 
-// The game folder's handle is kept in IndexedDB (handles cannot go in localStorage), so the picker shows once.
-function idbKv(mode, fn) {
-  return new Promise((res, rej) => {
-    const open = indexedDB.open('rs64-explorer', 1);
-
-    open.onupgradeneeded = () => open.result.createObjectStore('kv');
-    open.onerror = () => rej(open.error);
-
-    open.onsuccess = () => {
-      const req = fn(open.result.transaction('kv', mode).objectStore('kv'));
-
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
-    };
-  });
-}
-
 const GAME_EXE = 'RogueSquadron64Recomp.exe';
 const PREVIEW_MOD = 'rs64-explorer-preview';
 const PLAY_LINK_FILE = 'explorer-link.txt';

@@ -56,6 +56,23 @@ function store(key, value) {
   } catch {}
 }
 
+// File handles and the last ROM go in IndexedDB, which (unlike localStorage) holds them.
+function idbKv(mode, fn) {
+  return new Promise((res, rej) => {
+    const open = indexedDB.open('rs64-explorer', 1);
+
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => rej(open.error);
+
+    open.onsuccess = () => {
+      const req = fn(open.result.transaction('kv', mode).objectStore('kv'));
+
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    };
+  });
+}
+
 // HOB vertices are s16 model units; levels (DAT positions, terrain) use world units. Item scale applies on top.
 const HOB_TO_WORLD = 1 / 256;
 const MODEL_VIEW_SCALE = 1 / 1000;

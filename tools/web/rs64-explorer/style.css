@@ -495,6 +495,8 @@ main:has(#selHud:not(:empty)) #legend { max-height: calc(100% - var(--scene-h, 2
 #drop .box { border: 2px dashed var(--line); border-radius: 10px; padding: 40px 48px; max-width: min(640px, calc(100vw - 32px)); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 #drop.over .box, #drop .box:hover, #drop .box:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); outline: none; }
 #drop p { color: var(--dim); }
+#lastRom { color: var(--dim); font-size: 13px; text-decoration: underline; }
+#lastRom:hover { color: var(--text); }
 .err { color: var(--err); }
 #busy { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; }
 .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
