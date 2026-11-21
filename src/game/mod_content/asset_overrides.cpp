@@ -697,20 +697,13 @@ extern "C" uint32_t rs64_asset_manifest_to_free(uint32_t ptr) {
     return ptr;
 }
 
-// Terrain textures for RT64's whole-map pass, built once per level: level/tex and lv_<level, base 36>_TEX (a mod's copy when it replaces one) with the level's Soft paint textures (lv_<level>_PAINT) merged in as extra bank entries.
+// Terrain textures for RT64's whole-map pass: level/tex and lv_<level, base 36>_TEX (or a mod's copy) with the level's Soft paint (lv_<level>_PAINT) merged in; only the current level's bank is kept.
 // shortcut: mod-level aliases are not followed (Soft paint is stock levels only); follow them if mod levels get painted terrain.
 extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint32_t* bank_size, const uint8_t** ids, uint32_t* ids_size)
 {
 
-    static std::once_flag s_once;
-    static std::unordered_map<std::string, std::vector<uint8_t>> s_files;
     static std::unordered_map<uint32_t, std::pair<std::vector<uint8_t>, std::vector<uint8_t>>> s_levels;
     static std::mutex s_mutex;
-
-    std::call_once(s_once, [] {
-        s_files = rom_assets(recomp::get_rom(), [](const std::string& p) { return p == "level/tex" || (p.rfind("level/lv_", 0) == 0 && p.size() > 4 && p.compare(p.size() - 4, 4, "_TEX") == 0); });
-    });
-
     static constexpr char kDigits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 
     if (level >= 36)
@@ -724,8 +717,11 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
     if (it == s_levels.end())
     {
         const std::string lv = std::string("level/lv_") + kDigits[level];
+        const auto rom_files = rom_assets(recomp::get_rom(), [&lv](const std::string& p) { return p == "level/tex" || p == lv + "_TEX"; });
 
-        const auto file = [](const std::string& path) {
+        s_levels.clear();
+
+        const auto file = [&rom_files](const std::string& path) {
 
             std::vector<uint8_t> out;
 
@@ -734,7 +730,7 @@ extern "C" int rs64_terrain_textures(uint32_t level, const uint8_t** bank, uint3
                 const auto& rom = recomp::get_rom();
 
                 if ((size_t)o->rom_off + o->size <= rom.size()) out.assign(rom.begin() + o->rom_off, rom.begin() + o->rom_off + o->size);
-            } else if (const auto s = s_files.find(path); s != s_files.end())
+            } else if (const auto s = rom_files.find(path); s != rom_files.end())
             {
                 out = s->second;
             }
