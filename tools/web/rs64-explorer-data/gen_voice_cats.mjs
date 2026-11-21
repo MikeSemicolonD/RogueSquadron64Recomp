@@ -218,6 +218,30 @@ for (const [name, f] of funcs)
 // != 0 test is 1, ! or == 0 is 0); pc: counter -> voice ids.
 const num = (s) => parseInt(s);
 
+// The value a flag test wants: 1 for a bare read, != 0, > 0 or >= 1; 0 for !, == 0, <= 0 or < 1; the number for == n; null when it
+// compares against a variable or reads as no single value.
+const flagValue = (not, op, rhs) => {
+  const n = num(rhs);
+
+  if (not)
+    return 0;
+
+  if (!op)
+    return 1;
+
+  if (!Number.isFinite(n))
+    return null;
+
+  return {
+    '==': n,
+    '!=': n === 0 ? 1 : null,
+    '>': n === 0 ? 1 : null,
+    '>=': n === 1 ? 1 : null,
+    '<=': n === 0 ? 0 : null,
+    '<': n === 1 ? 0 : null
+  }[op] ?? null;
+};
+
 const matchEnd = (src, i, open, close) => {
   for (let d = 0; i < src.length; i++) {
     if (src[i] === open)
@@ -256,6 +280,11 @@ for (const f of readdirSync(lvSrc).filter((f) => /^lv_\w+\.c$/.test(f)))
 
   const ifs = [];
 
+  // "temp_v0_8 = getObjectiveBoolean(2); if ((temp_v0_8 == 1) …": a temporary in a condition stands for the read last assigned to it.
+  const temps = [...src.matchAll(/\b(\w+)\s*=\s*(getObjective(?:Boolean|Count)\((?:0x[0-9A-Fa-f]+|\d+)\))\s*;/g)].map((m) => ({ at: m.index, name: m[1], read: m[2] }));
+
+  const resolve = (cond, at) => cond.replace(/\b(temp_\w+)\b/g, (name) => temps.findLast((t) => t.name === name && t.at < at)?.read ?? name);
+
   for (const m of src.matchAll(/\bif\s*\(/g))
   {
     const ce = matchEnd(src, m.index + m[0].length - 1, '(', ')');
@@ -264,7 +293,73 @@ for (const f of readdirSync(lvSrc).filter((f) => /^lv_\w+\.c$/.test(f)))
     while (/\s/.test(src[b]))
       b++;
 
-    ifs.push({ cond: src.slice(m.index, ce + 1), from: b, to: src[b] === '{' ? matchEnd(src, b, '{', '}') : src.indexOf(';', b) });
+    ifs.push({ cond: resolve(src.slice(m.index, ce + 1), m.index), from: b, to: src[b] === '{' ? matchEnd(src, b, '{', '}') : src.indexOf(';', b) });
+  }
+
+  // The script's other effects, keyed the same way: fx.b: flag -> value tested -> effects, fx.c: counter -> effects.
+  // An effect is a short code the explorer words: m (music: a MUSICRNG state, or a byte of the song variable table 0x801399F8 that stepActiveSongTracks reads), cam:<name>, f<n>=<v> (sets a flag), c<n> (adds to a counter), done (an objective), obj (objectives shown), hud (HUD switches), dmg:<name>, efx:<name>, timer, sound; saved marks a counter counted into the friendlies-saved score.
+  const str = (s) => /^"([^"]*)"/.exec(s.trim())?.[1];
+  const fxAt = [];
+
+  for (const m of src.matchAll(/\b(delegateToLevelStageTick|getAndSetByteAtLevelStateTable|setObjectiveHiddenFlag|setHudEnableBit4|setHudEnableBit8|setHudFlagBit40AndStoreArg|setObjectiveBoolean|increaseObjectiveCount|activateObjectiveCompleteFlag|dealDamagetoDatItem|spawnEffectOnNamedDatItem|setObjectiveTimer|triggerSoundCueByType)\(([^;]*)\)\s*;/g))
+  {
+    const a = m[2].split(',');
+
+    const fx = {
+      delegateToLevelStageTick: () => (/MUSICRNG/.test(a[0]) ? 'm' : null),
+      getAndSetByteAtLevelStateTable: () => 'm',
+      setObjectiveHiddenFlag: () => 'obj',
+      setHudEnableBit4: () => 'hud',
+      setHudEnableBit8: () => 'hud',
+      setHudFlagBit40AndStoreArg: () => str(a[0]) && 'cam:' + str(a[0]),
+      setObjectiveBoolean: () => (Number.isFinite(num(a[0])) && Number.isFinite(num(a[1])) ? `f${num(a[0])}=${num(a[1])}` : null),
+      increaseObjectiveCount: () => (Number.isFinite(num(a[0])) ? 'c' + num(a[0]) : null),
+      activateObjectiveCompleteFlag: () => 'done',
+      dealDamagetoDatItem: () => str(a[0]) && 'dmg:' + str(a[0]),
+      spawnEffectOnNamedDatItem: () => str(a[0]) && 'efx:' + str(a[0]),
+      setObjectiveTimer: () => 'timer',
+      triggerSoundCueByType: () => 'sound'
+    }[m[1]]();
+
+    if (fx)
+      fxAt.push([m.index, fx]);
+  }
+
+  // Counters read into the friendlies-saved score: in the setFriendliesSaved call, or anywhere in the level's calculateFriendliesSaved (some sum them into a variable first).
+  const savedIn = [
+    ...[...src.matchAll(/\bsetFriendliesSaved\(([^;]*)\)\s*;/g)].map((m) => m[1]),
+    ...[...src.matchAll(/\b\w+_calculateFriendliesSaved\([^)]*\)\s*\{/g)].map((m) => src.slice(m.index, matchEnd(src, m.index + m[0].length - 1, '{', '}')))
+  ];
+
+  for (const text of savedIn)
+    for (const r of text.matchAll(/getObjectiveCount\((0x[0-9A-Fa-f]+|\d+)\)/g))
+    {
+      const fx = ((triggerVoices[lv] ??= { c: {}, b: {} }).fx ??= {});
+
+      ((fx.c ??= {})[num(r[1])] ??= []).includes('saved') || fx.c[num(r[1])].push('saved');
+    }
+
+  for (const [at, e] of fxAt) {
+    for (const c of ifs.filter((x) => x.from <= at && at <= x.to))
+    {
+      const fx = ((triggerVoices[lv] ??= { c: {}, b: {} }).fx ??= {});
+
+      for (const r of c.cond.matchAll(/(!\s*)?getObjective(Boolean|Count)\((0x[0-9A-Fa-f]+|\d+)\)\s*(==|!=|>=|>|<=|<)?\s*(0x[0-9A-Fa-f]+|\d+)?/g))
+      {
+        const n = num(r[3]);
+
+        if (r[2] === 'Count')
+          ((fx.c ??= {})[n] ??= []).includes(e) || fx.c[n].push(e);
+        else
+        {
+          // A compare against a variable ("== temp_v0") says nothing about the value.
+          const v = flagValue(r[1], r[4], r[5]);
+
+          if (v !== null && Number.isFinite(v))
+            (((fx.b ??= {})[n] ??= {})[v] ??= []).includes(e) || fx.b[n][v].push(e);
+        }
+      }
+    }
   }
 
   for (const [at, ids] of speechAt) {
@@ -280,7 +375,7 @@ for (const f of readdirSync(lvSrc).filter((f) => /^lv_\w+\.c$/.test(f)))
           (((t.pc ??= {})[n] ??= []).push(...ids));
         else
         {
-          const v = r[1] ? 0 : (r[4] === '==' ? num(r[5]) : (r[4] === '!=' && num(r[5]) === 0 ? 1 : (r[4] ? null : 1)));
+          const v = flagValue(r[1], r[4], r[5]);
 
           if (v !== null)
             ((((t.pb ??= {})[n] ??= {})[v] ??= []).push(...ids));

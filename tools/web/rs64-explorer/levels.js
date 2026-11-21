@@ -2297,8 +2297,40 @@ function waveTriggerRow(it)
   return row;
 }
 
-// What entering a trigger area does on its own (its cutscene, what it destroys, the wave or flag it starts), in words; parts are empty
-// when it does none. A stock flag names the units waiting for it.
+// What entering a trigger area does on its own (its cutscene, what it destroys, the wave or flag it starts), in words; parts are empty when it does none. A stock flag names the units waiting for it.
+// "a, b and c".
+const andList = (l) => (l.length > 1 ? `${l.slice(0, -1).join(', ')} and ${l.at(-1)}` : l[0]);
+
+// One decoded script effect in words (see gen_voice_cats.mjs), or as an -ing form after "keeps the mission from". Cutscenes already listed from the camera table are skipped.
+function scriptEffect(code, cams = [], ing = false)
+{
+  const [kind, arg] = code.split(/:(.*)/);
+  const flagSet = /^f(\d+)=(-?\d+)$/.exec(code);
+  const counter = /^c(\d+)$/.exec(code);
+
+  if (kind === 'cam')
+    return cams.includes(arg) ? null : (ing ? `playing '${arg}'` : `play '${arg}'`);
+
+  if (flagSet)
+    return `${+flagSet[2] ? (ing ? 'setting' : 'set') : (ing ? 'clearing' : 'clear')} flag ${flagSet[1]}`;
+
+  if (counter)
+    return `${ing ? 'adding' : 'add'} to 'counter #${counter[1]}'`;
+
+  const words = {
+    m: ['change the music', 'changing the music'],
+    done: ['complete an objective', 'completing an objective'],
+    obj: ['change the objectives shown', 'changing the objectives shown'],
+    hud: ['change the HUD', 'changing the HUD'],
+    dmg: [`damage '${arg}'`, `damaging '${arg}'`],
+    efx: [`put an effect on '${arg}'`, `putting an effect on '${arg}'`],
+    timer: ['start a timer', 'starting a timer'],
+    sound: ['play a sound', 'playing a sound']
+  }[kind];
+
+  return words ? words[+ing] : null;
+}
+
 // What setting a flag does besides spawning units, from the level's own data: music regions it switches or lets play (their when and gate
 // conditions), path points and trigger areas that wait for it, objective arrows it shows, and the mission script's cutscenes that need it.
 function flagReaders(dir, dv, flag)
@@ -2334,10 +2366,27 @@ function flagReaders(dir, dv, flag)
   if (cams.length)
     out.push(listed('lets the mission play', cams));
 
-  // Flags the stock mission script reads (decoded at build time); for a mod level, its template's script.
+  // What the stock mission script does with the flag (decoded at build time by gen_voice_cats.mjs; a mod level uses its template's):
+  // effects while it is set read "makes the mission …", effects only while it is clear "keeps the mission from …".
   const key = modLevelOf(dir) ? 'lv_' + modLevelOf(dir).template.toString(36) : dir.split('/').pop();
+  const tv = globalThis.RS64_TRIGGER_VOICES?.[key];
+  const fx = tv?.fx?.b?.[flag] ?? {};
+  const said = [...new Set([...(tv?.b?.[flag] ?? []), ...(tv?.pb?.[flag]?.[1] ?? [])])].map((v) => voiceLine(v)?.trim()).filter(Boolean);
+  const set = (fx[1] ?? []).map((e) => scriptEffect(e, cams)).filter(Boolean);
 
-  if (!cams.length && globalThis.RS64_TRIGGER_VOICES?.[key]?.reads?.includes('b' + flag))
+  // Different branches can test a flag both ways; an effect on both sides only says what setting the flag does.
+  const clear = (fx[0] ?? []).filter((e) => !(fx[1] ?? []).includes(e)).map((e) => scriptEffect(e, cams, true)).filter(Boolean);
+
+  if (said.length)
+    set.unshift(`say "${said[0]}"${said.length > 1 ? ` (+${said.length - 1} more)` : ''}`);
+
+  if (set.length)
+    out.push(`makes the mission ${andList([...new Set(set)])}`);
+
+  if (clear.length)
+    out.push(`keeps the mission from ${andList([...new Set(clear)])}`);
+
+  if (!cams.length && !set.length && !clear.length && tv?.reads?.includes('b' + flag))
     out.push('sets off something in the mission script');
 
   return out;
