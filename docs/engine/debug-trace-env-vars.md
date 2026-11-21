@@ -47,6 +47,7 @@ Use `1` to enable and `0` to disable a default-on switch; unset a variable to re
 | `ROGUESQ_AUDIO_GAIN` | `--audio-gain`, `-m`/`--mute` | 0.35 | Master gain, 0.0-1.0 (out of range = 0.35). `--mute` sets 0. |
 | `ROGUESQ_AUDIO_LATENCY_MS` | `--audio-latency-ms` | 60 | SDL audio buffer latency; 0 = off. |
 | `ROGUESQ_DUMP_PCM` | `--dump-pcm` | off | Write the synth output to a 22050 Hz stereo WAV; `1` writes `dumps/wav/capture.wav`, any other value is the path. The header is patched every buffer, so a killed run still leaves a valid file. |
+| `ROGUESQ_ROM=<path>` | `--rom` | unset | ROM to import when none is stored yet, tried before the usual file names. RecompLauncher passes the player's copy this way. |
 | `ROGUESQ_FAKE_CONTROLLER` | `--[no-]fake-controller` | off | Report a connected controller (headless runs). |
 | `ROGUESQ_AUTO_START` | `--auto-start` | 0 | Once past the no-controller gate, pulse START every `<ms>`. |
 | `ROGUESQ_HIDE_WINDOW` | `--[no-]hide-window` | off | Create the window hidden. RT64 still renders and presents; window screenshots are lost. |

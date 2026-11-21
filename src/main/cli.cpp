@@ -110,6 +110,7 @@ struct CliFlag {
 };
 
 static const CliFlag kCliFlags[] = {
+    {"rom",              "ROGUESQ_ROM",              CliFlag::Value, "",  "",  "import the ROM at <path> (.z64, .n64 or .v64) when no valid ROM is stored yet"},
     {"gfx-api",          "ROGUESQ_GFX_API",          CliFlag::Value, "",  "",  "graphics API: vulkan | d3d12 | d3d11 | d3d10 (default auto)"},
     {"precompile-d3d11-shaders", "ROGUESQ_PRECOMPILE_D3D11", CliFlag::Value, "", "", "compile the D3D11 shaders for every combination in <list> into d3d11_shader_cache/ and exit (no ROM needed)"},
     {"hle-dev-mode",     "ROGUESQ_HLE_DEV_MODE",     CliFlag::Bool,  "1", "0", "RT64 ImGui inspector on F1 (default on in Debug)"},

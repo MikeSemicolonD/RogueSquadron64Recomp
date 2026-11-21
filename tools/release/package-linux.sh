@@ -97,6 +97,7 @@ EOF
 sed -i "s/@ARCH@/$arch/g" "$stage/install-desktop.sh"
 chmod +x "$stage/install-desktop.sh"
 cp "$repo/ci/release-readme.txt" "$stage/README.txt"
+cp "$repo/recomplauncher.json" "$stage/recomplauncher.json"
 cp "$repo/LICENSE" "$stage/LICENSE.txt"
 cp "$repo/NOTICES.txt" "$stage/NOTICES.txt"
 cp -r "$repo/licenses" "$stage/licenses"

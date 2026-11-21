@@ -869,6 +869,13 @@ int main(int argc, char* argv[])
 
         bool imported = false;
 
+        if (const char* rom_arg = recomp::dbg::env_str("ROGUESQ_ROM"))
+        {
+            imported = recomp::select_rom(std::filesystem::u8path(rom_arg), rs_game_id) == recomp::RomValidationError::Good;
+
+            fprintf(stderr, "[ROM] %s %s\n", imported ? "Imported" : "Rejected", rom_arg);
+        }
+
         for (const std::filesystem::path& dir : rom_dirs) {
             for (const char* name : rom_names) {
                 for (const char* ext : rom_exts)

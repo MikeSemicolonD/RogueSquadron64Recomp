@@ -10,7 +10,7 @@ This page is for the maintainer who runs the release pipeline. [.github/workflow
 | macOS zip: one universal `.app`, arm64 + x86_64 (untested on a Mac) | Windows runner, cross-built in WSL from the same recompiled code |
 | Android arm64 APK | Windows runner, Gradle, from the same recompiled code |
 
-Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/release-readme.txt)) and the repo's `LICENSE` as `LICENSE.txt`; the APK is a single file.
+Every zip and tarball carries `README.txt` ([ci/release-readme.txt](../../ci/release-readme.txt)) and the repo's `LICENSE` as `LICENSE.txt`; the APK is a single file. The Windows zips and the Linux tarball also carry [recomplauncher.json](../../recomplauncher.json), the manifest RecompLauncher reads to find the ROM, start the game and show its settings (schema: `https://recomplauncher.com/schema/recomplauncher.json`).
 
 ## Making a release
 
