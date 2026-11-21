@@ -8,6 +8,7 @@
 #include "main/mcp_bridge.h"
 #include "hle/rt64_rs64_mcp.h"
 #include "util/debug_logs.h"
+#include "ultramodern/ultramodern.hpp"
 #include <algorithm>
 #include <map>
 #include <mutex>
@@ -440,7 +441,41 @@ static nlohmann::json mcp_pause_at(const nlohmann::json& p)
 
     const McpWait w = mcp_set_target(PauseTarget{ p["clock"].get<std::string>(), p["frame"].get<uint32_t>() }, false, p.value("next", false), after);
 
-    return mcp_wait_frozen(w, p.value("timeout_s", 120.0));
+    // speed: run the game clock that fast while waiting, back to the old speed once held (or on failure).
+    if (!p.contains("speed"))
+    {
+        return mcp_wait_frozen(w, p.value("timeout_s", 120.0));
+    }
+
+    const double was = ultramodern::get_speed();
+
+    ultramodern::set_speed(p["speed"].get<double>());
+
+    try {
+        nlohmann::json out = mcp_wait_frozen(w, p.value("timeout_s", 120.0));
+
+        ultramodern::set_speed(was);
+
+        return out;
+    }
+    catch (...) {
+        ultramodern::set_speed(was);
+        throw;
+    }
+}
+
+// {x}: set the game clock speed (1/16..16, 1 = real time); {} reports it.
+static nlohmann::json mcp_speed(const nlohmann::json& p)
+{
+
+    if (p.contains("x"))
+    {
+        if (!p["x"].is_number()) throw std::runtime_error("x must be a number (1/16..16)");
+
+        ultramodern::set_speed(p["x"].get<double>());
+    }
+
+    return { { "speed", ultramodern::get_speed() } };
 }
 
 // Pause once an RDRAM value meets a condition, checked every frame (a game state change is pause_at with the state's clock at frame 0).
@@ -687,6 +722,7 @@ extern "C" void rs64_mcp_register_pause_methods()
     rs64_mcp_register("pause_at", mcp_pause_at);
     rs64_mcp_register("step", mcp_step);
     rs64_mcp_register("resume", mcp_resume);
+    rs64_mcp_register("speed", mcp_speed);
     rs64_mcp_register("frame_info", [](const nlohmann::json&) { return mcp_frame_info(); });
     rs64_mcp_register("setting", rs64::menucfg::setting_rpc);
     rs64_mcp_register("nav", mcp_nav);

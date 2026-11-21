@@ -34,6 +34,7 @@ Every tool takes `instance` (default `p1`), the game it acts on. A game launched
 | `pause_at` | Freeze the game and the picture on exactly frame `frame` of `clock` (game state id, `cutscene`, `crawl`, or `dl` = display lists since boot). Errors at once if the shown state's clock is already past `frame`. |
 | `pause_now` | Freeze on the next frame, whatever is on screen. |
 | `step` / `resume` | From a freeze, run `frames` more and re-freeze / let it run. |
+| `speed` | Game clock speed while running, 1/16 to 16 (`pause_at(speed=16)` runs fast only while it waits). |
 | `pause_when` | Freeze when an RDRAM value changes or meets eq/ne/gt/lt (checked once a frame). A state change is `pause_at(<state>, 0)`. |
 | `pause_when_drawn` | Freeze once a model part or effect sprite is on screen, by light-preset key prefix (`r_pow`, `xwing#s0.p4`, `spr:explo_tex`; `\|` separates several). One or two frames after it first shows. |
 | `wait_log` | Wait for a regex in the game's log (e.g. `SEH caught\|null-call\|Assertion`). A line already printed fails at once; `repeat=true` waits for another. |

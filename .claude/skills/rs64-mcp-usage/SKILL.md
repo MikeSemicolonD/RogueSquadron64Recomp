@@ -40,6 +40,7 @@ close()
 - Before a `pause_at` on a state clock, check `frame_info().state`. The 3D craft-select hangar is `menu.hangar`; the 2D AVAILABLE CRAFT panel after a level is picked is still `menu.level_select`. A clock already counting needs `next=false` and a frame still ahead; `next=true` waits for the state to be entered again.
 - Use `clock="mission"` (or the state you are in) for `step`, so frame numbers match `pause_at`. The default `dl` counts display lists since boot.
 - `press` with `frames=N` then `step N` plays exactly N frames of that input. `frames=0` holds until `release`.
+- To reach a late frame quickly, use `pause_at(..., speed=16)`. It lands on the same frame and goes back to the old speed once held. `speed(0.25)` gives slow motion while running. It speeds up from the call, so from a launch first `pause_at("ingame", 1)` at 1x (the boot target needs 4 or less for the menus), then `resume` and pause again with the speed.
 - A mission's first ~200 frames are the opening fly-in. Steer after that.
 - `screenshot` returns a path, so `Read` it to look. Judge one image per step; don't batch ten blind steps.
 - Cutscene clocks run on wall time, so a hold skips ahead. To A/B a cutscene frame, launch once per variant.

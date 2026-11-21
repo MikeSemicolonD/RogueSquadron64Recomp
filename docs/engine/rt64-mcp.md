@@ -63,6 +63,7 @@ Clocks:
 Stepping:
 
 - `step` unpauses RT64, releases the game and re-freezes `frames` later (default clock `dl`). `resume` lets it run.
+- `speed(x)` sets the game clock speed while the game runs (1/16 to 16; `ROGUESQ_SPEED` sets the starting value). `pause_at(..., speed=16)` runs that fast only while it waits and lands on the same frame. Keep it at 4 or less while a boot target is still driving the menus.
 - Pause points run once a frame on every screen: the menu and mission frame hooks, and a `submitGfxFrame` hook on screens neither ticks (the craft-select hangar).
 - While a client is connected the hold has no time limit; a disconnect releases it.
 
