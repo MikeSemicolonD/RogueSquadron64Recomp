@@ -1,4 +1,4 @@
-// Draw-only stand-ins for level objects and ground units the game has not spawned yet, or destroyed structures, turrets and AT-STs as their wrecks, so they show at long draw distance: a model instance and prop state
+// Draw-only stand-ins for level objects, ships and ground units the game has not spawned yet, or destroyed structures, turrets and AT-STs as their wrecks, so they show at long draw distance: a model instance and prop state
 // block in host RAM, built as the prop handler (0x8006CBB0) spawns one, go through the game's visibility bucket. Nothing the game reads is written.
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
@@ -26,6 +26,7 @@ constexpr uint32_t kSelectLodAndSubmit = 0x80058068u;
 constexpr uint32_t kProbeLodTable = 0x8010A600u;
 constexpr uint32_t kProbeSizeBonus = 0x800A6CA8u;
 constexpr uint16_t kSubProbeDroid = 0x0Eu;
+constexpr uint16_t kSubShip = 0x21u;
 constexpr uint32_t kRootMatrix = 0x80059C24u;
 constexpr uint32_t kUniformRootMatrix = 0x80059B50u;
 constexpr uint32_t kConditionMet = 0x80065828u;
@@ -63,7 +64,7 @@ bool names_in_item(uint16_t sub)
 {
 
     switch (sub) {
-    case 0x14: case 0x33: case 0x36: case 0x44: case 0x46: case 0x4A: case 0x4B: case 0x4F:
+    case 0x14: case 0x21: case 0x33: case 0x36: case 0x44: case 0x46: case 0x4A: case 0x4B: case 0x4F:
         return true;
     default:
         return false;
@@ -299,7 +300,10 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
     float s = sx;
     uint32_t flags = 0;
 
-    if (sx < sy) {
+    // Ships and vehicles (npcDebrisFieldUpdate) cull at 1.25 times the x scale, with no axis flag.
+    if (sub == kSubShip) {
+        s = sx * 1.25f;
+    } else if (sx < sy) {
         s = sy;
         flags = 0x400u;
 
