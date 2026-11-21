@@ -130,6 +130,7 @@ void rs64_th_cinematicLoopBody_800A6084(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_waitForMusyXAudioTaskDone_80091ED0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_anyAudioSlotActive_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_shutdownMusyXVoices_8009BCEC(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_setActiveRenderListPtr_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_reclaimDisplayListChunk_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_drainMeshReleaseQueue_entry(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_heapFreeListInsert_entry(uint8_t* rdram, recomp_context* ctx);

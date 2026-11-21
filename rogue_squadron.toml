@@ -1225,6 +1225,12 @@ func = "shutdownMusyXVoices"
 before_vram = 0x8009BCEC
 text = '{ rs64_th_shutdownMusyXVoices_8009BCEC(rdram, ctx); }'
 
+# Mission frames clear the whole screen instead of the camera's clear list: the list skips areas the game expects its sky to cover, and during a fast roll a
+# strip of it is left uncovered, which on the N64 still holds the previous frame but under RT64 shows the render target's stale contents.
+[[patches.hook]]
+func = "setActiveRenderListPtr"
+text = '{ rs64_th_setActiveRenderListPtr_entry(rdram, ctx); }'
+
 # (2) The game frees DL chunks before waiting for SP-done, but RT64's parse may
 #     still be reading them. Wait for the in-flight parse first.
 [[patches.hook]]

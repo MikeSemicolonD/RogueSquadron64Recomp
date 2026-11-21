@@ -368,6 +368,12 @@ void rs64_th_advanceNpcOnCurvedPath_8006C018(uint8_t* rdram, recomp_context* ctx
         return;
     }
 
+    // The mark's matrix (+0x3C) is built only by the stock tail; one never shown yet is all zero and its inverse is NaN.
+    if (MEM_W(0x3C, (gpr)(int32_t)mark) == 0 && MEM_W(0x40, (gpr)(int32_t)mark) == 0 && MEM_W(0x44, (gpr)(int32_t)mark) == 0)
+    {
+        return;
+    }
+
     const recomp_context saved = *ctx;
 
     ctx->r4 = ctx->r20;
@@ -1321,6 +1327,12 @@ void rs64_th_anyAudioSlotActive_entry(uint8_t* rdram, recomp_context* ctx) {
 // shutdownMusyXVoices 0x8009BCEC
 void rs64_th_shutdownMusyXVoices_8009BCEC(uint8_t* rdram, recomp_context* ctx) {
     osYieldThread_recomp(rdram, ctx);
+}
+
+// setActiveRenderListPtr entry: no camera clear list, so emitFrameRdpInitDl clears the whole screen.
+void rs64_th_setActiveRenderListPtr_entry(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->r4 = 0;
 }
 
 // reclaimDisplayListChunk entry
