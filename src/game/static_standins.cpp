@@ -31,6 +31,9 @@ constexpr uint32_t kRootMatrix = 0x80059C24u;
 constexpr uint32_t kUniformRootMatrix = 0x80059B50u;
 constexpr uint32_t kConditionMet = 0x80065828u;
 constexpr uint32_t kGridEntries = 0x80136FCCu;
+constexpr uint32_t kGridScale = 0x8003A7B8u;
+constexpr uint32_t kGridHalfCells = 0x8003A7BCu;
+constexpr uint32_t kSpawnRef = 0x801375F8u;
 constexpr uint32_t kCutsceneFlag = 0x80130B39u;
 constexpr uint32_t kDatItemByName = 0x80047B48u;
 constexpr uint32_t kTerrainHeight = 0x80068180u;
@@ -530,6 +533,23 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
     const bool cutscene = rb(rdram, kCutsceneFlag) != 0;
 
+    // The game's spawn window (updateActiveGridCellState): the cells within kGridHalfCells of the reference point. A stand-in drawn inside it is a unit
+    // the game has not spawned there (a path unit away from its DAT cell), so it shows nothing yet and neither does the stand-in.
+    const float scale = rf(rdram, kGridScale);
+    const float half = rf(rdram, kGridHalfCells);
+    const float origin_x = rf(rdram, kDatFile + 4u);
+    const float origin_z = rf(rdram, kDatFile + 8u);
+    const float ref_x = (rf(rdram, kSpawnRef) - origin_x) * scale;
+    const float ref_z = (rf(rdram, kSpawnRef + 8u) - origin_z) * scale;
+
+    const auto in_spawn_window = [&](uint32_t state) {
+
+        const int cx = (int)((rf(rdram, state) - origin_x) * scale);
+        const int cz = (int)((rf(rdram, state + 8u) - origin_z) * scale);
+
+        return cx >= (int)(ref_x - half) && cx <= (int)(ref_x + half) && cz >= (int)(ref_z - half) && cz <= (int)(ref_z + half);
+    };
+
     for (const Standin& s : s_standins) {
         if (rh(rdram, s.item + 6u) != 0xFFFFu) continue;
 
@@ -542,6 +562,8 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
         // Trigger and wave gates: isDatItemConditionMet reads only objective flags and counters.
         if (!cutscene && mips_call(rdram, ctx, kConditionMet, { s.item }).v0 == 0) continue;
+
+        if (!destroyed && in_spawn_window(s.state)) continue;
 
         // A probe droid grows with distance, so it goes through npcProbeDriod's own render call. The mark gives it the draw distance in replays too.
         if (rh(rdram, s.item) == kSubProbeDroid) {
