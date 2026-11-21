@@ -585,6 +585,7 @@ Here's a list of MCPs that could be useful for this project:
 
 - **[amazingalek](https://github.com/amazingalek)**'s [Web implementation](https://github.com/n64hub/RogueSquadron64Recomp-web) playable right -> **[HERE](https://n64hub.com/star-wars-rogue-squadron/)**
 - **[bkacjio](https://github.com/bkacjios)**'s [port for the PocketGo S30](https://github.com/bkacjios/rs64recomp-s30)
+- **[fyreatwill](https://github.com/fyreatwill/RogueSquadron64Recomp)**'s [MacOS Port working off of my first attempt (LLE) branch](https://github.com/fyreatwill/RogueSquadron64Recomp) created through an autonomous loop
 
 ## License
 
