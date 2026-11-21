@@ -10,6 +10,7 @@
 #include <vector>
 #include "os_compat.h"
 #include "ultramodern/ultra64.h"
+#include "ultramodern/ultramodern.hpp"
 #include "util/debug_logs.h"
 
 #if defined(RS64_OPENXR)
@@ -832,6 +833,33 @@ void queue_samples(int16_t* samples, size_t num_samples)
             for (size_t i = 0; i < n; ++i) samples[i] = (int16_t)((float)samples[i] * s_gain);
         }
 
+        // The game clock can run faster or slower than real time (ROGUESQ_SPEED, the MCP speed tool). The game's demand-paced audio loop has to drain at that
+        // rate too, or everything that waits on sound (cutscene speech and music) stays at 1x: SDL gets one stereo frame for every `rate` the game made.
+        const double rate = ultramodern::get_speed();
+
+        if (rate != 1.0)
+        {
+            static double s_owed = 0.0;
+            static std::vector<int16_t> s_out;
+            const size_t frames = num_bytes / 4;
+
+            s_out.clear();
+
+            for (size_t f = 0; f < frames; ++f) {
+                s_owed += 1.0 / rate;
+
+                while (s_owed >= 1.0) {
+                    s_out.push_back(samples[f * 2]);
+                    s_out.push_back(samples[f * 2 + 1]);
+                    s_owed -= 1.0;
+                }
+            }
+
+            if (!s_out.empty()) SDL_QueueAudio(audio_device, s_out.data(), (Uint32)(s_out.size() * sizeof(int16_t)));
+
+            return;
+        }
+
         SDL_QueueAudio(audio_device, samples, (Uint32)num_bytes);
     }
 }
@@ -868,7 +896,10 @@ size_t get_frames_remaining()
 
     size_t cushion = (size_t)audio_sample_rate * (unsigned)ms / 1000u;
 
-    return frames > cushion ? frames - cushion : 0;
+    // In game frames: at a game clock `rate` times real time, each queued SDL frame stands for `rate` of them (queue_samples).
+    const double rate = ultramodern::get_speed();
+
+    return frames > cushion ? (size_t)((double)(frames - cushion) * rate) : 0;
 }
 
 #ifdef __ANDROID__

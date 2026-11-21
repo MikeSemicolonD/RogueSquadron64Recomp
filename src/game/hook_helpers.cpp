@@ -1225,12 +1225,13 @@ static void rate_log(float dt)
 }
 
 // ROGUESQ_FIXED_STEP=1: game time advances one paced frame per frame instead of following real time (timeSnapshotFiller hook), so frame numbers repeat run to run.
+// Also on at any speed but 1: the scaled VI jitter measures most frames just under one tick, which the menus and cutscenes count as no time passing.
 extern "C" int rs64_fixed_step(void)
 {
 
     static const bool s_on = env_on("ROGUESQ_FIXED_STEP");
 
-    return s_on ? 1 : 0;
+    return (s_on || ultramodern::get_speed() != 1.0) ? 1 : 0;
 }
 
 // Each mission frame, once its dt is final; returns the dt the frame uses. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps.
