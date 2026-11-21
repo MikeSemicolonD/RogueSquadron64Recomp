@@ -7,20 +7,6 @@ body:
       value: |
         Check the [Status](https://github.com/MikeSemicolonD/RogueSquadron64Recomp#status) section of the README for known issues first. Never attach or link a ROM.
 
-  - type: dropdown
-    id: kind
-    attributes:
-      label: Issue type
-      description: See [CONTRIBUTING.md](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/CONTRIBUTING.md#fixing-bugsissues) if you're unsure.
-      multiple: true
-      options:
-        - Recomp. Issue (this port, its rendering, input, hooks or features)
-        - Game Issue (also happens on a real N64 or in an emulator)
-        - Mod Issue (only happens with a mod enabled)
-        - Not sure
-    validations:
-      required: true
-
   - type: textarea
     id: what
     attributes:
@@ -40,13 +26,22 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Issue type
+      description: See [CONTRIBUTING.md](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/blob/main/CONTRIBUTING.md#fixing-bugsissues) if you're unsure.
+      options:
+        - Recomp. Issue (this port, its rendering, input, hooks or features)
+        - Game Issue (also happens on a real N64 or in an emulator)
+        - Mod Issue (only happens with a mod enabled)
+        - Not sure
+
   - type: input
     id: version
     attributes:
       label: Version
-      description: Release version, or commit hash if you built it yourself.
-    validations:
-      required: true
+      description: The release you downloaded (if you're unsure, run the game with `--version`, or on Android look under App info), or the commit hash if you built it yourself.
 
   - type: dropdown
     id: platform
@@ -59,8 +54,6 @@ body:
         - macOS
         - Android
         - Other
-    validations:
-      required: true
 
   - type: dropdown
     id: arch
