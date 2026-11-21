@@ -516,6 +516,8 @@ static void nav_level(uint8_t* rdram, const char* st)
 }
 
 static std::atomic<int> s_chain_next{ -1 };
+static std::atomic<int> s_chain_craft{ -1 };
+static std::atomic<bool> s_chain_ending{ false };
 
 static bool nav_chain()
 {
@@ -525,9 +527,12 @@ static bool nav_chain()
     return on;
 }
 
-extern "C" void rs64_nav_chain_next(int level)
+extern "C" void rs64_nav_chain_next(int level, int craft, bool mission_ending)
 {
 
+    // The level is the go signal, so the craft and the ending flag are stored first.
+    s_chain_craft.store(craft);
+    s_chain_ending.store(mission_ending);
     s_chain_next.store(level);
 }
 
@@ -600,6 +605,7 @@ static void nav_abort(uint8_t* rdram, const char* st) {
                 {
                     fprintf(stderr, "[nav] abort: mission ended on its own (state=%s), walking its results\n", st);
                     fflush(stderr);
+                    s_run.abort_wait = 0;
                     s_step = kStepAbortFrontEnd;
                 }
 
@@ -611,6 +617,24 @@ static void nav_abort(uint8_t* rdram, const char* st) {
             {
                 s_watchdog = 0;
                 break;
+            }
+
+            // A mission that is ending (a playlist replay ran to its last frame) plays its ending to the results; aborting it would press START through
+            // the ending cutscene and the menus after it. It is aborted only if the results have not come up after two minutes.
+            if (nav_chain() && s_chain_ending.load())
+            {
+                static auto s_end_t0 = std::chrono::steady_clock::now();
+
+                if (s_run.abort_wait++ == 0) s_end_t0 = std::chrono::steady_clock::now();
+
+                s_watchdog = 0;
+
+                if (std::chrono::steady_clock::now() - s_end_t0 < std::chrono::seconds(120)) break;
+
+                fprintf(stderr, "[nav] abort: no results two minutes after the replay ended; aborting the mission\n");
+                fflush(stderr);
+                s_chain_ending.store(false);
+                s_run.abort_wait = 0;
             }
 
             if (!is(st, "mission") || paused) break;
@@ -737,7 +761,15 @@ static void nav_abort(uint8_t* rdram, const char* st) {
                 } else if (nav_chain() || ++s_loops_done < loops) {
                     static const bool same = recomp::dbg::env_on("ROGUESQ_NAV_ABORT_SAME");
 
-                    if (nav_chain()) g_target.a = s_chain_next.exchange(-1);
+                    if (nav_chain())
+                    {
+                        const int craft = s_chain_craft.exchange(-1);
+
+                        if (craft >= 0) g_target.b = craft;
+
+                        s_chain_ending.store(false);
+                        g_target.a = s_chain_next.exchange(-1);
+                    }
                     else if (!same) g_target.a = (g_target.a + 1) % 16;
 
                     fprintf(stderr, "[nav] abort loop %d/%d: next level %d\n", s_loops_done, loops, g_target.a);

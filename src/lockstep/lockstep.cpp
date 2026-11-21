@@ -3,6 +3,7 @@
 #include "util/rdram_words.h"
 #include "game/game_state.h"
 #include "game/hook_helpers.h"
+#include "game/nav_sequencer.h"
 #include "util/debug_logs.h"
 #include "host_api/host_api.h"
 #include "main/main.h"
@@ -123,6 +124,136 @@ Mode mode() {
     return m;
 }
 
+// ROGUESQ_LS_REPLAY=<a.rec>;<b.rec>;...: one recording per mission, in order, in one launch.
+const std::vector<std::string>& playlist()
+{
+
+    static const std::vector<std::string> list = [] {
+
+        std::vector<std::string> v;
+        const char* e = recomp::dbg::env_str("ROGUESQ_LS_REPLAY");
+        const std::string all = e ? e : "";
+
+        for (size_t at = 0; at < all.size();) {
+            size_t end = all.find(';', at);
+
+            if (end == std::string::npos) end = all.size();
+
+            if (end > at) v.push_back(all.substr(at, end - at));
+
+            at = end + 1;
+        }
+
+        return v;
+    }();
+
+    return list;
+}
+
+// Mission init leaves parts of gPlayers[0], the life count and the rumble handle counter (handles land in gPlayers+0x1C0) from the previous mission;
+// a chained replay restores what the first mission started with.
+constexpr uint32_t kPlayer0 = 0x80137DB8u;
+constexpr uint32_t kPlayerSize = 0x2A0u;
+constexpr uint32_t kNumLives = 0x80130B10u;
+constexpr uint32_t kRumbleNextHandle = 0x80110744u;
+
+struct FreshStart {
+    bool taken = false;
+    std::vector<uint8_t> player;
+    uint8_t lives = 0;
+    uint32_t rumble_handle = 0;
+};
+
+void fresh_start(uint8_t* rdram, bool restore)
+{
+
+    static FreshStart s_fresh;
+
+    if (!restore) {
+        s_fresh.player.resize(kPlayerSize);
+
+        for (uint32_t i = 0; i < kPlayerSize; ++i) {
+            s_fresh.player[i] = rb(rdram, kPlayer0 + i);
+        }
+
+        s_fresh.lives = rb(rdram, kNumLives);
+        s_fresh.rumble_handle = rw(rdram, kRumbleNextHandle);
+        s_fresh.taken = true;
+
+        return;
+    }
+
+    if (!s_fresh.taken)
+    {
+        return;
+    }
+
+    // +0x4 and +0xC0 are heap pointers into the loaded level.
+    for (uint32_t i = 0; i < kPlayerSize; ++i) {
+        if ((i & ~3u) == 0x4 || (i & ~3u) == 0xC0) continue;
+
+        wb(rdram, kPlayer0 + i, s_fresh.player[i]);
+    }
+
+    wb(rdram, kNumLives, s_fresh.lives);
+    ww(rdram, kRumbleNextHandle, s_fresh.rumble_handle);
+}
+
+// ROGUESQ_LS_HEAP_DUMP=<folder>: at each lockstep mission start (and at mission frame ROGUESQ_LS_HEAP_DUMP_AT), the game heap's blocks (initMainHeap's list from 0x8010FF18:
+// u16 state 1 free / 2 used / 6 reserved / 8 end, u16 allocation flags, u32 size, data at +0x10) go to <folder>/missionNN_levelL[_fF].heap, with a summary line in the log.
+void dump_game_heap(const uint8_t* rdram, int mission, uint32_t level, long frame)
+{
+
+    const char* dir = recomp::dbg::env_str("ROGUESQ_LS_HEAP_DUMP");
+
+    if (!dir)
+    {
+        return;
+    }
+
+    char name[80];
+
+    if (frame < 0) {
+        snprintf(name, sizeof(name), "mission%02d_level%u.heap", mission, level);
+    } else {
+        snprintf(name, sizeof(name), "mission%02d_level%u_f%ld.heap", mission, level, frame);
+    }
+
+    const std::string path = (std::filesystem::path(dir) / name).string();
+    FILE* f = fopen(path.c_str(), "wb");
+    uint32_t blk = rw(rdram, 0x8010FF18u);
+    uint32_t used = 0;
+    uint32_t used_bytes = 0;
+    uint32_t free_bytes = 0;
+    uint32_t largest_free = 0;
+
+    for (int n = 0; n < 200000 && blk >= 0x80000000u && blk < 0x807FFFF0u; ++n) {
+        const uint32_t state = ((uint32_t)rb(rdram, blk) << 8) | rb(rdram, blk + 1);
+        const uint32_t tag = ((uint32_t)rb(rdram, blk + 2) << 8) | rb(rdram, blk + 3);
+        const uint32_t size = rw(rdram, blk + 4);
+
+        if (state & 8) break;
+
+        if (f) fprintf(f, "%08X %u %04X %08X\n", blk, state, tag, size);
+
+        if (state == 2) {
+            used++;
+            used_bytes += size;
+        } else if (state == 1) {
+            free_bytes += size;
+            largest_free = std::max(largest_free, size);
+        }
+
+        blk += 0x10 + size;
+    }
+
+    if (f) fclose(f);
+
+    // The texture pool (getLoadedTextureCount): texture data grows up from 0x8011A7D8, TLUTs down from 0x8011A7D0; loadLevelTextureCache sizes the level's cache from the gap.
+    fprintf(stderr, "[heap] mission %d level %u: %u blocks used (%u bytes), %u bytes free, largest free %u; texture pool data %08X tlut %08X -> %s\n", mission, level, used, used_bytes,
+            free_bytes, largest_free, rw(rdram, 0x8011A7D8u), rw(rdram, 0x8011A7D0u), path.c_str());
+}
+
 void close_files() {
 
     State& s = st();
@@ -163,7 +294,7 @@ bool dump_frame(uint32_t frame)
     return range.first >= 0 && (long)frame >= range.first && (long)frame <= range.second;
 }
 
-void end_session(const char* why)
+void end_session(uint8_t* rdram, const char* why)
 {
 
     State& s = st();
@@ -174,9 +305,33 @@ void end_session(const char* why)
     s.active = false;
     static const bool keep_running = recomp::dbg::env_on("ROGUESQ_LS_KEEP_RUNNING");
 
-    if (s.mode == Mode::Replay && !keep_running) {
-        rs64_menu_request_quit();
+    if (s.mode != Mode::Replay || keep_running)
+    {
+        return;
     }
+
+    // A playlist names the next recording's level and craft to the nav chain instead of quitting.
+    if (s.missions > 0 && (size_t)s.missions < playlist().size()) {
+        const std::string& next = playlist()[(size_t)s.missions];
+        SessionHeader h;
+        std::vector<FrameInput> frames;
+        std::map<uint32_t, std::vector<uint8_t>> song;
+
+        if (load_replay(next.c_str(), &h, &frames, &song))
+        {
+            // SELECT LEVEL lists the bonus levels from these unlock and passcode words, so the next pilot's are in place before it opens.
+            ww(rdram, 0x80130B4Cu, h.flags0);
+            ww(rdram, 0x80130B58u, h.cheats0);
+            ww(rdram, 0x80130B5Cu, h.cheats1);
+
+            fprintf(stderr, "[ls] playlist: next %s (level %u craft %u)\n", next.c_str(), h.level, h.craft);
+            rs64_nav_chain_next((int)h.level, (int)h.craft, true);
+
+            return;
+        }
+    }
+
+    rs64_menu_request_quit();
 }
 
 FILE* open_hash(const std::string& path) {
@@ -230,7 +385,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     s.missions++;
 
     // ROGUESQ_LS_EACH_MISSION=1 (smoke tests chaining levels in one launch): every mission starts a new session, rewriting the recording.
-    static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION");
+    static const bool each = recomp::dbg::env_on("ROGUESQ_LS_EACH_MISSION") || playlist().size() > 1;
 
     // A live recording keeps going through a retry or the next mission, into <name>_try<N>.rec: one file per mission attempt.
     const bool next_file = s.mode == Mode::Record;
@@ -238,7 +393,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     if (s.missions > 1) {
         if (s.active)
         {
-            end_session(each ? "next mission" : next_file ? "mission restarted, recording the next attempt" : "second initMission (one recording = one mission attempt)");
+            end_session(rdram, each ? "next mission" : next_file ? "mission restarted, recording the next attempt" : "second initMission (one recording = one mission attempt)");
         }
 
         if (!each && !next_file) return;
@@ -287,7 +442,17 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
         fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s%s\n", h.level, h.craft, h.seed, path.c_str(), ghost ? " (co-op: input only)" : "");
     } else if (s.mode == Mode::Replay) {
-        const char* path = recomp::dbg::env_str("ROGUESQ_LS_REPLAY");
+        const size_t entry = (size_t)s.missions - 1;
+
+        if (entry >= playlist().size())
+        {
+            fprintf(stderr, "[ls] playlist: mission %d has no recording\n", s.missions);
+            rs64_menu_request_quit();
+
+            return;
+        }
+
+        const char* path = playlist()[entry].c_str();
         SessionHeader h;
 
         if (!load_replay(path, &h, &s.frames, &s.song.by_frame, &s.speech.by_frame)) {
@@ -306,7 +471,21 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
             return;
         }
 
+        dump_game_heap(rdram, s.missions, h.level, -1);
+        fresh_start(rdram, entry > 0);
         apply_session(rdram, h);
+
+        // Widescreen and DRAW DISTANCE change the object culls; the first entry's were set at launch, before the level loads.
+        if (entry > 0 && h.draw_pct != 0)
+        {
+            using rs64::video::Display;
+
+            if ((uint32_t)rs64::video::display_value(Display::Widescreen) != (h.widescreen ? 1u : 0u)) rs64::video::step_display(Display::Widescreen);
+
+            rs64::video::set_draw_distance((float)h.draw_pct / 100.0f);
+
+            fprintf(stderr, "[ls] replay display: widescreen=%u draw=%.2f (from the recording)\n", h.widescreen, h.draw_pct / 100.0);
+        }
 
         if (!h.ship.empty() && !rs64_ships_fly(h.ship.c_str()))
         {
@@ -346,6 +525,12 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         }
 
         s.hash_path = out ? std::string(out) : (rerec ? std::string(rerec) + ".hash" : std::string(path) + ".replay.hash");
+
+        // With a playlist, ROGUESQ_LS_HASH_OUT is a folder holding one <name>.replay.hash per recording.
+        if (out && playlist().size() > 1)
+        {
+            s.hash_path = (std::filesystem::path(out) / (std::filesystem::path(path).stem().string() + ".replay.hash")).string();
+        }
         s.hash = open_hash(s.hash_path);
 
         fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u%s\n", s.frames.size(), h.level, h.craft, h.seed, rerec ? " (re-recording)" : "");
@@ -873,7 +1058,7 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         }
     } else if (s.mode == Mode::Replay) {
         if (s.frame >= s.frames.size()) {
-            end_session("replay finished");
+            end_session(rdram, "replay finished");
 
             return;
         }
@@ -881,7 +1066,7 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         const FrameInput& f = s.frames[s.frame];
 
         if (f.frame != s.frame) {
-            end_session("recording frame numbers out of sequence");
+            end_session(rdram, "recording frame numbers out of sequence");
 
             return;
         }
@@ -926,11 +1111,18 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
         fflush(s.dump);
     }
 
+    static const long s_heap_at = recomp::dbg::env_int("ROGUESQ_LS_HEAP_DUMP_AT", -1);
+
+    if (s_heap_at >= 0 && (long)s.frame == s_heap_at)
+    {
+        dump_game_heap(rdram, s.missions, rb(rdram, 0x80130B40u), s_heap_at);
+    }
+
     s.frame++;
 
     // A recording that ends with the mission (success, fail) has no mission frame after its last one, so stop here.
     if (s.mode == Mode::Replay && !s.resume && s.frame >= s.frames.size()) {
-        end_session("replay finished");
+        end_session(rdram, "replay finished");
     }
 }
 

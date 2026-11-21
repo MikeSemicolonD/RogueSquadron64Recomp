@@ -805,6 +805,14 @@ public:
                     video_cfg_pins_[it.key()] = { it.value(), saved[it.key()] };
                 }
             }
+
+            // A replay playlist switches these per recording, so they keep the player's value for the whole run.
+            const char* list = env_str("ROGUESQ_LS_REPLAY");
+            replay_playlist_ = list && std::strchr(list, ';');
+
+            for (const char* key : { "widescreen", "drawDistance" }) {
+                if (replay_playlist_ && saved.contains(key)) video_cfg_pins_[key] = { live[key], saved[key] };
+            }
         } catch (...) {}
 
         // PresentEarly (default on): the cinematic stays on one VI fb address, so RT64's
@@ -1070,6 +1078,7 @@ private:
     };
 
     std::map<std::string, VideoCfgPin> video_cfg_pins_;
+    bool replay_playlist_ = false;
 
     // A lost GPU device never recovers; rebuild RT64 on the same window. Rebuilds back off (1 s, doubling to 16 s) while losses keep recurring so a persistent fault can't spin.
     // ROGUESQ_NO_DEVICE_LOST_RECOVERY=1 disables. Runs on the gfx thread, which is the only caller of send_dl/update_screen.
@@ -1130,12 +1139,15 @@ private:
     void apply_replay_display()
     {
 
-        const char* path = env_str("ROGUESQ_LS_REPLAY");
+        const char* list = env_str("ROGUESQ_LS_REPLAY");
+
+        // A playlist (a;b;...) starts with the first entry's display; lockstep.cpp switches it for each later one.
+        const std::string path = list ? std::string(list).substr(0, std::string(list).find(';')) : std::string();
         rs64::ls::SessionHeader h;
         std::vector<rs64::ls::FrameInput> frames;
         std::map<uint32_t, std::vector<uint8_t>> song;
 
-        if (!path || !rs64::ls::load_replay(path, &h, &frames, &song) || h.draw_pct == 0)
+        if (path.empty() || !rs64::ls::load_replay(path.c_str(), &h, &frames, &song) || h.draw_pct == 0)
         {
             return;
         }
@@ -1170,7 +1182,7 @@ private:
             json j = json::parse(cur);
 
             for (auto it = video_cfg_pins_.begin(); it != video_cfg_pins_.end();) {
-                if (j[it->first] == it->second.live) {
+                if (replay_playlist_ || j[it->first] == it->second.live) {
                     j[it->first] = it->second.saved;
                     ++it;
                 } else {

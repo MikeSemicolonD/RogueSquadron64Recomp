@@ -618,7 +618,7 @@ static nlohmann::json mcp_nav(const nlohmann::json& p)
 {
 
     if (p.contains("next_level")) {
-        rs64_nav_chain_next(p["next_level"].get<int>());
+        rs64_nav_chain_next(p["next_level"].get<int>(), p.value("craft", -1), false);
 
         return { { "next_level", p["next_level"] } };
     }

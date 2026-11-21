@@ -29,8 +29,9 @@ extern "C" {
     // Called per graphics task: the step watchdog counts game frames.
     void rs64_nav_frame();
 
-    // ROGUESQ_NAV_CHAIN=1 (smoke tests): an abort target holds each mission until this names the next level, then aborts to SELECT LEVEL and starts it.
-    void rs64_nav_chain_next(int level);
+    // ROGUESQ_NAV_CHAIN=1 (smoke tests, replay playlists): an abort target holds each mission until this names the next level, then aborts to SELECT LEVEL and starts it; craft -1 keeps the current one.
+    // mission_ending: the held mission is finishing on its own, so its results are walked instead of aborting it.
+    void rs64_nav_chain_next(int level, int craft, bool mission_ending);
 
     // Back out to the main menu, then select this menu path (labels joined by /), as a menu: boot target does.
     void rs64_nav_menu_next(const char* path);
