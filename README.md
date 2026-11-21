@@ -104,7 +104,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Mods
 
-- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window. (some might require resetting the game)
+- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window OR the game's built in Mod menu. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
   - See [docs/guides/modding.md for modding info](docs/guides/modding.md).
 - **Included mods:**
@@ -114,8 +114,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Larger Object Pool:** doubles the number of ships, lasers, and explosions the game can track at once, so busy missions stop resetting pooled objects.
   - **Long Tow Cable:** the snowspeeder's tow cable is long enough to wrap an AT-AT several times.
   - **Quit Prompt:** a prompt in the main menu asking if you want to quit.
-  - **Invincibility:** your craft takes no damage.
-  - **Any Craft, Any Mission:** fly any ship on any level.
+  - **Invincibility:** your craft takes no damage. (Off by default)
+  - **Any Craft, Any Mission:** fly any ship on any level. (Off by default)
 
 ## Running
 
