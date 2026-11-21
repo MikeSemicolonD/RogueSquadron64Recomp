@@ -282,7 +282,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 - Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
 
 - Reflections might not look completely accurate because of the nature of Screen Space Reflections
-  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen.
+  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen. A potential solution would be an automated cubemap projection for each level done on the fly and have that be used as a fallback for when screen space reflections fall short.
 
 #### Draw distance Caveats
 
