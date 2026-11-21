@@ -90,7 +90,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - See [docs/guides/multiplayer.md](docs/guides/multiplayer.md) for more details.
 - **Ways to connect:** there is no official server. See [docs/guides/co-op-setup.md](docs/guides/co-op-setup.md) for more details.
   - **Direct:** works over LAN (with automatic discovery) and over the internet (with UPnP port forwarding).
-  - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi direct (macOS uses 'Network Sharing').
+  - **Wi-Fi Direct (Windows 10+, Linux, Android 10+):** play with no router. When there's no shared network, a nearby player who picks JOIN GAME joins the host's own Wi-Fi network automatically. (Android will ask to allow it) Linux needs NetworkManager and only hosts when it isn't already on a Wi-Fi network. Hosting on Linux or Android is untested. macOS doesn't support Wi-Fi Direct (macOS uses 'Network Sharing').
   - **Steam, using the `steam-relay` mod (Desktop ONLY):** with Steam running, HOST GAME lists your game on Steam, and JOIN GAME shows the open games to pick from (locked ones ask for their password). Steam sees the game as Spacewar (app id 480).
   - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - **Setup notes:**
@@ -104,7 +104,7 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 
 #### Mods
 
-- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window OR the game's built in Mod menu. (some might require resetting the game)
+- **Mod support:** turn mods on and off in the **Mods** panel of the **F6** window OR the game's built-in Mod menu. (some might require resetting the game)
   - Developers can use [mods/platforms.json](mods/platforms.json) to automatically include mods in builds based on platform.
   - See [docs/guides/modding.md for modding info](docs/guides/modding.md).
 - **Included mods:**
@@ -169,7 +169,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 - **DualShock 4 & DualSense Lightbar Support:** lightbar color will change depending on the state of the game.
   - Colors configurable from the `lightbar` section in `roguesq_input.json`
 
-- **DualSense Adaptive Trigger Support:** Ship speed affects the resistance of the Thrust & Brake triggers. Brake trigger becomes *resitive* if the speed is beyond cruising speed. Thrust trigger becomes *resistive* if at cruise speed or less.
+- **DualSense Adaptive Trigger Support:** Ship speed affects the resistance of the Thrust & Brake triggers. Brake trigger becomes *resistive* if the speed is beyond cruising speed. Thrust trigger becomes *resistive* if at cruise speed or less.
 
 > [!TIP]
 > When binding the throttle, move the lever to the opposite position, click **Rebind** on 'Throttle', then push/pull it forward/back.
@@ -228,7 +228,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > All issues should be reported/tracked via the [issue tracker](https://github.com/MikeSemicolonD/RogueSquadron64Recomp/issues?q=is%3Aissue+is%3Aopen+label%3A"Recomp.+Issue").
 
-- Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain render. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
+- Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain renderer. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
 
 ### Game specific Issues
 
@@ -239,7 +239,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
-- During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticable when in Widescreen. This is normal cutscene behaviour.
+- During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticeable when in Widescreen. This is normal cutscene behavior.
 
 - Turrets and structures aren't always uniformly connected to the ground, showing a gap between the structure and the ground.
 
@@ -287,7 +287,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 #### Draw distance Caveats
 
 - 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
-  - 'Search for Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
+  - 'Search for the Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
   - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
 
 - Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
@@ -584,8 +584,8 @@ Here's a list of MCPs that could be useful for this project:
 ## Notable Forks
 
 - **[amazingalek](https://github.com/amazingalek)**'s [Web implementation](https://github.com/n64hub/RogueSquadron64Recomp-web) playable right -> **[HERE](https://n64hub.com/star-wars-rogue-squadron/)**
-- **[bkacjio](https://github.com/bkacjios)**'s [port for the PocketGo S30](https://github.com/bkacjios/rs64recomp-s30)
-- **[fyreatwill](https://github.com/fyreatwill/RogueSquadron64Recomp)**'s [MacOS Port working off of my first attempt (LLE) branch](https://github.com/fyreatwill/RogueSquadron64Recomp) created through an autonomous loop
+- **[bkacjios](https://github.com/bkacjios)**'s [port for the PocketGo S30](https://github.com/bkacjios/rs64recomp-s30)
+- **[fyreatwill](https://github.com/fyreatwill/RogueSquadron64Recomp)**'s [macOS Port working off of my first attempt (LLE) branch](https://github.com/fyreatwill/RogueSquadron64Recomp) created through an autonomous loop
 
 ## License
 
