@@ -2195,6 +2195,17 @@ async function showLevel(dir, keepView = false, skyOverride = null)
     }
   }
 
+  // A path point or trigger that waits on a flag or counter says what sets it ("Only once 'X' is entered"), from the level's own data.
+  const sources = gateSources(datDv);
+
+  for (const it of dat.items)
+  {
+    const c = it.pathEvent ?? it.requires;
+
+    if (c?.flag || c?.counter)
+      it.needWords = gateWords({ flag: c.flag || 0, counter: c.counter || 0, atLeast: c.atLeast || 0 }, sources, it.offset);
+  }
+
   // Group splines by the NPCs that follow them: an NPC names its spline right after its own name (see npcAtAtUpdate).
   // A spline nobody names joins the group of a sibling with the same name stem (WEDGE_Spline_02 -> WEDGE_Spline_01's).
   const splines = dat.items.filter((s) => s.type === 3);
@@ -2631,7 +2642,7 @@ async function openFile(file)
     cutPathModels = null;
     edits.clear();
     dirty.clear();
-    history = createHistory();
+    history = withContext(createHistory());
     savedStep = null;
     updateModButton();
     applyModLevelsText('', '');
@@ -2661,6 +2672,18 @@ async function openFile(file)
 
     if (rom.assets.has(first + '_HOB'))
       showModel(first);
+
+    // Back on the tab and item last used, before the slow indexing below so a pick made meanwhile is not replaced; the tab's button does
+    // what a click would (Menus loads its pages first).
+    const tab = stored('rs64.tab', 'models');
+    const index = stored('rs64.item.' + tab, null);
+
+    restoreRow = Number.isInteger(index) ? { mode: tab, index } : null;
+
+    if (tab !== 'models')
+      $('tab' + tab[0].toUpperCase() + tab.slice(1))?.click();
+    else if (restoreRow)
+      setMode('models');
 
     busy('Indexing object packages...');
 

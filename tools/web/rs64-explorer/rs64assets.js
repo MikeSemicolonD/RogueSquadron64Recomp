@@ -2241,7 +2241,9 @@ function rs64Lib()
         tex: dv.getUint16(o + 2),
         name: name16(dv, o + 0x14),
         emissive: dv.getFloat32(o + 4) === 0,
-        diffuse: dv.getFloat32(o + 4)
+        diffuse: dv.getFloat32(o + 4),
+        // An ambient weight this large draws the material at full brightness (the explorer's Glow toggle sets 255).
+        glow: dv.getFloat32(o + 4) >= 127.5
       });
     }
 
@@ -3412,11 +3414,12 @@ function rs64Lib()
 
   // A new path under name: a stock path's record with no events or continuation, a straight line of 4 points from `at` (where its NPC
   // starts) in the stock path's first direction and spacing, ending in an attack on the player. Returns splineCopy's shape.
-  function splineNew(fromBytes, spline, toBytes, { name, at, attack })
+  // heading: the yaw (radians, models look down +Z) the path leaves along; without it, the stock path's first leg.
+  function splineNew(fromBytes, spline, toBytes, { name, at, attack, heading = null })
   {
     const fdv = viewOf(fromBytes);
     const src = splinePoints(fdv, spline);
-    const d = [src[2][0] - src[1][0], 0, src[2][2] - src[1][2]];
+    const d = heading == null ? [src[2][0] - src[1][0], 0, src[2][2] - src[1][2]] : [Math.sin(heading), 0, Math.cos(heading)];
     const len = Math.hypot(...d) || 1;
     const step = Math.max(10, Math.hypot(...src[src.length - 1].map((v, a) => v - src[0][a])) / (src.length - 1));
     const dir = d.map((v) => (v / len) * step);
@@ -3495,6 +3498,25 @@ function rs64Lib()
   const isTriggerArea = (it) => it.type === 7 && (it.sub === 0x18 || it.sub === 0x19);
   const isFlightPath = (it) => it.type === 3 && it.sub === 3 && it.points?.length >= 4;
   const unitDeath = (dv, it) => Object.fromEntries(Object.entries(UNIT_DEATH).map(([k, o]) => [k, dv.getInt32(it.offset + o)]));
+
+  function unitDeathSet(bytes, it, patch) {
+    const dv = viewOf(bytes);
+
+    for (const [k, v] of Object.entries(patch))
+      dv.setInt32(it.offset + UNIT_DEATH[k], v);
+  }
+
+  // Every unit record's spawn gate (isDatItemConditionMet): it stays out of the level until flag +0x60 is set and counter +0x64 reaches +0x68
+  // (0 skips that test). The waves, power-ups and troopers a destroyed building releases all use it.
+  const UNIT_GATE = { flag: 0x60, counter: 0x64, atLeast: 0x68 };
+  const unitGate = (dv, it) => Object.fromEntries(Object.entries(UNIT_GATE).map(([k, o]) => [k, dv.getInt32(it.offset + o)]));
+
+  function unitGateSet(bytes, it, gate) {
+    const dv = viewOf(bytes);
+
+    for (const [k, o] of Object.entries(UNIT_GATE))
+      dv.setInt32(it.offset + o, gate[k] ?? 0);
+  }
 
   // Objective counters and flags the level's DAT already uses (so objectives take others).
   function levelUsedObjectiveSlots(dv) {
@@ -4243,13 +4265,15 @@ function rs64Lib()
 
   // The HMP at a larger map size (w x h cells). The old map keeps cell (0, 0), so every world position stays put, and the ground continues
   // past the old edges with the edge heights and textures. The light list (world positions) moves along unchanged.
-  function hmpResize(orig, w, h)
+  // ox / oz of the new cells go on the -X / -Z sides, so the old ground moves 2 units a cell toward +X / +Z and everything placed must
+  // move with it. The game ignores the header's own origin (+0x00, +0x08) in places, so that stays 0.
+  function hmpResize(orig, w, h, ox = 0, oz = 0)
   {
     const dv = viewOf(orig);
     const ow = dv.getUint16(0x24);
     const oh = dv.getUint16(0x26);
 
-    if (w < ow || h < oh)
+    if (w < ow + ox || h < oh + oz || ox < 0 || oz < 0)
       throw new Error('A map can only grow');
 
     const light = dv.getUint32(0x20);
@@ -4268,20 +4292,103 @@ function rs64Lib()
     o.setUint16(0x24, w);
     o.setUint16(0x26, h);
 
+    const clampTo = (v, lo, n) => Math.min(Math.max(v - lo, 0), n - 1);
+
     for (let ty = 0; ty < h; ty++)
       for (let tx = 0; tx < w; tx++)
-        o.setUint16(0x28 + (ty * w + tx) * 2, dv.getUint16(0x28 + (Math.min(ty, oh - 1) * ow + Math.min(tx, ow - 1)) * 2));
+        o.setUint16(0x28 + (ty * w + tx) * 2, dv.getUint16(0x28 + (clampTo(ty, oz, oh) * ow + clampTo(tx, ox, ow)) * 2));
 
     // Repeated edge cells don't meet their copies, so the new area takes the old edge's vertex heights instead.
     const grid = hmpGrid(parseHMP(o));
-    const [OW, OH] = [ow * 4, oh * 4];
+    const [X0, Z0, X1, Z1] = [ox * 4, oz * 4, (ox + ow) * 4, (oz + oh) * 4];
 
     for (let Y = 0; Y < grid.H; Y++)
       for (let X = 0; X < grid.W; X++)
-        if (X > OW || Y > OH)
-          grid.hts[Y * grid.W + X] = grid.hts[Math.min(Y, OH) * grid.W + Math.min(X, OW)];
+        if (X < X0 || X > X1 || Y < Z0 || Y > Z1)
+          grid.hts[Y * grid.W + X] = grid.hts[Math.min(Math.max(Y, Z0), Z1) * grid.W + Math.min(Math.max(X, X0), X1)];
 
     return writeHMP(out, grid);
+  }
+
+  // Moves the HMP's point lights by (dx, dz) world units. Lighting block (+0x20): count, shadow and world colours, then 0x20-byte lights
+  // from +0x0C: RGB floats, a word (0 on the sun), XYZ (the sun's direction, else its world position), radius.
+  function hmpShiftLights(bytes, dx, dz)
+  {
+    const out = bytes.slice();
+    const o = new DataView(out.buffer, out.byteOffset, out.byteLength);
+    const L = o.getUint32(0x20);
+    const n = o.getUint32(L);
+
+    for (let k = 0; k < n; k++)
+    {
+      const p = L + 0x0C + k * 0x20;
+
+      if (!o.getUint32(p + 0x0C) || p + 0x20 > o.getUint32(0x1C))
+        continue;
+
+      o.setFloat32(p + 0x10, o.getFloat32(p + 0x10) + dx);
+      o.setFloat32(p + 0x18, o.getFloat32(p + 0x18) + dz);
+    }
+
+    return out;
+  }
+
+  // The level's sun (the first light of the HMP lighting block): dir the way its light travels, game Y-down (y > 0 shines down), and its
+  // colour as 0-255 floats. world is the lit-ground colour (bytes) the terrain shading scales by N.L.
+  function hmpSetSun(bytes, { dir, color, world })
+  {
+    const o = viewOf(bytes);
+    const L = o.getUint32(0x20);
+
+    color.forEach((v, k) => o.setFloat32(L + 0x0C + k * 4, v));
+    dir.forEach((v, k) => o.setFloat32(L + 0x1C + k * 4, v));
+    world.forEach((v, k) => o.setUint8(L + 8 + k, Math.max(0, Math.min(255, Math.round(v)))));
+  }
+
+  // Moves every DAT item by (dx, dz) world units: each record's position is at +0x10, and splines, zones and areas are relative to it.
+  function datShift(bytes, dx, dz)
+  {
+    const out = bytes.slice();
+    const o = new DataView(out.buffer, out.byteOffset, out.byteLength);
+
+    for (const it of parseDAT(o).items)
+    {
+      o.setFloat32(it.offset + 0x10, it.pos[0] + dx);
+      o.setFloat32(it.offset + 0x18, it.pos[2] + dz);
+    }
+
+    return out;
+  }
+
+  // Moves a cutscene by (dx, dz) world units: every camera's position channels and each root actor's (children ride on their parent).
+  // Positions are stored at 4x world.
+  function cutsceneShift(bytes, dx, dz)
+  {
+    const data = parseCutscene(viewOf(bytes));
+
+    const add = (keys, d) => {
+      for (let i = 0; i < keys.length; i += 3)
+        keys[i] += d * 4;
+    };
+
+    for (const c of data.cameras.filter(Boolean))
+    {
+      add(c[0], dx);
+      add(c[2], dz);
+    }
+
+    for (const a of data.actors.filter((x) => x.parent < 0))
+    {
+      if (a.animated) {
+        add(a.ch[0], dx);
+        add(a.ch[2], dz);
+      } else {
+        a.value[0] += dx * 4;
+        a.value[2] += dz * 4;
+      }
+    }
+
+    return writeCutscene(data);
   }
 
   // ---- Terrain textures: lv_X_TEX maps a tile's texmap id to an entry in the shared data/level/tex bank ----
@@ -6784,10 +6891,20 @@ function rs64Lib()
   // this can't name. Follows the level's start-up and per-frame code, callbacks that wait on a flag or counter, timers and calls into mission code.
   function missionScript(romBytes, level)
   {
-    const FN = { setFlag: 0x800C7540, getFlag: 0x800C759C, addCount: 0x800C75EC, getCount: 0x800C761C, whenMet: 0x800C7830, after: 0x800C7864 };
+    // camera: setHudFlagBit40AndStoreArg, which starts the in-mission camera sequence named by a0.
+    const FN = { setFlag: 0x800C7540, getFlag: 0x800C759C, addCount: 0x800C75EC, getCount: 0x800C761C, whenMet: 0x800C7830, after: 0x800C7864, camera: 0x800C7884 };
     const toRom = (a) => a - 0x7FFFF400;
     const word = (a) => ((romBytes[toRom(a)] << 24) | (romBytes[toRom(a) + 1] << 16) | (romBytes[toRom(a) + 2] << 8) | romBytes[toRom(a) + 3]) >>> 0;
-    const out = { flags: new Map(), counters: new Map() };
+    const out = { flags: new Map(), counters: new Map(), cameras: [] };
+
+    const text = (a) => {
+      let t = '';
+
+      for (let k = 0; k < 64 && romBytes[toRom(a) + k]; k++)
+        t += String.fromCharCode(romBytes[toRom(a) + k]);
+
+      return t;
+    };
 
     if (word(0x8010A450) !== 0x80101090)
       return out;
@@ -6900,6 +7017,8 @@ function rs64Lib()
             record(out.flags, a0);
           else if (to === FN.addCount)
             record(out.counters, a0);
+          else if (to === FN.camera && a0 !== undefined)
+            out.cameras.push({ name: text(a0 >>> 0), needs: [...base, ...needs] });
           else if (to === FN.whenMet)
             walk(a0 >>> 0, [...base, ...needs, ...(a1 && a2 ? [{ flag: a1 }] : []), ...(a3 ? [{ counter: a3, atLeast: arg4 }] : [])], depth + 1);
           else if (to === FN.after)
@@ -8670,7 +8789,9 @@ function rs64Lib()
         else
           h.push({ label, changes: [{ path, before, after }] });
       },
+      // context(): where the edit was made (the page's own view state), kept on the step so undo can go back there.
       push(step) {
+        step.ctx ??= h.context?.();
         h.steps.length = h.at;
         h.steps.push(step);
         h.at = h.steps.length;
@@ -9115,10 +9236,38 @@ function rs64Lib()
   const CUT_BANK_G = 2.2;
 
   // Mid-mission camera shots: a mod's camera_shots.txt, one "<level> <trigger> <camera> [personal]" (a later line wins) or
-  // "<level> <trigger> destroy <object>" (they add up) per line, '#' comments, as the game reads it (src/game/mod_content/camera_shots.h).
+  // "<level> <trigger> destroy <object>" (they add up) or "<level> <camera> replace <camera>|none" per line, # comments, as the game reads it
+  // (src/game/mod_content/camera_shots.h).
   // personal: in co-op only the player who set the trigger off sees it.
   const shotFields = (line) => (line.trim().startsWith('#') ? [] : line.trim().split(/\s+/).filter(Boolean));
-  const shotIsCamera = (f, level, trigger) => f.length >= 3 && f[0] === level && f[1] === trigger && f[2] !== 'destroy';
+  const shotIsCamera = (f, level, trigger) => f.length >= 3 && f[0] === level && f[1] === trigger && f[2] !== 'destroy' && f[2] !== 'replace';
+  const shotIsSwap = (f, level, camera) => f.length >= 4 && f[0] === level && f[1] === camera && f[2] === 'replace';
+
+  // "<level> <camera> replace <camera>|none": what plays when the mission script starts that camera. null keeps it, '' is nothing.
+  function shotSwapGet(text, level, camera) {
+    let to = null;
+
+    for (const line of text.split('\n')) {
+      const f = shotFields(line);
+
+      if (shotIsSwap(f, level, camera))
+        to = f[3] === 'none' ? '' : f[3];
+    }
+
+    return to;
+  }
+
+  // The text with that camera's replace line set to `to` ('' for nothing), or removed (null, or the camera itself); LF endings.
+  function shotSwapSet(text, level, camera, to)
+  {
+    const out = shotLines(text).filter((l) => !shotIsSwap(shotFields(l), level, camera));
+
+    if (to !== null && to !== camera)
+      out.push(`${level} ${camera} replace ${to || 'none'}`);
+
+    return out.length ? out.join('\n') + '\n' : '';
+  }
+
   const shotIsDestroy = (f, level, trigger) => f.length >= 4 && f[0] === level && f[1] === trigger && f[2] === 'destroy';
   const shotLines = (text) => text.replace(/\r/g, '').split('\n').filter((l, i, a) => i < a.length - 1 || l);
 
@@ -10387,7 +10536,7 @@ function rs64Lib()
     return { current, history };
   }
 
-  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, hmpResize, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, SHIP_TEMPLATES, SHIP_SPOTS, shipsParse, shipsWrite, shipBehaviours, SHIP_MAX, shipPos, shipFreeSpot, shipNew, shipAliases, hobSetObjectName, hmtOwnTextures, hudIconSize, hudIconWrite, blueprintWrite, texFileRename, shipStandAt, shipSpotAt, shipHangarRemove, shipHangarAdd, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, datFlightInset, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, CRAFT_RULE_EXT, modChecksOf, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, craftImportPlacement, craftClipBake, hobMoveHardpoints, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, writeAnim, DAT_TYPES,
+  globalThis.RS64 = { orderSetTarget, recordSetName, shotDropCameras, openRom, FONT_STRIP_HEADER, MOD_KINDS, modChangeKind, LIGHTS_ANY_LEVEL, spriteKeys, lightsParse, lightsWrite, hobMeshKey, meshKeyName, lightsMeshMatches, lightNew, menuItemKey, menuItemKeys, menuLinks, exportPlan, menuParse, menuWrite, menuWriteSubset, menuMerge, menuLayout, menuFontGaps, NATIVE_MENUS, MENU_DEFAULT_BUTTONS, menuWithDefaults, fontCovers, gameFonts, glyphPackParse, glyphPackWrite, langChars, encodeJpeg, CRAWL_STOCK_CAMERA, crawlCameraAt, CRAWL_PLANETS, CRAWL_PATH, crawlFontGaps, stockCrawls, crawlParse, crawlWrite, crawlFont, crawlLayout, parseShadowTextures, cutClips, cutDragClip, zipRead, zipUnpack, applyBPS, projectWrite, projectRead, createHistory, parseCutscene, writeCutscene, CUT_LIMITS, CUT_ACTOR_EVENTS, cutRecomputeSlopes, cutAddEvent, cutRemoveEvent, cutMoveEvent, cutSetKey, cutRemoveKey, cutAddActor, cutAnimateActor, cutSetActorName, cutRemoveActor, cutAddCamera, cutRemoveCamera, cutSetLength, cutBlank, cutSetChannelSpan, cutCurve, cutQuatToAxisAngle, cutAxisAngleToQuat, cutBakeActorPath, cutActorPose, cutBakeCameraPath, cutBakeCameraMode, cutShootAt, cutRetimeSnaps, cutUnbake, cutBake, cutBakedEvents, cutSyncModeSpans, shotLinkGet, shotLinkSet, shotDestroyGet, shotDestroySet, shotSwapGet, shotSwapSet, shotRename, datRenameItem, triggerSetActivators, nameListGet, PATH_LINK_FIELDS, cutsceneValue, encodeTexture, encodeBPS, zipStore, crc32, hmpGrid, writeHMP, hmpResize, hmpShiftLights, datShift, cutsceneShift, hmpSetSun, datAddItem, datRemoveItem, datReplaceItem, datLookup, datRebuildNameMap, modLevelsParse, modLevelsWrite, modLevelNew, modLevelAliases, SHIP_TEMPLATES, SHIP_SPOTS, shipsParse, shipsWrite, shipBehaviours, SHIP_MAX, shipPos, shipFreeSpot, shipNew, shipAliases, hobSetObjectName, hmtOwnTextures, hudIconSize, hudIconWrite, blueprintWrite, texFileRename, shipStandAt, shipSpotAt, shipHangarRemove, shipHangarAdd, medalInfo, MEDALS_SIMPLE, objectivesApply, objectiveTargets, levelUsedObjectiveSlots, isUnit, isTriggerArea, isFlightPath, datBlank, hmpFlat, datWaterGet, datWaterSet, datFlightInset, ENV_PATH, envParse, envWrite, recordInert, npcPathGet, npcSetPath, npcPathField, datRemoveIndexed, parseMusicCues, musicZoneSet, musicZoneEdit, musicConditionSources, musicGaps, musicRegionBox, musicMargin, musicAddTrigger, datNameItem, RULE_WHENS, RULE_ACTIONS, RULES_PATH, RULES_JSON_PATH, rulesParse, rulesExtParse, CRAFT_RULE_EXT, modChecksOf, menuExtParse, rulesWrite, ruleRefs, rulesRename, rulesBroken, rulesScriptParse, rulesScriptWrite, rulesScriptCheck, rulesComplete, rulesVariables, condCheck, condRename, splinePoints, splineSetPoints, splineAt, splineEvents, splineCopy, splineNew, splineAttackEnd, splineSetAttackEnd, uniqueName, PATH_EVENT_KEEP, PATH_ATTACK_AT, WAVE_FIELDS, waveGet, waveSet, missionScript, scriptUnits, arrowWrite, arrowSources, unitDeath, levelUsedObjectiveSlots, levelUsedFlags, waveFlagFor, triggerWave, unitGate, unitGateSet, unitDeathSet, UNITS_ANY_LEVEL, UNITS_NEED_PATH, UNITS_OWN_PATH, UNIT_RECORD_FROM, MODEL_UNITS, PACKAGES_PATH, unitModelName, datAddDevastatorGuns, hmtRenameTextures, hmtRestoreNames, TRAIN_UNITS, datAddTrain, datRemoveUnit, trainOf, trainLinks, datAddEnemy, hobSetPartGeometry, craftImportSlots, hobImportCraft, craftImportPlacement, craftClipBake, hobMoveHardpoints, parseSpriteAnim, inflate, parseHMT, parseHOB, parseHMP, parseDAT, parseTexTable, decodeTerrainTex, encodeTerrainTex, TERRAIN_TEX_BYTES, PAINT_MARK, paintPath, terrainTexRGBA, paintApply, paintBudget, modAssetFile, parseVoiceLines, parseAnim, writeAnim, DAT_TYPES,
     parseSdir, decodeMusyxAdpcm, wavBytes, parseSpeech, decodeMort, encodeMort, parseVoiceTable, parseMenuVoice, parseFrontText, parseCutsceneVoice, parsePool, parseSfxTable, renderSfx, triggerVoiceIds, parseSongTable, parseSongGroups, parseSong, resolveNote, parseMixTables, renderVoice, renderSong, applyMusyxReverb };
 }
 

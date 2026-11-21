@@ -88,6 +88,8 @@ Releasing plays it backwards. Parts the animation doesn't move keep moving as th
 
 Right-click a part, **Add light here**; drag the bulb to move it.
 
+To make a surface glow instead, right-click it and pick **Make it glow**. Its material then draws at full brightness in game, lit or in shade, even without ray tracing, so every part using that material glows. Give strips or windows their own material to glow alone. Parts drawn only with glowing materials also cast no ray-traced shadow and show in reflections. **Stop it glowing** puts the material back.
+
 The **Ray-traced lights** panel groups lights by *preset*, tied to the model part (**Mesh**) they ride on. It also shows a level's and an effect's lights.
 
 Per light:

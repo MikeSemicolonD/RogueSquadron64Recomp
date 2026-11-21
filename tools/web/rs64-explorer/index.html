@@ -46,7 +46,7 @@
     <label class="mdl" title="Spin speed, negative spins the other way">Auto-rotate <input type="range" id="optSpin" min="-10" max="10" step="0.5" value="0"><output id="spinVal">0</output></label>
     <b class="sec">Rendering</b>
     <div class="pair"><label><input type="checkbox" id="optTex" checked> Textures</label><label><input type="checkbox" id="optWire"> Wireframe</label></div>
-    <label>Filtering <select id="optFilter" style="flex:1"><option value="nearest">Nearest (crisp)</option><option value="linear">Bilinear</option><option value="trilinear">Trilinear (mipmaps)</option><option value="aniso">Anisotropic 16x</option></select></label>
+    <label>Filtering <select id="optFilter" style="flex:1"><option value="nearest">Nearest (crisp)</option><option value="linear" selected>Bilinear</option><option value="trilinear">Trilinear (mipmaps)</option><option value="aniso">Anisotropic 16x</option></select></label>
     <label title="Game: models are prelit and the terrain is baked, as on the N64. Dynamic: real-time sun with cast shadows.">Lighting <select id="optLight" style="flex:1"><option value="game">Game (prelit)</option><option value="dynamic">Dynamic sun + shadows</option></select></label>
     <button id="btnExport" title="Exports what is shown: current object, LOD and markers">Export .glb</button>
     <hr class="divider">
@@ -71,9 +71,9 @@
   <div id="viewNav" class="panel needs-rom" hidden><svg id="viewAxes" viewBox="-36 -36 72 72" width="72" height="72" role="group" aria-label="View axes"></svg><button id="viewOrtho" data-icon="camPersp" title="Perspective view: click for orthographic, which flattens the view for precise placement (numpad 5)"></button></div>
   <div id="topLeft">
     <div id="editPanel" class="panel needs-rom" hidden>
-      <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><button id="editSpace" data-modes="objects events" title="Global axes"></button><div class="heightBtns" data-modes="terrain"><button id="btnHeightOut" title="Save the terrain as a heightmap image">Export</button><button id="btnHeightIn" title="Load a heightmap image onto the terrain">Import</button></div></div>
+      <div class="editHead"><button id="editTab" data-icon="edit" aria-pressed="false" title="Edit level: switch from viewing to editing terrain, objects and events. Export mod saves the changes"></button><div class="heightBtns" data-modes="objects events"><button id="btnRules" title="Level-wide events: what happens at the start, on a timer or with the objectives, not on one object"></button><button id="editSpace" title="Global axes"></button></div><div class="heightBtns" data-modes="terrain"><button id="btnHeightOut" title="Save the terrain as a heightmap image">Export</button><button id="btnHeightIn" title="Load a heightmap image onto the terrain">Import</button></div></div>
       <div id="editBody">
-        <div class="modes" role="group" aria-label="Edit mode"><button data-mode="terrain" data-icon="terrain" title="Terrain: sculpt, paint and heightmaps"></button><button data-mode="objects" data-icon="objects" title="Objects: select, move, rotate, scale, duplicate and delete placed objects"></button><button data-mode="events" data-icon="events" title="Events: select, move and add paths, zones and triggers"></button></div>
+        <div class="modes" role="group" aria-label="Edit mode"><button data-mode="objects" data-icon="objects" title="Objects: select, move, rotate, scale, duplicate and delete placed objects"></button><button data-mode="events" data-icon="events" title="Events: select, move and add paths, zones and triggers"></button><button data-mode="terrain" data-icon="terrain" title="Terrain: sculpt, paint and heightmaps"></button></div>
         <input type="checkbox" id="optSculpt" hidden>
         <div data-modes="terrain" class="rows">
           <input type="hidden" id="sculptTool" value="raise">
@@ -84,7 +84,7 @@
           <label title="Brush radius in terrain grid steps (0.5 world units each)">Radius <input type="range" id="sculptRadius" min="1" max="40" value="8"><output id="sculptRadiusVal">8</output></label>
           <label title="Height change per brush step, in the level's stored height units">Strength <input type="range" id="sculptStrength" min="1" max="20" value="4"><output id="sculptStrengthVal">4</output></label>
           <div class="pair"><label title="Placed objects keep their height above the ground when you raise or lower the terrain under them"><input type="checkbox" id="optFollow" checked> Objects follow</label><label title="Outline the ground tiles: each paints one texture and counts toward the level's tile limit"><input type="checkbox" id="optTileGrid"> Show tiles</label></div>
-          <div class="lookRow"><button id="btnLook" title="The level's water, fog and clouds"></button><button id="btnMapSize" data-icon="scale" title="Map size: make the map bigger"></button></div>
+          <div class="lookRow"><button id="btnLook" title="The level's water, fog and clouds"></button><button id="btnMapSize" data-icon="scale" title="Map size and flight area: drag their sides"></button></div>
           <div id="sculptPalette" class="texPalette" role="listbox" aria-label="Paint texture"></div>
           <div class="sculptFoot"><label id="sculptBudgetRow" hidden>Ground tiles <meter id="sculptBudget" min="0" max="8191" low="6500" high="7800" optimum="0"></meter></label><label id="paintBudgetRow" hidden>Textures near any spot <meter id="paintBudget" min="0" max="360" low="240" high="300" optimum="0"></meter></label><span id="sculptInfo"></span></div>
         </div>
@@ -93,11 +93,11 @@
           <span id="selInfo" class="dim"></span>
           <div id="selFields" class="rows"></div>
           <button id="btnObjectives" hidden title="Objectives: how this level is won or lost"></button>
-          <button id="btnRules" data-modes="events" title="Level events: every rule in this level"></button>
           <div class="pair"><button id="btnDup" data-icon="duplicate" title="Duplicate: adds a copy 4 units along X as the last item of its kind (Ctrl+D)"></button><button id="btnDel" data-icon="delete" title="Delete the selected item (Delete key)"></button></div>
         </div>
       </div>
     </div>
+    <div id="linksPanel" class="panel needs-rom" hidden></div>
     <div id="hud" class="panel needs-rom"></div>
   </div>
   <div id="selHud" class="panel needs-rom"></div>

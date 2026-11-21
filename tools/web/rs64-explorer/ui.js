@@ -61,6 +61,7 @@ const setMode = (m) => {
     rememberLevel();
 
   mode = m;
+  store('rs64.tab', m);
 
   for (const [id, k] of [
     ['tabModels', 'models'],
@@ -92,10 +93,42 @@ const setMode = (m) => {
   syncBackButton();
   renderList();
 
-  // These tabs have no view of their own, so they open on their first item instead of an empty page.
-  if ((m === 'audio' && !overCut && !audioSel && !musicSel) || (m === 'fonts' && !fontSel) || (m === 'menus' && !menuSel))
+  // After a ROM load, the tab opens on the item last opened there (its place in the list), quietly on the Audio tab.
+  const back = restoreRow?.mode === m ? $('list').querySelectorAll('.row')[restoreRow.index] : null;
+
+  if (restoreRow?.mode === m)
+    restoreRow = null;
+
+  if (back)
+  {
+    audioQuiet = true;
+    back.click();
+
+    return;
+  }
+
+  // These tabs open on their first item instead of an empty page, or (Levels) the model or effect left on screen.
+  const audioFirst = m === 'audio' && !overCut && !audioSel && !musicSel;
+
+  if (audioFirst || (m === 'fonts' && !fontSel) || (m === 'menus' && !menuSel) || (m === 'levels' && !selectedLevel && !cut))
+  {
+    audioQuiet = audioFirst;
     $('list').querySelector('.row')?.click();
+  }
 };
+
+// The item to reopen on a tab after the next ROM load ({ mode, index }), and each tab's last opened item by its place in the
+// unfiltered list (a filtered list numbers its rows differently).
+let restoreRow = null;
+
+// Read before the row's own click, which rebuilds the list.
+$('list').addEventListener('click', (e) => {
+  const row = e.target.closest('.row');
+  const index = [...$('list').querySelectorAll('.row')].indexOf(row);
+
+  if (index >= 0 && !$('filter').value)
+    store('rs64.item.' + mode, index);
+}, true);
 
 $('tabFonts').onclick = () => setMode('fonts');
 
@@ -201,8 +234,7 @@ function rememberLevel(always = false)
     level: dir,
     cut: selected.startsWith('cut:') ? selected.slice(4) : null,
     view: getView(),
-    editMode,
-    item: sel && { type: sel.it.type, index: sel.it.index }
+    ...editorState()
   };
 
   const folder = dir.split('/').pop();
@@ -234,14 +266,43 @@ async function returnToLevel()
     return;
 
   setView(b.view);
+  restoreEditor(b);
+}
+
+// The level editor as it is: edit mode, selected object, which list shows and the open level event window.
+function editorState()
+{
+  return {
+    editMode,
+    item: sel && { type: sel.it.type, index: sel.it.index },
+    levelEvents: levelEventsOn,
+    events: !$('rulesPanel').hidden && rulesPanelFocus ? {
+      ...rulesPanelFocus,
+      it: rulesPanelFocus.it && { type: rulesPanelFocus.it.type, index: rulesPanelFocus.it.index }
+    } : null
+  };
+}
+
+// Puts editorState back on the level as loaded now; an object that is gone is skipped, and so is its window.
+function restoreEditor(b)
+{
+  const find = (r) => r && editObjects().find(([, x]) => x.type === r.type && x.index === r.index && !x.pathEvent);
 
   if (b.editMode && editMode !== b.editMode)
     setEditMode(b.editMode);
 
-  const again = b.item && editObjects().find(([, x]) => x.type === b.item.type && x.index === b.item.index && !x.pathEvent);
+  const again = find(b.item);
 
   if (again)
     select(again[0]);
+
+  levelEventsOn = !!b.levelEvents;
+  syncSelPanel();
+
+  const owner = find(b.events?.it);
+
+  if (b.events && (owner || !b.events.it))
+    openRulesPanel({ ...b.events, it: owner?.[1] ?? null });
 }
 
 $('btnBack').onclick = returnToLevel;
@@ -490,7 +551,15 @@ const dirty = new Set();
 const modDirty = () => [...dirty].filter((p) => !p.startsWith('explorer/'));
 const virtualAsset = (p) => p.startsWith('explorer/') || p.startsWith('mod/') || p.endsWith('_PAINT');
 const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
-let history = createHistory();
+let history = withContext(createHistory());
+
+// Where an edit is made (the tab, what is open there and, on a level, the editor's state), kept on its undo step.
+function withContext(h)
+{
+  h.context = () => ({ mode, selected, fontSel, menuSel, editor: selectedLevel && !String(selected).startsWith('cut:') ? editorState() : null });
+
+  return h;
+}
 
 function updateModButton()
 {
@@ -501,6 +570,8 @@ function updateModButton()
   $('btnModLabel').textContent = n ? `Export mod\n(${n} edited asset${n > 1 ? 's' : ''})` : 'Export mod';
   $('btnUndo').disabled = !history.at;
   $('btnRedo').disabled = history.at >= history.steps.length;
+  $('btnUndo').title = history.at ? `Undo ${history.steps[history.at - 1].label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
+  $('btnRedo').title = history.at < history.steps.length ? `Redo ${history.steps[history.at].label} (Ctrl+Y or Ctrl+Shift+Z)` : 'Redo (Ctrl+Y or Ctrl+Shift+Z)';
 }
 
 function markDirty(path, now) {
@@ -755,7 +826,7 @@ async function historyGroup(label, fn) {
 }
 
 // Undo / redo: write the stored bytes back, then rebuild whatever shows them (cutscene, level with its terrain, or model).
-async function applyHistory(changes)
+async function applyHistory(changes, ctx)
 {
   if (!changes.length)
     return;
@@ -773,6 +844,9 @@ async function applyHistory(changes)
   rulesChanged();
   crawlsChanged();
 
+  if (ctx)
+    return showContext(ctx);
+
   if (mode === 'fonts' && fontSel)
     showFont(fontSel);
 
@@ -780,6 +854,39 @@ async function applyHistory(changes)
     showMenu(menuSel);
 
   await refreshView();
+}
+
+// The tab and item an edit was made on, rebuilt with the restored bytes, and on a level the editor as it was.
+async function showContext(ctx)
+{
+  if (ctx.mode !== mode)
+    setMode(ctx.mode);
+
+  if (ctx.mode === 'fonts' && ctx.fontSel)
+    return showFont(ctx.fontSel);
+
+  if (ctx.mode === 'menus' && ctx.menuSel)
+    return showMenu(ctx.menuSel);
+
+  if (!ctx.selected || selected === ctx.selected)
+    await refreshView();
+  else
+  {
+    modelCache.clear();
+    clearCaches();
+
+    if (ctx.selected.startsWith('cut:'))
+      await showCutscene(ctx.selected.slice(4));
+    else if (ctx.mode === 'levels')
+      await showLevel(ctx.selected, true);
+    else if (ctx.mode === 'effects')
+      await showEffect(ctx.selected);
+    else
+      await showModel(ctx.selected);
+  }
+
+  if (ctx.editor)
+    restoreEditor(ctx.editor);
 }
 
 async function refreshView()
@@ -914,7 +1021,7 @@ async function openProject()
     markDirty(p, now);
   }
 
-  history = loaded.history;
+  history = withContext(loaded.history);
   savedStep = history.steps[history.at - 1] ?? null;
   projectHandle = handle;
   updateModButton();
@@ -928,11 +1035,32 @@ addEventListener('keydown', (e) => {
   }
 });
 
-const undoEdit = () => applyHistory(history.undo());
-const redoEdit = () => applyHistory(history.redo());
+// Each step goes back to where it was made: undo reads the step before it moves, redo the step it moves onto.
+const undoEdit = () => {
+  const ctx = history.steps[history.at - 1]?.ctx;
+
+  return applyHistory(history.undo(), ctx);
+};
+
+const redoEdit = () => {
+  const ctx = history.steps[history.at]?.ctx;
+
+  return applyHistory(history.redo(), ctx);
+};
+
+// A field being typed in keeps Ctrl+Z for its own text until its value is applied (change); after that, and on a select or a checkbox,
+// Ctrl+Z undoes the edit like anywhere else.
+let typingIn = null;
+
+addEventListener('input', (e) => {
+  if (e.target.matches?.('input:not([type=checkbox]):not([type=range]),textarea,[contenteditable]'))
+    typingIn = e.target;
+}, true);
+
+addEventListener('change', () => (typingIn = null), true);
 
 addEventListener('keydown', (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.target.closest?.('input,select,textarea'))
+  if (!(e.ctrlKey || e.metaKey) || (typingIn && e.target === typingIn))
     return;
 
   const k = e.key.toLowerCase();
@@ -1819,7 +1947,7 @@ async function replaceTexture(id, name) {
 // The level's HMP is edited as one continuous height grid (hmpGrid) and re-tiled by writeHMP; the terrain mesh is rebuilt while
 // dragging and the new HMP is committed as an edit when the stroke ends. Heights are stored game Y-down, so raising subtracts.
 let sculpt = null;
-const sculptActive = () => $('optSculpt').checked && selectedLevel && !!sculpt;
+const sculptActive = () => $('optSculpt').checked && selectedLevel && !!sculpt && !mapSizeOn;
 
 async function loadSculpt()
 {
@@ -1832,6 +1960,7 @@ async function loadSculpt()
   if (!$('optSculpt').checked || !selectedLevel || !rom.assets.has(selected + '/hmp'))
   {
     controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    mapSizingShow();
 
     return;
   }
@@ -1867,13 +1996,14 @@ async function loadSculpt()
   };
 
   sculpt.committed = sculpt.grid.hts.slice();
-  controls.mouseButtons.LEFT = null;
+  controls.mouseButtons.LEFT = mapSizeOn ? THREE.MOUSE.ROTATE : null;
   fillSculptPalette();
   sculptBudget(hmp.tiles.length);
   paintBudgetShow();
   sculptStatus('');
   showTileGrid();
   sculptRangeShow();
+  mapSizingShow();
 }
 
 // Stored heights are -128..127 steps of the level's height scale, so each level has its own height range.
@@ -2567,6 +2697,10 @@ async function commitTerrain(bytes) {
         waves: Math.max(1, Math.round(w.waves * waterK))
       }));
 
+    // Level lights keep their height in stored steps too.
+    if (waterK !== 1 && lightsLevel)
+      await lightsLevelAdjust(lightsLevel.level, { ky: waterK, withGame: stockDir(sculpt.dir) === sculpt.dir }, 'Terrain');
+
     for (const k of [...terrainCache.keys()])
       if (k.startsWith(sculpt.dir + '|'))
         terrainCache.delete(k);
@@ -2642,33 +2776,205 @@ async function importHeightmap() {
   await commitTerrain(bytes);
 }
 
-// Grows the map on its +X and +Z sides (hmpResize), so everything placed keeps its place. 128 cells a side is what has been flown in the game.
+// Map size: while its button is on, the map's outline and the flight area show a handle in the middle of each side, and the brush rests.
+// Dragging a map side out grows that side by whole cells (2 units). 128 cells a side is what has been flown in the game.
 const MAP_MAX = 128;
+const mapLineMat = new THREE.LineBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+const mapHandleMat = new THREE.MeshBasicMaterial({ color: 0xe8b84a, depthTest: false, transparent: true });
+let mapSizeOn = false;
+let mapSizing = null;
+let mapDrag = null;
+let mapFlightShown = false;
 
-async function growMap()
+// The map handles sit this far outside the edge, clear of a flight area side on the edge itself.
+const MAP_HANDLE_OUT = 3;
+
+// The map's outline in game space with add[side] more cells on its -X, +X, -Z and +Z sides.
+const mapRect = (m) => [-m.add[0] * 2, (m.w + m.add[1]) * 2, -m.add[2] * 2, (m.h + m.add[3]) * 2];
+
+function mapSizingDraw()
 {
-  const { w, h } = sculpt.grid;
-  const dir = sculpt.dir;
-  const ans = prompt(`Map size in cells (2 units each), ${w} x ${h} now, up to ${MAP_MAX} x ${MAP_MAX}. The ground continues from the +X and +Z edges.`, `${w} x ${h}`);
+  const [x0, x1, z0, z1] = mapRect(mapSizing);
+  const [W, H] = [mapSizing.w * 2, mapSizing.h * 2];
+  const at = (x, z) => new THREE.Vector3(x, levelHeight(Math.min(Math.max(x, 0), W), Math.min(Math.max(z, 0), H)) - 0.3, z);
+  const ring = [];
 
-  if (!ans)
-    return;
-
-  const m = ans.match(/^\s*(\d+)\s*[x*, ]\s*(\d+)\s*$/i);
-  const [nw, nh] = m ? [+m[1], +m[2]] : [0, 0];
-
-  if (nw < w || nh < h || nw > MAP_MAX || nh > MAP_MAX)
+  for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]])
   {
-    alert(`Give a size from ${w} x ${h} to ${MAP_MAX} x ${MAP_MAX}, like ${Math.min(w + 16, MAP_MAX)} x ${Math.min(h + 16, MAP_MAX)}. A map can only grow.`);
+    const n = Math.max(2, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.5));
 
-    return;
+    for (let i = 0; i < n; i++)
+      ring.push(at(ax + (bx - ax) * i / n, az + (bz - az) * i / n));
   }
 
-  if (nw === w && nh === h)
+  ring.push(ring[0].clone());
+  setOutline(mapSizing.line, ring);
+
+  const mx = (x0 + x1) / 2;
+  const mz = (z0 + z1) / 2;
+  const o = MAP_HANDLE_OUT;
+
+  [[x0 - o, mz], [x1 + o, mz], [mx, z0 - o], [mx, z1 + o]].forEach(([x, z], k) => mapSizing.handles[k].position.copy(at(x, z)));
+
+  // The flight area keeps its distance from the edges, so it moves with them.
+  if (flightArea)
+  {
+    setOutline(flightArea.line, flightOutline(flightArea.insets));
+    placeFlightHandles();
+  }
+}
+
+// Sides dragged out are kept and applied when the outline goes: Map size turned off, terrain editing left or the level reloaded.
+function mapSizingShow()
+{
+  const pending = mapSizing?.add.some(Boolean) ? mapSizing : null;
+
+  mapSizing?.group.removeFromParent();
+  mapSizing = null;
+
+  if (pending)
+    return void growMapSides(pending);
+
+  $('btnMapSize').classList.toggle('on', mapSizeOn);
+
+  const world = root?.getObjectByName('markers')?.parent;
+  const on = mapSizeOn && !!sculpt && !!world;
+
+  // The Water, fog and clouds panel shows the flight area too; only the box shown here is taken down.
+  if (on || mapFlightShown)
+    flightAreaShow(on);
+
+  mapFlightShown = on;
+
+  if (!on)
     return;
 
+  const group = new THREE.Group();
+  const line = outlineLine(mapLineMat);
+
+  line.renderOrder = 11;
+  group.add(line);
+
+  const handles = [0, 1, 2, 3].map(() => {
+    const h = new THREE.Mesh(cornerGeo, mapHandleMat);
+
+    h.renderOrder = 10;
+    group.add(h);
+
+    return h;
+  });
+
+  world.add(group);
+  mapSizing = { group, line, handles, add: [0, 0, 0, 0], dir: sculpt.dir, w: sculpt.grid.w, h: sculpt.grid.h, level: lightsLevel?.level };
+  mapSizingDraw();
+  sculptStatus(`Map ${sculpt.grid.w} x ${sculpt.grid.h} cells: drag a yellow side out to grow it, a red one to move the flight area`);
+}
+
+// The point under the cursor on the level-space plane at height y.
+function dragPlanePoint(e, y)
+{
+  const r = canvas.getBoundingClientRect();
+
+  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(pointer, camera);
+
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), root.localToWorld(new THREE.Vector3(0, y, 0)));
+  const w = raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+
+  return w && root.worldToLocal(w);
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 || !mapSizing)
+    return;
+
+  const h = pick(e, mapSizing.handles);
+
+  if (!h)
+    return;
+
+  mapDrag = { side: mapSizing.handles.indexOf(h.object), y: h.object.position.y };
+  controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
+  e.stopImmediatePropagation();
+}, true);
+canvas.addEventListener('pointermove', (e) => {
+  if (!mapDrag)
+    return;
+
+  e.stopImmediatePropagation();
+
+  const l = dragPlanePoint(e, mapDrag.y);
+
+  if (!l)
+    return;
+
+  const { side } = mapDrag;
+  const add = mapSizing.add;
+  const along = side < 2 ? l.x : l.z;
+  const span = side < 2 ? mapSizing.w : mapSizing.h;
+  const out = (side % 2 ? along - span * 2 : -along) / 2 - MAP_HANDLE_OUT / 2;
+
+  add[side] = Math.max(0, Math.min(Math.round(out), MAP_MAX - span - add[side ^ 1]));
+  mapSizingDraw();
+  sculptStatus(`Map ${mapSizing.w + add[0] + add[1]} x ${mapSizing.h + add[2] + add[3]} cells, made when you turn Map size off`);
+}, true);
+canvas.addEventListener('pointerup', (e) => {
+  if (!mapDrag)
+    return;
+
+  e.stopImmediatePropagation();
+  mapDrag = null;
+  controls.enabled = true;
+}, true);
+
+// The cutscenes that play over a level: a mod level's own (named after its folder), a stock level's idN files.
+function levelCutscenes(dir)
+{
+  const ml = modLevelOf(dir);
+  const n = parseInt(dir.split('/lv_')[1], 36);
+  const kinds = [['intro', 'Intro'], ['extro', 'Extro'], ['special', 'Ending ceremony']];
+
+  return kinds.map(([kind, label]) => [ml ? `data/cuts/${ml.folder}_${kind}` : `data/cuts/id${n}_${kind}`, label])
+    .filter(([path]) => (ml || n <= 15 || n === 19) && rom.assets.has(path));
+}
+
+// Grows the map by add cells on its -X, +X, -Z and +Z sides as one undo step. The game reads the ground from world (0, 0), so growing -X or
+// -Z moves everything in the level over with the old ground: objects, paths and areas, the ground's lights, the level's cutscenes (and
+// their snapshots) and its level light presets.
+async function growMapSides({ dir, w, h, level, add: [l, r, t, b] })
+{
+
+  const dx = l * 2;
+  const dz = t * 2;
+  const label = `Map size ${w + l + r} x ${h + t + b}`;
+
   try {
-    await editAsset(dir + '/hmp', (bytes) => hmpResize(bytes, nw, nh), `Map size ${nw} x ${nh}`);
+    await historyGroup(label, async () => {
+      await editAsset(dir + '/hmp', (bytes) => hmpShiftLights(hmpResize(bytes, w + l + r, h + t + b, l, t), dx, dz), label);
+
+      if (!dx && !dz)
+        return;
+
+      await editAsset(dir + '/dat', (bytes) => datShift(bytes, dx, dz), label);
+
+      for (const [path] of levelCutscenes(dir))
+      {
+        await editAsset(path, (bytes) => cutsceneShift(bytes, dx, dz), label);
+
+        const doc = await readAuthoring(path);
+        const snaps = Object.values(doc.tracks).flatMap((tr) => tr.snaps ?? []);
+
+        for (const s of snaps)
+          s.p = [s.p[0] + dx * 4, s.p[1], s.p[2] + dz * 4];
+
+        if (snaps.length)
+          await writeJson(authoringPath(path), doc, label);
+      }
+
+      if (level != null)
+        await lightsLevelAdjust(level, { dx, dz, withGame: stockDir(dir) === dir }, label);
+    });
   } catch (e) {
     alert(e.message);
 
@@ -2679,7 +2985,8 @@ async function growMap()
     if (k.startsWith(dir + '|'))
       terrainCache.delete(k);
 
-  await reloadLevel(dir);
+  if (selected === dir)
+    await reloadLevel(dir);
 }
 
 let stroke = null;
@@ -2981,7 +3288,13 @@ function flashTiles(tiles) {
 const needSculpt = (fn) => () => (sculpt ? fn() : ($('sculptInfo').textContent = 'This level has no terrain to edit.'));
 $('btnHeightOut').onclick = needSculpt(exportHeightmap);
 $('btnHeightIn').onclick = needSculpt(importHeightmap);
-$('btnMapSize').onclick = needSculpt(growMap);
+
+$('btnMapSize').onclick = needSculpt(() => {
+  mapSizeOn = !mapSizeOn;
+  sculptRing.visible = false;
+  controls.mouseButtons.LEFT = mapSizeOn ? THREE.MOUSE.ROTATE : null;
+  mapSizingShow();
+});
 
 for (const id of ['sculptRadius', 'sculptStrength'])
   $(id).oninput = () => ($(id + 'Val').textContent = $(id).value);

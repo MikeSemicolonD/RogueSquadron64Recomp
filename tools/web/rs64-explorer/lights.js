@@ -85,6 +85,33 @@ async function writeLights(label)
   await lightsRefresh();
 }
 
+// Moves the level light presets of level by (dx, dz) world units and scales their heights (stored height steps) by ky, after a map grows on its -X / -Z side or its height range grows.
+// withGame: the game's own presets too, as this mod's overrides (a stock level's edit; a mod level's would move the stock level's lights as well).
+async function lightsLevelAdjust(level, { dx = 0, dz = 0, ky = 1, withGame = false }, label)
+{
+  await readLights();
+
+  const touched = lightsAll().filter((p) => !p.mesh && !p.sprite && !p.cameraUnits && p.level === level && (withGame || !isGameLight(p)));
+
+  for (const p of touched)
+    for (const l of p.lights)
+    {
+      const pos = l.description?.position;
+
+      if (pos)
+        l.description.position = [Math.round(pos[0] + dx * 256), Math.round(pos[1] * ky), Math.round(pos[2] + dz * 256)];
+    }
+
+  if (!touched.length)
+    return;
+
+  for (const p of touched.filter(isGameLight))
+    if (!lightsDoc.presets.some((q) => q.name === p.name))
+      lightsDoc.presets.push(p);
+
+  await editText(LIGHTS_FILE, lightsWrite(lightsDoc), label);
+}
+
 // Reads every roguesq_lights.json in the game folder (mods/* by folder name since the MODS list order is not in the folder, then next to the exe;
 // the explorer's own preview mod is this mod, and a leftover model-lights folder is ignored as in game). ask: pick the folder if none is granted.
 async function loadGameLights(ask)
@@ -736,6 +763,63 @@ async function lightsAdd(hit)
     { ...lightNew(local, LIGHT_NEW_RADIUS), shadowOffset: LIGHT_NEW_SHADOW });
 }
 
+// ---- Glowing materials ----
+// _HMT material +0x04 weights the ambient lights in the game's vertex lighting (transformAndEmitFaceVertices, which copies +0x04..+0x13 into its material row),
+// and a vertex colour whose light passes 1 is drawn as it is, so 255 draws the material at full brightness on every side. The stock glows use 0 (no ambient), which only darkens.
+const GLOW_WEIGHT = 255;
+const GLOW_FIELD = (mat) => 8 + mat * 0x24 + 4;
+
+// Makes material mat of model id glow, or puts back its own weight, as one undo step with the model's RT emissive preset.
+async function setMaterialGlow(id, mat, on)
+{
+  const path = id + '_HMT';
+  const base = edits.get(path) ?? u8(await rom.read(path));
+  const own = dvOf(base).getFloat32(GLOW_FIELD(mat));
+  const value = on ? GLOW_WEIGHT : (own >= GLOW_WEIGHT / 2 ? 1 : own);
+
+  await historyGroup(on ? 'Make it glow' : 'Stop it glowing', async () => {
+    await editAsset(path, (bytes) => dvOf(bytes).setFloat32(GLOW_FIELD(mat), value));
+    modelCache.delete(id);
+    clearCaches();
+    await glowPreset(id);
+  });
+}
+
+// The model's emissive preset (no lights): every part drawn only with glowing materials, in every LOD, so in game it is never shadowed,
+// casts no shadow and shows in reflections. A part that mixes in other materials keeps its shadows.
+async function glowPreset(id)
+{
+  const model = await loadModel(id);
+  const keys = [];
+
+  for (const obj of model.hob.objects)
+  {
+    const name = meshKeyName(obj.name, obj.nodes.length);
+
+    obj.lods.forEach((lod, li) => {
+      const slot = obj.lodSlots?.[li] ?? 0;
+
+      lod.forEach((parts, node) => (parts ?? []).forEach((p, j) => {
+        if (p.faces?.length && p.faces.every((f) => model.hmt.materials[f.mat]?.glow))
+          keys.push(hobMeshKey(name, slot, node, j));
+      }));
+    });
+  }
+
+  await readLights();
+
+  const name = `glow_${id.split('/').pop()}`;
+  const i = lightsDoc.presets.findIndex((q) => q.name === name);
+
+  if (i >= 0)
+    lightsDoc.presets.splice(i, 1);
+
+  if (keys.length)
+    lightsDoc.presets.push({ name, enabled: true, emissive: true, mesh: [...new Set(keys)].join('|'), lights: [] });
+
+  await writeLights('Glow');
+}
+
 // The open model's light hardpoints: glw* (engine nozzle / lamp glows, where the game draws its glow sprites). trl* are contrail points
 // (wingtips), not light sources. [{ objGroup, obj, hp }] for each object.
 async function lightHardpoints(group = lightsModelGroup) {
@@ -895,7 +979,7 @@ function lightScope(p)
 function lightsPanel()
 {
   const panel = $('lightPanel');
-  const shown = !!root && ((mode === 'models' && !selectedLevel && !selectedEffect) || (mode === 'levels' && selectedLevel && !!lightsLevel) || (mode === 'effects' && selectedEffect && !!lightsFx));
+  const shown = !!root && ((mode === 'models' && !selectedLevel && !selectedEffect) || (mode === 'levels' && selectedLevel && !!lightsLevel && editMode === 'objects') || (mode === 'effects' && selectedEffect && !!lightsFx));
 
   panel.hidden = !shown;
   panel.classList.toggle('inLevel', mode !== 'models');

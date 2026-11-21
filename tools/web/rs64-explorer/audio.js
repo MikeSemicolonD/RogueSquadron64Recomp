@@ -1233,8 +1233,17 @@ function drawMusic(r)
   tick();
 }
 
+// Byte 4 of a voice clip's MORT header; the game's speech code skips the header, and no reader of this byte is known.
+const MORT_FLAG_TIP = 'Byte 4 of the clip\'s MORT header: 0 on most clips, 1 to 5 on the rest. What it means is not known, and every clip decodes the same whatever its value';
+
+// Set while the Audio tab opens its first row, which then shows without playing.
+let audioQuiet = false;
+
 function showAudio(r)
 {
+  const quiet = audioQuiet;
+
+  audioQuiet = false;
   document.body.classList.add('audio');
 
   if (r.kind === 'music')
@@ -1277,7 +1286,7 @@ function showAudio(r)
       ['Levels', r.levels.join(', ') || '-'],
       ['Voice ids', r.voiceIds.join(' ') || '-'],
       ['Rate', r.rate + ' Hz'],
-      ['MORT flag', e.flag]
+      ['MORT flag', e.flag, MORT_FLAG_TIP]
     ]
     : [
       ['Sample', r.index],
@@ -1288,7 +1297,7 @@ function showAudio(r)
       ['Loop', e.loopLen ? `${e.loopStart} + ${e.loopLen}` : 'none']
     ])));
 
-  p.innerHTML = `<b>${r.kind === 'group' || r.kind === 'sfx' || r.kind === 'cut' ? esc(r.title ?? r.label) : (r.kind === 'voice' ? 'Voice line ' : 'MusyX sample ') + r.index}</b>` + (r.text.trim() && r.kind !== 'cut' ? `<p>${esc(r.text)}</p>` : '') + rows.map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join('');
+  p.innerHTML = `<b>${r.kind === 'group' || r.kind === 'sfx' || r.kind === 'cut' ? esc(r.title ?? r.label) : (r.kind === 'voice' ? 'Voice line ' : 'MusyX sample ') + r.index}</b>` + (r.text.trim() && r.kind !== 'cut' ? `<p>${esc(r.text)}</p>` : '') + rows.map(([k, v, tip]) => `<span${tip ? ` title="${esc(tip)}"` : ''}>${k}</span><span>${v}</span>`).join('');
 
   const btns = elem('div');
 
@@ -1319,7 +1328,9 @@ function showAudio(r)
   p.hidden = false;
   syncPlayButton();
   renderList();
-  playRow(r, false);
+
+  if (!quiet)
+    playRow(r, false);
 }
 
 // Object name -> model id across every HOB, built once per ROM: placed items often name a model that lives outside the level's
@@ -1545,7 +1556,7 @@ function renderList() {
       d.title = r.tip ?? (r.obj == null ? r.id : `${r.id} / ${r.label}`);
 
       if (mode === 'audio' && ['music', 'sfx', 'voice', 'group'].includes(r.row.kind))
-        d.prepend(dragGrip(r));
+        dragRow(d, r);
 
       d.onclick = () => (mode === 'models' ? showModel(r.id, r.obj ?? -1) : (mode === 'effects' ? showEffect(r.id) : (mode === 'audio' ? showAudio(r.row) : (mode === 'fonts' ? showFont(r.id) : (mode === 'menus' ? showMenu(r.id) : (r.id.startsWith('cut:') ? showCutscene(r.id.slice(4)) : showLevel(r.id)))))));
       list.append(d);
