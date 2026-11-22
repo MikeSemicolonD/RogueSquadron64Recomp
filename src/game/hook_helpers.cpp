@@ -387,18 +387,13 @@ extern "C" int rs64_vr_cockpit_view(void)
     return (steady_ms() - s_cockpit_ms.load(std::memory_order_relaxed)) < 250 ? 1 : 0;
 }
 
-// VR, between binPolygonIntoTerrainGrid and streamTerrainGridCellsByDistance: every binned cell gets the full altitude band (highest 127, lowest -128).
-// The bin writes the band the game camera can see; looking up, it sits above the ground and streaming dropped every cell, so the head looking down saw none.
-extern "C" void rs64_vr_terrain_heights(uint8_t* rdram)
+// Between binPolygonIntoTerrainGrid and streamTerrainGridCellsByDistance: every binned cell gets the full altitude band (highest 127, lowest -128).
+// The bin writes the band the game camera can see; looking up (VR head down, or a climb past the Sullust capacitor), it sits above the ground and streaming dropped the ground below.
+extern "C" void rs64_terrain_full_band(uint8_t* rdram)
 {
 
     constexpr uint32_t kCells = 128u * 128u;
     constexpr int8_t kUncovered = -128;
-
-    if (!rs64_vr_active())
-    {
-        return;
-    }
 
     int8_t* top =reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80130DB0u) - 0x80000000u));
     int8_t* bottom = reinterpret_cast<int8_t*>(rdram + (rs64_tgrid_base(0x80131DB0u) - 0x80000000u));

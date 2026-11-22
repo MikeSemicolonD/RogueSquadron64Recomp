@@ -1031,7 +1031,7 @@ void rs64_th_streamTerrainGridCellsByDistance_80042DDC(uint8_t* rdram, recomp_co
 void rs64_th_buildVisibleTerrainGridAroundCamera_80043A8C(uint8_t* rdram, recomp_context* ctx)
 {
 
-    rs64_vr_terrain_heights(rdram);
+    rs64_terrain_full_band(rdram);
 
     rs64_terrain_grid_log(MEM_W(0, (gpr)(int32_t)0x80132DB0), MEM_W(0, (gpr)(int32_t)0x80132DB4), MEM_W(0, (gpr)(int32_t)0x80132DB8), MEM_W(0, (gpr)(int32_t)0x80132DBC), MEM_HU(0, (gpr)(int32_t)0x80130C4C), MEM_HU(0, (gpr)(int32_t)0x80136DF8), MEM_HU(0, (gpr)(int32_t)0x80136DFA));
 }
