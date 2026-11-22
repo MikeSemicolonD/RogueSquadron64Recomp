@@ -34,6 +34,10 @@ constexpr uint32_t kGridEntries = 0x80136FCCu;
 constexpr uint32_t kGridScale = 0x8003A7B8u;
 constexpr uint32_t kGridHalfCells = 0x8003A7BCu;
 constexpr uint32_t kSpawnRef = 0x801375F8u;
+constexpr uint32_t kSpawnRefMode = 0x8010CA1Cu;
+constexpr uint32_t kCraftRecord = 0x8006C8F0u;
+constexpr uint32_t kSpawnRangeScale = 0x8003A7D4u;
+constexpr uint32_t kSpawnRangeSq = 0x8003A7D8u;
 constexpr uint32_t kCutsceneFlag = 0x80130B39u;
 constexpr uint32_t kDatItemByName = 0x80047B48u;
 constexpr uint32_t kTerrainHeight = 0x80068180u;
@@ -680,19 +684,32 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
     // The game's spawn window (updateActiveGridCellState): the cells within kGridHalfCells of the reference point. A stand-in drawn inside it is a unit
     // the game has not spawned there (a path unit away from its DAT cell), so it shows nothing yet and neither does the stand-in.
+    // lookupActivePlayerCraftGridCell centers it on player 1's craft, or on kSpawnRef while the cutscene bit is set; kSpawnRef keeps the last cutscene's point.
+    const uint32_t ref = (rw(rdram, kSpawnRefMode) & 8u) ? kSpawnRef : mips_call(rdram, ctx, kCraftRecord, { 0 }).v0;
     const float scale = rf(rdram, kGridScale);
     const float half = rf(rdram, kGridHalfCells);
     const float origin_x = rf(rdram, kDatFile + 4u);
     const float origin_z = rf(rdram, kDatFile + 8u);
-    const float ref_x = (rf(rdram, kSpawnRef) - origin_x) * scale;
-    const float ref_z = (rf(rdram, kSpawnRef + 8u) - origin_z) * scale;
+    const float ref_x = (rf(rdram, ref) - origin_x) * scale;
+    const float ref_z = (rf(rdram, ref + 8u) - origin_z) * scale;
+    const float range_scale = rf(rdram, kSpawnRangeScale);
+    const float range_sq = rf(rdram, kSpawnRangeSq);
 
+    // Inside the square the game spawns an item only within isPointXzWithinRangeOfRef's circle, so the square's corners stay stand-ins.
     const auto in_spawn_window = [&](uint32_t state) {
 
         const int cx = (int)((rf(rdram, state) - origin_x) * scale);
         const int cz = (int)((rf(rdram, state + 8u) - origin_z) * scale);
+        const float dx = (rf(rdram, state) - rf(rdram, ref)) * range_scale;
+        const float dz = (rf(rdram, state + 8u) - rf(rdram, ref + 8u)) * range_scale;
 
-        return cx >= (int)(ref_x - half) && cx <= (int)(ref_x + half) && cz >= (int)(ref_z - half) && cz <= (int)(ref_z + half);
+        if (range_sq < dx * dx + dz * dz) return false;
+
+        // The game's cell loops stop before the upper bound, which is clamped to the last row or column.
+        const int max_x = std::min((int)(ref_x + half), (int)rw(rdram, kDatFile + 0x14u) - 1);
+        const int max_z = std::min((int)(ref_z + half), (int)rw(rdram, kDatFile + 0x18u) - 1);
+
+        return cx >= (int)(ref_x - half) && cx < max_x && cz >= (int)(ref_z - half) && cz < max_z;
     };
 
     for (const Standin& s : s_standins) {
