@@ -160,7 +160,7 @@ For a bug that shows up only in Release (or only when the host is fast), suspect
       fprintf(stderr, "[perf] ANativeWindow_setFrameRate = %d\n", rc);
   }
   ```
-  A comment that follows a statement starts a new step, so it gets a blank line above it; so does a log line (`fprintf`) after a non-log statement, and a multi-line statement ending in `};` (a lambda, struct or initializer) gets one before and after it.
+  A comment that follows a statement starts a new step, so it gets a blank line above it, and in a struct or class a comment after a member starts a new group of members the same way (`style_check` enforces this one); so does a log line (`fprintf`) after a non-log statement, and a multi-line statement ending in `};` (a lambda, struct or initializer) gets one before and after it.
   Preprocessor conditionals follow the same rule: a blank line before `#if` and after `#endif`, including between two conditionals in a row. A branch that holds more than a one-line statement (and its comment) also gets a blank line after its `#if`/`#elif`/`#else` and before the next directive, on both sides; a one-line branch stays tight:
   ```cpp
   #if defined(__linux__) && !defined(__ANDROID__)

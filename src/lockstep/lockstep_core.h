@@ -24,14 +24,18 @@ struct SessionHeader {
     uint32_t naboo = 0;
     uint32_t secondary = 0;
     uint32_t cruise_bits = 0;
+
     // Widescreen and DRAW DISTANCE (percent) at record time: both change the object culls. draw_pct 0 = not recorded (older files).
     uint32_t widescreen = 0;
     uint32_t draw_pct = 0;
+
     // The SELECT GAME pilot slot (0x80130B44), part of the settings hash; 0 in files that predate it, the slot replays use.
     uint32_t slot = 0;
+
     // gMissionState 0x80130B10..0x80130B3F before initMission: rank and per-level progress carried from the pilot.
     std::array<uint8_t, 0x30> pilot = {};
     std::string build;
+
     // The mod ship (ships.json id) flown as craft, empty for a stock craft: replays show its model.
     std::string ship;
 };

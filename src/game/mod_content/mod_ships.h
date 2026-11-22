@@ -31,11 +31,14 @@ struct Special {
 struct Ship {
     std::string mod, id, name;
     int tmpl = 0;
+
     // The camera stop: positions along the hangar's two camera routes (the 0x800CC414 / 0x800CC430 entries of a stock stop).
     float stop[2] = { 0, 0 };
+
     // Craft behaviours from any craft ("sfoils" X-wing, "boost" V-wing, "aim" A-wing); unlisted = the template's own.
     std::set<std::string> behaviours;
     bool ownBehaviours = false;
+
     // ships.json "special": the button's own settings, in place of the sfoils / boost presets.
     Special special;
 };

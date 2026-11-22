@@ -117,6 +117,7 @@ struct Ghost {
 
     // The other player's craft (LAUNCH on the client, READY from craft select on both), -1 unknown.
     int remote_craft = -1;
+
     // The new hangar ship that craft is (SHIP after READY), "" for the stock craft.
     std::string remote_ship;
 
@@ -263,6 +264,7 @@ struct Ghost {
     Vec3 prev_pos{};
     std::string launch;
     Puppet puppet;
+
     // When the puppet (or, spectating, this side's craft) samples the other player's stream; the two never run together.
     rs64::ls::PlayClock play_clock;
     bool puppet_shown = false;

@@ -71,30 +71,39 @@ namespace rs64::touch {
         void set_config(const Config& c);
         const Config& config() const;
         void set_screen(float width_px, float height_px);
+
         // Horizontal extent of the game picture (window fractions). Outside it (the side bars) only overlay buttons respond.
         void set_picture(float x0, float x1);
         void finger(int64_t id, FingerEvent ev, float x, float y, uint32_t ms);
         void physical_input();
         void back_pressed();
+
         // Steering roll from tilt_angles() (radians, + = clockwise); !valid (phone too flat) holds the steering centered.
         void tilt(float roll, bool valid);
+
         // Gyro rates (rad/s): clockwise turn (steering assist) and top edge tipping away (mouse-like up/down).
         void gyro_rate(float roll_rate, float pitch_rate);
         void set_menu_tap(MenuTapFn fn);
+
         // With a hover handler, pause-menu fingers highlight lines directly; release on the starting line selects it.
         void set_menu_hover(MenuHoverFn fn);
+
         // Queues a host-driven press lasting `polls` game polls, after any pending presses.
         void inject(uint16_t buttons, float x, float y, int polls, int gap = 1);
+
         // The game's frame count. Once set, a press counts its polls in game frames (plus the frame it starts in), so the game reads it however many times a frame the host polls.
         void set_frame(uint32_t frame);
+
         // A finger tap's per-context menu action at (x, y); also used for mouse clicks, so it works with touch disabled.
         void tap(Context ctx, float x, float y);
         Pad poll(Context ctx, uint32_t ms);
         bool active() const;
         OverlayState draw_state(Context ctx) const;
+
         // Layout editor: flight buttons are dragged/pinched instead of pressed; game input is suppressed until Done/Back.
         void begin_edit();
         bool editing() const;
+
         // True once after the editor closes; the host then persists config().layout.
         bool take_layout_saved();
 

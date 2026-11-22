@@ -65,11 +65,14 @@ struct Objective {
     int index = 0;
     int amount = 0;
     float seconds = 0;
+
     // Called out when it completes (or fails, for Protect / TimeLimit): a stock voice line and a DAT camera to cut to.
     int voice = kVoiceNone;
     std::string camera;
+
     // The mod's own recording at assets/level/<folder>/<recording>, played instead of voice.
     std::string recording;
+
     // Read aloud when the pause screen comes to its line (none by default): a stock voice id or a recording in the level folder.
     int pauseVoice = kVoiceNone;
     std::string pauseRecording;
@@ -84,14 +87,18 @@ struct ModLevel {
     int voice = kVoiceNone;
     bool hasMedals = false;
     MedalTier medals[3];
+
     // Approved craft (getAvailablePlayerCraftFlags bits), or kTemplateCraft for the template's.
     int craftMask = -1;
+
     // Opening crawl: kCrawlTemplate (the template's, if it has one), kCrawlNone, or its own text then planet pan-down 0-3.
     int crawl = -2;
     std::string crawlChapter, crawlTitle, crawlBody;
+
     // A crawl file (assets/crawl/<name>/crawl.json) named by "crawl": "<name>"; crawl stays kCrawlTemplate until one is found.
     std::string crawlName;
     std::vector<Objective> objectives;
+
     // Starting song: a song id from the music cue table (0x8010B1C0), or kMusicTemplate for the template's.
     int music = kMusicTemplate;
 };

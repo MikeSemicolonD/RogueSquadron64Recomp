@@ -15,6 +15,7 @@ constexpr const char* kDefaultConfig = "rs64_relay.cfg";
 
 struct Settings {
     uint16_t port = kDefaultPort;
+
     // WebTransport (UDP) port browser players connect to; 0 = off. Used only by a relay built with RELAY_WEBTRANSPORT.
     uint16_t browser_port = kDefaultPort + 1;
     std::string name = "RS64 RELAY";
@@ -75,12 +76,15 @@ struct Action {
 class Relay {
 public:
     Relay(Settings s, std::string config_path);
+
     // group: what the per-address limits count (an IPv6 address's /64); empty = ip.
     void on_connect(uint32_t peer, const std::string& ip, int64_t now_ms, const std::string& group = {});
     void on_disconnect(uint32_t peer);
     void on_receive(uint32_t peer, bool reliable, const uint8_t* data, size_t n, int64_t now_ms);
+
     // Closes idle connections.
     void tick(int64_t now_ms);
+
     // One console line; returns the lines to print.
     std::vector<std::string> command(const std::string& line);
     std::vector<Action> take_actions();

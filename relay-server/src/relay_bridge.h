@@ -20,12 +20,15 @@ public:
 
     explicit Bridge(uint16_t enet_port) : enet_port_(enet_port) {}
     ~Bridge();
+
     // Opens a session's socket; 0 when no socket could be opened.
     uint32_t open(const std::string& remote, Send to_browser);
     void from_browser(uint32_t id, const uint8_t* data, size_t len);
     void close(uint32_t id);
+
     // The browser address of the session whose loopback socket has this port, or "" for any other peer.
     std::string remote_of(uint16_t local_port) const;
+
     // Waits up to timeout_ms for datagrams on the session sockets and hands each one to its session.
     void pump(int timeout_ms);
     size_t sessions() const;
@@ -40,6 +43,7 @@ private:
 
     uint16_t enet_port_;
     mutable std::mutex mu_;
+
     // Held while a session's send runs; close takes it, so once close returns that session is never sent to again.
     std::mutex send_mu_;
     std::map<uint32_t, Session> sessions_;

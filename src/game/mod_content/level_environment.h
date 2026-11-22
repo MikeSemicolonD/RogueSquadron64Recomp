@@ -25,12 +25,15 @@ struct Environment {
     FogReach fogReach = FogReach::Auto;
     Color fogColor;
     bool clouds = false;
+
     // World units per second.
     float windX = 0.0f, windZ = 0.0f;
+
     // World height the cloud layers stay around (game Y, down is positive); without it they keep their offset from the camera.
     bool hasAltitude = false;
     float altitude = 0.0f;
     Color cloudTint;
+
     // Flight area: how far in from the map's min X, max X, min Z and max Z edges the craft is turned back.
     bool hasBounds = false;
     float bounds[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
