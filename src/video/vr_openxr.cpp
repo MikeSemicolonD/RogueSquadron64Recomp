@@ -89,49 +89,71 @@ struct State {
     XrInstance instance = XR_NULL_HANDLE;
     XrSystemId system = XR_NULL_SYSTEM_ID;
     XrSession session = XR_NULL_HANDLE;
-    XrSpace space = XR_NULL_HANDLE;
+    std::atomic<int> running{ 0 };
+    bool sessionBegun = false;
+
+    // What the runtime offers. metaRuntime: Meta's (Link or the XR Simulator), whose headset audio is a separate Windows device.
+    bool metaRuntime = false;
+    bool colorScale = false;
+    bool renderModels = false;
+    bool refreshRates = false;
+
+    // The space everything is placed in: LOCAL moved to the head's position and facing when it is first tracked, since SteamVR puts LOCAL's origin on the floor.
+    std::atomic<XrSpace> space{ XR_NULL_HANDLE };
+    XrSpace localSpace = XR_NULL_HANDLE;
+    XrSpace viewSpace = XR_NULL_HANDLE;
+    std::atomic<bool> recenter{ true };
+
+    // Spaces replaced by a recenter, kept until the session closes since other threads may still be using them.
+    std::vector<XrSpace> oldSpaces;
+
     XrActionSet actionSet = XR_NULL_HANDLE;
     XrAction pad[std::size(kPadActions)] = {};
     bool padReady = false;
     XrAction grip = XR_NULL_HANDLE;
+    XrSpace handSpaces[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
+    XrPath handPaths[2] = { XR_NULL_PATH, XR_NULL_PATH };
+
     // Right thumbstick, which the game doesn't use: up and down set the player's size (vrScale).
     XrAction scaleStick = XR_NULL_HANDLE;
+    Uint32 scaleTicks = 0;
+
     // Both controllers' vibration: the game's heavy rumble motor on the left hand, the light one on the right.
     XrAction haptic = XR_NULL_HANDLE;
-    XrPath handPaths[2] = { XR_NULL_PATH, XR_NULL_PATH };
+
     // The rumble thread's latest strengths (heavy, light), applied by poll_pad: haptics from another thread while it synced actions locked the controller input.
     std::atomic<float> rumbleWant[2] = { 0.0f, 0.0f };
     std::atomic<int> rumbleDirty{ 0 };
-    Uint32 scaleTicks = 0;
-    XrSpace handSpaces[2] = { XR_NULL_HANDLE, XR_NULL_HANDLE };
+
     EyeSwapchain eyes[2];
     EyeSwapchain screen;
+
     // The controller layer, drawn every headset frame over the eyes or the virtual screen; handsDrawn = both images acquired this frame.
     EyeSwapchain hands[2];
     bool handsDrawn = false;
     rs64vr::EyeViews handViews;
+
     // The runtime's controller models (XR_FB_render_model) as triangles of position and normal; handModelReady 1 once loaded, -1 when one can't be read.
-    bool renderModels = false;
-    bool refreshRates = false;
     PFN_xrEnumerateRenderModelPathsFB enumerateModelPaths = nullptr;
     PFN_xrGetRenderModelPropertiesFB getModelProperties = nullptr;
     PFN_xrLoadRenderModelFB loadModel = nullptr;
     std::vector<float> handModels[2];
     std::atomic<int> handModelReady[2] = { 0, 0 };
     Uint32 nextModelTry = 0;
+
     std::mutex* queueMutex = nullptr;
     bool frameBegun = false;
     XrTime displayTime = 0;
-    std::atomic<int> running{ 0 };
-    bool sessionBegun = false;
-    bool colorScale = false;
+    std::atomic<int64_t> predictedTime{ 0 };
+    std::atomic<int64_t> predictedPeriod{ 0 };
+
     // Brightness of the next submitted frame (fade between the virtual screen and the 3D view), 1 = full.
     float brightness = 1.0f;
+
     // Set by quit; while it waits, the calls other threads have in progress (a whole headset frame counts as one) drain to zero.
     std::atomic<int> quitting{ 0 };
     std::atomic<int> inUse{ 0 };
-    std::atomic<int64_t> predictedTime{ 0 };
-    std::atomic<int64_t> predictedPeriod{ 0 };
+
     PFN_xrGetVulkanInstanceExtensionsKHR getInstanceExtensions = nullptr;
     PFN_xrGetVulkanDeviceExtensionsKHR getDeviceExtensions = nullptr;
     PFN_xrGetVulkanGraphicsDeviceKHR getGraphicsDevice = nullptr;
@@ -225,9 +247,28 @@ void destroy_all()
         hand = XR_NULL_HANDLE;
     }
 
-    if (g.space != XR_NULL_HANDLE) {
-        xrDestroySpace(g.space);
+    for (XrSpace s : g.oldSpaces) {
+        if (s != g.localSpace) {
+            xrDestroySpace(s);
+        }
     }
+
+    if ((g.space.load() != XR_NULL_HANDLE) && (g.space.load() != g.localSpace)) {
+        xrDestroySpace(g.space.load());
+    }
+
+    if (g.localSpace != XR_NULL_HANDLE) {
+        xrDestroySpace(g.localSpace);
+    }
+
+    if (g.viewSpace != XR_NULL_HANDLE) {
+        xrDestroySpace(g.viewSpace);
+    }
+
+    g.oldSpaces.clear();
+    g.localSpace = XR_NULL_HANDLE;
+    g.viewSpace = XR_NULL_HANDLE;
+    g.recenter.store(true);
 
     if (g.actionSet != XR_NULL_HANDLE) {
         xrDestroyActionSet(g.actionSet);
@@ -544,6 +585,43 @@ static void request_top_refresh_rate()
     fprintf(stderr, "[vr] refresh rate %.1f Hz, available%s, requested %.1f (%d)\n", current, list.c_str(), top, int(requested));
 }
 
+// Moves the space to the head's position and facing (yaw only) once the head is tracked, so the game's camera and the menu screen start at eye level on every runtime.
+static void recenter_space(XrTime time)
+{
+
+    constexpr XrSpaceLocationFlags kTracked = XR_SPACE_LOCATION_ORIENTATION_VALID_BIT | XR_SPACE_LOCATION_POSITION_VALID_BIT;
+    XrSpaceLocation head{ XR_TYPE_SPACE_LOCATION };
+
+    if (!g.recenter.load() || (g.viewSpace == XR_NULL_HANDLE) || (time <= 0))
+    {
+        return;
+    }
+
+    if (XR_FAILED(xrLocateSpace(g.viewSpace, g.localSpace, time, &head)) || ((head.locationFlags & kTracked) != kTracked))
+    {
+        return;
+    }
+
+    const XrQuaternionf& q = head.pose.orientation;
+    const float yaw = std::atan2(2.0f * (q.x * q.z + q.w * q.y), 1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+    XrReferenceSpaceCreateInfo info{ XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
+    XrSpace centered = XR_NULL_HANDLE;
+
+    info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
+    info.poseInReferenceSpace.orientation = { 0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f) };
+    info.poseInReferenceSpace.position = head.pose.position;
+
+    if (XR_FAILED(xrCreateReferenceSpace(g.session, &info, &centered)))
+    {
+        return;
+    }
+
+    g.oldSpaces.push_back(g.space.exchange(centered));
+    g.recenter.store(false);
+
+    fprintf(stderr, "[vr] recentered on the head at %.2f %.2f %.2f, yaw %.1f deg\n", head.pose.position.x, head.pose.position.y, head.pose.position.z, yaw * 57.2958f);
+}
+
 // The profile the runtime bound for each hand, to tell which suggested bindings are in use.
 static void log_interaction_profile()
 {
@@ -615,6 +693,9 @@ void poll_events()
         }
         else if (event.type == XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED) {
             log_interaction_profile();
+        }
+        else if (event.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
+            g.recenter.store(true);
         }
 
         event = XrEventDataBuffer{ XR_TYPE_EVENT_DATA_BUFFER };
@@ -742,6 +823,7 @@ bool init_before_device()
     XrInstanceProperties props{ XR_TYPE_INSTANCE_PROPERTIES };
 
     xrGetInstanceProperties(g.instance, &props);
+    g.metaRuntime = (std::strstr(props.runtimeName, "Oculus") != nullptr) || (std::strstr(props.runtimeName, "Meta") != nullptr);
     fprintf(stderr, "[vr] OpenXR instance ready on %s (%zu instance and %zu device extensions requested)\n", props.runtimeName, hooks.instanceExtensions.size(), hooks.deviceExtensions.size());
 
     return true;
@@ -751,6 +833,12 @@ bool has_session()
 {
 
     return g.session != XR_NULL_HANDLE;
+}
+
+bool meta_runtime()
+{
+
+    return g.metaRuntime;
 }
 
 bool start_session(RT64::Application& app)
@@ -791,7 +879,15 @@ bool start_session(RT64::Application& app)
     space.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     space.poseInReferenceSpace.orientation.w = 1.0f;
 
-    if (XR_FAILED(xrCreateReferenceSpace(g.session, &space, &g.space)) || !create_eye_swapchains(app))
+    XrReferenceSpaceCreateInfo view = space;
+
+    view.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+
+    const bool spaces = XR_SUCCEEDED(xrCreateReferenceSpace(g.session, &space, &g.localSpace)) && XR_SUCCEEDED(xrCreateReferenceSpace(g.session, &view, &g.viewSpace));
+
+    g.space.store(g.localSpace);
+
+    if (!spaces || !create_eye_swapchains(app))
     {
         fprintf(stderr, "[vr] session setup failed; running flat\n");
         destroy_all();
@@ -1128,6 +1224,7 @@ extern "C" int rs64_vr_begin_frame(void)
     }
 
     g.displayTime = frame.predictedDisplayTime;
+    recenter_space(frame.predictedDisplayTime);
     g.predictedTime.store(frame.predictedDisplayTime);
     g.predictedPeriod.store((s_measured > 0) ? s_measured : frame.predictedDisplayPeriod);
 

@@ -568,8 +568,7 @@ void set_frequency(uint32_t freq)
     open_audio_device(freq);
 }
 
-// VR: the headset's playback device instead of the PC default; null (the default) without VR or such a device.
-// shortcut: matches Meta's Link device names only, add other headsets' names once someone tests them.
+// VR on Meta's runtime: the Link headset's playback device instead of the PC default; null (the default) otherwise, since SteamVR makes its headset the default itself.
 static const char* vr_audio_device()
 {
 
@@ -581,7 +580,7 @@ static const char* vr_audio_device()
     static std::string s_name;
 
     // The Meta virtual device exists whenever its software is installed, so a VR launch that fell back to flat keeps the PC output.
-    if (!rs64::vr::has_session())
+    if (!rs64::vr::has_session() || !rs64::vr::meta_runtime())
     {
         return nullptr;
     }
