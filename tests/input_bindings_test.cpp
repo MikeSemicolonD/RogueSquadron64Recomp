@@ -316,7 +316,7 @@ static void hotkey_checks()
     assert(!r.hotkeys.enabled && r.hotkeys.keys[(int)Hotkey::Pause] == "P" && r.hotkeys.keys[(int)Hotkey::Fps].empty() && r.hotkeys.keys[(int)Hotkey::Dump] == "F12");
 }
 
-// VR controllers are a device of their own: today's layout as defaults, both grips = Roll, the left stick steers.
+// VR controllers are a device of their own: today's layout as defaults, the grips unbound, the left stick steers.
 static void vr_checks()
 {
 
@@ -357,7 +357,7 @@ static void vr_checks()
 
     st.vr_buttons = (1u << VrGripL) | (1u << VrGripR);
     resolve(b, st, &btn, &x, &y);
-    assert(btn & N64_R_TRIG);
+    assert(btn == 0);
 
     st.vr_buttons = 0;
     st.vr_x = 1.0f;
@@ -366,8 +366,8 @@ static void vr_checks()
     assert(near(x, 80.0f / 127.0f) && near(y, 80.0f / 127.0f));
     st.vr_x = st.vr_y = 0.0f;
 
-    // The roll row shows the grip combo.
-    assert(menu_source_name(b.targets[(int)Target::RTrig][shown_source(b, Target::RTrig, Device::Vr)]) == "L GRIP - R GRIP");
+    // Roll has no VR default.
+    assert(shown_source(b, Target::RTrig, Device::Vr) < 0);
     assert(font_safe(menu_source_name(Source{ SourceKind::VrAxis, 0, -1 })));
 
     // Menus: VR A confirms, B backs out, Menu pauses.
@@ -384,13 +384,16 @@ static void vr_checks()
     assert(rb.targets[(int)Target::A][shown_source(rb, Target::A, Device::Vr)].code == VrTriggerR);
     assert(rb.targets[(int)Target::A][shown_source(rb, Target::A, Device::Keyboard)].code == SDL_SCANCODE_G);
 
-    // JSON keeps VR sources and the grip combo.
-    assert(save_bindings(b, "vr_test.json"));
+    // JSON keeps VR sources and a VR combo.
+    Bindings gb = b;
+    rebind(gb, Target::RTrig, Device::Vr, combo(vr(VrGripR), vr(VrGripL)));
+    assert(save_bindings(gb, "vr_test.json"));
     Bindings r;
     assert(load_bindings(r, "vr_test.json"));
     remove("vr_test.json");
     const Source& roll = r.targets[(int)Target::RTrig][shown_source(r, Target::RTrig, Device::Vr)];
     assert(roll.kind == SourceKind::VrButton && roll.with.kind == SourceKind::VrButton);
+    assert(r.targets[(int)Target::A][shown_source(r, Target::A, Device::Vr)].code == VrTriggerR);
 }
 
 // menu_fixed_mask_pad: pad A/B/Start and the D-pad.

@@ -399,7 +399,6 @@ Bindings default_bindings()
     add(Target::CDown,  vb(VrStickClickR));
     add(Target::Z,      vb(VrTriggerL));
     add(Target::A,      vb(VrTriggerR));
-    add(Target::RTrig,  Source{ SourceKind::VrButton, VrGripR, 0, -1, Held{ SourceKind::VrButton, VrGripL, 0, -1 } });
     add(Target::StickRight, vax(0, +1));
     add(Target::StickLeft,  vax(0, -1));
     add(Target::StickUp,    vax(1, +1));

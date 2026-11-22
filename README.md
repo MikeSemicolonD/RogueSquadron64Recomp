@@ -138,7 +138,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | Thrust | <kbd>W</kbd> | — | A | Right trigger | Button 3 | R2 |
 | Brake | <kbd>S</kbd> | — | Z | Left trigger | Button 4 | L2 |
 | Speed (positional) | — | — | — | — | Throttle lever | — |
-| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | Both grips |
+| Roll | <kbd>E</kbd> | — | R | Right shoulder | Button 7 + twist joystick | — |
 | Special | <kbd>F</kbd> | — | C-Right | X (West) | Button 5 | X |
 | Cockpit | <kbd>C</kbd> | — | D-Pad Up | D-Pad Up | — | — |
 | Standard | <kbd>V</kbd> | — | D-Pad Down | D-Pad Down | — | — |
