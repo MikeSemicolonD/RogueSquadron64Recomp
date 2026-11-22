@@ -191,9 +191,12 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | <kbd>F7</kbd> | FPS counter | All |
 | <kbd>F8</kbd> | VR camera controls via Numpad + Mouse | All (with VR Mode ON) |
 | <kbd>F9</kbd> / <kbd>Shift</kbd>+<kbd>F9</kbd> | Step forward / back through the ray tracing debug views | All |
+| <kbd>F10</kbd> | Pause / resume the game on an exact frame | Debug |
+| <kbd>F11</kbd> | Step one frame while paused | Debug |
 | <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
 | <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |
 
+- Change these keys, or turn them all off, under `hotkeys` in `roguesq_input.json` ([details](docs/guides/building-all-platforms.md)), or turn them off for one run with `--no-hotkeys`.
 - The current ray tracing debug view is named in a notice at the bottom right.
 - Set `ROGUESQ_FULL_DUMP=1` for a full-memory crash dump.
 - With RenderDoc loaded, **F12** also takes a capture alongside the crash dump. Launching from RenderDoc works too, without `ROGUESQ_RENDERDOC`.

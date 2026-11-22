@@ -338,6 +338,35 @@ extern "C" void rs64_menu_request_quit(void) {
 // from update_gfx (main thread) to toggle relative-mouse mode, so it is atomic.
 rs64::input::Bindings g_bindings = rs64::input::default_bindings();
 std::mutex            g_bindings_mtx;
+
+// Set once at startup, before the window exists; read by the event pump on the gfx thread.
+static rs64::input::HotkeyConfig s_hotkeys;
+
+void set_hotkeys(const rs64::input::HotkeyConfig& c)
+{
+
+    s_hotkeys = c;
+    s_hotkeys.enabled = recomp::dbg::env_on("ROGUESQ_HOTKEYS", c.enabled);
+}
+
+rs64::input::Hotkey hotkey_at(int scancode)
+{
+    return rs64::input::hotkey_at(s_hotkeys, scancode);
+}
+
+std::string hotkey_key(rs64::input::Hotkey h)
+{
+    return s_hotkeys.keys[(int)h];
+}
+
+// RT64's DeveloperShortcut order matches the first four hotkeys.
+extern "C" int rs64_dev_shortcut(int scancode)
+{
+
+    const rs64::input::Hotkey h = hotkey_at(scancode);
+
+    return (h <= rs64::input::Hotkey::TexturePacks) ? (int)h : -1;
+}
 std::atomic<bool>     g_show_controls{false};
 std::atomic<bool>     g_show_fps{false};
 std::atomic<bool>     g_mouse_capture{false};
@@ -1116,7 +1145,7 @@ void poll_input()
             note_physical_input();
             s_last_device.store(rs64::input::Device::Keyboard);
 
-            // F6 toggles the controls/rebind window. Mouse-steering capture is automatic (focus-driven, in update_gfx).
+            // Mouse-steering capture is automatic (focus-driven, in update_gfx). The function shortcuts come from roguesq_input.json's hotkeys.
             if (e.key.repeat == 0)
             {
                 switch (e.key.keysym.scancode) {
@@ -1124,36 +1153,6 @@ void poll_input()
                         if (e.key.keysym.mod & KMOD_ALT) rs64_toggle_fullscreen();
 
                         break;
-                    case SDL_SCANCODE_F6:
-                        g_show_controls.store(!g_show_controls.load());
-                        break;
-                    case SDL_SCANCODE_F7:
-                        g_show_fps.store(!g_show_fps.load());
-                        break;
-                    case SDL_SCANCODE_F8:
-                        if (rs64_vr_active()) {
-                            g_vr_mouse_look.store(!g_vr_mouse_look.load());
-                            rs64::app::notify("vrlook", g_vr_mouse_look.load() ? "Mouse turns the VR head (F8)" : "Mouse steers (F8)", 2.0f);
-                        }
-
-                        break;
-                    case SDL_SCANCODE_F5: {
-                        // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
-                        if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
-                            uint8_t& gate = rd[0x38CE0 ^ 3];
-                            gate = gate ? 0 : 1;
-
-                            fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
-                            fflush(stderr);
-                        }
-                        break;
-                    }
-                    case SDL_SCANCODE_F9: {
-                        const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
-
-                        rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (F9 next, Shift+F9 previous)", 3.0f);
-                        break;
-                    }
                     case SDL_SCANCODE_ESCAPE:
                         // Esc closes the controls window; otherwise it falls through to the game (bound to Start/pause).
                         if (g_show_controls.load()) {
@@ -1165,24 +1164,63 @@ void poll_input()
                     default:
                         break;
                 }
-            }
 
-            if (sym == SDLK_F12) {
-                fprintf(stderr, "[F12] manual minidump requested\n");
-                fflush(stderr);
-                rs64::app::notify("dump", "Saving a memory dump (F12). The game may freeze until it is written.", 60.0f);
+                using rs64::input::Hotkey;
 
-                // A moment's delay lets the notice draw before the dump stalls the process.
-                std::thread([] {
+                switch (hotkey_at(e.key.keysym.scancode)) {
+                    case Hotkey::Controls:
+                        g_show_controls.store(!g_show_controls.load());
+                        break;
+                    case Hotkey::Fps:
+                        g_show_fps.store(!g_show_fps.load());
+                        break;
+                    case Hotkey::VrLook:
+                        if (rs64_vr_active()) {
+                            const std::string key = " (" + hotkey_key(Hotkey::VrLook) + ")";
 
-                    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+                            g_vr_mouse_look.store(!g_vr_mouse_look.load());
+                            rs64::app::notify("vrlook", (g_vr_mouse_look.load() ? "Mouse turns the VR head" : "Mouse steers") + key, 2.0f);
+                        }
 
-                    if (rs64::crash::write_minidump_safe(nullptr)) {
-                        rs64::app::notify("dump", std::string("Memory dump saved: ") + rs64::crash::last_minidump_path(), 6.0f);
-                    } else {
-                        rs64::app::notify("dump", "Memory dump failed (see the log).", 6.0f);
+                        break;
+                    case Hotkey::Profiler: {
+                        // Factor 5's frame-profiler/debug-text HUD: gate byte 0x80038CE0 (retail leaves it 0). ^3 = N64 byte order.
+                        if (uint8_t* rd = (uint8_t*)g_recomp_rdram_for_wp_raw) {
+                            uint8_t& gate = rd[0x38CE0 ^ 3];
+                            gate = gate ? 0 : 1;
+
+                            fprintf(stderr, "[F5] profiler HUD gate 0x80038CE0 -> %u\n", gate);
+                            fflush(stderr);
+                        }
+                        break;
                     }
-                }).detach();
+                    case Hotkey::RtDebugView: {
+                        const rs64lights::DebugView& view = rs64lights::stepDebugView((e.key.keysym.mod & KMOD_SHIFT) ? -1 : 1);
+                        const std::string key = hotkey_key(Hotkey::RtDebugView);
+
+                        rs64::app::notify("rtdebug", std::string("RT debug view: ") + view.name + "  (" + key + " next, Shift+" + key + " previous)", 3.0f);
+                        break;
+                    }
+                    case Hotkey::Dump:
+                        fprintf(stderr, "[F12] manual minidump requested\n");
+                        fflush(stderr);
+                        rs64::app::notify("dump", "Saving a memory dump (" + hotkey_key(Hotkey::Dump) + "). The game may freeze until it is written.", 60.0f);
+
+                        // A moment's delay lets the notice draw before the dump stalls the process.
+                        std::thread([] {
+
+                            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+                            if (rs64::crash::write_minidump_safe(nullptr)) {
+                                rs64::app::notify("dump", std::string("Memory dump saved: ") + rs64::crash::last_minidump_path(), 6.0f);
+                            } else {
+                                rs64::app::notify("dump", "Memory dump failed (see the log).", 6.0f);
+                            }
+                        }).detach();
+                        break;
+                    default:
+                        break;
+                }
             }
 
             // Diagnostic: F1-F4 reaching PollEvent means SDL delivers them; RT64's filter (which runs first) may have consumed them already.

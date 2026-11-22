@@ -174,6 +174,7 @@ The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac archi
 | `mouse` | | `sensitivity`, `smoothing`, `curve`, `invert_x`, `invert_y` |
 | `rumble` | | `enabled`, `strength`, `scale_hits_by_damage`, `sustain_death_spiral`, and per-effect on/off under `effects` |
 | `lightbar` | | `enabled`, `health`, `hit_flash` (DualSense / DualShock 4) |
+| `hotkeys` | | `enabled` (`false` leaves the function keys to your game bindings; `--hotkeys` / `--no-hotkeys` sets it for one run) and the key for each shortcut by SDL key name, `""` to unbind one: `inspector`, `ray_tracing`, `view_rdram`, `texture_packs`, `profiler`, `controls`, `fps`, `vr_look`, `rt_debug_view`, `pause`, `step`, `dump` (F1 to F12) |
 | `joysticks` | | One entry per joystick: `guid`, `name`, `deadzone`, `invert_axes` (bit n flips axis n) |
 | `binds` | | N64 input name to a list of sources, below |
 

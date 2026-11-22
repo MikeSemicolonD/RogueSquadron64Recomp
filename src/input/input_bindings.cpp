@@ -1225,6 +1225,26 @@ void lightbar_fields(C& c, F&& f)
     f("hit_flash", c.hit_flash);
 }
 
+const char* hotkey_name(Hotkey h)
+{
+
+    static constexpr const char* kNames[(int)Hotkey::Count] = { "inspector", "ray_tracing", "view_rdram", "texture_packs", "profiler", "controls", "fps", "vr_look", "rt_debug_view", "pause", "step", "dump" };
+
+    return kNames[(int)h];
+}
+
+Hotkey hotkey_at(const HotkeyConfig& c, int sc)
+{
+
+    for (int h = 0; c.enabled && sc != SDL_SCANCODE_UNKNOWN && h < (int)Hotkey::Count; ++h) {
+        if (!c.keys[h].empty() && SDL_GetScancodeFromName(c.keys[h].c_str()) == sc) {
+            return (Hotkey)h;
+        }
+    }
+
+    return Hotkey::Count;
+}
+
 // In the working directory with saves and mods: the exe's folder can be read-only (AppImage, Flatpak).
 std::string default_config_path() {
     return "roguesq_input.json";
@@ -1279,6 +1299,16 @@ bool load_bindings(Bindings& b, const std::string& path) {
             {
                 if (k.contains(name) && k[name].is_string()) *field = parse_hex_color(k[name].get<std::string>(), *field);
             }
+        }
+    }
+
+    if (j.contains("hotkeys") && j["hotkeys"].is_object()) {
+        const json& h = j["hotkeys"];
+
+        b.hotkeys.enabled = value_or(h, "enabled", b.hotkeys.enabled);
+
+        for (int k = 0; k < (int)Hotkey::Count; ++k) {
+            b.hotkeys.keys[k] = value_or(h, hotkey_name((Hotkey)k), b.hotkeys.keys[k]);
         }
     }
 
@@ -1353,6 +1383,14 @@ bool save_bindings(const Bindings& b, const std::string& path)
     lightbar_fields(lb, writer(lightbar));
     lightbar["colors"] = colors;
     j["lightbar"] = lightbar;
+
+    json hotkeys = { { "enabled", b.hotkeys.enabled } };
+
+    for (int k = 0; k < (int)Hotkey::Count; ++k) {
+        hotkeys[hotkey_name((Hotkey)k)] = b.hotkeys.keys[k];
+    }
+
+    j["hotkeys"] = hotkeys;
     json joys = json::array();
 
     for (const JoyDevice& d : b.joy_devices)

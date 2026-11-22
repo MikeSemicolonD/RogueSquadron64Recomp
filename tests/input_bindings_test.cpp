@@ -285,6 +285,37 @@ static void combo_checks()
     assert(r.targets[(int)Target::CDown][0].with.kind == SourceKind::None);
 }
 
+// Function-key shortcuts: F1-F12 by default, rebindable by SDL key name, one unbindable, all off at once; the JSON keeps them.
+static void hotkey_checks()
+{
+
+    HotkeyConfig c;
+
+    assert(hotkey_at(c, SDL_SCANCODE_F1) == Hotkey::Inspector);
+    assert(hotkey_at(c, SDL_SCANCODE_F10) == Hotkey::Pause);
+    assert(hotkey_at(c, SDL_SCANCODE_P) == Hotkey::Count);
+
+    c.keys[(int)Hotkey::Pause] = "P";
+    c.keys[(int)Hotkey::Fps] = "";
+
+    assert(hotkey_at(c, SDL_SCANCODE_P) == Hotkey::Pause);
+    assert(hotkey_at(c, SDL_SCANCODE_F10) == Hotkey::Count);
+    assert(hotkey_at(c, SDL_SCANCODE_F7) == Hotkey::Count);
+
+    Bindings b = default_bindings();
+
+    b.hotkeys = c;
+    b.hotkeys.enabled = false;
+    assert(hotkey_at(b.hotkeys, SDL_SCANCODE_P) == Hotkey::Count);
+    assert(save_bindings(b, "hotkey_test.json"));
+
+    Bindings r;
+
+    assert(load_bindings(r, "hotkey_test.json"));
+    remove("hotkey_test.json");
+    assert(!r.hotkeys.enabled && r.hotkeys.keys[(int)Hotkey::Pause] == "P" && r.hotkeys.keys[(int)Hotkey::Fps].empty() && r.hotkeys.keys[(int)Hotkey::Dump] == "F12");
+}
+
 // VR controllers are a device of their own: today's layout as defaults, both grips = Roll, the left stick steers.
 static void vr_checks()
 {
@@ -435,6 +466,7 @@ int main() {
 
     controls_menu_checks();
     combo_checks();
+    hotkey_checks();
     vr_checks();
     SDL_SetMainReady();
     if (SDL_Init(SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER) != 0) {

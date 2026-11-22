@@ -119,6 +119,20 @@ struct LightbarConfig {
     uint32_t dead      = 0x200000;  // #200000
 };
 
+// The host's function-key shortcuts, in hotkey_name() order.
+enum class Hotkey { Inspector, RayTracing, ViewRdram, TexturePacks, Profiler, Controls, Fps, VrLook, RtDebugView, Pause, Step, Dump, Count };
+
+// Each key is an SDL key name ("F1"); "" leaves that shortcut unbound. Off frees every key for game bindings.
+struct HotkeyConfig {
+    bool enabled = true;
+    std::string keys[(int)Hotkey::Count] = { "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12" };
+};
+
+const char* hotkey_name(Hotkey h);
+
+// The shortcut on SDL scancode `sc`, or Hotkey::Count when none is (or hotkeys are off).
+Hotkey hotkey_at(const HotkeyConfig& c, int sc);
+
 struct Bindings {
     std::vector<Source> targets[(int)Target::Count];
     std::vector<JoyDevice> joy_devices;
@@ -140,6 +154,7 @@ struct Bindings {
     float trigger_resistance = 0.25f;
     RumbleConfig rumble;
     LightbarConfig lightbar;
+    HotkeyConfig hotkeys;
 };
 
 // Snapshot of live device state handed to resolve() each poll.

@@ -24,6 +24,7 @@ namespace rs64::app {
         SDL_JoystickID id = -1;
         std::string    guid;
         int            ordinal = 0;
+
         // Force-feedback sticks without SDL_JoystickRumble.
         SDL_Haptic*    haptic = nullptr;
     };
@@ -53,6 +54,12 @@ namespace rs64::app {
 
     // Set when a pad connects so the next lightbar tick (rumble.cpp) re-sends the current color.
     extern std::atomic<bool> g_lightbar_resend;
+
+    // Takes the loaded hotkeys; ROGUESQ_HOTKEYS (--hotkeys / --no-hotkeys) overrides their enabled flag for the run.
+    void set_hotkeys(const rs64::input::HotkeyConfig& c);
+    rs64::input::Hotkey hotkey_at(int scancode);
+    // The key name a shortcut is on, for notices.
+    std::string hotkey_key(rs64::input::Hotkey h);
 
     void poll_input();
     bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y);

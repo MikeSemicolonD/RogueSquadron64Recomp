@@ -6,10 +6,14 @@
 #include "host_api/host_api.h"
 #include "input/touch_menu.h"
 #include "main/mcp_bridge.h"
+#include "main/ui_panels.h"
 #include "hle/rt64_rs64_mcp.h"
 #include "util/debug_logs.h"
 #include "ultramodern/ultramodern.hpp"
+#include "input/input_host.h"
+
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -38,6 +42,7 @@ static std::map<std::string, uint32_t> s_mcp_dl_clocks;
 static std::optional<PauseTarget> s_mcp_target;
 static bool s_mcp_held = false;
 static bool s_mcp_release = false;
+static bool s_key_hold = false;
 static uint64_t s_mcp_hold_gen = 0;
 // Bumped when the MCP client disconnects, so a request left waiting by that client can't pause RT64 afterwards.
 static uint64_t s_mcp_epoch = 0;
@@ -255,12 +260,13 @@ void mcp_pause_point(const std::string& clock)
     hold_until([]() {
         std::lock_guard<std::mutex> lk(s_mcp_lock);
 
-        return s_mcp_release || !rs64_mcp_connected();
+        return s_mcp_release || (!rs64_mcp_connected() && !s_key_hold);
     }, std::chrono::steady_clock::time_point::max());
 
-    const bool dropped = !rs64_mcp_connected();
-
     g.lock();
+
+    const bool dropped = !rs64_mcp_connected() && !s_key_hold;
+
     s_mcp_held = false;
     g.unlock();
 
@@ -711,8 +717,71 @@ static nlohmann::json mcp_pause_menu(const nlohmann::json& p)
     return { { "page", open }, { "entry", rs64::touch::pause_entry(rdram) }, { "rows", rows } };
 }
 
+// The pause hotkey (F10) pauses on the next frame or resumes, the step hotkey (F11) steps one frame while paused; both work with or without an MCP client.
+static std::atomic<bool> s_key_busy{false};
+
+static void mcp_key_run(bool step)
+{
+
+    if (s_key_busy.exchange(true))
+    {
+        return;
+    }
+
+    std::thread([step] {
+
+        using rs64::input::Hotkey;
+
+        const bool held = mcp_frame_info()["held"].get<bool>();
+        const std::string keys = " (" + rs64::app::hotkey_key(Hotkey::Step) + " step, " + rs64::app::hotkey_key(Hotkey::Pause) + " resume)";
+        const auto set_key_hold = [](bool on) {
+
+            std::lock_guard<std::mutex> g(s_mcp_lock);
+
+            s_key_hold = on;
+        };
+
+        try {
+            if (step && held) {
+                mcp_step({ { "frames", 1u } });
+                rs64::app::notify("keypause", "Paused at display list " + std::to_string(mcp_frame_info()["clocks"]["dl"].get<uint64_t>()) + keys, 3600.0f);
+            }
+            else if (!step && held) {
+                set_key_hold(false);
+                mcp_resume({});
+                rs64::app::notify("keypause", "Resumed (" + rs64::app::hotkey_key(Hotkey::Pause) + " pause)", 2.0f);
+            }
+            else if (!step) {
+                set_key_hold(true);
+
+                const McpWait w = mcp_set_target(PauseTarget{ "dl", (uint32_t)mcp_frame_info()["clocks"]["dl"].get<uint64_t>() + 1 });
+
+                mcp_wait_frozen(w, 5.0);
+                rs64::app::notify("keypause", "Paused" + keys, 3600.0f);
+            }
+        }
+        catch (const std::exception& e) {
+            fprintf(stderr, "[keypause] %s\n", e.what());
+        }
+
+        s_key_busy.store(false);
+    }).detach();
+}
+
 extern "C" void rs64_mcp_register_pause_methods()
 {
+
+    // An event watch, not poll_input: poll_input runs on the game thread, which a pause holds.
+    SDL_AddEventWatch([](void*, SDL_Event* ev) -> int {
+
+        const rs64::input::Hotkey h = (ev->type == SDL_KEYDOWN && ev->key.repeat == 0) ? rs64::app::hotkey_at(ev->key.keysym.scancode) : rs64::input::Hotkey::Count;
+
+        if (h == rs64::input::Hotkey::Pause || h == rs64::input::Hotkey::Step) {
+            mcp_key_run(h == rs64::input::Hotkey::Step);
+        }
+
+        return 0;
+    }, nullptr);
 
     rs64_mcp_register("pause_when", mcp_pause_when);
     rs64_mcp_register("pause_when_drawn", mcp_pause_when_drawn);
