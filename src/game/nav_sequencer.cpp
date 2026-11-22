@@ -200,6 +200,7 @@ struct NavRun
     int hangar_frames = 0;
     int pressed_at = -1;
     bool cine_at_press = false;
+    std::string state_at_press;
     uint32_t title_word = 0;
     uint32_t confirms = 0;
     uint8_t menu_id = 0;
@@ -1027,7 +1028,10 @@ static void nav_menu(uint8_t* rdram, const char* st)
     {
         const bool cutscene = rs64_state_in_cinematic() && !r.cine_at_press;
 
-        if (title_word != r.title_word || menu_id != r.menu_id || rs64_menu_confirms() != r.confirms || cutscene)
+        // A pilot opens SELECT LEVEL, a state of its own that leaves the menu's title and id as they were; a repeat there picked a level.
+        const bool new_state = r.state_at_press != st;
+
+        if (title_word != r.title_word || menu_id != r.menu_id || rs64_menu_confirms() != r.confirms || cutscene || new_state)
         {
             fprintf(stderr, "[nav] menu: selected %s\n", path[s_step].c_str());
 
@@ -1091,6 +1095,7 @@ static void nav_menu(uint8_t* rdram, const char* st)
 
     r.pressed_at = s_watchdog;
     r.cine_at_press = rs64_state_in_cinematic();
+    r.state_at_press = st;
     r.title_word = title_word;
     r.menu_id = menu_id;
     r.confirms = rs64_menu_confirms();
