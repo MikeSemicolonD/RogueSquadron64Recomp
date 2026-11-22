@@ -388,6 +388,9 @@ void rs64_th_advanceNpcOnCurvedPath_8006C018(uint8_t* rdram, recomp_context* ctx
     const uint32_t mark = (uint32_t)ctx->r17;
     const uint32_t list = (uint32_t)ctx->r19;
 
+    // A mark with no object to follow ($s2 = 0, placed from its own position at +0x60) is a scorch, not a craft's shadow: the renderer keeps it under ray-traced shadows.
+    if (ctx->r18 == 0) rs64_f5_note_ground_mark(mark + 0x20);
+
     if ((ctx->r2 & 0xFF) || !rs64_ls_session() || list == 0 || MEM_H(0x1E, (gpr)(int32_t)mark) == 0)
     {
         return;

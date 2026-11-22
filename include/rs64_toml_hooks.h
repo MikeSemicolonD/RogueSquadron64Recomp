@@ -354,6 +354,7 @@ void rs64_dbg_log4(const char* tag, unsigned a, unsigned b, unsigned c, unsigned
 void rs64_f5_cable_submit(uint32_t, uint32_t, uint32_t);
 void rs64_f5_map_node(unsigned, unsigned);
 void rs64_f5_map_sprite(unsigned, unsigned);
+void rs64_f5_note_ground_mark(unsigned);
 void rs64_fb_cpu_cleared(uint8_t*, uint32_t, uint32_t);
 void rs64_fog_probe(uint8_t*);
 void rs64_hud_mark_element(uint8_t*, recomp_context*);
