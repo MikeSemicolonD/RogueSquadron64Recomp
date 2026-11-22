@@ -211,6 +211,7 @@ TARGET FPS (Display Settings, Advanced) sets how many frames a second the game r
 | Lowest input lag at 60 | On/Off | Off | 60 | A steady 60 real frames a second |
 | Original game | On/Off | Off | 30 | The N64's 30 fps |
 
+- TARGET FPS offers 30, 60, 72, 90, 120, 144, 165 and 240, up to the monitor's highest rate. A saved rate between those (`"targetFramerate": 100`) loads as the next one up.
 - With frame interpolation off, the game runs real frames at the target.
 - With frame interpolation on, the game runs 30 real frames a second up to a target of 60, and 60 above that, and fills in the rest. Interpolation adds about one frame of input lag.
 - Busy levels run fewer real frames: Battle of Calamari reaches about 110 at 240.

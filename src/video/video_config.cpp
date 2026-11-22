@@ -101,6 +101,21 @@ UC g_desired;
 bool g_pending = false;
 std::vector<int> g_refresh_rates;
 
+constexpr int kStandardRates[] = { 30, 60, 72, 90, 120, 144, 165, 240 };
+
+// The lowest standard rate at or above hz (the top one past it), so a saved odd rate (100) loads as a standard one.
+int standard_rate(int hz)
+{
+
+    for (int r : kStandardRates) {
+        if (r >= hz) {
+            return r;
+        }
+    }
+
+    return kStandardRates[std::size(kStandardRates) - 1];
+}
+
 // The settings read only at launch, as they were when the renderer started (first apply_pending). A new one adds a field here, in restart_snapshot and in restart_required.
 struct RestartSettings
 {
@@ -650,12 +665,19 @@ ApplyResult apply_pending(UC& uc)
 void set_refresh_rates(std::vector<int> hz)
 {
 
-    std::sort(hz.begin(), hz.end());
-    hz.erase(std::unique(hz.begin(), hz.end()), hz.end());
+    // TARGET FPS offers standard rates up to the monitor's highest, not every mode it lists (a 240 Hz monitor also has 100 and 119); SDL rounds 59.94 Hz down to 59.
+    const int top = hz.empty() ? 60 : *std::max_element(hz.begin(), hz.end());
+    std::vector<int> rates;
+
+    for (int r : kStandardRates) {
+        if (r <= top + 1) {
+            rates.push_back(r);
+        }
+    }
 
     std::lock_guard<std::mutex> lock(g_display_mutex);
 
-    g_refresh_rates = std::move(hz);
+    g_refresh_rates = std::move(rates);
 }
 
 void set_ssaa_base(float scale)
@@ -837,7 +859,7 @@ void apply_friendly(UC& uc, const json& j)
         if (t.is_string()) {
             g_target_display.store(t.get<std::string>() == "display", std::memory_order_relaxed);
         } else if (t.is_number()) {
-            uc.refreshRateTarget = t.get<int>();
+            uc.refreshRateTarget = standard_rate(t.get<int>());
             g_target_display.store(false, std::memory_order_relaxed);
         }
 
