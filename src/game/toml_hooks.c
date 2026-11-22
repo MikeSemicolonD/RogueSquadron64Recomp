@@ -231,16 +231,41 @@ static int s_effect_view_test;
 // Set when the last view test failed the game's own far plane; such an object passes only through the draw distance.
 static int s_past_stock_far;
 
+// Set for a view test that fails outright: a bomb out of the active range in a recording or replay.
+static int s_effect_cull_next;
+static int s_effect_cull;
+
 // randomBurstNpcHandlerVariant 0x8004093C
 void rs64_th_randomBurstNpcHandlerVariant_8004093C(uint8_t* rdram, recomp_context* ctx) {
 
     s_effect_view_test_next = 1;
 }
 
-// sprayEffectEmitterNpcHandler 0x8005E1A4
+// sprayEffectEmitterNpcHandler 0x8005E1A4 (emitter in $s0, position at +0x90). A TIE bomber's bomb (sprite id from loadTieBomberSprite at +0x12) out of the
+// active range in a recording or replay belongs to a bomber that is respawned at its start every 21 frames and not drawn, so the bomb is not drawn either.
 void rs64_th_sprayEffectEmitterNpcHandler_8005E1A4(uint8_t* rdram, recomp_context* ctx) {
 
+    union { uint32_t u; float f; } bx, bz, px, pz, range_sq, range_scale;
+    const gpr emitter = ctx->r16;
+
     s_effect_view_test_next = 1;
+
+    if (!rs64_ls_session() || MEM_HU(0x12, emitter) != MEM_HU(0, (gpr)(int32_t)0x80139738))
+    {
+        return;
+    }
+
+    bx.u = (uint32_t)MEM_W(0x90, emitter);
+    bz.u = (uint32_t)MEM_W(0x98, emitter);
+    px.u = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80137DC0);
+    pz.u = (uint32_t)MEM_W(0, (gpr)(int32_t)0x80137DC8);
+    range_sq.u = (uint32_t)MEM_W(0, (gpr)(int32_t)0x8003A7D8);
+    range_scale.u = (uint32_t)MEM_W(0, (gpr)(int32_t)0x8003A7D4);
+
+    const float dx = (bx.f - px.f) * range_scale.f;
+    const float dz = (bz.f - pz.f) * range_scale.f;
+
+    s_effect_cull_next = range_sq.f < dx * dx + dz * dz;
 }
 
 // updateWalkerParticlePositions 0x8005A9B8
@@ -417,6 +442,8 @@ void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_conte
     s_render_view_test_next = 0;
     s_effect_view_test = s_effect_view_test_next;
     s_effect_view_test_next = 0;
+    s_effect_cull = s_effect_cull_next;
+    s_effect_cull_next = 0;
     s_past_stock_far = 0;
 }
 
@@ -604,6 +631,8 @@ static void far_check(recomp_context* ctx)
     s_past_stock_far |= !(ctx->f2.fl < ctx->f0.fl);
 
     if (s_render_view_test || s_effect_view_test) ctx->f0.fl *= rs64_draw_dist();
+
+    if (s_effect_cull) ctx->f0.fl = 0.0f;
 }
 
 // The view test's camera-space box (+-125 per axis, the reach of convertMat3x4ToN64Mtx's fixed point): widened by the draw distance for the
@@ -1981,6 +2010,8 @@ int rs64_th_npcWingmanUpdate_800D9A00(uint8_t* rdram, recomp_context* ctx) {
 int rs64_th_isNpcWithinActiveReferenceRange_80047D9C(uint8_t* rdram, recomp_context* ctx) {
 
     if (rs64_hook(RS64_HOOK_NPC_ACTIVATION, rdram, ctx)) return 1;
+
+    rs64_unit_range_note(rdram, (uint32_t)ctx->r16, (ctx->r2 & 0xFF) != 0);
 
     return 0;
 }

@@ -961,11 +961,32 @@ extern "C" void rs64_neutralize_matpool_cimg(uint8_t* rdram, uint32_t dl_phys) {
     }
 }
 
+// The mission frame each unit last failed isNpcWithinActiveReferenceRange, keyed by the unit pointer it was tested with.
+static std::unordered_map<uint32_t, uint32_t> s_unit_out_of_range;
+
+extern "C" void rs64_unit_range_note(uint8_t* rdram, uint32_t unit, int in_range)
+{
+
+    if (in_range) {
+        s_unit_out_of_range.erase(unit);
+    } else {
+        s_unit_out_of_range[unit] = rw(rdram, 0x8013889Cu);
+    }
+}
+
 // Runs addNpcToVisibilityBucket again with the display widening on, for an object the stock test rejected: it joins the draw list and its LOD updates, but the fields game logic reads go back to their stock values.
 extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
 {
 
     if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
+    {
+        return 0;
+    }
+
+    // In a recording or replay the active range stays stock, so a unit out of it is destroyed and respawned at its start every 21 frames: draw it as the stock far plane did, not at all.
+    const auto out = s_unit_out_of_range.find(args[2]);
+
+    if (rs64_ls_session() && out != s_unit_out_of_range.end() && rw(rdram, 0x8013889Cu) - out->second <= 2u)
     {
         return 0;
     }

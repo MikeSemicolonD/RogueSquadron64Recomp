@@ -116,6 +116,7 @@ void rs64_npc_draw_only_mark(int on);
 int rs64_ls_session(void);
 void rs64_th_selectMeshLodAndSubmitForRender_80058104(uint8_t* rdram, recomp_context* ctx);
 int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args);
+void rs64_unit_range_note(uint8_t* rdram, uint32_t unit, int in_range);
 void rs64_pop_note(uint8_t* rdram, recomp_context* ctx, uint32_t obj, uint32_t pos, int drawn, int seen, float nx, float ny);
 void rs64_th_runMenuShipSelectScreen_800C14A8(uint8_t* rdram, recomp_context* ctx);
 int rs64_th_menuOverlayInit_entry(uint8_t* rdram, recomp_context* ctx);
