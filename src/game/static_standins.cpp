@@ -682,9 +682,8 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
     const bool cutscene = rb(rdram, kCutsceneFlag) != 0;
 
-    // The game's spawn window (updateActiveGridCellState): the cells within kGridHalfCells of the reference point. A stand-in drawn inside it is a unit
-    // the game has not spawned there (a path unit away from its DAT cell), so it shows nothing yet and neither does the stand-in.
-    // lookupActivePlayerCraftGridCell centers it on player 1's craft, or on kSpawnRef while the cutscene bit is set; kSpawnRef keeps the last cutscene's point.
+    // The game's spawn window (updateActiveGridCellState): cells within kGridHalfCells of player 1's craft, or of kSpawnRef (the last cutscene's point) while the cutscene bit is set.
+    // A stand-in inside it is a unit the game has not spawned there (a path unit away from its DAT cell), so the game shows nothing yet and neither does the stand-in.
     const uint32_t ref = (rw(rdram, kSpawnRefMode) & 8u) ? kSpawnRef : mips_call(rdram, ctx, kCraftRecord, { 0 }).v0;
     const float scale = rf(rdram, kGridScale);
     const float half = rf(rdram, kGridHalfCells);
