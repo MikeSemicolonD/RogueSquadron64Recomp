@@ -1029,7 +1029,8 @@ static void nav_menu(uint8_t* rdram, const char* st)
         const bool cutscene = rs64_state_in_cinematic() && !r.cine_at_press;
 
         // A pilot opens SELECT LEVEL, a state of its own that leaves the menu's title and id as they were; a repeat there picked a level.
-        const bool new_state = r.state_at_press != st;
+        // Only a named state counts: the SHOWROOM hub flickers to the plain "menu" state, which is no answer.
+        const bool new_state = (r.state_at_press != st) && (std::strchr(st, '.') != nullptr);
 
         if (title_word != r.title_word || menu_id != r.menu_id || rs64_menu_confirms() != r.confirms || cutscene || new_state)
         {
