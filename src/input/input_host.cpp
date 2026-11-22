@@ -359,6 +359,14 @@ std::string hotkey_key(rs64::input::Hotkey h)
     return s_hotkeys.keys[(int)h];
 }
 
+extern "C" int rs64_game_paused(void)
+{
+
+    const uint8_t* rd = (const uint8_t*)g_recomp_rdram_for_wp_raw;
+
+    return (rd != nullptr) && rs64::touch::read_paused(rd);
+}
+
 // RT64's DeveloperShortcut order matches the first four hotkeys.
 extern "C" int rs64_dev_shortcut(int scancode)
 {
