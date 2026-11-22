@@ -149,6 +149,12 @@ The macOS zip holds one universal `RogueSquadron64Recomp.app` for both Mac archi
 
 **Video presets:** [video-presets/](../../video-presets/README.md) holds ready-made display settings from low to ultra, plus original and vr. Launch with `--preset <name>` to use one without replacing your own `roguesq_video.json`.
 
+**VR headsets** (Windows, a build with VR): `--vr` or `--preset vr` uses the system's active OpenXR runtime, chosen in the Meta Horizon app or in SteamVR under Settings > OpenXR. To use another runtime for one launch, set `XR_RUNTIME_JSON` to its manifest, such as `C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json`.
+
+- **Quest** (Link or Air Link): the Meta Horizon Link runtime. Tested on a Quest 2.
+- **SteamVR headsets** (Vive, Index; untested): with the Meta Horizon app installed, SteamVR loads its oculus drivers and starts Horizon Link instead of finding the headset. With SteamVR closed, add `"driver_oculus" : { "enable" : false }` and `"driver_oculus_legacy" : { "enable" : false }` to `C:\Program Files (x86)\Steam\config\steamvr.vrsettings`. With a Vive Wireless Adapter, start the VIVE Wireless app and connect the headset before SteamVR. The controllers are drawn as simple stand-ins, since SteamVR doesn't supply controller models.
+- **Index and Vive controllers**: Index's left A/B act as X/Y and pressing the left trackpad is Menu. On Vive wands the left trackpad steers, the right trackpad click is A, the right menu button is B, the left trackpad click is X, the left menu button is Menu and the right trackpad sets your size, and the stick clicks have no button.
+
 **No monitor attached** (a headless Pi): the desktop then shows one frame a second and the game stalls with it. Set `"vsync": false` in `roguesq_video.json` to run at full speed.
 
 **Android** (and other phone GPUs): MSAA 8X and SSAA 4X are can be heavy for mobile devices, dropping the game below 30 fps. Use a lower setting or FXAA.

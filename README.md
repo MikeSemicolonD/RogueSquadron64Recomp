@@ -129,7 +129,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 
 <div align="center">
 
-| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. | Quest HMD (VR) |
+| Action | Keyboard | Mouse | N64 | Gamepad | Joystick / H.O.T.A.S. | VR Controller |
 | --- | --- | --- | --- | --- | --- | --- |
 | Steer | <kbd>↑</kbd>,<kbd>↓</kbd>,<kbd>←</kbd>,<kbd>→</kbd> (<kbd>A</kbd>/<kbd>D</kbd> turns) | Mouse X/Y | Analog stick | Left stick | Stick X/Y | LS |
 | Fire blasters | <kbd>Space</kbd> | <kbd>LMB</kbd> | B | A (South) | Button 1 (trigger) | A |
@@ -502,6 +502,7 @@ Without a Mac, the game cross-compiles from **WSL2 / Linux** with [osxcross](htt
 
 - **Build:** configure with `-DRS64_OPENXR=ON`. VR needs the Vulkan renderer.
 - **Start:** launch with `--preset vr` to use the [vr video preset](video-presets/vr/roguesq_video.json), which starts in the headset with settings that hold the headset's frame rate. Without a headset or runtime the game starts flat.
+- **Headsets:** choosing the OpenXR runtime, SteamVR and Vive setup, and the Index and Vive controller layouts are in [VR headsets](docs/guides/building-all-platforms.md#what-players-need).
 - **Your size:** push the right thumbstick up to grow or down to shrink until the cockpit feels right. Missions, the menus' 3D scenes (the hangar) and cutscenes each keep their own size, saved as `vrScale`, `vrScaleMenus` and `vrScaleCutscenes`.
 - Missions, cutscenes and SELECT LEVEL are in stereoscopic 3D while the menus and results screens show on a virtual screen in front of you.
 

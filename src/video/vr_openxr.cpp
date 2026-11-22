@@ -51,26 +51,37 @@ struct EyeSwapchain {
     bool released = false;
 };
 
-struct PadAction {
-    const char* name;
-    const char* path;
+// Interaction profiles with suggested bindings, in the column order of PadAction::paths.
+static constexpr const char* kProfiles[] = {
+    "/interaction_profiles/oculus/touch_controller",
+    "/interaction_profiles/valve/index_controller",
+    "/interaction_profiles/htc/vive_controller",
 };
 
-// Indexed by rs64::vr::PadButton, then the stick.
-static constexpr PadAction kPadActions[] = {
-    { "a", "/user/hand/right/input/a/click" },
-    { "b", "/user/hand/right/input/b/click" },
-    { "x", "/user/hand/left/input/x/click" },
-    { "y", "/user/hand/left/input/y/click" },
-    { "menu", "/user/hand/left/input/menu/click" },
-    { "stick-click-left", "/user/hand/left/input/thumbstick/click" },
-    { "stick-click-right", "/user/hand/right/input/thumbstick/click" },
-    { "trigger-left", "/user/hand/left/input/trigger/value" },
-    { "trigger-right", "/user/hand/right/input/trigger/value" },
-    { "grip-left", "/user/hand/left/input/squeeze/value" },
-    { "grip-right", "/user/hand/right/input/squeeze/value" },
-    { "stick", "/user/hand/left/input/thumbstick" },
+struct PadAction {
+    const char* name;
+    const char* paths[std::size(kProfiles)];
 };
+
+// Indexed by rs64::vr::PadButton, then the stick. Index has no X/Y or menu button: its left A/B and left trackpad press stand in. Vive wands have no face buttons or sticks: the trackpads and menu buttons stand in, and the stick clicks are unbound.
+static constexpr PadAction kPadActions[] = {
+    { "a", { "/user/hand/right/input/a/click", "/user/hand/right/input/a/click", "/user/hand/right/input/trackpad/click" } },
+    { "b", { "/user/hand/right/input/b/click", "/user/hand/right/input/b/click", "/user/hand/right/input/menu/click" } },
+    { "x", { "/user/hand/left/input/x/click", "/user/hand/left/input/a/click", "/user/hand/left/input/trackpad/click" } },
+    { "y", { "/user/hand/left/input/y/click", "/user/hand/left/input/b/click", nullptr } },
+    { "menu", { "/user/hand/left/input/menu/click", "/user/hand/left/input/trackpad/force", "/user/hand/left/input/menu/click" } },
+    { "stick-click-left", { "/user/hand/left/input/thumbstick/click", "/user/hand/left/input/thumbstick/click", nullptr } },
+    { "stick-click-right", { "/user/hand/right/input/thumbstick/click", "/user/hand/right/input/thumbstick/click", nullptr } },
+    { "trigger-left", { "/user/hand/left/input/trigger/value", "/user/hand/left/input/trigger/value", "/user/hand/left/input/trigger/value" } },
+    { "trigger-right", { "/user/hand/right/input/trigger/value", "/user/hand/right/input/trigger/value", "/user/hand/right/input/trigger/value" } },
+    { "grip-left", { "/user/hand/left/input/squeeze/value", "/user/hand/left/input/squeeze/value", "/user/hand/left/input/squeeze/click" } },
+    { "grip-right", { "/user/hand/right/input/squeeze/value", "/user/hand/right/input/squeeze/value", "/user/hand/right/input/squeeze/click" } },
+    { "stick", { "/user/hand/left/input/thumbstick", "/user/hand/left/input/thumbstick", "/user/hand/left/input/trackpad" } },
+};
+
+// The player-size stick (right hand), per profile.
+static constexpr const char* kScaleStickPaths[] = { "/user/hand/right/input/thumbstick", "/user/hand/right/input/thumbstick", "/user/hand/right/input/trackpad" };
+static_assert(std::size(kScaleStickPaths) == std::size(kProfiles));
 static constexpr int kPadStick = rs64::vr::kPadButtons;
 static_assert(std::size(kPadActions) == kPadStick + 1);
 
@@ -348,7 +359,7 @@ bool create_eye_swapchains(RT64::Application& app)
     return true;
 }
 
-// Touch controller actions, suggested for the Oculus Touch profile; other controllers get the runtime's remap of it.
+// Controller actions, suggested for Touch, Index and Vive controllers; others get the runtime's remap of one of those.
 bool create_pad_actions()
 {
 
@@ -362,22 +373,33 @@ bool create_pad_actions()
         return false;
     }
 
-    std::vector<XrActionSuggestedBinding> suggested;
+    constexpr size_t kProfileCount = std::size(kProfiles);
+    std::vector<XrActionSuggestedBinding> suggested[kProfileCount];
+
+    // Binds action to one path per profile, skipping a profile without one.
+    const auto suggest = [&](XrAction action, const char* const* paths) {
+        for (size_t p = 0; p < kProfileCount; p++) {
+            XrPath path = XR_NULL_PATH;
+
+            if (paths[p] && XR_SUCCEEDED(xrStringToPath(g.instance, paths[p], &path))) {
+                suggested[p].push_back({ action, path });
+            }
+        }
+    };
 
     for (size_t i = 0; i < std::size(kPadActions); i++) {
         XrActionCreateInfo action{ XR_TYPE_ACTION_CREATE_INFO };
-        XrPath path = XR_NULL_PATH;
 
         action.actionType = (int(i) == kPadStick) ? XR_ACTION_TYPE_VECTOR2F_INPUT : XR_ACTION_TYPE_BOOLEAN_INPUT;
         std::strncpy(action.actionName, kPadActions[i].name, XR_MAX_ACTION_NAME_SIZE - 1);
         std::strncpy(action.localizedActionName, kPadActions[i].name, XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
 
-        if (XR_FAILED(xrCreateAction(g.actionSet, &action, &g.pad[i])) || XR_FAILED(xrStringToPath(g.instance, kPadActions[i].path, &path)))
+        if (XR_FAILED(xrCreateAction(g.actionSet, &action, &g.pad[i])))
         {
             return false;
         }
 
-        suggested.push_back({ g.pad[i], path });
+        suggest(g.pad[i], kPadActions[i].paths);
     }
 
     // Both controllers' grip poses, to draw them.
@@ -396,19 +418,20 @@ bool create_pad_actions()
     std::strncpy(grip.localizedActionName, "grip", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
 
     if (XR_SUCCEEDED(xrCreateAction(g.actionSet, &grip, &g.grip))) {
-        suggested.push_back({ g.grip, gripPaths[0] });
-        suggested.push_back({ g.grip, gripPaths[1] });
+        for (auto& s : suggested) {
+            s.push_back({ g.grip, gripPaths[0] });
+            s.push_back({ g.grip, gripPaths[1] });
+        }
     }
 
     XrActionCreateInfo scale{ XR_TYPE_ACTION_CREATE_INFO };
-    XrPath scalePath = XR_NULL_PATH;
 
     scale.actionType = XR_ACTION_TYPE_VECTOR2F_INPUT;
     std::strncpy(scale.actionName, "player-size", XR_MAX_ACTION_NAME_SIZE - 1);
     std::strncpy(scale.localizedActionName, "player size", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
 
-    if (XR_SUCCEEDED(xrCreateAction(g.actionSet, &scale, &g.scaleStick)) && XR_SUCCEEDED(xrStringToPath(g.instance, "/user/hand/right/input/thumbstick", &scalePath))) {
-        suggested.push_back({ g.scaleStick, scalePath });
+    if (XR_SUCCEEDED(xrCreateAction(g.actionSet, &scale, &g.scaleStick))) {
+        suggest(g.scaleStick, kScaleStickPaths);
     }
 
     XrActionCreateInfo haptic{ XR_TYPE_ACTION_CREATE_INFO };
@@ -423,18 +446,37 @@ bool create_pad_actions()
     xrStringToPath(g.instance, "/user/hand/right/output/haptic", &hapticPaths[1]);
 
     if (XR_SUCCEEDED(xrCreateAction(g.actionSet, &haptic, &g.haptic))) {
-        suggested.push_back({ g.haptic, hapticPaths[0] });
-        suggested.push_back({ g.haptic, hapticPaths[1] });
+        for (auto& s : suggested) {
+            s.push_back({ g.haptic, hapticPaths[0] });
+            s.push_back({ g.haptic, hapticPaths[1] });
+        }
+
         g.handPaths[0] = handPaths[0];
         g.handPaths[1] = handPaths[1];
     }
 
-    XrInteractionProfileSuggestedBinding profile{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
+    // A runtime may reject a profile it doesn't know; the input works as long as one is taken.
+    int accepted = 0;
 
-    profile.countSuggestedBindings = uint32_t(suggested.size());
-    profile.suggestedBindings = suggested.data();
+    for (size_t p = 0; p < kProfileCount; p++) {
+        XrInteractionProfileSuggestedBinding profile{ XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING };
+        XrResult r = XR_ERROR_PATH_INVALID;
 
-    if (XR_FAILED(xrStringToPath(g.instance, "/interaction_profiles/oculus/touch_controller", &profile.interactionProfile)) || XR_FAILED(xrSuggestInteractionProfileBindings(g.instance, &profile)))
+        profile.countSuggestedBindings = uint32_t(suggested[p].size());
+        profile.suggestedBindings = suggested[p].data();
+
+        if (XR_SUCCEEDED(xrStringToPath(g.instance, kProfiles[p], &profile.interactionProfile))) {
+            r = xrSuggestInteractionProfileBindings(g.instance, &profile);
+        }
+
+        if (XR_SUCCEEDED(r)) {
+            accepted++;
+        } else {
+            fprintf(stderr, "[vr] bindings for %s rejected (%d)\n", kProfiles[p], int(r));
+        }
+    }
+
+    if (accepted == 0)
     {
         return false;
     }
@@ -502,6 +544,23 @@ static void request_top_refresh_rate()
     fprintf(stderr, "[vr] refresh rate %.1f Hz, available%s, requested %.1f (%d)\n", current, list.c_str(), top, int(requested));
 }
 
+// The profile the runtime bound for each hand, to tell which suggested bindings are in use.
+static void log_interaction_profile()
+{
+
+    for (int h = 0; h < 2; h++) {
+        XrInteractionProfileState state{ XR_TYPE_INTERACTION_PROFILE_STATE };
+        char name[XR_MAX_PATH_LENGTH] = "none";
+        uint32_t len = 0;
+
+        if (XR_SUCCEEDED(xrGetCurrentInteractionProfile(g.session, g.handPaths[h], &state)) && (state.interactionProfile != XR_NULL_PATH)) {
+            xrPathToString(g.instance, state.interactionProfile, XR_MAX_PATH_LENGTH, &len, name);
+        }
+
+        fprintf(stderr, "[vr] %s hand profile %s\n", (h == 0) ? "left" : "right", name);
+    }
+}
+
 void poll_events()
 {
 
@@ -553,6 +612,9 @@ void poll_events()
                 g.running.store(0);
                 fprintf(stderr, "[vr] session lost; running flat\n");
             }
+        }
+        else if (event.type == XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED) {
+            log_interaction_profile();
         }
 
         event = XrEventDataBuffer{ XR_TYPE_EVENT_DATA_BUFFER };
@@ -677,7 +739,10 @@ bool init_before_device()
 
     plume::SetVulkanCreateHooks(hooks);
 
-    fprintf(stderr, "[vr] OpenXR instance ready (%zu instance and %zu device extensions requested)\n", hooks.instanceExtensions.size(), hooks.deviceExtensions.size());
+    XrInstanceProperties props{ XR_TYPE_INSTANCE_PROPERTIES };
+
+    xrGetInstanceProperties(g.instance, &props);
+    fprintf(stderr, "[vr] OpenXR instance ready on %s (%zu instance and %zu device extensions requested)\n", props.runtimeName, hooks.instanceExtensions.size(), hooks.deviceExtensions.size());
 
     return true;
 }
