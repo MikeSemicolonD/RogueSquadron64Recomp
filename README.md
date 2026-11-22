@@ -230,6 +230,35 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - Shadows that are cast onto the new terrain renderer might not look 100% correct when compared with the look of the original's (Legacy) Terrain renderer. This is because of how shadow casting worked in the original along with how it did LOD. Terrain shadows are 'averaged' in the old one whereas the new one isn't, so shadows are cast more realistically.
 
+#### Ray Tracing Caveats
+
+- With Ray Tracing on, the following levels get light-shaft haze because I genuinely think they visually work better with it:
+  - Search for the Nonnah
+  - Imperial Construction Yard
+  - Escape from Fest
+  - Battle above Taloraan
+
+- Stray/odd shadows in places mostly due to terrain or its edge geometry
+
+- Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
+
+- Reflections might not look completely accurate because of the nature of Screen Space Reflections
+  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen. A potential solution would be an automated cubemap projection for each level done on the fly and have that be used as a fallback for when screen space reflections fall short.
+
+#### Draw distance Caveats
+
+- 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
+  - 'Search for the Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
+  - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
+
+- Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
+
+- There will be situations where Ties or Bombers appear to be stationary or might even move a little before being 'activated' once you get close enough to them. Since spawning of NPCs occurs based on player proximity, extending that distance could negatively affect gameplay so 'imposters'/'stand-ins' are used to display structures and NPCs at a distance in order to perserve gameplay.
+
+- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x` for performance reasons.
+
+- Draw distance will change on the fly relative to the intro/outro cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes. Mid-game cutscenes however will use the user's set draw distance.
+
 ### Game specific Issues
 
 > [!IMPORTANT]
@@ -239,7 +268,7 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 >
 > Game Issues should be fixed with Mods instead of fixing it through the recomp. which can affect all users who play expecting the base experience.
 
-- During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticeable when in Widescreen. This is normal cutscene behavior.
+- During cutscenes NPCs or ships might pop in and out or stop moving in general, which is very noticeable when in Widescreen since you can see beyond the game's original aspect ratio. This is normal cutscene behavior.
 
 - Turrets and structures aren't always uniformly connected to the ground, showing a gap between the structure and the ground.
 
@@ -268,33 +297,6 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 - Camera jitter after the player dies, spirals out and hits the ground while the camera is over a sharp incline.
 
 - A craft's ground shadow can show as a thin dark line stretching down the screen, when part of the shadow picks up the wrong ground height (e.g. the Beggar's Canyon ending near the landing pad).
-
-#### Ray Tracing Caveats
-
-- With Ray Tracing on, the following levels get light-shaft haze because I genuinely think they visually work better with it:
-  - Search for the Nonnah
-  - Imperial Construction Yard
-  - Escape from Fest
-  - Battle above Taloraan
-
-- Stray/odd shadows in places mostly due to terrain or its edge geometry
-
-- Shadows popping in and out because of geometry being culled when outside the camera's frustum. (Culling viewports have been increased/offset to alleviate this.)
-
-- Reflections might not look completely accurate because of the nature of Screen Space Reflections
-  - Battle for Calamari's intro cutscene doesn't reflect the explosion even though it is physically correct, since the explosion is near the camera's height and its mirror image falls below the screen. A potential solution would be an automated cubemap projection for each level done on the fly and have that be used as a fallback for when screen space reflections fall short.
-
-#### Draw distance Caveats
-
-- 'Search for the Nonnah' and 'Escape from Fest' keep their fog at a high draw distance. Every other level's fog moves out with the draw distance.
-  - 'Search for the Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
-  - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
-
-- Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
-
-- With LEGACY TERRAIN on (Display Settings > ADVANCED), the draw distance is capped at `1.3x` for performance reasons.
-
-- Draw distance will change on the fly relative to the intro/outro cutscene being played. Fog works in the same way. This is to maintain the original look/vision for the cutscenes. Mid-game cutscenes however will use the user's set draw distance.
 
 ### Roadmap
 
