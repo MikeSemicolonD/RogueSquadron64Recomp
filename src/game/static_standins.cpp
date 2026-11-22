@@ -49,8 +49,20 @@ constexpr uint32_t kRotateX = 0x8001CB9Cu;
 constexpr uint32_t kRotateY = 0x8001CCCCu;
 constexpr uint32_t kRotateZ = 0x8001CDFCu;
 constexpr uint32_t kTranslate = 0x8001CA90u;
+constexpr uint32_t kIdentity = 0x8001CA50u;
+constexpr uint32_t kApplyScale = 0x8001CB04u;
+constexpr uint32_t kComposeQuat = 0x8001DAECu;
 
-// wreck/wreck_scale: a destroyed structure's model, 0 when it has none.
+constexpr uint16_t kSubShield = 0x32u;
+constexpr uint16_t kSubRadarDish = 0x2Au;
+constexpr uint16_t kSubPowerGenerator = 0x4Au;
+constexpr uint16_t kSubPowerUp = 0x4Cu;
+constexpr uint32_t kObjectiveCounts = 0x80138060u;
+constexpr uint32_t kObjectiveBooleans = 0x801388A0u;
+constexpr uint32_t kMissionSeconds = 0x80130BA4u;
+constexpr uint32_t kDishSpinOn = 0x801399FBu;
+
+// wreck/wreck_scale: a destroyed structure's model, 0 when it has none. spin_*: the nodes its handler turns about Y, spin_rate degrees per second.
 struct Standin {
     uint32_t item;
     uint32_t state;
@@ -58,10 +70,21 @@ struct Standin {
     uint32_t scale;
     uint32_t wreck;
     uint32_t wreck_scale;
+    uint32_t spin_first = 0;
+    uint32_t spin_count = 0;
+    float spin_rate = 0.0f;
+};
+
+// turns: this node's angle as a multiple of the stand-in's spin angle.
+struct SpinNode {
+    uint32_t node;
+    uint32_t rec;
+    float turns;
 };
 
 uint32_t s_dat = 0;
 std::vector<Standin> s_standins;
+std::vector<SpinNode> s_spins;
 
 bool names_in_item(uint16_t sub)
 {
@@ -274,7 +297,11 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
 
     for (uint32_t i = 0; i < 12; i += 4) ww(rdram, state + i, rw(rdram, item + 0x10u + i));
 
-    mips_call(rdram, ctx, kComposeEuler, { state, rw(rdram, item + 0x1Cu), rw(rdram, item + 0x20u), rw(rdram, item + 0x24u) });
+    // npcRadarDishUpdate turns its dish 180 degrees from the DAT yaw.
+    const uint16_t sub = rh(rdram, item);
+    const uint32_t yaw = sub == kSubRadarDish ? float_bits(rf(rdram, item + 0x20u) + 180.0f) : rw(rdram, item + 0x20u);
+
+    mips_call(rdram, ctx, kComposeEuler, { state, rw(rdram, item + 0x1Cu), yaw, rw(rdram, item + 0x24u) });
 
     for (uint32_t i = 0x24u; i < 0x30u; i += 4) ww(rdram, state + i, 0);
 
@@ -282,10 +309,27 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
     ww(rdram, state + 0x30u, inst);
     ww(rdram, state + 0x34u, item);
 
-    // Walkers (AT-AT, AT-ST, AT-PT handlers) and shuttles draw at a uniform scale of item +0x28 over the model's +0x34, about 10x the item scale for an AT-ST.
-    const uint16_t sub = rh(rdram, item);
-
     if (sub == kSubProbeDroid) ww(rdram, inst + 4u, kProbeLodTable);
+
+    // The dish scales each axis by the item's scale over the model's +0x34 and culls at its +0x44 times the x scale.
+    if (sub == kSubRadarDish)
+    {
+        const float k = 1.0f / rf(rdram, model + 0x34u);
+        const float r = rf(rdram, model + 0x44u) * rf(rdram, item + 0x28u) * k;
+        const uint32_t m = inst + 0x28u;
+
+        std::memcpy(scale, &r, 4);
+        ww(rdram, state + 0x38u, *scale);
+        mips_call(rdram, ctx, kScaleMatrix, { m, float_bits(rf(rdram, item + 0x28u) * k), float_bits(rf(rdram, item + 0x2Cu) * k), float_bits(rf(rdram, item + 0x30u) * k) });
+        mips_call(rdram, ctx, kRotateX, { m, rw(rdram, item + 0x1Cu) });
+        mips_call(rdram, ctx, kRotateY, { m, yaw });
+        mips_call(rdram, ctx, kRotateZ, { m, rw(rdram, item + 0x24u) });
+        mips_call(rdram, ctx, kTranslate, { m, rw(rdram, state), rw(rdram, state + 4u), rw(rdram, state + 8u) });
+
+        return;
+    }
+
+    // Walkers (AT-AT, AT-ST, AT-PT handlers) and shuttles draw at a uniform scale of item +0x28 over the model's +0x34, about 10x the item scale for an AT-ST.
 
     if (sub == 0x0F || sub == 0x1F || sub == 0x47 || sub == 0x24 || sub == 0x2C || sub == 0x48 || sub == 0x4D) {
         const float ws = rf(rdram, item + 0x28u) / rf(rdram, model + 0x34u);
@@ -422,6 +466,105 @@ uint32_t build_unit_wreck(uint8_t* rdram, recomp_context* ctx, const Standin& s,
     return size;
 }
 
+// lookupHmtMaterialByName 0x80059434: the model's +0x28 table of 10-byte entries (9-byte name, node index) gives the instance node and the model's node record.
+void add_spin_node(const uint8_t* rdram, uint32_t inst, const char* name, float turns)
+{
+
+    const uint32_t model = rw(rdram, inst);
+    const uint32_t names = rw(rdram, model + 0x28u);
+
+    if (names == 0) return;
+
+    for (uint32_t e = names; rb(rdram, e) != 0 && e < names + 2560u; e += 10u) {
+        if (rstr(rdram, e, 9) != name) continue;
+
+        const uint32_t idx = rb(rdram, e + 9u);
+        const uint32_t rec = rw(rdram, rw(rdram, model + 0x14u) + 8u + idx * 8u);
+
+        s_spins.push_back({ inst + 0xCu + idx * 0x4Cu, rec, turns });
+        return;
+    }
+}
+
+// The parts a handler turns about Y while the object is alive: the radar dish's top (npcRadarDishUpdate, rate item +0x94 when +0x98 is set), the power
+// generator's base, main ring and eight cable rings (npcPowerGeneratorUpdate, 1, -1 and 2 times item +0x94) and the power-up (npcPowerUpUpdate, 90 degrees a second).
+void add_spins(const uint8_t* rdram, Standin& s)
+{
+
+    const uint16_t sub = rh(rdram, s.item);
+
+    s.spin_first = (uint32_t)s_spins.size();
+
+    if (sub == kSubRadarDish && rw(rdram, s.item + 0x98u) != 0) {
+        s.spin_rate = rf(rdram, s.item + 0x94u) * 30.0f;
+        add_spin_node(rdram, s.inst, "top_tran", 1.0f);
+    } else if (sub == kSubPowerGenerator) {
+        s.spin_rate = rf(rdram, s.item + 0x94u) * 30.0f;
+        add_spin_node(rdram, s.inst, "base", 1.0f);
+        add_spin_node(rdram, s.inst, "maintrns", -1.0f);
+
+        char ring[] = "cb_trns1";
+
+        for (int i = 0; i < 8; ++i) {
+            ring[7] = (char)('1' + i);
+            add_spin_node(rdram, s.inst, ring, 2.0f);
+        }
+    } else if (sub == kSubPowerUp) {
+        s.spin_rate = 90.0f;
+        add_spin_node(rdram, s.inst, "rot_a", 1.0f);
+    }
+
+    s.spin_count = (uint32_t)s_spins.size() - s.spin_first;
+}
+
+// The handlers' node pose: about the record's pivot (+0x50, flag 1) with its scale (+0x5C, flag 2) and quaternion (+0x68, flag 4), a turn about Y,
+// a lift (the power-up's bob), then the pivot and offset (+0x78, flag 8) back.
+void pose_node(uint8_t* rdram, recomp_context* ctx, const SpinNode& n, float yaw, float lift)
+{
+
+    const uint32_t m = n.node + 0x1Cu;
+    const uint32_t flags = rw(rdram, n.rec + 0x4Cu);
+    const float px = rf(rdram, n.rec + 0x50u);
+    const float py = rf(rdram, n.rec + 0x54u);
+    const float pz = rf(rdram, n.rec + 0x58u);
+
+    mips_call(rdram, ctx, kIdentity, { m });
+
+    if (flags & 1u) mips_call(rdram, ctx, kTranslate, { m, float_bits(-px), float_bits(-py), float_bits(-pz) });
+
+    if (flags & 2u) mips_call(rdram, ctx, kApplyScale, { m, rw(rdram, n.rec + 0x5Cu), rw(rdram, n.rec + 0x60u), rw(rdram, n.rec + 0x64u) });
+
+    if (flags & 4u) mips_call(rdram, ctx, kComposeQuat, { m, n.rec + 0x68u });
+
+    mips_call(rdram, ctx, kRotateY, { m, float_bits(yaw) });
+
+    if (lift != 0.0f) mips_call(rdram, ctx, kTranslate, { m, 0, float_bits(lift), 0 });
+
+    const float ox = rf(rdram, n.rec + 0x78u);
+    const float oy = rf(rdram, n.rec + 0x7Cu);
+    const float oz = rf(rdram, n.rec + 0x80u);
+
+    if ((flags & 9u) == 9u) {
+        mips_call(rdram, ctx, kTranslate, { m, float_bits(ox + px), float_bits(oy + py), float_bits(oz + pz) });
+    } else if ((flags & 9u) == 8u) {
+        mips_call(rdram, ctx, kTranslate, { m, float_bits(ox), float_bits(oy), float_bits(oz) });
+    } else if (flags & 1u) {
+        mips_call(rdram, ctx, kTranslate, { m, float_bits(px), float_bits(py), float_bits(pz) });
+    }
+}
+
+// npcShieldUpdate collapses once flag +0x7C equals +0x80 or counter +0x74 reaches +0x78 (1-based, 0 = none), and is then never relinked to its grid cell.
+bool shield_down(const uint8_t* rdram, uint32_t item)
+{
+
+    const uint32_t flag = rw(rdram, item + 0x7Cu);
+    const uint32_t counter = rw(rdram, item + 0x74u);
+
+    if (flag != 0 && rb(rdram, kObjectiveBooleans + flag - 1u) == rw(rdram, item + 0x80u)) return true;
+
+    return counter != 0 && (int32_t)rw(rdram, kObjectiveCounts + (counter - 1u) * 4u) >= (int32_t)rw(rdram, item + 0x78u);
+}
+
 void rebuild(uint8_t* rdram, recomp_context* ctx, uint32_t dat)
 {
 
@@ -433,6 +576,7 @@ void rebuild(uint8_t* rdram, recomp_context* ctx, uint32_t dat)
     }
 
     s_standins.clear();
+    s_spins.clear();
     s_dat = dat;
 
     const uint32_t count = rw(rdram, dat);
@@ -477,10 +621,11 @@ void rebuild(uint8_t* rdram, recomp_context* ctx, uint32_t dat)
             ++wrecks;
         }
 
+        add_spins(rdram, s);
         s_standins.push_back(s);
     }
 
-    fprintf(stderr, "[standins] %zu objects, %u wrecks, %u KB\n", s_standins.size(), wrecks, (at - kRegion) / 1024u);
+    fprintf(stderr, "[standins] %zu objects, %u wrecks, %zu spinning parts, %u KB\n", s_standins.size(), wrecks, s_spins.size(), (at - kRegion) / 1024u);
 }
 
 }
@@ -555,15 +700,34 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
 
         if (!std::binary_search(s_linked.begin(), s_linked.end(), s.item)) continue;
 
-        // A spent spawn count means destroyed: the game respawns a structure as its wreck, anything else not at all.
-        const bool destroyed = (int32_t)rw(rdram, s.item + 0x6Cu + diff * 4u) <= 0;
+        // A spent spawn count means destroyed: the game respawns a structure as its wreck, anything else not at all. A shield has no spawn
+        // count (its +0x74 is a counter index), so it goes only when shield_down.
+        const bool shield = rh(rdram, s.item) == kSubShield;
+        const bool destroyed = !shield && (int32_t)rw(rdram, s.item + 0x6Cu + diff * 4u) <= 0;
 
         if (destroyed && s.wreck == 0) continue;
+
+        if (shield && shield_down(rdram, s.item)) continue;
 
         // Trigger and wave gates: isDatItemConditionMet reads only objective flags and counters.
         if (!cutscene && mips_call(rdram, ctx, kConditionMet, { s.item }).v0 == 0) continue;
 
         if (!destroyed && in_spawn_window(s.state)) continue;
+
+        // Spinning parts follow mission time; a dish holds its pose while byte 0x801399FB (1 from load_dat_file_assets) is cleared.
+        const bool dish_held = rh(rdram, s.item) == kSubRadarDish && rb(rdram, kDishSpinOn) != 1;
+
+        if (!destroyed && s.spin_count != 0 && !dish_held)
+        {
+            const float t = rf(rdram, kMissionSeconds);
+            const float lift = rh(rdram, s.item) == kSubPowerUp ? std::sin((t - std::floor(t)) * 6.2831853f) * 0.5f : 0.0f;
+
+            for (uint32_t i = 0; i < s.spin_count; ++i) {
+                const SpinNode& n = s_spins[s.spin_first + i];
+
+                pose_node(rdram, ctx, n, std::fmod(s.spin_rate * n.turns * t, 360.0f), lift);
+            }
+        }
 
         // A probe droid grows with distance, so it goes through npcProbeDriod's own render call. The mark gives it the draw distance in replays too.
         if (rh(rdram, s.item) == kSubProbeDroid) {
