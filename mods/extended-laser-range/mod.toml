@@ -1,9 +1,9 @@
 # Laser bolts (audioCueDispatcherNpcHandler) get a lifetime at spawn: 1.5 s (rodata 0x8003AFD8), or 1.875 s (0x8003AFDC) when fired by the player.
 # Past it the bolt shrinks 0.2 a frame and is freed. Each lui/lwc1 rodata load becomes lui/mtc1 of an immediate float, doubling both.
 [manifest]
-id = "long_lasers"
+id = "extended_laser_range"
 version = "1.0.0"
-display_name = "Long Lasers"
+display_name = "Extended Laser Range"
 description = "Laser bolts fly twice as long before fading out, so they reach twice as far: 3.75 s for your craft, 3 s for everyone else. Missiles and torpedoes are unchanged."
 short_description = "Laser bolts fly twice as far."
 authors = ["RogueSquadron64Recomp"]
@@ -12,7 +12,7 @@ minimum_recomp_version = "0.0.0"
 enabled_by_default = false
 
 [inputs]
-mod_filename = "long_lasers"
+mod_filename = "extended_laser_range"
 func_reference_syms_file = "../../syms/rogue_squadron.syms.toml"
 
 # Default lifetime 1.5 -> 3.0 (0x40400000).
