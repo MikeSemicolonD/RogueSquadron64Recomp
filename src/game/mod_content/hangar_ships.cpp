@@ -11,6 +11,7 @@
 #include "util/mips_call.h"
 #include "util/rdram_words.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -290,6 +291,67 @@ extern "C" int rs64_ships_bay_craft(uint8_t* rdram, int bay)
     if (bay < 0 || bay >= (int)(kFirstBay + rs64ships::kMaxShips)) return -1;
 
     return rb(rdram, (s_tables ? s_tables + kTblBayCraft : kBayCraft) + (uint32_t)bay);
+}
+
+// The turns from the showing bay to a stock craft: positive is presses left (up the stops' u order), negative right. 0 when it shows already or no
+// turn reaches it (the Falcon or the Naboo starfighter while locked, the TIE's own reveal, a craft with no stop).
+extern "C" int rs64_ships_turns_to(uint8_t* rdram, int craft)
+{
+
+    const uint32_t stop_bay = s_tables ? s_tables + kTblBay : kStopBay;
+    const uint32_t stop_craft = s_tables ? s_tables + kTblCraft : kStopCraft;
+    const uint32_t stop_u = s_tables ? s_tables + kTblU : kStopU;
+    const int bay = rb(rdram, kBay);
+    int from = bay >= kFirstBay ? kFirstStop + bay - kFirstBay : -1;
+    std::vector<rs64ships::StopAt> stops;
+
+    for (int s = 0; s < kTurnStops; s++)
+    {
+        stops.push_back({ s, rf(rdram, stop_u + 4u * (uint32_t)s) });
+
+        if (rb(rdram, stop_bay + (uint32_t)s) == bay) from = s;
+    }
+
+    for (size_t k = 0; k < s_ships.size(); k++)
+    {
+        stops.push_back({ kFirstStop + (int)k, s_ships[k].stop[0] });
+    }
+
+    const auto shows = [&](int s) { return s < kTurnStops && rb(rdram, stop_craft + (uint32_t)s) == craft; };
+
+    const auto locked = [&](int s) {
+
+        if (s >= kTurnStops) return false;
+
+        const uint8_t c = rb(rdram, stop_craft + (uint32_t)s);
+
+        return (c == 5 && !rb(rdram, kFalconUnlocked)) || (c == 8 && !rb(rdram, kNabooUnlocked));
+    };
+
+    if (from < 0 || shows(from)) return 0;
+
+    int best = 0;
+
+    for (int dir = 1; dir >= -1; dir -= 2)
+    {
+        int at = from;
+
+        for (int n = 1; n <= (int)stops.size(); n++)
+        {
+            at = rs64ships::nextStop(at, dir, stops, locked);
+
+            if (at < 0 || at == from) break;
+
+            if (shows(at))
+            {
+                if (best == 0 || n < std::abs(best)) best = dir * n;
+
+                break;
+            }
+        }
+    }
+
+    return best;
 }
 
 // An element address in the per-bay word array (0x800CDA20 + 4 * (bay - 1)): a ship's bay uses its host word.

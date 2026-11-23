@@ -601,6 +601,7 @@ void rs64_th_player_craft_aim(uint8_t* rdram, recomp_context* ctx);
 void rs64_ships_aim(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updatePlayerCraftPhysics_entry(uint8_t* rdram, recomp_context* ctx);
 int rs64_ships_bay_craft(uint8_t* rdram, int bay);
+int rs64_ships_turns_to(uint8_t* rdram, int craft);
 void rs64_ships_behaviours(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_vwing_boost_gate(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_emit3DSoundsForActiveNpcs_800A9DF8(uint8_t* rdram, recomp_context* ctx);

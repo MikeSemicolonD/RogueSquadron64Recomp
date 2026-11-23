@@ -16,6 +16,9 @@ extern "C" { volatile int g_current_scene = -1; }
 extern "C" void rs64_pause_point(const char*, uint32_t) {}
 extern "C" int rs64_ships_bay_craft(uint8_t* rdram, int bay) { return rdram[(0xCC3F8u + (uint32_t)bay) ^ 3]; }
 
+static int s_turns_to = -1;
+extern "C" int rs64_ships_turns_to(uint8_t*, int) { return s_turns_to; }
+
 int main() {
     RsNavTarget t;
     t = rs64_nav_parse("level:3");    CHECK(t.kind == NAV_LEVEL && t.a == 3 && t.b == -1);
@@ -50,6 +53,9 @@ int main() {
     std::vector<uint8_t> rdram(0x200000, 0);
     int calls = 0;
 
+    // The hangar reads input (state 3), so the way to turn is chosen.
+    rdram[0xCC3E4u ^ 3] = 3;
+
     while (!nav_step_craft(rdram.data(), 5, "test") && calls < 20000) {
         ++calls;
     }
@@ -59,6 +65,14 @@ int main() {
     nav_run_reset();
     CHECK(!nav_step_craft(rdram.data(), 5, "test"));
     CHECK(s_run.bay_presses == 1);
+
+    // A craft no turn reaches (a locked Falcon) is done at once, without a press.
+    nav_run_reset();
+    s_turns_to = 0;
+    CHECK(nav_step_craft(rdram.data(), 5, "test"));
+    CHECK(s_run.bay_presses == 0);
+    s_turns_to = -1;
+    nav_run_reset();
 
     // A queued menu path starts with no press pending and the settle wait from zero.
     s_run.pressed_at = 40;

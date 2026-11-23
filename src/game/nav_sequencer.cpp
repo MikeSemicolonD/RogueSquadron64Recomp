@@ -194,6 +194,9 @@ struct NavRun
     int bay_seen = -1;
     int bay_wait = 0;
     int bay_presses = 0;
+
+    // The way to turn to a stock craft, chosen once so the turn never reverses: 1 right, -1 left, 2 no turn reaches it, 0 not chosen yet.
+    int bay_dir = 0;
     int name_toggle = 0;
     int settle = 0;
     int abort_wait = 0;
@@ -379,8 +382,26 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
         s_watchdog = 0;
     }
 
-    // 9 and up name a new hangar ship's bay (9 the first), whose craft byte is its template's.
-    if (want < 0 || (want >= 9 ? bay == want : here == want) || s_run.bay_presses >= 16)
+    // 9 and up name a new hangar ship's bay (9 the first), whose craft byte is its template's; a stock craft is only at one of the nine stock bays.
+    const bool at_target = want >= 9 ? bay == want : (bay < 9 && here == want);
+
+    // A stock craft turns the shorter way round, and one no turn reaches (a locked Falcon, the T-16) launches without a lap of the hangar.
+    // Chosen once the hangar reads input (state 3): its unlock bytes are set by then.
+    if (want >= 0 && want < 9 && !at_target && s_run.bay_dir == 0)
+    {
+        if (rdram[0xCC3E4u ^ 3] != 3)
+        {
+            return false;
+        }
+
+        const int turns = rs64_ships_turns_to(rdram, want);
+
+        s_run.bay_dir = turns > 0 ? -1 : turns < 0 ? 1 : 2;
+
+        fprintf(stderr, "[nav] %s: craft %d is %d turns away (0 = no bay reaches it)\n", who, want, turns);
+    }
+
+    if (want < 0 || at_target || s_run.bay_dir == 2 || s_run.bay_presses >= 16)
     {
         return true;
     }
@@ -392,7 +413,7 @@ static bool nav_step_craft(uint8_t* rdram, int want, const char* who)
     }
 
     // Ships stand to the left of the starting X-wing in the stock spots, so a ship target turns that way.
-    begin_pulse(want >= 9 ? N64_L_JPAD : N64_R_JPAD);
+    begin_pulse((want >= 9 || s_run.bay_dir < 0) ? N64_L_JPAD : N64_R_JPAD);
     s_run.bay_wait = 240;
     ++s_run.bay_presses;
 
