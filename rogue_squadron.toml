@@ -3097,6 +3097,12 @@ func = "audioCueDispatcherNpcHandler"
 before_vram = 0x8005CE24
 text = '{ rs64_th_audioCueDispatcherNpcHandler_8005CE24(rdram, ctx); }'
 
+# Wingman laser bolts (scale 0.5 x 0.5 x 1.0) draw at half size; their gameplay size is unchanged.
+[[patches.hook]]
+func = "audioCueDispatcherNpcHandler"
+before_vram = 0x8005D700
+text = '{ rs64_th_audioCueDispatcherNpcHandler_8005D700(rdram, ctx); }'
+
 # 60 fps missions: homing missiles add a fixed acceleration per frame, then add that to their speed.
 [[patches.hook]]
 func = "steerOrientationTowardTarget"

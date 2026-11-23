@@ -772,6 +772,30 @@ void rs64_th_selectMeshLodAndSubmitForRender_80058304(uint8_t* rdram, recomp_con
     s_inflated_count++;
 }
 
+// audioCueDispatcherNpcHandler 0x8005D700: a bolt's draw matrix ($s1+0x28) is built. Wingmen fire bolts at scale 0.5 x 0.5 x 1.0 (twice as wide and
+// four times as long as other craft's), which read as streaks across the sky at long draw distances; they draw at half that. Only the draw reads this
+// matrix and the handler rebuilds it before every draw, so it is not put back.
+void rs64_th_audioCueDispatcherNpcHandler_8005D700(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const gpr m = ctx->r17 + 0x28;
+    union { uint32_t u; float f; } v, sx, sy;
+
+    sx.u = (uint32_t)MEM_W(0xE4, ctx->r17);
+    sy.u = (uint32_t)MEM_W(0xE8, ctx->r17);
+
+    if (sx.f != 0.5f || sy.f != 0.5f)
+    {
+        return;
+    }
+
+    for (int i = 0; i < 9; ++i) {
+        v.u = (uint32_t)MEM_W(4 * i, m);
+        v.f *= 0.5f;
+        MEM_W(4 * i, m) = (int32_t)v.u;
+    }
+}
+
 // runInMissionFrame 0x800FAC68
 void rs64_th_runInMissionFrame_800FAC68(uint8_t* rdram, recomp_context* ctx) {
 
