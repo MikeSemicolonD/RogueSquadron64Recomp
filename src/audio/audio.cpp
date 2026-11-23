@@ -553,17 +553,78 @@ static std::atomic<bool> g_android_audio_reopen{false};
 
 static uint32_t audio_sample_rate = 48000;
 
+// The rate the output device was opened at. It stays open through the game's rate changes (48000, 22050, 32000 within one boot): closing and
+// reopening it clicks, in this game's sound and in other programs'. Sound at another rate goes through audio_resampler.
+static uint32_t audio_device_rate = 0;
+
 static void open_audio_device(uint32_t freq);
+
+#if !defined(__EMSCRIPTEN__)
+
+static SDL_AudioStream* audio_resampler = nullptr;
+
+static void set_resampler(uint32_t freq)
+{
+
+    if (audio_resampler != nullptr) {
+        SDL_FreeAudioStream(audio_resampler);
+        audio_resampler = nullptr;
+    }
+
+    if (freq != audio_device_rate) {
+        audio_resampler = SDL_NewAudioStream(AUDIO_S16SYS, 2, (int)freq, AUDIO_S16SYS, 2, (int)audio_device_rate);
+    }
+}
+
+#endif
+
+// Hands stereo frames at the game's rate to the device.
+static void queue_device(const int16_t* data, size_t frames)
+{
+
+#if !defined(__EMSCRIPTEN__)
+
+    if (audio_resampler != nullptr) {
+        static std::vector<int16_t> s_converted;
+
+        SDL_AudioStreamPut(audio_resampler, data, (int)(frames * 2 * sizeof(int16_t)));
+
+        const int ready = SDL_AudioStreamAvailable(audio_resampler);
+
+        if (ready > 0) {
+            s_converted.resize((size_t)ready / sizeof(int16_t));
+
+            const int got = SDL_AudioStreamGet(audio_resampler, s_converted.data(), ready);
+
+            if (got > 0) SDL_QueueAudio(audio_device, s_converted.data(), (Uint32)got);
+        }
+
+        return;
+    }
+
+#endif
+
+    SDL_QueueAudio(audio_device, data, (Uint32)(frames * 2 * sizeof(int16_t)));
+}
 
 void set_frequency(uint32_t freq)
 {
-    // Don't churn the device when the rate hasn't changed — each close/reopen
-    // flushes the SDL queue and clicks. The game re-sets the same AI rate
-    // repeatedly (observed 22050 set 3x), so this removes those pops.
+
     if (audio_device && freq == audio_sample_rate)
     {
         return;
     }
+
+#if !defined(__EMSCRIPTEN__)
+
+    if (audio_device) {
+        audio_sample_rate = freq;
+        set_resampler(freq);
+
+        return;
+    }
+
+#endif
 
     open_audio_device(freq);
 }
@@ -634,6 +695,12 @@ static void open_audio_device(uint32_t freq)
 
         return;
     }
+
+    audio_device_rate = freq;
+
+#if !defined(__EMSCRIPTEN__)
+    set_resampler(freq);
+#endif
 
     SDL_PauseAudioDevice(audio_device, 0);
 
@@ -854,12 +921,12 @@ void queue_samples(int16_t* samples, size_t num_samples)
                 }
             }
 
-            if (!s_out.empty()) SDL_QueueAudio(audio_device, s_out.data(), (Uint32)(s_out.size() * sizeof(int16_t)));
+            if (!s_out.empty()) queue_device(s_out.data(), s_out.size() / 2);
 
             return;
         }
 
-        SDL_QueueAudio(audio_device, samples, (Uint32)num_bytes);
+        queue_device(samples, num_bytes / 4);
     }
 }
 
@@ -868,7 +935,12 @@ size_t get_frames_remaining()
 
     if (!audio_device) return 0;
 
-    size_t frames = SDL_GetQueuedAudioSize(audio_device) / 4;  // 4 bytes/stereo frame
+    // Stereo frames queued at the device's rate, counted at the game's.
+    size_t frames = SDL_GetQueuedAudioSize(audio_device) / 4;
+
+    if ((audio_device_rate != 0) && (audio_device_rate != audio_sample_rate)) {
+        frames = (size_t)((uint64_t)frames * audio_sample_rate / audio_device_rate);
+    }
 
     // Deepen the game's audio target. ultramodern feeds this to the demand-paced game
     // audio loop, which keeps producing small (~96-frame) buffers until the reported
