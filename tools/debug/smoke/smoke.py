@@ -926,7 +926,7 @@ def compare(args):
         def growth(path):
 
             s = load_json(path)["private_bytes"] if os.path.exists(path) else []
-            return (s[-1] - s[1]) / (len(s) - 2) / 2**20 if len(s) > 2 else None
+            return (s[-1] - s[2]) / (len(s) - 3) / 2**20 if len(s) > 3 else None
 
         after = growth(os.path.join(cur, rel))
         before = growth(os.path.join(base, rel))
