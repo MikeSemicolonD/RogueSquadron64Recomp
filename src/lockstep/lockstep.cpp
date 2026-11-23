@@ -71,6 +71,10 @@ struct State {
     // The god-mode bit of gGameSettingsFlags (0x80130B4C) is set by the invincibility mod after the session hook, inside initMission.
     uint32_t god = 0;
     long flags0_at = -1;
+
+    // Mission logic rate of this session, and this frame's final dt (rs64_ls_rate_dt) above 30.
+    uint32_t hz = 30;
+    float dt = 0.0f;
 };
 
 constexpr uint32_t kSettingsFlags = 0x80130B4Cu;
@@ -421,6 +425,8 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         s.cruise = rs64_throttle_cruise_live();
         memcpy(&h.cruise_bits, &s.cruise, 4);
         h.ship = rs64_ships_flying_id();
+        h.hz = ghost ? 30u : (uint32_t)rs64_logic_hz();
+        s.hz = h.hz;
         s.rec = fopen(path.c_str(), "wb");
 
         if (!s.rec) {
@@ -440,7 +446,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
             ww(rdram, 0x80003470u, h.seed);
         }
 
-        fprintf(stderr, "[ls] recording level %u craft %u seed %u -> %s%s\n", h.level, h.craft, h.seed, path.c_str(), ghost ? " (co-op: input only)" : "");
+        fprintf(stderr, "[ls] recording level %u craft %u seed %u at %u Hz -> %s%s\n", h.level, h.craft, h.seed, h.hz, path.c_str(), ghost ? " (co-op: input only)" : "");
     } else if (s.mode == Mode::Replay) {
         const size_t entry = (size_t)s.missions - 1;
 
@@ -493,6 +499,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         }
 
         s.god = h.flags0 & kGodModeBit;
+        s.hz = h.hz ? h.hz : 30u;
         memcpy(&s.cruise, &h.cruise_bits, 4);
         ww(rdram, 0x80003470u, h.seed);
         const char* out = recomp::dbg::env_str("ROGUESQ_LS_HASH_OUT");
@@ -533,7 +540,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         }
         s.hash = open_hash(s.hash_path);
 
-        fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u%s\n", s.frames.size(), h.level, h.craft, h.seed, rerec ? " (re-recording)" : "");
+        fprintf(stderr, "[ls] replaying %zu frames, level %u craft %u seed %u at %u Hz%s\n", s.frames.size(), h.level, h.craft, h.seed, s.hz, rerec ? " (re-recording)" : "");
     }
 
     s.active = true;
@@ -571,7 +578,29 @@ extern "C" float rs64_ls_frame_dt(uint8_t* rdram, float dt) {
         s.flags0_at = -1;
     }
 
-    return 1.0f / 30.0f;
+    return s.hz > 30 ? dt : 1.0f / 30.0f;
+}
+
+// A high-rate session keeps real time while recording: each frame's final dt goes into its line, and a replay steps the same dts (1/hz for lines without one).
+extern "C" float rs64_ls_rate_dt(float dt)
+{
+
+    State& s = st();
+
+    if (!s.active || s.hz <= 30)
+    {
+        return dt;
+    }
+
+    if (s.mode == Mode::Replay && s.frame < s.frames.size()) {
+        const float rec = s.frames[s.frame].dt;
+
+        dt = rec > 0.0f ? rec : 1.0f / (float)s.hz;
+    }
+
+    s.dt = dt;
+
+    return dt;
 }
 
 // ROGUESQ_LS_PAUSE_AT=<f>[,<f>...]: a replay holds before frame f, writing <hash log>.paused, until <hash log>.resume appears (30 s cap), so
@@ -860,152 +889,6 @@ extern "C" void rs64_cine_pause_point(uint8_t* rdram)
     rs64_pause_point("cutscene", rw(rdram, 0x800B0B28u));
 }
 
-// ROGUESQ_INPUT_RECORD=<file> records controller 0 from the first input poll after launch (menus included); ROGUESQ_INPUT_REPLAY=<file> plays it back from the same point.
-// Lines after the header: "<ms> <vi> <poll> <buttons hex> <x> <y>". v4 (written now) has one line per poll; replay serves the recorded sample nearest the current wall-clock ms (within half a poll). v3 (older) was written on change and replays by wall-clock ms with the stick blended between close samples.
-namespace {
-
-struct InputRec { uint32_t ms, vi, poll; uint16_t buttons; float x, y; };
-
-}
-
-bool rs64::ls::session_input(int controller_num, uint16_t* buttons, float* x, float* y, LiveInput live)
-{
-
-    static const char* s_rec_path = recomp::dbg::env_str("ROGUESQ_INPUT_RECORD");
-    static const char* s_play_path = recomp::dbg::env_str("ROGUESQ_INPUT_REPLAY");
-    static bool s_anchored = false;
-    static uint32_t s_poll = 0;
-    static unsigned s_vi0 = 0;
-    static std::chrono::steady_clock::time_point s_t0;
-
-    if ((controller_num == 0) && (s_rec_path || s_play_path)) {
-        if (!s_anchored)
-        {
-            s_anchored = true;
-            s_poll = 0;
-            s_vi0 = g_vi_tick;
-            s_t0 = std::chrono::steady_clock::now();
-
-            fprintf(stderr, "[input-rec] first poll: %s\n", s_play_path ? "replaying" : "recording");
-        }
-    }
-
-    const uint32_t vi = s_anchored ? (uint32_t)(g_vi_tick - s_vi0) : 0u;
-    const uint32_t ms = s_anchored ? (uint32_t)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - s_t0).count() : 0u;
-
-    if ((controller_num == 0) && s_play_path && s_anchored)
-    {
-        static std::vector<InputRec> s_recs;
-        static size_t s_idx = 0;
-        static bool s_loaded = false;
-        static int s_version = 0;
-
-        if (!s_loaded)
-        {
-            s_loaded = true;
-
-            if (FILE* f = fopen(s_play_path, "r"))
-            {
-                char header[32] = {};
-
-                if ((fscanf(f, "%31s v%d", header, &s_version) == 2) && (s_version >= 3))
-                {
-                    InputRec r{};
-                    unsigned b = 0;
-
-                    while (fscanf(f, "%u %u %u %x %f %f", &r.ms, &r.vi, &r.poll, &b, &r.x, &r.y) == 6)
-                    {
-                        r.buttons = (uint16_t)b;
-                        s_recs.push_back(r);
-                    }
-                }
-
-                fclose(f);
-            }
-
-            fprintf(stderr, "[input-rec] loaded %zu entries (v%d) from %s\n", s_recs.size(), s_version, s_play_path);
-        }
-
-        if ((s_version >= 4) && !s_recs.empty())
-        {
-            // Every poll was recorded with its time, so serve the recorded sample nearest to now: at most half a poll off, and no lag builds up when the game polls at a slightly different rate.
-            auto it = std::lower_bound(s_recs.begin() + (ptrdiff_t)s_idx, s_recs.end(), ms, [](const InputRec& r, uint32_t t) { return r.ms < t; });
-            size_t j = (it == s_recs.end()) ? (s_recs.size() - 1) : (size_t)(it - s_recs.begin());
-
-            if ((j > 0) && ((it == s_recs.end()) || ((s_recs[j].ms - ms) > (ms - s_recs[j - 1].ms))))
-            {
-                j--;
-            }
-
-            s_idx = std::max(s_idx, j);
-        }
-        else {
-            while ((s_idx + 1 < s_recs.size()) && (s_recs[s_idx + 1].ms <= ms)) {
-                s_idx++;
-            }
-        }
-
-        // Close the game once the recording has played out (the last entry is written when the recorded session ended).
-        static bool s_quit = false;
-
-        if (!s_quit && !s_recs.empty() && (ms > s_recs.back().ms + 500u))
-        {
-            s_quit = true;
-
-            fprintf(stderr, "[input-rec] replay finished at ms=%u, closing\n", ms);
-            rs64_menu_request_quit();
-        }
-
-        const bool have = !s_recs.empty() && ((s_version >= 4) || (s_recs[s_idx].ms <= ms));
-        *buttons = have ? s_recs[s_idx].buttons : 0;
-        *x = have ? s_recs[s_idx].x : 0.0f;
-        *y = have ? s_recs[s_idx].y : 0.0f;
-
-        // v3 only: blend the stick between samples of continuous motion (mouse steering) so a poll that lands a few ms off still reads nearly the recorded value; held values and sudden changes still step.
-        if (have && (s_version < 4) && (s_idx + 1 < s_recs.size())) {
-            const InputRec& a = s_recs[s_idx];
-            const InputRec& b = s_recs[s_idx + 1];
-
-            if ((b.ms > a.ms) && (b.ms - a.ms <= 50u)) {
-                const float t = (float)(ms - a.ms) / (float)(b.ms - a.ms);
-                *x = a.x + (b.x - a.x) * t;
-                *y = a.y + (b.y - a.y) * t;
-            }
-        }
-
-        // Drift check: our VI/poll counts at this time vs the recorded ones.
-        static uint32_t s_last_log = 0;
-
-        if (have && (ms >= s_last_log + 10000))
-        {
-            s_last_log = ms;
-
-            fprintf(stderr, "[input-rec] ms=%u vi=%u recorded_vi=%u poll=%u recorded_poll=%u\n", ms, vi, s_recs[s_idx].vi, s_poll, s_recs[s_idx].poll);
-        }
-
-        s_poll++;
-
-        return true;
-    }
-
-    const bool ok = live(controller_num, buttons, x, y);
-
-    if ((controller_num == 0) && s_rec_path && s_anchored)
-    {
-        static FILE* s_file = [](const char* p) { FILE* f = fopen(p, "w"); if (f) fprintf(f, "rs64-input v4\n"); return f; }(s_rec_path);
-
-        if (s_file)
-        {
-            fprintf(s_file, "%u %u %u %04X %.9g %.9g\n", ms, vi, s_poll, *buttons, *x, *y);
-            fflush(s_file);
-        }
-
-        s_poll++;
-    }
-
-    return ok;
-}
-
 extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
 
     State& s = st();
@@ -1051,6 +934,7 @@ extern "C" void rs64_ls_frame_pads(uint8_t* rdram, recomp_context*) {
         s.head = f.head;
         s.head_x = f.head_x;
         s.head_y = f.head_y;
+        f.dt = s.hz > 30 ? s.dt : 0.0f;
 
         if (s.rec) {
             fprintf(s.rec, "%s\n", format_frame(f).c_str());
@@ -1129,6 +1013,11 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
 // A recording or replay is running: its mission must play the same whatever the display settings. Off again once it ends (ROGUESQ_LS_KEEP_RUNNING plays on live).
 extern "C" int rs64_ls_session(void) {
     return mode() != Mode::Off && st().active;
+}
+
+// The running session's logic rate, 0 when none runs.
+extern "C" int rs64_ls_hz(void) {
+    return rs64_ls_session() ? (int)st().hz : 0;
 }
 
 extern "C" int rs64_ls_replaying(void) {

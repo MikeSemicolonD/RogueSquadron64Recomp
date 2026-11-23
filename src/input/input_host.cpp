@@ -1743,16 +1743,14 @@ uint16_t n64_buttons()
 bool get_n64_input(int controller_num, uint16_t* buttons, float* x, float* y)
 {
 
-    return rs64::ls::session_input(controller_num, buttons, x, y, [](int c, uint16_t* b, float* sx, float* sy) {
-        const bool ok = get_n64_input_live(c, b, sx, sy);
+    const bool ok = get_n64_input_live(controller_num, buttons, x, y);
 
-        if (c == 0) {
-            rs64::host::run_input_filters(0, b, sx, sy);
-            s_n64_buttons.store(*b);
-        }
+    if (controller_num == 0) {
+        rs64::host::run_input_filters(0, buttons, x, y);
+        s_n64_buttons.store(*buttons);
+    }
 
-        return ok;
-    });
+    return ok;
 }
 
 void set_rumble(int controller_num, bool on) {

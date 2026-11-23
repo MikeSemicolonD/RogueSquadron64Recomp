@@ -270,6 +270,9 @@ static bool run_pulse() {
     // A press that started a cutscene (AT THE MOVIES) lets go at once, or the held button skips it.
     if (s_pulse > 0 && !s_pulse_cine && rs64_state_in_cinematic()) s_pulse = 0;
 
+    // A press that skipped a cutscene lets go when it ends, or the held START pauses the mission behind it (most frames at a high TARGET FPS).
+    if (s_pulse > 0 && s_pulse_cine && !rs64_state_in_cinematic()) s_pulse = 0;
+
     if (s_pulse <= 0) { rs64_nav_inject(0, 0, 0); return false; }
 
     rs64_nav_inject(s_pulse_btn, 0, 0);

@@ -1250,22 +1250,33 @@ extern "C" int rs64_fixed_step(void)
     return (s_on || ultramodern::get_speed() != 1.0) ? 1 : 0;
 }
 
+// Mission logic rate from ROGUESQ_GAME_HZ, VR or the TARGET FPS setting.
+extern "C" int rs64_logic_hz(void)
+{
+
+    static const int s_env = env_int("ROGUESQ_GAME_HZ", 0);
+
+    const int display_hz = (int)ultramodern::get_display_refresh_rate();
+    const int vr_hz = rs64_vr_game_hz();
+
+    return s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
+}
+
 // Each mission frame, once its dt is final; returns the dt the frame uses. 0x80128EAF is the game's minimum VIs per frame: 2 = 30 fps.
 // Above 30 the video clock ticks several times per frame, so a late frame waits a fraction of a frame for its swap instead of a whole one.
 extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
 {
 
-    static const int s_env = env_int("ROGUESQ_GAME_HZ", 0);
     static const int s_sub = std::clamp(env_int("ROGUESQ_VI_SUBTICKS", 4), 1, 8);
     static const bool s_log = env_on("ROGUESQ_LOG_RATE");
     static auto s_last = std::chrono::steady_clock::now();
 
     g_rate_frame_seen = true;
 
-    const int display_hz = (int)ultramodern::get_display_refresh_rate();
-    const int vr_hz = rs64_vr_game_hz();
-    const int hz = s_env > 0 ? std::clamp(s_env, 30, 240) : (vr_hz > 0 ? std::clamp(vr_hz, 30, 240) : rs64::rate::logic_hz(rs64::video::frame_interpolation_on(), rs64::video::target_fps(display_hz)));
-    const bool on = hz > 30 && !rs64_ls_session() && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
+    // A lockstep session runs at its recording's rate.
+    const int ls_hz = rs64_ls_hz();
+    const int hz = ls_hz > 0 ? ls_hz : rs64_logic_hz();
+    const bool on = hz > 30 && !rs64::ls::demo_active(rdram) && rs64::host::flag("ghost_mode") == 0;
     const int sub = on ? s_sub : 1;
     const auto now = std::chrono::steady_clock::now();
     const float real = std::chrono::duration<float>(now - s_last).count();
@@ -1290,6 +1301,7 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
         s_debt = 0.0f;
     }
 
+    dt = rs64_ls_rate_dt(dt);
     rs64::rate::update(g_rate, dt, on);
     rs64::mips::wb(rdram, 0x80128EAFu, on ? (uint8_t)sub : 2);
     ultramodern::set_vi_rate(on ? (uint32_t)(hz * sub) : 60u);

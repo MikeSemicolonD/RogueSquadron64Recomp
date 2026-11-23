@@ -1,12 +1,10 @@
-# Record controller input into tools/debug/recordings/<id>-<mission>/, creating the mission folder if needed.
-# Usage: .\tools\debug\recordings\record.ps1 -Level 5 [-Craft 0] [-Name jade_moon_strafe] [-Kind mission|session] [-Config Release]
-# Mission recordings boot straight into the level (ROGUESQ_BOOT_TARGET) and write <name>.rec plus the <name>.rec.hash baseline. They play mortal unless -Invincible.
-# Session recordings start at launch; drive the menus yourself and close the window to stop.
+# Record a mission into tools/debug/recordings/<id>-<mission>/, creating the mission folder if needed.
+# Usage: .\tools\debug\recordings\record.ps1 -Level 5 [-Craft 0] [-Name jade_moon_strafe] [-Config Release]
+# Boots straight into the level (ROGUESQ_BOOT_TARGET) and writes <name>.rec plus the <name>.rec.hash baseline. Recordings play mortal unless -Invincible.
 param(
     [Parameter(Mandatory = $true)][ValidateScript({ $_ -in ((0..18) + 20) })][int]$Level,
     [string]$Craft = "",
     [string]$Name = "",
-    [ValidateSet("mission", "session")][string]$Kind = "mission",
     [string]$Config = "Release",
     # Keep the invincibility mod's god mode in a mission recording (off by default).
     [switch]$Invincible
@@ -19,11 +17,6 @@ $missions = @(
     "blockade-on-chandrila", "raid-on-sullust", "moff-seerdons-revenge", "the-battle-of-calamari",
     "beggars-canyon", "the-death-star-trench-run", "the-battle-of-hoth", "", "chicken"
 )
-
-if ($Level -eq 20 -and $Kind -eq "session") {
-    Write-Error "CHICKEN (level 20) has no session recording: it boots straight into the mission, so use -Kind mission."
-    exit 1
-}
 
 $root = $PSScriptRoot
 $prefix = "{0:D2}-" -f $Level
@@ -58,22 +51,15 @@ if (-not (Test-Path $exe)) {
 }
 if ($Config -ne "Release") { Write-Warning "Recording in $Config; README says record and replay in Release (Debug changes frame timing)." }
 
-$vars = "ROGUESQ_LS_RECORD", "ROGUESQ_INPUT_RECORD", "ROGUESQ_BOOT_TARGET", "ROGUESQ_FORCE_LEVEL", "ROGUESQ_FORCE_CRAFT", "ROGUESQ_LS_GOD"
+$vars = "ROGUESQ_LS_RECORD", "ROGUESQ_BOOT_TARGET", "ROGUESQ_LS_GOD"
 $saved = @{}
 foreach ($v in $vars) { $saved[$v] = [Environment]::GetEnvironmentVariable($v); [Environment]::SetEnvironmentVariable($v, $null) }
 
 try {
-    if ($Kind -eq "mission") {
-        $env:ROGUESQ_LS_RECORD = $rec
-        if ($Invincible) { $env:ROGUESQ_LS_GOD = "1" }
-        $env:ROGUESQ_BOOT_TARGET = if ($Craft -ne "") { "level:$Level,$Craft" } else { "level:$Level" }
-        Write-Host "Mission recording -> $rec (boot target $env:ROGUESQ_BOOT_TARGET). Finish or fail the mission, then close the game. A retry records into <name>_try2.rec and so on."
-    } else {
-        $env:ROGUESQ_INPUT_RECORD = $rec
-        $env:ROGUESQ_FORCE_LEVEL = "$Level"
-        if ($Craft -ne "") { $env:ROGUESQ_FORCE_CRAFT = $Craft }
-        Write-Host "Session recording -> $rec (forced level $Level). Drive the menus from the title, play, then close the window."
-    }
+    $env:ROGUESQ_LS_RECORD = $rec
+    if ($Invincible) { $env:ROGUESQ_LS_GOD = "1" }
+    $env:ROGUESQ_BOOT_TARGET = if ($Craft -ne "") { "level:$Level,$Craft" } else { "level:$Level" }
+    Write-Host "Mission recording -> $rec (boot target $env:ROGUESQ_BOOT_TARGET). Finish or fail the mission, then close the game. A retry records into <name>_try2.rec and so on."
     Push-Location $exeDir
     try { & $exe } finally { Pop-Location }
 } finally {

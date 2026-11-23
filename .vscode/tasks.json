@@ -417,7 +417,7 @@
         {
             "label": "Record: Input recording (pick level / craft)",
             "type": "shell",
-            "command": "& .\\tools\\debug\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Kind ${input:rsRecKind} -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
+            "command": "& .\\tools\\debug\\recordings\\record.ps1 -Level ${input:rsRecLevel} -Craft '${input:rsCraft}' -Name '${input:rsRecName}' -Config ${input:rsRecConfig}",
             "options": {
                 "cwd": "${workspaceFolder}",
                 "shell": {
@@ -426,7 +426,7 @@
                 }
             },
             "problemMatcher": [],
-            "detail": "Record controller input into tools/debug/recordings/<id>-<mission>/ (folder created if missing). Mission = lockstep .rec + .hash baseline, boots straight into the level; session = from launch with the level forced. Blank name = <mission>_<timestamp>."
+            "detail": "Boots straight into the level and records the mission into tools/debug/recordings/<id>-<mission>/ (.rec + .hash) at your frame rate. Blank name = <mission>_<timestamp>."
         },
         {
             "label": "Record: Co-op client recording (you fly player 2)",
@@ -1184,19 +1184,9 @@
                 { "label": "16 Beggar's Canyon (bonus)", "value": "16" },
                 { "label": "17 The Death Star Trench Run (bonus)", "value": "17" },
                 { "label": "18 The Battle of Hoth (bonus)", "value": "18" },
-                { "label": "20 CHICKEN (AT-ST, mission recordings only)", "value": "20" }
+                { "label": "20 CHICKEN (AT-ST)", "value": "20" }
             ],
             "default": "0"
-        },
-        {
-            "id": "rsRecKind",
-            "type": "pickString",
-            "description": "Recording kind",
-            "options": [
-                { "label": "Mission (lockstep, .hash baseline, boots into the level)", "value": "mission" },
-                { "label": "Session (from launch, menus included)", "value": "session" }
-            ],
-            "default": "mission"
         },
         {
             "id": "rsRecName",

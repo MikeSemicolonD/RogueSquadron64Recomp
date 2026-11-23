@@ -31,7 +31,7 @@ std::string format_header(const SessionHeader& h)
         kMagic, h.seed, h.level, h.craft, h.difficulty, h.flags0, h.controller, h.expansion,
         h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, h.widescreen, h.draw_pct, h.slot, pilot, h.build.c_str());
 
-    return std::string(buf) + (h.ship.empty() ? "" : "ship=" + h.ship + "\n") + "---\n";
+    return std::string(buf) + (h.ship.empty() ? "" : "ship=" + h.ship + "\n") + (h.hz ? "hz=" + std::to_string(h.hz) + "\n" : "") + "---\n";
 }
 
 static bool parse_hex_bytes(const std::string& hex, uint8_t* out, size_t n) {
@@ -114,6 +114,7 @@ bool parse_header(const std::string& text, SessionHeader* out) {
         else if (key == "widescreen") h.widescreen = v;
         else if (key == "draw") h.draw_pct = v;
         else if (key == "slot") h.slot = v;
+        else if (key == "hz") h.hz = v;
         else if (key == "build") h.build = val;
         else if (key == "ship") h.ship = val;
         else if (key == "pilot" && !parse_hex_bytes(val, h.pilot.data(), h.pilot.size())) return false;
@@ -129,15 +130,24 @@ std::string format_frame(const FrameInput& f)
     snprintf(buf, sizeof(buf), "%u %02X%02X%02X%02X%02X%02X %u", f.frame,
         f.pad[0], f.pad[1], f.pad[2], f.pad[3], f.pad[4], f.pad[5], (unsigned)f.throttle);
 
-    if (!f.head)
-    {
-        return buf;
+    std::string line = buf;
+
+    if (f.head) {
+        char head[8];
+        snprintf(head, sizeof(head), " %02X%02X", (uint8_t)f.head_x, (uint8_t)f.head_y);
+        line += head;
     }
 
-    char head[8];
-    snprintf(head, sizeof(head), " %02X%02X", (uint8_t)f.head_x, (uint8_t)f.head_y);
+    if (f.dt > 0.0f) {
+        uint32_t bits = 0;
+        char dt[16];
 
-    return std::string(buf) + head;
+        memcpy(&bits, &f.dt, 4);
+        snprintf(dt, sizeof(dt), " t%08X", bits);
+        line += dt;
+    }
+
+    return line;
 }
 
 // Recordings written in text mode on Windows end lines with "\r\n"; parse them like "\n".
@@ -155,7 +165,27 @@ static std::string normalize_eol(const char* line) {
 bool parse_frame(const char* raw, FrameInput* out)
 {
 
-    const std::string norm = normalize_eol(raw);
+    std::string norm = normalize_eol(raw);
+    float dt = 0.0f;
+
+    // A high-rate frame ends with " t<8 hex>", its dt's float bits.
+    const size_t t = norm.rfind(" t");
+
+    if (raw && t != std::string::npos && norm.size() == t + 11 && norm.back() == '\n')
+    {
+        char* end = nullptr;
+        const std::string bits_hex = norm.substr(t + 2, 8);
+        const uint32_t bits = (uint32_t)std::strtoul(bits_hex.c_str(), &end, 16);
+
+        if (*end != 0)
+        {
+            return false;
+        }
+
+        memcpy(&dt, &bits, 4);
+        norm.erase(t, 10);
+    }
+
     const char* line = raw ? norm.c_str() : nullptr;
     unsigned frame = 0;
     char hex[13] = {};
@@ -205,6 +235,7 @@ bool parse_frame(const char* raw, FrameInput* out)
     f.head = with_head;
     f.head_x = (int8_t)(uint8_t)(head >> 8);
     f.head_y = (int8_t)(uint8_t)(head & 0xFF);
+    f.dt = dt;
     *out = f;
 
     return true;

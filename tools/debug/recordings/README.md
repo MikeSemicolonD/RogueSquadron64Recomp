@@ -4,12 +4,9 @@ Recorded controller input, one folder per mission, for repeatable test runs: fra
 
 Run outputs (`.replay.hash`, logs) go to `logs/`, not here. Record and replay in the Release build; Debug adds background work that changes frame timing.
 
-## Two kinds of recording
+## Mission recordings
 
-| Kind | Header | Starts at | Env vars | Used for |
-| --- | --- | --- | --- | --- |
-| **Mission** (lockstep) | `rs64-ls v2` | Mission frame 0, fixed 1/30 s step, forced RNG seed | `ROGUESQ_LS_RECORD` / `ROGUESQ_LS_REPLAY` | Bit-exact determinism checks against a `.hash` baseline; co-op runs (`ROGUESQ_MP_PAD`, `ROGUESQ_LS_PAD2_REPLAY`) |
-| **Session** | `rs64-input v3`/`v4` | First input poll after launch (boot and menus included) | `ROGUESQ_INPUT_RECORD` / `ROGUESQ_INPUT_REPLAY` | Visual checks (interpolation, rendering) where the run only has to be close |
+A recording (header `rs64-ls v2`, `ROGUESQ_LS_RECORD` / `ROGUESQ_LS_REPLAY`) starts at mission frame 0 with a forced RNG seed at the logic rate it was recorded at (`hz=` in the header: the TARGET FPS setting, up to 240; 30 when absent). Above 30 it records on real time and stores each frame's dt, so it plays at normal speed even when the frame rate dips, and a replay steps the same dts frame-exact at any `ROGUESQ_SPEED`. Used for bit-exact determinism checks against a `.hash` baseline, exact-frame repros and co-op runs (`ROGUESQ_MP_PAD`, `ROGUESQ_LS_PAD2_REPLAY`).
 
 A mission recording `<name>.rec` sits next to its baseline `<name>.rec.hash`, the per-frame state hashes written while recording. A recording without a `.hash` is input-only.
 
@@ -87,7 +84,6 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 | File | Kind | Contents |
 | --- | --- | --- |
 | `prisons_of_kessel_20261119_200534.rec` (+ `.hash`) | Mission | 18007 frames, X-wing, no deaths, played to the mission end |
-| `kessel.rec` | Session (v3) | Boot, menus, then flying past the searchlight towers and fighting (frame-interpolation checks) |
 
 ### 16 Beggar's Canyon
 
@@ -115,10 +111,9 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
 
   ```powershell
   .\tools\debug\recordings\record.ps1 -Level 5 -Craft 0 -Name jade_moon
-  .\tools\debug\recordings\record.ps1 -Level 9 -Kind session
   ```
 
-- `run-replays.ps1`: replays every mission recording under a folder that has a `.hash` baseline (skips `*_coop.rec` and session recordings) and compares each with `compare_hashes.py`. Writes to `logs/lockstep/<tag>/` with a `summary.csv`; exits 0 only if every replay is IDENTICAL.
+- `run-replays.ps1`: replays every mission recording under a folder that has a `.hash` baseline (skips `*_coop.rec`) and compares each with `compare_hashes.py`. Writes to `logs/lockstep/<tag>/` with a `summary.csv`; exits 0 only if every replay is IDENTICAL.
 
   ```powershell
   .\tools\debug\recordings\run-replays.ps1 -Tag release-a
@@ -163,19 +158,3 @@ python tools\debug\recordings\compare_hashes.py tools\debug\recordings\00-ambush
 Use the `level=` and `craft=` values from the recording's header in `ROGUESQ_BOOT_TARGET`. The replay writes `<rec>.replay.hash` next to the recording and quits at the end; `run-replays.ps1` does all of this and keeps the output in `logs/`.
 
 Several recordings play in one launch as a `;`-separated `ROGUESQ_LS_REPLAY` list, booted with `ROGUESQ_BOOT_TARGET=abort:<level>,<craft>` (the first recording's) and `ROGUESQ_NAV_CHAIN=1`. Set `ROGUESQ_LS_HASH_OUT` to a folder and each recording's `.replay.hash` is written there. Every entry must replay under the same staged mods.
-
-## Record and replay a session recording
-
-```powershell
-$env:ROGUESQ_INPUT_RECORD = "$PWD\tools\debug\recordings\09-prisons-of-kessel\kessel.rec"
-.\build\Release\RogueSquadron64Recomp.exe
-```
-
-Launch without `ROGUESQ_BOOT_TARGET`, play from the title screen, then close the window. Replay with `ROGUESQ_INPUT_REPLAY` set to the same path, the same build and the same env settings. Replay overrides all controller-0 input from launch, holds the last input after the file ends, and closes the game when the recording ends.
-
-Session format: lines are `<ms> <vi> <poll> <buttons hex> <stick x> <stick y>` after the version header.
-
-- **v4** (written now): one line per input poll, full float precision. Replay serves the recorded sample nearest the current wall-clock time, so every input (mouse steering included) lands within half a poll (~8 ms) of when it was recorded and no lag builds up. The recorded stick values already include the mouse smoothing.
-- **v3** (older files, e.g. `kessel.rec`): written only on change and replayed by wall-clock `ms`, with the stick blended between close samples. Mouse steering drifts slightly between runs.
-
-Replay logs `[input-rec] ms=… vi=… recorded_vi=… poll=… recorded_poll=…` every 10 s. The game is not fully deterministic outside mission recordings, so a long session replay can still diverge from the recorded run.

@@ -29,6 +29,9 @@ struct SessionHeader {
     uint32_t widescreen = 0;
     uint32_t draw_pct = 0;
 
+    // Mission logic rate at record time (rs64_logic_hz). 0 = 30 (older files). Above 30 each frame line carries its real dt.
+    uint32_t hz = 0;
+
     // The SELECT GAME pilot slot (0x80130B44), part of the settings hash; 0 in files that predate it, the slot replays use.
     uint32_t slot = 0;
 
@@ -57,6 +60,9 @@ struct FrameInput {
     bool head = false;
     int8_t head_x = 0;
     int8_t head_y = 0;
+
+    // The frame's game-time step in a high-rate recording (written as " t<float bits hex>"); 0 = the fixed 1/hz step.
+    float dt = 0.0f;
 };
 
 std::string format_frame(const FrameInput& f);
@@ -161,9 +167,5 @@ inline bool pause_clock_matches(const std::string& target, const std::string& cl
 
     return clock == target || (clock.size() > target.size() && clock.compare(0, target.size(), target) == 0 && clock[target.size()] == '.');
 }
-
-// Host side (lockstep.cpp): a controller poll through the ROGUESQ_INPUT_RECORD / ROGUESQ_INPUT_REPLAY session recording; `live` polls the real input when not replaying.
-using LiveInput = bool (*)(int controller_num, uint16_t* buttons, float* x, float* y);
-bool session_input(int controller_num, uint16_t* buttons, float* x, float* y, LiveInput live);
 
 }

@@ -28,9 +28,12 @@ static void test_header_roundtrip() {
     CHECK(g.ship.empty() && text.find("ship=") == std::string::npos);
     h.ship = "red_wing";
     CHECK(parse_header(format_header(h), &g) && g.ship == "red_wing");
+    CHECK(g.hz == 0 && text.find("hz=") == std::string::npos);
+    h.hz = 240;
+    CHECK(parse_header(format_header(h), &g) && g.hz == 240 && g.ship == "red_wing");
     SessionHeader old;
     CHECK(parse_header("rs64-ls v2\nseed=1\n---\n", &old));
-    CHECK(old.draw_pct == 0 && old.ship.empty() && old.slot == 0);
+    CHECK(old.draw_pct == 0 && old.ship.empty() && old.slot == 0 && old.hz == 0);
 }
 
 static void test_attempt_path() {
@@ -66,6 +69,16 @@ static void test_frame_roundtrip() {
     CHECK(parse_frame((aimed + "\n").c_str(), &g));
     CHECK(g.head && g.head_x == -127 && g.head_y == 64 && g.throttle == 200);
     CHECK(!parse_frame("1234 80017F810005 200 81\n", &g));
+    CHECK(g.dt == 0.0f);
+
+    f.dt = 1.0f / 237.0f;
+    const std::string timed = format_frame(f);
+    CHECK(timed.rfind("1234 80017F810005 200 8140 t", 0) == 0 && timed.size() == 36);
+    CHECK(parse_frame((timed + "\r\n").c_str(), &g));
+    CHECK(g.dt == f.dt && g.head && g.head_x == -127 && g.throttle == 200);
+    f.head = false;
+    CHECK(parse_frame((format_frame(f) + "\n").c_str(), &g) && g.dt == f.dt && !g.head);
+    CHECK(!parse_frame("1234 80017F810005 200 t3B8ZZZZZ\n", &g));
 }
 
 static void test_parse_frame_rejects_partial() {

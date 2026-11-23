@@ -675,7 +675,7 @@ static void draw_fps_counter()
     static std::once_flag s_replay_once;
 
     std::call_once(s_replay_once, [] {
-        if (recomp::dbg::env_str("ROGUESQ_LS_REPLAY") || recomp::dbg::env_str("ROGUESQ_INPUT_REPLAY")) {
+        if (recomp::dbg::env_str("ROGUESQ_LS_REPLAY")) {
             g_show_fps.store(true);
         }
     });
