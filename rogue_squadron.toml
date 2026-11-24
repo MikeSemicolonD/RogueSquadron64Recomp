@@ -3002,6 +3002,38 @@ func = "updateT16FlightControls"
 before_vram = 0x800BD180
 text = '{ rs64_th_updateT16FlightControls_800BD180(rdram, ctx); }'
 
+# The T-16's target speed (+0xEC) moves by a fixed amount each frame: brake -0.375, boost the throttle amount x 0.6, recovery to cruise +0.3.
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BCF58
+text = '{ rs64_th_updateT16FlightControls_800BCF58(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BCFD0
+text = '{ rs64_th_updateT16FlightControls_800BCFD0(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateT16FlightControls"
+before_vram = 0x800BD114
+text = '{ rs64_th_updateT16FlightControls_800BD114(rdram, ctx); }'
+
+# The Naboo starfighter's target speed (+0xEC) moves by a fixed amount each frame, as the T-16's does: brake, boost (throttle amount x $f24) and recovery to cruise ($f24).
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDD84
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDD84(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDE00
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDE00(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updateNabooStarfighterFlightControls"
+before_vram = 0x800BDE84
+text = '{ rs64_th_updateNabooStarfighterFlightControls_800BDE84(rdram, ctx); }'
+
 [[patches.hook]]
 func = "updateNabooStarfighterFlightControls"
 before_vram = 0x800BDEB8

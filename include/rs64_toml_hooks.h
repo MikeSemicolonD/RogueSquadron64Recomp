@@ -425,6 +425,12 @@ void rs64_th_updateTieInterceptorFlightControls_800BC198(uint8_t* rdram, recomp_
 void rs64_th_updateTieInterceptorFlightControls_800BC1C8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateT16FlightControls_800BD150(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateT16FlightControls_800BD180(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateT16FlightControls_800BCF58(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateT16FlightControls_800BCFD0(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateT16FlightControls_800BD114(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateNabooStarfighterFlightControls_800BDD84(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateNabooStarfighterFlightControls_800BDE00(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updateNabooStarfighterFlightControls_800BDE84(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateNabooStarfighterFlightControls_800BDEB8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateNabooStarfighterFlightControls_800BDEE8(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateSnowSpeederFlightControls_800ABDA8(uint8_t* rdram, recomp_context* ctx);

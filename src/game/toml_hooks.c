@@ -3109,6 +3109,42 @@ void rs64_th_updateT16FlightControls_800BD180(uint8_t* rdram, recomp_context* ct
     ctx->f4.fl *= rs64_rate_scale();
 }
 
+// updateT16FlightControls 0x800BCF58: the target speed's brake step ($f0)
+void rs64_th_updateT16FlightControls_800BCF58(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updateT16FlightControls 0x800BCFD0: its boost step ($f0, throttle amount x 0.6)
+void rs64_th_updateT16FlightControls_800BCFD0(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updateT16FlightControls 0x800BD114: its recovery step to cruise ($f0)
+void rs64_th_updateT16FlightControls_800BD114(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updateNabooStarfighterFlightControls 0x800BDD84: the target speed's brake step ($f0)
+void rs64_th_updateNabooStarfighterFlightControls_800BDD84(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updateNabooStarfighterFlightControls 0x800BDE00: its boost step ($f0, throttle amount x $f24)
+void rs64_th_updateNabooStarfighterFlightControls_800BDE00(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
+// updateNabooStarfighterFlightControls 0x800BDE84: its recovery step to cruise ($f20 += $f24; $f24 is the boost factor too, so $f20 takes the difference)
+void rs64_th_updateNabooStarfighterFlightControls_800BDE84(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f20.fl += ctx->f24.fl * (rs64_rate_scale() - 1.0f);
+}
+
 // updateNabooStarfighterFlightControls 0x800BDEB8: speed-up step
 void rs64_th_updateNabooStarfighterFlightControls_800BDEB8(uint8_t* rdram, recomp_context* ctx) {
 
