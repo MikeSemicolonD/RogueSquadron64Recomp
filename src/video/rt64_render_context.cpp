@@ -301,8 +301,8 @@ extern "C" float rs64_aspect_scale(void)
     return (w > 1.0f && w < 4.0f) ? w : 1.0f;
 }
 
-// The game's frustum culls (scaled via rogue_squadron.toml hooks) assume 4:3, so in widescreen they widen to the window over 4:3, plus slack for
-// wings past a model's bounding sphere (the Calamari intro's far-left V-wing vanished while its wingtip showed). ROGUESQ_CULL_WIDEN=0 disables.
+// The game's frustum culls (scaled via rogue_squadron.toml hooks) assume 4:3, so in widescreen they widen to the window over 4:3. Every aspect gets slack
+// for parts past a model's bounding sphere (the Calamari intro's far-left V-wing vanished while its wingtip showed). ROGUESQ_CULL_WIDEN=0 disables.
 constexpr float kCullEdgeSlack = 1.05f;
 
 extern "C" float rs64_cull_widen(void)
@@ -320,10 +320,10 @@ extern "C" float rs64_cull_widen(void)
     const float window = (shared.swapChainHeight > 0) ? float(shared.swapChainWidth) / float(shared.swapChainHeight) : 0.0f;
     const float widened = std::max(scale, expand ? window * 0.75f : 1.0f);
 
-    return (widened > 1.0f) ? widened * kCullEdgeSlack : 1.0f;
+    return std::max(widened, 1.0f) * kCullEdgeSlack;
 }
 
-// The same slack on the vertical edges, where a banked or rolled craft's wings reach past its bounding sphere too.
+// The same slack on the vertical edges, where a banked or rolled craft's wings or a walker's head reach past its bounding sphere too.
 extern "C" float rs64_cull_widen_y(void)
 {
 
