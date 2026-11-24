@@ -849,28 +849,41 @@ static SDL_Sensor* g_accel_sensor = nullptr;
 static SDL_Sensor* g_gyro_sensor = nullptr;
 static std::atomic<bool> g_pad_gyro{false};
 
-// Tilt steering: screen roll from gravity, low-passed so hand shake and linear acceleration don't jitter the turn.
-static void accel_event(const SDL_Event& e)
+// The browser's motion events arrived (rs64_web_motion): they stand in for the SDL sensors it lacks.
+static std::atomic<bool> g_web_motion{false};
+
+// Tilt steering: screen roll from gravity (m/s^2, device axes), low-passed so hand shake and linear acceleration don't jitter the turn.
+static void accel_sample(float x, float y, float z, bool flipped)
 {
 
     static float s_roll = 0.0f;
-    const bool flipped = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
     float roll = 0.0f;
-    const bool valid = rs64::touch::tilt_angles(e.sensor.data[0], e.sensor.data[1], e.sensor.data[2], flipped, &roll);
+    const bool valid = rs64::touch::tilt_angles(x, y, z, flipped, &roll);
     s_roll += (roll - s_roll) * 0.25f;
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     g_touch.tilt(s_roll, valid);
 }
 
-// Gyro rates for the steering assist and mouse-like up/down. Device axes are portrait-natural: the screen normal is device z (+ = counter-clockwise, so negate
+// Gyro rates (rad/s) for the steering assist and mouse-like up/down. Device axes are portrait-natural: the screen normal is device z (+ = counter-clockwise, so negate
 // for clockwise), and tipping the top edge away turns about screen-right (device -y, flipped on the other landscape side).
-static void gyro_event(const SDL_Event& e)
+static void gyro_sample(float y, float z, bool flipped)
 {
 
-    const bool flipped = SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
     const float s = flipped ? -1.0f : 1.0f;
     std::lock_guard<std::mutex> lk(g_touch_mtx);
-    g_touch.gyro_rate(-e.sensor.data[2], s * e.sensor.data[1]);
+    g_touch.gyro_rate(-z, s * y);
+}
+
+static bool landscape_flipped() {
+    return SDL_GetDisplayOrientation(0) == SDL_ORIENTATION_LANDSCAPE_FLIPPED;
+}
+
+static void accel_event(const SDL_Event& e) {
+    accel_sample(e.sensor.data[0], e.sensor.data[1], e.sensor.data[2], landscape_flipped());
+}
+
+static void gyro_event(const SDL_Event& e) {
+    gyro_sample(e.sensor.data[1], e.sensor.data[2], landscape_flipped());
 }
 
 static SDL_Sensor* open_sensor(SDL_SensorType type) {
@@ -931,7 +944,7 @@ static void update_gyro_sensor() {
 
     std::lock_guard<std::mutex> lk(g_touch_mtx);
     rs64::touch::Config tc = g_touch.config();
-    tc.gyro = want && g_accel_sensor;
+    tc.gyro = want && (g_accel_sensor || g_web_motion.load());
     g_touch.set_config(tc);
 
     if (!g_gyro_sensor) {
@@ -1011,6 +1024,21 @@ extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_paste(const char* text)
     std::lock_guard<std::mutex> lk(g_paste_mtx);
 
     g_pasted = text ? text : "";
+}
+
+// The page's devicemotion events: gravity (m/s^2) and rotation rate (rad/s) on device axes, and whether the screen is the other landscape way up.
+extern "C" EMSCRIPTEN_KEEPALIVE void rs64_web_motion(float ax, float ay, float az, float gy, float gz, int flipped)
+{
+
+    g_web_motion.store(true);
+
+    if (!rs64::touch::gyro_enabled())
+    {
+        return;
+    }
+
+    accel_sample(ax, ay, az, flipped != 0);
+    gyro_sample(gy, gz, flipped != 0);
 }
 
 static std::string take_pasted()

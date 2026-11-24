@@ -5,6 +5,10 @@
 #include "json/json.hpp"
 #include "util/settings_file.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 using nlohmann::json;
 
 namespace rs64::touch {
@@ -40,6 +44,10 @@ namespace rs64::touch {
 
 #ifdef __ANDROID__
         c.enabled = true;
+#endif
+
+#ifdef __EMSCRIPTEN__
+        c.enabled = MAIN_THREAD_EM_ASM_INT({ return matchMedia('(pointer: coarse)').matches ? 1 : 0; }) != 0;
 #endif
 
         std::ifstream f(path);
