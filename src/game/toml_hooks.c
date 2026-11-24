@@ -224,6 +224,13 @@ void rs64_npc_draw_only_mark(int on) {
     s_npc_draw_only_pass = on;
 }
 
+// Set while an object the sphere test rejected is drawn because its model box reaches the view: the test's projected position goes to the screen centre.
+static int s_npc_box_visible;
+
+void rs64_npc_box_visible_mark(int on) {
+    s_npc_box_visible = on;
+}
+
 // Set just before the effect handlers' view tests, which take the draw distance far plane like the render paths. Saved $ra can't tell callers apart: jal doesn't write r31.
 static int s_effect_view_test_next;
 static int s_effect_view_test;
@@ -563,6 +570,11 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001DEA0(uint8_t* rdram, recomp_co
             s_view_slope_y = m / scale;
         }
     }
+
+    if (s_npc_box_visible) {
+        ctx->f10.fl = 0.0f;
+        ctx->f12.fl = 0.0f;
+    }
 }
 
 // transformVec3ToNpcLocalWithScale 0x8001E168: the point test's projected x ($f8) and the scale its y is projected with next ($f20).
@@ -578,6 +590,11 @@ void rs64_th_transformVec3ToNpcLocalWithScale_8001E168(uint8_t* rdram, recomp_co
 
         ctx->f8.fl /= m;
         ctx->f20.fl /= m;
+    }
+
+    if (s_npc_box_visible) {
+        ctx->f8.fl = 0.0f;
+        ctx->f20.fl = 0.0f;
     }
 }
 
@@ -1110,7 +1127,7 @@ void rs64_th_addNpcToVisibilityBucket_8005804C(uint8_t* rdram, recomp_context* c
         return;
     }
 
-    const int drawn = (ctx->r2 != 0) || (rs64_ls_any_session() && rs64_npc_draw_only_pass(rdram, ctx, s_npc_view_args));
+    const int drawn = (ctx->r2 != 0) || (rs64_ls_any_session() && rs64_npc_draw_only_pass(rdram, ctx, s_npc_view_args)) || rs64_npc_box_pass(rdram, ctx, s_npc_view_args);
 
     rs64_pop_note(rdram, ctx, s_npc_view_args[1], s_npc_view_args[2], drawn, s_view_seen, s_view_nx, s_view_ny);
 }

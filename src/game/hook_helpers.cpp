@@ -974,13 +974,8 @@ extern "C" void rs64_unit_range_note(uint8_t* rdram, uint32_t unit, int in_range
 }
 
 // Runs addNpcToVisibilityBucket again with the display widening on, for an object the stock test rejected: it joins the draw list and its LOD updates, but the fields game logic reads go back to their stock values.
-extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+static int npc_draw_only_call(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
 {
-
-    if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
-    {
-        return 0;
-    }
 
     // In a recording or replay the active range stays stock, so a unit out of it is destroyed and respawned at its start every 21 frames: draw it as the stock far plane did, not at all.
     const auto out = s_unit_out_of_range.find(args[2]);
@@ -1011,6 +1006,59 @@ extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, cons
     ww(rdram, model + 0x3Cu, modelFrame);
 
     return drawn != 0;
+}
+
+extern "C" int rs64_npc_draw_only_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    if (!(rs64_cull_widen() > 1.0f) && !(rs64_draw_dist() > 1.0f) && !(rs64_shadow_cull_margin() > 1.0f) && !(rs64_shadow_keep_dist() > 0.0f))
+    {
+        return 0;
+    }
+
+    return npc_draw_only_call(rdram, ctx, args);
+}
+
+// Whether the model's box (min corner at +0x5C, max at +0x68) reaches the view, by the game's own box test with the object's pose made into a matrix the way the draw path does.
+// args are addNpcToVisibilityBucket's: view, object, pose (position, forward, up) and scale.
+static bool npc_box_visible(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    constexpr uint32_t kMat34FromPose = 0x80059B50u;
+    constexpr uint32_t kProjectBoxToView = 0x80065E98u;
+    const uint32_t model = rw(rdram, args[1]);
+
+    for (uint32_t i = 0; i < 3; ++i)
+    {
+        if (!(rf(rdram, model + 0x68u + 4u * i) > rf(rdram, model + 0x5Cu + 4u * i)))
+        {
+            return false;
+        }
+    }
+
+    const uint32_t matrix = RS64_HR_BOX_MATRIX;
+
+    rs64::mips::mips_call(rdram, ctx, kMat34FromPose, { matrix, args[2], args[3] });
+
+    return rs64::mips::mips_call(rdram, ctx, kProjectBoxToView, { args[0], matrix, model + 0x5Cu, model + 0x68u }, { 0u, 0u }).v0 != 0;
+}
+
+// An object the sphere test rejected while part of its model box is on screen (a walker's head, a wingtip) still draws. ROGUESQ_NPC_BOX_CULL=0 disables.
+extern "C" int rs64_npc_box_pass(uint8_t* rdram, recomp_context* ctx, const uint32_t* args)
+{
+
+    static const bool s_on = env_on("ROGUESQ_NPC_BOX_CULL", true);
+
+    if (!s_on || !npc_box_visible(rdram, ctx, args))
+    {
+        return 0;
+    }
+
+    rs64_npc_box_visible_mark(1);
+    const int drawn = npc_draw_only_call(rdram, ctx, args);
+    rs64_npc_box_visible_mark(0);
+
+    return drawn;
 }
 
 // Whether a hill stands between the camera and the world position at pos: the game's terrain height at points along the line. Debug only (ROGUESQ_LOG_POP).
