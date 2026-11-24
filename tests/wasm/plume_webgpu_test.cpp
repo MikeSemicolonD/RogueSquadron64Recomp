@@ -5,7 +5,10 @@
 #include "video/web_shader_convert.h"
 
 #include <cstdio>
+#include <cmath>
 #include <cstring>
+#include <functional>
+#include <random>
 #include <string>
 #include <thread>
 #include <vector>
@@ -640,6 +643,303 @@ namespace {
         return error.empty() ? "" : "device error: " + error;
     }
 
+    // A BLAS built on the GPU through the real build path, read back from the AS heap.
+    struct BuiltBlas {
+        std::unique_ptr<RenderBuffer> asBuffer;
+        std::unique_ptr<RenderAccelerationStructure> as;
+        std::vector<uint8_t> bytes;
+    };
+
+    std::unique_ptr<RenderBuffer> upload(const void* data, uint64_t size)
+    {
+
+        std::unique_ptr<RenderBuffer> buffer = gDevice->createBuffer(RenderBufferDesc::UploadBuffer(std::max<uint64_t>(size, 16), RenderBufferFlag::STORAGE));
+
+        if (size > 0) {
+            std::memcpy(buffer->map(), data, size);
+            buffer->unmap();
+        }
+
+        return buffer;
+    }
+
+    std::string build_blas(const std::vector<float>& pos, const std::vector<uint32_t>& idx, uint32_t stride, BuiltBlas& out, RenderAccelerationStructure* reuse = nullptr)
+    {
+
+        // Positions widened to the stride (in floats); the extra words hold garbage the builder must skip.
+        std::vector<float> wide;
+
+        for (size_t v = 0; v < pos.size() / 3; v++) {
+            for (uint32_t k = 0; k < stride / 4; k++) {
+                wide.push_back((k < 3) ? pos[v * 3 + k] : 12345.0f);
+            }
+        }
+
+        std::unique_ptr<RenderBuffer> index = upload(idx.data(), idx.size() * 4);
+        std::unique_ptr<RenderBuffer> vertex = upload(wide.data(), wide.size() * 4);
+        const RenderBottomLevelASMesh mesh(RenderBufferReference(index.get()), RenderBufferReference(vertex.get()), RenderFormat::R32_UINT, RenderFormat::R32G32B32_FLOAT, uint32_t(idx.size()), uint32_t(pos.size() / 3), stride, true);
+        RenderBottomLevelASBuildInfo info;
+
+        gDevice->setBottomLevelASBuildInfo(info, &mesh, 1, true, false);
+
+        if (reuse == nullptr) {
+            out.asBuffer = as_buffer(was::blasSize(1 << 13));
+            out.as = gDevice->createAccelerationStructure(RenderAccelerationStructureDesc(RenderAccelerationStructureType::BOTTOM_LEVEL, RenderBufferReference(out.asBuffer.get()), std::max<uint64_t>(info.accelerationStructureSize, was::blasSize(1 << 13))));
+            reuse = out.as.get();
+        }
+
+        if (reuse == nullptr)
+        {
+            return "no acceleration structure";
+        }
+
+        std::unique_ptr<RenderBuffer> scratch = gDevice->createBuffer(RenderBufferDesc::DefaultBuffer(info.scratchSize, RenderBufferFlag::ACCELERATION_STRUCTURE_SCRATCH));
+        const auto* web = static_cast<const WebGPUAccelerationStructure*>(reuse);
+        std::unique_ptr<RenderBuffer> readback = gDevice->createBuffer(RenderBufferDesc::ReadbackBuffer(info.accelerationStructureSize));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        list->begin();
+        list->buildBottomLevelAS(reuse, RenderBufferReference(scratch.get()), info);
+        list->copyBufferRegion(RenderBufferReference(readback.get()), RenderBufferReference(static_cast<WebGPUDevice*>(gDevice.get())->asHeap.get(), web->offset), info.accelerationStructureSize);
+        list->end();
+        submit_and_wait(list.get());
+        out.bytes.resize(info.accelerationStructureSize);
+        std::memcpy(out.bytes.data(), readback->map(), out.bytes.size());
+        readback->unmap();
+
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        return error.empty() ? "" : "device error: " + error;
+    }
+
+    void random_tris(uint32_t seed, uint32_t n, std::vector<float>& pos, std::vector<uint32_t>& idx)
+    {
+
+        std::mt19937 rng(seed);
+        std::uniform_real_distribution<float> c(-50.0f, 50.0f);
+        std::uniform_real_distribution<float> d(-3.0f, 3.0f);
+
+        pos.clear();
+        idx.clear();
+
+        for (uint32_t t = 0; t < n; t++) {
+            const float cx = c(rng);
+            const float cy = c(rng);
+            const float cz = c(rng);
+
+            for (int k = 0; k < 3; k++) {
+                idx.push_back(uint32_t(pos.size() / 3));
+                pos.push_back(cx + d(rng));
+                pos.push_back(cy + d(rng));
+                pos.push_back(cz + d(rng));
+            }
+        }
+    }
+
+    // Every primitive once, every node's boxes around its subtree, and the tree tracing like brute force.
+    std::string check_blas(const std::vector<uint8_t>& blas, const std::vector<float>& pos, const std::vector<uint32_t>& idx, uint32_t rays)
+    {
+
+        was::BlasHeader header;
+        const uint32_t n = uint32_t(idx.size() / 3);
+
+        std::memcpy(&header, blas.data(), sizeof(header));
+
+        if ((header.triCount != n) || (header.nodeCount != was::nodeCountFor(n)))
+        {
+            return "header " + std::to_string(header.triCount) + "/" + std::to_string(header.nodeCount) + " for " + std::to_string(n) + " triangles";
+        }
+
+        std::vector<uint32_t> seen(n, 0);
+        const auto* tris = reinterpret_cast<const was::Tri*>(blas.data() + was::blasTriOffset(n));
+
+        for (uint32_t t = 0; t < n; t++) {
+            if (tris[t].primitiveIndex >= n)
+            {
+                return "primitive index out of range";
+            }
+
+            seen[tris[t].primitiveIndex]++;
+        }
+
+        for (uint32_t s : seen) {
+            if (s != 1)
+            {
+                return "a primitive is missing or repeated";
+            }
+        }
+
+        const auto* nodes = reinterpret_cast<const was::Node*>(blas.data() + sizeof(was::BlasHeader));
+
+        // A child's box must hold every vertex under it.
+        std::function<bool(uint32_t, const float*, const float*)> contains = [&](uint32_t word, const float* lo, const float* hi) {
+
+            auto inside = [&](const float* v) {
+
+                for (int a = 0; a < 3; a++) {
+                    if ((v[a] < lo[a] - 1e-3f) || (v[a] > hi[a] + 1e-3f)) return false;
+                }
+
+                return true;
+            };
+
+            if ((word & was::kLeafBit) != 0) {
+                const was::Tri& tri = tris[word & ~was::kLeafBit];
+                return inside(tri.v0) && inside(tri.v1) && inside(tri.v2);
+            }
+
+            const was::Node& node = nodes[word];
+            return contains(node.left, lo, hi) && contains(node.right, lo, hi) && contains(node.left, node.lmin, node.lmax) && contains(node.right, node.rmin, node.rmax);
+        };
+
+        if (n > 1) {
+            const float lo[3] = { -1e30f, -1e30f, -1e30f };
+            const float hi[3] = { 1e30f, 1e30f, 1e30f };
+
+            if (!contains(0, lo, hi))
+            {
+                return "a node's box misses part of its subtree";
+            }
+        }
+
+        std::mt19937 rng(99);
+        std::uniform_real_distribution<float> o(-60.0f, 60.0f);
+        std::uniform_real_distribution<float> d(-1.0f, 1.0f);
+
+        for (uint32_t r = 0; r < rays; r++) {
+            const float org[3] = { o(rng), o(rng), o(rng) };
+            const float dir[3] = { d(rng), d(rng), d(rng) };
+            was::RefHit want;
+            was::RefHit got;
+            const bool w = was::traceReference(pos, idx, org, dir, 0.0f, 1e30f, false, &want);
+            const bool g = was::traceBvh(blas.data(), org, dir, 0.0f, 1e30f, false, &got);
+
+            // Overlapping coplanar triangles tie on t; either one is the closest hit then.
+            if ((w != g) || (w && (std::fabs(want.t - got.t) > 1e-4f * std::max(1.0f, want.t))))
+            {
+                return "ray " + std::to_string(r) + " traces differently (hit " + std::to_string(w) + "/" + std::to_string(g) + " t " + std::to_string(want.t) + "/" + std::to_string(got.t) + ")";
+            }
+
+            if (w && (want.prim != got.prim) && (std::fabs(want.t - got.t) > 1e-6f * std::max(1.0f, want.t)))
+            {
+                return "ray " + std::to_string(r) + " hits primitive " + std::to_string(got.prim) + " instead of " + std::to_string(want.prim);
+            }
+        }
+
+        return "";
+    }
+
+    std::string blas_counts()
+    {
+
+        for (uint32_t n : { 0u, 1u, 2u, 7u, 1000u, 5000u }) {
+            std::vector<float> pos;
+            std::vector<uint32_t> idx;
+            BuiltBlas built;
+
+            random_tris(n + 1, n, pos, idx);
+
+            const std::string build = build_blas(pos, idx, 12, built);
+            const std::string check = build.empty() ? check_blas(built.bytes, pos, idx, 0) : build;
+
+            if (!check.empty())
+            {
+                return "n=" + std::to_string(n) + ": " + check;
+            }
+        }
+
+        return "";
+    }
+
+    std::string blas_trace_matches_bruteforce()
+    {
+
+        std::vector<float> pos;
+        std::vector<uint32_t> idx;
+        BuiltBlas built;
+
+        random_tris(5, 5000, pos, idx);
+
+        const std::string build = build_blas(pos, idx, 12, built);
+
+        return build.empty() ? check_blas(built.bytes, pos, idx, 4000) : build;
+    }
+
+    std::string blas_degenerate_codes()
+    {
+
+        std::vector<float> pos;
+        std::vector<uint32_t> idx;
+
+        // 300 triangles around one centroid, then two coplanar ones.
+        for (uint32_t t = 0; t < 300; t++) {
+            const float s = 1.0f + float(t % 7);
+
+            for (const float v : { -s, 0.0f, 0.0f, s, 0.0f, 0.0f, 0.0f, s * float(1 + t % 3), 0.0f }) {
+                pos.push_back(v);
+            }
+
+            for (int k = 0; k < 3; k++) {
+                idx.push_back(t * 3 + k);
+            }
+
+            // Recentre the third vertex so all centroids coincide.
+            pos[(t * 3 + 2) * 3 + 1] = 0.0f;
+            pos[(t * 3 + 2) * 3 + 2] = s;
+        }
+
+        for (const float v : { 100.0f, 0.0f, 0.0f, 101.0f, 0.0f, 0.0f, 100.0f, 1.0f, 0.0f, 102.0f, 0.0f, 0.0f, 103.0f, 0.0f, 0.0f, 102.0f, 1.0f, 0.0f }) {
+            pos.push_back(v);
+        }
+
+        for (uint32_t k = 900; k < 906; k++) {
+            idx.push_back(k);
+        }
+
+        BuiltBlas built;
+        const std::string build = build_blas(pos, idx, 12, built);
+
+        return build.empty() ? check_blas(built.bytes, pos, idx, 2000) : build;
+    }
+
+    std::string blas_stride16()
+    {
+
+        std::vector<float> pos;
+        std::vector<uint32_t> idx;
+        BuiltBlas built;
+
+        random_tris(16, 1000, pos, idx);
+
+        const std::string build = build_blas(pos, idx, 16, built);
+
+        return build.empty() ? check_blas(built.bytes, pos, idx, 1000) : build;
+    }
+
+    std::string blas_rebuild_same_object()
+    {
+
+        std::vector<float> pos;
+        std::vector<uint32_t> idx;
+        BuiltBlas built;
+
+        random_tris(21, 1000, pos, idx);
+
+        const std::string first = build_blas(pos, idx, 12, built);
+
+        if (!first.empty())
+        {
+            return first;
+        }
+
+        random_tris(22, 10, pos, idx);
+
+        BuiltBlas again;
+        const std::string second = build_blas(pos, idx, 12, again, built.as.get());
+
+        return second.empty() ? check_blas(again.bytes, pos, idx, 500) : second;
+    }
+
 }
 
 int main()
@@ -664,7 +964,12 @@ int main()
         { "swap_chain_clear", swap_chain_clear },
         { "as_create_and_bind", as_create_and_bind },
         { "as_heap_full_fails_cleanly", as_heap_full_fails_cleanly },
-        { "as_build_info", as_build_info }
+        { "as_build_info", as_build_info },
+        { "blas_counts", blas_counts },
+        { "blas_trace_matches_bruteforce", blas_trace_matches_bruteforce },
+        { "blas_degenerate_codes", blas_degenerate_codes },
+        { "blas_stride16", blas_stride16 },
+        { "blas_rebuild_same_object", blas_rebuild_same_object }
     };
 
     int failed = 0;
