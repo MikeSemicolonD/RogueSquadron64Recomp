@@ -1442,6 +1442,7 @@ extern "C" void rs64_ghost_mission_init(uint8_t* rdram, recomp_context* ctx)
 
     Ghost& s = g();
     s.rdram = rdram;
+    rs64_ghost_hud_reset();
     s.in_session = false;
     s.session_level = -1;
     s.pending_result = -1;
