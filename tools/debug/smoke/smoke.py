@@ -702,7 +702,7 @@ def run(args):
                 continue
 
             for rate in cam["rates"]:
-                camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), rate, cam, args.speed)
+                camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), run_spec.get("at", cam["at"]), rate, cam, args.speed)
 
 
 def private_bytes(pid):
@@ -796,21 +796,21 @@ PLAYER_POS = 0x80137DC0
 
 
 def camera_distance(game):
-    """Distance from the drawn camera's world position to player 1's craft."""
+    """Distance from the drawn camera's world position to player 1's craft, and the craft's position."""
 
     cam = struct.unpack(">I", read(game, CAMERA_PTR, 4))[0]
 
     if not ptr_ok(cam):
-        return None
+        return None, None
 
     c = struct.unpack(">3f", read(game, cam + 0x4C, 12))
     p = struct.unpack(">3f", read(game, PLAYER_POS, 12))
 
-    return sum((a - b) ** 2 for a, b in zip(c, p)) ** 0.5
+    return sum((a - b) ** 2 for a, b in zip(c, p)) ** 0.5, p
 
 
-def camera_run(out, level, craft, cheats, rate, spec, speed):
-    """One launch of `craft` on `level` with the game logic at `rate` fps: from mission second spec["at"], each phase {name, buttons, seconds} holds its buttons
+def camera_run(out, level, craft, cheats, at, rate, spec, speed):
+    """One launch of `craft` on `level` with the game logic at `rate` fps: from mission second `at`, each phase {name, buttons, seconds} holds its buttons
     and samples the camera-to-craft distance ten times a game second; the samples of its last spec["settle"] seconds are kept. Results for each rate are merged
     into camera_level<id>_craft<id>/camera.json, so the 30 and 240 fps runs can be compared."""
 
@@ -819,7 +819,7 @@ def camera_run(out, level, craft, cheats, rate, spec, speed):
     def body(game):
 
         enter(game, os.path.dirname(path))
-        game.call("pause_at", {"clock": "mission", "frame": round(spec["at"] * rate), "timeout_s": 240}, 255)
+        game.call("pause_at", {"clock": "mission", "frame": round(at * rate), "timeout_s": 240}, 255)
         chunk = max(1, rate // 10)
         result = {}
 
@@ -830,6 +830,7 @@ def camera_run(out, level, craft, cheats, rate, spec, speed):
                 game.call("press", {"buttons": buttons, "frames": 0})
 
             samples = []
+            craft = []
             steps = round(seconds * rate / chunk)
             keep = round(spec["settle"] * rate / chunk)
 
@@ -837,13 +838,21 @@ def camera_run(out, level, craft, cheats, rate, spec, speed):
                 game.call("step", {"frames": chunk, "clock": "mission", "timeout_s": 120}, 135)
 
                 if i >= steps - keep:
-                    samples.append(camera_distance(game))
+                    distance, pos = camera_distance(game)
+
+                    if distance is not None:
+                        samples.append(distance)
+                        craft.append(pos)
 
             if buttons:
                 game.call("release")
 
-            samples = [s for s in samples if s is not None]
-            result[name] = {"mean": sum(samples) / len(samples), "min": min(samples), "max": max(samples)} if samples else None
+            # A craft that stops moving has left flight (a level's end sequence frames it with its own camera), so the phase measures nothing.
+            if len(set(craft)) <= 1:
+                result[name] = None
+                continue
+
+            result[name] = {"mean": sum(samples) / len(samples), "min": min(samples), "max": max(samples)}
 
         data = load_json(path) if os.path.exists(path) else {}
         data[str(rate)] = result
@@ -1036,7 +1045,7 @@ def compare(args):
         for rate, phases in sorted(data.items(), key=lambda kv: int(kv[0])):
             for name, r in phases.items():
                 if r is None or ref.get(name) is None:
-                    problems.append(f"{rate} fps {name}: no samples")
+                    problems.append(f"{rate} fps {name}: craft stopped, no flight to measure")
                     continue
 
                 cells.append(f"{name}@{rate} {r['mean']:.2f}")
