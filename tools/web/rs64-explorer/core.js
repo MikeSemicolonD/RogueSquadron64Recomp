@@ -722,6 +722,7 @@ Promise.all([ready, scriptsLoaded]).then(() => renderer.setAnimationLoop(() => {
   fly(dt);
   applyAnim(dt);
   applyExhaust(dt);
+  applyLamps(dt);
   applyEffect(dt);
   lightsFxTick();
   lightsPreviewTick();
@@ -2621,6 +2622,8 @@ function setRoot(obj) {
   root = obj;
   anim = null;
   setupExhaust(null);
+  lamps.forEach((l) => l.sprite.material.dispose());
+  lamps = [];
   effect = null;
   sky = null;
   skyColor = null;

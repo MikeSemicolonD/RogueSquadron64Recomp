@@ -1587,6 +1587,160 @@ async function setupAnimations(id, objGroup)
     : null;
 }
 
+// The game's lamps (func_80071308): a model named in its table D_800A0C1C (LAMP_MODELS, name -> flag word) gets a halo on each point of
+// its glwa / glwb / glwc hardpoints, one LAMP_BITS row [bit, hardpoint, kind] per set flag, at most 12 per object.
+const LAMP_MODELS = {
+  i_ltsrc_hi: 0x1, i_lnd_hi: 0x401, imp_shuttle: 0x4, b_lrsp: 0x10, b_cr2_hi: 0x2000, b_cr4_hi: 0x800, b_cr5_hi: 0x2000, b_cr6_hi: 0x800,
+  b_cr7_hi: 0x2000, b_cr8_hi: 0x800, b_20sb_hi: 0x8, b_tec_hi: 0x2, b_km1_hi: 0x20, b_km2_hi: 0x20, b_km3_hi: 0x8, b_km4_hi: 0x20,
+  b_km5new_hi: 0x20, b_km6_hi: 0x20, b_km7_hi: 0x20, i_trd2_hi: 0x8, b_gs1_hi: 0x20, b_gs2_hi: 0x8, i_rfc_hi: 0x8, b_me5_hi: 0x8,
+  b_med_hi: 0x8, b_pwrtran_hi: 0x202, waveskimmer: 0x8, v_hls_hi: 0x4, wrld_dvstr: 0x100, reb_transport: 0x800, raptor: 0x80800,
+  b_trp_hi: 0x100, b_tsp_hi: 0x100, r_blk_hi: 0x1000, b_thcap_hi: 0x800, r_tr_pillar: 0x8000, v_crs_hi: 0x10000, probe_droid: 0x20000,
+  v_ya2_hi: 0x40000, v_ya4_hi: 0x40000
+};
+
+const LAMP_BITS = [
+  [0x1, 'glwa', 0],
+  [0x200, 'glwa', 0xB],
+  [0x20, 'glwa', 5],
+  [0x4000, 'glwa', 0xF],
+  [0x2, 'glwb', 3],
+  [0x400, 'glwb', 0xC],
+  [0x4, 'glwa', 1],
+  [0x4, 'glwb', 1],
+  [0x4, 'glwc', 1],
+  [0x8, 'glwa', 4],
+  [0x10, 'glwa', 6],
+  [0x40, 'glwa', 7],
+  [0x80, 'glwb', 0],
+  [0x100, 'glwa', 0xA],
+  [0x100, 'glwb', 9],
+  [0x800, 'glwa', 0xC],
+  [0x1000, 'glwa', 0xD],
+  [0x2000, 'glwa', 0xE],
+  [0x8000, 'glwa', 0x10],
+  [0x10000, 'glwb', 2],
+  [0x10000, 'glwa', 0xC],
+  [0x20000, 'glwa', 0x11],
+  [0x40000, 'glwa', 0x12],
+  [0x80000, 'glwb', 0x12]
+];
+
+// Counter steps per second while on, fading out, off and fading in (D_800A0AA0); a phase ends when the counter passes 256.
+const LAMP_BLINK = [4096, 3072, 256, 3072];
+
+// Per kind: colour (D_800A0B38), size (D_800A0B84), distance pulled toward the camera (D_800A0BD0), blink rates (none = steady) and the
+// facing bias (0.95 for the kinds built with flag 0x40, else 0.6).
+const LAMP_KINDS = {
+  0x0: [0xffffff, 0.8, 0.3],
+  0x1: [0xffffff, 0.1875, 0.1, LAMP_BLINK],
+  0x2: [0xffffff, 0.1875, 0],
+  0x3: [0xff3c3c, 0.25, 0.1, LAMP_BLINK],
+  0x4: [0xff3c3c, 0.25, 0.3, LAMP_BLINK],
+  0x5: [0xffffff, 0.1875, 0.3],
+  0x6: [0xff3c3c, 0.5, 0.1, LAMP_BLINK],
+  0x7: [0xbeffbe, 0.25, 0.3, LAMP_BLINK],
+  0x9: [0xff3c3c, 0.5, 0.3, [2048, 3072, 384, 3072], 0.95],
+  0xA: [0xffffff, 0.6, 0.3],
+  0xB: [0xf5f5ff, 9, 1],
+  0xC: [0xffff3c, 0.25, 0.1, LAMP_BLINK],
+  0xD: [0xf5f5ff, 2.1, 1],
+  0xE: [0xffffff, 0.25, 0.3, LAMP_BLINK],
+  0xF: [0xff3c3c, 0.1875, 0.3],
+  0x10: [0xffffff, 0.9, 0.4, null, 0.95],
+  0x11: [0xffffff, 0.03, 0.1],
+  0x12: [0xffffff, 0.3, 0.3]
+};
+
+let lamps = [];
+const _lampView = new THREE.Vector3();
+
+async function setupLamps(group, model)
+{
+  if (!artCache.has('lamp:halo'))
+    artCache.set('lamp:halo', rom.read('data/part_spr').then((dv) => keyedAnim('data/part_spr', dv).filter((f) => f.rgba && f.name.startsWith('halo')).slice(0, 1).map((f) => ({ ...f, map: uprightTex(f) }))));
+
+  const [halo] = await artCache.get('lamp:halo');
+  const made = [];
+
+  for (const objGroup of halo ? group.children : [])
+  {
+    const flags = LAMP_MODELS[objGroup.name];
+    const obj = model.hob.objects.find((o) => o.name === objGroup.name);
+    const rig = objGroup.userData.rig;
+    let left = 12;
+
+    if (!flags || !obj || !rig)
+      continue;
+
+    const find = (name) => obj.hardpoints.find((h) => h.name === name);
+
+    for (const [bit, name, kind] of LAMP_BITS.filter((b) => flags & b[0]))
+    {
+      const [color, size, pull, rates = null, bias = 0.6] = LAMP_KINDS[kind];
+
+      // Not the game: six buildings (b_cr5-8_hi, b_km1_hi, b_km5new_hi) are flagged for glwa but only have glwb points, and get their lamps there.
+      const hp = find(name) ?? (name === 'glwa' ? find('glwb') : null);
+
+      for (const p of hp?.points.slice(0, left) ?? [])
+      {
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: halo.map,
+          color,
+          transparent: true,
+          depthWrite: false,
+          fog: false,
+          blending: THREE.AdditiveBlending
+        }));
+
+        // shortcut: the game's size is taken as the halo's half-width in vertex units (its sprite draw is not traced), check against a game frame.
+        sprite.scale.setScalar((size <= 0.5 ? size * 1.3 : size) * 2 * 256);
+        rig.nodes[hp.node].add(sprite);
+        left--;
+
+        made.push({
+          sprite,
+          at: new THREE.Vector3(...p.pos).multiplyScalar(256),
+          dir: new THREE.Vector3(...p.dir).normalize(),
+          pull: pull * 256,
+          rates,
+          bias,
+          mode: 0,
+          count: 0
+        });
+      }
+    }
+  }
+
+  lamps = made;
+}
+
+// The lamp update (func_80072BE0) and its alpha (func_80071928): how far the hardpoint faces the camera, times the blink phase; under 4/255 it is not drawn.
+function applyLamps(dt)
+{
+  for (const l of lamps)
+  {
+    if (l.rates)
+    {
+      l.count += l.rates[l.mode] * dt;
+
+      if (l.count > 256) {
+        l.count = 0;
+        l.mode = (l.mode + 1) & 3;
+      }
+    }
+
+    const phase = [1, 1 - l.count / 256, 0, l.count / 256][l.mode];
+
+    _lampView.copy(l.sprite.parent.worldToLocal(_lampView.copy(camera.position))).sub(l.at).normalize();
+
+    const alpha = THREE.MathUtils.clamp(l.bias + l.dir.dot(_lampView), 0, 1) * phase;
+
+    l.sprite.position.copy(l.at).addScaledVector(_lampView, l.pull);
+    l.sprite.material.opacity = alpha;
+    l.sprite.visible = alpha >= 4 / 255;
+  }
+}
+
 async function showModel(id, objIndex = -1, keepView = false)
 {
   setContext(false);
@@ -1653,6 +1807,7 @@ async function showModel(id, objIndex = -1, keepView = false)
 
   setupFoils(id, group.children[0]);
   setupExhaust(group.children[0]);
+  await setupLamps(group, model);
   await lightsShow(group);
 
   // The slider only appears when this model has more than one LOD, and stops at its last one.
