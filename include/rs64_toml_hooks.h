@@ -392,6 +392,8 @@ void rs64_th_advanceWrappingPhaseAccumulator_800C6710(uint8_t* rdram, recomp_con
 void rs64_th_updateHangarBayScene_800AB8F4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B7900(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_menuControllerInput_800B793C(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_playerVwingMainUpdate_800BA018(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_playerVwingMainUpdate_800BA04C(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updatePlayerVehicleByControlMode_8004D5A4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updateHangarBayScene_800ABAA0(uint8_t* rdram, recomp_context* ctx);
 void rs64_rate_submit(uint8_t* rdram);

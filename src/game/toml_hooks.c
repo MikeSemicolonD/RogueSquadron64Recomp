@@ -3526,6 +3526,18 @@ void rs64_th_menuControllerInput_800B793C(uint8_t* rdram, recomp_context* ctx) {
     if (!rs64_rate_tick()) ctx->r2 -= 1;
 }
 
+// playerVwingMainUpdate (menu overlay) 0x800BA018: the SELECT GAME insignia's fixed spin step ($f2)
+void rs64_th_playerVwingMainUpdate_800BA018(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl *= rs64_rate_scale();
+}
+
+// playerVwingMainUpdate (menu overlay) 0x800BA04C: its eased spin step ($f0)
+void rs64_th_playerVwingMainUpdate_800BA04C(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f0.fl *= rs64_rate_scale();
+}
+
 // updateHangarBayScene 0x800AB8F4 / 0x800ABAA0: the bay's two speeds step toward their target by $f2 per frame.
 void rs64_th_updateHangarBayScene_800AB8F4(uint8_t* rdram, recomp_context* ctx) {
 

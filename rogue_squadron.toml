@@ -1159,6 +1159,17 @@ func = "menuControllerInput"
 before_vram = 0x800B793C
 text = '{ rs64_th_menuControllerInput_800B793C(rdram, ctx); }'
 
+# SELECT GAME's spinning insignia (menu overlay, misnamed): each frame adds a fixed step and an eased step to the spin angle (+0x44).
+[[patches.hook]]
+func = "playerVwingMainUpdate"
+before_vram = 0x800BA018
+text = '{ rs64_th_playerVwingMainUpdate_800BA018(rdram, ctx); }'
+
+[[patches.hook]]
+func = "playerVwingMainUpdate"
+before_vram = 0x800BA04C
+text = '{ rs64_th_playerVwingMainUpdate_800BA04C(rdram, ctx); }'
+
 # The craft-select bay moves between points with speeds that step toward their target by 0.004 / 0.007 per frame.
 [[patches.hook]]
 func = "updateHangarBayScene"
