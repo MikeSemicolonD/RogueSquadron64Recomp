@@ -387,6 +387,8 @@ Probes:
 
 Probes: `ROGUESQ_TEST_DEVICE_LOST_AT_SUBMIT=<n>` (plume_vulkan.cpp) — report device lost on the n-th submit once; `ROGUESQ_LOG_SWAPCHAIN` (plume_vulkan.cpp, rt64_present_queue.cpp) — acquire/present results, swapchain recreation, suspend/resume; `ROGUESQ_DESC_DIAG` (plume_d3d12.cpp, rt64_framebuffer_renderer.cpp) — descriptor-set counts; `ROGUESQ_DIAG_CAP` (rt64_diag_bounds.h) — capacity of bounded diagnostic sets and maps (5000).
 
+A lost Vulkan device prints the driver's `VK_EXT_device_fault` report under the `VK_ERROR_DEVICE_LOST` line: `[plume] device fault:` and one `address <type> 0x…` line per fault address (`read-invalid` / `write-invalid` is a shader reading or writing memory it doesn't own, `ip-fault` the faulting shader instruction). Windows logs the matching driver reset as System events `nvlddmkm` 153 and `Display` 4101. To find which shader and buffer, install the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (only its core component is needed) and run with the Khronos validation layer's GPU-assisted validation on (Vulkan Configurator), which reports out-of-bounds reads whether or not they crash.
+
 ## Audio
 
 Probes (`src/audio/audio.cpp` unless noted):
