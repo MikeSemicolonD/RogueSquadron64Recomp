@@ -100,6 +100,23 @@ std::mutex g_display_mutex;
 UC g_desired;
 bool g_pending = false;
 std::vector<int> g_refresh_rates;
+bool g_demo_interp = false;
+
+// Attract demos replay recorded 30 fps steps, so their logic can't run faster: interpolation fills the frames between instead. Called under g_display_mutex.
+void apply_demo_interp(UC& uc, bool demo, ApplyResult& r)
+{
+
+    const bool want = demo && g_desired.refreshRate == UC::RefreshRate::Original;
+    const UC::RefreshRate rate = want ? interp_rate() : g_desired.refreshRate;
+
+    if (want != g_demo_interp || uc.refreshRate != rate)
+    {
+        uc.refreshRate = rate;
+        r.changed = true;
+    }
+
+    g_demo_interp = want;
+}
 
 constexpr int kStandardRates[] = { 30, 60, 72, 90, 120, 144, 165, 240 };
 
@@ -625,7 +642,7 @@ bool restart_required()
     return g_started && (now.api != g_started->api || now.d3d10 != g_started->d3d10 || now.vr != g_started->vr);
 }
 
-ApplyResult apply_pending(UC& uc)
+ApplyResult apply_pending(UC& uc, bool demo)
 {
 
     std::lock_guard<std::mutex> lock(g_display_mutex);
@@ -637,6 +654,10 @@ ApplyResult apply_pending(UC& uc)
     if (!g_pending)
     {
         g_desired = uc;
+
+        if (g_demo_interp) g_desired.refreshRate = UC::RefreshRate::Original;
+
+        apply_demo_interp(uc, demo, r);
 
         return r;
     }
@@ -659,7 +680,17 @@ ApplyResult apply_pending(UC& uc)
     uc.graphicsAPI = d.graphicsAPI;
     g_pending = false;
 
+    apply_demo_interp(uc, demo, r);
+
     return r;
+}
+
+bool demo_interpolating()
+{
+
+    std::lock_guard<std::mutex> lock(g_display_mutex);
+
+    return g_demo_interp;
 }
 
 void set_refresh_rates(std::vector<int> hz)

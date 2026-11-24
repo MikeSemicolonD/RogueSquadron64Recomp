@@ -489,6 +489,31 @@ static void test_custom_aa_steps_to_fxaa() {
     CHECK(rs64::video::aa_preset(uc) == 1);
 }
 
+// A demo interpolates with interpolation off, and the menu copy and the saved setting stay off.
+static void test_demo_interpolation() {
+
+    UC uc;
+
+    uc.validate();
+    uc.refreshRate = UC::RefreshRate::Original;
+    rs64::video::apply_pending(uc);
+
+    CHECK(rs64::video::apply_pending(uc, true).changed);
+    CHECK(uc.refreshRate != UC::RefreshRate::Original);
+    CHECK(rs64::video::demo_interpolating());
+    CHECK(!rs64::video::apply_pending(uc, true).changed);
+    CHECK(!rs64::video::frame_interpolation_on());
+
+    CHECK(rs64::video::apply_pending(uc, false).changed);
+    CHECK(uc.refreshRate == UC::RefreshRate::Original);
+    CHECK(!rs64::video::demo_interpolating());
+
+    uc.refreshRate = UC::RefreshRate::Manual;
+    rs64::video::apply_pending(uc);
+    CHECK(!rs64::video::apply_pending(uc, true).changed);
+    CHECK(!rs64::video::demo_interpolating());
+}
+
 static void test_graphics_api_cycle() {
     using rs64::video::Display;
     UC uc; uc.validate();
@@ -573,6 +598,7 @@ static void test_wrong_types_skipped() {
 
 int main() {
     test_wrong_types_skipped();
+    test_demo_interpolation();
     test_graphics_api_cycle();
     test_graphics_api_names();
     test_custom_aa_steps_to_fxaa();

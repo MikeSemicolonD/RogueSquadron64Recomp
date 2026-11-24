@@ -1027,7 +1027,7 @@ public:
         diag().log_vi_state();
 
         // Menu display settings: MSAA recreates the render targets first, as the F1 inspector does.
-        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig);
+        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig, rs64::ls::demo_active((const uint8_t*)app->core.RDRAM));
 
         if (menu_cfg.msaa) app->updateMultisampling();
         if (menu_cfg.changed) app->updateUserConfig(menu_cfg.discard_fbs);
@@ -1165,7 +1165,7 @@ private:
     void maybe_persist_video_cfg()
     {
 
-        if (video_cfg_path_.empty() || !app) return;
+        if (video_cfg_path_.empty() || !app || rs64::video::demo_interpolating()) return;
         if ((vi_count_ % 15) != 0) return;                 // ~4x/sec; config changes are rare
 
         std::string cur;
