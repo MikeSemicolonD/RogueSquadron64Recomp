@@ -1450,7 +1450,7 @@ private:
     // in upstream_compat.cpp), so it gets the fast-forward only.
     // ROGUESQ_CINE_FASTFWD=N adds N per present to the submitted-frame counter the cinematic times from (0x8011A890) until
     // the cutscene's end frame, so the timeline completes through the game's own logic.
-    // ROGUESQ_SKIP_DEMO=<n> pins the attract demoId
+    // ROGUESQ_FORCE_DEMO=<n> pins the attract demoId
     // (0x80130B54) and its cycle byte so that demo loops. 0=Tatooine 1=JadeMoon 2=KileII
     // 3=Taloraan 4=Fest 5=TrenchRun.
     void drive_boot_target()
@@ -1481,9 +1481,9 @@ private:
 
         static const int s_ffwd = env_int("ROGUESQ_CINE_FASTFWD", (s_mode != BOOT_OFF) ? 400 : 0);
 
-        static const int s_skip_demo = [](){
+        static const int s_force_demo = [](){
 
-            if (env_str("ROGUESQ_SKIP_DEMO")) return env_int("ROGUESQ_SKIP_DEMO");
+            if (env_str("ROGUESQ_FORCE_DEMO")) return env_int("ROGUESQ_FORCE_DEMO");
 
             return (s_mode == BOOT_DEMO) ? s_demo_arg : -1;
         }();
@@ -1545,8 +1545,8 @@ private:
             g_boot_pulse_start = (s_skip_done || g_active_overlay != 2) ? 0 : 1;
         }
 
-        if (s_skip_demo >= 0 && s_skip_demo <= 5) {
-            diag().wr8(0x130B54, (uint8_t)s_skip_demo);
+        if (s_force_demo >= 0 && s_force_demo <= 5) {
+            diag().wr8(0x130B54, (uint8_t)s_force_demo);
             diag().wr8(0x130B55, 0);
         }
     }
