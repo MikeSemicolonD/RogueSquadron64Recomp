@@ -581,6 +581,8 @@ Here's a list of MCPs that could be useful for this project:
 
 - **[gpeter12](https://github.com/gpeter12)**: Helped to test and verify that the recomp. works on Linux Mint 22.3 - Cinnamon 64-bit in addition to testing and verifying the 'setup.sh' to improve the build process for both developers & non-developers.
 
+- **[nandologia](https://github.com/nandologia)**: Tested and verified that the recomp works in Batocera.
+
 ## Acknowledgements
 
 - **[Dávid Pethes](https://github.com/dpethes/rerogue)**: the rerogue tools and the [satd.sk write-up](https://satd.sk/pages/rs/) documenting the PC build's HOB, HMT, HMP, and MORT formats, which the N64 build shares.
