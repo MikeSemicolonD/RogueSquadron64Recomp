@@ -152,6 +152,12 @@ set_target_properties(game_rate_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQ
 target_include_directories(game_rate_test PRIVATE ${RS64_ROOT}/src)
 
 # Standalone unit test for the dynamic point-light helpers.
+add_executable(webgpu_as_test EXCLUDE_FROM_ALL
+    ${RS64_ROOT}/tests/webgpu_as_test.cpp
+)
+set_target_properties(webgpu_as_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+target_include_directories(webgpu_as_test PRIVATE ${RS64_ROOT}/lib/rt64/src/contrib/plume)
+
 add_executable(rs64_lights_test EXCLUDE_FROM_ALL
     ${RS64_ROOT}/tests/rs64_lights_test.cpp
 )
@@ -216,7 +222,7 @@ add_executable(style_check EXCLUDE_FROM_ALL
 )
 set_target_properties(style_check PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 
-set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test mod_ships_test level_rules_test level_environment_test crosshair_match_test hud_placement_test game_rate_test rs64_lights_test rs64_vr_test menu_layout_test mods_page_test lang_test terrain_edit_test terrain_paint_test mcp_framing_test spirv_web_passes_test recomp_fp_convert_test audio_ring_test static_native_libs_test)
+set(RS64_BASE_TESTS play_link_test lockstep_core_test nav_target_test host_api_test cable_alias_test camera_shots_test mod_levels_test mod_ships_test level_rules_test level_environment_test crosshair_match_test hud_placement_test game_rate_test rs64_lights_test webgpu_as_test rs64_vr_test menu_layout_test mods_page_test lang_test terrain_edit_test terrain_paint_test mcp_framing_test spirv_web_passes_test recomp_fp_convert_test audio_ring_test static_native_libs_test)
 set(RS64_TESTS ${RS64_BASE_TESTS} mp_core_test net_core_test net_link_test relay_core_test relay_client_test)
 
 if (MSVC)
