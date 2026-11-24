@@ -940,6 +940,125 @@ namespace {
         return second.empty() ? check_blas(again.bytes, pos, idx, 500) : second;
     }
 
+    std::vector<uint8_t> read_heap(uint64_t offset, uint64_t size)
+    {
+
+        std::unique_ptr<RenderBuffer> readback = gDevice->createBuffer(RenderBufferDesc::ReadbackBuffer(size));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+        std::vector<uint8_t> bytes(size);
+
+        list->begin();
+        list->copyBufferRegion(RenderBufferReference(readback.get()), RenderBufferReference(static_cast<WebGPUDevice*>(gDevice.get())->asHeap.get(), offset), size);
+        list->end();
+        submit_and_wait(list.get());
+        std::memcpy(bytes.data(), readback->map(), size);
+        readback->unmap();
+        return bytes;
+    }
+
+    // A TLAS over BLASes built by build_blas, built through the real path; its instance table is uploaded the way RT64 does.
+    struct BuiltTlas {
+        std::unique_ptr<RenderBuffer> asBuffer;
+        std::unique_ptr<RenderAccelerationStructure> as;
+    };
+
+    std::string build_tlas(const RenderTopLevelASInstance* instances, uint32_t count, BuiltTlas& out)
+    {
+
+        RenderTopLevelASBuildInfo info;
+
+        gDevice->setTopLevelASBuildInfo(info, instances, count, true, false);
+
+        std::unique_ptr<RenderBuffer> table = upload(info.instancesBufferData.data(), info.instancesBufferData.size());
+        std::unique_ptr<RenderBuffer> scratch = gDevice->createBuffer(RenderBufferDesc::DefaultBuffer(info.scratchSize, RenderBufferFlag::ACCELERATION_STRUCTURE_SCRATCH));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        out.asBuffer = as_buffer(info.accelerationStructureSize);
+        out.as = gDevice->createAccelerationStructure(RenderAccelerationStructureDesc(RenderAccelerationStructureType::TOP_LEVEL, RenderBufferReference(out.asBuffer.get()), info.accelerationStructureSize));
+
+        if (!out.as)
+        {
+            return "no TLAS";
+        }
+
+        list->begin();
+        list->buildTopLevelAS(out.as.get(), RenderBufferReference(scratch.get()), RenderBufferReference(table.get()), info);
+        list->end();
+        submit_and_wait(list.get());
+
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        return error.empty() ? "" : "device error: " + error;
+    }
+
+    std::string tlas_two_instances()
+    {
+
+        const std::vector<float> pos = { 0, 0, 0, 1, 0, 0, 0, 1, 0 };
+        const std::vector<uint32_t> idx = { 0, 1, 2 };
+        BuiltBlas a;
+        BuiltBlas b;
+        std::string error = build_blas(pos, idx, 12, a);
+
+        if (error.empty()) {
+            error = build_blas(pos, idx, 12, b);
+        }
+
+        if (!error.empty())
+        {
+            return error;
+        }
+
+        RenderAffineTransform moved;
+
+        moved.m[0][3] = 10.0f;
+
+        const RenderTopLevelASInstance instances[2] = {
+            RenderTopLevelASInstance(RenderBufferReference(a.asBuffer.get()), 4, 0x01, 0, false, RenderAffineTransform()),
+            RenderTopLevelASInstance(RenderBufferReference(b.asBuffer.get()), 9, 0x02, 0, true, moved)
+        };
+
+        BuiltTlas tlas;
+        error = build_tlas(instances, 2, tlas);
+
+        if (!error.empty())
+        {
+            return error;
+        }
+
+        const auto* web = static_cast<const WebGPUAccelerationStructure*>(tlas.as.get());
+        const std::vector<uint8_t> bytes = read_heap(web->offset, was::tlasSize(2));
+        was::TlasHeader header;
+        was::Instance inst[2];
+
+        std::memcpy(&header, bytes.data(), sizeof(header));
+        std::memcpy(inst, bytes.data() + sizeof(header), sizeof(inst));
+
+        if (header.instanceCount != 2)
+        {
+            return "instance count " + std::to_string(header.instanceCount);
+        }
+
+        const uint64_t blasA = static_cast<const WebGPUAccelerationStructure*>(a.as.get())->offset;
+        const uint64_t blasB = static_cast<const WebGPUAccelerationStructure*>(b.as.get())->offset;
+
+        if ((web->offset + inst[0].blasOffset != blasA) || (web->offset + inst[1].blasOffset != blasB))
+        {
+            return "BLAS offsets are not relative to the TLAS";
+        }
+
+        if ((inst[1].worldToObject[0][3] != -10.0f) || (inst[1].mask != 0x02) || (inst[1].instanceID != 9) || (inst[0].instanceID != 4))
+        {
+            return "wrong instance record";
+        }
+
+        was::BlasHeader blasHeader;
+        const std::vector<uint8_t> blasBytes = read_heap(blasB, sizeof(was::BlasHeader));
+
+        std::memcpy(&blasHeader, blasBytes.data(), sizeof(blasHeader));
+        return (blasHeader.triCount == 1) ? "" : "the second instance's BLAS reads triCount " + std::to_string(blasHeader.triCount);
+    }
+
 }
 
 int main()
@@ -969,7 +1088,8 @@ int main()
         { "blas_trace_matches_bruteforce", blas_trace_matches_bruteforce },
         { "blas_degenerate_codes", blas_degenerate_codes },
         { "blas_stride16", blas_stride16 },
-        { "blas_rebuild_same_object", blas_rebuild_same_object }
+        { "blas_rebuild_same_object", blas_rebuild_same_object },
+        { "tlas_two_instances", tlas_two_instances }
     };
 
     int failed = 0;
