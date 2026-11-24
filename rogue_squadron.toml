@@ -3108,6 +3108,12 @@ func = "updatePlayerDeathSpiral"
 before_vram = 0x800B0F14
 text = '{ rs64_th_updatePlayerDeathSpiral_800B0F14(rdram, ctx); }'
 
+# 60 fps missions: the death fall speed grows x1.01 per frame.
+[[patches.hook]]
+func = "updatePlayerDeathSpiral"
+before_vram = 0x800B0BB0
+text = '{ rs64_th_updatePlayerDeathSpiral_800B0BB0(rdram, ctx); }'
+
 
 # The chase camera speeds up over only the shortest frame time it has seen (+0xA4) and coasts the rest; on PC one short frame shrinks that for good and the camera drags behind.
 [[patches.hook]]

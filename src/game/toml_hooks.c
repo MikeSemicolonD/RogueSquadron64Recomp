@@ -3232,6 +3232,12 @@ void rs64_th_updatePlayerDeathSpiral_800B0F14(uint8_t* rdram, recomp_context* ct
     ctx->f0.fl *= rs64_rate_scale();
 }
 
+// updatePlayerDeathSpiral 0x800B0BB0: fall speed growth factor in $f2
+void rs64_th_updatePlayerDeathSpiral_800B0BB0(uint8_t* rdram, recomp_context* ctx) {
+
+    ctx->f2.fl = rs64_rate_drag(ctx->f2.fl);
+}
+
 // updatePlayerVehicleByControlMode 0x8004D738: follow-speed dead zone; $f20 is the camera's step time
 void rs64_th_updatePlayerVehicleByControlMode_8004D738(uint8_t* rdram, recomp_context* ctx) {
 
