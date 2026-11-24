@@ -453,7 +453,6 @@ void rs64_th_updatePlayerVehicleByControlMode_8004DAE0(uint8_t* rdram, recomp_co
 void rs64_th_npcTurretUpdate_800C96BC(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_audioCueDispatcherNpcHandler_8005CE14(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_audioCueDispatcherNpcHandler_8005CE24(uint8_t* rdram, recomp_context* ctx);
-void rs64_th_audioCueDispatcherNpcHandler_8005D700(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_steerOrientationTowardTarget_8005F3D4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_steerOrientationTowardTarget_8005F3E4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_npcWingmanSteerToward_800D9010(uint8_t* rdram, recomp_context* ctx);
