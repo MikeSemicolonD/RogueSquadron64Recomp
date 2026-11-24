@@ -27,6 +27,12 @@
 #include "audio/audio_web.h"
 #endif
 
+#if defined(__ANDROID__)
+#include <aaudio/AAudio.h>
+#include <algorithm>
+#include <mutex>
+#endif
+
 using recomp::dbg::env_on;
 using recomp::dbg::env_int;
 
@@ -538,6 +544,143 @@ RspUcodeFunc* get_rsp_microcode(const OSTask* task) {
 
 #endif
 
+#if defined(__ANDROID__)
+
+// SDL2's Android outputs drop audio (AAudio writes with a 1 ms timeout) or land on the low-latency mixer, which underruns on Samsung phones.
+// This stream pulls from the game's queue at normal latency instead.
+namespace aaudio {
+
+    static constexpr size_t kRingSamples = 1u << 18;
+
+    static std::mutex s_lock;
+    static std::vector<int16_t> s_ring(kRingSamples);
+    static size_t s_head = 0;
+    static size_t s_count = 0;
+    static AAudioStream* s_stream = nullptr;
+    static std::atomic<bool> s_lost{false};
+
+    static aaudio_data_callback_result_t on_data(AAudioStream*, void*, void* out, int32_t frames)
+    {
+
+        int16_t* dst = static_cast<int16_t*>(out);
+        const size_t want = (size_t)frames * 2;
+        std::lock_guard<std::mutex> lk(s_lock);
+        const size_t n = std::min(want, s_count);
+
+        for (size_t i = 0; i < n; i++) {
+            dst[i] = s_ring[(s_head + i) % kRingSamples];
+        }
+
+        s_head = (s_head + n) % kRingSamples;
+        s_count -= n;
+        std::fill(dst + n, dst + want, (int16_t)0);
+
+        return AAUDIO_CALLBACK_RESULT_CONTINUE;
+    }
+
+    // Headphones plugged or pulled disconnect the stream; the next buffer reopens it.
+    static void on_error(AAudioStream*, void*, aaudio_result_t)
+    {
+        s_lost.store(true);
+    }
+
+    static uint32_t open(int freq)
+    {
+
+        AAudioStreamBuilder* builder = nullptr;
+
+        if (AAudio_createStreamBuilder(&builder) != AAUDIO_OK)
+        {
+            return 0;
+        }
+
+        AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
+        AAudioStreamBuilder_setChannelCount(builder, 2);
+        AAudioStreamBuilder_setSampleRate(builder, freq);
+        AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
+        AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_GAME);
+        AAudioStreamBuilder_setDataCallback(builder, on_data, nullptr);
+        AAudioStreamBuilder_setErrorCallback(builder, on_error, nullptr);
+
+        const aaudio_result_t result = AAudioStreamBuilder_openStream(builder, &s_stream);
+
+        AAudioStreamBuilder_delete(builder);
+
+        if (result != AAUDIO_OK)
+        {
+            SDL_SetError("AAudio: %s", AAudio_convertResultToText(result));
+            s_stream = nullptr;
+
+            return 0;
+        }
+
+        s_lost.store(false);
+        AAudioStream_requestStart(s_stream);
+
+        return 1;
+    }
+
+    static void clear()
+    {
+
+        std::lock_guard<std::mutex> lk(s_lock);
+
+        s_count = 0;
+    }
+
+    // Closing waits for a running data callback, so it must not hold s_lock.
+    static void close()
+    {
+
+        if (s_stream != nullptr) {
+            AAudioStream_close(s_stream);
+            s_stream = nullptr;
+        }
+
+        clear();
+    }
+
+    static int queue(const void* data, uint32_t bytes)
+    {
+
+        const int16_t* src = static_cast<const int16_t*>(data);
+        std::lock_guard<std::mutex> lk(s_lock);
+        const size_t n = std::min((size_t)bytes / 2, kRingSamples - s_count);
+
+        for (size_t i = 0; i < n; i++) {
+            s_ring[(s_head + s_count + i) % kRingSamples] = src[i];
+        }
+
+        s_count += n;
+
+        return 0;
+    }
+
+    static uint32_t queued_bytes()
+    {
+
+        std::lock_guard<std::mutex> lk(s_lock);
+
+        return (uint32_t)(s_count * 2);
+    }
+
+    static bool lost()
+    {
+        return s_lost.load();
+    }
+
+}
+
+#define SDL_OpenAudioDevice(device, capture, desired, obtained, changes) ::rs64::audio::aaudio::open((desired)->freq)
+#define SDL_CloseAudioDevice(id) ::rs64::audio::aaudio::close()
+#define SDL_PauseAudioDevice(id, paused) ((void)0)
+#define SDL_QueueAudio(id, data, bytes) ::rs64::audio::aaudio::queue((data), (bytes))
+#define SDL_GetQueuedAudioSize(id) ::rs64::audio::aaudio::queued_bytes()
+#define SDL_ClearQueuedAudio(id) ::rs64::audio::aaudio::clear()
+#define SDL_GetCurrentAudioDriver() "aaudio"
+
+#endif
+
 static SDL_AudioDeviceID audio_device = 0;
 
 #ifdef __ANDROID__
@@ -726,7 +869,7 @@ void queue_samples(int16_t* samples, size_t num_samples)
 
     static uint32_t s_probe_until = 0;
 
-    if (g_android_audio_reopen.exchange(false))
+    if (g_android_audio_reopen.exchange(false) || rs64::audio::aaudio::lost())
     {
         open_audio_device(audio_sample_rate);
         s_probe_until = SDL_GetTicks() + 10000;
@@ -753,7 +896,16 @@ void queue_samples(int16_t* samples, size_t num_samples)
         // Underrun gauge: the device queue was already dry when this buffer arrived (audible gap).
         static int warm = 0;
 
-        if (++warm > 64 && SDL_GetQueuedAudioSize(audio_device) == 0) ++g_rs64_audio_underruns;
+        const bool dry = (++warm > 64) && (SDL_GetQueuedAudioSize(audio_device) == 0);
+
+        // The AI clock drops the time of a long audio-thread stall, so the queue never refills by itself: pad it with silence or every later jitter pops.
+        if (dry) {
+            static std::vector<int16_t> s_pad;
+
+            ++g_rs64_audio_underruns;
+            s_pad.assign((size_t)audio_sample_rate * 40 / 1000 * 2, 0);
+            queue_device(s_pad.data(), s_pad.size() / 2);
+        }
 
         // Diagnostic (ROGUESQ_LOG_AUDIO_OUT=1): confirm PCM flows + silence vs content.
         static int s_lo = -1;

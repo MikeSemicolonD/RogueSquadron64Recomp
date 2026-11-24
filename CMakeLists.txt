@@ -384,7 +384,7 @@ endif()
 if (ANDROID)
     add_library(RogueSquadron64Recomp SHARED ${RS64_MAIN_SOURCES} ${CMAKE_SOURCE_DIR}/src/main/android_host.cpp)
     set_target_properties(RogueSquadron64Recomp PROPERTIES OUTPUT_NAME main)
-    target_link_libraries(RogueSquadron64Recomp PRIVATE android log)
+    target_link_libraries(RogueSquadron64Recomp PRIVATE android log aaudio)
     target_link_options(RogueSquadron64Recomp PRIVATE -Wl,-z,max-page-size=16384)
 
     # Discord status on Android needs the closed Discord Social SDK, found through Prefab when android/app/libs/discord_partner_sdk.aar exists.
