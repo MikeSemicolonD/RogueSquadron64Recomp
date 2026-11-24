@@ -60,10 +60,17 @@ EOF
 chmod +x "$stage/run.sh"
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# favicon.ico holds one PNG; its directory entry gives the size (byte 14) and offset (byte 18).
+# The 256x256 PNG in favicon.ico is the directory entry whose width byte is 0; size at +8, offset at +12.
 ico="$repo/favicon.ico"
-png_size=$(od -An -t u4 -j 14 -N 4 "$ico" | tr -d ' ')
-png_offset=$(od -An -t u4 -j 18 -N 4 "$ico" | tr -d ' ')
+count=$(od -An -t u2 -j 4 -N 2 "$ico" | tr -d ' ')
+entry=6
+
+for ((i = 0; i < count; i++)); do
+    [ "$(od -An -t u1 -j $((6 + 16 * i)) -N 1 "$ico" | tr -d ' ')" = 0 ] && entry=$((6 + 16 * i))
+done
+
+png_size=$(od -An -t u4 -j $((entry + 8)) -N 4 "$ico" | tr -d ' ')
+png_offset=$(od -An -t u4 -j $((entry + 12)) -N 4 "$ico" | tr -d ' ')
 head -c $((png_offset + png_size)) "$ico" | tail -c "$png_size" > "$stage/rs64recomp.png"
 
 case "$(readelf -h "$exe" | sed -n 's/^ *Machine: *//p')" in
