@@ -75,6 +75,9 @@ struct State {
     // Mission logic rate of this session, and this frame's final dt (rs64_ls_rate_dt) above 30.
     uint32_t hz = 30;
     float dt = 0.0f;
+
+    // The mission plays with normal play's gameplay widenings (a new recording, or a replay of one); false keeps them stock.
+    bool live = false;
 };
 
 constexpr uint32_t kSettingsFlags = 0x80130B4Cu;
@@ -427,6 +430,8 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         h.ship = rs64_ships_flying_id();
         h.hz = ghost ? 30u : (uint32_t)rs64_logic_hz();
         s.hz = h.hz;
+        h.live = ghost ? 0u : 1u;
+        s.live = !ghost;
         s.rec = fopen(path.c_str(), "wb");
 
         if (!s.rec) {
@@ -481,8 +486,9 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
         fresh_start(rdram, entry > 0);
         apply_session(rdram, h);
 
-        // Widescreen and DRAW DISTANCE change the object culls; the first entry's were set at launch, before the level loads.
-        if (entry > 0 && h.draw_pct != 0)
+        // Widescreen and DRAW DISTANCE change the object culls; the first entry's were set at launch, before the level loads. A live recording's
+        // also change its gameplay, so it always takes the recorded ones.
+        if ((entry > 0 || h.live) && h.draw_pct != 0)
         {
             using rs64::video::Display;
 
@@ -500,6 +506,7 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
 
         s.god = h.flags0 & kGodModeBit;
         s.hz = h.hz ? h.hz : 30u;
+        s.live = h.live != 0;
         memcpy(&s.cruise, &h.cruise_bits, 4);
         ww(rdram, 0x80003470u, h.seed);
         const char* out = recomp::dbg::env_str("ROGUESQ_LS_HASH_OUT");
@@ -1010,14 +1017,20 @@ extern "C" void rs64_ls_frame_hash(uint8_t* rdram, recomp_context*)
     }
 }
 
-// A recording or replay is running: its mission must play the same whatever the display settings. Off again once it ends (ROGUESQ_LS_KEEP_RUNNING plays on live).
+// A stock-play session runs (a replay of an older recording): its mission must play the same whatever the display settings, so the gameplay
+// widenings stay off. A new recording and its replay play like normal play. Off again once it ends (ROGUESQ_LS_KEEP_RUNNING plays on live).
 extern "C" int rs64_ls_session(void) {
+    return mode() != Mode::Off && st().active && !st().live;
+}
+
+// Any recording or replay runs, live or stock: the RT shadow view widening stays in the draw-only passes, out of the fields game logic reads.
+extern "C" int rs64_ls_any_session(void) {
     return mode() != Mode::Off && st().active;
 }
 
 // The running session's logic rate, 0 when none runs.
 extern "C" int rs64_ls_hz(void) {
-    return rs64_ls_session() ? (int)st().hz : 0;
+    return rs64_ls_any_session() ? (int)st().hz : 0;
 }
 
 extern "C" int rs64_ls_replaying(void) {

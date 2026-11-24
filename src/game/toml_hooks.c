@@ -355,7 +355,7 @@ void rs64_th_checkAndReturnByteFlagAsU8_80059424(uint8_t* rdram, recomp_context*
     const uint32_t inst = s_pre_test_args[1];
     const uint32_t unit = s_pre_test_args[2];
 
-    if ((ctx->r2 & 0xFF) || !rs64_ls_session() || inst < 0x80000000u || inst >= 0x80800000u || unit < 0x80000000u || unit >= 0x80800000u)
+    if ((ctx->r2 & 0xFF) || !rs64_ls_any_session() || inst < 0x80000000u || inst >= 0x80800000u || unit < 0x80000000u || unit >= 0x80800000u)
     {
         return;
     }
@@ -391,7 +391,7 @@ void rs64_th_advanceNpcOnCurvedPath_8006C018(uint8_t* rdram, recomp_context* ctx
     // A mark with no object to follow ($s2 = 0, placed from its own position at +0x60) is a scorch, not a craft's shadow: the renderer keeps it under ray-traced shadows.
     if (ctx->r18 == 0) rs64_f5_note_ground_mark(mark + 0x20);
 
-    if ((ctx->r2 & 0xFF) || !rs64_ls_session() || list == 0 || MEM_H(0x1E, (gpr)(int32_t)mark) == 0)
+    if ((ctx->r2 & 0xFF) || !rs64_ls_any_session() || list == 0 || MEM_H(0x1E, (gpr)(int32_t)mark) == 0)
     {
         return;
     }
@@ -441,7 +441,7 @@ void rs64_th_advanceNpcOnCurvedPath_8006C018(uint8_t* rdram, recomp_context* ctx
 // transformVec3ToNpcLocalWithScale entry
 void rs64_th_transformVec3ToNpcLocalWithScale_entry(uint8_t* rdram, recomp_context* ctx) {
 
-    s_render_view_test = s_render_view_test_next && (s_npc_draw_only_pass || !rs64_ls_session());
+    s_render_view_test = s_render_view_test_next && (s_npc_draw_only_pass || !rs64_ls_any_session());
     s_render_view_test_next = 0;
     s_effect_view_test = s_effect_view_test_next;
     s_effect_view_test_next = 0;
@@ -1110,7 +1110,7 @@ void rs64_th_addNpcToVisibilityBucket_8005804C(uint8_t* rdram, recomp_context* c
         return;
     }
 
-    const int drawn = (ctx->r2 != 0) || (rs64_ls_session() && rs64_npc_draw_only_pass(rdram, ctx, s_npc_view_args));
+    const int drawn = (ctx->r2 != 0) || (rs64_ls_any_session() && rs64_npc_draw_only_pass(rdram, ctx, s_npc_view_args));
 
     rs64_pop_note(rdram, ctx, s_npc_view_args[1], s_npc_view_args[2], drawn, s_view_seen, s_view_nx, s_view_ny);
 }

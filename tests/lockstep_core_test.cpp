@@ -31,9 +31,12 @@ static void test_header_roundtrip() {
     CHECK(g.hz == 0 && text.find("hz=") == std::string::npos);
     h.hz = 240;
     CHECK(parse_header(format_header(h), &g) && g.hz == 240 && g.ship == "red_wing");
+    CHECK(g.live == 0 && format_header(h).find("live=") == std::string::npos);
+    h.live = 1;
+    CHECK(parse_header(format_header(h), &g) && g.live == 1 && g.hz == 240);
     SessionHeader old;
     CHECK(parse_header("rs64-ls v2\nseed=1\n---\n", &old));
-    CHECK(old.draw_pct == 0 && old.ship.empty() && old.slot == 0 && old.hz == 0);
+    CHECK(old.draw_pct == 0 && old.ship.empty() && old.slot == 0 && old.hz == 0 && old.live == 0);
 }
 
 static void test_attempt_path() {

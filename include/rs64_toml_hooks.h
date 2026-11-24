@@ -114,6 +114,7 @@ void rs64_vr_death_camera(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_addNpcToVisibilityBucket_8005804C(uint8_t* rdram, recomp_context* ctx);
 void rs64_npc_draw_only_mark(int on);
 int rs64_ls_session(void);
+int rs64_ls_any_session(void);
 int rs64_ls_hz(void);
 float rs64_ls_rate_dt(float dt);
 int rs64_logic_hz(void);

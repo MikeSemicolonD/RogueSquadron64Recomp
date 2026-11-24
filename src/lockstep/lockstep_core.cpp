@@ -31,7 +31,7 @@ std::string format_header(const SessionHeader& h)
         kMagic, h.seed, h.level, h.craft, h.difficulty, h.flags0, h.controller, h.expansion,
         h.cheats0, h.cheats1, h.naboo, h.secondary, h.cruise_bits, h.widescreen, h.draw_pct, h.slot, pilot, h.build.c_str());
 
-    return std::string(buf) + (h.ship.empty() ? "" : "ship=" + h.ship + "\n") + (h.hz ? "hz=" + std::to_string(h.hz) + "\n" : "") + "---\n";
+    return std::string(buf) + (h.ship.empty() ? "" : "ship=" + h.ship + "\n") + (h.hz ? "hz=" + std::to_string(h.hz) + "\n" : "") + (h.live ? "live=1\n" : "") + "---\n";
 }
 
 static bool parse_hex_bytes(const std::string& hex, uint8_t* out, size_t n) {
@@ -115,6 +115,7 @@ bool parse_header(const std::string& text, SessionHeader* out) {
         else if (key == "draw") h.draw_pct = v;
         else if (key == "slot") h.slot = v;
         else if (key == "hz") h.hz = v;
+        else if (key == "live") h.live = v;
         else if (key == "build") h.build = val;
         else if (key == "ship") h.ship = val;
         else if (key == "pilot" && !parse_hex_bytes(val, h.pilot.data(), h.pilot.size())) return false;

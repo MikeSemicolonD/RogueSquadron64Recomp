@@ -32,6 +32,9 @@ struct SessionHeader {
     // Mission logic rate at record time (rs64_logic_hz). 0 = 30 (older files). Above 30 each frame line carries its real dt.
     uint32_t hz = 0;
 
+    // 1: recorded with the gameplay widenings of normal play (unit active range, widescreen view tests); 0 = stock (older files).
+    uint32_t live = 0;
+
     // The SELECT GAME pilot slot (0x80130B44), part of the settings hash; 0 in files that predate it, the slot replays use.
     uint32_t slot = 0;
 
