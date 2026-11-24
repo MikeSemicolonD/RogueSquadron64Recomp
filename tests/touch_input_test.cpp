@@ -1336,6 +1336,7 @@ static void test_classify() {
     CHECK(classify(2, "cinematic", false, false) == Context::Cutscene);
     CHECK(classify(-1, "unknown", false, false) == Context::Cutscene);
     CHECK(classify(1, nullptr, false, false) == Context::Carousel);
+    CHECK(classify(1, "attribution", false, false) == Context::Cutscene);
 }
 
 static void test_config_roundtrip() {

@@ -204,12 +204,12 @@ namespace rs64::touch {
             return paused ? Context::PauseMenu : Context::Flight;
         }
 
-        if (overlay != 1)
+        const std::string s = id ? id : "";
+
+        if (overlay != 1 || s == "attribution")
         {
             return Context::Cutscene;
         }
-
-        const std::string s = id ? id : "";
 
         if (s == "menu.passcodes") {
             return Context::Wheel;
