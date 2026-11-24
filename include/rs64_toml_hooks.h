@@ -440,6 +440,10 @@ void rs64_th_updatePlayerCraftPhysics_800B2824(uint8_t* rdram, recomp_context* c
 void rs64_th_updatePlayerDeathSpiral_800B0EF4(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updatePlayerDeathSpiral_800B0F14(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_updatePlayerVehicleByControlMode_8004D738(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updatePlayerVehicleByControlMode_8004D6EC(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updatePlayerVehicleByControlMode_entry(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updatePlayerVehicleByControlMode_8004D7D8(uint8_t* rdram, recomp_context* ctx);
+void rs64_th_updatePlayerVehicleByControlMode_8004DAE0(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_npcTurretUpdate_800C96BC(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_audioCueDispatcherNpcHandler_8005CE14(uint8_t* rdram, recomp_context* ctx);
 void rs64_th_audioCueDispatcherNpcHandler_8005CE24(uint8_t* rdram, recomp_context* ctx);

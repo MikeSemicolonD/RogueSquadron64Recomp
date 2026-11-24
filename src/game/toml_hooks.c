@@ -3219,6 +3219,103 @@ void rs64_th_updatePlayerVehicleByControlMode_8004D5A4(uint8_t* rdram, recomp_co
     MEM_W(0xA4, ctx->r18) = bits;
 }
 
+// updatePlayerVehicleByControlMode 0x8004D6EC: $f0 = distance to the follow point minus the hold distance (+0x94, nonzero for the Falcon), about to be made absolute.
+// The absolute value gives a second resting point on the follow point itself, which the fly-in lands in above 30 fps: the camera then steps past it every
+// frame and bumps the hull. Closer than the hold distance, the camera stops chasing.
+void rs64_th_updatePlayerVehicleByControlMode_8004D6EC(uint8_t* rdram, recomp_context* ctx)
+{
+
+    if (rs64_rate_scale() != 1.0f && ctx->f0.fl < 0.0f)
+    {
+        ctx->f0.fl = 0.0f;
+    }
+}
+
+// The chase camera is drawn just after its follow step, so at 30 fps the picture shows it one 1/30 s step ahead of where it measured its distance.
+// Above 30 the step is shorter and the camera looks farther back; the drawn position (+0x4C, the view matrix's translation) gets the rest of a 30 fps step.
+static uint32_t s_cam_step_owner;
+static float s_cam_step[3];
+
+// The camera given the step last frame, and the step: the drawn position is copied back into the follow state (+0x10) between updates, so it is taken out again.
+static uint32_t s_cam_drawn_owner;
+static float s_cam_drawn_step[3];
+
+// updatePlayerVehicleByControlMode entry (a0 = the camera): undoes last frame's drawn step where the follow state took it on.
+void rs64_th_updatePlayerVehicleByControlMode_entry(uint8_t* rdram, recomp_context* ctx)
+{
+
+    const gpr cam = ctx->r4;
+    int copied = 1;
+
+    if (s_cam_drawn_owner == 0 || s_cam_drawn_owner != (uint32_t)cam)
+    {
+        return;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        copied &= MEM_W(0x10 + 4 * i, cam) == MEM_W(0x4C + 4 * i, cam);
+    }
+
+    if (copied)
+    {
+        union { uint32_t u; float f; } p;
+
+        for (int i = 0; i < 3; ++i) {
+            p.u = (uint32_t)MEM_W(0x10 + 4 * i, cam);
+            p.f -= s_cam_drawn_step[i];
+            MEM_W(0x10 + 4 * i, cam) = (int32_t)p.u;
+        }
+    }
+
+    s_cam_drawn_owner = 0;
+}
+
+// updatePlayerVehicleByControlMode 0x8004D7D8: the follow step just moved the camera by speed (+0x98) x dt ($f20) along the clamped offset at sp+0x70.
+void rs64_th_updatePlayerVehicleByControlMode_8004D7D8(uint8_t* rdram, recomp_context* ctx)
+{
+
+    union { uint32_t u; float f; } speed, d;
+    const float dt = ctx->f20.fl;
+
+    s_cam_step_owner = 0;
+
+    if (rs64_rate_scale() == 1.0f || !(dt < 1.0f / 30.0f))
+    {
+        return;
+    }
+
+    speed.u = (uint32_t)MEM_W(0x98, ctx->r18);
+
+    for (int i = 0; i < 3; ++i) {
+        d.u = (uint32_t)MEM_W(0x70 + 4 * i, ctx->r29);
+        s_cam_step[i] = speed.f * (1.0f / 30.0f - dt) * d.f;
+    }
+
+    s_cam_step_owner = (uint32_t)ctx->r18;
+}
+
+// updatePlayerVehicleByControlMode 0x8004DAE0: the drawn position is final unless the camera snaps onto its object next, which rebuilds it.
+void rs64_th_updatePlayerVehicleByControlMode_8004DAE0(uint8_t* rdram, recomp_context* ctx)
+{
+
+    union { uint32_t u; float f; } p;
+
+    if (s_cam_step_owner != (uint32_t)ctx->r18)
+    {
+        return;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        p.u = (uint32_t)MEM_W(0x4C + 4 * i, ctx->r18);
+        p.f += s_cam_step[i];
+        MEM_W(0x4C + 4 * i, ctx->r18) = (int32_t)p.u;
+        s_cam_drawn_step[i] = s_cam_step[i];
+    }
+
+    s_cam_drawn_owner = s_cam_step_owner;
+    s_cam_step_owner = 0;
+}
+
 // npcTurretUpdate 0x800C96BC: fire cooldown
 void rs64_th_npcTurretUpdate_800C96BC(uint8_t* rdram, recomp_context* ctx) {
 

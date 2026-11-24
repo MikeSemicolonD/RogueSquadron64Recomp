@@ -1,6 +1,6 @@
 """Visual + stat smoke test: every target in manifest.toml captured on exact frames, then compared with a baseline run.
 
-  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf,memory] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
+  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf,memory,camera] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
   python tools/debug/smoke/smoke.py compare [--baseline baseline] [--tag current] [--platforms windows]
   python tools/debug/smoke/smoke.py clean
 
@@ -36,7 +36,7 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 # invincibility: an unflown craft would otherwise crash (the Trench Run walls) and stop the chain on a game over.
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
-SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf", "memory"]
+SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf", "memory", "camera"]
 # The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
 # (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
 # or the one device adb sees.
@@ -694,6 +694,16 @@ def run(args):
         if wanted(f"memory_level{mem['level']:02d}"):
             memory_run(out, mem["level"], mem["loops"], mem["at"], args.speed)
 
+    if "camera" in sections:
+        cam = m["camera"]
+
+        for run_spec in cam["runs"]:
+            if not wanted(f"camera_level{run_spec['level']:02d}_craft{run_spec['craft']:02d}"):
+                continue
+
+            for rate in cam["rates"]:
+                camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), rate, cam, args.speed)
+
 
 def private_bytes(pid):
     """The process's committed private memory (PrivateUsage), which RT64's GPU allocations count toward too."""
@@ -782,6 +792,74 @@ def perf_run(out, level, preset, at, seconds):
     session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}", "ROGUESQ_FIXED_STEP": "0"}, body, 1, settings=settings)
 
 
+PLAYER_POS = 0x80137DC0
+
+
+def camera_distance(game):
+    """Distance from the drawn camera's world position to player 1's craft."""
+
+    cam = struct.unpack(">I", read(game, CAMERA_PTR, 4))[0]
+
+    if not ptr_ok(cam):
+        return None
+
+    c = struct.unpack(">3f", read(game, cam + 0x4C, 12))
+    p = struct.unpack(">3f", read(game, PLAYER_POS, 12))
+
+    return sum((a - b) ** 2 for a, b in zip(c, p)) ** 0.5
+
+
+def camera_run(out, level, craft, cheats, rate, spec, speed):
+    """One launch of `craft` on `level` with the game logic at `rate` fps: from mission second spec["at"], each phase {name, buttons, seconds} holds its buttons
+    and samples the camera-to-craft distance ten times a game second; the samples of its last spec["settle"] seconds are kept. Results for each rate are merged
+    into camera_level<id>_craft<id>/camera.json, so the 30 and 240 fps runs can be compared."""
+
+    path = os.path.join(out, f"camera_level{level:02d}_craft{craft:02d}", "camera.json")
+
+    def body(game):
+
+        enter(game, os.path.dirname(path))
+        game.call("pause_at", {"clock": "mission", "frame": round(spec["at"] * rate), "timeout_s": 240}, 255)
+        chunk = max(1, rate // 10)
+        result = {}
+
+        for phase in spec["phases"]:
+            name, buttons, seconds = phase["name"], phase["buttons"], phase["seconds"]
+
+            if buttons:
+                game.call("press", {"buttons": buttons, "frames": 0})
+
+            samples = []
+            steps = round(seconds * rate / chunk)
+            keep = round(spec["settle"] * rate / chunk)
+
+            for i in range(steps):
+                game.call("step", {"frames": chunk, "clock": "mission", "timeout_s": 120}, 135)
+
+                if i >= steps - keep:
+                    samples.append(camera_distance(game))
+
+            if buttons:
+                game.call("release")
+
+            samples = [s for s in samples if s is not None]
+            result[name] = {"mean": sum(samples) / len(samples), "min": min(samples), "max": max(samples)} if samples else None
+
+        data = load_json(path) if os.path.exists(path) else {}
+        data[str(rate)] = result
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=1)
+
+    # The fresh pilot's hangar does not show every craft the level approves, so the boot takes the level's own craft and the mission flies the forced one.
+    env = {"ROGUESQ_BOOT_TARGET": f"level:{level}", "ROGUESQ_FORCE_CRAFT": str(craft)}
+
+    if cheats:
+        env["ROGUESQ_CHEATS"] = cheats
+
+    session(out, env, body, speed, settings={"targetFramerate": rate, "frameInterpolation": False})
+
+
 def image_diff(a, b, diff_path=None):
 
     ia = Image.open(a).convert("RGB")
@@ -819,6 +897,8 @@ STAT_FIELDS = ["player", "camera", "wingmen", "npcs"]
 PERF_SLOWER = 0.15
 # A memory run whose private bytes grow by more than this per replay of its level fails.
 MEMORY_GROWTH_MB = 16
+# A craft's chase camera fails when its mean distance in a phase at any frame rate differs from the 30 fps run's by more than this fraction.
+CAMERA_SPREAD = 0.05
 
 
 def load_json(path):
@@ -937,6 +1017,34 @@ def compare(args):
 
         was = f"{before:+.1f} -> " if before is not None else ""
         rows.append((f"{rel} ({was}{after:+.1f} MB/loop)", None, [f"grows {after:.1f} MB per loop"] if after > MEMORY_GROWTH_MB else []))
+
+    # The chase camera is judged within the current run: each frame rate against the 30 fps run of the same craft.
+    for root, _, files in os.walk(cur):
+        if "camera.json" not in files:
+            continue
+
+        rel = os.path.relpath(os.path.join(root, "camera.json"), cur)
+        data = load_json(os.path.join(cur, rel))
+        ref = data.get("30")
+        problems = []
+        cells = []
+
+        if not ref:
+            rows.append((rel, None, ["no 30 fps run"]))
+            continue
+
+        for rate, phases in sorted(data.items(), key=lambda kv: int(kv[0])):
+            for name, r in phases.items():
+                if r is None or ref.get(name) is None:
+                    problems.append(f"{rate} fps {name}: no samples")
+                    continue
+
+                cells.append(f"{name}@{rate} {r['mean']:.2f}")
+
+                if abs(r["mean"] / ref[name]["mean"] - 1) > CAMERA_SPREAD:
+                    problems.append(f"{rate} fps {name} {r['mean']:.2f} vs {ref[name]['mean']:.2f} at 30")
+
+        rows.append((f"{rel} ({', '.join(cells)})", None, problems))
 
     failed = 0
 

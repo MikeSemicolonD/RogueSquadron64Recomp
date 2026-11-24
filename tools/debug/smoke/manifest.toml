@@ -102,3 +102,27 @@ ids = [
 level = 3
 loops = 6
 at = 300
+
+# Chase camera at each frame rate: per run, one fixed-step launch per rate (interpolation off) flies the craft from mission second `at` through the phases,
+# holding each phase's buttons (a = boost, z = brake) and sampling the camera-to-craft distance over its last `settle` seconds into camera.json. Compare fails a
+# craft whose mean distance in a phase differs from its 30 fps run by more than CAMERA_SPREAD. Each craft flies a level it is approved for, with the passcode
+# that unlocks it (FARMBOY Falcon, TIEDUP TIE, WOMPRAT! Beggar's Canyon for the T-16). The Naboo starfighter is not covered yet.
+[camera]
+rates = [30, 240]
+at = 10.0
+settle = 1.0
+phases = [
+  { name = "cruise", buttons = [], seconds = 2.0 },
+  { name = "boost", buttons = ["a"], seconds = 3.0 },
+  { name = "brake", buttons = ["z"], seconds = 3.0 },
+]
+runs = [
+  { level = 15, craft = 0 },
+  { level = 13, craft = 1 },
+  { level = 15, craft = 2 },
+  { level = 15, craft = 3 },
+  { level = 3, craft = 4 },
+  { level = 15, craft = 5, cheats = "FARMBOY" },
+  { level = 15, craft = 6, cheats = "TIEDUP" },
+  { level = 16, craft = 7, cheats = "WOMPRAT!" },
+]

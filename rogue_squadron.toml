@@ -3089,6 +3089,28 @@ func = "updatePlayerVehicleByControlMode"
 before_vram = 0x8004D738
 text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D738(rdram, ctx); }'
 
+# Above 30 fps the chase camera of a craft with a hold distance (+0x94, the Falcon) settles onto its follow point and bumps the hull; closer than that distance it stops chasing.
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004D6EC
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D6EC(rdram, ctx); }'
+
+# At 30 fps the chase camera is drawn one 1/30 s follow step ahead of where it measured its distance; above 30 its drawn position gets the rest of that step,
+# so it frames the craft as the 30 fps game does. The drawn position is copied back into the follow state between updates; the entry hook takes that step out again.
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+text = '{ rs64_th_updatePlayerVehicleByControlMode_entry(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004D7D8
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004D7D8(rdram, ctx); }'
+
+[[patches.hook]]
+func = "updatePlayerVehicleByControlMode"
+before_vram = 0x8004DAE0
+text = '{ rs64_th_updatePlayerVehicleByControlMode_8004DAE0(rdram, ctx); }'
+
 
 # 60 fps missions: turret fire cooldown counts frames.
 [[patches.hook]]
