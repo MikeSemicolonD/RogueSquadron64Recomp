@@ -1541,6 +1541,7 @@ static void testHitColorTable() {
     CHECK(movingCraft("xwing#s0.p1.2"));
     CHECK(movingCraft("tie_fighter#s1.p0.0"));
     CHECK(movingCraft("wmvwng#s0.p0.0") && movingCraft("wmxwng#s0.p2.1"));
+    CHECK(movingCraft("t16#s0.p0.0") && movingCraft("c_t16#s0.p1.0"));
     CHECK(!movingCraft("wmvwngx#s0.p0.0"));
     CHECK(!movingCraft("xwing_hangar#s0.p0.0"));
     CHECK(!movingCraft("platform#s0.p0.0"));
