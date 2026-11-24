@@ -27,6 +27,7 @@ constexpr uint32_t kProbeLodTable = 0x8010A600u;
 constexpr uint32_t kProbeSizeBonus = 0x800A6CA8u;
 constexpr uint16_t kSubProbeDroid = 0x0Eu;
 constexpr uint16_t kSubShip = 0x21u;
+constexpr uint16_t kSubMovingSpawn = 0x46u;
 constexpr uint32_t kRootMatrix = 0x80059C24u;
 constexpr uint32_t kUniformRootMatrix = 0x80059B50u;
 constexpr uint32_t kConditionMet = 0x80065828u;
@@ -41,6 +42,7 @@ constexpr uint32_t kSpawnRangeSq = 0x8003A7D8u;
 constexpr uint32_t kCutsceneFlag = 0x80130B39u;
 constexpr uint32_t kDatItemByName = 0x80047B48u;
 constexpr uint32_t kTerrainHeight = 0x80068180u;
+constexpr uint32_t kSplineEval = 0x80018F98u;
 constexpr uint32_t kRegion = RS64_HR_STANDINS;
 constexpr uint32_t kRegionEnd = RS64_HR_STANDINS_END;
 constexpr uint32_t kStateSize = 0x50u;
@@ -101,8 +103,8 @@ bool names_in_item(uint16_t sub)
     }
 }
 
-// Subtypes whose handler picks the model itself (mission overlay strings, the undamaged model): turrets, walkers, droids, radar dish,
-// shield dome, shuttles (npcShuttleUpdate), ground transports (npcGroundTransportUpdate), TIEs (npcTieVariantUpdate), train cars, power-ups.
+// Subtypes whose handler picks the model itself (mission overlay strings, the undamaged model): turrets, walkers, droids, radar dish, shield dome,
+// shuttles (npcShuttleUpdate), ground transports (npcGroundTransportUpdate), TIEs (npcTieVariantUpdate), train cars, power-ups, water craft (npcWaterCraftUpdate).
 uint32_t handler_model_name(uint16_t sub)
 {
 
@@ -137,6 +139,8 @@ uint32_t handler_model_name(uint16_t sub)
     case 0x34: return 0x800A80E8u;
     case 0x35: return 0x800A80F4u;
     case 0x4C: return 0x800A8890u;
+    case 0x3E: return 0x800A83ACu;
+    case 0x40: return 0x800A83BCu;
     default: return 0;
     }
 }
@@ -245,12 +249,12 @@ uint32_t build_instance(uint8_t* rdram, recomp_context* ctx, uint32_t model, uin
     return size;
 }
 
-// A unit with a path (name at item + item[+0x8C], "-" for none) spawns on it (func_800F947C): the spline starts at the path's second point
-// (+0x20 offsets from +0x10, +0x1C the count) facing along (p2 - p0). Walkers stand on the terrain, ground transports keep the DAT's height above it.
+// A unit with a path (name at item + item[+0x8C], +0x90 for moving spawns, "-" for none) spawns on it (func_800F947C): the spline starts at the path's second point (+0x20 offsets from +0x10,
+// +0x1C the count) facing along (p2 - p0). Walkers, moving spawns and water craft sit on the game's height grid (the water surface for boats), ground transports keep the DAT's height above it.
 void place_on_path(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t state)
 {
 
-    const uint32_t offset = rw(rdram, item + 0x8Cu);
+    const uint32_t offset = rw(rdram, item + (rh(rdram, item) == kSubMovingSpawn ? 0x90u : 0x8Cu));
     const uint32_t name = item + offset;
 
     if (offset < 0x90u || offset >= 0x400u || rb(rdram, name) == '-' || rb(rdram, name) == 0) return;
@@ -263,15 +267,44 @@ void place_on_path(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t 
 
     if (pts < 0x80000000u || pts >= 0x80800000u) return;
 
-    const float x = rf(rdram, path + 0x10u) + rf(rdram, pts + 12u);
-    const float y = rf(rdram, path + 0x14u) + rf(rdram, pts + 16u);
-    const float z = rf(rdram, path + 0x18u) + rf(rdram, pts + 20u);
-    const float dx = rf(rdram, pts + 24u) - rf(rdram, pts);
-    const float dz = rf(rdram, pts + 32u) - rf(rdram, pts + 8u);
-    const float len = std::sqrt(dx * dx + dz * dz);
+    float x = rf(rdram, path + 0x10u) + rf(rdram, pts + 12u);
+    float y = rf(rdram, path + 0x14u) + rf(rdram, pts + 16u);
+    float z = rf(rdram, path + 0x18u) + rf(rdram, pts + 20u);
+    float dx = rf(rdram, pts + 24u) - rf(rdram, pts);
+    float dz = rf(rdram, pts + 32u) - rf(rdram, pts + 8u);
 
     const uint16_t sub = rh(rdram, item);
-    const bool walker = sub == 0x0F || sub == 0x1F || sub == 0x47;
+
+    // Water craft start item +0x9C seconds along at item +0x90 units per second (npcWaterCraftUpdate -> initActorAsType1, path +0x24 its length, past the end back to 0),
+    // placed as buildPositionAndCallTransformHelper does: evalCubicSplineAtTime at 0.999t + 0.001, heading from 0.0009 earlier. Spline {count, points, knots} and output go in the state's unused tail.
+    const float t = (sub == 0x3E || sub == 0x40) && rf(rdram, path + 0x24u) > 0.0f ? rf(rdram, item + 0x9Cu) * rf(rdram, item + 0x90u) / rf(rdram, path + 0x24u) : 0.0f;
+
+    if (t > 0.0f && t <= 1.0f)
+    {
+        const uint32_t spline = state + 0x38u;
+        const uint32_t out = state + 0x44u;
+        const float u = t * 0.999f + 0.001f;
+
+        ww(rdram, spline, rw(rdram, path + 0x1Cu));
+        ww(rdram, spline + 4u, pts);
+        ww(rdram, spline + 8u, pts + rw(rdram, path + 0x1Cu) * 12u);
+        mips_call(rdram, ctx, kSplineEval, { spline, float_bits(u - 0.0009f), out });
+
+        const float bx = rf(rdram, out), bz = rf(rdram, out + 8u);
+
+        mips_call(rdram, ctx, kSplineEval, { spline, float_bits(u), out });
+        x = rf(rdram, path + 0x10u) + rf(rdram, out);
+        y = rf(rdram, path + 0x14u) + rf(rdram, out + 4u);
+        z = rf(rdram, path + 0x18u) + rf(rdram, out + 8u);
+        dx = rf(rdram, out) - bx;
+        dz = rf(rdram, out + 8u) - bz;
+
+        for (uint32_t i = 0x38u; i < kStateSize; i += 4) ww(rdram, state + i, 0);
+    }
+
+    const float len = std::sqrt(dx * dx + dz * dz);
+
+    const bool walker = sub == 0x0F || sub == 0x1F || sub == 0x47 || sub == kSubMovingSpawn || sub == 0x3E || sub == 0x40;
     const bool transport = sub == 0x2B || sub == 0x2D || sub == 0x2E;
     const float ground = walker || transport ? mips_call(rdram, ctx, kTerrainHeight, { 0, 0, 0, 0 }, {}, x, z).f0 : 0.0f;
     const float dat_x = rf(rdram, item + 0x10u);
@@ -333,9 +366,9 @@ void build_state(uint8_t* rdram, recomp_context* ctx, uint32_t item, uint32_t st
         return;
     }
 
-    // Walkers (AT-AT, AT-ST, AT-PT handlers) and shuttles draw at a uniform scale of item +0x28 over the model's +0x34, about 10x the item scale for an AT-ST.
+    // Walkers (AT-AT, AT-ST, AT-PT handlers), shuttles and water craft draw at a uniform scale of item +0x28 over the model's +0x34, about 10x the item scale for an AT-ST.
 
-    if (sub == 0x0F || sub == 0x1F || sub == 0x47 || sub == 0x24 || sub == 0x2C || sub == 0x48 || sub == 0x4D) {
+    if (sub == 0x0F || sub == 0x1F || sub == 0x47 || sub == 0x24 || sub == 0x2C || sub == 0x48 || sub == 0x4D || sub == 0x3E || sub == 0x40) {
         const float ws = rf(rdram, item + 0x28u) / rf(rdram, model + 0x34u);
         const float r = rf(rdram, model + 0x44u) * ws;
         uint32_t bits;
@@ -659,11 +692,12 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
     const uint32_t diff = rw(rdram, kDifficulty) & 3u;
     // Items the game still spawns on approach are linked in a DAT grid cell (updateActiveGridCellState 0x8004736C moves a spawned
     // item's entry to the free list): 12-byte entries, +2 next, +4 type (3 = item), +8 the item.
-    static std::vector<uint32_t> s_linked;
+    static std::vector<uint32_t> s_linked, s_was_linked;
     const uint32_t cells = rw(rdram, kDatFile + 0x14u) * rw(rdram, kDatFile + 0x18u);
     const uint32_t heads = rw(rdram, kDatFile + 0x1Cu);
     const uint32_t entries = rw(rdram, kGridEntries);
 
+    s_was_linked.swap(s_linked);
     s_linked.clear();
 
     for (uint32_t c = 0; c < cells && c < 0x10000u; ++c) {
@@ -683,7 +717,6 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
     const bool cutscene = rb(rdram, kCutsceneFlag) != 0;
 
     // The game's spawn window (updateActiveGridCellState): cells within kGridHalfCells of player 1's craft, or of kSpawnRef (the last cutscene's point) while the cutscene bit is set.
-    // A stand-in inside it is a unit the game has not spawned there (a path unit away from its DAT cell), so the game shows nothing yet and neither does the stand-in.
     const uint32_t ref = (rw(rdram, kSpawnRefMode) & 8u) ? kSpawnRef : mips_call(rdram, ctx, kCraftRecord, { 0 }).v0;
     const float scale = rf(rdram, kGridScale);
     const float half = rf(rdram, kGridHalfCells);
@@ -712,9 +745,12 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
     };
 
     for (const Standin& s : s_standins) {
-        if (rh(rdram, s.item + 6u) != 0xFFFFu) continue;
+        // The game first draws a unit the frame after it spawns, so the stand-in covers the spawn frame.
+        const bool spawned = rh(rdram, s.item + 6u) != 0xFFFFu;
+        const bool linked = std::binary_search(s_linked.begin(), s_linked.end(), s.item);
+        const bool spawn_frame = spawned && !linked && std::binary_search(s_was_linked.begin(), s_was_linked.end(), s.item);
 
-        if (!std::binary_search(s_linked.begin(), s_linked.end(), s.item)) continue;
+        if (!spawn_frame && (spawned || !linked)) continue;
 
         // A spent spawn count means destroyed: the game respawns a structure as its wreck, anything else not at all. A shield has no spawn
         // count (its +0x74 is a counter index), so it goes only when shield_down.
@@ -728,7 +764,12 @@ extern "C" void rs64_standins_submit(uint8_t* rdram, recomp_context* ctx)
         // Trigger and wave gates: isDatItemConditionMet reads only objective flags and counters.
         if (!cutscene && mips_call(rdram, ctx, kConditionMet, { s.item }).v0 == 0) continue;
 
-        if (!destroyed && in_spawn_window(s.state)) continue;
+        // The game spawns by the DAT position, so the window can only hold a path unit drawn at its path start with its DAT spot still out of range.
+        // Only walkers (the Gerrard V AT-PT) hide there, as a stand-in you can't shoot; boats, ships and other path units stay drawn until they spawn in place.
+        const uint16_t sub = rh(rdram, s.item);
+        const bool walker = sub == 0x0F || sub == 0x1F || sub == 0x47;
+
+        if (!destroyed && walker && in_spawn_window(s.state)) continue;
 
         // Spinning parts follow mission time; a dish holds its pose while byte 0x801399FB (1 from load_dat_file_assets) is cleared.
         const bool dish_held = rh(rdram, s.item) == kSubRadarDish && rb(rdram, kDishSpinOn) != 1;
