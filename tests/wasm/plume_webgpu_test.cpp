@@ -1,6 +1,7 @@
 // Runs in Chrome (plume_webgpu_test.html, which loads rs64tint first): plume's WebGPU backend against RT64's own shaders.
 
 #include "plume_webgpu.h"
+#include "plume_webgpu_as.h"
 #include "video/web_shader_convert.h"
 
 #include <cstdio>
@@ -18,6 +19,8 @@ extern "C" {
     extern const size_t ComposePSBlobSPIRV_size;
     extern const char TextureCopyPSBlobSPIRV[];
     extern const size_t TextureCopyPSBlobSPIRV_size;
+    extern const char ReadSceneHeaderCSBlobSPIRV[];
+    extern const size_t ReadSceneHeaderCSBlobSPIRV_size;
 }
 
 namespace {
@@ -66,7 +69,10 @@ namespace {
 
         const RenderDeviceCapabilities& caps = gDevice->getCapabilities();
 
-        if (!caps.computeShaders || caps.raytracing || caps.rayQuery || (caps.maxTexturesPerStage < 16))
+        const auto* web = static_cast<const WebGPUDevice*>(gDevice.get());
+        const bool rayQuery = (web->limits.maxStorageBuffersPerShaderStage >= 15) && !web->phone;
+
+        if (!caps.computeShaders || caps.raytracing || (caps.rayQuery != rayQuery) || (caps.maxTexturesPerStage < 16))
         {
             return "unexpected capabilities";
         }
@@ -472,6 +478,168 @@ namespace {
         return error.empty() ? "" : "device error: " + error;
     }
 
+    namespace was = plume::webgpu_as;
+
+    std::unique_ptr<RenderBuffer> as_buffer(uint64_t size)
+    {
+        return gDevice->createBuffer(RenderBufferDesc::AccelerationStructureBuffer(size));
+    }
+
+    // ReadSceneHeaderCS over a bound acceleration structure: its first 16 words.
+    std::string read_scene_words(const RenderAccelerationStructure* as, uint32_t out[16])
+    {
+
+        RenderDescriptorSetBuilder setBuilder;
+
+        setBuilder.begin();
+        setBuilder.addAccelerationStructure(0);
+        setBuilder.addReadWriteByteAddressBuffer(1);
+        setBuilder.end();
+
+        RenderPipelineLayoutBuilder layoutBuilder;
+
+        layoutBuilder.begin();
+        layoutBuilder.addDescriptorSet(setBuilder);
+        layoutBuilder.end();
+
+        std::unique_ptr<RenderPipelineLayout> layout = layoutBuilder.create(gDevice.get());
+        std::unique_ptr<RenderShader> shader = gDevice->createShader(ReadSceneHeaderCSBlobSPIRV, ReadSceneHeaderCSBlobSPIRV_size, "CSMain", RenderShaderFormat::SPIRV);
+        std::unique_ptr<RenderPipeline> pipeline = gDevice->createComputePipeline(RenderComputePipelineDesc(layout.get(), shader.get(), 16, 1, 1));
+        const auto* webPipeline = static_cast<const WebGPUPipeline*>(pipeline.get());
+
+        if (!webPipeline->valid)
+        {
+            return "pipeline invalid: " + webPipeline->error;
+        }
+
+        std::unique_ptr<RenderDescriptorSet> set = setBuilder.create(gDevice.get());
+        std::unique_ptr<RenderBuffer> words = gDevice->createBuffer(RenderBufferDesc::DefaultBuffer(64, RenderBufferFlag::STORAGE | RenderBufferFlag::UNORDERED_ACCESS));
+        std::unique_ptr<RenderBuffer> readback = gDevice->createBuffer(RenderBufferDesc::ReadbackBuffer(64));
+        std::unique_ptr<RenderCommandList> list = gQueue->createCommandList();
+
+        set->setAccelerationStructure(0, as);
+        set->setBuffer(1, words.get());
+        list->begin();
+        list->setComputePipelineLayout(layout.get());
+        list->setPipeline(pipeline.get());
+        list->setComputeDescriptorSet(set.get(), 0);
+        list->dispatch(1, 1, 1);
+        list->copyBuffer(readback.get(), words.get());
+        list->end();
+        submit_and_wait(list.get());
+        std::memcpy(out, readback->map(), 64);
+        readback->unmap();
+        return "";
+    }
+
+    std::string as_create_and_bind()
+    {
+
+        std::unique_ptr<RenderBuffer> blasBuffer = as_buffer(was::blasSize(3));
+        std::unique_ptr<RenderBuffer> tlasBuffer = as_buffer(was::tlasSize(2));
+        std::unique_ptr<RenderAccelerationStructure> blas = gDevice->createAccelerationStructure(RenderAccelerationStructureDesc(RenderAccelerationStructureType::BOTTOM_LEVEL, RenderBufferReference(blasBuffer.get()), was::blasSize(3)));
+        std::unique_ptr<RenderAccelerationStructure> tlas = gDevice->createAccelerationStructure(RenderAccelerationStructureDesc(RenderAccelerationStructureType::TOP_LEVEL, RenderBufferReference(tlasBuffer.get()), was::tlasSize(2)));
+
+        if (!blas || !tlas)
+        {
+            return "no acceleration structure";
+        }
+
+        uint32_t words[16] = {};
+        const std::string read = read_scene_words(tlas.get(), words);
+
+        if (!read.empty())
+        {
+            return read;
+        }
+
+        for (uint32_t w : words) {
+            if (w != 0)
+            {
+                return "an unbuilt TLAS reads non-zero";
+            }
+        }
+
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        return error.empty() ? "" : "device error: " + error;
+    }
+
+    std::string as_heap_full_fails_cleanly()
+    {
+
+        const uint64_t huge = uint64_t(64) << 30;
+        std::unique_ptr<RenderBuffer> buffer = as_buffer(256);
+        std::unique_ptr<RenderAccelerationStructure> as = gDevice->createAccelerationStructure(RenderAccelerationStructureDesc(RenderAccelerationStructureType::BOTTOM_LEVEL, RenderBufferReference(buffer.get()), huge));
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        if (as)
+        {
+            return "a structure larger than the heap was created";
+        }
+
+        return error.empty() ? "no error reported" : "";
+    }
+
+    std::string as_build_info()
+    {
+
+        std::unique_ptr<RenderBuffer> index = gDevice->createBuffer(RenderBufferDesc::DefaultBuffer(3000 * 4, RenderBufferFlag::STORAGE));
+        std::unique_ptr<RenderBuffer> vertex = gDevice->createBuffer(RenderBufferDesc::DefaultBuffer(3000 * 16, RenderBufferFlag::STORAGE));
+        const RenderBottomLevelASMesh mesh(RenderBufferReference(index.get()), RenderBufferReference(vertex.get()), RenderFormat::R32_UINT, RenderFormat::R32G32B32_FLOAT, 3000, 3000, 16, true);
+        RenderBottomLevelASBuildInfo info;
+
+        gDevice->setBottomLevelASBuildInfo(info, &mesh, 1, true, false);
+
+        if ((info.primitiveCount != 1000) || (info.accelerationStructureSize != was::blasSize(1000)) || (info.scratchSize != was::blasScratchSize(1000)))
+        {
+            return "wrong BLAS sizes";
+        }
+
+        const RenderBottomLevelASMesh two[2] = { mesh, mesh };
+        RenderBottomLevelASBuildInfo bad;
+
+        gDevice->setBottomLevelASBuildInfo(bad, two, 2, true, false);
+
+        if ((bad.accelerationStructureSize != 0) || static_cast<WebGPUDevice*>(gDevice.get())->takeErrors().empty())
+        {
+            return "two meshes were accepted";
+        }
+
+        std::unique_ptr<RenderBuffer> blasBuffer = as_buffer(info.accelerationStructureSize);
+        std::unique_ptr<RenderAccelerationStructure> blas = gDevice->createAccelerationStructure(RenderAccelerationStructureDesc(RenderAccelerationStructureType::BOTTOM_LEVEL, RenderBufferReference(blasBuffer.get()), info.accelerationStructureSize));
+        RenderAffineTransform moved;
+
+        moved.m[0][3] = 10.0f;
+
+        const RenderTopLevelASInstance instances[2] = {
+            RenderTopLevelASInstance(RenderBufferReference(blasBuffer.get()), 4, 0x01, 0, false, RenderAffineTransform()),
+            RenderTopLevelASInstance(RenderBufferReference(blasBuffer.get()), 9, 0x02, 0, true, moved)
+        };
+
+        RenderTopLevelASBuildInfo tlasInfo;
+
+        gDevice->setTopLevelASBuildInfo(tlasInfo, instances, 2, true, false);
+
+        if ((tlasInfo.instanceCount != 2) || (tlasInfo.accelerationStructureSize != was::tlasSize(2)) || (tlasInfo.instancesBufferData.size() != sizeof(was::TlasHeader) + 2 * sizeof(was::Instance)))
+        {
+            return "wrong TLAS sizes";
+        }
+
+        was::Instance second;
+
+        std::memcpy(&second, tlasInfo.instancesBufferData.data() + sizeof(was::TlasHeader) + sizeof(was::Instance), sizeof(second));
+
+        if ((second.instanceID != 9) || (second.mask != 0x02) || (second.worldToObject[0][3] != -10.0f) || (second.flags != was::kInstanceCullDisable))
+        {
+            return "wrong instance record";
+        }
+
+        const std::string error = static_cast<WebGPUDevice*>(gDevice.get())->takeErrors();
+
+        return error.empty() ? "" : "device error: " + error;
+    }
+
 }
 
 int main()
@@ -493,7 +661,10 @@ int main()
         { "partial_clear", partial_clear },
         { "draw_texture_copy", draw_texture_copy },
         { "fence_from_worker", fence_from_worker },
-        { "swap_chain_clear", swap_chain_clear }
+        { "swap_chain_clear", swap_chain_clear },
+        { "as_create_and_bind", as_create_and_bind },
+        { "as_heap_full_fails_cleanly", as_heap_full_fails_cleanly },
+        { "as_build_info", as_build_info }
     };
 
     int failed = 0;
