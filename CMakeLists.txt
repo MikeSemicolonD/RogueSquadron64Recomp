@@ -431,7 +431,7 @@ if (EMSCRIPTEN)
         VERBATIM)
 
     # Browser test: cmake --build build-web --target web_shader_convert_test, then open web_shader_convert_test.html from build-web.
-    set(RS64_WEB_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c)
+    set(RS64_WEB_TEST_SPIRV ${CMAKE_BINARY_DIR}/src/shaders/ComposePS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RSPSmoothNormalCS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64ShadowsPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64ShadowsSoftPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64LightsShadowedPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64FogShaftsPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64HazeShaftsPS.hlsl.spirv.c ${CMAKE_BINARY_DIR}/src/shaders/RS64HazeUpsamplePS.hlsl.spirv.c)
     set_source_files_properties(${RS64_WEB_TEST_SPIRV} PROPERTIES GENERATED TRUE)
     add_executable(web_shader_convert_test EXCLUDE_FROM_ALL ${CMAKE_SOURCE_DIR}/tests/wasm/web_shader_convert_test.cpp ${CMAKE_SOURCE_DIR}/src/video/web_shader_convert.cpp ${RS64_WEB_TEST_SPIRV})
     target_include_directories(web_shader_convert_test PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/tools/wgsl)

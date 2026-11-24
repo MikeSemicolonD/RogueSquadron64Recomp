@@ -75,7 +75,7 @@ namespace {
         const RenderDeviceCapabilities& caps = gDevice->getCapabilities();
 
         const auto* web = static_cast<const WebGPUDevice*>(gDevice.get());
-        const bool rayQuery = (web->limits.maxStorageBuffersPerShaderStage >= 15) && !web->phone;
+        const bool rayQuery = (web->limits.maxStorageBuffersPerShaderStage >= 15) && web->textureFormatsTier1 && !web->phone;
 
         if (!caps.computeShaders || caps.raytracing || (caps.rayQuery != rayQuery) || (caps.maxTexturesPerStage < 16))
         {
@@ -1091,7 +1091,7 @@ namespace {
         float u;
         float v;
         uint32_t front;
-        float objOrgX;
+        float objectToWorldX;
     };
 
     static_assert(sizeof(Ray) == 48 && sizeof(GpuHit) == 32, "test record layout");
@@ -1105,8 +1105,7 @@ namespace {
         m[2][2] = 1.0f;
     }
 
-    // Brute force over every instance the mask lets through, the ray taken into each object space; mode 1 sees only even primitives
-    // of non-opaque meshes. Returns the instance id through id.
+    // Brute force over every instance the mask lets through, the ray taken into each object space. Returns the instance id through id.
     bool cpu_trace(const std::vector<SceneInstance>& scene, const Ray& ray, was::RefHit* hit, uint32_t* id)
     {
 
@@ -1115,6 +1114,9 @@ namespace {
 
         for (const SceneInstance& inst : scene) {
             if ((inst.mask & ray.mask) == 0) continue;
+
+            // Non-opaque geometry is skipped unless the ray forces opaque (RS64SoftRayQuery has no candidates).
+            if (!inst.opaque && ((ray.flags & 0x01) == 0)) continue;
 
             float inv[3][4];
             was::affineInverse(inst.objectToWorld, inv);
@@ -1131,7 +1133,6 @@ namespace {
             for (size_t t = 0; t + 2 < inst.idx.size(); t += 3) {
                 const uint32_t prim = uint32_t(t / 3);
 
-                if (!inst.opaque && (ray.mode == 1) && ((prim % 2) != 0)) continue;
 
                 was::RefHit h;
 
@@ -1299,6 +1300,13 @@ namespace {
             {
                 return "ray " + std::to_string(r) + ": barycentrics or front face differ";
             }
+
+            for (const SceneInstance& inst : scene) {
+                if ((inst.id == g.id) && (std::fabs(inst.objectToWorld[0][3] - g.objectToWorldX) > 1e-3f))
+                {
+                    return "ray " + std::to_string(r) + ": object-to-world x " + std::to_string(g.objectToWorldX) + " for instance " + std::to_string(g.id);
+                }
+            }
         }
 
         return (exact && (hitCount == 0)) ? "no ray hit anything" : "";
@@ -1351,13 +1359,17 @@ namespace {
         return compare(two_instance_scene(1500, true), random_rays(44, 3000, 0x10, 0xFF, 0), true);
     }
 
-    std::string rq_non_opaque_candidates()
+    // Non-opaque geometry is invisible unless the ray forces opaque.
+    std::string rq_non_opaque_skipped()
     {
 
         std::vector<SceneInstance> scene = two_instance_scene(1500, false);
 
         scene[0].opaque = false;
-        return compare(scene, random_rays(45, 3000, 0, 0xFF, 1), true);
+
+        const std::string skipped = compare(scene, random_rays(45, 3000, 0, 0xFF, 0), true);
+
+        return skipped.empty() ? compare(scene, random_rays(48, 3000, 0x01, 0xFF, 0), true) : skipped;
     }
 
     // A flat 40x40 grid at y=0 under rays along the axes: none may slip through the box tests.
@@ -1482,7 +1494,7 @@ int main()
         { "rq_mask_filters", rq_mask_filters },
         { "rq_first_hit_ends", rq_first_hit_ends },
         { "rq_cull_back", rq_cull_back },
-        { "rq_non_opaque_candidates", rq_non_opaque_candidates },
+        { "rq_non_opaque_skipped", rq_non_opaque_skipped },
         { "rq_axis_aligned_rays", rq_axis_aligned_rays },
         { "rq_deep_tree", rq_deep_tree }
     };
