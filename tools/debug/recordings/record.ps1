@@ -36,8 +36,15 @@ if ($Name -eq "") {
 if ($Name -notlike "*.rec") { $Name += ".rec" }
 $rec = Join-Path $dir $Name
 if (Test-Path $rec) {
-    Write-Error "$rec already exists; pick another name or delete it first."
-    exit 1
+    $answer = Read-Host "$rec already exists. Overwrite it? [y/N]"
+    if ($answer -notmatch '^(y|yes)$') {
+        Write-Host "Kept the existing recording."
+        exit 1
+    }
+    # Its hash and retry attempts belong to the old take.
+    $stem = [IO.Path]::GetFileNameWithoutExtension($rec)
+    Remove-Item -Force $rec, "$rec.hash" -ErrorAction SilentlyContinue
+    Get-ChildItem -Path $dir -Filter "${stem}_try*.rec*" | Remove-Item -Force
 }
 
 $repo = (Resolve-Path "$PSScriptRoot\..\..\..").Path
