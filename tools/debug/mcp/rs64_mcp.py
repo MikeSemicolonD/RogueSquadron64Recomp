@@ -1493,7 +1493,7 @@ def expect_error(fn, text):
 
 def serve():
     import anyio
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP, Image
 
     import inspect
 
@@ -1508,7 +1508,7 @@ def serve():
 
     # FastMCP runs a plain function on its event loop, so one waiting call (pause_at) held every other tool, close included, until it returned.
     # Every tool also takes instance (default p1), the game it acts on, so one server drives a co-op pair.
-    def tool():
+    def tool(**opts):
         def register(fn):
             @functools.wraps(fn)
             async def run(*args, instance: str = "p1", **kwargs):
@@ -1517,7 +1517,7 @@ def serve():
             sig = inspect.signature(fn)
             extra = inspect.Parameter("instance", inspect.Parameter.KEYWORD_ONLY, default="p1", annotation=str)
             run.__signature__ = sig.replace(parameters=[*sig.parameters.values(), extra])
-            return mcp.tool()(run)
+            return mcp.tool(**opts)(run)
         return register
 
     @tool()
@@ -1831,10 +1831,11 @@ def serve():
         """Start RT64's texture dumper into dir (every texture load, .tmem + RDRAM + json), or stop it with no dir."""
         return game.call("texture_dumping", {"dir": dir} if dir else {})
 
-    @tool()
-    def screenshot(path: str | None = None) -> dict:
-        """PNG of the game window (client area, captured by the game's PID; default path under the session dir). Returns path, size and distinct colour count."""
-        return game.screenshot(path)
+    @tool(structured_output=False)
+    def screenshot(path: str | None = None) -> list:
+        """PNG of the game window (client area, captured by the game's PID; default path under the session dir). Returns the image, plus path, size and distinct colour count."""
+        r = game.screenshot(path)
+        return [Image(path=r["path"]), r]
 
     @tool()
     def view_framebuffer(index: int = -1, depth: bool = False) -> dict:
