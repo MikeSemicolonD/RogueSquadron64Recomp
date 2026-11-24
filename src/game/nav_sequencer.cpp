@@ -197,6 +197,10 @@ struct NavRun
 
     // The way to turn to a stock craft, chosen once so the turn never reverses: 1 right, -1 left, 2 no turn reaches it, 0 not chosen yet.
     int bay_dir = 0;
+    bool skipping_cutscene = false;
+
+    // The intro's seen bit was set only to let START skip it, and goes back to unset once the cutscene ends.
+    bool unset_seen_bit = false;
     int name_toggle = 0;
     int settle = 0;
     int abort_wait = 0;
@@ -510,6 +514,36 @@ static void nav_level(uint8_t* rdram, const char* st)
             if (is(st, "menu.level_select") && available_craft(rdram)) nav_repress(N64_A_BUTTON);
             break;
         case kStepHangar:  // the hangar: turn the bays to the target craft, confirm, until mission
+            // The mission's opening cutscene is skipped with START at once: waiting out the re-press interval let most of it play at a high game speed.
+            // cinematicLoopBody takes START only once the pilot has seen the intro (isUnlockBitSet(level + 6), a bit at 0x8013A663), so a fresh pilot gets the bit for the cutscene.
+            if (g_target.c != 1 && !s_watch_crawl && is(st, "cinematic"))
+            {
+                const uint32_t id = (uint32_t)g_target.a + 6u;
+                const uint32_t seen = 0x13A663u + (id >> 3);
+                const uint8_t bit = (uint8_t)(1u << (id & 7u));
+
+                if (!s_run.skipping_cutscene)
+                {
+                    s_run.skipping_cutscene = true;
+                    s_run.unset_seen_bit = (rdram[seen ^ 3] & bit) == 0;
+                    rdram[seen ^ 3] |= bit;
+                    s_since_press = REPRESS_INTERVAL;
+                }
+
+                nav_repress(N64_START_BUTTON);
+                break;
+            }
+
+            if (s_run.skipping_cutscene && s_run.unset_seen_bit)
+            {
+                const uint32_t id = (uint32_t)g_target.a + 6u;
+
+                rdram[(0x13A663u + (id >> 3)) ^ 3] &= (uint8_t)~(1u << (id & 7u));
+            }
+
+            s_run.skipping_cutscene = false;
+            s_run.unset_seen_bit = false;
+
             if (nav_step_craft(rdram, g_target.b, "level"))
             {
                 // hangar target: stop here with the craft showing, once the opening camera pan is over and the hangar reads input (state 3).

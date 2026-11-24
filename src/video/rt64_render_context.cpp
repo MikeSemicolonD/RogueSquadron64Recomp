@@ -1517,12 +1517,24 @@ private:
         {
             static bool s_seen_cine = false, s_skip_done = false;
 
+            // Past frame 95 the boot intro takes START only once the pilot has seen it (isUnlockBitSet(0), bit 0 of 0x8013A663); a fresh pilot gets the bit while it plays.
+            constexpr uint32_t kSeenBits = 0x13A663u;
+            static bool s_unset_seen = false;
+
+            if (g_active_overlay == 2 && !s_seen_cine && !s_skip_done)
+            {
+                s_unset_seen = (diag().rd8(kSeenBits) & 1u) == 0;
+                diag().wr8(kSeenBits, diag().rd8(kSeenBits) | 1u);
+            }
+
             if (g_active_overlay == 2) s_seen_cine = true;
 
             if (!s_skip_done && s_seen_cine && g_active_overlay == 1)
             {
                 s_skip_done = true;
                 g_boot_pulse_start = 0;
+
+                if (s_unset_seen) diag().wr8(kSeenBits, diag().rd8(kSeenBits) & ~1u);
 
                 fprintf(stderr, "[boot-skip] menu handoff reached; START pulse off\n");
                 fflush(stderr);
