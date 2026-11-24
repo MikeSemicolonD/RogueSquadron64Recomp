@@ -704,7 +704,7 @@ static void open_audio_device(uint32_t freq)
 
     SDL_PauseAudioDevice(audio_device, 0);
 
-    fprintf(stderr, "[Audio] device OPENED freq=%u on %s (output path live)\n", freq, (device != nullptr) ? device : "the default output");
+    fprintf(stderr, "[Audio] device OPENED freq=%u on %s, %s driver (output path live)\n", freq, (device != nullptr) ? device : "the default output", SDL_GetCurrentAudioDriver());
     fflush(stderr);
 }
 

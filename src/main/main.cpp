@@ -184,6 +184,13 @@ ultramodern::gfx_callbacks_t::gfx_data_t create_gfx()
 
 #endif
 
+    // Muted (--mute, every test launch): SDL's dummy output plays the queue back in real time without the sound card, whose opening and closing clicks other programs' audio.
+    const char* gain = recomp::dbg::env_str("ROGUESQ_AUDIO_GAIN");
+
+    if (gain && atof(gain) == 0.0) {
+        SDL_SetHint(SDL_HINT_AUDIODRIVER, "dummy");
+    }
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO | SDL_INIT_SENSOR) != 0)
     {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
