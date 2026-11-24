@@ -87,6 +87,7 @@ State& st() {
     return s;
 }
 
+// ROGUESQ_LS_SEED for record mode; 0 keeps the game's own RNG state.
 uint32_t ls_seed() {
 
     static const uint32_t seed = []() {
@@ -95,16 +96,14 @@ uint32_t ls_seed() {
 
         if (!e)
         {
-            return 1u;
+            return 0u;
         }
 
         const uint32_t v = parse_seed(e);
 
         if (v == 0)
         {
-            fprintf(stderr, "[ls] ROGUESQ_LS_SEED=%s is not a nonzero number; keeping seed 1\n", e);
-
-            return 1u;
+            fprintf(stderr, "[ls] ROGUESQ_LS_SEED=%s is not a nonzero number; keeping the game's own seed\n", e);
         }
 
         return v;
@@ -418,7 +417,8 @@ extern "C" void rs64_ls_on_mission_init(uint8_t* rdram, recomp_context*)
     if (s.mode == Mode::Record)
     {
         const std::string path = attempt_path(recomp::dbg::env_str("ROGUESQ_LS_RECORD"), each ? 1 : s.missions);
-        SessionHeader h = read_session(rdram, ghost ? rw(rdram, 0x80003470u) : seed);
+        // The game's own RNG state is saved and the replay restores it, so a recorded mission plays as randomly as an unrecorded one; ROGUESQ_LS_SEED forces one.
+        SessionHeader h = read_session(rdram, (ghost || seed == 0) ? rw(rdram, 0x80003470u) : seed);
         h.build = __DATE__ " " __TIME__;
         h.widescreen = (uint32_t)rs64::video::display_value(rs64::video::Display::Widescreen);
         h.draw_pct = (uint32_t)std::lround(rs64_draw_dist_setting() * 100.0f);
