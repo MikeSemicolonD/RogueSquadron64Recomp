@@ -17,6 +17,10 @@ struct Imposter {
     uint32_t ctx = 0;
     uint32_t blk = 0;
 
+    // The NPC slot it spawned in. The game clears the record's own slot field (0xFFFF) when it tears the slot down (a failed mission's ending does), but the spawn's reference
+    // on the context is still held then, so the release must not depend on the record: a reference left behind makes the mission cleanup loop on that slot forever.
+    uint32_t slot = 0xFFFFu;
+
     // The wingman model the imposter spawned with (0 = X-wing, the only one with S-foil nodes).
     int model = -1;
 
@@ -229,6 +233,7 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
     }
 
     rdram[(npc + 0x1A - 0x80000000u) ^ 3] += 1;
+    s.slot = slot;
     ww(rdram, kImposterRec + 0xE0, blk);
     ww(rdram, kImposterRec + 0xE4, npc);
 
@@ -258,6 +263,42 @@ extern "C" void rs64_imposter_frame(uint8_t* rdram, recomp_context* ctx)
 }
 
 // Drops the spawn's reference before the mission's slots are torn down; destroyNpcContextArrays spins until every slot is free, and nothing else releases a record outside the level's DAT list.
+// endMissionCleanup (destroyTransientNpcSlots) destroys the NPC slots one at a time and skips any whose context still has a reference (+0x1A), looping until the list is
+// empty. The imposter is spawned and removed several times a mission (each time the other player is shot down and comes back), and a count it leaves on a shared
+// context is never given back: the cleanup then loops on that slot forever (a black screen at 100% CPU on the host). The mission is over when this runs, so every
+// reference left on a slot in the cleanup's own list is cleared.
+static void clear_leftover_npc_refs(uint8_t* rdram)
+{
+
+    const uint32_t table = rw(rdram, 0x80130BB0u);
+
+    if (table < 0x80000000u || table >= 0x80800000u) {
+        return;
+    }
+
+    uint32_t cleared = 0;
+    uint32_t walked = 0;
+
+    for (uint32_t idx = rh(rdram, table + 1u * 8u + 6u); idx != 0xFFFFu && idx < kNpcSlots && walked < kNpcSlots; idx = rh(rdram, table + idx * 8u + 6u), ++walked)
+    {
+        const uint32_t npc = rw(rdram, table + idx * 8u);
+
+        if (npc < 0x80000000u || npc >= 0x80800000u) {
+            continue;
+        }
+
+        uint8_t& refs = rdram[(npc + 0x1A - 0x80000000u) ^ 3];
+
+        if (refs != 0) {
+            fprintf(stderr, "[coop] mission end: slot %u ctx %08X still held %u time(s); cleared so the cleanup can finish\n", idx, npc, (unsigned)refs);
+            refs = 0;
+            ++cleared;
+        }
+    }
+
+    (void)cleared;
+}
+
 extern "C" void rs64_imposter_release(uint8_t* rdram, recomp_context* ctx)
 {
 
@@ -271,21 +312,38 @@ extern "C" void rs64_imposter_release(uint8_t* rdram, recomp_context* ctx)
 
     if (!s.spawned || s.ctx == 0) {
         s = Imposter{};
+
+        if (rs64_coop_imposter()) {
+            clear_leftover_npc_refs(rdram);
+        }
+
         return;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    uint32_t slot = rh(rdram, kImposterRec + 0x6);
     const uint32_t table = rw(rdram, 0x80130BB0u);
 
-    if (slot != 0xFFFFu && rw(rdram, table + slot * 8) == s.ctx) {
+    if (slot == 0xFFFFu) {
+        slot = s.slot;
+    }
+
+    if (slot < kNpcSlots && rw(rdram, table + slot * 8) == s.ctx) {
         uint8_t& refs = rdram[(s.ctx + 0x1A - 0x80000000u) ^ 3];
 
-        if (refs > 0) {
-            refs -= 1;
-        }
+        fprintf(stderr, "[coop] imposter release: slot %u ctx %08X refs %u -> 0\n", slot, s.ctx, (unsigned)refs);
+
+        // Not just this spawn's own reference: others (a lock-on, a shot in flight) can still hold one when the mission is torn down, and endMissionCleanup then
+        // loops on this slot forever. The mission is over, so nothing is left to use the slot; the game destroys it next.
+        refs = 0;
+    } else {
+        fprintf(stderr, "[coop] imposter release: slot %u does not hold ctx %08X (table has %08X), left alone\n", slot, s.ctx, slot < kNpcSlots ? rw(rdram, table + slot * 8) : 0u);
     }
 
     s = Imposter{};
+
+    if (rs64_coop_imposter()) {
+        clear_leftover_npc_refs(rdram);
+    }
 }
 
 // The remote player left the mission or is down: release the spawn's reference and destroy its slot (destroyNpcSlotByIndex); rs64_imposter_frame spawns it again when they're back.
@@ -332,8 +390,12 @@ extern "C" void rs64_imposter_despawn(uint8_t* rdram, recomp_context* ctx)
         return;
     }
 
-    const uint32_t slot = rh(rdram, kImposterRec + 0x6);
+    uint32_t slot = rh(rdram, kImposterRec + 0x6);
     const uint32_t table = rw(rdram, 0x80130BB0u);
+
+    if (slot == 0xFFFFu) {
+        slot = s.slot;
+    }
 
     if (slot < kNpcSlots && rw(rdram, table + slot * 8) == s.ctx) {
         uint8_t& refs = rdram[(s.ctx + 0x1A - 0x80000000u) ^ 3];
