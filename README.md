@@ -254,6 +254,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
   - 'Search for the Nonnah' is intended to have heavy fog since the player is meant to search the level for the objective.
   - 'Escape from Fest' **needs it** because the AT-PTs for the mission spawn based on Player proximity.
 
+- Nearby hills can show a sharp outline against the fog wall.
+
 - Buildings, turrets and units the game hasn't woken yet show in their starting pose, frozen until you get within the game's own range (about `1.5x`).
 
 - There will be situations where Ties or Bombers appear to be stationary or might even move a little before being 'activated' once you get close enough to them. Since spawning of NPCs occurs based on player proximity, extending that distance could negatively affect gameplay so 'imposters'/'stand-ins' are used to display structures and NPCs at a distance in order to perserve gameplay.
