@@ -1027,7 +1027,9 @@ public:
         diag().log_vi_state();
 
         // Menu display settings: MSAA recreates the render targets first, as the F1 inspector does.
-        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig, rs64::ls::demo_active((const uint8_t*)app->core.RDRAM));
+        // A demo's cutscene stays at the game's own rate: tweening its cloud sheets stuttered (Taloraan's intro).
+        const bool demo_play = rs64::ls::demo_active((const uint8_t*)app->core.RDRAM) && !rs64_state_in_cinematic();
+        const rs64::video::ApplyResult menu_cfg = rs64::video::apply_pending(app->userConfig, demo_play);
 
         if (menu_cfg.msaa) app->updateMultisampling();
         if (menu_cfg.changed) app->updateUserConfig(menu_cfg.discard_fbs);

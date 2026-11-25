@@ -46,6 +46,11 @@ inline int logic_hz(bool interpolation, int target) {
     return std::clamp(target, 30, 240);
 }
 
+// Smoothed frame steps only while the host holds the rate: a host that can't shows each frame for as long as it took, and an even step then moves the same on a 33 ms and a 67 ms frame.
+inline bool keeps_up(float avg_interval, int hz) {
+    return avg_interval <= 1.5f / float(hz);
+}
+
 // A per-frame multiplier k applied over `scale` 30 Hz steps.
 inline float drag(float k, float scale) {
     return k > 0.0f ? std::pow(k, scale) : k;

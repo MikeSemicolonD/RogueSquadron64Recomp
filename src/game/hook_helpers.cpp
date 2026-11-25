@@ -1338,9 +1338,17 @@ extern "C" float rs64_rate_frame(uint8_t* rdram, float dt)
     if (sub > 1 && real > 0.0f && real <= 0.1f && !rs64_fixed_step())
     {
         s_smooth = s_smooth > 0.0f ? s_smooth + (real - s_smooth) * 0.1f : real;
-        s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);
-        dt = std::clamp(s_smooth + (s_debt - s_smooth) * 0.05f, 0.25f * s_smooth, 4.0f * s_smooth);
-        s_debt -= dt;
+
+        if (!rs64::rate::keeps_up(s_smooth, hz))
+        {
+            s_debt = 0.0f;
+        }
+        else
+        {
+            s_debt = std::clamp(s_debt + real, -0.05f, 0.05f + s_smooth);
+            dt = std::clamp(s_smooth + (s_debt - s_smooth) * 0.05f, 0.25f * s_smooth, 4.0f * s_smooth);
+            s_debt -= dt;
+        }
     }
     else
     {
