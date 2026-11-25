@@ -16,6 +16,20 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
 ---
 
 <div align="center">
+  
+[<picture title="Recomp. Launcher">
+    <source
+      srcset="./docs/recomp-launcher/badge-dark.svg"
+      media="(prefers-color-scheme: dark)"
+    />
+    <img align="top" src="./docs/recomp-launcher/badge-light.svg" alt="Recomp. Launcher" />
+</picture>](https://mikesemicolond.github.io/RogueSquadron64Recomp/)
+
+</div>
+
+---
+
+<div align="center">
 
 ### Screenshots
 
