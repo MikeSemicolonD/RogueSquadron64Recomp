@@ -8,6 +8,36 @@ Crash and hang dumps are in [debugging-with-visual-studio.md](debugging-with-vis
 - `tools/debug/measure-leak.ps1 -Timeout S -Tag <label>` — single run, per-second WS/Private/VM to `memory.csv`.
 - `tools/debug/recordings/` — per-mission input recordings (folder prefix = level id) plus `run-replays.ps1`, which replays every mission recording against its `.hash` baseline. See [tools/debug/recordings/README.md](../../tools/debug/recordings/README.md).
 
+## Per-level performance
+
+`tools/debug/recordings/run-level-perf.ps1` replays every level's mission recording, each in its own Release launch at 4x. Game fps is recorded frames over the mission's wall time, so 120 means the level kept up with 4x. Walk is RT64's display-list walk per frame (`ROGUESQ_LOG_FRAME_PROFILE`), hitches its `[frameprof HITCH]` lines, RAM the working set at mission start and end.
+
+Windows, Release, 2026-11-25 (commit `7169b076`):
+
+| Level                 | Frames | Secs | Game fps | Walk ms/f | Hitches | RAM MB    |
+| --------------------- | ------ | ---- | -------- | --------- | ------- | --------- |
+| 0 Mos Eisley          | 3766   | 31   | 119.9    | 2.02      | 1       | 498 → 499 |
+| 1 Barkhesh            | 9840   | 82   | 119.9    | 2.14      | 0       | 487 → 501 |
+| 2 Nonnah              | 8762   | 73   | 119.6    | 1.63      | 0       | 473 → 496 |
+| 3 Corellia            | 15056  | 126  | 119.6    | 2.18      | 1       | 494 → 505 |
+| 4 Gerrard V           | 7336   | 62   | 118.2    | 2.64      | 0       | 493 → 503 |
+| 5 Jade Moon           | 7579   | 63   | 119.4    | 2.17      | 0       | 486 → 503 |
+| 6 Construction Yards  | 14325  | 121  | 117.9    | 2.47      | 0       | 490 → 511 |
+| 7 Kile II             | 9933   | 83   | 119.5    | 2.41      | 0       | 482 → 503 |
+| 8 Rescue on Kessel    | 4195   | 35   | 118.5    | 2.37      | 1       | 488 → 502 |
+| 9 Prisons of Kessel   | 18008  | 150  | 119.7    | 2.31      | 2       | 486 → 510 |
+| 10 Taloraan           | 10272  | 86   | 119.9    | 1.94      | 0       | 493 → 499 |
+| 11 Fest               | 10500  | 88   | 119.9    | 1.82      | 1       | 484 → 495 |
+| 12 Chandrila          | 9040   | 75   | 120.1    | 1.95      | 0       | 495 → 501 |
+| 13 Sullust            | 8989   | 75   | 119.6    | 2.00      | 0       | 487 → 501 |
+| 14 Moff Seerdon       | 8832   | 74   | 119.9    | 1.77      | 1       | 494 → 497 |
+| 15 Calamari           | 10323  | 88   | 117.2    | 2.57      | 0       | 493 → 509 |
+| 16 Beggar's Canyon    | 2393   | 20   | 119.5    | 1.63      | 0       | 460 → 480 |
+| 17 Trench Run         | 6426   | 58   | 111.7    | 3.00      | 0       | 470 → 498 |
+| 18 Hoth               | 6585   | 55   | 119.8    | 2.26      | 0       | 487 → 502 |
+
+Chaining the levels in one launch (a `ROGUESQ_LS_REPLAY` playlist) carries mission state over, so a later replay can fail its mission and then wait on the results screen. Chained, the first four levels grew 2-13 MB each, Barkhesh included.
+
 ## Validation harness (`tools/debug/validate/`)
 
 The primary correctness workflow — diff a live run against a Project64 golden rather than eyeballing screenshots:

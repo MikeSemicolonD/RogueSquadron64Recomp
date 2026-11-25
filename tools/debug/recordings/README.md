@@ -121,6 +121,13 @@ The `mos_eisley.rec` baseline was recorded with the `larger_object_pool.nrm` mod
   ```
 
   `-Speed 4` (default) runs the game clock 4x and matches 1x; 8 is too fast for the menu driver.
+- `run-level-perf.ps1`: replays each level's dated recording (`mos_eisley.rec` for level 0) in its own launch at 4x and tabulates game fps, DL walk ms per frame, hitches and working set at mission start and end. Writes to `logs/levelperf/<tag>/` with a `summary.csv`. The latest table is in [debug-tools.md](../../../docs/engine/debug-tools.md#per-level-performance).
+
+  ```powershell
+  .\tools\debug\recordings\run-level-perf.ps1 -Tag current
+  .\tools\debug\recordings\run-level-perf.ps1 -Tag taloraan -Levels 10
+  ```
+
 - `capture-frames.ps1`: replays one recording (level and craft from its header, 4x) and screenshots the window at each listed frame; the replay pauses there (`ROGUESQ_LS_PAUSE_AT`) until the capture is taken, so two runs with different `-Env` give pixel-identical frames for A/B of render changes. Output and the hash log go to `dumps/capture/<tag>/`, never next to the recording.
 
   ```powershell
