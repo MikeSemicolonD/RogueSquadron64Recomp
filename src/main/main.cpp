@@ -696,6 +696,12 @@ int main(int argc, char* argv[])
 
     rs64::cli::register_play_link();
 
+    // Without the ubershader RT64 queues every shipped shader combination at startup; the render context quits once they are compiled and saved.
+    if (recomp::dbg::env_on("ROGUESQ_PRECOMPILE_SHADERS"))
+    {
+        rs64::cli::set_env("ROGUESQ_UBERSHADER", "0");
+    }
+
     fprintf(stderr, "[main] Rogue Squadron 64 Recompiled %s\n", RS64_VERSION_STRING);
 
     if (const char* comboList = recomp::dbg::env_str("ROGUESQ_PRECOMPILE_D3D11"))

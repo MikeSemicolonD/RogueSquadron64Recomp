@@ -30,6 +30,7 @@ extern SDL_Window* g_sdl_window;
 #include "hle/rt64_rs64_lights.h"
 #include "hle/rt64_rs64_transition.h"
 #include "hle/rt64_rs64_vr.h"
+#include "rhi/rt64_render_hooks.h"
 #include "librecomp/mods.hpp"
 
 #include "ultramodern/ultramodern.hpp"
@@ -1039,6 +1040,37 @@ public:
         const auto pres0 = std::chrono::high_resolution_clock::now();
         app->updateScreen();
         diag().frame_profile(pres0);
+        finish_precompile();
+    }
+
+    // --precompile-shaders: once every queued shader is compiled, keep the pipeline cache and quit.
+    void finish_precompile()
+    {
+
+        static const bool s_precompile = env_on("ROGUESQ_PRECOMPILE_SHADERS");
+        static bool s_done = false;
+
+        if (!s_precompile || s_done)
+        {
+            return;
+        }
+
+        uint32_t pending = 0;
+        uint32_t compiled = 0;
+        bool draws_wait = false;
+
+        RT64::GetShaderCompileStatus(pending, compiled, draws_wait);
+
+        if ((pending != 0) || (compiled == 0))
+        {
+            return;
+        }
+
+        s_done = true;
+        app->device->savePipelineCache();
+
+        fprintf(stderr, "[precompile] %u shaders compiled and kept for later launches\n", compiled);
+        rs64_menu_request_quit();
     }
 
     void shutdown() override {

@@ -113,6 +113,7 @@ static const CliFlag kCliFlags[] = {
     {"rom",              "ROGUESQ_ROM",              CliFlag::Value, "",  "",  "import the ROM at <path> (.z64, .n64 or .v64) when no valid ROM is stored yet"},
     {"gfx-api",          "ROGUESQ_GFX_API",          CliFlag::Value, "",  "",  "graphics API: vulkan | d3d12 | d3d11 | d3d10 (default auto)"},
     {"precompile-d3d11-shaders", "ROGUESQ_PRECOMPILE_D3D11", CliFlag::Value, "", "", "compile the D3D11 shaders for every combination in <list> into d3d11_shader_cache/ and exit (no ROM needed)"},
+    {"precompile-shaders", "ROGUESQ_PRECOMPILE_SHADERS", CliFlag::Bool, "1", "0", "compile every known shader for this GPU with the saved settings, keep them for later launches, then exit"},
     {"hle-dev-mode",     "ROGUESQ_HLE_DEV_MODE",     CliFlag::Bool,  "1", "0", "RT64 ImGui inspector on F1 (default on in Debug)"},
     {"f5-native",        "ROGUESQ_F5_NATIVE",        CliFlag::Bool,  "1", "0", "emit F5 geometry (default on); --no- parses without emitting"},
     {"audio-ucode",      "ROGUESQ_NO_AUDIO_UCODE",   CliFlag::Bool,  "0", "1", "MusyX synth (default); --no-audio-ucode uses the silent stub"},
