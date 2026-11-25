@@ -301,6 +301,8 @@ Bindings are saved to `roguesq_input.json` next to the executable.
 
 - A craft's ground shadow can show as a thin dark line stretching down the screen, when part of the shadow picks up the wrong ground height (e.g. the Beggar's Canyon ending near the landing pad).
 
+- Objects (static blue units) on radar will pop in and out when out of view of the player.
+
 ### Roadmap
 
 - RS64 Improvements/Fixes
