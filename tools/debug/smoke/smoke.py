@@ -767,6 +767,21 @@ def memory_run(out, level, loops, at, speed):
     session(out, env, body, speed, os.path.join(out, "memory.rec"))
 
 
+def memory_growth(samples):
+    """Median MB per loop that private bytes grow from the third loop on (the first two fill caches), or None below four loops.
+    A leak grows every loop; the GPU allocator keeping a block it added (~64 MB, once, on the hangar visit that outgrows its blocks) is one step and leaves the median alone."""
+
+    steps = sorted(b - a for a, b in zip(samples[2:], samples[3:]))
+
+    if not steps:
+        return None
+
+    mid = len(steps) // 2
+    median = steps[mid] if len(steps) % 2 else (steps[mid - 1] + steps[mid]) / 2
+
+    return median / 2**20
+
+
 def perf_run(out, level, preset, at, seconds):
     """One real-speed launch with a repo video preset merged over the pinned profile: held on mission frame `at` to line the runs up, then run `seconds` and RT64's last
     120 frame times read into perf_level<id>_<preset>/perf.json."""
@@ -904,7 +919,7 @@ RULES = {
 STAT_FIELDS = ["player", "camera", "wingmen", "npcs"]
 # A preset whose average frame time grew by more than this fraction fails.
 PERF_SLOWER = 0.15
-# A memory run whose private bytes grow by more than this per replay of its level fails.
+# A memory run whose private bytes grow by more than this per replay of its level (the median, memory_growth) fails.
 MEMORY_GROWTH_MB = 16
 # A craft's chase camera fails when its mean distance in a phase at any frame rate differs from the 30 fps run's by more than this fraction.
 CAMERA_SPREAD = 0.05
@@ -1005,7 +1020,7 @@ def compare(args):
         slower = after > before * (1 + PERF_SLOWER)
         rows.append((f"{rel} ({1000 / before:.0f} -> {1000 / after:.0f} fps)", None, [f"frame time +{after / before - 1:.0%}"] if slower else []))
 
-    # The first loop's level load fills caches, so growth is measured from the second loop on; the baseline's growth is shown alongside.
+    # The baseline's growth is shown alongside.
     for root, _, files in os.walk(cur):
         if "memory.json" not in files:
             continue
@@ -1013,9 +1028,7 @@ def compare(args):
         rel = os.path.relpath(os.path.join(root, "memory.json"), cur)
 
         def growth(path):
-
-            s = load_json(path)["private_bytes"] if os.path.exists(path) else []
-            return (s[-1] - s[2]) / (len(s) - 3) / 2**20 if len(s) > 3 else None
+            return memory_growth(load_json(path)["private_bytes"]) if os.path.exists(path) else None
 
         after = growth(os.path.join(cur, rel))
         before = growth(os.path.join(base, rel))

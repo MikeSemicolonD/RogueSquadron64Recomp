@@ -2,6 +2,48 @@
 
 Crash and hang dumps are in [debugging-with-visual-studio.md](debugging-with-visual-studio.md#crashes-and-hangs). Live frame inspection is in [rt64-mcp.md](rt64-mcp.md).
 
+## Tests
+
+| Suite | Command | Checks |
+| --- | --- | --- |
+| Unit tests | `cmake --build build --config Release --target rs64_unit_tests` | Host, co-op mod and relay server logic, plus `style_check` |
+| Separate unit tests | `cmake --build build --config Release --target <name>` | `touch_input_test`, `video_config_test`, `transition_gate_test`, `input_bindings_test`, `fault_guard_test` |
+| Smoke test | `python -I tools/debug/smoke/smoke.py run`, then `compare` | Screenshots, game state, frame rate, memory and chase camera against a baseline run |
+| Replay hashes | `tools/debug/recordings/run-replays.ps1` | Each mission recording still plays out the same, frame hash by frame hash |
+
+Run the unit tests and the smoke test's `perf,memory` sections before committing anything that could change frame rate, memory or game behaviour ([AGENTS.md](../../AGENTS.md#build--run) has the exact commands).
+
+A fix lands with the check that would have caught it: a unit test for logic, a smoke target for a picture, menu or setting, or a mission recording for gameplay.
+
+### Unit tests
+
+`rs64_unit_tests` builds and runs every test in `tests/CMakeLists.txt`, the mod's in `mods/multiplayer-native/tests/` and the relay's in `relay-server/tests/`, then `style_check`. Each test prints its name and `OK`; `style` prints how many findings are new. CI runs the same target ([release-ci.md](release-ci.md#unit-tests)).
+
+The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time from `build\Release\<name>.exe`:
+
+- `input_bindings_test` checks with `assert`, which Release compiles out: run it from the Debug build.
+- `fault_guard_test` covers the Linux and macOS guest-fault guard (Windows uses SEH), so it only exists in a Linux or macOS build.
+
+### Smoke test
+
+`smoke.py run` stages the Release exe in `build/Smoke`, runs every target in [manifest.toml](../../tools/debug/smoke/manifest.toml) with a pinned profile and save (never yours), and writes `dumps/smoke/<tag>/<platform>/`. `compare` checks that against `dumps/smoke/baseline` and writes `report.html` next to it. Make a new baseline with `run --tag baseline`.
+
+| Section | What it captures | Fails when |
+| --- | --- | --- |
+| `levels` | Each level's mission frames | Over 0.05% of pixels change, or the player, camera, wingmen or NPCs move |
+| `changes` | Each setting changed mid-mission, against an unchanged run | As `levels`; a `sim` setting is only compared with its own baseline |
+| `menus` | Each menu path | Over 0.05% of pixels change, or the game state differs |
+| `pause` | Every pause-page setting through each value | As `menus` |
+| `cutscenes` | Cutscene frames | Over 20% of pixels change (water, ground and subtitles follow the voice stream) |
+| `perf` | Each `video-presets/` preset at real speed | Average frame time grows over 15% |
+| `memory` | Private bytes at the same mission frame over six replays of level 3 | Median growth per replay from the third on is over 16 MB |
+| `camera` | Chase-camera distance per craft at each frame rate | Mean distance differs from the 30 fps run by over 5% |
+
+- `--sections` and `--filter` (folder names, such as `level03`) narrow a run. Rows for targets you didn't run show as "missing", and `compare` exits non-zero because of them.
+- A crash, assertion or SEH line in the game log fails its target and leaves `faults.txt`. A target that fails to run leaves `error.txt`.
+- `memory` takes the median because level 3 steps up once by about 64 MB, on the third or fourth replay, when the GPU allocator adds a block that it then keeps. A leak grows on every replay.
+- Windows is the default platform. `--platforms linux,android,pi` runs the WSL build, the installed APK or the Pi over ssh, each configured with the MCP bridge on. `memory` runs on Windows only.
+
 ## Stability / leak harness
 
 - `tools/debug/run-stability.ps1 -Runs N -Timeout S -Tag <label>` — N timed launches, per-run stderr in `logs/stability/<tag>/`, outcomes classified in its `summary.csv`. `-EnvVars "A=1;B=1"` forwards debug vars. `-Runs 1` for data capture, `-Runs 3` for stability-rate.

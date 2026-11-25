@@ -97,7 +97,7 @@ ids = [
 ]
 
 # Memory leaks: one fixed-step launch plays `level` `loops` times through the nav chain and reads the game's private bytes on mission frame `at` of each loop
-# into memory.json. Compare fails a run that grows more than MEMORY_GROWTH_MB per loop from the third loop on (the first two fill caches: level 3 steps ~60 MB into loop 3, then holds flat). Windows only.
+# into memory.json. Compare fails a run whose median growth per loop from the third loop on is over MEMORY_GROWTH_MB (the first two fill caches, and the median passes the one ~64 MB step level 3 takes when the GPU allocator adds a block, on loop 3 or 4). Windows only.
 [memory]
 level = 3
 loops = 6
