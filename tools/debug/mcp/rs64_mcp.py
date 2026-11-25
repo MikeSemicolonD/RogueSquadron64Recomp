@@ -1491,11 +1491,46 @@ def expect_error(fn, text):
     raise AssertionError(f"expected an error containing {text!r}")
 
 
+def server_log_path() -> str:
+    return os.path.join(REPO, "dumps", "mcp", "rs64_mcp_server.log")
+
+
+def log_crash(where: str, exc_type, exc, tb) -> None:
+    import traceback
+
+    try:
+        os.makedirs(os.path.dirname(server_log_path()), exist_ok=True)
+
+        with open(server_log_path(), "a", encoding="utf-8") as f:
+            f.write(f"--- {time.strftime('%Y-%m-%d %H:%M:%S')} {where}\n")
+            f.write("".join(traceback.format_exception(exc_type, exc, tb)))
+    except OSError:
+        pass
+
+
+def quiet_cancel() -> None:
+    import mcp.shared.session as session
+
+    # The SDK answers a cancelled request with an error, which the client no longer knows: Claude Code takes that as a protocol error and closes the
+    # connection, and the launched game with it. The spec says a cancelled request gets no response.
+    async def cancel(self) -> None:
+        if self._cancel_scope:
+            self._cancel_scope.cancel()
+
+        self._completed = True
+
+    session.RequestResponder.cancel = cancel
+
+
 def serve():
     import anyio
     from mcp.server.fastmcp import FastMCP, Image
 
     import inspect
+
+    sys.excepthook = lambda t, e, tb: log_crash("server", t, e, tb)
+    threading.excepthook = lambda a: log_crash(f"thread {a.thread.name if a.thread else '?'}", a.exc_type, a.exc_value, a.exc_traceback)
+    quiet_cancel()
 
     mcp = FastMCP("rs64")
     games = {}
@@ -1512,7 +1547,8 @@ def serve():
         def register(fn):
             @functools.wraps(fn)
             async def run(*args, instance: str = "p1", **kwargs):
-                return await anyio.to_thread.run_sync(functools.partial(in_instance, fn, instance, args, kwargs))
+                # A cancelled call returns at once; its thread finishes on its own and the result is dropped.
+                return await anyio.to_thread.run_sync(functools.partial(in_instance, fn, instance, args, kwargs), abandon_on_cancel=True)
 
             sig = inspect.signature(fn)
             extra = inspect.Parameter("instance", inspect.Parameter.KEYWORD_ONLY, default="p1", annotation=str)
@@ -1899,6 +1935,9 @@ def serve():
 
     try:
         mcp.run()
+    except BaseException as e:
+        log_crash("mcp.run", type(e), e, e.__traceback__)
+        raise
     finally:
         for g in games.values():
             g.close()
