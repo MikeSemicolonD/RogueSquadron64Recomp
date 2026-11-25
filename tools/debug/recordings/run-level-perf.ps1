@@ -1,8 +1,10 @@
 # Replay each level's mission recording (the dated one, or mos_eisley.rec for level 0) in its own launch and tabulate game fps, DL walk time, hitches and RAM.
-# Usage: .\tools\debug\recordings\run-level-perf.ps1 -Tag current [-Levels 1,10] [-Binary .\build\Release\RogueSquadron64Recomp.exe] [-Speed 4] [-Timeout 600]
+# Usage: .\tools\debug\recordings\run-level-perf.ps1 -Tag current [-Levels 1,10] [-Binary .\build\Release\RogueSquadron64Recomp.exe] [-Speed 4] [-Timeout 600] [-ReportTag current]
 # Game fps is recorded frames over the mission's wall time, so at -Speed 4 a level that keeps up reads 120. Walk and hitches come from ROGUESQ_LOG_FRAME_PROFILE; RAM is the process working set at mission start and end.
+# The table also goes to dumps\smoke\<ReportTag>\windows\levelperf.js, which the smoke report page there shows.
 param(
     [string]$Tag = "levelperf",
+    [string]$ReportTag = "current",
     [int[]]$Levels = 0..18,
     [string]$Binary = ".\build\Release\RogueSquadron64Recomp.exe",
     [int]$Speed = 4,
@@ -104,3 +106,15 @@ $rows | Format-Table -AutoSize
 $csv = Join-Path $outDir "summary.csv"
 $rows | Export-Csv -Path $csv -NoTypeInformation -Encoding utf8
 Write-Host "CSV: $csv"
+
+$reportDir = Join-Path (Get-Location) "dumps\smoke\$ReportTag\windows"
+New-Item -ItemType Directory -Force -Path $reportDir | Out-Null
+$commit = git -C $PSScriptRoot rev-parse --short HEAD
+$data = [PSCustomObject]@{ made = (Get-Date -Format "yyyy-MM-dd HH:mm"); commit = "$commit"; speed = $Speed; rows = @($rows) }
+"window.LEVEL_PERF = " + (ConvertTo-Json -InputObject $data -Depth 4 -Compress) + ";" | Set-Content -Path (Join-Path $reportDir "levelperf.js") -Encoding utf8
+
+foreach ($f in "report.html", "report.css", "report.js") {
+    Copy-Item (Join-Path $PSScriptRoot "..\smoke\report\$f") (Join-Path $reportDir $f)
+}
+
+Write-Host "Report: $(Join-Path $reportDir 'report.html')"

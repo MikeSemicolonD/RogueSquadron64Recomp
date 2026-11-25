@@ -26,7 +26,7 @@ The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time f
 
 ### Smoke test
 
-`smoke.py run` stages the Release exe in `build/Smoke`, runs every target in [manifest.toml](../../tools/debug/smoke/manifest.toml) with a pinned profile and save (never yours), and writes `dumps/smoke/<tag>/<platform>/`. `compare` checks that against `dumps/smoke/baseline` and writes `report.html` next to it. Make a new baseline with `run --tag baseline`.
+`smoke.py run` stages the Release exe in `build/Smoke`, runs every target in [manifest.toml](../../tools/debug/smoke/manifest.toml) with a pinned profile and save (never yours), and writes `dumps/smoke/<tag>/<platform>/`. `compare` checks that against `dumps/smoke/baseline` and writes `results.js` and the report page from [tools/debug/smoke/report](../../tools/debug/smoke/report/) next to it. Open `report.html` for a breakdown by section, sortable by biggest change, with each image beside its baseline and its changed pixels. Make a new baseline with `run --tag baseline`.
 
 | Section | What it captures | Fails when |
 | --- | --- | --- |
@@ -39,7 +39,7 @@ The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time f
 | `memory` | Private bytes at the same mission frame over six replays of level 3 | Median growth per replay from the third on is over 16 MB |
 | `camera` | Chase-camera distance per craft at each frame rate | Mean distance differs from the 30 fps run by over 5% |
 
-- `--sections` and `--filter` (folder names, such as `level03`) narrow a run. Rows for targets you didn't run show as "missing", and `compare` exits non-zero because of them.
+- `--sections` and `--filter` (folder names, such as `level03`) narrow a run. Images of targets you didn't run show as "not in this run", and `compare` exits non-zero because of them. An image only the current run has shows as "new".
 - A crash, assertion or SEH line in the game log fails its target and leaves `faults.txt`. A target that fails to run leaves `error.txt`.
 - `memory` takes the median because level 3 steps up once by about 64 MB, on the third or fourth replay, when the GPU allocator adds a block that it then keeps. A leak grows on every replay.
 - Windows is the default platform. `--platforms linux,android,pi` runs the WSL build, the installed APK or the Pi over ssh, each configured with the MCP bridge on. `memory` runs on Windows only.
@@ -52,7 +52,7 @@ The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time f
 
 ## Per-level performance
 
-`tools/debug/recordings/run-level-perf.ps1` replays every level's mission recording, each in its own Release launch at 4x. Game fps is recorded frames over the mission's wall time, so 120 means the level kept up with 4x. Walk is RT64's display-list walk per frame (`ROGUESQ_LOG_FRAME_PROFILE`), hitches its `[frameprof HITCH]` lines, RAM the working set at mission start and end.
+`tools/debug/recordings/run-level-perf.ps1` replays every level's mission recording, each in its own Release launch at 4x. Game fps is recorded frames over the mission's wall time, so 120 means the level kept up with 4x. Walk is RT64's display-list walk per frame (`ROGUESQ_LOG_FRAME_PROFILE`), hitches its `[frameprof HITCH]` lines, RAM the working set at mission start and end. The table also goes into the smoke report at `dumps/smoke/<ReportTag>/windows/report.html` (`-ReportTag`, default `current`), sortable by any column.
 
 Windows, Release, 2026-11-25 (commit `7169b076`):
 

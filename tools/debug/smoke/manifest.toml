@@ -2,6 +2,13 @@
 # each changes group in one launch per level, menus in one launch. Frames are on the entry's clock: mission frames for levels, display lists after the
 # menu path is done for menus, the cutscene clock for cutscenes.
 
+# The power-on sequence as a player sees it, in one fixed-step launch with no boot target and no fast-forward: frames on each state's own clock, held with
+# pause_at one at a time. Attribution runs ~120 frames, the intro cutscene (level 19 special) 1200, then the main menu.
+[boot]
+attribution = [30, 90]
+cutscene = [60, 200, 350, 500, 650, 800, 950, 1100]
+"menu.main" = [30]
+
 [levels]
 # 19 is the front end's map, not a mission.
 ids = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20]

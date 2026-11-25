@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smoke Report</title>
+<!-- The remembered theme (shared with the RS64 Explorer) applies before the stylesheet, so the page never flashes the other one. -->
+<script>try { const t = JSON.parse(localStorage.getItem("rs64.theme")); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}</script>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230f1115'/><path d='M8 16.5l5.5 5.5L24 10' fill='none' stroke='%23e8b84a' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<link rel="stylesheet" href="report.css">
+</head>
+<body>
+<header>
+  <h1>Smoke report</h1>
+  <span id="summary"></span>
+  <span id="made"></span>
+  <select id="platform" aria-label="Platform" title="Show another platform's results" hidden></select>
+  <button id="themeBtn" title="Switch between the dark and light theme" aria-label="Switch between the dark and light theme">&#9681;</button>
+</header>
+<section id="sections"></section>
+<section id="perf" hidden></section>
+<div id="toolbar">
+  <select id="sort" aria-label="Sort">
+    <option value="change">Biggest change first</option>
+    <option value="name">By name</option>
+  </select>
+  <label><input type="checkbox" id="failedOnly" checked> Failures only</label>
+  <span id="shown"></span>
+</div>
+<main id="rows"></main>
+<div id="viewer" hidden>
+  <div id="vBox">
+    <div id="vBar">
+      <b id="vTitle"></b>
+      <span id="vModes"></span>
+      <span class="vTools">
+        <button id="vOut" title="Zoom out" aria-label="Zoom out">&minus;</button>
+        <span id="vScale"></span>
+        <button id="vIn" title="Zoom in" aria-label="Zoom in">+</button>
+        <button id="vFit" title="Fit the window (or double-click the picture)" aria-label="Fit the window">&#10530;</button>
+        <button id="vClose" title="Close (Esc)" aria-label="Close">&times;</button>
+      </span>
+    </div>
+    <div id="vStage">
+      <div id="vLayer"><img id="vA" alt=""><img id="vB" alt="" hidden><div id="vLine" hidden></div></div>
+    </div>
+    <div id="vSplitBar" hidden><span>Baseline</span><input type="range" id="vSplit" min="0" max="100" value="50" aria-label="Split between baseline and current"><span>Current</span></div>
+  </div>
+</div>
+<p id="empty" hidden>No smoke results next to this page. Run <code>smoke.py compare</code> to make them.</p>
+<script>document.write(`<script src="../platforms.js?v=${Date.now()}"><\/script><script src="results.js?v=${Date.now()}"><\/script><script src="levelperf.js?v=${Date.now()}"><\/script><script src="report.js?v=${Date.now()}"><\/script>`);</script>
+</body>
+</html>

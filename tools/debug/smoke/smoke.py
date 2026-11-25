@@ -1,6 +1,6 @@
 """Visual + stat smoke test: every target in manifest.toml captured on exact frames, then compared with a baseline run.
 
-  python tools/debug/smoke/smoke.py run [--tag current] [--sections levels,changes,menus,pause,cutscenes,perf,memory,camera] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
+  python tools/debug/smoke/smoke.py run [--tag current] [--sections boot,levels,changes,menus,pause,cutscenes,perf,memory,camera] [--filter level00] [--build Release] [--speed 16] [--platforms windows]
   python tools/debug/smoke/smoke.py compare [--baseline baseline] [--tag current] [--platforms windows]
   python tools/debug/smoke/smoke.py clean
 
@@ -10,7 +10,6 @@ the game state, draw counts, frame times and (in missions) player, camera, wingm
 Make a baseline with `run --tag baseline`. Frame times in the other sections run at --speed; the perf section measures each repo video preset at real speed.
 """
 import argparse
-import html
 import json
 import os
 import re
@@ -27,7 +26,7 @@ from PIL import Image, ImageChops
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "mcp"))
 
-from rs64_mcp import REPO, Game, MissionEnded, symbol_table  # noqa: E402
+from rs64_mcp import REPO, Game, GameError, MissionEnded, symbol_table  # noqa: E402
 
 BUILDS = os.path.join(REPO, "build")
 STAGE = os.path.join(REPO, "build", "Smoke")
@@ -36,7 +35,7 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 # invincibility: an unflown craft would otherwise crash (the Trench Run walls) and stop the chain on a game over.
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
-SECTIONS = ["levels", "changes", "menus", "pause", "cutscenes", "perf", "memory", "camera"]
+SECTIONS = ["boot", "levels", "changes", "menus", "pause", "cutscenes", "perf", "memory", "camera"]
 # The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
 # (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
 # or the one device adb sees.
@@ -295,6 +294,24 @@ def tap(game, buttons, wait):
     game.call("step", {"frames": wait, "clock": "ingame", "timeout_s": 120}, 135)
 
 
+def select_pause_page(game, step, page):
+    """Puts the pause menu's cursor on the entry that opens `step`; False, noted in skipped.txt, when this platform's menu has no such entry
+    (RAY TRACING needs ray queries, which WSL's Dozen driver has none of)."""
+
+    try:
+        game.call("pause_menu", {"page": step})
+    except GameError as e:
+        if "no entry on the open pause page" not in str(e):
+            raise
+
+        with open(os.path.join(game.target_dir, "skipped.txt"), "a", encoding="utf-8") as f:
+            f.write(f"pause page {page}: not on this platform's pause menu\n")
+
+        return False
+
+    return True
+
+
 def pause_settings_cycle(game, at, pages, skip):
     """Held at lockstep frame `at`, pause and open each pause page path (as in pause_chain), then step every setting row through all its values with A,
     one shot per value (pause-<page>-<key>-NN), until it is back where it started; B and START return to the game. Rows in `skip` are left alone."""
@@ -312,20 +329,26 @@ def pause_settings_cycle(game, at, pages, skip):
 
     for page in pages:
         path = [int(s) if s.isdigit() else s for s in str(page).split("/")]
+        offered = True
 
         for step in path:
             before = game.call("pause_menu", {})["page"]
 
+            if not select_pause_page(game, step, page):
+                offered = False
+                break
+
             for _ in range(4):
-                game.call("pause_menu", {"page": step})
                 tap(game, ["a"], PAUSE_SETTLE)
 
                 if game.call("pause_menu", {})["page"] != before:
                     break
+
+                game.call("pause_menu", {"page": step})
             else:
                 raise RuntimeError(f"A did not open {step} on the way to {page}")
 
-        rows = game.call("pause_menu", {})["rows"]
+        rows = game.call("pause_menu", {})["rows"] if offered else []
 
         for k, row in enumerate(rows):
             key = row["key"]
@@ -379,9 +402,20 @@ def pause_chain(out, level, at, pages, frames, speed):
 
             enter(game, os.path.join(out, f"pause_{level}_{str(page).replace('/', '-')}"))
 
+            opened = 0
+
             for i, step in enumerate(path):
-                game.call("pause_menu", {"page": step})
+                if not select_pause_page(game, step, page):
+                    break
+
                 press(game, ["a"], frames[0] if i == len(path) - 1 else settle)
+                opened += 1
+
+            if opened < len(path):
+                for _ in range(opened):
+                    press(game, ["b"], settle)
+
+                continue
 
             if not path:
                 game.call("step", {"frames": frames[0], "clock": "ingame", "timeout_s": 120}, 135)
@@ -452,6 +486,23 @@ def change_chain(specs, at, settle=30):
         shots.append((t + 2 * settle, f"_{spec}_restored", restore))
 
     return shots
+
+
+def boot_run(out, clocks, speed):
+    """The power-on sequence in one launch with no boot target: each {clock: [frames]} entry of the manifest's [boot], in order, held with its own
+    pause_at (a step after a hold lands late on the cutscene clock) and shot as <clock>-<frame>."""
+
+    def body(game):
+
+        enter(game, os.path.join(out, "boot"))
+
+        for clock, frames in clocks.items():
+            for frame in frames:
+                game.call("pause_at", {"clock": clock, "frame": frame, "timeout_s": 240}, 255)
+                shot(game, game.target_dir, f"{clock.replace('.', '_')}-{frame:06d}", False)
+                game.call("resume")
+
+    session(out, {"ROGUESQ_CINE_FASTFWD": "0"}, body, speed)
 
 
 def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
@@ -631,6 +682,9 @@ def run(args):
                 pause_settings_cycle(game, shots[-1][0] + 30, pause_pages, m["levels"].get("pause_skip", ()))
 
         session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}"}, body, args.speed, os.path.join(out, "level.rec"))
+
+    if "boot" in sections and wanted("boot"):
+        boot_run(out, m["boot"], args.speed)
 
     # Level 20 (CHICKEN) skips the front end, so it can't be reached from SELECT LEVEL and gets a launch of its own.
     if "levels" in sections:
@@ -908,6 +962,7 @@ def image_diff(a, b, diff_path=None):
 # Missions and pause pages (fixed step, ingame clock) and menus (ROGUESQ_MENU_FIXED, nav clock) match exactly. Cutscenes match except animated water and
 # ground textures and subtitles, which follow the voice stream (measured up to 15%), so their limit only catches a wrong camera, scene or model.
 RULES = {
+    "boot": (0.05, ["state"]),
     "level": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),
     "changes": (0.05, ["state", "player", "camera", "wingmen", "npcs"]),
     "cutscene": (20, ["state"]),
@@ -984,7 +1039,7 @@ def compare(args):
             pct = None
 
             if not os.path.exists(other):
-                problems.append("missing")
+                problems.append("not in this run, only in the baseline")
             else:
                 pct = image_diff(os.path.join(base, rel), other, os.path.join(cur, "_diff", rel))
 
@@ -999,6 +1054,15 @@ def compare(args):
                 problems.append(leaks[rel])
 
             rows.append((rel, pct, problems))
+
+    for root, dirs, files in os.walk(cur):
+        dirs[:] = [d for d in dirs if not d.startswith("_")]
+
+        for name in sorted(files):
+            rel = os.path.relpath(os.path.join(root, name), cur)
+
+            if name.endswith(".png") and not os.path.exists(os.path.join(base, rel)):
+                rows.append((rel, None, ["new, not in the baseline"]))
 
     for root, _, files in os.walk(cur):
         for name in ("error.txt", "faults.txt"):
@@ -1081,36 +1145,37 @@ def compare(args):
 
 
 def report(cur, base, rows):
+    """Writes the rows to results.js next to a copy of the report page (tools/debug/smoke/report), which builds itself from them."""
 
-    def ft(path):
+    def frame_time(path):
 
-        if not os.path.exists(path):
-            return ""
+        t = load_json(path).get("frame_times", {}).get("present") if os.path.exists(path) else None
 
-        t = load_json(path).get("frame_times", {}).get("present")
-
-        return f"{1000.0 / t['avg']:.0f} fps (p99 {t['p99']:.1f} ms)" if t and t.get("avg") else ""
+        return t if t and t.get("avg") else None
 
     rel_base = os.path.relpath(base, cur).replace("\\", "/")
-    lines = [
-        "<!doctype html><meta charset=utf-8><title>Smoke report</title>",
-        "<style>body{font:14px sans-serif;background:#111;color:#ddd}img{width:32%;margin:2px}.f{color:#f66}.o{color:#6c6}</style>",
-        f"<h1>Smoke report</h1><p>{sum(bool(r[2]) for r in rows)} of {len(rows)} failed. Baseline, current, changed pixels (magenta). FPS is meaningful only at --speed 1.</p>",
-    ]
+    results = []
 
-    for rel, pct, problems in sorted(rows, key=lambda r: (not r[2], r[0])):
+    for rel, pct, problems in rows:
         url = rel.replace("\\", "/")
-        status = f"<span class=f>FAIL: {html.escape('; '.join(problems))}</span>" if problems else "<span class=o>ok</span>"
-        lines.append(f"<h3>{html.escape(url)} {status}</h3>")
+        row = {"name": url, "pct": pct, "problems": problems}
 
         if url.endswith(".png"):
-            fps = ft(os.path.join(cur, rel[:-4] + ".json"))
-            lines.append(f"<p>{f'{pct:.3f}% pixels changed' if pct is not None else ''} {fps}</p>")
-            diff = f"<img src='_diff/{url}'>" if os.path.exists(os.path.join(cur, "_diff", rel)) else ""
-            lines.append(f"<img src='{rel_base}/{url}'><img src='{url}'>{diff}")
+            t = frame_time(os.path.join(cur, rel[:-4] + ".json"))
+            row["baseline"] = f"{rel_base}/{url}" if os.path.exists(os.path.join(base, rel)) else None
+            row["current"] = url if os.path.exists(os.path.join(cur, rel)) else None
+            row["diff"] = f"_diff/{url}" if os.path.exists(os.path.join(cur, "_diff", rel)) else None
+            row["frame_ms"] = t and {"avg": t["avg"], "p99": t["p99"]}
 
-    with open(os.path.join(cur, "report.html"), "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
+        results.append(row)
+
+    data = {"platform": os.path.basename(cur), "tag": os.path.basename(os.path.dirname(cur)), "made": time.strftime("%Y-%m-%d %H:%M"), "rows": results}
+
+    with open(os.path.join(cur, "results.js"), "w", encoding="utf-8") as f:
+        f.write("window.SMOKE_RESULTS = " + json.dumps(data) + ";\n")
+
+    for name in ("report.html", "report.css", "report.js"):
+        shutil.copy(os.path.join(HERE, "report", name), os.path.join(cur, name))
 
 
 def main():
@@ -1156,6 +1221,14 @@ def main():
             run(args)
         else:
             failed += compare(args)
+
+    # The report's platform picker lists every platform of this tag that has a report, not only the ones just compared.
+    if args.cmd == "compare":
+        tag_dir = os.path.join(OUT, args.tag)
+        compared = sorted(p for p in os.listdir(tag_dir) if os.path.exists(os.path.join(tag_dir, p, "results.js")))
+
+        with open(os.path.join(tag_dir, "platforms.js"), "w", encoding="utf-8") as f:
+            f.write("window.SMOKE_PLATFORMS = " + json.dumps(compared) + ";\n")
 
     sys.exit(1 if failed else 0)
 
