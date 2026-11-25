@@ -21,6 +21,8 @@ namespace rs64::android {
     void update_wifi_direct();
     // ANativeWindow_setFrameRate(FIXED_SOURCE) at ROGUESQ_ANDROID_FRAME_RATE (default 60, 0 = leave the display alone). API 30+.
     void set_window_frame_rate(void* native_window);
+    // Feeds the display's vsyncs (AChoreographer) to the VI thread, which then fires a VI on each one at 60 Hz. ROGUESQ_ANDROID_VSYNC_VI=0 keeps the timer.
+    void start_vsync_source();
     // ADPF: reports one display list's CPU time to a hint session on the render threads (Gfx, RT64 Workload/Present). API 33+; ROGUESQ_ANDROID_PERF_HINT=0 disables.
     void perf_report_work(int64_t work_ns);
 }

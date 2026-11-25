@@ -1,7 +1,9 @@
 #include "main/android_host.h"
 
 #include <algorithm>
+#include <android/choreographer.h>
 #include <android/log.h>
+#include <android/looper.h>
 #include <android/native_window.h>
 #include <cstdio>
 #include <dlfcn.h>
@@ -16,6 +18,7 @@
 #include "SDL_system.h"
 #include "host_api/host_api.h"
 #include "util/debug_logs.h"
+#include "ultramodern/ultramodern.hpp"
 
 namespace rs64::android {
     namespace {
@@ -382,6 +385,42 @@ namespace rs64::android {
         int32_t rc = s_fn(static_cast<ANativeWindow*>(native_window), static_cast<float>(s_rate), kCompatFixedSource);
 
         fprintf(stderr, "[perf] ANativeWindow_setFrameRate(%d, FIXED_SOURCE) = %d\n", s_rate, rc);
+    }
+
+    void start_vsync_source()
+    {
+
+        if (!recomp::dbg::env_on("ROGUESQ_ANDROID_VSYNC_VI", true))
+        {
+            return;
+        }
+
+        std::thread([] {
+
+            ALooper_prepare(0);
+
+            static AChoreographer* s_choreo = AChoreographer_getInstance();
+
+            if (!s_choreo)
+            {
+                fprintf(stderr, "[vsync] no choreographer, the VI keeps its timer\n");
+                return;
+            }
+
+            static AChoreographer_frameCallback s_tick = [](long frame_time_ns, void*) {
+
+                ultramodern::signal_display_vsync(frame_time_ns);
+                AChoreographer_postFrameCallback(s_choreo, s_tick, nullptr);
+            };
+
+            AChoreographer_postFrameCallback(s_choreo, s_tick, nullptr);
+            fprintf(stderr, "[vsync] VI follows the display's vsync\n");
+
+            while (true)
+            {
+                ALooper_pollOnce(-1, nullptr, nullptr, nullptr);
+            }
+        }).detach();
     }
 
     void perf_report_work(int64_t work_ns)

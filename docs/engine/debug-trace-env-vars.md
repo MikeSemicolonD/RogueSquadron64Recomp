@@ -84,6 +84,7 @@ Other user options without flags:
 | `ROGUESQ_TEX_HASH_ALL_TMEM` | off | `1` restores upstream RT64 texture hashing. By default TMEM words written before the tile's own load hash as zero, so a partially loaded texture (e.g. probe droid lenses) hashes the same every run. Packs must be dumped with the same setting. |
 | `ROGUESQ_FULL_DUMP` | off | Crash dumps (SEH, SIGABRT, F12) are full-memory (~5 GB) instead of lite. |
 | `ROGUESQ_ANDROID_FRAME_RATE` | 60 | Android: display rate requested via `ANativeWindow_setFrameRate(FIXED_SOURCE)` (API 30+). `0` leaves it to the system. |
+| `ROGUESQ_ANDROID_VSYNC_VI` | on | Android: the display's vsync (`AChoreographer`) fires the VI while the display runs at 60 Hz, the VI at 60 and the game at 1x, and each present goes out one vsync after its VI, so a 30 fps frame always shows for 2 refreshes. `0` keeps the free-running VI timer. |
 | `ROGUESQ_ANDROID_PERF_HINT` | on | Android: ADPF `APerformanceHint` session on the render threads (Gfx, RT64 Workload/Present), fed each display list's CPU time against 16.67 ms (API 33+). `0` disables. |
 | `ROGUESQ_TOUCH_DEBUG` | off | Draw the touch menu tap boxes (`roguesq_touch.json`). |
 

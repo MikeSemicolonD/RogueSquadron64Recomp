@@ -668,6 +668,7 @@ int main(int argc, char* argv[])
     rs64::android::load_env_file();
     std::filesystem::current_path(rs64::android::data_dir());
     rs64::android::install_bundled_mods();
+    rs64::android::start_vsync_source();
 
 #endif
 
