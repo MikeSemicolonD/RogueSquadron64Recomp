@@ -109,8 +109,8 @@ A static recompilation of **Star Wars: Rogue Squadron** (USA v1.0) for the N64 b
   - **Self-hosted relay server:** anyone can run `rs64_relay`, a small console server for Windows and Linux, and players type its address into the MULTIPLAYER address box, just like a friend's IP. The game remembers the server, HOST GAME lists games there and JOIN GAME shows them. Setup is in [docs/guides/relay-server.md](docs/guides/relay-server.md).
 - **Setup notes:**
   - **Windows Firewall asks to allow the game** the first time it runs. For co-op, tick **Private networks** (for home and LAN play) and press **Allow access**. If you press Cancel, co-op can't take incoming connections until you allow `RogueSquadron64Recomp.exe` under Windows Security > Firewall > Allow an app through firewall.
-  - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, MULTIPLAYER defaults to direct connections.
   - **Steam Relay OFF by default:** press F6 in the game, turn on **Steam Relay** in the Mods window OR toggle the mod in the in-game mod menu.
+    - **The Steam API library is not included:** download the Steamworks SDK (version 1.65, from [partner.steamgames.com](https://partner.steamgames.com/downloads/list), any Steam login) and copy `redistributable_bin/win64/steam_api64.dll` (Windows), `redistributable_bin/linux64/libsteam_api.so` (Linux) or `redistributable_bin/osx/libsteam_api.dylib` (macOS) into `mods/steam-relay/`. Without it, or with Steam closed, MULTIPLAYER defaults to direct connections.
   - Linux needs the native Steam package (**Flatpak and Snap Steam are not supported**); on Steam Deck, add the Linux build as a non-Steam game; on macOS, remove the download quarantine with `xattr -d com.apple.quarantine mods/steam-relay/libsteam_api.dylib`.
 
 > [!NOTE]
@@ -210,7 +210,7 @@ Actions are for the game's default **Luke** controller setting. The other contro
 | <kbd>F12</kbd> | Write a crash dump to `dumps/crash-dumps/` (Windows only) | All |
 | <kbd>Print Screen</kbd> | RenderDoc frame capture (set `ROGUESQ_RENDERDOC=<path to renderdoc.dll>`, Windows only) | All |
 
-- Change these keys, or turn them all off, under `hotkeys` in `roguesq_input.json` ([details](docs/guides/building-all-platforms.md)), or turn them off for one run with `--no-hotkeys`.
+- Can be be changed turned off completely, under `hotkeys` in `roguesq_input.json` ([details](docs/guides/building-all-platforms.md)), can also be turned off for the session using `--no-hotkeys`.
 - The current ray tracing debug view is named in a notice at the bottom right.
 - Set `ROGUESQ_FULL_DUMP=1` for a full-memory crash dump.
 - With RenderDoc loaded, **F12** also takes a capture alongside the crash dump. Launching from RenderDoc works too, without `ROGUESQ_RENDERDOC`.
