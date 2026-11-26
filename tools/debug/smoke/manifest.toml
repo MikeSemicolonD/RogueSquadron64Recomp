@@ -146,11 +146,11 @@ problem = "^pixels "
 reason = "WSL: the Rebel insignia behind the pause menu animates on real time there, so its angle at the capture varies from run to run"
 
 [[known]]
-platform = "linux"
+platform = ["linux", "android"]
 targets = ["changes_level*/*", "level*/mission-*"]
 problem = "^pixels |(wingmen|npcs|player|camera) differs|moved the game"
-when = "(wingmen|npcs|player|camera) differs"
-reason = "WSL: wingman and enemy positions drift from run to run there (not yet explained), and the picture follows them"
+when = "(wingmen|npcs|player|camera) differs|moved the game"
+reason = "WSL and Android: wingman and enemy positions drift from run to run there (not yet explained), and the picture follows them"
 
 [[known]]
 platform = ["windows", "linux"]

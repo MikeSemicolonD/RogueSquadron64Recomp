@@ -275,10 +275,14 @@ def session(out, env, body, speed, record=None, settings=None, isolate=False):
     return error is None
 
 
-def enter(game, target_dir):
+def enter(game, target_dir, clear=True):
 
     game.target_dir = target_dir
     os.makedirs(target_dir, exist_ok=True)
+
+    # A target shared by several launches clears its notes only on the first, so a later launch keeps an earlier one's failure.
+    if not clear:
+        return
 
     # A rerun target keeps none of an earlier run's failure notes.
     for name in ("error.txt", "faults.txt", "skipped.txt", "ended.txt", "game.log"):
@@ -801,7 +805,8 @@ def run(args):
                 if wanted(f"perf_level{level:02d}_{preset}"):
                     perf_run(out, level, preset, p["at"], p["seconds"])
 
-    if "memory" in sections:
+    # shortcut: Windows only (GetProcessMemoryInfo by pid), add /proc or adb readers when another platform needs it.
+    if "memory" in sections and platform == "windows":
         mem = m["memory"]
 
         if wanted(f"memory_level{mem['level']:02d}"):
@@ -875,10 +880,6 @@ def private_bytes(pid):
 def memory_run(out, level, loops, at, speed):
     """One launch that plays `level` `loops` times through the nav chain, reading the game's private bytes on mission frame `at` of each loop into
     memory_level<id>/memory.json. A leak shows as growth from loop to loop."""
-
-    # shortcut: Windows only (GetProcessMemoryInfo by pid), add /proc or adb readers when another platform needs it.
-    if platform != "windows":
-        raise SystemExit("the memory section runs on Windows only")
 
     path = os.path.join(out, f"memory_level{level:02d}", "memory.json")
 
@@ -970,7 +971,7 @@ def camera_run(out, level, craft, cheats, at, rate, spec, speed):
 
     def body(game):
 
-        enter(game, os.path.dirname(path))
+        enter(game, os.path.dirname(path), rate == spec["rates"][0])
         game.call("pause_at", {"clock": "mission", "frame": round(at * rate), "timeout_s": 240}, 255)
         chunk = max(1, rate // 10)
         result = {}
