@@ -85,6 +85,8 @@ A mod not listed in `mods/platforms.json` ships nowhere, and a new code mod's `.
 3. **Rerun with the gfx traces**: `ROGUESQ_LOG_GFX_TASK=1` (one line per graphics task), `ROGUESQ_LOG_DL_HEALTH=1` (garbage color-image rejects, a desync signal) and `ROGUESQ_DESYNC_TRACE=1` (recent F5 commands ring) show which DL was in flight.
 4. **Use `tools/debug/reconstruct-freeze.py` on a full dump** to validate queue-level theories before instrumenting: it lists every blocked game thread and its wait queue. `tools/debug/host-stacks.py` gives the symbolized host stacks.
 
+For rendering that is wrong on one GPU or driver only (Pi v3dv, Android, a WSL or browser backend), run once with `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` and `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=true` before guessing, and fix every error: an over-limit layout or an unblendable target renders garbage with no crash.
+
 For a hang, or a recompiled function that faults on data that decodes fine offline, suspect a codegen mistranslation of a rare instruction on that path (the voice-freeze cause was the `*al` link-branches) before deep subsystem RE.
 
 For a bug that shows up only in Release (or only when the host is fast), suspect a game assumption that some producer is slower than a frame before suspecting the compiler. Example: `tickFormatMessageWorker` sent every reply as a pointer to one stack buffer; at -O2 it answered several requests before the menu polled once, the queued replies aliased, and SELECT GAME lost its medals/preview (fixed by the reply-ring hook in `rogue_squadron.toml`). `ROGUESQ_WATCH_ADDRS` and `ROGUESQ_DATA_BP` find the diverging write; the CMake `RS64_OD_TARGETS` / `RS64_OD_SOURCES` settings bisect by optimization level.
