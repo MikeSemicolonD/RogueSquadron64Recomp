@@ -627,10 +627,18 @@ class Game:
             # wsl.exe passes no Windows environment, so the game's variables are exported in the script; its Linux pid goes to a file for close().
             self.linux_pid_file = os.path.join(self.session_dir, "linux.pid")
             exports = "".join(f"export {k}={shlex.quote(v)}; " for k, v in game_env.items())
-            script = (f"echo $$ > {shlex.quote(self.game_path(self.linux_pid_file))}; {exports}"
+            game = f"echo $$ > {shlex.quote(self.game_path(self.linux_pid_file))}; exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args)
+
+            # The game draws on a shared Xvfb display (:99, started once and reused), so WSLg never shows its window or takes focus; RS64_WSL_SHOW=1 shows it on the desktop.
+            if os.environ.get("RS64_WSL_SHOW") != "1":
+                game = ("unset WAYLAND_DISPLAY; export DISPLAY=:99; "
+                        "pgrep -f '^Xvfb :99' >/dev/null || (setsid Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &); "
+                        "for i in $(seq 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.1; done; " + game)
+
+            script = (f"{exports}"
                       "export VK_ICD_FILENAMES=$HOME/mesa-dzn/share/vulkan/icd.d/dzn_icd.x86_64.json; "
                       "export LD_LIBRARY_PATH=/usr/lib/wsl/lib:$HOME/mesa-dzn/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH; "
-                      f"cd {shlex.quote(self.game_path(exe_dir))} && exec ./RogueSquadron64Recomp " + " ".join(shlex.quote(a) for a in game_args))
+                      f"cd {shlex.quote(self.game_path(exe_dir))} && {game}")
             self.proc = subprocess.Popen(["wsl.exe", "-e", "bash", "-lc", script], stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         elif platform == "ssh":
             # The desktop session's display, as tools/release/linux/test-remote.sh finds it, and the bundle's libraries from the machine's install (RS64_SSH_LIBS).

@@ -578,18 +578,30 @@ def menu_chain(out, paths, frames, speed, cheats=""):
             for i, path in enumerate(todo):
                 enter(game, os.path.join(out, menu_folder(path)))
 
-                if i == 0:
-                    hold_nav(game, frames, None)
-                else:
-                    current = game.call("setting", {})
+                try:
+                    if i == 0:
+                        hold_nav(game, frames, None)
+                    else:
+                        current = game.call("setting", {})
 
-                    for key, v in snapshot.items():
-                        if current[key]["value"] != v["value"]:
-                            step_setting(game, key, v["value"])
+                        for key, v in snapshot.items():
+                            if current[key]["value"] != v["value"]:
+                                step_setting(game, key, v["value"])
 
-                    after = game.call("frame_info")["restarts"].get("nav", 0)
-                    game.call("nav", {"menu": path})
-                    hold_nav(game, frames, after)
+                        after = game.call("frame_info")["restarts"].get("nav", 0)
+                        game.call("nav", {"menu": path})
+                        hold_nav(game, frames, after)
+                except Exception:
+                    missing = next((line for line in game.log_tail(60).splitlines() if "[nav] stuck: no entry" in line), None)
+
+                    if missing is None:
+                        raise
+
+                    # A page this platform's menu lacks (RAY TRACING without ray queries) is skipped, not failed; the chain relaunches at the next path.
+                    with open(os.path.join(game.target_dir, "skipped.txt"), "a", encoding="utf-8") as f:
+                        f.write(f"menu {path}: not on this platform's menu ({missing.strip()})\n")
+
+                    return
 
                 done.append(path)
 

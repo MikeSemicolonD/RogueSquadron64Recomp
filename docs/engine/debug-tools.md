@@ -42,7 +42,7 @@ The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time f
 - `--sections` and `--filter` (folder names, such as `level03`) narrow a run. Images of targets you didn't run show as "not in this run", and `compare` exits non-zero because of them. An image only the current run has shows as "new".
 - A crash, assertion or SEH line in the game log fails its target and leaves `faults.txt`. A target that fails to run leaves `error.txt`.
 - `memory` takes the median because level 3 steps up once by about 64 MB, on the third or fourth replay, when the GPU allocator adds a block that it then keeps. A leak grows on every replay.
-- Windows is the default platform. `--platforms linux,android,pi` runs the WSL build, the installed APK or the Pi over ssh, each configured with the MCP bridge on. `memory` runs on Windows only.
+- Windows is the default platform. `--platforms linux,android,pi` runs the WSL build, the installed APK or the Pi over ssh, each configured with the MCP bridge on. `memory` runs on Windows only. The WSL game draws on a hidden Xvfb display (install `xvfb` in WSL), so it never takes focus. Set `RS64_WSL_SHOW=1` to see its window.
 
 ## Stability / leak harness
 
