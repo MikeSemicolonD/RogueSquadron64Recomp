@@ -881,6 +881,18 @@
             "detail": "Copies the ROM into the remote folder next to run.sh. ssh asks for the password in this terminal unless a key is set up."
         },
         {
+            "label": "Linux: Install Flatpak on remote machine",
+            "type": "process",
+            "command": "wsl.exe",
+            "args": [
+                "-d", "${input:wslDistro}",
+                "-e", "bash", "-lc",
+                "cd \"$(wslpath '${workspaceFolder}')\" && bash tools/release/linux/deploy-remote.sh '${input:flatpakSource}' '${input:remoteUser}' '${input:remoteHost}'"
+            ],
+            "problemMatcher": [],
+            "detail": "Installs the game's Flatpak on user@host, replacing the installed one and keeping its saves, settings and mods. Given a folder, it picks the newest Flatpak in it built for that machine's CPU. ssh asks for the password in this terminal unless a key is set up."
+        },
+        {
             "label": "Build (Linux cross, WSL): tarball + AppImage",
             "type": "process",
             "command": "wsl.exe",
@@ -1303,6 +1315,12 @@
             "type": "promptString",
             "description": "Package to deploy (Windows or WSL path)",
             "default": "build/release/rs64-linux-arm64.tar.xz"
+        },
+        {
+            "id": "flatpakSource",
+            "type": "promptString",
+            "description": "Flatpak to install, or a folder to take the newest one from",
+            "default": "build/packages"
         },
         {
             "id": "remoteHost",
