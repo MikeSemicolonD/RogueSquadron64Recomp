@@ -761,11 +761,13 @@ public:
         app->userConfig.refreshRateTarget = 30;
 #endif
 
-        // A Raspberry Pi's GPU can't keep up above the N64's own resolution, and RT64's framebuffer write-back costs it about half its frame time.
+        // A Raspberry Pi's GPU can't keep up above the N64's own resolution, RT64's framebuffer write-back costs it about half its frame time,
+        // and the whole-map terrain pass runs slower and draws blocky ground there than the game's own terrain.
         if (is_raspberry_pi()) {
             app->userConfig.refreshRateTarget = 30;
             app->userConfig.resolution = UC::Resolution::Original;
             rs64::video::set_framebuffer_writeback(false);
+            rs64::video::set_legacy_terrain(true);
         }
 
         // roguesq_video.json in the working directory overrides the baseline above (a default is written on first run); the ROGUESQ_* env vars below override the file.
