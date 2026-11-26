@@ -135,3 +135,25 @@ runs = [
   { level = 16, craft = 7, cheats = "WOMPRAT!", at = 6.0 },
   { level = 15, craft = 8, cheats = "HALIFAX?" },
 ]
+
+# Differences already understood: compare shows a matching problem as known, with its reason, and the row fails only for problems no entry explains.
+# platform: the run it applies to (one name or a list); targets: patterns on the path under the platform folder; problem: a regex over the problem text;
+# when (optional): a regex another problem of the same row must also match, so a picture change alone still fails.
+[[known]]
+platform = "linux"
+targets = ["*/pause-*"]
+problem = "^pixels "
+reason = "WSL: the Rebel insignia behind the pause menu animates on real time there, so its angle at the capture varies from run to run"
+
+[[known]]
+platform = "linux"
+targets = ["changes_level*/*", "level*/mission-*"]
+problem = "^pixels |(wingmen|npcs|player|camera) differs|moved the game"
+when = "(wingmen|npcs|player|camera) differs"
+reason = "WSL: wingman and enemy positions drift from run to run there (not yet explained), and the picture follows them"
+
+[[known]]
+platform = ["windows", "linux"]
+targets = ["menu_options__biographies/*", "menu_options__showroom__*/*"]
+problem = "^pixels "
+reason = "Biographies and Showroom animate their models and text on real time, so the frame the capture lands on varies from run to run"

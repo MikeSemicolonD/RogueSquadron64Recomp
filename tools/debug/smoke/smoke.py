@@ -10,6 +10,7 @@ the game state, draw counts, frame times and (in missions) player, camera, wingm
 Make a baseline with `run --tag baseline`. Frame times in the other sections run at --speed; the perf section measures each repo video preset at real speed.
 """
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 import tomllib
 import traceback
@@ -36,6 +38,9 @@ OUT = os.path.join(REPO, "dumps", "smoke")
 MODS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool.nrm", "invincibility.nrm"]
 MOD_IDS = ["display-settings", "controls-menu", "quit-prompt", "larger_object_pool", "invincibility"]
 SECTIONS = ["boot", "levels", "changes", "menus", "pause", "cutscenes", "perf", "memory", "camera"]
+
+# Each launch resets the shared staged profile and copies it, so two games launching at once take turns.
+LAUNCH_LOCK = threading.Lock()
 # The folder under build/ each platform is staged into and launched from (rs64_mcp Game.launch); None = no launcher yet. Linux runs the WSL Release build
 # (LINUX_BUILD in the default distro's home, configured with -DRS64_MCP=ON) under WSL; Android runs the installed APK (gradlew assembleRelease -Prs64Mcp=ON) on ANDROID_SERIAL
 # or the one device adb sees.
@@ -194,10 +199,10 @@ def shot(game, out_dir, name, mission):
         json.dump(record, f, indent=1)
 
 
-def session(out, env, body, speed, record=None, settings=None):
-    """One launch: body(game) moves game.target_dir along as it shoots. A failure, or faults in the log, is written into the target it was on; returns False on failure."""
+def session(out, env, body, speed, record=None, settings=None, isolate=False):
+    """One launch: body(game) moves game.target_dir along as it shoots. A failure, or faults in the log, is written into the target it was on; returns False on failure.
+    isolate runs the game in its own copy of the staged folder, so another game can run at the same time."""
 
-    reset_profile()
     game = Game()
     game.target_dir = out
 
@@ -220,7 +225,10 @@ def session(out, env, body, speed, record=None, settings=None):
     os.makedirs(out, exist_ok=True)
 
     try:
-        game.launch(config, full_env, record=record, settings=settings, platform="ssh" if platform == "pi" else platform)
+        with LAUNCH_LOCK:
+            reset_profile()
+            game.launch(config, full_env, record=record, settings=settings, platform="ssh" if platform == "pi" else platform, isolate=isolate)
+
         body(game)
     except Exception:
         error = traceback.format_exc()
@@ -267,6 +275,11 @@ def enter(game, target_dir):
 
     game.target_dir = target_dir
     os.makedirs(target_dir, exist_ok=True)
+
+    # A rerun target keeps none of an earlier run's failure notes.
+    for name in ("error.txt", "faults.txt", "skipped.txt", "ended.txt"):
+        if os.path.exists(os.path.join(target_dir, name)):
+            os.remove(os.path.join(target_dir, name))
 
 
 def hold(game, clock, shots, mission, after_restart=False):
@@ -512,7 +525,7 @@ def boot_run(out, clocks, speed):
     session(out, {"ROGUESQ_CINE_FASTFWD": "0"}, body, speed)
 
 
-def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
+def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=(), record_name="levels.rec", isolate=False):
     """Every level in one launch: each mission is held for its shots, its pause settings pages cycled (pause_settings_cycle), then aborted to SELECT LEVEL
     and the next one started (ROGUESQ_NAV_CHAIN). A level that fails is skipped and the chain relaunched at the one after it."""
 
@@ -542,7 +555,7 @@ def level_chain(out, ids, frames, speed, pause_pages=(), pause_skip=()):
                     game.call("nav", {"next_level": levels[i + 1]})
 
         env = {"ROGUESQ_BOOT_TARGET": f"abort:{remaining[0]}", "ROGUESQ_NAV_CHAIN": "1", "ROGUESQ_LS_EACH_MISSION": "1"}
-        session(out, env, body, speed, os.path.join(out, "levels.rec"))
+        session(out, env, body, speed, os.path.join(out, record_name), isolate=isolate)
         remaining = remaining[len(done) + 1:]
 
 
@@ -713,7 +726,21 @@ def run(args):
     # Level 20 (CHICKEN) skips the front end, so it can't be reached from SELECT LEVEL and gets a launch of its own.
     if "levels" in sections:
         ids = [i for i in m["levels"]["ids"] if wanted(f"level{i:02d}")]
-        level_chain(out, [i for i in ids if i != 20], m["levels"]["frames"], args.speed, m["levels"].get("pause_pages", ()), m["levels"].get("pause_skip", ()))
+        chain = [i for i in ids if i != 20]
+        level_args = (m["levels"]["frames"], args.speed, m["levels"].get("pause_pages", ()), m["levels"].get("pause_skip", ()))
+
+        # On Windows two games, each in its own copy of the game folder, play half the levels at once; the MCP runs a second game only there.
+        if platform == "windows" and len(chain) > 1:
+            halves = [chain[:len(chain) // 2], chain[len(chain) // 2:]]
+            threads = [threading.Thread(target=level_chain, args=(out, half, *level_args, f"levels_{n}.rec", True)) for n, half in enumerate(halves)]
+
+            for t in threads:
+                t.start()
+
+            for t in threads:
+                t.join()
+        elif chain:
+            level_chain(out, chain, *level_args)
 
         if 20 in ids:
             one_level(20, [(f, "", None) for f in m["levels"]["frames"]], m["levels"].get("pause_pages", ()))
@@ -758,7 +785,8 @@ def run(args):
 
                     session(out, {"ROGUESQ_BOOT_TARGET": f"cutscene:{scene}"}, cutscene_body, args.speed)
 
-    if "perf" in sections:
+    # WSL's frame rates go through Dozen onto Direct3D 12, so they say little about Linux, and its relaunch per preset was a third of the run; --sections perf still runs it.
+    if "perf" in sections and not (platform == "linux" and args.sections == ",".join(SECTIONS)):
         p = m["perf"]
 
         for level in p["levels"]:
@@ -1065,8 +1093,10 @@ def visual_leaks(run_dir, visual):
 def compare(args):
 
     with open(os.path.join(HERE, "manifest.toml"), "rb") as f:
-        visual = tomllib.load(f)["changes"]["visual"]
+        manifest = tomllib.load(f)
 
+    visual = manifest["changes"]["visual"]
+    known = [k for k in manifest.get("known", []) if args.platform in ([k["platform"]] if isinstance(k["platform"], str) else k["platform"])]
     base = os.path.join(OUT, args.baseline, args.platform)
     cur = os.path.join(OUT, args.tag, args.platform)
     leaks = visual_leaks(cur, visual)
@@ -1181,15 +1211,40 @@ def compare(args):
         rows.append((f"{rel} ({', '.join(cells)})", None, problems))
 
     failed = 0
+    explained = 0
+    rows = [(rel, pct, *split_known(rel, problems, known)) for rel, pct, problems in rows]
 
-    for rel, pct, problems in rows:
+    for rel, pct, problems, excused in rows:
         failed += bool(problems)
-        print(f"{'FAIL' if problems else 'ok  '} {rel:60} {'; '.join(problems)}")
+        explained += bool(excused and not problems)
+        status = "FAIL" if problems else "known" if excused else "ok"
+        print(f"{status:5} {rel:60} {'; '.join(problems + [p for p, _ in excused])}")
 
     report(cur, base, rows)
-    print(f"{args.platform}: {failed} of {len(rows)} failed; report: {os.path.join(cur, 'report.html')}")
+    print(f"{args.platform}: {failed} of {len(rows)} failed, {explained} known; report: {os.path.join(cur, 'report.html')}")
 
     return failed
+
+
+def split_known(rel, problems, known):
+    """A row's problems as (still failing, [(problem, reason)] explained by a [[known]] entry of the manifest)."""
+
+    path = rel.split(" ")[0].replace("\\", "/")
+    failing = []
+    excused = []
+
+    for problem in problems:
+        entry = next((k for k in known
+                      if any(fnmatch.fnmatch(path, t) for t in k["targets"])
+                      and re.search(k["problem"], problem)
+                      and (not k.get("when") or any(re.search(k["when"], p) for p in problems))), None)
+
+        if entry:
+            excused.append((problem, entry["reason"]))
+        else:
+            failing.append(problem)
+
+    return failing, excused
 
 
 def report(cur, base, rows):
@@ -1204,9 +1259,9 @@ def report(cur, base, rows):
     rel_base = os.path.relpath(base, cur).replace("\\", "/")
     results = []
 
-    for rel, pct, problems in rows:
+    for rel, pct, problems, excused in rows:
         url = rel.replace("\\", "/")
-        row = {"name": url, "pct": pct, "problems": problems}
+        row = {"name": url, "pct": pct, "problems": problems, "known": [{"problem": p, "reason": r} for p, r in excused]}
 
         if url.endswith(".png"):
             t = frame_time(os.path.join(cur, rel[:-4] + ".json"))

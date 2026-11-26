@@ -58,6 +58,9 @@ header select, #toolbar select { padding: 4px 6px; background: var(--control); c
 .fail .status { color: var(--bad); }
 .pct, .fps { color: var(--dim); }
 .problems { margin-top: 2px; color: var(--bad); }
+.row.known { border-left-color: var(--accent); }
+.known .status { color: var(--accent); }
+.knownNote { margin-top: 2px; color: var(--dim); }
 .shots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
 .shots figure { margin: 0; }
 .shots figcaption { color: var(--dim); font-size: 11px; }

@@ -26,7 +26,7 @@ The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time f
 
 ### Smoke test
 
-`smoke.py run` stages the Release exe in `build/Smoke`, runs every target in [manifest.toml](../../tools/debug/smoke/manifest.toml) with a pinned profile and save (never yours), and writes `dumps/smoke/<tag>/<platform>/`. `compare` checks that against `dumps/smoke/baseline` and writes `results.js` and the report page from [tools/debug/smoke/report](../../tools/debug/smoke/report/) next to it. Open `report.html` for a breakdown by section, sortable by biggest change, with each image beside its baseline and its changed pixels. Make a new baseline with `run --tag baseline`.
+`smoke.py run` stages the Release exe in `build/Smoke`, runs every target in [manifest.toml](../../tools/debug/smoke/manifest.toml) with a pinned profile and save (never yours), and writes `dumps/smoke/<tag>/<platform>/`. `compare` checks that against `dumps/smoke/baseline` and writes `results.js` and the report page from [tools/debug/smoke/report](../../tools/debug/smoke/report/) next to it. Open `report.html` for a breakdown by section, sortable by biggest change, with each image beside its baseline and its changed pixels. Make a new baseline with `run --tag baseline`. A difference that is understood but not fixed goes in `[[known]]` at the end of the manifest, with its reason: the report then shows it as known instead of failed, and the row still fails for any problem no entry explains.
 
 On Windows, `run` also writes the shader combinations every launch drew to `shader_combos_seen.txt` and those missing from [tools/d3d11/shader_combos.txt](../../tools/d3d11/shader_combos.txt) to `shader_combos_missing.txt`, and prints both counts. Append the missing lines to that list so release builds precompile them.
 
@@ -44,7 +44,7 @@ On Windows, `run` also writes the shader combinations every launch drew to `shad
 - `--sections` and `--filter` (folder names, such as `level03`) narrow a run. Images of targets you didn't run show as "not in this run", and `compare` exits non-zero because of them. An image only the current run has shows as "new".
 - A crash, assertion or SEH line in the game log fails its target and leaves `faults.txt`. A target that fails to run leaves `error.txt`.
 - `memory` takes the median because level 3 steps up once by about 64 MB, on the third or fourth replay, when the GPU allocator adds a block that it then keeps. A leak grows on every replay.
-- Windows is the default platform. `--platforms linux,android,pi` runs the WSL build, the installed APK or the Pi over ssh, each configured with the MCP bridge on. `memory` runs on Windows only. The WSL game draws on a hidden Xvfb display (install `xvfb` in WSL), so it never takes focus. Set `RS64_WSL_SHOW=1` to see its window.
+- Windows is the default platform. `--platforms linux,android,pi` runs the WSL build, the installed APK or the Pi over ssh, each configured with the MCP bridge on. `memory` runs on Windows only, and `perf` on WSL only when named in `--sections`, since its frame rates go through Dozen. On Windows two games, each in its own copy of the game folder, play half the levels at once. The WSL game draws on a hidden Xvfb display (install `xvfb` in WSL), so it never takes focus. Set `RS64_WSL_SHOW=1` to see its window.
 
 ## Stability / leak harness
 

@@ -1,5 +1,6 @@
 // Smoke report: builds the page from window.SMOKE_RESULTS (results.js, written by smoke.py compare next to a copy of this page).
-// Each row is {name, pct, problems, baseline?, current?, diff?, frame_ms?}; a row with problems failed.
+// Each row is {name, pct, problems, known, baseline?, current?, diff?, frame_ms?}; a row with problems failed, one with only known problems
+// (each {problem, reason}, explained by the manifest's [[known]] entries) did not.
 
 const data = window.SMOKE_RESULTS;
 const $ = (id) => document.getElementById(id);
@@ -7,6 +8,7 @@ const state = { section: null };
 
 const sectionOf = (row) => (row.name.match(/^[a-z]+/) || ['other'])[0];
 const failed = (row) => row.problems.length > 0;
+const knownOnly = (row) => !failed(row) && (row.known || []).length > 0;
 
 // Failures first; among them the ones with no pixel figure (frame rate, memory, camera, missing), then the most pixels changed.
 function byChange(a, b)
@@ -219,7 +221,9 @@ function setupViewer()
 function rowView(row)
 {
   const bad = failed(row);
-  const head = el('div', { className: 'rowHead' }, el('span', { className: 'status', textContent: bad ? 'FAIL' : 'ok' }), el('b', { textContent: row.name }));
+  const known = row.known || [];
+  const status = bad ? 'FAIL' : known.length ? 'known' : 'ok';
+  const head = el('div', { className: 'rowHead' }, el('span', { className: 'status', textContent: status }), el('b', { textContent: row.name }));
 
   if (row.pct !== null)
     head.append(el('span', { className: 'pct', textContent: `${row.pct.toFixed(3)}% of pixels changed` }));
@@ -227,10 +231,13 @@ function rowView(row)
   if (row.frame_ms)
     head.append(el('span', { className: 'fps', textContent: `${(1000 / row.frame_ms.avg).toFixed(0)} fps, p99 ${row.frame_ms.p99.toFixed(1)} ms` }));
 
-  const view = el('article', { className: bad ? 'row fail' : 'row' }, head);
+  const view = el('article', { className: bad ? 'row fail' : known.length ? 'row known' : 'row' }, head);
 
   if (bad)
     view.append(el('div', { className: 'problems', textContent: row.problems.join('; ') }));
+
+  for (const k of known)
+    view.append(el('div', { className: 'knownNote', textContent: `Known: ${k.problem}. ${k.reason}` }));
 
   const shots = pictures(row).map(([label, path]) => shot(row, label, path));
 
@@ -267,14 +274,16 @@ function sectionsView()
 
   for (const row of data ? data.rows : [])
   {
-    const c = counts.get(sectionOf(row)) || { total: 0, failed: 0 };
+    const c = counts.get(sectionOf(row)) || { total: 0, failed: 0, known: 0 };
 
     c.total++;
     c.failed += failed(row) ? 1 : 0;
+    c.known += knownOnly(row) ? 1 : 0;
     counts.set(sectionOf(row), c);
   }
 
-  const cards = [...counts].sort((a, b) => b[1].failed - a[1].failed || a[0].localeCompare(b[0])).map(([name, c]) => card(name, name, `${c.failed} of ${c.total} failed`, c.failed / c.total));
+  const detail = (c) => `${c.failed} of ${c.total} failed` + (c.known ? `, ${c.known} known` : '');
+  const cards = [...counts].sort((a, b) => b[1].failed - a[1].failed || a[0].localeCompare(b[0])).map(([name, c]) => card(name, name, detail(c), c.failed / c.total));
   const perf = window.LEVEL_PERF;
 
   if (perf)
