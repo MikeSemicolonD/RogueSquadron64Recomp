@@ -702,6 +702,9 @@ def run(args):
 
     config = PLATFORMS[args.platform]
     platform = args.platform
+
+    # The emulator's 4 cores starve the MCP bridge at 16x (no ping reply in 10 s); 4x keeps it answering.
+    speed = args.speed or (4 if platform == "android" else 16)
     stage(args.build)
     out = os.path.join(OUT, args.tag, args.platform)
     sections = args.sections.split(",")
@@ -722,16 +725,16 @@ def run(args):
             if pause_pages:
                 pause_settings_cycle(game, shots[-1][0] + 30, pause_pages, m["levels"].get("pause_skip", ()))
 
-        session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}"}, body, args.speed, os.path.join(out, "level.rec"))
+        session(out, {"ROGUESQ_BOOT_TARGET": f"level:{level}"}, body, speed, os.path.join(out, "level.rec"))
 
     if "boot" in sections and wanted("boot"):
-        boot_run(out, m["boot"], args.speed)
+        boot_run(out, m["boot"], speed)
 
     # Level 20 (CHICKEN) skips the front end, so it can't be reached from SELECT LEVEL and gets a launch of its own.
     if "levels" in sections:
         ids = [i for i in m["levels"]["ids"] if wanted(f"level{i:02d}")]
         chain = [i for i in ids if i != 20]
-        level_args = (m["levels"]["frames"], args.speed, m["levels"].get("pause_pages", ()), m["levels"].get("pause_skip", ()))
+        level_args = (m["levels"]["frames"], speed, m["levels"].get("pause_pages", ()), m["levels"].get("pause_skip", ()))
 
         # On Windows two games, each in its own copy of the game folder, play half the levels at once; the MCP runs a second game only there.
         if platform == "windows" and len(chain) > 1:
@@ -762,21 +765,21 @@ def run(args):
         paths = [p for p in m["menus"]["paths"] if wanted(menu_folder(p))]
 
         if paths:
-            menu_chain(out, paths, m["menus"]["frames"], args.speed, m["menus"].get("cheats", ""))
+            menu_chain(out, paths, m["menus"]["frames"], speed, m["menus"].get("cheats", ""))
 
     if "pause" in sections:
         p = m["pause"]
         pages = [page for page in p["pages"] if wanted(f"pause_{p['level']}_{page}")]
 
         if pages:
-            pause_chain(out, p["level"], p["at"], pages, p["frames"], args.speed)
+            pause_chain(out, p["level"], p["at"], pages, p["frames"], speed)
 
     # Without the passcode, one launch per cutscene frame: the cutscene clock runs on wall time, so a step after a hold lands late.
     if "cutscenes" in sections:
         cs = m["cutscenes"]
 
         if cs.get("cheats"):
-            cutscene_chain(out, cs["cheats"], cs["viewer_path"], cs["frames"], args.speed)
+            cutscene_chain(out, cs["cheats"], cs["viewer_path"], cs["frames"], speed)
         else:
             for scene in cs["ids"]:
                 name = f"cutscene_{scene.replace(',', '_')}"
@@ -787,7 +790,7 @@ def run(args):
                         enter(game, os.path.join(out, name))
                         hold(game, "cutscene", [(frame, "", None)], False)
 
-                    session(out, {"ROGUESQ_BOOT_TARGET": f"cutscene:{scene}"}, cutscene_body, args.speed)
+                    session(out, {"ROGUESQ_BOOT_TARGET": f"cutscene:{scene}"}, cutscene_body, speed)
 
     # WSL's frame rates go through Dozen onto Direct3D 12, so they say little about Linux, and its relaunch per preset was a third of the run; --sections perf still runs it.
     if "perf" in sections and not (platform == "linux" and args.sections == ",".join(SECTIONS)):
@@ -802,7 +805,7 @@ def run(args):
         mem = m["memory"]
 
         if wanted(f"memory_level{mem['level']:02d}"):
-            memory_run(out, mem["level"], mem["loops"], mem["at"], args.speed)
+            memory_run(out, mem["level"], mem["loops"], mem["at"], speed)
 
     if "camera" in sections:
         cam = m["camera"]
@@ -812,7 +815,7 @@ def run(args):
                 continue
 
             for rate in cam["rates"]:
-                camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), run_spec.get("at", cam["at"]), rate, cam, args.speed)
+                camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), run_spec.get("at", cam["at"]), rate, cam, speed)
 
     report_combos(out)
 
@@ -1483,7 +1486,7 @@ def main():
     r.add_argument("--sections", default=",".join(SECTIONS), help="any of " + ",".join(SECTIONS))
     r.add_argument("--filter", default="", help="only targets whose folder name contains one of these (comma list), e.g. level00 or level16,level17")
     r.add_argument("--build", default="Release", help="build folder to stage the exe from (Debug gives symbolized fault stacks, ~10x slower)")
-    r.add_argument("--speed", type=int, default=16)
+    r.add_argument("--speed", type=int, help="game speed (default 16, 4 on android)")
     c = sub.add_parser("compare")
     c.add_argument("--baseline", default="baseline")
     c.add_argument("--tag", default="current")
