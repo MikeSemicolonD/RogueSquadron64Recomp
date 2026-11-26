@@ -45,6 +45,7 @@ if [ -d "${BUILDS[0]}/mods" ]; then
     (cd "${BUILDS[0]}" && find mods -name '*.dylib') | while read -r lib; do
         merge "$app/Resources/$lib" "${BUILDS[@]/%//$lib}"
     done
+    rm -rf "$app/Resources/mods/steam-relay"
 fi
 
 # favicon.ico's 7th entry is the 256x256 PNG; an icns may hold it as-is under type ic08.

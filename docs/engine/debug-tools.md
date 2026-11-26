@@ -28,6 +28,8 @@ The separate tests are `EXCLUDE_FROM_ALL` targets, built and run one at a time f
 
 `smoke.py run` stages the Release exe in `build/Smoke`, runs every target in [manifest.toml](../../tools/debug/smoke/manifest.toml) with a pinned profile and save (never yours), and writes `dumps/smoke/<tag>/<platform>/`. `compare` checks that against `dumps/smoke/baseline` and writes `results.js` and the report page from [tools/debug/smoke/report](../../tools/debug/smoke/report/) next to it. Open `report.html` for a breakdown by section, sortable by biggest change, with each image beside its baseline and its changed pixels. Make a new baseline with `run --tag baseline`.
 
+On Windows, `run` also writes the shader combinations every launch drew to `shader_combos_seen.txt` and those missing from [tools/d3d11/shader_combos.txt](../../tools/d3d11/shader_combos.txt) to `shader_combos_missing.txt`, and prints both counts. Append the missing lines to that list so release builds precompile them.
+
 | Section | What it captures | Fails when |
 | --- | --- | --- |
 | `levels` | Each level's mission frames | Over 0.05% of pixels change, or the player, camera, wingmen or NPCs move |

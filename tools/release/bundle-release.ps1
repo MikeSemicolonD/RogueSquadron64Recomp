@@ -39,12 +39,16 @@ function Build-Windows([string]$arch, [string]$buildDir, [string]$cmakeArch) {
     if (-not (Test-Path "$buildDir\CMakeCache.txt")) {
         Invoke-Checked "configure $arch" { cmake -B $buildDir -G "Visual Studio 17 2022" -A $cmakeArch -T ClangCL "-DN64RECOMP_EXE=$repo/build/Debug/N64Recomp.exe" }
     }
+
+    # The "Release, MCP" task leaves RS64_MCP=ON in the cache; AUTO keeps the bridge out of Release.
+    Invoke-Checked "reset MCP $arch" { cmake -B $buildDir -DRS64_MCP=AUTO }
     Invoke-Checked "build $arch" { cmake --build $buildDir --config Release --target RogueSquadron64Recomp }
     $stage = Join-Path $env:TEMP "rs64-bundle-$arch"
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Path $stage | Out-Null
     foreach ($f in "RogueSquadron64Recomp.exe", "SDL2.dll", "dxil.dll", "dxcompiler.dll") { Copy-Item "$buildDir\dist\$f" $stage }
     Invoke-Checked "stage mods $arch" { cmake -DSRC="$repo/mods" -DDST="$stage/mods" -DPLATFORM=desktop -DBUILT="$repo/$buildDir/built_mods/Release" -P "$repo/tools/mods/stage_mods.cmake" }
+    Remove-Item -Recurse -Force "$stage\mods\steam-relay" -ErrorAction SilentlyContinue
     # Shader bytecode doesn't depend on the CPU architecture, so the first Windows build of a run compiles the cache and the other reuses it.
     if (-not (Test-Path "$shaderCache\rt64_combos.txt")) {
         $env:PLUME_D3D11_SHADER_CACHE = $shaderCache
@@ -56,6 +60,7 @@ function Build-Windows([string]$arch, [string]$buildDir, [string]$cmakeArch) {
     Copy-Item ci\release-readme.txt "$stage\README.txt"
     Copy-Item LICENSE "$stage\LICENSE.txt"
     Copy-Item NOTICES.txt "$stage\NOTICES.txt"
+    Copy-Item recomplauncher.json "$stage\recomplauncher.json"
     Copy-Item -Recurse licenses "$stage\licenses"
     Copy-Item -Recurse video-presets "$stage\video-presets"
     $zip = Join-Path $out "RogueSquadron64Recomp-windows-$arch-$Version.zip"

@@ -55,6 +55,9 @@ WINGMAN_UPDATE = symbol_table()["npcWingmanUpdate"]
 PIXEL_DELTA = 64
 CONTROL = "control"
 FAULTS = ("Assertion", "Access violation", "SEH caught", "null-call", "[hle-seh]")
+COMBOS_SEEN = "shader_combos_seen.txt"
+COMBOS_MISSING = "shader_combos_missing.txt"
+SHIPPED_COMBOS = os.path.join(REPO, "tools", "d3d11", "shader_combos.txt")
 MENU_DONE = r"\[nav\] menu: path done"
 NAV_STUCK = r"\[nav\] stuck"
 
@@ -203,6 +206,10 @@ def session(out, env, body, speed, record=None, settings=None):
                 "ROGUESQ_LS_GOD": "1"}
     full_env.update(env)
     error = None
+
+    # Every session appends the shader combinations it draws; run() checks them against the shipped D3D11 list.
+    if platform == "windows":
+        full_env["ROGUESQ_RECORD_SHADER_COMBOS"] = os.path.join(out, COMBOS_SEEN)
 
     # A Pi 4 crawls through the boot at the pinned profile's 3X, so it runs the low video preset (native resolution, 30 fps, vsync off).
     if platform == "pi" and settings is None:
@@ -681,6 +688,11 @@ def run(args):
     stage(args.build)
     out = os.path.join(OUT, args.tag, args.platform)
     sections = args.sections.split(",")
+
+    for name in (COMBOS_SEEN, COMBOS_MISSING):
+        if os.path.exists(os.path.join(out, name)):
+            os.remove(os.path.join(out, name))
+
     wanted = (lambda name: any(f in name for f in args.filter.split(",")))
 
     def one_level(level, shots, pause_pages=(), folder="level"):
@@ -769,6 +781,30 @@ def run(args):
 
             for rate in cam["rates"]:
                 camera_run(out, run_spec["level"], run_spec["craft"], run_spec.get("cheats", ""), run_spec.get("at", cam["at"]), rate, cam, args.speed)
+
+    report_combos(out)
+
+
+def report_combos(out):
+    """Writes the combinations the run drew that tools/d3d11/shader_combos.txt lacks to shader_combos_missing.txt, in the list's own format."""
+
+    seen_path = os.path.join(out, COMBOS_SEEN)
+
+    if not os.path.exists(seen_path):
+        return
+
+    def lines(path):
+
+        with open(path, encoding="utf-8") as f:
+            return {line.strip().upper() for line in f if line.strip()}
+
+    seen = lines(seen_path)
+    missing = sorted(seen - lines(SHIPPED_COMBOS))
+
+    with open(os.path.join(out, COMBOS_MISSING), "w", encoding="utf-8") as f:
+        f.writelines(line + "\n" for line in missing)
+
+    print(f"shader combos: {len(seen)} drawn, {len(missing)} not in tools/d3d11/shader_combos.txt (listed in {COMBOS_MISSING})")
 
 
 def private_bytes(pid):
